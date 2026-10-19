@@ -8,6 +8,9 @@ pub mod operations;
 mod panel_apply;
 mod pills;
 pub mod pins;
+mod selection_section;
+#[cfg(test)]
+pub(crate) use selection_section::counts_text as selection_counts_text;
 pub mod post;
 pub mod setup;
 mod shoe_row;
@@ -147,6 +150,11 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
     flush_post_snapshot(state);
     flush_machine_snapshot(state);
     flush_toolpath_snapshot(state);
+    // P4.3: the pick mode and the `+ Rule` draft end when no toolpath is
+    // on screen.
+    if !matches!(state.selection, Selection::Toolpath(_)) {
+        state.gui.selection_ui.keep_only(None);
+    }
 
     match state.selection.clone() {
         Selection::None => draw_nothing_selected(ui, state),
@@ -330,10 +338,24 @@ pub fn toolpath_panel_snapshot(
 pub(crate) struct ToolpathPanelInputs {
     pub tools: Vec<(crate::state::job::ToolId, String, f64)>,
     pub models: Vec<(crate::state::job::ModelId, String)>,
-    /// The models a selection boundary can name: every model with
-    /// at least one closed 2D polygon. Any model qualifies, not only the
-    /// toolpath's own.
-    pub outline_models: Vec<(crate::state::job::ModelId, String)>,
+    /// The "Selection" boundary source is enabled: a model of the project
+    /// holds a drawing item or a face item (geometry selection P4.3).
+    pub boundary_selection_enabled: bool,
+    /// The boundary selection that the "Selection" source button writes,
+    /// and that a boundary `Reset` restores
+    /// (`ProjectSession::boundary_selection_default`).
+    pub boundary_default: rs_cam_core::selection::Selection,
+    /// The `selection_status` answer for the op selection (P4.3), through
+    /// the `SelectionStatus` query. `None` for an op that holds no
+    /// selection; `Err` is an error that is not a selection refusal.
+    pub selection_report: Option<SelectionRead>,
+    /// The `selection_status` answer for the boundary selection. `None`
+    /// when the boundary source is not a selection.
+    pub boundary_report: Option<SelectionRead>,
+    /// The item sources a `+ Rule` draft can name, through the
+    /// `ListItems` query. Empty while no draft of this toolpath is open:
+    /// the list is read only for the open popover.
+    pub rule_sources: Vec<RuleSource>,
     pub tool_configs: Vec<(crate::state::job::ToolId, crate::state::job::ToolConfig)>,
     pub boundary_source_candidates: Vec<BoundaryRestCandidate>,
     /// Names of toolpaths currently consuming THIS one's rest-depth analysis
@@ -350,7 +372,6 @@ pub(crate) struct ToolpathPanelInputs {
     pub machine: rs_cam_core::machine::MachineProfile,
     pub spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
     pub project_default_rpm: u32,
-    pub model_has_enriched: bool,
     pub model_is_step_missing_brep: bool,
     pub height_ctx: Option<crate::state::toolpath::HeightContext>,
     pub stale_default_defects: Vec<rs_cam_core::compute::validate::StaleDefault>,
@@ -383,6 +404,100 @@ pub(crate) struct ToolpathPanelInputs {
     /// H2: the dust shoe row of the Heights tab. `None` when the machine
     /// head has no dust shoe.
     pub shoe: Option<ShoeRowInputs>,
+}
+
+/// One `selection_status` read: the report, or the error text of an error
+/// that is not a selection refusal.
+pub(crate) type SelectionRead =
+    Result<std::sync::Arc<rs_cam_core::session::SelectionReport>, String>;
+
+/// One item source of a `+ Rule` draft: the toolpath model, another model,
+/// or the stock, with the layers and the kinds that its items carry.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RuleSource {
+    pub source: rs_cam_core::selection::SourceRef,
+    pub name: String,
+    pub layers: Vec<String>,
+    pub kinds: std::collections::BTreeSet<rs_cam_core::selection::ItemKind>,
+}
+
+/// The `selection_status` answer for `target` of toolpath `index`, through
+/// the `SelectionStatus` query (the GUI reach of the row, P4.3).
+fn selection_read(
+    session: &rs_cam_core::session::ProjectSession,
+    index: usize,
+    target: rs_cam_core::session::SelectionTarget,
+) -> SelectionRead {
+    use rs_cam_core::session::{Query, QueryAnswer, SelectionStatusArgs};
+    match session.query(Query::SelectionStatus(SelectionStatusArgs {
+        index,
+        target,
+    })) {
+        Ok(QueryAnswer::SelectionStatus(report)) => Ok(report),
+        Ok(other) => Err(format!("the selection_status read answered {other:?}")),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// The item sources of a `+ Rule` draft on toolpath `tc`: its own model
+/// first, then every other model with an item, then the stock. The layers
+/// and the kinds come from the `ListItems` query, so the GUI and MCP list
+/// one answer.
+fn rule_sources(
+    session: &rs_cam_core::session::ProjectSession,
+    tc: &rs_cam_core::session::ToolpathConfig,
+) -> Vec<RuleSource> {
+    use rs_cam_core::selection::{ItemKind, SourceRef};
+    use rs_cam_core::session::{ListItemsArgs, Query, QueryAnswer};
+    let listed = |model_id: usize| -> (Vec<String>, std::collections::BTreeSet<ItemKind>) {
+        let items = match session.query(Query::ListItems(ListItemsArgs {
+            model_id,
+            layer: None,
+            kind: None,
+        })) {
+            Ok(QueryAnswer::ListItems(answer)) => answer.items,
+            Ok(_) | Err(_) => Vec::new(),
+        };
+        let mut layers: Vec<String> = items.iter().filter_map(|i| i.layer.clone()).collect();
+        layers.sort();
+        layers.dedup();
+        (layers, items.iter().map(|i| i.kind).collect())
+    };
+    let mut out = Vec::new();
+    let mut models: Vec<&rs_cam_core::session::LoadedModel> = session
+        .models()
+        .iter()
+        .filter(|m| !m.items.is_empty())
+        .collect();
+    // The toolpath model leads, as "This model".
+    models.sort_by_key(|m| m.id != tc.model_id);
+    for model in models {
+        let (layers, kinds) = listed(model.id);
+        let (source, name) = if model.id == tc.model_id {
+            (
+                SourceRef::ToolpathModel,
+                format!("This model ({})", model.name),
+            )
+        } else {
+            (
+                SourceRef::Model(rs_cam_core::ids::ModelId(model.id)),
+                model.name.clone(),
+            )
+        };
+        out.push(RuleSource {
+            source,
+            name,
+            layers,
+            kinds,
+        });
+    }
+    out.push(RuleSource {
+        source: SourceRef::Stock,
+        name: "Stock".to_owned(),
+        layers: Vec::new(),
+        kinds: [ItemKind::Loop].into_iter().collect(),
+    });
+    out
 }
 
 /// H2: what the toolpath panel's dust shoe row reads. Every text comes from
@@ -472,12 +587,39 @@ pub(crate) fn toolpath_panel_inputs(
         .iter()
         .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
         .collect();
-    let outline_models: Vec<_> = session
-        .models()
-        .iter()
-        .filter(|m| m.items.has_closed_ring())
-        .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
-        .collect();
+    // P4.3: the "Selection" boundary source needs an item to pick: a
+    // drawing item or a face item. Every item kind is one of the two.
+    let boundary_selection_enabled = session.models().iter().any(|m| !m.items.is_empty());
+    let boundary_default = session.boundary_selection_default();
+    // P4.3: the two selection reads of the section, through the query row.
+    let (selection_report, boundary_report, rule_sources) =
+        match session.find_toolpath_config_by_id(id) {
+            Some((index, tc)) => {
+                let op = tc.operation.selection().is_some().then(|| {
+                    selection_read(session, index, rs_cam_core::session::SelectionTarget::Op)
+                });
+                let boundary =
+                    matches!(tc.boundary.source, BoundarySource::Selection { .. }).then(|| {
+                        selection_read(
+                            session,
+                            index,
+                            rs_cam_core::session::SelectionTarget::Boundary,
+                        )
+                    });
+                let draft_open = gui
+                    .selection_ui
+                    .rule_draft
+                    .as_ref()
+                    .is_some_and(|d| d.toolpath_id == id);
+                let sources = if draft_open {
+                    rule_sources(session, tc)
+                } else {
+                    Vec::new()
+                };
+                (op, boundary, sources)
+            }
+            None => (None, None, Vec::new()),
+        };
     // Snapshot tool configs for feeds calculation
     let tool_configs: Vec<_> = session.tools().iter().map(|t| (t.id, t.clone())).collect();
     // Candidate source toolpaths for a `DerivedRestRegions` boundary
@@ -533,13 +675,10 @@ pub(crate) fn toolpath_panel_inputs(
     let material = session.stock_config().material.clone();
     let machine = session.machine().clone();
 
-    // Check if the toolpath's model has enriched mesh (for face selection UI)
+    // The model of the toolpath, for the BREP warning below.
     let model_for_panel = session
         .find_toolpath_config_by_id(id)
         .and_then(|(_, tc)| session.models().iter().find(|m| m.id == tc.model_id));
-    let model_has_enriched = model_for_panel
-        .map(|m| m.enriched_mesh.is_some())
-        .unwrap_or(false);
     // Defensive: if a STEP model loaded without BREP (e.g. older
     // project file or future loader regression), surface a warning
     // so the face picker isn't silently absent.
@@ -647,7 +786,11 @@ pub(crate) fn toolpath_panel_inputs(
     ToolpathPanelInputs {
         tools,
         models,
-        outline_models,
+        boundary_selection_enabled,
+        boundary_default,
+        selection_report,
+        boundary_report,
+        rule_sources,
         tool_configs,
         boundary_source_candidates,
         rest_region_consumers: rest_region_consumer_names,
@@ -657,7 +800,6 @@ pub(crate) fn toolpath_panel_inputs(
         machine,
         spindle_strategy: session.post_config().spindle_strategy,
         project_default_rpm: session.post_config().spindle_speed,
-        model_has_enriched,
         model_is_step_missing_brep,
         height_ctx,
         stale_default_defects,
@@ -1484,6 +1626,9 @@ fn draw_toolpath_selection(
     // Copied out and written back so the panel's `&mut bool` cannot
     // collide with the session borrows in the same argument list.
     let mut show_reach_map = state.viewport.show_reach_map;
+    // P4.3: the pick mode and the `+ Rule` draft belong to the toolpath
+    // on screen. A change of the selected toolpath ends both.
+    state.gui.selection_ui.keep_only(Some(id));
 
     // UI-01: the panel's whole read side, assembled by one
     // function. The 21 arguments it replaces were built here by
@@ -1511,9 +1656,20 @@ fn draw_toolpath_selection(
         // static diagnostic contexts and the model bbox travel as
         // one value, so no caller can draw the entry while
         // silently substituting a default for one of the others.
-        draw_toolpath_panel(ui, &mut snapshot, &inputs, &mut show_reach_map, events);
+        // Taken out and put back, as `show_reach_map`: the section edits
+        // the view state while `inputs` holds its read of the session.
+        let mut selection_ui = std::mem::take(&mut state.gui.selection_ui);
+        draw_toolpath_panel(
+            ui,
+            &mut snapshot,
+            &inputs,
+            &mut show_reach_map,
+            &mut selection_ui,
+            events,
+        );
 
         state.viewport.show_reach_map = show_reach_map;
+        state.gui.selection_ui = selection_ui;
 
         // ORDER IS LOAD-BEARING. The runtime write-back runs
         // FIRST, because it copies `entry.stale_since` — the

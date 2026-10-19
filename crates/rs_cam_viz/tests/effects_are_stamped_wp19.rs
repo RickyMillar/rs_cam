@@ -94,22 +94,11 @@ const JUSTIFIED: &[Justified] = &[
         reason: "storing a simulation leaves the session's `Some`, so `stale` is empty \
                  and `simulation_cleared` is false (`session/command.rs`)",
     },
-    // Geometry selection P2.3c / P2.6: `Selection::apply` is the pure
-    // edit of a selection VALUE. The scan reads its `.apply(` as a
-    // session call. It answers `Result<(), SelectionRefusal>`, never an
-    // `Effects`; the panel then writes the selection through a command.
-    Justified {
-        path: "src/ui/properties/operations/drill.rs",
-        needle: "selection.apply(edit, op_default)",
-        reason: "`Selection::apply` edits a selection value and returns no `Effects`; \
-                 the entry write-back carries the command",
-    },
-    Justified {
-        path: "src/ui/properties/tab_badges.rs",
-        needle: "cleared.apply(",
-        reason: "`Selection::apply` edits a selection value and returns no `Effects`; \
-                 the `EditToolpathSelection` event carries the command",
-    },
+    // Geometry selection P2.3c / P2.6 held two rows here: the drill hole
+    // selector and the face Clear edited a selection VALUE with
+    // `Selection::apply`. P4.3 (lead ruling L-1) deleted both sites: the
+    // Selection section sends `EditToolpathSelection` and applies no edit
+    // itself, so the rows went too.
     // C01 (`9da22f20`) deleted the legacy project loader in
     // `src/controller/io.rs`. Its two rows — `Command::SetProjectName(`
     // and `Command::ReplaceSetupsAndToolpaths(` — named the builder over

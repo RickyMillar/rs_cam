@@ -810,8 +810,9 @@ pub struct InlayConfig {
     /// Pocket depth below the stock top (mm).
     #[param(
         help = "Depth of the inlay pocket below the stock top. This op cuts only the V walls. Add a \
-                Pocket with a flat end mill for the floor: the same depth, a machining boundary of \
-                Model Outline on this design, containment Inside, offset minus pocket_depth x \
+                Pocket with a flat end mill for the floor: the same depth, a Selection machining \
+                boundary of the closed shapes of this design, containment Inside, offset minus \
+                pocket_depth x \
                 tan(half the V angle) (3 mm for a 90 deg bit at 3 mm depth). Cut the Pocket first. \
                 CAUTION: where the floor is narrower than the end mill plus that inset, the Inside \
                 clip collapses and the Pocket cuts the whole design and the V walls; read \

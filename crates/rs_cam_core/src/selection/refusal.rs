@@ -29,8 +29,9 @@ impl ItemRef {
     }
 }
 
-/// The noun of a kind, singular and plural.
-pub(crate) fn kind_noun(kind: ItemKind, count: usize) -> &'static str {
+/// The noun of a kind, singular and plural. The GUI selection section
+/// (P4.3) prints its counts with it, so a count and a refusal use one noun.
+pub fn kind_noun(kind: ItemKind, count: usize) -> &'static str {
     let one = count == 1;
     match kind {
         ItemKind::Loop if one => "closed loop",

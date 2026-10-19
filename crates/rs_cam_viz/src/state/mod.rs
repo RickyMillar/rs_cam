@@ -5,6 +5,7 @@ pub mod job;
 pub mod multitool_planner;
 pub mod overlays;
 pub mod panels;
+pub mod pick;
 pub mod pin_view;
 pub mod runtime;
 pub mod selection;

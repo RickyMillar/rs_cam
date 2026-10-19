@@ -373,7 +373,20 @@ mod tests {
 
     #[test]
     fn mcp_core_and_gui_give_one_selection_status_p2_7() {
-        let s = project();
+        let mut s = project();
+        // P4.3: a rule edit first, so the GUI section reads an edited
+        // selection: the `CUT` Pocket also takes the `KEEP` layer.
+        edit(
+            &mut s,
+            0,
+            SelectionEdit::AddRule(Rule {
+                source: SourceRef::ToolpathModel,
+                filter: Filter {
+                    layers: vec!["KEEP".into()],
+                    ..Filter::default()
+                },
+            }),
+        );
         assert_eq!(s.toolpath_count(), 5);
         for index in 0..5 {
             let tc = s.get_toolpath_config(index).unwrap().clone();
@@ -389,7 +402,7 @@ mod tests {
             else {
                 panic!("the selection_status row answered another kind");
             };
-            assert_eq!(query, *memo, "op {index}: the query row is the memo");
+            assert_eq!(*query, *memo, "op {index}: the query row is the memo");
 
             let reply = selection_status_reply(&s, index, SelectionTarget::Op);
             let name = &tc.name;
@@ -414,6 +427,33 @@ mod tests {
                 reply["selected"].as_array().unwrap().len(),
                 memo.selected.len()
             );
+            // P4.3: the Selection section reads the same answer through
+            // the panel inputs, and prints the same counts.
+            let inputs = crate::ui::properties::toolpath_panel_inputs(
+                tc.id,
+                &s,
+                &crate::state::runtime::GuiState::default(),
+                None,
+                None,
+                false,
+            );
+            let section = inputs
+                .selection_report
+                .expect("every op here holds a selection")
+                .expect("the selection resolves");
+            assert_eq!(*section, *memo, "op {index}: the section reads the memo");
+            let wire_counts: std::collections::BTreeMap<ItemKind, usize> =
+                serde_json::from_value(reply["counts"].clone()).unwrap();
+            let from_wire = SelectionReport {
+                counts: wire_counts,
+                islands: usize::try_from(reply["islands"].as_u64().unwrap()).unwrap(),
+                ..SelectionReport::default()
+            };
+            assert_eq!(
+                crate::ui::properties::selection_counts_text(&section),
+                crate::ui::properties::selection_counts_text(&from_wire),
+                "op {index} ({name}): the section prints the counts MCP gives"
+            );
             // The GUI drill panel and its viewport markers read this
             // projection of the memo.
             if let Some(panel) = s.hole_selection(&tc) {
@@ -431,7 +471,11 @@ mod tests {
         // report cannot pass.
         let reply = |i| selection_status_reply(&s, i, SelectionTarget::Op);
         let pocket = reply(0);
-        assert_eq!((count(&pocket, "loop"), count(&pocket, "circle")), (1, 0));
+        assert_eq!(
+            (count(&pocket, "loop"), count(&pocket, "circle")),
+            (2, 0),
+            "the CUT rule and the added KEEP rule give two loops"
+        );
         assert!(pocket["refusal"].is_null(), "{pocket}");
         let drill = reply(1);
         assert_eq!(count(&drill, "circle"), 1);
@@ -540,7 +584,7 @@ mod tests {
         else {
             panic!("the selection_status row answered another kind");
         };
-        assert_eq!(query, *memo, "the query row is the memo");
+        assert_eq!(*query, *memo, "the query row is the memo");
         let reply = selection_status_reply(&s, 3, SelectionTarget::Boundary);
         assert_eq!(reply["target"], serde_json::json!("boundary"));
         assert_eq!(count(&reply, "circle"), 1, "{reply}");

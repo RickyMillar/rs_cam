@@ -96,7 +96,7 @@ fn status(s: &ProjectSession) -> SelectionReport {
         }))
         .unwrap()
     {
-        QueryAnswer::SelectionStatus(report) => report,
+        QueryAnswer::SelectionStatus(report) => SelectionReport::clone(&report),
         other => panic!("the selection_status query answered {other:?}"),
     }
 }

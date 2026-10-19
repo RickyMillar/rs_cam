@@ -316,6 +316,10 @@ pub struct GuiState {
     /// sheet read the plan on every frame; the memo builds it once per
     /// change of an input.
     pub shoe_plan: crate::state::shoe_plan::ShoePlanMemo,
+    /// P4.3: the pick mode and the `+ Rule` draft of the selection
+    /// section. View state only: a project load resets it with the rest of
+    /// this struct, and no file holds it.
+    pub selection_ui: crate::state::pick::SelectionUi,
 }
 
 impl GuiState {
@@ -334,6 +338,7 @@ impl GuiState {
             reach_overlay: ReachOverlayState::new(),
             wizard: crate::state::wizard::WizardState::default(),
             shoe_plan: crate::state::shoe_plan::ShoePlanMemo::default(),
+            selection_ui: crate::state::pick::SelectionUi::default(),
         }
     }
 

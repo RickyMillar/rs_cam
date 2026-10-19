@@ -247,6 +247,15 @@ pub(super) fn render_diagnostic_row(
             .map(|defect| (defect, rule_id.as_str(), *new_value)),
         _ => None,
     };
+    // L-2 (geometry selection P4.3): a selection refusal has one owner,
+    // the Selection section on the Geometry tab, which holds the text and
+    // the fix. The footer row names that section in one line; the hover
+    // keeps the whole refusal.
+    let face = if is_selection_refusal(d) {
+        format!("{prefix}the selection refuses. See Selection on the Geometry tab.")
+    } else {
+        format!("{prefix}{}", d.message)
+    };
     ui.horizontal(|ui| {
         // The Fix button sits at the right edge; the message takes the rest.
         let fix_width = if fix.is_some() {
@@ -261,13 +270,9 @@ pub(super) fn render_diagnostic_row(
             |ui| {
                 ui.set_width(line_width);
                 ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(format!("{prefix}{}", d.message))
-                            .small()
-                            .color(color),
-                    )
-                    .truncate()
-                    .show_tooltip_when_elided(false),
+                    egui::Label::new(egui::RichText::new(face).small().color(color))
+                        .truncate()
+                        .show_tooltip_when_elided(false),
                 )
                 .on_hover_text(hover);
             },
@@ -288,6 +293,16 @@ pub(super) fn render_diagnostic_row(
             entry.stale_since = Some(std::time::Instant::now());
         }
     });
+}
+
+/// True when `d` is the refusal of the op selection: the footer row of
+/// `precondition.selection_refused`, and its drill form
+/// `precondition.drill_no_holes` (both carry the `selection_status`
+/// refusal).
+fn is_selection_refusal(d: &rs_cam_core::diagnostics::Diagnostic) -> bool {
+    use rs_cam_core::diagnostics::ids;
+    let id = d.id.as_str();
+    id == ids::PRECOND_SELECTION_REFUSED || id == ids::PRECOND_DRILL_NO_HOLES
 }
 
 /// One-line evidence summary for the panel. Returns `None` when the
@@ -459,7 +474,6 @@ pub(super) fn draw_geometry_wiring(
 ) {
     let tools = inputs.tools.as_slice();
     let models = inputs.models.as_slice();
-    let model_has_enriched = inputs.model_has_enriched;
     let model_is_step_missing_brep = inputs.model_is_step_missing_brep;
     let rest_fresh = inputs.rest_fresh;
     // Tool selector
@@ -511,60 +525,9 @@ pub(super) fn draw_geometry_wiring(
         );
     }
 
-    // Face selection (STEP models only). Geometry selection P2.6: a face
-    // pick is a pick of the op selection, so an op that holds no selection
-    // (a 3D op) shows no face picker. P4.2: the Face op holds one, so it
-    // shows the picker.
-    if model_has_enriched && let Some(selection) = entry.operation.selection() {
-        ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new("Face Selection")
-                .strong()
-                .color(crate::ui::tokens::TEXT_STRONG),
-        );
-        // SHE-005 — one affordance, not two stacked sentences. Zero
-        // selected: a single muted placeholder. ≥1 selected: count +
-        // Clear, no tip line. The unconditional "Tip:" sentence is
-        // removed — the placeholder + the live count updating as the
-        // user clicks convey the action.
-        let face_count = selection.face_picks().count();
-        if face_count > 0 {
-            ui.horizontal(|ui| {
-                ui.label(format!(
-                    "{} face{} selected",
-                    face_count,
-                    if face_count == 1 { "" } else { "s" }
-                ));
-                if ui.small_button("Clear").clicked() {
-                    // One edit through the command door: the selection less
-                    // its face picks. A removed pick adds no exclude.
-                    let mut cleared = selection.clone();
-                    let op_default = entry
-                        .operation
-                        .default_selection()
-                        .unwrap_or_else(rs_cam_core::selection::Selection::empty);
-                    for key in selection.face_picks() {
-                        if let Err(refusal) = cleared.apply(
-                            rs_cam_core::selection::SelectionEdit::RemovePick(key.clone()),
-                            &op_default,
-                        ) {
-                            tracing::error!(%refusal, "face Clear: a selection edit refused");
-                        }
-                    }
-                    events.push(crate::ui::AppEvent::EditToolpathSelection {
-                        toolpath_id: entry.id,
-                        target: rs_cam_core::session::SelectionTarget::Op,
-                        edit: rs_cam_core::selection::SelectionEdit::Replace(Box::new(cleared)),
-                    });
-                }
-            });
-        } else {
-            ui.label(
-                egui::RichText::new("Pick faces in viewport \u{2197}")
-                    .color(crate::ui::tokens::TEXT_FAINT),
-            );
-        }
-    }
+    // Geometry selection P4.3: the face picker block went to the
+    // Selection section (`selection_section.rs`), which shows the face
+    // picks with the other items of the selection.
 
     // W2 (G-STARTFROM): ONE row writes `stock_source`, for every
     // operation, pencil included. It used to be two controls that

@@ -123,3 +123,171 @@ fn build_world_stock_bbox_respects_stock_origin_f024() {
         bbox.max.z
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// P4.3: each edit of the Selection section undoes in one step
+// ═══════════════════════════════════════════════════════════════════════
+
+/// The P2.7 drawing, one tool, a Drill (toolpath 0) and a Pocket (toolpath
+/// 1) whose boundary is a selection with no item.
+fn selection_controller() -> AppController<ScriptedBackend> {
+    use rs_cam_core::compute::catalog::OperationConfig;
+    use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf");
+    let model = rs_cam_core::io::load_model_file(&path, 0, ModelKind::Dxf, ModelUnits::Millimeters)
+        .expect("the drawing loads");
+    let mut builder =
+        ProjectSessionBuilder::new().tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    let _ = builder.add_model(model);
+    let config = |op: crate::state::toolpath::OperationType| ToolpathConfig {
+        shoe: Default::default(),
+        id: ToolpathId(0),
+        name: op.label().to_owned(),
+        enabled: true,
+        operation: OperationConfig::new_default(op),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: 1,
+        model_id: 0,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        debug_options: Default::default(),
+        feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
+        planner_origin: None,
+    };
+    builder
+        .add_toolpath(0, config(crate::state::toolpath::OperationType::Drill))
+        .expect("the drill is addable");
+    let mut pocket = config(crate::state::toolpath::OperationType::Pocket);
+    pocket.boundary = BoundaryConfig {
+        enabled: true,
+        source: BoundarySource::Selection {
+            selection: rs_cam_core::selection::Selection::empty(),
+            holes: false,
+        },
+        containment: BoundaryContainment::Center,
+        offset: 0.0,
+    };
+    builder
+        .add_toolpath(0, pocket)
+        .expect("the pocket is addable");
+    let mut controller = AppController::with_backend(ScriptedBackend::new());
+    controller.state.session = builder.build();
+    for tc in controller.state.session.toolpath_configs() {
+        controller
+            .state
+            .gui
+            .toolpath_rt
+            .insert(tc.id, ToolpathRuntime::new(true));
+    }
+    controller
+}
+
+/// The selection `target` of toolpath `index`, as stored.
+fn stored_selection(
+    c: &AppController<ScriptedBackend>,
+    index: usize,
+    target: rs_cam_core::session::SelectionTarget,
+) -> rs_cam_core::selection::Selection {
+    c.state.session.toolpath_configs()[index]
+        .selection_of(target)
+        .expect("the target is a selection")
+        .expect("the toolpath holds the selection")
+        .clone()
+}
+
+/// One section edit inside one inspector undo snapshot, as the panel takes
+/// it: the snapshot on the first frame, the edit event, the flush when the
+/// operator leaves the toolpath.
+fn edit_in_one_step(
+    c: &mut AppController<ScriptedBackend>,
+    index: usize,
+    target: rs_cam_core::session::SelectionTarget,
+    edit: rs_cam_core::selection::SelectionEdit,
+) {
+    let tc = c.state.session.toolpath_configs()[index].clone();
+    c.state.history.toolpath_snapshot = Some((
+        tc.id,
+        tc.operation.clone(),
+        tc.dressups.clone(),
+        tc.boundary.clone(),
+        tc.feeds_provenance.clone(),
+    ));
+    c.handle_internal_event(crate::ui::AppEvent::EditToolpathSelection {
+        toolpath_id: tc.id,
+        target,
+        edit,
+    });
+    let (snap_id, old_op, old_dressups, old_boundary, old_provenance) =
+        c.state.history.toolpath_snapshot.take().unwrap();
+    let (_, now) = c.state.session.find_toolpath_config_by_id(snap_id).unwrap();
+    let action = crate::state::history::UndoAction::ToolpathParamChange {
+        tp_id: snap_id,
+        old_op,
+        new_op: now.operation.clone(),
+        old_dressups,
+        new_dressups: now.dressups.clone(),
+        old_boundary,
+        new_boundary: now.boundary.clone(),
+        old_feeds_provenance: old_provenance,
+        new_feeds_provenance: now.feeds_provenance.clone(),
+    };
+    c.state.history.push(action);
+}
+
+/// Geometry selection P4.3: the four edits of the Selection section
+/// (`AddRule`, `RemoveRule`, `Reset`, `Replace`) on the op target of a
+/// Drill and on the boundary target of a Pocket. Each edit lands, ONE undo
+/// gives the selection before it back, and one redo puts the edit back.
+#[test]
+fn each_selection_section_edit_undoes_in_one_step_p4_3() {
+    use rs_cam_core::selection::{Filter, Rule, Selection, SelectionEdit, SourceRef};
+    use rs_cam_core::session::SelectionTarget;
+
+    let rule = |layer: &str| Rule {
+        source: SourceRef::ToolpathModel,
+        filter: Filter {
+            layers: vec![layer.to_owned()],
+            ..Filter::default()
+        },
+    };
+    let mut c = selection_controller();
+    for (index, target) in [(0, SelectionTarget::Op), (1, SelectionTarget::Boundary)] {
+        let edits = [
+            SelectionEdit::AddRule(rule("HOLES")),
+            SelectionEdit::Replace(Box::new(Selection::from_rules(vec![
+                rule("CUT"),
+                rule("KEEP"),
+            ]))),
+            SelectionEdit::RemoveRule(0),
+            SelectionEdit::Reset,
+        ];
+        for edit in edits {
+            let before = stored_selection(&c, index, target);
+            edit_in_one_step(&mut c, index, target, edit.clone());
+            let after = stored_selection(&c, index, target);
+            assert_ne!(
+                after, before,
+                "{target:?} {edit:?}: the edit must land through the event"
+            );
+            c.handle_internal_event(crate::ui::AppEvent::Undo);
+            assert_eq!(
+                stored_selection(&c, index, target),
+                before,
+                "{target:?} {edit:?}: one undo must give the selection before the edit"
+            );
+            c.handle_internal_event(crate::ui::AppEvent::Redo);
+            assert_eq!(
+                stored_selection(&c, index, target),
+                after,
+                "{target:?} {edit:?}: one redo must put the edit back"
+            );
+        }
+    }
+}

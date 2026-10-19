@@ -39,6 +39,9 @@ pub(super) fn draw_toolpath_panel(
     // panel takes no state reference; the caller copies the flag out and
     // writes it back.
     show_reach_map: &mut bool,
+    // P4.3: the pick mode and the `+ Rule` draft of the Selection
+    // sections, threaded in as `show_reach_map` is.
+    selection_ui: &mut crate::state::pick::SelectionUi,
     events: &mut Vec<AppEvent>,
 ) {
     // Disjoint borrows of the snapshot's fields. The body edits the entry
@@ -214,7 +217,24 @@ pub(super) fn draw_toolpath_panel(
         }
     });
     if !validation_errors.is_empty() {
+        // L-2 (geometry selection P4.3): the Selection section owns the
+        // refusal text. A validation error that IS that refusal gets one
+        // line here, which says why Generate is off and names the section.
+        let section_refusal = inputs
+            .selection_report
+            .as_ref()
+            .and_then(|read| read.as_ref().ok())
+            .and_then(|report| report.refusal.as_ref())
+            .map(ToString::to_string);
         for err in &validation_errors {
+            if section_refusal.as_deref() == Some(err.as_str()) {
+                ui.add(
+                    OneLine::new("The selection refuses. See Selection below.")
+                        .color(crate::ui::tokens::DANGER)
+                        .detail(err.clone()),
+                );
+                continue;
+            }
             // A sentence, so it wraps explicitly rather than inheriting a
             // wrap mode from whatever layout encloses this panel
             // (G-REACHWRAP). It blocks Generate, so it is the danger colour
@@ -298,7 +318,9 @@ pub(super) fn draw_toolpath_panel(
     // ── Tab content ─────────────────────────────────────────────────
 
     match active_tab {
-        ToolpathTab::Geometry => draw_geometry_tab(ui, entry, inputs, model_bbox, events),
+        ToolpathTab::Geometry => {
+            draw_geometry_tab(ui, entry, inputs, model_bbox, selection_ui, events);
+        }
 
         ToolpathTab::FeedsSpeeds => draw_feeds_tab(ui, entry, inputs, model_bbox, events),
 
@@ -473,11 +495,11 @@ pub(super) fn draw_geometry_tab(
     entry: &mut crate::state::toolpath::ToolpathEntry,
     inputs: &ToolpathPanelInputs,
     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+    selection_ui: &mut crate::state::pick::SelectionUi,
     events: &mut Vec<AppEvent>,
 ) {
     let tools = inputs.tools.as_slice();
     let models = inputs.models.as_slice();
-    let outline_models = inputs.outline_models.as_slice();
     let tool_configs = inputs.tool_configs.as_slice();
     let boundary_source_candidates = inputs.boundary_source_candidates.as_slice();
     let rest_region_consumers = inputs.rest_region_consumers.as_slice();
@@ -597,6 +619,33 @@ pub(super) fn draw_geometry_tab(
         entry.pill_stamped_fields.push(field);
     }
 
+    // ── Selection (geometry selection P4.3) ─────────────────────
+    // The op selection of every op that holds one. The section sends
+    // `EditToolpathSelection` only (L-1); it reads the stored selection
+    // and does not write the draft entry.
+    if let Some(selection) = entry.operation.selection() {
+        let op_default = entry
+            .operation
+            .default_selection()
+            .unwrap_or_else(rs_cam_core::selection::Selection::empty);
+        super::selection_section::draw_selection_section(
+            ui,
+            &super::selection_section::SelectionSectionInputs {
+                toolpath_id: entry.id,
+                toolpath_model: rs_cam_core::ids::ModelId(entry.model_id.0),
+                target: rs_cam_core::session::SelectionTarget::Op,
+                selection,
+                op_default: &op_default,
+                report: inputs.selection_report.as_ref(),
+                item_use: entry.operation.capabilities().item_use,
+                models,
+                sources: &inputs.rule_sources,
+            },
+            selection_ui,
+            events,
+        );
+    }
+
     // ── Machining Boundary ─────────────────────────────────────
     // W3.2: the boundary defines *what region to cut*, so it lives
     // under Geometry (was on the old Dressups tab).
@@ -657,39 +706,39 @@ pub(super) fn draw_geometry_tab(
                         {
                             entry.boundary.source = BoundarySource::ModelSilhouette;
                         }
-                        let has_outline_models = !outline_models.is_empty();
+                        // P4.3: the one door to a `Selection` boundary. It
+                        // is enabled when a model holds a drawing item or a
+                        // face item, so a STEP-only project reaches it.
+                        let selection_enabled = inputs.boundary_selection_enabled;
                         if ui
                             .add_enabled(
-                                has_outline_models,
+                                selection_enabled,
                                 egui::Button::selectable(
                                     matches!(
                                         entry.boundary.source,
                                         BoundarySource::Selection { .. }
                                     ),
-                                    "Model Outline",
+                                    "Selection",
                                 ),
                             )
-                            .on_hover_text(if has_outline_models {
-                                "Use the closed 2D shapes of a DXF or SVG model as the \
-                                 boundary. The model can be a different model from the \
-                                 one this toolpath cuts. Holes in the shapes stay \
-                                 uncut. Pick the model below."
+                            .on_hover_text(if selection_enabled {
+                                "Use a selection of items as the boundary: the closed \
+                                 shapes of a drawing, or faces picked in the viewport. \
+                                 The items can come from another model. Holes in the \
+                                 shapes stay uncut. Edit the selection below."
                             } else {
-                                "No model in this project has a closed 2D shape. \
-                                 Import a DXF or SVG with closed shapes to use this source."
+                                "No model in this project has a drawing item or a face. \
+                                 Import a DXF, an SVG or a STEP model to use this source."
                             })
                             .clicked()
                         {
                             // Keep the current selection when the source is
-                            // already a selection; else take the closed shapes
-                            // of the first candidate.
-                            if !matches!(entry.boundary.source, BoundarySource::Selection { .. })
-                                && let Some((first_id, _)) = outline_models.first()
-                            {
+                            // already a selection; else write the value that a
+                            // boundary Reset restores: the closed shapes of the
+                            // first model with a closed shape, else no item.
+                            if !matches!(entry.boundary.source, BoundarySource::Selection { .. }) {
                                 entry.boundary.source = BoundarySource::Selection {
-                                    selection: rs_cam_core::selection::Selection::closed_shapes_of(
-                                        *first_id,
-                                    ),
+                                    selection: inputs.boundary_default.clone(),
                                     holes: false,
                                 };
                             }
@@ -728,51 +777,26 @@ pub(super) fn draw_geometry_tab(
                     });
             });
 
-            // Outline model picker — only shown when `Source` above is a
-            // `Selection`. It lists the models with a closed 2D shape. A
-            // stored id that names no such model shows as "not found";
-            // generation then refuses and names the id. A selection that is
-            // not the closed shapes of one model (written by MCP or by hand
-            // in the file) shows as a custom selection; picking a model
-            // replaces it.
+            // P4.3: the Selection section draws the boundary selection
+            // (it replaces the "Outline model" combo). It sends edits with
+            // `target: Boundary`; Reset restores `inputs.boundary_default`.
             if let BoundarySource::Selection { selection, holes } = &mut entry.boundary.source {
-                ui.horizontal(|ui| {
-                    ui.label("Outline model:");
-                    let current = selection.closed_shapes_model();
-                    let current_label = match current {
-                        Some(model_id) => outline_models
-                            .iter()
-                            .find(|(candidate_id, _)| *candidate_id == model_id)
-                            .map(|(_, name)| name.clone())
-                            .unwrap_or_else(|| format!("(model id {} not found)", model_id.0)),
-                        None => format!(
-                            "(custom selection: {} rules, {} picks)",
-                            selection.rules().len(),
-                            selection.picks().len()
-                        ),
-                    };
-                    egui::ComboBox::from_id_salt("boundary_outline_model")
-                        .truncate()
-                        .selected_text(current_label)
-                        .show_ui(ui, |ui| {
-                            for (candidate_id, name) in outline_models {
-                                let selected = current == Some(*candidate_id);
-                                if ui.selectable_label(selected, name.as_str()).clicked() {
-                                    *selection =
-                                        rs_cam_core::selection::Selection::closed_shapes_of(
-                                            *candidate_id,
-                                        );
-                                }
-                            }
-                        })
-                        .response
-                        .on_hover_text(
-                            "The model whose closed shapes bound this toolpath. \
-                             The toolpath cuts only inside the shapes and not in \
-                             their holes. Containment and offset below apply to \
-                             the outline.",
-                        );
-                });
+                super::selection_section::draw_selection_section(
+                    ui,
+                    &super::selection_section::SelectionSectionInputs {
+                        toolpath_id: entry.id,
+                        toolpath_model: rs_cam_core::ids::ModelId(entry.model_id.0),
+                        target: rs_cam_core::session::SelectionTarget::Boundary,
+                        selection,
+                        op_default: &inputs.boundary_default,
+                        report: inputs.boundary_report.as_ref(),
+                        item_use: rs_cam_core::session::BOUNDARY_ITEM_USE,
+                        models,
+                        sources: &inputs.rule_sources,
+                    },
+                    selection_ui,
+                    events,
+                );
                 // The holes option inverts the regions: the toolpath cuts
                 // inside the holes of the shapes and stays off the shapes.
                 ui.checkbox(holes, "Machine the holes").on_hover_text(

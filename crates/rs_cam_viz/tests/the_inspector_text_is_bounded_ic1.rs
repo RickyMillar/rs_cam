@@ -337,8 +337,11 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // IC1 the Feeds & Speeds tab painted 52 to 60 lines with 14 to 16
     // paragraphs. Round 2 (IC2, same day) moved the derivation into the
     // closed `Details`: Feeds & Speeds went from 32-36 to 22-25 lines.
+    // Geometry selection P4.3 added the Selection section to the Pocket
+    // Geometry tab (the header, Cuts, Rules, the actions and `Details`):
+    // 26 lines, so the cap is 26 plus 3 by the same rule.
     let caps: [(&str, [usize; 5]); 3] = [
-        ("Pocket", [23, 25, 22, 21, 13]),
+        ("Pocket", [29, 25, 22, 21, 13]),
         ("3D Rough", [23, 25, 22, 20, 13]),
         ("3D Finish", [21, 28, 22, 23, 15]),
     ];

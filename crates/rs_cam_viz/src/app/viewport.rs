@@ -223,9 +223,15 @@ impl RsCamApp {
                 if let Selection::Toolpath(tp_id) = self.controller.state().selection {
                     let pick = {
                         let session = &self.controller.state().session;
+                        // P4.3 (L-3): the section whose Pick button is on
+                        // takes the click; with none on, today's rule.
+                        let pick_target =
+                            self.controller.state().gui.selection_ui.pick_target(tp_id);
                         session.find_toolpath_config_by_id(tp_id).map(|(_, tc)| {
                             (
-                                rs_cam_core::session::SelectionTarget::for_face_pick(tc),
+                                pick_target.unwrap_or_else(|| {
+                                    rs_cam_core::session::SelectionTarget::for_face_pick(tc)
+                                }),
                                 session.face_pick_key(tc, model_id.0, face_id),
                             )
                         })

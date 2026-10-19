@@ -20,7 +20,7 @@ mod tests;
 
 pub use item::{FaceItem, Item, ItemCounts, ItemError, ItemKind, ItemSet, Shape, SourceRef};
 pub use key::{KEY_MATCH_EPS_MM, MatchKey};
-pub use refusal::{ItemRef, RefusalCause, SelectionNote, SelectionRefusal};
+pub use refusal::{ItemRef, RefusalCause, SelectionNote, SelectionRefusal, kind_noun};
 pub use resolve::{
     LostPick, MatchedBy, ResolveScope, ResolvedItem, ResolvedSelection, face_in_setup_frame,
     resolve,

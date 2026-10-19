@@ -534,12 +534,9 @@ macro_rules! for_each_command {
                  ),
              }),
             (Query, SelectionStatus, "selection_status", SelectionStatusArgs,
-             SelectionReport,
+             std::sync::Arc<SelectionReport>,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the drill panel reads ProjectSession::hole_selection, a projection of the \
-                      same memo; the selection panel comes in geometry selection P4",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI reads no selection status; a refusal stops its run",
@@ -547,10 +544,7 @@ macro_rules! for_each_command {
              }),
             (Query, ListItems, "list_model_items", ListItemsArgs, ListItemsAnswer,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI picks items in the viewport; the selection panel with an item \
-                      list comes in geometry selection P4",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI writes rules in its job file; it lists no items",
@@ -2692,10 +2686,10 @@ impl ProjectSession {
                     .toolpath_configs()
                     .get(args.index)
                     .ok_or(SessionError::ToolpathNotFound(args.index))?;
+                // The memo's own allocation: the GUI selection section
+                // reads this answer on every frame (P4.3), so no clone.
                 let report = self.selection_status(tc, args.target)?;
-                Ok(QueryAnswer::SelectionStatus(SelectionReport::clone(
-                    &report,
-                )))
+                Ok(QueryAnswer::SelectionStatus(report))
             }
             Query::ListItems(args) => {
                 let ListItemsArgs {

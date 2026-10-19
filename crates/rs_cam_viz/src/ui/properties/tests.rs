@@ -380,7 +380,14 @@ fn a_setup_map_op_draws_no_boundary_controls_d3() {
         warmup.textures_delta.clear();
         let mut events = Vec::new();
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            super::toolpath_panel::draw_geometry_tab(ui, &mut entry, &inputs, None, &mut events);
+            super::toolpath_panel::draw_geometry_tab(
+                ui,
+                &mut entry,
+                &inputs,
+                None,
+                &mut crate::state::pick::SelectionUi::default(),
+                &mut events,
+            );
         });
         let mut texts = Vec::new();
         for clipped in &out.shapes {

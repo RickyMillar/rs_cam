@@ -91,8 +91,9 @@ impl SelectionTarget {
 }
 
 /// The `ItemUse` that reads a boundary selection: closed regions
-/// (`resolve_boundary_selection_polys` and the boundary report).
-pub(crate) const BOUNDARY_ITEM_USE: ItemUse = ItemUse::Regions;
+/// (`resolve_boundary_selection_polys` and the boundary report). The GUI
+/// selection section reads it for the kinds a boundary rule can name.
+pub const BOUNDARY_ITEM_USE: ItemUse = ItemUse::Regions;
 
 /// The name that a refusal of a boundary selection gives as its op.
 pub(crate) const BOUNDARY_LABEL: &str = "Machining boundary";

@@ -1,5 +1,4 @@
 use super::super::pills::PillSuggestions;
-use rs_cam_core::selection::{Filter, Rule, Selection, SelectionEdit, SourceRef};
 use rs_cam_core::session::HoleSelection;
 
 use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
@@ -14,107 +13,23 @@ use rs_cam_core::compute::catalog::OperationType;
 const HOLE_SOURCES_NOTE: &str =
     "Holes are DXF points and circle/arc centres, and circles in SVG drawings.";
 
-/// Apply one edit to the selection of the op. `op_default` is the default
-/// selection of the op (`OperationConfig::default_selection`). The panel
-/// sends no edit that can refuse (`RemoveRule` is the only one), so an
-/// error is a defect of this panel, logged.
-fn edit(selection: &mut Selection, edit: SelectionEdit, op_default: &Selection) {
-    if let Err(refusal) = selection.apply(edit, op_default) {
-        tracing::error!(%refusal, "drill panel: a selection edit refused");
-    }
-}
-
-/// Shared hole selector (geometry selection P2.3c): a count, the refusal
-/// of the selection, a viewport hint, Select all / Clear, and a per-layer
-/// "select the layer" dropdown. It writes `SelectionEdit`s to `selection`;
-/// `holes` is the resolution generation reads
-/// (`ProjectSession::hole_selection`), so the count and the refusal are the
-/// generator's own.
+/// The drill legend: what a hole source is, and how many of the items are
+/// points, so circle and point markers read clearly.
+///
+/// Geometry selection P4.3 (lead ruling L-1): the count, Select all, Clear,
+/// the layer rule and the refusal moved to the Selection section
+/// (`selection_section.rs`), which sends edits only. This legend writes
+/// nothing.
 ///
 /// `needs_holes` is true for `Drill`, whose only hole source is the
-/// selection, so the count (0 allowed) and the refusal are always visible;
-/// false for the pin drill, whose holes are the stock's alignment pins and
-/// for which a drawing with no hole is unremarkable.
-fn draw_hole_selector(
-    ui: &mut egui::Ui,
-    selection: &mut Selection,
-    op_default: &Selection,
-    holes: Option<&HoleSelection>,
-    needs_holes: bool,
-) {
-    let refusal = holes.and_then(|h| h.refusal.as_deref());
+/// selection, so the legend is always visible; false for the pin drill,
+/// whose holes are the stock's alignment pins and for which a drawing with
+/// no hole is unremarkable.
+fn draw_hole_legend(ui: &mut egui::Ui, holes: Option<&HoleSelection>, needs_holes: bool) {
     let items = holes.map_or(&[][..], |h| h.items.as_slice());
-    if items.is_empty() {
-        if !needs_holes && refusal.is_none() {
-            return;
-        }
-        ui.separator();
-        ui.label("Drill holes: 0");
-        if let Some(refusal) = refusal {
-            ui.colored_label(crate::ui::tokens::DANGER, refusal);
-        }
-        ui.label(egui::RichText::new(HOLE_SOURCES_NOTE).small().weak());
+    if items.is_empty() && !needs_holes {
         return;
     }
-    ui.separator();
-    let total = items.len();
-    let selected = holes.map_or(0, HoleSelection::selected_count);
-    ui.label(format!("Drill holes: {selected} of {total} selected"));
-    // G-DRILLPICKSTALE (F4.8): the operator sees a lost pick, or an empty
-    // selection, BEFORE pressing Generate, in the generator's own words.
-    if let Some(refusal) = refusal {
-        ui.colored_label(crate::ui::tokens::DANGER, refusal);
-    }
-    ui.label(
-        egui::RichText::new("Click points/holes in the viewport to toggle.")
-            .small()
-            .weak(),
-    );
-    let layers = holes.map(HoleSelection::layers).unwrap_or_default();
-    ui.horizontal(|ui| {
-        if ui.button("Select all").clicked() {
-            edit(
-                selection,
-                SelectionEdit::Replace(Box::new(Selection::drawing())),
-                op_default,
-            );
-        }
-        if ui.button("Clear").clicked() {
-            edit(
-                selection,
-                SelectionEdit::Replace(Box::new(Selection::empty())),
-                op_default,
-            );
-        }
-        if !layers.is_empty() {
-            egui::ComboBox::from_id_salt("drill_layer_select")
-                .truncate()
-                .selected_text("Select layer…")
-                .show_ui(ui, |ui| {
-                    for layer in &layers {
-                        if ui.selectable_label(false, layer).clicked() {
-                            let rule = Rule {
-                                source: SourceRef::ToolpathModel,
-                                filter: Filter {
-                                    layers: vec![layer.clone()],
-                                    ..Filter::default()
-                                },
-                            };
-                            // Under "every hole" a layer rule adds nothing,
-                            // so the first layer pick means "this layer".
-                            let layer_edit = if selection.is_drawing() {
-                                SelectionEdit::Replace(Box::new(Selection::from_rules(vec![rule])))
-                            } else {
-                                SelectionEdit::AddRule(rule)
-                            };
-                            edit(selection, layer_edit, op_default);
-                        }
-                    }
-                });
-        }
-    });
-    // Brief legend so circle vs point markers read clearly; the point count
-    // is named only when there are any.
     let points = items.iter().filter(|i| i.diameter.is_none()).count();
     let legend = if points > 0 {
         format!("{HOLE_SOURCES_NOTE} {points} of these are points.")
@@ -260,7 +175,7 @@ pub(in crate::ui::properties) fn draw_drill_params(
             Some(&mut cfg.retract_amount),
         );
     });
-    draw_hole_selector(ui, &mut cfg.selection, &Selection::drawing(), holes, true);
+    draw_hole_legend(ui, holes, true);
 }
 
 pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
@@ -306,5 +221,5 @@ pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
             None,
         );
     });
-    draw_hole_selector(ui, &mut cfg.selection, &Selection::empty(), holes, false);
+    draw_hole_legend(ui, holes, false);
 }
