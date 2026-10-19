@@ -382,7 +382,7 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
 | P1 open paths | done (operator look pending) | bba80b4d, 2bf0132c | G-OPGOLDEN unchanged; lead ruling: an open Trace path gets no lead extension past its ends |
 | P2 selection core | done (operator look pending) | P2.5 5d906b48, P2.6 1e2ec0c4, P2.7 89df3283 | 349b3a48, e041d244, 4b6353b9, P2.3b | D5 (Face onto Items) deferred to P4: needs a region-offset adapter and a new is_stock_based rule; selection_dropped reports non-default drops only (lead: a default is no user work). P2.3c open: hole_selection runs per frame (cache in P2.4); viewport pick tests model XY but markers draw in the setup frame (pre-existing defect: fix in P2.6 TogglePick); operator look: a click under "every hole" now excludes that hole | P2.1: bridges byte-equal on 25 drawings; open: hand-built test drawings are not nested (check in P2.2) |
 | P3 depth refs | waiting on operator D9 | | G-BOTTOMPIN: a pin can sit below the op depth (-20 vs a 6 mm pocket), so honouring it cuts deeper: operator rules |
-| P4 UI + sources | P4.0 probe, P4.1-P4.9 and P4.D done (P4.8 without the SVG scale default); operator demo seen 2026-10-20 | 1ca93935, 229eb719, c223d7c4, 9bdfac8e, 3373d8d2, 099d946b, 22cb38fa, 8f5723e3, a53e0cf5, 30e9a146, 0458a586 (SVG O-2); pushed to ca18398c | next: P4.10, then P3 (D9) after the tech-debt W4; SVG fix waits for the operator |
+| P4 UI + sources | P4.0 probe, P4.1-P4.9 and P4.D done (P4.8 without the SVG scale default); operator demo seen 2026-10-20 | 1ca93935, 229eb719, c223d7c4, 9bdfac8e, 3373d8d2, 099d946b, 22cb38fa, 8f5723e3, a53e0cf5, 30e9a146, 0458a586 (SVG O-2), a83d7236 (P4.10); P4 COMPLETE; pushed to ca18398c | next: P3 (D9) after the tech-debt W4; SVG fix waits for the operator |
 | P5 tabs | done (operator look pending) | e76f82c8, P5b | GUI viewport tab editor -> P4. Lead ruling P5b: tab_width = the material bridge (today bridge = width - D: default leaves none); tab_height holds on every level |
 | P6 open paths, holes | blocked on P2 | | |
 | P7 templates | blocked on P4 | | |
@@ -501,3 +501,12 @@ P4.10.
   baseline held bit for bit. FOLLOW-UP: the dated bench copy
   `planning/feed_modulation_calibration/bench_batch_2026-05-27/demo_star.svg`
   now imports at 52.9 mm.
+- P4.10 (a83d7236): P4 is complete. Open follow-ups, all small:
+  - tab marks still draw on a hidden model (`upload_tab_lines` does not
+    read the eye);
+  - STL faces have no highlight; a cold STL face build in `start` can
+    stall a frame (P4.7);
+  - MCP has no click act (`click_edit` is in core);
+  - the kind-filter and `+ Rule` wording (parked by the operator);
+  - `session/CLAUDE.md` is over 40 lines with the tech-debt lines; the
+    owner of the next session/ edit shortens it.
