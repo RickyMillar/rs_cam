@@ -33,6 +33,8 @@ pub enum ShimError {
     UnsupportedTool(String),
     UnsupportedOperation(String),
     UnknownMaterial(String),
+    /// The cell's `machine_class` names no preset.
+    UnknownMachine(String),
     /// Engine refused the cell's tool × operation pairing (e.g. flat
     /// endmill on a Scallop op). The runner treats this as a *pass*
     /// for cells in `unusable` / `refuse` mode and as an NA for
@@ -46,6 +48,7 @@ impl std::fmt::Display for ShimError {
             ShimError::UnsupportedTool(s) => write!(f, "unsupported tool_class: {s}"),
             ShimError::UnsupportedOperation(s) => write!(f, "unsupported operation: {s}"),
             ShimError::UnknownMaterial(s) => write!(f, "unknown material key: {s}"),
+            ShimError::UnknownMachine(s) => write!(f, "unknown machine_class: {s}"),
             ShimError::EngineRefused(s) => write!(f, "engine refused: {s}"),
         }
     }
@@ -69,46 +72,102 @@ pub struct ShimSnapshot {
     pub bindings: Bindings,
 }
 
-/// Build a `Material` from the cell's `material` key. The plan uses
-/// names like `oak_red` that don't exist in [`Material::from_key`] —
-/// alias them to the closest in-engine match so Phase 0 can run without
-/// adding new species. Phase 1+ extends this map; bug surfaces here as
-/// `UnknownMaterial` rather than a silent miscount.
+/// Build a `Material` from the cell's `material` key.
+///
+/// F091: this is the one key table. `Material::from_key` is gone: no
+/// production path read it, and serde cannot read these flat keys
+/// (`Material` is externally tagged). The plan uses names like `oak_red`
+/// that are not in-engine materials, so the first match maps each one to
+/// the closest in-engine key. An unknown key refuses as `UnknownMaterial`;
+/// it never falls back to softwood.
 fn resolve_material(key: &str) -> Result<Material, ShimError> {
-    let alias = match key {
+    use rs_cam_core::material::{
+        AluminumAlloy, FiberglassGrade, FoamDensity, PlasticFamily, PlywoodGrade, SheetGoodKind,
+        WoodSpecies,
+    };
+    let canonical = match key {
         "oak_red" => "white_oak", // closest hardwood proxy; Janka ~1290 vs 1360
         "maple_sugar" => "hard_maple", // Phase 1 cell anchor
         "pine_eastern_white" => "softwood",
         "al6061" => "aluminum_6061_t6",
-        // Phase 2 prep (2026-06-03) — aliases for the 44-cell expansion.
-        // Each maps a drafter-friendly key to the canonical Material::from_key
-        // string so cells can use natural names.
-        //
-        // Pure aliases (no semantic shift):
-        "white_oak_red" => "white_oak", // belt-and-braces alias matching oak_red
+        // Phase 2 prep (2026-06-03): aliases for the 44-cell expansion.
+        "white_oak_red" => "white_oak",
         "hardwood_maple" => "hard_maple",
         "softwood_pine" => "softwood",
         "aluminum_6061" => "aluminum_6061_t6",
-        // Composite — closest in-engine type is FiberglassGrade::Generic.
-        // The `_gp` suffix matches the Garr "Fiberglass/Plastics/G10"
-        // chart row that motivated MaterialFamily::Fiberglass. Phase 3
-        // candidate for a dedicated grade when per-grade LUT data lands;
-        // for now both `fiberglass_gp` and the canonical
-        // `fiberglass_generic` key resolve to the same variant.
+        // Composite: the closest in-engine type is FiberglassGrade::Generic.
+        // The `_gp` suffix matches the Garr "Fiberglass/Plastics/G10" chart
+        // row that motivated MaterialFamily::Fiberglass.
         "fiberglass_gp" => "fiberglass_generic",
         _ => key,
     };
-    let m = Material::from_key(alias);
-    // Material::from_key has a generic fallback; detect it via key equality
-    // for unknown inputs. The engine's fallback is "softwood", so explicitly
-    // accept aliases we know map cleanly and otherwise pass the value through
-    // (callers can override via Phase 1+ alias growth).
-    match (key, &m) {
-        // If we asked for something definitely unmapped and the engine
-        // silently returned the generic softwood, surface it.
-        (k, _) if k.is_empty() => Err(ShimError::UnknownMaterial(k.to_owned())),
-        _ => Ok(m),
-    }
+    let wood = |species| Material::SolidWood { species };
+    let plastic = |family| Material::Plastic { family };
+    let aluminum = |alloy| Material::Aluminum { alloy };
+    Ok(match canonical {
+        "softwood" => wood(WoodSpecies::GenericSoftwood),
+        "radiata_pine" => wood(WoodSpecies::RadiataPine),
+        "longleaf_pine" => wood(WoodSpecies::LongleafPine),
+        "hardwood" => wood(WoodSpecies::GenericHardwood),
+        "hard_maple" => wood(WoodSpecies::HardMaple),
+        "walnut" => wood(WoodSpecies::Walnut),
+        "birch" => wood(WoodSpecies::Birch),
+        "white_oak" => wood(WoodSpecies::WhiteOak),
+        "jarrah" => wood(WoodSpecies::Jarrah),
+        "ipe" => wood(WoodSpecies::Ipe),
+        "plywood_softwood" => Material::Plywood {
+            grade: PlywoodGrade::Softwood,
+        },
+        "baltic_birch" => Material::Plywood {
+            grade: PlywoodGrade::BalticBirch,
+        },
+        "plywood_hardwood" => Material::Plywood {
+            grade: PlywoodGrade::HardwoodFaced,
+        },
+        "mdf" => Material::SheetGood {
+            kind: SheetGoodKind::Mdf,
+        },
+        "hdf" => Material::SheetGood {
+            kind: SheetGoodKind::Hdf,
+        },
+        "particleboard" => Material::SheetGood {
+            kind: SheetGoodKind::Particleboard,
+        },
+        "plastic" => plastic(PlasticFamily::Generic),
+        "acrylic" => plastic(PlasticFamily::Acrylic),
+        "hdpe" => plastic(PlasticFamily::Hdpe),
+        "delrin" => plastic(PlasticFamily::Delrin),
+        "polycarbonate" => plastic(PlasticFamily::Polycarbonate),
+        "uhmw_pe" => plastic(PlasticFamily::UhmwPe),
+        "polypropylene" => plastic(PlasticFamily::Polypropylene),
+        "nylon66" => plastic(PlasticFamily::Nylon66),
+        "abs" => plastic(PlasticFamily::Abs),
+        "petg" => plastic(PlasticFamily::Petg),
+        "rigid_pvc" => plastic(PlasticFamily::RigidPvc),
+        "aluminum_6061_t6" => aluminum(AluminumAlloy::Alloy6061T6),
+        "aluminum_7075_t6" => aluminum(AluminumAlloy::Alloy7075T6),
+        "aluminum_2024_t3" => aluminum(AluminumAlloy::Alloy2024T3),
+        "aluminum_5052_h32" => aluminum(AluminumAlloy::Alloy5052H32),
+        "aluminum_3003_h14" => aluminum(AluminumAlloy::Alloy3003H14),
+        "aluminum_1100_o" => aluminum(AluminumAlloy::Alloy1100O),
+        "aluminum_7050_t7651" => aluminum(AluminumAlloy::Alloy7050T7651),
+        "foam_low" => Material::Foam {
+            density: FoamDensity::Low,
+        },
+        "foam_medium" => Material::Foam {
+            density: FoamDensity::Medium,
+        },
+        "foam_high" => Material::Foam {
+            density: FoamDensity::High,
+        },
+        "fiberglass_g10_fr4" => Material::Fiberglass {
+            grade: FiberglassGrade::G10Fr4,
+        },
+        "fiberglass_generic" => Material::Fiberglass {
+            grade: FiberglassGrade::Generic,
+        },
+        _ => return Err(ShimError::UnknownMaterial(key.to_owned())),
+    })
 }
 
 /// Literature bands are spindle-agnostic recommendations. Default to
@@ -118,12 +177,14 @@ fn resolve_material(key: &str) -> Result<Material, ShimError> {
 /// says nothing about the spindle — many users (including the author of
 /// this matrix) run a 24 k VFD on theirs, so we route it through the
 /// generic profile too. A cell that genuinely wants to validate a
-/// machine-specific clamp must pass an explicit `machine_class` key
-/// recognised by [`MachineProfile::from_key`].
-fn resolve_machine(key: Option<&str>) -> MachineProfile {
+/// machine-specific clamp names a preset key. F091: this is the one key
+/// table (`MachineProfile::from_key` is gone); an unknown key refuses.
+fn resolve_machine(key: Option<&str>) -> Result<MachineProfile, ShimError> {
     match key {
-        None | Some("shapeoko_xxl") | Some("generic") => MachineProfile::generic_wood_router(),
-        Some(other) => MachineProfile::from_key(other),
+        None | Some("shapeoko_xxl") | Some("generic") => Ok(MachineProfile::generic_wood_router()),
+        Some("shapeoko_vfd") => Ok(MachineProfile::shapeoko_vfd()),
+        Some("shapeoko_makita") => Ok(MachineProfile::shapeoko_makita()),
+        Some(other) => Err(ShimError::UnknownMachine(other.to_owned())),
     }
 }
 
@@ -379,7 +440,7 @@ fn run_cell_in_material(
     validate_tool_class_for_operation(&cell.inputs.tool_class, &cell.inputs.operation)?;
     let tool_type = resolve_tool_type(cell)?;
     let (op_family, pass_role) = resolve_operation(&cell.inputs.operation)?;
-    let machine = resolve_machine(cell.inputs.machine_class.as_deref());
+    let machine = resolve_machine(cell.inputs.machine_class.as_deref())?;
     let lut = feeds::embedded_vendor_lut();
 
     let tool = build_tool(cell, tool_type);

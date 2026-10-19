@@ -17,6 +17,7 @@ use crate::machine::kinematics::MachineKinematics;
 
 /// Spindle speed control type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum SpindleConfig {
     Variable { min_rpm: f64, max_rpm: f64 },
     Discrete { speeds: Vec<f64> },
@@ -24,6 +25,7 @@ pub enum SpindleConfig {
 
 /// Spindle power model.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum PowerModel {
     /// VFD: constant torque up to rated RPM, power scales linearly with RPM.
     VfdConstantTorque { rated_power_kw: f64, rated_rpm: f64 },
@@ -34,6 +36,7 @@ pub enum PowerModel {
 /// Chip load formula parameters derived from empirical data.
 /// ChipLoad = K0 * D^p * (1/H)^q
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChipLoadFormula {
     pub k0: f64, // base coefficient
     pub p: f64,  // diameter exponent
@@ -53,6 +56,7 @@ impl Default for ChipLoadFormula {
 
 /// Machine-specific DOC/WOC parameters reflecting rigidity.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RigidityProfile {
     pub doc_roughing_factor: f64,
     pub doc_finishing_factor: f64,
@@ -174,6 +178,7 @@ impl Default for RigidityProfile {
 
 /// Complete machine profile for feeds calculation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MachineProfile {
     pub name: String,
     pub spindle: SpindleConfig,
@@ -216,8 +221,9 @@ pub struct MachineProfile {
     /// ceiling is the rated curve [`Self::power_at_rpm`] (ruling Q2).
     ///
     /// Serde: a file without the key loads the default. The old key
-    /// `safety_factor` (a feed factor of 0.75 or 0.80) is ignored on load;
-    /// there is no alias (ruling 2026-09-16, "no legacy, breaking OK").
+    /// `safety_factor` (a feed factor of 0.75 or 0.80) refuses on load
+    /// (F034, `deny_unknown_fields`; the project loader names it through
+    /// `RETIRED_KEYS`); there is no alias (ruling 2026-09-16).
     #[serde(default = "default_aggressiveness")]
     pub aggressiveness: f64,
     /// Linear-axis kinematics limits used by the F-034 cycle-time
@@ -273,6 +279,7 @@ impl ControllerFirmware {
 /// setting numbers and units are grblHAL's (settings.h:78-80, 212-214,
 /// 269; settings.c:2412-2499).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ControllerSettings {
     #[serde(default)]
     pub firmware: ControllerFirmware,
@@ -282,18 +289,17 @@ pub struct ControllerSettings {
     /// `$31` minimum spindle speed, RPM.
     #[serde(default)]
     pub rpm_min: Option<f64>,
-    /// `$32` mode: 0 normal, 1 laser, 2 lathe (settings.c:2415).
+    /// `$32` mode (settings.c:2415). The file holds the number.
     #[serde(default)]
-    pub mode: Option<u32>,
+    pub mode: Option<ControllerMode>,
     /// `$340` spindle at-speed tolerance, percent. Above 0, a spindle with
     /// an encoder makes M3 wait for the speed (spindle_control.c:787-806).
     #[serde(default)]
     pub spindle_at_speed_tolerance_pct: Option<f64>,
-    /// `$341` tool change mode: 0 normal, 1 manual touch off, 2 manual
-    /// touch off at G59.3, 3 automatic touch off at G59.3, 4 ignore M6
-    /// (settings.h:856-862, settings.c:2482).
+    /// `$341` tool change mode (settings.h:856-862, settings.c:2482). The
+    /// file holds the number.
     #[serde(default)]
-    pub tool_change_mode: Option<u32>,
+    pub tool_change_mode: Option<ControllerToolChangeMode>,
     /// `$342` tool change probing distance, mm.
     #[serde(default)]
     pub tool_change_probing_distance_mm: Option<f64>,
@@ -328,9 +334,128 @@ pub enum SpindleDrive {
     Plugin(String),
 }
 
-/// `$341` value 4: grblHAL ignores M6 (gcode.c:1838) and sets the new tool
-/// at once (gcode.c:4144-4147).
-pub const TOOL_CHANGE_MODE_IGNORE: u32 = 4;
+/// A numbered grblHAL setting held a value its enum does not name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("${setting}={value} is not a value this build knows")]
+pub struct UnknownSettingValue {
+    /// The setting number, for example 341.
+    pub setting: u32,
+    /// The value the setting held.
+    pub value: u32,
+}
+
+/// `$32` mode (settings.c:2415). F202: the five-meaning `u32` of `$341` and
+/// this three-meaning `u32` are enums; a value outside the list cannot load.
+/// The project file holds the number (`try_from`/`into`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub enum ControllerMode {
+    /// 0: normal.
+    Normal,
+    /// 1: laser.
+    Laser,
+    /// 2: lathe.
+    Lathe,
+}
+
+impl ControllerMode {
+    /// The `$32` number.
+    pub const fn number(self) -> u32 {
+        match self {
+            Self::Normal => 0,
+            Self::Laser => 1,
+            Self::Lathe => 2,
+        }
+    }
+}
+
+impl TryFrom<u32> for ControllerMode {
+    type Error = UnknownSettingValue;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Normal),
+            1 => Ok(Self::Laser),
+            2 => Ok(Self::Lathe),
+            _ => Err(UnknownSettingValue { setting: 32, value }),
+        }
+    }
+}
+
+impl From<ControllerMode> for u32 {
+    fn from(mode: ControllerMode) -> Self {
+        mode.number()
+    }
+}
+
+impl std::fmt::Display for ControllerMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.number())
+    }
+}
+
+/// `$341` tool change mode (settings.h:856-862, settings.c:2482).
+///
+/// Distinct from [`crate::gcode::ToolChangeMode`], which is how ONE export
+/// writes a change (pause, M6, suppress). This is what the controller does
+/// with an M6. The project file holds the number (`try_from`/`into`), so a
+/// value outside the list refuses at load.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub enum ControllerToolChangeMode {
+    /// 0: normal.
+    Normal,
+    /// 1: manual touch off.
+    ManualTouchOff,
+    /// 2: manual touch off at G59.3.
+    ManualTouchOffAtG59_3,
+    /// 3: automatic touch off at G59.3.
+    AutomaticTouchOffAtG59_3,
+    /// 4: grblHAL ignores M6 (gcode.c:1838) and sets the new tool at once
+    /// (gcode.c:4144-4147).
+    IgnoreM6,
+}
+
+impl ControllerToolChangeMode {
+    /// The `$341` number.
+    pub const fn number(self) -> u32 {
+        match self {
+            Self::Normal => 0,
+            Self::ManualTouchOff => 1,
+            Self::ManualTouchOffAtG59_3 => 2,
+            Self::AutomaticTouchOffAtG59_3 => 3,
+            Self::IgnoreM6 => 4,
+        }
+    }
+}
+
+impl TryFrom<u32> for ControllerToolChangeMode {
+    type Error = UnknownSettingValue;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Normal),
+            1 => Ok(Self::ManualTouchOff),
+            2 => Ok(Self::ManualTouchOffAtG59_3),
+            3 => Ok(Self::AutomaticTouchOffAtG59_3),
+            4 => Ok(Self::IgnoreM6),
+            _ => Err(UnknownSettingValue {
+                setting: 341,
+                value,
+            }),
+        }
+    }
+}
+
+impl From<ControllerToolChangeMode> for u32 {
+    fn from(mode: ControllerToolChangeMode) -> Self {
+        mode.number()
+    }
+}
+
+impl std::fmt::Display for ControllerToolChangeMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.number())
+    }
+}
 
 impl ControllerSettings {
     /// True when M3 waits for the spindle on the controller: a spindle on
@@ -406,9 +531,19 @@ impl ControllerSettings {
         keep(&mut self.spindle_drive, spindle_drive);
     }
 
-    /// True when `$341=4`: the board ignores M6.
+    /// True when `$341=4`: the board ignores M6. An unknown mode (no `$341`
+    /// imported) is `false`: M6 runs.
     pub fn ignores_m6(&self) -> bool {
-        self.tool_change_mode == Some(TOOL_CHANGE_MODE_IGNORE)
+        match self.tool_change_mode {
+            Some(ControllerToolChangeMode::IgnoreM6) => true,
+            Some(
+                ControllerToolChangeMode::Normal
+                | ControllerToolChangeMode::ManualTouchOff
+                | ControllerToolChangeMode::ManualTouchOffAtG59_3
+                | ControllerToolChangeMode::AutomaticTouchOffAtG59_3,
+            )
+            | None => false,
+        }
     }
 }
 
@@ -667,22 +802,6 @@ impl MachineProfile {
         }
     }
 
-    /// Parse a preset key. Unknown keys fall back to the generic profile.
-    ///
-    /// **Test door.** The literature-matrix shim
-    /// (`crates/rs_cam_core/tests/literature_matrix/shim.rs`) is the only
-    /// caller; it maps a cell's `machine_class` string to a profile. No
-    /// production path reads it. The viz legacy project loader that also
-    /// read a persisted `machine = "<key>"` line is gone, so the key is
-    /// a test input now, not a file format.
-    pub fn from_key(key: &str) -> Self {
-        match key {
-            "shapeoko_vfd" => Self::shapeoko_vfd(),
-            "shapeoko_makita" => Self::shapeoko_makita(),
-            _ => Self::generic_wood_router(),
-        }
-    }
-
     /// Index into [`Self::presets`] of the preset this profile
     /// structurally equals, or `None` for a custom/edited machine.
     ///
@@ -692,8 +811,9 @@ impl MachineProfile {
     /// and an edited preset still claimed to BE the preset. Current
     /// project files serialize the full profile inline
     /// (`ProjectFile.job.machine`), so no key is written anywhere
-    /// (`from_key` above is a test door); structural equality
-    /// (same serde-JSON form) is the honest preset test.
+    /// (F091 deleted the `from_key` test door; the literature-matrix shim
+    /// holds its own key table); structural equality (same serde-JSON
+    /// form) is the honest preset test.
     pub fn matching_preset_index(&self) -> Option<usize> {
         let self_json = serde_json::to_string(self).ok()?;
         Self::presets()
@@ -783,17 +903,42 @@ mod tests {
         }
     }
 
-    /// Ruling R4 (2026-09-24): a profile written with the old key
-    /// `safety_factor` loads, the key is ignored, and the dial takes the
-    /// default. A profile with neither key also takes the default.
+    /// Ruling R4 (2026-09-24) and F034: a profile written with the old
+    /// key `safety_factor` refuses (no key is ignored). A profile with
+    /// neither key takes the default.
     #[test]
-    fn the_old_safety_factor_key_is_ignored_on_load() {
+    fn the_old_safety_factor_key_is_refused_on_load() {
         let mut value = serde_json::to_value(MachineProfile::generic_wood_router()).unwrap();
         let obj = value.as_object_mut().unwrap();
         obj.remove("aggressiveness");
-        obj.insert("safety_factor".to_owned(), serde_json::json!(0.75));
-        let loaded: MachineProfile = serde_json::from_value(value).unwrap();
-        assert_eq!(loaded.aggressiveness, DEFAULT_AGGRESSIVENESS);
+        let defaulted: MachineProfile = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(defaulted.aggressiveness, DEFAULT_AGGRESSIVENESS);
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("safety_factor".to_owned(), serde_json::json!(0.75));
+        let err = serde_json::from_value::<MachineProfile>(value).unwrap_err();
+        assert!(err.to_string().contains("safety_factor"), "{err}");
+    }
+
+    /// F202: the `$341` and `$32` numbers round-trip, and a number the
+    /// enum does not name refuses at load.
+    #[test]
+    fn controller_modes_hold_the_number_and_refuse_an_unknown_one() {
+        let settings = ControllerSettings {
+            mode: Some(ControllerMode::Lathe),
+            tool_change_mode: Some(ControllerToolChangeMode::IgnoreM6),
+            ..ControllerSettings::default()
+        };
+        let text = toml::to_string(&settings).unwrap();
+        assert!(text.contains("mode = 2"), "{text}");
+        assert!(text.contains("tool_change_mode = 4"), "{text}");
+        let back: ControllerSettings = toml::from_str(&text).unwrap();
+        assert_eq!(back, settings);
+        assert!(back.ignores_m6());
+        assert!(toml::from_str::<ControllerSettings>("tool_change_mode = 5").is_err());
+        assert!(toml::from_str::<ControllerSettings>("mode = 3").is_err());
+        assert!(toml::from_str::<ControllerSettings>("tool_change = 4").is_err());
     }
 
     #[test]

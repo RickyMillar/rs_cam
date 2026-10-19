@@ -20,7 +20,16 @@ use crate::trace::debug_trace::ToolpathDebugOptions;
 // ── Project file types (TOML deserialization) ──────────────────────────
 
 /// Top-level project file structure (format_version=3).
+///
+/// F034 (operator ruling 5, 2026-10-19): the root and every section below
+/// it that this file defines refuse a key they do not hold
+/// (`deny_unknown_fields`). A misspelt key is a load error, not a silent
+/// default. The toolpath section and the operation tables stay open: the
+/// geometry-selection programme still adds and retires keys there. A
+/// retired key keeps its own message: [`check_retired_keys`] runs on the
+/// raw table BEFORE the typed parse.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectFile {
     #[serde(default = "default_format_version")]
     pub format_version: u32,
@@ -156,6 +165,30 @@ const RETIRED_KEYS: &[RetiredKey] = &[
                       exposed shank is stickout - cutting_length. Set stickout. Delete the key",
     },
     RetiredKey {
+        table: &[],
+        key: "toolpaths",
+        replacement: "Removed: a toolpath lives under its setup, [[setups.toolpaths]]. Delete \
+                      the root key, an empty list too",
+    },
+    RetiredKey {
+        table: &["job"],
+        key: "machine_ref",
+        replacement: "Removed (L6): the machine is a snapshot, the inline [job.machine] \
+                      table. Nothing links to a library file. Delete the key",
+    },
+    RetiredKey {
+        table: &["job", "machine"],
+        key: "safety_factor",
+        replacement: "Removed (ruling R4): the machine aggressiveness dial \
+                      (job.machine.aggressiveness) is the one load margin. Delete the key",
+    },
+    RetiredKey {
+        table: &["job", "stock", "material", "Custom"],
+        key: "kc",
+        replacement: "Removed (ruling B6): a custom material has no force line and no Kc. \
+                      Delete the key",
+    },
+    RetiredKey {
         table: &["tools", "[]"],
         key: "holder_diameter",
         replacement: "Removed (H1): the collet and the parts above the holder face are the \
@@ -258,11 +291,27 @@ fn check_retired_keys(raw: &toml::Value) -> Result<(), SessionError> {
 
 impl ProjectFile {
     /// Parse a project file from its text. This is the one text door:
-    /// it refuses a retired key ([`RETIRED_KEYS`]) before it reads the
-    /// typed sections.
+    /// it refuses a format that is not 3 and a retired key
+    /// ([`RETIRED_KEYS`]) before it reads the typed sections.
     pub fn from_toml_str(text: &str) -> Result<Self, SessionError> {
         let raw: toml::Value =
             toml::from_str(text).map_err(|e| SessionError::TomlParse(e.to_string()))?;
+        // F034: the version check comes before the closed typed parse. An
+        // older format holds keys this one does not (format 2 kept the
+        // pins on the setup), and its refusal must name the version, not
+        // the first key it does not know.
+        // A file with no key falls through: the typed parse and
+        // `check_format_version` judge it (a TOML that is not a project at
+        // all then reads as "not an rs_cam project").
+        let found = raw
+            .get("format_version")
+            .and_then(toml::Value::as_integer)
+            .and_then(|n| u32::try_from(n).ok());
+        if let Some(found) = found
+            && found != SUPPORTED_FORMAT_VERSION
+        {
+            return Err(SessionError::UnsupportedFormatVersion { found });
+        }
         check_retired_keys(&raw)?;
         // The second parse keeps the line and column in a typed error.
         toml::from_str(text).map_err(|e| SessionError::TomlParse(e.to_string()))
@@ -406,6 +455,7 @@ impl ProjectLoadWarning {
 
 /// Job-level settings (name, stock, post).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectJobSection {
     #[serde(default = "default_job_name")]
     pub name: String,
@@ -426,6 +476,7 @@ pub struct ProjectJobSection {
 /// `resolution_mm` present = `SimulationResolution::Fixed`; absent =
 /// `SimulationResolution::Auto`, the documented default.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectSimulationSection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolution_mm: Option<f64>,
@@ -463,6 +514,7 @@ fn default_job_name() -> String {
 
 /// Stock dimensions as saved in the project file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectStockConfig {
     #[serde(default = "default_stock_dim")]
     pub x: f64,
@@ -530,6 +582,7 @@ fn default_stock_padding() -> f64 {
 
 /// Tool definition in the project file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectToolSection {
     #[serde(default)]
     pub id: Option<usize>,
@@ -620,6 +673,7 @@ fn default_cut_direction() -> String {
 
 /// Model reference in the project file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectModelSection {
     #[serde(default)]
     pub id: Option<usize>,
@@ -651,6 +705,7 @@ pub struct ProjectModelSection {
 
 /// Setup section in the project file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectSetupSection {
     #[serde(default)]
     pub id: Option<usize>,
@@ -711,10 +766,11 @@ pub struct ProjectToolpathSection {
     pub operation: Option<OperationConfig>,
     #[serde(default = "default_true")]
     pub enabled: bool,
-    #[serde(default)]
-    pub tool_id: Option<usize>,
-    #[serde(default)]
-    pub model_id: Option<usize>,
+    /// F053: required. A toolpath with no tool id used to bind to tool 0
+    /// with no word; the ids are EXACT (P2.4/P2.5).
+    pub tool_id: usize,
+    /// F053: required, as `tool_id`.
+    pub model_id: usize,
     #[serde(default)]
     pub dressups: DressupConfig,
     #[serde(default)]
@@ -1045,8 +1101,8 @@ fn toolpath_config_from_section(
         operation: operation.clone(),
         dressups,
         heights: tp.heights.clone(),
-        tool_id: tp.tool_id.unwrap_or(0),
-        model_id: tp.model_id.unwrap_or(0),
+        tool_id: tp.tool_id,
+        model_id: tp.model_id,
         pre_gcode: tp.pre_gcode.clone(),
         post_gcode: tp.post_gcode.clone(),
         boundary: tp.boundary.clone(),
@@ -1063,25 +1119,48 @@ fn toolpath_config_from_section(
 
 /// Read the setup datum off a TOML setup section (W9 / P-2).
 ///
-/// An **absent or empty** key keeps the type default rather than being
-/// handed to `from_key`. The two are equivalent today — both `from_key`
-/// implementations fall through to the default — but writing the guard
-/// makes "the file said nothing" and "the file said something we don't
-/// recognise" distinguishable if either fall-through ever changes.
-fn datum_from_section(section: &ProjectSetupSection) -> DatumConfig {
-    DatumConfig {
-        xy_method: if section.xy_datum.is_empty() {
-            XYDatum::default()
-        } else {
-            XYDatum::from_key(&section.xy_datum)
-        },
-        z_method: if section.z_datum.is_empty() {
-            ZDatum::default()
-        } else {
-            ZDatum::from_key(&section.z_datum)
-        },
+/// An **absent or empty** key keeps the type default: the writer leaves
+/// the keys out for an untouched datum. F015 (operator ruling 1): a token
+/// the vocabulary does not hold refuses the load and names the setup and
+/// the token. An unknown `z_datum` never falls back to the stock top.
+fn datum_from_section(section: &ProjectSetupSection) -> Result<DatumConfig, SessionError> {
+    let unknown = |key: &'static str, token: &str| SessionError::UnknownSetupDatum {
+        setup: section.name.clone(),
+        key,
+        token: token.to_owned(),
+    };
+    let xy_method = if section.xy_datum.is_empty() {
+        XYDatum::default()
+    } else {
+        XYDatum::from_key(&section.xy_datum)
+            .ok_or_else(|| unknown("xy_datum", &section.xy_datum))?
+    };
+    let z_method = if section.z_datum.is_empty() {
+        ZDatum::default()
+    } else {
+        ZDatum::from_key(&section.z_datum).ok_or_else(|| unknown("z_datum", &section.z_datum))?
+    };
+    Ok(DatumConfig {
+        xy_method,
+        z_method,
         notes: section.datum_notes.clone(),
+    })
+}
+
+/// F053: refuse two entries of one section kind with the same id. An
+/// entry with no id takes its index, so an index can also collide with an
+/// explicit id; that refuses too.
+fn refuse_duplicate_ids(
+    section: &'static str,
+    ids: impl IntoIterator<Item = usize>,
+) -> Result<(), SessionError> {
+    let mut seen = std::collections::HashSet::new();
+    for id in ids {
+        if !seen.insert(id) {
+            return Err(SessionError::DuplicateId { section, id });
+        }
     }
+    Ok(())
 }
 
 /// Reject TOML that parses but contains no recognizable CAM content. Without
@@ -1141,6 +1220,23 @@ pub(super) fn build_session_from_project(
     for tool in &tools {
         super::validate_tool(tool)?;
     }
+    refuse_duplicate_ids("tools", tools.iter().map(|t| t.id.0))?;
+    refuse_duplicate_ids(
+        "models",
+        project
+            .models
+            .iter()
+            .enumerate()
+            .map(|(idx, m)| m.id.unwrap_or(idx)),
+    )?;
+    refuse_duplicate_ids(
+        "setups",
+        project
+            .setups
+            .iter()
+            .enumerate()
+            .map(|(idx, s)| s.id.unwrap_or(idx)),
+    )?;
 
     // Load models
     let mut models = Vec::new();
@@ -1311,7 +1407,7 @@ pub(super) fn build_session_from_project(
             name: setup_section.name.clone(),
             face_up,
             z_rotation,
-            datum: datum_from_section(setup_section),
+            datum: datum_from_section(setup_section)?,
             model_ids: setup_section
                 .model_ids
                 .iter()
@@ -1323,6 +1419,8 @@ pub(super) fn build_session_from_project(
             pause_message: setup_section.pause_message.clone(),
         });
     }
+
+    refuse_duplicate_ids("toolpaths", toolpath_configs.iter().map(|tc| tc.id.0))?;
 
     // A toolpath that names a tool or a model the file does not define
     // cannot generate. The GUI used to re-derive these two sentences from
@@ -1385,8 +1483,7 @@ pub(super) fn build_session_from_project(
 
     // Machines use snapshot semantics (like `[[tools]]`): the inline
     // `[job.machine]` copy is authoritative. L6 deleted the pre-snapshot
-    // `machine_ref` link. A file that still carries the key loads, and
-    // the reader ignores it.
+    // `machine_ref` link; the loader refuses the key (`RETIRED_KEYS`).
 
     let mut session = super::ProjectSession {
         name: project.job.name.clone(),

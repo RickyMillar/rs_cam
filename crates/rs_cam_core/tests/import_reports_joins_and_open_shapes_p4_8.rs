@@ -269,7 +269,6 @@ fn write_project(dir: &Path, model: &str, import: Option<f64>) -> PathBuf {
         .unwrap_or_default();
     let toml = format!(
         r#"format_version = 3
-name = "p4_8"
 
 [[models]]
 id = 0

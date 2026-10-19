@@ -547,6 +547,7 @@ impl MaterialCategory {
 
 /// Material being cut. Determines chip load scaling and power requirements.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum Material {
     SolidWood {
         species: WoodSpecies,
@@ -629,8 +630,8 @@ pub enum Material {
         /// (1.0) in [`Material::feed_scale_factor`].
         feed_scale_factor: f64,
         // Ruling B6 removed the typed `kc` field. A custom material has no
-        // force line. An old project file that carries `kc` still loads:
-        // serde ignores the unknown key.
+        // force line. The loader refuses an old file's `kc` key
+        // (`project_file::RETIRED_KEYS`).
     },
 }
 
@@ -1582,88 +1583,6 @@ impl Material {
             .collect()
     }
 
-    /// Serialization key for TOML project files.
-    pub fn to_key(&self) -> String {
-        match self {
-            Material::SolidWood { species } => match species {
-                WoodSpecies::GenericSoftwood => "softwood",
-                WoodSpecies::RadiataPine => "radiata_pine",
-                WoodSpecies::LongleafPine => "longleaf_pine",
-                WoodSpecies::GenericHardwood => "hardwood",
-                WoodSpecies::HardMaple => "hard_maple",
-                WoodSpecies::Walnut => "walnut",
-                WoodSpecies::Birch => "birch",
-                WoodSpecies::WhiteOak => "white_oak",
-                WoodSpecies::Jarrah => "jarrah",
-                WoodSpecies::Ipe => "ipe",
-            }
-            .to_owned(),
-            Material::Plywood { grade } => match grade {
-                PlywoodGrade::Softwood => "plywood_softwood",
-                PlywoodGrade::BalticBirch => "baltic_birch",
-                PlywoodGrade::HardwoodFaced => "plywood_hardwood",
-            }
-            .to_owned(),
-            Material::SheetGood { kind } => match kind {
-                SheetGoodKind::Mdf => "mdf",
-                SheetGoodKind::Hdf => "hdf",
-                SheetGoodKind::Particleboard => "particleboard",
-            }
-            .to_owned(),
-            Material::Plastic { family } => match family {
-                PlasticFamily::Generic => "plastic",
-                PlasticFamily::Acrylic => "acrylic",
-                PlasticFamily::Hdpe => "hdpe",
-                PlasticFamily::Delrin => "delrin",
-                PlasticFamily::Polycarbonate => "polycarbonate",
-                PlasticFamily::UhmwPe => "uhmw_pe",
-                PlasticFamily::Polypropylene => "polypropylene",
-                PlasticFamily::Nylon66 => "nylon66",
-                PlasticFamily::Abs => "abs",
-                PlasticFamily::Petg => "petg",
-                PlasticFamily::RigidPvc => "rigid_pvc",
-            }
-            .to_owned(),
-            Material::Aluminum { alloy } => match alloy {
-                AluminumAlloy::Alloy6061T6 => "aluminum_6061_t6",
-                AluminumAlloy::Alloy7075T6 => "aluminum_7075_t6",
-                AluminumAlloy::Alloy2024T3 => "aluminum_2024_t3",
-                AluminumAlloy::Alloy5052H32 => "aluminum_5052_h32",
-                AluminumAlloy::Alloy3003H14 => "aluminum_3003_h14",
-                AluminumAlloy::Alloy1100O => "aluminum_1100_o",
-                AluminumAlloy::Alloy7050T7651 => "aluminum_7050_t7651",
-            }
-            .to_owned(),
-            Material::Foam { density } => match density {
-                FoamDensity::Low => "foam_low",
-                FoamDensity::Medium => "foam_medium",
-                FoamDensity::High => "foam_high",
-            }
-            .to_owned(),
-            Material::Fiberglass { grade } => match grade {
-                FiberglassGrade::G10Fr4 => "fiberglass_g10_fr4",
-                FiberglassGrade::Generic => "fiberglass_generic",
-            }
-            .to_owned(),
-            Material::Custom { name, .. } => format!("custom:{name}"),
-            // Parametric variant — emits a key carrying source_id +
-            // janka_lbf so a from_key roundtrip can reconstruct the
-            // variant (the per-species library is consulted at parse
-            // time; if the source_id no longer exists in
-            // `wood_species_library()` we still recover label + janka
-            // from the key). Format:
-            // `solid_wood_by_janka:{source_id}:{janka_lbf}:{label}`
-            // The trailing label may contain ASCII punctuation
-            // (parens, slashes, dashes) — the parser splits on the
-            // first three `:` only so a label can carry colons too.
-            Material::SolidWoodByJanka {
-                janka_lbf,
-                label,
-                source_id,
-            } => format!("solid_wood_by_janka:{source_id}:{janka_lbf}:{label}"),
-        }
-    }
-
     /// Test-fixture constructor for `Material::Custom { name,
     /// feed_scale_factor }` with an audit-defaulted scalar (S3-13
     /// from `planning/tool_kinematics_chipload_audit_2026-05-31.md`).
@@ -1685,157 +1604,6 @@ impl Material {
         Material::Custom {
             name: name.to_owned(),
             feed_scale_factor: 1.0,
-        }
-    }
-
-    /// Parse from TOML key. Returns default softwood if unrecognized.
-    pub fn from_key(key: &str) -> Self {
-        match key {
-            "softwood" => Material::SolidWood {
-                species: WoodSpecies::GenericSoftwood,
-            },
-            "radiata_pine" => Material::SolidWood {
-                species: WoodSpecies::RadiataPine,
-            },
-            // Canonical key for the renamed variant.
-            "longleaf_pine" => Material::SolidWood {
-                species: WoodSpecies::LongleafPine,
-            },
-            // Legacy alias: 2026-05-30 Phase 2C renamed
-            // `SouthernYellowPine` → `LongleafPine` because Janka is
-            // per-species and SYP is a trade group. Preserves load-
-            // compat for project files saved before the rename. Write
-            // path emits only "longleaf_pine".
-            "southern_yellow_pine" => Material::SolidWood {
-                species: WoodSpecies::LongleafPine,
-            },
-            "hardwood" => Material::SolidWood {
-                species: WoodSpecies::GenericHardwood,
-            },
-            "hard_maple" => Material::SolidWood {
-                species: WoodSpecies::HardMaple,
-            },
-            "walnut" => Material::SolidWood {
-                species: WoodSpecies::Walnut,
-            },
-            "birch" => Material::SolidWood {
-                species: WoodSpecies::Birch,
-            },
-            "white_oak" => Material::SolidWood {
-                species: WoodSpecies::WhiteOak,
-            },
-            "jarrah" => Material::SolidWood {
-                species: WoodSpecies::Jarrah,
-            },
-            "ipe" => Material::SolidWood {
-                species: WoodSpecies::Ipe,
-            },
-            "plywood_softwood" => Material::Plywood {
-                grade: PlywoodGrade::Softwood,
-            },
-            "baltic_birch" => Material::Plywood {
-                grade: PlywoodGrade::BalticBirch,
-            },
-            "plywood_hardwood" => Material::Plywood {
-                grade: PlywoodGrade::HardwoodFaced,
-            },
-            "mdf" => Material::SheetGood {
-                kind: SheetGoodKind::Mdf,
-            },
-            "hdf" => Material::SheetGood {
-                kind: SheetGoodKind::Hdf,
-            },
-            "particleboard" => Material::SheetGood {
-                kind: SheetGoodKind::Particleboard,
-            },
-            "plastic" => Material::Plastic {
-                family: PlasticFamily::Generic,
-            },
-            "acrylic" => Material::Plastic {
-                family: PlasticFamily::Acrylic,
-            },
-            "hdpe" => Material::Plastic {
-                family: PlasticFamily::Hdpe,
-            },
-            "delrin" => Material::Plastic {
-                family: PlasticFamily::Delrin,
-            },
-            "polycarbonate" => Material::Plastic {
-                family: PlasticFamily::Polycarbonate,
-            },
-            "uhmw_pe" => Material::Plastic {
-                family: PlasticFamily::UhmwPe,
-            },
-            "polypropylene" => Material::Plastic {
-                family: PlasticFamily::Polypropylene,
-            },
-            "nylon66" => Material::Plastic {
-                family: PlasticFamily::Nylon66,
-            },
-            "abs" => Material::Plastic {
-                family: PlasticFamily::Abs,
-            },
-            "petg" => Material::Plastic {
-                family: PlasticFamily::Petg,
-            },
-            "rigid_pvc" => Material::Plastic {
-                family: PlasticFamily::RigidPvc,
-            },
-            "aluminum_6061_t6" => Material::Aluminum {
-                alloy: AluminumAlloy::Alloy6061T6,
-            },
-            "aluminum_7075_t6" => Material::Aluminum {
-                alloy: AluminumAlloy::Alloy7075T6,
-            },
-            "aluminum_2024_t3" => Material::Aluminum {
-                alloy: AluminumAlloy::Alloy2024T3,
-            },
-            "aluminum_5052_h32" => Material::Aluminum {
-                alloy: AluminumAlloy::Alloy5052H32,
-            },
-            "aluminum_3003_h14" => Material::Aluminum {
-                alloy: AluminumAlloy::Alloy3003H14,
-            },
-            "aluminum_1100_o" => Material::Aluminum {
-                alloy: AluminumAlloy::Alloy1100O,
-            },
-            "aluminum_7050_t7651" => Material::Aluminum {
-                alloy: AluminumAlloy::Alloy7050T7651,
-            },
-            "foam_low" => Material::Foam {
-                density: FoamDensity::Low,
-            },
-            "foam_medium" => Material::Foam {
-                density: FoamDensity::Medium,
-            },
-            "foam_high" => Material::Foam {
-                density: FoamDensity::High,
-            },
-            "fiberglass_g10_fr4" => Material::Fiberglass {
-                grade: FiberglassGrade::G10Fr4,
-            },
-            "fiberglass_generic" => Material::Fiberglass {
-                grade: FiberglassGrade::Generic,
-            },
-            // Parametric solid-wood-by-Janka key. See `to_key` for the
-            // emission format. Parses defensively — any malformed
-            // segment falls through to the default.
-            key if key.starts_with("solid_wood_by_janka:") => {
-                let rest = &key["solid_wood_by_janka:".len()..];
-                let mut parts = rest.splitn(3, ':');
-                if let (Some(source_id), Some(janka_str), Some(label)) =
-                    (parts.next(), parts.next(), parts.next())
-                    && let Ok(janka_lbf) = janka_str.parse::<f64>()
-                {
-                    return Material::SolidWoodByJanka {
-                        janka_lbf,
-                        label: label.to_owned(),
-                        source_id: source_id.to_owned(),
-                    };
-                }
-                Material::default()
-            }
-            _ => Material::default(),
         }
     }
 }
@@ -2249,27 +2017,6 @@ mod tests {
     }
 
     #[test]
-    fn legacy_southern_yellow_pine_key_aliases_to_longleaf() {
-        // 2026-05-30 Phase 2C: `SouthernYellowPine` was a trade-group
-        // misnomer — SYP covers Longleaf/Loblolly/Shortleaf/Slash with
-        // different Jankas per species. The variant was renamed to
-        // `LongleafPine` (Janka 870 lbf, Wood Database). Legacy
-        // project files saved before the rename carry the old key;
-        // `from_key` must alias them to `LongleafPine` so loading
-        // doesn't silently fall back to default softwood.
-        let restored = Material::from_key("southern_yellow_pine");
-        assert_eq!(
-            restored,
-            Material::SolidWood {
-                species: WoodSpecies::LongleafPine,
-            },
-            "legacy SYP key must map to LongleafPine"
-        );
-        // And the write path emits only the new canonical key.
-        assert_eq!(restored.to_key(), "longleaf_pine");
-    }
-
-    #[test]
     fn longleaf_pine_janka_matches_wood_database() {
         assert!((WoodSpecies::LongleafPine.janka_lbf() - 870.0).abs() < 1e-9);
     }
@@ -2327,13 +2074,33 @@ mod tests {
         }
     }
 
+    /// F091: serde is the one material spelling. Every catalog entry
+    /// round-trips through the project-file form.
     #[test]
-    fn test_key_roundtrip() {
-        for (_, mat) in Material::catalog() {
-            let key = mat.to_key();
-            let restored = Material::from_key(&key);
-            assert_eq!(mat, restored, "roundtrip failed for key '{key}'");
+    fn every_catalog_material_round_trips_through_serde() {
+        #[derive(Serialize, Deserialize)]
+        struct Holder {
+            material: Material,
         }
+        for (_, mat) in Material::catalog() {
+            let text = toml::to_string(&Holder {
+                material: mat.clone(),
+            })
+            .unwrap();
+            let back: Holder = toml::from_str(&text).unwrap();
+            assert_eq!(mat, back.material, "round trip failed for:\n{text}");
+        }
+    }
+
+    /// F034: a key the material does not hold is refused. Ruling B6
+    /// removed the `kc` key of a custom material.
+    #[test]
+    fn a_custom_material_refuses_an_unknown_key() {
+        let err = toml::from_str::<Material>(
+            "[Custom]\nname = \"x\"\nfeed_scale_factor = 1.0\nkc = 20.0\n",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("kc"), "{err}");
     }
 
     #[test]

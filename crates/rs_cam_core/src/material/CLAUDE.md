@@ -28,6 +28,8 @@ layers read from it. The principal type is `Material` in `mod.rs`.
   printed range does not refuse; `ChipRegime` names it.
 - A library row reads its `specific_gravity_12` (FPL rows only); a Wood
   Database row refuses `NoDensity`. The Janka value never reaches the line.
+- serde is the one material spelling (F091 deleted `to_key`/`from_key`; the literature shim holds its own key table).
+  `Material` refuses an unknown key (F034).
 - The species library is DATA. Edit `data/wood_species.toml`; no hash pins
   it (B6 deleted the pin). Every library `source_id` must name an entry in
   `data/vendor_lut/source_manifest.json` (`wood_species_library_provenance`).

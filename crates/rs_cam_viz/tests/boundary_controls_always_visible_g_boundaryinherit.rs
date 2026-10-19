@@ -190,6 +190,8 @@ fn summary_line_names_the_stored_source() {
 
 const LEGACY_SECTION: &str = r#"
 name = "Finish"
+tool_id = 0
+model_id = 0
 boundary_inherit = true
 
 [boundary]

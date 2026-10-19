@@ -10,19 +10,7 @@ use super::project_file::{
     ProjectToolSection, ProjectToolpathSection,
 };
 use super::{ProjectSession, SessionError};
-use crate::compute::tool_config::{BitCutDirection, ToolMaterial, ToolType};
-
-/// Convert a `ToolType` to the string key used in project files.
-fn tool_type_to_key(tt: ToolType) -> String {
-    match tt {
-        ToolType::EndMill => "end_mill",
-        ToolType::BallNose => "ball_nose",
-        ToolType::BullNose => "bull_nose",
-        ToolType::VBit => "v_bit",
-        ToolType::TaperedBallNose => "tapered_ball_nose",
-    }
-    .to_owned()
-}
+use crate::compute::tool_config::{BitCutDirection, ToolMaterial};
 
 /// Convert a `ToolMaterial` to the string key used in project files.
 fn tool_material_to_key(tm: ToolMaterial) -> String {
@@ -175,7 +163,7 @@ impl ProjectSession {
             .map(|t| ProjectToolSection {
                 id: Some(t.id.0),
                 name: t.name.clone(),
-                tool_type: tool_type_to_key(t.tool_type),
+                tool_type: t.tool_type.serde_token().to_owned(),
                 diameter: t.diameter,
                 cutting_length: t.cutting_length,
                 helix_deg: t.helix_deg,
@@ -225,8 +213,8 @@ impl ProjectSession {
                         name: tc.name.clone(),
                         operation: Some(tc.operation.clone()),
                         enabled: tc.enabled,
-                        tool_id: Some(tc.tool_id),
-                        model_id: Some(tc.model_id),
+                        tool_id: tc.tool_id,
+                        model_id: tc.model_id,
                         dressups: tc.dressups.clone(),
                         heights: tc.heights.clone(),
                         pre_gcode: tc.pre_gcode.clone(),

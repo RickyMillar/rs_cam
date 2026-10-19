@@ -26,6 +26,8 @@ principal type is `MachineProfile` in `mod.rs`.
 - `MachineProfile::link_kinematics` is the one link-envelope builder. A machine edit compares it
   and stales the link-stage ops and each result that read a stock snapshot (B7, the air filter).
   `retract_saves_time` is the ONE feed-or-retract rule (W6.1 Waterline, the air-cut filter).
+- F202: `$341` is `ControllerToolChangeMode`, `$32` is `ControllerMode` (`try_from` the number). The `$$` import lists an
+  unknown value in `GrblImport::unknown_values` and leaves the field `None`. It is not `gcode::ToolChangeMode` (one export's handling).
 - An arc is timed at its arc length (`move_length`, `hypot(r * sweep, dz)`), never its chord;
   both integrators read `move_length` / `move_directions`.
 

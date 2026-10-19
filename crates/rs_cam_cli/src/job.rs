@@ -1380,7 +1380,7 @@ mod tests {
     }
 
     /// F028: the `[job] post` token goes through `PostFormat::from_token`.
-    /// An unknown token refuses the job file; the aliases still parse.
+    /// An unknown token refuses the job file, and so does a retired alias (W4).
     /// Before the fix the field was a `String`, and `execute_job` (the door
     /// `sweep` calls) turned an unknown token into GRBL.
     #[test]
@@ -1396,10 +1396,11 @@ mod tests {
             err.as_deref().is_some_and(|e| e.contains("grbll")),
             "{err:?}"
         );
-        assert_eq!(job(Some("GRBL_HAL")).unwrap().job.post, PostFormat::GrblHal);
+        assert_eq!(job(Some("GRBLHAL")).unwrap().job.post, PostFormat::GrblHal);
+        assert!(job(Some("grbl_hal")).is_err(), "the retired alias refuses");
         assert_eq!(job(None).unwrap().job.post, PostFormat::Grbl);
         // The sweep writes the job back and reads it again.
-        let round = toml::to_string(&job(Some("linux_cnc")).unwrap()).unwrap();
+        let round = toml::to_string(&job(Some("linuxcnc")).unwrap()).unwrap();
         assert_eq!(
             toml::from_str::<JobFile>(&round).unwrap().job.post,
             PostFormat::LinuxCnc

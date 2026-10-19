@@ -21,7 +21,8 @@ Z-first, and in a setup with an obstacle the toolpath starts at the plane (`a_sn
   setup zeroes to the presented top. Export consumes the datum in the setup;
   do not re-derive it here.
 - A post-processor is data, not code. Add a `PostDefinition` row, not a
-  branch in the emitter.
+  branch in the emitter. F090/F034: `tool_change` is required and an unknown post key refuses.
+- `PostFormat::from_token` reads only the `to_token` spellings; an unknown `[job.post] format` refuses (no GRBL fallback).
 - W2.5: every session door fills `GcodePhase::feeds` from the slot it emits
   (`FeedStage::statement`). The line follows the label. It states, never refuses.
 

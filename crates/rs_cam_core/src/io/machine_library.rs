@@ -195,6 +195,21 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// F034: a machine file with a key the profile does not hold refuses,
+    /// and the error names the key. The saved file round-trips.
+    #[test]
+    fn a_machine_file_with_an_unknown_key_refuses() {
+        let dir = temp_dir("unknown_key");
+        let path = save_to(&dir, "m", &MachineProfile::generic_wood_router()).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let back = load_from(&dir, "m").unwrap();
+        assert_eq!(toml::to_string_pretty(&back).unwrap(), text);
+        std::fs::write(&path, format!("max_feed_mm_minn = 1.0\n{text}")).unwrap();
+        let err = load_from(&dir, "m").unwrap_err();
+        assert!(err.to_string().contains("max_feed_mm_minn"), "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn list_returns_sorted_stems() {
         let dir = temp_dir("list");

@@ -321,29 +321,25 @@ fn the_same_project_saved_as_grbl_still_filters_the_mcode() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// An unknown token still degrades to GRBL rather than refusing the
-/// export. Stated as a test because it is a deliberate choice, not an
-/// oversight: `from_token` returns `None` and the export site — not the
-/// resolver — picks the fallback.
+/// F015/F090 (no-legacy ruling): an unknown post token in a project file
+/// refuses the load and names the token. It used to degrade to GRBL, so a
+/// misspelt dialect exported a program for a controller nobody chose.
 #[test]
-fn an_unknown_post_token_still_falls_back_to_grbl() {
+fn an_unknown_post_token_refuses_the_load() {
     let dir = scratch_dir("export_unknown");
     let project_path = build_project(&dir, PostFormat::Grbl);
-    // UI-07: `format` is the typed enum now, so an unknown token can only
-    // arrive from a file. Write one, the way a hand-edited or older project
-    // would carry it.
     let toml = std::fs::read_to_string(&project_path).expect("read project toml");
+    assert!(toml.contains("format = \"grbl\""), "non-vacuity: {toml}");
     std::fs::write(
         &project_path,
         toml.replace("format = \"grbl\"", "format = \"cobalt-cnc\""),
     )
     .expect("write the unknown token back");
-    let gcode = reload_and_export(&project_path);
 
     assert_eq!(PostFormat::from_token("cobalt-cnc"), None);
-    assert!(
-        gcode.contains("unsupported on GRBL"),
-        "an unresolvable token must export as GRBL; emitted:\n{gcode}"
-    );
+    let err = ProjectSession::load(&project_path)
+        .err()
+        .expect("an unknown post token must refuse the load");
+    assert!(err.to_string().contains("cobalt-cnc"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }

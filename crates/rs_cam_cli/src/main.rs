@@ -891,8 +891,8 @@ mod tests {
             };
             post
         };
-        assert_eq!(post("GRBL_HAL"), PostFormat::GrblHal);
-        assert_eq!(post("linux_cnc"), PostFormat::LinuxCnc);
+        assert_eq!(post("GRBLHAL"), PostFormat::GrblHal);
+        assert_eq!(post("linuxcnc"), PostFormat::LinuxCnc);
         let Commands::Run { post, .. } = Cli::try_parse_from(["rs_cam", "run", "pocket"])
             .unwrap()
             .command

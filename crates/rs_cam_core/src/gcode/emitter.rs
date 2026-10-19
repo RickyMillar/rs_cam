@@ -552,6 +552,7 @@ M3 S{spindle_rpm}
 """
             postamble = "M30\n"
             program_pause = "M0\n"
+            tool_change = "M5\nM6 T{tool_number}\n"
             [decimals]
             xyz = 3
             feed = 0

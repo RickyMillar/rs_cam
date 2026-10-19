@@ -52,6 +52,7 @@ impl SafeZ {
 
 /// Per-axis decimal places for emitted move words.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Decimals {
     pub xyz: usize,
     pub feed: usize,
@@ -64,6 +65,7 @@ pub struct Decimals {
 /// at the clamp site. Shipped TOMLs leave these unset (no clamping)
 /// until the wizard surfaces them or a per-machine config layers on.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PostLimits {
     #[serde(default)]
     pub max_rpm: Option<Rpm>,
@@ -130,6 +132,7 @@ impl Units {
 /// The conversion happens in `program_builder` so the emitter sees only
 /// `Statement::Linear` for linearised arcs — it doesn't need to know.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArcLinearize {
     #[serde(default)]
     pub enabled: bool,
@@ -224,6 +227,7 @@ fn ascii_look_alike(ch: char) -> &'static str {
 /// `{text}`. Move-line formatting is hard-coded in the emitter and
 /// driven by `decimals`.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PostDefinition {
     pub name: String,
     pub decimals: Decimals,
@@ -236,12 +240,11 @@ pub struct PostDefinition {
     /// - `{message_comment}` → `TOOL CHANGE: <label> [T<n>]` wrapped in
     ///   this post's comment style
     ///
-    /// Default (posts that omit the field) is the classic
-    /// `M5` + `M6 T{tool_number}` pair. Controllers without M6
+    /// Required (F090: no default for a post that omits it). The M6
+    /// posts write `M5` + `M6 T{tool_number}`. Controllers without M6
     /// (vanilla GRBL) template a spindle-stop + message + `M0` pause
     /// instead; the `SpindleSet` emitted right after the change doubles
     /// as the resume spin-up.
-    #[serde(default = "default_tool_change")]
     pub tool_change: String,
     pub comment: CommentStyle,
     /// The format of an operator message: `{message_comment}` in the
@@ -305,12 +308,6 @@ pub struct PostDefinition {
     pub mist_option: bool,
 }
 
-/// Backward-compat default for post TOMLs lacking a `tool_change`
-/// field: the pre-template behaviour (`M5` then `M6 T<n>`).
-fn default_tool_change() -> String {
-    "M5\nM6 T{tool_number}\n".to_owned()
-}
-
 fn default_supports_cutter_comp() -> bool {
     // Default true preserves the existing emission behaviour for the
     // LinuxCNC/Mach3 posts (which DO support comp). Grbl/grblHAL TOMLs
@@ -321,6 +318,7 @@ fn default_supports_cutter_comp() -> bool {
 /// Comment formatting. `format` contains `{text}`; the emitter renders
 /// `format!("{}\n", format.replace("{text}", text))`.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CommentStyle {
     pub format: String,
 }
@@ -553,6 +551,7 @@ mod tests {
 """
             postamble = "M30\n"
             program_pause = "M0\n"
+            tool_change = "M5\nM6 T{tool_number}\n"
             [decimals]
             xyz = 3
             feed = 0
@@ -577,6 +576,7 @@ mod tests {
                 preamble = "{{units_word}} M3 S{{spindle_rpm}}\n"
                 postamble = "M30\n"
                 program_pause = "M0\n"
+                tool_change = "M5\nM6 T{{tool_number}}\n"
                 [decimals]
                 xyz = 3
                 feed = 0
@@ -744,12 +744,12 @@ mod tests {
         assert_eq!(block, "M5\n(TOOL CHANGE: End Mill [rough] [T3])\nM0\n");
     }
 
+    /// F090 and F034: a post TOML without `tool_change` refuses (no
+    /// default), and so does a key the post does not hold.
     #[test]
-    fn tool_change_field_defaults_when_absent_from_toml() {
-        // Backward compat: a post TOML without `tool_change` must parse
-        // and fall back to the legacy M5 + M6 pair.
-        let toml = r#"
-            name = "Legacy"
+    fn a_post_without_tool_change_or_with_an_unknown_key_refuses() {
+        let base = r#"
+            name = "Test"
             preamble = "M3 S{spindle_rpm}\n"
             postamble = "M30\n"
             program_pause = "M0\n"
@@ -760,9 +760,14 @@ mod tests {
             [comment]
             format = "({text})"
         "#;
-        let post = PostDefinition::from_toml(toml).unwrap();
-        assert_eq!(post.tool_change, "M5\nM6 T{tool_number}\n");
+        let err = PostDefinition::from_toml(base).unwrap_err();
+        assert!(err.to_string().contains("tool_change"), "{err}");
+        let with = format!("tool_change = \"M5\\nM6 T{{tool_number}}\\n\"\n{base}");
+        let post = PostDefinition::from_toml(&with).unwrap();
         assert_eq!(post.render_tool_change(4, "Bit"), "M5\nM6 T4\n");
+        let typo = format!("tool_chnage = \"M0\"\n{with}");
+        let err = PostDefinition::from_toml(&typo).unwrap_err();
+        assert!(err.to_string().contains("tool_chnage"), "{err}");
     }
 
     #[test]

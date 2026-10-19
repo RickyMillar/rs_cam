@@ -224,6 +224,25 @@ fn all_smoke_cases_have_required_tool_in_template() {
     );
 }
 
+/// The CSV `material_family` word for a template material. F091 deleted
+/// `Material::to_key`; the CSV holds three words, and any other material
+/// prints its serde form, which no CSV row matches.
+fn family_key(material: &Material) -> String {
+    use rs_cam_core::material::{SheetGoodKind, WoodSpecies};
+    match material {
+        Material::SolidWood {
+            species: WoodSpecies::GenericSoftwood,
+        } => "softwood".to_owned(),
+        Material::SolidWood {
+            species: WoodSpecies::GenericHardwood,
+        } => "hardwood".to_owned(),
+        Material::SheetGood {
+            kind: SheetGoodKind::Mdf,
+        } => "mdf".to_owned(),
+        other => format!("{other:?}"),
+    }
+}
+
 #[test]
 fn all_smoke_cases_have_matching_material_family() {
     let root = repo_root();
@@ -234,7 +253,7 @@ fn all_smoke_cases_have_matching_material_family() {
         let Ok(session) = ProjectSession::load(&template) else {
             continue; // surfaced by the loader test
         };
-        let template_key = Material::to_key(&session.stock_config().material);
+        let template_key = family_key(&session.stock_config().material);
         if template_key == row.material_family {
             continue;
         }

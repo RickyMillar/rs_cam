@@ -24,7 +24,10 @@
 
 use rs_cam_core::gcode::PostFormat;
 use rs_cam_core::machine::kinematics::MachineKinematics;
-use rs_cam_core::machine::{ControllerFirmware, ControllerSettings, MachineProfile, SpindleDrive};
+use rs_cam_core::machine::{
+    ControllerFirmware, ControllerMode, ControllerSettings, ControllerToolChangeMode,
+    MachineProfile, SpindleDrive,
+};
 use rs_cam_core::session::{
     Command, ImportMachineSettingsArgs, ProjectSessionBuilder, SetMachineArgs, SetPostConfigArgs,
 };
@@ -49,9 +52,9 @@ fn full_profile() -> MachineProfile {
         firmware: ControllerFirmware::GrblHal,
         rpm_max: Some(1_000.0),
         rpm_min: Some(0.0),
-        mode: Some(0),
+        mode: Some(ControllerMode::Normal),
         spindle_at_speed_tolerance_pct: Some(5.0),
-        tool_change_mode: Some(0),
+        tool_change_mode: Some(ControllerToolChangeMode::Normal),
         tool_change_probing_distance_mm: Some(30.0),
         spindle_on_delay_s: Some(2.5),
         mist_output: Some(true),
@@ -97,7 +100,8 @@ fn a_dump_writes_only_the_settings_it_states_b6() {
     kinematics.acceleration_mm_s2 = (400.0 + 350.0 + 200.0) / 3.0;
     kinematics.max_rate_xyz_mm_min = Some([9_000.0, 8_000.0, 900.0]);
     expected.max_feed_mm_min = 9_000.0;
-    expected.controller.as_mut().unwrap().tool_change_mode = Some(3);
+    expected.controller.as_mut().unwrap().tool_change_mode =
+        Some(ControllerToolChangeMode::AutomaticTouchOffAtG59_3);
 
     let json = |machine: &MachineProfile| serde_json::to_value(machine).expect("serialize");
     assert_eq!(json(session.machine()), json(&expected));

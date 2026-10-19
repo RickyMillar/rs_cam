@@ -117,7 +117,6 @@ fn via_project_file_model(
     let toml = format!(
         r#"
 format_version = 3
-name = "units-reload-fixture"
 
 [[models]]
 id = 0

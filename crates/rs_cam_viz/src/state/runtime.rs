@@ -420,17 +420,15 @@ mod tests {
         }
     }
 
-    /// The underscore spellings a pre-UI-07 typed surface could have
-    /// written still read back.
+    /// W4 (F090, no legacy): the underscore spellings are gone; each one
+    /// fails to read back instead of loading as its post.
     #[test]
-    fn the_underscore_post_spellings_still_read_back() {
-        for (spelling, expected) in [
-            ("\"grbl_hal\"", PostFormat::GrblHal),
-            ("\"linux_cnc\"", PostFormat::LinuxCnc),
-        ] {
-            let back: PostFormat =
-                serde_json::from_str(spelling).expect("the alias spelling reads back");
-            assert_eq!(back, expected, "{spelling} must still load");
+    fn the_underscore_post_spellings_are_refused() {
+        for spelling in ["\"grbl_hal\"", "\"linux_cnc\""] {
+            assert!(
+                serde_json::from_str::<PostFormat>(spelling).is_err(),
+                "{spelling} must not load"
+            );
         }
     }
 

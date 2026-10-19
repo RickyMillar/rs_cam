@@ -103,14 +103,6 @@ pub fn emit_gcode(toolpath: &Toolpath, post: &PostDefinition, spindle_rpm: u32) 
     emitter::emit_program(&program_builder::build_single(toolpath, spindle_rpm), post)
 }
 
-/// Render a `Program` to g-code text using the given post definition.
-///
-/// Re-export of `emitter::emit_program` for backward-compatible call
-/// sites; all formatting decisions live in the emitter module.
-pub fn emit_program(program: &Program, post: &PostDefinition) -> String {
-    emitter::emit_program(program, post)
-}
-
 /// The tool a phase cuts with, as seen by the g-code program builder.
 ///
 /// `id` is the *identity* — the tool config id (`ToolConfig::id.0`).
@@ -1425,11 +1417,11 @@ pub enum PostFormat {
     /// `rename_all = "snake_case"` used to serialise this as `"grbl_hal"`
     /// while the project-file writer spelled it `"grblhal"`. The project
     /// file now holds the typed enum, so the two spellings must be one; the
-    /// canonical form is the one already on disk. The underscore spelling
-    /// stays readable as an alias.
-    #[serde(rename = "grblhal", alias = "grbl_hal")]
+    /// canonical form is the one already on disk. F090: the underscore
+    /// spelling is no longer read (no alias).
+    #[serde(rename = "grblhal")]
     GrblHal,
-    #[serde(rename = "linuxcnc", alias = "linux_cnc")]
+    #[serde(rename = "linuxcnc")]
     LinuxCnc,
     Mach3,
 }
@@ -1477,9 +1469,10 @@ impl PostFormat {
         }
     }
 
-    /// **The** resolver for a post token read off disk or off a CLI
-    /// flag. Case-insensitive; accepts the underscore spellings as
-    /// aliases of the canonical [`Self::to_token`] output.
+    /// **The** resolver for a post token read off a CLI flag or a job
+    /// file. Case- and whitespace-insensitive; it reads only the
+    /// canonical [`Self::to_token`] spellings (F090: the `grbl_hal` and
+    /// `linux_cnc` aliases are gone).
     ///
     /// W9 / P-1: three production readers used to open-code this match
     /// and only one of them knew `"grblhal"` — the other two fell
@@ -1492,8 +1485,8 @@ impl PostFormat {
     pub fn from_token(name: &str) -> Option<PostFormat> {
         match name.trim().to_lowercase().as_str() {
             "grbl" => Some(PostFormat::Grbl),
-            "grblhal" | "grbl_hal" => Some(PostFormat::GrblHal),
-            "linuxcnc" | "linux_cnc" => Some(PostFormat::LinuxCnc),
+            "grblhal" => Some(PostFormat::GrblHal),
+            "linuxcnc" => Some(PostFormat::LinuxCnc),
             "mach3" => Some(PostFormat::Mach3),
             _ => None,
         }
@@ -1509,10 +1502,13 @@ impl PostFormat {
 /// `to_token` / `from_token` round trip through a project file are gone.
 ///
 /// Every field states a default, because a project file written before a
-/// field existed does not carry it.
+/// field existed does not carry it. F034: a key the config does not hold
+/// refuses. F015/F090: an unknown `format` token refuses (it used to read
+/// as GRBL).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PostConfig {
-    #[serde(default, deserialize_with = "post_format_or_grbl")]
+    #[serde(default)]
     pub format: PostFormat,
     #[serde(default = "default_spindle_speed")]
     pub spindle_speed: u32,
@@ -1601,20 +1597,6 @@ impl Default for PostConfig {
             native_drill_cycles: None,
         }
     }
-}
-
-/// Read a post token from a project file, falling back to GRBL.
-///
-/// UI-07 kept the behaviour the two deleted translations had: a token the
-/// resolver does not know degrades to GRBL rather than refusing the whole
-/// project load. This is the ONE place that decides; `PostFormat::from_token`
-/// still returns `None` so a CLI flag can refuse instead.
-fn post_format_or_grbl<'de, D>(deserializer: D) -> Result<PostFormat, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let token = String::deserialize(deserializer)?;
-    Ok(PostFormat::from_token(&token).unwrap_or(PostFormat::Grbl))
 }
 
 /// Get a `PostDefinition` by name (CLI / config-string lookup).
@@ -1915,9 +1897,9 @@ mod tests {
     fn test_get_post_definition() {
         assert!(get_post_definition("grbl").is_some());
         assert!(get_post_definition("grblhal").is_some());
-        assert!(get_post_definition("grbl_hal").is_some());
+        assert!(get_post_definition("grbl_hal").is_none());
         assert!(get_post_definition("linuxcnc").is_some());
-        assert!(get_post_definition("linux_cnc").is_some());
+        assert!(get_post_definition("linux_cnc").is_none());
         assert!(get_post_definition("mach3").is_some());
         assert!(get_post_definition("unknown").is_none());
     }
@@ -1943,44 +1925,42 @@ mod tests {
         }
     }
 
-    /// The resolver is case- and whitespace-insensitive, and the
-    /// underscore spellings stay accepted as aliases.
+    /// The resolver is case- and whitespace-insensitive. F090: the
+    /// underscore spellings are refused (no alias).
     #[test]
-    fn the_post_resolver_accepts_the_alias_spellings() {
+    fn the_post_resolver_refuses_the_old_alias_spellings() {
         assert_eq!(
             PostFormat::from_token("  GRBLHAL "),
-            Some(PostFormat::GrblHal)
-        );
-        assert_eq!(
-            PostFormat::from_token("grbl_hal"),
             Some(PostFormat::GrblHal)
         );
         assert_eq!(
             PostFormat::from_token("LinuxCNC"),
             Some(PostFormat::LinuxCnc)
         );
+        assert_eq!(PostFormat::from_token("grbl_hal"), None);
+        assert_eq!(PostFormat::from_token("linux_cnc"), None);
         assert_eq!(PostFormat::from_token("cobalt"), None);
     }
 
-    /// The typed serde wire must accept the project-file spelling as
-    /// well as its own `snake_case` output, or a surface that
-    /// deserialises a `PostFormat` directly rejects a grblHAL value the
-    /// project-file writer produced. The viz fallback project schema was
-    /// the first such surface; C11 deleted it, and the union stays.
+    /// The typed serde wire reads the project-file spelling only. F090:
+    /// the `snake_case` alias is refused, and so is an unknown token in a
+    /// project post table (it used to read as GRBL, F015).
     #[test]
-    fn the_typed_post_wire_accepts_both_spellings() {
+    fn the_typed_post_wire_reads_one_spelling() {
         assert_eq!(
             serde_json::from_str::<PostFormat>("\"grblhal\"").ok(),
-            Some(PostFormat::GrblHal)
-        );
-        assert_eq!(
-            serde_json::from_str::<PostFormat>("\"grbl_hal\"").ok(),
             Some(PostFormat::GrblHal)
         );
         assert_eq!(
             serde_json::from_str::<PostFormat>("\"linuxcnc\"").ok(),
             Some(PostFormat::LinuxCnc)
         );
+        assert!(serde_json::from_str::<PostFormat>("\"grbl_hal\"").is_err());
+        assert!(serde_json::from_str::<PostFormat>("\"linux_cnc\"").is_err());
+        assert!(toml::from_str::<PostConfig>("format = \"cobalt\"").is_err());
+        assert!(toml::from_str::<PostConfig>("formatt = \"grbl\"").is_err());
+        let config: PostConfig = toml::from_str("format = \"grblhal\"").unwrap();
+        assert_eq!(config.format, PostFormat::GrblHal);
     }
 
     #[test]

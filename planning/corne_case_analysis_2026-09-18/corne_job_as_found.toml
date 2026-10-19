@@ -29,7 +29,6 @@ spindle_strategy = "max_speed"
 name = "Generic Wood Router"
 max_feed_mm_min = 4000.0
 max_shank_mm = 6.35
-safety_factor = 0.75
 
 [job.machine.spindle.Variable]
 min_rpm = 8000.0
@@ -405,4 +404,3 @@ name = "Setup 2"
 face_up = "top"
 z_rotation = "0"
 model_ids = [1]
-toolpaths = []

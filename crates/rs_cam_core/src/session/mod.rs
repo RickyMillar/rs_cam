@@ -276,6 +276,26 @@ pub enum SessionError {
         tool: String,
         error: crate::tool::ToolGeometryError,
     },
+    /// F015 (operator ruling 1): a setup's `xy_datum` or `z_datum` token
+    /// is not one the vocabulary holds. The loader refuses: an unknown Z
+    /// datum never falls back to the stock top, because the datum sets
+    /// the program Z0.
+    UnknownSetupDatum {
+        /// The setup's name.
+        setup: String,
+        /// The key: `xy_datum` or `z_datum`.
+        key: &'static str,
+        /// The token the file holds.
+        token: String,
+    },
+    /// F053: two sections of one kind carry the same id. An id is EXACT
+    /// (P2.4/P2.5), so the loader cannot guess which one a reference means.
+    DuplicateId {
+        /// The section kind: `tools`, `models`, `setups` or `toolpaths`.
+        section: &'static str,
+        /// The id that occurs twice.
+        id: usize,
+    },
 }
 
 impl SessionError {
@@ -371,6 +391,21 @@ impl std::fmt::Display for SessionError {
             Self::ToolOutOfDomain { tool, error } => {
                 write!(f, "Tool '{tool}' refused: {error}")
             }
+            Self::UnknownSetupDatum { setup, key, token } => write!(
+                f,
+                "Setup '{setup}' has unknown {key} '{token}'. The datum sets the program \
+                 zero, so rs_cam does not guess it. Valid {key} values: {}.",
+                if *key == "z_datum" {
+                    "stock_top, table, manual, offset:<mm>"
+                } else {
+                    "corner_fl, corner_fr, corner_bl, corner_br, center, pins, manual"
+                }
+            ),
+            Self::DuplicateId { section, id } => write!(
+                f,
+                "Two [[{section}]] entries carry id {id}. An id names exactly one entry; \
+                 give each entry its own id."
+            ),
         }
     }
 }
@@ -792,12 +827,15 @@ impl Corner {
         }
     }
 
-    pub fn from_key(s: &str) -> Self {
+    /// The corner a `to_key` token names. F015: `None` for any other
+    /// token (it used to read as front-left).
+    pub fn from_key(s: &str) -> Option<Self> {
         match s {
-            "fr" => Corner::FrontRight,
-            "bl" => Corner::BackLeft,
-            "br" => Corner::BackRight,
-            _ => Corner::FrontLeft,
+            "fl" => Some(Corner::FrontLeft),
+            "fr" => Some(Corner::FrontRight),
+            "bl" => Some(Corner::BackLeft),
+            "br" => Some(Corner::BackRight),
+            _ => None,
         }
     }
 }
@@ -841,15 +879,17 @@ impl XYDatum {
         }
     }
 
-    pub fn from_key(s: &str) -> Self {
+    /// The XY datum a `to_key` token names. F015: `None` for any other
+    /// token (it used to read as the front-left corner probe).
+    pub fn from_key(s: &str) -> Option<Self> {
         if let Some(corner) = s.strip_prefix("corner_") {
-            XYDatum::CornerProbe(Corner::from_key(corner))
+            Corner::from_key(corner).map(XYDatum::CornerProbe)
         } else {
             match s {
-                "center" => XYDatum::CenterOfStock,
-                "pins" => XYDatum::AlignmentPins,
-                "manual" => XYDatum::Manual,
-                _ => XYDatum::default(),
+                "center" => Some(XYDatum::CenterOfStock),
+                "pins" => Some(XYDatum::AlignmentPins),
+                "manual" => Some(XYDatum::Manual),
+                _ => None,
             }
         }
     }
@@ -884,14 +924,22 @@ impl ZDatum {
         }
     }
 
-    pub fn from_key(s: &str) -> Self {
+    /// The Z datum a `to_key` token names. F015 (operator ruling 1):
+    /// `None` for any other token, and for an `offset:` whose value is not
+    /// a finite number. An unknown token used to read as the stock top and
+    /// `offset:<garbage>` as `FixedOffset(0.0)`; both moved the program Z0.
+    pub fn from_key(s: &str) -> Option<Self> {
         if let Some(val) = s.strip_prefix("offset:") {
-            ZDatum::FixedOffset(val.parse().unwrap_or(0.0))
+            val.parse::<f64>()
+                .ok()
+                .filter(|z| z.is_finite())
+                .map(ZDatum::FixedOffset)
         } else {
             match s {
-                "table" => ZDatum::MachineTable,
-                "manual" => ZDatum::Manual,
-                _ => ZDatum::StockTop,
+                "stock_top" => Some(ZDatum::StockTop),
+                "table" => Some(ZDatum::MachineTable),
+                "manual" => Some(ZDatum::Manual),
+                _ => None,
             }
         }
     }
@@ -2254,8 +2302,8 @@ mod tests {
                     name: "Bare".to_owned(),
                     operation: None,
                     enabled: true,
-                    tool_id: None,
-                    model_id: None,
+                    tool_id: 0,
+                    model_id: 0,
                     dressups: crate::compute::config::DressupConfig::default(),
                     heights: crate::compute::config::HeightsConfig::default(),
                     pre_gcode: None,
@@ -2321,8 +2369,9 @@ mod tests {
             "y = 10.0\n",
             "diameter = 6.0\n",
         );
-        let project: ProjectFile = toml::from_str(toml_str).unwrap();
-        match ProjectSession::from_project_file(project, Path::new(".")) {
+        // F034: the text door checks the version before the closed typed
+        // parse, so the refusal names the version, not the setup key.
+        match ProjectFile::from_toml_str(toml_str) {
             Err(SessionError::UnsupportedFormatVersion { found }) => assert_eq!(found, 2),
             Err(other) => panic!("expected UnsupportedFormatVersion, got {other:?}"),
             Ok(_) => panic!("the loader must refuse a format 2 project"),
@@ -2559,8 +2608,8 @@ mod tests {
                         crate::compute::catalog::OperationType::Pocket,
                     )),
                     enabled: true,
-                    tool_id: Some(0),
-                    model_id: Some(0),
+                    tool_id: 0,
+                    model_id: 0,
                     dressups: crate::compute::config::DressupConfig::default(),
                     heights: crate::compute::config::HeightsConfig::default(),
                     pre_gcode: None,

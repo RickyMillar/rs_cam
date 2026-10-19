@@ -1,5 +1,4 @@
 format_version = 3
-toolpaths = []
 
 [job]
 name = "wanaka_full_tuned"
@@ -39,7 +38,6 @@ spindle_strategy = "match_chart"
 name = "Shapeoko Pro XXL"
 max_feed_mm_min = 10000.0
 max_shank_mm = 6.35
-safety_factor = 0.75
 
 [job.machine.spindle.Variable]
 min_rpm = 8000.0

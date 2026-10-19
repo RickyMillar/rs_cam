@@ -203,7 +203,12 @@ pub struct GrblImport {
     pub max_spindle_rpm: Option<f64>,
     /// Count of `$N` settings seen but not consumed — lets the UI note
     /// "imported N of M settings" without pretending it used them all.
+    /// F202: a `$32` or `$341` value outside its enum counts here too.
     pub ignored_count: usize,
+    /// F202: each `$32` / `$341` value the import did not know. The field
+    /// stays `None` and the setting counts in [`Self::ignored_count`]; the
+    /// import never reads an unknown mode as a known one.
+    pub unknown_values: Vec<crate::machine::UnknownSettingValue>,
     /// G10: the controller facts the export reads: the firmware (from the
     /// welcome line or `$I`), `$30 $31 $32 $340 $341 $342 $394`, and the
     /// mist output (from `$I`). [`Self::apply_to`] merges them into
@@ -460,7 +465,7 @@ impl MachineKinematics {
         const KNOWN: [u32; 15] = [
             11, 12, 30, 31, 32, 110, 111, 112, 120, 121, 122, 340, 341, 342, 394,
         ];
-        let ignored_count = map.keys().filter(|k| !KNOWN.contains(k)).count();
+        let mut ignored_count = map.keys().filter(|k| !KNOWN.contains(k)).count();
 
         let (ax, ay, az) = (
             map.get(&120).copied(),
@@ -501,13 +506,19 @@ impl MachineKinematics {
                 .filter(|v| v.is_finite() && *v >= 0.0 && v.fract() == 0.0)
                 .map(|v| v as u32)
         };
+        // F202: a mode the enum does not name stays `None`, counts as
+        // ignored and is listed. It is never read as a known mode.
+        let mut unknown_values = Vec::new();
+        let mode = typed_mode(as_int(32), &mut unknown_values);
+        let tool_change_mode = typed_mode(as_int(341), &mut unknown_values);
+        ignored_count += unknown_values.len();
         let controller = crate::machine::ControllerSettings {
             firmware: detect_firmware(dump),
             rpm_max: map.get(&30).copied(),
             rpm_min: map.get(&31).copied(),
-            mode: as_int(32),
+            mode,
             spindle_at_speed_tolerance_pct: map.get(&340).copied(),
-            tool_change_mode: as_int(341),
+            tool_change_mode,
             tool_change_probing_distance_mm: map.get(&342).copied(),
             spindle_on_delay_s: map.get(&394).copied(),
             mist_output: detect_mist_output(dump),
@@ -524,9 +535,28 @@ impl MachineKinematics {
             arc_tolerance_mm: map.get(&12).copied(),
             max_spindle_rpm: map.get(&30).copied(),
             ignored_count,
+            unknown_values,
             controller,
         }
     }
+}
+
+/// F202: turn a `$N` integer into its enum. A value the enum does not name
+/// is pushed onto `unknown` and gives `None`.
+fn typed_mode<T>(
+    value: Option<u32>,
+    unknown: &mut Vec<crate::machine::UnknownSettingValue>,
+) -> Option<T>
+where
+    T: TryFrom<u32, Error = crate::machine::UnknownSettingValue>,
+{
+    value.and_then(|v| match T::try_from(v) {
+        Ok(mode) => Some(mode),
+        Err(refused) => {
+            unknown.push(refused);
+            None
+        }
+    })
 }
 
 /// G10: the firmware a pasted console text names.
@@ -2160,9 +2190,14 @@ $130=845.000\n$131=850.000\n$132=95.000\n";
         assert_eq!(c.firmware, ControllerFirmware::GrblHal);
         assert_eq!(c.rpm_max, Some(1_000.0));
         assert_eq!(c.rpm_min, Some(0.0));
-        assert_eq!(c.mode, Some(0));
+        assert_eq!(c.mode, Some(crate::machine::ControllerMode::Normal));
         assert_eq!(c.spindle_at_speed_tolerance_pct, Some(5.0));
-        assert_eq!(c.tool_change_mode, Some(0), "$341=0: normal mode");
+        assert_eq!(
+            c.tool_change_mode,
+            Some(crate::machine::ControllerToolChangeMode::Normal),
+            "$341=0: normal mode"
+        );
+        assert!(imp.unknown_values.is_empty());
         assert_eq!(c.tool_change_probing_distance_mm, Some(30.0));
         assert_eq!(c.spindle_on_delay_s, Some(0.0));
         assert_eq!(c.mist_output, Some(true), "[OPT:VNMHSL2,...] lists M");
@@ -2184,6 +2219,27 @@ $130=845.000\n$131=850.000\n$132=95.000\n";
         // `$341=4`: the board ignores M6.
         let ignore = MachineKinematics::from_grbl_settings("$341=4\n");
         assert!(ignore.controller.ignores_m6());
+
+        // F202: `$341=5` and `$32=7` name no mode. Each stays unknown,
+        // counts as ignored and is listed; neither reads as a known mode.
+        let unknown = MachineKinematics::from_grbl_settings("$341=5\n$32=7\n");
+        assert_eq!(unknown.controller.tool_change_mode, None);
+        assert_eq!(unknown.controller.mode, None);
+        assert!(!unknown.controller.ignores_m6());
+        assert_eq!(unknown.ignored_count, 2);
+        assert_eq!(
+            unknown.unknown_values,
+            vec![
+                crate::machine::UnknownSettingValue {
+                    setting: 32,
+                    value: 7
+                },
+                crate::machine::UnknownSettingValue {
+                    setting: 341,
+                    value: 5
+                },
+            ]
+        );
     }
 
     /// G5: a PWM spindle (SYNTHETIC `$I`: option letters, no spindle
