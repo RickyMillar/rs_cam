@@ -382,7 +382,7 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
 | P1 open paths | done (operator look pending) | bba80b4d, 2bf0132c | G-OPGOLDEN unchanged; lead ruling: an open Trace path gets no lead extension past its ends |
 | P2 selection core | done (operator look pending) | P2.5 5d906b48, P2.6 1e2ec0c4, P2.7 89df3283 | 349b3a48, e041d244, 4b6353b9, P2.3b | D5 (Face onto Items) deferred to P4: needs a region-offset adapter and a new is_stock_based rule; selection_dropped reports non-default drops only (lead: a default is no user work). P2.3c open: hole_selection runs per frame (cache in P2.4); viewport pick tests model XY but markers draw in the setup frame (pre-existing defect: fix in P2.6 TogglePick); operator look: a click under "every hole" now excludes that hole | P2.1: bridges byte-equal on 25 drawings; open: hand-built test drawings are not nested (check in P2.2) |
 | P3 depth refs | waiting on operator D9 | | G-BOTTOMPIN: a pin can sit below the op depth (-20 vs a 6 mm pocket), so honouring it cuts deeper: operator rules |
-| P4 UI + sources | P4.0 probe, P4.1-P4.9 done (P4.8 without the SVG scale default); operator demo seen 2026-10-20 | 1ca93935, 229eb719, c223d7c4, 9bdfac8e, 3373d8d2, 099d946b, 22cb38fa, 8f5723e3, a53e0cf5 | next: P4.D demo fixes, then the SVG full fix (O-2), P4.10; SVG fix waits for the operator |
+| P4 UI + sources | P4.0 probe, P4.1-P4.9 and P4.D done (P4.8 without the SVG scale default); operator demo seen 2026-10-20 | 1ca93935, 229eb719, c223d7c4, 9bdfac8e, 3373d8d2, 099d946b, 22cb38fa, 8f5723e3, a53e0cf5, 30e9a146 | next: the SVG full fix (O-2), P4.10, then P3 (D9); SVG fix waits for the operator |
 | P5 tabs | done (operator look pending) | e76f82c8, P5b | GUI viewport tab editor -> P4. Lead ruling P5b: tab_width = the material bridge (today bridge = width - D: default leaves none); tab_height holds on every level |
 | P6 open paths, holes | blocked on P2 | | |
 | P7 templates | blocked on P4 | | |
@@ -486,3 +486,12 @@ after P4.9, before the push:
 Parked by the operator ("we can work on that later"): the kind filter in
 pick mode and the `+ Rule` card is hard to understand. A follow-up after
 P4.10.
+- P4.D (30e9a146) accepted. L-8 is revised as above; P4_DESIGN.md
+  section 4 row L-8 ("a notice, no edit") is superseded by this note.
+  Accepted: a click keeps the stored `enabled` of the boundary; a
+  shift-click on a non-Selection boundary still gives a notice; MCP has
+  no click act (`click_edit` is in core for a later click tool); a
+  neutral drawing draws in the active setup frame. FOLLOW-UPS: a hidden
+  model can still be picked (`pick_model_face` does not read the eye);
+  the refused section shows two Pick buttons; the parked kind-filter
+  wording.
