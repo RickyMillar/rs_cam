@@ -13,9 +13,7 @@ use crate::compute::collision_check::{
 };
 use crate::compute::tool_config::ToolId;
 use crate::ids::ToolpathId;
-use crate::session::diagnostics_types::{
-    CUT_METRICS_NOT_MEASURED_NO_SIMULATION, CUT_METRICS_NOT_MEASURED_NO_TRACE,
-};
+use crate::session::diagnostics_types::CutMetricsNotMeasured;
 use crate::session::{
     ProjectDiagnostics, ProjectEvidence, ProjectSession, SessionError, ToolpathDiagnostic, Verdict,
     VerdictEvidence, VerdictKind, VerdictSeverity,
@@ -782,6 +780,43 @@ impl ProjectSession {
         let Some(trace) = evidence.cut_trace else {
             return crate::stock::sim_triage::SimulationTriage::default();
         };
+        let project_diagnostics = self.diagnostics_with_evidence(evidence);
+        self.triage_with_report_from_parts(evidence, trace, report, &project_diagnostics)
+    }
+
+    /// [`Self::simulation_triage_with_report`] plus the project verdict of
+    /// the same diagnostics build (F113). The GUI simulation header caches
+    /// both on one key, so it builds the project diagnostics once.
+    ///
+    /// With no cut trace the triage is the empty default, and the verdict
+    /// still reads the collision evidence.
+    pub fn verdict_and_triage_with_report(
+        &self,
+        evidence: &ProjectEvidence<'_>,
+        report: &crate::tool_load::ToolLoadReport,
+    ) -> (
+        crate::session::ProjectVerdict,
+        crate::stock::sim_triage::SimulationTriage,
+    ) {
+        let project_diagnostics = self.diagnostics_with_evidence(evidence);
+        let triage = match evidence.cut_trace {
+            Some(trace) => {
+                self.triage_with_report_from_parts(evidence, trace, report, &project_diagnostics)
+            }
+            None => crate::stock::sim_triage::SimulationTriage::default(),
+        };
+        (project_diagnostics.verdict(), triage)
+    }
+
+    /// The kinematic readings of `report`, plus the session's own reading
+    /// of each enabled row the report leaves out, then the triage.
+    fn triage_with_report_from_parts(
+        &self,
+        evidence: &ProjectEvidence<'_>,
+        trace: &crate::stock::simulation_cut::SimulationCutTrace,
+        report: &crate::tool_load::ToolLoadReport,
+        project_diagnostics: &ProjectDiagnostics,
+    ) -> crate::stock::sim_triage::SimulationTriage {
         let in_report: std::collections::BTreeSet<ToolpathId> = report
             .per_toolpath
             .iter()
@@ -803,8 +838,7 @@ impl ProjectSession {
             })
             .chain(missing.iter().map(|util| (util.toolpath_id, util)))
             .collect();
-        let project_diagnostics = self.diagnostics_with_evidence(evidence);
-        self.triage_from_parts(evidence, trace, &project_diagnostics, &kinematics)
+        self.triage_from_parts(evidence, trace, project_diagnostics, &kinematics)
     }
 
     /// The one triage assembly behind [`Self::simulation_triage_with_diagnostics`]
@@ -926,7 +960,6 @@ impl ProjectSession {
         let mut per_toolpath = Vec::new();
         let mut total_collision_count: usize = 0;
         let mut collision_checks_failed: usize = 0;
-        let mut total_rapid_collision_count: usize = 0;
 
         // Per-TP context collected in the toolpath loop for later verdict
         // emission. We index by `toolpath_id` (which equals `tc.id`).
@@ -938,8 +971,13 @@ impl ProjectSession {
 
         // G-RAPIDFRAME: ONE attribution gives the count and the worst hit
         // of each toolpath. See `rapid_attribution_by_toolpath`.
-        let rapid_by_toolpath =
-            rapid_attribution_by_toolpath(&evidence.attributed_rapid_collisions());
+        let attributed_rapid = evidence.attributed_rapid_collisions();
+        let rapid_by_toolpath = rapid_attribution_by_toolpath(&attributed_rapid);
+        // F113: the project total counts EVERY hit of the evidence. A hit
+        // that no boundary holds, or that sits on a toolpath with no result,
+        // is still a rapid through the stock; the per-toolpath sum dropped
+        // it, and the MCP verdict (which counted every hit) disagreed.
+        let total_rapid_collision_count = attributed_rapid.len();
 
         for (idx, tc) in self.toolpath_configs.iter().enumerate() {
             if let Some(result) = self.results.get(&idx) {
@@ -948,7 +986,6 @@ impl ProjectSession {
                 // already merges them.
                 let rapid = rapid_by_toolpath.get(&tc.id).copied().unwrap_or_default();
                 let rapid_count = rapid.count;
-                total_rapid_collision_count += rapid_count;
 
                 // The verdict depends on the count only. The worst hit only
                 // adds detail to the headline, so a missing worst hit never
@@ -1110,9 +1147,9 @@ impl ProjectSession {
         let cut_metrics_not_measured = if trace_figures.is_some() {
             None
         } else if self.simulation.is_some() || !evidence.boundaries.is_empty() {
-            Some(CUT_METRICS_NOT_MEASURED_NO_TRACE)
+            Some(CutMetricsNotMeasured::NoTrace)
         } else {
-            Some(CUT_METRICS_NOT_MEASURED_NO_SIMULATION)
+            Some(CutMetricsNotMeasured::NoSimulation)
         };
 
         // Per-TP op-kind-aware air-cut warnings. A blanket project-wide

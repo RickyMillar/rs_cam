@@ -49,7 +49,7 @@ impl SimulationState {
     /// parts beside the report key, and the evidence fingerprint.
     ///
     /// A build reads its kinematic rows from the load report
-    /// ([`ProjectSession::simulation_triage_with_report`]), so it does not
+    /// ([`ProjectSession::verdict_and_triage_with_report`]), so it does not
     /// analyse the moves again. It still walks the cut trace for the
     /// diagnostics and the triage. The inspector's measurability strip asks
     /// for it on every frame the Diagnostics header is open, so a hit must
@@ -60,35 +60,54 @@ impl SimulationState {
         &mut self,
         session: &ProjectSession,
     ) -> &rs_cam_core::stock::sim_triage::SimulationTriage {
+        self.refresh_triage_cache(session);
+        &self.debug.triage_cache.triage
+    }
+
+    /// The project verdict (F113) of the same diagnostics build as
+    /// [`Self::cached_simulation_triage`], on the same cache key. It is
+    /// core's [`rs_cam_core::session::ProjectDiagnostics::verdict`], the
+    /// answer the CLI summary and the MCP `get_diagnostics` reply give.
+    pub fn cached_project_verdict(
+        &mut self,
+        session: &ProjectSession,
+    ) -> Option<rs_cam_core::session::ProjectVerdict> {
+        self.refresh_triage_cache(session);
+        self.debug.triage_cache.verdict
+    }
+
+    /// Build the triage and the project verdict when the cache key moved.
+    fn refresh_triage_cache(&mut self, session: &ProjectSession) {
         let report = self.cached_load_report(session);
         let evidence_fp = self.evidence_fingerprint();
-        if !self
+        if self
             .debug
             .triage_cache
             .matches(&report, session, evidence_fp)
         {
-            let start = std::time::Instant::now();
-            // Scoped so the immutable `project_evidence` borrow of `self`
-            // ends before the cache write below.
-            let triage = {
-                let evidence = self.project_evidence();
-                session.simulation_triage_with_report(&evidence, &report)
-            };
-            let elapsed = start.elapsed();
-            if elapsed > std::time::Duration::from_millis(8) {
-                tracing::debug!(
-                    elapsed_ms = elapsed.as_secs_f64() * 1000.0,
-                    "slow simulation triage build"
-                );
-            }
-            let cache = &mut self.debug.triage_cache;
-            cache.report = Some(LoadReportStamp::of(&report));
-            cache.session = Some(TriageSessionKey::of(session));
-            cache.evidence_fp = evidence_fp;
-            cache.triage = triage;
-            cache.builds += 1;
+            return;
         }
-        &self.debug.triage_cache.triage
+        let start = std::time::Instant::now();
+        // Scoped so the immutable `project_evidence` borrow of `self`
+        // ends before the cache write below.
+        let (verdict, triage) = {
+            let evidence = self.project_evidence();
+            session.verdict_and_triage_with_report(&evidence, &report)
+        };
+        let elapsed = start.elapsed();
+        if elapsed > std::time::Duration::from_millis(8) {
+            tracing::debug!(
+                elapsed_ms = elapsed.as_secs_f64() * 1000.0,
+                "slow simulation triage build"
+            );
+        }
+        let cache = &mut self.debug.triage_cache;
+        cache.report = Some(LoadReportStamp::of(&report));
+        cache.session = Some(TriageSessionKey::of(session));
+        cache.evidence_fp = evidence_fp;
+        cache.triage = triage;
+        cache.verdict = Some(verdict);
+        cache.builds += 1;
     }
 
     /// Build the core [`ProjectEvidence`] borrow view from viz state.

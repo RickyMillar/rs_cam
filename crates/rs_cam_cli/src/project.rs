@@ -527,7 +527,7 @@ struct ProjectSummary {
     average_engagement: Option<f64>,
     /// Why the four cut-trace figures above are `null`. `null` when they
     /// are measured. The text is core's `ProjectDiagnostics` reason.
-    cut_metrics_not_measured: Option<&'static str>,
+    cut_metrics_not_measured: Option<rs_cam_core::session::CutMetricsNotMeasured>,
     /// Holder/shank collisions summed over the toolpaths whose check RAN.
     /// Read it with `collision_checks_failed` — a zero here means nothing on
     /// its own if some checks did not complete.
@@ -559,7 +559,9 @@ struct ProjectSummary {
     /// and whether it is the project file's value or `--resolution`.
     simulation_resolution: ResolutionUsed,
     per_toolpath: Vec<ToolpathSummaryEntry>,
-    verdict: String,
+    /// F113: core's project verdict, `{kind, <fields>, headline}`. The
+    /// same object the MCP `get_diagnostics` reply carries.
+    verdict: rs_cam_core::session::ProjectVerdict,
     /// Checkpoint K (g2) — the operating point `verdict` and every
     /// per-toolpath gate reading were taken at. Default flipped to
     /// `true` at (g1); `--no-adaptive-feed-modulation` opts out.
@@ -933,7 +935,11 @@ pub fn run_project_command(
     // reader sees the classes — safety, then actions, then a bounded
     // advisory list that says how much it withheld — rather than a single
     // string plus an unbounded pile of runs.
-    print_triage_report(&session.triage(), diag.cut_metrics_not_measured);
+    print_triage_report(
+        &session.triage(),
+        diag.cut_metrics_not_measured
+            .map(rs_cam_core::session::CutMetricsNotMeasured::as_str),
+    );
     let stock_change_rows = session.stock_change_rows();
     print_stock_changes(&stock_change_rows);
 
@@ -957,35 +963,9 @@ pub fn run_project_command(
         "off (--no-adaptive-feed-modulation)".to_owned()
     };
 
-    // A failed check outranks a clean count, because the count is only clean
-    // for the toolpaths that were actually checked. Ordered above the
-    // collision arm on purpose: "some checks did not run" is a statement about
-    // the evidence, and it must not be hidden by a finding from the rest of it.
-    let verdict = if !collision_check_failed.is_empty() {
-        format!(
-            "UNKNOWN: {} of {} toolpath collision checks failed — the collision \
-             result is incomplete",
-            collision_check_failed.len(),
-            tp_count
-        )
-    } else if total_collision_count > 0 {
-        format!(
-            "ERROR: {} holder/shank collisions detected",
-            total_collision_count
-        )
-    } else if diag.rapid_collision_count > 0 {
-        format!(
-            "WARNING: {} rapid-through-stock collisions",
-            diag.rapid_collision_count
-        )
-    } else if let Some(air_pct) = diag.air_cut_pct_of_total_runtime.filter(|pct| *pct > 40.0) {
-        // LH-1: the 40% band is on the TOTAL-runtime measure; the verdict
-        // string says so rather than shipping a bare "air cutting %".
-        // U2: an air cut that was not measured gives no verdict here.
-        format!("WARNING: {air_pct:.1}% air cutting of total runtime")
-    } else {
-        "OK".to_owned()
-    };
+    // F113: the project verdict is core's, the one ladder MCP and the GUI
+    // read. The CLI had its own copy of the ladder.
+    let verdict = diag.verdict();
 
     // CMP-25: the default-findings validator, on the one artifact a batch run
     // leaves behind. The adapter already turns these into `Diagnostic`s for
@@ -1023,7 +1003,7 @@ pub fn run_project_command(
         awaiting_prior_stock: blocked,
         simulation_resolution: resolution_used,
         per_toolpath,
-        verdict: verdict.clone(),
+        verdict,
         adaptive_feed_modulation,
         modulation_state: modulation_state.clone(),
         stock_changes: stock_change_rows
@@ -1124,7 +1104,17 @@ pub fn run_project_command(
             }
         }
         eprintln!("Adaptive feed modulation: {modulation_state}");
-        eprintln!("Verdict: {verdict}");
+        // F113: the exhaustive match gives the mark of each arm, the same
+        // mark the per-toolpath lines use. A new arm does not compile here
+        // until this surface says how it prints it.
+        let verdict_mark = match verdict {
+            rs_cam_core::session::ProjectVerdict::Unknown { .. }
+            | rs_cam_core::session::ProjectVerdict::Collisions { .. }
+            | rs_cam_core::session::ProjectVerdict::RapidCollisions { .. }
+            | rs_cam_core::session::ProjectVerdict::HighAirCut { .. } => "!",
+            rs_cam_core::session::ProjectVerdict::Ok => " ",
+        };
+        eprintln!("Verdict: [{verdict_mark}] {}", verdict.headline());
         eprintln!("Output: {}", output_dir.display());
     }
 

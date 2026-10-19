@@ -243,6 +243,26 @@ fn tool_op_compat_checks(
 
 // ── stepover ────────────────────────────────────────────────────────
 
+/// F117: the one stepover rule. `Some(stepover)` when `op` has a stepover
+/// wider than a tool of `diameter`.
+///
+/// Two adjacent passes leave an uncut strip of width
+/// `stepover − diameter`. The strip has a width only when
+/// `stepover > diameter`; at equality the passes meet. Suggest clamps a
+/// wider stepover to exactly the diameter
+/// (`feeds::suggest::invariants::clamp_stepover_to_diameter`), so equality
+/// is a value core writes itself. The GUI Generate gate refused it
+/// (`stepover >= diameter`, Pocket and Adaptive only) while core flagged
+/// `>` on every op and the CLI generated. The static check, the GUI gate
+/// and the Suggest clamp read this one function.
+///
+/// `None` for an op with no stepover, or a diameter that is not positive.
+#[must_use]
+pub fn stepover_exceeds_diameter(op: &OperationConfig, diameter: f64) -> Option<f64> {
+    let stepover = op.stepover()?;
+    (diameter > 0.0 && stepover > diameter).then_some(stepover)
+}
+
 fn stepover_checks(
     scope: &Scope,
     op: &OperationConfig,
@@ -258,7 +278,7 @@ fn stepover_checks(
         return out;
     }
 
-    if stepover > diameter {
+    if stepover_exceeds_diameter(op, diameter).is_some() {
         out.push(Diagnostic {
             id: DiagnosticId::from(ids::GEOM_STEPOVER_EXCEEDS_DIAMETER),
             scope: scope.clone(),

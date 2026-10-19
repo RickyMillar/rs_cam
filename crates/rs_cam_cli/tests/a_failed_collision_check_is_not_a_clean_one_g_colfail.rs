@@ -91,28 +91,46 @@ fn a_failed_check_is_not_rounded_to_ok_g_colfail() {
     );
 }
 
+/// F113 retarget: the verdict is core's `ProjectDiagnostics::verdict`, the
+/// one ladder the CLI, MCP and the GUI read. The roll-up must test the
+/// failed set BEFORE the collision count, so "some checks did not run" is
+/// not hidden by a finding from the rest of the evidence.
 #[test]
 fn the_verdict_does_not_claim_ok_over_a_failed_check_g_colfail() {
+    use rs_cam_core::session::{ProjectDiagnostics, ProjectVerdict};
+
     let code = producer_source();
-
-    // The roll-up must test the failed set BEFORE the collision count, so
-    // "some checks did not run" is not hidden by a finding from the rest.
-    let verdict_at = code
-        .find("let verdict = ")
-        .expect("the verdict expression is gone");
-    let tail = &code[verdict_at..];
-    let failed_at = tail
-        .find("collision_check_failed")
-        .expect("the verdict no longer consults the failed-check set");
-    let count_at = tail
-        .find("total_collision_count")
-        .expect("the verdict no longer consults the collision count");
-
     assert!(
-        failed_at < count_at,
-        "the verdict tests the collision COUNT before it tests whether any \
-         check failed. A run with failed checks and no findings elsewhere \
-         would report a clean verdict."
+        code.contains("diag.verdict()"),
+        "the CLI no longer reads core's project verdict"
+    );
+    assert!(
+        !code.contains("holder/shank collisions detected"),
+        "the CLI holds its own verdict ladder again"
+    );
+
+    let diagnostics = ProjectDiagnostics {
+        total_runtime_s: Some(10.0),
+        air_cut_pct_of_total_runtime: Some(90.0),
+        air_cut_pct_of_cutting_time: Some(95.0),
+        average_engagement: Some(0.1),
+        cut_metrics_not_measured: None,
+        collision_count: 5,
+        collision_checks_failed: 1,
+        rapid_collision_count: 3,
+        per_toolpath: Vec::new(),
+        verdicts: Vec::new(),
+    };
+    assert!(
+        matches!(
+            diagnostics.verdict(),
+            ProjectVerdict::Unknown {
+                checks_failed: 1,
+                ..
+            }
+        ),
+        "a failed check must outrank the collision count: {:?}",
+        diagnostics.verdict()
     );
 }
 

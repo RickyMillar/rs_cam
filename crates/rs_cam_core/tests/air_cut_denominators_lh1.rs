@@ -269,12 +269,12 @@ fn no_surface_divides_air_cut_by_a_runtime_without_naming_it() {
             "crates/rs_cam_viz/src/ui/sim_diagnostics.rs",
             &["% of total runtime)", "{pct:.0}% of total runtime"],
         ),
+        // F181: the MCP `get_diagnostics` reply is the serialized core
+        // report, so its denominators are the names of the core fields
+        // (the `diagnostics_types.rs` row below).
         (
             "crates/rs_cam_viz/src/controller/events/compute.rs",
-            &[
-                "air_cut_pct_of_total_runtime",
-                "air_cut_pct_of_cutting_time",
-            ],
+            &["serde_json::to_value(&core_diagnostics)"],
         ),
         (
             "crates/rs_cam_viz/src/app/mcp/simulation.rs",
@@ -287,9 +287,15 @@ fn no_surface_divides_air_cut_by_a_runtime_without_naming_it() {
             "crates/rs_cam_cli/src/job.rs",
             &["% of total runtime", "% of cutting time"],
         ),
+        // F113: the project verdict headline moved from the CLI into
+        // core's `ProjectVerdict`, which the CLI and MCP both print.
         (
-            "crates/rs_cam_cli/src/project.rs",
-            &["air cutting of total runtime"],
+            "crates/rs_cam_core/src/session/diagnostics_types.rs",
+            &[
+                "air cutting of total runtime",
+                "pub air_cut_pct_of_total_runtime: Option<f64>",
+                "pub air_cut_pct_of_cutting_time: Option<f64>",
+            ],
         ),
     ];
 

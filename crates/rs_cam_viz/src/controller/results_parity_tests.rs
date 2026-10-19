@@ -433,3 +433,39 @@ fn mcp_get_diagnostics_collision_count_comes_from_evidence() {
         .expect("one per-toolpath row");
     assert_eq!(row["collision_count"].as_u64(), Some(1));
 }
+
+/// F181: MCP `get_diagnostics` carries every top-level key of the core
+/// `ProjectDiagnostics`, with the core value. The reply listed its keys by
+/// hand, so `verdicts` never reached the agent. The reply is now the
+/// serialized core report plus the viz-only keys; a new core field reaches
+/// the wire with no edit here.
+#[cfg(feature = "mcp")]
+#[test]
+fn mcp_get_diagnostics_carries_every_core_project_key_f181() {
+    let mut controller = parity_controller();
+    drain_one_result(&mut controller);
+
+    let core = {
+        let evidence = crate::app::mcp::viz_project_evidence(&controller.state);
+        let diagnostics = controller
+            .state
+            .session
+            .diagnostics_with_evidence(&evidence);
+        serde_json::to_value(&diagnostics).expect("the core report serialises")
+    };
+    let core = core.as_object().expect("an object");
+    // Non-vacuity: the core report names the key the hand list dropped.
+    assert!(core.contains_key("verdicts"), "{core:?}");
+
+    let diag = controller.build_mcp_diagnostics();
+    for (key, value) in core {
+        let published = diag
+            .get(key)
+            .unwrap_or_else(|| panic!("MCP get_diagnostics drops the core key `{key}`"));
+        // The per-toolpath rows carry the lane columns on top of the core
+        // row; every other key is the core value.
+        if key != "per_toolpath" {
+            assert_eq!(published, value, "`{key}` differs from core");
+        }
+    }
+}

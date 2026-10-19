@@ -624,6 +624,52 @@ mod tests {
         );
     }
 
+    /// F117: the GUI Generate gate and core's static check read one
+    /// stepover rule, on every operation with a stepover. At equality
+    /// neither refuses (Suggest writes that value); above it both do. The
+    /// GUI refused `>=` on Pocket and Adaptive alone, and core flagged `>`
+    /// on every op.
+    #[test]
+    fn the_gui_gate_and_core_read_one_stepover_rule_f117() {
+        use rs_cam_core::diagnostics::adapters::from_static_checks::diagnostics_from_static_checks;
+        use rs_cam_core::diagnostics::ids::GEOM_STEPOVER_EXCEEDS_DIAMETER;
+
+        const DIAMETER: f64 = 6.0;
+        let tool = sample_tool(ToolId(1), ToolType::EndMill, DIAMETER);
+        let session = ProjectSessionBuilder::new()
+            .tool(tool.clone())
+            .model(session_mesh_model(2))
+            .build();
+        let ctx = ToolpathValidationContext::from_session(&session);
+
+        let mut checked = 0;
+        for &op_type in OperationType::ALL {
+            let mut op = OperationConfig::new_default(op_type);
+            if op.stepover().is_none() {
+                continue;
+            }
+            checked += 1;
+            for (stepover, refused) in [(DIAMETER, false), (DIAMETER * 1.5, true)] {
+                assert!(op.set_stepover(stepover));
+                let tc = make_session_toolpath_config("Op", 1, 2, op.clone());
+                let gui = validate_toolpath_config(&tc, &ctx)
+                    .iter()
+                    .any(|e| e == super::registry::STEPOVER_EXCEEDS_DIAMETER_REFUSAL);
+                let core = diagnostics_from_static_checks(tc.id, &op, &tool, None)
+                    .iter()
+                    .any(|d| d.id.as_str() == GEOM_STEPOVER_EXCEEDS_DIAMETER);
+                assert_eq!(
+                    (gui, core),
+                    (refused, refused),
+                    "{op_type:?} at stepover {stepover} on a {DIAMETER} mm tool: \
+                     the GUI gate and core must give one answer"
+                );
+            }
+        }
+        // Non-vacuity: Pocket and Adaptive and at least one other op.
+        assert!(checked > 2, "only {checked} ops carry a stepover");
+    }
+
     /// A drawing with one circle-centre target — what a DXF with a `CIRCLE`
     /// entity imports to.
     fn session_target_model(id: usize) -> rs_cam_core::session::LoadedModel {

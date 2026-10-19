@@ -62,6 +62,34 @@ pub enum SimulationIssueKind {
     HolderCollision,
 }
 
+/// Where the Warnings tab lists an issue kind (F189).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IssueCluster {
+    /// A "Must address" row, in `rank` order (0 first).
+    MustAddress { rank: u8 },
+    /// An "Informational" row: a share of runtime, not a defect count.
+    Informational,
+}
+
+impl SimulationIssueKind {
+    /// The cluster of this kind. The match is exhaustive: a new kind does
+    /// not compile until it names its cluster. R-4 (census §3.5 D3) found
+    /// `Annotation` in neither of the two hand lists this replaces, so the
+    /// panel dropped it in silence.
+    #[must_use]
+    pub const fn cluster(self) -> IssueCluster {
+        match self {
+            Self::RapidCollision => IssueCluster::MustAddress { rank: 0 },
+            Self::HolderCollision => IssueCluster::MustAddress { rank: 1 },
+            Self::Hotspot => IssueCluster::MustAddress { rank: 2 },
+            // A curated, generator-authored note: beside the must-address
+            // rows, last, so it cannot outrank a collision.
+            Self::Annotation => IssueCluster::MustAddress { rank: 3 },
+            Self::LowEngagement | Self::AirCut => IssueCluster::Informational,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SimulationIssue {
     pub kind: SimulationIssueKind,
@@ -498,6 +526,9 @@ pub(crate) struct SimulationTriageCache {
     /// inputs — see [`SimulationState::evidence_fingerprint`].
     pub(crate) evidence_fp: u64,
     pub(crate) triage: rs_cam_core::stock::sim_triage::SimulationTriage,
+    /// The project verdict of the same diagnostics build (F113). `None`
+    /// before the first build.
+    pub(crate) verdict: Option<rs_cam_core::session::ProjectVerdict>,
     /// How many times the cache built a triage. Read by the sentries.
     pub(crate) builds: u64,
 }

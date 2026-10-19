@@ -361,11 +361,15 @@ fn clamp_stepover_to_diameter(
     tool: &ToolConfig,
 ) -> Vec<SuggestWarning> {
     let mut warnings = Vec::new();
-    if let Some(stepover) = operation.stepover()
+    // F117: the one stepover rule, the same the static check and the GUI
+    // Generate gate read.
+    if let Some(stepover) =
+        crate::diagnostics::adapters::from_static_checks::stepover_exceeds_diameter(
+            operation,
+            tool.diameter,
+        )
         && stepover.is_finite()
         && tool.diameter.is_finite()
-        && tool.diameter > 0.0
-        && stepover > tool.diameter
     {
         operation.set_stepover(tool.diameter);
         warnings.push(SuggestWarning::StepoverClampedToToolDiameter {

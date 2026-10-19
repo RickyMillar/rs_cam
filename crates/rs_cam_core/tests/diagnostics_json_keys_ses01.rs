@@ -38,7 +38,8 @@
 use rs_cam_core::ToolpathId;
 use rs_cam_core::finish::unified_finish::MonotoneCellTotals;
 use rs_cam_core::session::{
-    ProjectDiagnostics, ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind, VerdictSeverity,
+    CutMetricsNotMeasured, ProjectDiagnostics, ToolpathDiagnostic, Verdict, VerdictEvidence,
+    VerdictKind, VerdictSeverity,
 };
 
 /// Every field carries a DISTINCT value, and every `Option` is `Some`.
@@ -52,7 +53,7 @@ fn populated() -> ProjectDiagnostics {
         air_cut_pct_of_total_runtime: Some(12.0),
         air_cut_pct_of_cutting_time: Some(13.0),
         average_engagement: Some(14.0),
-        cut_metrics_not_measured: Some("not measured"),
+        cut_metrics_not_measured: Some(CutMetricsNotMeasured::NoTrace),
         collision_count: 15,
         collision_checks_failed: 16,
         rapid_collision_count: 17,
@@ -109,7 +110,7 @@ const PINNED: &str = concat!(
     r#""air_cut_pct_of_total_runtime":12.0,"#,
     r#""air_cut_pct_of_cutting_time":13.0,"#,
     r#""average_engagement":14.0,"#,
-    r#""cut_metrics_not_measured":"not measured","#,
+    r#""cut_metrics_not_measured":"the simulation result holds no cut trace; re-run the simulation","#,
     r#""collision_count":15,"#,
     r#""collision_checks_failed":16,"#,
     r#""rapid_collision_count":17,"#,

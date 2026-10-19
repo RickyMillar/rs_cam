@@ -45,7 +45,8 @@ fn no_simulation_publishes_null_and_names_the_reason() {
     }
     let reason = diag
         .cut_metrics_not_measured
-        .expect("a NOT MEASURED figure names its reason");
+        .expect("a NOT MEASURED figure names its reason")
+        .as_str();
     assert!(reason.contains("no simulation"), "{reason}");
 
     let json = serde_json::to_value(&diag).expect("the diagnostics serialise");
@@ -78,7 +79,8 @@ fn a_trace_less_simulation_publishes_null_and_names_the_missing_trace() {
     }
     let reason = diag
         .cut_metrics_not_measured
-        .expect("a NOT MEASURED figure names its reason");
+        .expect("a NOT MEASURED figure names its reason")
+        .as_str();
     assert!(
         reason.contains("no cut trace"),
         "a run that exists must not read as `no simulation`: {reason}"

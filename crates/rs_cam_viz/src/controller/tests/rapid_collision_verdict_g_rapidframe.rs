@@ -345,3 +345,87 @@ fn a_holder_hit_on_the_second_toolpath_stays_on_it_g_rapidframe() {
         assert_eq!(hits[0]["local_move"].as_u64(), Some(3));
     }
 }
+
+// ── F113 (tech-debt review 2026-10-19): one project verdict ──────────────
+//
+// The MCP `get_diagnostics` ladder had no holder-collision arm. A project
+// with holder collisions and no rapid collision read `ERROR` in the CLI and
+// `OK` in MCP, beside a non-zero `collision_count` in the same reply.
+// `build_mcp_diagnostics` exists only under the `mcp` feature, so these
+// tests are gated on it.
+
+#[cfg(feature = "mcp")]
+/// Two generated toolpaths, an adopted run with no rapid collision, and a
+/// holder check that found one hit on the second toolpath.
+fn controller_with_one_holder_hit() -> AppController<ScriptedBackend> {
+    use rs_cam_core::stock::collision::{
+        AssemblySegment, CollisionEvent, CollisionKind, CollisionReport,
+    };
+    let (mut controller, _first, second) = controller_with_hits_on_second(&[]);
+    let checks = &mut controller.state.simulation.checks;
+    checks.collision_report = Some(CollisionReport {
+        collisions: vec![CollisionEvent {
+            move_index: 3,
+            position: P3::new(1.0, 1.0, -1.0),
+            penetration_depth: 0.5,
+            segment: AssemblySegment::Holder,
+            kind: CollisionKind::Workpiece,
+        }],
+        min_safe_stickout: 40.0,
+    });
+    checks.checked_scope.toolpath_id = Some(second);
+    checks.holder_collision_count = 1;
+    controller
+}
+
+#[cfg(feature = "mcp")]
+#[test]
+fn mcp_does_not_say_ok_over_a_holder_collision_f113() {
+    let controller = controller_with_one_holder_hit();
+    let diag = controller.build_mcp_diagnostics();
+
+    // Non-vacuity: the reply counts the hit and no rapid collision.
+    assert_eq!(diag["collision_count"].as_u64(), Some(1), "{diag:#}");
+    assert_eq!(diag["rapid_collision_count"].as_u64(), Some(0), "{diag:#}");
+
+    assert_eq!(
+        diag["verdict"]["kind"].as_str(),
+        Some("collisions"),
+        "{diag:#}"
+    );
+    let headline = diag["verdict"]["headline"]
+        .as_str()
+        .expect("the verdict carries its headline");
+    assert!(
+        headline.starts_with("ERROR"),
+        "a holder collision is an ERROR, as the CLI says, not {headline:?}"
+    );
+}
+
+/// The GUI header, the MCP reply and core give one verdict for one state.
+/// The CLI summary reads `ProjectDiagnostics::verdict` too; its evidence
+/// comes from its own holder sweep, so this fixture cannot inject it.
+#[cfg(feature = "mcp")]
+#[test]
+fn every_surface_reads_one_project_verdict_f113() {
+    use rs_cam_core::session::ProjectVerdict;
+
+    let mut controller = controller_with_one_holder_hit();
+    let core = {
+        let state = &controller.state;
+        let evidence = state.simulation.project_evidence();
+        state.session.diagnostics_with_evidence(&evidence).verdict()
+    };
+    assert_eq!(core, ProjectVerdict::Collisions { count: 1 });
+
+    let mcp = controller.build_mcp_diagnostics();
+    assert_eq!(
+        mcp["verdict"],
+        serde_json::to_value(core).expect("the verdict serialises"),
+        "MCP must publish core's verdict"
+    );
+
+    let state = &mut controller.state;
+    let gui = state.simulation.cached_project_verdict(&state.session);
+    assert_eq!(gui, Some(core), "the GUI header must read core's verdict");
+}

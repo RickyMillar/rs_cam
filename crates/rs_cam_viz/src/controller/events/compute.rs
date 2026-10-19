@@ -2431,105 +2431,42 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
 
-        // LH-1: publish BOTH air-cut denominators under names that say which
-        // is which. The verdict rule below and every
-        // `air_cut_high_threshold_pct` band are tuned against the
-        // total-runtime reading; the cutting-time reading - what
-        // `narrate_toolpath` prints for the same seconds - ships beside it
-        // under its own name. L10 retired the unnamed `air_cut_percentage`.
-        // See `MEASUREMENT_DOMAINS.md` LH-1.
-        //
-        // U2 (2026-10-01): with no cut trace the four figures are `null`, not
-        // 0.0. `null` means NOT MEASURED and 0.0 means measured and clean
-        // (the `get_diagnostics` contract). A trace-less run published 0 %
-        // air cut and 0 s runtime, which reads as a clean measurement.
-        // `cut_metrics_not_measured` names the reason beside them.
-        let trace_summary = self
-            .state
-            .simulation
-            .results
-            .as_ref()
-            .and_then(|sim_results| sim_results.cut_trace.as_ref())
-            .map(|ct| {
-                use rs_cam_core::stock::simulation_cut::AirCutRatios;
-                let s = &ct.summary;
-                (
-                    s.total_runtime_s,
-                    s.air_cut_pct_of_total_runtime(),
-                    s.air_cut_pct_of_cutting_time(),
-                    s.average_engagement,
-                )
-            });
-        let total_runtime_s = trace_summary.map(|t| t.0);
-        let air_cut_pct = trace_summary.map(|t| t.1);
-        let air_cut_pct_of_cutting = trace_summary.map(|t| t.2);
-        let avg_engagement = trace_summary.map(|t| t.3);
-        let cut_metrics_not_measured = match (&self.state.simulation.results, trace_summary) {
-            (_, Some(_)) => None,
-            (None, None) => Some("no simulation has run"),
-            (Some(_), None) => {
-                Some("the simulation result holds no cut trace; re-run the simulation")
+        // F181 / F048: the base object is the serialized core report, so
+        // every field of `ProjectDiagnostics` reaches the wire: both named
+        // air-cut denominators (LH-1), the four cut-trace figures as `null`
+        // when NOT MEASURED (U2) with `cut_metrics_not_measured` naming the
+        // reason, the holder pair `collision_count` / `collision_checks_failed`
+        // (CMP-14), `rapid_collision_count` and the structured `verdicts`.
+        // This surface listed the keys by hand, so `verdicts` never reached
+        // the agent and the totals were derived again from the view's trace.
+        // The keys below are the viz-only ones: the lane columns on each
+        // row, the GUI lane errors, the sequencing blocks and the verdict.
+        let mut resp = match serde_json::to_value(&core_diagnostics) {
+            Ok(value @ serde_json::Value::Object(_)) => value,
+            Ok(other) => {
+                return serde_json::json!({
+                    "error": format!("the project diagnostics serialised to {other}, not an object"),
+                });
+            }
+            Err(e) => {
+                return serde_json::json!({
+                    "error": format!("the project diagnostics did not serialise: {e}"),
+                });
             }
         };
-
-        let rapid_collision_count = self.state.simulation.checks.rapid_collisions.len();
-
-        // W5B-F4 (2026-08-21): 20 → 40. This bar and the GUI banner
-        // (`ui/sim_diagnostics.rs`) are the same number on two surfaces; the
-        // CLI shipped 40 on the same quantity, so the workspace carried two
-        // project constants at once. 20 fired on every reference project the
-        // repo has both before and after the swept-kernel flip, so it carried
-        // no information. Interim constant; the recommended end state is to
-        // derive this from the per-op offender list. Verdict flips: none.
-        // `planning/perf_review_2026-08-19/DELTA_w5b_f4_aircut_DECISION.md` §5.6.
-        // CMP-14 follow-up (2026-09-18): the failed-check arm goes FIRST,
-        // above every finding, and it reads UNKNOWN rather than WARNING —
-        // the same order and the same word the CLI uses
-        // (`rs_cam_cli/src/project.rs`). "Some checks did not run" is a
-        // statement about the EVIDENCE, and a finding from the rest of the
-        // evidence must not hide it. This surface said "OK" over an
-        // unmeasured holder check, which is the claim G-COLFAIL exists to
-        // stop.
-        let unknown_verdict;
-        let verdict = if core_diagnostics.collision_checks_failed > 0 {
-            unknown_verdict = format!(
-                "UNKNOWN: {} toolpath collision check(s) failed — the collision \
-                 result is incomplete",
-                core_diagnostics.collision_checks_failed
-            );
-            unknown_verdict.as_str()
-        } else if rapid_collision_count > 0 {
-            "WARNING: rapid collisions detected"
-        } else if air_cut_pct.is_some_and(|pct| pct > 40.0) {
-            "WARNING: high air cutting (>40% of total runtime)"
-        } else {
-            "OK"
-        };
-
-        let mut resp = serde_json::json!({
-            "total_runtime_s": total_runtime_s,
-            "air_cut_pct_of_total_runtime": air_cut_pct,
-            "air_cut_pct_of_cutting_time": air_cut_pct_of_cutting,
-            "average_engagement": avg_engagement,
-            "cut_metrics_not_measured": cut_metrics_not_measured,
-            // B-5: the holder-collision total, from the same evidence the
-            // per-toolpath rows and the triage read. It was a literal `0`
-            // here — a number that had never been measured, printed on the
-            // surface an agent reads as a safety tally (X-VAC).
-            "collision_count": core_diagnostics.collision_count,
-            // CMP-14 follow-up (2026-09-18): `collision_count` is a sum
-            // over the toolpaths whose check MEASURED. Without this
-            // number beside it, an agent reads a partial sum as the
-            // project's clean bill of health. The CLI and the core
-            // diagnostics carry the pair; the GUI's MCP surface carried
-            // only the first half.
-            "collision_checks_failed": core_diagnostics.collision_checks_failed,
-            "rapid_collision_count": rapid_collision_count,
-            "verdict": verdict,
-            "per_toolpath": per_toolpath,
-            "runtime_errors": runtime_errors,
-            "awaiting_prior_stock": awaiting_prior_stock,
-        });
+        // SAFETY: resp is a JSON object (the match above returns otherwise).
+        #[allow(clippy::indexing_slicing)]
+        {
+            resp["per_toolpath"] = serde_json::Value::Array(per_toolpath);
+            // F113: the project verdict is core's `ProjectDiagnostics::verdict`,
+            // the one ladder the CLI summary and the GUI header read. This
+            // surface held its own copy, with no holder-collision arm, so it
+            // said "OK" over holder collisions that the CLI called "ERROR".
+            resp["verdict"] = serde_json::json!(core_diagnostics.verdict());
+            resp["runtime_errors"] = serde_json::Value::Array(runtime_errors);
+            resp["awaiting_prior_stock"] = serde_json::Value::Array(awaiting_prior_stock);
+        }
+        let trace_measured = core_diagnostics.cut_metrics_not_measured.is_none();
 
         if let Some(ref sim_results) = self.state.simulation.results
             && let Some(ref ct) = sim_results.cut_trace
@@ -2565,7 +2502,7 @@ impl<B: ComputeBackend> AppController<B> {
             // U2: every class-D tally counts cut-trace samples. With no
             // trace the core type holds its `Default` zeros, so each tally
             // goes on the wire as `null` (NOT MEASURED), not 0.
-            if trace_summary.is_none()
+            if !trace_measured
                 && let Some(counts) = resp["triage"]
                     .get_mut("counts")
                     .and_then(serde_json::Value::as_object_mut)

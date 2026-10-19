@@ -74,8 +74,8 @@ pub use cycle_time::{
 // move.
 pub use dependencies::{Edge, EdgeKind, EdgeState};
 pub use diagnostics_types::{
-    ProjectDiagnostics, ProjectEvidence, ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind,
-    VerdictSeverity,
+    CutMetricsNotMeasured, PROJECT_AIR_CUT_BAR_PCT, ProjectDiagnostics, ProjectEvidence,
+    ProjectVerdict, ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind, VerdictSeverity,
 };
 pub use eval_context::SetupEvalContext;
 pub use load_report::LoadReportStamp;

@@ -11,14 +11,14 @@ use super::sim_debug::{
 use crate::state::freshness::simulation_freshness;
 use crate::state::runtime::GuiState;
 use crate::state::simulation::{
-    CUT_METRIC_ORDER, CutMetricCard, CutMetricSet, SimInspectorTab, SimulationIssueKind,
-    SimulationState,
+    CUT_METRIC_ORDER, CutMetricCard, CutMetricSet, IssueCluster, SimInspectorTab,
+    SimulationIssueKind, SimulationState,
 };
 use crate::state::toolpath::ToolpathId;
 use crate::ui::theme;
 use crate::ui::tokens;
 use crate::ui_command::{SimJumpToMoveArgs, UiCommand};
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{ProjectSession, ProjectVerdict};
 use rs_cam_core::tool_load::verdict::{
     BoundSource, ChipSide, ChiploadVerdict, CriterionKind, CriterionStatus, LoadState,
 };
@@ -74,10 +74,7 @@ pub fn draw(
     // 2026-10-13: "can we de-clutter by moving the sections into tabs.
     // default to showing cut metric graphs." The tab lives in
     // `SimulationState`, so it lasts while the app runs.
-    let badge = {
-        let triage = sim.cached_simulation_triage(session);
-        warnings_badge(triage.safety.len(), triage.actions.len())
-    };
+    let badge = warnings_badge_for(sim.cached_simulation_triage(session));
     let mut tab = sim.inspector_tab;
     let _ = TabStrip::new(&mut tab)
         .tab(SimInspectorTab::Metrics, SimInspectorTab::Metrics.label())
@@ -117,6 +114,27 @@ pub fn draw(
     // that told the operator where the display controls live. Pattern C of
     // `planning/ui_declutter_2026-09-14/PLAN.md` rules that nothing which
     // explains where a control lives survives.
+}
+
+/// The Warnings badge of `triage` (F189): the count of each class, from one
+/// exhaustive match, so a new class does not compile until it says whether
+/// the badge counts it.
+#[must_use]
+pub fn warnings_badge_for(
+    triage: &rs_cam_core::stock::sim_triage::SimulationTriage,
+) -> Option<TabBadge> {
+    use rs_cam_core::stock::sim_triage::TriageClass;
+    let (mut safety, mut actions) = (0, 0);
+    for finding in triage.findings() {
+        match finding.class {
+            TriageClass::Safety => safety += 1,
+            TriageClass::Action => actions += 1,
+            // The badge counts what to act on. An advisory is listed on the
+            // tab, not counted on its label.
+            TriageClass::Advisory => {}
+        }
+    }
+    warnings_badge(safety, actions)
 }
 
 /// The badge of the Warnings tab: the number of safety and action items of
@@ -300,7 +318,7 @@ fn draw_status_header(ui: &mut egui::Ui, sim: &mut SimulationState, session: &Pr
             .strong(),
     )
     .on_hover_text(verdict.hover);
-    draw_air_cut_caution(ui, sim);
+    draw_project_verdict_caption(ui, sim.cached_project_verdict(session));
     // Freshness chip — rendered here (not in the overview body) so it covers
     // the focused-card paths too (INS-005).
     // W4, G-FRESHNESSDISAGREE: this chip asks the core, so it cannot read
@@ -318,9 +336,9 @@ fn draw_status_header(ui: &mut egui::Ui, sim: &mut SimulationState, session: &Pr
     ui.separator();
 }
 
-/// The high-air-cutting caution, on the page.
+/// The project verdict caption, on the page (F113).
 ///
-/// # Why this is back
+/// # Why the high-air-cutting caution is here
 ///
 /// The declutter of 2026-09-14 deleted it, on the assumption that the
 /// triage-driven verdict line above had absorbed it. It had not. Air cut
@@ -330,37 +348,42 @@ fn draw_status_header(ui: &mut egui::Ui, sim: &mut SimulationState, session: &Pr
 /// judgement, which is the half an operator acts on.
 ///
 /// Caught by `air_cut_denominators_lh1`, a CORE test that scans this file.
-/// It went unseen for a day because the declutter ran `cargo test -p
-/// rs_cam_viz` and never the core gate.
 ///
-/// # Why the threshold is not recomputed here
+/// # Why the band is not here
 ///
-/// The share comes from [`AirCutRatios::air_cut_pct_of_total_runtime`], the
-/// measure the shipped thresholds are tuned against. The old banner divided
-/// by hand in the view, which is the pattern `rs_cam_viz/CLAUDE.md` bans.
-const HIGH_AIR_CUT_PCT: f64 = 40.0;
-
-fn draw_air_cut_caution(ui: &mut egui::Ui, sim: &SimulationState) {
-    use rs_cam_core::stock::simulation_cut::AirCutRatios;
-    let Some(trace) = sim.results.as_ref().and_then(|r| r.cut_trace.as_ref()) else {
+/// The caption reads core's [`ProjectVerdict`], the ladder the CLI summary
+/// and the MCP `get_diagnostics` reply read. This file held a copy of the
+/// 40 % band, and MCP held another with no holder-collision arm (F113).
+/// The match is exhaustive, so a new arm does not compile here until this
+/// page says how it shows it.
+fn draw_project_verdict_caption(ui: &mut egui::Ui, verdict: Option<ProjectVerdict>) {
+    let Some(verdict) = verdict else {
         return;
     };
-    let pct = trace.summary.air_cut_pct_of_total_runtime();
-    if pct <= HIGH_AIR_CUT_PCT {
-        return;
+    match verdict {
+        // The triage line above names each collision and each failed check
+        // as a safety finding. A second line for the same finding is noise.
+        ProjectVerdict::Unknown { .. }
+        | ProjectVerdict::Collisions { .. }
+        | ProjectVerdict::RapidCollisions { .. }
+        | ProjectVerdict::Ok => {}
+        ProjectVerdict::HighAirCut {
+            pct_of_total_runtime: pct,
+        } => {
+            ui.label(
+                egui::RichText::new(format!(
+                    "\u{26A0} High air cutting ({pct:.0}% of total runtime)"
+                ))
+                .small()
+                .color(theme::WARNING_MILD),
+            )
+            .on_hover_text(
+                "More than two fifths of the run is spent moving at cutting feed \
+                 without removing material. The toolpath may be crossing cleared \
+                 ground; check the linking strategy and the stock model.",
+            );
+        }
     }
-    ui.label(
-        egui::RichText::new(format!(
-            "\u{26A0} High air cutting ({pct:.0}% of total runtime)"
-        ))
-        .small()
-        .color(theme::WARNING_MILD),
-    )
-    .on_hover_text(
-        "More than two fifths of the run is spent moving at cutting feed \
-         without removing material. The toolpath may be crossing cleared \
-         ground; check the linking strategy and the stock model.",
-    );
 }
 
 /// Hotspot card. Returns `Some(())` when drawn so the caller can early-return.
@@ -642,41 +665,35 @@ fn draw_warnings_tab(
     // `issue_count` row hid 24 800 air-cut "issues" alongside 14
     // hotspots, which makes the project look broken when most of the
     // count is emission noise.
-    let mut must_address: Vec<(SimulationIssueKind, usize)> = Vec::new();
+    //
+    // F189: the cluster is `SimulationIssueKind::cluster`, one exhaustive
+    // match, not two hand lists of kinds.
+    let mut must_address: Vec<(u8, SimulationIssueKind, usize)> = Vec::new();
     let mut informational: Vec<(SimulationIssueKind, usize)> = Vec::new();
-    let kinds_must = [
-        SimulationIssueKind::RapidCollision,
-        SimulationIssueKind::HolderCollision,
-        SimulationIssueKind::Hotspot,
-        SimulationIssueKind::Annotation,
-    ];
-    // R-4 (census §3.5 D3): `Annotation` was in NEITHER list, so
-    // generation-time debug annotations reached this panel and were
-    // silently dropped — the one issue kind with no home. It is a
-    // curated, generator-authored note, so it belongs with the
-    // must-address cluster's neighbours rather than beside the
-    // per-run tallies; it is listed last there so it cannot outrank
-    // a collision.
-    let kinds_info = [
-        SimulationIssueKind::LowEngagement,
-        SimulationIssueKind::AirCut,
-    ];
-    for kind in kinds_must {
-        let count = issues.iter().filter(|i| i.kind == kind).count();
-        if count > 0 {
-            must_address.push((kind, count));
+    for issue in issues {
+        let kind = issue.kind;
+        match kind.cluster() {
+            IssueCluster::MustAddress { rank } => {
+                match must_address.iter_mut().find(|(_, k, _)| *k == kind) {
+                    Some(entry) => entry.2 += 1,
+                    None => must_address.push((rank, kind, 1)),
+                }
+            }
+            IssueCluster::Informational => {
+                match informational.iter_mut().find(|(k, _)| *k == kind) {
+                    Some(entry) => entry.1 += 1,
+                    None => informational.push((kind, 1)),
+                }
+            }
         }
     }
-    for kind in kinds_info {
-        let count = issues.iter().filter(|i| i.kind == kind).count();
-        informational.push((kind, count));
-    }
+    must_address.sort_by_key(|(rank, _, _)| *rank);
     if !must_address.is_empty() {
         // The severity is the status chip of each row, so the header
         // carries no colour of its own.
         SectionHeader::new("Must address").show(ui);
         DataTable::new("cut_overview_must_address")
-            .rows(must_address.iter().map(|(kind, count)| {
+            .rows(must_address.iter().map(|(_, kind, count)| {
                 DataRow::value(issue_kind_label(*kind), count.to_string())
                     .status(Role::Danger, "act")
             }))
@@ -864,9 +881,22 @@ fn draw_warnings_tab(
     }
 }
 
-/// The triage items the Warnings badge counts: safety, then actions, in
-/// the contract's own order. A row with a toolpath jumps to its worst move.
-/// A clear triage reads one "Nothing to act on" row.
+/// The role of a Warnings row of `class` (F189). The one exhaustive match:
+/// a new class does not compile until this tab says how it shows it.
+#[must_use]
+pub fn triage_row_role(class: rs_cam_core::stock::sim_triage::TriageClass) -> Role {
+    use rs_cam_core::stock::sim_triage::TriageClass;
+    match class {
+        TriageClass::Safety => Role::Danger,
+        TriageClass::Action => Role::Caution,
+        TriageClass::Advisory => Role::Info,
+    }
+}
+
+/// Every triage item, in the contract's own order: safety, then actions,
+/// then the capped advisories (F189: the tab read two of three buckets). A
+/// row with a toolpath jumps to its worst move. A clear triage reads one
+/// "Nothing to act on" row.
 fn draw_triage_rows(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
@@ -874,19 +904,12 @@ fn draw_triage_rows(
     events: &mut Vec<AppEvent>,
 ) {
     let mut targets: Vec<Option<(ToolpathId, usize)>> = Vec::new();
-    let rows: Vec<DataRow> = {
+    let (mut rows, hidden): (Vec<DataRow>, usize) = {
         let triage = sim.cached_simulation_triage(session);
-        triage
-            .safety
-            .iter()
-            .map(|finding| (Role::Danger, finding))
-            .chain(
-                triage
-                    .actions
-                    .iter()
-                    .map(|finding| (Role::Caution, finding)),
-            )
-            .map(|(role, finding)| {
+        let rows = triage
+            .findings()
+            .map(|finding| {
+                let role = triage_row_role(finding.class);
                 let target = finding
                     .dedup_key
                     .toolpath_id
@@ -907,8 +930,16 @@ fn draw_triage_rows(
                     None => row.hover(format!("From the simulation triage{times}.")),
                 }
             })
-            .collect()
+            .collect();
+        (rows, triage.advisories.hidden())
     };
+    if hidden > 0 {
+        // The advisory cap says what it withheld (`Bounded`).
+        rows.push(DataRow::record(format!(
+            "\u{2026} +{hidden} more advisories (the cap withheld them)"
+        )));
+        targets.push(None);
+    }
     if rows.is_empty() {
         DataTable::new("warnings_triage_clear")
             .row(DataRow::note(Role::Ok, "Nothing to act on"))

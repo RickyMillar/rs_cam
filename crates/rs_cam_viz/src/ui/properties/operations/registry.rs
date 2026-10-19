@@ -164,6 +164,10 @@ pub(in crate::ui::properties) fn draw_editor_and_diagram(
 }
 
 /// The per-operation errors both validation entry points collect.
+/// The Generate refusal for a stepover wider than the tool (F117).
+pub(in crate::ui::properties) const STEPOVER_EXCEEDS_DIAMETER_REFUSAL: &str =
+    "Stepover must not exceed the tool diameter";
+
 pub(in crate::ui::properties) fn op_errors(
     op: &OperationConfig,
     cx: &OpValidateCtx<'_>,
@@ -173,6 +177,18 @@ pub(in crate::ui::properties) fn op_errors(
     // registry row, with the text the generator refuses with.
     if let Some(text) = op.op_type().tool_refusal(cx.tool.tool_type.cutter_kind()) {
         errs.push(text);
+    }
+    // F117: core's one stepover rule, on every operation with a stepover,
+    // as core's static check reads it. This gate refused
+    // `stepover >= diameter` on Pocket and Adaptive alone, while core
+    // flagged `>` on every op and the CLI generated.
+    if rs_cam_core::diagnostics::adapters::from_static_checks::stepover_exceeds_diameter(
+        op,
+        cx.tool.diameter,
+    )
+    .is_some()
+    {
+        errs.push(STEPOVER_EXCEEDS_DIAMETER_REFUSAL.to_owned());
     }
     if let Some(check) = row(op.op_type()).validate {
         check(op, cx, errs);
@@ -418,21 +434,6 @@ fn dia_inlay_plug(op: &OperationConfig, ui: &mut egui::Ui) {
 // this match — byte for byte, including the messages. One table, two
 // callers.
 
-fn val_stepover_under_diameter(
-    op: &OperationConfig,
-    cx: &OpValidateCtx<'_>,
-    errs: &mut Vec<String>,
-) {
-    let stepover = match op {
-        OperationConfig::Pocket(c) => c.stepover,
-        OperationConfig::Adaptive(c) => c.stepover,
-        _ => return,
-    };
-    if stepover >= cx.tool.diameter {
-        errs.push("Stepover must be less than tool diameter".into());
-    }
-}
-
 fn val_drill(op: &OperationConfig, cx: &OpValidateCtx<'_>, errs: &mut Vec<String>) {
     let OperationConfig::Drill(_) = op else {
         return;
@@ -457,7 +458,7 @@ pub const OP_UI_ROWS: &[OpUiRow] = &[
         op: OperationType::Pocket,
         draw: ed_pocket,
         diagram: OpDiagram::Stepover,
-        validate: Some(val_stepover_under_diameter),
+        validate: None,
     },
     OpUiRow {
         op: OperationType::Profile,
@@ -469,7 +470,7 @@ pub const OP_UI_ROWS: &[OpUiRow] = &[
         op: OperationType::Adaptive,
         draw: ed_adaptive,
         diagram: OpDiagram::Draw(dia_adaptive),
-        validate: Some(val_stepover_under_diameter),
+        validate: None,
     },
     OpUiRow {
         op: OperationType::VCarve,

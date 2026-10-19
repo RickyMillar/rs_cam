@@ -325,23 +325,46 @@ pub struct Verdict {
     pub evidence: VerdictEvidence,
 }
 
-/// Why the cut-trace figures of a [`ProjectDiagnostics`] are `None`, when
-/// no simulation exists.
+/// Why the cut-trace figures of a [`ProjectDiagnostics`] are `None` (F048).
 ///
-/// The MCP `get_diagnostics` response publishes the same text under the
-/// same key (`cut_metrics_not_measured`), so that two surfaces give one
-/// answer for one project state.
-pub(crate) const CUT_METRICS_NOT_MEASURED_NO_SIMULATION: &str = "no simulation has run";
+/// The MCP `get_diagnostics` reply and the CLI summary publish the core
+/// value under the same key (`cut_metrics_not_measured`), so two surfaces
+/// give one answer for one project state. The text was a `pub(crate)`
+/// string, and the viz copied it as a literal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CutMetricsNotMeasured {
+    /// No simulation exists.
+    NoSimulation,
+    /// A simulation exists, and it kept no cut trace (U2, 2026-10-01).
+    /// Every simulation captures the trace on every surface (operator
+    /// ruling 2026-10-02, "always capture"), so this marks evidence that a
+    /// caller built without one. The text names no control: no capture
+    /// control exists.
+    NoTrace,
+}
 
-/// Why the cut-trace figures of a [`ProjectDiagnostics`] are `None`, when a
-/// simulation exists but it kept no cut trace (U2, 2026-10-01).
-///
-/// Every simulation captures the trace on every surface (operator ruling
-/// 2026-10-02, "always capture"), so this marks evidence that a caller
-/// built without one. The text names no control: no capture control
-/// exists.
-pub(crate) const CUT_METRICS_NOT_MEASURED_NO_TRACE: &str =
-    "the simulation result holds no cut trace; re-run the simulation";
+impl CutMetricsNotMeasured {
+    /// The wire text.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NoSimulation => "no simulation has run",
+            Self::NoTrace => "the simulation result holds no cut trace; re-run the simulation",
+        }
+    }
+}
+
+impl std::fmt::Display for CutMetricsNotMeasured {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The wire form is the text of [`CutMetricsNotMeasured::as_str`].
+impl serde::Serialize for CutMetricsNotMeasured {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
 
 /// Project-level diagnostics summary.
 ///
@@ -372,11 +395,9 @@ pub struct ProjectDiagnostics {
     /// Mean engagement over the cut trace. `None` when the evidence has no
     /// cut trace.
     pub average_engagement: Option<f64>,
-    /// Why the four cut-trace figures above are `None`:
-    /// `CUT_METRICS_NOT_MEASURED_NO_SIMULATION` or
-    /// `CUT_METRICS_NOT_MEASURED_NO_TRACE`. `None` when the figures are
-    /// measured.
-    pub cut_metrics_not_measured: Option<&'static str>,
+    /// Why the four cut-trace figures above are `None`. `None` when the
+    /// figures are measured.
+    pub cut_metrics_not_measured: Option<CutMetricsNotMeasured>,
     /// Holder/shank collisions summed over every toolpath the evidence
     /// MEASURED. It is not the whole project's answer unless
     /// [`Self::collision_checks_failed`] is zero — read the two together.
@@ -385,11 +406,168 @@ pub struct ProjectDiagnostics {
     /// means [`Self::collision_count`] is a partial sum and the project
     /// has no clean bill of health. The CLI carries the same pair.
     pub collision_checks_failed: usize,
+    /// Every rapid-through-stock collision of the evidence (F113). A hit
+    /// that no toolpath boundary holds, or that sits on a toolpath with no
+    /// current result, is in this total and in no `per_toolpath` row, so
+    /// the rows can sum to less. The triage lists every hit too.
     pub rapid_collision_count: usize,
     pub per_toolpath: Vec<ToolpathDiagnostic>,
     /// Severity-ranked list of structured verdicts (critical → polish).
     /// Empty when the project has no findings.
     pub verdicts: Vec<Verdict>,
+}
+
+/// The project air-cut band of [`ProjectVerdict::HighAirCut`], on the
+/// total-runtime measure (LH-1).
+///
+/// W5B-F4 (2026-08-21) set the CLI verdict, the MCP verdict and the GUI
+/// banner to 40, the same number as the clearing bar
+/// (`planning/perf_review_2026-08-19/DELTA_w5b_f4_aircut_DECISION.md`
+/// §5.6). The band is that bar, so it is derived from it here, not typed
+/// again.
+pub const PROJECT_AIR_CUT_BAR_PCT: f64 = crate::compute::catalog::AIR_CUT_BAR_CLEARING_PCT;
+
+/// The one project verdict (F113). The CLI summary, the MCP
+/// `get_diagnostics` reply and the GUI simulation header read it from
+/// [`ProjectDiagnostics::verdict`]. Each surface matches it exhaustively,
+/// so a new arm is a compile error on every surface.
+///
+/// The arms are in ladder order. The first arm that holds is the verdict:
+/// a failed check outranks every finding, because "some checks did not
+/// run" is a statement about the evidence (CMP-14, G-COLFAIL).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ProjectVerdict {
+    /// Some holder/shank checks failed, so the collision answer is
+    /// incomplete. `toolpaths` is the count of toolpaths with a result.
+    Unknown {
+        checks_failed: usize,
+        toolpaths: usize,
+    },
+    /// Holder/shank and obstacle collisions
+    /// ([`ProjectDiagnostics::collision_count`]).
+    Collisions { count: usize },
+    /// Rapid-through-stock collisions.
+    RapidCollisions { count: usize },
+    /// The air-cut share of total runtime is above
+    /// [`PROJECT_AIR_CUT_BAR_PCT`]. An air cut that was not measured gives
+    /// no verdict (U2).
+    HighAirCut { pct_of_total_runtime: f64 },
+    /// No arm above holds.
+    Ok,
+}
+
+impl ProjectVerdict {
+    /// The stable tag, for a reader that branches without the headline.
+    pub fn kind(self) -> &'static str {
+        match self {
+            Self::Unknown { .. } => "unknown",
+            Self::Collisions { .. } => "collisions",
+            Self::RapidCollisions { .. } => "rapid_collisions",
+            Self::HighAirCut { .. } => "high_air_cut",
+            Self::Ok => "ok",
+        }
+    }
+
+    /// The one-line text the CLI prints and the MCP reply carries.
+    pub fn headline(self) -> String {
+        match self {
+            Self::Unknown {
+                checks_failed,
+                toolpaths,
+            } => format!(
+                "UNKNOWN: {checks_failed} of {toolpaths} toolpath collision checks failed \
+                 \u{2014} the collision result is incomplete"
+            ),
+            Self::Collisions { count } => {
+                format!("ERROR: {count} holder/shank or obstacle collisions detected")
+            }
+            Self::RapidCollisions { count } => {
+                format!("WARNING: {count} rapid-through-stock collisions")
+            }
+            // LH-1: the band is on the TOTAL-runtime measure, and the text
+            // says so.
+            Self::HighAirCut {
+                pct_of_total_runtime,
+            } => format!("WARNING: {pct_of_total_runtime:.1}% air cutting of total runtime"),
+            Self::Ok => "OK".to_owned(),
+        }
+    }
+}
+
+/// The wire form: `{"kind": …, <the arm's fields>, "headline": …}`.
+impl serde::Serialize for ProjectVerdict {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("kind", self.kind())?;
+        match *self {
+            Self::Unknown {
+                checks_failed,
+                toolpaths,
+            } => {
+                map.serialize_entry("checks_failed", &checks_failed)?;
+                map.serialize_entry("toolpaths", &toolpaths)?;
+            }
+            Self::Collisions { count } | Self::RapidCollisions { count } => {
+                map.serialize_entry("count", &count)?;
+            }
+            Self::HighAirCut {
+                pct_of_total_runtime,
+            } => {
+                map.serialize_entry("pct_of_total_runtime", &pct_of_total_runtime)?;
+            }
+            Self::Ok => {}
+        }
+        map.serialize_entry("headline", &self.headline())?;
+        map.end()
+    }
+}
+
+impl ProjectDiagnostics {
+    /// The project verdict (F113): the one ladder every surface reads.
+    ///
+    /// The destructure names every field and has no rest pattern, so a new
+    /// field does not compile here until someone decides whether the
+    /// verdict reads it.
+    pub fn verdict(&self) -> ProjectVerdict {
+        let Self {
+            total_runtime_s: _,
+            air_cut_pct_of_total_runtime,
+            // The cutting-time reading has no threshold (LH-1).
+            air_cut_pct_of_cutting_time: _,
+            average_engagement: _,
+            // A trace-less run has a `None` air cut; the arm abstains.
+            cut_metrics_not_measured: _,
+            collision_count,
+            collision_checks_failed,
+            rapid_collision_count,
+            per_toolpath,
+            // The per-finding list is a different, per-toolpath answer.
+            verdicts: _,
+        } = self;
+        if *collision_checks_failed > 0 {
+            ProjectVerdict::Unknown {
+                checks_failed: *collision_checks_failed,
+                toolpaths: per_toolpath.len(),
+            }
+        } else if *collision_count > 0 {
+            ProjectVerdict::Collisions {
+                count: *collision_count,
+            }
+        } else if *rapid_collision_count > 0 {
+            ProjectVerdict::RapidCollisions {
+                count: *rapid_collision_count,
+            }
+        } else if let Some(pct) =
+            air_cut_pct_of_total_runtime.filter(|pct| *pct > PROJECT_AIR_CUT_BAR_PCT)
+        {
+            ProjectVerdict::HighAirCut {
+                pct_of_total_runtime: pct,
+            }
+        } else {
+            ProjectVerdict::Ok
+        }
+    }
 }
 
 // ── Serde for the verdict enums ────────────────────────────────────────
@@ -414,5 +592,94 @@ impl serde::Serialize for VerdictSeverity {
 impl serde::Serialize for VerdictKind {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    fn clean() -> ProjectDiagnostics {
+        ProjectDiagnostics {
+            total_runtime_s: Some(10.0),
+            air_cut_pct_of_total_runtime: Some(PROJECT_AIR_CUT_BAR_PCT),
+            air_cut_pct_of_cutting_time: Some(PROJECT_AIR_CUT_BAR_PCT * 2.0),
+            average_engagement: Some(0.3),
+            cut_metrics_not_measured: None,
+            collision_count: 0,
+            collision_checks_failed: 0,
+            rapid_collision_count: 0,
+            per_toolpath: Vec::new(),
+            verdicts: Vec::new(),
+        }
+    }
+
+    /// F113: the ladder order. Each arm wins over every arm below it.
+    #[test]
+    fn the_project_verdict_ladder_order_f113() {
+        // At the band the air cut is not high: the band is exclusive.
+        assert_eq!(clean().verdict(), ProjectVerdict::Ok);
+
+        let above = PROJECT_AIR_CUT_BAR_PCT + 1.0;
+        let mut d = clean();
+        d.air_cut_pct_of_total_runtime = Some(above);
+        assert_eq!(
+            d.verdict(),
+            ProjectVerdict::HighAirCut {
+                pct_of_total_runtime: above
+            }
+        );
+        // U2: an air cut that was not measured gives no verdict.
+        d.air_cut_pct_of_total_runtime = None;
+        d.cut_metrics_not_measured = Some(CutMetricsNotMeasured::NoTrace);
+        assert_eq!(d.verdict(), ProjectVerdict::Ok);
+
+        d.air_cut_pct_of_total_runtime = Some(above);
+        d.rapid_collision_count = 2;
+        assert_eq!(d.verdict(), ProjectVerdict::RapidCollisions { count: 2 });
+
+        d.collision_count = 3;
+        assert_eq!(d.verdict(), ProjectVerdict::Collisions { count: 3 });
+
+        d.collision_checks_failed = 1;
+        assert_eq!(
+            d.verdict(),
+            ProjectVerdict::Unknown {
+                checks_failed: 1,
+                toolpaths: 0
+            }
+        );
+    }
+
+    /// F113: the wire form names the kind, the arm's fields and the
+    /// headline; the CLI prints the same headline.
+    #[test]
+    fn the_project_verdict_wire_form_f113() {
+        let json = serde_json::to_value(ProjectVerdict::Collisions { count: 3 }).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "kind": "collisions",
+                "count": 3,
+                "headline": "ERROR: 3 holder/shank or obstacle collisions detected",
+            })
+        );
+        let ok = serde_json::to_value(ProjectVerdict::Ok).unwrap();
+        assert_eq!(ok, serde_json::json!({"kind": "ok", "headline": "OK"}));
+    }
+
+    /// F048: the reason is a typed value whose wire form is its text.
+    #[test]
+    fn the_not_measured_reason_serialises_as_its_text_f048() {
+        for reason in [
+            CutMetricsNotMeasured::NoSimulation,
+            CutMetricsNotMeasured::NoTrace,
+        ] {
+            assert_eq!(
+                serde_json::to_value(reason).unwrap(),
+                serde_json::Value::String(reason.as_str().to_owned())
+            );
+        }
     }
 }

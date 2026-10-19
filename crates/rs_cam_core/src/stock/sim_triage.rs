@@ -147,10 +147,31 @@ pub struct WorstEvidence {
     pub sample_count: usize,
 }
 
+/// The triage class of a [`Finding`] (F189): the bucket it lands in.
+///
+/// The rule that makes a finding sets its class, and ONE routing match puts
+/// it in its bucket (`SimulationTriage::build_with_rest_context`). A reader
+/// that lists findings walks [`SimulationTriage::findings`] and matches the
+/// class exhaustively, so a new class does not compile on a surface that
+/// does not say how it shows it. The Warnings tab read two of three buckets
+/// before this type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TriageClass {
+    /// Class A: physical damage if run. Never dropped, never deduped.
+    Safety,
+    /// Class B: costs a run or a part. One per (rule, toolpath).
+    Action,
+    /// Class C: worth seeing, capped with "N more".
+    Advisory,
+}
+
 /// One entry in a triage list: the existing [`Diagnostic`] contract plus what
 /// merging needs to stay honest.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Finding {
+    /// The bucket the finding lands in, set by the rule that made it.
+    pub class: TriageClass,
     pub diagnostic: Diagnostic,
     pub dedup_key: DedupKey,
     /// How many findings merged into this one. Always >= 1.
@@ -232,6 +253,26 @@ impl SimulationTriage {
     /// True when there is nothing the operator must look at.
     pub fn is_clear(&self) -> bool {
         self.safety.is_empty() && self.actions.is_empty()
+    }
+
+    /// Every retained finding of every bucket, in the contract order
+    /// (safety, then actions, then the capped advisories). Each carries its
+    /// [`TriageClass`].
+    ///
+    /// The destructure has no rest pattern, so a new bucket does not compile
+    /// here until it joins the walk (F189).
+    pub fn findings(&self) -> impl Iterator<Item = &Finding> {
+        let Self {
+            measurability: _,
+            safety,
+            actions,
+            advisories,
+            counts: _,
+        } = self;
+        safety
+            .iter()
+            .chain(actions.iter())
+            .chain(advisories.items.iter())
     }
 
     /// Highest severity anywhere in the actionable lists.
@@ -342,8 +383,9 @@ impl SimulationTriage {
         links_on_mesh: &BTreeSet<ToolpathId>,
         fresh_twin: &BTreeMap<ToolpathId, crate::compute::toolpath_stats::FreshTwinTime>,
     ) -> Self {
-        let mut safety = Vec::new();
-        let mut actions = Vec::new();
+        // F189: every rule pushes here with its own class. ONE routing match
+        // below puts each finding in its bucket.
+        let mut found: Vec<Finding> = Vec::new();
 
         // ── Class A ────────────────────────────────────────────────────
         // Never deduped, never capped. Two collisions in one bucket stay
@@ -357,7 +399,7 @@ impl SimulationTriage {
                 .collision
                 .as_ref()
                 .map_or([0.0, 0.0, 0.0], |c| [c.start.x, c.start.y, c.start.z]);
-            safety.push(collision_finding(
+            found.push(collision_finding(
                 ids::PROJECT_RAPID_COLLISION,
                 rapid_collision_message(hit, inputs.toolpath_names),
                 toolpath_id,
@@ -372,7 +414,7 @@ impl SimulationTriage {
                 // Not a collision. The ABSENCE of an answer, which class A
                 // reports because "we do not know" is a safety statement
                 // and silence would read as clean (CMP-14).
-                safety.push(collision_finding(
+                found.push(collision_finding(
                     ids::PROJECT_HOLDER_CHECK_FAILED,
                     "Holder/shank collision check failed on this toolpath — holder clearance \
                      is UNKNOWN, not clear"
@@ -387,7 +429,7 @@ impl SimulationTriage {
             }
             let count = check.collisions();
             for i in 0..count {
-                safety.push(collision_finding(
+                found.push(collision_finding(
                     ids::PROJECT_HOLDER_COLLISION,
                     format!("Holder/shank collision ({} on this toolpath)", count),
                     Some(*tp),
@@ -409,7 +451,7 @@ impl SimulationTriage {
                 crate::stock::collision::CollisionKind::Workpiece => "obstacle ''".to_owned(),
             };
             let p = hit.event.position;
-            safety.push(collision_finding(
+            found.push(collision_finding(
                 ids::PROJECT_OBSTACLE_COLLISION,
                 format!(
                     "The {} enters {what} at move {} ({:.2} mm below its clear height)",
@@ -447,7 +489,8 @@ impl SimulationTriage {
                 } => Some(id),
                 _ => None,
             };
-            actions.push(Finding {
+            found.push(Finding {
+                class: TriageClass::Action,
                 dedup_key: DedupKey {
                     id: d.id.clone(),
                     toolpath_id,
@@ -478,12 +521,12 @@ impl SimulationTriage {
                     .copied(),
                 inputs.measurability.cell_mm,
             ) {
-                actions.push(f);
+                found.push(f);
             }
             if rest_driven.contains(&tp.toolpath_id)
                 && let Some(f) = entry_load_finding(inputs.trace, tp.toolpath_id)
             {
-                actions.push(f);
+                found.push(f);
             }
             // G-LINKPLOUGH: see `link_cut_observation` for the scope.
             if !links_on_mesh.contains(&tp.toolpath_id)
@@ -501,7 +544,7 @@ impl SimulationTriage {
                     inputs.measurability.cell_mm,
                 )
             {
-                actions.push(f);
+                found.push(f);
             }
         }
 
@@ -514,7 +557,7 @@ impl SimulationTriage {
         // stock exactly as it is on rest stock.
         for util in inputs.kinematic_utilization.values() {
             if let Some(f) = plunge_class_finding(util) {
-                actions.push(f);
+                found.push(f);
             }
         }
 
@@ -527,18 +570,18 @@ impl SimulationTriage {
                 times,
                 inputs.toolpath_names.get(&id).map(String::as_str),
             ) {
-                actions.push(f);
+                found.push(f);
             }
         }
 
         // ── Class C ────────────────────────────────────────────────────
-        let mut advisories: Vec<Finding> = Vec::new();
         for (i, h) in inputs.trace.hotspots.iter().enumerate() {
             let bucket_mm = bucket_edge_mm(inputs.tool_diameters_mm.get(&h.toolpath_id).copied());
             let region = inputs
                 .region_of
                 .and_then(|f| f(h.toolpath_id, &h.span_path));
-            advisories.push(Finding {
+            found.push(Finding {
+                class: TriageClass::Advisory,
                 dedup_key: DedupKey {
                     id: DiagnosticId::from(ids::PROJECT_AIR_CUT_HIGH),
                     toolpath_id: Some(h.toolpath_id),
@@ -580,6 +623,18 @@ impl SimulationTriage {
                     sample_count: h.sample_index_end.saturating_sub(h.sample_index_start) + 1,
                 },
             });
+        }
+
+        // ── The one routing push (F189) ────────────────────────────────
+        let mut safety = Vec::new();
+        let mut actions = Vec::new();
+        let mut advisories = Vec::new();
+        for finding in found {
+            match finding.class {
+                TriageClass::Safety => safety.push(finding),
+                TriageClass::Action => actions.push(finding),
+                TriageClass::Advisory => advisories.push(finding),
+            }
         }
 
         let advisories = dedup(advisories);
@@ -624,6 +679,7 @@ fn rest_slower_than_fresh_finding(
         |n| format!("'{n}'"),
     );
     Some(Finding {
+        class: TriageClass::Action,
         dedup_key: DedupKey {
             id: DiagnosticId::from(ids::PROJECT_REST_SLOWER_THAN_FRESH),
             toolpath_id: Some(toolpath_id),
@@ -907,6 +963,7 @@ fn standing_material_finding(
     };
 
     Some(Finding {
+        class: TriageClass::Action,
         dedup_key: DedupKey {
             id: DiagnosticId::from(ids::PROJECT_CROSSES_STANDING_MATERIAL),
             toolpath_id: Some(toolpath_id),
@@ -1185,6 +1242,7 @@ fn entry_load_finding(trace: &SimulationCutTrace, toolpath_id: ToolpathId) -> Op
     };
 
     Some(Finding {
+        class: TriageClass::Action,
         dedup_key: DedupKey {
             id: DiagnosticId::from(ids::PROJECT_ENTRY_LOAD),
             toolpath_id: Some(toolpath_id),
@@ -1478,6 +1536,7 @@ fn link_cut_finding(
     };
     let name = toolpath_name.map_or_else(String::new, |n| format!("\"{n}\": "));
     Some(Finding {
+        class: TriageClass::Action,
         dedup_key: DedupKey {
             id: DiagnosticId::from(ids::PROJECT_LINK_CUTS_STOCK),
             toolpath_id: Some(toolpath_id),
@@ -1577,6 +1636,7 @@ pub fn plunge_class_finding(util: &ToolpathKinematicUtilization) -> Option<Findi
     let move_index = util.plunge.worst_move_index;
 
     Some(Finding {
+        class: TriageClass::Action,
         dedup_key: DedupKey {
             id: DiagnosticId::from(ids::PROJECT_PLUNGE_CLASS_LOAD),
             toolpath_id: Some(toolpath_id),
@@ -1679,6 +1739,7 @@ fn collision_finding(
     ordinal: usize,
 ) -> Finding {
     Finding {
+        class: TriageClass::Safety,
         dedup_key: DedupKey {
             id: DiagnosticId::from(id),
             toolpath_id,
@@ -1974,6 +2035,71 @@ mod tests {
         assert_eq!(t.worst_severity(), Some(Severity::Critical));
     }
 
+    /// F189 — each finding carries the class of the bucket it landed in, and
+    /// `findings` walks every bucket. The Warnings tab read two of three
+    /// buckets; it now walks `findings` and matches the class.
+    #[test]
+    fn every_finding_carries_its_bucket_class_and_findings_walks_all_f189() {
+        let samples: Vec<_> = (0..6000).map(|i| air_sample(i, 1)).collect();
+        let trace = SimulationCutTrace::from_samples(0.5, samples);
+        let rapid = unattributed(RapidCollision {
+            move_index: 4211,
+            start: crate::geo::P3::new(3.0, 4.0, 5.0),
+            end: crate::geo::P3::new(9.0, 4.0, 5.0),
+        });
+        let removal_warning = Diagnostic {
+            id: DiagnosticId::from(ids::PROJECT_GENERATED_EMPTY),
+            scope: Scope::Toolpath { id: ToolpathId(1) },
+            category: Category::Geometry,
+            severity: Severity::Caution,
+            confidence: Confidence::Static,
+            state: DiagnosticState::Current,
+            source: Source::Simulation,
+            message: "removed no material".to_owned(),
+            evidence: None,
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        };
+        let m = MeasurabilityReport::default();
+        let d = BTreeMap::new();
+        let t = SimulationTriage::build(&inputs(
+            &trace,
+            &m,
+            std::slice::from_ref(&removal_warning),
+            std::slice::from_ref(&rapid),
+            &[],
+            &d,
+            &BTreeMap::new(),
+        ));
+
+        // Non-vacuity: every bucket holds a finding.
+        assert!(!t.safety.is_empty());
+        assert!(!t.actions.is_empty());
+        assert!(!t.advisories.items.is_empty());
+
+        assert!(t.safety.iter().all(|f| f.class == TriageClass::Safety));
+        assert!(t.actions.iter().all(|f| f.class == TriageClass::Action));
+        assert!(
+            t.advisories
+                .items
+                .iter()
+                .all(|f| f.class == TriageClass::Advisory)
+        );
+        assert_eq!(
+            t.findings().count(),
+            t.safety.len() + t.actions.len() + t.advisories.items.len(),
+            "findings() must walk every bucket"
+        );
+        for class in [
+            TriageClass::Safety,
+            TriageClass::Action,
+            TriageClass::Advisory,
+        ] {
+            assert!(t.findings().any(|f| f.class == class), "{class:?}");
+        }
+    }
+
     /// GATE 3 — dedup never hides a distinct safety event.
     #[test]
     fn gate_3_two_collisions_in_one_bucket_stay_two_entries() {
@@ -2009,6 +2135,7 @@ mod tests {
     #[test]
     fn dedup_keeps_the_worst_evidence_not_the_first() {
         let a = |wasted: f64, eng: f64| Finding {
+            class: TriageClass::Advisory,
             dedup_key: DedupKey {
                 id: DiagnosticId::from(ids::PROJECT_AIR_CUT_HIGH),
                 toolpath_id: Some(ToolpathId(1)),
@@ -2052,6 +2179,7 @@ mod tests {
         for tp in [1usize, 2] {
             for i in 0..40 {
                 findings.push(Finding {
+                    class: TriageClass::Advisory,
                     dedup_key: DedupKey {
                         id: DiagnosticId::from(ids::PROJECT_AIR_CUT_HIGH),
                         toolpath_id: Some(ToolpathId(tp)),

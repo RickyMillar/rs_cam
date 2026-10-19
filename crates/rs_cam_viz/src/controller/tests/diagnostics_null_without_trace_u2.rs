@@ -27,7 +27,17 @@ fn trace_less_results() -> crate::state::simulation::SimulationResults {
             material_slots: Vec::new(),
         }),
         total_moves: 12,
-        boundaries: Vec::new(),
+        // A run holds the boundary of each toolpath it simulated. Core
+        // reads a boundary as "a simulation exists" (the reason is then
+        // `NoTrace`, not `NoSimulation`).
+        boundaries: vec![rs_cam_core::compute::simulate::SimBoundary {
+            id: ToolpathId(1),
+            name: "Pocket".to_owned(),
+            tool_name: "EndMill".to_owned(),
+            start_move: 0,
+            end_move: 12,
+            direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
+        }],
         setup_boundaries: Vec::new(),
         checkpoints: Vec::new(),
         selected_toolpaths: None,
