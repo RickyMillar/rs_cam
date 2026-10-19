@@ -8,7 +8,7 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 - `mutation.rs`, `mutation/` (CRUD, S2 `stock_change.rs`); `compute.rs`, `compute/` (generation, simulation, export, diagnostics); `builder.rs`, `project_file.rs`, `save.rs`;
   `stock_change_report.rs` (S4 rows); `diagnostics_types.rs` (keep the `mod.rs` re-export).
 - `eval_context.rs`, `cycle_time.rs`, `reach.rs`, `multitool.rs`, `pins.rs` (P6 pin inputs, P10 setup notes), `pin_report.rs` (P7, the one pin report); `shoe.rs` (H1, the one shoe plan); `rest_stock.rs` — the
-  stored resolution; `load_report.rs` — the memo; `result_provenance.rs` — the feed stage (W2.5); `selection_status.rs` (P2.4: THE resolution, the `SelectionStatus` memo).
+  stored resolution; `load_report.rs` — the memo; `result_provenance.rs` — the feed stage (W2.5); `selection_status.rs` (P2.4: THE resolution, the `SelectionStatus` memo); `tab_layout.rs` (P4.6: the `TabLayout` query, no kernel; `apply_tab_edit`: L-5 conversion, O-4 refusal).
 
 ## Invariants
 
@@ -37,4 +37,4 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 
 `cargo test -p rs_cam_core -q --test <name>`, one per name (W2.5: viz `export_states_the_feed_stage_w2_5`): `command_registry_completeness`, `mutation_paths_invalidate_alike_p0`,
 `adopt_result_rejects_stale_completion`, `stale_set_has_one_answer_wp28`, `dependency_edges_are_the_walker_dep1`, `generation_plan_is_the_edge_walk_w0b`, `a_late_simulation_does_not_refill_the_core_d7`, `rest_stock_identity_g_restres`,
-`stock_changes_stale_from_their_setup_on_s2`, `a_plan_resimulates_after_an_upstream_change_w1_5b`, `fresh_generation_ignores_simulation_b19` (B19: `Fresh` reads no prior stock), `selection_status_is_memoised_p2_4`, P2.5 `a_reimport_stales_every_reader_of_the_model_p2_5`, `a_missing_tool_id_refuses_p2_5`, `a_retired_boundary_source_is_named_p2_5`, P2.6 `selection_round_trips_p2_6`, P2.7 `one_item_is_one_pick_p2_7`, P4.1 `a_3d_op_face_pick_sets_its_top_p4_1`, P4.2 `a_face_op_reads_its_selection_p4_2`, P4.4 `item_states_match_the_cut_p4_4`.
+`stock_changes_stale_from_their_setup_on_s2`, `a_plan_resimulates_after_an_upstream_change_w1_5b`, `fresh_generation_ignores_simulation_b19` (B19: `Fresh` reads no prior stock), `selection_status_is_memoised_p2_4`, P2.5 `a_reimport_stales_every_reader_of_the_model_p2_5`, `a_missing_tool_id_refuses_p2_5`, `a_retired_boundary_source_is_named_p2_5`, P2.6 `selection_round_trips_p2_6`, P2.7 `one_item_is_one_pick_p2_7`, P4.1 `a_3d_op_face_pick_sets_its_top_p4_1`, P4.2 `a_face_op_reads_its_selection_p4_2`, P4.4 `item_states_match_the_cut_p4_4`, P4.6 `the_tab_layout_is_the_cut_layout_p4_6`.

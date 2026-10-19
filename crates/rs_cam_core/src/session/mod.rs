@@ -34,6 +34,8 @@ pub(crate) mod selection_status;
 mod shoe;
 pub use shoe::ShoePlanRow;
 mod stock_change_report;
+mod tab_layout;
+pub use tab_layout::{TabEdit, TabLayoutAnswer, TabMark, apply_tab_edit};
 
 pub use builder::ProjectSessionBuilder;
 pub use command::{
@@ -56,7 +58,7 @@ pub use command::{
     SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
     SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
     SetToolpathEnabledArgs, SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathOperationArgs,
-    SetToolpathParamArgs, SetToolpathShoeArgs, SetToolpathToolArgs, Surfaces,
+    SetToolpathParamArgs, SetToolpathShoeArgs, SetToolpathToolArgs, Surfaces, TabLayoutArgs,
     ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
 };
 pub use compute::{

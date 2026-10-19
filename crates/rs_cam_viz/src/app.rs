@@ -96,6 +96,11 @@ pub struct RsCamApp {
     /// the frame loop then uploads the hover buffer alone.
     hover_detector: crate::state::selection_highlight::HoverDetector,
     hover_upload_pending: bool,
+    /// Geometry selection P4.6: the upload trigger of the tab marks of the
+    /// tab editor. The viewport sets `tab_upload_pending` on a change of
+    /// the layout or of the drag only.
+    tab_marks_detector: crate::state::tab_edit::TabMarksDetector,
+    tab_upload_pending: bool,
     /// MCP request receiver (populated when `--mcp` is passed).
     #[cfg(feature = "mcp")]
     mcp_receiver: Option<std::sync::mpsc::Receiver<crate::mcp_bridge::McpRequest>>,
@@ -406,6 +411,8 @@ impl RsCamApp {
             selection_report_detector: Default::default(),
             hover_detector: Default::default(),
             hover_upload_pending: false,
+            tab_marks_detector: Default::default(),
+            tab_upload_pending: false,
             #[cfg(feature = "mcp")]
             mcp_receiver,
             #[cfg(feature = "mcp")]
@@ -1025,6 +1032,10 @@ impl RsCamApp {
         // P4.5: the hover buffer, on a hover change only.
         if std::mem::take(&mut self.hover_upload_pending) {
             self.upload_hover_lines(frame);
+        }
+        // P4.6: the tab marks buffer, on a layout or drag change only.
+        if std::mem::take(&mut self.tab_upload_pending) {
+            self.upload_tab_lines(frame);
         }
 
         // Handle keyboard shortcuts (before UI to prevent conflicts)

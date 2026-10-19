@@ -558,6 +558,11 @@ pub enum McpRequestKind {
     },
     /// Geometry selection P2.7: the `list_model_items` query row.
     ListModelItems(rs_cam_mcp::server::ListModelItemsParam),
+    /// Geometry selection P4.6: the `tab_layout` query row of the Profile
+    /// at `index`.
+    TabLayout {
+        index: usize,
+    },
     /// Dump the structural spans (Operation, DepthPass, Region, Entry, LeadOut,
     /// LinkBridge, DressupArtifact, RapidOrderBarrier) of a generated toolpath.
     /// Lets agents inspect toolpath anatomy without parsing the raw move list.

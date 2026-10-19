@@ -134,6 +134,171 @@ impl RsCamApp {
         true
     }
 
+    /// The toolpath whose tab editor is on and has a layout, in the
+    /// Toolpaths workspace (geometry selection P4.6), or `None`.
+    fn active_tab_edit(&self) -> Option<crate::state::toolpath::ToolpathId> {
+        let state = self.controller.state();
+        if state.workspace != Workspace::Toolpaths {
+            return None;
+        }
+        let Selection::Toolpath(id) = state.selection else {
+            return None;
+        };
+        state
+            .gui
+            .selection_ui
+            .tab_edit(id)
+            .filter(|mode| mode.answer().is_some())
+            .map(|_| id)
+    }
+
+    /// The tab mark under the screen point `pos`, in the tab editor of
+    /// `id` (P4.6).
+    fn tab_under(&self, id: crate::state::toolpath::ToolpathId, pos: egui::Pos2) -> Option<usize> {
+        let state = self.controller.state();
+        let mode = state.gui.selection_ui.tab_edit(id)?;
+        let scene = crate::interaction::picking::tab_scene(&state.session, id, mode)?;
+        crate::interaction::picking::pick_tab(&self.pick_context(pos), &scene)
+    }
+
+    /// A primary click in the tab editor (P4.6). It wins over every other
+    /// pick: `true` when the editor is on. A click on a loop (not on a tab)
+    /// adds a hand tab at the nearest point of that loop.
+    fn handle_tab_click(&mut self, click_pos: egui::Pos2) -> bool {
+        let Some(id) = self.active_tab_edit() else {
+            return false;
+        };
+        if self.tab_under(id, click_pos).is_some() {
+            return true;
+        }
+        let hit = {
+            let state = self.controller.state();
+            state
+                .gui
+                .selection_ui
+                .tab_edit(id)
+                .and_then(|mode| mode.answer())
+                .and_then(|answer| {
+                    crate::interaction::picking::pick_tab_loop(
+                        &self.pick_context(click_pos),
+                        &state.session,
+                        id,
+                        &answer.loops,
+                    )
+                })
+        };
+        if let Some((loop_key, at)) = hit {
+            self.controller.events_mut().push(AppEvent::EditTabs {
+                toolpath_id: id,
+                edit: rs_cam_core::session::TabEdit::Add { loop_key, at },
+            });
+        }
+        true
+    }
+
+    /// A secondary click in the tab editor (P4.6): a click on a tab deletes
+    /// it. `true` when the editor is on.
+    fn handle_tab_secondary_click(&mut self, click_pos: egui::Pos2) -> bool {
+        let Some(id) = self.active_tab_edit() else {
+            return false;
+        };
+        if let Some(mark) = self.tab_under(id, click_pos) {
+            self.controller.events_mut().push(AppEvent::EditTabs {
+                toolpath_id: id,
+                edit: rs_cam_core::session::TabEdit::Delete { mark },
+            });
+        }
+        true
+    }
+
+    /// The tab drag of the tab editor (P4.6). A primary drag that starts on
+    /// a tab moves it: the point snaps to the loop on each frame (GUI state
+    /// only), and the release sends ONE `EditTabs` move (one undo step).
+    /// `true` while the drag owns the pointer, so the camera does not orbit.
+    fn handle_tab_drag(&mut self, ui: &egui::Ui, response: &egui::Response) -> bool {
+        let Some(id) = self.active_tab_edit() else {
+            return false;
+        };
+        if response.drag_started_by(egui::PointerButton::Primary)
+            && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+            && let Some(mark) = self.tab_under(id, origin)
+            && let Some(mode) = self
+                .controller
+                .state_mut()
+                .gui
+                .selection_ui
+                .tab_edit_mut(id)
+        {
+            mode.drag = Some(crate::state::pick::TabDrag { mark, to: None });
+        }
+        let Some(drag) = self
+            .controller
+            .state()
+            .gui
+            .selection_ui
+            .tab_edit(id)
+            .and_then(|mode| mode.drag.clone())
+        else {
+            return false;
+        };
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        if response.dragged_by(egui::PointerButton::Primary)
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            let snapped = {
+                use crate::interaction::picking::{
+                    drawing_plane_z, loop_ring, pointer_on_plane, snap_to_loop,
+                    toolpath_setup_frame,
+                };
+                let state = self.controller.state();
+                let session = &state.session;
+                state
+                    .gui
+                    .selection_ui
+                    .tab_edit(id)
+                    .and_then(|mode| mode.answer())
+                    .and_then(|answer| answer.marks.get(drag.mark))
+                    .zip(session.find_toolpath_config_by_id(id))
+                    .and_then(|(mark, (_, tc))| {
+                        let ring = loop_ring(session, tc, &mark.loop_key)?;
+                        let frame = toolpath_setup_frame(session, id);
+                        let z = drawing_plane_z(session, tc, frame.as_ref());
+                        let p = pointer_on_plane(&self.pick_context(pos), z)?;
+                        snap_to_loop(frame.as_ref(), session.stock_config(), &ring, p)
+                            .map(|(at, _)| at)
+                    })
+            };
+            if let Some(to) = snapped
+                && drag.to != Some(to)
+                && let Some(mode) = self
+                    .controller
+                    .state_mut()
+                    .gui
+                    .selection_ui
+                    .tab_edit_mut(id)
+                && let Some(d) = mode.drag.as_mut()
+            {
+                d.to = Some(to);
+            }
+        }
+        if response.drag_stopped() {
+            let last = self
+                .controller
+                .state_mut()
+                .gui
+                .selection_ui
+                .tab_edit_mut(id)
+                .and_then(|mode| mode.drag.take());
+            if let Some(crate::state::pick::TabDrag { mark, to: Some(to) }) = last {
+                self.controller.events_mut().push(AppEvent::EditTabs {
+                    toolpath_id: id,
+                    edit: rs_cam_core::session::TabEdit::Move { mark, to },
+                });
+            }
+        }
+        true
+    }
+
     /// Click-to-select: find nearest toolpath to click position in screen space.
     fn handle_viewport_click(&mut self, click_pos: egui::Pos2, shift: bool) {
         let rect = self.viewport_rect;
@@ -141,6 +306,10 @@ impl RsCamApp {
             return;
         }
 
+        // P4.6: the tab editor wins the click, as the pick mode does.
+        if self.handle_tab_click(click_pos) {
+            return;
+        }
         if self.handle_pick_mode_click(click_pos, shift) {
             return;
         }
@@ -403,6 +572,9 @@ impl RsCamApp {
         );
 
         self.viewport_rect = rect;
+        // P4.6: the tab editor reads its layout again when the toolpath
+        // inputs moved (never per frame).
+        crate::state::tab_edit::refresh_layout(self.controller.state_mut());
         let dock = {
             let (state, events) = self.controller.state_and_events_mut();
             crate::ui::overlays::panel::draw_catalogue(ui.ctx(), state, projection, events, rect);
@@ -571,7 +743,32 @@ impl RsCamApp {
             }
         }
 
-        if response.dragged_by(egui::PointerButton::Primary) {
+        // P4.6: a right-click on a tab deletes it; a drag that starts on a
+        // tab moves it, and the camera does not orbit during that drag.
+        if response.secondary_clicked()
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            let _ = self.handle_tab_secondary_click(pos);
+        }
+        let tab_drag = self.handle_tab_drag(ui, &response);
+        if !tab_drag
+            && response.hovered()
+            && let Some(id) = self.active_tab_edit()
+            && let Some(pos) = ui.input(|i| i.pointer.hover_pos())
+            && self.tab_under(id, pos).is_some()
+        {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
+        if self
+            .tab_marks_detector
+            .changed(crate::state::tab_edit::TabMarksKey::of(
+                self.controller.state(),
+            ))
+        {
+            self.tab_upload_pending = true;
+            ui.ctx().request_repaint();
+        }
+        if !tab_drag && response.dragged_by(egui::PointerButton::Primary) {
             let delta = response.drag_delta();
             self.camera.orbit(delta.x, delta.y);
         }

@@ -24,7 +24,7 @@ The tabs that edit a setup, a tool, the stock, the post and an operation.
 - A draw never writes `rest_analysis.enabled`; `apply_auto_enable` is the
   door. Do not draw a raw egui widget where `ui/components/` has one.
 - A tooltip keys on the registry parameter NAME, never the label. The selection
-  section writes through `EditToolpathSelection` only (L-1), never the draft.
+  section writes through `EditToolpathSelection` only (L-1), never the draft. P4.6: the Profile Tabs row toggles the tab editor (`OpDrawCtx::selection_ui`); the editor writes through `EditTabs`, never the draft.
 - One `OpUiRow` per operation carries the editor, the diagram decision
   and the validation arm. A blank diagram states its reason.
 - IC1/IC2: a field is one row; its explanation is the hover. Derived data is

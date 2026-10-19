@@ -679,3 +679,255 @@ fn determine_face_normal(bbox: &rs_cam_core::geo::BoundingBox3, hit: &P3) -> [f3
         [0.0, -1.0, 0.0] // -Y
     }
 }
+
+// ── The hand-tab editor (geometry selection P4.6) ──────────────────────
+
+/// One tab mark as the viewport draws and picks it, in the display frame.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DisplayTab {
+    /// The index of the mark in `TabLayoutAnswer::marks`.
+    pub mark: usize,
+    /// The centre of the lift (display XY). A dragged tab draws at the
+    /// snapped point of the drag.
+    pub at: P2,
+    /// The unit direction of the loop at the mark (display XY). The bar
+    /// draws across it.
+    pub along: [f64; 2],
+    /// True for a hand tab (it draws a handle ring).
+    pub hand: bool,
+    /// True while the tab is dragged.
+    pub dragged: bool,
+}
+
+/// The tab marks of the tab editor of one Profile, in the display frame.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TabScene {
+    pub tabs: Vec<DisplayTab>,
+    /// The plane the drawing draws on ([`drawing_plane_z`]).
+    pub z: f64,
+    /// Half the length of a bar: the tool radius. A bar centred on the cut
+    /// ring then spans the kerf from the outline to its far edge.
+    pub half_bar: f64,
+}
+
+/// The ring (model frame) of the loop `key` of the toolpath model of `tc`,
+/// as the drawing draws it: a loop, a circle ring or a face outline. `None`
+/// for an item of another source.
+#[must_use]
+pub fn loop_ring(
+    session: &ProjectSession,
+    tc: &rs_cam_core::session::ToolpathConfig,
+    key: &rs_cam_core::selection::MatchKey,
+) -> Option<Vec<P2>> {
+    use rs_cam_core::selection::Shape;
+    let item = session
+        .models()
+        .iter()
+        .find(|m| m.id == tc.model_id)?
+        .items
+        .iter()
+        .find(|i| i.key().names_same_geometry(key))?;
+    match item.shape() {
+        Shape::Loop(p) => Some(p.exterior.clone()),
+        Shape::Circle { ring, .. } => Some(ring.exterior.clone()),
+        Shape::Face(face) => Some(face.rings.exterior.clone()),
+        Shape::Path(_) | Shape::Point(_) => None,
+    }
+}
+
+/// The nearest point of the closed ring `ring` (model frame) to the
+/// display point `p`, measured where the viewport draws the ring
+/// ([`item_display_xy`]). The answer is in the model frame: the display
+/// map is affine, so the point at the same fraction of the same segment of
+/// the model ring is the snapped point. Also gives the display distance.
+#[must_use]
+pub fn snap_to_loop(
+    frame: Option<&SetupFrame>,
+    stock: &StockConfig,
+    ring: &[P2],
+    p: P2,
+) -> Option<([f64; 2], f64)> {
+    let mut best: Option<([f64; 2], f64)> = None;
+    for (k, a) in ring.iter().enumerate() {
+        let Some(b) = ring.get((k + 1) % ring.len()) else {
+            continue;
+        };
+        let (da, db) = (
+            item_display_xy(frame, stock, *a),
+            item_display_xy(frame, stock, *b),
+        );
+        let (dx, dy) = (db.x - da.x, db.y - da.y);
+        let len2 = dx * dx + dy * dy;
+        let t = if len2 > 0.0 {
+            (((p.x - da.x) * dx + (p.y - da.y) * dy) / len2).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let d = (p.x - (da.x + t * dx)).hypot(p.y - (da.y + t * dy));
+        if best.is_none_or(|(_, bd)| d < bd) {
+            best = Some(([a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)], d));
+        }
+    }
+    best
+}
+
+/// The unit direction (display frame) of the segment of the closed ring
+/// `ring` (model frame) nearest the model point `p`.
+fn loop_direction(frame: Option<&SetupFrame>, stock: &StockConfig, ring: &[P2], p: P2) -> [f64; 2] {
+    let mut best: Option<(f64, [f64; 2])> = None;
+    for (k, a) in ring.iter().enumerate() {
+        let Some(b) = ring.get((k + 1) % ring.len()) else {
+            continue;
+        };
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let len2 = dx * dx + dy * dy;
+        if len2 <= 0.0 {
+            continue;
+        }
+        let t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / len2).clamp(0.0, 1.0);
+        let d = (p.x - (a.x + t * dx)).hypot(p.y - (a.y + t * dy));
+        if best.is_none_or(|(bd, _)| d < bd) {
+            let (da, db) = (
+                item_display_xy(frame, stock, *a),
+                item_display_xy(frame, stock, *b),
+            );
+            let (ex, ey) = (db.x - da.x, db.y - da.y);
+            let len = ex.hypot(ey);
+            best = Some((d, [ex / len, ey / len]));
+        }
+    }
+    best.map_or([1.0, 0.0], |(_, dir)| dir)
+}
+
+/// The tab marks of the editor `mode` of the toolpath `id`, where the
+/// viewport draws them. `None` when the editor has no layout.
+#[must_use]
+pub fn tab_scene(
+    session: &ProjectSession,
+    id: ToolpathId,
+    mode: &crate::state::pick::TabEditMode,
+) -> Option<TabScene> {
+    use rs_cam_core::dressup::tabs::TabSource;
+    let answer = mode.answer()?;
+    let (_, tc) = session.find_toolpath_config_by_id(id)?;
+    let stock = session.stock_config();
+    let frame = toolpath_setup_frame(session, id);
+    let z = drawing_plane_z(session, tc, frame.as_ref());
+    let half_bar = session
+        .get_tool(rs_cam_core::compute::tool_config::ToolId(tc.tool_id))
+        .map_or(POINT_MARK_RADIUS_MM, |t| t.diameter / 2.0);
+    let tabs = answer
+        .marks
+        .iter()
+        .enumerate()
+        .map(|(k, m)| {
+            let drag_to = mode
+                .drag
+                .as_ref()
+                .filter(|d| d.mark == k)
+                .and_then(|d| d.to);
+            let on_loop = drag_to.unwrap_or(m.on_loop);
+            let at = drag_to.unwrap_or(m.at);
+            let along = loop_ring(session, tc, &m.loop_key).map_or([1.0, 0.0], |ring| {
+                loop_direction(
+                    frame.as_ref(),
+                    stock,
+                    &ring,
+                    P2::new(on_loop[0], on_loop[1]),
+                )
+            });
+            DisplayTab {
+                mark: k,
+                at: item_display_xy(frame.as_ref(), stock, P2::new(at[0], at[1])),
+                along,
+                hand: matches!(m.source, TabSource::Hand(_)),
+                dragged: drag_to.is_some(),
+            }
+        })
+        .collect();
+    Some(TabScene { tabs, z, half_bar })
+}
+
+/// The point of the plane `z` (display frame) under the pointer of `ctx`.
+#[must_use]
+pub fn pointer_on_plane(ctx: &PickContext<'_>, z: f64) -> Option<P2> {
+    let (origin, dir) =
+        ctx.camera
+            .unproject_ray(ctx.screen_x, ctx.screen_y, ctx.aspect, ctx.vw, ctx.vh)?;
+    let (oz, dz) = (f64::from(origin.z), f64::from(dir.z));
+    if dz.abs() < f64::EPSILON {
+        return None;
+    }
+    let t = (z - oz) / dz;
+    Some(P2::new(
+        f64::from(origin.x) + t * f64::from(dir.x),
+        f64::from(origin.y) + t * f64::from(dir.y),
+    ))
+}
+
+/// The tab of `scene` under the pointer of `ctx`: the nearest mark on the
+/// screen within [`PICK_THRESHOLD_POINT`] pixels.
+#[must_use]
+pub fn pick_tab(ctx: &PickContext<'_>, scene: &TabScene) -> Option<usize> {
+    let mut best: Option<(f32, usize)> = None;
+    for tab in &scene.tabs {
+        let Some(s) = ctx.camera.project_to_screen(
+            [tab.at.x as f32, tab.at.y as f32, scene.z as f32],
+            ctx.aspect,
+            ctx.vw,
+            ctx.vh,
+        ) else {
+            continue;
+        };
+        let d = (s[0] - ctx.screen_x).hypot(s[1] - ctx.screen_y);
+        if d <= PICK_THRESHOLD_POINT && best.is_none_or(|(b, _)| d < b) {
+            best = Some((d, tab.mark));
+        }
+    }
+    best.map(|(_, mark)| mark)
+}
+
+/// The loop of `loops` under the pointer of `ctx` (the drawn line within
+/// [`PICK_THRESHOLD_TOOLPATH`] pixels, the rule of [`pick_items`]) and the
+/// point of that loop under the pointer, in the drawing frame.
+#[must_use]
+pub fn pick_tab_loop(
+    ctx: &PickContext<'_>,
+    session: &ProjectSession,
+    id: ToolpathId,
+    loops: &[rs_cam_core::selection::MatchKey],
+) -> Option<(rs_cam_core::selection::MatchKey, [f64; 2])> {
+    let (_, tc) = session.find_toolpath_config_by_id(id)?;
+    let stock = session.stock_config();
+    let frame = toolpath_setup_frame(session, id);
+    let z = drawing_plane_z(session, tc, frame.as_ref());
+    let pointer = [f64::from(ctx.screen_x), f64::from(ctx.screen_y)];
+    let mut best: Option<(f64, &rs_cam_core::selection::MatchKey, Vec<P2>)> = None;
+    for key in loops {
+        let Some(ring) = loop_ring(session, tc, key) else {
+            continue;
+        };
+        let projected: Vec<[f64; 2]> = ring
+            .iter()
+            .filter_map(|p| {
+                let q = item_display_xy(frame.as_ref(), stock, *p);
+                ctx.camera
+                    .project_to_screen(
+                        [q.x as f32, q.y as f32, z as f32],
+                        ctx.aspect,
+                        ctx.vw,
+                        ctx.vh,
+                    )
+                    .map(|s| [f64::from(s[0]), f64::from(s[1])])
+            })
+            .collect();
+        let d = rs_cam_core::selection::polyline_distance(pointer, projected, true);
+        if d <= f64::from(PICK_THRESHOLD_TOOLPATH) && best.as_ref().is_none_or(|(b, _, _)| d < *b) {
+            best = Some((d, key, ring));
+        }
+    }
+    let (_, key, ring) = best?;
+    let on_plane = pointer_on_plane(ctx, z)?;
+    let (at, _) = snap_to_loop(frame.as_ref(), stock, &ring, on_plane)?;
+    Some((key.clone(), at))
+}

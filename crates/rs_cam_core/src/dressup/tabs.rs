@@ -708,6 +708,11 @@ pub struct TabbedRing {
     /// fraction of the length of `ring` ([`Tab::position`]) and the lift
     /// in mm ([`Tab::width`], from [`tab_lift_length`]).
     pub zones: Vec<(f64, f64)>,
+    /// One entry per zone, in the order of `zones`: the centre of the lift
+    /// on the cut ring (the nearest point of the ring to the centre) and
+    /// the index of that centre in the `centres` argument of
+    /// [`tabbed_ring`] (geometry selection P4.6).
+    pub points: Vec<(P2, usize)>,
 }
 
 impl TabbedRing {
@@ -739,16 +744,19 @@ impl TabbedRing {
 pub fn tabbed_ring(ring: &[P2], centres: &[P2], tab_width: f64, tool_radius: f64) -> TabbedRing {
     let (segs, total) = segments(ring);
     let chord = straight_tab_lift(tab_width, tool_radius);
-    // (distance along the ring, lift) per centre.
-    let mut along: Vec<(f64, f64)> = centres
+    // (distance along the ring, lift, point on the ring, centre index) per
+    // centre.
+    let mut along: Vec<(f64, f64, P2, usize)> = centres
         .iter()
-        .filter_map(|&c| nearest_on_loop(ring, c).map(|(_, s, _)| s))
-        .map(|s| (s, lift_on(&segs, total, s, chord)))
+        .enumerate()
+        .filter_map(|(at, &c)| nearest_on_loop(ring, c).map(|(q, s, _)| (s, q, at)))
+        .map(|(s, q, at)| (s, lift_on(&segs, total, s, chord), q, at))
         .collect();
     if along.is_empty() || total <= 0.0 {
         return TabbedRing {
             ring: ring.to_vec(),
             zones: Vec::new(),
+            points: Vec::new(),
         };
     }
     along.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -756,11 +764,10 @@ pub fn tabbed_ring(ring: &[P2], centres: &[P2], tab_width: f64, tool_radius: f64
     // the loop. Ties: the first.
     let mut seam = 0.0;
     let mut widest = f64::NEG_INFINITY;
-    for (i, &(s, lift)) in along.iter().enumerate() {
+    for (i, &(s, lift, _, _)) in along.iter().enumerate() {
         let (next, next_lift) = along
             .get(i + 1)
-            .copied()
-            .unwrap_or((along[0].0 + total, along[0].1));
+            .map_or((along[0].0 + total, along[0].1), |n| (n.0, n.1));
         let gap = (next - next_lift / 2.0) - (s + lift / 2.0);
         if gap > widest {
             widest = gap;
@@ -768,14 +775,283 @@ pub fn tabbed_ring(ring: &[P2], centres: &[P2], tab_width: f64, tool_radius: f64
         }
     }
     let rotated = start_at(ring, seam);
-    let mut zones: Vec<(f64, f64)> = along
+    let mut placed: Vec<((f64, f64), (P2, usize))> = along
         .iter()
-        .map(|&(s, lift)| ((s - seam).rem_euclid(total) / total, lift))
+        .map(|&(s, lift, q, at)| (((s - seam).rem_euclid(total) / total, lift), (q, at)))
         .collect();
-    zones.sort_by(|a, b| a.0.total_cmp(&b.0));
+    placed.sort_by(|a, b| a.0.0.total_cmp(&b.0.0));
+    let (zones, points) = placed.into_iter().unzip();
     TabbedRing {
         ring: rotated,
         zones,
+        points,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The one placement of generation and of the editor (geometry selection P4.6)
+// ---------------------------------------------------------------------------
+
+/// A hand tab of `tab_points`, snapped to the outline of the region it
+/// names (setup frame).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HandTab {
+    /// The index of the point in `tab_points`.
+    pub point: usize,
+    /// The index of the region in the op's regions.
+    pub region: usize,
+    /// The nearest point of the region exterior (setup frame).
+    pub on_outline: P2,
+}
+
+/// The hand tabs `tab_points` (drawing frame) in the setup frame, each
+/// snapped to the nearest exterior of `regions` (the loops a Profile
+/// cuts). `setup` moves a drawing point into the setup frame
+/// (`SetupTransformInfo::drawing_to_local`, as the frame door moves the
+/// loops); `None` is the identity.
+///
+/// # Errors
+///
+/// The text that names a point farther than [`hand_tab_reach`] from every
+/// exterior. Generation (`OperationError::Other`) and the `tab_layout`
+/// query give this text, so the two refuse alike.
+pub fn resolve_hand_tabs(
+    tab_points: &[[f64; 2]],
+    setup: Option<&crate::compute::transform::SetupTransformInfo>,
+    tool_radius: f64,
+    regions: &[crate::polygon::Polygon2],
+) -> Result<Vec<HandTab>, String> {
+    let reach = hand_tab_reach(tool_radius);
+    tab_points
+        .iter()
+        .enumerate()
+        .map(|(point, &[x, y])| {
+            let drawn = P2::new(x, y);
+            // The points are in the drawing frame, as the items are; the
+            // setup moves them as it moves the loops (`to_setup_frame`).
+            let local = setup.map_or(drawn, |info| info.drawing_to_local(drawn));
+            let nearest = regions
+                .iter()
+                .enumerate()
+                .filter_map(|(i, r)| nearest_on_loop(&r.exterior, local).map(|(q, _, d)| (i, q, d)))
+                .min_by(|a, b| a.2.total_cmp(&b.2));
+            match nearest {
+                Some((region, on_outline, d)) if d <= reach => Ok(HandTab {
+                    point,
+                    region,
+                    on_outline,
+                }),
+                _ => Err(format!(
+                    "Profile: the hand tab at X{x:.3} Y{y:.3} is {} from every loop this \
+                     operation cuts; a tab must be within {reach:.3} mm (one tool diameter) of a \
+                     loop. Move the point onto the outline or delete it from tab_points.",
+                    nearest.map_or_else(|| "far".to_owned(), |(_, _, d)| format!("{d:.3} mm"))
+                )),
+            }
+        })
+        .collect()
+}
+
+/// Where a planned tab comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TabSource {
+    /// The automatic rule ([`auto_tabs`], or the even spacing).
+    Auto,
+    /// A hand tab: the index of its point in `tab_points`.
+    Hand(usize),
+}
+
+/// One tab as the Profile cuts it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlannedTab {
+    /// The centre of the lift on the cut ring (setup frame): the point
+    /// that [`apply_tabs`] lifts round.
+    pub at: P2,
+    /// The centre on the outline loop (setup frame): the point that a hand
+    /// tab at this place stores (after the inverse frame door).
+    pub on_outline: P2,
+    pub source: TabSource,
+}
+
+/// The cut of one region: its ring with the tabs, for the Profile pass,
+/// and the tabs as points, for the editor.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlannedContour {
+    /// The index of the region in the op's regions, or `None` when the
+    /// piece is not one of them (it then takes no hand tab).
+    pub region: Option<usize>,
+    /// The ring in cut order, its start in the largest gap, and its zones.
+    pub tabbed: TabbedRing,
+    /// One entry per zone of `tabbed`, in the same order.
+    pub tabs: Vec<PlannedTab>,
+}
+
+/// The tab plan of the pieces of one `plan_profile_tabs` call.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProfileTabPlan {
+    /// One contour per piece whose offset gives a ring, in piece order.
+    pub contours: Vec<PlannedContour>,
+    /// The loops whose automatic tabs did not follow the side rule.
+    pub notes: Vec<crate::compute::toolpath_stats::TabNote>,
+    /// The offset failures of the pieces (`profile_path_reported`).
+    pub offset_failures: usize,
+}
+
+/// The tab rule of one Profile op.
+#[derive(Debug, Clone, Copy)]
+pub struct ProfileTabRule<'a> {
+    /// Every region of the op: a hand tab names its region by index here.
+    pub regions: &'a [crate::polygon::Polygon2],
+    /// The hand tabs ([`resolve_hand_tabs`] over `regions`).
+    pub hand: &'a [HandTab],
+    /// The minimum count of automatic tabs per loop (`tab_count`).
+    pub count: usize,
+    /// The bridge width (`tab_width`).
+    pub width: f64,
+    /// The side, the tool radius, the climb and the compensation of the
+    /// cut. The Z, feed and rapid fields are not read.
+    pub profile: &'a crate::ops::profile::ProfileParams,
+}
+
+/// THE tab placement of a Profile (geometry selection P4.6): the cut ring
+/// of each piece of `pieces` and its tabs. `ProfilePass::prepare` cuts
+/// from it, and the `tab_layout` query reads it, so the marks of the
+/// editor are the tabs that generation cuts.
+///
+/// The rule (P5): the hand tabs of a region replace its automatic tabs.
+/// Without a hand tab, `count > 0` asks for the side rule ([`auto_tabs`]);
+/// a loop with no side that holds a tab takes `count` tabs spaced evenly
+/// by length on the cut ring, and a note says so. With `count == 0` and no
+/// hand tab at all, no ring gets a tab and no ring moves its start.
+#[must_use]
+pub fn plan_profile_tabs(
+    pieces: &[crate::polygon::Polygon2],
+    rule: &ProfileTabRule<'_>,
+) -> ProfileTabPlan {
+    let tabs_on = rule.count > 0 || !rule.hand.is_empty();
+    let mut plan = ProfileTabPlan {
+        contours: Vec::new(),
+        notes: Vec::new(),
+        offset_failures: 0,
+    };
+    for piece in pieces {
+        let (contour, failures) = crate::ops::profile::profile_path_reported(piece, rule.profile);
+        plan.offset_failures += failures;
+        let Some(contour) = contour else { continue };
+        let ring = crate::ops::profile::profile_ring(&contour, rule.profile.climb);
+        // A Profile is not a `LevelClip` op, so the runner gives it the
+        // region polygons whole: the piece finds its region by its exterior.
+        let region = rule
+            .regions
+            .iter()
+            .position(|r| r.exterior == piece.exterior);
+        let planned = if tabs_on {
+            contour_tabs(piece, region, &ring, rule, &mut plan.notes)
+        } else {
+            PlannedContour {
+                region,
+                tabbed: TabbedRing {
+                    ring,
+                    zones: Vec::new(),
+                    points: Vec::new(),
+                },
+                tabs: Vec::new(),
+            }
+        };
+        plan.contours.push(planned);
+    }
+    plan
+}
+
+/// The tabs of the cut ring `ring` of `outline`, the region at index
+/// `region` of the op ([`plan_profile_tabs`]).
+fn contour_tabs(
+    outline: &crate::polygon::Polygon2,
+    region: Option<usize>,
+    ring: &[P2],
+    rule: &ProfileTabRule<'_>,
+    notes: &mut Vec<crate::compute::toolpath_stats::TabNote>,
+) -> PlannedContour {
+    use crate::compute::toolpath_stats::TabNote;
+    // (centre, the point on the outline, the source) per tab.
+    let hand: Vec<(P2, P2, TabSource)> = rule
+        .hand
+        .iter()
+        .filter(|h| Some(h.region) == region)
+        .map(|h| (h.on_outline, h.on_outline, TabSource::Hand(h.point)))
+        .collect();
+    let centre = || {
+        let (lo, hi) = outline.exterior.iter().fold(
+            ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]),
+            |(lo, hi), p| {
+                (
+                    [lo[0].min(p.x), lo[1].min(p.y)],
+                    [hi[0].max(p.x), hi[1].max(p.y)],
+                )
+            },
+        );
+        [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0]
+    };
+    let loop_index = region.unwrap_or(usize::MAX);
+    let asked = rule.count;
+    let on_outline = |c: P2| nearest_on_loop(&outline.exterior, c).map_or(c, |(q, _, _)| q);
+    let auto = |c: P2| (c, c, TabSource::Auto);
+    let centres: Vec<(P2, P2, TabSource)> = if !hand.is_empty() {
+        hand
+    } else if asked == 0 {
+        Vec::new()
+    } else {
+        match auto_tabs(
+            &outline.exterior,
+            asked,
+            rule.width,
+            rule.profile.tool_radius,
+        ) {
+            AutoTabs::OnSides { centres, .. } => {
+                if centres.len() < asked {
+                    notes.push(TabNote::FewerThanAsked {
+                        loop_index,
+                        centre: centre(),
+                        placed: centres.len(),
+                        asked,
+                    });
+                }
+                // The side rule places on the outline itself.
+                centres.into_iter().map(auto).collect()
+            }
+            AutoTabs::NoSide => {
+                notes.push(TabNote::EvenSpacing {
+                    loop_index,
+                    centre: centre(),
+                    count: asked,
+                });
+                even_centres(ring, asked)
+                    .into_iter()
+                    .map(|c| (c, on_outline(c), TabSource::Auto))
+                    .collect()
+            }
+        }
+    };
+    let points: Vec<P2> = centres.iter().map(|&(c, _, _)| c).collect();
+    let tabbed = tabbed_ring(ring, &points, rule.width, rule.profile.tool_radius);
+    let tabs = tabbed
+        .points
+        .iter()
+        .filter_map(|&(at, index)| {
+            centres
+                .get(index)
+                .map(|&(_, on_outline, source)| PlannedTab {
+                    at,
+                    on_outline,
+                    source,
+                })
+        })
+        .collect();
+    PlannedContour {
+        region,
+        tabbed,
+        tabs,
     }
 }
 

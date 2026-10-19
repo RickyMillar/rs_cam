@@ -87,6 +87,9 @@ pub struct Regions {
     curves: Curves,
     /// For each polygon: true when its exterior is the stock ring.
     stock: Vec<bool>,
+    /// For each polygon: the index in `ResolvedSelection::items` of the
+    /// item whose ring is its exterior (geometry selection P4.6).
+    exterior_items: Vec<usize>,
 }
 
 impl Regions {
@@ -100,6 +103,15 @@ impl Regions {
     /// region by its stock offset (geometry selection P4.2, ruling O-3).
     pub fn is_stock(&self, index: usize) -> bool {
         self.stock.get(index).copied().unwrap_or(false)
+    }
+
+    /// The index in `ResolvedSelection::items` of the item whose ring is
+    /// the exterior of the polygon at `index` of [`Self::as_slice`]
+    /// (geometry selection P4.6: the loop that a tab mark names). The
+    /// nesting follows each ring by its input position, so the answer is
+    /// the item, not a ring with equal coordinates.
+    pub fn exterior_item(&self, index: usize) -> Option<usize> {
+        self.exterior_items.get(index).copied()
     }
 
     /// The same polygons as lines to follow: a closed region is also a
@@ -313,7 +325,7 @@ pub fn view(
     let view = match item_use {
         ItemUse::None => View::None,
         ItemUse::Regions => {
-            let (polygons, stock, islands) = regions_of(&served);
+            let (polygons, stock, exteriors, islands) = regions_of(&served);
             if polygons.is_empty() {
                 return Err(empty(notes));
             }
@@ -329,6 +341,10 @@ pub fn view(
             View::Regions(Regions {
                 curves: Curves { polygons },
                 stock,
+                exterior_items: exteriors
+                    .into_iter()
+                    .filter_map(|pos| served_at.get(pos).copied())
+                    .collect(),
             })
         }
         ItemUse::Curves => {
@@ -393,29 +409,37 @@ fn mark_cut(roles: &mut [ItemRole], served_at: &[usize]) {
 /// nested by containment, then each face with its own inner loops. The
 /// flags mark each area whose exterior is the stock ring (P4.2). The stock
 /// ring nests as any drawing ring does, so a drawing loop inside the stock
-/// is a hole of the stock region (a Pocket clears round it). The set holds
-/// the positions in `served` of the rings that became holes (P4.4).
-fn regions_of(served: &[&Item]) -> (Vec<Polygon2>, Vec<bool>, BTreeSet<usize>) {
+/// is a hole of the stock region (a Pocket clears round it). The third
+/// list holds, for each area, the position in `served` of the item whose
+/// ring is its exterior (P4.6). The set holds the positions in `served` of
+/// the rings that became holes (P4.4).
+fn regions_of(served: &[&Item]) -> (Vec<Polygon2>, Vec<bool>, Vec<usize>, BTreeSet<usize>) {
     let nested = nest_closed_rings_at(served);
     let islands = nested.holes;
-    let (mut polygons, mut stock): (Vec<Polygon2>, Vec<bool>) = nested
-        .regions
-        .into_iter()
-        .map(|(polygon, at)| {
-            let from_stock = served
-                .get(at)
-                .is_some_and(|i| i.source() == SourceRef::Stock);
-            (polygon, from_stock)
+    let mut polygons = Vec::new();
+    let mut stock = Vec::new();
+    let mut exteriors = Vec::new();
+    for (polygon, at) in nested.regions {
+        let from_stock = served
+            .get(at)
+            .is_some_and(|i| i.source() == SourceRef::Stock);
+        polygons.push(polygon);
+        stock.push(from_stock);
+        exteriors.push(at);
+    }
+    for (at, face) in served
+        .iter()
+        .enumerate()
+        .filter_map(|(at, i)| match i.shape() {
+            Shape::Face(face) => Some((at, face.rings.clone())),
+            Shape::Loop(_) | Shape::Circle { .. } | Shape::Path(_) | Shape::Point(_) => None,
         })
-        .unzip();
-    for face in served.iter().filter_map(|i| match i.shape() {
-        Shape::Face(face) => Some(face.rings.clone()),
-        Shape::Loop(_) | Shape::Circle { .. } | Shape::Path(_) | Shape::Point(_) => None,
-    }) {
+    {
         polygons.push(face);
         stock.push(false);
+        exteriors.push(at);
     }
-    (polygons, stock, islands)
+    (polygons, stock, exteriors, islands)
 }
 
 /// The loops and circle rings of `items`, in this order, nested by

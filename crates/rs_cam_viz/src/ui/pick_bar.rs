@@ -89,6 +89,10 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, viewport_rect: egui::Rect
     if state.workspace != crate::state::Workspace::Toolpaths {
         return;
     }
+    if state.gui.selection_ui.tab_edit(tp_id).is_some() {
+        draw_tab_bar(ctx, state, tp_id, viewport_rect);
+        return;
+    }
     let Some(mode) = state.gui.selection_ui.pick_mode(tp_id) else {
         return;
     };
@@ -154,11 +158,86 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, viewport_rect: egui::Rect
         });
 
     if done {
-        state.gui.selection_ui.pick = None;
-    } else if let Some(mode) = state.gui.selection_ui.pick.as_mut()
+        state.gui.selection_ui.set_pick(None);
+    } else if let Some(mode) = state.gui.selection_ui.pick_mut()
         && mode.filter != filter
     {
         mode.filter = filter;
+    }
+}
+
+/// The help line of the tab editor bar (geometry selection P4.6).
+const TAB_HELP: &str =
+    "Click a loop: add a tab. Drag a tab: move it. Right-click a tab: delete it.";
+
+/// The bar of the tab editor of a Profile (geometry selection P4.6), in
+/// the place of the pick bar (L-4): the one-line summary of the tabs, the
+/// help line and `Done`. A refused layout shows the refusal in `DANGER`.
+fn draw_tab_bar(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    tp_id: crate::state::toolpath::ToolpathId,
+    viewport_rect: egui::Rect,
+) {
+    let Some(mode) = state.gui.selection_ui.tab_edit(tp_id) else {
+        return;
+    };
+    let name = state
+        .session
+        .find_toolpath_config_by_id(tp_id)
+        .map(|(_, tc)| tc.name.clone())
+        .unwrap_or_default();
+    let line = match mode.layout.as_ref().map(|(_, r)| r) {
+        Some(Ok(answer)) => Ok(crate::state::tab_edit::tab_summary(answer)),
+        Some(Err(refusal)) => Err(refusal.clone()),
+        None => Ok(String::new()),
+    };
+    let mut done = false;
+    egui::Area::new(egui::Id::new(PICK_BAR_AREA_ID))
+        .order(egui::Order::Middle)
+        .pivot(egui::Align2::CENTER_TOP)
+        .fixed_pos(egui::pos2(
+            viewport_rect.center().x,
+            viewport_rect.min.y + tokens::SPACE_3,
+        ))
+        .constrain_to(viewport_rect)
+        .show(ctx, |ui| {
+            egui::Frame::default()
+                .fill(tokens::SURFACE_OVERLAY)
+                .stroke(egui::Stroke::new(1.0, tokens::HAIRLINE))
+                .corner_radius(tokens::RADIUS_MD)
+                .shadow(tokens::SHADOW_OVERLAY)
+                .inner_margin(egui::Margin::same(tokens::SPACE_3 as i8))
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = tokens::SPACE_2;
+                    ui.label(
+                        egui::RichText::new(format!("Edit tabs of {name}"))
+                            .color(tokens::TEXT_STRONG),
+                    );
+                    ui.horizontal(|ui| {
+                        match &line {
+                            Ok(summary) => {
+                                ui.label(summary.as_str());
+                            }
+                            Err(refusal) => {
+                                ui.label(
+                                    egui::RichText::new(refusal.as_str()).color(tokens::DANGER),
+                                );
+                            }
+                        }
+                        if ui
+                            .add(Button::new("Done"))
+                            .on_hover_text("End the tab editor (Esc).")
+                            .clicked()
+                        {
+                            done = true;
+                        }
+                    });
+                    ui.label(egui::RichText::new(TAB_HELP).color(tokens::TEXT_MUTED));
+                });
+        });
+    if done {
+        state.gui.selection_ui.set_tab_edit(tp_id, false);
     }
 }
 

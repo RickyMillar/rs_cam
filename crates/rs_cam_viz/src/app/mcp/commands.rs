@@ -1987,6 +1987,7 @@ impl RsCamApp {
             | CommandId::GetOperationSchema
             | CommandId::SelectionStatus
             | CommandId::ListItems
+            | CommandId::TabLayout
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
             | CommandId::GenerateToolpath
@@ -2896,6 +2897,7 @@ impl RsCamApp {
             | CommandId::GetOperationSchema
             | CommandId::SelectionStatus
             | CommandId::ListItems
+            | CommandId::TabLayout
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
             | CommandId::GenerateToolpath

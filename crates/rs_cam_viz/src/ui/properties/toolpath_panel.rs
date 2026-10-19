@@ -607,6 +607,8 @@ pub(super) fn draw_geometry_tab(
         tool_radius,
         resolved_claims_reference,
         stock_source: entry.stock_source,
+        toolpath_id: entry.id,
+        selection_ui: &mut *selection_ui,
     };
     operations::registry::draw_editor_and_diagram(ui, &mut entry.operation, &mut draw_ctx);
     // G-PILLCLAMP: a pill wrote its field this frame — stamp the

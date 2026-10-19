@@ -375,6 +375,29 @@ impl SetupTransformInfo {
         }
     }
 
+    /// The exact inverse of [`Self::drawing_to_local`]: a point of this
+    /// setup's work plane back in the frame of the drawing (geometry
+    /// selection P4.6: a tab mark and a stored hand tab are drawing points).
+    ///
+    /// On `Top` and `Bottom` the XY of [`Self::world_to_local`] does not
+    /// read Z, so the inverse is [`Self::local_to_global`] plus the stock
+    /// origin. On a lateral face the forward map is the in-plane Z
+    /// rotation only, so the inverse is its inverse.
+    pub fn local_to_drawing(&self, q: P2) -> P2 {
+        let (eff_w, eff_d, _) =
+            self.face_up
+                .effective_stock(self.stock_x, self.stock_y, self.stock_z);
+        if self.face_up.is_lateral() {
+            let p = self
+                .z_rotation
+                .inverse_transform_point(P3::new(q.x, q.y, 0.0), eff_w, eff_d);
+            P2::new(p.x, p.y)
+        } else {
+            let p = self.local_to_global(P3::new(q.x, q.y, 0.0));
+            P2::new(p.x + self.stock_origin_x, p.y + self.stock_origin_y)
+        }
+    }
+
     /// Transform a model's **drawing** polygons into this setup's work
     /// plane, per [`Self::drawing_to_local`].
     ///
@@ -633,5 +656,45 @@ impl SetupTransformInfo {
             .collect();
 
         Toolpath { moves: new_moves }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Geometry selection P4.6: `local_to_drawing` is the exact inverse of
+    /// `drawing_to_local` on every face and every Z rotation, with a stock
+    /// origin that is not zero. A tab mark goes to the drawing frame and a
+    /// stored hand tab comes back through `drawing_to_local`, so a drift
+    /// here moves a tab.
+    #[test]
+    fn local_to_drawing_inverts_drawing_to_local_p4_6() {
+        let points = [
+            P2::new(0.0, 0.0),
+            P2::new(12.5, -7.25),
+            P2::new(-30.0, 41.0),
+        ];
+        for &face_up in FaceUp::ALL {
+            for &z_rotation in ZRotation::ALL {
+                let info = SetupTransformInfo {
+                    face_up,
+                    z_rotation,
+                    stock_x: 120.0,
+                    stock_y: 80.0,
+                    stock_z: 18.0,
+                    stock_origin_x: -15.0,
+                    stock_origin_y: 7.0,
+                    stock_origin_z: -18.0,
+                };
+                for p in points {
+                    let back = info.local_to_drawing(info.drawing_to_local(p));
+                    assert!(
+                        (back.x - p.x).abs() < 1e-9 && (back.y - p.y).abs() < 1e-9,
+                        "{face_up:?} {z_rotation:?}: {p:?} came back as {back:?}"
+                    );
+                }
+            }
+        }
     }
 }

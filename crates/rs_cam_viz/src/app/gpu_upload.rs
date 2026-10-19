@@ -196,6 +196,49 @@ impl RsCamApp {
         };
     }
 
+    /// Upload the tab marks buffer of the tab editor (geometry selection
+    /// P4.6). The frame calls it on a change of the layout or of the drag
+    /// only (`TabMarksDetector`); it rebuilds this one small buffer.
+    pub(super) fn upload_tab_lines(&mut self, frame: &mut eframe::Frame) {
+        let Some(render_state) = frame.wgpu_render_state() else {
+            return;
+        };
+        let verts = {
+            let state = self.controller.state();
+            match crate::state::tab_edit::TabMarksKey::of(state).map(|key| key.toolpath_id) {
+                Some(id) => state
+                    .gui
+                    .selection_ui
+                    .tab_edit(id)
+                    .and_then(|mode| {
+                        crate::interaction::picking::tab_scene(&state.session, id, mode)
+                    })
+                    .map(|scene| tab_vertices(&scene))
+                    .unwrap_or_default(),
+                None => Vec::new(),
+            }
+        };
+        let mut renderer = render_state.renderer.write();
+        // SAFETY: RenderResources inserted in RsCamApp::new; always present.
+        #[allow(clippy::unwrap_used)]
+        let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
+        resources.tab_lines = if verts.is_empty() {
+            None
+        } else {
+            crate::render::gpu_safety::try_create_buffer(
+                &render_state.device,
+                &resources.gpu_limits,
+                "tab_lines",
+                bytemuck::cast_slice(&verts),
+                egui_wgpu::wgpu::BufferUsages::VERTEX,
+            )
+            .map(|vertex_buffer| crate::render::PolygonGpuData {
+                vertex_buffer,
+                vertex_count: verts.len() as u32,
+            })
+        };
+    }
+
     pub(super) fn upload_gpu_data(&mut self, frame: &mut eframe::Frame) {
         let Some(render_state) = frame.wgpu_render_state() else {
             return;
@@ -1877,6 +1920,51 @@ fn build_advance_bands(
 /// the item ([`rs_cam_core::selection::Shape::pick_lines`]) at the point
 /// function and the plane of the draw and the pick. A face draws its rings
 /// at its own plane. A point draws a ring mark. No item, no vertex.
+/// The line vertices of the tab marks of `scene` (geometry selection
+/// P4.6): per tab a bar across the loop, `half_bar` to each side of the
+/// lift centre, and a handle ring of `POINT_MARK_RADIUS_MM` round a hand
+/// tab.
+pub(crate) fn tab_vertices(
+    scene: &crate::interaction::picking::TabScene,
+) -> Vec<crate::render::LineVertex> {
+    use crate::interaction::picking::POINT_MARK_RADIUS_MM;
+    use crate::render::{LineVertex, colors};
+    let z = scene.z as f32;
+    let mut verts = Vec::new();
+    for tab in &scene.tabs {
+        let color = if tab.dragged {
+            colors::TAB_DRAGGED
+        } else if tab.hand {
+            colors::TAB_HAND
+        } else {
+            colors::TAB_AUTO
+        };
+        // The normal of the loop: the direction turned a quarter turn.
+        let [ax, ay] = tab.along;
+        let (nx, ny) = (-ay * scene.half_bar, ax * scene.half_bar);
+        verts.push(LineVertex {
+            position: [(tab.at.x - nx) as f32, (tab.at.y - ny) as f32, z],
+            color,
+        });
+        verts.push(LineVertex {
+            position: [(tab.at.x + nx) as f32, (tab.at.y + ny) as f32, z],
+            color,
+        });
+        if tab.hand || tab.dragged {
+            super::push_circle_vertices(
+                &mut verts,
+                tab.at.x as f32,
+                tab.at.y as f32,
+                z,
+                POINT_MARK_RADIUS_MM as f32,
+                color,
+                24,
+            );
+        }
+    }
+    verts
+}
+
 pub(crate) fn hover_vertices(
     session: &rs_cam_core::session::ProjectSession,
     tc: &rs_cam_core::session::ToolpathConfig,

@@ -1198,6 +1198,14 @@ pub struct SelectionStatusParam {
     pub target: SelectionTargetParam,
 }
 
+/// `tab_layout` (geometry selection P4.6): the tabs that generation cuts
+/// for a Profile, as marks in the drawing frame.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct TabLayoutParam {
+    /// Toolpath index (0-based). The toolpath must be a Profile.
+    pub index: usize,
+}
+
 /// `list_model_items` (P2.7): the items of one model, each with its match
 /// key.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -2492,6 +2500,11 @@ pub fn build_info() -> serde_json::Value {
             // `get_toolpath_params` returns `operation.params.selection`;
             // `inspect_model` carries `items` (counts by kind and layer).
             "geometry_selection",
+            // Geometry selection P4.6 (2026-10-20): `tab_layout` gives the
+            // tabs a Profile cuts (`marks`: `at`, `on_loop`, `loop_key`,
+            // `source`) and the loops it cuts; the write stays
+            // `set_toolpath_param tab_points`.
+            "tab_layout",
         ],
     })
 }

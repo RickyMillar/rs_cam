@@ -39,7 +39,7 @@ use rs_cam_mcp::server::{
     SetStockConfigParam, SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam,
     SetToolpathHeightsParam, SetToolpathModelParam, SetToolpathParamInput, SetToolpathShoeParam,
     SetToolpathToolParam, SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam,
-    SimScrubToolpathParam, SimulationParam, json_str,
+    SimScrubToolpathParam, SimulationParam, TabLayoutParam, json_str,
 };
 
 /// How long a cheap read waits for the GUI frame loop before falling back to
@@ -699,6 +699,17 @@ impl EmbeddedCamServer {
             })
             .await,
         )
+    }
+
+    #[tool(
+        name = "tab_layout",
+        description = "Geometry selection P4.6: the holding tabs that generation cuts for the Profile at `index`, with no generation. `marks` has one entry per tab, loop by loop and in cut order: `at` (the centre of the lift on the cut ring, drawing frame: the frame of the item keys and of `tab_points`), `on_loop` (the centre on the outline loop, drawing frame: the value a hand tab stores in `tab_points`), `loop_key` (the match key of the loop) and `source` (`\"auto\"`, or `{\"hand\": i}` with `i` the index in `tab_points`). `loops` lists the key of every loop the Profile cuts. Hand tabs replace the automatic tabs of their loop. To edit, write the whole list with `set_toolpath_param` `tab_points` (copy `on_loop` of each tab of a loop to keep them). The read refuses as generation refuses (a far hand tab names its point)."
+    )]
+    async fn tab_layout(
+        &self,
+        Parameters(TabLayoutParam { index }): Parameters<TabLayoutParam>,
+    ) -> String {
+        Self::format_result(self.send_request(McpRequestKind::TabLayout { index }).await)
     }
 
     #[tool(

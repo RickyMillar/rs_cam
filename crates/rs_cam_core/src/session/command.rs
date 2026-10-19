@@ -93,6 +93,7 @@ use std::sync::atomic::AtomicBool;
 
 use super::cycle_time::{self, CycleTime};
 use super::selection_status::{ModelItem, SelectionReport};
+use super::tab_layout::TabLayoutAnswer;
 use super::{
     GenerateToolpathHandle, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle,
     ProjectSession, RecommendClearingStrategyHandle, SessionError, ToolpathComputeResult,
@@ -124,11 +125,11 @@ macro_rules! for_each_command {
         $m! {
             //  kind      id                wire name             payload
             //  answer / handle     surfaces
+            // Geometry selection P4.6: the viewport tab editor writes
+            // `tab_points` through this row (one undo step per act).
             (Command, SetToolpathParam, "set_toolpath_param", SetToolpathParamArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI inspector replaces the whole config through replace_toolpath_config",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Reached,
              }),
@@ -548,6 +549,14 @@ macro_rules! for_each_command {
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI writes rules in its job file; it lists no items",
+                 ),
+             }),
+            (Query, TabLayout, "tab_layout", TabLayoutArgs, TabLayoutAnswer,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI writes tab_points in its job file; it draws no tab marks",
                  ),
              }),
             (Query, GetOperationSchema, "get_operation_schema", GetOperationSchemaArgs,
@@ -1729,6 +1738,13 @@ pub struct ListItemsAnswer {
     pub items: Vec<ModelItem>,
 }
 
+/// The arguments of the `tab_layout` read (geometry selection P4.6).
+#[derive(Debug, Clone)]
+pub struct TabLayoutArgs {
+    /// The index of the Profile toolpath to read.
+    pub index: usize,
+}
+
 /// The arguments of the `get_operation_schema` read.
 #[derive(Debug, Clone)]
 pub struct GetOperationSchemaArgs {
@@ -2704,6 +2720,13 @@ impl ProjectSession {
                 } = args;
                 let items = self.list_model_items_near(model_id, layer.as_deref(), kind, near)?;
                 Ok(QueryAnswer::ListItems(ListItemsAnswer { items }))
+            }
+            Query::TabLayout(args) => {
+                let tc = self
+                    .toolpath_configs()
+                    .get(args.index)
+                    .ok_or(SessionError::ToolpathNotFound(args.index))?;
+                Ok(QueryAnswer::TabLayout(self.tab_layout(tc)?))
             }
             Query::GetOperationSchema(args) => {
                 let GetOperationSchemaArgs { operation_type } = args;

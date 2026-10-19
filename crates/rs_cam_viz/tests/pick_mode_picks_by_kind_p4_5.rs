@@ -224,7 +224,7 @@ fn pick_on(c: &mut AppController<SilentBackend>) -> PickMode {
         SelectionTarget::Op,
         tc.operation.capabilities().item_use,
     );
-    c.state_mut().gui.selection_ui.pick = Some(mode.clone());
+    c.state_mut().gui.selection_ui.set_pick(Some(mode.clone()));
     mode
 }
 

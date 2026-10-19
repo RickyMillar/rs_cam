@@ -13,6 +13,7 @@ pub mod selection_highlight;
 pub mod shoe_plan;
 pub mod simulation;
 pub mod stale;
+pub mod tab_edit;
 pub mod toolpath;
 pub mod viewport;
 pub mod wizard;

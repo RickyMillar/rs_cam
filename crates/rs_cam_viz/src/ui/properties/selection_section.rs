@@ -201,7 +201,7 @@ pub(crate) fn draw_selection_section(
         if ui.add(pick_button).on_hover_text(PICK_HOVER).clicked() {
             // L-3: one Pick at a time. A click on this button replaces the
             // mode of any other section.
-            ui_state.pick = if on {
+            ui_state.set_pick(if on {
                 None
             } else {
                 Some(PickMode::new(
@@ -209,7 +209,7 @@ pub(crate) fn draw_selection_section(
                     inputs.target,
                     inputs.item_use,
                 ))
-            };
+            });
         }
     });
 

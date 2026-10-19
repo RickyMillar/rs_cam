@@ -5058,5 +5058,25 @@
       "type": "object"
     },
     "name": "sim_scrub_toolpath"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`tab_layout` (geometry selection P4.6): the tabs that generation cuts\nfor a Profile, as marks in the drawing frame.",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based). The toolpath must be a Profile.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "TabLayoutParam",
+      "type": "object"
+    },
+    "name": "tab_layout"
   }
 ]

@@ -8,7 +8,7 @@ use crate::state::toolpath::{
 
 use super::super::{advanced, depth_caution_row, dv, dv_pill, p, schema_range, through_cut_row};
 use super::{DepthBeyondStock, ThroughCut, draw_tab_diagram};
-use crate::ui::components::UiExt as _;
+use crate::ui::components::{Button, UiExt as _};
 use rs_cam_core::compute::catalog::OperationType;
 
 pub(in crate::ui::properties) fn draw_face_params(
@@ -187,6 +187,10 @@ pub(in crate::ui::properties) fn draw_profile_params(
     pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
     through_cut: Option<&ThroughCut>,
+    tab_editor: (
+        crate::state::toolpath::ToolpathId,
+        &mut crate::state::pick::SelectionUi,
+    ),
 ) {
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     ui.param_grid("profile_p", |ui| {
@@ -231,7 +235,7 @@ pub(in crate::ui::properties) fn draw_profile_params(
     // dragged up to the board, tabs set back to zero). Every other frame
     // passes `None`, which leaves the stored state — and the operator's
     // collapse — alone. Same id as the old `ui.collapsing("Tabs", ..)`.
-    draw_profile_tabs(ui, cfg, through_cut);
+    draw_profile_tabs(ui, cfg, through_cut, tab_editor);
     advanced(ui, "profile_adv", |ui| {
         ui.label("Compensation:");
         egui::ComboBox::from_id_salt("prof_comp")
@@ -257,8 +261,21 @@ pub(in crate::ui::properties) fn draw_profile_params(
     });
 }
 
+/// The hover of the `Edit in viewport` button of the Tabs row (P4.6).
+const TAB_EDIT_HOVER: &str = "Show the tabs in the viewport. Click a loop to add a tab, drag a tab \
+     to move it, right-click a tab to delete it. An edit of a loop with automatic tabs makes all \
+     of its tabs hand tabs. The last tab of a loop cannot be deleted.";
+
 /// The Tabs disclosure of Profile, with its diagram.
-fn draw_profile_tabs(ui: &mut egui::Ui, cfg: &mut ProfileConfig, through_cut: Option<&ThroughCut>) {
+fn draw_profile_tabs(
+    ui: &mut egui::Ui,
+    cfg: &mut ProfileConfig,
+    through_cut: Option<&ThroughCut>,
+    (toolpath_id, selection_ui): (
+        crate::state::toolpath::ToolpathId,
+        &mut crate::state::pick::SelectionUi,
+    ),
+) {
     let tabs_default_open =
         through_cut.is_some() && cfg.tab_count == 0 && cfg.tab_points.is_empty();
     let tabs_seen_id = ui.id().with("prof_tabs_through_cut_seen");
@@ -284,14 +301,24 @@ fn draw_profile_tabs(ui: &mut egui::Ui, cfg: &mut ProfileConfig, through_cut: Op
                     cfg.tab_count = count.max(0) as usize;
                 }
                 ui.end_row();
-                // P5: hand tabs come from `tab_points` (MCP or the project
-                // file); the viewport editor is open work (P4).
-                if !cfg.tab_points.is_empty() {
+                // P5: hand tabs come from `tab_points`. P4.6: the viewport
+                // tab editor writes them (`Edit in viewport`); MCP and the
+                // project file write them too.
+                if cfg.tab_count > 0 || !cfg.tab_points.is_empty() {
                     ui.label("Hand tabs:");
                     ui.horizontal(|ui| {
                         ui.label(cfg.tab_points.len().to_string());
-                        if ui.small_button("Clear").clicked() {
+                        if !cfg.tab_points.is_empty() && ui.small_button("Clear").clicked() {
                             cfg.tab_points.clear();
+                        }
+                        let on = selection_ui.tab_edit(toolpath_id).is_some();
+                        let button = if on {
+                            Button::primary("Edit in viewport")
+                        } else {
+                            Button::new("Edit in viewport")
+                        };
+                        if ui.add(button).on_hover_text(TAB_EDIT_HOVER).clicked() {
+                            selection_ui.set_tab_edit(toolpath_id, !on);
                         }
                     });
                     ui.end_row();

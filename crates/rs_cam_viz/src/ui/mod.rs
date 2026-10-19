@@ -365,6 +365,15 @@ pub enum AppEvent {
         circle: Option<rs_cam_core::selection::DiameterRange>,
     },
 
+    // Geometry selection P4.6: one act of the viewport tab editor of a
+    // Profile (add, move or delete one tab). The controller reads the tab
+    // layout, builds the new `tab_points` (`apply_tab_edit`: L-5, O-4) and
+    // writes them with ONE `SetToolpathParam`: one undo step.
+    EditTabs {
+        toolpath_id: ToolpathId,
+        edit: rs_cam_core::session::TabEdit,
+    },
+
     // One edit of a selection of the toolpath from a panel (the face Clear
     // button).
     EditToolpathSelection {

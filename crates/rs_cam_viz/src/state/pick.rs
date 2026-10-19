@@ -5,9 +5,13 @@
 //! the kind filter that the viewport filter bar (`ui/pick_bar.rs`) edits.
 //!
 //! Lead ruling L-3: one `Pick` button is on at a time. The type holds one
-//! `Option<PickMode>`, so a second mode cannot exist. With no mode on, a
+//! `Option<ViewportMode>`, so a second mode cannot exist. With no mode on, a
 //! viewport click edits the default target (`SelectionTarget::Op`, or the
 //! boundary of an op that holds no selection).
+//!
+//! P4.6 adds the second viewport mode, the hand-tab editor of a Profile
+//! ([`TabEditMode`]). It is a variant of the same `Option`, so a pick mode
+//! and the tab editor cannot both be on.
 
 use std::collections::BTreeSet;
 
@@ -143,11 +147,69 @@ pub struct RuleDraft {
     pub z: Option<ZRange>,
 }
 
+/// A drag of one tab in the tab editor (geometry selection P4.6). It is GUI
+/// state only: the release sends ONE `SetToolpathParam`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TabDrag {
+    /// The index of the dragged tab in `TabLayoutAnswer::marks`.
+    pub mark: usize,
+    /// The point on the loop under the pointer (drawing frame), snapped on
+    /// each frame. `None` until the pointer first moves onto the loop.
+    pub to: Option<[f64; 2]>,
+}
+
+/// The hand-tab editor of one Profile (geometry selection P4.6).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TabEditMode {
+    pub toolpath_id: ToolpathId,
+    /// The drag in progress, if any.
+    pub drag: Option<TabDrag>,
+    /// The tab layout the editor shows, and the input revision of the
+    /// toolpath it was read at (`ProjectSession::toolpath_revision`). The
+    /// frame reads the query again only when the revision moves
+    /// ([`super::tab_edit::refresh_layout`]).
+    pub layout: Option<(u64, Result<rs_cam_core::session::TabLayoutAnswer, String>)>,
+}
+
+impl TabEditMode {
+    /// A new editor of `toolpath_id`, with no layout read yet.
+    pub fn new(toolpath_id: ToolpathId) -> Self {
+        Self {
+            toolpath_id,
+            drag: None,
+            layout: None,
+        }
+    }
+
+    /// The layout, when the query gave one.
+    pub fn answer(&self) -> Option<&rs_cam_core::session::TabLayoutAnswer> {
+        self.layout.as_ref().and_then(|(_, r)| r.as_ref().ok())
+    }
+}
+
+/// The one viewport mode that is on (lead ruling L-3).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ViewportMode {
+    /// A `Pick` button of the Selection section (P4.3, P4.5).
+    Pick(PickMode),
+    /// The hand-tab editor of a Profile (P4.6).
+    Tabs(TabEditMode),
+}
+
+impl ViewportMode {
+    fn toolpath_id(&self) -> ToolpathId {
+        match self {
+            Self::Pick(mode) => mode.toolpath_id,
+            Self::Tabs(mode) => mode.toolpath_id,
+        }
+    }
+}
+
 /// The selection section state of the inspector.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SelectionUi {
-    /// The pick mode that is on, if any.
-    pub pick: Option<PickMode>,
+    /// The viewport mode that is on, if any.
+    pub mode: Option<ViewportMode>,
     /// The `+ Rule` draft, while the popover is open.
     pub rule_draft: Option<RuleDraft>,
 }
@@ -155,9 +217,48 @@ pub struct SelectionUi {
 impl SelectionUi {
     /// True when the `Pick` button of `target` on `toolpath_id` is on.
     pub fn pick_is_on(&self, toolpath_id: ToolpathId, target: SelectionTarget) -> bool {
-        self.pick
-            .as_ref()
-            .is_some_and(|m| m.toolpath_id == toolpath_id && m.target == target)
+        self.pick_mode(toolpath_id)
+            .is_some_and(|m| m.target == target)
+    }
+
+    /// Turn the pick mode of `target` on `toolpath_id` on (with `mode`) or
+    /// off. Any other mode ends (L-3).
+    pub fn set_pick(&mut self, mode: Option<PickMode>) {
+        self.mode = mode.map(ViewportMode::Pick);
+    }
+
+    /// The pick mode that is on, of any toolpath.
+    pub fn pick_mut(&mut self) -> Option<&mut PickMode> {
+        match self.mode.as_mut() {
+            Some(ViewportMode::Pick(mode)) => Some(mode),
+            Some(ViewportMode::Tabs(_)) | None => None,
+        }
+    }
+
+    /// The tab editor of `toolpath_id`, if it is on.
+    pub fn tab_edit(&self, toolpath_id: ToolpathId) -> Option<&TabEditMode> {
+        match self.mode.as_ref() {
+            Some(ViewportMode::Tabs(mode)) if mode.toolpath_id == toolpath_id => Some(mode),
+            Some(ViewportMode::Tabs(_) | ViewportMode::Pick(_)) | None => None,
+        }
+    }
+
+    /// The tab editor of `toolpath_id`, if it is on, to edit.
+    pub fn tab_edit_mut(&mut self, toolpath_id: ToolpathId) -> Option<&mut TabEditMode> {
+        match self.mode.as_mut() {
+            Some(ViewportMode::Tabs(mode)) if mode.toolpath_id == toolpath_id => Some(mode),
+            Some(ViewportMode::Tabs(_) | ViewportMode::Pick(_)) | None => None,
+        }
+    }
+
+    /// Turn the tab editor of `toolpath_id` on or off. On ends any other
+    /// mode (L-3).
+    pub fn set_tab_edit(&mut self, toolpath_id: ToolpathId, on: bool) {
+        if on {
+            self.mode = Some(ViewportMode::Tabs(TabEditMode::new(toolpath_id)));
+        } else if self.tab_edit(toolpath_id).is_some() {
+            self.mode = None;
+        }
     }
 
     /// The target that a viewport click on `toolpath_id` edits, when a
@@ -168,9 +269,10 @@ impl SelectionUi {
 
     /// The pick mode of `toolpath_id`, if one is on.
     pub fn pick_mode(&self, toolpath_id: ToolpathId) -> Option<&PickMode> {
-        self.pick
-            .as_ref()
-            .filter(|mode| mode.toolpath_id == toolpath_id)
+        match self.mode.as_ref() {
+            Some(ViewportMode::Pick(mode)) if mode.toolpath_id == toolpath_id => Some(mode),
+            Some(ViewportMode::Pick(_) | ViewportMode::Tabs(_)) | None => None,
+        }
     }
 
     /// The open draft of `target` on `toolpath_id`, if any.
@@ -186,14 +288,14 @@ impl SelectionUi {
 
     /// Clear the state of every toolpath but `toolpath_id`. The inspector
     /// calls it each frame, so a change of the selected toolpath ends the
-    /// pick mode and closes the popover.
+    /// pick mode or the tab editor and closes the popover.
     pub fn keep_only(&mut self, toolpath_id: Option<ToolpathId>) {
         if self
-            .pick
+            .mode
             .as_ref()
-            .is_some_and(|m| Some(m.toolpath_id) != toolpath_id)
+            .is_some_and(|m| Some(m.toolpath_id()) != toolpath_id)
         {
-            self.pick = None;
+            self.mode = None;
         }
         if self
             .rule_draft

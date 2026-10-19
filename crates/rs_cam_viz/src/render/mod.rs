@@ -222,6 +222,11 @@ pub struct RenderResources {
     /// hover change uploads only this buffer and never the drawing
     /// (`polygon_data`). It draws after the drawing, over it.
     pub hover_lines: Option<PolygonGpuData>,
+    /// Geometry selection P4.6: the tab marks of the tab editor (a bar
+    /// across the loop per tab, a ring per hand tab). Its own small buffer:
+    /// it uploads on a change of the layout or of the drag only
+    /// (`state::tab_edit::TabMarksDetector`).
+    pub tab_lines: Option<PolygonGpuData>,
     pub collision_vertex_buffer: Option<wgpu::Buffer>,
     pub collision_vertex_count: u32,
     pub origin_axes_data: Option<grid_render::OriginAxesGpuData>,
@@ -754,6 +759,7 @@ impl RenderResources {
             fixture_data: None,
             polygon_data: Vec::new(),
             hover_lines: None,
+            tab_lines: None,
             toolpath_data: Vec::new(),
             sim_mesh_data: None,
             height_planes_data: None,
@@ -1274,6 +1280,16 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                     pass.set_vertex_buffer(0, hover.vertex_buffer.slice(..));
                     pass.draw(0..hover.vertex_count, 0..1);
                 }
+            }
+
+            // Geometry selection P4.6: the tab marks of the tab editor. The
+            // editor is on by an explicit act, so the marks draw with the
+            // curves overlay off too.
+            if let Some(tabs) = &resources.tab_lines {
+                pass.set_pipeline(&resources.line_pipeline);
+                pass.set_bind_group(0, &resources.line_bind_group, &[]);
+                pass.set_vertex_buffer(0, tabs.vertex_buffer.slice(..));
+                pass.draw(0..tabs.vertex_count, 0..1);
             }
 
             // Draw collision markers

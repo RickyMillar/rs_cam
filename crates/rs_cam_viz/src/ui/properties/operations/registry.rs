@@ -73,6 +73,12 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
     /// analytic reference picker on it, Unified Finish gates its claims
     /// block.
     pub stock_source: StockSource,
+    /// The toolpath on screen. The Profile Tabs row turns its viewport tab
+    /// editor on and off (geometry selection P4.6).
+    pub toolpath_id: crate::state::toolpath::ToolpathId,
+    /// The viewport mode state (`SelectionUi`): the tab editor is one of its
+    /// modes (L-3). Only the Profile editor writes it.
+    pub selection_ui: &'a mut crate::state::pick::SelectionUi,
 }
 
 /// What shape diagram an operation shows under its parameter grid.
@@ -228,7 +234,8 @@ editor!(ed_profile, Profile, |ui, cfg, cx| draw_profile_params(
     cfg,
     cx.pills,
     cx.depth_caution,
-    cx.through_cut
+    cx.through_cut,
+    (cx.toolpath_id, &mut *cx.selection_ui)
 ));
 editor!(ed_adaptive, Adaptive, |ui, cfg, cx| draw_adaptive_params(
     ui,

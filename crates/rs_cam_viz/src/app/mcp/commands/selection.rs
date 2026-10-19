@@ -2,7 +2,8 @@
 //!
 //! The wire tools are `edit_toolpath_selection` (the `EditSelection`
 //! command row), `selection_status` and `list_model_items` (the
-//! `SelectionStatus` and `ListItems` query rows). Each takes the core door
+//! `SelectionStatus` and `ListItems` query rows), and `tab_layout` (the
+//! `TabLayout` query row, P4.6). Each takes the core door
 //! (`ProjectSession::apply` or `ProjectSession::query`); this file only
 //! converts the wire type and writes the reply JSON.
 //!
@@ -13,7 +14,8 @@
 use rs_cam_core::selection::{ItemCounts, MatchKey};
 use rs_cam_core::session::{
     Command, EditSelectionArgs, Effects, ListItemsArgs, ModelItem, ProjectSession, Query,
-    QueryAnswer, SelectionReport, SelectionStatusArgs, SelectionTarget,
+    QueryAnswer, SelectionReport, SelectionStatusArgs, SelectionTarget, TabLayoutAnswer,
+    TabLayoutArgs,
 };
 use rs_cam_mcp::server::{EditToolpathSelectionParam, ListModelItemsParam, json_str};
 
@@ -186,7 +188,59 @@ pub(crate) fn selection_status_reply(
     }
 }
 
+/// The reply of the `tab_layout` read: the core answer, mark by mark. A
+/// key is its file JSON; `source` is `"auto"` or `{"hand": i}`.
+pub(crate) fn tab_layout_json(answer: &TabLayoutAnswer) -> serde_json::Value {
+    serde_json::json!({
+        "marks": answer
+            .marks
+            .iter()
+            .map(|m| serde_json::json!({
+                "at": m.at,
+                "on_loop": m.on_loop,
+                "loop_key": key_json(&m.loop_key),
+                "source": m.source,
+            }))
+            .collect::<Vec<_>>(),
+        "loops": answer.loops.iter().map(key_json).collect::<Vec<_>>(),
+    })
+}
+
+/// The `tab_layout` reply for the toolpath at `index`: the answer of the
+/// core query row, with the toolpath's name and its `tab_points`.
+pub(crate) fn tab_layout_reply(session: &ProjectSession, index: usize) -> serde_json::Value {
+    let Some(tc) = session.get_toolpath_config(index) else {
+        return serde_json::json!({
+            "error": format!("Toolpath index {index} not found"),
+        });
+    };
+    match session.query(Query::TabLayout(TabLayoutArgs { index })) {
+        Ok(QueryAnswer::TabLayout(answer)) => {
+            let mut reply = tab_layout_json(&answer);
+            if let Some(obj) = reply.as_object_mut() {
+                obj.insert("index".into(), serde_json::json!(index));
+                obj.insert("id".into(), serde_json::json!(tc.id));
+                obj.insert("name".into(), serde_json::json!(tc.name));
+                if let rs_cam_core::compute::catalog::OperationConfig::Profile(cfg) = &tc.operation
+                {
+                    obj.insert("tab_points".into(), serde_json::json!(cfg.tab_points));
+                }
+            }
+            reply
+        }
+        Ok(other) => serde_json::json!({
+            "error": format!("the tab_layout read answered {other:?}"),
+        }),
+        Err(e) => serde_json::json!({ "error": e.to_string() }),
+    }
+}
+
 impl RsCamApp {
+    /// The `tab_layout` read: the core query row (P4.6).
+    pub(crate) fn mcp_tab_layout(&self, index: usize) -> String {
+        json_str(tab_layout_reply(&self.controller.state().session, index))
+    }
+
     /// The `selection_status` read: the core query row.
     pub(crate) fn mcp_selection_status(&self, index: usize, target: SelectionTarget) -> String {
         json_str(selection_status_reply(
@@ -810,5 +864,93 @@ mod tests {
             "one layer rule, two doors"
         );
         assert_eq!(stored(&gui, 3).rules().len(), 2);
+    }
+
+    /// Geometry selection P4.6: the MCP `tab_layout` reply and the marks
+    /// the GUI tab editor shows (`state::tab_edit::refresh_layout`, the
+    /// layout the viewport draws and the controller edits) are one answer,
+    /// mark by mark: `at`, `on_loop`, `loop_key` and `source`. Two arms: a
+    /// Profile with auto tabs on a Top setup, and with one hand tab on a
+    /// Bottom setup turned 90 degrees.
+    #[test]
+    fn mcp_and_gui_give_one_tab_layout_p4_6() {
+        use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+        use rs_cam_core::session::{SetSetupFaceArgs, SetSetupRotationArgs, SetToolpathParamArgs};
+        for flipped in [false, true] {
+            let mut s = project();
+            let tool_id = s.tools()[0].id.0;
+            let profile = add_op(&mut s, OperationType::Profile, tool_id);
+            let _ = apply(
+                &mut s,
+                Command::SetToolpathParam(SetToolpathParamArgs {
+                    index: profile,
+                    param: "tab_count".to_owned(),
+                    value: serde_json::json!(2),
+                }),
+            );
+            if flipped {
+                let _ = apply(
+                    &mut s,
+                    Command::SetSetupFace(SetSetupFaceArgs {
+                        setup_index: 0,
+                        face_up: FaceUp::Bottom,
+                    }),
+                );
+                let _ = apply(
+                    &mut s,
+                    Command::SetSetupRotation(SetSetupRotationArgs {
+                        setup_index: 0,
+                        z_rotation: ZRotation::Deg90,
+                    }),
+                );
+                // One hand tab: the outline point of the first auto mark.
+                let first = match s.query(Query::TabLayout(TabLayoutArgs { index: profile })) {
+                    Ok(QueryAnswer::TabLayout(answer)) => answer.marks[0].on_loop,
+                    other => panic!("tab_layout answered {other:?}"),
+                };
+                let _ = apply(
+                    &mut s,
+                    Command::SetToolpathParam(SetToolpathParamArgs {
+                        index: profile,
+                        param: "tab_points".to_owned(),
+                        value: serde_json::json!([first]),
+                    }),
+                );
+            }
+            let mcp = tab_layout_reply(&s, profile);
+            assert!(mcp.get("error").is_none(), "{mcp}");
+
+            let id = s.toolpath_configs()[profile].id;
+            let mut state = crate::state::AppState::new();
+            state.session = s;
+            state.workspace = crate::state::Workspace::Toolpaths;
+            state.selection = crate::state::selection::Selection::Toolpath(id);
+            state.gui.selection_ui.set_tab_edit(id, true);
+            assert!(crate::state::tab_edit::refresh_layout(&mut state));
+            let gui = state
+                .gui
+                .selection_ui
+                .tab_edit(id)
+                .and_then(|mode| mode.answer())
+                .expect("the GUI editor has a layout");
+            assert!(!gui.marks.is_empty(), "the Profile has tabs");
+            if flipped {
+                assert!(
+                    gui.marks
+                        .iter()
+                        .any(|m| m.source == rs_cam_core::dressup::tabs::TabSource::Hand(0))
+                );
+            }
+            let marks = mcp["marks"].as_array().expect("marks");
+            assert_eq!(marks.len(), gui.marks.len(), "{mcp}");
+            for (wire, mark) in marks.iter().zip(&gui.marks) {
+                assert_eq!(wire["at"], serde_json::json!(mark.at));
+                assert_eq!(wire["on_loop"], serde_json::json!(mark.on_loop));
+                assert_eq!(wire["loop_key"], key_json(&mark.loop_key));
+                assert_eq!(wire["source"], serde_json::json!(mark.source));
+            }
+            let loops = mcp["loops"].as_array().expect("loops");
+            assert_eq!(loops.len(), gui.loops.len());
+        }
     }
 }

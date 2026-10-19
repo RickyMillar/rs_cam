@@ -469,11 +469,12 @@ impl RsCamApp {
             return;
         }
         // Geometry selection P4.5: Escape ends the pick mode, after the
-        // dock surfaces above took theirs. The key is consumed.
-        if self.controller.state().gui.selection_ui.pick.is_some()
+        // dock surfaces above took theirs. The key is consumed. P4.6: it
+        // ends the tab editor too (a drag in progress sends nothing).
+        if self.controller.state().gui.selection_ui.mode.is_some()
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
         {
-            self.controller.state_mut().gui.selection_ui.pick = None;
+            self.controller.state_mut().gui.selection_ui.mode = None;
         }
 
         ctx.input(|i| {

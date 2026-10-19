@@ -119,6 +119,15 @@ pub fn selection_state_color(state: rs_cam_core::session::ItemState) -> [f32; 3]
     }
 }
 
+// ── Profile tabs (geometry selection P4.6) ──────────────────────────────
+
+/// An automatic tab in the tab editor: a bar across the loop.
+pub const TAB_AUTO: [f32; 3] = token_rgb(tokens::INK_65);
+/// A hand tab in the tab editor: a bar across the loop and a handle ring.
+pub const TAB_HAND: [f32; 3] = token_rgb(tokens::ACCENT);
+/// The tab that the pointer drags (drawn at the snapped point).
+pub const TAB_DRAGGED: [f32; 3] = token_rgb(tokens::TEXT_STRONG);
+
 // ── Drill markers ───────────────────────────────────────────────────────
 
 /// A drill hole that the selection holds (was a literal in
