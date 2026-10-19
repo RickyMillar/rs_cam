@@ -538,3 +538,20 @@ The lead approves `P3_DESIGN.md` and takes L-1 to L-17 as it recommends.
   once in `step_input.rs`, so every reader of a STEP mesh sees outward
   triangles, and delete `outward_sign`. Run G-OPGOLDEN and the 3D sentries
   on those two files first: a slope or flat-face reader may move.
+- P3.1 (86265095) accepted. PENDING SWAP after the tech-debt W5 commit
+  (lead, one small commit), from the P3.1 editor:
+  1. `session/compute/export.rs` `diagnose_toolpath_with_trace`: replace
+     `height_context_for_toolpath(tc)` + `ResolvedHeights::from_heights`
+     with `self.toolpath_heights(tc).ok().map(|a|
+     ResolvedHeights::from_toolpath_heights(&a, &tc.heights))`, and pass
+     `heights: heights.as_ref()`. Optionally emit
+     `model_reference_refusal` as a diagnostic there.
+  2. Delete `height_context_for_toolpath`, `transform_bbox_world_to_local`,
+     the "PR-5 polish" doc line, and `ResolvedHeights::from_heights`.
+  3. In `one_heights_resolver_for_every_surface_p3_1`: `mcp_today` uses
+     `from_toolpath_heights`; remove `#[ignore]` from
+     `the_mcp_diagnostics_read_the_face_top`. Fix the doc comment at
+     `tests/depth_beyond_stock_core_g_depthstockcore.rs:351`.
+  Accepted deviations: `ToolpathHeights::from_context` is public (two
+  ungated core tests use it); L-4 is a value on the answer, and generation
+  refuses through `generation_heights`; `TopSource` has three flat arms.
