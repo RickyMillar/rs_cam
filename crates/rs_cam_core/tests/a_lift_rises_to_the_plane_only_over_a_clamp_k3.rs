@@ -162,9 +162,10 @@ fn a_link_rises_to_the_plane_only_when_it_crosses_the_clamp_k3() {
     add_clamp(&mut session, [-3.0, -40.0, -DEPTH], [3.0, 40.0, CLAMP_TOP]);
     let tp = generate(&mut session);
     let tc = &session.toolpath_configs()[0];
-    let retract = tc
+    let retract = session
+        .toolpath_heights(tc)
+        .expect("the heights resolve")
         .heights
-        .resolve(&session.height_context_for_toolpath(tc))
         .retract_z;
     assert!(
         retract < plane() - 1.0,
@@ -213,9 +214,10 @@ fn k1_pipeline(mut free: ProjectSession, clamped: &ProjectSession) -> Toolpath {
         )
         .expect("a tool view");
     let tc = &free.toolpath_configs()[0];
-    let retract = tc
+    let retract = free
+        .toolpath_heights(tc)
+        .expect("the heights resolve")
         .heights
-        .resolve(&free.height_context_for_toolpath(tc))
         .retract_z;
     let mut channels = ReconcileSet::empty();
     clip_annotated_to_obstacles(AnnotatedToolpath::new(tp), &view, retract, Some(300.0))

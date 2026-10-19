@@ -3,7 +3,7 @@
 //! LUT viewer and the entry-style preview diagram.
 
 use crate::state::toolpath::{
-    DressupConfig, DressupEntryStyle, HeightContext, HeightsConfig, OperationConfig, ToolpathEntry,
+    DressupConfig, DressupEntryStyle, HeightsConfig, OperationConfig, ToolpathEntry,
 };
 use crate::ui::AppEvent;
 use crate::ui::components::{
@@ -702,10 +702,10 @@ pub(super) fn draw_entry_preview_diagram(
     ui: &mut egui::Ui,
     dressups: &DressupConfig,
     helix_radius_mm: Option<f64>,
-    height_ctx: &HeightContext,
+    answer: &rs_cam_core::session::ToolpathHeights,
     heights: &HeightsConfig,
 ) {
-    let resolved = heights.resolve(height_ctx);
+    let resolved = answer.resolve(heights);
     let feed_z = resolved.feed_z;
     let top_z = resolved.top_z;
     let z_drop = feed_z - top_z;

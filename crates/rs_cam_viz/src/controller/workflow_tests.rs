@@ -369,7 +369,11 @@ fn w3_face_z_propagates_to_height_resolution() {
     // Resolve heights with auto defaults
     let heights_config = HeightsConfig::default();
     let op_depth = 3.0;
-    let mut heights = heights_config.resolve(&HeightContext::simple(10.0, op_depth));
+    let mut heights = rs_cam_core::session::ToolpathHeights::from_context(
+        &heights_config,
+        HeightContext::simple(10.0, op_depth),
+    )
+    .heights;
 
     // Without face Z, auto top_z resolves to 0 (HeightContext::simple stock
     // spans 0 → -op_depth; resolve() uses 0 as the auto top default — see
@@ -984,7 +988,11 @@ fn w5_project_round_trip_preserves_step_face_selection() {
 #[test]
 fn w6_auto_height_defaults() {
     let config = HeightsConfig::default();
-    let h = config.resolve(&HeightContext::simple(10.0, 5.0));
+    let h = rs_cam_core::session::ToolpathHeights::from_context(
+        &config,
+        HeightContext::simple(10.0, 5.0),
+    )
+    .heights;
 
     // HeightContext::simple(10.0, 5.0) → stock_top=0, stock_bottom=-5, safe_z=10
     // retract = safe_z (auto) = 10
@@ -1029,7 +1037,11 @@ fn w6_auto_height_defaults() {
 fn w6_face_top_z_overrides_auto() {
     let config = HeightsConfig::default();
     let op_depth = 5.0;
-    let mut h = config.resolve(&HeightContext::simple(10.0, op_depth));
+    let mut h = rs_cam_core::session::ToolpathHeights::from_context(
+        &config,
+        HeightContext::simple(10.0, op_depth),
+    )
+    .heights;
 
     let face_z = 15.0;
     if config.top_z.is_auto() {
@@ -1049,7 +1061,11 @@ fn w6_manual_heights_override_face_z() {
     config.top_z = HeightMode::Manual(3.0);
 
     let op_depth = 5.0;
-    let mut h = config.resolve(&HeightContext::simple(10.0, op_depth));
+    let mut h = rs_cam_core::session::ToolpathHeights::from_context(
+        &config,
+        HeightContext::simple(10.0, op_depth),
+    )
+    .heights;
 
     let face_z = 15.0;
     // Same logic as events.rs — only override when auto
@@ -1067,7 +1083,11 @@ fn w6_manual_heights_override_face_z() {
 #[test]
 fn w6_height_ordering_with_various_depths() {
     for &(safe_z, op_depth) in &[(5.0, 2.0), (20.0, 10.0), (0.5, 0.1), (100.0, 50.0)] {
-        let h = HeightsConfig::default().resolve(&HeightContext::simple(safe_z, op_depth));
+        let h = rs_cam_core::session::ToolpathHeights::from_context(
+            &HeightsConfig::default(),
+            HeightContext::simple(safe_z, op_depth),
+        )
+        .heights;
         assert!(
             h.clearance_z > h.retract_z && h.retract_z > h.feed_z && h.top_z > h.bottom_z,
             "Height ordering violated for safe_z={safe_z}, op_depth={op_depth}: \

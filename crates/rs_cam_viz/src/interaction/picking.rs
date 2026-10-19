@@ -390,15 +390,22 @@ pub fn drawing_plane_z(
     frame: Option<&SetupFrame>,
 ) -> f64 {
     match &tc.operation {
+        // Geometry selection P3.1: the Trace top is THE heights of the
+        // session (`toolpath_heights`), the top that generation cuts from.
+        // A refused height draws at the stock top, as every other op.
         rs_cam_core::compute::catalog::OperationConfig::Trace(_) => {
-            let context = crate::state::job::height_context_from_session(session, tc);
-            let heights = tc.heights.resolve(&context);
-            tc.operation
-                .cutting_levels(heights.top_z)
-                .last()
-                .copied()
-                .unwrap_or(heights.top_z)
-                + HOLE_MARK_LIFT_MM
+            match session.toolpath_heights(tc) {
+                Ok(resolved) => {
+                    let heights = resolved.heights;
+                    tc.operation
+                        .cutting_levels(heights.top_z)
+                        .last()
+                        .copied()
+                        .unwrap_or(heights.top_z)
+                        + HOLE_MARK_LIFT_MM
+                }
+                Err(_) => drawing_display_z(frame, session.stock_config()),
+            }
         }
         _ => drawing_display_z(frame, session.stock_config()),
     }

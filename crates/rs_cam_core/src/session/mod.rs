@@ -19,6 +19,7 @@ pub mod dependencies;
 mod diagnostics_types;
 mod eval_context;
 pub mod generation_plan;
+mod heights;
 mod load_report;
 pub mod multitool;
 mod mutation;
@@ -81,6 +82,7 @@ pub use diagnostics_types::{
     ProjectVerdict, ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind, VerdictSeverity,
 };
 pub use eval_context::SetupEvalContext;
+pub use heights::{ToolpathHeights, TopSource};
 pub use load_report::LoadReportStamp;
 pub use multitool::{
     MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle, TierStrategy,

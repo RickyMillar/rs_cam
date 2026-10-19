@@ -114,7 +114,23 @@ impl ResolvedHeights {
     ///
     /// The stock span is `Some` because the context always carries it.
     pub fn from_heights(heights: &HeightsConfig, ctx: &HeightContext) -> Self {
-        let resolved = heights.resolve(ctx);
+        Self::from_resolved(&heights.resolve(ctx), ctx)
+    }
+
+    /// Build from THE heights of the session (geometry selection P3.1):
+    /// `heights` resolved by [`crate::session::ToolpathHeights::resolve`],
+    /// so the snapshot holds the face top that generation cuts from.
+    pub fn from_toolpath_heights(
+        answer: &crate::session::ToolpathHeights,
+        heights: &HeightsConfig,
+    ) -> Self {
+        Self::from_resolved(&answer.resolve(heights), &answer.context)
+    }
+
+    fn from_resolved(
+        resolved: &crate::compute::config::ResolvedHeights,
+        ctx: &HeightContext,
+    ) -> Self {
         Self {
             top_z: resolved.top_z,
             bottom_z: resolved.bottom_z,

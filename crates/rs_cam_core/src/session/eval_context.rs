@@ -148,12 +148,12 @@ impl SetupEvalContext {
         ctx
     }
 
-    /// THE height context of a toolpath in this setup: the one builder the
-    /// generation, the session diagnostics and the GUI read, so all three
-    /// resolve the same heights. `model_bbox` is the model box in this
-    /// setup's frame (`None` when the toolpath binds no model).
+    /// THE height context of a toolpath in this setup. `model_bbox` is the
+    /// model box in this setup's frame (`None` when the toolpath binds no
+    /// mesh). P3.1: `pub(crate)`; a surface outside the crate reads
+    /// `ProjectSession::toolpath_heights`.
     #[must_use]
-    pub fn height_context(
+    pub(crate) fn height_context(
         &self,
         op_depth: f64,
         model_bbox: Option<&BoundingBox3>,

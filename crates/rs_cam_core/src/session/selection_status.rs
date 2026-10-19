@@ -286,6 +286,10 @@ pub struct SelectionReport {
     /// the report holds no count and no refusal: the GUI section says
     /// "computing faces…", and generation computes the faces itself.
     pub faces_not_ready: Vec<ModelId>,
+    /// The highest plane Z of the up faces of the selection, in the SETUP
+    /// frame (`ResolvedSelection::face_top_z`): the auto top that
+    /// [`ProjectSession::toolpath_heights`] reads (geometry selection P3.1).
+    pub face_top_z: Option<f64>,
 }
 
 /// One item of a model, as the `list_model_items` read gives it (geometry
@@ -434,19 +438,13 @@ impl ProjectSession {
         tc: &ToolpathConfig,
         ctx: &SetupEvalContext,
     ) -> Result<Option<f64>, SessionError> {
-        if tc.operation.selection().is_some() || !tc.boundary.enabled {
+        if !self.reads_boundary_faces(tc) {
             return Ok(None);
         }
-        match &tc.boundary.source {
-            BoundarySource::Selection { .. } => Ok(self
-                .resolve_selection_frames(tc, SelectionTarget::Boundary, ctx, FaceAccess::Build)?
-                .setup
-                .face_top_z()),
-            BoundarySource::Stock
-            | BoundarySource::ModelSilhouette
-            | BoundarySource::DerivedRestRegions { .. }
-            | BoundarySource::PlannedTierRegions { .. } => Ok(None),
-        }
+        Ok(self
+            .resolve_selection_frames(tc, SelectionTarget::Boundary, ctx, FaceAccess::Build)?
+            .setup
+            .face_top_z())
     }
 
     /// The selection that a boundary `Reset` restores, and that the
@@ -574,6 +572,7 @@ impl ProjectSession {
         let mut report = SelectionReport {
             hole_items,
             selected,
+            face_top_z: frames.setup.face_top_z(),
             ..SelectionReport::default()
         };
         // P4.4: the resolution states first. An item that the selection

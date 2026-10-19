@@ -179,7 +179,7 @@ fn header_diagnostics(
         .find(|t| t.id.0 == tc.tool_id)
         .cloned()
         .expect("tool is in the session");
-    let height_ctx = session.height_context_for_toolpath(tc);
+    let height_ctx = session.toolpath_heights(tc).expect("the heights resolve");
     collect_diagnostics(
         &snapshot.entry,
         Some(&tool),
@@ -205,7 +205,7 @@ fn rule(
     idx: usize,
 ) -> Option<rs_cam_viz::ui::properties::DepthBeyondStock> {
     let tc = &session.toolpath_configs()[idx];
-    let height_ctx = session.height_context_for_toolpath(tc);
+    let height_ctx = session.toolpath_heights(tc).expect("the heights resolve");
     depth_beyond_stock(&tc.operation, &tc.heights, &height_ctx)
 }
 

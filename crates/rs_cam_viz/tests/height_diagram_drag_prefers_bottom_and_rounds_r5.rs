@@ -47,6 +47,7 @@
 
 use std::path::{Path, PathBuf};
 
+use rs_cam_core::session::ToolpathHeights;
 use rs_cam_viz::state::toolpath::{HeightContext, HeightMode, HeightsConfig, OperationType};
 use rs_cam_viz::ui::properties::draw_height_diagram;
 use rs_cam_viz::ui::properties::operations::{pick_line, round_pin};
@@ -171,7 +172,8 @@ fn frame(
     };
     let mut out = ctx.run_ui(input, |ui| {
         ui.set_max_width(PANEL_WIDTH);
-        draw_height_diagram(ui, heights, hctx, OperationType::Waterline);
+        let answer = ToolpathHeights::from_context(heights, *hctx);
+        draw_height_diagram(ui, heights, &answer, OperationType::Waterline);
     });
     let shapes = std::mem::take(&mut out.shapes);
     out.textures_delta.clear();
@@ -240,7 +242,7 @@ fn a_drag_on_the_shared_line_moves_the_bottom_and_lands_on_the_grid_r5() {
     // puts both Auto lines on one Y; the tie-break is what this arm pins.
     hctx.model_bottom_z = Some(hctx.stock_top_z);
     let mut heights = HeightsConfig::default();
-    let auto = heights.resolve(&hctx);
+    let auto = ToolpathHeights::from_context(&heights, hctx).heights;
     assert_eq!(auto.top_z, auto.bottom_z, "the fixture must coincide");
 
     // Top is CAUTION; Bottom on a waterline is DANGER at the same Y.
@@ -280,7 +282,7 @@ fn a_drag_on_a_separate_top_line_moves_the_top_r5() {
     let ctx = context();
     let hctx = waterline_ctx(10.0);
     let mut heights = HeightsConfig::default();
-    let auto = heights.resolve(&hctx);
+    let auto = ToolpathHeights::from_context(&heights, hctx).heights;
 
     let shapes = frame(&ctx, &mut heights, &hctx, Vec::new());
     let top = line_centre(&shapes, tokens::CAUTION);

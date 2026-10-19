@@ -220,7 +220,7 @@ fn read_case(case: &Case) -> (Option<String>, Vec<Diagnostic>) {
     let session = builder.build();
 
     let tc = &session.toolpath_configs()[idx];
-    let height_ctx = session.height_context_for_toolpath(tc);
+    let height_ctx = session.toolpath_heights(tc).expect("the heights resolve");
     let snapshot = toolpath_panel_snapshot(tc.id, &session, &GuiState::default())
         .expect("the toolpath resolves for the properties panel");
 

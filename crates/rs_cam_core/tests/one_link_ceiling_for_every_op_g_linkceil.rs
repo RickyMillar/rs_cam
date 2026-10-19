@@ -281,7 +281,10 @@ fn auto_heights_keep_the_old_ceiling_values() {
         stock_top_z: STOCK_Z,
         ..HeightContext::simple(RETRACT_Z, 0.0)
     };
-    let auto_top_z = HeightsConfig::default().resolve(&ctx).top_z;
+    let auto_top_z =
+        rs_cam_core::session::ToolpathHeights::from_context(&HeightsConfig::default(), ctx)
+            .heights
+            .top_z;
     assert_eq!(auto_top_z, STOCK_Z);
     let tool =
         rs_cam_core::compute::cutter::build_cutter(&endmill_tool_config(TOOL_DIAMETER_MM)).unwrap();

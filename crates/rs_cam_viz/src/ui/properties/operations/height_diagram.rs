@@ -222,12 +222,15 @@ pub(crate) fn model_profile(ctx: &HeightContext) -> ModelProfile {
 pub fn draw_height_diagram(
     ui: &mut egui::Ui,
     heights: &mut HeightsConfig,
-    ctx: &HeightContext,
+    answer: &rs_cam_core::session::ToolpathHeights,
     op_type: OperationType,
 ) {
     use crate::ui::tokens;
 
-    let resolved = heights.resolve(ctx);
+    // P3.1: THE session rule; an auto top is the face top generation cuts
+    // from.
+    let ctx = &answer.context;
+    let resolved = answer.resolve(heights);
     let profile = model_profile(ctx);
 
     // R33. One fact — `honors_pinned_bottom_z` — drives the colour and the

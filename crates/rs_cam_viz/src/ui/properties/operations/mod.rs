@@ -305,15 +305,28 @@ pub fn bottom_z_pin_note(op_type: OperationType) -> Option<&'static str> {
     }
 }
 
+/// The Top row tooltip for the source of the resolved Top (P3.1).
+const fn top_tooltip(source: rs_cam_core::session::TopSource) -> &'static str {
+    match source {
+        rs_cam_core::session::TopSource::AutoFaces => {
+            "Top of material. Cutting starts at this Z. Auto: the highest picked face."
+        }
+        rs_cam_core::session::TopSource::AutoStockTop | rs_cam_core::session::TopSource::Pinned => {
+            "Top of material. Cutting starts at this Z. Usually the stock top surface."
+        }
+    }
+}
+
 /// The Bottom row tooltip for an operation that DOES read the pin.
 const BOTTOM_Z_TOOLTIP: &str = "Deepest cut depth. The tool stops at this Z.";
 
 pub(super) fn draw_heights_params(
     ui: &mut egui::Ui,
     heights: &mut HeightsConfig,
-    ctx: &HeightContext,
+    answer: &rs_cam_core::session::ToolpathHeights,
     op_type: OperationType,
 ) {
+    let ctx = &answer.context;
     // What an `Auto` row shows is the value the CORE resolver produces for
     // THIS config — not a second set of defaults maintained here. The panel
     // used to carry its own (feed_z defaulted to `stock_top + 2` while the
@@ -321,7 +334,11 @@ pub(super) fn draw_heights_params(
     // defaults into the config on render, the divergence was a silent edit
     // rather than a visible disagreement. Rows other than `Auto` ignore this
     // value and display their own stored offset / absolute Z.
-    let auto = heights.resolve(ctx);
+    // P3.1: THE session rule, so an auto Top shows the face top that
+    // generation cuts from.
+    let auto = answer.resolve(heights);
+    let top_source = answer.top_source(heights);
+    let model_refusal = answer.model_reference_refusal(heights);
 
     // F1.19 / G-BOTTOMPIN: the Bottom row's own tooltip used to say that
     // pinning the row overrides the operation's floor. That is true on three
@@ -374,7 +391,7 @@ pub(super) fn draw_heights_params(
             draw_height_row(
                 ui,
                 "Top:",
-                "Top of material. Cutting starts at this Z. Usually the stock top surface.",
+                top_tooltip(top_source),
                 &mut heights.top_z,
                 HeightReference::StockTop,
                 auto.top_z,
@@ -396,6 +413,16 @@ pub(super) fn draw_heights_params(
     // F1.19 / G-BOTTOMPIN: the note is drawn, not hidden behind a hover. The
     // row above stays editable, so an operator can still read a stored pin
     // and set it back to auto.
+    // P3.1: where the Top comes from ("auto: faces" with a face pick).
+    ui.add_space(2.0);
+    ui.add(crate::ui::components::OneLine::new(format!(
+        "Top: {}",
+        top_source.label()
+    )));
+    // L-4: a model reference on a model with no mesh refuses generation.
+    if let Some(refusal) = model_refusal {
+        ui.add(crate::ui::components::OneLine::new(refusal));
+    }
     if let Some(note) = pin_note {
         ui.add_space(2.0);
         ui.add(crate::ui::components::OneLine::new(format!(
@@ -447,7 +474,7 @@ mod tests {
     fn heights_display_leaves_auto_rows_unpinned_g_heightstab() {
         let heights = HeightsConfig::default();
         let ctx = zero_depth_3d_ctx();
-        let auto = heights.resolve(&ctx);
+        let auto = rs_cam_core::session::ToolpathHeights::from_context(&heights, ctx).heights;
 
         // Pre-condition: an all-Auto config leaves the floor to the operation.
         assert!(!auto.bottom_pinned);
@@ -486,14 +513,18 @@ mod tests {
         assert!(heights.feed_z.is_auto());
         assert!(heights.top_z.is_auto());
         assert!(heights.bottom_z.is_auto());
-        assert!(!heights.resolve(&ctx).bottom_pinned);
+        assert!(
+            !rs_cam_core::session::ToolpathHeights::from_context(&heights, ctx)
+                .heights
+                .bottom_pinned
+        );
     }
 
     #[test]
     fn height_row_commits_only_on_a_user_edit_g_heightstab() {
         let ctx = zero_depth_3d_ctx();
         let mut heights = HeightsConfig::default();
-        let auto = heights.resolve(&ctx);
+        let auto = rs_cam_core::session::ToolpathHeights::from_context(&heights, ctx).heights;
         let display = height_row_display(
             &heights.bottom_z,
             HeightReference::StockTop,
@@ -504,7 +535,11 @@ mod tests {
         // Viewing the tab: no widget moved.
         commit_height_row(&mut heights.bottom_z, display, false);
         assert!(heights.bottom_z.is_auto());
-        assert!(!heights.resolve(&ctx).bottom_pinned);
+        assert!(
+            !rs_cam_core::session::ToolpathHeights::from_context(&heights, ctx)
+                .heights
+                .bottom_pinned
+        );
 
         // The user drags the row: now it pins, and only now.
         let edited = ReferenceOffset {
@@ -516,7 +551,7 @@ mod tests {
             heights.bottom_z,
             HeightMode::FromReference(r) if (r.offset + 6.0).abs() < 1e-9
         ));
-        let resolved = heights.resolve(&ctx);
+        let resolved = rs_cam_core::session::ToolpathHeights::from_context(&heights, ctx).heights;
         assert!(resolved.bottom_pinned);
         assert!((resolved.bottom_z - 19.0).abs() < 1e-9);
     }

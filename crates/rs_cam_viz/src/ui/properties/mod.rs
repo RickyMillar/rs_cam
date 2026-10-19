@@ -382,7 +382,9 @@ pub(crate) struct ToolpathPanelInputs {
     pub spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
     pub project_default_rpm: u32,
     pub model_is_step_missing_brep: bool,
-    pub height_ctx: Option<crate::state::toolpath::HeightContext>,
+    /// THE heights of the toolpath (geometry selection P3.1:
+    /// `ProjectSession::toolpath_heights`), or the text of its error.
+    pub toolpath_heights: Option<Result<rs_cam_core::session::ToolpathHeights, String>>,
     pub stale_default_defects: Vec<rs_cam_core::compute::validate::StaleDefault>,
     /// The project load report, shared with every other surface through
     /// the session memo. The panel reads one row of it through
@@ -734,11 +736,11 @@ pub(crate) fn toolpath_panel_inputs(
         .find_toolpath_config_by_id(id)
         .and_then(|(_, tc)| session.hole_selection(tc));
 
-    // Snapshot height context before mutable borrow. Use the shared
-    // helper so model_top/bottom_z are in the setup-local frame.
-    let height_ctx = session
+    // Snapshot THE heights before the mutable borrow (P3.1): the one
+    // session resolver, in the setup frame, with the face top.
+    let toolpath_heights = session
         .find_toolpath_config_by_id(id)
-        .map(|(_, tc)| crate::state::job::height_context_from_session(session, tc));
+        .map(|(_, tc)| session.toolpath_heights(tc).map_err(|e| e.to_string()));
     // Pre-compute stale-default defects for this TP so the panel
     // can render the validator banner without needing a session
     // reference. Defects are recomputed each frame, so a Fix
@@ -834,7 +836,7 @@ pub(crate) fn toolpath_panel_inputs(
         spindle_strategy: session.post_config().spindle_strategy,
         project_default_rpm: session.post_config().spindle_speed,
         model_is_step_missing_brep,
-        height_ctx,
+        toolpath_heights,
         stale_default_defects,
         load_report,
         load_verdict_index,

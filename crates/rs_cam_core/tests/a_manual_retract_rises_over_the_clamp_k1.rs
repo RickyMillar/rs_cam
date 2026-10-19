@@ -123,8 +123,10 @@ fn a_manual_retract_below_the_clamp_never_crosses_it_k1() {
     let session = two_traces_across_the_clamp();
     for index in 0..2 {
         let tc = &session.toolpath_configs()[index];
-        let ctx = session.height_context_for_toolpath(tc);
-        let resolved = tc.heights.resolve(&ctx);
+        let resolved = session
+            .toolpath_heights(tc)
+            .expect("the heights resolve")
+            .heights;
         // K3: the op keeps the operator's retract; only a crossing rises.
         assert!(
             (resolved.retract_z - MANUAL_RETRACT).abs() < 1e-9,

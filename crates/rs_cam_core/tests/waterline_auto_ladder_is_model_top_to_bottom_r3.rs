@@ -54,7 +54,7 @@ use rs_cam_core::mesh::{TriangleMesh, make_test_hemisphere};
 use rs_cam_core::ops::waterline::{
     FLAT_FACE_NUDGE_MM, WaterlineLadder, waterline_ladder, waterline_z_levels,
 };
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{ProjectSession, ToolpathHeights};
 
 const EPS: f64 = 1e-9;
 
@@ -74,7 +74,7 @@ fn corne_ctx(op_depth: f64) -> HeightContext {
 
 #[test]
 fn a_zero_depth_auto_bottom_is_the_model_bottom_and_the_top_stays_the_stock_top() {
-    let h = HeightsConfig::default().resolve(&corne_ctx(0.0));
+    let h = ToolpathHeights::from_context(&HeightsConfig::default(), corne_ctx(0.0)).heights;
     assert!(
         (h.top_z - 23.0).abs() < EPS,
         "the Auto top is the stock top, whatever the depth: {}",
@@ -96,7 +96,7 @@ fn a_zero_depth_auto_bottom_never_sits_below_the_stock_bottom() {
         model_bottom_z: Some(2.0),
         ..corne_ctx(0.0)
     };
-    let h = HeightsConfig::default().resolve(&ctx);
+    let h = ToolpathHeights::from_context(&HeightsConfig::default(), ctx).heights;
     assert!((h.bottom_z - 2.0).abs() < EPS, "{}", h.bottom_z);
 
     // Model reaching BELOW the stock (a through part on a thin board): the
@@ -105,7 +105,7 @@ fn a_zero_depth_auto_bottom_never_sits_below_the_stock_bottom() {
         model_bottom_z: Some(-4.0),
         ..corne_ctx(0.0)
     };
-    let h = HeightsConfig::default().resolve(&ctx);
+    let h = ToolpathHeights::from_context(&HeightsConfig::default(), ctx).heights;
     assert!((h.bottom_z - 0.0).abs() < EPS, "{}", h.bottom_z);
 
     // No model at all: the stock bottom.
@@ -115,13 +115,13 @@ fn a_zero_depth_auto_bottom_never_sits_below_the_stock_bottom() {
         stock_bottom_z: -3.0,
         ..corne_ctx(0.0)
     };
-    let h = HeightsConfig::default().resolve(&ctx);
+    let h = ToolpathHeights::from_context(&HeightsConfig::default(), ctx).heights;
     assert!((h.bottom_z + 3.0).abs() < EPS, "{}", h.bottom_z);
 }
 
 #[test]
 fn a_context_with_a_depth_keeps_the_f028_arithmetic() {
-    let h = HeightsConfig::default().resolve(&corne_ctx(5.0));
+    let h = ToolpathHeights::from_context(&HeightsConfig::default(), corne_ctx(5.0)).heights;
     assert!((h.top_z - 23.0).abs() < EPS, "{}", h.top_z);
     assert!(
         (h.bottom_z - 18.0).abs() < EPS,
@@ -129,21 +129,27 @@ fn a_context_with_a_depth_keeps_the_f028_arithmetic() {
         h.bottom_z
     );
     // A pinned top still anchors the depth.
-    let pinned = HeightsConfig {
-        top_z: HeightMode::Manual(20.0),
-        ..HeightsConfig::default()
-    }
-    .resolve(&corne_ctx(5.0));
+    let pinned = ToolpathHeights::from_context(
+        &HeightsConfig {
+            top_z: HeightMode::Manual(20.0),
+            ..HeightsConfig::default()
+        },
+        corne_ctx(5.0),
+    )
+    .heights;
     assert!((pinned.bottom_z - 15.0).abs() < EPS, "{}", pinned.bottom_z);
 }
 
 #[test]
 fn a_pinned_bottom_on_a_zero_depth_op_is_left_alone() {
-    let h = HeightsConfig {
-        bottom_z: HeightMode::Manual(0.5),
-        ..HeightsConfig::default()
-    }
-    .resolve(&corne_ctx(0.0));
+    let h = ToolpathHeights::from_context(
+        &HeightsConfig {
+            bottom_z: HeightMode::Manual(0.5),
+            ..HeightsConfig::default()
+        },
+        corne_ctx(0.0),
+    )
+    .heights;
     assert!((h.bottom_z - 0.5).abs() < EPS, "{}", h.bottom_z);
     assert!(h.bottom_pinned);
 }

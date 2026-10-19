@@ -4,11 +4,10 @@
 //! parent re-exports every public name.
 
 use rs_cam_core::diagnostics::adapters::from_static_checks as core_static_checks;
+use rs_cam_core::session::ToolpathHeights;
 
 use crate::state::job::ToolType;
-use crate::state::toolpath::{
-    HeightContext, HeightsConfig, OperationConfig, ProfileConfig, ToolpathEntry,
-};
+use crate::state::toolpath::{HeightsConfig, OperationConfig, ProfileConfig, ToolpathEntry};
 
 pub struct ToolpathValidationContext {
     tools: Vec<ValidationTool>,
@@ -260,9 +259,9 @@ const DEPTH_BEYOND_STOCK_EPSILON_MM: f64 = core_static_checks::DEPTH_BEYOND_STOC
 /// there means NOT MEASURED and makes core's rule abstain.
 fn diagnostics_heights(
     heights: &HeightsConfig,
-    ctx: &HeightContext,
+    answer: &ToolpathHeights,
 ) -> core_static_checks::ResolvedHeights {
-    core_static_checks::ResolvedHeights::from_heights(heights, ctx)
+    core_static_checks::ResolvedHeights::from_toolpath_heights(answer, heights)
 }
 
 /// UX-R03-007 / G-DEPTHSTOCK: does this cut go below the stock bottom?
@@ -285,9 +284,9 @@ fn diagnostics_heights(
 pub fn depth_beyond_stock(
     operation: &OperationConfig,
     heights: &HeightsConfig,
-    ctx: &HeightContext,
+    answer: &ToolpathHeights,
 ) -> Option<DepthBeyondStock> {
-    core_static_checks::depth_beyond_stock(operation, &diagnostics_heights(heights, ctx))
+    core_static_checks::depth_beyond_stock(operation, &diagnostics_heights(heights, answer))
 }
 
 // ── Profile through cut (G-THROUGHCUT, UX-R03-006) ──────────────────────
@@ -387,9 +386,10 @@ pub fn profile_through_cut_line(
 pub fn profile_through_cut(
     cfg: &ProfileConfig,
     heights: &HeightsConfig,
-    ctx: &HeightContext,
+    answer: &ToolpathHeights,
 ) -> Option<ThroughCut> {
-    let resolved = heights.resolve(ctx);
+    let ctx = &answer.context;
+    let resolved = answer.resolve(heights);
     let bottom_z = resolved.top_z - cfg.depth;
     let depth_mm = ctx.stock_top_z - bottom_z;
     let stock_thickness_mm = ctx.stock_top_z - ctx.stock_bottom_z;
@@ -438,7 +438,7 @@ pub fn collect_diagnostics(
     entry: &ToolpathEntry,
     tool: Option<&rs_cam_core::compute::tool_config::ToolConfig>,
     stale_defaults: &[rs_cam_core::compute::validate::StaleDefault],
-    height_ctx: Option<&HeightContext>,
+    toolpath_heights: Option<&ToolpathHeights>,
     preconditions: &rs_cam_core::diagnostics::diagnose::PreconditionContext,
     model_refs: &rs_cam_core::diagnostics::diagnose::ModelRefContext,
     suggest_warnings: Option<&[rs_cam_core::feeds::suggest::SuggestWarning]>,
@@ -447,7 +447,7 @@ pub fn collect_diagnostics(
     let Some(tool) = tool else {
         return Vec::new();
     };
-    let heights = height_ctx.map(|ctx| diagnostics_heights(&entry.heights, ctx));
+    let heights = toolpath_heights.map(|answer| diagnostics_heights(&entry.heights, answer));
     let inputs = rs_cam_core::diagnostics::ToolpathDiagnoseInputs {
         toolpath_id: entry.id,
         operation: &entry.operation,

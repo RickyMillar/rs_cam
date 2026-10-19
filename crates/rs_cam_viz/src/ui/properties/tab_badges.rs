@@ -3,7 +3,7 @@
 //! wiring block.
 
 use super::ToolpathTab;
-use crate::state::toolpath::{HeightContext, StockSource, ToolpathEntry};
+use crate::state::toolpath::{StockSource, ToolpathEntry};
 use crate::ui::components::{TabBadge, TabStrip};
 
 /// Per-tab badge state for the tab bar.
@@ -27,15 +27,15 @@ impl TabBadges {
 pub(super) fn compute_tab_badges(
     entry: &ToolpathEntry,
     diagnostics: &[rs_cam_core::diagnostics::Diagnostic],
-    height_ctx: Option<&HeightContext>,
+    toolpath_heights: Option<&rs_cam_core::session::ToolpathHeights>,
     shoe_gap_too_low: bool,
 ) -> TabBadges {
     use rs_cam_core::diagnostics::{Category, DiagnosticState, Severity};
 
     // Heights: badge if any height warning exists. A warning outranks the
     // pin mark below.
-    let heights_warning = height_ctx.and_then(|hctx| {
-        let h = entry.heights.resolve(hctx);
+    let heights_warning = toolpath_heights.and_then(|answer| {
+        let h = answer.resolve(&entry.heights);
         if h.bottom_z > h.top_z || h.clearance_z < h.retract_z {
             Some(crate::ui::tokens::DANGER) // red
         } else if h.feed_z < h.top_z || h.retract_z < h.feed_z {

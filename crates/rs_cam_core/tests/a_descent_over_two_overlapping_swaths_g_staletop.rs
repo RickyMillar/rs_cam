@@ -270,8 +270,9 @@ fn probe_cell(session: &mut ProjectSession, index: usize, dpp: f64, stepover: f6
         .expect("the project simulates");
 
     let tc = session.toolpath_configs()[index].clone();
-    let hctx = session.height_context_for_toolpath(&tc);
-    let h = tc.heights.resolve(&hctx);
+    let answer = session.toolpath_heights(&tc).expect("the heights resolve");
+    let hctx = answer.context;
+    let h = answer.heights;
     line(&format!(
         "height context: safe_z {:.3}, stock_top_z {:.3}, stock_bottom_z {:.3}, model_top {:?}, model_bottom {:?}, op_depth {:.3}",
         hctx.safe_z,

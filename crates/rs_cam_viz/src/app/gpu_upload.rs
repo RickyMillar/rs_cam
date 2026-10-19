@@ -10,7 +10,7 @@ use crate::render::stock_render::StockGpuData;
 use crate::render::toolpath_render::{self, ToolpathGpuData};
 use crate::render::upload_cache;
 use crate::state::Workspace;
-use crate::state::job::{SetupFrame, SetupId, height_context_from_session, transform_mesh};
+use crate::state::job::{SetupFrame, SetupId, transform_mesh};
 use crate::state::selection::Selection;
 use crate::state::simulation::StockVizMode;
 
@@ -1456,41 +1456,47 @@ impl RsCamApp {
                     // when the overlay is not drawn, which is what makes
                     // "deselect" a key change rather than a silent stale
                     // overlay.
-                    let entry_config = selected.then(|| {
-                        use crate::state::toolpath::DressupEntryStyle;
-                        let entry_style = match tc.dressups.entry_style {
-                            DressupEntryStyle::None => toolpath_render::EntryStyle::None,
-                            DressupEntryStyle::Ramp => toolpath_render::EntryStyle::Ramp,
-                            DressupEntryStyle::Helix => toolpath_render::EntryStyle::Helix,
-                        };
-                        let height_ctx = height_context_from_session(session, tc);
-                        let resolved = tc.heights.resolve(&height_ctx);
-                        toolpath_render::EntryPreviewConfig {
-                            entry_style,
-                            ramp_angle_deg: tc.dressups.ramp_angle,
-                            // G10 Q6 and D2: the radius the engine emits
-                            // (the operator value or 0.3 x D, capped at the
-                            // flat bottom). With no tool bound, the rule has
-                            // no D and the preview draws no helix.
-                            helix_radius: session
-                                .tools()
-                                .iter()
-                                .find(|t| t.id.0 == tc.tool_id)
-                                // F029: a tool outside its domain builds no
-                                // cutter, so the preview has no rule radius.
-                                .and_then(|t| rs_cam_core::compute::cutter::build_cutter(t).ok())
-                                .map(|cutter| tc.dressups.helix_radius_for(&cutter).emitted_mm)
-                                .or(tc.dressups.helix_radius)
-                                .unwrap_or(0.0),
-                            helix_pitch: tc.dressups.helix_pitch,
-                            lead_in_out: tc.dressups.lead_in_out.is_some(),
-                            lead_radius: tc.dressups.lead_in_out.map_or(0.0, |l| l.radius),
-                            // Heights resolve in the emission frame; shift
-                            // alongside the toolpath the preview rides on.
-                            feed_z: resolved.feed_z + display_shift.z,
-                            top_z: resolved.top_z + display_shift.z,
-                        }
-                    });
+                    // P3.1: THE heights of the session. A refused height
+                    // draws no entry preview.
+                    let entry_config = selected
+                        .then(|| session.toolpath_heights(tc).ok())
+                        .flatten()
+                        .map(|resolved| {
+                            let resolved = resolved.heights;
+                            use crate::state::toolpath::DressupEntryStyle;
+                            let entry_style = match tc.dressups.entry_style {
+                                DressupEntryStyle::None => toolpath_render::EntryStyle::None,
+                                DressupEntryStyle::Ramp => toolpath_render::EntryStyle::Ramp,
+                                DressupEntryStyle::Helix => toolpath_render::EntryStyle::Helix,
+                            };
+                            toolpath_render::EntryPreviewConfig {
+                                entry_style,
+                                ramp_angle_deg: tc.dressups.ramp_angle,
+                                // G10 Q6 and D2: the radius the engine emits
+                                // (the operator value or 0.3 x D, capped at the
+                                // flat bottom). With no tool bound, the rule has
+                                // no D and the preview draws no helix.
+                                helix_radius: session
+                                    .tools()
+                                    .iter()
+                                    .find(|t| t.id.0 == tc.tool_id)
+                                    // F029: a tool outside its domain builds no
+                                    // cutter, so the preview has no rule radius.
+                                    .and_then(|t| {
+                                        rs_cam_core::compute::cutter::build_cutter(t).ok()
+                                    })
+                                    .map(|cutter| tc.dressups.helix_radius_for(&cutter).emitted_mm)
+                                    .or(tc.dressups.helix_radius)
+                                    .unwrap_or(0.0),
+                                helix_pitch: tc.dressups.helix_pitch,
+                                lead_in_out: tc.dressups.lead_in_out.is_some(),
+                                lead_radius: tc.dressups.lead_in_out.map_or(0.0, |l| l.radius),
+                                // Heights resolve in the emission frame; shift
+                                // alongside the toolpath the preview rides on.
+                                feed_z: resolved.feed_z + display_shift.z,
+                                top_z: resolved.top_z + display_shift.z,
+                            }
+                        });
                     let profile_tool = (selected && state.viewport.show_tool_profile_preview)
                         .then(|| {
                             session
@@ -1626,9 +1632,13 @@ impl RsCamApp {
         if let Selection::Toolpath(tp_id) = self.controller.state().selection {
             let state = self.controller.state();
             let session = &state.session;
-            if let Some((_, tc)) = session.find_toolpath_config_by_id(tp_id) {
-                let height_ctx = height_context_from_session(session, tc);
-                let heights = tc.heights.resolve(&height_ctx);
+            // P3.1: THE heights of the session; a refused height draws no
+            // planes.
+            if let Some(heights) = session
+                .find_toolpath_config_by_id(tp_id)
+                .and_then(|(_, tc)| session.toolpath_heights(tc).ok())
+                .map(|resolved| resolved.heights)
+            {
                 // Use the same stock bbox as the rest of the viewport (local
                 // or global). Heights resolve in the emission frame, so
                 // identity setups shift by -origin_z to match it.

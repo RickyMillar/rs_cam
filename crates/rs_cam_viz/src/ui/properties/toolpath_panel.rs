@@ -18,8 +18,8 @@ use super::{
     boundary_summary_line, operations, rest_grid_footprint_area,
 };
 use crate::state::toolpath::{
-    BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig, HeightContext,
-    OperationConfig, StockSource, UiProcessRole,
+    BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig, OperationConfig,
+    StockSource, UiProcessRole,
 };
 use crate::ui::AppEvent;
 use crate::ui::components::{DataRow, DataTable, OneLine, Role, UiExt as _};
@@ -61,7 +61,11 @@ pub(super) fn draw_toolpath_panel(
     let tools = inputs.tools.as_slice();
     let tool_configs = inputs.tool_configs.as_slice();
     let validation = &inputs.validation;
-    let height_ctx = inputs.height_ctx.as_ref();
+    // P3.1: THE heights of the session; `None` when they did not resolve.
+    let toolpath_heights = inputs
+        .toolpath_heights
+        .as_ref()
+        .and_then(|answer| answer.as_ref().ok());
     let stale_default_defects = inputs.stale_default_defects.as_slice();
     let load_verdict = inputs.load_verdict();
     let tab_override = inputs.tab_override;
@@ -264,7 +268,7 @@ pub(super) fn draw_toolpath_panel(
         entry,
         tool_for_diags,
         stale_default_defects,
-        height_ctx,
+        toolpath_heights,
         preconditions,
         model_refs,
         suggest_warnings,
@@ -310,7 +314,12 @@ pub(super) fn draw_toolpath_panel(
         ui.memory(|mem| mem.data.get_temp(tab_id))
             .unwrap_or(ToolpathTab::Geometry)
     });
-    let tab_badges = compute_tab_badges(entry, &diagnostics, height_ctx, shoe_finding.is_some());
+    let tab_badges = compute_tab_badges(
+        entry,
+        &diagnostics,
+        toolpath_heights,
+        shoe_finding.is_some(),
+    );
     draw_toolpath_tabs(ui, &mut active_tab, &tab_badges);
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, active_tab));
     ui.separator();
@@ -328,10 +337,16 @@ pub(super) fn draw_toolpath_panel(
         // strategy (W3.2 — lifted out of the old Dressups tab). This arm is
         // already one call: `draw_linking_params` IS the Linking tab, and it
         // lives in `linking_dressup.rs` beside the Dressup rows it shares.
-        ToolpathTab::Linking => draw_linking_params(ui, entry, tool_for_diags, height_ctx),
+        ToolpathTab::Linking => draw_linking_params(ui, entry, tool_for_diags, toolpath_heights),
 
         ToolpathTab::Heights => {
-            draw_heights_tab(ui, entry, height_ctx, inputs.shoe.as_ref(), events);
+            draw_heights_tab(
+                ui,
+                entry,
+                inputs.toolpath_heights.as_ref(),
+                inputs.shoe.as_ref(),
+                events,
+            );
         }
 
         ToolpathTab::Dressup => draw_dressup_tab(ui, entry),
@@ -557,7 +572,10 @@ pub(super) fn draw_geometry_tab(
     let material = &inputs.material;
     let machine = &inputs.machine;
     let spindle_strategy = inputs.spindle_strategy;
-    let height_ctx = inputs.height_ctx.as_ref();
+    let toolpath_heights = inputs
+        .toolpath_heights
+        .as_ref()
+        .and_then(|answer| answer.as_ref().ok());
     let holes = inputs.holes.as_ref();
 
     ui.add_space(4.0);
@@ -653,14 +671,15 @@ pub(super) fn draw_geometry_tab(
     // G-DEPTHSTOCK (UX-R03-007): the same rule the header ribbon
     // prints, read once here and handed to the depth field's row.
     // `Copy`, so nothing is held across the mutable borrow below.
-    let depth_caution = height_ctx
-        .and_then(|hctx| operations::depth_beyond_stock(&entry.operation, &entry.heights, hctx));
+    let depth_caution = toolpath_heights.and_then(|answer| {
+        operations::depth_beyond_stock(&entry.operation, &entry.heights, answer)
+    });
     let depth_caution = depth_caution.as_ref();
     // G-THROUGHCUT (UX-R03-006): Profile only. Read here, before the
     // mutable borrow, for the same reason as the caution above.
-    let through_cut = match (&entry.operation, height_ctx) {
-        (OperationConfig::Profile(cfg), Some(hctx)) => {
-            operations::profile_through_cut(cfg, &entry.heights, hctx)
+    let through_cut = match (&entry.operation, toolpath_heights) {
+        (OperationConfig::Profile(cfg), Some(answer)) => {
+            operations::profile_through_cut(cfg, &entry.heights, answer)
         }
         _ => None,
     };
@@ -1197,15 +1216,27 @@ fn draw_feeds_tab(
 }
 
 /// The Heights tab: the Z planes.
+///
+/// P3.1: the diagram and the rows read THE heights of the session
+/// (`ProjectSession::toolpath_heights`). When they do not resolve, the tab
+/// names the error and draws no row: a row needs the stock and the model Z.
 fn draw_heights_tab(
     ui: &mut egui::Ui,
     entry: &mut crate::state::toolpath::ToolpathEntry,
-    height_ctx: Option<&HeightContext>,
+    toolpath_heights: Option<&Result<rs_cam_core::session::ToolpathHeights, String>>,
     shoe: Option<&super::ShoeRowInputs>,
     events: &mut Vec<AppEvent>,
 ) {
-    let fallback_ctx = HeightContext::simple(10.0, 5.0);
-    let ctx = height_ctx.unwrap_or(&fallback_ctx);
+    let answer = match toolpath_heights {
+        Some(Ok(answer)) => Some(answer),
+        Some(Err(error)) => {
+            ui.add(crate::ui::components::OneLine::new(format!(
+                "Heights: {error}"
+            )));
+            None
+        }
+        None => None,
+    };
     // F1.19 / G-BOTTOMPIN: the Bottom row is annotated per operation,
     // so the panel needs the operation. Read before the mutable
     // borrow of `entry.heights`; `OperationType` is `Copy`.
@@ -1214,9 +1245,11 @@ fn draw_heights_tab(
     let op_type = entry.operation.op_type();
     // IC1: the diagram summarises the five planes, so it comes first. The
     // rows below it set them.
-    draw_height_diagram(ui, &mut entry.heights, ctx, op_type);
-    ui.add_space(6.0);
-    draw_heights_params(ui, &mut entry.heights, ctx, op_type);
+    if let Some(answer) = answer {
+        draw_height_diagram(ui, &mut entry.heights, answer, op_type);
+        ui.add_space(6.0);
+        draw_heights_params(ui, &mut entry.heights, answer, op_type);
+    }
     // H2: the dust shoe sits with the safety heights. It moves no
     // toolpath; it decides what the checks read above the tool.
     if let Some(shoe) = shoe {

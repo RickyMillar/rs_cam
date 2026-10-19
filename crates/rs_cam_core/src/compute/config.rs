@@ -331,7 +331,10 @@ impl HeightsConfig {
     /// retract and the clearance stay at the op's own values; the per-op
     /// obstacle step lifts only the moves that cross an obstacle to the
     /// obstacle plane (`compute::obstacle::clip_annotated_to_obstacles`).
-    pub fn resolve(&self, ctx: &HeightContext) -> ResolvedHeights {
+    ///
+    /// P3.1: `pub(crate)`. Every surface outside the crate reads
+    /// `ProjectSession::toolpath_heights`, which applies the face top.
+    pub(crate) fn resolve(&self, ctx: &HeightContext) -> ResolvedHeights {
         let retract = self.retract_z.resolve_value(ctx.safe_z, ctx);
         let top_z = self.top_z.resolve_value(ctx.stock_top_z, ctx);
         ResolvedHeights {

@@ -143,7 +143,8 @@ fn draw_in(ctx: &egui::Context, height_ctx: &HeightContext, op_type: OperationTy
         ui.set_max_width(PANEL_WIDTH);
         let inner = ui.scope(|ui| {
             ui.set_max_width(PANEL_WIDTH);
-            draw_height_diagram(ui, &mut heights, height_ctx, op_type);
+            let answer = rs_cam_core::session::ToolpathHeights::from_context(&heights, *height_ctx);
+            draw_height_diagram(ui, &mut heights, &answer, op_type);
         });
         requested_width = inner.response.rect.width();
     });

@@ -284,8 +284,8 @@ fn the_panel_inputs_carry_the_session_lists_ui01() {
         "the consumed MCP tab must reach the panel"
     );
     assert!(
-        inputs.height_ctx.is_some(),
-        "a toolpath with a model resolves a height context"
+        matches!(inputs.toolpath_heights, Some(Ok(_))),
+        "a toolpath with a model resolves its heights"
     );
     assert!(
         inputs.boundary_source_candidates.is_empty(),

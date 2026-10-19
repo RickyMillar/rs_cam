@@ -8,8 +8,8 @@ use super::feeds_speeds::draw_entry_preview_diagram;
 use super::operations::{draw_dogbone_diagram, draw_lead_in_out_diagram};
 use super::{operations, pills};
 use crate::state::toolpath::{
-    ArcFitParams, DogboneParams, DressupConfig, DressupEntryStyle, HeightContext, LeadParams,
-    LinkDressupParams, ToolpathEntry,
+    ArcFitParams, DogboneParams, DressupConfig, DressupEntryStyle, LeadParams, LinkDressupParams,
+    ToolpathEntry,
 };
 use crate::ui::automation;
 use crate::ui::components::UiExt as _;
@@ -313,7 +313,7 @@ pub(super) fn draw_linking_params(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
     tool: Option<&rs_cam_core::compute::tool_config::ToolConfig>,
-    height_ctx: Option<&HeightContext>,
+    toolpath_heights: Option<&rs_cam_core::session::ToolpathHeights>,
 ) {
     // Some dressups are geometrically incompatible with specific operations
     // (project_curve traces many small rings; drop_cutter 3D finish emits
@@ -357,11 +357,11 @@ pub(super) fn draw_linking_params(
     crate::ui::components::SectionHeader::new("Entry & Exit").show(ui);
     // IC1: the entry diagram summarises the entry move, so it opens the
     // section, above the rows that set it.
-    {
-        let fallback_ctx = HeightContext::simple(10.0, 5.0);
-        let ctx = height_ctx.unwrap_or(&fallback_ctx);
+    // P3.1: the diagram reads THE heights of the session; with no answer
+    // it draws nothing rather than invented planes.
+    if let Some(answer) = toolpath_heights {
         let helix_radius_mm = cutter.as_ref().map(|c| cfg.helix_radius_for(c).emitted_mm);
-        draw_entry_preview_diagram(ui, cfg, helix_radius_mm, ctx, &entry.heights);
+        draw_entry_preview_diagram(ui, cfg, helix_radius_mm, answer, &entry.heights);
         ui.add_space(4.0);
     }
 

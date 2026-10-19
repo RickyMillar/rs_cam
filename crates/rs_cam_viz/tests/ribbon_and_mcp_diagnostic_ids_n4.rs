@@ -240,7 +240,7 @@ fn ribbon_diagnostics(session: &ProjectSession, idx: usize) -> Vec<Diagnostic> {
         .find(|t| t.id.0 == tc.tool_id)
         .cloned()
         .expect("the tool is in the session");
-    let height_ctx = session.height_context_for_toolpath(tc);
+    let height_ctx = session.toolpath_heights(tc).expect("the heights resolve");
     let stale_defaults = rs_cam_core::compute::validate::validate_one_toolpath(
         tc,
         Some(&tool),

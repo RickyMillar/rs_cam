@@ -62,27 +62,9 @@ impl ProjectSession {
         // `MissingSource` with the id, and a 3D op refuses below.
         let model = self.toolpath_model(tc).ok();
 
-        let mut mesh = model.and_then(|m| m.mesh.clone());
-
-        // ProjectCurve optionally references a separate surface model for
-        // the mesh (so polygons can come from a DXF while the projection
-        // target is a terrain STL). Match the GUI compute path. A surface
-        // id that names no model refuses: it does not fall back to the
-        // mesh of the toolpath model (P2.4).
-        if let crate::compute::OperationConfig::ProjectCurve(ref cfg) = tc.operation
-            && let Some(surface_id) = cfg.surface_model_id
-        {
-            let surface = self.find_model_by_raw_id(surface_id.0).ok_or_else(|| {
-                SessionError::MissingGeometry(format!(
-                    "Toolpath '{}' projects onto surface model id {}, but no model has that \
-                     id. Pick a surface model, or set the surface to the input model.",
-                    tc.name, surface_id.0
-                ))
-            })?;
-            if surface.mesh.is_some() {
-                mesh = surface.mesh.clone();
-            }
-        }
+        // P3.1: the toolpath model's mesh, or the surface model of a Project
+        // Curve. The heights read the same mesh (`toolpath_mesh`).
+        let mut mesh = self.toolpath_mesh(tc)?;
 
         // Validate geometry requirements. A 2D op needs no check here: the
         // prologue refuses an op whose selection gives it nothing to cut
@@ -211,28 +193,13 @@ impl ProjectSession {
         // below; it used to read the zero-rooted local bbox, which for
         // `origin_z > SAFE_Z_CLEARANCE_MM` put the retract plane inside the
         // material and for `origin_z < 0` lifted it well above the stock
-        // (G-SAFEZ-LOCAL). Provided by `SetupEvalContext::safe_z`.
-        let safe_z = ctx.safe_z;
-
-        let model_bbox = mesh.as_ref().map(|m| &m.bbox);
-        // K3: the heights do not read the obstacles. The obstacle step
-        // after the dressups lifts only the moves that cross one.
-        let height_ctx = ctx.height_context(tc.operation.default_depth_for_heights(), model_bbox);
-        debug_assert_eq!(height_ctx.safe_z, safe_z);
-        let mut heights = tc.heights.resolve(&height_ctx);
-        // N12 item 1: an AUTO top follows the picked faces. The GUI
-        // controller applied this override and the resolver did not. A
-        // PINNED top is the operator's own answer and stays. P2.3b: the
-        // top is in the setup frame (it was in the model frame before, so a
-        // face pick on a flipped setup took the wrong Z).
-        if let Some(top) = face_top_z
-            && tc.heights.top_z.is_auto()
-        {
-            heights.top_z = top;
-            if tc.heights.bottom_z.is_auto() {
-                heights.bottom_z = top - tc.operation.default_depth_for_heights().abs();
-            }
-        }
+        // (G-SAFEZ-LOCAL). Provided by `SetupEvalContext::safe_z`, which the
+        // height context reads.
+        // P3.1: THE heights rule (`session/heights.rs`): the context of the
+        // setup with the setup-frame mesh box, the resolver, then an auto top
+        // follows the picked faces. The GUI and MCP read the same rule
+        // through `toolpath_heights`.
+        let heights = self.generation_heights(tc, &ctx, mesh.as_deref(), face_top_z)?;
 
         // Build tool definition
         let tool_def = crate::session::session_cutter(&tool)?;

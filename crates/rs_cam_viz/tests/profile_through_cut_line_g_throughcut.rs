@@ -164,7 +164,7 @@ fn build_session() -> ProjectSessionBuilder {
 /// The rule the params panel reads for the Profile at `idx`.
 fn rule(session: &ProjectSession, idx: usize) -> Option<ThroughCut> {
     let tc = &session.toolpath_configs()[idx];
-    let height_ctx = session.height_context_for_toolpath(tc);
+    let height_ctx = session.toolpath_heights(tc).expect("the heights resolve");
     let OperationConfig::Profile(cfg) = &tc.operation else {
         panic!("the toolpath at {idx} is a Profile");
     };
@@ -190,7 +190,7 @@ fn a_full_depth_profile_with_no_tabs_reads_the_seed_line_g_throughcut() {
     // The two rules partition the boundary: at depth == thickness the
     // G-DEPTHSTOCK caution stays silent and this line speaks.
     let tc = &session.toolpath_configs()[idx];
-    let height_ctx = session.height_context_for_toolpath(tc);
+    let height_ctx = session.toolpath_heights(tc).expect("the heights resolve");
     assert_eq!(
         depth_beyond_stock(&tc.operation, &tc.heights, &height_ctx),
         None,
@@ -221,7 +221,7 @@ fn a_depth_beyond_the_board_shows_both_the_line_and_the_caution_g_throughcut() {
         "Through cut of a 18 mm board · Holding: 3 tabs"
     );
     let tc = &session.toolpath_configs()[idx];
-    let height_ctx = session.height_context_for_toolpath(tc);
+    let height_ctx = session.toolpath_heights(tc).expect("the heights resolve");
     let caution = depth_beyond_stock(&tc.operation, &tc.heights, &height_ctx)
         .expect("beyond the board is also an exceedance");
     assert!((caution.excess_mm - 7.0).abs() < 1e-9);

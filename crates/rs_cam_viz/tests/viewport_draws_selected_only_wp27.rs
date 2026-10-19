@@ -433,8 +433,7 @@ fn vector_upload_is_contextual_and_uses_operation_specific_heights() {
     let picking = strip_comments(&source("src/interaction/picking.rs"));
     for needle in [
         "pub fn drawing_plane_z(",
-        "height_context_from_session(session, tc)",
-        "tc.heights.resolve(&context)",
+        "session.toolpath_heights(tc)",
         ".cutting_levels(heights.top_z)",
     ] {
         assert!(
