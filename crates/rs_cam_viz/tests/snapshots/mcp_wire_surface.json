@@ -2456,6 +2456,35 @@
           "format": "uint",
           "minimum": 0,
           "type": "integer"
+        },
+        "near": {
+          "additionalProperties": false,
+          "description": "Only the items whose drawn lines pass within `radius_mm` of `xy`,\nnearest first: the MCP form of a viewport click (P4.5). `xy` is in\nthe model frame, the frame of the key anchors. Absent: every item,\nin import order.",
+          "properties": {
+            "radius_mm": {
+              "description": "The radius (mm).",
+              "format": "double",
+              "type": "number"
+            },
+            "xy": {
+              "description": "The point, model frame (mm).",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            }
+          },
+          "required": [
+            "xy",
+            "radius_mm"
+          ],
+          "type": [
+            "object",
+            "null"
+          ]
         }
       },
       "required": [

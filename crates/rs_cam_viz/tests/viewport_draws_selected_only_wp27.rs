@@ -409,15 +409,29 @@ fn vector_upload_is_contextual_and_uses_operation_specific_heights() {
     for needle in [
         "vector_source_toolpath(state)",
         "find(|model| model.id == toolpath.model_id)",
-        "height_context_from_session(&state.session, &toolpath)",
-        "toolpath.heights.resolve(&context)",
-        ".cutting_levels(heights.top_z)",
+        // Geometry selection P4.5: the plane of the drawing is ONE
+        // function, shared by the draw and the pick (`drawing_plane_z`).
+        "drawing_plane_z(",
         "surface_model_id",
         "face.z_at_xy(x, y)",
     ] {
         assert!(
             upload.contains(needle),
             "contextual vector upload lost `{needle}`"
+        );
+    }
+    // The operation-specific height of that plane (a Trace draws at its
+    // last cutting level) lives in the shared function.
+    let picking = strip_comments(&source("src/interaction/picking.rs"));
+    for needle in [
+        "pub fn drawing_plane_z(",
+        "height_context_from_session(session, tc)",
+        "tc.heights.resolve(&context)",
+        ".cutting_levels(heights.top_z)",
+    ] {
+        assert!(
+            picking.contains(needle),
+            "the drawing plane lost its operation-specific height `{needle}`"
         );
     }
 }

@@ -123,6 +123,33 @@ impl ReportDetector {
     }
 }
 
+/// The upload trigger of the pick hover (geometry selection P4.5): the item
+/// under the pointer that the hover buffer last drew. The `last_hover_face`
+/// pattern (V13): the viewport asks for one hover upload on a CHANGE of the
+/// hovered item only, never per frame, and the hover buffer is its own
+/// small buffer, so a pointer move never rebuilds the drawing buffer.
+#[derive(Debug, Default)]
+pub struct HoverDetector {
+    last: Option<rs_cam_core::selection::MatchKey>,
+}
+
+impl HoverDetector {
+    /// Compare the hovered item of this frame with the last one. `true`
+    /// (once) when it changed; the caller then uploads the hover buffer.
+    pub fn changed(&mut self, now: Option<rs_cam_core::selection::MatchKey>) -> bool {
+        if self.last == now {
+            return false;
+        }
+        self.last = now;
+        true
+    }
+
+    /// The item the hover buffer draws.
+    pub fn hovered(&self) -> Option<&rs_cam_core::selection::MatchKey> {
+        self.last.as_ref()
+    }
+}
+
 /// For each note of `report`, the keys of the items that "Show me" frames:
 /// the `Skipped` items of the note's kind and layer, from `item_states`
 /// (the toolpath model `model`) and from `foreign`. The keys carry the

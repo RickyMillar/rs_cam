@@ -6,7 +6,7 @@ The pickable 2D geometry of every source and the selection of an op. Plan: `plan
 
 - `mod.rs` — the facade. `tests.rs` — the P2.2 lib sentries. `stock.rs` — `stock_items`. `item.rs` — `Item`, `Shape`,
   `FaceItem`, `ItemKind`, `SourceRef`, `ItemSet`; `key.rs` — `MatchKey`, `matches`, `names_same_geometry` (`KEY_MATCH_EPS_MM`).
-- `rule.rs` — `Selection` (private fields, NO `Default`), `Rule`, `Filter`, `KindFilter`, `SelectionEdit`, `apply`.
+- `rule.rs` — `Selection` (private fields, NO `Default`), `Rule`, `Filter`, `KindFilter`, `SelectionEdit`, `apply`; P4.5 `Rule::layer_rules` (a Ø range gets its own circle rule), `SelectionEdit::add_rules` (THE replace-under-default rule). `near.rs` — P4.5 THE pick rule: `Shape::pick_lines`, `polyline_distance`, `items_near`.
 - `resolve.rs` — `resolve` (pure; reports, never refuses), `ResolvedSelection`, `MatchedBy`,
   `to_setup_frame` + `face_in_setup_frame` (THE frame door), `face_top_z`.
 - `view.rs` — `view`, `OpItems`, `Regions`/`Curves`/`Holes`, `Shape::serves`;
@@ -37,4 +37,4 @@ The pickable 2D geometry of every source and the selection of an op. Plan: `plan
 - `--test default_selection_equals_the_old_lists_p2_2` (frozen lists); P2.3b `a_layer_rule_cuts_only_its_layer_p2_3`,
   `an_absent_selection_key_loads_the_op_default_p2_3`, `an_op_change_keeps_its_selection_p2_3`, `a_face_pick_cuts_from_its_setup_frame_top_p2_3`;
   P2.3c `drill_picks_resolve_to_targets_g_drillpickstale` (a lost pick refuses), `a_retired_drill_pick_key_is_named_p2_3c`;
-  P2.4 `selection_refusals_name_the_item_p2_4` (one arm per cause; status = generation), `a_two_face_pick_keeps_both_faces_p2_4`; P2.5 `a_selection_boundary_confines_g_modeloutline`; P2.6 `selection_round_trips_p2_6`, `a_retired_selection_key_is_named_p2_6`; P2.7 `one_item_is_one_pick_p2_7`; P4.1 `a_3d_op_face_pick_sets_its_top_p4_1` (a 3D op's face pick is a boundary pick); P4.2 `a_face_op_reads_its_selection_p4_2`; P4.4 `item_states_match_the_cut_p4_4`
+  P2.4 `selection_refusals_name_the_item_p2_4` (one arm per cause; status = generation), `a_two_face_pick_keeps_both_faces_p2_4`; P2.5 `a_selection_boundary_confines_g_modeloutline`; P2.6 `selection_round_trips_p2_6`, `a_retired_selection_key_is_named_p2_6`; P2.7 `one_item_is_one_pick_p2_7`; P4.1 `a_3d_op_face_pick_sets_its_top_p4_1` (a 3D op's face pick is a boundary pick); P4.2 `a_face_op_reads_its_selection_p4_2`; P4.4 `item_states_match_the_cut_p4_4`; P4.5 `--lib p4_5`

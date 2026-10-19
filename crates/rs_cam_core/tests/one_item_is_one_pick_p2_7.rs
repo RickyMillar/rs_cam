@@ -92,6 +92,7 @@ fn listed_key(s: &ProjectSession) -> MatchKey {
             model_id,
             layer: None,
             kind: Some(ItemKind::Circle),
+            near: None,
         }))
         .expect("the model exists");
     let QueryAnswer::ListItems(answer) = answer else {

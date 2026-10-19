@@ -347,6 +347,35 @@ impl<B: ComputeBackend> AppController<B> {
                     None => {}
                 }
             }
+            AppEvent::PickLayer {
+                toolpath_id,
+                target,
+                key,
+                kinds,
+                circle,
+            } => {
+                // Geometry selection P4.5: core builds the layer rule edit
+                // (the replace-under-default rule lives there, beside
+                // `pick_edit`), so MCP and the GUI agree. An item with no
+                // layer gives a notice and no edit.
+                let edit = self
+                    .state
+                    .session
+                    .find_toolpath_config_by_id(toolpath_id)
+                    .map(|(_, tc)| {
+                        self.state
+                            .session
+                            .layer_rule_edit(tc, target, &key, &kinds, circle)
+                    });
+                match edit {
+                    Some(Ok(edit)) => self.apply_selection_edit(toolpath_id, target, edit),
+                    Some(Err(error)) => self.push_notification(
+                        format!("Could not add the layer: {error}"),
+                        super::Severity::Warning,
+                    ),
+                    None => {}
+                }
+            }
             AppEvent::EditToolpathSelection {
                 toolpath_id,
                 target,

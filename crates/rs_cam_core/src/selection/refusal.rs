@@ -62,6 +62,19 @@ fn use_phrase(use_: ItemUse) -> &'static str {
     }
 }
 
+/// Why a reader of `item_use` cannot cut items of `kind`: "The op cuts
+/// closed areas only (...), so it does not cut open paths." The GUI pick
+/// bar (geometry selection P4.5) shows it on a disabled kind chip. It
+/// reads [`use_phrase`], the phrase of the `KindNotCut` refusal, so the
+/// chip and the refusal give one reason.
+pub fn kind_not_cut_reason(kind: ItemKind, item_use: ItemUse) -> String {
+    format!(
+        "The op {}, so it does not cut {}.",
+        use_phrase(item_use),
+        kind_noun(kind, 2)
+    )
+}
+
 impl fmt::Display for ItemRef {
     /// "open path on layer 'TEXT' (starts at X 12.000 Y 40.500, 86.200 mm
     /// long)".

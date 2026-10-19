@@ -25,13 +25,13 @@ use std::collections::BTreeSet;
 use rs_cam_core::compute::catalog::ItemUse;
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::selection::{
-    DiameterRange, FaceFilter, Facing, Filter, ItemKind, KindFilter, MatchKey, Rule, Selection,
-    SelectionEdit, SourceRef, ZRange, kind_noun,
+    FaceFilter, Facing, Filter, ItemKind, KindFilter, MatchKey, Rule, Selection, SelectionEdit,
+    SourceRef, ZRange, kind_noun,
 };
 use rs_cam_core::session::{SelectionReport, SelectionTarget};
 
 use super::{RuleSource, SelectionRead};
-use crate::state::pick::{PickMode, RuleDraft, SelectionUi};
+use crate::state::pick::{DEFAULT_CIRCLE_RANGE, PickMode, RuleDraft, SelectionUi};
 use crate::state::toolpath::ToolpathId;
 use crate::ui::AppEvent;
 use crate::ui::components::{
@@ -204,10 +204,11 @@ pub(crate) fn draw_selection_section(
             ui_state.pick = if on {
                 None
             } else {
-                Some(PickMode {
-                    toolpath_id: inputs.toolpath_id,
-                    target: inputs.target,
-                })
+                Some(PickMode::new(
+                    inputs.toolpath_id,
+                    inputs.target,
+                    inputs.item_use,
+                ))
             };
         }
     });
@@ -701,10 +702,7 @@ fn draw_rule_draft(
                 .checkbox(&mut limit, "Limit the circle diameter")
                 .changed()
             {
-                draft.diameter = limit.then_some(DiameterRange {
-                    nominal_mm: 5.0,
-                    tolerance_mm: 0.1,
-                });
+                draft.diameter = limit.then_some(DEFAULT_CIRCLE_RANGE);
             }
             if let Some(range) = draft.diameter.as_mut() {
                 ui.param_grid(inputs.salt("rule_diameter"), |ui| {
@@ -757,15 +755,18 @@ fn draw_rule_draft(
                 .on_hover_text("Add the rule to this selection.")
                 .clicked()
             {
-                let rule = draft_rule(draft);
                 // Under the default, the first rule replaces it, so one act
                 // gives one set of items (the drill's first layer pick).
-                let edit = if inputs.is_default() && !inputs.selection.is_empty() {
-                    SelectionEdit::Replace(Box::new(Selection::from_rules(vec![rule])))
-                } else {
-                    SelectionEdit::AddRule(rule)
-                };
-                inputs.send(events, edit);
+                // Core owns that rule (P4.5): the viewport shift-click
+                // reads the same function.
+                if let Some(edit) = SelectionEdit::add_rules(
+                    inputs.selection,
+                    inputs.op_default,
+                    inputs.toolpath_model,
+                    vec![draft_rule(draft)],
+                ) {
+                    inputs.send(events, edit);
+                }
                 *close = true;
             }
         });

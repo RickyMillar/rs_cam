@@ -459,6 +459,7 @@ fn rule_sources(
             model_id,
             layer: None,
             kind: None,
+            near: None,
         })) {
             Ok(QueryAnswer::ListItems(answer)) => answer.items,
             Ok(_) | Err(_) => Vec::new(),

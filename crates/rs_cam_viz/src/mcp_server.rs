@@ -675,7 +675,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "list_model_items",
-        description = "Geometry selection: list the items of one model (a closed loop, an open path, a point, a circle, a flat STEP face), in import order, each with its kind, layer, measure and match `key`. Filter by `layer` and `kind`. To pick an item, copy its `key` into `edit_toolpath_selection` `{\"add_pick\": <key>}`. The key names the model as `{\"model\": id}`; on a toolpath of that model the pick is stored as `\"toolpath_model\"`, so a viewport click on the same item toggles the same pick."
+        description = "Geometry selection: list the items of one model (a closed loop, an open path, a point, a circle, a flat STEP face), in import order, each with its kind, layer, measure and match `key`. Filter by `layer` and `kind`. `near: {\"xy\": [x, y], \"radius_mm\": r}` (model frame) lists only the items whose lines pass within `r` of the point, nearest first: the same rule as a viewport click. To pick an item, copy its `key` into `edit_toolpath_selection` `{\"add_pick\": <key>}`. The key names the model as `{\"model\": id}`; on a toolpath of that model the pick is stored as `\"toolpath_model\"`, so a viewport click on the same item toggles the same pick."
     )]
     async fn list_model_items(&self, Parameters(param): Parameters<ListModelItemsParam>) -> String {
         Self::format_result(

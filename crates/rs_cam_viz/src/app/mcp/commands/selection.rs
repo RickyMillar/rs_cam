@@ -105,6 +105,31 @@ pub(crate) fn model_item_json(item: &ModelItem) -> serde_json::Value {
     })
 }
 
+/// The reply of the `list_model_items` read (P2.7; P4.5 `near`): the core
+/// query row, each item as [`model_item_json`].
+pub(crate) fn list_model_items_reply(
+    session: &ProjectSession,
+    p: &ListModelItemsParam,
+) -> serde_json::Value {
+    let query = Query::ListItems(ListItemsArgs {
+        model_id: p.model_id,
+        layer: p.layer.clone(),
+        kind: p.kind.map(Into::into),
+        near: p.near.map(Into::into),
+    });
+    match session.query(query) {
+        Ok(QueryAnswer::ListItems(answer)) => serde_json::json!({
+            "model_id": p.model_id,
+            "count": answer.items.len(),
+            "items": answer.items.iter().map(model_item_json).collect::<Vec<_>>(),
+        }),
+        Ok(other) => serde_json::json!({
+            "error": format!("the list_model_items read answered {other:?}"),
+        }),
+        Err(e) => serde_json::json!({ "error": e.to_string() }),
+    }
+}
+
 /// The item counts of a model (`ItemSet::counts`): the `items` block of
 /// `inspect_model`.
 pub(crate) fn item_counts_json(counts: &ItemCounts) -> serde_json::Value {
@@ -173,22 +198,7 @@ impl RsCamApp {
 
     /// The `list_model_items` read: the core query row.
     pub(crate) fn mcp_list_model_items(&self, p: &ListModelItemsParam) -> String {
-        let query = Query::ListItems(ListItemsArgs {
-            model_id: p.model_id,
-            layer: p.layer.clone(),
-            kind: p.kind.map(Into::into),
-        });
-        match self.controller.state().session.query(query) {
-            Ok(QueryAnswer::ListItems(answer)) => json_str(serde_json::json!({
-                "model_id": p.model_id,
-                "count": answer.items.len(),
-                "items": answer.items.iter().map(model_item_json).collect::<Vec<_>>(),
-            })),
-            Ok(other) => json_str(serde_json::json!({
-                "error": format!("the list_model_items read answered {other:?}"),
-            })),
-            Err(e) => json_str(serde_json::json!({ "error": e.to_string() })),
-        }
+        json_str(list_model_items_reply(&self.controller.state().session, p))
     }
 
     /// `edit_toolpath_selection` → `Command::EditSelection`.
@@ -689,5 +699,116 @@ mod tests {
         assert_eq!(counts["by_kind"]["circle"], serde_json::json!(2));
         assert_eq!(counts["by_kind"]["path"], serde_json::json!(1));
         assert_eq!(counts["by_layer"]["HOLES"]["circle"], serde_json::json!(2));
+    }
+    /// The stored selection of op `index`.
+    fn stored(s: &ProjectSession, index: usize) -> Selection {
+        s.get_toolpath_config(index)
+            .unwrap()
+            .operation
+            .selection()
+            .unwrap()
+            .clone()
+    }
+
+    /// Apply one wire edit (`edit_toolpath_selection` JSON) to op `index`,
+    /// as the MCP row does.
+    fn wire_edit(s: &mut ProjectSession, index: usize, edit: &serde_json::Value) {
+        let wire: EditToolpathSelectionParam =
+            serde_json::from_value(serde_json::json!({ "index": index, "edit": edit }))
+                .expect("the wire edit parses");
+        let _ = apply(
+            s,
+            Command::EditSelection(EditSelectionArgs {
+                index: wire.index,
+                target: wire.target.into(),
+                edit: wire.edit.into(),
+            }),
+        );
+    }
+
+    /// Geometry selection P4.5, MCP parity of a click: an MCP
+    /// `list_model_items { near }` at a circle centre, then the edit its
+    /// key gives, stores the same pick as the GUI click on that circle
+    /// (`pick_edit`, the `TogglePick` path). Parity of a shift-click: the
+    /// layer rule of `layer_rule_edit` (kinds and a circle range) is one
+    /// wire `replace` with the same rules.
+    #[test]
+    fn an_mcp_near_pick_and_a_gui_click_give_one_pick_p4_5() {
+        // Toolpath 1 is a Drill with one picked circle; pick the other.
+        let circles = project()
+            .list_model_items(0, Some("HOLES"), Some(ItemKind::Circle))
+            .unwrap();
+        let other = circles[1].key.clone();
+
+        // GUI: the click on the drawn circle sends `TogglePick` of the item
+        // key; the controller asks `pick_edit`.
+        let mut gui = project();
+        let tc = gui.get_toolpath_config(1).unwrap().clone();
+        let item_key = gui.models()[0]
+            .items
+            .iter()
+            .find(|i| i.key().names_same_geometry(&other))
+            .unwrap()
+            .key()
+            .clone();
+        let click = gui.pick_edit(&tc, SelectionTarget::Op, item_key).unwrap();
+        edit(&mut gui, 1, click);
+
+        // MCP: `near` at the circle centre lists that circle first; its
+        // key goes into `add_pick`.
+        let mut mcp = project();
+        let p: ListModelItemsParam = serde_json::from_value(serde_json::json!({
+            "model_id": 0,
+            "near": { "xy": other.anchor, "radius_mm": 0.5 },
+        }))
+        .unwrap();
+        let reply = list_model_items_reply(&mcp, &p);
+        let first = &reply["items"][0];
+        assert_eq!(first["kind"], serde_json::json!("circle"), "{reply}");
+        wire_edit(
+            &mut mcp,
+            1,
+            &serde_json::json!({ "add_pick": first["key"] }),
+        );
+        assert_eq!(stored(&mcp, 1), stored(&gui, 1), "one item is one pick");
+        assert_eq!(stored(&gui, 1).picks().len(), 2);
+
+        // Shift-click on a HOLES circle of the default Pocket (toolpath 3),
+        // loops and circles on, Ø range on.
+        let mut gui = project();
+        let tc = gui.get_toolpath_config(3).unwrap().clone();
+        let range = rs_cam_core::selection::DiameterRange {
+            nominal_mm: circles[0].measure,
+            tolerance_mm: 0.1,
+        };
+        let layer = gui
+            .layer_rule_edit(
+                &tc,
+                SelectionTarget::Op,
+                &circles[0].key,
+                &[ItemKind::Loop, ItemKind::Circle],
+                Some(range),
+            )
+            .unwrap();
+        edit(&mut gui, 3, layer);
+        let mut mcp = project();
+        wire_edit(
+            &mut mcp,
+            3,
+            &serde_json::json!({ "replace": { "rules": [
+                { "source": "toolpath_model",
+                  "filter": { "layers": ["HOLES"], "kinds": { "only": ["loop"] } } },
+                { "source": "toolpath_model",
+                  "filter": { "layers": ["HOLES"], "kinds": { "only": ["circle"] },
+                              "diameter": { "nominal_mm": range.nominal_mm,
+                                            "tolerance_mm": 0.1 } } },
+            ] } }),
+        );
+        assert_eq!(
+            stored(&mcp, 3),
+            stored(&gui, 3),
+            "one layer rule, two doors"
+        );
+        assert_eq!(stored(&gui, 3).rules().len(), 2);
     }
 }

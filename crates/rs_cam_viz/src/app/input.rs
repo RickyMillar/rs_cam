@@ -468,6 +468,13 @@ impl RsCamApp {
         if ctx.memory(|m| m.focused().is_some()) {
             return;
         }
+        // Geometry selection P4.5: Escape ends the pick mode, after the
+        // dock surfaces above took theirs. The key is consumed.
+        if self.controller.state().gui.selection_ui.pick.is_some()
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
+            self.controller.state_mut().gui.selection_ui.pick = None;
+        }
 
         ctx.input(|i| {
             let modifiers = i.modifiers;

@@ -9,6 +9,7 @@
 
 pub mod item;
 pub mod key;
+pub mod near;
 pub mod refusal;
 pub mod resolve;
 pub mod rule;
@@ -20,7 +21,10 @@ mod tests;
 
 pub use item::{FaceItem, Item, ItemCounts, ItemError, ItemKind, ItemSet, Shape, SourceRef};
 pub use key::{KEY_MATCH_EPS_MM, MatchKey};
-pub use refusal::{ItemRef, RefusalCause, SelectionNote, SelectionRefusal, kind_noun};
+pub use near::{PickLine, items_near, polyline_distance};
+pub use refusal::{
+    ItemRef, RefusalCause, SelectionNote, SelectionRefusal, kind_not_cut_reason, kind_noun,
+};
 pub use resolve::{
     ExcludedItem, LostPick, MatchedBy, ResolveScope, ResolvedItem, ResolvedSelection,
     face_in_setup_frame, resolve,

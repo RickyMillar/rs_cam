@@ -1210,6 +1210,32 @@ pub struct ListModelItemsParam {
     /// Only the items of this kind.
     #[serde(default)]
     pub kind: Option<ItemKindParam>,
+    /// Only the items whose drawn lines pass within `radius_mm` of `xy`,
+    /// nearest first: the MCP form of a viewport click (P4.5). `xy` is in
+    /// the model frame, the frame of the key anchors. Absent: every item,
+    /// in import order.
+    #[serde(default)]
+    pub near: Option<NearParam>,
+}
+
+/// A point and a radius for `list_model_items` (P4.5).
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(inline)]
+pub struct NearParam {
+    /// The point, model frame (mm).
+    pub xy: [f64; 2],
+    /// The radius (mm).
+    pub radius_mm: f64,
+}
+
+impl From<NearParam> for rs_cam_core::session::Near {
+    fn from(p: NearParam) -> Self {
+        Self {
+            xy: p.xy,
+            radius_mm: p.radius_mm,
+        }
+    }
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]

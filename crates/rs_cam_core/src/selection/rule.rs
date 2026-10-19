@@ -169,6 +169,53 @@ impl Rule {
         }
     }
 
+    /// The rules of a layer pick (geometry selection P4.5, a viewport
+    /// shift-click): the items of `source` on `layer` whose kind is in
+    /// `kinds`. With `circle`, the circles must also be in that diameter
+    /// range.
+    ///
+    /// A filter with a diameter range admits circles only
+    /// ([`Filter::admits`]). So when `kinds` holds circles and other kinds,
+    /// the circles get a rule of their own with the range, and the other
+    /// kinds get one rule with no range. A `circle` without
+    /// [`ItemKind::Circle`] in `kinds` is not used. No kind gives no rule.
+    pub fn layer_rules(
+        source: SourceRef,
+        layer: &str,
+        kinds: &[ItemKind],
+        circle: Option<DiameterRange>,
+    ) -> Vec<Rule> {
+        let rule = |kinds: Vec<ItemKind>, diameter: Option<DiameterRange>| Rule {
+            source,
+            filter: Filter {
+                layers: vec![layer.to_owned()],
+                kinds: KindFilter::Only(kinds),
+                diameter,
+                face: None,
+            },
+        };
+        if kinds.is_empty() {
+            return Vec::new();
+        }
+        let has_circle = kinds.contains(&ItemKind::Circle);
+        match circle {
+            Some(range) if has_circle => {
+                let others: Vec<ItemKind> = kinds
+                    .iter()
+                    .copied()
+                    .filter(|k| *k != ItemKind::Circle)
+                    .collect();
+                let mut rules = Vec::new();
+                if !others.is_empty() {
+                    rules.push(rule(others, None));
+                }
+                rules.push(rule(vec![ItemKind::Circle], Some(range)));
+                rules
+            }
+            Some(_) | None => vec![rule(kinds.to_vec(), None)],
+        }
+    }
+
     /// True when the rule names its kinds (`KindFilter::Only`). An item it
     /// matches is then an explicit act of the user.
     pub fn names_kinds(&self) -> bool {
@@ -243,6 +290,52 @@ impl SelectionEdit {
                 SelectionEdit::RemovePick(key.for_toolpath_model(toolpath_model))
             }
             SelectionEdit::RemoveRule(_) | SelectionEdit::Reset => self,
+        }
+    }
+
+    /// The edit that adds `rules` to `current`, a selection whose op
+    /// default is `op_default`, on a toolpath on `toolpath_model`
+    /// (geometry selection P4.3 `+ Rule`, P4.5 shift-click).
+    ///
+    /// Under the default (a selection that is not empty), the new rules
+    /// replace it, so one act gives one set of items: the rule of the first
+    /// layer pick of the drill. The two selections are compared in the
+    /// stored form ([`Selection::for_toolpath_model`]). Else one rule gives
+    /// `AddRule`, and more rules give one `Replace` that appends the rules
+    /// the selection does not hold, so the act is one undo step. No rule
+    /// gives `None`.
+    ///
+    /// The viewport and the section call it. An MCP `add_rule` stays an
+    /// explicit edit, as an MCP `add_pick` does.
+    pub fn add_rules(
+        current: &Selection,
+        op_default: &Selection,
+        toolpath_model: ModelId,
+        mut rules: Vec<Rule>,
+    ) -> Option<SelectionEdit> {
+        let stored = current.clone().for_toolpath_model(toolpath_model);
+        let under_default =
+            !stored.is_empty() && stored == op_default.clone().for_toolpath_model(toolpath_model);
+        if under_default {
+            return (!rules.is_empty())
+                .then(|| SelectionEdit::Replace(Box::new(Selection::from_rules(rules))));
+        }
+        match rules.len() {
+            0 => None,
+            1 => rules.pop().map(SelectionEdit::AddRule),
+            _ => {
+                let mut all = current.rules.clone();
+                for rule in rules {
+                    if !all.contains(&rule) {
+                        all.push(rule);
+                    }
+                }
+                Some(SelectionEdit::Replace(Box::new(Selection::from_parts(
+                    all,
+                    current.picks.clone(),
+                    current.excludes.clone(),
+                ))))
+            }
         }
     }
 }
@@ -474,7 +567,12 @@ impl Selection {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
 mod tests {
     use super::*;
 
@@ -610,5 +708,94 @@ mod tests {
         );
         // An unknown key refuses.
         assert!(toml::from_str::<Selection>("pickz = []").is_err());
+    }
+
+    /// Geometry selection P4.5: a layer pick with loops and Ø-limited
+    /// circles gives TWO rules, because a filter with a diameter admits
+    /// circles only. One kind gives one rule; no kind gives none.
+    #[test]
+    fn a_layer_pick_splits_the_circle_range_into_its_own_rule_p4_5() {
+        let range = DiameterRange {
+            nominal_mm: 5.0,
+            tolerance_mm: 0.1,
+        };
+        let rules = Rule::layer_rules(
+            SourceRef::ToolpathModel,
+            "CUT",
+            &[ItemKind::Loop, ItemKind::Circle],
+            Some(range),
+        );
+        assert_eq!(rules.len(), 2, "{rules:?}");
+        assert_eq!(
+            rules[0].filter.kinds,
+            KindFilter::Only(vec![ItemKind::Loop])
+        );
+        assert_eq!(rules[0].filter.diameter, None);
+        assert_eq!(
+            rules[1].filter.kinds,
+            KindFilter::Only(vec![ItemKind::Circle])
+        );
+        assert_eq!(rules[1].filter.diameter, Some(range));
+        assert!(
+            rules
+                .iter()
+                .all(|r| r.filter.layers == vec!["CUT".to_owned()])
+        );
+        // No circle chip: the range is not used.
+        let one = Rule::layer_rules(
+            SourceRef::ToolpathModel,
+            "CUT",
+            &[ItemKind::Loop],
+            Some(range),
+        );
+        assert_eq!(one.len(), 1);
+        assert_eq!(one[0].filter.diameter, None);
+        assert!(Rule::layer_rules(SourceRef::ToolpathModel, "CUT", &[], None).is_empty());
+    }
+
+    /// Geometry selection P4.3/P4.5: under the default the first rules
+    /// replace it; after it one rule adds and two rules append in one edit.
+    #[test]
+    fn added_rules_replace_the_default_only_p4_5() {
+        let own = ModelId(0);
+        let rule = |layer: &str| Rule {
+            source: SourceRef::ToolpathModel,
+            filter: Filter {
+                layers: vec![layer.to_owned()],
+                ..Filter::default()
+            },
+        };
+        let default = Selection::drawing();
+        assert_eq!(
+            SelectionEdit::add_rules(&default, &default, own, vec![rule("A")]),
+            Some(SelectionEdit::Replace(Box::new(Selection::from_rules(
+                vec![rule("A")]
+            ))))
+        );
+        let custom = Selection::from_rules(vec![rule("A")]);
+        assert_eq!(
+            SelectionEdit::add_rules(&custom, &default, own, vec![rule("B")]),
+            Some(SelectionEdit::AddRule(rule("B")))
+        );
+        let Some(SelectionEdit::Replace(both)) =
+            SelectionEdit::add_rules(&custom, &default, own, vec![rule("A"), rule("C")])
+        else {
+            panic!("two rules after the default give one Replace");
+        };
+        assert_eq!(both.rules(), &[rule("A"), rule("C")]);
+        // An empty default (a boundary with no item) is not replaced.
+        assert_eq!(
+            SelectionEdit::add_rules(
+                &Selection::empty(),
+                &Selection::empty(),
+                own,
+                vec![rule("A")]
+            ),
+            Some(SelectionEdit::AddRule(rule("A")))
+        );
+        assert_eq!(
+            SelectionEdit::add_rules(&custom, &default, own, vec![]),
+            None
+        );
     }
 }

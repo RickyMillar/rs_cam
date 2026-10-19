@@ -6,11 +6,142 @@ use crate::ui_command::{SimJumpToMoveArgs, UiCommand};
 
 use super::RsCamApp;
 
+/// The pick mode of the selected toolpath, as the click and the hover read
+/// it (geometry selection P4.5).
+struct ActivePick {
+    toolpath_id: crate::state::toolpath::ToolpathId,
+    target: rs_cam_core::session::SelectionTarget,
+    filter: crate::state::pick::PickFilter,
+    /// The kinds the click picks: the chips that are on, served and held
+    /// (`PickFilter::effective_kinds`).
+    kinds: Vec<rs_cam_core::selection::ItemKind>,
+}
+
 impl RsCamApp {
+    /// The pick context of the viewport point `pos` (screen coordinates).
+    fn pick_context(&self, pos: egui::Pos2) -> crate::interaction::picking::PickContext<'_> {
+        let rect = self.viewport_rect;
+        crate::interaction::picking::PickContext {
+            camera: &self.camera,
+            screen_x: pos.x - rect.min.x,
+            screen_y: pos.y - rect.min.y,
+            aspect: if rect.height() > 0.0 {
+                rect.width() / rect.height()
+            } else {
+                1.0
+            },
+            vw: rect.width(),
+            vh: rect.height(),
+        }
+    }
+
+    /// The pick mode of the selected toolpath in the Toolpaths workspace,
+    /// or `None` (P4.5).
+    fn active_pick(&self) -> Option<ActivePick> {
+        let state = self.controller.state();
+        if state.workspace != Workspace::Toolpaths {
+            return None;
+        }
+        let Selection::Toolpath(id) = state.selection else {
+            return None;
+        };
+        let mode = state.gui.selection_ui.pick_mode(id)?;
+        let (_, tc) = state.session.find_toolpath_config_by_id(id)?;
+        let held = state
+            .session
+            .models()
+            .iter()
+            .find(|m| m.id == tc.model_id)
+            .map(|m| crate::state::pick::held_kinds(m.items.iter()))
+            .unwrap_or_default();
+        let item_use = crate::state::pick::target_item_use(tc, mode.target);
+        Some(ActivePick {
+            toolpath_id: id,
+            target: mode.target,
+            kinds: mode.filter.effective_kinds(item_use, &held),
+            filter: mode.filter.clone(),
+        })
+    }
+
+    /// The key of the item under `pos` in pick mode (P4.5), or `None`. A
+    /// face that is not flat has no item: `Err` names it.
+    fn pick_mode_key(
+        &self,
+        pick: &ActivePick,
+        pos: egui::Pos2,
+    ) -> Option<Result<rs_cam_core::selection::MatchKey, String>> {
+        use crate::interaction::PickHit;
+        let state = self.controller.state();
+        let ctx = self.pick_context(pos);
+        let hit = crate::interaction::picking::pick_items(
+            &ctx,
+            &state.session,
+            pick.toolpath_id,
+            &pick.filter,
+            &pick.kinds,
+        )?;
+        match hit {
+            PickHit::Item { key, .. } => Some(Ok(key)),
+            PickHit::ModelFace { model_id, face_id } => {
+                let (_, tc) = state.session.find_toolpath_config_by_id(pick.toolpath_id)?;
+                Some(
+                    state
+                        .session
+                        .face_pick_key(tc, model_id.0, face_id)
+                        .map_err(|refusal| refusal.to_string()),
+                )
+            }
+            PickHit::CollisionMarker { .. }
+            | PickHit::AlignmentPin { .. }
+            | PickHit::Obstacle { .. }
+            | PickHit::StockFace { .. }
+            | PickHit::Toolpath { .. } => None,
+        }
+    }
+
+    /// A click in pick mode (P4.5). It wins over every other pick: `true`
+    /// when a pick mode is on, also when the click hits no item. A click
+    /// sends `TogglePick`; a shift-click sends `PickLayer`.
+    fn handle_pick_mode_click(&mut self, click_pos: egui::Pos2, shift: bool) -> bool {
+        let Some(pick) = self.active_pick() else {
+            return false;
+        };
+        match self.pick_mode_key(&pick, click_pos) {
+            Some(Ok(key)) => {
+                let event = if shift {
+                    AppEvent::PickLayer {
+                        toolpath_id: pick.toolpath_id,
+                        target: pick.target,
+                        key,
+                        kinds: pick.kinds,
+                        circle: pick.filter.circle,
+                    }
+                } else {
+                    AppEvent::TogglePick {
+                        toolpath_id: pick.toolpath_id,
+                        target: pick.target,
+                        key,
+                    }
+                };
+                self.controller.events_mut().push(event);
+            }
+            Some(Err(refusal)) => self.controller.push_notification(
+                format!("Could not pick the face: {refusal}"),
+                crate::controller::Severity::Warning,
+            ),
+            None => {}
+        }
+        true
+    }
+
     /// Click-to-select: find nearest toolpath to click position in screen space.
-    fn handle_viewport_click(&mut self, click_pos: egui::Pos2) {
+    fn handle_viewport_click(&mut self, click_pos: egui::Pos2, shift: bool) {
         let rect = self.viewport_rect;
         if rect.width() < 1.0 || rect.height() < 1.0 {
+            return;
+        }
+
+        if self.handle_pick_mode_click(click_pos, shift) {
             return;
         }
 
@@ -275,6 +406,8 @@ impl RsCamApp {
         let dock = {
             let (state, events) = self.controller.state_and_events_mut();
             crate::ui::overlays::panel::draw_catalogue(ui.ctx(), state, projection, events, rect);
+            // P4.5: the pick filter bar, at the top centre (L-4).
+            crate::ui::pick_bar::draw(ui.ctx(), state, rect);
             crate::ui::viewport_overlay::draw(ui, state, projection, &lane_snapshots, events, rect)
         };
         if self.controller.state().viewport.show_tool_deflection {
@@ -287,7 +420,42 @@ impl RsCamApp {
             && !dock.closed_popover_on_click
             && let Some(pos) = response.interact_pointer_pos()
         {
-            self.handle_viewport_click(pos);
+            let shift = ui.input(|i| i.modifiers.shift);
+            self.handle_viewport_click(pos, shift);
+        }
+
+        // P4.5: the item under the pointer in pick mode. The hover buffer
+        // uploads on a change of the item only (`HoverDetector`, the
+        // `last_hover_face` pattern below), never per frame.
+        let pick = self.active_pick();
+        let hovered_item = match (&pick, ui.input(|i| i.pointer.hover_pos())) {
+            (Some(pick), Some(pos)) if response.hovered() => self
+                .pick_mode_key(pick, pos)
+                .and_then(Result::ok)
+                .map(|key| (pick, key)),
+            _ => None,
+        };
+        if self
+            .hover_detector
+            .changed(hovered_item.as_ref().map(|(_, key)| key.clone()))
+        {
+            self.hover_upload_pending = true;
+            ui.ctx().request_repaint();
+        }
+        if let Some((pick, key)) = &hovered_item {
+            let state = self.controller.state();
+            if let Some((_, tc)) = state.session.find_toolpath_config_by_id(pick.toolpath_id) {
+                let tip = crate::ui::pick_bar::hover_text(&state.session, tc, pick.target, key);
+                egui::Tooltip::always_open(
+                    ui.ctx().clone(),
+                    response.layer_id,
+                    egui::Id::new("pick_item_tip"),
+                    egui::PopupAnchor::Pointer,
+                )
+                .show(|ui| {
+                    ui.label(tip);
+                });
+            }
         }
 
         // Update hovered face for BREP hover highlighting.
@@ -359,7 +527,9 @@ impl RsCamApp {
         // Span-path tooltip on toolpath hover. Shows the SpanKind path for
         // the closest sampled move so the user can read what part of the
         // operation they're pointing at (e.g. "DepthPass 3 / Region 2").
+        // In pick mode the item tooltip above has the pointer (P4.5).
         if response.hovered()
+            && pick.is_none()
             && let Some(pos) = ui.input(|i| i.pointer.hover_pos())
         {
             let pick_ctx = crate::interaction::picking::PickContext {

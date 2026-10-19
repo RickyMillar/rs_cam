@@ -1,6 +1,7 @@
 use crate::render::camera::OrbitCamera;
 use crate::state::Workspace;
 use crate::state::job::{ModelId, ObstacleId, SetupFrame, SetupId, StockConfig};
+use crate::state::pick::PickFilter;
 use crate::state::pin_view::pin_display_points;
 use crate::state::runtime::GuiState;
 use crate::state::toolpath::ToolpathId;
@@ -8,6 +9,7 @@ use crate::state::viewport::{ToolpathDrawFilter, toolpaths_to_draw};
 use rs_cam_core::geo::{BoundingBox3, P2, P3, V3};
 use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 use rs_cam_core::mesh::ray_pick_triangle;
+use rs_cam_core::selection::ItemKind;
 use rs_cam_core::session::ProjectSession;
 
 /// Screen-space pick threshold for point-like markers (collision dots, pins).
@@ -40,9 +42,10 @@ pub enum PickHit {
         model_id: ModelId,
         face_id: FaceGroupId,
     },
-    /// Hit a drawn item of the active toolpath (geometry selection P2.6;
-    /// today the hole markers of a drill op: a point or a circle). `key` is
-    /// the match key a pick of the item stores.
+    /// Hit a drawn item of the active toolpath: a hole marker of a drill op
+    /// (geometry selection P2.6), or in pick mode any item the filter
+    /// admits (P4.5, [`pick_items`]). `key` is the match key a pick of the
+    /// item stores.
     Item {
         toolpath_id: ToolpathId,
         key: rs_cam_core::selection::MatchKey,
@@ -173,34 +176,11 @@ pub fn pick(
     // click hits the face where it is drawn. The transform is rigid (a
     // flip, a turn and a shift), so the ray parameter `t` keeps its length
     // and compares with the other hits.
-    if matches!(workspace, Workspace::Toolpaths) {
-        let (model_origin, model_dir) = match display_frame {
-            Some(frame) => {
-                let a = frame.inverse_transform_point(origin, stock);
-                let b = frame.inverse_transform_point(origin + dir, stock);
-                (a, b - a)
-            }
-            None => (origin, dir),
-        };
-        for model in session.models() {
-            if let Some(enriched) = &model.enriched_mesh {
-                let mesh = enriched.as_mesh();
-                // Fast AABB rejection
-                if mesh.bbox.ray_intersect(&model_origin, &model_dir).is_none() {
-                    continue;
-                }
-                if let Some((tri_idx, t)) = ray_pick_triangle(mesh, &model_origin, &model_dir)
-                    && t < best_t
-                {
-                    best_t = t;
-                    let face_id = enriched.face_for_triangle(tri_idx);
-                    best_hit = Some(PickHit::ModelFace {
-                        model_id: ModelId(model.id),
-                        face_id,
-                    });
-                }
-            }
-        }
+    if matches!(workspace, Workspace::Toolpaths)
+        && let Some((t, hit)) = pick_model_face(session, display_frame, origin, dir)
+        && t < best_t
+    {
+        best_hit = Some(hit);
     }
 
     if best_hit.is_some() {
@@ -215,6 +195,168 @@ pub fn pick(
     }
 
     None
+}
+
+/// The nearest BREP face hit by the ray `origin` + t `dir` (display
+/// frame), over the enriched mesh of every model, with its ray parameter.
+///
+/// Geometry selection P2.6: the upload draws the enriched mesh moved by the
+/// display frame (`SetupFrame::transform_point`). The ray moves back into
+/// the model frame through the inverse of that one transform, so a click
+/// hits the face where it is drawn. The transform is rigid (a flip, a turn
+/// and a shift), so `t` keeps its length and compares with other hits.
+fn pick_model_face(
+    session: &ProjectSession,
+    display_frame: Option<&SetupFrame>,
+    origin: P3,
+    dir: V3,
+) -> Option<(f64, PickHit)> {
+    let stock = session.stock_config();
+    let (model_origin, model_dir) = match display_frame {
+        Some(frame) => {
+            let a = frame.inverse_transform_point(origin, stock);
+            let b = frame.inverse_transform_point(origin + dir, stock);
+            (a, b - a)
+        }
+        None => (origin, dir),
+    };
+    let mut best: Option<(f64, PickHit)> = None;
+    for model in session.models() {
+        if let Some(enriched) = &model.enriched_mesh {
+            let mesh = enriched.as_mesh();
+            // Fast AABB rejection
+            if mesh.bbox.ray_intersect(&model_origin, &model_dir).is_none() {
+                continue;
+            }
+            if let Some((tri_idx, t)) = ray_pick_triangle(mesh, &model_origin, &model_dir)
+                && best.as_ref().is_none_or(|(b, _)| t < *b)
+            {
+                let face_id = enriched.face_for_triangle(tri_idx);
+                best = Some((
+                    t,
+                    PickHit::ModelFace {
+                        model_id: ModelId(model.id),
+                        face_id,
+                    },
+                ));
+            }
+        }
+    }
+    best
+}
+
+/// The pick of a viewport click or of the pointer while a pick mode is on
+/// (geometry selection P4.5). It wins over every other pick: the toolpath,
+/// the stock, the pins.
+///
+/// - The drawing items of the toolpath model that `filter` admits
+///   ([`PickFilter::admits`] with `kinds`): the item whose drawn lines
+///   ([`Shape::pick_lines`], through [`item_display_xy`] on the
+///   [`drawing_plane_z`] plane) pass nearest the pointer on the screen,
+///   within [`PICK_THRESHOLD_TOOLPATH`] pixels ([`PICK_THRESHOLD_POINT`]
+///   for a point). The distance is [`polyline_distance`], the rule of
+///   MCP `list_model_items { near }`. So with the loop chip off, a click
+///   on a loop picks nothing of it and the next item under the pointer
+///   wins.
+/// - With no such item and the face chip on: the BREP face under the ray
+///   (a STEP face; `ProjectSession::face_pick_key` names its item).
+///
+/// [`Shape::pick_lines`]: rs_cam_core::selection::Shape::pick_lines
+/// [`polyline_distance`]: rs_cam_core::selection::polyline_distance
+pub fn pick_items(
+    ctx: &PickContext<'_>,
+    session: &ProjectSession,
+    toolpath_id: ToolpathId,
+    filter: &PickFilter,
+    kinds: &[ItemKind],
+) -> Option<PickHit> {
+    let (_, tc) = session.find_toolpath_config_by_id(toolpath_id)?;
+    let model = session.models().iter().find(|m| m.id == tc.model_id)?;
+    let stock = session.stock_config();
+    let frame = toolpath_setup_frame(session, toolpath_id);
+    let z = drawing_plane_z(session, tc, frame.as_ref());
+    let screen = |p: &P2| -> Option<[f64; 2]> {
+        let q = item_display_xy(frame.as_ref(), stock, *p);
+        ctx.camera
+            .project_to_screen(
+                [q.x as f32, q.y as f32, z as f32],
+                ctx.aspect,
+                ctx.vw,
+                ctx.vh,
+            )
+            .map(|s| [f64::from(s[0]), f64::from(s[1])])
+    };
+    let pointer = [f64::from(ctx.screen_x), f64::from(ctx.screen_y)];
+    let mut best: Option<(f64, &rs_cam_core::selection::MatchKey)> = None;
+    for item in model.items.iter() {
+        // A face is a surface, not a drawn line: the ray arm below.
+        if item.kind() == ItemKind::Face || !filter.admits(kinds, item) {
+            continue;
+        }
+        let threshold = match item.kind() {
+            ItemKind::Point => PICK_THRESHOLD_POINT,
+            ItemKind::Loop | ItemKind::Path | ItemKind::Circle | ItemKind::Face => {
+                PICK_THRESHOLD_TOOLPATH
+            }
+        };
+        let distance = item
+            .shape()
+            .pick_lines()
+            .into_iter()
+            .map(|(pts, closed)| {
+                let projected: Vec<[f64; 2]> = pts.iter().filter_map(&screen).collect();
+                rs_cam_core::selection::polyline_distance(pointer, projected, closed)
+            })
+            .fold(f64::INFINITY, f64::min);
+        if distance <= f64::from(threshold) && best.is_none_or(|(b, _)| distance < b) {
+            best = Some((distance, item.key()));
+        }
+    }
+    if let Some((_, key)) = best {
+        return Some(PickHit::Item {
+            toolpath_id,
+            key: key.clone(),
+        });
+    }
+    if !kinds.contains(&ItemKind::Face) {
+        return None;
+    }
+    let (ray_origin, ray_dir) =
+        ctx.camera
+            .unproject_ray(ctx.screen_x, ctx.screen_y, ctx.aspect, ctx.vw, ctx.vh)?;
+    let origin = P3::new(
+        ray_origin.x as f64,
+        ray_origin.y as f64,
+        ray_origin.z as f64,
+    );
+    let dir = V3::new(ray_dir.x as f64, ray_dir.y as f64, ray_dir.z as f64);
+    pick_model_face(session, frame.as_ref(), origin, dir).map(|(_, hit)| hit)
+}
+
+/// The Z (display frame) at which the drawing of `tc` draws, and at which a
+/// pick tests it (geometry selection P4.5: the one plane of the draw and
+/// the pick). A Trace draws at its last cutting level; every other op at
+/// the displayed stock top plus [`HOLE_MARK_LIFT_MM`]. A Project Curve
+/// draws its lines on the surface; the pick tests them on this plane.
+#[must_use]
+pub fn drawing_plane_z(
+    session: &ProjectSession,
+    tc: &rs_cam_core::session::ToolpathConfig,
+    frame: Option<&SetupFrame>,
+) -> f64 {
+    match &tc.operation {
+        rs_cam_core::compute::catalog::OperationConfig::Trace(_) => {
+            let context = crate::state::job::height_context_from_session(session, tc);
+            let heights = tc.heights.resolve(&context);
+            tc.operation
+                .cutting_levels(heights.top_z)
+                .last()
+                .copied()
+                .unwrap_or(heights.top_z)
+                + HOLE_MARK_LIFT_MM
+        }
+        _ => drawing_display_z(frame, session.stock_config()),
+    }
 }
 
 fn pick_collision_markers(ctx: &PickContext<'_>, positions: &[[f32; 3]]) -> Option<PickHit> {

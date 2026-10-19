@@ -239,6 +239,15 @@ pub struct ModelItem {
     pub measure: f64,
 }
 
+/// The `near` filter of the `list_model_items` read (geometry selection
+/// P4.5): a point in the MODEL frame (the frame of the item keys) and a
+/// radius in mm.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Near {
+    pub xy: [f64; 2],
+    pub radius_mm: f64,
+}
+
 /// The two frames of one resolved selection.
 pub(crate) struct SelectionFrames {
     /// As the drawing holds the items (the drill picker reads it).
@@ -680,6 +689,55 @@ impl ProjectSession {
         })
     }
 
+    /// The edit that a viewport shift-click on `key` sends to the selection
+    /// `target` of `tc` (geometry selection P4.5): the layer of the item as
+    /// a rule, for the kinds `kinds` (the chips that are on) and, for the
+    /// circles, the diameter range `circle` ([`Rule::layer_rules`]).
+    ///
+    /// Under the default selection, the first layer rule replaces the
+    /// default ([`SelectionEdit::add_rules`], the rule of the P4.3
+    /// `+ Rule` card). The default of the op target is the op default; the
+    /// default of the boundary target is
+    /// [`Self::boundary_selection_default`] (the `Reset` value).
+    ///
+    /// Refusals (the GUI gives a notice and no edit): an item with no
+    /// layer, no kind, an op that holds no selection, a boundary that is
+    /// not a selection.
+    pub fn layer_rule_edit(
+        &self,
+        tc: &ToolpathConfig,
+        target: SelectionTarget,
+        key: &MatchKey,
+        kinds: &[ItemKind],
+        circle: Option<crate::selection::DiameterRange>,
+    ) -> Result<SelectionEdit, SessionError> {
+        let Some(layer) = key.layer.as_deref() else {
+            return Err(SessionError::InvalidParam(format!(
+                "The {} is on no layer, so no layer rule can name it",
+                ItemRef::new(key.clone())
+            )));
+        };
+        let no_selection = || {
+            SessionError::InvalidParam(format!(
+                "Toolpath '{}' holds no selection: its operation cuts no drawing item",
+                tc.name
+            ))
+        };
+        let current = tc.selection_of(target)?.ok_or_else(no_selection)?;
+        let op_default = match target {
+            SelectionTarget::Op => tc.operation.default_selection().ok_or_else(no_selection)?,
+            SelectionTarget::Boundary => self.boundary_selection_default(),
+        };
+        let rules = crate::selection::Rule::layer_rules(key.source, layer, kinds, circle);
+        SelectionEdit::add_rules(current, &op_default, ModelId(tc.model_id), rules).ok_or_else(
+            || {
+                SessionError::InvalidParam(
+                    "No kind is on, so the layer rule names no item".to_owned(),
+                )
+            },
+        )
+    }
+
     /// The items of the model with id `model_id`, in import order, with
     /// an optional layer and kind filter: the `list_model_items` read.
     pub fn list_model_items(
@@ -688,6 +746,21 @@ impl ProjectSession {
         layer: Option<&str>,
         kind: Option<ItemKind>,
     ) -> Result<Vec<ModelItem>, SessionError> {
+        self.list_model_items_near(model_id, layer, kind, None)
+    }
+
+    /// [`Self::list_model_items`] with an optional [`Near`] filter
+    /// (geometry selection P4.5): with `near`, only the items whose drawn
+    /// lines pass within `near.radius_mm` of `near.xy`, nearest first, by
+    /// the pick rule of a viewport click ([`crate::selection::items_near`]).
+    /// So `near` is the MCP form of a click.
+    pub fn list_model_items_near(
+        &self,
+        model_id: usize,
+        layer: Option<&str>,
+        kind: Option<ItemKind>,
+        near: Option<Near>,
+    ) -> Result<Vec<ModelItem>, SessionError> {
         let model = self.find_model_by_raw_id(model_id).ok_or_else(|| {
             let known: Vec<String> = self.models.iter().map(|m| m.id.to_string()).collect();
             SessionError::MissingGeometry(format!(
@@ -695,11 +768,27 @@ impl ProjectSession {
                 known.join(", ")
             ))
         })?;
-        Ok(model
+        let admitted = model
             .items
             .iter()
             .filter(|item| layer.is_none_or(|want| item.layer() == Some(want)))
-            .filter(|item| kind.is_none_or(|want| item.kind() == want))
+            .filter(|item| kind.is_none_or(|want| item.kind() == want));
+        let ordered: Vec<&crate::selection::Item> = match near {
+            None => admitted.collect(),
+            Some(near) => {
+                let admitted: Vec<&crate::selection::Item> = admitted.collect();
+                crate::selection::items_near(
+                    admitted.iter().copied(),
+                    P2::new(near.xy[0], near.xy[1]),
+                    near.radius_mm,
+                )
+                .into_iter()
+                .filter_map(|(index, _)| admitted.get(index).copied())
+                .collect()
+            }
+        };
+        Ok(ordered
+            .into_iter()
             .map(|item| ModelItem {
                 key: MatchKey {
                     source: SourceRef::Model(ModelId(model_id)),

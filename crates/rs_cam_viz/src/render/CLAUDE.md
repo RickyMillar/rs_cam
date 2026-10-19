@@ -12,6 +12,7 @@ Every viewport pipeline. The entry point is `render::mod`, called from
 - `grid_render.rs`, `fixture_render.rs`, `height_planes.rs` — the reference
   geometry.
 - `colors.rs` — every colour constant, including `COLLISION_POINT`. P4.4: a selection state colour is its UI token / 255 (`token_rgb`).
+- `mod.rs` `hover_lines` — P4.5: the pick hover ring, its own buffer, drawn after the drawing.
 - `sim_render.rs` `head_draw_parts` — the H2 machine head and shoe the tool
   ghost and the tool preview draw; a soft part draws lighter.
 - `upload_cache.rs` — the content-addressed keys for the GPU upload pass.

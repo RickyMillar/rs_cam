@@ -91,6 +91,11 @@ pub struct RsCamApp {
     /// P4.4: the upload trigger of the selection highlight and the drill
     /// markers (the report `Arc` of the drawn toolpath).
     selection_report_detector: crate::state::selection_highlight::ReportDetector,
+    /// P4.5: the item under the pointer in pick mode, and its upload
+    /// trigger. The viewport sets `hover_upload_pending` on a change only;
+    /// the frame loop then uploads the hover buffer alone.
+    hover_detector: crate::state::selection_highlight::HoverDetector,
+    hover_upload_pending: bool,
     /// MCP request receiver (populated when `--mcp` is passed).
     #[cfg(feature = "mcp")]
     mcp_receiver: Option<std::sync::mpsc::Receiver<crate::mcp_bridge::McpRequest>>,
@@ -399,6 +404,8 @@ impl RsCamApp {
             unsaved_guard: None,
             last_overlay_upload_key,
             selection_report_detector: Default::default(),
+            hover_detector: Default::default(),
+            hover_upload_pending: false,
             #[cfg(feature = "mcp")]
             mcp_receiver,
             #[cfg(feature = "mcp")]
@@ -1014,6 +1021,10 @@ impl RsCamApp {
 
         if self.controller.take_pending_upload() {
             self.upload_gpu_data(frame);
+        }
+        // P4.5: the hover buffer, on a hover change only.
+        if std::mem::take(&mut self.hover_upload_pending) {
+            self.upload_hover_lines(frame);
         }
 
         // Handle keyboard shortcuts (before UI to prevent conflicts)

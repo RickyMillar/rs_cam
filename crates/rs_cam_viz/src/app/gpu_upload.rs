@@ -156,6 +156,46 @@ impl RsCamApp {
     /// height planes — tens to a few thousand vertices) are still rebuilt
     /// unconditionally; keying them would cost more in key comparison than
     /// the rebuild costs.
+    /// Upload the hover buffer: the ring of the item under the pointer in
+    /// pick mode (geometry selection P4.5). The viewport calls it on a
+    /// change of the hovered item only (`HoverDetector`). It rebuilds this
+    /// one small buffer and no other, so a pointer move never rebuilds the
+    /// drawing buffer (the V8/V13 lesson).
+    pub(super) fn upload_hover_lines(&mut self, frame: &mut eframe::Frame) {
+        let Some(render_state) = frame.wgpu_render_state() else {
+            return;
+        };
+        let verts = {
+            let state = self.controller.state();
+            match (
+                self.hover_detector.hovered(),
+                crate::state::selection_highlight::highlight_toolpath(state),
+            ) {
+                (Some(key), Some(tc)) => hover_vertices(&state.session, tc, key),
+                _ => Vec::new(),
+            }
+        };
+        let mut renderer = render_state.renderer.write();
+        // SAFETY: RenderResources inserted in RsCamApp::new; always present.
+        #[allow(clippy::unwrap_used)]
+        let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
+        resources.hover_lines = if verts.is_empty() {
+            None
+        } else {
+            crate::render::gpu_safety::try_create_buffer(
+                &render_state.device,
+                &resources.gpu_limits,
+                "hover_lines",
+                bytemuck::cast_slice(&verts),
+                egui_wgpu::wgpu::BufferUsages::VERTEX,
+            )
+            .map(|vertex_buffer| crate::render::PolygonGpuData {
+                vertex_buffer,
+                vertex_count: verts.len() as u32,
+            })
+        };
+    }
+
     pub(super) fn upload_gpu_data(&mut self, frame: &mut eframe::Frame) {
         let Some(render_state) = frame.wgpu_render_state() else {
             return;
@@ -461,22 +501,12 @@ impl RsCamApp {
                     break 'polygon_upload;
                 }
                 let setup_ref = model_setup.as_ref();
-                let planar_z = match &toolpath.operation {
-                    rs_cam_core::compute::catalog::OperationConfig::Trace(_) => {
-                        let context = height_context_from_session(&state.session, &toolpath);
-                        let heights = toolpath.heights.resolve(&context);
-                        toolpath
-                            .operation
-                            .cutting_levels(heights.top_z)
-                            .last()
-                            .copied()
-                            .unwrap_or(heights.top_z) as f32
-                            + 0.05
-                    }
-                    _ => model_setup
-                        .map(|setup| setup.effective_stock(&stock).2 as f32 + 0.05)
-                        .unwrap_or((stock.origin_z + stock.z) as f32 + 0.05),
-                };
+                // P4.5: the one plane of the draw and the pick.
+                let planar_z = crate::interaction::picking::drawing_plane_z(
+                    &state.session,
+                    &toolpath,
+                    setup_ref,
+                ) as f32;
                 let surface_mesh = match &toolpath.operation {
                     rs_cam_core::compute::catalog::OperationConfig::ProjectCurve(cfg) => state
                         .session
@@ -1840,6 +1870,83 @@ fn build_advance_bands(
         .iter()
         .map(|(id, range)| (*id, VendorChiploadBand::from_advance_range(range)))
         .collect()
+}
+
+/// The line vertices of the hover ring of the item `key` of the toolpath
+/// `tc` (geometry selection P4.5), in `SELECTION_HOVER`: the drawn lines of
+/// the item ([`rs_cam_core::selection::Shape::pick_lines`]) at the point
+/// function and the plane of the draw and the pick. A face draws its rings
+/// at its own plane. A point draws a ring mark. No item, no vertex.
+pub(crate) fn hover_vertices(
+    session: &rs_cam_core::session::ProjectSession,
+    tc: &rs_cam_core::session::ToolpathConfig,
+    key: &rs_cam_core::selection::MatchKey,
+) -> Vec<crate::render::LineVertex> {
+    use crate::interaction::picking::{
+        POINT_MARK_RADIUS_MM, drawing_plane_z, item_display_xy, toolpath_setup_frame,
+    };
+    use crate::render::{LineVertex, colors};
+    use rs_cam_core::selection::Shape;
+    let color = colors::SELECTION_HOVER;
+    let Some(item) = session
+        .models()
+        .iter()
+        .find(|m| m.id == tc.model_id)
+        .and_then(|m| m.items.iter().find(|i| i.key().names_same_geometry(key)))
+    else {
+        return Vec::new();
+    };
+    let stock = session.stock_config();
+    let frame = toolpath_setup_frame(session, tc.id);
+    let plane = drawing_plane_z(session, tc, frame.as_ref());
+    let at = |p: &rs_cam_core::geo::P2| -> [f32; 3] {
+        match item.shape() {
+            Shape::Face(face) => {
+                let q = rs_cam_core::geo::P3::new(p.x, p.y, face.plane_z);
+                let q = frame.as_ref().map_or(q, |f| f.transform_point(q, stock));
+                [q.x as f32, q.y as f32, q.z as f32]
+            }
+            Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => {
+                let q = item_display_xy(frame.as_ref(), stock, *p);
+                [q.x as f32, q.y as f32, plane as f32]
+            }
+        }
+    };
+    let mut verts = Vec::new();
+    for (pts, closed) in item.shape().pick_lines() {
+        match pts {
+            [] => {}
+            [single] => {
+                let c = at(single);
+                super::push_circle_vertices(
+                    &mut verts,
+                    c[0],
+                    c[1],
+                    c[2],
+                    POINT_MARK_RADIUS_MM as f32,
+                    color,
+                    24,
+                );
+            }
+            _ => {
+                let ends = if closed { pts.len() } else { pts.len() - 1 };
+                for i in 0..ends {
+                    let (Some(a), Some(b)) = (pts.get(i), pts.get((i + 1) % pts.len())) else {
+                        continue;
+                    };
+                    verts.push(LineVertex {
+                        position: at(a),
+                        color,
+                    });
+                    verts.push(LineVertex {
+                        position: at(b),
+                        color,
+                    });
+                }
+            }
+        }
+    }
+    verts
 }
 
 #[cfg(test)]

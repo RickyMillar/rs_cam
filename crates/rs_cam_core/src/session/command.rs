@@ -1711,6 +1711,10 @@ pub struct ListItemsArgs {
     pub layer: Option<String>,
     /// Only the items of this kind. `None` = every kind.
     pub kind: Option<crate::selection::ItemKind>,
+    /// Only the items near a point (model frame), nearest first: the MCP
+    /// form of a viewport click (geometry selection P4.5). `None` = every
+    /// item, in import order.
+    pub near: Option<crate::session::Near>,
 }
 
 /// The answer to the `list_model_items` read.
@@ -2696,8 +2700,9 @@ impl ProjectSession {
                     model_id,
                     layer,
                     kind,
+                    near,
                 } = args;
-                let items = self.list_model_items(model_id, layer.as_deref(), kind)?;
+                let items = self.list_model_items_near(model_id, layer.as_deref(), kind, near)?;
                 Ok(QueryAnswer::ListItems(ListItemsAnswer { items }))
             }
             Query::GetOperationSchema(args) => {

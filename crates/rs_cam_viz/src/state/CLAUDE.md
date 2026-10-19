@@ -18,7 +18,7 @@ project. The entry point is `state::AppState` in `mod.rs`.
 - `history.rs`, `wizard.rs`, `multitool_planner.rs` — undo, the export
   wizard and the planner.
 - `panels.rs`, `app_settings.rs`, `pin_view.rs`, `shoe_plan.rs` — drafts; settings; pin frame (C8); the shoe plan memo and run sheet (H2);
-  `pick.rs` — P4.3 `SelectionUi` on `GuiState`: the pick mode (one at a time, L-3) and the `+ Rule` draft.
+  `pick.rs` — P4.3 `SelectionUi` on `GuiState`: the pick mode (one at a time, L-3) and the `+ Rule` draft; P4.5 `PickFilter` (`effective_kinds`: on, served, held). `selection_highlight::HoverDetector` uploads the hover on a change only.
 
 ## Invariants
 

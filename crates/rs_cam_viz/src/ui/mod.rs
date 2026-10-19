@@ -9,6 +9,7 @@ pub mod machine_library_modal;
 pub mod menu_bar;
 pub mod multitool_planner;
 pub mod overlays;
+pub mod pick_bar;
 pub mod pin_wizard;
 pub mod preferences;
 pub mod preflight;
@@ -348,6 +349,20 @@ pub enum AppEvent {
         toolpath_id: ToolpathId,
         target: rs_cam_core::session::SelectionTarget,
         key: rs_cam_core::selection::MatchKey,
+    },
+
+    // Geometry selection P4.5: one viewport shift-click on an item in pick
+    // mode. The layer of the item becomes a rule for the kinds `kinds` (the
+    // chips that are on) and, for the circles, the diameter range
+    // `circle`. The controller asks core for the edit
+    // (`ProjectSession::layer_rule_edit`: under the default the rule
+    // replaces it), then applies it.
+    PickLayer {
+        toolpath_id: ToolpathId,
+        target: rs_cam_core::session::SelectionTarget,
+        key: rs_cam_core::selection::MatchKey,
+        kinds: Vec<rs_cam_core::selection::ItemKind>,
+        circle: Option<rs_cam_core::selection::DiameterRange>,
     },
 
     // One edit of a selection of the toolpath from a panel (the face Clear

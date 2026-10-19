@@ -217,6 +217,11 @@ pub struct RenderResources {
     pub reach_overlay_data: Option<mesh_render::EnrichedMeshGpuData>,
     pub tool_model_data: Option<ToolModelGpuData>,
     pub polygon_data: Vec<PolygonGpuData>,
+    /// Geometry selection P4.5: the ring of the item under the pointer in
+    /// pick mode, in `SELECTION_HOVER`. It is its own small buffer, so a
+    /// hover change uploads only this buffer and never the drawing
+    /// (`polygon_data`). It draws after the drawing, over it.
+    pub hover_lines: Option<PolygonGpuData>,
     pub collision_vertex_buffer: Option<wgpu::Buffer>,
     pub collision_vertex_count: u32,
     pub origin_axes_data: Option<grid_render::OriginAxesGpuData>,
@@ -748,6 +753,7 @@ impl RenderResources {
             solid_stock_data: None,
             fixture_data: None,
             polygon_data: Vec::new(),
+            hover_lines: None,
             toolpath_data: Vec::new(),
             sim_mesh_data: None,
             height_planes_data: None,
@@ -1263,6 +1269,10 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 for poly_gpu in &resources.polygon_data {
                     pass.set_vertex_buffer(0, poly_gpu.vertex_buffer.slice(..));
                     pass.draw(0..poly_gpu.vertex_count, 0..1);
+                }
+                if let Some(hover) = &resources.hover_lines {
+                    pass.set_vertex_buffer(0, hover.vertex_buffer.slice(..));
+                    pass.draw(0..hover.vertex_count, 0..1);
                 }
             }
 
