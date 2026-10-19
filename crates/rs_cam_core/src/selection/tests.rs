@@ -107,7 +107,7 @@ fn resolve_in(
     resolve(
         sel,
         &ResolveScope {
-            toolpath_model: Some(m),
+            toolpath_model: Ok(m),
             models: std::slice::from_ref(m),
             stock_bbox: &bbox,
             setup,

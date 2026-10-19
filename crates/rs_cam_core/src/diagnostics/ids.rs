@@ -394,6 +394,11 @@ pub const STALE_PROJECT_CURVE_NEGATIVE_DEPTH: &str = "stale.project_curve_negati
 // error.
 pub const PRECOND_DRILL_NO_HOLES: &str = "precondition.drill_no_holes";
 pub const PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES: &str = "precondition.alignment_pin_drill_no_holes";
+/// Geometry selection P2.4: the selection of an op that is not a drill
+/// refuses (`SelectionRefusal`: the item, the cause and the fix), so
+/// generation will refuse. A drill op states the same refusal under its
+/// own no-holes id.
+pub const PRECOND_SELECTION_REFUSED: &str = "precondition.selection_refused";
 pub const PRECOND_PROJECT_CURVE_NO_CURVE: &str = "precondition.project_curve_no_curve";
 pub const PRECOND_PROJECT_CURVE_NO_SURFACE: &str = "precondition.project_curve_no_surface";
 
@@ -498,6 +503,7 @@ pub const ALL: &[&str] = &[
     STALE_PROJECT_CURVE_NEGATIVE_DEPTH,
     PRECOND_DRILL_NO_HOLES,
     PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES,
+    PRECOND_SELECTION_REFUSED,
     PRECOND_PROJECT_CURVE_NO_CURVE,
     PRECOND_PROJECT_CURVE_NO_SURFACE,
     REF_MODEL_MISSING,

@@ -49,11 +49,11 @@ pub use command::{
     RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
     ReorderToolpathArgs, ReplaceObstacleArgs, ReplaceStockChangeArgs, ReplaceToolArgs,
     ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs,
-    SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs,
-    SetFaceSelectionArgs, SetFeedsProvenanceArgs, SetMachineArgs, SetMachineHeadArgs,
-    SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs,
-    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs,
-    SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
+    SelectionStatusArgs, SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs,
+    SetDressupFieldArgs, SetFaceSelectionArgs, SetFeedsProvenanceArgs, SetMachineArgs,
+    SetMachineHeadArgs, SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs,
+    SetRestAnalysisConfigArgs, SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs,
+    SetSetupNameArgs, SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
     SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
     SetToolpathEnabledArgs, SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathOperationArgs,
     SetToolpathParamArgs, SetToolpathShoeArgs, SetToolpathToolArgs, Surfaces,
@@ -87,7 +87,7 @@ pub use pin_report::{PinPreset, PinSetReport, PinStatus};
 pub use pins::{PinToolBinding, TWIST_DRILL_POINT_DEG};
 pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
 pub use result_provenance::{FeedStage, ResultProvenance};
-pub use selection_status::{HoleItem, HoleSelection};
+pub use selection_status::{HoleItem, HoleSelection, SelectionReport};
 pub use stock_change_report::{StockChangeRow, StockChangeVolumeAbsence, StockMaterialSwatch};
 
 // Re-export all public project_file types so external crates see no path change.
@@ -257,6 +257,10 @@ pub enum SessionError {
     /// A toolpath in the project file has no `[setups.toolpaths.operation]`
     /// table, so it has no parameters. The loader refuses it.
     MissingOperation { setup: String, toolpath: String },
+    /// The selection of the op refuses (geometry selection P2.4): the
+    /// item, the cause and the fix, with the op label. Generation and the
+    /// `selection_status` query give the same value.
+    Selection(crate::selection::SelectionRefusal),
 }
 
 impl std::fmt::Display for SessionError {
@@ -319,6 +323,9 @@ impl std::fmt::Display for SessionError {
                 "Toolpath '{toolpath}' in setup '{setup}' has no [setups.toolpaths.operation] \
                  table. rs_cam does not invent the parameters of a toolpath."
             ),
+            // No prefix: the refusal is one sentence that starts with the
+            // op label and ends with the fix.
+            Self::Selection(refusal) => write!(f, "{refusal}"),
         }
     }
 }
@@ -1331,6 +1338,10 @@ pub struct ProjectSession {
     /// The memo behind [`Self::tool_load_report_for`]. Derived data: a clone
     /// starts empty, and the key reads the inputs, not a counter.
     pub(crate) load_report_memo: load_report::LoadReportMemo,
+    /// The memo behind [`Self::selection_status`] (geometry selection
+    /// P2.4). Derived data: a clone starts empty, and the key reads the
+    /// inputs, not a counter.
+    pub(crate) selection_status_memo: selection_status::SelectionStatusMemo,
 
     // ID generators (max existing ID + 1)
     pub(crate) next_toolpath_id: usize,
@@ -1374,6 +1385,7 @@ impl ProjectSession {
             simulation: None,
             simulation_resolution: SimulationResolution::Auto,
             load_report_memo: load_report::LoadReportMemo::default(),
+            selection_status_memo: selection_status::SelectionStatusMemo::default(),
             next_toolpath_id: 0,
             next_tool_id: 0,
             next_setup_id: 1,
@@ -1789,11 +1801,12 @@ impl ProjectSession {
             .or_else(|| self.tools.first())
     }
 
+    /// The model with the EXACT id `raw_id`. There is no fallback to
+    /// another model (geometry selection P2.4): a toolpath that names a
+    /// removed model refuses by its id, and never reads the wrong
+    /// geometry.
     pub(crate) fn find_model_by_raw_id(&self, raw_id: usize) -> Option<&LoadedModel> {
-        self.models
-            .iter()
-            .find(|m| m.id == raw_id)
-            .or_else(|| self.models.first())
+        self.models.iter().find(|m| m.id == raw_id)
     }
 
     pub(crate) fn find_setup_for_toolpath_index(&self, tp_index: usize) -> Option<&SetupData> {

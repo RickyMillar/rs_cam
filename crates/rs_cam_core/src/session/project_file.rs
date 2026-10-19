@@ -1322,6 +1322,7 @@ pub(super) fn build_session_from_project(
         simulation: None,
         simulation_resolution: project.job.simulation.resolution(),
         load_report_memo: super::load_report::LoadReportMemo::default(),
+        selection_status_memo: crate::session::selection_status::SelectionStatusMemo::default(),
         next_toolpath_id,
         next_tool_id,
         next_setup_id,

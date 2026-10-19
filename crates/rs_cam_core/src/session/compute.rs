@@ -754,6 +754,12 @@ impl JobPhases<'_, '_> {
                 drop(core_scope);
                 Ok((annotated, findings))
             }
+            // P2.4: a selection refusal stays typed, so generation and the
+            // `selection_status` query give the same value.
+            Err(crate::compute::execute::OperationError::Selection(refusal)) => {
+                drop(core_scope);
+                Err(SessionError::Selection(refusal))
+            }
             Err(e) => {
                 drop(core_scope);
                 Err(SessionError::OperationFailed(e.to_string()))

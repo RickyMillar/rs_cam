@@ -276,13 +276,19 @@ impl ProjectSession {
             let enabled = tc.enabled;
             let name = tc.name.clone();
             let op_default = tc.operation.default_selection();
-            let (Some(op_default), Some(slot)) = (op_default, tc.operation.selection_slot()) else {
+            let Some(op_default) = op_default else {
+                return Err(SessionError::InvalidParam(format!(
+                    "Toolpath '{name}' holds no selection: its operation cuts no drawing item"
+                )));
+            };
+            let label = tc.operation.op_type().label();
+            let Some(slot) = tc.operation.selection_slot() else {
                 return Err(SessionError::InvalidParam(format!(
                     "Toolpath '{name}' holds no selection: its operation cuts no drawing item"
                 )));
             };
             slot.apply(edit, &op_default)
-                .map_err(|e| SessionError::InvalidParam(e.to_string()))?;
+                .map_err(|e| SessionError::Selection(e.for_op(label)))?;
             session.invalidate_result_chain(index, enabled);
             Ok(())
         })

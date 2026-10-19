@@ -857,8 +857,8 @@ fn check2b_a_rest_op_removes_no_more_material_than_a_fresh_op() {
 /// - `GeneratedEmpty`: legal only when none of those exemptions holds.
 /// - Any other refusal must be a NAMED one: a typed `SessionError`
 ///   variant, or `OperationFailed` with the text of a typed
-///   `OperationError` (missing geometry, invalid tool, a selection
-///   refusal). Free text
+///   `OperationError` (missing geometry, invalid tool), or a selection
+///   refusal (`SessionError::Selection`). Free text
 ///   (`OperationError::Other`) is an unnamed error.
 /// - A panic is always a defect.
 fn classify(op: OperationType, rest: bool, outcome: &Outcome) -> Result<&'static str, String> {
@@ -896,12 +896,9 @@ fn classify(op: OperationType, rest: bool, outcome: &Outcome) -> Result<&'static
                 OperationError::MissingGeometry(String::new()).to_string(),
                 OperationError::InvalidTool(String::new()).to_string(),
             ];
-            // A selection refusal (`OperationError::Selection`, geometry
-            // selection P2.3a/P2.3c) is typed too: its text is
-            // "<op label>: <cause>. Fix: <fix>." (`SelectionRefusal`).
-            let selection =
-                text.starts_with(&format!("{}: ", op.label())) && text.contains(". Fix: ");
-            if selection || named.iter().any(|prefix| text.starts_with(prefix.as_str())) {
+            // A selection refusal is `SessionError::Selection` (geometry
+            // selection P2.4), a typed refusal: the arm below.
+            if named.iter().any(|prefix| text.starts_with(prefix.as_str())) {
                 Ok("named-refusal")
             } else {
                 Err(format!("an unnamed error: {text}"))

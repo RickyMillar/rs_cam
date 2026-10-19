@@ -9,6 +9,7 @@
 use std::fmt;
 
 use crate::compute::catalog::ItemUse;
+use crate::geometry::enriched_mesh::FaceGroupId;
 
 use super::item::{ItemKind, SourceRef};
 use super::key::MatchKey;
@@ -157,8 +158,11 @@ pub enum RefusalCause {
     /// The user named an item (a pick, or a rule that names its kind) that
     /// the op cannot cut: an open path in a closed-area op, and so on.
     KindNotCut { kind: ItemKind, item_use: ItemUse },
-    /// A picked face that is not a flat horizontal face (P2.4).
-    FaceNotFlat,
+    /// A picked face that is not a flat horizontal face (P2.4): a BREP
+    /// face with no Face item (`face` is its BREP id; the refusal has no
+    /// item), or a Face item that the setup turns on its side (the item
+    /// names it).
+    FaceNotFlat { face: Option<FaceGroupId> },
     /// A rule or a pick names a model that does not exist. No fallback to
     /// another model.
     MissingSource(SourceRef),
@@ -212,12 +216,12 @@ impl SelectionRefusal {
                  cuts this kind of item (Trace or Project Curve for an open \
                  path, Drill for a point)"
             }
-            RefusalCause::FaceNotFlat => {
+            RefusalCause::FaceNotFlat { .. } => {
                 "Pick a flat horizontal face, or remove the face from the selection"
             }
             RefusalCause::MissingSource(_) => {
-                "Import the model again, or remove the rule or the pick that \
-                 names it"
+                "Set an existing model on the toolpath, import the model again, \
+                 or remove the rule or the pick that names it"
             }
             RefusalCause::UnknownLayer(_) => {
                 "Correct the layer name in the rule, or add the layer to the drawing"
@@ -245,7 +249,13 @@ impl SelectionRefusal {
                 kind_noun(*kind, 1),
                 use_phrase(*item_use)
             ),
-            RefusalCause::FaceNotFlat => "the face is not flat and horizontal".to_owned(),
+            RefusalCause::FaceNotFlat { face: Some(id) } => format!(
+                "the selection picks face {} of the model, which is not flat and horizontal",
+                id.0
+            ),
+            RefusalCause::FaceNotFlat { face: None } => {
+                "the face is not flat and horizontal in the setup frame".to_owned()
+            }
             RefusalCause::MissingSource(source) => {
                 let name = match source {
                     SourceRef::ToolpathModel => "the model of the toolpath".to_owned(),

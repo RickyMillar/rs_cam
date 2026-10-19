@@ -11,6 +11,9 @@
 //!   selection — the two sources the generator drills). The selection
 //!   verdict comes from the session (`ProjectSession::hole_selection`,
 //!   the resolution generation reads); this adapter only converts it.
+//! - **Every other op with a selection** — its selection refuses
+//!   (geometry selection P2.4, `PRECOND_SELECTION_REFUSED`): the
+//!   generator's own refusal sentence, from `selection_status`.
 //! - **ProjectCurve** — needs both a source curve (the toolpath's
 //!   `model_id` must point at a polygon-bearing model) AND a target
 //!   surface mesh (either the same model or any other loaded model).
@@ -53,10 +56,10 @@ pub struct PreconditionContext {
     /// The count of the holes that a drill op drills from its own
     /// selection (geometry selection P2.3c). Zero for every other op.
     pub selection_holes: usize,
-    /// The refusal that generation gives for the selection of a drill op,
+    /// The refusal that generation gives for the selection of the op,
     /// with the op name (`selection::view`, through
-    /// `ProjectSession::hole_selection`). `None` when the selection gives
-    /// the op its holes, and for every other op.
+    /// `ProjectSession::selection_status`). `None` when the selection
+    /// gives the op its items.
     pub selection_refusal: Option<String>,
 }
 
@@ -114,10 +117,37 @@ pub fn diagnostics_from_preconditions(
         }
         OperationConfig::ProjectCurve(_) => {
             out.extend(project_curve_checks(&scope, ctx));
+            // With no curve at all, the no-curve rule above says it once.
+            if ctx.target_model.is_some_and(|m| m.has_polygons) {
+                out.extend(selection_refused(&scope, ctx));
+            }
         }
-        _ => {}
+        _ => {
+            out.extend(selection_refused(&scope, ctx));
+        }
     }
     out
+}
+
+/// Geometry selection P2.4: the selection of an op that is not a drill
+/// refuses. The message is the generator's own refusal sentence (the
+/// item, the cause and the fix), from the session's `selection_status`.
+fn selection_refused(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnostic> {
+    let message = ctx.selection_refusal.as_ref()?;
+    Some(Diagnostic {
+        id: DiagnosticId::from(ids::PRECOND_SELECTION_REFUSED),
+        scope: scope.clone(),
+        category: Category::Geometry,
+        severity: Severity::Blocking,
+        confidence: Confidence::Static,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!("{message} — generation will fail."),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    })
 }
 
 fn drill_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnostic> {

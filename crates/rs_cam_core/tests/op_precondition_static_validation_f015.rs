@@ -321,8 +321,12 @@ fn drill_op_against_polygon_only_model_fires_no_targets() {
             )
         });
     assert_eq!(diag.severity, Severity::Blocking);
+    // Geometry selection P2.3c: the message is the generator's own
+    // selection refusal (`Empty`), which names the skipped loops and the fix.
     assert!(
-        diag.message.contains("No drill targets"),
+        diag.message.starts_with("Drill: ")
+            && diag.message.contains("closed loop")
+            && diag.message.contains("Fix: "),
         "got {:?}",
         diag.message
     );

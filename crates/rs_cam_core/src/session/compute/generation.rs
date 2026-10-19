@@ -58,35 +58,32 @@ impl ProjectSession {
             .ok_or(SessionError::ToolNotFound(ToolId(tc.tool_id)))?
             .clone();
 
-        let model = self.find_model_by_raw_id(tc.model_id);
+        // P2.4: the model by its EXACT id. A toolpath whose model id names
+        // no model reads no mesh and no item; its selection refuses
+        // `MissingSource` with the id, and a 3D op refuses below.
+        let model = self.toolpath_model(tc).ok();
 
         let mut mesh = model.and_then(|m| m.mesh.clone());
 
         // ProjectCurve optionally references a separate surface model for
         // the mesh (so polygons can come from a DXF while the projection
-        // target is a terrain STL). Match the GUI compute path.
+        // target is a terrain STL). Match the GUI compute path. A surface
+        // id that names no model refuses: it does not fall back to the
+        // mesh of the toolpath model (P2.4).
         if let crate::compute::OperationConfig::ProjectCurve(ref cfg) = tc.operation
             && let Some(surface_id) = cfg.surface_model_id
-            && let Some(surface) = self.find_model_by_raw_id(surface_id.0)
-            && surface.mesh.is_some()
         {
-            mesh = surface.mesh.clone();
-        }
-
-        // N12 items 1 and 2, geometry selection P2.3b: the picked BREP
-        // faces are Face items of the model. Each picked face enters the
-        // selection as a pick (below), so it reaches the op through
-        // `resolve` and `view` as any other item, and its plane Z reaches
-        // the heights in the SETUP frame (`ResolvedSelection::face_top_z`).
-        // A picked face with no Face item (not a flat horizontal face)
-        // refuses here: before P2.3b one such face dropped the whole pick
-        // with a log line.
-        let face_picks = match tc.face_selection.as_deref() {
-            Some(ids) if !ids.is_empty() => {
-                crate::session::selection_status::face_pick_keys(&tc.name, model, ids)?
+            let surface = self.find_model_by_raw_id(surface_id.0).ok_or_else(|| {
+                SessionError::MissingGeometry(format!(
+                    "Toolpath '{}' projects onto surface model id {}, but no model has that \
+                     id. Pick a surface model, or set the surface to the input model.",
+                    tc.name, surface_id.0
+                ))
+            })?;
+            if surface.mesh.is_some() {
+                mesh = surface.mesh.clone();
             }
-            Some(_) | None => Vec::new(),
-        };
+        }
 
         // The boundary outline of the picked faces, for a
         // `BoundarySource::FaceSelection` boundary only. P2.5 moves that
@@ -106,6 +103,13 @@ impl ProjectSession {
         // prologue refuses an op whose selection gives it nothing to cut
         // (`OperationError::Selection`), with the item and the fix.
         if tc.operation.is_3d() && mesh.is_none() {
+            if model.is_none() {
+                return Err(SessionError::MissingGeometry(format!(
+                    "Toolpath '{}' reads model id {}, but no model has that id. Set an \
+                     existing model on the toolpath.",
+                    tc.name, tc.model_id
+                )));
+            }
             return Err(SessionError::MissingGeometry(
                 "Operation requires a 3D mesh (STL/STEP)".to_owned(),
             ));
@@ -198,19 +202,13 @@ impl ProjectSession {
         // `view` over it. The picked faces join the selection as picks. An
         // op that holds no selection (Face, a 3D op) resolves only its
         // picked faces, for the auto top below; its prologue reads no item.
-        let resolved = self.resolve_op_selection(
-            tc,
-            model,
-            face_picks,
-            &emission_stock_bbox,
-            ctx.local_to_global.as_ref(),
-        )?;
-        let selection = match ctx.local_to_global.as_ref() {
-            Some(info) => resolved
-                .to_setup_frame(info)
-                .map_err(|e| SessionError::OperationFailed(e.to_string()))?,
-            None => resolved,
-        };
+        // N12 items 1 and 2: each picked BREP face enters the selection as
+        // a pick, so it reaches the op through `resolve` and `view` as any
+        // other item. P2.4: THE resolution (`resolve_selection_frames`) is
+        // the one the `selection_status` query reads, so the two give the
+        // same refusal. A picked face that is not flat refuses there
+        // (`FaceNotFlat`), by its face id.
+        let selection = self.resolve_selection_frames(tc, &ctx)?.setup;
         // DESIGN 7.2: the top of the picked faces, in the SETUP frame.
         let face_top_z = selection.face_top_z();
 

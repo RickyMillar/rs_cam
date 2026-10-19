@@ -1982,6 +1982,7 @@ impl RsCamApp {
             | CommandId::ReplaceObstacle
             | CommandId::ToolpathCycleTime
             | CommandId::GetOperationSchema
+            | CommandId::SelectionStatus
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
             | CommandId::GenerateToolpath
@@ -2890,6 +2891,7 @@ impl RsCamApp {
             | CommandId::ReplaceTool
             | CommandId::ToolpathCycleTime
             | CommandId::GetOperationSchema
+            | CommandId::SelectionStatus
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
             | CommandId::GenerateToolpath

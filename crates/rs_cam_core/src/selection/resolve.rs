@@ -16,6 +16,8 @@ use crate::geo::{BoundingBox3, P3, V3};
 use crate::polygon::Polygon2;
 use crate::session::LoadedModel;
 
+use crate::ids::ModelId;
+
 use super::item::{FaceItem, Item, ItemError, ItemSet, Shape, SourceRef};
 use super::key::MatchKey;
 use super::rule::Selection;
@@ -23,10 +25,11 @@ use super::stock::stock_items;
 
 /// What a selection resolves against.
 pub struct ResolveScope<'a> {
-    /// The model of the toolpath (exact id). `None` when the id names no
-    /// model: a rule or pick on [`SourceRef::ToolpathModel`] then reports a
-    /// missing source.
-    pub toolpath_model: Option<&'a LoadedModel>,
+    /// The model of the toolpath (exact id), or the id it names when no
+    /// model has that id. A rule or a pick on [`SourceRef::ToolpathModel`]
+    /// then reports the missing source as `SourceRef::Model(id)`, so the
+    /// refusal names the id (P2.4: no fallback to another model).
+    pub toolpath_model: Result<&'a LoadedModel, ModelId>,
     /// Every model of the project, for [`SourceRef::Model`].
     pub models: &'a [LoadedModel],
     /// The stock in the emission frame, for [`SourceRef::Stock`].
@@ -266,8 +269,8 @@ fn shape_in_setup_frame(shape: &Shape, info: &SetupTransformInfo) -> Shape {
 ///
 /// A lateral setup turns a horizontal model face vertical: its normal then
 /// has no Z part, so a face filter admits it neither up nor down, and its
-/// plane Z is a depth along the side, not a floor. P2.4 refuses such a
-/// face (`FaceNotFlat`).
+/// plane Z is a depth along the side, not a floor. [`super::view`]
+/// refuses such a face (`FaceNotFlat`, P2.4).
 pub fn face_in_setup_frame(face: &FaceItem, info: Option<&SetupTransformInfo>) -> (f64, V3) {
     let Some(info) = info.filter(|i| i.needs_transform()) else {
         return (face.plane_z, face.normal);
@@ -301,7 +304,7 @@ fn locate<'a>(
 ) -> Option<(Slot, &'a ItemSet)> {
     match source {
         SourceRef::ToolpathModel => {
-            let m = scope.toolpath_model?;
+            let m = scope.toolpath_model.ok()?;
             Some((Slot::Model(m.id), &m.items))
         }
         SourceRef::Model(id) => {
@@ -309,6 +312,15 @@ fn locate<'a>(
             Some((Slot::Model(m.id), &m.items))
         }
         SourceRef::Stock => Some((Slot::Stock, stock?)),
+    }
+}
+
+/// The source that a missing `source` names in a refusal: the toolpath
+/// model by its id, so the text names the model that does not exist.
+fn missing_ref(scope: &ResolveScope<'_>, source: SourceRef) -> SourceRef {
+    match (source, scope.toolpath_model) {
+        (SourceRef::ToolpathModel, Err(id)) => SourceRef::Model(id),
+        (SourceRef::ToolpathModel, Ok(_)) | (SourceRef::Model(_) | SourceRef::Stock, _) => source,
     }
 }
 
@@ -365,6 +377,7 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection {
 
     let mut missing_sources: Vec<SourceRef> = Vec::new();
     let mut missing = |source: SourceRef| {
+        let source = missing_ref(scope, source);
         if !missing_sources.contains(&source) {
             missing_sources.push(source);
         }

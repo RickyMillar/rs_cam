@@ -337,6 +337,12 @@ impl EnrichedMesh {
 
 /// The most face groups an [`EnrichedMesh`] can carry, because
 /// [`FaceGroupId`] is a `u16`.
+/// The smallest `|normal.z|` of a plane face that counts as horizontal: a
+/// face gets 2D boundary loops (and so a Face item) only above it. The
+/// selection view reads the same value for a face in the setup frame
+/// (`FaceNotFlat`, geometry selection P2.4).
+pub const HORIZONTAL_FACE_MIN_NORMAL_Z: f64 = 0.95;
+
 pub const MAX_FACE_GROUPS: usize = u16::MAX as usize + 1;
 
 /// Why [`build_enriched_mesh`] refused.
@@ -458,7 +464,7 @@ fn compute_2d_boundary(
 
     // Check that the plane is approximately horizontal
     if let SurfaceParams::Plane { normal, .. } = surface_params {
-        if normal.z.abs() < 0.95 {
+        if normal.z.abs() < HORIZONTAL_FACE_MIN_NORMAL_Z {
             return None; // Not horizontal enough
         }
     } else {

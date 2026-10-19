@@ -27,6 +27,7 @@ use std::collections::BTreeMap;
 
 use crate::compute::catalog::ItemUse;
 use crate::geo::P2;
+use crate::geometry::enriched_mesh::HORIZONTAL_FACE_MIN_NORMAL_Z;
 use crate::polygon::{Polygon2, detect_containment};
 
 use super::item::{Item, ItemKind, Shape};
@@ -177,7 +178,9 @@ impl OpItems {
 /// 1. A missing source (`MissingSource`).
 /// 2. A lost pick (`LostPick`) or an ambiguous pick (`AmbiguousPick`).
 /// 3. A rule layer that names no item (`UnknownLayer`).
-/// 4. An item the user named and the op cannot cut (`KindNotCut`).
+/// 4. An item the user named and the op cannot cut (`KindNotCut`), or a
+///    face that is not flat and horizontal in the frame of the selection
+///    (`FaceNotFlat`; call `view` after the frame door).
 /// 5. Nothing left to cut (`Empty`), unless the op may be empty. `Empty`
 ///    names the skipped items of every kind.
 ///
@@ -221,6 +224,16 @@ pub fn view(
     for r in resolved.items() {
         let shape = r.item().shape();
         if shape.serves(item_use) {
+            // A face that the setup turns on its side (a lateral setup)
+            // has no floor in the work plane: it refuses by name.
+            if let Shape::Face(face) = shape
+                && face.normal.z.abs() < HORIZONTAL_FACE_MIN_NORMAL_Z
+            {
+                return Err(SelectionRefusal::new(
+                    Some(ItemRef::new(r.identity().clone())),
+                    RefusalCause::FaceNotFlat { face: None },
+                ));
+            }
             served.push(r.item());
             continue;
         }

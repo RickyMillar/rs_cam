@@ -138,7 +138,7 @@ fn differences(label: &str, model: &LoadedModel, setup: Option<&SetupTransformIn
     let resolved = resolve(
         &Selection::drawing(),
         &ResolveScope {
-            toolpath_model: Some(model),
+            toolpath_model: Ok(model),
             models: std::slice::from_ref(model),
             stock_bbox: &stock,
             setup,
@@ -447,7 +447,7 @@ fn an_open_path_keeps_its_drawn_direction_in_the_view() {
     let resolved = resolve(
         &Selection::drawing(),
         &ResolveScope {
-            toolpath_model: Some(&model),
+            toolpath_model: Ok(&model),
             models: std::slice::from_ref(&model),
             stock_bbox: &stock,
             setup: None,

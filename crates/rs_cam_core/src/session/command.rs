@@ -92,6 +92,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use super::cycle_time::{self, CycleTime};
+use super::selection_status::SelectionReport;
 use super::{
     GenerateToolpathHandle, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle,
     ProjectSession, RecommendClearingStrategyHandle, SessionError, ToolpathComputeResult,
@@ -532,6 +533,21 @@ macro_rules! for_each_command {
                  ),
                  cli: Reach::Skip(
                      "the batch CLI exposes no such command",
+                 ),
+             }),
+            (Query, SelectionStatus, "selection_status", SelectionStatusArgs,
+             SelectionReport,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the drill panel reads ProjectSession::hole_selection, a projection of the \
+                      same memo; the selection panel comes in geometry selection P4",
+                 ),
+                 mcp: Reach::Skip(
+                     "the MCP selection tools come with the selection wire types (geometry \
+                      selection P2.7)",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI reads no selection status; a refusal stops its run",
                  ),
              }),
             (Query, GetOperationSchema, "get_operation_schema", GetOperationSchemaArgs,
@@ -1687,6 +1703,14 @@ pub struct ToolpathCycleTimeAnswer {
     pub cycle_time: CycleTime,
 }
 
+/// The arguments of the `selection_status` read (geometry selection
+/// DESIGN 5.4).
+#[derive(Debug, Clone)]
+pub struct SelectionStatusArgs {
+    /// The index of the toolpath to read.
+    pub index: usize,
+}
+
 /// The arguments of the `get_operation_schema` read.
 #[derive(Debug, Clone)]
 pub struct GetOperationSchemaArgs {
@@ -2644,6 +2668,16 @@ impl ProjectSession {
                 Ok(QueryAnswer::ToolpathCycleTime(ToolpathCycleTimeAnswer {
                     cycle_time,
                 }))
+            }
+            Query::SelectionStatus(args) => {
+                let tc = self
+                    .toolpath_configs()
+                    .get(args.index)
+                    .ok_or(SessionError::ToolpathNotFound(args.index))?;
+                let report = self.selection_status(tc)?;
+                Ok(QueryAnswer::SelectionStatus(SelectionReport::clone(
+                    &report,
+                )))
             }
             Query::GetOperationSchema(args) => {
                 let GetOperationSchemaArgs { operation_type } = args;
