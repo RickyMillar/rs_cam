@@ -486,7 +486,7 @@ fn resolve_hand_tabs(
 }
 
 /// The Profile op: the tool-centre contour of each region, cut at each
-/// level, with tabs at the final Z.
+/// level, with tabs on each level below the tab top (P5b).
 struct ProfilePass<'a> {
     cfg: &'a ProfileConfig,
     /// The regions of the op (`Prepared::regions`), to find the region of
@@ -499,7 +499,8 @@ struct ProfilePass<'a> {
 }
 
 /// One contour of a Profile region: the ring the pass cuts (in cut order,
-/// its start in a gap between tabs) and the tabs of the final Z.
+/// its start in a gap between tabs) and its tabs. The tabs do not depend
+/// on Z: every level reuses them.
 struct ProfileContour {
     ring: Vec<P2>,
     tabs: Vec<crate::dressup::Tab>,
@@ -589,7 +590,7 @@ impl ProfilePass<'_> {
                 }
             }
         };
-        tabbed_ring(ring, &centres, self.cfg.tab_width)
+        tabbed_ring(ring, &centres, self.cfg.tab_width, self.base.tool_radius)
     }
 }
 
@@ -655,7 +656,7 @@ impl LayeredOp for ProfilePass<'_> {
                     .position(|r| r.exterior == piece.exterior);
                 let tabbed = self.contour_tabs(piece, index, &ring, &mut notes);
                 ProfileContour {
-                    tabs: tabbed.tabs(self.cfg.tab_width, self.cfg.tab_height),
+                    tabs: tabbed.tabs(self.cfg.tab_height),
                     ring: tabbed.ring,
                 }
             } else {
@@ -680,9 +681,12 @@ impl LayeredOp for ProfilePass<'_> {
         ))
     }
 
-    /// Each contour at `level.z`, climb or conventional. On a level at the
-    /// final Z each contour gets its own tabs (placed in `prepare`), cut by
-    /// the one lift emitter, [`crate::dressup::apply_tabs`].
+    /// Each contour at `level.z`, climb or conventional, with its own tabs
+    /// (placed in `prepare`), cut by the one lift emitter,
+    /// [`crate::dressup::apply_tabs`]. The tab top is `level.final_z +
+    /// tab_height`; a level below it lifts over each tab to the tab top, a
+    /// level at or above it cuts through (P5b). So a tab keeps its full
+    /// height when `tab_height` is more than `depth_per_pass`.
     fn emit_level(
         &self,
         geometry: &Self::Geometry,
@@ -697,11 +701,7 @@ impl LayeredOp for ProfilePass<'_> {
         let mut tp = Toolpath::new();
         for contour in geometry {
             let pass = crate::ops::profile::profile_ring_to_toolpath(&contour.ring, &params);
-            let pass = if level.is_final && !contour.tabs.is_empty() {
-                crate::dressup::apply_tabs(pass, &contour.tabs, level.z)
-            } else {
-                pass
-            };
+            let pass = crate::dressup::apply_tabs(pass, &contour.tabs, level.z, level.final_z);
             tp.moves.extend(pass.moves);
         }
         Ok(tp)

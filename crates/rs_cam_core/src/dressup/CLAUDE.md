@@ -4,7 +4,7 @@ The passes run after an op generates a toolpath. `apply_dressups` in
 `compute/execute/dressup_apply.rs` drives them from a `DressupContext`;
 `DRESSUP_PIPELINE` there lists every stage in run order. Three run outside
 it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.rs`
-(it needs that level's cut depth), and `optimize_entry_descents_annotated` and
+(each level below the tab top lifts, P5b), and `optimize_entry_descents_annotated` and
 `adaptive_feed_modulate`, in `session/compute.rs` (prior stock, engagement). Add no fourth.
 
 ## Files
@@ -13,7 +13,7 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
   and helix emitters. `entry_audit.rs` — a fed move's burial audit.
 - `link.rs` — link against retract. `arcfit.rs` — lines to arcs, within the
   tolerance in 3D (G-TIERBURIAL). `feedopt.rs`, `feed_modulation.rs`,
-  `air_cut.rs`, `tsp.rs`. `tabs.rs` — tab placement on straight sides (P5) and `apply_tabs`. `condition.rs` — segment merge (roughing; off where
+  `air_cut.rs`, `tsp.rs`. `tabs.rs` — tab placement on straight sides (P5), the lift from the bridge width (P5b) and `apply_tabs`. `condition.rs` — segment merge (roughing; off where
   `planner_applies_segment_merge`: 3D Rough, 2D Adaptive; G-PLANSIMGAP).
 
 ## Invariants
@@ -34,7 +34,7 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --test capability_link_moves_safety --test dressup_span_invariants --test tabs_sit_on_straight_sides_p5`
+- `cargo test -p rs_cam_core -q --test capability_link_moves_safety --test dressup_span_invariants --test tabs_sit_on_straight_sides_p5 --test tabs_bridge_width_and_height_p5b`
 - `... --test constrained_max_modulation_f039 --test entry_moves_stock_aware_g_rampterrain --test finishing_defaults_have_no_ramp_entry_r10 --test adaptive3d_entry_stock_aware`
 - `cargo test -p rs_cam_core -q --test lead_in_out_feed_rates_f040 --test plunge_guard_p3 --test an_entry_ramp_follows_the_arc_g_rampchord` (a ramp laps on the arc)
 - `... --test a_peck_ladder_is_never_split_into_a_rapid_into_stock_g_pecksplit --test fed_chords_ride_the_surface_g_tierburial`

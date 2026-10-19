@@ -355,7 +355,7 @@ fn profile_toolpath_for_tabs() -> Toolpath {
 fn test_tabs_lift_at_positions() {
     let tp = profile_toolpath_for_tabs();
     let tabs = even_tabs(4, 5.0, 3.0);
-    let result = apply_tabs(tp.clone(), &tabs, -5.0);
+    let result = apply_tabs(tp.clone(), &tabs, -5.0, -5.0);
 
     // Some moves should be at tab height (-5 + 3 = -2)
     let tab_moves: Vec<_> = result
@@ -373,7 +373,7 @@ fn test_tabs_lift_at_positions() {
 fn test_tabs_preserve_non_tab_moves() {
     let tp = profile_toolpath_for_tabs();
     let tabs = even_tabs(2, 3.0, 2.0);
-    let result = apply_tabs(tp.clone(), &tabs, -5.0);
+    let result = apply_tabs(tp.clone(), &tabs, -5.0, -5.0);
 
     // Should still have moves at cut_depth
     let cut_moves: Vec<_> = result
@@ -390,7 +390,7 @@ fn test_tabs_preserve_non_tab_moves() {
 #[test]
 fn test_no_tabs_returns_unchanged() {
     let tp = profile_toolpath_for_tabs();
-    let result = apply_tabs(tp.clone(), &[], -5.0);
+    let result = apply_tabs(tp.clone(), &[], -5.0, -5.0);
     assert_eq!(result.moves.len(), tp.moves.len());
 }
 
@@ -413,7 +413,7 @@ fn test_even_tabs_spacing() {
 fn test_tabs_have_sharp_transitions() {
     let tp = profile_toolpath_for_tabs();
     let tabs = even_tabs(2, 10.0, 3.0);
-    let result = apply_tabs(tp.clone(), &tabs, -5.0);
+    let result = apply_tabs(tp.clone(), &tabs, -5.0, -5.0);
 
     // Find vertical step-up feed moves (same XY, Z increases sharply)
     let mut found_step_up = false;
@@ -633,7 +633,7 @@ fn test_dogbone_respects_angle_threshold() {
 fn test_tabs_add_transition_moves() {
     let tp = profile_toolpath_for_tabs();
     let tabs = even_tabs(4, 5.0, 3.0);
-    let result = apply_tabs(tp.clone(), &tabs, -5.0);
+    let result = apply_tabs(tp.clone(), &tabs, -5.0, -5.0);
 
     // Tab dressup adds step-up/step-down moves at tab edges
     assert!(
@@ -693,7 +693,7 @@ fn apply_tabs_carries_the_move_intent_cut08() {
             "fixture precondition: the input carries no Unknown intent"
         );
 
-        let result = apply_tabs(tp, &tabs, -5.0);
+        let result = apply_tabs(tp, &tabs, -5.0, -5.0);
 
         let unknown = result
             .moves

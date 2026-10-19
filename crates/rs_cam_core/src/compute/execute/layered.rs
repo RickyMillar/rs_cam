@@ -98,17 +98,11 @@ pub(crate) struct LevelInfo {
     pub z: f64,
     /// The position of the level in the ladder, from 0 at the top.
     pub index: usize,
-    /// True for each level at the final Z of the ladder: the deepest level
-    /// and each spring pass (`finishing_passes`) that repeats its Z.
-    /// Profile puts its tabs on these levels. A spring pass without the
-    /// tabs would cut the tabs away.
-    pub is_final: bool,
+    /// The Z of the final level of the ladder: the deepest level, which
+    /// each spring pass (`finishing_passes`) repeats. Profile stands its
+    /// tabs on it: every level below the tab top lifts over a tab (P5b).
+    pub final_z: f64,
 }
-
-/// The Z tolerance (mm) of [`LevelInfo::is_final`]. A spring pass is an
-/// exact copy of the final Z, so the tolerance only absorbs float noise.
-/// It is the tolerance of the Profile adapter before W3.2.
-const FINAL_Z_EPS_MM: f64 = 1e-9;
 
 /// The tool-centre rings of one prepared region and the half-width (mm)
 /// of the band the tool reaches around them. [`RestUse::LevelSkip`] reads
@@ -538,7 +532,7 @@ fn emit_at<O: LayeredOp>(
         LevelInfo {
             z,
             index: i,
-            is_final: (z - final_z).abs() < FINAL_Z_EPS_MM,
+            final_z,
         },
         &LevelRest {
             standing: rules.contour.map(|rule| rule.at(z)),

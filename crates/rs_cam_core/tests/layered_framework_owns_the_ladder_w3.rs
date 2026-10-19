@@ -386,8 +386,15 @@ const BEFORE_TRACE: (usize, u64) = (96, 4_273_299_077_702_301_738);
 /// starts in the largest gap between tabs (`dressup::tabs::tabbed_ring`),
 /// so the first tab is whole: before, it sat on the plunge point, half
 /// size, with a slanted lift.
-const BEFORE_PROFILE_TABS: (usize, u64) = (102, 11_559_622_444_127_422_163);
-const BEFORE_PROFILE_TABS_SPRING: (usize, u64) = (150, 6_199_123_954_740_191_121);
+///
+/// Re-pinned again for P5b (2026-10-19), by design: `tab_width` is now
+/// the bridge, so each lift is longer by the tool diameter
+/// (`dressup::tabs::tab_lift_length`). The longer lifts move the split
+/// points on the ring (move counts 102 -> 106, 150 -> 154). The
+/// tab top (`TAB_H`) stands above the final level only, so the P5b level
+/// rule adds no lift here.
+const BEFORE_PROFILE_TABS: (usize, u64) = (106, 10_647_655_285_267_498_227);
+const BEFORE_PROFILE_TABS_SPRING: (usize, u64) = (154, 6_534_920_059_359_883_601);
 
 /// Tab count of the Profile cases.
 const TABS: usize = 2;

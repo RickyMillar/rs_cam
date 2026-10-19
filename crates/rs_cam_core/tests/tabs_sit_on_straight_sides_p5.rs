@@ -10,8 +10,9 @@
 //!
 //! 1. One tab per straight side that holds one; the count is a minimum,
 //!    and extra tabs go to the longest sides (`auto_tabs`).
-//! 2. A tab keeps `tab_width + tool_radius` from each corner
-//!    (`tab_corner_clearance`).
+//! 2. The lift of a tab keeps `tab_width + tool_radius` from each corner
+//!    (`tab_corner_clearance`). The lift is the bridge `tab_width` plus
+//!    the tool diameter (`straight_tab_lift`, P5b).
 //! 3. A side can wrap past the loop start (`straight_sides`).
 //! 4. A loop with no side that holds a tab (a circle) takes the even
 //!    spacing by length, and a `TabPlacementFinding` says so.
@@ -42,7 +43,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::ProfileConfig;
 use rs_cam_core::compute::toolpath_stats::{TabNote, TabPlacementFinding};
 use rs_cam_core::dressup::apply_tabs;
-use rs_cam_core::dressup::tabs::{tab_corner_clearance, tabbed_ring};
+use rs_cam_core::dressup::tabs::{straight_tab_lift, tab_corner_clearance, tabbed_ring};
 use rs_cam_core::geo::P2;
 use rs_cam_core::ops::profile::{
     ProfileParams, ProfileSide, profile_path_reported, profile_ring, profile_ring_to_toolpath,
@@ -193,14 +194,21 @@ fn side_of(p: P2, x0: f64, y0: f64, x1: f64, y1: f64) -> &'static str {
     }
 }
 
-/// Every tab is whole: the tool travels one tab width on its top.
+/// The lift of a tab on a straight side (P5b): the bridge `W` plus the
+/// tool diameter.
+const LIFT: f64 = W + TOOL_D;
+
+/// Every tab is whole: the ends of its lift stand `LIFT` apart (the chord
+/// rule of `tab_lift_length`, P5b), and on a straight side the tool
+/// travels that far on the tab top.
 fn assert_whole(tabs: &[CutTab]) {
     for t in tabs {
+        let chord = (t.up.x - t.down.x).hypot(t.up.y - t.down.y);
         assert!(
-            (t.len - W).abs() < 1e-6,
-            "a tab of {} mm, not {W}: {t:?}",
-            t.len
+            (chord - LIFT).abs() < 1e-6,
+            "a lift whose ends are {chord} mm apart, not {LIFT}: {t:?}"
         );
+        assert!(t.len >= chord - 1e-6, "{t:?}");
     }
 }
 
@@ -276,15 +284,17 @@ fn tabs_extra_count_goes_to_the_longest_sides_p5() {
     );
 }
 
-/// Rule 2: a side shorter than `W + 2 · clearance` (24 mm here) holds no
-/// tab, and every tab edge keeps the clearance from the outline corners.
-/// The 20 mm sides lie between `W + 2 · W` (18 mm, the clearance without
-/// the tool radius) and 24 mm, so they prove the radius term.
+/// Rule 2: a side shorter than `LIFT + 2 · clearance` (30 mm here) holds
+/// no tab, and both ends of every lift keep the clearance from the outline
+/// corners. The 26 mm sides lie between `LIFT + 2 · W` (24 mm, the
+/// clearance without the tool radius) and 30 mm, so they prove the radius
+/// term.
 #[test]
 fn tabs_keep_clear_of_corners_p5() {
-    let (x0, y0, x1, y1) = (-40.0, -10.0, 40.0, 10.0);
+    let (x0, y0, x1, y1) = (-40.0, -13.0, 40.0, 13.0);
     let clearance = tab_corner_clearance(W, R);
     assert!((clearance - (W + R)).abs() < 1e-12);
+    assert!((straight_tab_lift(W, R) - LIFT).abs() < 1e-12);
     let (tp, finding) = run(vec![rect(x0, y0, x1, y1)], profile(2, vec![])).unwrap();
     let tabs = cut_tabs(&tp);
     assert_whole(&tabs);
@@ -442,9 +452,9 @@ fn tabs_lifts_match_apply_tabs_for_the_same_points_p5() {
     let ring = profile_ring(&contour, params.climb);
     // The point snaps to the outline at (13, 20); the ring takes its
     // nearest point.
-    let tabbed = tabbed_ring(&ring, &[P2::new(13.0, 20.0)], W);
+    let tabbed = tabbed_ring(&ring, &[P2::new(13.0, 20.0)], W, R);
     let pass = profile_ring_to_toolpath(&tabbed.ring, &params);
-    let want = cut_tabs(&apply_tabs(pass, &tabbed.tabs(W, H), Z));
+    let want = cut_tabs(&apply_tabs(pass, &tabbed.tabs(H), Z, Z));
     assert_eq!(want.len(), 1);
     for (g, w) in got.iter().zip(&want) {
         for (a, b) in [(g.up, w.up), (g.down, w.down)] {

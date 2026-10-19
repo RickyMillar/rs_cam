@@ -409,16 +409,19 @@ mod tests {
         }
     }
 
-    // --- Task A3: Tabs only on final depth pass ---
+    // --- Task A3 (P5b): tabs on every level below the tab top ---
 
     #[test]
-    fn profile_multi_pass_tabs_only_on_final_depth() {
+    fn profile_multi_pass_tabs_on_every_level_below_the_tab_top() {
+        // Levels -2, -4, -6; the tab top is -6 + 3 = -3. The level at -4
+        // is below the tab top, so it lifts over each tab too (P5b); the
+        // level at -2 is above it and cuts through.
         let cfg = ProfileConfig {
             depth: 6.0,
             depth_per_pass: 2.0,
             tab_count: 4,
             tab_width: 6.0,
-            tab_height: 2.0,
+            tab_height: 3.0,
             finishing_passes: 0,
             ..ProfileConfig::default()
         };
@@ -430,42 +433,47 @@ mod tests {
         let final_z = -cfg.depth;
         let tab_z = final_z + cfg.tab_height;
 
-        // Tab height moves should exist (tabs applied to final pass)
-        let tab_moves: Vec<_> = tp
-            .moves
-            .iter()
-            .filter(|m| (m.target.z - tab_z).abs() < 0.01)
-            .collect();
+        // A vertical fed rise from `from_z` to the tab top.
+        let rises_from = |from_z: f64| {
+            tp.moves
+                .windows(2)
+                .filter(|w| {
+                    matches!(w[1].move_type, MoveType::Linear { .. })
+                        && (w[0].target.x - w[1].target.x).abs() < 1e-9
+                        && (w[0].target.y - w[1].target.y).abs() < 1e-9
+                        && (w[0].target.z - from_z).abs() < 0.01
+                        && (w[1].target.z - tab_z).abs() < 0.01
+                })
+                .count()
+        };
         assert!(
-            !tab_moves.is_empty(),
-            "Final pass should have tab height moves at z={tab_z}"
+            rises_from(final_z) > 0,
+            "the final level lifts over its tabs"
+        );
+        assert_eq!(
+            rises_from(-4.0),
+            rises_from(final_z),
+            "the level at -4 lifts over the same tabs as the final level"
         );
 
-        // Intermediate passes (at Z != final_z) should have NO tab-height lifts.
-        // Roughing levels are at -2, -4; final is at -6. Tab height is -4.
-        // Check that the Z=-4 moves are actual cutting moves, not tab lifts:
-        // Tab lifts have z = final_z + tab_height = -6 + 2 = -4 which
-        // coincides with a roughing level. Instead, verify that there are
-        // no tab-height moves between roughing passes (moves with z > final_z
-        // that aren't at a legitimate roughing level or safe_z).
         let depth_stepping = rs_cam_core::ops::depth::DepthStepping {
             start_z: 0.0,
             final_z: -cfg.depth.abs(),
             max_step_down: cfg.depth_per_pass,
             finishing_passes: cfg.finishing_passes,
         };
-        let roughing_levels = depth_stepping.all_levels();
+        let levels = depth_stepping.all_levels();
         for m in &tp.moves {
             if let MoveType::Linear { .. } = m.move_type {
                 let z = m.target.z;
-                // Any linear move should be at a legitimate level, tab_z, or
-                // a plunge between levels.
-                let at_known_level = roughing_levels.iter().any(|&lv| (z - lv).abs() < 0.01);
+                // Any linear move is at a level, at the tab top, or a
+                // plunge between levels.
+                let at_known_level = levels.iter().any(|&lv| (z - lv).abs() < 0.01);
                 let at_tab_z = (z - tab_z).abs() < 0.01;
                 let is_plunge_or_retract = z > final_z + 0.01 && z < safe_z - 0.01;
                 assert!(
                     at_known_level || at_tab_z || is_plunge_or_retract,
-                    "unexpected linear move z={z}, expected one of levels {roughing_levels:?}, tab_z={tab_z}, or plunge"
+                    "unexpected linear move z={z}, expected one of levels {levels:?}, tab_z={tab_z}, or plunge"
                 );
             }
         }

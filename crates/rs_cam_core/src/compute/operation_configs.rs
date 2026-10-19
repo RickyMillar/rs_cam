@@ -573,13 +573,21 @@ pub struct ProfileConfig {
         range = 0.0..=20.0,
     )]
     pub tab_count: usize,
+    /// The bridge width (P5b, operator ruling 2026-10-19): the width of
+    /// the material a tab leaves, not the lift of the tool. The lift is
+    /// longer by the tool diameter on a straight side
+    /// (`dressup::tabs::straight_tab_lift`).
     #[param(
-        help = "Width of holding tabs that keep the part attached to stock.",
+        help = "Bridge width: the width of the material each holding tab leaves between the part \
+                and the stock. The tool lifts over the bridge plus one tool diameter.",
         range = 1.0..=50.0,
     )]
     pub tab_width: f64,
+    /// The tab top stands this far above the final floor on every level:
+    /// each level below it lifts over the tab (P5b).
     #[param(
-        help = "Height of holding tabs from the floor of the cut.",
+        help = "Height of holding tabs from the floor of the cut. Every pass below the tab top lifts \
+                over the tab, so the tab keeps this height at any depth per pass.",
         range = 0.5..=20.0,
     )]
     pub tab_height: f64,

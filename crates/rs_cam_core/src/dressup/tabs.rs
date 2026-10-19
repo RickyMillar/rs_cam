@@ -7,6 +7,16 @@
 //! also moves the start of that ring into the largest gap between tabs. So
 //! no tab zone crosses the plunge, and [`apply_tabs`] measures every tab
 //! whole.
+//!
+//! P5b (operator rulings, 2026-10-19):
+//!
+//! - `tab_width` is the bridge: the width of the material a tab leaves.
+//!   The lift on the cut ring is longer by the tool diameter on a straight
+//!   ([`straight_tab_lift`]) and by the chord rule on a curve
+//!   ([`tab_lift_length`]).
+//! - The tab top is `final floor + tab_height` on every level. Each level
+//!   below the tab top lifts over the tab ([`apply_tabs`]); placement does
+//!   not depend on Z, so one placement serves every level.
 
 use super::Z_LEVEL_EPS_MM;
 use crate::geo::{P2, P3};
@@ -15,20 +25,28 @@ use crate::toolpath::{MoveType, Toolpath};
 /// A tab (bridge) that holds the part to the stock during profile cutting.
 #[derive(Debug, Clone)]
 pub struct Tab {
-    /// Position along the polygon perimeter (0.0 to 1.0, fractional).
+    /// Position of the tab centre along the cut path (0.0 to 1.0,
+    /// fractional).
     pub position: f64,
-    /// Width of the tab in mm.
+    /// Length (mm) of the lift along the cut path: the tool-centre span
+    /// over the tab. It is not the bridge width; [`tab_lift_length`]
+    /// derives it from the bridge width.
     pub width: f64,
-    /// Height of the tab in mm (how far above cut_depth the tab rises).
+    /// Height of the tab top above the final floor of the cut (mm).
     pub height: f64,
 }
 
-/// Insert holding tabs into a profile toolpath.
+/// Insert holding tabs into one level of a profile toolpath.
 ///
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-/// Tabs create sharp rectangular bridges: the cutter steps up to tab height,
-/// traverses at that height, then steps back down. This leaves material
-/// bridges that hold the part to the stock.
+/// `cut_depth` is the Z of the level and `floor_z` is the final floor of
+/// the cut. The top of a tab is `floor_z + height` on every level. A level
+/// below the tab top lifts over the tab to the tab top; a level at or
+/// above the tab top cuts through, because it removes nothing of the tab.
+/// So the tab keeps its full height when `height` is more than the depth
+/// per pass (P5b).
+///
+/// Tabs create sharp rectangular bridges: the cutter steps up to the tab
+/// top, traverses at that height, then steps back down.
 ///
 /// Tab positions are interpolated along cutting segments, so tabs appear
 /// at the correct location even when move endpoints are sparse.
@@ -45,9 +63,15 @@ pub struct Tab {
 /// The fed lift onto a tab keeps the cut intent. It removes material, and a
 /// `Retract`-tagged feed is forbidden — see
 /// `tests/retract_intent_move_type_census_w6.rs`.
-pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath {
+#[allow(clippy::indexing_slicing)] // SAFETY: `cp` indexes `cutting_indices` and `cum_dist` (same length) below their length; each entry of `cutting_indices` indexes `toolpath.moves`
+pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64, floor_z: f64) -> Toolpath {
     use crate::toolpath::MoveIntent;
 
+    // A tab whose top is not above this level leaves the level as it is.
+    let tabs: Vec<&Tab> = tabs
+        .iter()
+        .filter(|t| floor_z + t.height > cut_depth + Z_LEVEL_EPS_MM)
+        .collect();
     if tabs.is_empty() {
         return toolpath;
     }
@@ -86,7 +110,8 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
         return toolpath;
     }
 
-    // Build sorted tab boundary events as absolute distances
+    // The tab zones as absolute distances along the cut, each with its
+    // tab top.
     struct TabZone {
         start_dist: f64,
         end_dist: f64,
@@ -100,7 +125,7 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
             TabZone {
                 start_dist: (center_dist - half_w).max(0.0),
                 end_dist: (center_dist + half_w).min(total_dist),
-                tab_z: cut_depth + tab.height,
+                tab_z: floor_z + tab.height,
             }
         })
         .collect();
@@ -112,9 +137,10 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
             .map(|tz| tz.tab_z)
     };
 
-    // Walk through toolpath, interpolating tab boundaries along cutting segments
+    // Walk through toolpath, interpolating tab boundaries along cutting
+    // segments. `on_tab` holds the tab top while the tool is on a tab.
     let mut result = Toolpath::new();
-    let mut in_tab = false;
+    let mut on_tab: Option<f64> = None;
 
     for (i, m) in toolpath.moves.iter().enumerate() {
         let cut_pos = cutting_indices.iter().position(|&ci| ci == i);
@@ -123,7 +149,7 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
             if cp == 0 {
                 // First cutting move — just emit it
                 result.moves.push(m.clone());
-                in_tab = tab_z_at_dist(0.0).is_some();
+                on_tab = tab_z_at_dist(0.0);
                 continue;
             }
 
@@ -143,14 +169,15 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
                 continue;
             }
 
-            // Collect all tab boundary crossings within this segment
-            let mut events: Vec<(f64, bool)> = Vec::new(); // (dist, is_entry)
+            // Collect all tab boundary crossings within this segment:
+            // (dist, the tab top of the zone, is_entry).
+            let mut events: Vec<(f64, f64, bool)> = Vec::new();
             for tz in &tab_zones {
                 if tz.start_dist > seg_start_dist && tz.start_dist < seg_end_dist {
-                    events.push((tz.start_dist, true));
+                    events.push((tz.start_dist, tz.tab_z, true));
                 }
                 if tz.end_dist > seg_start_dist && tz.end_dist < seg_end_dist {
-                    events.push((tz.end_dist, false));
+                    events.push((tz.end_dist, tz.tab_z, false));
                 }
             }
             events.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -159,7 +186,7 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
                 // No boundary crossings — whole segment is in or out
                 let mid_dist = (seg_start_dist + seg_end_dist) / 2.0;
                 if let Some(tab_z) = tab_z_at_dist(mid_dist) {
-                    if !in_tab {
+                    if on_tab.is_none() {
                         // Entered tab zone before this segment
                         if let Some(last) = result.moves.last() {
                             result.feed_to_with_intent(
@@ -168,7 +195,7 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
                                 m.intent,
                             );
                         }
-                        in_tab = true;
+                        on_tab = Some(tab_z);
                     }
                     result.feed_to_with_intent(
                         P3::new(curr_target.x, curr_target.y, tab_z),
@@ -176,30 +203,27 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
                         m.intent,
                     );
                 } else {
-                    if in_tab {
-                        if let Some(last) = result.moves.last() {
-                            result.feed_to_with_intent(
-                                P3::new(last.target.x, last.target.y, cut_depth),
-                                feed_rate,
-                                MoveIntent::EntryPlunge,
-                            );
-                        }
-                        in_tab = false;
+                    if on_tab.take().is_some()
+                        && let Some(last) = result.moves.last()
+                    {
+                        result.feed_to_with_intent(
+                            P3::new(last.target.x, last.target.y, cut_depth),
+                            feed_rate,
+                            MoveIntent::EntryPlunge,
+                        );
                     }
                     result.moves.push(m.clone());
                 }
             } else {
                 // Process boundary crossings — split segment at each event
-                let mut last_dist = seg_start_dist;
-
-                for (event_dist, is_entry) in &events {
-                    let t = (*event_dist - seg_start_dist) / seg_len;
+                for &(event_dist, tab_z, is_entry) in &events {
+                    let t = (event_dist - seg_start_dist) / seg_len;
                     let split_x = prev_target.x + t * (curr_target.x - prev_target.x);
                     let split_y = prev_target.y + t * (curr_target.y - prev_target.y);
 
-                    if *is_entry {
+                    if is_entry {
                         // Emit segment up to tab entry at cut_depth
-                        if !in_tab {
+                        if on_tab.is_none() {
                             result.feed_to_with_intent(
                                 P3::new(split_x, split_y, cut_depth),
                                 feed_rate,
@@ -207,16 +231,14 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
                             );
                         }
                         // Step up
-                        let tab_z = tab_z_at_dist(*event_dist + 0.01).unwrap_or(cut_depth + 2.0);
                         result.feed_to_with_intent(
                             P3::new(split_x, split_y, tab_z),
                             feed_rate,
                             m.intent,
                         );
-                        in_tab = true;
+                        on_tab = Some(tab_z);
                     } else {
                         // Emit segment up to tab exit at tab height
-                        let tab_z = tab_z_at_dist(last_dist + 0.01).unwrap_or(cut_depth + 2.0);
                         result.feed_to_with_intent(
                             P3::new(split_x, split_y, tab_z),
                             feed_rate,
@@ -228,30 +250,20 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
                             feed_rate,
                             MoveIntent::EntryPlunge,
                         );
-                        in_tab = false;
+                        on_tab = None;
                     }
-                    last_dist = *event_dist;
                 }
 
                 // Emit remainder of segment after last event
-                if in_tab {
-                    let tab_z = tab_z_at_dist(last_dist + 0.01).unwrap_or(cut_depth + 2.0);
-                    result.feed_to_with_intent(
-                        P3::new(curr_target.x, curr_target.y, tab_z),
-                        feed_rate,
-                        m.intent,
-                    );
-                } else {
-                    result.feed_to_with_intent(
-                        P3::new(curr_target.x, curr_target.y, cut_depth),
-                        feed_rate,
-                        m.intent,
-                    );
-                }
+                result.feed_to_with_intent(
+                    P3::new(curr_target.x, curr_target.y, on_tab.unwrap_or(cut_depth)),
+                    feed_rate,
+                    m.intent,
+                );
             }
         } else {
             // Non-cutting move — pass through unchanged
-            in_tab = false;
+            on_tab = None;
             result.moves.push(m.clone());
         }
     }
@@ -259,7 +271,8 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64) -> Toolpath 
     result
 }
 
-/// Generate evenly-spaced tabs around a perimeter.
+/// Generate evenly-spaced tabs around a perimeter. `width` is the lift
+/// length of each tab ([`Tab::width`]).
 pub fn even_tabs(count: usize, width: f64, height: f64) -> Vec<Tab> {
     (0..count)
         .map(|i| Tab {
@@ -300,8 +313,9 @@ const FACET_LENGTH_MATCH: f64 = 1e-6;
 /// neither bends nor extends a run.
 const MIN_SEGMENT_MM: f64 = 1e-9;
 
-/// The clearance (mm) between the edge of a tab and the nearest corner of
-/// its side.
+/// The clearance (mm) between the end of the lift of a tab and the nearest
+/// corner of its side. The lift is [`straight_tab_lift`] long, so a side
+/// holds a tab when it is `lift + 2 · clearance` long.
 ///
 /// - `tool_radius`: on an outside profile, the tool-centre path of a
 ///   90 degree inside corner ends one tool radius before the outline
@@ -313,6 +327,93 @@ const MIN_SEGMENT_MM: f64 = 1e-9;
 #[must_use]
 pub fn tab_corner_clearance(tab_width: f64, tool_radius: f64) -> f64 {
     tab_width + tool_radius
+}
+
+/// The lift (mm) of a tab on a straight side: `tab_width + 2 · tool_radius`.
+///
+/// `tab_width` is the bridge: the width of the material the tab leaves
+/// (operator ruling, 2026-10-19). The tool cuts one radius past each end
+/// of its lift, so the narrowest part of the bridge, on the line of the
+/// tool centre, is `lift − 2 · tool_radius`. On the part face the bridge
+/// is the full lift long, because the tool touches the face at one point.
+/// [`tab_lift_length`] gives the lift on any ring; on a straight it is
+/// this value.
+#[must_use]
+pub fn straight_tab_lift(tab_width: f64, tool_radius: f64) -> f64 {
+    tab_width + 2.0 * tool_radius
+}
+
+/// The lift (mm) of a tab centred at distance `centre` along the closed
+/// cut ring `ring`, for a bridge of `tab_width` and a tool of
+/// `tool_radius`.
+///
+/// The rule: the lift is `[centre − a, centre + a]`, with the smallest
+/// `a` for which the straight distance between its two ends is
+/// `tab_width + 2 · tool_radius`. The tool at each end cuts a disc of
+/// `tool_radius`, so the two discs stand `tab_width` apart: the bridge is
+/// nowhere narrower than `tab_width`.
+///
+/// - A straight side: the chord is the arc, so the lift is
+///   [`straight_tab_lift`].
+/// - An arc of centre-path radius `ρ`: the chord of the lift is
+///   `2ρ · sin(L / 2ρ)`, so `L = 2ρ · asin((tab_width + 2 · tool_radius) / 2ρ)`.
+///   This is longer than on a straight.
+///
+/// A ring too small to hold the chord gets a lift of the whole ring.
+#[must_use]
+pub fn tab_lift_length(ring: &[P2], centre: f64, tab_width: f64, tool_radius: f64) -> f64 {
+    let (segs, total) = segments(ring);
+    lift_on(
+        &segs,
+        total,
+        centre,
+        straight_tab_lift(tab_width, tool_radius),
+    )
+}
+
+/// [`tab_lift_length`] on the segments of a ring, for a chord of `chord`.
+fn lift_on(segs: &[Segment], total: f64, centre: f64, chord: f64) -> f64 {
+    let half_max = total / 2.0;
+    let gap = |a: f64| {
+        let (p, q) = (
+            point_on(segs, total, centre - a),
+            point_on(segs, total, centre + a),
+        );
+        (p.x - q.x).hypot(p.y - q.y)
+    };
+    // The chord is never longer than the arc, so `a` is at least half the
+    // chord. On a straight that is the answer.
+    let mut lo = (chord / 2.0).min(half_max);
+    if gap(lo) >= chord - MIN_SEGMENT_MM {
+        return 2.0 * lo;
+    }
+    // March out in steps of a quarter of the chord to the first `a` whose
+    // chord is long enough, then halve the bracket. The step is short
+    // against the lift, so the march does not jump over a first crossing
+    // on a ring that bends back.
+    let step = chord / 4.0;
+    let mut hi = lo;
+    loop {
+        hi = (hi + step).min(half_max);
+        if gap(hi) >= chord {
+            break;
+        }
+        if hi >= half_max {
+            return total;
+        }
+        lo = hi;
+    }
+    // The bracket stops at `MIN_SEGMENT_MM`: a shorter move along the ring
+    // has no direction (see the constant).
+    while hi - lo > MIN_SEGMENT_MM {
+        let mid = 0.5 * (lo + hi);
+        if gap(mid) >= chord {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    2.0 * hi
 }
 
 /// How far (mm) a hand tab may sit from the loop it names: one tool
@@ -454,8 +555,17 @@ pub fn straight_sides(ring: &[P2]) -> Vec<Side> {
 #[must_use]
 pub fn point_at(ring: &[P2], s: f64) -> P2 {
     let (segs, total) = segments(ring);
-    let Some(last) = segs.last() else {
+    if segs.is_empty() {
         return ring.first().copied().unwrap_or_else(|| P2::new(0.0, 0.0));
+    }
+    point_on(&segs, total, s)
+}
+
+/// [`point_at`] on the segments of a ring of length `total`. Needs at
+/// least one segment; with none it gives the origin.
+fn point_on(segs: &[Segment], total: f64, s: f64) -> P2 {
+    let Some(last) = segs.last() else {
+        return P2::new(0.0, 0.0);
     };
     let s = if total > 0.0 {
         s.rem_euclid(total)
@@ -514,7 +624,9 @@ pub enum AutoTabs {
 /// The rule:
 ///
 /// 1. A side holds a tab when its length is at least
-///    `tab_width + 2 · tab_corner_clearance`. Each such side gets one tab.
+///    `lift + 2 · tab_corner_clearance`, with `lift` the
+///    [`straight_tab_lift`] of `tab_width` (the bridge). Each such side
+///    gets one tab.
 /// 2. The total is `max(min_count, sides)`: the count of the op is a
 ///    minimum, and the one-per-side rule wins over a smaller count
 ///    (operator ruling 2026-10-16: at least one tab per side).
@@ -524,17 +636,23 @@ pub enum AutoTabs {
 ///    clearance. A long side so takes more tabs than a short one.
 /// 4. The tabs of one side sit at the centres of equal shares of the
 ///    length that is clear of its corners.
+///
+/// The sides are measured on the outline. On an outside profile the cut
+/// runs one tool radius out from a straight side, so the lift on the cut
+/// is as long as on the outline; `tab_corner_clearance` holds the
+/// shortening of the cut at an inside corner.
 #[must_use]
 #[allow(clippy::indexing_slicing)] // SAFETY: every index is taken modulo the length, or is below it by the loop bound
 pub fn auto_tabs(outline: &[P2], min_count: usize, tab_width: f64, tool_radius: f64) -> AutoTabs {
     let clearance = tab_corner_clearance(tab_width, tool_radius);
+    let lift = straight_tab_lift(tab_width, tool_radius);
     // (eligible start, eligible length) of the centre of a tab per side.
     let eligible: Vec<(f64, f64)> = straight_sides(outline)
         .iter()
-        .filter(|s| s.length() >= tab_width + 2.0 * clearance)
+        .filter(|s| s.length() >= lift + 2.0 * clearance)
         .map(|s| {
-            let lo = s.start + clearance + tab_width / 2.0;
-            (lo, s.end - clearance - tab_width / 2.0 - lo)
+            let lo = s.start + clearance + lift / 2.0;
+            (lo, s.end - clearance - lift / 2.0 - lo)
         })
         .collect();
     if eligible.is_empty() {
@@ -542,7 +660,7 @@ pub fn auto_tabs(outline: &[P2], min_count: usize, tab_width: f64, tool_radius: 
     }
     let capacity: Vec<usize> = eligible
         .iter()
-        .map(|&(_, len)| ((len / (tab_width + clearance)).floor() as usize).max(1))
+        .map(|&(_, len)| ((len / (lift + clearance)).floor() as usize).max(1))
         .collect();
     let mut per_side = vec![1_usize; eligible.len()];
     for _ in eligible.len()..min_count.max(eligible.len()) {
@@ -586,18 +704,20 @@ pub fn even_centres(ring: &[P2], count: usize) -> Vec<P2> {
 pub struct TabbedRing {
     /// The cut ring, its start moved into the largest gap between tabs.
     pub ring: Vec<P2>,
-    /// One position per centre, as a fraction of the length of `ring`
-    /// ([`Tab::position`]), in loop order.
-    pub positions: Vec<f64>,
+    /// One (position, lift) per centre, in loop order: the position as a
+    /// fraction of the length of `ring` ([`Tab::position`]) and the lift
+    /// in mm ([`Tab::width`], from [`tab_lift_length`]).
+    pub zones: Vec<(f64, f64)>,
 }
 
 impl TabbedRing {
-    /// The tabs of this ring for [`apply_tabs`].
+    /// The tabs of this ring for [`apply_tabs`], each `height` above the
+    /// final floor.
     #[must_use]
-    pub fn tabs(&self, width: f64, height: f64) -> Vec<Tab> {
-        self.positions
+    pub fn tabs(&self, height: f64) -> Vec<Tab> {
+        self.zones
             .iter()
-            .map(|&position| Tab {
+            .map(|&(position, width)| Tab {
                 position,
                 width,
                 height,
@@ -606,8 +726,9 @@ impl TabbedRing {
     }
 }
 
-/// Put each centre on the closed cut ring `ring` (its nearest point) and
-/// start the ring in the middle of the largest gap between the tab zones.
+/// Put each centre on the closed cut ring `ring` (its nearest point), give
+/// it the lift of a bridge of `tab_width` ([`tab_lift_length`]), and start
+/// the ring in the middle of the largest gap between the lifts.
 ///
 /// [`apply_tabs`] measures a tab zone on `[0, length]` and clips it there,
 /// and it plunges at the ring start. A zone across the start would be cut
@@ -615,40 +736,46 @@ impl TabbedRing {
 /// (when the tabs leave a gap at all).
 #[must_use]
 #[allow(clippy::indexing_slicing)] // SAFETY: every index is taken modulo the length, or is below it by the loop bound
-pub fn tabbed_ring(ring: &[P2], centres: &[P2], tab_width: f64) -> TabbedRing {
-    let (_, total) = segments(ring);
-    let mut along: Vec<f64> = centres
+pub fn tabbed_ring(ring: &[P2], centres: &[P2], tab_width: f64, tool_radius: f64) -> TabbedRing {
+    let (segs, total) = segments(ring);
+    let chord = straight_tab_lift(tab_width, tool_radius);
+    // (distance along the ring, lift) per centre.
+    let mut along: Vec<(f64, f64)> = centres
         .iter()
         .filter_map(|&c| nearest_on_loop(ring, c).map(|(_, s, _)| s))
+        .map(|s| (s, lift_on(&segs, total, s, chord)))
         .collect();
     if along.is_empty() || total <= 0.0 {
         return TabbedRing {
             ring: ring.to_vec(),
-            positions: Vec::new(),
+            zones: Vec::new(),
         };
     }
-    along.sort_by(f64::total_cmp);
-    // The largest gap between one zone end and the next zone start, round
+    along.sort_by(|a, b| a.0.total_cmp(&b.0));
+    // The largest gap between one lift end and the next lift start, round
     // the loop. Ties: the first.
     let mut seam = 0.0;
     let mut widest = f64::NEG_INFINITY;
-    for (i, &s) in along.iter().enumerate() {
-        let next = along.get(i + 1).copied().unwrap_or(along[0] + total);
-        let gap = (next - tab_width / 2.0) - (s + tab_width / 2.0);
+    for (i, &(s, lift)) in along.iter().enumerate() {
+        let (next, next_lift) = along
+            .get(i + 1)
+            .copied()
+            .unwrap_or((along[0].0 + total, along[0].1));
+        let gap = (next - next_lift / 2.0) - (s + lift / 2.0);
         if gap > widest {
             widest = gap;
-            seam = (s + tab_width / 2.0 + gap / 2.0).rem_euclid(total);
+            seam = (s + lift / 2.0 + gap / 2.0).rem_euclid(total);
         }
     }
     let rotated = start_at(ring, seam);
-    let mut positions: Vec<f64> = along
+    let mut zones: Vec<(f64, f64)> = along
         .iter()
-        .map(|&s| (s - seam).rem_euclid(total) / total)
+        .map(|&(s, lift)| ((s - seam).rem_euclid(total) / total, lift))
         .collect();
-    positions.sort_by(f64::total_cmp);
+    zones.sort_by(|a, b| a.0.total_cmp(&b.0));
     TabbedRing {
         ring: rotated,
-        positions,
+        zones,
     }
 }
 

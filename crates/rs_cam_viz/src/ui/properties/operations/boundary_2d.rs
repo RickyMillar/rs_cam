@@ -299,7 +299,7 @@ fn draw_profile_tabs(ui: &mut egui::Ui, cfg: &mut ProfileConfig, through_cut: Op
                 if cfg.tab_count > 0 || !cfg.tab_points.is_empty() {
                     dv(
                         ui,
-                        p(OperationType::Profile, "tab_width", "Width:"),
+                        p(OperationType::Profile, "tab_width", "Bridge width:"),
                         &mut cfg.tab_width,
                         " mm",
                         0.5,

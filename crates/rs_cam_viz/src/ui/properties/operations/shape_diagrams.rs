@@ -531,7 +531,7 @@ pub(in crate::ui::properties) fn draw_tab_diagram(
         egui::pos2(rect.center().x, rect.bottom() - 4.0),
         egui::Align2::CENTER_BOTTOM,
         format!(
-            "min {tab_count} tab{}/loop, 1+ per side \u{00D7} {tab_width:.1}mm \u{00D7} {tab_height:.1}mm",
+            "min {tab_count} tab{}/loop, 1+ per side, bridge {tab_width:.1}mm \u{00D7} {tab_height:.1}mm",
             if tab_count == 1 { "" } else { "s" }
         ),
         egui::FontId::proportional(9.0),
