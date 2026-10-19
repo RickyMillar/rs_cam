@@ -80,6 +80,7 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
         spindle_rpm: None,
         selected_holes: None,
         selected_layers: Vec::new(),
+        selection: rs_cam_core::selection::Selection::empty(),
     };
 
     let tc = ToolpathConfig {

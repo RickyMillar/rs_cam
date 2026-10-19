@@ -473,10 +473,7 @@ pub(crate) fn toolpath_panel_inputs(
     let outline_models: Vec<_> = session
         .models()
         .iter()
-        .filter(|m| {
-            m.outlines_pre_selection()
-                .is_some_and(|polys| polys.iter().any(|p| p.closed && p.exterior.len() >= 3))
-        })
+        .filter(|m| m.items.has_closed_ring())
         .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
         .collect();
     // Snapshot tool configs for feeds calculation

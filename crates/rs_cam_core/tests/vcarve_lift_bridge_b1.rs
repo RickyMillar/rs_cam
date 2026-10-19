@@ -120,6 +120,7 @@ fn build_vcarve_session() -> ProjectSession {
         plunge_rate: 400.0,
         tolerance: 0.05,
         spindle_rpm: Some(18_000),
+        selection: rs_cam_core::selection::Selection::drawing(),
     };
 
     let tc = ToolpathConfig {

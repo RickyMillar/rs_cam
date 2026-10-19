@@ -101,8 +101,7 @@ pub struct SelectionNote {
 impl fmt::Display for SelectionNote {
     /// "2 open paths on layer 'TEXT' are not cut: the op cuts closed areas
     /// only (...). The first: open path (...)." An open path also gets the
-    /// fix: "Use Trace or Project Curve for an open path, or close it in
-    /// the drawing."
+    /// fix that suits the op ([`note_fix`]).
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verb = if self.count == 1 { "is" } else { "are" };
         write!(
@@ -114,22 +113,33 @@ impl fmt::Display for SelectionNote {
             use_phrase(self.item_use),
             self.first
         )?;
-        if let Some(fix) = note_fix(self.kind) {
+        if let Some(fix) = note_fix(self.kind, self.item_use) {
             write!(f, " {fix}")?;
         }
         Ok(())
     }
 }
 
-/// The fix a note gives for a skipped kind. Only an open path gets one:
-/// it is a likely drawing defect (lead ruling "notes", P2.2). The match
-/// has no wildcard, so a new kind states its answer.
-fn note_fix(kind: ItemKind) -> Option<&'static str> {
-    match kind {
-        ItemKind::Path => {
+/// The fix a note gives for a skipped kind, for an op of `item_use`. Only
+/// an open path gets one: it is a likely drawing defect (lead ruling
+/// "notes", P2.2). The fix depends on the op: a closed loop serves an area
+/// op, but a drill drills no loop, so "close it" is no fix for a drill.
+/// The match has no wildcard, so a new kind or a new use states its answer.
+fn note_fix(kind: ItemKind, item_use: ItemUse) -> Option<&'static str> {
+    match (kind, item_use) {
+        (ItemKind::Path, ItemUse::Regions) => {
             Some("Use Trace or Project Curve for an open path, or close it in the drawing.")
         }
-        ItemKind::Loop | ItemKind::Point | ItemKind::Circle | ItemKind::Face => None,
+        (ItemKind::Path, ItemUse::Holes { .. }) => {
+            Some("To cut the open path, add a Trace or Project Curve operation.")
+        }
+        // An op that follows lines cuts an open path, and an op that reads
+        // no item skips nothing: neither gives a path note.
+        (ItemKind::Path, ItemUse::Curves | ItemUse::None) => None,
+        (
+            ItemKind::Loop | ItemKind::Point | ItemKind::Circle | ItemKind::Face,
+            ItemUse::Regions | ItemUse::Curves | ItemUse::Holes { .. } | ItemUse::None,
+        ) => None,
     }
 }
 

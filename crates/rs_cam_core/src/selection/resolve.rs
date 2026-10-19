@@ -127,10 +127,10 @@ impl ResolvedSelection {
     /// nothing lost or missing. No model is needed. [`super::view`] nests
     /// the rings as it nests a drawing.
     ///
-    /// Two callers (P2.3a): the session gives the face outline of a STEP
-    /// face pick to the op through it (until P2.3b and P2.4 resolve faces
-    /// as items), and `SelectionInputs::from_polygons` gives a hand-built
-    /// list to an `ExecutionContext` with no session.
+    /// The caller: `SelectionInputs` (the empty default, and
+    /// `from_polygons`, which gives a hand-built list to an
+    /// `ExecutionContext` with no session). The session resolves the
+    /// selection of the op, face picks included (P2.3b).
     pub(crate) fn from_polygons(polygons: Vec<Polygon2>) -> Self {
         let items = ItemSet::from_polygons(polygons)
             .iter()
@@ -163,6 +163,24 @@ impl ResolvedSelection {
 
     pub fn unmatched_layers(&self) -> &[String] {
         &self.unmatched_layers
+    }
+
+    /// The highest plane Z of the faces in the selection, or `None` when
+    /// the selection holds no face (DESIGN 7.2). The session reads it as
+    /// the auto top of an op with picked faces.
+    ///
+    /// Call it after [`Self::to_setup_frame`]: the plane Z is then in the
+    /// SETUP frame, so a face pick on a flipped setup gives the top of the
+    /// face as that setup sees it.
+    pub fn face_top_z(&self) -> Option<f64> {
+        self.items
+            .iter()
+            .filter_map(|r| match r.item.shape() {
+                Shape::Face(face) => Some(face.plane_z),
+                Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => None,
+            })
+            .filter(|z| z.is_finite())
+            .reduce(f64::max)
     }
 
     /// THE frame door: the items of a model move into the work plane of

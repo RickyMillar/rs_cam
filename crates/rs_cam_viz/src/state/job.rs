@@ -256,8 +256,8 @@ pub fn obstacle_display_extent(
     models: &[rs_cam_core::session::LoadedModel],
 ) -> Option<BoundingBox3> {
     use rs_cam_core::compute::obstacle::SILHOUETTE_CELL_MM;
-    use rs_cam_core::compute::stock_change::is_closed_outline;
     use rs_cam_core::geo::P3;
+    use rs_cam_core::selection::Shape;
     use rs_cam_core::session::ObstacleGeometry;
     if !o.enabled {
         return None;
@@ -279,8 +279,18 @@ pub fn obstacle_display_extent(
                 f64::NEG_INFINITY,
             ];
             for id in model_ids {
-                let polygons = find(*id)?.outlines_pre_selection()?;
-                for p in polygons.iter().filter(|p| is_closed_outline(p)) {
+                // The closed rings of the drawing (loops and circles). A
+                // ring nested in another lies inside it, so the bbox of the
+                // rings is the bbox of the outer outlines.
+                let model = find(*id)?;
+                if !model.items.has_drawing() {
+                    return None;
+                }
+                let rings = model.items.iter().filter_map(|item| match item.shape() {
+                    Shape::Loop(ring) | Shape::Circle { ring, .. } => Some(ring),
+                    Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => None,
+                });
+                for p in rings {
                     for v in &p.exterior {
                         xy = [
                             xy[0].min(v.x),

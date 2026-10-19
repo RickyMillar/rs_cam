@@ -16,6 +16,51 @@ use crate::trace::semantic_trace::{SemanticKey, ToolpathSemanticKind};
 
 use super::ResolvedGenInputs;
 
+/// The pick keys of the picked BREP faces of `model` (geometry selection
+/// P2.3b). Each key names the Face item whose BREP id is the picked id, on
+/// the toolpath model. A picked face with no Face item refuses and names
+/// the face: the STEP door makes a Face item for each flat horizontal face
+/// only (`io::brep_face_items`), and a pick that the op cannot cut must
+/// not drop out in silence.
+fn face_pick_keys(
+    toolpath: &str,
+    model: Option<&crate::session::LoadedModel>,
+    ids: &[crate::geometry::enriched_mesh::FaceGroupId],
+) -> Result<Vec<crate::selection::MatchKey>, SessionError> {
+    let Some(model) = model else {
+        return Err(SessionError::MissingGeometry(format!(
+            "Toolpath '{toolpath}' picks model faces, but its model does not exist. Pick a \
+             model for the toolpath, or clear the face pick."
+        )));
+    };
+    ids.iter()
+        .map(|id| {
+            model
+                .items
+                .iter()
+                .find(|item| match item.shape() {
+                    crate::selection::Shape::Face(face) => face.brep == Some(*id),
+                    crate::selection::Shape::Loop(_)
+                    | crate::selection::Shape::Path(_)
+                    | crate::selection::Shape::Point(_)
+                    | crate::selection::Shape::Circle { .. } => false,
+                })
+                .map(|item| crate::selection::MatchKey {
+                    source: crate::selection::SourceRef::ToolpathModel,
+                    ..item.key().clone()
+                })
+                .ok_or_else(|| {
+                    SessionError::MissingGeometry(format!(
+                        "Toolpath '{toolpath}' picks face {} of model '{}', but that face is not \
+                         a flat horizontal face, so it has no outline to cut. Remove the face \
+                         from the pick.",
+                        id.0, model.name
+                    ))
+                })
+        })
+        .collect()
+}
+
 impl ProjectSession {
     /// Resolve every per-generation input from session state for toolpath
     /// `index`: tool + cutter, geometry (mesh / polygons, setup-transformed),
@@ -61,10 +106,6 @@ impl ProjectSession {
         let model = self.find_model_by_raw_id(tc.model_id);
 
         let mut mesh = model.and_then(|m| m.mesh.clone());
-        // Geometry selection P2.3a: the op reads the items of its model
-        // through the resolved selection (below). P2.3b gives each config
-        // its own selection; until then every op takes the default rule.
-        let has_drawing = model.is_some_and(|m| m.items.has_drawing());
 
         // ProjectCurve optionally references a separate surface model for
         // the mesh (so polygons can come from a DXF while the projection
@@ -77,62 +118,39 @@ impl ProjectSession {
             mesh = surface.mesh.clone();
         }
 
-        // N12 items 1 and 2: the picked BREP faces.
-        //
-        // A STEP model carries a mesh and an enriched mesh, never polygons,
-        // so a 2D operation over picked faces takes its geometry from the
-        // face outline. The GUI controller derived this and the resolver
-        // did not, so the two doors disagreed about what geometry a face
-        // pick even has, and the geometry check below refused on this door.
-        //
-        // Derived BEFORE the setup transform, so the outline rides into the
-        // emission frame with every other polygon.
-        let mut face_boundary: Option<crate::polygon::Polygon2> = None;
-        let mut face_top_z: Option<f64> = None;
-        if let (Some(face_ids), Some(enriched)) = (
-            tc.face_selection.as_ref(),
-            model.and_then(|m| m.enriched_mesh.as_ref()),
-        ) && !face_ids.is_empty()
-        {
-            match enriched.faces_boundary_as_polygon(face_ids) {
-                Some(poly) => {
-                    // The face tops, in the model's own frame — the frame
-                    // the GUI controller read them in. A non-identity setup
-                    // moves the geometry and not this number; that is the
-                    // behaviour being moved, not a new one.
-                    let top = face_ids
-                        .iter()
-                        .filter_map(|fid| enriched.face_group(*fid))
-                        .map(|group| group.bbox.max.z)
-                        .fold(f64::NEG_INFINITY, f64::max);
-                    if top.is_finite() {
-                        face_top_z = Some(top);
-                    }
-                    face_boundary = Some(poly);
-                }
-                None => {
-                    tracing::warn!(
-                        toolpath = %tc.name,
-                        "Selected faces produced no boundary polygon (they are \
-                         not horizontal planes); ignoring the face pick"
-                    );
-                }
-            }
-        }
+        // N12 items 1 and 2, geometry selection P2.3b: the picked BREP
+        // faces are Face items of the model. Each picked face enters the
+        // selection as a pick (below), so it reaches the op through
+        // `resolve` and `view` as any other item, and its plane Z reaches
+        // the heights in the SETUP frame (`ResolvedSelection::face_top_z`).
+        // A picked face with no Face item (not a flat horizontal face)
+        // refuses here: before P2.3b one such face dropped the whole pick
+        // with a log line.
+        let face_picks = match tc.face_selection.as_deref() {
+            Some(ids) if !ids.is_empty() => face_pick_keys(&tc.name, model, ids)?,
+            Some(_) | None => Vec::new(),
+        };
 
-        // Validate geometry requirements
+        // The boundary outline of the picked faces, for a
+        // `BoundarySource::FaceSelection` boundary only. P2.5 moves that
+        // boundary onto the selection; until then it keeps the union of
+        // `faces_boundary_as_polygon`, moved by the setup transform below.
+        let mut face_boundary: Option<crate::polygon::Polygon2> = match (
+            tc.face_selection.as_deref(),
+            model.and_then(|m| m.enriched_mesh.as_ref()),
+        ) {
+            (Some(ids), Some(enriched)) if !ids.is_empty() => {
+                enriched.faces_boundary_as_polygon(ids)
+            }
+            _ => None,
+        };
+
+        // Validate geometry requirements. A 2D op needs no check here: the
+        // prologue refuses an op whose selection gives it nothing to cut
+        // (`OperationError::Selection`), with the item and the fix.
         if tc.operation.is_3d() && mesh.is_none() {
             return Err(SessionError::MissingGeometry(
                 "Operation requires a 3D mesh (STL/STEP)".to_owned(),
-            ));
-        }
-        if !tc.operation.is_3d()
-            && !tc.operation.is_stock_based()
-            && !has_drawing
-            && face_boundary.is_none()
-        {
-            return Err(SessionError::MissingGeometry(
-                "Operation requires 2D geometry (SVG/DXF)".to_owned(),
             ));
         }
 
@@ -216,39 +234,44 @@ impl ProjectSession {
         // finding 4).
         let emission_stock_bbox = ctx.heights_stock_bbox;
 
-        // Geometry selection (DESIGN 4.1, P2.3a): resolve the selection of
-        // the op against the items of its model, then move the items into
-        // the setup frame through THE frame door (`to_setup_frame`, the
-        // same `apply_to_drawing_polygons` the drawing took before). The
-        // prologue runs `view` over it.
-        //
-        // Transitional until P2.3b: every op takes `Selection::drawing()`
-        // (no config holds a selection yet), on the model that
-        // `find_model_by_raw_id` gives (P2.4 refuses a missing model). A
-        // STEP face pick gives the face outline as one hand-built polygon
-        // when the model holds no drawing, as before (P2.3b and P2.4 make
-        // faces items of the selection).
-        let selection = if has_drawing {
-            let resolved = crate::selection::resolve(
-                &crate::selection::Selection::drawing(),
-                &crate::selection::ResolveScope {
-                    toolpath_model: model,
-                    models: &self.models,
-                    stock_bbox: &emission_stock_bbox,
-                    setup: ctx.local_to_global.as_ref(),
-                },
-            );
-            match ctx.local_to_global.as_ref() {
-                Some(info) => resolved
-                    .to_setup_frame(info)
-                    .map_err(|e| SessionError::OperationFailed(e.to_string()))?,
-                None => resolved,
-            }
-        } else {
-            crate::selection::ResolvedSelection::from_polygons(
-                face_boundary.iter().cloned().collect(),
-            )
+        // Geometry selection (DESIGN 4.1, P2.3b): resolve the selection of
+        // the op (`OperationConfig::selection`) against the items of the
+        // models and the stock, then move the items into the setup frame
+        // through THE frame door (`to_setup_frame`). The prologue runs
+        // `view` over it. The picked faces join the selection as picks. An
+        // op that holds no selection (Face, a 3D op) resolves only its
+        // picked faces, for the auto top below; its prologue reads no item.
+        let mut selection_spec = tc
+            .operation
+            .selection()
+            .cloned()
+            .unwrap_or_else(crate::selection::Selection::empty);
+        let op_default = tc
+            .operation
+            .default_selection()
+            .unwrap_or_else(crate::selection::Selection::empty);
+        for key in face_picks {
+            selection_spec
+                .apply(crate::selection::SelectionEdit::AddPick(key), &op_default)
+                .map_err(|e| SessionError::OperationFailed(e.to_string()))?;
+        }
+        let resolved = crate::selection::resolve(
+            &selection_spec,
+            &crate::selection::ResolveScope {
+                toolpath_model: model,
+                models: &self.models,
+                stock_bbox: &emission_stock_bbox,
+                setup: ctx.local_to_global.as_ref(),
+            },
+        );
+        let selection = match ctx.local_to_global.as_ref() {
+            Some(info) => resolved
+                .to_setup_frame(info)
+                .map_err(|e| SessionError::OperationFailed(e.to_string()))?,
+            None => resolved,
         };
+        // DESIGN 7.2: the top of the picked faces, in the SETUP frame.
+        let face_top_z = selection.face_top_z();
 
         // F-028 (2026-05-25) established this frame for the height context
         // (heights.top_z anchors 2.5D depth stepping and must match where
@@ -273,7 +296,9 @@ impl ProjectSession {
         let mut heights = tc.heights.resolve(&height_ctx);
         // N12 item 1: an AUTO top follows the picked faces. The GUI
         // controller applied this override and the resolver did not. A
-        // PINNED top is the operator's own answer and stays.
+        // PINNED top is the operator's own answer and stays. P2.3b: the
+        // top is in the setup frame (it was in the model frame before, so a
+        // face pick on a flipped setup took the wrong Z).
         if let Some(top) = face_top_z
             && tc.heights.top_z.is_auto()
         {

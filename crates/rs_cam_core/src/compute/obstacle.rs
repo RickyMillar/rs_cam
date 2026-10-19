@@ -332,9 +332,7 @@ pub fn model_geometry_facts(
         .map(|m| ModelGeometryFacts {
             name: &m.name,
             has_mesh: m.mesh.is_some(),
-            has_closed_outline: m
-                .outlines_pre_selection()
-                .is_some_and(|p| p.iter().any(is_closed_outline)),
+            has_closed_outline: m.items.has_closed_ring(),
         })
 }
 

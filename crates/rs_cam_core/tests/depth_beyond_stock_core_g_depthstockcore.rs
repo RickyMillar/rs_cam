@@ -317,6 +317,7 @@ fn pocket_session(depth: f64) -> ProjectSession {
             finishing_passes: 0,
             spindle_rpm: Some(18_000),
             region_ordering: rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
+            selection: rs_cam_core::selection::Selection::drawing(),
         }),
         dressups: DressupConfig::default(),
         // Auto everywhere. The point is that the OPERATION's depth reaches

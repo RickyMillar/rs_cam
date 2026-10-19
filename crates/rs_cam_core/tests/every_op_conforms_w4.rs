@@ -51,6 +51,11 @@
 //! 8. **Obstacles** (K1). A box strip across the stock, its top above the
 //!    stock top, on every op, top-up AND flipped. See
 //!    [`check8_no_op_puts_the_tool_inside_an_obstacle`].
+//! 9. **Selection** (geometry selection P2.3b, DESIGN 3.1). An op holds a
+//!    selection exactly when its `item_use` reads items; the selection is
+//!    a driver-set field with the op's own default, and a default
+//!    selection writes no key. See
+//!    [`check9_an_op_holds_a_selection_exactly_when_it_cuts_items`].
 //!
 //! # The simulation cell
 //!
@@ -85,7 +90,7 @@ use common::op_fixtures::{
 };
 use common::session::toolpath_config;
 use rayon::prelude::*;
-use rs_cam_core::compute::catalog::{Kinematics, OperationConfig, OperationType, RestUse};
+use rs_cam_core::compute::catalog::{ItemUse, Kinematics, OperationConfig, OperationType, RestUse};
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId};
 use rs_cam_core::compute::{OperationError, StockConfig};
@@ -1556,6 +1561,75 @@ fn check8_no_op_puts_the_tool_inside_an_obstacle() {
 
 /// The registry is the case list: every op is in `ALL` once, so each check
 /// above (which iterates `ALL`) covers every op.
+/// Check 9 (module doc): the selection slot follows the item use.
+///
+/// For each op of the registry, on its default config:
+///
+/// - an op whose `item_use` is not `None` holds a selection
+///   (`OperationConfig::selection`) and states a default
+///   (`default_selection`); an op whose `item_use` is `None` has neither;
+/// - the default config holds its default selection;
+/// - `selection` is a driver-set field (check 6 refuses it), never a
+///   published param;
+/// - a default selection writes no `selection` key, and a file with no key
+///   loads it back.
+#[test]
+fn check9_an_op_holds_a_selection_exactly_when_it_cuts_items() {
+    let mut defects = Vec::new();
+    let mut slots = 0;
+    for &op in OperationType::ALL {
+        let key = op.kind_str();
+        let cfg = OperationConfig::new_default(op);
+        let cuts_items = match cfg.capabilities().item_use {
+            ItemUse::None => false,
+            ItemUse::Regions | ItemUse::Curves | ItemUse::Holes { .. } => true,
+        };
+        let held = cfg.selection();
+        let default = cfg.default_selection();
+        if held.is_some() != cuts_items || default.is_some() != cuts_items {
+            defects.push(format!(
+                "{key}/check9: item use {:?}, selection slot {}, default {}",
+                cfg.capabilities().item_use,
+                held.is_some(),
+                default.is_some()
+            ));
+            continue;
+        }
+        let in_driver_set = op
+            .registry_entry()
+            .params
+            .driver_set
+            .iter()
+            .any(|f| f.name == "selection");
+        let published = OperationConfig::param_names_for_type(op).contains(&"selection");
+        if published || in_driver_set != cuts_items {
+            defects.push(format!(
+                "{key}/check9: `selection` published {published}, driver-set {in_driver_set}"
+            ));
+        }
+        let Some(held) = held else { continue };
+        slots += 1;
+        if Some(held) != default.as_ref() {
+            defects.push(format!(
+                "{key}/check9: the default config holds {held:?}, not its default {default:?}"
+            ));
+        }
+        let value = serde_json::to_value(&cfg).expect("an op serializes");
+        if value.pointer("/params/selection").is_some() {
+            defects.push(format!("{key}/check9: a default selection wrote a key"));
+        }
+        let back: OperationConfig = serde_json::from_value(value).expect("an op loads");
+        if back.selection() != default.as_ref() {
+            defects.push(format!(
+                "{key}/check9: a file with no key loaded {:?}",
+                back.selection()
+            ));
+        }
+    }
+    assert!(slots >= 12, "only {slots} ops hold a selection");
+    assert!(defects.is_empty(), "{}", defects.join("\n"));
+}
+
 #[test]
 fn the_case_list_is_the_registry() {
     let kinds: BTreeSet<&str> = OperationType::ALL.iter().map(|op| op.kind_str()).collect();

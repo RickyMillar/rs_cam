@@ -9,7 +9,6 @@ use crate::compute::alignment_pins::{
 };
 use crate::compute::catalog::OperationConfig;
 use crate::ids::ModelId;
-use crate::io::dxf_input::DrillTargetKind;
 
 use super::ProjectSession;
 
@@ -91,23 +90,22 @@ impl ProjectSession {
     /// has at least one entity, and every entity is a circle whose
     /// diameter is one of `pin_diameters` within [`PIN_CAD_ROUNDING_MM`].
     ///
-    /// The DXF import gives each circle a polygon AND a `CircleCenter`
-    /// drill target, and gives no other entity a `CircleCenter` target. So
-    /// "every entity is a circle" is: every drill target is a circle
-    /// centre, and the polygon count equals the target count. A POINT, a
-    /// line or any other outline breaks the equality, and the model stays
-    /// part.
+    /// Geometry selection P2.3b: the test reads the items. A circle is ONE
+    /// item since P2.1, so "every entity is a circle" is: every item is a
+    /// `Circle`. A point, a loop, an open path or a face keeps the model
+    /// part. (Before P2.3b the test compared the drill target count with
+    /// the nested polygon count, so two concentric circles read as part.)
     fn is_pin_hole_drawing(model: &super::LoadedModel, pin_diameters: &[f64]) -> bool {
-        let targets = model.drill_targets_pre_selection();
-        let polygon_count = model.outlines_pre_selection().map_or(0, |p| p.len());
         model.mesh.is_none()
-            && !targets.is_empty()
-            && polygon_count == targets.len()
-            && targets.iter().all(|t| match t.kind {
-                DrillTargetKind::CircleCenter { diameter } => pin_diameters
+            && !model.items.is_empty()
+            && model.items.iter().all(|item| match item.shape() {
+                crate::selection::Shape::Circle { diameter, .. } => pin_diameters
                     .iter()
                     .any(|d| (d - diameter).abs() <= PIN_CAD_ROUNDING_MM),
-                DrillTargetKind::Point => false,
+                crate::selection::Shape::Loop(_)
+                | crate::selection::Shape::Path(_)
+                | crate::selection::Shape::Point(_)
+                | crate::selection::Shape::Face(_) => false,
             })
     }
 

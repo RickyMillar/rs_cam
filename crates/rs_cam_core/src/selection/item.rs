@@ -406,6 +406,25 @@ impl ItemSet {
             .any(|i| !matches!(i.shape, Shape::Face(_)))
     }
 
+    /// True when an item is a closed ring: a loop or a circle. A face
+    /// is not a drawing ring. Each such item holds a closed ring of 3 or
+    /// more points (the `Item::new` invariant).
+    pub fn has_closed_ring(&self) -> bool {
+        self.items.iter().any(|i| match i.shape {
+            Shape::Loop(_) | Shape::Circle { .. } => true,
+            Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => false,
+        })
+    }
+
+    /// The count of the drawn rings: loops, open paths and circle rings
+    /// (`Shape::drawing_ring`). A point and a face have no ring.
+    pub fn ring_count(&self) -> usize {
+        self.items
+            .iter()
+            .filter(|i| i.shape.drawing_ring().is_some())
+            .count()
+    }
+
     /// The distinct layers of every item, sorted.
     pub fn layers(&self) -> Vec<String> {
         let mut layers: Vec<String> = self

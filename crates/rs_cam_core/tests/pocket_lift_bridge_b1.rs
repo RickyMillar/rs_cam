@@ -128,6 +128,7 @@ fn build_pocket_session() -> ProjectSession {
         finishing_passes: 0,
         spindle_rpm: Some(18_000),
         region_ordering: rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
+        selection: rs_cam_core::selection::Selection::drawing(),
     };
 
     let tc = ToolpathConfig {

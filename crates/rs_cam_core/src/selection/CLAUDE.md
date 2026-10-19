@@ -1,17 +1,15 @@
 # `selection/` — items, selections, resolution
 
-The pickable 2D geometry of every source and the selection of an op. The
-plan is `planning/geometry_selection_2026-10-16/` (DESIGN + PLAN rulings).
+The pickable 2D geometry of every source and the selection of an op. Plan: `planning/geometry_selection_2026-10-16/`.
 
 ## Files
 
 - `mod.rs` — the facade. `tests.rs` — the P2.2 lib sentries. `stock.rs` — `stock_items`.
 - `item.rs` — `Item`, `Shape`, `FaceItem`, `ItemKind`, `SourceRef`, `ItemSet`;
   `key.rs` — `MatchKey`, `matches`, `names_same_geometry` (`KEY_MATCH_EPS_MM`).
-- `rule.rs` — `Selection` (private fields, NO `Default`), `Rule`, `Filter`,
-  `KindFilter`, `SelectionEdit`, `Selection::apply`.
-- `resolve.rs` — `resolve` (pure; reports, never refuses), `ResolvedSelection`,
-  `MatchedBy`, `to_setup_frame` + `face_in_setup_frame` (THE frame door).
+- `rule.rs` — `Selection` (private fields, NO `Default`), `Rule`, `Filter`, `KindFilter`, `SelectionEdit`, `apply`.
+- `resolve.rs` — `resolve` (pure; reports, never refuses), `ResolvedSelection`, `MatchedBy`,
+  `to_setup_frame` + `face_in_setup_frame` (THE frame door), `face_top_z`.
 - `view.rs` — `view`, `OpItems`, `Regions`/`Curves`/`Holes`, `Shape::serves`;
   `refusal.rs` — `SelectionRefusal`, `RefusalCause` (`fix()`), `ItemRef`, `SelectionNote`.
 
@@ -26,15 +24,17 @@ plan is `planning/geometry_selection_2026-10-16/` (DESIGN + PLAN rulings).
   enters by a pick or a rule that names it. `MatchedBy::Default` items the
   op cannot cut are left out with a `SelectionNote`; a pick or an `Only`
   rule match refuses `KindNotCut` (lead ruling D2/D13).
-- Two items with equal keys stay two items; a pick on them is ambiguous.
-- Do not read a source file here. A door in `io/` builds the items.
+- Two items with equal keys stay two items; a pick on them is ambiguous. Read no source file here.
 - A face filter reads the SETUP frame (`ResolveScope::setup`); the frame door
-  does not move a stock item. P2.3b/c delete the two `*_pre_selection` bridges.
+  does not move a stock item. P2.3b: an op config holds `selection` (driver-set, per-op serde default);
+  the session resolves `op.selection()` + face picks; `face_top_z` is setup frame. Bridges left:
+  `outlines_pre_selection` (nested-list readers, P2.5/P2.7), `drill_targets_pre_selection` (P2.3c).
 - `view` gives a `SelectionNote` for a skipped open path only; `OpItems::skipped_by_kind`
   counts every kind; `Empty` names every kind. `detect_containment` keeps an open path's direction.
 
 ## Sentries
 
 - `cargo test -p rs_cam_core -q --lib selection`; `--test every_import_door_gives_items_p2_1` (also `--features step`)
-- `cargo test -p rs_cam_core -q --test default_selection_equals_the_old_lists_p2_2`
-  (the frozen difference lists name the open points of P2.3)
+- `--test default_selection_equals_the_old_lists_p2_2` (frozen difference lists); P2.3b `--test`
+  `a_layer_rule_cuts_only_its_layer_p2_3`, `an_absent_selection_key_loads_the_op_default_p2_3`,
+  `an_op_change_keeps_its_selection_p2_3`, `a_face_pick_cuts_from_its_setup_frame_top_p2_3`

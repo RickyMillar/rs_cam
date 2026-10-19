@@ -479,17 +479,35 @@ impl ProjectSession {
     /// (chain order matters: rest-referencing ops downstream see the stock
     /// this toolpath leaves). Re-normalizes the dressups for the new op kind
     /// and drops the cached result + simulation.
+    ///
+    /// Geometry selection (P2.3b, DESIGN 3.1): a change of the op KIND
+    /// keeps the selection. The setter copies the old selection into the
+    /// new op. When the new op holds no selection (a 3D op), the selection
+    /// drops, and [`Effects::selection_dropped`] says so when it was not
+    /// the default of the old op. A replace with the same kind installs the
+    /// new config as it is, its selection included.
     #[instrument(skip(self, operation))]
     pub(crate) fn set_toolpath_operation(
         &mut self,
         index: usize,
-        operation: OperationConfig,
+        mut operation: OperationConfig,
     ) -> Result<Effects, SessionError> {
-        self.try_with_effects(Some(index), move |session| {
+        let mut selection_dropped = false;
+        let mut effects = self.try_with_effects(Some(index), |session| {
             let tc = session
                 .toolpath_configs
                 .get_mut(index)
                 .ok_or(SessionError::ToolpathNotFound(index))?;
+            if tc.operation.op_type() != operation.op_type()
+                && let Some(old) = tc.operation.selection()
+            {
+                match operation.selection_slot() {
+                    Some(slot) => *slot = old.clone(),
+                    None => {
+                        selection_dropped = tc.operation.default_selection().as_ref() != Some(old);
+                    }
+                }
+            }
             tc.operation = operation;
             // Same invariant set_dressup_config enforces: the surviving
             // dressups must be legal for the NEW operation kind.
@@ -498,8 +516,10 @@ impl ProjectSession {
             tc.dressups = dressups;
             let enabled = tc.enabled;
             session.invalidate_result_chain(index, enabled);
-            Ok(())
-        })
+            Ok::<(), SessionError>(())
+        })?;
+        effects.selection_dropped = selection_dropped;
+        Ok(effects)
     }
 
     // ── Cross-setup moves ─────────────────────────────────────────

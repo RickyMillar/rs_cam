@@ -980,6 +980,107 @@ impl OperationConfig {
         }
     }
 
+    /// The selection of the op: the items it cuts (geometry selection
+    /// P2.3b, DESIGN 3.1). `None` for an op that cuts no drawing item. The
+    /// match names every variant, so a new op states whether it holds a
+    /// selection.
+    pub fn selection(&self) -> Option<&crate::selection::Selection> {
+        match self {
+            OperationConfig::Pocket(c) => Some(&c.selection),
+            OperationConfig::Profile(c) => Some(&c.selection),
+            OperationConfig::Adaptive(c) => Some(&c.selection),
+            OperationConfig::VCarve(c) => Some(&c.selection),
+            OperationConfig::Inlay(c) => Some(&c.selection),
+            OperationConfig::InlayPlug(c) => Some(&c.selection),
+            OperationConfig::Zigzag(c) => Some(&c.selection),
+            OperationConfig::Trace(c) => Some(&c.selection),
+            OperationConfig::Drill(c) => Some(&c.selection),
+            OperationConfig::Chamfer(c) => Some(&c.selection),
+            OperationConfig::ProjectCurve(c) => Some(&c.selection),
+            OperationConfig::AlignmentPinDrill(c) => Some(&c.selection),
+            OperationConfig::Face(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_) => None,
+        }
+    }
+
+    /// The writable selection of the op, `None` when the op holds none.
+    /// Crate-private: only the session commands write a selection (the op
+    /// change carries it; P2.6 adds the selection edit).
+    pub(crate) fn selection_slot(&mut self) -> Option<&mut crate::selection::Selection> {
+        match self {
+            OperationConfig::Pocket(c) => Some(&mut c.selection),
+            OperationConfig::Profile(c) => Some(&mut c.selection),
+            OperationConfig::Adaptive(c) => Some(&mut c.selection),
+            OperationConfig::VCarve(c) => Some(&mut c.selection),
+            OperationConfig::Inlay(c) => Some(&mut c.selection),
+            OperationConfig::InlayPlug(c) => Some(&mut c.selection),
+            OperationConfig::Zigzag(c) => Some(&mut c.selection),
+            OperationConfig::Trace(c) => Some(&mut c.selection),
+            OperationConfig::Drill(c) => Some(&mut c.selection),
+            OperationConfig::Chamfer(c) => Some(&mut c.selection),
+            OperationConfig::ProjectCurve(c) => Some(&mut c.selection),
+            OperationConfig::AlignmentPinDrill(c) => Some(&mut c.selection),
+            OperationConfig::Face(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_) => None,
+        }
+    }
+
+    /// The default selection of the op, `None` when the op holds no
+    /// selection. It is the value that a file with no `selection` key
+    /// loads and that `SelectionEdit::Reset` restores. Each arm names the
+    /// same constructor as the `serde(default)` of its config field.
+    pub fn default_selection(&self) -> Option<crate::selection::Selection> {
+        use crate::selection::Selection;
+        match self {
+            OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::ProjectCurve(_) => Some(Selection::drawing()),
+            // Decision D6: the stock pins are the holes of a Pin Drill. A
+            // drawing default would drill every circle of the drawing.
+            OperationConfig::AlignmentPinDrill(_) => Some(Selection::empty()),
+            OperationConfig::Face(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_) => None,
+        }
+    }
+
     pub fn spec(&self) -> OperationSpec {
         self.op_type().spec()
     }

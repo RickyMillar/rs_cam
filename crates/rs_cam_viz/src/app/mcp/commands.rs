@@ -1518,13 +1518,7 @@ impl RsCamApp {
                 let valid: Vec<String> = session
                     .models()
                     .iter()
-                    .filter(|m| {
-                        m.outlines_pre_selection().is_some_and(|polys| {
-                            polys
-                                .iter()
-                                .any(|poly| poly.closed && poly.exterior.len() >= 3)
-                        })
-                    })
+                    .filter(|m| m.items.has_closed_ring())
                     .map(|m| format!("{} ('{}')", m.id, m.name))
                     .collect();
                 let valid_list = if valid.is_empty() {
@@ -1551,11 +1545,7 @@ impl RsCamApp {
                         Some("model_id"),
                     ));
                 };
-                let has_closed = model.outlines_pre_selection().is_some_and(|polys| {
-                    polys
-                        .iter()
-                        .any(|poly| poly.closed && poly.exterior.len() >= 3)
-                });
+                let has_closed = model.items.has_closed_ring();
                 if !has_closed {
                     return CorePlan::Answered(mutation_error_json(
                         &format!(

@@ -1141,6 +1141,11 @@ pub struct Effects {
     /// Read the row before reading the number. `None` means the command
     /// created nothing; it never means index zero.
     pub created: Option<usize>,
+    /// `true` when the command dropped a selection that was not the
+    /// default of its op (geometry selection P2.3b, DESIGN 3.1). Only
+    /// `SetToolpathOperation` sets it: the new op holds no selection (a
+    /// 3D op), so the old selection has no place to go.
+    pub selection_dropped: bool,
 }
 
 // ── WP4 payloads ─────────────────────────────────────────────────
@@ -2737,6 +2742,7 @@ impl ProjectSession {
                 .filter(|i| *i < self.toolpath_count())
                 .map(|i| self.toolpath_revision(i)),
             created: None,
+            selection_dropped: false,
         })
     }
 

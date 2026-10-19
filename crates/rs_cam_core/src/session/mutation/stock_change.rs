@@ -11,7 +11,7 @@
 use tracing::instrument;
 
 use crate::compute::stock_change::{
-    ModelGeometryFacts, StockChange, StockChangeRefusal, is_closed_outline, stock_change_effects,
+    ModelGeometryFacts, StockChange, StockChangeRefusal, stock_change_effects,
     validate_stock_change,
 };
 use crate::ids::{ModelId, StockChangeId};
@@ -31,9 +31,7 @@ pub(crate) fn loaded_model_facts(
         .map(|m| ModelGeometryFacts {
             name: &m.name,
             has_mesh: m.mesh.is_some(),
-            has_closed_outline: m
-                .outlines_pre_selection()
-                .is_some_and(|polys| polys.iter().any(is_closed_outline)),
+            has_closed_outline: m.items.has_closed_ring(),
         })
 }
 

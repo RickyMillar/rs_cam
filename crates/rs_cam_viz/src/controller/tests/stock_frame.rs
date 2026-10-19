@@ -242,6 +242,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         finishing_passes: 0,
         spindle_rpm: Some(18_000),
         region_ordering: rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
+        selection: rs_cam_core::selection::Selection::drawing(),
     };
 
     let tp_config = ToolpathConfig {

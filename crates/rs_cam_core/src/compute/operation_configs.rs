@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::catalog::{DepthSemantics, OperationParams};
 use super::tool_config::ToolId;
 use crate::finish::finish_planner::FinishPlannerParams;
+use crate::selection::Selection;
 
 // Re-export operation parameter enums from core (single source of truth).
 pub use crate::finish::ramp_finish::CutDirection;
@@ -67,6 +68,9 @@ const DRIVER_SET_SELECTED_HOLES: &str = "the DXF/model drill picker writes the p
 
 const DRIVER_SET_SELECTED_LAYERS: &str =
     "the layer-select route writes this beside the picked target list";
+
+const DRIVER_SET_SELECTION: &str =
+    "the selection command writes the selection (rules and picks), not the parameter setter";
 
 /// The three runtime numbers every finishing `…Params` carries and no
 /// config holds (FIN-02).
@@ -275,6 +279,15 @@ pub struct TraceConfig {
     #[serde(default = "default_layered_region_ordering")]
     #[param(help = HELP_REGION_ORDERING)]
     pub region_ordering: RegionOrdering,
+    /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
+    /// file with no `selection` key loads the default of this op:
+    /// every drawing item of the toolpath model that the op can cut.
+    #[serde(
+        default = "Selection::drawing",
+        skip_serializing_if = "Selection::is_drawing"
+    )]
+    #[param(driver_set = DRIVER_SET_SELECTION)]
+    pub selection: Selection,
 }
 
 impl Default for TraceConfig {
@@ -288,6 +301,7 @@ impl Default for TraceConfig {
             compensation: TraceCompensation::None,
             spindle_rpm: None,
             region_ordering: default_layered_region_ordering(),
+            selection: Selection::drawing(),
         }
     }
 }
@@ -327,6 +341,17 @@ pub struct DrillConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[param(driver_set = DRIVER_SET_SELECTED_LAYERS)]
     pub selected_layers: Vec<String>,
+    /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
+    /// file with no `selection` key loads the default of this op:
+    /// every drawing item of the toolpath model that the op can cut.
+    /// The drill adapter does not read it yet: it reads
+    /// [`Self::selected_holes`] and the model targets until P2.3c.
+    #[serde(
+        default = "Selection::drawing",
+        skip_serializing_if = "Selection::is_drawing"
+    )]
+    #[param(driver_set = DRIVER_SET_SELECTION)]
+    pub selection: Selection,
 }
 
 impl Default for DrillConfig {
@@ -342,6 +367,7 @@ impl Default for DrillConfig {
             spindle_rpm: None,
             selected_holes: None,
             selected_layers: Vec::new(),
+            selection: Selection::drawing(),
         }
     }
 }
@@ -385,6 +411,17 @@ pub struct AlignmentPinDrillConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[param(driver_set = DRIVER_SET_SELECTED_LAYERS)]
     pub selected_layers: Vec<String>,
+    /// The extra holes this op drills (geometry selection P2.3b, DESIGN
+    /// 3.1, decision D6). A file with no `selection` key loads the
+    /// default of this op: no item. The stock pins are not part of it.
+    /// The adapter does not read it yet: it reads [`Self::selected_holes`]
+    /// until P2.3c.
+    #[serde(
+        default = "Selection::empty",
+        skip_serializing_if = "Selection::is_empty"
+    )]
+    #[param(driver_set = DRIVER_SET_SELECTION)]
+    pub selection: Selection,
 }
 
 impl AlignmentPinDrillConfig {
@@ -425,6 +462,7 @@ impl Default for AlignmentPinDrillConfig {
             spindle_rpm: None,
             selected_holes: None,
             selected_layers: Vec::new(),
+            selection: Selection::empty(),
         }
     }
 }
@@ -461,6 +499,15 @@ pub struct ChamferConfig {
     pub ramp_feed_rate: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
+    /// file with no `selection` key loads the default of this op:
+    /// every drawing item of the toolpath model that the op can cut.
+    #[serde(
+        default = "Selection::drawing",
+        skip_serializing_if = "Selection::is_drawing"
+    )]
+    #[param(driver_set = DRIVER_SET_SELECTION)]
+    pub selection: Selection,
 }
 
 impl Default for ChamferConfig {
@@ -473,6 +520,7 @@ impl Default for ChamferConfig {
             plunge_rate: 400.0,
             ramp_feed_rate: None,
             spindle_rpm: None,
+            selection: Selection::drawing(),
         }
     }
 }
@@ -506,6 +554,15 @@ pub struct PocketConfig {
     #[serde(default = "default_layered_region_ordering")]
     #[param(help = HELP_REGION_ORDERING)]
     pub region_ordering: RegionOrdering,
+    /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
+    /// file with no `selection` key loads the default of this op:
+    /// every drawing item of the toolpath model that the op can cut.
+    #[serde(
+        default = "Selection::drawing",
+        skip_serializing_if = "Selection::is_drawing"
+    )]
+    #[param(driver_set = DRIVER_SET_SELECTION)]
+    pub selection: Selection,
 }
 
 impl Default for PocketConfig {
@@ -523,6 +580,7 @@ impl Default for PocketConfig {
             finishing_passes: 0,
             spindle_rpm: None,
             region_ordering: default_layered_region_ordering(),
+            selection: Selection::drawing(),
         }
     }
 }
@@ -565,6 +623,15 @@ pub struct ProfileConfig {
     #[serde(default = "default_layered_region_ordering")]
     #[param(help = HELP_REGION_ORDERING)]
     pub region_ordering: RegionOrdering,
+    /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
+    /// file with no `selection` key loads the default of this op:
+    /// every drawing item of the toolpath model that the op can cut.
+    #[serde(
+        default = "Selection::drawing",
+        skip_serializing_if = "Selection::is_drawing"
+    )]
+    #[param(driver_set = DRIVER_SET_SELECTION)]
+    pub selection: Selection,
 }
 
 impl Default for ProfileConfig {
@@ -584,6 +651,7 @@ impl Default for ProfileConfig {
             compensation: CompensationType::InComputer,
             spindle_rpm: None,
             region_ordering: default_layered_region_ordering(),
+            selection: Selection::drawing(),
         }
     }
 }
@@ -642,6 +710,15 @@ pub struct AdaptiveConfig {
     /// reactive `Agent`, or the constructive `ContourSpiral` (Stage 1).
     #[serde(default)]
     pub path_strategy: crate::adaptive::PathStrategy2d,
+    /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
+    /// file with no `selection` key loads the default of this op:
+    /// every drawing item of the toolpath model that the op can cut.
+    #[serde(
+        default = "Selection::drawing",
+        skip_serializing_if = "Selection::is_drawing"
+    )]
+    #[param(driver_set = DRIVER_SET_SELECTION)]
+    pub selection: Selection,
 }
 
 impl Default for AdaptiveConfig {
@@ -662,6 +739,7 @@ impl Default for AdaptiveConfig {
             cleanup_strategy: crate::adaptive::CleanupStrategy::ContourParallelHybrid,
             engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
             path_strategy: crate::adaptive::PathStrategy2d::Agent,
+            selection: Selection::drawing(),
         }
     }
 }
@@ -687,6 +765,15 @@ pub struct VCarveConfig {
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
+    /// file with no `selection` key loads the default of this op:
+    /// every drawing item of the toolpath model that the op can cut.
+    #[serde(
+        default = "Selection::drawing",
+        skip_serializing_if = "Selection::is_drawing"
+    )]
+    #[param(driver_set = DRIVER_SET_SELECTION)]
+    pub selection: Selection,
 }
 
 impl Default for VCarveConfig {
@@ -699,6 +786,7 @@ impl Default for VCarveConfig {
             ramp_feed_rate: None,
             tolerance: 0.05,
             spindle_rpm: None,
+            selection: Selection::drawing(),
         }
     }
 }
@@ -764,6 +852,15 @@ pub struct InlayConfig {
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
+    /// file with no `selection` key loads the default of this op:
+    /// every drawing item of the toolpath model that the op can cut.
+    #[serde(
+        default = "Selection::drawing",
+        skip_serializing_if = "Selection::is_drawing"
+    )]
+    #[param(driver_set = DRIVER_SET_SELECTION)]
+    pub selection: Selection,
 }
 
 impl Default for InlayConfig {
@@ -790,6 +887,7 @@ impl Default for InlayConfig {
             ramp_feed_rate: None,
             tolerance: 0.05,
             spindle_rpm: None,
+            selection: Selection::drawing(),
         }
     }
 }
@@ -854,6 +952,15 @@ pub struct InlayPlugConfig {
     pub tolerance: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spindle_rpm: Option<u32>,
+    /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
+    /// file with no `selection` key loads the default of this op:
+    /// every drawing item of the toolpath model that the op can cut.
+    #[serde(
+        default = "Selection::drawing",
+        skip_serializing_if = "Selection::is_drawing"
+    )]
+    #[param(driver_set = DRIVER_SET_SELECTION)]
+    pub selection: Selection,
 }
 
 impl InlayPlugConfig {
@@ -893,6 +1000,7 @@ impl Default for InlayPlugConfig {
             ramp_feed_rate: None,
             tolerance: pocket.tolerance,
             spindle_rpm: None,
+            selection: Selection::drawing(),
         }
     }
 }
@@ -922,6 +1030,15 @@ pub struct ZigzagConfig {
     #[serde(default = "default_layered_region_ordering")]
     #[param(help = HELP_REGION_ORDERING)]
     pub region_ordering: RegionOrdering,
+    /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
+    /// file with no `selection` key loads the default of this op:
+    /// every drawing item of the toolpath model that the op can cut.
+    #[serde(
+        default = "Selection::drawing",
+        skip_serializing_if = "Selection::is_drawing"
+    )]
+    #[param(driver_set = DRIVER_SET_SELECTION)]
+    pub selection: Selection,
 }
 
 impl Default for ZigzagConfig {
@@ -936,6 +1053,7 @@ impl Default for ZigzagConfig {
             angle: 0.0,
             spindle_rpm: None,
             region_ordering: default_layered_region_ordering(),
+            selection: Selection::drawing(),
         }
     }
 }
@@ -2594,6 +2712,15 @@ pub struct ProjectCurveConfig {
         range = 0.0..=25.0,
     )]
     pub chain_distance_mm: f64,
+    /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
+    /// file with no `selection` key loads the default of this op:
+    /// every drawing item of the toolpath model that the op can cut.
+    #[serde(
+        default = "Selection::drawing",
+        skip_serializing_if = "Selection::is_drawing"
+    )]
+    #[param(driver_set = DRIVER_SET_SELECTION)]
+    pub selection: Selection,
 }
 
 /// `0.0` — chaining OFF.
@@ -2622,6 +2749,7 @@ impl Default for ProjectCurveConfig {
             projection: ProjectCurveProjection::Cutter,
             spindle_rpm: None,
             chain_distance_mm: default_project_curve_chain_distance_mm(),
+            selection: Selection::drawing(),
         }
     }
 }

@@ -193,6 +193,7 @@ fn pocket_toolpath(tool_id: usize, model_id: usize) -> ToolpathConfig {
         finishing_passes: 0,
         spindle_rpm: Some(18_000),
         region_ordering: rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
+        selection: rs_cam_core::selection::Selection::drawing(),
     };
     ToolpathConfig {
         shoe: Default::default(),

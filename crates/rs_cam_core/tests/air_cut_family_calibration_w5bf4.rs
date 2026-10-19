@@ -504,6 +504,7 @@ fn flat_cases() -> Vec<FlatCase> {
                     spindle_rpm: Some(18_000),
                     region_ordering:
                         rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
+                    selection: rs_cam_core::selection::Selection::drawing(),
                 })
             },
             ToolType::EndMill,
@@ -523,6 +524,7 @@ fn flat_cases() -> Vec<FlatCase> {
                     spindle_rpm: Some(18_000),
                     region_ordering:
                         rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
+                    selection: rs_cam_core::selection::Selection::drawing(),
                 })
             },
             ToolType::EndMill,
@@ -581,6 +583,7 @@ fn flat_cases() -> Vec<FlatCase> {
                     spindle_rpm: Some(18_000),
                     region_ordering:
                         rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
+                    selection: rs_cam_core::selection::Selection::drawing(),
                 })
             },
             ToolType::EndMill,
@@ -627,6 +630,7 @@ fn flat_cases() -> Vec<FlatCase> {
                     feed_rate: 800.0,
                     plunge_rate: 400.0,
                     spindle_rpm: Some(18_000),
+                    selection: rs_cam_core::selection::Selection::drawing(),
                 })
             },
             ToolType::VBit,

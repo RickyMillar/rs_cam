@@ -54,8 +54,9 @@ pub(crate) use params::strip_outer_quotes;
 pub struct ResolvedGenInputs {
     tool: ToolConfig,
     mesh: Option<Arc<TriangleMesh>>,
-    /// Geometry selection (P2.3a): the op's selection, resolved against
-    /// the items of its model and moved into the emission frame. The
+    /// Geometry selection (P2.3b): the op's own selection
+    /// (`OperationConfig::selection`) and its picked faces, resolved against
+    /// the items of the models and moved into the emission frame. The
     /// prologue runs `selection::view` over it
     /// (`ExecutionContext::selection`).
     selection: crate::selection::ResolvedSelection,
@@ -113,13 +114,11 @@ pub struct ResolvedGenInputs {
     /// polygons are transformed on the way in, but `selected_holes` arrive
     /// as raw model coordinates on the operation config.
     setup_transform: Option<crate::compute::transform::SetupTransformInfo>,
-    /// N12 items 1 and 2: the XY outline of the picked BREP faces, in the
-    /// emission frame.
-    ///
-    /// A STEP model carries a mesh and an enriched mesh, never polygons, so
-    /// a picked-face 2D operation gets its geometry from here. The same
-    /// outline answers a [`BoundarySource::FaceSelection`] boundary
-    /// (`resolve_containment_polygon`).
+    /// N12 item 2: the XY outline of the picked BREP faces, in the
+    /// emission frame. Only a [`BoundarySource::FaceSelection`] boundary
+    /// reads it (`resolve_containment_polygon`); P2.5 moves that boundary
+    /// onto the selection. An op cuts the picked faces through its
+    /// selection (geometry selection P2.3b), not through this outline.
     ///
     /// `None` means the toolpath picks no face, or the model exposes no
     /// enriched mesh, or the picked faces are not horizontal planes — never

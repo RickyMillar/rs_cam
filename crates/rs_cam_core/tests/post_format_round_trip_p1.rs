@@ -176,6 +176,7 @@ fn build_project_with_mist(dir: &Path, format: PostFormat, mist: Option<bool>) -
             finishing_passes: 0,
             spindle_rpm: Some(18_000),
             region_ordering: rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
+            selection: rs_cam_core::selection::Selection::drawing(),
         }),
         dressups: DressupConfig::for_op(OperationType::Pocket),
         heights: HeightsConfig::default(),

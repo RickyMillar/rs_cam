@@ -261,7 +261,7 @@ impl ProjectSession {
                 .iter()
                 .find(|m| m.id == tc.model_id)
                 .map(|m| TargetModelGeometry {
-                    has_polygons: m.outlines_pre_selection().is_some_and(|p| !p.is_empty()),
+                    has_polygons: m.items.ring_count() > 0,
                     has_mesh: m.mesh.is_some(),
                     drill_target_count: m.drill_targets_pre_selection().len(),
                 });
