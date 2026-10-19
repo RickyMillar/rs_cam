@@ -70,10 +70,11 @@ const DRIVER_SET_SELECTION: &str =
 
 /// The floor of Pocket, Profile, Zigzag and Adaptive 2D is one value with a
 /// reference (geometry selection P3.2, ruling D9), not a number. The GUI
-/// writes it through the whole config; the floor command is P3.3.
+/// writes it through the whole config; MCP and the CLI write it through the
+/// `SetToolpathFloor` command (P3.3, the MCP tool `set_toolpath_floor`).
 const DRIVER_SET_FLOOR: &str = "the floor names its reference (operation.params.floor, for example \
-     { from = \"top\", depth = 6.0 }), so the parameter setter does not write it. The op form \
-     writes the whole config";
+     { from = \"top\", depth = 6.0 }), so the parameter setter does not write it. Write it with \
+     set_toolpath_floor { index, floor }";
 
 /// The three runtime numbers every finishing `…Params` carries and no
 /// config holds (FIN-02).

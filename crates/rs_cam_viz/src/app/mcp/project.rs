@@ -292,6 +292,11 @@ impl RsCamApp {
                     // P2.5: op-agnostic rest analysis config — mirrors `boundary`'s
                     // presence here; set via `set_rest_analysis_config`.
                     "rest_analysis": tc.rest_analysis,
+                    // Geometry selection P3.3: the heights from the one
+                    // heights rule, with the floor reference and the
+                    // resolved floor Z (the `set_toolpath_floor` reply
+                    // gives the same block).
+                    "heights": super::commands::floor::toolpath_heights_json(session, tc),
                     "runtime": self.mcp_runtime_status_for_toolpath_id(tc.id),
                 }))
             }

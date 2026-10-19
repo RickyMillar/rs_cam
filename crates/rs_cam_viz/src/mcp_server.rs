@@ -37,9 +37,10 @@ use rs_cam_mcp::server::{
     SetMachineHeadParam, SetMachineKinematicsParam, SetRestAnalysisConfigParam,
     SetSetupRotationParam, SetSimulationResolutionParam, SetSpindleStrategyParam,
     SetStockConfigParam, SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam,
-    SetToolpathHeightsParam, SetToolpathModelParam, SetToolpathParamInput, SetToolpathShoeParam,
-    SetToolpathToolParam, SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam,
-    SimScrubToolpathParam, SimulationParam, TabLayoutParam, json_str,
+    SetToolpathFloorParam, SetToolpathHeightsParam, SetToolpathModelParam, SetToolpathParamInput,
+    SetToolpathShoeParam, SetToolpathToolParam, SetUiViewParam, SimJumpToMoveParam,
+    SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam, TabLayoutParam,
+    json_str,
 };
 
 /// How long a cheap read waits for the GUI frame loop before falling back to
@@ -1230,6 +1231,20 @@ impl EmbeddedCamServer {
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::Core(CoreRequest::SetToolpathHeights(param)))
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "set_toolpath_floor",
+        description = "Set the floor of a Pocket, Profile, Zigzag or Adaptive 2D toolpath (geometry selection P3.3). The floor names its reference, in the project-file JSON: {\"from\": \"top\", \"depth\": 6.0} (mm below the resolved Top Z; the default; depth more than 0), \"stock_top\", \"stock_bottom\" (a positive depth cuts into the spoilboard, a negative one leaves a skin) or \"model_top\" with a depth, or {\"from\": \"z\", \"z\": -20.0} (an absolute Z in the setup frame). \"each_face\" is not yet available. get_operation_schema gives each reference and its domain (`floor`). These four ops refuse set_toolpath_param floor and a Heights Bottom Z. A floor at or above the resolved top refuses at generation. The reply gives `heights` (top_z, bottom_z, top_from, floor_z, floor_refusal); get_toolpath_params gives the same. Invalidates the toolpath — regenerate to apply."
+    )]
+    async fn set_toolpath_floor(
+        &self,
+        Parameters(param): Parameters<SetToolpathFloorParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::SetToolpathFloor(param)))
                 .await,
         )
     }

@@ -23,19 +23,25 @@
 //!
 //! `floor` is a driver-set field of the op configs
 //! (`#[param(driver_set = DRIVER_SET_FLOOR)]`), so the F185 compile check of
-//! `#[derive(OpParams)]` does not reach inside it. The two numbers state
-//! their domain here:
+//! `#[derive(OpParams)]` does not reach inside it. [`Floor::domain`] states
+//! the domain of each number in code, and two readers use it (P3.3): the
+//! `set_toolpath_floor` door ([`Floor::door_refusal`]) and the
+//! `get_operation_schema` entry ([`floor_schema_json`]).
 //!
-//! - `depth` is unbounded: a signed distance below the reference (a negative
-//!   value stands above it). No static bound comes from math or physics,
-//!   because the valid depth depends on the reference and on the resolved
-//!   top. The resolver refuses a floor at or above the top
-//!   ([`FloorRefusal::AboveTop`]) and a value that is not finite.
+//! - `depth` of [`Floor::Top`] is more than 0: a depth of 0 or less puts the
+//!   floor at or above the top by construction (L-16).
+//! - `depth` of every other reference is unbounded: a signed distance below
+//!   the reference (a negative value stands above it, for example an onion
+//!   skin above the stock bottom, L-13). The valid depth depends on the
+//!   resolved top, so the session refuses a floor at or above the top
+//!   ([`FloorRefusal::AboveTop`]) at generation.
 //! - `z` is frame-dependent: an absolute Z in the setup frame, as a
 //!   `frame_dependent` parameter.
+//! - Every number is finite.
 
 use serde::{Deserialize, Serialize};
 
+use super::catalog::ParamRange;
 use super::config::HeightContext;
 
 /// The floor of a Pocket, Profile, Zigzag or Adaptive 2D: one value that
@@ -101,6 +107,87 @@ impl Floor {
             | Self::EachFace { .. }
             | Self::Z { .. } => None,
         }
+    }
+
+    /// One floor of each reference, in the order of the enum. The
+    /// `get_operation_schema` entry lists them ([`floor_schema_json`]).
+    pub const EACH_REFERENCE: [Self; 6] = [
+        Self::Top { depth: 0.0 },
+        Self::StockTop { depth: 0.0 },
+        Self::StockBottom { depth: 0.0 },
+        Self::ModelTop { depth: 0.0 },
+        Self::EachFace { depth: 0.0 },
+        Self::Z { z: 0.0 },
+    ];
+
+    /// The `from` token of the reference: the file and wire spelling.
+    #[must_use]
+    pub const fn from_token(&self) -> &'static str {
+        match self {
+            Self::Top { .. } => "top",
+            Self::StockTop { .. } => "stock_top",
+            Self::StockBottom { .. } => "stock_bottom",
+            Self::ModelTop { .. } => "model_top",
+            Self::EachFace { .. } => "each_face",
+            Self::Z { .. } => "z",
+        }
+    }
+
+    /// The name of the number the floor holds: `depth`, or `z` for
+    /// [`Floor::Z`].
+    #[must_use]
+    pub const fn value_name(&self) -> &'static str {
+        match self {
+            Self::Top { .. }
+            | Self::StockTop { .. }
+            | Self::StockBottom { .. }
+            | Self::ModelTop { .. }
+            | Self::EachFace { .. } => "depth",
+            Self::Z { .. } => "z",
+        }
+    }
+
+    /// The domain of the number the floor holds (W6a; see the module
+    /// documentation). The door and the schema read this one value.
+    #[must_use]
+    pub const fn domain(&self) -> ParamRange {
+        match self {
+            Self::Top { .. } => ParamRange {
+                min: Some(0.0),
+                max: None,
+                min_exclusive: true,
+            },
+            Self::StockTop { .. }
+            | Self::StockBottom { .. }
+            | Self::ModelTop { .. }
+            | Self::EachFace { .. }
+            | Self::Z { .. } => ParamRange {
+                min: None,
+                max: None,
+                min_exclusive: false,
+            },
+        }
+    }
+
+    /// The refusal of the floor that is known with no model and no height
+    /// context: the `set_toolpath_floor` door (P3.3). A number that is not
+    /// finite, [`Floor::EachFace`] before P3.5, and a number outside
+    /// [`Self::domain`]. A floor at or above a resolved top that is not
+    /// [`Floor::Top`] needs the session, so generation refuses it.
+    #[must_use]
+    pub fn door_refusal(&self) -> Option<FloorRefusal> {
+        let value = self.value();
+        if !value.is_finite() {
+            return Some(FloorRefusal::NotFinite);
+        }
+        if matches!(self, Self::EachFace { .. }) {
+            return Some(FloorRefusal::EachFaceNotYet);
+        }
+        (!self.domain().accepts(value)).then_some(FloorRefusal::OutOfDomain {
+            from: self.from_token(),
+            name: self.value_name(),
+            value,
+        })
     }
 
     /// The number the floor holds: the depth, or the Z of [`Floor::Z`].
@@ -180,6 +267,16 @@ pub enum FloorRefusal {
     NoModelMesh,
     /// [`Floor::EachFace`] before P3.5.
     EachFaceNotYet,
+    /// The number is outside [`Floor::domain`] (P3.3): a depth of 0 or
+    /// less below the Top Z.
+    OutOfDomain {
+        /// The `from` token of the reference.
+        from: &'static str,
+        /// The name of the number (`depth` or `z`).
+        name: &'static str,
+        /// The value.
+        value: f64,
+    },
     /// The floor is at or above the resolved top: the ladder would be empty
     /// (ruling L-16).
     AboveTop {
@@ -204,6 +301,11 @@ impl std::fmt::Display for FloorRefusal {
                 "the floor \"each picked face\" is not yet available (geometry selection \
                  P3.5). Set the floor from the Top Z, the stock, the model or a Z value"
             ),
+            Self::OutOfDomain { from, name, value } => write!(
+                f,
+                "the floor {{ from = \"{from}\", {name} = {value} }} is at or above the top, so \
+                 the op has nothing to cut. Set a {name} more than 0"
+            ),
             Self::AboveTop { floor_z, top_z } => write!(
                 f,
                 "the floor Z {floor_z:.3} is at or above the Top Z {top_z:.3}, so the op has \
@@ -213,8 +315,66 @@ impl std::fmt::Display for FloorRefusal {
     }
 }
 
+/// What a reference means, for the `get_operation_schema` entry.
+const fn reference_help(floor: &Floor) -> &'static str {
+    match floor {
+        Floor::Top { .. } => {
+            "mm below the resolved Top Z of the op (auto: the stock top, or the top of the \
+             picked faces; else the pinned top). The default"
+        }
+        Floor::StockTop { .. } => "mm below the stock top; a negative value stands above it",
+        Floor::StockBottom { .. } => {
+            "mm below the stock bottom; a positive value cuts into the spoilboard, a negative \
+             value leaves a skin"
+        }
+        Floor::ModelTop { .. } => {
+            "mm below the model top; a model with no mesh has no top, so generation refuses it"
+        }
+        Floor::EachFace { .. } => {
+            "each face region of the op selection at its own plane Z. Not yet available: the \
+             door refuses it until geometry selection P3.5"
+        }
+        Floor::Z { .. } => "an absolute Z in the setup frame (frame-dependent)",
+    }
+}
+
+/// The `floor` entry of `get_operation_schema` for an op whose default
+/// floor is `default` (P3.3). It lists each reference with the name and the
+/// domain of its number ([`Floor::domain`]), and names the tool that writes
+/// the floor. The JSON of a floor is the file JSON.
+#[must_use]
+pub fn floor_schema_json(default: Floor) -> serde_json::Value {
+    let variants: Vec<serde_json::Value> = Floor::EACH_REFERENCE
+        .iter()
+        .map(|floor| {
+            serde_json::json!({
+                "from": floor.from_token(),
+                "label": floor.reference_label(),
+                "field": floor.value_name(),
+                "range": floor.domain().to_json(),
+                "frame_dependent": matches!(floor, Floor::Z { .. }),
+                "available": !matches!(floor, Floor::EachFace { .. }),
+                "description": reference_help(floor),
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "set_through": "set_toolpath_floor",
+        "note": "The floor names its reference. Write it with set_toolpath_floor \
+                 { index, floor }; set_toolpath_param refuses it. A floor at or above the \
+                 resolved top refuses at generation.",
+        "default": default,
+        "variants": variants,
+    })
+}
+
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
 
@@ -261,5 +421,33 @@ mod tests {
             extra.is_err(),
             "an extra key in the floor table must refuse"
         );
+    }
+
+    /// P3.3: the door refusal reads the domain. A Top depth of 0 or less
+    /// refuses; a negative depth on another reference passes; a number that
+    /// is not finite and Each Face refuse. The `from` token is the serde
+    /// token.
+    #[test]
+    fn the_door_reads_the_domain() {
+        assert!(Floor::Top { depth: 6.0 }.door_refusal().is_none());
+        assert!(matches!(
+            Floor::Top { depth: 0.0 }.door_refusal(),
+            Some(FloorRefusal::OutOfDomain { .. })
+        ));
+        assert!(Floor::StockBottom { depth: -1.0 }.door_refusal().is_none());
+        assert!(Floor::Z { z: -20.0 }.door_refusal().is_none());
+        assert_eq!(
+            Floor::Z { z: f64::NAN }.door_refusal(),
+            Some(FloorRefusal::NotFinite)
+        );
+        assert_eq!(
+            Floor::EachFace { depth: 1.0 }.door_refusal(),
+            Some(FloorRefusal::EachFaceNotYet)
+        );
+        for floor in Floor::EACH_REFERENCE {
+            let json = serde_json::to_value(floor).unwrap();
+            assert_eq!(json["from"], serde_json::json!(floor.from_token()));
+            assert!(json.get(floor.value_name()).is_some(), "{json}");
+        }
     }
 }

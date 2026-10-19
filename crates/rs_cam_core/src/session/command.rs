@@ -342,6 +342,16 @@ macro_rules! for_each_command {
                      "the batch CLI exposes no such command",
                  ),
              }),
+            // Geometry selection P3.3 (L-17): MCP and the CLI write the
+            // floor through this row; the GUI writes the whole config.
+            (Command, SetToolpathFloor, "set_toolpath_floor", SetToolpathFloorArgs, Effects,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the GUI inspector replaces the whole config through replace_toolpath_config",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Reached,
+             }),
             (Command, SetToolpathDebugOptions, "set_toolpath_debug_options",
              SetToolpathDebugOptionsArgs, Effects,
              Surfaces {
@@ -1625,6 +1635,16 @@ pub struct SetMachineHeadArgs {
     pub head: Box<crate::machine::head::MachineHead>,
 }
 
+/// The arguments of the `set_toolpath_floor` command (geometry selection
+/// P3.3). The floor is the file value (`{ from = "top", depth = 6.0 }`).
+#[derive(Debug, Clone)]
+pub struct SetToolpathFloorArgs {
+    /// The index of the toolpath to write.
+    pub index: usize,
+    /// The floor of the op.
+    pub floor: crate::compute::floor::Floor,
+}
+
 /// The arguments of the `set_toolpath_shoe` command (H1).
 #[derive(Debug, Clone)]
 pub struct SetToolpathShoeArgs {
@@ -2589,6 +2609,7 @@ impl ProjectSession {
             Command::ImportMachineSettings(args) => Ok(self.import_machine_settings(&args.import)),
             Command::SetMachineHead(args) => self.set_machine_head(*args.head),
             Command::SetToolpathShoe(args) => self.set_toolpath_shoe(args.index, args.shoe),
+            Command::SetToolpathFloor(args) => self.set_toolpath_floor(args.index, args.floor),
             Command::SetPostConfig(args) => Ok(self.set_post_config(*args.post)),
             Command::SetBoundaryConfig(args) => self.set_boundary_config(args.index, args.boundary),
             Command::SetRestAnalysisConfig(args) => {

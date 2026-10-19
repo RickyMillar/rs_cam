@@ -342,7 +342,7 @@ type = "pocket"
 input = "demo_pocket.svg"
 tool = "flat_6mm"
 stepover = 2.0
-depth = 6.0
+floor = { from = "top", depth = 6.0 }
 depth_per_pass = 3.0
 feed_rate = 2000
 plunge_rate = 500
@@ -351,7 +351,7 @@ plunge_rate = 500
 type = "profile"
 input = "demo_pocket.svg"
 tool = "flat_3mm"
-depth = 6.0
+floor = { from = "z", z = -4.0 }
 depth_per_pass = 2.0
 side = "inside"
 feed_rate = 1000
@@ -401,6 +401,26 @@ plunge_rate = 400
         Some("flat_3mm")
     );
     assert_eq!(ops[1].get("type").and_then(|v| v.as_str()), Some("profile"));
+    // Geometry selection P3.3: the floor job key is the project-file
+    // table. A value that is not the default (an absolute Z) reads back.
+    assert_eq!(
+        ops[1]
+            .get("floor")
+            .and_then(|f| f.get("from"))
+            .and_then(|v| v.as_str()),
+        Some("z")
+    );
+    assert_eq!(
+        ops[1]
+            .get("floor")
+            .and_then(|f| f.get("z"))
+            .and_then(|v| v.as_float()),
+        Some(-4.0)
+    );
+    assert!(
+        ops[0].get("depth").is_none(),
+        "the four floor ops hold no depth key"
+    );
 
     // Verify tool references are valid (all operation tools exist in [tools])
     let tools_table = tools.as_table().expect("tools should be a table");
@@ -439,7 +459,7 @@ diameter = 6.35
 type = "pocket"
 input = "test.svg"
 tool = "nonexistent_tool"
-depth = 3.0
+floor = { from = "top", depth = 3.0 }
 "#;
 
     let value: toml::Value = toml::from_str(toml_content).expect("Valid TOML syntax");

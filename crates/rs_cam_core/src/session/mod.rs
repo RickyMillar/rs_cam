@@ -58,10 +58,10 @@ pub use command::{
     SetPinPartModelsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs, SetSetupDatumArgs,
     SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs, SetSetupPauseMessageArgs,
     SetSetupRotationArgs, SetSimulationResolutionArgs, SetStockConfigArgs, SetStockSourceArgs,
-    SetToolParamArgs, SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathHeightsArgs,
-    SetToolpathModelArgs, SetToolpathOperationArgs, SetToolpathParamArgs, SetToolpathShoeArgs,
-    SetToolpathToolArgs, Surfaces, TabLayoutArgs, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
-    UpdateStockFromBboxArgs,
+    SetToolParamArgs, SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathFloorArgs,
+    SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathOperationArgs, SetToolpathParamArgs,
+    SetToolpathShoeArgs, SetToolpathToolArgs, Surfaces, TabLayoutArgs, ToolpathCycleTimeAnswer,
+    ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
 };
 pub use compute::{
     GenContext, GenObserver, GenerateToolpathHandle, RecommendClearingStrategyHandle,

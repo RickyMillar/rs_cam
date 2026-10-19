@@ -5874,9 +5874,155 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`set_toolpath_floor` (geometry selection P3.3): the floor of one Pocket,\nProfile, Zigzag or Adaptive 2D toolpath.",
+      "properties": {
+        "floor": {
+          "description": "The floor, as the project file writes it:\n`{\"from\": \"top\", \"depth\": 6.0}`.",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "description": "`depth` mm below the resolved Top Z of the op (auto: the stock top,\nor the top of the picked faces). The depth must be more than 0.",
+              "properties": {
+                "depth": {
+                  "description": "mm below the reference.",
+                  "format": "double",
+                  "type": "number"
+                },
+                "from": {
+                  "const": "top",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from",
+                "depth"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "`depth` mm below the stock top.",
+              "properties": {
+                "depth": {
+                  "description": "mm below the reference; a negative value stands above it.",
+                  "format": "double",
+                  "type": "number"
+                },
+                "from": {
+                  "const": "stock_top",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from",
+                "depth"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "`depth` mm below the stock bottom: a positive depth cuts into the\nspoilboard, a negative depth leaves a skin.",
+              "properties": {
+                "depth": {
+                  "description": "mm below the reference; a negative value stands above it.",
+                  "format": "double",
+                  "type": "number"
+                },
+                "from": {
+                  "const": "stock_bottom",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from",
+                "depth"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "`depth` mm below the model top. A model with no mesh refuses.",
+              "properties": {
+                "depth": {
+                  "description": "mm below the reference; a negative value stands above it.",
+                  "format": "double",
+                  "type": "number"
+                },
+                "from": {
+                  "const": "model_top",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from",
+                "depth"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Each picked face at its own plane Z. Not yet available: refused.",
+              "properties": {
+                "depth": {
+                  "description": "mm below each face.",
+                  "format": "double",
+                  "type": "number"
+                },
+                "from": {
+                  "const": "each_face",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from",
+                "depth"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "An absolute Z in the setup frame.",
+              "properties": {
+                "from": {
+                  "const": "z",
+                  "type": "string"
+                },
+                "z": {
+                  "description": "The floor Z.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "from",
+                "z"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "index": {
+          "description": "Toolpath index (0-based).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index",
+        "floor"
+      ],
+      "title": "SetToolpathFloorParam",
+      "type": "object"
+    },
+    "name": "set_toolpath_floor"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "bottom_z": {
-          "description": "Bottom / lowest-cut reference Z (absolute). Omit to leave unchanged.",
+          "description": "Bottom / lowest-cut reference Z (absolute). Omit to leave unchanged.\nPocket, Profile, Zigzag and Adaptive 2D refuse a Bottom Z: their\nfloor is `set_toolpath_floor`.",
           "format": "double",
           "type": [
             "number",

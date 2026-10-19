@@ -38,7 +38,8 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
   names. The core setters apply them in schema order. Do not add a CLI
   spelling, a per-op map or a default number: an unset key keeps the
   registry default, and `parse_job_file` refuses an unknown key. The job key
-  `selection` (P2.7) has the project-file shape and goes through `EditSelection`.
+  `selection` (P2.7) has the project-file shape and goes through `EditSelection`;
+  the job key `floor` (P3.3) has the project-file shape and goes through `SetToolpathFloor`.
 
 ## Verification and sweeps
 

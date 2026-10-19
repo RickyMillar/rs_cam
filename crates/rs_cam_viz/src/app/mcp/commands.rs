@@ -64,6 +64,7 @@ use crate::ui_command::UiCommand;
 use super::RestAnalysisDials;
 
 mod drawing;
+pub(super) mod floor;
 mod import;
 mod obstacles;
 mod selection;
@@ -638,6 +639,17 @@ impl RsCamApp {
                         index: p.index,
                         heights,
                     }),
+                    Box::new(before),
+                )
+            }
+            CoreRequest::SetToolpathFloor(p) => {
+                before.index = Some(p.index);
+                before.extra = serde_json::json!({
+                    "index": p.index,
+                    "floor": rs_cam_core::compute::floor::Floor::from(p.floor),
+                });
+                CorePlan::Apply(
+                    Command::SetToolpathFloor(floor::floor_args(&p)),
                     Box::new(before),
                 )
             }
@@ -1852,6 +1864,7 @@ impl RsCamApp {
             | CoreRequest::RemoveAlignmentPin(_)
             | CoreRequest::SetAlignmentPins(_)
             | CoreRequest::SetToolpathHeights(_)
+            | CoreRequest::SetToolpathFloor(_)
             | CoreRequest::RemoveTool(_)
             | CoreRequest::SetStockConfig(_)
             | CoreRequest::SetStockSource(_)
@@ -1976,6 +1989,7 @@ impl RsCamApp {
             | CommandId::AdoptRestFreshComparison
             | CommandId::SetToolParam
             | CommandId::SetToolpathHeights
+            | CommandId::SetToolpathFloor
             | CommandId::SetToolpathDebugOptions
             | CommandId::AddToolpath
             | CommandId::RemoveToolpath
@@ -2424,6 +2438,27 @@ impl RsCamApp {
                 CoreReply::quiet(self.mcp_mutation_result(
                     format!("Set toolpath {index} heights. Regenerate to apply."),
                     before.extra.clone(),
+                    stale,
+                    &before.diagnostics,
+                ))
+            }
+            CommandId::SetToolpathFloor => {
+                self.controller.state_mut().gui.mark_edited();
+                let stale = self.core_stale(&effects);
+                let index = before.index();
+                let mut applied = before.extra.clone();
+                let session = &self.controller.state().session;
+                if let (Some(map), Some(tc)) =
+                    (applied.as_object_mut(), session.get_toolpath_config(index))
+                {
+                    let _ = map.insert(
+                        "heights".to_owned(),
+                        floor::toolpath_heights_json(session, tc),
+                    );
+                }
+                CoreReply::quiet(self.mcp_mutation_result(
+                    format!("Set toolpath {index} floor. Regenerate to apply."),
+                    applied,
                     stale,
                     &before.diagnostics,
                 ))

@@ -1022,6 +1022,40 @@ impl OperationConfig {
         }
     }
 
+    /// Write the floor of the op (geometry selection P3.3, the
+    /// `SetToolpathFloor` door). `false` for an op that holds no floor
+    /// ([`Self::floor`] is `None`); nothing is written then.
+    pub(crate) fn set_floor(&mut self, floor: crate::compute::floor::Floor) -> bool {
+        let slot = match self {
+            OperationConfig::Pocket(c) => &mut c.floor,
+            OperationConfig::Profile(c) => &mut c.floor,
+            OperationConfig::Adaptive(c) => &mut c.floor,
+            OperationConfig::Zigzag(c) => &mut c.floor,
+            OperationConfig::Face(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => return false,
+        };
+        *slot = floor;
+        true
+    }
+
     /// The selection of the op: the items it cuts (geometry selection
     /// P2.3b, DESIGN 3.1). `None` for an op that cuts no drawing item. The
     /// match names every variant, so a new op states whether it holds a
@@ -1385,6 +1419,10 @@ impl OperationConfig {
                 })
                 .collect(),
             tool_constraints: tool_constraints_for_type(op_type),
+            // P3.3: the floor is driver-set, so `params` leaves it out.
+            floor: Self::new_default(op_type)
+                .floor()
+                .map(crate::compute::floor::floor_schema_json),
         }
     }
 }

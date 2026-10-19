@@ -20,7 +20,7 @@
 //! input = "design.svg"
 //! tool = "flat_6mm"
 //! stepover = 2.0
-//! depth = 6.0
+//! floor = { from = "top", depth = 6.0 }
 //! depth_per_pass = 3.0
 //! feed_rate = 1000
 //! plunge_rate = 500
@@ -56,7 +56,7 @@ use rs_cam_core::{
     session::{
         AddModelArgs, AddToolArgs, AddToolpathArgs, Command, EditSelectionArgs, LoadedModel,
         ProjectSession, SetDressupFieldArgs, SetPostConfigArgs, SetStockConfigArgs,
-        SetToolpathParamArgs, ToolpathConfig,
+        SetToolpathFloorArgs, SetToolpathParamArgs, ToolpathConfig,
     },
     stock::simulation_cut::{
         AirCutRatios as _, SimulationCutArtifact, SimulationCutIssueKind, SimulationCutTrace,
@@ -235,6 +235,13 @@ pub struct OperationDef {
     /// no selection refuses it by name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selection: Option<rs_cam_core::selection::Selection>,
+    /// The floor of a Pocket, Profile, Zigzag or Adaptive 2D (geometry
+    /// selection P3.3), in the project-file spelling:
+    /// `floor = { from = "top", depth = 6.0 }`. Empty: the default of the
+    /// op. The `set_toolpath_floor` command applies it after the
+    /// parameters, so an op with no floor refuses it by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub floor: Option<rs_cam_core::compute::floor::Floor>,
     /// Operation parameters by their schema name.
     #[serde(flatten)]
     pub params: toml::Table,
@@ -254,6 +261,7 @@ impl OperationDef {
         "stock_top_z",
         "dressups",
         "selection",
+        "floor",
     ];
 
     /// The registry op that `type` names, after the C2 check of every key.
@@ -1233,6 +1241,14 @@ fn execute_op_via_session(
         });
         let _ = crate::command::apply_command(&mut session, command)
             .map_err(|e| anyhow::anyhow!("selection: {e}"))?;
+    }
+    if let Some(floor) = op.floor {
+        let command = Command::SetToolpathFloor(SetToolpathFloorArgs {
+            index: tp_index,
+            floor,
+        });
+        let _ = crate::command::apply_command(&mut session, command)
+            .map_err(|e| anyhow::anyhow!("floor: {e}"))?;
     }
 
     let mut post = session.post_config().clone();

@@ -23,6 +23,13 @@
 //! generation refuses with it. A pinned Bottom Z on those four ops refuses
 //! at every door ([`ToolpathConfig::floor_conflict`]).
 //!
+//! P3.3: [`ProjectSession::set_toolpath_floor`] is the door of the
+//! `SetToolpathFloor` command (MCP `set_toolpath_floor`, the CLI job key
+//! `floor`). It refuses an op with no floor and a floor that
+//! `Floor::door_refusal` refuses. The GUI writes the floor through the
+//! whole config (L-17). [`ToolpathHeights::floor_z`] is the read of the
+//! resolved floor for every surface.
+//!
 //! L-4: a Top Z or a Bottom Z that reads the Model Top or the Model Bottom
 //! refuses when the toolpath has no mesh. Before P3.1 generation used the
 //! stock top there and the GUI used Z 0. The answer carries the refusal
@@ -43,9 +50,9 @@ use crate::compute::catalog::FloorOwner;
 use crate::compute::config::{
     HeightContext, HeightMode, HeightReference, HeightsConfig, ResolvedHeights,
 };
-use crate::compute::floor::{FloorRef, FloorRefusal};
+use crate::compute::floor::{Floor, FloorRef, FloorRefusal};
 use crate::mesh::TriangleMesh;
-use crate::session::{ProjectSession, SessionError, ToolpathConfig};
+use crate::session::{Effects, ProjectSession, SessionError, ToolpathConfig};
 
 use super::SetupEvalContext;
 use super::selection_status::SelectionTarget;
@@ -124,6 +131,19 @@ impl ToolpathHeights {
                 (floor_z >= top_z).then_some(FloorRefusal::AboveTop { floor_z, top_z })
             }
         }
+    }
+
+    /// P3.3: the resolved floor Z of an `OpFloor` op under `heights`, in
+    /// the setup frame, or why it does not resolve. `None` for an op with
+    /// no floor field. The Z is `ResolvedHeights::bottom_z`: the floor IS
+    /// the bottom of these ops (P3.2).
+    #[must_use]
+    pub fn floor_z(&self, heights: &HeightsConfig) -> Option<Result<f64, FloorRefusal>> {
+        self.floor.as_ref()?;
+        Some(match self.floor_refusal(heights) {
+            Some(refusal) => Err(refusal),
+            None => Ok(self.resolve(heights).bottom_z),
+        })
     }
 
     /// L-4: the refusal of `heights` on this toolpath, or `None`. A Top Z or
@@ -235,6 +255,53 @@ impl ProjectSession {
             None => None,
         };
         Ok(self.heights_in_setup(tc, &ctx, setup_mesh.as_deref(), face_top_z))
+    }
+
+    /// Write the floor of toolpath `index` (geometry selection P3.3): the
+    /// door of the `SetToolpathFloor` command row.
+    ///
+    /// The op must hold a floor (Pocket, Profile, Zigzag, Adaptive 2D), and
+    /// the floor must pass `Floor::door_refusal` (a finite number in its
+    /// domain; Each Face is not yet available). A floor at or above a
+    /// resolved top that is not the Top Z needs the model and the
+    /// selection, so generation refuses it (L-16). A change drops the
+    /// result chain of the toolpath, as a heights edit does.
+    ///
+    /// # Errors
+    /// [`SessionError::ToolpathNotFound`], or [`SessionError::InvalidParam`]
+    /// that names the toolpath and the fix. Nothing is written then.
+    pub(crate) fn set_toolpath_floor(
+        &mut self,
+        index: usize,
+        floor: Floor,
+    ) -> Result<Effects, SessionError> {
+        self.try_with_effects(Some(index), move |session| {
+            let tc = session
+                .toolpath_configs
+                .get_mut(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?;
+            let Some(before) = tc.operation.floor() else {
+                return Err(SessionError::InvalidParam(format!(
+                    "{} '{}' has no floor field. Only Pocket, Profile, Zigzag and Adaptive 2D \
+                     take a floor; set the depth of this op with set_toolpath_param or its \
+                     heights",
+                    tc.operation.label(),
+                    tc.name
+                )));
+            };
+            if let Some(refusal) = floor.door_refusal() {
+                return Err(SessionError::InvalidParam(format!(
+                    "Toolpath '{}': {refusal}",
+                    tc.name
+                )));
+            }
+            if before != floor {
+                let _ = tc.operation.set_floor(floor);
+                let enabled = tc.enabled;
+                session.invalidate_result_chain(index, enabled);
+            }
+            Ok(())
+        })
     }
 
     /// [`Self::heights_in_setup`] for generation: the L-4 refusal is an

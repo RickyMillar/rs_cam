@@ -524,7 +524,101 @@ pub struct SetToolpathHeightsParam {
     /// Stock-top reference Z (absolute). Omit to leave unchanged.
     pub top_z: Option<f64>,
     /// Bottom / lowest-cut reference Z (absolute). Omit to leave unchanged.
+    /// Pocket, Profile, Zigzag and Adaptive 2D refuse a Bottom Z: their
+    /// floor is `set_toolpath_floor`.
     pub bottom_z: Option<f64>,
+}
+
+/// The floor of a Pocket, Profile, Zigzag or Adaptive 2D (geometry
+/// selection P3.3): one value that names its reference. The same serde
+/// shape as core `Floor`, so the wire JSON is the project-file JSON:
+/// `{"from": "top", "depth": 6.0}` or `{"from": "z", "z": -20.0}`. Every Z
+/// is in the setup frame. `get_operation_schema` gives the domain of each
+/// number (`floor.variants`).
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "from", rename_all = "snake_case", deny_unknown_fields)]
+#[schemars(inline)]
+pub enum FloorParam {
+    /// `depth` mm below the resolved Top Z of the op (auto: the stock top,
+    /// or the top of the picked faces). The depth must be more than 0.
+    Top {
+        /// mm below the reference.
+        depth: f64,
+    },
+    /// `depth` mm below the stock top.
+    StockTop {
+        /// mm below the reference; a negative value stands above it.
+        depth: f64,
+    },
+    /// `depth` mm below the stock bottom: a positive depth cuts into the
+    /// spoilboard, a negative depth leaves a skin.
+    StockBottom {
+        /// mm below the reference; a negative value stands above it.
+        depth: f64,
+    },
+    /// `depth` mm below the model top. A model with no mesh refuses.
+    ModelTop {
+        /// mm below the reference; a negative value stands above it.
+        depth: f64,
+    },
+    /// Each picked face at its own plane Z. Not yet available: refused.
+    EachFace {
+        /// mm below each face.
+        depth: f64,
+    },
+    /// An absolute Z in the setup frame.
+    Z {
+        /// The floor Z.
+        z: f64,
+    },
+}
+
+impl From<FloorParam> for rs_cam_core::compute::floor::Floor {
+    fn from(p: FloorParam) -> Self {
+        match p {
+            FloorParam::Top { depth } => Self::Top { depth },
+            FloorParam::StockTop { depth } => Self::StockTop { depth },
+            FloorParam::StockBottom { depth } => Self::StockBottom { depth },
+            FloorParam::ModelTop { depth } => Self::ModelTop { depth },
+            FloorParam::EachFace { depth } => Self::EachFace { depth },
+            FloorParam::Z { z } => Self::Z { z },
+        }
+    }
+}
+
+impl From<rs_cam_core::compute::floor::Floor> for FloorParam {
+    fn from(floor: rs_cam_core::compute::floor::Floor) -> Self {
+        use rs_cam_core::compute::floor::Floor;
+        match floor {
+            Floor::Top { depth } => Self::Top { depth },
+            Floor::StockTop { depth } => Self::StockTop { depth },
+            Floor::StockBottom { depth } => Self::StockBottom { depth },
+            Floor::ModelTop { depth } => Self::ModelTop { depth },
+            Floor::EachFace { depth } => Self::EachFace { depth },
+            Floor::Z { z } => Self::Z { z },
+        }
+    }
+}
+
+impl Default for FloorParam {
+    /// The default floor of a Pocket, from the operation catalog.
+    fn default() -> Self {
+        use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+        OperationConfig::new_default(OperationType::Pocket)
+            .floor()
+            .map_or(Self::Top { depth: 0.0 }, Self::from)
+    }
+}
+
+/// `set_toolpath_floor` (geometry selection P3.3): the floor of one Pocket,
+/// Profile, Zigzag or Adaptive 2D toolpath.
+#[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
+pub struct SetToolpathFloorParam {
+    /// Toolpath index (0-based).
+    pub index: usize,
+    /// The floor, as the project file writes it:
+    /// `{"from": "top", "depth": 6.0}`.
+    pub floor: FloorParam,
 }
 
 /// F3.1 — add a toolpath through the GUI's own add path.
@@ -2566,6 +2660,12 @@ pub fn build_info() -> serde_json::Value {
             // joins and closes open paths of a drawing (the edit ledger);
             // `inspect_model` gives `open_shapes` and `drawing_edits`.
             "drawing_edits",
+            // Geometry selection P3.3 (2026-10-20): `set_toolpath_floor`
+            // writes the floor of Pocket, Profile, Zigzag and Adaptive 2D;
+            // `get_operation_schema` gives `floor` (each reference and its
+            // domain); `get_toolpath_params` gives `heights` (`top_from`,
+            // `floor`, `floor_label`, `floor_z`, `floor_refusal`).
+            "toolpath_floor",
             // TD3 B-5 (G-RESULTS): `get_diagnostics`' per-toolpath rows are
             // the core `ToolpathDiagnostic` — `op_kind`, per-toolpath
             // collision counts, and the report-only generation-finding
@@ -2753,6 +2853,7 @@ mod tests {
             "selection_item_states",
             "import_options",
             "drawing_edits",
+            "toolpath_floor",
             "multitool_finishing_planner",
             "preview_tier_map",
             "reach_map",
@@ -2795,6 +2896,37 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{json} does not parse as the wire: {e}"));
             assert_eq!(ModelUnits::from(wire), units, "{json}");
         }
+    }
+
+    /// Geometry selection P3.3: the wire floor is the file JSON. Each core
+    /// reference serialises to JSON that the wire reads back to the same
+    /// floor, and an extra key refuses on both sides.
+    #[test]
+    fn floor_wire_is_the_file_json_p3_3() {
+        use rs_cam_core::compute::floor::Floor;
+        let cases = [
+            Floor::Top { depth: 6.0 },
+            Floor::StockTop { depth: 2.0 },
+            Floor::StockBottom { depth: -0.5 },
+            Floor::ModelTop { depth: 1.0 },
+            Floor::EachFace { depth: 0.0 },
+            Floor::Z { z: -20.0 },
+        ];
+        assert_eq!(cases.len(), Floor::EACH_REFERENCE.len());
+        for floor in cases {
+            let file = serde_json::to_value(floor).unwrap();
+            let wire: FloorParam = serde_json::from_value(file.clone()).unwrap();
+            assert_eq!(Floor::from(wire), floor, "{file}");
+            assert_eq!(FloorParam::from(floor), wire, "{file}");
+        }
+        let extra = serde_json::json!({ "from": "top", "depth": 6.0, "z": 1.0 });
+        assert!(serde_json::from_value::<FloorParam>(extra).is_err());
+        let param: SetToolpathFloorParam = serde_json::from_value(serde_json::json!({
+            "index": 2,
+            "floor": { "from": "stock_bottom", "depth": 0.5 },
+        }))
+        .unwrap();
+        assert_eq!(Floor::from(param.floor), Floor::StockBottom { depth: 0.5 });
     }
 
     /// Geometry selection P2.7: the wire JSON of a selection IS the file

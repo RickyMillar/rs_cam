@@ -876,6 +876,9 @@ declare_core_requests! {
             => SetToolpathModel, Some(Workspace::Toolpaths);
         SetToolpathHeights(rs_cam_mcp::server::SetToolpathHeightsParam)
             => SetToolpathHeights, None;
+        /// Row `SetToolpathFloor` (geometry selection P3.3).
+        SetToolpathFloor(rs_cam_mcp::server::SetToolpathFloorParam)
+            => SetToolpathFloor, None;
         AddToolpath(rs_cam_mcp::server::AddToolpathParam)
             => AddToolpath, Some(Workspace::Toolpaths);
         RemoveToolpath(rs_cam_mcp::server::RemoveToolpathParam)
