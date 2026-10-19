@@ -43,14 +43,14 @@ use std::sync::atomic::AtomicBool;
 use tracing::{debug, info, warn};
 
 use rs_cam_core::{
-    compute::ModelUnits,
     compute::catalog::{OperationConfig, OperationType},
     compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource},
     compute::tool_config::{ToolConfig, ToolId, ToolType},
+    compute::{ModelUnits, build_cutter},
     dexel_stock::{StockCutDirection, TriDexelStock},
     gcode::{
-        CoolantMode, GcodePhase, PhaseTool, ToolLoadExportPolicy, WizardOverlay,
-        export_gcode_phases_with_overlay_checked, get_post_definition,
+        CoolantMode, GcodePhase, PhaseTool, PostFormat, ToolLoadExportPolicy, WizardOverlay,
+        export_gcode_phases_with_overlay_checked,
     },
     geo::BoundingBox3,
     session::{
@@ -92,8 +92,11 @@ pub(crate) struct SetupDef {
 #[derive(Deserialize, Serialize)]
 pub(crate) struct JobConfig {
     pub output: PathBuf,
-    #[serde(default = "default_post")]
-    pub post: String,
+    /// The post dialect. F028: the token goes through
+    /// `PostFormat::from_token` at parse time, so an unknown token refuses
+    /// the job file; no door downstream can fall back to GRBL.
+    #[serde(default, deserialize_with = "post_format_from_token")]
+    pub post: PostFormat,
     #[serde(default = "default_spindle_speed")]
     pub spindle_speed: u32,
     #[serde(default = "default_safe_z")]
@@ -126,8 +129,20 @@ pub(crate) struct JobConfig {
     pub one_file_per_setup: Option<bool>,
 }
 
-fn default_post() -> String {
-    "grbl".into()
+/// Read the `[job] post` token through the one core resolver, and refuse a
+/// token that it does not know.
+fn post_format_from_token<'de, D>(deserializer: D) -> Result<PostFormat, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let token = String::deserialize(deserializer)?;
+    PostFormat::from_token(&token).ok_or_else(|| {
+        let valid: Vec<&str> = PostFormat::ALL.iter().map(|f| f.to_token()).collect();
+        serde::de::Error::custom(format!(
+            "unknown post-processor '{token}'; supported: {}",
+            valid.join(", ")
+        ))
+    })
 }
 fn default_spindle_speed() -> u32 {
     18000
@@ -172,8 +187,9 @@ pub struct ToolDef {
     /// Shank diameter above the cutting flutes (mm).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shank_diameter: Option<f64>,
-    /// The length from the holder face to the tip (mm). Default: the
-    /// cutting length, so the holder face sits at the top of the flutes.
+    /// The length from the holder face to the tip (mm). Empty: the
+    /// `ToolConfig::new_default` stickout, the value the op's session and
+    /// the job's simulation cutter both take (F116 step 1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stickout: Option<f64>,
 }
@@ -367,17 +383,7 @@ pub fn run_job_command(
     });
 
     // Emit G-code with per-operation spindle speed support
-    let post_def = get_post_definition(&job_file.job.post).with_context(|| {
-        format!(
-            "Unknown post-processor '{}'. Supported: {}",
-            job_file.job.post,
-            rs_cam_core::gcode::PostFormat::ALL
-                .iter()
-                .map(|f| f.to_token())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    })?;
+    let post_def = job_file.job.post.definition();
     // G11: the controller options, resolved by the one core rule. The job
     // file has no machine profile, so an omitted option is off.
     let overlay = {
@@ -851,47 +857,17 @@ pub fn parse_job_file(path: &Path) -> Result<JobFile> {
 /// Default cutting length when not specified in the job file.
 const DEFAULT_CUTTING_LENGTH_FACTOR: f64 = 4.0;
 
-fn build_tool(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
-    use rs_cam_core::tool::{
-        BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, TaperedBallEndmill,
-        ToolDefinition, VBitEndmill,
-    };
-    let d = def.diameter;
-    let cl = d * DEFAULT_CUTTING_LENGTH_FACTOR;
-    let cutter: Box<dyn MillingCutter> = match def.tool_type {
-        ToolType::EndMill => Box::new(FlatEndmill::new(d, cl)),
-        ToolType::BallNose => Box::new(BallEndmill::new(d, cl)),
-        ToolType::BullNose => {
-            let cr = def
-                .corner_radius
-                .context("Bull nose tool requires 'corner_radius'")?;
-            Box::new(BullNoseEndmill::new(d, cr, cl)?)
-        }
-        ToolType::VBit => {
-            let angle = def
-                .included_angle
-                .context("V-bit tool requires 'included_angle'")?;
-            Box::new(VBitEndmill::new(d, angle, cl)?)
-        }
-        ToolType::TaperedBallNose => {
-            let taper = def
-                .taper_angle
-                .context("Tapered ball requires 'taper_angle'")?;
-            let shaft = def
-                .shaft_diameter
-                .context("Tapered ball requires 'shaft_diameter'")?;
-            Box::new(TaperedBallEndmill::new(d, taper, shaft, cl)?)
-        }
-    };
-    Ok(ToolDefinition::new(
-        cutter,
-        def.shank_diameter.unwrap_or(d),
-        // The stickout is the holder face height above the tip. The
-        // default puts the face at the top of the flutes.
-        def.stickout.unwrap_or(cl),
-        def.flute_count.unwrap_or(2),
-        rs_cam_core::compute::ToolMaterial::Carbide,
-    ))
+/// The cutter of a job-file tool, for the job's own simulation and
+/// diagnostics.
+///
+/// F116 step 1: the CLI held its own cutter builder (`build_tool`). It set
+/// no helix angle, hard-coded carbide and took a 4×D stickout, while the
+/// session tool of the same op took the `ToolConfig` values. This function
+/// builds the cutter with core [`build_cutter`] from the same record that
+/// the op's session receives, so the job refuses an out-of-domain tool with
+/// the `ToolConfig::validate` sentence that every other door gives.
+fn phase_cutter(tool: &ToolConfig) -> Result<rs_cam_core::tool::ToolDefinition> {
+    build_cutter(tool).with_context(|| format!("tool '{}'", tool.name))
 }
 
 // ── Operation execution ────────────────────────────────────────────────
@@ -1005,8 +981,9 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
             tool_def.diameter,
             tool_def.tool_type.serde_token()
         );
-        let phase_cutter = build_tool(tool_def)?;
-        let flute_count = tool_def.flute_count.unwrap_or(2);
+        let tool_config = tool_config_from_def(tool_def, &op.tool)?;
+        let phase_cutter = phase_cutter(&tool_config)?;
+        let flute_count = tool_config.flute_count;
         phases.push(OpResult {
             toolpath: tp,
             cutter: phase_cutter,
@@ -1050,7 +1027,33 @@ struct SessionOpOutput {
 }
 
 /// Build a session `ToolConfig` from a job-file tool definition.
-fn tool_config_from_def(def: &ToolDef, name: &str) -> ToolConfig {
+///
+/// The job file must state the geometry that defines its tool type (the
+/// corner radius of a bull nose, the included angle of a V-bit, the taper
+/// and shaft of a tapered ball). A missing key is refused; the job does not
+/// take the `ToolConfig` default for it.
+fn tool_config_from_def(def: &ToolDef, name: &str) -> Result<ToolConfig> {
+    let required: &[(&str, Option<f64>)] = match def.tool_type {
+        ToolType::EndMill | ToolType::BallNose => &[],
+        ToolType::BullNose => &[("corner_radius", def.corner_radius)],
+        ToolType::VBit => &[("included_angle", def.included_angle)],
+        ToolType::TaperedBallNose => &[
+            ("taper_angle", def.taper_angle),
+            ("shaft_diameter", def.shaft_diameter),
+        ],
+    };
+    let missing: Vec<&str> = required
+        .iter()
+        .filter(|(_, value)| value.is_none())
+        .map(|(key, _)| *key)
+        .collect();
+    if !missing.is_empty() {
+        bail!(
+            "tool '{name}' ({}) requires {}",
+            def.tool_type.serde_token(),
+            missing.join(", ")
+        );
+    }
     let mut tc = ToolConfig::new_default(ToolId(0), def.tool_type);
     tc.name = name.to_owned();
     tc.diameter = def.diameter;
@@ -1079,7 +1082,7 @@ fn tool_config_from_def(def: &ToolDef, name: &str) -> ToolConfig {
     if let Some(stickout) = def.stickout {
         tc.stickout = stickout;
     }
-    tc
+    Ok(tc)
 }
 
 fn execute_op_via_session(
@@ -1126,7 +1129,7 @@ fn execute_op_via_session(
     let tool_idx = crate::command::apply_command(
         &mut session,
         Command::AddTool(AddToolArgs {
-            tool: Box::new(tool_config_from_def(tool_def, &op.tool)),
+            tool: Box::new(tool_config_from_def(tool_def, &op.tool)?),
         }),
     )?
     .created
@@ -1212,8 +1215,7 @@ fn execute_op_via_session(
     }
 
     let mut post = session.post_config().clone();
-    post.format = rs_cam_core::gcode::PostFormat::from_token(&job.job.post)
-        .unwrap_or(rs_cam_core::gcode::PostFormat::Grbl);
+    post.format = job.job.post;
     post.safe_z = op.safe_z.unwrap_or(job.job.safe_z);
     post.spindle_speed = job.job.spindle_speed;
     let _ = crate::command::apply_command(
@@ -1238,7 +1240,7 @@ fn execute_op_via_session(
         let op_label = format!("Op {} \u{2014} {}", i, op.op_type);
         // The one size convention (`Ø` diameter, `R` radius) shared by
         // every surface; see `ToolConfig::size_label`.
-        let tool_summary = tool_config_from_def(tool_def, &op.tool).summary();
+        let tool_summary = tool_config_from_def(tool_def, &op.tool)?.summary();
         let operation_json = session
             .get_toolpath_config(tp_index)
             .map(|tc| serde_json::to_value(&tc.operation).unwrap_or_default())
@@ -1315,11 +1317,100 @@ pub(crate) fn param_value_from_str(s: &str) -> serde_json::Value {
 mod tests {
     use super::*;
 
+    /// The cutter of a job tool, through the one core builder.
+    fn cutter_of(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
+        phase_cutter(&tool_config_from_def(def, "t")?)
+    }
+
+    fn end_mill_def() -> ToolDef {
+        ToolDef {
+            tool_type: ToolType::EndMill,
+            number: None,
+            diameter: 6.0,
+            flute_count: None,
+            corner_radius: None,
+            included_angle: None,
+            taper_angle: None,
+            shaft_diameter: None,
+            shank_diameter: None,
+            stickout: None,
+        }
+    }
+
+    /// F116 step 1: the job's cutter comes from core `build_cutter`, so a
+    /// tool that `ToolConfig::validate` refuses is refused here too. The
+    /// deleted CLI `build_tool` built a cutter with zero flutes and a
+    /// negative stickout.
+    #[test]
+    fn f116_the_job_cutter_refuses_an_out_of_domain_tool() {
+        let zero_flutes = ToolDef {
+            flute_count: Some(0),
+            ..end_mill_def()
+        };
+        let err = cutter_of(&zero_flutes).err().map(|e| format!("{e:#}"));
+        assert!(
+            err.as_deref().is_some_and(|e| e.contains("flute_count")),
+            "{err:?}"
+        );
+        let negative_stickout = ToolDef {
+            stickout: Some(-1.0),
+            ..end_mill_def()
+        };
+        assert!(cutter_of(&negative_stickout).is_err());
+
+        // The job cutter is the session tool: the same stickout and flutes.
+        let tool = tool_config_from_def(&end_mill_def(), "t").unwrap();
+        let cutter = cutter_of(&end_mill_def()).unwrap();
+        assert_eq!(cutter.stickout.to_bits(), tool.stickout.to_bits());
+        assert_eq!(cutter.flute_count, tool.flute_count);
+    }
+
+    /// A job tool must state the geometry that defines its type.
+    #[test]
+    fn a_job_bull_nose_without_a_corner_radius_is_refused() {
+        let def = ToolDef {
+            tool_type: ToolType::BullNose,
+            ..end_mill_def()
+        };
+        let err = tool_config_from_def(&def, "t").err().map(|e| e.to_string());
+        assert!(
+            err.as_deref().is_some_and(|e| e.contains("corner_radius")),
+            "{err:?}"
+        );
+    }
+
+    /// F028: the `[job] post` token goes through `PostFormat::from_token`.
+    /// An unknown token refuses the job file; the aliases still parse.
+    /// Before the fix the field was a `String`, and `execute_job` (the door
+    /// `sweep` calls) turned an unknown token into GRBL.
+    #[test]
+    fn f028_the_job_file_refuses_an_unknown_post_token() {
+        let job = |post: Option<&str>| {
+            let post = post
+                .map(|p| format!("post = \"{p}\"\n"))
+                .unwrap_or_default();
+            toml::from_str::<JobFile>(&format!("[job]\noutput = \"a.nc\"\n{post}"))
+        };
+        let err = job(Some("grbll")).err().map(|e| e.to_string());
+        assert!(
+            err.as_deref().is_some_and(|e| e.contains("grbll")),
+            "{err:?}"
+        );
+        assert_eq!(job(Some("GRBL_HAL")).unwrap().job.post, PostFormat::GrblHal);
+        assert_eq!(job(None).unwrap().job.post, PostFormat::Grbl);
+        // The sweep writes the job back and reads it again.
+        let round = toml::to_string(&job(Some("linux_cnc")).unwrap()).unwrap();
+        assert_eq!(
+            toml::from_str::<JobFile>(&round).unwrap().job.post,
+            PostFormat::LinuxCnc
+        );
+    }
+
     #[test]
     fn test_tool_radius_uses_cutter_radius() {
-        // Verify that build_tool returns cutters whose radius() matches
-        // what the job executor would use (cutter.radius(), not diameter/2.0
-        // from the TOML definition, which could differ for composite tools).
+        // Verify that the job cutter's radius() matches what the job
+        // executor would use (cutter.radius(), not diameter/2.0 from the
+        // TOML definition, which could differ for composite tools).
         let flat_def = ToolDef {
             tool_type: ToolType::EndMill,
             number: None,
@@ -1332,7 +1423,7 @@ mod tests {
             shank_diameter: None,
             stickout: None,
         };
-        let cutter = build_tool(&flat_def).unwrap();
+        let cutter = cutter_of(&flat_def).unwrap();
         assert!((cutter.radius() - 3.0).abs() < 1e-10);
 
         let ball_def = ToolDef {
@@ -1347,7 +1438,7 @@ mod tests {
             shank_diameter: None,
             stickout: None,
         };
-        let ball_cutter = build_tool(&ball_def).unwrap();
+        let ball_cutter = cutter_of(&ball_def).unwrap();
         assert!((ball_cutter.radius() - 5.0).abs() < 1e-10);
 
         // For tapered ball, diameter() returns shaft_diameter, so radius()
@@ -1365,7 +1456,7 @@ mod tests {
             shank_diameter: None,
             stickout: None,
         };
-        let tapered_cutter = build_tool(&tapered_def).unwrap();
+        let tapered_cutter = cutter_of(&tapered_def).unwrap();
         // radius() should return shaft_diameter / 2.0 = 6.0
         assert!((tapered_cutter.radius() - 6.0).abs() < 1e-10);
     }

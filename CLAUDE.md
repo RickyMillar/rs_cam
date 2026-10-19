@@ -93,14 +93,14 @@ workspace's denied clippy lints and `unsafe_code`.
 | One sentry | `cargo test -p <crate> -q --test <name>` |
 | Focused crate tests | `cargo test -p <crate> -q` (viz, cli, mcp; core `--lib`) |
 | Full lint | `cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research,rs_cam_core/test-support -- -D warnings` |
-| Core full gate (CI) | `cargo test -p rs_cam_core --features heavy-tests,research,test-support --no-fail-fast -- -q` |
+| Core full gate | `cargo test -p rs_cam_core --features heavy-tests,research,test-support --no-fail-fast -- -q` |
 
 Local loop: the folder sentries for the folders you touched, the focused
 crate tests, then clippy. On the operator's PC, do not run the core full
 gate without asking, and ask before any test run over about three minutes.
 In the cloud environment (Claude Code on the web) run any test, the full
-gate included, whenever it is needed (operator, 2026-09-27). GitHub CI has
-not run a job since at least 2026-04: do not count on it.
+gate included, whenever it is needed (operator, 2026-09-27). The repository
+has no CI (operator ruling 2026-10-19, F151): no remote job runs a gate.
 Do not use workspace-wide `cargo test`; it can loop in this repository.
 
 On a shared machine run every cargo command through `scripts/cargo_lane.sh

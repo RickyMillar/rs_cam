@@ -9,8 +9,9 @@ allowed-tools: Bash, Read, Edit
 The literature matrix (`crates/rs_cam_core/tests/literature_matrix/`) carries
 a `last_verified` date on every entry in `sources.toml`. Sources age into
 three buckets: fresh (<12 months), warn (12-18 months), stale (≥18 months).
-Phase 5 of the plan added a CI report; this skill is the operator-side
-counterpart for actually refreshing them.
+Phase 5 of the plan added a freshness report
+(`tests/literature_matrix/freshness.rs`; no CI runs it); this skill is the
+operator-side counterpart for actually refreshing them.
 
 Plan: `planning/feeds_literature_matrix_2026-06-03.md` §"Phase plan / Risk
 register".

@@ -633,6 +633,54 @@ fn print_stock_changes(rows: &[rs_cam_core::session::StockChangeRow]) {
 
 // ── Main entry point ────────────────────────────────────────────────────
 
+/// Refuse a `--skip` id that the project does not hold, and a `--setup`
+/// filter that matches no setup by name or id (F014). The refusal lists the
+/// valid values.
+fn check_toolpath_filters(
+    session: &ProjectSession,
+    skip_ids: &[rs_cam_core::ToolpathId],
+    setup_filter: Option<&str>,
+) -> Result<()> {
+    let unknown: Vec<String> = skip_ids
+        .iter()
+        .filter(|id| session.find_toolpath_config_by_id(**id).is_none())
+        .map(|id| id.0.to_string())
+        .collect();
+    if !unknown.is_empty() {
+        let valid: Vec<String> = session
+            .toolpath_configs()
+            .iter()
+            .map(|tc| tc.id.0.to_string())
+            .collect();
+        anyhow::bail!(
+            "--skip names no toolpath with id {}. The project holds the ids: {}",
+            unknown.join(", "),
+            if valid.is_empty() {
+                "none".to_owned()
+            } else {
+                valid.join(", ")
+            }
+        );
+    }
+    if let Some(filter) = setup_filter
+        && !session
+            .list_setups()
+            .iter()
+            .any(|setup| setup.name == filter || setup.id.to_string() == filter)
+    {
+        let valid: Vec<String> = session
+            .list_setups()
+            .iter()
+            .map(|setup| format!("{} (id {})", setup.name, setup.id))
+            .collect();
+        anyhow::bail!(
+            "--setup '{filter}' matches no setup. The project holds: {}",
+            valid.join(", ")
+        );
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn run_project_command(
     input: &Path,
@@ -698,6 +746,11 @@ pub fn run_project_command(
         setups = session.setup_count(),
         "Loaded project"
     );
+
+    // F014: a skip id or a setup filter that names nothing is refused. A
+    // typo used to emit the toolpath the operator asked to skip, or skip
+    // every toolpath and report a clean run.
+    check_toolpath_filters(&session, skip_ids, setup_filter)?;
 
     // 2. Map setup_filter to additional skip IDs
     let mut combined_skip: Vec<rs_cam_core::ToolpathId> = skip_ids.to_vec();
@@ -1608,5 +1661,31 @@ mod tests {
                 "{key} must serialise as null, not 0:\n{json}"
             );
         }
+    }
+
+    /// F014: a `--skip` id or a `--setup` filter that names nothing is
+    /// refused before any toolpath generates.
+    #[test]
+    fn f014_an_unknown_skip_id_or_setup_is_refused() {
+        let session = rs_cam_core::session::ProjectSession::new_empty();
+        let err = super::check_toolpath_filters(&session, &[rs_cam_core::ToolpathId(7)], None)
+            .err()
+            .map(|e| e.to_string());
+        assert!(
+            err.as_deref().is_some_and(|e| e.contains("id 7")),
+            "{err:?}"
+        );
+        let err = super::check_toolpath_filters(&session, &[], Some("no such setup"))
+            .err()
+            .map(|e| e.to_string());
+        assert!(
+            err.as_deref().is_some_and(|e| e.contains("no such setup")),
+            "{err:?}"
+        );
+        assert!(super::check_toolpath_filters(&session, &[], None).is_ok());
+        let setup = session.list_setups().first().unwrap();
+        let (name, id) = (setup.name.clone(), setup.id.to_string());
+        assert!(super::check_toolpath_filters(&session, &[], Some(&name)).is_ok());
+        assert!(super::check_toolpath_filters(&session, &[], Some(&id)).is_ok());
     }
 }

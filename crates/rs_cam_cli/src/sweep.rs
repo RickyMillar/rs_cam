@@ -65,7 +65,7 @@ pub fn run_sweep(
 
     // Write baseline artifacts
     write_json(&output_dir.join("baseline.json"), &base_fp)?;
-    write_toolpath_svg(&output_dir.join("baseline.svg"), base_tp);
+    write_toolpath_svg(&output_dir.join("baseline.svg"), base_tp)?;
     write_gcode(
         &output_dir.join("baseline.nc"),
         base_tp,
@@ -116,7 +116,7 @@ pub fn run_sweep(
             &output_dir.join(format!("variant_{safe_val}_diff.json")),
             &diff,
         )?;
-        write_toolpath_svg(&output_dir.join(format!("variant_{safe_val}.svg")), var_tp);
+        write_toolpath_svg(&output_dir.join(format!("variant_{safe_val}.svg")), var_tp)?;
         write_gcode(
             &output_dir.join(format!("variant_{safe_val}.nc")),
             var_tp,
@@ -323,9 +323,9 @@ fn write_json(path: &Path, value: &impl serde::Serialize) -> Result<()> {
     std::fs::write(path, json).context(format!("Writing {}", path.display()))
 }
 
-fn write_toolpath_svg(path: &Path, tp: &rs_cam_core::toolpath::Toolpath) {
+fn write_toolpath_svg(path: &Path, tp: &rs_cam_core::toolpath::Toolpath) -> Result<()> {
     let svg = rs_cam_core::export::viz::toolpath_to_svg(tp, 800.0, 600.0);
-    let _ = std::fs::write(path, svg);
+    std::fs::write(path, svg).context(format!("Writing {}", path.display()))
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -335,8 +335,8 @@ fn write_gcode(
     job: &job::JobFile,
     _result: &job::JobResult,
 ) -> Result<()> {
-    let post = rs_cam_core::gcode::get_post_definition(&job.job.post)
-        .unwrap_or_else(|| rs_cam_core::gcode::PostFormat::Grbl.definition());
+    // F028: the job file parser already refused an unknown post token.
+    let post = job.job.post.definition();
     let gcode = rs_cam_core::gcode::emit_gcode(tp, post, job.job.spindle_speed);
     std::fs::write(path, gcode).context(format!("Writing G-code to {}", path.display()))
 }
@@ -373,9 +373,13 @@ fn simulate_and_export(
     let w: u32 = 900;
     let h: u32 = 600;
     let pixels = rs_cam_core::export::fingerprint::render_stock_composite(&stock, w, h);
-    if let Some(img) = image::RgbaImage::from_raw(w, h, pixels) {
-        let _ = img.save(output_dir.join(format!("{prefix}_stock.png")));
-    }
+    // F057: a sweep artifact that fails to write is an error, not a
+    // silent gap in the output directory.
+    let png_path = output_dir.join(format!("{prefix}_stock.png"));
+    let img = image::RgbaImage::from_raw(w, h, pixels)
+        .context("the stock composite has the wrong pixel count")?;
+    img.save(&png_path)
+        .context(format!("Writing {}", png_path.display()))?;
 
     Ok(StockFingerprint::from_stock(&stock))
 }

@@ -40,7 +40,9 @@ pub struct RunArgs {
     pub set: Vec<String>,
     pub output: Option<PathBuf>,
     pub svg: Option<PathBuf>,
-    pub post: String,
+    /// The post dialect, parsed at the flag by `PostFormat::from_token`
+    /// (F028): an unknown token never reaches here.
+    pub post: rs_cam_core::gcode::PostFormat,
     pub safe_z: f64,
     pub spindle_speed: u32,
     /// G11: the grblHAL export options, the keys of MCP `export_gcode`.
@@ -172,8 +174,7 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
     }
 
     let mut post = session.post_config().clone();
-    post.format = rs_cam_core::gcode::PostFormat::from_token(&args.post)
-        .unwrap_or(rs_cam_core::gcode::PostFormat::Grbl);
+    post.format = args.post;
     post.safe_z = args.safe_z;
     post.spindle_speed = args.spindle_speed;
     post.controller_waits_for_spindle = args.controller_waits_for_spindle;

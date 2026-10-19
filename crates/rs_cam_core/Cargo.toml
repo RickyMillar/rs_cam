@@ -13,7 +13,7 @@ step = ["truck-stepio", "truck-topology", "truck-meshalgo", "truck-geometry", "t
 # that is not heavy but is not a gate either (the `[[test]]` sections at the
 # bottom of this file). They were 75% of the 1,663 s serial rs_cam_core suite
 # on the 2026-08-27 profile, so the dev loop neither compiles nor runs them.
-# They are load-bearing sentries, NOT instruments: the commit gate and CI must
+# They are load-bearing sentries, NOT instruments: the commit gate must
 # pass `--features heavy-tests` (or `--features rs_cam_core/heavy-tests` from
 # the workspace root) for both `cargo test` and `cargo clippy`.
 heavy-tests = []

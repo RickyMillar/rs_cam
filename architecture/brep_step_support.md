@@ -526,7 +526,8 @@ forking truck or pivoting to subprocess fallback.
 
 **SR-4.7.4: CI**
 
-- Add CI job building with `--features step`
+- No CI exists (F151, 2026-10-19). `rs_cam_cli` turns on `step`, so every
+  workspace build compiles it.
 - truck crates are pure Rust — no C++ toolchain needed
 - Commit small test STEP fixtures (~10-50KB each)
 

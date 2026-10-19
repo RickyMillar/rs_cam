@@ -1,12 +1,12 @@
 ---
 name: verify
-description: Run the CI quality gate; the core suite needs the operator's go-ahead
+description: Run the pre-merge quality gate; the core suite needs the operator's go-ahead
 allowed-tools: Bash
 ---
 
 # /verify — Pre-Merge Quality Gate
 
-Run these steps in order. They cover the same ground as `.github/workflows/ci.yml`, with the same feature flags — but per-crate rather than workspace-wide (see step 2), so the commands are not byte-identical to the workflow's.
+Run these steps in order. The repository has no CI (F151, 2026-10-19), so this skill is the only full gate. The steps run per crate, not workspace-wide (see step 2).
 
 ## Steps
 
@@ -18,7 +18,7 @@ Fix: `cargo fmt` then review changes.
 
 ### 2. Test suite (per-crate — avoid workspace-wide)
 
-This is the CI gate. Locally, run it only with the operator's go-ahead: the core line takes 30+ minutes. The usual local loop is the folder sentries, the focused crate tests and step 3.
+This is the full gate. Locally, run it only with the operator's go-ahead: the core line takes 30+ minutes. The usual local loop is the folder sentries, the focused crate tests and step 3.
 
 ```bash
 cargo test -p rs_cam_core --features heavy-tests,research,test-support --no-fail-fast -- -q
@@ -51,4 +51,4 @@ cargo test -p rs_cam_viz compute::worker::tests::
 Fix: check `crates/rs_cam_viz/src/controller/tests.rs` and `compute/worker.rs`.
 
 ## All pass?
-Ready to commit. All five steps must pass — this is what CI enforces on every PR.
+Ready to commit. All five steps must pass. No CI runs them for you.

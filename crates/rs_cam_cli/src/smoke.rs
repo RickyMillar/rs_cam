@@ -613,6 +613,24 @@ fn run_single_case(case: &SmokeCase, all_cases: &[SmokeCase], resolution: f64) -
     row
 }
 
+/// Store `resolution` as the session's simulation cell through
+/// `SetSimulationResolution`, and return the cell the session then holds.
+///
+/// F057: the harness used to drop the refusal of this command, so a run at a
+/// refused cell measured at the old stored cell under a row that named the
+/// refused one.
+fn set_smoke_resolution(
+    session: &mut rs_cam_core::session::ProjectSession,
+    resolution: f64,
+) -> Result<f64, rs_cam_core::session::SessionError> {
+    let _ = session.apply(rs_cam_core::session::Command::SetSimulationResolution(
+        rs_cam_core::session::SetSimulationResolutionArgs {
+            resolution: rs_cam_core::session::SimulationResolution::Fixed(resolution),
+        },
+    ))?;
+    Ok(session.simulation_resolution_mm())
+}
+
 fn run_single_case_inner(
     case: &SmokeCase,
     all_cases: &[SmokeCase],
@@ -747,12 +765,20 @@ fn run_single_case_inner(
     let cancel = AtomicBool::new(false);
 
     // G-RESTRES: the smoke cell is the project's ONE stored simulation cell,
-    // so a chained case's rest snapshot is current.
-    let _ = session.apply(rs_cam_core::session::Command::SetSimulationResolution(
-        rs_cam_core::session::SetSimulationResolutionArgs {
-            resolution: rs_cam_core::session::SimulationResolution::Fixed(resolution),
-        },
-    ));
+    // so a chained case's rest snapshot is current. F057: a refused cell is
+    // a harness error, and the measurement reads the stored cell, so the
+    // row, the session and the dexel grid name one cell.
+    let resolution = match set_smoke_resolution(&mut session, resolution) {
+        Ok(mm) => mm,
+        Err(e) => {
+            return BaselineRow::failure(
+                &case.case_id,
+                op_type.kind_str(),
+                "harness_error",
+                &format!("simulation resolution refused: {e}"),
+            );
+        }
+    };
 
     // ONE `SimulationOptions` value serves both the priming pass and the
     // measurement pass, so the two dexel grids are the same grid. Hoisted
@@ -1484,5 +1510,22 @@ mod tests {
                 .any(|c| c.contains("status generation_failed → harness_error")),
             "failure-class slide not reported: {changes:?}"
         );
+    }
+
+    /// F057: a refused cell is an error, not a dropped `Result`, and the
+    /// cell the harness measures at is the cell the session stores.
+    #[test]
+    fn f057_a_refused_cell_is_an_error_and_the_measured_cell_is_the_stored_one() {
+        let mut session = rs_cam_core::session::ProjectSession::new_empty();
+        let stored = set_smoke_resolution(&mut session, 0.4).unwrap();
+        assert_eq!(stored.to_bits(), 0.4_f64.to_bits());
+        for bad in [0.0, -1.0, f64::NAN] {
+            assert!(set_smoke_resolution(&mut session, bad).is_err(), "{bad}");
+            // The refusal leaves the stored cell as it was.
+            assert_eq!(
+                session.simulation_resolution_mm().to_bits(),
+                0.4_f64.to_bits()
+            );
+        }
     }
 }

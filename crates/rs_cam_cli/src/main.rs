@@ -13,8 +13,105 @@ mod smoke;
 mod sweep;
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use rs_cam_core::dressup::feed_modulation::ModulationStrategy;
+use rs_cam_core::feeds::SpindleStrategy;
 use std::path::PathBuf;
+
+// ── Typed flag tokens (F014, F028, F057) ────────────────────────────────
+//
+// Each flag that names a core enum parses into that enum at the clap
+// boundary. An unknown token is a clap error; no flag falls back to a
+// default in silence.
+
+/// The `project --modulation-strategy` token of [`ModulationStrategy`].
+///
+/// Core has no clap dependency, so the CLI holds this mirror. The two
+/// `From` impls match every variant on both sides, so a new core variant
+/// does not compile until it has a token here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum ModulationStrategyArg {
+    ConstrainedMax,
+    BandMid,
+}
+
+impl From<ModulationStrategyArg> for ModulationStrategy {
+    fn from(arg: ModulationStrategyArg) -> Self {
+        match arg {
+            ModulationStrategyArg::ConstrainedMax => ModulationStrategy::ConstrainedMax,
+            ModulationStrategyArg::BandMid => ModulationStrategy::BandMid,
+        }
+    }
+}
+
+impl From<ModulationStrategy> for ModulationStrategyArg {
+    fn from(strategy: ModulationStrategy) -> Self {
+        match strategy {
+            ModulationStrategy::ConstrainedMax => ModulationStrategyArg::ConstrainedMax,
+            ModulationStrategy::BandMid => ModulationStrategyArg::BandMid,
+        }
+    }
+}
+
+/// The `project --spindle-strategy` token of [`SpindleStrategy`]. The
+/// token is the core serde token (`match_chart`, `max_speed`), the one the
+/// project file holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "snake_case")]
+enum SpindleStrategyArg {
+    MatchChart,
+    MaxSpeed,
+}
+
+impl From<SpindleStrategyArg> for SpindleStrategy {
+    fn from(arg: SpindleStrategyArg) -> Self {
+        match arg {
+            SpindleStrategyArg::MatchChart => SpindleStrategy::MatchChart,
+            SpindleStrategyArg::MaxSpeed => SpindleStrategy::MaxSpeed,
+        }
+    }
+}
+
+/// The reverse map. A test walks it, so a new core variant does not
+/// compile in the test build until it has a token here.
+#[cfg(test)]
+impl From<SpindleStrategy> for SpindleStrategyArg {
+    fn from(strategy: SpindleStrategy) -> Self {
+        match strategy {
+            SpindleStrategy::MatchChart => SpindleStrategyArg::MatchChart,
+            SpindleStrategy::MaxSpeed => SpindleStrategyArg::MaxSpeed,
+        }
+    }
+}
+
+/// The `run --post` parser. It calls the one core resolver,
+/// [`rs_cam_core::gcode::PostFormat::from_token`], so the flag takes the
+/// same tokens and aliases as a project file. An unknown token is refused.
+fn parse_post_format(token: &str) -> Result<rs_cam_core::gcode::PostFormat, String> {
+    use rs_cam_core::gcode::PostFormat;
+    PostFormat::from_token(token).ok_or_else(|| {
+        let valid: Vec<&str> = PostFormat::ALL.iter().map(|f| f.to_token()).collect();
+        format!(
+            "unknown post-processor '{token}'; supported: {}",
+            valid.join(", ")
+        )
+    })
+}
+
+/// The parser of a simulation cell size in mm. Core refuses a cell that is
+/// not finite and positive (`SetSimulationResolution`); this parser gives
+/// the same refusal at the flag.
+fn parse_positive_mm(token: &str) -> Result<f64, String> {
+    let mm: f64 = token
+        .trim()
+        .parse()
+        .map_err(|e| format!("'{token}' is not a number of mm: {e}"))?;
+    if mm.is_finite() && mm > 0.0 {
+        Ok(mm)
+    } else {
+        Err(format!("'{token}' is not a positive cell size in mm"))
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "rs_cam", about = "3-axis wood router CAM toolpath generator")]
@@ -113,9 +210,10 @@ enum Commands {
         #[arg(long)]
         svg: Option<PathBuf>,
 
-        /// Post-processor: grbl, grblhal, linuxcnc, mach3
-        #[arg(long, default_value = "grbl")]
-        post: String,
+        /// Post-processor: grbl, grblhal, linuxcnc, mach3. An unknown token
+        /// is refused (F028).
+        #[arg(long, default_value = "grbl", value_parser = parse_post_format)]
+        post: rs_cam_core::gcode::PostFormat,
 
         /// Safe Z height for rapid moves
         #[arg(long, default_value = "10.0")]
@@ -190,9 +288,10 @@ enum Commands {
         #[arg(long)]
         setup: Option<String>,
 
-        /// Skip these toolpath IDs (comma-separated)
-        #[arg(long)]
-        skip: Option<String>,
+        /// Skip these toolpath IDs (comma-separated). A token that is not an
+        /// id, or an id that the project does not hold, is refused (F014).
+        #[arg(long, value_delimiter = ',')]
+        skip: Vec<usize>,
 
         /// Override the project's stored simulation resolution, in mm.
         ///
@@ -200,8 +299,9 @@ enum Commands {
         /// simulation uses (`[job.simulation] resolution_mm`, auto when
         /// absent), so a rest cascade needs no flag. A value here replaces it
         /// for this run, and `summary.json` says `override`. A cell coarser
-        /// than the rest needs is refused.
-        #[arg(long)]
+        /// than the rest needs is refused, and so is a cell that is not a
+        /// positive number of mm.
+        #[arg(long, value_parser = parse_positive_mm)]
         resolution: Option<f64>,
 
         /// Print human-readable summary to stderr
@@ -245,9 +345,13 @@ enum Commands {
         /// F-039 — modulation algorithm: `constrained-max` (default;
         /// per-move binding-constraint solver) or `band-mid` (F-036's
         /// "target band-mid" heuristic, kept as a fallback for one
-        /// release cycle).
-        #[arg(long, default_value = "constrained-max")]
-        modulation_strategy: String,
+        /// release cycle). An unknown token is refused (F014).
+        #[arg(
+            long,
+            value_enum,
+            default_value_t = ModulationStrategyArg::from(ModulationStrategy::default())
+        )]
+        modulation_strategy: ModulationStrategyArg,
 
         /// F-039 — modulation feed scale: the multiplier the modulator
         /// applies to the binding feed limit (default 1.0 = emit at the
@@ -281,8 +385,8 @@ enum Commands {
         /// the constant-chipload line up to the spindle ceiling and
         /// scales feed proportionally. When unset, the strategy from
         /// the loaded project's post config is used.
-        #[arg(long, value_parser = ["match_chart", "max_speed"])]
-        spindle_strategy: Option<String>,
+        #[arg(long, value_enum)]
+        spindle_strategy: Option<SpindleStrategyArg>,
 
         /// Write `simulation.json`, the per-sample cut-trace artifact, into
         /// the output directory. Default off.
@@ -325,8 +429,8 @@ enum Commands {
         #[arg(long)]
         baseline: Option<PathBuf>,
 
-        /// Simulation resolution in mm.
-        #[arg(long, default_value = "0.5")]
+        /// Simulation resolution in mm: a positive number (F057).
+        #[arg(long, default_value = "0.5", value_parser = parse_positive_mm)]
         resolution: f64,
     },
 
@@ -378,7 +482,7 @@ enum Commands {
         /// Override the project's stored simulation resolution, in mm. The
         /// same rule as `project` (G-RESTRES): omit it to use the project
         /// file's value; the report says which one ran.
-        #[arg(long)]
+        #[arg(long, value_parser = parse_positive_mm)]
         resolution: Option<f64>,
 
         /// Skip the closing simulation: time and counts only. The plan still
@@ -513,24 +617,8 @@ fn main() -> Result<()> {
             spindle_strategy,
             sim_artifact,
         } => {
-            let skip_ids: Vec<rs_cam_core::ToolpathId> = skip
-                .as_deref()
-                .unwrap_or("")
-                .split(',')
-                .filter(|s| !s.is_empty())
-                .filter_map(|s| s.trim().parse().ok().map(rs_cam_core::ToolpathId))
-                .collect();
-            let strategy = match modulation_strategy.as_str() {
-                "band-mid" | "bandmid" | "band_mid" => {
-                    rs_cam_core::dressup::feed_modulation::ModulationStrategy::BandMid
-                }
-                _ => rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-            };
-            let spindle_strat_override = spindle_strategy.as_deref().and_then(|s| match s {
-                "match_chart" => Some(rs_cam_core::feeds::SpindleStrategy::MatchChart),
-                "max_speed" => Some(rs_cam_core::feeds::SpindleStrategy::MaxSpeed),
-                _ => None,
-            });
+            let skip_ids: Vec<rs_cam_core::ToolpathId> =
+                skip.into_iter().map(rs_cam_core::ToolpathId).collect();
             project::run_project_command(
                 &input,
                 &output_dir,
@@ -541,11 +629,11 @@ fn main() -> Result<()> {
                 emit_gcode.as_deref(),
                 // Checkpoint K (g1) — default ON, opt out explicitly.
                 !no_adaptive_feed_modulation,
-                strategy,
+                modulation_strategy.into(),
                 modulation_feed_scale,
                 inject_shapeoko_kinematics,
                 apply_suggest,
-                spindle_strat_override,
+                spindle_strategy.map(Into::into),
                 sim_artifact,
             )?;
         }
@@ -718,6 +806,130 @@ mod tests {
         for token in ["overrides", "settings.toml", "RS_CAM_SETTINGS"] {
             assert!(help.contains(token), "--help lacks {token}: {help}");
         }
+    }
+
+    fn project_args<'a>(extra: &[&'a str]) -> Vec<&'a str> {
+        let mut args = vec!["rs_cam", "project", "p.toml", "--output-dir", "out"];
+        args.extend_from_slice(extra);
+        args
+    }
+
+    /// F014: a `--skip` token that is not an id is a clap error. Before the
+    /// fix, `3,4a` dropped `4a` and emitted toolpath 4.
+    #[test]
+    fn f014_skip_refuses_a_token_that_is_not_an_id() {
+        assert!(Cli::try_parse_from(project_args(&["--skip", "3,4a"])).is_err());
+        let cli = Cli::try_parse_from(project_args(&["--skip", "3,4"])).unwrap();
+        let Commands::Project { skip, .. } = cli.command else {
+            panic!("not the project command");
+        };
+        assert_eq!(skip, vec![3, 4]);
+        let cli = Cli::try_parse_from(project_args(&[])).unwrap();
+        let Commands::Project { skip, .. } = cli.command else {
+            panic!("not the project command");
+        };
+        assert!(skip.is_empty());
+    }
+
+    /// F014: a `--modulation-strategy` typo is a clap error. Before the fix
+    /// it ran ConstrainedMax. The deleted aliases are refused too.
+    #[test]
+    fn f014_modulation_strategy_refuses_a_typo() {
+        use rs_cam_core::dressup::feed_modulation::ModulationStrategy;
+        for bad in ["band-midd", "bandmid", "band_mid"] {
+            assert!(
+                Cli::try_parse_from(project_args(&["--modulation-strategy", bad])).is_err(),
+                "{bad} parsed"
+            );
+        }
+        let strategy = |extra: &[&str]| {
+            let Commands::Project {
+                modulation_strategy,
+                ..
+            } = Cli::try_parse_from(project_args(extra)).unwrap().command
+            else {
+                panic!("not the project command");
+            };
+            ModulationStrategy::from(modulation_strategy)
+        };
+        assert_eq!(
+            strategy(&["--modulation-strategy", "band-mid"]),
+            ModulationStrategy::BandMid
+        );
+        assert_eq!(strategy(&[]), ModulationStrategy::default());
+    }
+
+    /// F014: the `--spindle-strategy` tokens are the core serde tokens, and
+    /// an unknown token is a clap error.
+    #[test]
+    fn f014_spindle_strategy_tokens_are_the_core_serde_tokens() {
+        use super::SpindleStrategyArg;
+        use clap::ValueEnum;
+        use rs_cam_core::feeds::SpindleStrategy;
+        for &arg in SpindleStrategyArg::value_variants() {
+            let core = SpindleStrategy::from(arg);
+            assert_eq!(SpindleStrategyArg::from(core), arg);
+            let token = arg.to_possible_value().unwrap().get_name().to_owned();
+            assert_eq!(serde_json::to_value(core).unwrap(), token.as_str());
+        }
+        assert!(Cli::try_parse_from(project_args(&["--spindle-strategy", "max-speed"])).is_err());
+    }
+
+    /// F028: an unknown `run --post` token is a clap error. Before the fix
+    /// it emitted GRBL. The core aliases still parse.
+    #[test]
+    fn f028_run_post_refuses_an_unknown_token() {
+        use rs_cam_core::gcode::PostFormat;
+        assert!(Cli::try_parse_from(["rs_cam", "run", "pocket", "--post", "grbll"]).is_err());
+        let post = |token: &str| {
+            let Commands::Run { post, .. } =
+                Cli::try_parse_from(["rs_cam", "run", "pocket", "--post", token])
+                    .unwrap()
+                    .command
+            else {
+                panic!("not the run command");
+            };
+            post
+        };
+        assert_eq!(post("GRBL_HAL"), PostFormat::GrblHal);
+        assert_eq!(post("linux_cnc"), PostFormat::LinuxCnc);
+        let Commands::Run { post, .. } = Cli::try_parse_from(["rs_cam", "run", "pocket"])
+            .unwrap()
+            .command
+        else {
+            panic!("not the run command");
+        };
+        assert_eq!(post, PostFormat::Grbl);
+    }
+
+    /// F057: a cell size that is not a positive number of mm is a clap error
+    /// on every `--resolution` flag. Before the fix, `smoke --resolution 0`
+    /// reached core, which refused it, and the harness dropped the refusal.
+    #[test]
+    fn f057_resolution_refuses_a_cell_that_is_not_positive() {
+        for bad in ["0", "-0.5", "nan", "inf", "fine"] {
+            assert!(
+                Cli::try_parse_from(["rs_cam", "smoke", "--resolution", bad]).is_err(),
+                "smoke {bad}"
+            );
+            assert!(
+                Cli::try_parse_from(project_args(&["--resolution", bad])).is_err(),
+                "project {bad}"
+            );
+            assert!(
+                Cli::try_parse_from(["rs_cam", "rough-score", "p.toml", "--resolution", bad])
+                    .is_err(),
+                "rough-score {bad}"
+            );
+        }
+        let Commands::Smoke { resolution, .. } =
+            Cli::try_parse_from(["rs_cam", "smoke", "--resolution", "0.25"])
+                .unwrap()
+                .command
+        else {
+            panic!("not the smoke command");
+        };
+        assert_eq!(resolution, 0.25);
     }
 
     #[test]

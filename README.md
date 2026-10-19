@@ -117,7 +117,7 @@ The repo currently keeps these gates green:
 - `cargo test -q`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 
-Linux CI also runs a dedicated `rs_cam_viz` regression lane for the renderless GUI harness and compute-lane queue/cancel tests.
+The repository has no CI. Step 5 of the `/verify` skill runs the `rs_cam_viz` regression lane for the renderless GUI harness and the compute-lane queue/cancel tests.
 
 ## Open-source provenance
 
