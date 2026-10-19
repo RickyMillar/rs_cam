@@ -112,6 +112,9 @@ const CLI_COMPUTE_DOOR_ROWS: &[CommandId] = &[CommandId::GenerateToolpath];
 const MCP_SOURCES: &[&str] = &[
     "src/app/mcp.rs",
     "src/app/mcp/commands.rs",
+    // Geometry selection P2.7: the wire's selection rows (it reads the
+    // `selection_status` and `list_model_items` query rows for MCP).
+    "src/app/mcp/commands/selection.rs",
     "src/app/mcp/diagnostics.rs",
     "src/app/mcp/generation.rs",
     "src/app/mcp/project.rs",

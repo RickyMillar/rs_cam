@@ -73,6 +73,16 @@ impl MatchKey {
         }
     }
 
+    /// The same key with its source in the form a toolpath on
+    /// `toolpath_model` stores ([`SourceRef::for_toolpath_model`]).
+    #[must_use]
+    pub fn for_toolpath_model(self, toolpath_model: crate::ids::ModelId) -> Self {
+        Self {
+            source: self.source.for_toolpath_model(toolpath_model),
+            ..self
+        }
+    }
+
     /// True when the two keys name one item: the source is equal and
     /// [`Self::names_same_geometry`] holds.
     pub fn matches(&self, other: &MatchKey) -> bool {

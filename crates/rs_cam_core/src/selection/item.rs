@@ -41,6 +41,47 @@ pub enum SourceRef {
     Stock,
 }
 
+impl SourceRef {
+    /// The source as a selection of a toolpath on `toolpath_model` stores
+    /// it: `Model(toolpath_model)` becomes [`SourceRef::ToolpathModel`];
+    /// every other source stays (geometry selection P2.7).
+    ///
+    /// One item has ONE stored spelling, so a pick from `list_model_items`
+    /// (`Model(id)`) and a viewport pick (`ToolpathModel`) of the same item
+    /// are one pick, and the second toggle removes it. A pick on the own
+    /// model then follows a re-target of the toolpath (DESIGN 9.2): it
+    /// resolves against the new model and flags when it misses. A pick on
+    /// another model stays bound to that model.
+    pub fn for_toolpath_model(self, toolpath_model: ModelId) -> SourceRef {
+        match self {
+            SourceRef::Model(id) if id == toolpath_model => SourceRef::ToolpathModel,
+            SourceRef::Model(_) | SourceRef::ToolpathModel | SourceRef::Stock => self,
+        }
+    }
+}
+
+/// The item counts of one item set: by kind, and by layer then kind (the
+/// `inspect_model` reply and the GUI model panel, geometry selection P2.7).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ItemCounts {
+    pub by_kind: std::collections::BTreeMap<ItemKind, usize>,
+    /// Items with no layer (an SVG item, a face) are not here.
+    pub by_layer: std::collections::BTreeMap<String, std::collections::BTreeMap<ItemKind, usize>>,
+}
+
+impl ItemCounts {
+    /// One count line: "4 closed loops, 5 open paths, 1 point", in kind
+    /// order. The GUI model panel prints it for `by_kind` and for each
+    /// layer of `by_layer`.
+    pub fn line(counts: &std::collections::BTreeMap<ItemKind, usize>) -> String {
+        counts
+            .iter()
+            .map(|(kind, n)| format!("{n} {}", super::refusal::kind_noun(*kind, *n)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
 /// The fieldless mirror of [`Shape`], for rules, keys and refusal text.
 /// `Ord` keys the skipped-item counts of a view (`OpItems::skipped_by_kind`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -456,6 +497,23 @@ impl ItemSet {
             .iter()
             .filter(|i| i.shape.drawing_ring().is_some())
             .count()
+    }
+
+    /// The count of the items by kind, and by layer then kind.
+    pub fn counts(&self) -> ItemCounts {
+        let mut counts = ItemCounts::default();
+        for item in &self.items {
+            *counts.by_kind.entry(item.kind()).or_insert(0) += 1;
+            if let Some(layer) = item.layer() {
+                *counts
+                    .by_layer
+                    .entry(layer.to_owned())
+                    .or_default()
+                    .entry(item.kind())
+                    .or_insert(0) += 1;
+            }
+        }
+        counts
     }
 
     /// The distinct layers of every item, sorted.

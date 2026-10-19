@@ -257,10 +257,20 @@ impl RsCamApp {
                 let mut op_value =
                     serde_json::to_value(&tc.operation).unwrap_or_else(|_| serde_json::json!({}));
                 if let Some(obj) = op_value.as_object_mut() {
-                    obj.insert(
-                        "params".to_owned(),
-                        tc.operation.params_value_including_nulls(),
-                    );
+                    let mut params = tc.operation.params_value_including_nulls();
+                    // Geometry selection P2.7: the selection is driver-set,
+                    // so the schema list leaves it out. It is returned
+                    // always (the op default too), as the file JSON that
+                    // `edit_toolpath_selection` `replace` takes.
+                    if let (Some(map), Some(selection)) =
+                        (params.as_object_mut(), tc.operation.selection())
+                    {
+                        map.insert(
+                            "selection".to_owned(),
+                            serde_json::to_value(selection).unwrap_or(serde_json::Value::Null),
+                        );
+                    }
+                    obj.insert("params".to_owned(), params);
                     obj.insert(
                         "param_schema".to_owned(),
                         serde_json::to_value(tc.operation.param_schema_hints())
@@ -401,9 +411,19 @@ impl RsCamApp {
                 );
             }
 
-            // Polygon summary (SVG/DXF-specific)
-            // The drawn rings of the model, nested (`ItemSet::drawing_curves`);
-            // P2.7 adds the item listing.
+            // Geometry selection P2.7: the items of the model by kind and
+            // by layer (`ItemSet::counts`), the numbers the GUI model panel
+            // shows. `list_model_items` lists each item with its key.
+            if !model.items.is_empty() {
+                map.insert(
+                    "items".into(),
+                    super::commands::item_counts_json(&model.items.counts()),
+                );
+            }
+
+            // The nested drawn rings of the model (`ItemSet::drawing_curves`):
+            // a ring with the rings inside it as holes, so `count` is the
+            // count of top-level rings, not of items.
             let curves = model
                 .items
                 .has_drawing()

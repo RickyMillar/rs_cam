@@ -479,9 +479,7 @@ macro_rules! for_each_command {
                      "the GUI inspector replaces the whole config through replace_toolpath_config",
                  ),
                  mcp: Reach::Reached,
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
+                 cli: Reach::Reached,
              }),
             (Command, SetToolpathEnabled, "set_toolpath_enabled", SetToolpathEnabledArgs, Effects,
              Surfaces {
@@ -542,10 +540,7 @@ macro_rules! for_each_command {
                      "the drill panel reads ProjectSession::hole_selection, a projection of the \
                       same memo; the selection panel comes in geometry selection P4",
                  ),
-                 mcp: Reach::Skip(
-                     "the MCP selection tools come with the selection wire types (geometry \
-                      selection P2.7)",
-                 ),
+                 mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI reads no selection status; a refusal stops its run",
                  ),
@@ -556,10 +551,7 @@ macro_rules! for_each_command {
                      "the GUI picks items in the viewport; the selection panel with an item \
                       list comes in geometry selection P4",
                  ),
-                 mcp: Reach::Skip(
-                     "the MCP selection tools come with the selection wire types (geometry \
-                      selection P2.7)",
-                 ),
+                 mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI writes rules in its job file; it lists no items",
                  ),
@@ -604,13 +596,8 @@ macro_rules! for_each_command {
              EditSelectionArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,
-                 mcp: Reach::Skip(
-                     "the MCP selection tool comes with the selection wire types (geometry \
-                      selection P2.7)",
-                 ),
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Reached,
              }),
             (Command, AddObstacle, "add_obstacle", AddObstacleArgs, Effects,
              Surfaces {
@@ -1733,8 +1720,11 @@ pub struct ListItemsArgs {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ListItemsAnswer {
     /// The items in import order. Each key names its source as
-    /// `SourceRef::Model(model_id)`, so a pick that copies it reads this
-    /// model whatever the model of the toolpath is.
+    /// `SourceRef::Model(model_id)`. A pick that copies it reads this
+    /// model, except on a toolpath whose model IS this model: the
+    /// `edit_toolpath_selection` command then stores the key as
+    /// `SourceRef::ToolpathModel` (P2.7, one spelling per item), so the
+    /// pick follows a re-target of the toolpath.
     pub items: Vec<ModelItem>,
 }
 

@@ -213,19 +213,6 @@ fn no_production_source_names_the_second_staleness_model() {
 /// LEDGER of an open finding.
 const ALL_SKIP_ALLOW_LIST: &[(&str, &str)] = &[
     (
-        "selection_status",
-        "Geometry selection P2.4 query row. The product reads the same memo through \
-         `ProjectSession::selection_status` (the precondition diagnostics) and its projection \
-         `hole_selection` (the GUI drill panel); the MCP tool comes in P2.7 and the GUI panel \
-         in P4, and each then reaches the row.",
-    ),
-    (
-        "list_model_items",
-        "Geometry selection P2.6 query row: the items of a model with their pick keys. It is \
-         the pick source of the MCP selection tools, which come in P2.7 and then reach the row; \
-         the GUI selection panel with an item list comes in P4.",
-    ),
-    (
         "set_toolpath_operation",
         "WP15a row. The registry's own GUI reason reads: no GUI control changes an operation kind in place. \
          MEASURED 2026-09-14: no production `Command` literal.",

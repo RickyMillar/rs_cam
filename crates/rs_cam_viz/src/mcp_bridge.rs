@@ -550,6 +550,13 @@ pub enum McpRequestKind {
     InspectBrepFaces {
         model_id: usize,
     },
+    /// Geometry selection P2.7: the `selection_status` query row of the
+    /// toolpath at `index`.
+    SelectionStatus {
+        index: usize,
+    },
+    /// Geometry selection P2.7: the `list_model_items` query row.
+    ListModelItems(rs_cam_mcp::server::ListModelItemsParam),
     /// Dump the structural spans (Operation, DepthPass, Region, Entry, LeadOut,
     /// LinkBridge, DressupArtifact, RapidOrderBarrier) of a generated toolpath.
     /// Lets agents inspect toolpath anatomy without parsing the raw move list.
@@ -895,6 +902,9 @@ declare_core_requests! {
             => SetDressupField, None;
         SetToolpathEnabled(rs_cam_mcp::server::SetToolpathEnabledParam)
             => SetToolpathEnabled, None;
+        /// Row `EditSelection` (geometry selection P2.7).
+        EditToolpathSelection(rs_cam_mcp::server::EditToolpathSelectionParam)
+            => EditSelection, Some(Workspace::Toolpaths);
         /// Row `SetSimulationResolution` (G-RESTRES).
         SetSimulationResolution(rs_cam_mcp::server::SetSimulationResolutionParam)
             => SetSimulationResolution, None;

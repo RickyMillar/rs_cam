@@ -54,9 +54,9 @@ use rs_cam_core::{
     },
     geo::BoundingBox3,
     session::{
-        AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
-        SetDressupFieldArgs, SetPostConfigArgs, SetStockConfigArgs, SetToolpathParamArgs,
-        ToolpathConfig,
+        AddModelArgs, AddToolArgs, AddToolpathArgs, Command, EditSelectionArgs, LoadedModel,
+        ProjectSession, SetDressupFieldArgs, SetPostConfigArgs, SetStockConfigArgs,
+        SetToolpathParamArgs, ToolpathConfig,
     },
     stock::simulation_cut::{
         AirCutRatios as _, SimulationCutArtifact, SimulationCutIssueKind, SimulationCutTrace,
@@ -212,6 +212,13 @@ pub struct OperationDef {
     /// Dressup fields by their `DressupConfig::FIELD_DEFS` name.
     #[serde(default, skip_serializing_if = "toml::Table::is_empty")]
     pub dressups: toml::Table,
+    /// The selection of the op (geometry selection P2.7): the
+    /// `[operation.selection]` table in the shape of the project file's
+    /// `operation.params.selection`. Empty: the default of the op. The
+    /// `edit_toolpath_selection` command applies it, so an op that holds
+    /// no selection refuses it by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<rs_cam_core::selection::Selection>,
     /// Operation parameters by their schema name.
     #[serde(flatten)]
     pub params: toml::Table,
@@ -230,6 +237,7 @@ impl OperationDef {
         "scale",
         "stock_top_z",
         "dressups",
+        "selection",
     ];
 
     /// The registry op that `type` names, after the C2 check of every key.
@@ -1192,6 +1200,14 @@ fn execute_op_via_session(
         });
         let _ = crate::command::apply_command(&mut session, command)
             .map_err(|e| anyhow::anyhow!("dressup '{}': {e}", def.name))?;
+    }
+    if let Some(selection) = &op.selection {
+        let command = Command::EditSelection(EditSelectionArgs {
+            index: tp_index,
+            edit: rs_cam_core::selection::SelectionEdit::Replace(Box::new(selection.clone())),
+        });
+        let _ = crate::command::apply_command(&mut session, command)
+            .map_err(|e| anyhow::anyhow!("selection: {e}"))?;
     }
 
     let mut post = session.post_config().clone();

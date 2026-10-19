@@ -26,19 +26,20 @@ use crate::ui_command::{
 use rs_cam_mcp::server::{
     AddAlignmentPinParam, AddToolFromLibraryParam, AddToolParam, AddToolpathParam,
     AddToolpathViaGuiParam, ApplyFeedsParam, CollisionCheckParam, CompareRestWithFreshParam,
-    CutTraceParam, ExportParam, GenDebugTraceParam, GenerateAllParam, GenerateToolpathParam,
-    GetNotificationsParam, ImportMachineSettingsParam, IndexParam, InspectSpansParam,
-    ListToolCatalogParam, LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam,
-    MoveAlignmentPinsParam, OperationSchemaParam, PlaceAlignmentPatternParam,
-    PlanMultitoolFinishingParam, PreviewTierMapParam, ReachMapParam, RemoveAlignmentPinParam,
-    RemoveToolParam, RemoveToolpathParam, SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam,
-    ScreenshotToolpathParam, SetAlignmentPinsParam, SetBoundaryConfigParam, SetDressupConfigParam,
-    SetDressupFieldParam, SetMachineHeadParam, SetMachineKinematicsParam,
-    SetRestAnalysisConfigParam, SetSetupRotationParam, SetSimulationResolutionParam,
-    SetSpindleStrategyParam, SetStockConfigParam, SetStockSourceParam, SetToolParamInput,
-    SetToolpathEnabledParam, SetToolpathHeightsParam, SetToolpathModelParam, SetToolpathParamInput,
-    SetToolpathShoeParam, SetToolpathToolParam, SetUiViewParam, SimJumpToMoveParam,
-    SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam, json_str,
+    CutTraceParam, EditToolpathSelectionParam, ExportParam, GenDebugTraceParam, GenerateAllParam,
+    GenerateToolpathParam, GetNotificationsParam, ImportMachineSettingsParam, IndexParam,
+    InspectSpansParam, ListModelItemsParam, ListToolCatalogParam, LoadMachineFromLibraryParam,
+    LoadProjectParam, ModelIdParam, MoveAlignmentPinsParam, OperationSchemaParam,
+    PlaceAlignmentPatternParam, PlanMultitoolFinishingParam, PreviewTierMapParam, ReachMapParam,
+    RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam,
+    ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam, SetAlignmentPinsParam,
+    SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam, SetMachineHeadParam,
+    SetMachineKinematicsParam, SetRestAnalysisConfigParam, SetSetupRotationParam,
+    SetSimulationResolutionParam, SetSpindleStrategyParam, SetStockConfigParam,
+    SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam, SetToolpathHeightsParam,
+    SetToolpathModelParam, SetToolpathParamInput, SetToolpathShoeParam, SetToolpathToolParam,
+    SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam,
+    SimulationParam, json_str,
 };
 
 /// How long a cheap read waits for the GUI frame loop before falling back to
@@ -669,6 +670,47 @@ impl EmbeddedCamServer {
         Self::format_result(
             self.send_request(McpRequestKind::InspectBrepFaces { model_id })
                 .await,
+        )
+    }
+
+    #[tool(
+        name = "list_model_items",
+        description = "Geometry selection: list the items of one model (a closed loop, an open path, a point, a circle, a flat STEP face), in import order, each with its kind, layer, measure and match `key`. Filter by `layer` and `kind`. To pick an item, copy its `key` into `edit_toolpath_selection` `{\"add_pick\": <key>}`. The key names the model as `{\"model\": id}`; on a toolpath of that model the pick is stored as `\"toolpath_model\"`, so a viewport click on the same item toggles the same pick."
+    )]
+    async fn list_model_items(&self, Parameters(param): Parameters<ListModelItemsParam>) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::ListModelItems(param))
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "selection_status",
+        description = "Geometry selection: what the selection of the toolpath at `index` resolves to, with no generation. The answer generation gives: `counts` (items cut, by kind), `islands`, `skipped_by_kind` (items the default rule matched that the op cannot cut), `notes` (the skipped open paths), `lost` (picks that name no item or more than one), `refusal` (the refusal text, or null), `holes` (a drill op: the holes it drills, in the model frame) and `selected` (the key of every selected item). The GUI reads the same report."
+    )]
+    async fn selection_status(
+        &self,
+        Parameters(IndexParam { index }): Parameters<IndexParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::SelectionStatus { index })
+                .await,
+        )
+    }
+
+    #[tool(
+        name = "edit_toolpath_selection",
+        description = "Geometry selection: apply one edit to the selection of the op of the toolpath at `index` (a 2.5D op; a 3D op holds no selection and refuses). `edit` is exactly one of: `{\"add_pick\": <key>}` (a key from `list_model_items`), `{\"remove_pick\": <key>}` (with no pick of the item, it excludes the item from the rule matches), `{\"add_rule\": {\"source\": \"toolpath_model\", \"filter\": {\"layers\": [\"CUT\"]}}}`, `{\"remove_rule\": <index>}`, `{\"replace\": {\"rules\": [...], \"picks\": [...], \"excludes\": [...]}}` or `\"reset\"` (the default of the op). The JSON is the project-file JSON. The edit stales the toolpath; read `selection_status` to see what it cuts."
+    )]
+    async fn edit_toolpath_selection(
+        &self,
+        Parameters(param): Parameters<EditToolpathSelectionParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::EditToolpathSelection(
+                param,
+            )))
+            .await,
         )
     }
 

@@ -275,13 +275,20 @@ impl ProjectSession {
                 )));
             };
             let label = tc.operation.op_type().label();
+            // P2.7: one stored spelling per item. A key or a rule on the
+            // model of the toolpath is stored as `ToolpathModel`, in the
+            // edit AND in the selection it edits, so a `list_model_items`
+            // key and a viewport pick of one item are one pick.
+            let model = crate::ids::ModelId(tc.model_id);
             let Some(slot) = tc.operation.selection_slot() else {
                 return Err(SessionError::InvalidParam(format!(
                     "Toolpath '{name}' holds no selection: its operation cuts no drawing item"
                 )));
             };
-            slot.apply(edit, &op_default)
+            let mut next = slot.clone().for_toolpath_model(model);
+            next.apply(edit.for_toolpath_model(model), &op_default)
                 .map_err(|e| SessionError::Selection(e.for_op(label)))?;
+            *slot = next;
             session.invalidate_result_chain(index, enabled);
             Ok(())
         })

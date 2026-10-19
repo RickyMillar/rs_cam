@@ -845,13 +845,325 @@ pub struct SetBoundaryConfigParam {
     /// A rule may read any project model (`{"model": id}`, the id from
     /// `inspect_model`) or the model of the toolpath (`"toolpath_model"`).
     /// Holes in the shapes stay uncut. Replaces `model_id` (P2.5).
-    pub selection: Option<serde_json::Value>,
+    pub selection: Option<SelectionParam>,
     /// Used only when `source` is "selection". When true, the toolpath
     /// cuts inside the HOLES of the regions and stays off the regions, for
     /// example the area inside an edge band. Generation refuses when the
     /// regions have no hole. When absent, the value is false. Replaces
     /// `outline_holes` (P2.5).
     pub holes: Option<bool>,
+}
+
+// ── Geometry selection (P2.7) ─────────────────────────────────────────
+//
+// The wire types of a selection. Each mirrors one `rs_cam_core::selection`
+// type with the SAME serde shape, so the wire JSON is the project-file JSON
+// of the selection (DESIGN 10.4). The mirrors exist because `rs_cam_core`
+// does not depend on schemars. Each `From` match names every variant, so a
+// new core variant does not compile until the wire states it. The test
+// `selection_wire_is_the_file_json_p2_7` round-trips each shape.
+
+/// Where an item comes from: `"toolpath_model"`, `{"model": <id>}` (an
+/// `inspect_model` id) or `"stock"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum SourceRefParam {
+    /// The model of the toolpath.
+    #[default]
+    ToolpathModel,
+    /// A project model by its `inspect_model` id.
+    Model(usize),
+    /// The stock outline of the setup.
+    Stock,
+}
+
+impl From<SourceRefParam> for rs_cam_core::selection::SourceRef {
+    fn from(p: SourceRefParam) -> Self {
+        match p {
+            SourceRefParam::ToolpathModel => Self::ToolpathModel,
+            SourceRefParam::Model(id) => Self::Model(rs_cam_core::ids::ModelId(id)),
+            SourceRefParam::Stock => Self::Stock,
+        }
+    }
+}
+
+/// The kind of an item.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum ItemKindParam {
+    /// A closed loop.
+    #[default]
+    Loop,
+    /// An open path.
+    Path,
+    /// A point.
+    Point,
+    /// A circle (one item; centre and diameter).
+    Circle,
+    /// A flat face of a STEP model.
+    Face,
+}
+
+impl From<ItemKindParam> for rs_cam_core::selection::ItemKind {
+    fn from(p: ItemKindParam) -> Self {
+        match p {
+            ItemKindParam::Loop => Self::Loop,
+            ItemKindParam::Path => Self::Path,
+            ItemKindParam::Point => Self::Point,
+            ItemKindParam::Circle => Self::Circle,
+            ItemKindParam::Face => Self::Face,
+        }
+    }
+}
+
+/// Which kinds a rule matches: `"served"` (every drawing kind the op
+/// cuts; the op leaves out the others with a note) or `{"only": [kinds]}`
+/// (these kinds; a matched item the op cannot cut refuses).
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum KindFilterParam {
+    #[default]
+    Served,
+    Only(Vec<ItemKindParam>),
+}
+
+impl From<KindFilterParam> for rs_cam_core::selection::KindFilter {
+    fn from(p: KindFilterParam) -> Self {
+        match p {
+            KindFilterParam::Served => Self::Served,
+            KindFilterParam::Only(kinds) => Self::Only(kinds.into_iter().map(Into::into).collect()),
+        }
+    }
+}
+
+/// A circle diameter range: `nominal_mm` plus or minus `tolerance_mm`.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, schemars::JsonSchema)]
+#[schemars(inline)]
+pub struct DiameterRangeParam {
+    pub nominal_mm: f64,
+    pub tolerance_mm: f64,
+}
+
+/// Which way a face points, in the setup frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum FacingParam {
+    Up,
+    Down,
+    Either,
+}
+
+/// A Z range in mm, both ends included.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, schemars::JsonSchema)]
+#[schemars(inline)]
+pub struct ZRangeParam {
+    pub min: f64,
+    pub max: f64,
+}
+
+/// A face filter: the facing and the plane Z, in the setup frame.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, schemars::JsonSchema)]
+#[schemars(inline)]
+pub struct FaceFilterParam {
+    pub facing: FacingParam,
+    #[serde(default)]
+    pub z: Option<ZRangeParam>,
+}
+
+impl From<FaceFilterParam> for rs_cam_core::selection::FaceFilter {
+    fn from(p: FaceFilterParam) -> Self {
+        use rs_cam_core::selection::Facing;
+        Self {
+            facing: match p.facing {
+                FacingParam::Up => Facing::Up,
+                FacingParam::Down => Facing::Down,
+                FacingParam::Either => Facing::Either,
+            },
+            z: p.z.map(|z| rs_cam_core::selection::ZRange {
+                min: z.min,
+                max: z.max,
+            }),
+        }
+    }
+}
+
+/// The test of one rule. Every part must admit the item.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, schemars::JsonSchema)]
+#[schemars(inline)]
+pub struct FilterParam {
+    /// Only items on these layers. Empty or absent: every layer.
+    #[serde(default)]
+    pub layers: Vec<String>,
+    /// Absent: `"served"`.
+    #[serde(default)]
+    pub kinds: KindFilterParam,
+    /// Circles only, of this diameter range.
+    #[serde(default)]
+    pub diameter: Option<DiameterRangeParam>,
+    /// Faces only, by facing and plane Z.
+    #[serde(default)]
+    pub face: Option<FaceFilterParam>,
+}
+
+impl From<FilterParam> for rs_cam_core::selection::Filter {
+    fn from(p: FilterParam) -> Self {
+        Self {
+            layers: p.layers,
+            kinds: p.kinds.into(),
+            diameter: p.diameter.map(|d| rs_cam_core::selection::DiameterRange {
+                nominal_mm: d.nominal_mm,
+                tolerance_mm: d.tolerance_mm,
+            }),
+            face: p.face.map(Into::into),
+        }
+    }
+}
+
+/// One rule: the items of `source` that `filter` admits. Example (the
+/// closed loops on layer CUT of the toolpath model):
+/// `{"source": "toolpath_model", "filter": {"layers": ["CUT"], "kinds": {"only": ["loop"]}}}`.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, schemars::JsonSchema)]
+#[schemars(inline)]
+pub struct RuleParam {
+    pub source: SourceRefParam,
+    #[serde(default)]
+    pub filter: FilterParam,
+}
+
+impl From<RuleParam> for rs_cam_core::selection::Rule {
+    fn from(p: RuleParam) -> Self {
+        Self {
+            source: p.source.into(),
+            filter: p.filter.into(),
+        }
+    }
+}
+
+/// The match key of one item. Copy it from a `list_model_items` row (or a
+/// `selection_status` key); do not type it. A key matches an item when the
+/// source, kind, layer and BREP id are equal and the anchor and measure
+/// agree within 1e-6 mm.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, schemars::JsonSchema)]
+#[schemars(inline)]
+pub struct MatchKeyParam {
+    pub source: SourceRefParam,
+    pub kind: ItemKindParam,
+    #[serde(default)]
+    pub layer: Option<String>,
+    /// Loop and face: the area centroid. Path: the first vertex. Point:
+    /// the point. Circle: the centre.
+    pub anchor: [f64; 2],
+    /// Loop and face: the square root of the area (mm). Path: the length.
+    /// Circle: the diameter. Point: 0.
+    pub measure: f64,
+    /// Face only: the BREP face id.
+    #[serde(default)]
+    pub brep: Option<u16>,
+}
+
+impl From<MatchKeyParam> for rs_cam_core::selection::MatchKey {
+    fn from(p: MatchKeyParam) -> Self {
+        Self {
+            source: p.source.into(),
+            kind: p.kind.into(),
+            layer: p.layer,
+            anchor: p.anchor,
+            measure: p.measure,
+            brep: p.brep,
+        }
+    }
+}
+
+/// A whole selection, as the project file holds it: the union of the rule
+/// matches and the picks, less the excludes. `{"rules": [], "picks": []}`
+/// selects nothing.
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(inline)]
+pub struct SelectionParam {
+    #[serde(default)]
+    pub rules: Vec<RuleParam>,
+    /// Items added by hand (match keys).
+    #[serde(default)]
+    pub picks: Vec<MatchKeyParam>,
+    /// Items removed by hand from the rule matches (match keys).
+    #[serde(default)]
+    pub excludes: Vec<MatchKeyParam>,
+}
+
+impl From<SelectionParam> for rs_cam_core::selection::Selection {
+    fn from(p: SelectionParam) -> Self {
+        Self::from_parts(
+            p.rules.into_iter().map(Into::into).collect(),
+            p.picks.into_iter().map(Into::into).collect(),
+            p.excludes.into_iter().map(Into::into).collect(),
+        )
+    }
+}
+
+/// One edit of the selection of an op. Exactly one key:
+/// `{"add_pick": <key>}`, `{"remove_pick": <key>}`, `{"add_rule": <rule>}`,
+/// `{"remove_rule": <index>}`, `{"replace": <selection>}`, or `"reset"`
+/// (the default selection of the op).
+#[derive(Debug, Clone, PartialEq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum SelectionEditParam {
+    /// Replace the whole selection.
+    Replace(SelectionParam),
+    /// Add a rule (a rule equal to one the selection holds is not added).
+    AddRule(RuleParam),
+    /// Remove the rule at this index.
+    RemoveRule(usize),
+    /// Pick an item. It also removes an exclude of that item.
+    AddPick(MatchKeyParam),
+    /// Remove the pick of an item. With no pick of it, exclude the item
+    /// from the rule matches.
+    RemovePick(MatchKeyParam),
+    /// Back to the default selection of the op.
+    #[default]
+    Reset,
+}
+
+impl From<SelectionEditParam> for rs_cam_core::selection::SelectionEdit {
+    fn from(p: SelectionEditParam) -> Self {
+        match p {
+            SelectionEditParam::Replace(s) => Self::Replace(Box::new(s.into())),
+            SelectionEditParam::AddRule(r) => Self::AddRule(r.into()),
+            SelectionEditParam::RemoveRule(i) => Self::RemoveRule(i),
+            SelectionEditParam::AddPick(k) => Self::AddPick(k.into()),
+            SelectionEditParam::RemovePick(k) => Self::RemovePick(k.into()),
+            SelectionEditParam::Reset => Self::Reset,
+        }
+    }
+}
+
+/// `edit_toolpath_selection` (P2.7): apply one edit to the selection of
+/// the op of a toolpath. The edit stales that toolpath and its dependents.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct EditToolpathSelectionParam {
+    /// Toolpath index (0-based).
+    pub index: usize,
+    /// The edit.
+    pub edit: SelectionEditParam,
+}
+
+/// `list_model_items` (P2.7): the items of one model, each with its match
+/// key.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct ListModelItemsParam {
+    /// The model id (`inspect_model` `id`), not an index.
+    pub model_id: usize,
+    /// Only the items on this layer.
+    #[serde(default)]
+    pub layer: Option<String>,
+    /// Only the items of this kind.
+    #[serde(default)]
+    pub kind: Option<ItemKindParam>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -2120,6 +2432,11 @@ pub fn build_info() -> serde_json::Value {
             // `remove_obstacle`; `list_setups` and `inspect_stock` list a
             // setup's `obstacles`; a simulation counts an obstacle hit.
             "obstacles",
+            // Geometry selection P2.7 (2026-10-19): `edit_toolpath_selection`,
+            // `selection_status` and `list_model_items`;
+            // `get_toolpath_params` returns `operation.params.selection`;
+            // `inspect_model` carries `items` (counts by kind and layer).
+            "geometry_selection",
         ],
     })
 }
@@ -2130,7 +2447,12 @@ pub fn no_project_error() -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
 mod tests {
     use super::*;
 
@@ -2204,12 +2526,117 @@ mod tests {
             "alignment_pin_report",
             "result_feed_stage",
             "obstacles",
+            "geometry_selection",
         ] {
             assert!(
                 features.contains(&flag),
                 "build_info dropped published feature flag `{flag}` — agents probe these"
             );
         }
+    }
+
+    /// Geometry selection P2.7: the wire JSON of a selection IS the file
+    /// JSON. Each core shape serializes, parses as the wire type and
+    /// converts back to the same core value. The edits cover every
+    /// variant, and the selection holds every source, kind and filter part.
+    #[test]
+    fn selection_wire_is_the_file_json_p2_7() {
+        use rs_cam_core::ids::ModelId;
+        use rs_cam_core::selection::{
+            DiameterRange, FaceFilter, Facing, Filter, ItemKind, KindFilter, MatchKey, Rule,
+            Selection, SelectionEdit, SourceRef, ZRange,
+        };
+        let key = |source, kind, brep| MatchKey {
+            source,
+            kind,
+            layer: Some("HOLES".into()),
+            anchor: [12.5, -3.25],
+            measure: 6.0,
+            brep,
+        };
+        let rule = |source, filter| Rule { source, filter };
+        let selection = Selection::from_parts(
+            vec![
+                rule(SourceRef::ToolpathModel, Filter::default()),
+                rule(
+                    SourceRef::Model(ModelId(3)),
+                    Filter {
+                        layers: vec!["CUT".into(), "TEXT".into()],
+                        kinds: KindFilter::Only(vec![
+                            ItemKind::Loop,
+                            ItemKind::Path,
+                            ItemKind::Point,
+                            ItemKind::Circle,
+                            ItemKind::Face,
+                        ]),
+                        diameter: Some(DiameterRange {
+                            nominal_mm: 5.0,
+                            tolerance_mm: 0.1,
+                        }),
+                        face: None,
+                    },
+                ),
+                rule(
+                    SourceRef::Stock,
+                    Filter {
+                        face: Some(FaceFilter {
+                            facing: Facing::Down,
+                            z: Some(ZRange {
+                                min: -4.0,
+                                max: 0.0,
+                            }),
+                        }),
+                        ..Filter::default()
+                    },
+                ),
+                rule(
+                    SourceRef::ToolpathModel,
+                    Filter {
+                        face: Some(FaceFilter {
+                            facing: Facing::Up,
+                            z: None,
+                        }),
+                        ..Filter::default()
+                    },
+                ),
+                rule(
+                    SourceRef::ToolpathModel,
+                    Filter {
+                        face: Some(FaceFilter {
+                            facing: Facing::Either,
+                            z: None,
+                        }),
+                        ..Filter::default()
+                    },
+                ),
+            ],
+            vec![
+                key(SourceRef::Model(ModelId(3)), ItemKind::Circle, None),
+                key(SourceRef::ToolpathModel, ItemKind::Face, Some(7)),
+            ],
+            vec![key(SourceRef::Stock, ItemKind::Loop, None)],
+        );
+        let edits = [
+            SelectionEdit::Replace(Box::new(selection.clone())),
+            SelectionEdit::AddRule(selection.rules()[1].clone()),
+            SelectionEdit::RemoveRule(2),
+            SelectionEdit::AddPick(selection.picks()[0].clone()),
+            SelectionEdit::RemovePick(selection.picks()[1].clone()),
+            SelectionEdit::Reset,
+        ];
+        for edit in edits {
+            let json = serde_json::to_value(&edit).unwrap();
+            let wire: SelectionEditParam = serde_json::from_value(json.clone())
+                .unwrap_or_else(|e| panic!("the wire does not parse the file JSON {json}: {e}"));
+            assert_eq!(SelectionEdit::from(wire), edit, "{json}");
+        }
+        let json = serde_json::to_value(&selection).unwrap();
+        let wire: SelectionParam = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(Selection::from(wire), selection, "{json}");
+        // An unknown key refuses on the wire as in the file.
+        assert!(
+            serde_json::from_value::<SelectionParam>(serde_json::json!({"pickz": []})).is_err()
+        );
     }
 
     /// Phase O — the planner trigger's wire contract. Only `setup_index`

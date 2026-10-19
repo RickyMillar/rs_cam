@@ -307,6 +307,14 @@ impl super::RsCamApp {
                 let resp = self.mcp_inspect_brep_faces(model_id);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::SelectionStatus { index } => {
+                let resp = self.mcp_selection_status(index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
+            McpRequestKind::ListModelItems(param) => {
+                let resp = self.mcp_list_model_items(&param);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::InspectSpans {
                 index,
                 kind,

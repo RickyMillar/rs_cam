@@ -159,6 +159,16 @@ pub struct Rule {
 }
 
 impl Rule {
+    /// The same rule with its source in the form a toolpath on
+    /// `toolpath_model` stores ([`SourceRef::for_toolpath_model`]).
+    #[must_use]
+    pub fn for_toolpath_model(self, toolpath_model: ModelId) -> Self {
+        Self {
+            source: self.source.for_toolpath_model(toolpath_model),
+            ..self
+        }
+    }
+
     /// True when the rule names its kinds (`KindFilter::Only`). An item it
     /// matches is then an explicit act of the user.
     pub fn names_kinds(&self) -> bool {
@@ -210,6 +220,31 @@ pub enum SelectionEdit {
     RemovePick(MatchKey),
     /// Back to the default selection of the op.
     Reset,
+}
+
+impl SelectionEdit {
+    /// The same edit with each source in the form a toolpath on
+    /// `toolpath_model` stores ([`SourceRef::for_toolpath_model`]). The
+    /// `edit_toolpath_selection` command applies it, so every surface
+    /// stores one spelling for one item (geometry selection P2.7).
+    #[must_use]
+    pub fn for_toolpath_model(self, toolpath_model: ModelId) -> Self {
+        match self {
+            SelectionEdit::Replace(selection) => {
+                SelectionEdit::Replace(Box::new(selection.for_toolpath_model(toolpath_model)))
+            }
+            SelectionEdit::AddRule(rule) => {
+                SelectionEdit::AddRule(rule.for_toolpath_model(toolpath_model))
+            }
+            SelectionEdit::AddPick(key) => {
+                SelectionEdit::AddPick(key.for_toolpath_model(toolpath_model))
+            }
+            SelectionEdit::RemovePick(key) => {
+                SelectionEdit::RemovePick(key.for_toolpath_model(toolpath_model))
+            }
+            SelectionEdit::RemoveRule(_) | SelectionEdit::Reset => self,
+        }
+    }
 }
 
 impl Selection {
@@ -297,6 +332,41 @@ impl Selection {
             rules,
             picks: Vec::new(),
             excludes: Vec::new(),
+        }
+    }
+
+    /// These rules, picks and excludes, as given (a wire or a job file
+    /// that holds a whole selection).
+    pub fn from_parts(rules: Vec<Rule>, picks: Vec<MatchKey>, excludes: Vec<MatchKey>) -> Self {
+        Self {
+            rules,
+            picks,
+            excludes,
+        }
+    }
+
+    /// The same selection with each source in the form a toolpath on
+    /// `toolpath_model` stores ([`SourceRef::for_toolpath_model`]).
+    #[must_use]
+    pub fn for_toolpath_model(self, toolpath_model: ModelId) -> Self {
+        let Self {
+            rules,
+            picks,
+            excludes,
+        } = self;
+        Self {
+            rules: rules
+                .into_iter()
+                .map(|r| r.for_toolpath_model(toolpath_model))
+                .collect(),
+            picks: picks
+                .into_iter()
+                .map(|k| k.for_toolpath_model(toolpath_model))
+                .collect(),
+            excludes: excludes
+                .into_iter()
+                .map(|k| k.for_toolpath_model(toolpath_model))
+                .collect(),
         }
     }
 
@@ -465,6 +535,37 @@ mod tests {
         // Reset reads the op default the caller gives.
         s.apply(SelectionEdit::Reset, &Selection::empty()).unwrap();
         assert!(s.is_empty());
+    }
+
+    #[test]
+    fn only_the_own_model_is_stored_as_the_toolpath_model() {
+        let own = ModelId(3);
+        let on = |source| MatchKey { source, ..key(1.0) };
+        let edit = SelectionEdit::AddPick(on(SourceRef::Model(own)));
+        assert_eq!(
+            edit.for_toolpath_model(own),
+            SelectionEdit::AddPick(on(SourceRef::ToolpathModel))
+        );
+        // Another model and the stock stay as they are.
+        for source in [SourceRef::Model(ModelId(4)), SourceRef::Stock] {
+            let edit = SelectionEdit::RemovePick(on(source));
+            assert_eq!(edit.clone().for_toolpath_model(own), edit);
+        }
+        // A whole selection: rules, picks and excludes.
+        let rule = Rule {
+            source: SourceRef::Model(own),
+            filter: Filter::default(),
+        };
+        let s = Selection::from_parts(
+            vec![rule],
+            vec![on(SourceRef::Model(own))],
+            vec![on(SourceRef::Model(own))],
+        )
+        .for_toolpath_model(own);
+        assert!(
+            s.sources().all(|src| src == SourceRef::ToolpathModel),
+            "{s:?}"
+        );
     }
 
     #[test]

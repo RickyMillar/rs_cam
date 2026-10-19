@@ -225,8 +225,24 @@ pub(super) fn draw_model_properties(
                 ))
                 .row(DataRow::value("Surface types", parts.join(", ")));
         }
+        // Geometry selection P2.7: the items by kind and by layer
+        // (`ItemSet::counts`), the counts MCP `inspect_model` reports under
+        // `items`.
+        if !model.items.is_empty() {
+            let counts = model.items.counts();
+            table = table.row(DataRow::value(
+                "Items",
+                rs_cam_core::selection::ItemCounts::line(&counts.by_kind),
+            ));
+            for (layer, by_kind) in &counts.by_layer {
+                table = table.row(DataRow::value(
+                    format!("  layer {layer}"),
+                    rs_cam_core::selection::ItemCounts::line(by_kind),
+                ));
+            }
+        }
         // The drawn rings of the model, nested (`ItemSet::drawing_curves`),
-        // the same list MCP `inspect_model` reports.
+        // the same list MCP `inspect_model` reports under `polygons`.
         let curves = model
             .items
             .has_drawing()

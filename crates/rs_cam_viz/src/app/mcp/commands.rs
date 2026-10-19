@@ -64,8 +64,10 @@ use crate::ui_command::UiCommand;
 use super::RestAnalysisDials;
 
 mod obstacles;
+mod selection;
 mod stock_changes;
 pub(crate) use obstacles::obstacle_json;
+pub(crate) use selection::item_counts_json;
 pub(crate) use stock_changes::stock_change_json;
 
 /// What one command carries from before the mutation into its reply.
@@ -278,6 +280,7 @@ impl RsCamApp {
             }
             CoreRequest::SetToolpathTool(p) => self.select_toolpath_for_mcp(p.index),
             CoreRequest::SetToolpathModel(p) => self.select_toolpath_for_mcp(p.index),
+            CoreRequest::EditToolpathSelection(p) => self.select_toolpath_for_mcp(p.index),
             _ => {}
         }
     }
@@ -362,6 +365,7 @@ impl RsCamApp {
             CoreRequest::AddObstacle(p) => self.plan_add_obstacle(&p, before),
             CoreRequest::EditObstacle(p) => self.plan_edit_obstacle(&p, before),
             CoreRequest::RemoveObstacle(p) => self.plan_remove_obstacle(&p, before),
+            CoreRequest::EditToolpathSelection(p) => self.plan_edit_selection(p, before),
             CoreRequest::RemoveAlignmentPin(p) => {
                 before.index = Some(p.index);
                 CorePlan::Apply(
@@ -1530,16 +1534,7 @@ impl RsCamApp {
                         Some("selection"),
                     ));
                 };
-                let selection: rs_cam_core::selection::Selection = match serde_json::from_value(raw)
-                {
-                    Ok(selection) => selection,
-                    Err(e) => {
-                        return CorePlan::Answered(mutation_error_json(
-                            &format!("Error: the selection does not parse: {e}."),
-                            Some("selection"),
-                        ));
-                    }
-                };
+                let selection = rs_cam_core::selection::Selection::from(raw);
                 // A rule or a pick that names a missing model refuses here,
                 // as generation would.
                 let missing = selection.sources().find_map(|source| match source {
@@ -1857,6 +1852,7 @@ impl RsCamApp {
             | CoreRequest::SetDressupConfig(_)
             | CoreRequest::SetDressupField(_)
             | CoreRequest::SetToolpathEnabled(_)
+            | CoreRequest::EditToolpathSelection(_)
             | CoreRequest::SetSimulationResolution(_) => None,
         }
     }
@@ -1960,6 +1956,7 @@ impl RsCamApp {
             | CommandId::SetSetupPauseMessage
             | CommandId::MoveToolpathToSetup
             | CommandId::SetToolpathParam
+            | CommandId::EditSelection
             | CommandId::AdoptResult
             | CommandId::AdoptRestFreshComparison
             | CommandId::SetToolParam
@@ -2001,7 +1998,6 @@ impl RsCamApp {
             // eleven carry no caller at all.
             | CommandId::ReorderToolpath
             | CommandId::RemoveModel
-            | CommandId::EditSelection
             | CommandId::AddObstacle
             | CommandId::RemoveObstacle
             | CommandId::AddStockChange
@@ -2054,6 +2050,7 @@ impl RsCamApp {
             CommandId::AddObstacle => self.describe_obstacle("Added", &effects, before),
             CommandId::ReplaceObstacle => self.describe_obstacle("Edited", &effects, before),
             CommandId::RemoveObstacle => self.describe_obstacle("Removed", &effects, before),
+            CommandId::EditSelection => self.describe_edit_selection(&effects, before),
             CommandId::AddAlignmentPin => {
                 let pin_count = self
                     .controller
@@ -2911,7 +2908,6 @@ impl RsCamApp {
             | CommandId::ReorderToolpath
             | CommandId::RemoveModel
             | CommandId::SetPinPartModels
-            | CommandId::EditSelection
             | CommandId::AutoEnableRestAnalysis
             | CommandId::ForgetResult
             | CommandId::SetToolpathOperation

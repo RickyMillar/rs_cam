@@ -18,7 +18,7 @@ pub mod view;
 #[cfg(test)]
 mod tests;
 
-pub use item::{FaceItem, Item, ItemError, ItemKind, ItemSet, Shape, SourceRef};
+pub use item::{FaceItem, Item, ItemCounts, ItemError, ItemKind, ItemSet, Shape, SourceRef};
 pub use key::{KEY_MATCH_EPS_MM, MatchKey};
 pub use refusal::{ItemRef, RefusalCause, SelectionNote, SelectionRefusal};
 pub use resolve::{

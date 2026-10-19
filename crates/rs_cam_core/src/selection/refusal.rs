@@ -30,7 +30,7 @@ impl ItemRef {
 }
 
 /// The noun of a kind, singular and plural.
-fn kind_noun(kind: ItemKind, count: usize) -> &'static str {
+pub(crate) fn kind_noun(kind: ItemKind, count: usize) -> &'static str {
     let one = count == 1;
     match kind {
         ItemKind::Loop if one => "closed loop",

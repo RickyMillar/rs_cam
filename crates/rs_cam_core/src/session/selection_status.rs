@@ -139,8 +139,9 @@ pub struct SelectionReport {
 /// selection DESIGN 10.2): the pick source of an agent.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelItem {
-    /// The key a pick of the item stores. Its source is
-    /// `SourceRef::Model(id)` of the listed model.
+    /// The key of the item, with the source `SourceRef::Model(id)` of the
+    /// listed model. The `edit_toolpath_selection` command stores it as
+    /// `SourceRef::ToolpathModel` on a toolpath of that model (P2.7).
     pub key: MatchKey,
     pub kind: ItemKind,
     pub layer: Option<String>,
