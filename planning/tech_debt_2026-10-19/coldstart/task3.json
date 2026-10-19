@@ -1,0 +1,371 @@
+{
+ "with": {
+  "task": "Add a new dressup that post-processes a toolpath, selectable per toolpath on every surface (GUI, MCP, CLI job file, project file).",
+  "variant": "with-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/src/dressup/CLAUDE.md:1-12 and crates/rs_cam_core/src/compute/CLAUDE.md (Invariants, CUT-13 line)",
+    "change": "Read first. Says: params live INSIDE an Option on DressupConfig (CUT-13); wire is DressupConfigWire; DRESSUP_PIPELINE lists stages; 'Add no fourth' outside-pipeline stage. Points to the pattern to copy (segment_merge) only indirectly.",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/dressup/<new>.rs + dressup/mod.rs (2636 lines, facade)",
+    "change": "Write the transform. Signature must return trace::transform_provenance::Transformed (see dressup/condition.rs:51 merge_linear_runs, ends with Transformed::from_remap at :186). Register the module in dressup/mod.rs and add a line to dressup/CLAUDE.md file map.",
+    "compiler_forces_it": true,
+    "how_found": "rg for a sibling (condition.rs) ; apply_dressup_traced's closure type forces Transformed"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:~860 (new XxxParams struct next to ArcFitParams/SegmentMergeParams)",
+    "change": "Add a Copy params struct with Default (serde derive). A default fn for the serde default if the value is non-zero (see default_segment_merge_tolerance at :785).",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (segment_merge)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:897-929 (struct DressupConfig)",
+    "change": "Add field `pub xxx: Option<XxxParams>`. Every full struct literal of DressupConfig without `..` then fails to compile: e.g. compute/execute/project_curve_chaining.rs:825, rs_cam_viz test fixtures, tests with explicit field lists.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:938-962 (struct DressupConfigWire, flat bool + value keys)",
+    "change": "Add `xxx: bool` and `xxx_<value>: f64`. Must carry #[serde(default)] / #[serde(default = ..)] like segment_merge (:954-957) or every saved project file and MCP payload without the key fails to load. The compiler does NOT warn about a missing #[serde(default)].",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling; the missing default is a runtime load failure"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:964-1030 (From<DressupConfigWire> for DressupConfig, From<DressupConfig> for DressupConfigWire)",
+    "change": "Map the new bool/value pair to Option and back. Both are struct literals without `..`, so a new field on either struct fails to compile here.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:1060-1155 (DressupConfig::FIELD_DEFS)",
+    "change": "Add a DressupFieldDef row per wire key (enable key before value key). Core test dressup_field_names_are_published (config.rs tests) holds table vs struct; CLI job.rs:265 and MCP set_dressup_field validation read this table.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling; sentry then catches a miss"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:1186 (owner_of_value_field) and :1233 (is_dressup_enabled)",
+    "change": "Add the value key -> enable key arm and the enable key arm. Both are string matches ending in `_ =>` (None / false). If missed, set_dressup_field (session/mutation/config.rs:92-93) silently ACCEPTS a value patch while the dressup is off, and the value is dropped by the Option round trip.",
+    "compiler_forces_it": false,
+    "how_found": "rg owner_of_value_field; reading config.rs"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:1158-1176 (Default impl) and :1247-1295 (for_role: Roughing / SemiFinish / Finish arms)",
+    "change": "Decide the default per process role. Default impl is a full struct literal (forced); for_role uses `..base` (not forced, silent default = off).",
+    "compiler_forces_it": false,
+    "how_found": "reading config.rs"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:1345-1380 (normalize_for_op) + compute/catalog/schema.rs:543-585 (DressupPolicy)",
+    "change": "If the new dressup is unsafe on some ops (like link/lead on ProjectCurve/DropCutter), add a strip arm. normalize_for_op strips only entry_style, lead_in_out, link_moves by name; DressupPolicy has one strip_all_reason and no per-dressup flag. A new dressup is NOT stripped on any op unless this is edited by hand.",
+    "compiler_forces_it": false,
+    "how_found": "reading config.rs"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:~100-250 (OperationTransformCapabilities) and compute/catalog/capabilities.rs:533,548",
+    "change": "If an op's planner already does the transform, or an op cannot take it, add a capability bool (pattern: planner_applies_segment_merge at catalog.rs:164) and set it per op; frozen by test every_op_states_its_capabilities_w2_4. Optional, only if the dressup has op-specific behaviour.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/execute/dressup_apply.rs:~140-240 (DressupStage consts)",
+    "change": "Add `pub const XXX: Self = DressupStage { debug_key, debug_label, kind: ToolpathSemanticKind::Dressup|Optimization, semantic_label }`. debug_label must be unique (tests/dressup_span_invariants.rs:536 checks).",
+    "compiler_forces_it": false,
+    "how_found": "rg DressupStage:: ; comment at :124 'CMP-20/CUT-06'"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/execute/dressup_apply.rs:253-264 (DRESSUP_PIPELINE)",
+    "change": "Insert the stage at its ORDER-LOAD-BEARING position. Nothing links this list to the apply_dressups body; sentry dressup_span_invariants.rs:438-545 checks only that a run emits a subsequence, and only for configs the test builds (line 470 sets segment_merge; a new field is not in it unless added).",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md + comment at dressup_apply.rs:240"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/execute/dressup_apply.rs:471-950 (apply_dressups body)",
+    "change": "Add `if let Some(p) = cfg.xxx { current = apply_dressup_traced(current, debug_ctx, semantic_ctx, channels, DressupStage::XXX, |scope| scope.set_param(SemanticKey::..), |at| crate::dressup::xxx(at, ..)) }` at the pipeline position (pattern: segment merge :813-834). apply_dressup_traced's `transform` returning Transformed forces the move-index report. If the stage needs a new input (stock, cutter, kinematics), add a field to DressupContext (:420-470), which is destructured exhaustively at :476 so the compiler then forces the session call site (session/compute.rs:855) and 6+ test call sites (execute/tests.rs:1469,1516; tests/transform_provenance_fingerprints.rs:275,340,468; project_curve_chaining.rs:831).",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md + rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/trace/semantic_trace.rs:156 (SemanticKey) and :16 (ToolpathSemanticKind)",
+    "change": "Only if the stage records a param that has no key yet: add a SemanticKey variant (as_str/Display exhaustive at :307,:478). Reuse Tolerance etc. where it fits.",
+    "compiler_forces_it": true,
+    "how_found": "compiler once a variant is added; choosing a key by rg SemanticKey::Tolerance"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/compute.rs:762-870 (ProjectSession-side apply_dressups wrapper building DressupContext)",
+    "change": "Feed any new context input. Session path is the only production caller of compute::execute::apply_dressups.",
+    "compiler_forces_it": true,
+    "how_found": "compiler if DressupContext grows"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/mod.rs:911-922 (generation_inputs_signature)",
+    "change": "Nothing to edit: it serialises the whole DressupConfig, so the new field stales a toolpath automatically. Verify rather than add.",
+    "compiler_forces_it": false,
+    "how_found": "reading session/mod.rs"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/mutation/config.rs:61-150 (set_dressup_field_impl)",
+    "change": "No edit if FIELD_DEFS, owner_of_value_field and is_dressup_enabled are right: it validates the key against FIELD_DEFS (:82), refuses an owner that is off (:92), merges JSON and re-deserialises. MCP set_dressup_field, MCP set_dressup_config, CLI job and the project file all reach core through here or serde.",
+    "compiler_forces_it": false,
+    "how_found": "reading config.rs"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/mcp_server.rs:1287 (set_dressup_config description literal)",
+    "change": "Append the new field names to the hand-written comma list (the run is parsed up to the first '.'). Sentry rs_cam_viz/tests/dressup_field_names_are_published.rs fails if a FIELD_DEFS name is missing.",
+    "compiler_forces_it": false,
+    "how_found": "rg FIELD_DEFS; comment at mcp_server.rs:1283"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/mcp_server.rs:1301 (set_dressup_field description)",
+    "change": "Add the new enable key to the hand-written list '(dogbone, lead_in_out, link_moves, arc_fitting, segment_merge)'. No test holds this list.",
+    "compiler_forces_it": false,
+    "how_found": "rg segment_merge"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/linking_dressup.rs:~600-680 (draw_dressup_params; arc fitting at :625-640, lead at :168-194)",
+    "change": "Add the GUI control: checkbox that sets cfg.xxx = on.then(XxxParams::default), then dv_dressup(ui, \"xxx_value\", ...) on cfg.xxx.as_mut(). Tooltip key = the FIELD_DEFS name; test the_help_key_is_the_param_name_ui04.rs:265 holds dv_dressup keys to FIELD_DEFS. Respect the per-op grey-out the way draw_linking_params does (policy.strip_all_reason).",
+    "compiler_forces_it": false,
+    "how_found": "rg arc_fitting in viz"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/linking_dressup.rs:282-307 (dressup_active_count)",
+    "change": "Add `if cfg.xxx.is_some() { active += 1 }` and bump the hard-coded `total = 8` (:283). Note it already omits segment_merge and the true flag count is 7 + entry, so the literal is already wrong.",
+    "compiler_forces_it": false,
+    "how_found": "reading linking_dressup.rs"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs:1146-1170 (draw_dressup_tab, 'Apply recommended dressups' reset)",
+    "change": "Check the reset/recommended action and any badge (ui/properties/tab_badges.rs) include the new dressup.",
+    "compiler_forces_it": false,
+    "how_found": "rg dressup in viz"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/sim_debug.rs:~170-195 (help text keyed on debug_key string)",
+    "change": "Add a `\"<debug_key>\" => Some(...)` arm. Wildcard `_ => None`: a missing arm shows no help in the debug view.",
+    "compiler_forces_it": false,
+    "how_found": "rg \"arc_fit\" in viz"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/project_file.rs:961-991 (dressup_changes)",
+    "change": "Only if normalize_for_op strips the new dressup on some op: add a `before.xxx.is_some() != after.xxx.is_some()` block. Otherwise the load warning prints the fallback 'a dressup value this reader does not name' (:987).",
+    "compiler_forces_it": false,
+    "how_found": "reading project_file.rs"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/job.rs:189-270, :1184",
+    "change": "No edit: the TOML [operation.dressups] table is validated and applied from DressupConfig::FIELD_DEFS, so the CLI follows the table. Add a job-file test row in crates/rs_cam_cli/tests/integration.rs if wanted.",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md (rs_cam_cli/CLAUDE.md:34) then job.rs"
+   },
+   {
+    "path_line": "FEATURE_CATALOG.md:88-91 (dressup list), README.md, CREDITS.md",
+    "change": "Document the dressup (FEATURE_CATALOG defines shipped capability claims). CREDITS.md if it uses an external algorithm.",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md (root: Sources of truth)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/tests/ (new sentry) + tests/toolpath_fields_round_trip_c11.rs:128,323 + tests/dressup_span_invariants.rs:470 + tests/transform_provenance_fingerprints.rs:240",
+    "change": "Add the new field to the round-trip fixture, the span-invariant config and the provenance fingerprint config; add a unit test beside the transform. Fixtures set fields by name, so a miss compiles and the new stage is simply never exercised.",
+    "compiler_forces_it": false,
+    "how_found": "rg segment_merge in tests"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_core/src/compute/config.rs:1186 owner_of_value_field and :1233 is_dressup_enabled: string matches with wildcard arms. Missing either lets set_dressup_field accept a value patch while the dressup is off; the value is dropped on the Option round trip. No test enumerates them against FIELD_DEFS.",
+   "crates/rs_cam_core/src/compute/config.rs:938-962 DressupConfigWire: a new key without #[serde(default)] breaks load of every existing project file and every MCP set_dressup_config payload. Compiles fine, fails at runtime on old files.",
+   "crates/rs_cam_core/src/compute/execute/dressup_apply.rs:253 DRESSUP_PIPELINE vs the apply_dressups body (:471+): two separate lists of the same order. The sentry only checks a subsequence for configs it builds; a stage placed in the wrong spot in the body or missing from the list is caught only if the test config enables it (dressup_span_invariants.rs:470).",
+   "crates/rs_cam_core/src/compute/config.rs:1345 normalize_for_op and compute/catalog/schema.rs:543 DressupPolicy: strip_all strips three named dressups only. A new dressup that is unsafe on ProjectCurve/DropCutter is NOT stripped; nothing flags it, and the GUI grey-out (draw_linking_params) will not cover it either.",
+   "crates/rs_cam_viz/src/ui/properties/linking_dressup.rs: segment_merge, the newest dressup, has NO GUI control (rg segment_merge in rs_cam_viz/src finds only mcp_server.rs strings). Precedent shows the GUI surface can be skipped with every gate green. No test checks 'every FIELD_DEFS row has a GUI control'; the_help_key_is_the_param_name_ui04 checks only the reverse direction.",
+   "crates/rs_cam_viz/src/ui/properties/linking_dressup.rs:283 dressup_active_count: hard-coded total = 8 and a hand list of if-blocks; segment_merge is already absent. Badge 'N/M dressups active' goes wrong silently.",
+   "crates/rs_cam_viz/src/mcp_server.rs:1301 set_dressup_field description lists enable keys by hand; the dressup_field_names_are_published test covers only the set_dressup_config literal.",
+   "crates/rs_cam_viz/src/ui/sim_debug.rs:~189 string match on debug_key with `_ => None`: no help text for the new stage, no error.",
+   "crates/rs_cam_core/src/compute/config.rs:1247 for_role uses `..base`: the new dressup defaults to off for every role; whether roughing/finishing should turn it on is not forced by anything.",
+   "crates/rs_cam_core/src/session/project_file.rs:961 dressup_changes: names only entry_style, lead_in_out, link_moves; a stripped new dressup prints the generic fallback line (:987).",
+   "Test fixtures (tests/toolpath_fields_round_trip_c11.rs, dressup_span_invariants.rs, transform_provenance_fingerprints.rs, op_fixtures.rs) set fields by name or use ..default: the new stage can ship with zero coverage and green gates.",
+   "dressup/CLAUDE.md says 'Add no fourth' out-of-pipeline stage, but the file does not say HOW to add an in-pipeline stage in one list; the contributor must assemble that from DressupStage, DRESSUP_PIPELINE, apply_dressup_traced docs and CUT-13 prose in compute/CLAUDE.md.",
+   "FEATURE_CATALOG.md / README.md dressup lists: prose only, no sentry."
+  ],
+  "reuse_traps": [
+   "Transformed::{from_remap, from_permutation, from_mapping, index_preserving} (crates/rs_cam_core/src/trace/transform_provenance.rs:340-364) vs hand-rolled move-index bookkeeping; apply_dressup_traced (dressup_apply.rs:~276) already reconciles channels and binds semantic scopes. Writing a new run-and-trace wrapper would be a duplicate.",
+   "AnnotatedToolpath helpers (rapid_order_barriers, spans_valid) in trace/toolpath_spans.rs vs re-deriving span boundaries in a new transform; dressup/arcfit.rs and dressup/condition.rs show the intent/Region-boundary breaks (arcs do not cross an intent boundary).",
+   "DressupConfig::FIELD_DEFS (config.rs:1060) is the one vocabulary for MCP, CLI job, GUI tooltips (linking_dressup.rs:124 dressup_help / dv_dressup). A contributor may write a second schema list for the CLI or a tooltip table.",
+   "internal_link_ceiling_z (dressup_apply.rs, used before RAPID_ORDER/LINK) and shared link_ceiling_for (compute/execute/shared.rs) for any stage that raises or lowers Z; finish/surface_link.rs relink_fragments for any linking logic (dressup/CLAUDE.md: 'Do not add a second linking implementation').",
+   "machine::kinematics::retract_saves_time for any retract-vs-feed decision (dressup/CLAUDE.md invariant) vs a new time heuristic.",
+   "OperationTransformCapabilities (compute/catalog.rs:140-250) / OperationConfig::capabilities() for per-op gating, vs a new `match op_type` (compute/CLAUDE.md W2.4 forbids it, but only prose enforces that)."
+  ],
+  "ambiguity": [
+   "Three shapes for dressup params in DressupConfig: Option<Params> with wire bool+value (dogbone, lead_in_out, link_moves, arc_fitting, segment_merge, CUT-13) vs flat bool + value fields (feed_optimization, feed_max_rate, feed_ramp_rate; config.rs:915-921 comment says kept flat only because tool_load/ reads it) vs bool-only (optimize_rapid_order). CUT-13 prose points to Option; the code has both.",
+   "Three places a stage can run: inside apply_dressups/DRESSUP_PIPELINE (compute/execute/dressup_apply.rs), per-level in clearing_2d.rs (apply_tabs), or in session/compute.rs (optimize_entry_descents_annotated, adaptive_feed_modulate). dressup/CLAUDE.md says add no fourth; the choice rests on whether the stage needs prior stock/engagement.",
+   "Two ways a stage can be gated per op: DressupPolicy / normalize_for_op (strip by name, config-level) vs OperationTransformCapabilities booleans (catalog.rs, execution-level, e.g. planner_applies_segment_merge, allows_link_moves). Both exist for similar purposes.",
+   "Closest siblings differ: segment_merge (newest, after arc fit, planner-skip gate, no GUI control) vs arc_fitting (full GUI + FIELD_DEFS + needs tool_radius and entry_containment) vs lead_in_out (needs feed params, GUI diagram). Which one to copy for the GUI half is unclear.",
+   "SemanticKind for the stage: ToolpathSemanticKind::Dressup (dogbone, lead, link) vs ::Optimization (arc fit, merge, air-cut, feed opt); the choice changes sim_debug colour (ui/sim_debug.rs:70,122) with no rule stated.",
+   "Whether the GUI has to expose it: the 'every surface' requirement (task) vs the precedent of segment_merge (MCP, CLI, project file only)."
+  ]
+ },
+ "without": {
+  "task": "Add a new dressup that post-processes a toolpath, selectable per toolpath on every surface (GUI, MCP, CLI job, project file). Traced only, not implemented.",
+  "variant": "no-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:857-881 (SegmentMergeParams, template at 861-881)",
+    "change": "Add a `FooParams` struct with a `Default` impl (copy ArcFitParams/SegmentMergeParams) that holds the dressup's dials. Derive Debug, Clone, Copy, PartialEq, Serialize, Deserialize.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (rg segment_merge)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:897-929 (struct DressupConfig; segment_merge at :919)",
+    "change": "Add `pub foo: Option<FooParams>`. Some means on, None means off. A new struct field is forced at every place that builds `DressupConfig` as a full literal, but only there.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (`From` impls and any literal without `..`); the field shape was found by rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:938-969 (DressupConfigWire; segment_merge at :961-964)",
+    "change": "Add a flat `foo: bool` and one flat key per dial. Give each `#[serde(default)]` or `#[serde(default = \"fn\")]`, as segment_merge did. Without the default, every saved project and every fixture TOML that lacks the key stops loading.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling; the default attribute was seen on segment_merge only (:961-964)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:971-1003 (From<Wire> for DressupConfig) and :1005-1036 (From<DressupConfig> for Wire)",
+    "change": "Map bool+dials to Option in one direction and Option to bool+dials (unwrap_or_default) in the other. Both are struct literals with no `..`, so the Wire struct fields are forced.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:1060-1146 (DressupConfig::FIELD_DEFS; segment_merge at :1126)",
+    "change": "Add one DressupFieldDef row per wire key (enable key and each dial) with a one-line description. This table is the single vocabulary: the CLI job validator, the CLI job applier, `set_dressup_field` and the GUI tooltips all read it. The core test dressup_field_names_are_published (:1457) fails if a serialized key has no row.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'FIELD_DEFS'; the in-file doc comment at :1053-1059 names the tests"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:1158-1180 (impl Default for DressupConfig; segment_merge at :1174)",
+    "change": "Add `foo: None` (or Some for default-on). This is a full literal with no `..`, so the field is forced. The on/off choice is a product decision that no code checks.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:1191-1201 (owner_of_value_field) and :1220-1228 (is_dressup_enabled)",
+    "change": "Add match arms: dial key => \"foo\" in owner_of_value_field and \"foo\" => self.foo.is_some() in is_dressup_enabled. Both have a `_ =>` arm, so a missing arm falls through. `set_dressup_field` (mutation/config.rs:92-93) then lets a dial be patched while the dressup is off, and the value is silently dropped on the Option round trip.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'owner_of_value_field' from the set_dressup_field path"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:1232-1304 (for_role) and :1312-1355 (normalize_for_op)",
+    "change": "Decide the per-role default (Roughing at :1241-1255, SemiFinish, Finish) and whether the dressup is unsafe for some ops. normalize_for_op hand-lists only entry_style, lead_in_out and link_moves under strip_all_reason (:1322-1345). A new unsafe dressup must be added there by hand, or it is not stripped on those ops.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'strip_all_reason' and reading for_role"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/execute/dressup_apply.rs:218-223 (DressupStage::SEGMENT_MERGE) and :253-264 (DRESSUP_PIPELINE)",
+    "change": "Add a `DressupStage::FOO` constant (debug_key, debug_label, kind, semantic_label) and add it to the DRESSUP_PIPELINE list at the right position. The doc comment says order is load-bearing and that a stage must only emit a key listed there.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'DressupStage::' / 'DRESSUP_PIPELINE'; guarded by a test only (tests/dressup_span_invariants.rs:438-530)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/execute/dressup_apply.rs:813-840 (stage 5b, segment_merge block) inside apply_dressups (:471+)",
+    "change": "Add `if let Some(p) = cfg.foo { current = apply_dressup_traced(current, debug_ctx, semantic_ctx, channels, DressupStage::FOO, |scope| { scope.set_param(..) }, |at| crate::dressup::foo(at, ..)) }` at the chosen position. The closure must return `Transformed`; that is compiler-enforced (apply_dressup_traced, :290+). If the stage is op-gated, add a capability and gate it as link_moves does at :735-738.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling; reading apply_dressups"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/dressup/ (new fn beside condition.rs:51 merge_linear_runs; export in dressup/mod.rs:14-19)",
+    "change": "Implement `fn foo(annotated: AnnotatedToolpath, ..) -> Transformed`, using Transformed::index_preserving / from_remap / from_mapping (trace/transform_provenance.rs:340-364). Add `pub mod foo;` in dressup/mod.rs. The Transformed return type forces the move-index provenance to be reported.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (return type of the transform closure)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/trace/semantic_trace.rs:156 (enum SemanticKey) and src/trace/toolpath_spans.rs (SpanKind)",
+    "change": "Only if the stage records a new param key or tags its moves with a new span kind. Add a SemanticKey variant for the new param, or a SpanKind variant. A new SpanKind also reaches the exhaustive matches in viz/ui/sim_op_list.rs:822-861, export/ribbon.rs:182 and ui/overlays/registry.rs:924. Reusing SemanticKey::Tolerance avoids all of this.",
+    "compiler_forces_it": true,
+    "how_found": "compiler for the SpanKind match arms; rg for the others"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/linking_dressup.rs:621-662 (draw_dressup_params; arc fitting at :625-643)",
+    "change": "Add a checkbox that sets cfg.foo = on.then(FooParams::default), plus dv_dressup rows for the dials with the key = the FIELD_DEFS name. NOTE: segment_merge has NO GUI row at all (rg segment_merge in rs_cam_viz/src finds nothing), so a contributor copying the newest sibling gets no GUI example.",
+    "compiler_forces_it": false,
+    "how_found": "rg for arc_fitting in viz after finding no segment_merge hit"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/linking_dressup.rs:282-308 (dressup_active_count)",
+    "change": "Add the new dressup to the active count. `total` is the literal 8 at :283 and is already out of step with the 7 counted items. segment_merge is not counted either.",
+    "compiler_forces_it": false,
+    "how_found": "reading the Dressup tab summary at toolpath_panel.rs:1149"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/mcp_server.rs:1287 (set_dressup_config description) and :1301 (set_dressup_field description)",
+    "change": "Add the new key names to the hand-written description run after the marker 'dressup fields: ', closed by a full stop. For a new enable key, also add it to the set_dressup_field text 'set the enable key (dogbone, lead_in_out, link_moves, arc_fitting, segment_merge)'. The first is checked by a test; the second is not.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'set_dressup_config'; the test is rs_cam_viz/tests/dressup_field_names_are_published.rs:20-80"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/job.rs:240-270 and :1184-1194",
+    "change": "Nothing to write. The job file validator and the job applier both iterate DressupConfig::FIELD_DEFS, so the CLI follows from the FIELD_DEFS rows. Only the doc example near job.rs:29 and FEATURE_CATALOG.md:212 mention it.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'FIELD_DEFS'"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/mutation/config.rs:61-150 (set_dressup_field_impl)",
+    "change": "Nothing to write. It patches via serde JSON over the Wire form and checks the key against FIELD_DEFS (:82), so it follows from the Wire struct and the FIELD_DEFS rows. This is the path MCP and CLI both use.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'set_dressup_field'"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/project_file.rs:961-990 (dressup_changes) and :1009-1020",
+    "change": "Only needed if normalize_for_op strips the new dressup. dressup_changes names only entry_style, lead_in_out and link_moves, and any other change falls back to the vague text 'a dressup value this reader does not name' (:986-988). Project save/load itself is serde and needs nothing.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'normalize_for_op' callers"
+   },
+   {
+    "path_line": "crates/rs_cam_core/tests/dressup_span_invariants.rs:445-475, tests/toolpath_fields_round_trip_c11.rs:128, tests/transform_provenance_fingerprints.rs:240, tests/arcfit_intent_key_cost_f1.rs:143 and ~25 test files that build a full `DressupConfig { .. }` (e.g. tests/isoclip_link_rapid_g_isocliprapid.rs:326, tests/common/op_fixtures.rs:531)",
+    "change": "Every full-literal DressupConfig without `..DressupConfig::default()` needs `foo: None`. Also add the new dressup to the stage-order test config and the round-trip test.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (full literals); the test updates were found by rg segment_merge"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:1374-1422 (the_wire_form_carries_every_dressup_value_field)",
+    "change": "Add the new value and enable keys to the hand-written key lists at :1395-1413. The test is a sentry only for the keys it lists, so a forgotten key passes.",
+    "compiler_forces_it": false,
+    "how_found": "rg segment_merge_tolerance"
+   },
+   {
+    "path_line": "FEATURE_CATALOG.md:88-91 (dressup list) and architecture/*.md",
+    "change": "Document the new dressup in the feature list.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'arc fitting' in *.md"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_core/src/compute/config.rs:1191-1201 and :1220-1228: owner_of_value_field and is_dressup_enabled are string-keyed matches with a `_ =>` wildcard. If the new dressup's rows are forgotten, a value patch while the dressup is off is not refused (set_dressup_field, mutation/config.rs:92-93). The dial then vanishes at the Option boundary and the caller never gets it back. Nothing tests this per field.",
+   "crates/rs_cam_core/src/compute/config.rs:961-964: the new DressupConfigWire fields must carry `#[serde(default...)]`. Without it every existing project TOML and fixture (e.g. crates/rs_cam_core/tests/fixtures/*.toml) fails to deserialize, and the error does not point at the Wire struct. Only the segment_merge precedent in the same file shows this.",
+   "crates/rs_cam_viz/src/ui/properties/linking_dressup.rs:621-662: the GUI is a hand-written parallel of FIELD_DEFS. No test ties a GUI row to a FIELD_DEFS row. segment_merge, which is in FIELD_DEFS, the CLI, MCP and the wire, has no GUI control at all (no rg hit in rs_cam_viz/src). A new dressup that skips the GUI passes every test and compiles, and 'selectable on every surface' fails silently.",
+   "crates/rs_cam_viz/src/ui/properties/linking_dressup.rs:283: `let total = 8` is a literal beside hand-incremented counters. The 'n/8 dressups active' text on the Dressup tab (toolpath_panel.rs:1149-1152) goes wrong with no signal. It is already inconsistent (7 counted items; segment_merge not counted).",
+   "crates/rs_cam_viz/src/mcp_server.rs:1301: the set_dressup_field description lists the enable keys 'dogbone, lead_in_out, link_moves, arc_fitting, segment_merge' as a hand-written run. The CMP-17 test checks only the set_dressup_config run, so this list can go stale unnoticed. segment_merge was added to it by hand.",
+   "crates/rs_cam_viz/src/mcp_server.rs:1287 relies on a test to join a string literal to FIELD_DEFS. The test is gated by `#![cfg(feature = \"mcp\")]` (tests/dressup_field_names_are_published.rs:30), so a build without the mcp feature never runs it.",
+   "crates/rs_cam_core/src/compute/execute/dressup_apply.rs:253-264: DRESSUP_PIPELINE is a separate list from the code order inside apply_dressups. Forgetting to list the new DressupStage, or putting it in the wrong place, is caught only if the test config in tests/dressup_span_invariants.rs:445-475 turns the new stage ON. That config is a hand-built literal, so a stage that is never enabled there is never checked.",
+   "crates/rs_cam_core/src/compute/execute/dressup_apply.rs:813 (stage 5b gates): there are two more places where an op can be excluded: OperationTransformCapabilities (compute/catalog.rs:106-205, e.g. planner_applies_segment_merge) and per-op capability rows in compute/catalog/capabilities.rs:533-548. A dressup that is wrong for planner-emitted ops (3D Rough, 2D Adaptive) needs a capability bool, `new` default, a builder, a per-op opt-in and a row in tests/every_op_states_its_capabilities_w2_4.rs:185. Nothing prompts for this when the dressup is added; segment_merge's planner coupling was found only by reading ExecutionContext.segment_merge_tolerance (compute/execute.rs:393, session/compute.rs:1273).",
+   "crates/rs_cam_core/src/compute/config.rs:1312-1355 normalize_for_op: the strip list is hand-written per field. A dressup unsafe on ProjectCurve or UnifiedFinish (registry strip_all, compute/catalog/registry.rs:250, 306, 362, 610, 872, 1169) is not stripped unless added here, and the GUI greys controls from the same policy (linking_dressup.rs ~:318-333) by separate hand-written conditions.",
+   "crates/rs_cam_core/src/session/project_file.rs:961-990 dressup_changes: a newly stripped dressup is reported to the operator as 'a dressup value this reader does not name'. No compile or test error.",
+   "crates/rs_cam_core/src/compute/config.rs:1374-1422 and the viz description test hand-list keys. A new key missing from these lists still passes. Only the FIELD_DEFS vs serialized-keys test (:1457) is generative, and it compares only names.",
+   "Planner-side channels: if the dressup changes cut geometry that a planner stamps into its own stock (Adaptive3d, 2D Adaptive), an equivalent of segment_merge_tolerance threaded through ExecutionContext (compute/execute.rs:393, volumetric.rs:55-210, rs_cam_core/src/adaptive3d/mod.rs:142-197, session/compute.rs:1273) is needed. Nothing flags that the planner plan and the emitted path can disagree (G-PLANSIMGAP). Only tests/adaptive3d_plan_matches_merged_path_g_plansimgap.rs covers the existing case.",
+   "Fingerprint and staleness: session/mod.rs:915 hashes the serialized DressupConfig, so staleness follows automatically. But tests/transform_provenance_fingerprints.rs:75, 172-177, 240 and tests/arcfit_intent_key_cost_f1.rs:143-162 build their own full configs and capabilities. They do not cover the new dressup unless edited."
+  ],
+  "reuse_traps": [
+   "Existing: DressupConfig::FIELD_DEFS (compute/config.rs:1060) is the one vocabulary table, read by CLI job (rs_cam_cli/src/job.rs:265,1184), set_dressup_field (session/mutation/config.rs:82) and GUI tooltips via dressup_help (linking_dressup.rs:124). A contributor would write a new key list or tooltip text; the correct move is to add FIELD_DEFS rows. The GUI needs `dv_dressup` (linking_dressup.rs:132), not `dv`/`dv_pill`, which take an OperationType.",
+   "Existing: apply_dressup_traced (dressup_apply.rs:290-ish) plus DressupStage and Transformed::index_preserving / from_remap (trace/transform_provenance.rs:340-364). A contributor would write their own tracing, span or index-remap code in the stage and break the channel reconcile.",
+   "Existing: AnnotatedToolpath::rapid_order_barriers (used by merge_linear_runs, dressup/condition.rs:55-59) and the arcfit run key. Barrier and intent handling for 'do not cross a boundary' exists. A contributor would re-derive span barriers by hand.",
+   "Existing: DressupConfig::for_op / for_role / normalize_for_op and the registry's DressupPolicy (compute/catalog/schema.rs:538-580) for per-op eligibility. A contributor would add `match op_type` arms in the dressup or the GUI instead of adding a registry policy or capability.",
+   "Existing: toolpath_is_drill_cycle (dressup_apply.rs, 'fn toolpath_is_drill_cycle') and internal_link_ceiling_z. A contributor who needs 'is this a drill cycle' would re-scan for MoveIntent::Drilling.",
+   "Existing: OperationTransformCapabilities builder methods (catalog.rs:230-260, e.g. with_planner_segment_merge) and lead_scope(). A contributor would add a new `bool` argument to `new` or a parallel list of op types instead of a builder.",
+   "Existing: DressupConfigWire (private, compute/config.rs:938) is the serde shape. A contributor would be tempted to add `#[serde(rename)]` or a second flat bool+f64 pair directly on DressupConfig, as feed_optimization did, instead of the Option<Params> fold."
+  ],
+  "ambiguity": [
+   "Option<Params> fold (arc_fitting, segment_merge, dogbone, lead_in_out, link_moves; config.rs:910-918) versus flat bool + value fields (feed_optimization, feed_max_rate, feed_ramp_rate and optimize_rapid_order; config.rs:919-928). The struct doc at :883-895 says the Option form is CUT-13's fix, but the comment at :921-925 says the flat shape was kept for feed_optimization because another session owns a reader. Both are live in the same struct.",
+   "Dressup vs op-specific stage: the always-on air-cut filter (DressupStage::AIR_CUT_FILTER, dressup_apply.rs:~225, run unconditionally when prior stock, cutter and kinematics exist; no config field) versus a configured stage. A stage with no DressupConfig field never reaches FIELD_DEFS, GUI, MCP or CLI. A reader could copy either.",
+   "Two rapid-order slots (barriered and unbarriered; both DressupStage::RAPID_ORDER) and the entry slot (RAMP_ENTRY/HELIX_ENTRY/PLUNGE_ENTRY with the same debug_key 'entry_style') show that a stage may reuse a key. The test at dressup_span_invariants.rs:~525 says label must be distinct and key need not be. Unclear which rule a new stage should follow.",
+   "Where in the GUI: the Linking tab (draw_linking_params, linking_dressup.rs:~310, entry, links, rapid order, 'Advanced' feed optimisation) versus the Dressup tab (draw_dressup_params, :621, 'Path Quality': arc fitting, dogbone). The doc comment at :308-311 says edge work stays in draw_dressup_params. A path-quality post-processor fits either, and segment_merge, the newest and closest sibling, is in neither.",
+   "Applied by the dressup pipeline vs applied by the planner: segment_merge is skipped in the pipeline and run in the planner for some ops (dressup_apply.rs:813-840 with `by_planner`). A dressup that post-processes a toolpath could follow the plain arc-fit pattern (:781) or the segment-merge pattern with the planner twin. The doc does not say which a new dressup is.",
+   "Closest example to copy: arc_fitting (full GUI, role defaults, MCP, FIELD_DEFS, multitool override at session/multitool.rs:937-942) versus segment_merge (newest, has the serde-default, planner and capability coupling, but no GUI). Neither is a complete template on its own."
+  ]
+ }
+}

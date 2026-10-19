@@ -1,0 +1,641 @@
+{
+ "with": {
+  "task": "Add a new cutter (tool) shape with its geometry, feeds-and-speeds handling, simulation and GUI tool editor support.",
+  "variant": "with-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/src/tool/<new>.rs (copy tool/tapered_ball.rs:24-170)",
+    "change": "New struct implementing MillingCutter. Required: diameter, length, height_at_radius, width_at_height, center_height, normal_length, xy_normal_length, edge_drop. Override geometry_hint, cusp_radius/valley_radius_mm, lookup_diameter_at, chip_geometry as needed. Use edge_drop_by_profile (tool/mod.rs:103) for edge_drop.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (trait) after rg TaperedBallEndmill; tool/CLAUDE.md lists the file map only"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/tool/mod.rs:10-20",
+    "change": "Add `mod` and `pub use` for the new cutter.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (TaperedBallEndmill)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/tool/mod.rs:585",
+    "change": "geometry_hint trait default returns ToolGeometryHint::Flat. The new cutter must override it, or it is classified Flat for feeds, LUT, plunge cap and cache key.",
+    "compiler_forces_it": false,
+    "how_found": "comment (doc says 'should override')"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/tool/mod.rs:330-352 and 395-399",
+    "change": "cusp_radius and valley_radius_mm have a `_ => self.radius()` arm. A shape with a finer tip than its envelope needs its own arm.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (TaperedBall in tool/mod.rs)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/tool/mod.rs:775-781",
+    "change": "Bending-section match on CutterKind: add the new kind and choose its bending fraction.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (comment at :771 says the match is exhaustive on purpose)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/tool/mod.rs:803-900",
+    "change": "If you add a NEW trait method with a default, the ToolDefinition wrapper must forward it; the wrapper overrides each method one by one.",
+    "compiler_forces_it": false,
+    "how_found": "guess (read the wrapper impl)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/mod.rs:73-87",
+    "change": "Add a ToolGeometryHint variant if the shape is not Flat/Ball/Bull/VBit/TaperedBall. Every exhaustive match on the hint then fails to build.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/mod.rs:107-118, 150-200, 204-212",
+    "change": "mrr_cross_section_mm2, engaged_diameter_at_doc (second hand-written copy of lookup_diameter_at), cutter_kind(): add arms.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/mod.rs:235-300",
+    "change": "CutterKind enum, label(), ALL, lut_family(), tool_type(): add the variant and all four arms.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (ALL is a slice, so only the round-trip sentry catches a missing entry)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/vendor_lut.rs:106-114, 147-155",
+    "change": "Only if the cutter needs its own LUT family: add a ToolFamily variant and label(). Data rows are the include_str! list at vendor_lut.rs:346-385 plus data/vendor_lut/source_manifest.json.",
+    "compiler_forces_it": true,
+    "how_found": "rg ChamferVbit"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/vendor_normalize.rs:108-123, 139-147",
+    "change": "lut_query_by_cutter and missing_project_curve_rows: add the family arm.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/vendor_lookup.rs:411-475 and 976-996",
+    "change": "find_best_row_for_geometry and find_best_chip_envelope_row are exhaustive. tool_family_compatible uses matches! and tool_family_score has `_ => 0`: decide the fallback family (like TaperedBall -> BallNose) or the shape gets no fallback rows.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (TaperedBallNose, BallNose)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/support.rs:231-352",
+    "change": "formula_backing: add arms per (op, role, material) or the cell falls to `_ => Clueless UNJUDGED_REASON`. Add a DRILL_* reason arm before the `(_, Drill, _)` catch-all.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/extrapolation/hardness.rs:57-64",
+    "change": "Add the family to SOFT_OVER_HARD_PRINTED_MAX (a slice). A missing family gets cap 1.0.",
+    "compiler_forces_it": false,
+    "how_found": "comment at :88 ('the sentry pins them'); sentry a_hardness_transfer_caps_at_the_printed_soft_hard_ratio_g2"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/extrapolation/size.rs:280-287; extrapolation.rs:188",
+    "change": "spread_for and SpreadFamily: add arm (exhaustive). Also check size.rs:222, 404, 414 which special-case TaperedBallNose by ==.",
+    "compiler_forces_it": true,
+    "how_found": "compiler for spread_for; rg for the == sites"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/extrapolation/plunge.rs:335-343, PLUNGE_RULES ~:260-330; family.rs FAMILY_RULES :100-114; drill.rs:376",
+    "change": "tool_family_label arm (exhaustive). PLUNGE_RULES, FAMILY_RULES and DRILL_RULES are data tables: no rule means a refusal.",
+    "compiler_forces_it": false,
+    "how_found": "rg TaperedBallNose in feeds/extrapolation"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/geometry.rs:318-330, 380-390, 440-455, 478-492",
+    "change": "depth_derate_diameter_mm, depth_derate_diameter_for_cutter, lut_key_diameter_mm, lut_key_diameter_for_cutter: add arms.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/mod.rs:1841, 1934, 2058, 2947, 3084",
+    "change": "RPM tier (matches!), scallop ball_r (`_ => 0.0`), axial chip thinning (`_ => 1.0`), adaptive engagement matrix, effective diameter. Only :2947 and :3084 are exhaustive.",
+    "compiler_forces_it": false,
+    "how_found": "rg ToolGeometryHint::TaperedBall"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/cutter_constraints.rs:370-376; tool_load/plunge_stress.rs:30-40; session/reach.rs:34-42; feeds/plunge.rs:270-286",
+    "change": "Tip-radius, plunge-cap, reach tip-sphere and plunge-rule key arms. Exhaustive.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:725-730",
+    "change": "helix_entry_diameter_mm has `_ => cutter.diameter()`. A shape whose tip is narrower than its diameter needs an arm.",
+    "compiler_forces_it": false,
+    "how_found": "rg ToolGeometryHint::TaperedBall"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/maps/tool_shape_key.rs:46-70",
+    "change": "HintKey enum and HintKey::new: add a variant. The module doc (:34) says a shape that is not a function of hint plus six scalars must extend the key.",
+    "compiler_forces_it": true,
+    "how_found": "compiler; comment"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/sim_prefix.rs:390-440",
+    "change": "hash_tool probes the profile at 64 radii, so a rotationally symmetric shape needs no edit. A non-symmetric shape needs the hash extended.",
+    "compiler_forces_it": false,
+    "how_found": "comment"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/stock/radial_profile.rs and dexel_stock/stamping.rs",
+    "change": "Simulation stamping reads height_at_radius through RadialProfileLUT::from_cutter. No per-shape edit for a shape of revolution. Add the cutter to the shape lists in tests (radial_profile.rs:181, stamping.rs:2543, tool/mod.rs:966).",
+    "compiler_forces_it": false,
+    "how_found": "rg TaperedBallEndmill in tests"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/tool_config.rs:13-72",
+    "change": "ToolType variant, ALL, label, cutter_kind, serde_token. has_ball_tip (:40) is matches!.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (has_ball_tip excepted)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/tool_config.rs:~176-200 (struct ToolConfig) and :207",
+    "change": "Add geometry field(s) with #[serde(default)] and a default in new_default. Fields without serde(default) break loading every existing tool-library TOML (ToolCatalog, io/tool_library.rs:69). Reusing existing fields avoids this.",
+    "compiler_forces_it": true,
+    "how_found": "compiler for struct literals; the serde break is silent"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/tool_config.rs:250, 260, 326, 357, 382",
+    "change": "envelope_diameter, summary and diameter_field_label have `_` arms. metric_size_label and imperial_size_label are exhaustive and show the size in the \u00d8/R convention.",
+    "compiler_forces_it": false,
+    "how_found": "rg TaperedBallNose in tool_config.rs"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/tool_config.rs:572-662 and 695-800",
+    "change": "name_claim and angle_claim (`_ => None` at :660). ToolGeometryField: variant, owner, field_name, defines_owner, is_length, value_of, set_on for each new field.",
+    "compiler_forces_it": false,
+    "how_found": "rg; the owner/value_of/set_on arms are exhaustive and forced"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/tool_config.rs:1303-1350",
+    "change": "Pinned tables of serde tokens (tool_type_serde_repr_pinned, parse_lenient_vocabulary_is_pinned). Add the new token.",
+    "compiler_forces_it": false,
+    "how_found": "sentry fails on the length assert"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/cutter.rs:8-40",
+    "change": "build_cutter arm that constructs the cutter from ToolConfig. The one builder in core.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog/registry.rs:240-241, 298-299, 354-355, 556-557, 757-758, 806-807, 860-861, 1018-1019",
+    "change": "required_kinds lists on eight operations. A new ball-like or V-like kind is refused by these operations unless you add it.",
+    "compiler_forces_it": false,
+    "how_found": "rg required_kinds"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/diagnostics/adapters/from_static_checks.rs:174, 347",
+    "change": "matches!(BallNose | TaperedBallNose) for the flat-clearing hint and the scallop check. Add the new type if it has a ball tip.",
+    "compiler_forces_it": false,
+    "how_found": "rg TaperedBallNose"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/validate.rs:247, 282 (in flux)",
+    "change": "Stale-default plunge rule uses the hint (:247 matches Ball|TaperedBall); wood adaptive rule checks == Flat (:282). Review both.",
+    "compiler_forces_it": false,
+    "how_found": "rg"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/save.rs:15-25 and :170-195 (in flux)",
+    "change": "tool_type_to_key (duplicates serde_token) and the ProjectToolSection literal.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/project_file.rs:532-600 and :855-880 (in flux)",
+    "change": "ProjectToolSection field with a serde default fn, and the ToolConfig literal in tool_from_project_section.",
+    "compiler_forces_it": true,
+    "how_found": "compiler for the literal; the default fn is by convention"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/mod.rs:1020-1040 and :1515-1535 (in flux)",
+    "change": "ToolSummary (the list_tools wire row) lists geometry fields one by one. A new field is not reported unless you add it.",
+    "compiler_forces_it": false,
+    "how_found": "rg taper_half_angle"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/compute/params.rs:~500-600",
+    "change": "set_tool_param matches param names as strings. Add a key for each new geometry field.",
+    "compiler_forces_it": false,
+    "how_found": "rg taper_half_angle"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/io/tool_library.rs:299-307",
+    "change": "dedupe_key lists geometry fields by hand. A new field left out makes two different tools count as duplicates and the second is deleted.",
+    "compiler_forces_it": false,
+    "how_found": "rg taper_half_angle"
+   },
+   {
+    "path_line": "crates/rs_cam_mcp/src/server.rs:518, 666-690, 1850-1900",
+    "change": "AddToolParam field and doc, parse_tool_type doc, build_tool_config: hand-zeroes three fields (:1851-1853) and has an exhaustive per-type match for required geometry.",
+    "compiler_forces_it": false,
+    "how_found": "rg taper_half_angle; the match at :1856 is exhaustive and forces an arm"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/mcp_server.rs:1128, 1175",
+    "change": "Tool descriptions list the types and params as prose strings (the MCP schema the agent reads).",
+    "compiler_forces_it": false,
+    "how_found": "rg taper_half_angle"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp/project.rs:185-205",
+    "change": "list_tool_catalog row: per-type geometry in a match with `_ => {}`.",
+    "compiler_forces_it": false,
+    "how_found": "rg TaperedBallNose"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/job.rs:146-175, 846-880, 1050-1075 (in flux)",
+    "change": "ToolDef field, build_tool arm (a second cutter builder; the match is exhaustive), tool_config_from_def copies fields with no match.",
+    "compiler_forces_it": false,
+    "how_found": "rg TaperedBallEndmill; only the build_tool arm is forced"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/run.rs:79, 304-316 (in flux)",
+    "change": "Type list inside help and error strings.",
+    "compiler_forces_it": false,
+    "how_found": "rg tapered_ball_nose"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/tool.rs:244, 280-312, 322-336",
+    "change": "Tool editor: type-specific ValueRow in a match with `_ => {}`, plus matches! blocks. The preview (:390-470) draws from profile_points and needs no edit. The type combo uses ToolType::ALL. The type switch refill uses missing_defining_geometry (:170).",
+    "compiler_forces_it": false,
+    "how_found": "rg TaperedBallNose"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/tool_library_modal.rs:320-326, 464-492",
+    "change": "row_summary and draw_readonly_grid, both with `_` arms. The edit form reuses draw_tool_fields (:536).",
+    "compiler_forces_it": false,
+    "how_found": "rg TaperedBallNose"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/render/sim_render.rs:479-503, 628-645, 710-725, ~1011",
+    "change": "ToolShape variant, ToolGeometry scalar field, from_tool_config mapping, draw_* method in ToolWireCtx, and the draw dispatch.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/feeds_speeds.rs:490-500; ui/feeds/shared.rs:90-98, 355-405; ui/feeds/why.rs:535-550",
+    "change": "Exhaustive matches on ToolType, ToolFamily and the hint.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/tests/feeds_matrix_instrument_fm1.rs:586,1211 and planning/feeds_matrix_2026-09-23/matrix_2026-09-23.csv",
+    "change": "FM1 iterates ToolType::ALL. The golden CSV must be re-blessed in the same commit (RS_CAM_UPDATE_FEEDS_MATRIX=1). Also tests/every_cell_declares_its_feeds_support_fm0.rs:121.",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md (feeds/CLAUDE.md rule)"
+   },
+   {
+    "path_line": "README.md:9, FEATURE_CATALOG.md:52, CREDITS.md",
+    "change": "Tool families list and shipped claims. CREDITS.md for any new formula or dataset.",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md (root: update docs with visible surface)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/tests.rs:1757-1790",
+    "change": "Sentries tool_type_cutter_kind_round_trips and facing_bit_is_a_lut_only_family walk the ALL slices. A missing ALL entry passes silently except the length assert.",
+    "compiler_forces_it": false,
+    "how_found": "comment"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_core/src/tool/mod.rs:585 - geometry_hint trait default returns Flat. A new cutter that does not override it compiles and passes. It reads as a flat end mill for the LUT family, plunge cap, cache key and deflection. Silent because the default is a valid value.",
+   "crates/rs_cam_core/src/compute/tool_config.rs:~176-200 - ToolConfig geometry fields carry no serde default. A new field breaks loading every saved tool-library TOML (io/tool_library.rs:69-71) at run time, not at build time. The project file has separate default fns at session/project_file.rs:552-600.",
+   "crates/rs_cam_core/src/io/tool_library.rs:299-307 - dedupe_key names the geometry fields by hand. A new field left out makes two different tools duplicates, and dedupe_library deletes one. No test names it.",
+   "crates/rs_cam_core/src/session/compute/params.rs:~560-600 - set_tool_param matches the field name as a string. A new field cannot be set from MCP until you add a key. The error reads 'unknown tool parameter'.",
+   "crates/rs_cam_core/src/session/mod.rs:1020-1040, 1531 (in flux) - ToolSummary (list_tools wire) lists geometry fields one by one. A new field is never reported on MCP.",
+   "crates/rs_cam_viz/src/ui/properties/tool.rs:280-312 and ui/tool_library_modal.rs:320-326, 470-491 - match on ToolType with `_ => {}`. The GUI compiles with no editor row, no read-only row and no summary text for the new geometry. This is the 'GUI tool editor support' half of the task.",
+   "crates/rs_cam_viz/src/app/mcp/project.rs:189-205 - list_tool_catalog drops the new geometry through `_ => {}`.",
+   "crates/rs_cam_viz/src/mcp_server.rs:1128, 1175 and crates/rs_cam_mcp/src/server.rs:518, 666 - prose tool descriptions list the accepted types and params. They are the schema the agent reads. Nothing checks them against ToolType::ALL.",
+   "crates/rs_cam_core/src/registry catalog: compute/catalog/registry.rs:757, 806, 860, 1018 (Ball, TaperedBall) and 240, 298, 354, 556 (VBit) - required_kinds lists. A new ball-like kind is refused by Pencil, SpiralFinish, Scallop and UnifiedFinish with no error at build time. FEATURE_CATALOG.md:66 shows the refusal is operator-visible.",
+   "crates/rs_cam_core/src/feeds/vendor_lookup.rs:976-996 - tool_family_compatible (matches!) and tool_family_score (`_ => 0`). Without an arm the new family never falls back to a neighbouring family's rows, so Suggest refuses with 'no row'.",
+   "crates/rs_cam_core/src/feeds/support.rs:~346-351 - formula_backing ends in `_ => Clueless UNJUDGED_REASON`. The new family refuses every formula-only cell with a generic reason, and nothing says an arm is missing. The drill catch-all `(_, Drill, _)` is similar.",
+   "crates/rs_cam_core/src/feeds/extrapolation/hardness.rs:57-64 and :92 - SOFT_OVER_HARD_PRINTED_MAX is a slice. A missing family falls back to 1.0 with `map_or`. Only a sentry notices.",
+   "crates/rs_cam_core/src/feeds/extrapolation/plunge.rs PLUNGE_RULES, family.rs FAMILY_RULES, drill.rs DRILL_RULES - data tables with no exhaustiveness. A missing rule is a refusal at run time, which looks like a data gap, not a code gap.",
+   "crates/rs_cam_core/src/feeds/mod.rs:1934 (scallop ball_r `_ => 0.0`) and :2058 (axial chip thinning `_ => 1.0`) - a ball-tipped new shape silently gets no scallop-driven stepover and no ball chip thinning.",
+   "crates/rs_cam_core/src/compute/config.rs:728 - helix_entry_diameter_mm `_ => cutter.diameter()`. A narrow-tipped shape plunges a helix at its full envelope.",
+   "crates/rs_cam_core/src/tool/mod.rs:351, 398 - cusp_radius and valley_radius_mm `_ => self.radius()`. The cusp radius is the tip radius for tapered; a new shape that forms a finer feature than its envelope silently over-spaces finishing passes (G-BULLCUSP history).",
+   "crates/rs_cam_core/src/diagnostics/adapters/from_static_checks.rs:174, 347 and compute/tool_config.rs:40 (has_ball_tip) - matches! on BallNose | TaperedBallNose. A ball-tipped new type is missed with no error.",
+   "crates/rs_cam_core/src/compute/tool_config.rs:250, 260, 382, 572-662 - envelope_diameter, summary, diameter_field_label, name_claim, angle_claim. All use `_` arms. The envelope one affects boundary clipping and keep-out offsets.",
+   "crates/rs_cam_cli/src/job.rs:1050-1075 (in flux) - tool_config_from_def copies ToolDef fields one by one with no match. A new field in a job file is ignored silently. build_tool (:846) is a second builder; the match forces an arm, but a ToolDef field is by hand.",
+   "crates/rs_cam_cli/src/run.rs:79, 307 (in flux) - hard-coded type list in help text and error string.",
+   "crates/rs_cam_core/tests/feeds_matrix_instrument_fm1.rs and planning/feeds_matrix_2026-09-23/matrix_2026-09-23.csv - the golden matrix grows by one tool row. The rule to re-bless in the same commit is in feeds/CLAUDE.md only. The test fails with a diff, but a new contributor may not know the env flag.",
+   "README.md:9, FEATURE_CATALOG.md:52 - shipped-capability claims. Nothing fails if you skip them. Root CLAUDE.md says to update them.",
+   "crates/rs_cam_core/src/maps/tool_shape_key.rs:34-37 and compute/sim_prefix.rs:390 - residual-risk comments: a shape that is not a function of the hint plus scalars (or not rotationally symmetric) collides in cache keys. Only a comment says so.",
+   "crates/rs_cam_core/src/tool/mod.rs:803-900 - if the work adds a trait method with a default body, the ToolDefinition wrapper does not forward it and the default runs silently.",
+   "No CLAUDE.md lists an 'add a cutter' checklist. tool/CLAUDE.md names only its own folder's files and sentries. The best list is the doc comment on ToolConfig::normalize_geometry (tool_config.rs:~422-430), which names consumers of the geometry fields."
+  ],
+  "reuse_traps": [
+   "ToolType::cutter_kind().lut_family() (compute/tool_config.rs:50, feeds/mod.rs:276) vs the hand-written copy tool_type_to_lut_family in crates/rs_cam_viz/src/ui/properties/feeds_speeds.rs:490-500. A contributor copies the viz copy and adds a third arm list.",
+   "ToolFamily::label (feeds/vendor_lut.rs:147) vs tool_family_label in feeds/extrapolation/plunge.rs:335 vs tool_family_label in crates/rs_cam_viz/src/ui/feeds/shared.rs:90. Three label tables for one enum.",
+   "build_cutter (compute/cutter.rs:8, re-exported at rs_cam_viz/src/compute/worker/helpers.rs:5) vs build_tool in crates/rs_cam_cli/src/job.rs:846. A second ToolType -> cutter builder.",
+   "ToolType::serde_token / ToolType::ALL / parse_lenient (tool_config.rs:64-95) vs tool_type_to_key in session/save.rs:15 and the type lists in run.rs:79, mcp_server.rs:1175. The first set is the single source.",
+   "ToolConfig::normalize_geometry / missing_defining_geometry / ToolGeometryField (tool_config.rs:410-450, 695-800) vs the hand-zeroing of three fields in rs_cam_mcp/src/server.rs:1851-1853. Use the first for a new field.",
+   "edge_drop_by_profile (tool/mod.rs:103) and flat_chip_geometry_for_radius (tool/mod.rs:219). Before G-TIERBURIAL, bull nose and tapered each hand-wrote edge_drop and both were wrong. Easy to miss, as they are pub(crate) helpers in mod.rs.",
+   "ToolGeometryHint::engaged_diameter_at_doc (feeds/mod.rs:~150) and MillingCutter::lookup_diameter_at (tool/mod.rs:477): two hand-kept copies of the same geometry; the parity sentry is in feeds/tests.rs:~1790.",
+   "MillingCutter::profile_points (tool/mod.rs:572) already gives the GUI preview. Do not hand-write a preview profile.",
+   "ToolConfig::size_label / SizeUnits / inch_text (tool_config.rs:~300, tool/size_units.rs). Do not format a size string by hand in the GUI."
+  ],
+  "ambiguity": [
+   "Closest example to copy: TaperedBallNose (hint with parameters, own LUT family, defining geometry, tip != diameter) vs VBit (single angle, own LUT family, special rules in many places). A flat-ish new shape such as a BullNose copy touches fewer sites. rg 'TaperedBall' gives about 150 hits and 'VBit' about as many, with no guide on which is canonical.",
+   "Where the new geometry lives: a new flat field on ToolConfig plus ToolGeometryField (tool_config.rs:~176, 695; ~10 struct literals in tests/common/tools.rs and many test files break), or reuse of existing fields (corner_radius, included_angle, taper_half_angle). Both are in the code. The first matches the 'compiler enforced' direction but has a large blast radius.",
+   "New ToolGeometryHint variant vs reuse of an existing one. The hint feeds eight exhaustive matches, so a new variant is the type-safe way, but ToolShapeKey and sim_prefix both state they assume the hint is complete.",
+   "New ToolFamily (LUT) vs mapping to an existing family with a fallback. TaperedBall falls back to BallNose at vendor_lookup.rs:981-993; the other families have none. Either is plausible.",
+   "Two derivation paths for the shape class: ToolGeometryHint::cutter_kind (feeds/mod.rs:204, called 'primary') vs ToolType::cutter_kind (tool_config.rs:50, 'convenience'). Both must agree; a round-trip sentry pins it.",
+   "Naming of the angle: ToolConfig.taper_half_angle, ToolSummary.taper_half_angle_deg, MCP taper_half_angle, CLI ToolDef.taper_angle (job.rs:168), GUI 'Taper Half-Angle'. Four spellings; a new field has no rule.",
+   "Tool-type token in the CLI: job.rs ToolDef takes the ToolType serde token, but its own geometry field names differ from MCP's. Copy the MCP names or the CLI names?"
+  ]
+ },
+ "without": {
+  "task": "Add a new cutter (tool) shape: geometry, feeds-and-speeds handling, simulation, GUI tool editor support",
+  "variant": "no-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/src/tool/<newshape>.rs (new; model on tool/bullnose.rs:68-158 and tool/tapered_ball.rs:105-306)",
+    "change": "New struct implementing MillingCutter: diameter, length, chip_geometry, height_at_radius, width_at_height, center_height, normal_length, xy_normal_length, edge_drop, plus overrides geometry_hint (bullnose.rs:90), lookup_diameter_at (tapered_ball.rs:176), helix_deg. Use edge_drop_by_profile (tool/mod.rs:103).",
+    "compiler_forces_it": true,
+    "how_found": "compiler (required trait methods, tool/mod.rs:409-590); rg for sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/tool/mod.rs:9-19",
+    "change": "mod + pub use for the new cutter",
+    "compiler_forces_it": false,
+    "how_found": "rg for sibling (pub use TaperedBallEndmill)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/tool/mod.rs:331,396",
+    "change": "cusp_radius and valley_radius_mm match geometry_hint() with a `_ => self.radius()` wildcard; decide whether the new shape has a tip-sphere or corner feature scale",
+    "compiler_forces_it": false,
+    "how_found": "rg for sibling (TaperedBall in tool/mod.rs)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/tool/mod.rs:774-781",
+    "change": "ToolDefinition::tip_deflection_mm bending_fraction match on CutterKind (exhaustive, comment says a 6th shape fails to compile)",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/mod.rs:75-86",
+    "change": "Add ToolGeometryHint variant (with its dials)",
+    "compiler_forces_it": false,
+    "how_found": "rg for sibling (it is the root of the exhaustive matches below)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/mod.rs:109-117, 190-195, 206-210",
+    "change": "mrr_cross_section_mm2, engaged_diameter_at_doc, cutter_kind arms for the new hint",
+    "compiler_forces_it": true,
+    "how_found": "compiler (exhaustive, no wildcard)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/mod.rs:236-297",
+    "change": "Add CutterKind variant; extend label(), ALL (257-263), lut_family(), tool_type()",
+    "compiler_forces_it": true,
+    "how_found": "compiler for match arms; ALL slices NOT forced"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/vendor_lut.rs:108-116 and label() ~148",
+    "change": "Add ToolFamily variant or map the new kind onto an existing family (CutterKind::lut_family, feeds/mod.rs:278-283). Note vendor data rows are JSON under crates/rs_cam_core/data/vendor_lut/observations and are loaded via EMBEDDED_FILES (vendor_lut.rs:343)",
+    "compiler_forces_it": true,
+    "how_found": "compiler for the enum arms; data rows by rg tapered_ball_nose over non-rs files"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/vendor_normalize.rs:110-120, 135-143",
+    "change": "lut_query_by_cutter and missing_project_curve_rows arms for the new family",
+    "compiler_forces_it": true,
+    "how_found": "compiler (exhaustive on ToolFamily)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/vendor_lookup.rs:419-426, 465-471, 975-994",
+    "change": "Exhaustive hint arms (419,465); tool_family_compatible/tool_family_score fallback pairs are matches!/`_ => 0` so a family fallback (e.g. new->Ball) must be added by hand",
+    "compiler_forces_it": false,
+    "how_found": "rg for sibling (TaperedBallNose, BallNose fallback pair)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/geometry.rs:323-329, 385-389, 451-455, 483-493",
+    "change": "depth_derate_diameter_mm, depth_derate_diameter_for_cutter, lut_key_diameter_mm, and a fourth helper: arms for the new hint",
+    "compiler_forces_it": true,
+    "how_found": "compiler (exhaustive)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/mod.rs:1841,1883,1933-1935,2058,2945-2948,3073-3084",
+    "change": "Further hint matches in the feeds calculator (suggest defaults, effective diameter, tip radius); per-shape factors (ap/ae 1.20/0.14 etc.) at 2945-2948 need new numbers",
+    "compiler_forces_it": true,
+    "how_found": "rg ToolGeometryHint:: in feeds/mod.rs; most are exhaustive, 1841/1883 are matches! (silent)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/predict.rs:500-502, 565-580",
+    "change": "DeflectionCaveat and bending_diameter_mm: new CutterKind arms (the doc says a 6th shape fails to compile)",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/cutter_constraints.rs:367-375, 408-413",
+    "change": "max_doc_scallop is exhaustive; min_doc_chipload_floor uses matches!(Flat|Bull|VBit) so a ball-like new shape silently gets the chipload floor model",
+    "compiler_forces_it": false,
+    "how_found": "rg ToolGeometryHint (matches! form)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/mod.rs:1140",
+    "change": "validate_tool_for_operation scallop refusal: matches!(actual, Flat | VBit); a new shape with no tip radius must be added here",
+    "compiler_forces_it": false,
+    "how_found": "rg CutterKind::"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/tool_load/plunge_stress.rs:30-39",
+    "change": "effective_tip_diameter_mm arm (exhaustive); decide whether the new tip is a plunge risk",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/reach.rs:35-40",
+    "change": "tip-radius arm (exhaustive on hint)",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/maps/tool_shape_key.rs:48-70",
+    "change": "HintKey variant + arm; comment at :34 says a shape not captured by the hint must extend the key",
+    "compiler_forces_it": true,
+    "how_found": "compiler (HintKey::new exhaustive)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/config.rs:726-729",
+    "change": "helix_entry_diameter_mm: `_ => cutter.diameter()` wildcard; a cutter whose diameter() is the envelope rather than the tip needs an arm",
+    "compiler_forces_it": false,
+    "how_found": "rg geometry_hint()"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/tool_config.rs:11-19",
+    "change": "Add ToolType variant (serde snake_case token is derived from the variant name)",
+    "compiler_forces_it": false,
+    "how_found": "rg ToolType::"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/tool_config.rs:22-28, 31-37, 52-57, 65-70, 203-208",
+    "change": "ALL (hand list, not forced), label, cutter_kind, serde_token, new_default name/diameter arms",
+    "compiler_forces_it": true,
+    "how_found": "compiler for label/cutter_kind/serde_token/new_default; ALL is NOT forced"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/tool_config.rs:40-42, 250-254, 262-268, 321-367, 384, 617, 642-660",
+    "change": "has_ball_tip (matches!), envelope_diameter (`_ =>`), summary (`_ =>`), metric_size_label/imperial_size_label (exhaustive), diameter_field_label (`_ =>`), name_claim and angle_claim (`_ =>`)",
+    "compiler_forces_it": false,
+    "how_found": "reading tool_config.rs; only the two size_label matches are exhaustive"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/tool_config.rs:154-196 (ToolConfig struct), 699-785 (ToolGeometryField)",
+    "change": "If the shape has a new defining dimension: new ToolConfig field, new ToolGeometryField variant with ALL, owner, field_name, defines_owner, is_length, value_of, set_on. Existing fields (corner_radius, included_angle, taper_half_angle, shaft_diameter) may be reused",
+    "compiler_forces_it": true,
+    "how_found": "compiler for ToolGeometryField match arms; ALL and the struct literal in new_default are forced only once the field exists"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/cutter.rs:9-41",
+    "change": "build_cutter arm constructing the new cutter (the only ToolConfig to MillingCutter builder)",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/save.rs:16-24",
+    "change": "tool_type_to_key hand-written exhaustive string map (a second copy of serde_token); IN FLUX",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/project_file.rs:538-553, 599, 862-869 and session/save.rs:178-185",
+    "change": "ProjectToolSection is a parallel struct on the project-file surface; only needs edits if a new ToolConfig field is added (field, default fn, load, save). The tool_type is a plain String parsed with ToolType::parse_lenient (project_file.rs:784-798) so the token itself needs no edit. IN FLUX",
+    "compiler_forces_it": false,
+    "how_found": "rg taper_half_angle across crates"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/compute/params.rs:545-585",
+    "change": "set_tool_param_impl string-keyed param list; add a key for any new field",
+    "compiler_forces_it": false,
+    "how_found": "rg taper_half_angle"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/mod.rs:1015-1040, 1522-1536",
+    "change": "ToolSummary (MCP wire struct) hard-codes taper_half_angle_deg/corner_radius_mm/included_angle_deg; add a field if the new geometry should be listed. IN FLUX",
+    "compiler_forces_it": false,
+    "how_found": "rg taper_half_angle"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/io/tool_library.rs:297-307",
+    "change": "dedupe_key hand-lists the geometry fields; a new dimension (and already shaft_diameter) is not in it, so two different new-shape tools collapse as duplicates",
+    "compiler_forces_it": false,
+    "how_found": "rg taper_half_angle"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog/registry.rs:241,299,355,557,758,807,861,1019",
+    "change": "required_kinds lists per operation (VBit-only ops, Ball|TaperedBall finishing ops); add the new kind where it is valid. Absence means the op refuses the tool (schema.rs:395-402 allows)",
+    "compiler_forces_it": false,
+    "how_found": "rg CutterKind:: in registry.rs"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/job.rs:849-880, 120-175, 1050-1068",
+    "change": "build_tool hand-built second cutter factory (duplicates compute/cutter.rs:build_cutter), ToolDef parallel struct (keys corner_radius, included_angle, taper_angle, shaft_diameter), tool_config_from_def. build_tool match is exhaustive; IN FLUX",
+    "compiler_forces_it": true,
+    "how_found": "compiler for the match; ToolDef fields by rg"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/run.rs:79,307",
+    "change": "help/error text listing the tool type tokens (parsing itself goes through ToolType::parse_lenient). IN FLUX",
+    "compiler_forces_it": false,
+    "how_found": "rg tapered_ball_nose"
+   },
+   {
+    "path_line": "crates/rs_cam_mcp/src/server.rs:1845-1899",
+    "change": "build_tool_config per-type defining-geometry match (exhaustive, last arm names EndMill|BallNose); rule 2 at 1851-1853 hard-clears three fields only; AddToolInput doc at 667-693 and error text at 1677",
+    "compiler_forces_it": true,
+    "how_found": "compiler for the match; strings by rg"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/mcp_server.rs:1128,1175 and crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json:333-423",
+    "change": "MCP tool descriptions with the type list and param list, plus the wire snapshot",
+    "compiler_forces_it": false,
+    "how_found": "rg tapered_ball_nose over non-rs files finds the snapshot; the snapshot test is the only enforcement"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp/project.rs:187-205",
+    "change": "catalog row adds per-type fields; `_ => {}` wildcard",
+    "compiler_forces_it": false,
+    "how_found": "rg ToolType::"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/render/sim_render.rs:482-505, 627-645, 690-725, ~1006",
+    "change": "ToolShape variant, ToolGeometry fields, from_tool_config arm, wireframe match arm and a draw_<shape> function (the 3D simulation tool ghost). Core stock simulation itself is generic over height_at_radius (stock/radial_profile.rs:35-50)",
+    "compiler_forces_it": true,
+    "how_found": "compiler for the two matches; draw function by copying draw_tapered_ball_nose"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/tool.rs:164-183, 244, 280-330",
+    "change": "Type combo iterates ToolType::ALL; type-specific ValueRow match has a `_ => {}` wildcard so the new field editor must be added by hand; cross-section preview (390-480) is generic via profile_points",
+    "compiler_forces_it": false,
+    "how_found": "reading the tool editor"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/tool_library_modal.rs:321-325, 468-490",
+    "change": "row_summary and draw_readonly_grid per-type rows, both with wildcards",
+    "compiler_forces_it": false,
+    "how_found": "rg ToolType::"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/feeds_speeds.rs:489-500",
+    "change": "tool_type_to_lut_family exhaustive duplicate of CutterKind::lut_family",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/feeds/shared.rs:91-96, 358-360, 401-403 and ui/feeds/why.rs:539-550",
+    "change": "ToolFamily label match (exhaustive), ball_tip_radius and engaged_diameter_context (wildcards), engaged_diameter_hover (exhaustive)",
+    "compiler_forces_it": false,
+    "how_found": "rg ToolFamily:: and ToolGeometryHint:: in viz; 2 of 4 are exhaustive"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/state/job.rs:617-623",
+    "change": "all_constants_are_exhaustive hard-codes ToolType::ALL.len() == 5; bump to 6",
+    "compiler_forces_it": false,
+    "how_found": "rg ToolType::ALL (test fails)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/data/vendor_lut/observations/*.json",
+    "change": "Feeds-and-speeds rows for the new shape (or an explicit fallback pair); without rows feeds_support returns Refuse",
+    "compiler_forces_it": false,
+    "how_found": "rg over non-rs files"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_core/src/compute/tool_config.rs:22-28 ToolType::ALL (and feeds/mod.rs:257-263 CutterKind::ALL) are hand lists beside the enums; omitting the new variant compiles, and the GUI Add-tool menu (viz/ui/setup_panel.rs:221), the type combo (viz/ui/properties/tool.rs:165) and parse_lenient (tool_config.rs:89-93) all iterate ALL, so the shape is unreachable and unparseable. Only count-pinning tests catch it (tool_config.rs:1311, viz/src/state/job.rs:618 hard-codes 5).",
+   "crates/rs_cam_core/src/feeds/mod.rs:1140 scallop refusal `matches!(actual, CutterKind::Flat | CutterKind::VBit)`: a new tip-radius-less shape is silently accepted by Scallop.",
+   "crates/rs_cam_core/src/feeds/cutter_constraints.rs:408-413 `matches!(geometry, Flat | Bull | VBit)` decides which shapes get the chipload-floor model; a ball-like new shape falls through to the ball/tapered model unannounced.",
+   "crates/rs_cam_core/src/tool/mod.rs:331-343 and 396-399 cusp_radius/valley_radius_mm `_ =>` wildcards: a new shape silently gets radius() (the envelope). That is the exact defect the G-BULLCUSP comment (tool/mod.rs:336-348) says cost a release. Same for compute/config.rs:726-729 helix_entry_diameter_mm and session/reach.rs.",
+   "crates/rs_cam_core/src/compute/catalog/registry.rs:758,807,861,1019 required_kinds `[Ball, TaperedBall]` for finishing ops: nothing says the new ball-like shape belongs there, and omission just makes those ops refuse the tool.",
+   "crates/rs_cam_core/src/compute/tool_config.rs:40-42 has_ball_tip (matches!), 250-254 envelope_diameter (`_ =>` returns diameter), 262-268 summary, 384 diameter_field_label, 617 and 642-660 name_claim/angle_claim: wildcard arms that return plain-cutter behaviour for the new type.",
+   "crates/rs_cam_cli/src/job.rs:849-880 build_tool is a second, hand-written ToolType-to-cutter factory beside compute/cutter.rs:9-41, and its ToolDef (job.rs:127-175, deny_unknown_fields) is a parallel TOML schema with different key names (taper_angle vs taper_half_angle). The match is forced but defaults and required-field errors are not shared.",
+   "crates/rs_cam_core/src/session/save.rs:16-24 tool_type_to_key duplicates ToolType::serde_token (tool_config.rs:64-71); both are exhaustive but the persisted key could diverge from the serde token with no failing build.",
+   "crates/rs_cam_mcp/src/server.rs:1851-1853 rule 2 clears only corner_radius, included_angle, taper_half_angle (not shaft_diameter or any new field); and the string vocab at server.rs:667, 1677, viz/src/mcp_server.rs:1128/1175, cli/run.rs:79/307 and the wire snapshot rs_cam_viz/tests/snapshots/mcp_wire_surface.json:423 list the type tokens as prose.",
+   "crates/rs_cam_core/src/io/tool_library.rs:297-307 dedupe_key does not include shaft_diameter or any new dimension.",
+   "crates/rs_cam_viz/src/ui/properties/tool.rs:280-330, ui/tool_library_modal.rs:321-325 and 468-490, app/mcp/project.rs:187-205: GUI editor, library detail and MCP catalog rows use `_ => {}` arms, so the new shape's defining dimension has no editor row, no read-only row and no catalog field until someone adds it. The tool editor is where an operator can only set the shape up if this is done.",
+   "crates/rs_cam_core/src/session/compute/params.rs:545-585 set_tool_param string match and rs_cam_core/src/session/mod.rs:1015-1040 ToolSummary: any new ToolConfig field is invisible to MCP set/list until added by hand.",
+   "Hand-listed shape sets in tests and benches (tool/mod.rs:966, stock/radial_profile.rs:164-186, dexel_stock/stamping.rs:2542, surface/dropcutter.rs:940-948, maps/tool_shape_key.rs:102+, tier_map.rs:1077) do not iterate ToolType::ALL, so the new shape is not covered by the 'every shipped shape' sentries (profile non-negativity, drop-cutter parity, stamping parity) unless added by hand.",
+   "Vendor data: crates/rs_cam_core/data/vendor_lut/observations/*.json has no rows for a new family and feeds_support refuses; test_embedded_has_all_tool_families (vendor_lut.rs:742-777) lists families by hand, so it will not fail for a new one.",
+   "Documentation prose still says five tools: compute/tool_config.rs:10 ('five cutter types'), viz state/job.rs:618, tool/mod.rs:964 comments ('all five cutter shapes' at tool/mod.rs:~665, plus feeds/mod.rs:293 '5 <-> 5')."
+  ],
+  "reuse_traps": [
+   "edge_drop_by_profile (crates/rs_cam_core/src/tool/mod.rs:103) vs hand-written closed-form edge_drop in ball.rs:96, flat.rs:89, vbit.rs:220. A new convex-profile cutter should call the shared helper (as bullnose.rs:158 and tapered_ball.rs:306 do); the comment at mod.rs:96-102 says closed forms in bull and tapered placed the contact at the mirrored point and were low by 1.8 mm.",
+   "ToolType::cutter_kind() (tool_config.rs:51) and CutterKind::lut_family() (feeds/mod.rs:277) already map ToolType to ToolFamily, but rs_cam_viz/src/ui/properties/feeds_speeds.rs:489 tool_type_to_lut_family re-implements it; do not copy that third map.",
+   "compute/cutter.rs:build_cutter is the only ToolConfig-to-cutter builder (doc at tool_config.rs:~496), but cli/job.rs:849 build_tool is a second factory; use build_cutter or session ToolConfig rather than adding to build_tool.",
+   "ToolConfig::normalize_geometry / missing_defining_geometry / ToolGeometryField (tool_config.rs:699-785) already do the GUI type-switch fixups (viz tool.rs:170-175); do not write per-type default-fill code in the editor.",
+   "ToolType::parse_lenient (tool_config.rs:89), serde_token, and ToolType::label are the string vocabulary; do not add a parser in MCP/CLI/loader (they all call parse_lenient: project_file.rs:784, mcp server.rs:1674, cli run.rs:304).",
+   "MillingCutter::profile_points (tool/mod.rs:~560) is what the tool preview (viz tool.rs:451) and RadialProfile::from_cutter (stock/radial_profile.rs:35) read; simulation stamping needs no per-shape code, so do not write a shape-specific stamper.",
+   "tool_scale accessor family (tool/mod.rs:~232 table, envelope/cusp/valley/engagement_radius_mm): reuse these instead of adding a new radius accessor; the doc on height_at_radius says explicitly not to add a fourth."
+  ],
+  "ambiguity": [
+   "Closest example to copy: TaperedBallNose (most wiring: own hint with data, own ToolFamily, own wireframe, LUT fallback pair, plunge cap, name-claim handling) versus BullNose (one parameter, uses edge_drop_by_profile, cusp_radius special case, simpler). Both are plausible; the G-BULLCUSP comment at tool/mod.rs:336-348 shows BullNose later needed fixes the first copy missed.",
+   "New ToolFamily vs mapping onto an existing one: BullNose and TaperedBallNose each have their own ToolFamily (feeds/mod.rs:280-282) and a fallback pair (vendor_lookup.rs:975-994: Bull to Flat, Tapered to Ball), while the rest do not; a new shape could add a family and rows or reuse an existing family via lut_family().",
+   "New geometry field vs reuse: ToolConfig carries per-type fields (corner_radius, corner_radius_mm, included_angle, taper_half_angle, shaft_diameter) with ToolGeometryField (tool_config.rs:699), but TaperedBall uses two fields while VBit one, and EndMill also has its own corner_radius_mm separate from BullNose corner_radius; either pattern could be copied.",
+   "Per-shape editor UI: tool.rs uses a `match tool.tool_type` inside the shared param grid (280-317) for most types but a separate 'Cutter geometry' group for TaperedBall (322-338, TOO-005); the library modal repeats a third variant.",
+   "Hint dispatch style: some consumers match ToolGeometryHint (feeds, plunge_stress, reach), others match CutterKind (predict.rs, tool/mod.rs:774) and others ToolType (viz, mcp, cli); the closed enum to extend first is not obvious (feeds/mod.rs:219-232 doc distinguishes them).",
+   "Pre-existing divergence in cutter factories: compute/cutter.rs:build_cutter (session path) versus cli/job.rs:build_tool (legacy CLI job path); both are exhaustive on ToolType."
+  ]
+ }
+}

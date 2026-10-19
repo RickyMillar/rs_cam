@@ -1,0 +1,310 @@
+{
+ "with": {
+  "task": "Add a new project-level setting (traced as a new StockConfig field, e.g. next to padding / pin_part_models) that every surface (GUI, MCP, CLI) can change, that persists in the project file, and that invalidates dependent computed results. None of the sites below is in the uncommitted set (git status: .mcp.json, planning/rivmap_block_job/testpiece.toml, scripts/debt_scan.py), so none is marked in flux.",
+  "variant": "with-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/src/compute/stock_config.rs:69",
+    "change": "Add the field to `StockConfig` with `#[serde(default)]`. Follow the `padding` / `pin_part_models` doc-comment style.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (padding, pin_part_models); session/CLAUDE.md names the one door but not the stock files"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/stock_config.rs:99",
+    "change": "Add the field to `impl Default for StockConfig` (full struct literal).",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/project_file.rs:466",
+    "change": "Add the field to the PARALLEL on-disk struct `ProjectStockConfig` with `#[serde(default...)]`. Its default fn must equal the `StockConfig` default.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (padding). The compiler flags the two literals that read it (save.rs:142, project_file.rs:763), but only after you add the field. Nothing says to add it."
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/project_file.rs:497",
+    "change": "Add the field to `impl Default for ProjectStockConfig` (full literal).",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/project_file.rs:763",
+    "change": "Copy the field in `stock_from_project` (file to session). It is a full literal.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/save.rs:142",
+    "change": "Copy the field in `to_project_file` (session to file). It is a full literal. This is the persistence step.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/mutation/config.rs:494",
+    "change": "`set_stock_config` replaces the whole stock and calls `drop_all_results`. This gives correct (over-wide) invalidation for free. A narrower rule needs a new Command row plus `drop_results_and_their_dependents` (mutation/toolpath.rs:882) or an edge in `dependencies::edges`.",
+    "compiler_forces_it": false,
+    "how_found": "session/CLAUDE.md (invalidation invariants) + rg SetStockConfig"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/command.rs:383",
+    "change": "The `SetStockConfig` registry row already carries gui/mcp/cli Reach. Only a NEW narrow Command needs a row here, plus an args struct (command.rs:1528 pattern) and an apply arm (command.rs:2505).",
+    "compiler_forces_it": true,
+    "how_found": "CLAUDE.md (session) + compiler for the apply arm. The registry test fails on a setter without a row."
+   },
+   {
+    "path_line": "crates/rs_cam_mcp/src/server.rs:758",
+    "change": "Add an `Option<T>` field to `SetStockConfigParam`. Use an enum with `#[schemars(inline)]` if the value has a fixed token set. Add a `build_info().features` token. Extend the serde test at server.rs:2715.",
+    "compiler_forces_it": false,
+    "how_found": "crates/rs_cam_mcp/CLAUDE.md + rg SetStockConfigParam"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp/commands.rs:1114",
+    "change": "`core_set_stock_config`: validate the new param, write it into the cloned stock, and add it to `fields_set` (hand-written merge).",
+    "compiler_forces_it": false,
+    "how_found": "rg SetStockConfigParam"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp/commands.rs:2583",
+    "change": "The `CommandId::SetStockConfig` reply arm builds the reply JSON and message by hand from x,y,z,origin,material. Add the new field.",
+    "compiler_forces_it": false,
+    "how_found": "rg CommandId::SetStockConfig"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/mcp_server.rs:1211",
+    "change": "Update the `set_stock_config` tool description string, which is the only place a client reads the field list in prose.",
+    "compiler_forces_it": false,
+    "how_found": "rg set_stock_config"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp/project.rs:480",
+    "change": "Add the field to the hand-built `inspect_stock` reply, so the setting can be read back.",
+    "compiler_forces_it": false,
+    "how_found": "rg `\"padding\"` / `auto_from_model` outside tests"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/stock.rs:68",
+    "change": "Draw the widget in the stock panel on the draft. Call `edit.commit()` on the right widget event. Decide whether the field belongs in `reconcile_auto_from_model` (stock.rs:28, hand-listed geometry fields).",
+    "compiler_forces_it": false,
+    "how_found": "rg SetStockConfig in viz, ui/properties/CLAUDE.md"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/panel_apply.rs:162",
+    "change": "`stock_edit_command` routes a draft by struct-update comparison. A new field falls into `SetStockConfig` (drop everything) by default. Check that this is the wanted rule. Undo (controller/events/undo.rs:180) reuses the same function, so undo is covered.",
+    "compiler_forces_it": false,
+    "how_found": "rg SetStockConfig"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/job.rs:1105",
+    "change": "The CLI only builds a stock from `stock_top_z` and has no stock keys in its job file. Add a key to the job schema if the CLI must set the field. Otherwise the CLI row `cli: Reach::Reached` is true only in name.",
+    "compiler_forces_it": false,
+    "how_found": "rg SetStockConfig in cli"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/io/setup_sheet.rs:176",
+    "change": "The setup sheet prints the stock numbers by hand. Add the field if the operator needs it on the sheet.",
+    "compiler_forces_it": false,
+    "how_found": "viz/CLAUDE.md line 'audit the setup sheet, project IO...'"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/save.rs:723",
+    "change": "Extend `stock_config_round_trip`, which lists fields by hand. Add a core sentry for the field's invalidation, modelled on `a_pin_set_edit_stales_only_the_pin_drill_p4.rs`.",
+    "compiler_forces_it": false,
+    "how_found": "rg padding in save.rs"
+   },
+   {
+    "path_line": "FEATURE_CATALOG.md:1",
+    "change": "Update the shipped-capability claim for the new visible setting (root CLAUDE.md: 'Update visible-product docs with visible surface changes').",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_core/src/session/project_file.rs:466: `ProjectStockConfig` is a second struct for the same data, hand-copied in two directions. The compiler catches the two copy literals only AFTER you add the field to it. If you add the field to `StockConfig` only, the compiler fails at project_file.rs:763 and save.rs:142, which is lucky. But the `#[serde(default)]` and the default fn (default_stock_padding at project_file.rs:521 duplicates 5.0 from stock_config.rs:107) are not tied to the `StockConfig` default. The two defaults can drift silently, and an old file loads with a different value from a new session.",
+   "crates/rs_cam_mcp/src/server.rs:758: `SetStockConfigParam` has NO `padding` field, although `padding` is a persisted stock field. This is the live proof that a stock field can land in GUI + file and be unreachable from MCP with no error. Nothing forces a wire param. The CLI is the same: job.rs:1105 only reaches `stock_top_z`. The 'every surface' requirement has no sentry for stock fields.",
+   "crates/rs_cam_viz/src/app/mcp/commands.rs:2583 and project.rs:480: the MCP mutation reply and the `inspect_stock` reply are hand-built JSON. A field missing here persists and works, but a client cannot read it back, and no test notices.",
+   "crates/rs_cam_viz/src/ui/properties/stock.rs:28: `reconcile_auto_from_model` lists the six geometry fields by hand. A new field that changes the stock size or origin does not clear `auto_from_model` on the GUI and MCP doors unless added in BOTH places (stock.rs:28 and the `geometry_set` pushes at commands.rs:1161-1180). The next `import_model` then overwrites the user's value (commands.rs:1107 'Gap 2').",
+   "crates/rs_cam_core/src/session/mutation/config.rs:494: invalidation is correct by default (drops all) and so hides a mistake. If the setting is cheap to apply (e.g. a display or export-only value), the over-wide drop destroys generated work and nothing complains. If the setting is later split into a narrow Command, `stock_edit_command` (panel_apply.rs:162) must also be split. Its pins_only / part_models_only comparisons are hand-written per field, and the undo arm and the stock panel share it only by convention.",
+   "crates/rs_cam_viz/src/ui/properties/panel_apply.rs:134: after a stock apply the GUI sets `panel_side_effects.upload` and `pin_drill_sync` by hand. A setting that changes viewport buffers, or a pin-drill input, depends on these flags. The core `Effects` do not carry them.",
+   "crates/rs_cam_viz/src/controller/events/model.rs:887 and controller/io.rs:26: the model-import and rescale doors write the stock through `SetStockConfig`. They clone the current stock, so the new field survives. But `update_from_bbox` (stock_config.rs:117) and any code that rebuilds a `StockConfig` from parts would reset it to the default without error.",
+   "Full `StockConfig { .. }` literals without `..StockConfig::default()` in tests and benches (e.g. crates/rs_cam_core/benches/hot_paths.rs:728, crates/rs_cam_viz/src/compute/worker/test_fixture.rs:42, viz tests such as `a_tool_size_reads_diameter_and_radius_g_toolsize.rs:67`) break the test build, not the library build. A `cargo check` of the lib passes, and the failure shows only in clippy `--all-targets` or `cargo test`. I did not check which of them lack the `..default` tail.",
+   "planning/fixtures and repo .toml project files (e.g. planning/rivmap_block_job/testpiece.toml) hold `[job.stock]` tables. The `serde(default)` means they load without the key, so no test forces a regenerated fixture. Golden outputs (G-OPGOLDEN style) stay the same only if the default is neutral. Nothing checks that."
+  ],
+  "reuse_traps": [
+   "`stock_edit_command` / `part_models_first` (crates/rs_cam_viz/src/ui/properties/panel_apply.rs:162,195) are the one function that turns a stock draft into a Command, shared by panel and undo. A new contributor would write a second diff-to-command in the panel. Do not re-write `reconcile_auto_from_model` (ui/properties/stock.rs:28) either.",
+   "`ProjectSession::try_with_effects` / `with_effects` (session/mutation/config.rs:495) and `drop_results_and_their_dependents` (mutation/toolpath.rs:882) / `drop_all_results` (:862) are the invalidation helpers. A contributor might clear `results` by hand or write a new stale-set walker. `dependencies::edges` is the one rule, and `Effects.stale` is the answer to return.",
+   "`resolve_material` and `mutation_error_json` in viz app/mcp/commands.rs (used at :1118) are the MCP validation and refusal helpers. `apply_panel_command` (panel_apply.rs:~225) runs a Command from a draw site and stamps the stale set. `CoreReply::quiet` / `core_stale(&effects)` build the MCP reply.",
+   "`rs_cam_core::session::project_file::stock_from_project` and the `ProjectSessionBuilder::stock` API (builder.rs:194) are the conversion and the test fixture door. Test code often hand-builds `StockConfig { .. }` instead of using the builder.",
+   "The `RETIRED_KEYS` table (project_file.rs:85) is the door for removing a key later. The existing `padding` default fn (project_file.rs:521) is a trap to copy: the 5.0 is typed in three places."
+  ],
+  "ambiguity": [
+   "Three plausible stock-level patterns. (1) Extend `StockConfig` and ride `SetStockConfig` (drop everything), like `padding` / `material`. (2) Add a narrow Command beside `SetAlignmentPins` / `SetPinPartModels` (command.rs:~126-160 rows, panel_apply.rs:162 split) for a finer invalidation. (3) Treat it as a project section like `simulation_resolution` / `rest_analysis` (their own Command and their own file table). CLAUDE.md says the registry owns commands, but not when a field earns its own row.",
+   "Stock-level vs setup-level. The prompt says 'stock or setup field'. Setups have their own per-setup fields and round-trip sentries (`setup_datum_round_trip_p2.rs`), plus `SetSetupFace` / `SetSetupRotation` / `SetSetupPauseMessage` rows. The stock path has `ProjectStockConfig`. The two persist through different structs. Nothing in session/CLAUDE.md says which a given setting belongs to.",
+   "Pin-field precedent vs the older fields: `pin_part_models` (P7) uses `skip_serializing_if = \"Option::is_none\"` and its own Command. `padding` uses a named default fn and no skip. Both are current, and either could be copied.",
+   "One persisted type or two. Post config was collapsed to one type (project_file.rs comment UI-07: 'one type, so a new field cannot be missed'), while stock still has `ProjectStockConfig` + `StockConfig`. A contributor can copy the old field-by-field pattern or collapse the stock the UI-07 way."
+  ]
+ },
+ "without": {
+  "task": "Add a new project-level setting (new stock/setup field) that every surface can change, persists in the project file and invalidates dependent computed results. Traced as a new contributor with no CLAUDE.md. Several of the paths touched are in the in-flux list (session/command.rs, session/project_file.rs, session/save.rs, session/mutation/config.rs, cli/src/job.rs); mark those in flux.",
+  "variant": "no-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/src/compute/stock_config.rs:63-91",
+    "change": "Add the field to `StockConfig` (the in-memory model). Use #[serde(default)] like alignment_pins/pin_part_models. This is the copy target: pin_part_models (P7) is the newest stock-level field.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (pin_part_models, auto_from_model)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/stock_config.rs:99-114",
+    "change": "Add the field to `impl Default for StockConfig` (full struct literal).",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/project_file.rs:470-495",
+    "change": "Add the field to `ProjectStockConfig`, the separate on-disk twin of StockConfig, with a serde default (and skip_serializing_if when optional). IN FLUX.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (pin_part_models)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/project_file.rs:498-513",
+    "change": "Add the field to `impl Default for ProjectStockConfig` (full struct literal). IN FLUX.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/project_file.rs:759-776",
+    "change": "`stock_from_project` copies file -> session field by field in a full literal. IN FLUX.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/save.rs:142-154",
+    "change": "`to_project_file` copies session -> file field by field in a full literal. IN FLUX.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/command.rs:383-388 and 1528-1531",
+    "change": "Decide the door. Copy 1: no new Command, the field rides `Command::SetStockConfig`, which replaces the whole block (SetStockConfigArgs.stock is a Box<StockConfig>). The registry already marks gui/mcp/cli Reached. Copy 2: add a narrow Command row (like SetPinPartModels at command.rs:164, args at :1216, dispatch at :2445) with a for_each_command! row, Surfaces literal, args struct, apply arm, setter in mutation/entities.rs:536, and CommandId arms in rs_cam_viz/src/app/mcp/commands.rs:1952 and :2913. IN FLUX.",
+    "compiler_forces_it": true,
+    "how_found": "compiler for Copy 2 (exhaustive CommandId matches and the Surfaces literal); nothing for Copy 1"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/mutation/config.rs:494-499",
+    "change": "`set_stock_config` does `session.stock = stock; drop_all_results()`. A new field that only affects some outputs still drops everything here. A narrower invalidation (as P4 pins at mutation/entities.rs:505-527 does with drop_results_and_their_dependents) needs its own setter. IN FLUX.",
+    "compiler_forces_it": false,
+    "how_found": "rg SetStockConfig, reading the setter"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/stock.rs:175-215",
+    "change": "Add the egui widget to the stock panel draft; call edit.drag/edit.click so the PanelEdit commit fires. The panel edits a draft copy, so the new field travels with the StockConfig clone.",
+    "compiler_forces_it": false,
+    "how_found": "rg auto_from_model / padding"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/panel_apply.rs:149-187",
+    "change": "`stock_edit_command` classifies the diff of draft vs stored: pins-only -> SetAlignmentPins, part-models-only -> SetPinPartModels, else SetStockConfig. A new field falls into the else arm (drops everything) with no edit. A narrow row needs another struct-update comparison here AND in `part_models_first` (:189-212) AND in undo.rs:180-210.",
+    "compiler_forces_it": false,
+    "how_found": "rg pin_part_models"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/controller/events/undo.rs:180-215",
+    "change": "`apply_stock_snapshot` re-uses stock_edit_command, so a whole-StockConfig field undoes for free. A narrow-command field must also be handled in the `matches!(command, SetAlignmentPins)` branch.",
+    "compiler_forces_it": false,
+    "how_found": "rg SetStockConfig"
+   },
+   {
+    "path_line": "crates/rs_cam_mcp/src/server.rs:758-791",
+    "change": "Add an Option<T> field to `SetStockConfigParam` (the MCP wire patch type, a parallel struct) with a doc comment that becomes the JSON schema.",
+    "compiler_forces_it": false,
+    "how_found": "rg SetStockConfig"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp/commands.rs:1114-1207",
+    "change": "`core_set_stock_config` copies each Some(spec.x) into the stock by hand, with validation. Add the new field here or the MCP param is silently ignored.",
+    "compiler_forces_it": false,
+    "how_found": "rg SetStockConfig"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp/commands.rs:2583-2650",
+    "change": "The `CommandId::SetStockConfig` reply arm destructures a hand-picked tuple of stock fields into the reply JSON. Add the new field so the agent sees the value that was applied.",
+    "compiler_forces_it": false,
+    "how_found": "reading far away from the builder"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/mcp_server.rs:1210-1218",
+    "change": "The `set_stock_config` tool description string is hand-written prose listing fields. Update it.",
+    "compiler_forces_it": false,
+    "how_found": "rg set_stock_config"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json:3089",
+    "change": "Regenerate the wire-surface snapshot (set_stock_config input schema). It is pinned by crates/rs_cam_viz/tests/mcp_wire_surface_pin.rs:68 and fails until regenerated.",
+    "compiler_forces_it": false,
+    "how_found": "rg set_stock_config across non-rs files"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp/project.rs:470-500",
+    "change": "The `inspect_stock` JSON is a hand-built serde_json::json! of stock fields. Add the field so an agent can read it back.",
+    "compiler_forces_it": false,
+    "how_found": "rg auto_from_model"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/job.rs:1099-1117",
+    "change": "The batch CLI has no stock block. It only exposes `stock_top_z`, then sends SetStockConfig. To make the CLI able to set the field, add a field to the job op/TOML struct here (also smoke.rs:1120-1130 if it should apply). The CLI project.rs path loads the saved project, so persistence works with no change. IN FLUX.",
+    "compiler_forces_it": false,
+    "how_found": "rg SetStockConfig, rg 'stock' in cli"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/load_report.rs:100-121 and 162",
+    "change": "Only if the field reaches tool load: `ReportKey` memoises on `stock.material` alone, not the whole stock. A stock field that changes loads must be added to ReportKey.matches and capture. IN FLUX.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'stock.material' to find readers of the stock"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/simulate.rs:1001-1011",
+    "change": "Only if the field changes simulation: `stock_hash` in SimulationProvenance hashes the bbox, top_z and resolution only. Add the field or a cached cut trace is not marked stale.",
+    "compiler_forces_it": false,
+    "how_found": "rg stock_hash"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/compute/generation.rs:282",
+    "change": "Only if generators must read the field: generation passes only `alignment_pins` from the stock into the execution context. Any other new field has to be threaded here and into ExecutionContext by hand.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'self.stock' in session/compute"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_viz/src/app/mcp/commands.rs:1114-1207: `core_set_stock_config` copies fields one by one from SetStockConfigParam. Nothing fails if the new field is added to the param (rs_cam_mcp/src/server.rs:758) but not copied here. The MCP call returns success and drops the value. `padding` already shows this: it is a StockConfig field with a GUI widget (ui/properties/stock.rs:198) and an inspect_stock key (app/mcp/project.rs:483), and it is absent from SetStockConfigParam, so MCP cannot set it.",
+   "crates/rs_cam_viz/src/app/mcp/commands.rs:2583-2650: the SetStockConfig reply arm builds the reply from a hand-picked tuple of fields. The new value is applied but missing from the reply, which is a quiet half-miss.",
+   "crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json:3089: the committed snapshot of every MCP tool schema must be regenerated (mcp_wire_surface_pin.rs:68). This is the only prompt that the MCP schema moved, and it is a test failure rather than a compile error.",
+   "crates/rs_cam_viz/src/app/mcp/project.rs:483: the inspect_stock JSON is hand-built, so a read-back key for the new field is not forced anywhere.",
+   "crates/rs_cam_viz/src/mcp_server.rs:1211: the tool description is a string literal listing fields. Nothing checks it against the param struct.",
+   "crates/rs_cam_cli/src/job.rs:1099-1117 (in flux): the batch CLI is a separate input format (op.stock_top_z only). 'Every surface can change' needs a new field in that format. The registry marks cli: Reached for SetStockConfig (session/command.rs:386), so the registry is satisfied without any CLI input for the new field.",
+   "crates/rs_cam_core/src/session/save.rs:142-154 vs project_file.rs:759-776: both are full literals, so a missing field fails to compile. Forgetting the #[serde(default)] attribute on ProjectStockConfig does not fail: old project files then fail to load or are rejected. No round-trip test iterates fields (save.rs tests only assert selected ones, ~:721-737), so a wrong default or a field copied under the wrong name loads without error.",
+   "crates/rs_cam_core/src/session/project_file.rs:85 RETIRED_KEYS and :38 SUPPORTED_FORMAT_VERSION (in flux): a new field changes the on-disk format. Whether to bump the version is a judgement call. Nothing prompts a contributor to consider it. Fixture TOMLs (test_data/ux_*.toml, crates/rs_cam_core/tests/fixtures/*.toml) do not need the key because of serde defaults, and nothing checks that.",
+   "crates/rs_cam_core/src/session/mutation/config.rs:494-499 (in flux): `set_stock_config` drops EVERY result for any stock change. A contributor who wants 'invalidates dependent results' precisely needs a narrow setter like set_alignment_pins (mutation/entities.rs:505-527). The compiler does not tell them the broad default exists or is over-invalidating.",
+   "crates/rs_cam_viz/src/ui/properties/panel_apply.rs:149-212 and undo.rs:180-215: stock_edit_command / part_models_first diff the draft against stored by struct-update comparison. A narrow-command field is silently classified as SetStockConfig (drops everything) until both functions are extended. A new field added in a way the equality does not see (for example a float, a NaN) causes edit loops.",
+   "crates/rs_cam_core/src/compute/simulate.rs:1001: SimulationProvenance.stock_hash omits any new stock field. A cached cut trace or prefix memo can survive an edit that should invalidate it. No test breaks.",
+   "crates/rs_cam_core/src/session/load_report.rs:100-121: ReportKey keys on stock.material only. A new stock field read by the load report is silently served from the memo.",
+   "crates/rs_cam_core/src/session/compute/generation.rs:282: generation copies only alignment_pins out of stock. A generator will not see a new stock field until it is threaded by hand. Other readers (export.rs:411, diagnostics.rs:1219) each read particular fields too.",
+   "crates/rs_cam_viz/src/render/upload_cache.rs:110 and state/pin_view.rs: GPU/viewport caches hold a StockConfig copy. The GUI apply path sets `panel_side_effects.upload = true` by hand (panel_apply.rs:130-132). The MCP and undo paths set other flags separately, so a field that changes the viewport can refresh on one surface and not on another.",
+   "crates/rs_cam_core/benches/hot_paths.rs:721 and rs_cam_viz/src/compute/worker/test_fixture.rs:41-68: these are struct literals with ..StockConfig::default(), so they compile without change and pin the new field to its default silently."
+  ],
+  "reuse_traps": [
+   "Per-field stock edit: `stock_edit_command` and `part_models_first` in rs_cam_viz/src/ui/properties/panel_apply.rs:149-212 already decide which Command a stock edit becomes, and undo.rs reuses them. A new contributor would write a new command-selection branch in the stock panel or in undo instead of extending these two helpers.",
+   "Invalidation: `ProjectSession::drop_all_results` (session/mutation/toolpath.rs:862) and `drop_results_and_their_dependents` (:882) already exist. A contributor might hand-roll stale-marking in the GUI. `Effects::stale` plus `crate::state::stale::stamp_stale` (viz/src/state/stale.rs:42) is the shared GUI hand-off.",
+   "Shared mutation door: the MCP patch-then-apply shape (clone stock_config(), overwrite fields, send SetStockConfig) in core_set_stock_config (app/mcp/commands.rs:1114) is the same one the CLI uses (job.rs:1107-1115) and smoke.rs:1120. A contributor might add a new setter on ProjectSession instead of reusing the whole-block Command.",
+   "Auto-from-model rule: `reconcile_auto_from_model` (viz/src/ui/properties/stock.rs:28) and the same rule re-implemented in core_set_stock_config (commands.rs:1157-1193) and in project load (project_file.rs:1220). Three copies of the rule; a field that interacts with auto-sizing has to be consistent in all three.",
+   "Material resolution: `resolve_material` (called in commands.rs core_set_stock_config) is the existing by-name resolver for the MCP surface. A contributor adding a named-choice field might write a new parser instead.",
+   "Stock-change editor (rs_cam_core/src/compute/stock_change.rs, viz ui/properties/stock_changes.rs, app/mcp/commands/stock_changes.rs) is a parallel, per-setup, narrow-command family (AddStockChange/EditStockChange). Its names make it look like the stock-setting example to copy, but it is the wrong shape for a project-level field."
+  ],
+  "ambiguity": [
+   "Two equally plausible patterns for the command door: (a) ride SetStockConfig, the whole-block replace used by padding, auto_from_model, material and origin (session/command.rs:383, 1528); (b) a dedicated narrow row like SetPinPartModels (command.rs:164, 1216, 2445; mutation/entities.rs:536) or SetAlignmentPins. Both are live, and (b) needs panel_apply.rs and undo.rs changes that (a) does not.",
+   "Two plausible invalidation patterns: drop_all_results in set_stock_config (mutation/config.rs:494) versus the finer drop_results_and_their_dependents used by pins (mutation/entities.rs:505-527), plus SetPostConfig's per-field `post_change_reaches_motion` gate (mutation/config.rs:515-531) that clears the simulation only when a field reaches motion. Three different invalidation philosophies sit next to each other.",
+   "Stock-level (StockConfig, job.stock) versus per-setup (SetupData at session/mod.rs:741, with its own commands such as SetSetupRotation and SetSetupPauseMessage) versus job-level non-stock (PostConfig, MachineProfile, ProjectSimulationSection::of(simulation_resolution) at save.rs). 'Project-level setting' fits any of these. Each has a different file twin: ProjectStockConfig, ProjectSetupSection, a PostConfig clone with no twin (save.rs comment UI-07), ProjectSimulationSection.",
+   "A persistence twin exists for stock (ProjectStockConfig, field-by-field) but not for post (`self.post.clone()`, single type); copying the wrong one yields either a duplicate struct or no file mapping.",
+   "Optional-field serde style: pin_part_models uses `#[serde(default, skip_serializing_if = \"Option::is_none\")]`, while the other stock fields use #[serde(default = \"default_stock_*\")] helper functions or plain #[serde(default)]."
+  ]
+ }
+}

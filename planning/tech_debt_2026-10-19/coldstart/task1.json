@@ -1,0 +1,394 @@
+{
+ "with": {
+  "task": "Add a new 2.5D operation type (params, generation, GUI property panel, MCP exposure, CLI job support, project save/load, simulation, export)",
+  "variant": "with-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/src/ops/mod.rs:9-23 and new crates/rs_cam_core/src/ops/<new>.rs",
+    "change": "Add the pure kernel module (`pub mod <new>;`). Copy ops/zigzag.rs (Z-free geometry plus one level). ops/CLAUDE.md:7 and compute/CLAUDE.md say a Layered op gives Z-free geometry and the runner steps Z.",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md (crates/rs_cam_core/src/ops/CLAUDE.md, compute/CLAUDE.md W3) then rg -i zigzag"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/operation_configs.rs:971-1030 (ZigzagConfig struct + Default), derive at :971",
+    "change": "Add `<New>Config` with `#[derive(OpParams)]`, `#[param(help=..., range=...)]` on each dial, `selection` field with `serde(default = \"Selection::drawing\")` and `#[param(driver_set = DRIVER_SET_SELECTION)]`, `region_ordering`, `ramp_feed_rate`, `spindle_rpm`. Reuse HELP_* consts at :26-70.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (for_each_op! row names the type) and compute/CLAUDE.md:17 (W5)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/operation_configs.rs:2775-2860 and :2921 (impl_operation_params!(ZigzagConfig {...}))",
+    "change": "Add `impl_operation_params!(<New>Config {...})`. The trait itself is forced. The optional keys (stepover, depth_per_pass, total_depth, ramp_feed_rate) are not.",
+    "compiler_forces_it": true,
+    "how_found": "compiler for the invocation; the optional keys only by reading the macro"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:316 (for_each_op! row) and imports :7-11",
+    "change": "Insert the row `(NewOp, NewConfig, Menu2d, \"new_op\")`. This generates OperationType, ALL, category(), name(), kind_str(), serde token, OperationConfig::op_type/new_default/as_params. Row position fixes ALL order, which frozen tests compare.",
+    "compiler_forces_it": false,
+    "how_found": "comment at catalog.rs:288-300 and rg Zigzag"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:750-775 (enum OperationConfig)",
+    "change": "Add the variant `NewOp(NewConfig)` to the hand-written serde-tagged enum. The generated dispatch refers to it, so a missing variant fails to compile.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:510-535 (registry_entry) and :30-40 (pub(super) use REG_*)",
+    "change": "Add `OperationType::NewOp => &REG_NEW_OP` and the REG_ import.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (exhaustive match, no wildcard)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog/registry.rs:395-440 (REG_ZIGZAG) and imports :13-18",
+    "change": "Add `REG_NEW_OP: OpRegistryEntry` with spec, params: NewConfig::PARAMS, tool_constraints, dressup_policy, policy, capabilities (all ~25 fields listed, no Default), and `generate:` pointing at the adapter.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (struct literal) and compute/CLAUDE.md:17"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:781-890 (OperationConfig::capabilities)",
+    "change": "Add the variant to the no-override arm list at :882-892, or write an override arm.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (doc says every variant is named)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:910-950 (surface_mask), :954-985 (stock_to_leave_dial)",
+    "change": "Add the variant to the `None` arm of each.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:987-1075 (selection, selection_slot, default_selection)",
+    "change": "Add `Some(&c.selection)`, `Some(&mut c.selection)` and `Some(Selection::drawing())` arms. W4 check 9 holds slot = (item_use != None).",
+    "compiler_forces_it": true,
+    "how_found": "compiler; compute/CLAUDE.md P2.3b"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:1393-1440 (OperationConfig::cutting_levels)",
+    "change": "Add a depth-stepping arm (`uniform(cfg.depth, cfg.depth_per_pass)`) or `vec![]`. Keep it equal to the depth stated in impl_operation_params and the adapter ladder.",
+    "compiler_forces_it": true,
+    "how_found": "compiler; doc comment at :1385-1392"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:440-452 (ALL_2D)",
+    "change": "Add the op to the hand-written ALL_2D list, in ALL order. The GUI add-op menu (viz ui/toolpath_panel.rs:1162) reads this list.",
+    "compiler_forces_it": false,
+    "how_found": "comment catalog.rs:295; sentry operation_partitions_cover_all_variants_once at compute/catalog/tests.rs:412 (in flux)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/execute/clearing_2d.rs:57-72 (generate_zigzag) and :251-300 (ZigzagRaster: impl LayeredOp)",
+    "change": "Write `generate_new_op` using `config_guard!` and a `struct NewPass` that implements `LayeredOp` (depth_per_pass, region_ordering, rest_use, prepare, emit_level; optional hooks outlines, ladder, spans, annotate). Then `run_layered`.",
+    "compiler_forces_it": true,
+    "how_found": "compiler for `generate:` field and the LayeredOp required methods; pattern from compute/CLAUDE.md W3"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/execute.rs:550-559 (pub(crate) use clearing_2d::{...})",
+    "change": "Re-export the new generate fn so registry.rs can name `crate::compute::execute::generate_new_op`.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/geometry_class.rs:67-82 (classify)",
+    "change": "Add the op to the PocketLike arm (a 2.5D op). Exhaustive match; but a wrong arm (Zigzag sits in the 3D terrain arm at :79) compiles too.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/operations/mod.rs:271-300 (bottom_z_pin_note)",
+    "change": "Add the op to the exhaustive match with the Depth note. Sentry bottom_z_pin_note_g_bottompin ties it to honors_pinned_bottom_z.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/state/toolpath/configs.rs:4-12 and crates/rs_cam_viz/src/state/toolpath.rs:12-20",
+    "change": "Add `NewConfig` to the two hand-written re-export lists so the GUI can name the type.",
+    "compiler_forces_it": true,
+    "how_found": "compiler once the editor names the type"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/operations/boundary_2d.rs:560-602 (draw_zigzag_params), mod.rs:15 (pub(super) use)",
+    "change": "Write `draw_new_op_params(ui, cfg, pills, depth_caution)` with `dv`/`dv_pill` rows keyed by `p(OperationType::NewOp, \"param_name\", \"Label:\")`, `region_ordering_row`, `depth_caution_row`.",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md (ui/properties/CLAUDE.md) then rg -i zigzag in viz"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/operations/registry.rs:36-46 (imports), :238 (editor! ed_zigzag), :493-497 (OP_UI_ROWS Zigzag row)",
+    "change": "Add the `editor!` adapter and an `OpUiRow {op, draw, diagram, validate}`. `draw` is a required field. Sentry operations_registry_ui05 checks one row per op.",
+    "compiler_forces_it": false,
+    "how_found": "ui/properties/CLAUDE.md invariant and registry.rs module doc; the row is held by a test, not by the compiler (const slice)"
+   },
+   {
+    "path_line": "crates/rs_cam_mcp/src/server.rs:1659-1662 (parse_operation_type) and crates/rs_cam_viz/src/mcp_server.rs:1153 (add_toolpath description)",
+    "change": "Add `new_op` to two hand-typed lists of valid tokens in prose. Parsing works with no edit (serde), so only the text lies. Also viz/src/app/mcp/view.rs:40.",
+    "compiler_forces_it": false,
+    "how_found": "rg -i zigzag in crates (string hit, not a symbol)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/tests/ (every_op_states_its_capabilities_w2_4.rs:157,438,576,640,734; every_cell_declares_its_feeds_support_fm0.rs:155-199; fixtures/op_golden_g_opgolden.toml; compute/catalog/tests.rs:536; compute/execute/tests.rs:496; feeds/geometry_class.rs:131-155)",
+    "change": "Add a row to each frozen table, change the hard-coded `24` (and `24 * 5 * 4`) counts, re-bless the op golden (RS_CAM_BLESS_OPGOLDEN=1) and the feeds matrix CSV (RS_CAM_UPDATE_FEEDS_MATRIX=1, planning/feeds_matrix_2026-09-23/matrix_2026-09-23.csv). Tests fail until you do.",
+    "compiler_forces_it": false,
+    "how_found": "compute/CLAUDE.md sentry list and feeds/CLAUDE.md; each red test names the table"
+   },
+   {
+    "path_line": "FEATURE_CATALOG.md:21-31, crates/rs_cam_core/src/ops/CLAUDE.md:7-9, crates/rs_cam_core/src/compute/CLAUDE.md:17",
+    "change": "Add the operation row to the catalog and the file maps. Root CLAUDE.md says to update visible-product docs with a visible surface change.",
+    "compiler_forces_it": false,
+    "how_found": "root CLAUDE.md 'Sources of truth'"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/job.rs:187-262 (OperationDef::operation_type), crates/rs_cam_cli/src/run.rs:272 (parse_op_type)",
+    "change": "No edit. The CLI reads `OperationType::ALL`, `kind_str()` and the registry schema. Verify only with `run --list-ops` / `--list-params`.",
+    "compiler_forces_it": false,
+    "how_found": "crates/rs_cam_cli/CLAUDE.md C2 contract"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/project_file.rs, save.rs; compute/simulate.rs; gcode/mod.rs",
+    "change": "No edit for a generic 2.5D op. Save/load uses the serde tag `kind` from the for_each_op! token. Simulation and export read the generated Toolpath and generic registry fields. Only Drill-type ops have per-op arms (simulate.rs:315, gcode/mod.rs:186).",
+    "compiler_forces_it": false,
+    "how_found": "rg OperationConfig:: over session, gcode, compute/simulate.rs showed no 2.5D-specific arm"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_viz/src/ui/properties/operations/shape_diagrams.rs:14-52 (StepoverPattern::from_operation ends `_ => None`): if the new row uses `OpDiagram::Stepover` (copying Zigzag at registry.rs:496) and no arm is added, the panel draws no diagram. Nothing fails. The registry.rs module doc claims the `_ => {}` fallback is gone, but this wildcard remains behind OpDiagram::Stepover (registry.rs:187-193).",
+   "crates/rs_cam_viz/src/ui/properties/operations/registry.rs:424-430 (val_stepover_under_diameter ends `_ => return`): a new op with a stepover that must stay under the tool diameter gets no check unless it is added here and set as `validate:` on the row. Silent.",
+   "crates/rs_cam_core/src/feeds/suggest/apply.rs:1000-1019 (apply_stock_defaults ends `_ => {}`): the stock-aware default depth (Pocket: min(stock_z*0.5, 5)) is not set for the new op. add_toolpath over MCP (viz/src/app/mcp/commands.rs:919) then creates it with the bare config default depth. Silent.",
+   "crates/rs_cam_core/src/compute/operation_configs.rs:2775-2860 (impl_operation_params!): `stepover:`, `depth_per_pass:`, `total_depth:`, `ramp_feed_rate:` keys are optional. If you leave one out, the trait default returns None/false. Suggest and `set_toolpath_param` then skip or refuse that dial with no compile error. Also `total_depth` must agree with cutting_levels (catalog.rs:1393) and the adapter ladder, three encodings of one fact.",
+   "crates/rs_cam_viz/src/ui/properties/operations/boundary_2d.rs:560-602 `p(OperationType::X, \"name\", ...)`: the param name is a string. A typo gives no tooltip and an unbounded row. Only the source-scanning test the_help_key_is_the_param_name_ui04 catches it (SENTRY, a text scan).",
+   "crates/rs_cam_core/src/compute/config.rs:1666-1711 (dressup_policy_table_is_pinned ends `_ =>` asserting ANY_DRESSUP): a new op that copies `DressupPolicy::ANY_DRESSUP` passes by default. If the op starts on the outline at zero depth (like Inlay/VCarve/Trace), the lead-in problem of G-VCARVELEAD is not signalled. The wildcard hides the decision.",
+   "crates/rs_cam_core/src/compute/catalog/registry.rs:395-440 `policy: OpPolicy::MILLING` and `ToolConstraintsDef::ANY_TOOL`: these are copyable consts, so the policy fields `raster_stepover_is_lateral`, `empty_is_feature_selective` and `kinematics` are inherited silently from the sibling you copied. Pinned only by *_set_is_pinned tests.",
+   "crates/rs_cam_mcp/src/server.rs:1661 and crates/rs_cam_viz/src/mcp_server.rs:1153: hand-typed op token lists in an error message and a tool description. An agent reads them to learn the valid values; they omit the new op. The test at server.rs:2394 only checks that `alignment_pin_drill` appears.",
+   "architecture/high_level_design.md:141-148 'Adding a new operation typically requires changes in four places' (worker.rs, properties/mod.rs): stale, and it points at files that no longer hold the dispatch. A contributor who follows it misses the catalogue, registry, selection and test tables. architecture/requirements.md:77 (NFR-2.2 'implementing a trait') is also stale.",
+   "crates/rs_cam_core/src/compute/execute.rs:283-315 prose count '24 of 24 registered families' and the hard-coded `24` in tests/every_cell_declares_its_feeds_support_fm0.rs:191,199: the prose goes stale with no signal. The assert count fails, but the failure text does not say 'also re-bless the feeds matrix CSV'.",
+   "Row order: for_each_op! (catalog.rs:316), ALL_2D (:440) and the frozen tables in tests/every_op_states_its_capabilities_w2_4.rs compare `ops == ALL.to_vec()`. A row placed at the wrong index fails several tests with unrelated messages.",
+   "`config_guard!` (execute.rs:510) returns a runtime error if the registry row's `generate` is paired with the wrong variant. A copy-paste of `generate_zigzag` with the old `Zigzag` token compiles and fails only at generation time."
+  ],
+  "reuse_traps": [
+   "New Z-ladder: you may write your own depth stepping. Use `ops::depth::z_ladder` (ops/CLAUDE.md: 'Build no third'), `DepthStepping` (catalog.rs:1393) and `effective_levels` in the LayeredOp default `ladder`. Do not re-implement it.",
+   "Own region loop, rest clipping and cancel polling: use `run_layered` (compute/execute/layered.rs) and `Capabilities::rest_use`. Do not loop over polygons or poll the cancel flag in the kernel by hand.",
+   "Own feed and plunge resolution: `LayerFeeds::new(ctx, op)` (clearing_2d.rs:69) already gives tool radius, feeds and safe Z. `op.capabilities()` gives rest_use. Do not read config.feed_rate directly.",
+   "Own spans and annotation: `generated_with_depth_run_spans` and `with_depth_run_annotation` are the LayeredOp defaults. Trace and Chamfer override them only for a reason.",
+   "Own obstacle, boundary or stock clipping: `Prepared::territory()`, `area_outlines_less_obstacles` (layered.rs:~482) and `ObstacleSet::resolve` (compute/obstacle.rs) do it for every op (K1). Do not clip in the kernel.",
+   "Own item and geometry extraction from the drawing: the prologue (`execute/prologue.rs`, `Prepared::regions/curves/holes`) and `Selection::drawing()` already do this. Do not read `ctx.mesh` or model items in the adapter.",
+   "Own raster or offset code: `ops::zigzag::zigzag_lines_on_lattice_reported`, `offset_polygon_reported` (counts failures for OffsetFailures) and the `ZigzagRaster` lattice rule (B9). Search by name finds them only if you already know them.",
+   "Own GUI numeric rows: `dv`, `dv_pill`, `dv_narrowed`, `help_for`, `schema_range` (linking_dressup.rs:35-118), `region_ordering_row` (boundary_2d.rs:154), `depth_caution_row`, `finishing_passes_row`. The schema already holds the range and the help text, so no GUI range or tooltip string is written.",
+   "Own help strings and defaults: HELP_STEPOVER, HELP_DEPTH, HELP_DEPTH_PER_PASS, HELP_ANGLE, HELP_REGION_ORDERING, RAMP_FEED_RATE_HELP and `default_layered_region_ordering()` at the top of operation_configs.rs; a new `&str` per field creates drift.",
+   "Own test kernel wrapper: ops/CLAUDE.md D3 says there is no per-op public wrapper. Tests call `tests/common/kernels.rs` or `op_fixtures::generated_op` (tests/common/op_fixtures.rs:548).",
+   "Own MCP param parsing or CLI key table: `parse_operation_type` (serde), `OperationConfig::schema_for_type`, `param_names_for_type` and the CLI `parse_op_type` already derive from the registry. Do not add a per-op map (rs_cam_cli/CLAUDE.md C2)."
+  ],
+  "ambiguity": [
+   "Layered runner (clearing_2d.rs: Zigzag, Trace, Profile, Pocket, Face; adapter in `compute/execute/clearing_2d.rs`) versus kernel-direct curve family (curve_engrave.rs: Inlay, VCarve, Chamfer, ProjectCurve; Chamfer is Layered but in curve_engrave.rs). The ops/CLAUDE.md file map groups the engraving family apart from the clearing family. Both are 2.5D. The adapter file you pick decides where the code lives.",
+   "Copy Zigzag (`depth` + `depth_per_pass`, `uniform(...)` in cutting_levels, catalog.rs:1416) or Pocket/Profile (`finishing_passes`, `DepthStepping {..}` struct, catalog.rs:1403-1415). Two live depth-stepping shapes for the same kind of op.",
+   "Registry row to copy: Zigzag (`ItemUse::Regions`, `RestUse::LevelClip`, `TRANSFORM_DEPTH_ORDER`, `flat_floor_clearing: true`) versus Trace (`TRANSFORM_TRACE`, `ItemUse::Curves`, `RestUse::LevelSkip`, ForceNone entry) versus Profile (contour, `RestUse::LevelSkip`). Each row yields a different dressup, rest and territory outcome.",
+   "Diagram decision: `OpDiagram::Stepover` (Zigzag, Pocket; needs the silent StepoverPattern arm) versus `OpDiagram::Draw(fn)` (Profile, Trace, Chamfer) versus `OpDiagram::None(reason)` (UnifiedFinish).",
+   "Editor file in viz: boundary_2d.rs (Pocket, Profile, Zigzag, Inlay, VCarve) versus engrave.rs (Trace, Chamfer). ui/properties/CLAUDE.md says only 'one editor per op family'.",
+   "Feeds family: reuse `FeedsOperationFamily::Pocket` (Zigzag, Face, Inlay all reuse it) versus add a family to the vendor LUT. The LUT family is a separate enum in feeds/vendor_lut.rs:292; the matrix sentry counts cells per op.",
+   "Where the 'op count' lives: some tests compare to `OperationType::ALL.len()`, others hard-code 24 (fm0 test :191,:199). Two patterns for the same guard; the contributor does not know which to update.",
+   "Docs: architecture/high_level_design.md:141 ('four places') versus compute/CLAUDE.md:17 and the catalog.rs:288-300 X-macro comment ('ONE row'). The first is stale; both claim to describe how to add an op."
+  ]
+ },
+ "without": {
+  "task": "Add a new 2.5D operation type (params, generation, GUI property panel, MCP exposure, CLI job support, project save/load, simulation, export). Traced as a new contributor with no CLAUDE.md read. Evidence baseline HEAD 99b6fb41; read-only, no cargo run.",
+  "variant": "no-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:310-331",
+    "change": "Add one row to the for_each_op! X-macro: (Variant, VariantConfig, Menu2d, \"snake_token\"). This generates OperationType, ALL, category(), name(), kind_str(), serde token, and OperationConfig::{op_type,new_default,as_params,as_params_mut}. Closest examples to copy: Zigzag (:316), Trace (:317), Pocket (:310). The macro's own doc comment (:300-305) says 'edit the list, not this block'.",
+    "compiler_forces_it": false,
+    "how_found": "comment"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:749-775",
+    "change": "Add the hand-written OperationConfig::Variant(VariantConfig) enum variant. A missing variant fails to compile because the macro-generated dispatch (:371-398) names OperationConfig::$variant.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:446-458",
+    "change": "Add the op to the hand-written OperationType::ALL_2D menu list. The macro category token alone does NOT put it in the menu: ALL_2D and ALL_3D are separate hand-written slices, and the GUI add menu reads them (crates/rs_cam_viz/src/ui/toolpath_panel.rs:1162).",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:519",
+    "change": "Add OperationType::Variant => &REG_VARIANT to the exhaustive registry_entry() match. Also add REG_VARIANT to the use registry::{...} import at :32-37 and VariantConfig to the import at :6-11.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:830-890",
+    "change": "OperationConfig::capabilities(): the match names every variant, so add the op to the 'no override' list at :870-888, or write an override arm.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:925-975",
+    "change": "Add the op to the 'None' arm of surface_mask() (:940) and stock_to_leave_dial() (:974). Both are exhaustive with no wildcard.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:995-1070",
+    "change": "selection() (:998), selection_mut() (:1030), a third selection-related match (:1064) and default_selection() (~:1050) each list every variant. A 2.5D op that cuts drawing items adds Some(&c.selection) / Some(&mut c.selection) / Some(Selection::drawing()).",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:1410-1435",
+    "change": "cutting_levels(): add an arm. Doc says 'Every variant is named, no wildcard', so a 2.5D op must choose uniform(cfg.depth, cfg.depth_per_pass) or the empty-vec group.",
+    "compiler_forces_it": true,
+    "how_found": "comment"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/operation_configs.rs:972-1030",
+    "change": "Define VariantConfig (copy ZigzagConfig): #[derive(Debug, Clone, Serialize, Deserialize, OpParams)], #[param(help=..., range=...)] on each tunable, feed_rate, plunge_rate, ramp_feed_rate, spindle_rpm, region_ordering, selection (with serde default = Selection::drawing and #[param(driver_set = DRIVER_SET_SELECTION)]), and impl Default. #[derive(OpParams)] (crates/rs_cam_derive) writes ::PARAMS, which drives the MCP schema, the CLI job keys, the setters and the GUI help text.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/operation_configs.rs:2921-2928",
+    "change": "Add impl_operation_params!(VariantConfig { plunge_rate: .., ramp_feed_rate: .., stepover: .., depth_per_pass: .., total_depth: .., depth_semantics: Explicit(depth) }). The macro requires feed_rate, spindle_rpm and depth_semantics (:2780-2860). The stepover, depth_per_pass, total_depth and ramp_feed_rate clauses are optional and default to None/false.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog/registry.rs:396-440",
+    "change": "Add pub(super) static REG_VARIANT: OpRegistryEntry (copy REG_ZIGZAG or REG_POCKET at :84): spec (label, description, family TwoPointFiveD, geometry Items, ui_family, ui_process_role, feeds_family, feeds_pass_role, feeds_formula_source), params: VariantConfig::PARAMS, tool_constraints, dressup_policy, policy, a full Capabilities literal (~25 fields) and generate: crate::compute::execute::generate_variant. Also extend the use list at :12-18 for the config import.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/execute/clearing_2d.rs:54-75",
+    "change": "Write the generator adapter generate_variant(ctx, prepared, op) -> Result<GeneratedToolpath, OperationError>. Copy generate_zigzag: config_guard!(op, Variant, \"generate_variant\"), build a LayeredOp kernel struct (impl at :260-330 needs depth_per_pass, region_ordering, rest_use, prepare, emit_level), then call run_layered(&kernel, ctx, prepared). Declared in registry as the generate fn pointer. The geometry kernel itself goes in a new crates/rs_cam_core/src/ops/<name>.rs plus a pub mod line in crates/rs_cam_core/src/ops/mod.rs:9-13.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/execute.rs:545-552",
+    "change": "Add generate_variant to the pub(crate) re-export list from clearing_2d (or whichever sub-module) so the registry path crate::compute::execute::generate_variant resolves.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/geometry_class.rs:69-82",
+    "change": "classify(): exhaustive match with no wildcard, so add Variant to the PocketLike or FeatureDriven arm. The existing list files Zigzag under the 3D-terrain arm (:79), which is wrong for a 2.5D op, so do not copy that arm.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/operations/mod.rs:271-300",
+    "change": "bottom_z_pin_note(): exhaustive match on every op (IN FLUX path). Add Op::Variant => Some(DEPTH) or a new const. A sentry ties each answer to capabilities().honors_pinned_bottom_z (crates/rs_cam_viz/tests/bottom_z_pin_note_g_bottompin.rs).",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/operations/registry.rs:447-600",
+    "change": "Add an OpUiRow { op, draw: ed_variant, diagram: Stepover|Draw(..)|None(reason), validate } to OP_UI_ROWS, and an editor!(ed_variant, Variant, |ui, cfg, cx| draw_variant_params(..)) adapter (see ed_zigzag at ~:238). The OpUiRow struct literal cannot be written without draw, so that field is forced, but the row's presence in the table is not.",
+    "compiler_forces_it": false,
+    "how_found": "comment"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/operations/boundary_2d.rs:560-602",
+    "change": "Write draw_variant_params (copy draw_zigzag_params): ui.param_grid, dv/dv_pill rows keyed p(OperationType::Variant, \"param_name\", \"Label:\"), depth_caution_row, region_ordering_row. Then add it to the pub(super) use at crates/rs_cam_viz/src/ui/properties/operations/mod.rs:14-16 and to the use block at registry.rs:38-46. Tooltips resolve from the core schema by param name, and rows must exist in the schema with a range.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/state/toolpath/configs.rs:3-12",
+    "change": "Add VariantConfig to the pub use rs_cam_core::compute::operation_configs::{..} re-export, and the same list at crates/rs_cam_viz/src/state/toolpath.rs:11-20. The GUI imports config types via crate::state::toolpath::*.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/operations/shape_diagrams.rs:17-52",
+    "change": "If the registry row uses OpDiagram::Stepover, add an OperationConfig::Variant arm to StepoverPattern::from_operation. It ends '_ => None', so a missing arm draws no diagram.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_mcp/src/server.rs:1659-1662",
+    "change": "parse_operation_type: the 'Valid types:' error string is a hard-coded list of all 24 kinds. Add the new token. The parse itself is serde-driven and already accepts the new kind.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog/tests.rs:527-556",
+    "change": "Add (\"token\", OperationType::Variant) to the PINNED serde-repr literal table in operation_type_serde_repr_pinned (IN FLUX path). The PINNED.len() == ALL.len() assert fails until it is added.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/tests/every_op_states_its_capabilities_w2_4.rs:1-40",
+    "change": "Add a row to the frozen capability tables (frozen output, plus the C2 frozen_c2 table). These tests assert registry rows against hand-written golden tables, so a new op fails them until a row is added on purpose.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/tests/every_op_keeps_its_toolpath_g_opgolden.rs:1-40",
+    "change": "Bless a new golden fingerprint for the op. Other per-op test tables exist: every_op_conforms_w4.rs (arms/rest_pairs generated from ALL, so automatic), crates/rs_cam_viz/tests/operations_registry_ui05.rs (checks OP_UI_ROWS), crates/rs_cam_core/src/compute/execute/tests.rs:1043 (cancel sentries). Fixture builders are in crates/rs_cam_core/tests/common/op_fixtures.rs.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/job.rs:242-290",
+    "change": "CLI job support needs NO per-op code. type is resolved through crate::run::parse_op_type (crates/rs_cam_cli/src/run.rs:271) over OperationType::ALL, and every other key is checked against registry_entry().params.defs. The derive output gives it for free. Only add a fixture or doc example if wanted.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/project_file.rs:695",
+    "change": "Project save/load needs NO per-op code. OperationConfig is serde adjacently tagged (catalog.rs:747-749: tag=kind, content=params), so the derive on VariantConfig is the whole change. A selection key with serde default and skip_serializing_if is needed so old files load.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/simulate.rs:315",
+    "change": "Simulation and export need NO per-op code for a normal cutting op. Only Drill and AlignmentPinDrill special-case here, and gcode/mod.rs:186-193 does the same for PhaseDrill. G-code export is driven by Toolpath moves.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling"
+   },
+   {
+    "path_line": "FEATURE_CATALOG.md:21-27",
+    "change": "Add a catalog row (docs). Prose only, nothing enforces it.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_core/src/compute/catalog.rs:446-458 (ALL_2D): the new op can be in the macro and ALL yet absent from the GUI add menu. Only operation_partitions_cover_all_variants_once (crates/rs_cam_core/src/compute/catalog/tests.rs:412) catches it, and that file is in flux.",
+   "crates/rs_cam_mcp/src/server.rs:1661: the hard-coded 'Valid types' error string is not generated from OperationType::ALL. The sentry (server.rs:2381-2400) only checks that the new name parses and that 'alignment_pin_drill' appears in the message, so a missing new name is silent. The reuse trap is crates/rs_cam_core/src/session/compute/params.rs:487, which builds the same list from OperationType::ALL.",
+   "crates/rs_cam_core/src/feeds/suggest/apply.rs:1007-1030 (apply_stock_defaults, ends '_ => {}'): the stock-aware default depth (Pocket/Profile/Adaptive set depth from stock_z) is not applied to the new op. No error; the op just keeps its static default depth.",
+   "crates/rs_cam_core/src/feeds/suggest/axial_envelope.rs:287-330: a '_'-style match applies the axial-envelope clamp only to listed ops. A new depth_per_pass op gets no envelope clamping or warning.",
+   "crates/rs_cam_viz/src/ui/properties/operations/registry.rs:420-430 (val_stepover_under_diameter): 'match op { Pocket, Adaptive, _ => return }'. A new op with a stepover gets no 'stepover must be less than tool diameter' error unless it is added by hand and given validate: Some(..).",
+   "crates/rs_cam_viz/src/ui/properties/operations/shape_diagrams.rs:17-52 (StepoverPattern::from_operation, '_ => None'): a row with OpDiagram::Stepover whose config is missing here draws nothing, and draw_editor_and_diagram treats None as 'no diagram' without error (registry.rs:140-146).",
+   "crates/rs_cam_core/src/diagnostics/adapters/from_preconditions.rs:81-136 (ends '_ => selection_refused'): the new op silently falls into the generic selection check, which is probably right. Whether it needs a bespoke precondition is not signalled.",
+   "crates/rs_cam_core/src/session/compute/diagnostics.rs:1635-1675 (hole-op collection, '_ => continue'): if the new op's circle selections count as drilled holes (as Pocket's do), there is no prompt to add it.",
+   "crates/rs_cam_viz/src/ui/properties/operations/registry.rs:447 (OP_UI_ROWS): the row lookup row() is unreachable!() at GUI render time (registry.rs:126-131). The only guard is the operations_registry_ui05 test, so a missing row compiles and panics the inspector when the op is selected.",
+   "crates/rs_cam_core/src/compute/catalog/schema.rs (impl_operation_params! optional clauses, operation_configs.rs:2780-2860): leaving out stepover:, depth_per_pass: or total_depth: silently compiles to None/false defaults. The setter then refuses at runtime, and the Suggest pills and depth checks do not apply.",
+   "crates/rs_cam_core/src/compute/execute.rs:296-340 doc paragraph says '24 of 24 registered families' and lists the families that poll cancel by hand. Prose only (the count is test-asserted via cancellable_families_honour_a_preset_cancel_flag at crates/rs_cam_core/src/compute/execute/tests.rs:1043), but the sentry's own case list must also be extended.",
+   "crates/rs_cam_core/src/compute/catalog/tests.rs:527 PINNED, every_op_states_its_capabilities_w2_4.rs frozen tables, and the golden fingerprint file for every_op_keeps_its_toolpath_g_opgolden.rs: per-op hand-maintained tables in tests. They go red with count mismatches rather than naming the missing op.",
+   "crates/rs_cam_viz/src/ui/properties/operations/mod.rs:271-300 and crates/rs_cam_core/src/compute/catalog/tests.rs, project_file.rs, crates/rs_cam_cli/src/job.rs are on the in-flux list, so edits there will collide with other sessions.",
+   "FEATURE_CATALOG.md (e.g. :21-27) and docs: per-op feature rows are prose with no check.",
+   "crates/rs_cam_mcp/src/server.rs:198,465,645: doc comments listing example op names (schemars descriptions shown to the MCP client). Examples only, but stale if the new op is meant to be advertised."
+  ],
+  "reuse_traps": [
+   "MCP/CLI/session op-name lists: crates/rs_cam_core/src/session/compute/params.rs:487 and crates/rs_cam_cli/src/run.rs:271-282 already build the valid-kind list from OperationType::ALL + kind_str(). The hard-coded string in crates/rs_cam_mcp/src/server.rs:1661 is the odd one out, and is where I would have appended a name by hand.",
+   "Depth stepping: crates/rs_cam_core/src/ops/depth.rs DepthStepping::new(...).all_levels() through the 'uniform' closure in OperationConfig::cutting_levels (catalog.rs:1393), plus crates/rs_cam_core/src/ops/face.rs face_levels. Do not write a new Z ladder.",
+   "Layered runner: run_layered + the LayeredOp trait (crates/rs_cam_core/src/compute/execute/layered.rs) and LayerFeeds::new (clearing_2d.rs:42-52) own the Z ladder, region ordering, rest-clip, territory, obstacle clip and per-level cancel poll. A contributor reading the older ops/*.rs kernels would hand-roll a depth loop and miss all of that.",
+   "Geometry selection: Prepared::regions/curves/holes (compute/execute/prologue.rs) and ItemUse in Capabilities decide which items the op gets. Do not parse polygons yourself.",
+   "Param plumbing: #[derive(OpParams)] + impl_operation_params! (operation_configs.rs:2780-2860) already provide the MCP schema, CLI keys, setters and help text. Do not hand-write ParamDef arrays or MCP/CLI handling. The GUI tooltips and ranges come from schema_range / help_for / p() in crates/rs_cam_viz/src/ui/properties/linking_dressup.rs:35-111.",
+   "GUI row helpers: dv, dv_pill, depth_caution_row, region_ordering_row (boundary_2d.rs:154), and draw_outline_diagram / draw_stepover_diagram (shape_diagrams.rs) already exist. Pocket/Zigzag copy these.",
+   "Capabilities presets: TRANSFORM_DEPTH_ORDER, TRANSFORM_TRACE, AIR_CUT_BAR_CLEARING_PCT, ToolConstraintsDef::ANY_TOOL, DressupPolicy::ANY_DRESSUP, OpPolicy::MILLING (registry.rs:84-128). Do not invent new constants.",
+   "Spindle RPM and feed resolution: effective_spindle_rpm (catalog.rs:1448). Do not read post.spindle_speed directly.",
+   "is_stock_based / geometry_requirement / is_3d on OperationConfig (catalog.rs:1090-1115) decide model requirements. Callers (crates/rs_cam_viz/src/controller/events/toolpath.rs:153, crates/rs_cam_viz/src/app/mcp/commands.rs:936) already read them."
+  ],
+  "ambiguity": [
+   "Which sibling to copy: Pocket (PocketConfig with a pattern enum, finishing_passes, own cutting_levels arm at catalog.rs:1403), Zigzag (simplest Layered kernel, but classify() puts it in the 3D arm), Trace (curve ops with ItemUse override by compensation) or Chamfer (derives Z from the cutter, and sits on the Layered runner via curve_engrave.rs:216-340). Each differs on cutting_levels, ItemUse, hooks and geometry_class, and nothing says which is canonical.",
+   "Two generator homes: compute/execute/clearing_2d.rs (area-clearing ops) versus compute/execute/curve_engrave.rs (Chamfer, curve ops). Which file a new 2.5D op joins depends on whether it clears areas or follows curves.",
+   "Diagram choice in OP_UI_ROWS: OpDiagram::Stepover (needs a from_operation arm) versus OpDiagram::Draw(dia_x) (viz registry.rs bespoke diagrams) versus OpDiagram::None(reason). Sibling ops use all three.",
+   "Where the GUI editor function lives: boundary_2d.rs (Pocket, Zigzag, Profile, Face, Adaptive, VCarve, Inlay) versus engrave.rs (Chamfer, Trace) versus drill.rs. Splits are by name, not rule.",
+   "feeds_family choice: reuse FeedsOperationFamily::Pocket (Zigzag, Face do) versus Contour or Trace (Profile, Chamfer). A genuinely new family would force new matches throughout crates/rs_cam_core/src/feeds/ (support.rs, vendor_lut.rs). The enum is not X-macro generated.",
+   "Depth stepping: PocketConfig/ProfileConfig build DepthStepping with finishing_passes by hand (catalog.rs:1403-1415), while Zigzag/Trace/Adaptive use the 'uniform' closure (:1397).",
+   "Per-op validation: val_stepover_under_diameter (viz registry.rs:420) is a shared wildcard match, while val_drill is a per-op guard. Two patterns for 'add a validation'."
+  ]
+ }
+}

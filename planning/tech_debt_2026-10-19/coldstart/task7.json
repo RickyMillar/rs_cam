@@ -1,0 +1,257 @@
+{
+ "with": {
+  "task": "Add a new simulation metric or warning that appears in the simulation panel Warnings tab and in the MCP simulation output.",
+  "variant": "with-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/src/diagnostics/ids.rs:136",
+    "change": "Add `pub const PROJECT_<NAME>: &str = \"project.<name>\";` with a doc comment, beside PROJECT_LINK_CUTS_STOCK (copy of commit e72f4ccb). diagnostics/CLAUDE.md says a new rule needs an id here.",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md (diagnostics/CLAUDE.md invariant) + git show e72f4ccb of the closest example"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/diagnostics/ids.rs:452",
+    "change": "Add the new const to the `ALL` slice. Nothing but `all_diagnostic_ids_are_unique` (tests.rs:41) reads ALL, and it checks only duplicates, not omissions.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (PROJECT_LINK_CUTS_STOCK appears twice in ids.rs)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/stock/sim_triage.rs:1446",
+    "change": "Write `<x>_observation` (pure measure, pub, unit-testable) and `<x>_finding` (Finding with DedupKey, Diagnostic{category,severity,confidence,Source::Simulation,message,evidence}, WorstEvidence) after link_cut_finding. Return None when nothing is measured, never a clean row.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (link_cut_finding, entry_load_finding)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/stock/sim_triage.rs:460",
+    "change": "Call the new finding in the per-toolpath loop over `inputs.trace.toolpath_summaries` (or beside the `kinematic_utilization` loop at ~506 if it is not trace-driven) and `actions.push(f)` (class B) or put it in `safety` / the `advisories` vec (~540) for class A / C. The class is chosen by which Vec you push to; the Warnings badge counts only safety+actions.",
+    "compiler_forces_it": false,
+    "how_found": "reading SimulationTriage::build_with_rest_context; docs table at sim_triage.rs:34-44"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/stock/sim_triage.rs:260",
+    "change": "If the rule needs a new input: add a field to `TriageInputs` (compiler forces every struct literal) or a positional arg to `build_with_rest_context` (line 339; forces its 3 callers). Literals to fix: benches/hot_paths.rs:1129, sim_triage.rs:1867 and :2210, tests/a_fresh_stock_pass_at_its_own_depth_is_not_an_overcut_g_overcutref.rs:89, tests/kinematic_surfacing_p4.rs:172 and :194, tests/a_link_through_stock_is_flagged_g_linkplough.rs:171.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (struct literal missing field) / rg TriageInputs"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/compute/diagnostics.rs:802",
+    "change": "In `triage_from_parts` compute the new input from the session (as links_on_mesh at 802-815 and fresh_twin at ~897) and pass it at the call on line 902. This is the single production caller.",
+    "compiler_forces_it": true,
+    "how_found": "compiler once the signature or field is added; rg build_with_rest_context"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/compute/diagnostics.rs:193",
+    "change": "If the new input reads session state that the load-report key (LoadReportStamp) does not hold, add it to `TriageSessionKey` (struct 193, `of` 203, `matches` ~215). Otherwise the GUI Warnings tab keeps a stale cached triage while MCP, which rebuilds, shows the new finding.",
+    "compiler_forces_it": false,
+    "how_found": "doc comment on triage_from_parts (line 813) and on TriageSessionKey; no compiler or lint link"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/sim_diagnostics.rs:870",
+    "change": "No code change for a triage finding: draw_triage_rows renders triage.safety and triage.actions as jump rows, and the tab badge (line 79) counts them. Only a Class D count or a non-triage row needs a new DataRow in draw_warnings_tab (line 513).",
+    "compiler_forces_it": false,
+    "how_found": "reading draw_warnings_tab; verifying nothing else matches on ids"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/controller/events/compute.rs:2564",
+    "change": "No code change for a triage finding: run_simulation and get_diagnostics both go through build_mcp_diagnostics, which serde-serialises the whole SimulationTriage into resp[\"triage\"]. A new field on ChannelCounts or Finding appears automatically.",
+    "compiler_forces_it": false,
+    "how_found": "tracing mcp_run_simulation (app/mcp/simulation.rs:135) to notify_mcp_simulation_complete (compute.rs:2258)"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/project.rs:1442",
+    "change": "A new ChannelCounts tally needs a hand-written eprintln in the Counts line. Findings print generically (1399-1426).",
+    "compiler_forces_it": false,
+    "how_found": "rg of `.counts` consumers"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp/simulation.rs:723",
+    "change": "Only for a per-toolpath metric (not a finding): `toolpath_summaries` in get_cut_trace is a hand-built json! list of named fields, so a new SimulationCutToolpathSummary field does not reach MCP until it is listed here. The cut-trace `summary` block (line 683) is serde and automatic.",
+    "compiler_forces_it": false,
+    "how_found": "reading build_cut_trace_response"
+   },
+   {
+    "path_line": "crates/rs_cam_core/tests/a_link_through_stock_is_flagged_g_linkplough.rs:171",
+    "change": "Add a sentry test file under crates/rs_cam_core/tests/ modelled on this one (build trace, call SimulationTriage::build_with_rest_context, assert id in actions). Sibling sentries are red when the call is disabled.",
+    "compiler_forces_it": false,
+    "how_found": "stock/CLAUDE.md sentry list + git show e72f4ccb --stat"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/stock/CLAUDE.md:31",
+    "change": "Add the new sentry to the Sentries list and any new invariant; the previous commit did this.",
+    "compiler_forces_it": false,
+    "how_found": "git show e72f4ccb"
+   },
+   {
+    "path_line": "FEATURE_CATALOG.md:146",
+    "change": "Document the new finding on the triage bullet or a new bullet (root CLAUDE.md: update visible-product docs with visible surface changes; FEATURE_CATALOG defines shipped claims). Also CREDITS.md if the rule uses an external formula.",
+    "compiler_forces_it": false,
+    "how_found": "root CLAUDE.md sources-of-truth section"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_core/src/diagnostics/ids.rs:452 - A const left out of `ids::ALL` compiles, and every test passes. `all_diagnostic_ids_are_unique` (diagnostics/tests.rs:41) checks duplicates only. `all_diagnostic_ids_reachable_in_adapter_source` (tests.rs:60) uses a hand-kept list and scans only src/diagnostics/, so a triage-built id in stock/ is never checked. Strength: NONE.",
+   "crates/rs_cam_core/src/session/compute/diagnostics.rs:193 - TriageSessionKey is held up only by a doc comment (diagnostics.rs:813 and viz state/simulation.rs:484). A rule that reads a new session part makes the GUI cached triage (state/simulation/issue_triage.rs:60) stale. MCP rebuilds, so GUI and MCP disagree. No compiler or lint link. Strength: DOC.",
+   "crates/rs_cam_core/src/stock/sim_triage.rs:317 - `SimulationTriage::build` passes empty sets for the rest context. A test written through `build` can pass or fail without the scope sets the session supplies (the linkplough test header warns about this). Strength: DOC.",
+   "crates/rs_cam_core/src/stock/sim_triage.rs:460 - Class (safety/actions/advisories) is chosen by which Vec you push to. `sort_findings` uses category_rank and severity, but no type ties a rule id to a class. The Warnings badge counts only safety+actions (sim_diagnostics.rs:79). A Class C advisory shows in the verdict line (:242) but not in the Warnings tab triage rows (draw_triage_rows reads only safety and actions). So a new 'warning' pushed to advisories silently never appears in that tab.",
+   "crates/rs_cam_viz/src/ui/sim_diagnostics.rs:647 - `kinds_must` and `kinds_info` are hand arrays. A new SimulationIssueKind variant fails the exhaustive matches (issue_kind_label :1000, issue_kind_rank issue_triage.rs:512) but is not added to either array, so its count never shows in the Warnings tab. The R-4 comment at :651 records this already happened to `Annotation`. Also sim_op_list.rs:1143 has a third hand list of kinds for row flags.",
+   "crates/rs_cam_viz/src/app/mcp/simulation.rs:723 - The get_cut_trace `toolpath_summaries` array is built with json! and a literal key list. A new per-toolpath metric on the core summary struct never reaches MCP while the GUI shows it.",
+   "crates/rs_cam_cli/src/project.rs:1442 - The CLI Counts line lists ChannelCounts fields by hand. A new tally reaches MCP (serde) and not the CLI report. Surface parity is operator preference (feedback_surface_number_parity) with no sentry I found.",
+   "crates/rs_cam_core/src/stock/sim_triage.rs:1170 - The None vs Some(0.0) rule (stock/CLAUDE.md) holds only by prose. `link_cut_finding` returns None when unmeasured. A new rule that returns a zero row on a trace with no population reads as measured-clean. Also `tp.metrics_not_applicable` (:462) must be skipped by hand.",
+   "FEATURE_CATALOG.md:146 and stock/CLAUDE.md sentries list - docs and sentry list are updated by convention only. The earlier commit e72f4ccb did not touch FEATURE_CATALOG (rg finds no link_cuts_stock there), so even the closest precedent skipped it.",
+   "crates/rs_cam_viz/src/mcp_server.rs:511 - The get_diagnostics tool description is a prose string. It lists channels by name, so a new triage-visible metric is undiscoverable to agents unless this text is edited. Nothing checks it."
+  ],
+  "reuse_traps": [
+   "Rule-id and finding scaffolding: existing `link_cut_finding` / `entry_load_finding` / `collision_finding` (sim_triage.rs:1446, 1170, 1672) vs a new hand-built Diagnostic. Copy the Finding/DedupKey/WorstEvidence shape, not a fresh struct.",
+   "Signal on a sample: existing `is_link_intent` (:1330), `is_entry_intent` (:1084), `removed_height_mm` (:1074), `SimulationCutSample::is_air`, and `tool_load::locality::is_steady_state_for_gate` (tool_load/CLAUDE.md says never write a second copy). A contributor reading the samples would likely write a new filter.",
+   "Thresholds: `link_cut_noise_floor_mm` (:1263), `commanded_tolerance_mm` (:711), `bite_reference` (:784), `commanded_step_mm`, `FRESH_MATERIAL_THRESHOLD_MM`. A new bar would tempt a new number; the root CLAUDE.md forbids constants typed from memory.",
+   "Reading the triage in the GUI: `SimulationState::cached_simulation_triage` (state/simulation/issue_triage.rs:60) vs calling `ProjectSession::simulation_triage*` directly per frame (a full trace pass). On the MCP side `build_mcp_diagnostics` (compute.rs:2335) and `viz_project_evidence` (app/mcp/diagnostics.rs) are the one door; a new MCP tool that builds its own TriageInputs would drift.",
+   "Scoping sets: `rest_driven` and `links_on_mesh` are built in triage_from_parts (diagnostics.rs:792-815) from `tc.operation.capabilities()`. A new per-op scope should read capabilities() (trace/CLAUDE.md: no match on op type), not a new match.",
+   "Count pills and rollups: `ToolLoadReport::summary()` (read at sim_diagnostics.rs:520) is the shared producer for Findings pills. A new 'N toolpaths with X' pill that counts itself would diverge from the verdict HUD."
+  ],
+  "ambiguity": [
+   "Two paths produce an Action in triage. Path A: a direct Finding built in stock/sim_triage.rs from the cut trace (link_cuts_stock, entry_load, standing_material), id in ids.rs, no enum. Path B: a `VerdictKind` variant in session/diagnostics_types.rs:118 plus `as_str` (:160), an `id_and_category_for` arm (diagnostics/adapters/from_project_diagnostics.rs:76) and a Verdict push in session/compute/diagnostics.rs (~1380-1470), converted into actions at sim_triage.rs:416. Path B has compiler-forced exhaustive matches, which the operator prefers; Path A is the newest precedent (Oct 2026). Pick by whether the rule needs the trace (A) or project verdicts shown on non-sim surfaces (B).",
+   "Metric vs warning: a Class D `ChannelCounts` field (sim_triage.rs:168, serde, shown nowhere in the Warnings tab and printed by hand in the CLI) vs a cut-trace summary field (`SimulationCutSummary`, MCP get_cut_trace) vs a Metrics-tab card (CUT_METRIC_ORDER / CutMetricSet in viz). All three are 'simulation metrics'; only the triage route reaches both the Warnings tab and run_simulation output.",
+   "Per-sample issue route: `SimulationCutIssueKind` (core simulation_cut.rs:147) mapped to viz `SimulationIssueKind` (state/simulation.rs:56, issue_triage.rs:291) is a second Warnings-tab route (issue-kind rows, hotspots) that looks like the place for a 'warning'. The triage doc says issue counts are a legacy, non-gating population, so the triage route is preferred, but nothing in the code says so at the enum.",
+   "Adding an input: new `TriageInputs` field (as kinematic_utilization, compiler-forced at 7 literals) vs new positional arg on `build_with_rest_context` (as rest_driven, links_on_mesh, fresh_twin; forces 3 call sites and leaves `build` with an empty default). Both are current practice.",
+   "Severity and class: the Warnings tab paints Role::Danger for every safety item and Role::Caution for every action regardless of the Diagnostic severity (sim_diagnostics.rs:884-890), so an Info-severity action such as rest_slower_than_fresh still shows in caution colour and in the badge count."
+  ]
+ },
+ "without": {
+  "task": "Add a new simulation metric or warning that appears in the simulation panel Warnings tab and in the MCP simulation output.",
+  "variant": "no-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/src/diagnostics/ids.rs:161",
+    "change": "Add `pub const PROJECT_<NAME>: &str = \"project.<name>\"` next to PROJECT_REST_SLOWER_THAN_FRESH (doc comment explains the rule).",
+    "compiler_forces_it": false,
+    "how_found": "rg for sibling (PROJECT_REST_SLOWER_THAN_FRESH / PROJECT_PLUNGE_CLASS_LOAD)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/diagnostics/ids.rs:452",
+    "change": "Append the new const to `ids::ALL`. Skipping it is caught only by the duplicate-id test and per-id `ALL.contains` tests that you would have to write.",
+    "compiler_forces_it": false,
+    "how_found": "rg for sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/stock/sim_triage.rs:1552",
+    "change": "Write a `pub fn <x>_finding(...) -> Option<Finding>` modelled on `plunge_class_finding` (1552) or `rest_slower_than_fresh_finding` (~line 548): build DedupKey + Diagnostic (id, Scope, Category, Severity, Confidence, Source::Simulation, message, evidence, fix) + occurrences + WorstEvidence.",
+    "compiler_forces_it": false,
+    "how_found": "rg for sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/stock/sim_triage.rs:332",
+    "change": "Call the new finding function inside `SimulationTriage::build_with_rest_context` and push it into `safety` (Class A, ~line 345-420) or `actions` (Class B, ~line 450-530) or `advisories` (Class C, ~line 540-590). The bucket you push into decides the Warnings badge count, the verdict line, and role colour (Danger vs Caution). Nothing checks that Category/Severity agree with the bucket.",
+    "compiler_forces_it": false,
+    "how_found": "rg for sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/stock/sim_triage.rs:217",
+    "change": "Only if the new warning needs new input: add a field to `TriageInputs` (struct at ~line 250-315). Adding a field forces every `TriageInputs { .. }` literal to change (compiler). If instead the warning is a lone function over existing inputs, no struct change.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/compute/diagnostics.rs:815",
+    "change": "`triage_from_parts` builds TriageInputs from the session (tool diameters, commanded depths, rest_driven, links_on_mesh, fresh_twin ...). Fill any new TriageInputs field here; also `build_with_rest_context` signature if it takes a new set/map (like fresh_twin).",
+    "compiler_forces_it": true,
+    "how_found": "rg 'TriageInputs'"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/compute/diagnostics.rs:1163",
+    "change": "ALTERNATIVE route (verdict route): produce a `Verdict` with a new `VerdictKind` in `diagnostics_with_evidence` (see pushes at 1163-1471); it reaches triage `actions` automatically via the Class B loop in sim_triage.rs:~447. Needs a new variant at crates/rs_cam_core/src/session/diagnostics_types.rs:118.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'VerdictKind::'"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/diagnostics_types.rs:118",
+    "change": "(Verdict route only) add a `VerdictKind` variant.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (exhaustive match below)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/diagnostics/adapters/from_project_diagnostics.rs:76",
+    "change": "(Verdict route only) add the arm to `id_and_category_for` (exhaustive match, no wildcard). `state_for` at ~line 108 has a `_ =>` wildcard: a kind that should be NotApplicable would silently become Current.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/compute/diagnostics.rs:824",
+    "change": "If the finding reads session state that the GUI triage cache does not already key on, add it to `TriageSessionKey` (comment at the top of triage_from_parts says it MUST be in the load-report key or TriageSessionKey). Defined in core session module (re-exported at session/mod.rs:64).",
+    "compiler_forces_it": false,
+    "how_found": "comment"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/state/simulation/issue_triage.rs:147",
+    "change": "If the finding reads new viz-side evidence (new ProjectEvidence field), add it to `evidence_fingerprint` and `project_evidence` (line 100). Adding a ProjectEvidence field forces literals to change, but the fingerprint hash is not forced.",
+    "compiler_forces_it": false,
+    "how_found": "comment"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/sim_diagnostics.rs:870",
+    "change": "Warnings tab: `draw_triage_rows` renders safety then actions automatically from the triage (message text only). A new finding in those buckets needs NO UI edit. A new Class C advisory is NOT rendered in the Warnings tab triage rows at all (only counted in the verdict line, sim_diagnostics.rs:~248); you would need to add a draw call.",
+    "compiler_forces_it": false,
+    "how_found": "reading the panel code"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/controller/events/compute.rs:2564",
+    "change": "MCP output: `resp[\"triage\"] = serde_json::to_value(&triage)` serializes the whole SimulationTriage, so a new finding in safety/actions/advisories appears in get_diagnostics and in run_simulation (which calls build_mcp_diagnostics at compute.rs:2266) with no edit. If the item is a new NUMERIC metric rather than a finding, add a key to the `json!` at compute.rs:2508 and a not-measured/null arm (see compute.rs:2440-2460 and counts nulling at 2569).",
+    "compiler_forces_it": false,
+    "how_found": "rg '\"triage\"'"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/mcp_server.rs:511",
+    "change": "Update the `get_diagnostics` tool description text if you add a new top-level field or finding family (string prose only).",
+    "compiler_forces_it": false,
+    "how_found": "rg 'triage' in mcp_server.rs"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/diagnostics/tests.rs:95",
+    "change": "Optionally add the const to the `consts` list in `all_diagnostic_ids_reachable_in_adapter_source` (hand list, already stale: it lacks PROJECT_PLUNGE_CLASS_LOAD etc.). Add a core integration test in crates/rs_cam_core/tests/ like kinematic_surfacing_p4.rs or a_rest_op_slower_than_fresh_is_told_r3.rs.",
+    "compiler_forces_it": false,
+    "how_found": "rg for sibling tests"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/project.rs:1399",
+    "change": "CLI report prints triage.safety/actions generically from `diagnostic.message`; no edit needed for a finding. A new numeric metric needs a hand-added CLI line.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'triage' in cli"
+   },
+   {
+    "path_line": "FEATURE_CATALOG.md:156",
+    "change": "Docs: the feature catalog lists each triage finding (plunge_class_load entry). Add the new one.",
+    "compiler_forces_it": false,
+    "how_found": "rg for sibling id across *.md"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_core/src/diagnostics/ids.rs:452 - forgetting to add the const to `ids::ALL`. It compiles; only per-id tests (which you must write) catch it. Nothing derives ALL from the consts.",
+   "crates/rs_cam_core/src/stock/sim_triage.rs:332 vs 450 vs 540 - choosing the wrong bucket (safety/actions/advisories). Bucket is a plain `Vec::push`; severity and category are independent fields, so Danger/Caution role, badge count and verdict-line wording follow the bucket while the Diagnostic may claim another severity. sort_findings (sim_triage.rs:1792) sorts by severity within a bucket only.",
+   "crates/rs_cam_viz/src/ui/sim_diagnostics.rs:870 - a Class C advisory (the capped bucket) never reaches the Warnings tab rows; `draw_triage_rows` reads only `safety` and `actions`. Advisories appear in the verdict line (sim_diagnostics.rs:~248) and the CLI only. The tab name suggests otherwise.",
+   "crates/rs_cam_core/src/session/compute/diagnostics.rs:824 - TriageSessionKey: if the new finding reads session state outside the load-report key, the GUI Warnings tab shows a stale cached triage while MCP (which rebuilds) shows the new one. A silent GUI vs MCP divergence. Only a comment ('must be in the load-report key or in TriageSessionKey') tells you; the key is not derived from the reads.",
+   "crates/rs_cam_viz/src/state/simulation/issue_triage.rs:147 - new viz-side evidence must be hashed in `evidence_fingerprint`, otherwise the cached triage is not invalidated. Not forced by types.",
+   "crates/rs_cam_viz/src/controller/events/compute.rs:2500 - the MCP `verdict` string is a hand-rolled if/else chain (unknown, rapid collisions, air cut >40%) separate from the triage. A new warning appears in `triage` but the `verdict` still says \"OK\". Nothing links the two.",
+   "crates/rs_cam_viz/src/ui/sim_diagnostics.rs:512 - the Warnings tab also has a second, parallel path for 'issues': `SimulationIssueKind` lists `kinds_must` / `kinds_info` (sim_diagnostics.rs:~660) and `issue_kind_label` (1000). If you copy the ISSUE-kind pattern instead of the triage-finding pattern, a new kind not put in either list is silently dropped (the R-4 comment records exactly this happened to Annotation). Those lists are arrays, not exhaustive matches.",
+   "crates/rs_cam_viz/src/mcp_server.rs:511 - tool description prose for get_diagnostics and run_simulation (mcp_server.rs:1488) is hand-maintained and will not mention the new finding.",
+   "crates/rs_cam_core/src/diagnostics/adapters/from_project_diagnostics.rs:108 - `state_for` has a `_ =>` wildcard (verdict route): a new VerdictKind that should be NotApplicable silently becomes Current.",
+   "crates/rs_cam_core/src/stock/sim_triage.rs:450 - the Class B loop skips specific ids by string comparison (PROJECT_MEASURABILITY_ABSTAINED, three collision ids). A new Safety-category verdict that is also emitted per-event in `safety` would be double-listed unless you add it to that string skip list.",
+   "crates/rs_cam_core/src/diagnostics/tests.rs:95 - the hand-kept `consts` list is already stale (PLUNGE_CLASS_LOAD, REST_SLOWER_THAN_FRESH absent); the test passes without your id, so it gives no signal.",
+   "Files in flux (in_flux_paths.txt): crates/rs_cam_core/src/session/load_report.rs, session/mod.rs, session/compute/tests.rs, session/compute/generation.rs are uncommitted; edits to has_plunge_finding-style tests or session exports may conflict. sim_triage.rs, ids.rs, sim_diagnostics.rs, compute.rs (viz events), diagnostics.rs are not on the list."
+  ],
+  "reuse_traps": [
+   "Triage finding constructor: `collision_finding` (crates/rs_cam_core/src/stock/sim_triage.rs, used at ~line 346) vs hand-built `Finding { dedup_key, diagnostic, occurrences, worst }` in `plunge_class_finding` (1552) and `rest_slower_than_fresh_finding` (~548). There is no single `Finding::new`; you would copy ~35 lines of struct literal. Only the safety/collision case has a helper.",
+   "Cached triage accessor: `SimulationState::cached_simulation_triage` (crates/rs_cam_viz/src/state/simulation/issue_triage.rs:59) versus calling `session.simulation_triage(...)` directly in the UI. A new panel row would re-build the triage per frame if you do not find the cache.",
+   "Percent-of-runtime figures: use the `AirCutRatios` trait (`s.air_cut_pct_of_total_runtime()`); sim_diagnostics.rs:~705 has a comment that a hand-written divide is a guarded sentry failure, but low-engagement is still a local divide. A new ratio metric will tempt you to write a closure.",
+   "Rapid/holder/obstacle location attribution: `AttributedRapidCollision` / `evidence.attributed_rapid_collisions()` (G-RAPIDFRAME) already maps global move to (toolpath, local move); `SimulationState::global_move_for_local` does the reverse for the jump click (sim_diagnostics.rs:~915). Easy to re-derive wrongly.",
+   "Spatial dedup helpers `dedup`, `cap_per_toolpath`, `bucket_edge_mm`, `spatial_bucket` in sim_triage.rs (used at ~lines 540-600) exist for advisories; a new advisory would be tempted to write its own capping.",
+   "Not-measured vs zero JSON handling: the `counts` nulling loop at crates/rs_cam_viz/src/controller/events/compute.rs:2569 and `cut_metrics_not_measured` (2447) are the only place that turns absent traces into null; a new numeric metric added outside `counts` must re-implement this.",
+   "Severity-to-role mapping: `warnings_badge` / `Role::Danger` vs `Role::Caution` in sim_diagnostics.rs (129, 870) is hard-coded by bucket, separate from `Severity` (diagnostics/mod.rs)."
+  ],
+  "ambiguity": [
+   "Two patterns for a sim warning: (a) direct triage finding built in sim_triage.rs (plunge_class_finding, rest_slower_than_fresh_finding, standing_material_finding, entry_load_finding, link_cut_finding); (b) VerdictKind + Verdict in session/compute/diagnostics.rs:1163-1471 mapped by the exhaustive adapter at from_project_diagnostics.rs:76 and flowing into triage.actions via the Class B loop. (b) is compiler-forced, (a) is not. Both reach the GUI and MCP.",
+   "Two things called 'issues' in the Warnings tab: triage findings (`SimulationTriage`, sim_diagnostics.rs:870) versus `SimulationIssueKind` cut-trace issues (sim_diagnostics.rs:660, state/simulation/issue_triage.rs:~215 and MCP `issues` array at app/mcp/simulation.rs:626-701). Both display in the same tab and the MCP has `issue_count` beside `triage`. The sim_triage.rs header says to use triage, but the issue-kind path looks equally plausible.",
+   "'Metric' vs 'warning': a metric lives in `ToolLoadReport`/`CriterionKind` cut-metric cards (sim_diagnostics.rs:1505 `has_cut_metric_card`, `CutMetricSpec` 1521, `DistributionMetric`) on the Metrics tab, a different pipeline from Warnings. A 'metric that appears in Warnings' could be copied from either; the summary pills (`CountPill`, sim_diagnostics.rs:~535-575) are a third place.",
+   "MCP exposure: `get_diagnostics`/`run_simulation` (build_mcp_diagnostics, compute.rs:2345) vs `get_project_diagnostics` (app/mcp/diagnostics.rs:~600-675 via diagnose_project_with_evidence, which does NOT include sim_triage-only findings) vs `get_toolpath_diagnostics` (diagnostics.rs:~690) vs `get_cut_trace` (app/mcp/simulation.rs). A triage-only finding appears in the first only; a verdict-route finding appears in several. Which one is 'the MCP simulation output' is not obvious.",
+   "Placement in Category/Severity/Confidence for the new Diagnostic: plunge_class_finding uses ToolLoad/Caution/Critical/Verified, rest_slower uses Efficiency/Info/Approximate, air-cut advisory uses Efficiency/Hint; there is no rule in code for choosing."
+  ]
+ }
+}

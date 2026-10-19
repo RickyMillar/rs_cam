@@ -1,0 +1,262 @@
+{
+ "with": {
+  "task": "Add a new MCP tool that reports a newly computed diagnostic value, and show the same value in the GUI so both surfaces show the same number.",
+  "variant": "with-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/src/session/ (new file, sibling of pin_report.rs:1, load_report.rs:1, selection_status.rs) and crates/rs_cam_core/src/session/mod.rs:25,86",
+    "change": "Compute the value ONCE in core as a method on ProjectSession returning a typed report. Add `mod x;` and `pub use` beside `mod pin_report;` (mod.rs:25) and `pub use pin_report::{...}` (mod.rs:86). Pattern copied: P7 pin_set_report ('No surface computes a pin number a second time', pin_report.rs:1-5).",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (pin_report, load_report); session/CLAUDE.md file list"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/command.rs:499-567 (Query rows ToolpathCycleTime/SelectionStatus/ListItems/GetOperationSchema) and :2084-2110 (generated Query/QueryAnswer enums), :2652 (ProjectSession::query match)",
+    "change": "OPTIONAL, only if the value is a pure read of the session: add a (Query, Id, wire, Args, Answer, Surfaces{gui,mcp,cli}) row and a match arm in ProjectSession::query. Each Surfaces column forces a Reach::Reached or Reach::Skip(reason) decision.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (exhaustive match in query(), CommandId derived from the row); rg for sibling Query rows"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp/commands.rs:1989-1992 and :2898-2901",
+    "change": "If a core Query row is added, its CommandId must be named in the two lists that already name ToolpathCycleTime/GetOperationSchema/SelectionStatus/ListItems (the 'not a wire mutation' arms). Otherwise the core-arm match does not compile.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (exhaustive match on CommandId) - but only if a core row is added"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui_command.rs:741-800 (UiQuery rows GetDiagnostics/GetToolLoadReport/GetCutTrace/InspectCollisions)",
+    "change": "ALTERNATIVE registry for a read that needs viz state (the cut trace lives in viz state.simulation, not the session). Add (UiQuery, GetX, \"get_x\", NoArgs, String, Surfaces{gui: Skip(reason), mcp: Reached, cli: Skip(reason)}). Existing rows all write gui: Skip('the panel reads the slot without this door'), which is the parity hole.",
+    "compiler_forces_it": true,
+    "how_found": "rg GetToolLoadReport; ui_command.rs doc comment"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp.rs:664-666 (RsCamApp::ui_query match)",
+    "change": "Add `UiQuery::GetX(NoArgs) => UiQueryAnswer::GetX(self.mcp_get_x())`. The enum is generated from the row, so a missing arm does not compile.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (exhaustive match on UiQuery)"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp/generation.rs:291 (mcp_get_tool_load_report) or app/mcp/diagnostics.rs:675 (mcp_get_project_diagnostics) or app/mcp/view.rs:65 (mcp_reach_map)",
+    "change": "Write the handler `pub(super) fn mcp_get_x(&self) -> String` that reads the core report/memo and serialises with json_str. Pick the file by topic from app/CLAUDE.md file list.",
+    "compiler_forces_it": false,
+    "how_found": "app/CLAUDE.md file map; rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/mcp_server.rs:1004-1040 (tools get_tool_load_report, get_project_diagnostics)",
+    "change": "Add a #[tool(name=..., description=...)] async fn that calls self.send_request(McpRequestKind::UiQuery(UiQuery::GetX(NoArgs))). The description is prose and is pinned by no test unless it carries a contract.",
+    "compiler_forces_it": false,
+    "how_found": "rg get_tool_load_report; a registry row with mcp: Reached makes every_mcp_reached_view_row_declares_a_tool (tests/command_surface_completeness.rs:676-698) fail, so the SENTRY forces it"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/mcp_bridge.rs:520 (McpRequestKind::GetProjectDiagnostics) and crates/rs_cam_viz/src/app/mcp.rs:398-401 (match arm)",
+    "change": "ONLY for the non-registry pattern: a new McpRequestKind variant plus an arm in handle_mcp_request (mcp.rs:230-237, no wildcard, so the compiler forces the arm). Needed instead of the UiQuery row when the tool takes parameters.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (exhaustive match on McpRequestKind) once the variant exists; nothing tells you to prefer this over UiQuery"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json (near :1308 get_project_diagnostics) and tests/mcp_wire_surface_pin.rs",
+    "change": "Regenerate the snapshot with RS_CAM_UPDATE_WIRE_SNAPSHOT=1 and commit it. The tool count and names are compared to it.",
+    "compiler_forces_it": false,
+    "how_found": "app/CLAUDE.md sentries list; the test fails at run time, not at build time (SENTRY)"
+   },
+   {
+    "path_line": "crates/rs_cam_mcp/src/server.rs:1970-2000 (build_info features list) and :2143-2210 (frozen-flag test list)",
+    "change": "Add a feature token for the new reply (rs_cam_mcp/CLAUDE.md: 'add one when a reply gains a key'). The array and the test list are two separate lists.",
+    "compiler_forces_it": false,
+    "how_found": "rs_cam_mcp/CLAUDE.md prose; rg for a sibling flag (alignment_pin_report)"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/ (panel file chosen by area, e.g. ui/readiness_panel.rs:218, ui/sim_diagnostics.rs:948, ui/properties/mod.rs:989)",
+    "change": "Show the value in the GUI by calling the SAME core method (state.session.x_report()) or the same viz memo (state.simulation.cached_load_report, state/simulation/issue_triage.rs:33; cached_cut_metrics, state/simulation.rs:227). Do not recompute.",
+    "compiler_forces_it": false,
+    "how_found": "rg of the sibling: pin_wizard.rs:115, app/pin_marks.rs:33, readiness.rs:356"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/tests/ (new *_parity_*.rs sentry) beside controller/results_parity_tests.rs:1 and tests/ribbon_and_mcp_diagnostic_ids_n4.rs:1",
+    "change": "Add a test that calls the real GUI function and the real MCP handler on one fixture and asserts equal numbers. N4 documents that a test calling the shared helper twice cannot fail.",
+    "compiler_forces_it": false,
+    "how_found": "memory feedback_surface_number_parity; N4 header"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src (project report; rs_cam_cli/src/rough_score.rs:19,114,154 read ProjectSession::diagnostics) and rs_cam_viz/src/app/mcp/project.rs:497",
+    "change": "If the value should reach CLI and project_summary/inspect_stock too, add it there (the CLI 'project' report; pin_report_json is hand-built JSON at project.rs:866 and commands.rs:3189). Registry rows demand a cli Reach/Skip decision; non-registry paths do not.",
+    "compiler_forces_it": false,
+    "how_found": "FEATURE_CATALOG.md:156 lists surfaces for kinematic utilization; rg"
+   },
+   {
+    "path_line": "FEATURE_CATALOG.md (e.g. :67, :156 style entries) and CREDITS.md",
+    "change": "Add the capability claim for a visible surface change. Add CREDITS.md if the number uses a formula or dataset from a source.",
+    "compiler_forces_it": false,
+    "how_found": "root CLAUDE.md 'Sources of truth' prose"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/diagnostics/ids.rs:1-510 and diagnostics/adapters/",
+    "change": "ONLY if the value is a Diagnostic finding (not a bare number): add an id constant and an adapter. Then get_toolpath_diagnostics and get_project_diagnostics and the ribbon already carry it, and a new tool may be unnecessary.",
+    "compiler_forces_it": false,
+    "how_found": "diagnostics/CLAUDE.md"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_viz/src/mcp_bridge.rs:20-60 (McpReadKind / McpReadSnapshot) and mcp_server.rs:194 (cheap_read): a read that is cheap and needs no argument should be a cheap_read with a snapshot field, or it stalls when the frame loop is busy. Copying get_tool_load_report (mcp_server.rs:1008) uses plain send_request. mcp_server.rs:249 hand-lists the 'long in-band reads' (get_cut_trace, get_tool_load_report) in a prose string; a new slow tool is not added there. Nothing forces either choice.",
+   "crates/rs_cam_viz/src/ui_command.rs:741-800: the existing UiQuery rows all declare gui: Reach::Skip('the panel reads the slot without this door'). A registry row therefore does NOT make the GUI read the same function. The GUI/MCP number parity is held only by two handlers calling the same core method. The gui Reach::Reached census (tests/command_surface_completeness.rs:318,404) requires a GUI constructor only for Reached rows, so Skip passes with any panel code.",
+   "crates/rs_cam_viz/src/state/simulation.rs:262-300 build_cut_metric_set: a stated 'residual' copy of the per-toolpath loop body of gcode::project_load_report ('core has no public door that builds this context for one toolpath'). A new number computed from the load context is silently derived twice, once in the GUI card and once in MCP, and can diverge.",
+   "crates/rs_cam_viz/src/app/mcp/project.rs:866 pin_report_json and controller/events/compute.rs:2345 build_mcp_diagnostics are hand-built JSON. A new field on the core report is not added to the JSON automatically (no serde derive), so the MCP reply omits it with no compile error. results_parity_tests.rs:1 documents this exact defect (ten channels never reached the agent).",
+   "crates/rs_cam_mcp/src/server.rs:1970 and :2143: the build_info features array and the test that freezes it are two lists; adding only to the array passes every test. No test checks that a new tool has a feature token.",
+   "crates/rs_cam_viz/src/app/mcp/diagnostics.rs and rs_cam_viz/tests/one_bounded_response_vocabulary_cli04.rs:1: any array in the reply must take its cap from rs_cam_mcp/src/response.rs (CappedArray, constants at response.rs:50-108). The scan only finds a literal cap; an UNCAPPED array is invisible to it (its own NOT MEASURED note). The 8 MB backstop MAX_RESPONSE_BYTES is the only protection.",
+   "None-versus-0.0 rule (core diagnostics/CLAUDE.md, cli/CLAUDE.md, mcp.rs tool description for get_project_diagnostics): the new value must report 'not measured' when there is no simulation or the trace is stale. Held by prose and per-feature sentries only (e.g. controller/tests/diagnostics_null_without_trace_u2.rs). A plain f64 field compiles and shows 0 as clean.",
+   "Planned versus emitted evidence (viz/CLAUDE.md 'GUI contracts'): the surface must name which it reports. Generated worker IR and post-simulation IR differ. No type distinguishes them for a new f64.",
+   "crates/rs_cam_viz/src/app/mcp/commands.rs:1989 and :2898: these two lists are only forced if a CORE Query row is added. Choosing a UiQuery row or a plain McpRequestKind variant never reaches them, so the core and viz registries can both be silent about the tool.",
+   "The in-process cache key: cached_load_report (state/simulation/issue_triage.rs:33) and the memo in session/load_report.rs key on exact inputs ('No key part is a counter'). A new memoised value that reads an input not in that key goes stale on one surface only. Nothing flags a missing key part except a hand-written test."
+  ],
+  "reuse_traps": [
+   "Existing: ProjectSession::pin_set_report / pin_set_report_for (core session/pin_report.rs). Trap: write pin-style numbers again in a panel, as the wizard once did. Found only via pins.rs:59 comment and pin_report.rs:1.",
+   "Existing: AppState.simulation.cached_load_report (state/simulation/issue_triage.rs:33) and ui::readiness::load_report (ui/readiness.rs:356) both return the memoised Arc<ToolLoadReport>. Trap: call rs_cam_core::gcode::project_load_report directly, which is far too slow per frame (session/load_report.rs:1-30 says 2026-10-02 profile). Found via rg of mcp_get_tool_load_report (generation.rs:303).",
+   "Existing: state.simulation.cached_cut_metrics (state/simulation.rs:227) and rs_cam_core::tool_load::metric_distribution / gate_population. Trap: bin or sum cut-trace samples again, which g_cutcards names as the defect where the card disagrees with the badge. Found via tests/cut_metric_cards_read_the_gate_g_cutcards.rs header.",
+   "Existing: readiness::toolpath_cycle_time (ui/readiness.rs:519) wrapping Query::ToolpathCycleTime, and readiness::format_cycle_time (readiness.rs:607) as the one seconds formatter. Trap: write another seconds formatter or time estimate in the panel; setup_sheet.rs:426 records two surfaces that once disagreed.",
+   "Existing: transit-sample filter locality::is_steady_state_for_gate (from memory MEMORY.md). Trap: filter samples with a new predicate in a new metric. Not named in any CLAUDE.md I read; found only in auto-memory.",
+   "Existing: ProjectEvidence::attributed_rapid_collisions (app/mcp/simulation.rs:129 comment). Trap: re-attribute a collision to a toolpath; G-RAPIDFRAME says the surfaces then name two toolpaths for one collision.",
+   "Existing: rs_cam_mcp::response::{CappedArray, cap_json_values, ResponseBudget} (diagnostics.rs:9-12). Trap: write `.take(50)` in the handler. Found by the CLI-04 test header and rs_cam_mcp/CLAUDE.md.",
+   "Existing: rs_cam_mcp::server::json_str (used in generation.rs and diagnostics.rs). Trap: hand-roll the JSON string reply; found by reading the sibling handler."
+  ],
+  "ambiguity": [
+   "Where the MCP row lives: (a) a core `Query` row in rs_cam_core/src/session/command.rs:499-567 (cycle time, selection status), (b) a viz `UiQuery` row in ui_command.rs:741-800 (get_tool_load_report), or (c) a bare `McpRequestKind` variant with no registry row (get_project_diagnostics, mcp_bridge.rs:520). Three live patterns serve the same kind of read. CLAUDE.md files do not say which to prefer for a diagnostic value. Only the UiQuery pattern has a census test; (c) is held by the wire snapshot only.",
+   "Where the number is computed: in a core ProjectSession method (pin_report, selection_status, cycle_time: 'one report, no surface computes it twice') versus a viz memo on state.simulation (cached_load_report, cached_cut_metrics) because the cut trace is held in viz state and not in session.simulation (rs_cam_core/tests/query_cycle_time_one_answer.rs header). A diagnostic that reads the trace must pick; the first needs the trace passed in as an argument.",
+   "Wire format: hand-built serde_json::json! (pin_report_json, mcp_get_tool_load_report) versus a serde derive on the core report type (ToolLoadReport via serde_json::to_value, generation.rs:~318). Both exist.",
+   "Diagnostic list versus new tool: adding a rule id in core diagnostics/ids.rs makes the value appear in get_toolpath_diagnostics and the GUI ribbon with an N4 parity test (tests/ribbon_and_mcp_diagnostic_ids_n4.rs), while the task asks for a new tool. Both patterns match 'a newly computed diagnostic value'.",
+   "Cheap snapshot read (cheap_read with McpReadKind, mcp_server.rs:194, five tools) versus plain send_request (get_tool_load_report). A cheap read also needs a McpReadSnapshot field and a pick arm (mcp_bridge.rs:20-70).",
+   "Where the GUI shows it: Inspector cut-metric card (ui CLAUDE.md, Metrics tab), Readiness panel limit rows (readiness_panel.rs), simulation diagnostics (sim_diagnostics.rs), or a verdict pill (components/pill.rs). Each has its own sentry set and none is named as the default for a new diagnostic.",
+   "Two folder CLAUDE.md files own overlapping pieces: app/CLAUDE.md for the tool and ui/CLAUDE.md or state/CLAUDE.md for the panel and memo. Neither tells you to update the other; the parity step is not owned by one file."
+  ]
+ },
+ "without": {
+  "task": "Add a new MCP tool that reports a newly computed diagnostic value, and show the same value in the GUI so both surfaces show the same number.",
+  "variant": "no-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/src/stock/simulation_cut.rs:603-660 (trait AirCutRatios) and crates/rs_cam_core/src/stock/sim_triage.rs:164-170 (ChannelCounts)",
+    "change": "Closest examples. Air-cut percent is the one number the repo shows on MCP, GUI and CLI. Copy the shape: compute once in core as a named accessor or a field on a serde-derived core struct. Candidate homes: ProjectDiagnostics (diagnostics_types.rs:356) for a project scalar, ChannelCounts/SimulationTriage for a tally, a new AirCutRatios-style trait method for a per-summary ratio. Part of this ruling is inferred, not compiler-checked.",
+    "compiler_forces_it": false,
+    "how_found": "rg for air_cut_pct_of_total_runtime across the workspace"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/diagnostics_types.rs:356-396",
+    "change": "Add the new field to ProjectDiagnostics (derive Serialize is the wire contract). Use Option<f64> and the null-means-NOT-MEASURED convention if it depends on the cut trace (doc at :350-356).",
+    "compiler_forces_it": false,
+    "how_found": "rg for the sibling field; the doc comment says the derive IS the wire contract"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/compute/diagnostics.rs:1090-1110 and 1498-1512",
+    "change": "Compute the value from evidence.cut_trace in the trace_figures tuple (:1090-1104) and set it in the ProjectDiagnostics literal (:1498). The literal is the only core construction site.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (missing struct field in literal)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/tests/diagnostics_json_keys_ses01.rs:50-70 and PINNED at ~:105-125",
+    "change": "Add the field to the populated() literal. Add the key to the PINNED JSON string in declaration order. The literal is compiler-forced. The pinned string only fails at test time.",
+    "compiler_forces_it": true,
+    "how_found": "compiler for the literal; the test header says a new field changes the literal"
+   },
+   {
+    "path_line": "crates/rs_cam_core/tests/air_cut_denominators_lh1.rs:110-120",
+    "change": "A second ProjectDiagnostics struct literal in a test. It must gain the field or it will not compile.",
+    "compiler_forces_it": true,
+    "how_found": "compiler, or rg ProjectDiagnostics {"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/controller/events/compute.rs:2453-2520 (build_mcp_diagnostics, the json! at :2511)",
+    "change": "The MCP get_diagnostics top-level JSON is hand-built with json!{...}. It does NOT serialise ProjectDiagnostics, even though core_diagnostics is in scope at :2352. A new ProjectDiagnostics field never reaches MCP unless the key is added here by hand. It also re-derives the trace_summary tuple (:2453-2466) a second time next to core's own tuple. Add the key here, reading core_diagnostics.<field> rather than recomputing.",
+    "compiler_forces_it": false,
+    "how_found": "rg air_cut_pct_of_cutting_time found two places that build the same keys"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/controller/tests/diagnostics_null_without_trace_u2.rs:48-53",
+    "change": "TRACE_FIGURES is a hand-kept string list of keys that must be null without a trace. Add the new key if it is trace-derived. Nothing prompts this.",
+    "compiler_forces_it": false,
+    "how_found": "rg for the key string in tests"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui_command.rs:755-762",
+    "change": "Preferred registry for a no-arg MCP read that reads view state: add a (UiQuery, <Id>, \"<wire_name>\", NoArgs, String, Surfaces{gui,mcp,cli}) row. Each Skip needs a reason string. The macro generates the UiQuery/UiQueryAnswer variants.",
+    "compiler_forces_it": false,
+    "how_found": "rg of get_diagnostics found the row; sibling rows :755-790"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp.rs:652-690 (ui_query match)",
+    "change": "Add the UiQuery::<Id>(NoArgs) arm returning UiQueryAnswer::<Id>(self.mcp_<fn>()). The match has no wildcard, so a new UiQuery row will not compile without it.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (exhaustive match)"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp/diagnostics.rs:19-21",
+    "change": "Add the handler mcp_<fn>(&self) -> String, mirroring mcp_get_diagnostics (json_str(controller.build_mcp_...)). If the new tool belongs inside get_diagnostics (a new key), only compute.rs:2511 changes and no new tool or registry row is needed.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (arm calls it); sibling file"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/mcp_server.rs:509-518 (and :1005-1012, :1032-1040)",
+    "change": "Add the #[tool(name=..., description=...)] async fn that calls send_request(McpRequestKind::UiQuery(UiQuery::<Id>(NoArgs))). The rmcp macro registers it at runtime. Nothing in the type system ties a registry row to a tool fn, so a forgotten tool is caught only by command_surface_completeness property 4 (tests/command_surface_completeness.rs:15-30). The description is prose: if you add a key to get_diagnostics, its description (:511) must also be edited by hand.",
+    "compiler_forces_it": false,
+    "how_found": "rg of get_tool_load_report found the tool fn"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json (tests/mcp_wire_surface_pin.rs:68,200-245)",
+    "change": "New tool means regenerate the snapshot with RS_CAM_UPDATE_WIRE_SNAPSHOT=1. It is a test, not a compile error. Adding a key to an existing tool's output changes nothing here, because only names and input schemas are pinned.",
+    "compiler_forces_it": false,
+    "how_found": "rg get_tool_load_report found the JSON; the pin test"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/sim_diagnostics.rs:690-780 (Informational DataTable) and :338-370 (draw_air_cut_caution)",
+    "change": "GUI display. The GUI never reads ProjectDiagnostics. It reads trace.summary directly (:348, :705-725) or the SimulationTriage via sim.cached_simulation_triage(session) (:78, :288, :605). To show the same number as MCP, read the same core accessor or field, and do not divide in the view. Add a DataRow/DataTable row. Nothing links this to the MCP key, so parity is by convention. A test such as controller/results_parity_tests.rs would have to be written.",
+    "compiler_forces_it": false,
+    "how_found": "rg air_cut_pct_of_total_runtime found sim_diagnostics.rs"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/state/simulation/issue_triage.rs:59-95 and :148-190 (evidence_fingerprint)",
+    "change": "Only if the value goes through the cached triage and depends on an input not already hashed: the cache key (report stamp, session key, evidence_fp) must include it. The fingerprint is a hand-written hasher over chosen fields.",
+    "compiler_forces_it": false,
+    "how_found": "read cached_simulation_triage"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/project.rs:511-535 (struct ProjectSummary) and :1000-1030 (literal) and :1080-1100 (eprintln)",
+    "change": "The CLI project report is a parallel struct, hand-mapped from diag.<field>. A new ProjectDiagnostics field is not required there, so the CLI silently lacks it unless you add the field and the mapping. The task names only MCP and GUI, so this is optional, but the surface goes quietly out of sync.",
+    "compiler_forces_it": false,
+    "how_found": "rg air_cut_pct_of_total_runtime found the CLI"
+   },
+   {
+    "path_line": "crates/rs_cam_core/tests/air_cut_denominators_lh1.rs:225-330",
+    "change": "If the value is a percentage of an air-cut-like time, this grep sentry scans five named source files for the denominator labels. A new surface file is not covered, and the file list is a hand-kept array.",
+    "compiler_forces_it": false,
+    "how_found": "rg of the air_cut names found the test"
+   },
+   {
+    "path_line": "FEATURE_CATALOG.md:146 and :178",
+    "change": "The user-facing catalog lists MCP tools and diagnostic keys in prose. Update it. Nothing checks it.",
+    "compiler_forces_it": false,
+    "how_found": "rg get_diagnostics across md files"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_viz/src/controller/events/compute.rs:2511 - MCP get_diagnostics is a hand-built json!{} and not the ProjectDiagnostics derive. Adding the field to the core struct compiles, passes the core tests (once ses01 is updated) and never reaches MCP. I found it only by rg-ing a sibling key and seeing a second site. Silent: a string key in a json! literal.",
+   "crates/rs_cam_viz/src/mcp_server.rs:511 - the get_diagnostics tool description is a prose string that lists the published keys and the null-means-NOT-MEASURED rule. It has no link to the output. Silent: a string literal.",
+   "crates/rs_cam_viz/src/ui/sim_diagnostics.rs:690-780 vs compute.rs:2453 - the GUI and the MCP read the same quantity through two independent paths (trace.summary in the view, a re-derived tuple in the controller, a third tuple in core diagnostics.rs:1090). Nothing makes the displayed number equal the MCP number. The requested outcome (same number on both surfaces) is held by convention and comments only, and no test compares GUI and MCP for a new value. Silent: parallel derivation on separate surfaces.",
+   "crates/rs_cam_viz/src/controller/events/compute.rs:2467-2473 - the not-measured reason strings are copied literals. The core constants (diagnostics_types.rs:337 and :345) are pub(crate), so viz cannot import them and the two copies can drift. Silent: duplicated literals across a visibility wall.",
+   "crates/rs_cam_viz/src/controller/events/compute.rs:2506 vs sim_diagnostics.rs HIGH_AIR_CUT_PCT (about :330) vs rs_cam_cli/src/project.rs:981 - three independent 40.0 thresholds. A new threshold for the new value would be copied the same way. Silent: constants with no shared definition.",
+   "crates/rs_cam_viz/tests/mcp_wire_surface_pin.rs - pins tool names and input schemas only. Adding a response key to an existing tool is not caught here. Adding a new tool fails with a test message. Only the second case is forced.",
+   "crates/rs_cam_viz/src/mcp_bridge.rs:20-60 (McpReadSnapshot, McpReadKind) - a cached fallback list of five no-arg reads that the MCP thread serves while the frame loop is stalled (mcp_server.rs:249). A new cheap no-arg read does not get a stall fallback unless it is added here. I could not tell whether it should be. Silent: separate list.",
+   "crates/rs_cam_cli/src/project.rs:511-535 - CLI ProjectSummary is a parallel struct. A new core field is not forced into it (only per-toolpath rows use an exhaustive destructure, around :112-120). Silent: parallel struct on another surface.",
+   "crates/rs_cam_viz/src/state/simulation/issue_triage.rs:148 - the triage cache fingerprint is a hand-written list of hashed fields. A value that depends on a new input will serve a stale cached GUI number while MCP recomputes. Silent: manual cache key."
+  ],
+  "reuse_traps": [
+   "AirCutRatios trait (crates/rs_cam_core/src/stock/simulation_cut.rs:603-660) vs a hand division: I would likely have written air_cut_time_s / total_runtime_s * 100 in the GUI. The doc comment at sim_diagnostics.rs:700-722 describes a past incident with a local pct_of_total closure. One accessor exists per denominator.",
+   "ProjectSession::diagnostics_with_evidence (crates/rs_cam_core/src/session/compute/diagnostics.rs:922) / ProjectDiagnostics vs build_mcp_diagnostics's own trace_summary tuple (viz compute.rs:2453). The tuple is the visible pattern and invites a third copy. core_diagnostics at compute.rs:2352 is already in scope.",
+   "SimulationState::project_evidence (crates/rs_cam_viz/src/state/simulation/issue_triage.rs:~98) is the one builder of ProjectEvidence for the GUI, and cached_simulation_triage is the cached triage. I would otherwise rebuild evidence by hand in the panel.",
+   "readiness::toolpath_cycle_time (crates/rs_cam_viz/src/ui/readiness.rs:519) is a thin wrapper over the core Query::ToolpathCycleTime (core session/cycle_time.rs:372). Per-toolpath times in the GUI are already unified, so do not recompute them in the view.",
+   "rs_cam_mcp::server::json_str and cap_json_values/ResponseBudget (crates/rs_cam_mcp/src/response.rs) for response shaping, instead of format!-ing JSON; fmt_opt in rs_cam_cli/src/project.rs for Option<f64> printing.",
+   "ui::components DataRow::value / DataRow::not_measured (used at sim_diagnostics.rs:~760-775) render a measured value or the NOT MEASURED mark. Without them I would hand-draw a label and could show 0 for a missing figure."
+  ],
+  "ambiguity": [
+   "Three registries for a new MCP read are all plausible: (a) a core Command-registry Query row (crates/rs_cam_core/src/session/command.rs:499, ToolpathCycleTime), (b) a viz UiQuery row (crates/rs_cam_viz/src/ui_command.rs:755, GetDiagnostics), (c) a bare McpRequestKind variant (crates/rs_cam_viz/src/mcp_bridge.rs:520 GetProjectDiagnostics, handled at app/mcp.rs:398). The first two tie into completeness sentries and the third does not. The only hint that the third is older is the registry comment in ui_command.rs:1-60.",
+   "Extend an existing payload or add a new tool. A new key inside get_diagnostics (hand-built json!, compute.rs:2511) is one edit. A new tool needs the registry row, the dispatch arm, the handler, the tool fn and the snapshot. Both patterns are in the repo and the task wording supports both.",
+   "Where the value lives in core: ProjectDiagnostics field (diagnostics_types.rs:356), a ChannelCounts tally in SimulationTriage (sim_triage.rs:164, which already reaches MCP via resp[\"triage\"] at compute.rs:2560 and the GUI via cached_simulation_triage), or an AirCutRatios-style trait method on SimulationCutSummary. The triage route gives MCP and GUI the same serde object with no hand-built JSON, but the 'null without a trace' loop at compute.rs:2566-2575 then applies to it and I may not want that. The GUI does not read ProjectDiagnostics at all.",
+   "How the GUI shows it: a DataTable row in sim_diagnostics.rs (:690-780), a caution banner like draw_air_cut_caution (:338), or a readiness pill in ui/readiness_panel.rs. All three are equally plausible examples."
+  ]
+ }
+}

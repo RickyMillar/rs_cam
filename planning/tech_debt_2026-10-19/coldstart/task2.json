@@ -1,0 +1,256 @@
+{
+ "with": {
+  "task": "Add a new numeric parameter to Pocket (shows in GUI, MCP schema, CLI job file, saved project; has a default and validation)",
+  "variant": "with-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/src/compute/operation_configs.rs:492-529",
+    "change": "Add the field to PocketConfig with #[param(help = ..., range = a..=b)]. Add #[serde(default = ...)] too (see silent_misses). Re-use a HELP_* const (lines 21-60) if two ops share the text. The derive OpParams writes the schema, the setter range and the GUI range from this one attribute.",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md (compute/CLAUDE.md W5: its #[param] attributes ARE the schema)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/operation_configs.rs:531-548",
+    "change": "Add the default value to the hand-written impl Default for PocketConfig. This is the registry default, the CLI default and the new-toolpath default.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (missing field in struct literal)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/execute/clearing_2d.rs:182-245",
+    "change": "Read the field in the Contour arm (PocketContour::prepare or emit_level). This arm builds crate::ops::pocket::PocketParams at line 233.",
+    "compiler_forces_it": false,
+    "how_found": "rg for the sibling field (stepover) in the Pocket adapter"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/execute/clearing_2d.rs:159-168",
+    "change": "Pocket's Zigzag pattern builds ZigzagRaster from named config fields. Pass the new field here too, or the Zigzag pattern ignores it.",
+    "compiler_forces_it": false,
+    "how_found": "reading generate_pocket to the end"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/ops/pocket.rs:19-34",
+    "change": "If the kernel needs the value, add a field to PocketParams. Every struct literal of PocketParams then fails to compile: clearing_2d.rs:233, compute/simulate.rs:3074, tests/common/kernels.rs, tests/param_sweep.rs:355, tests/property_tests.rs:78 and :140, ops/pocket.rs:396.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (PocketParams has no Default; struct literal)"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/operations/boundary_2d.rs:69-130",
+    "change": "Add a dv(ui, p(OperationType::Pocket, \"<name>\", \"<Label>:\"), &mut cfg.<name>, unit, speed) row in draw_pocket_params, or in the advanced() block at line 128. The range and the tooltip come from the registry by the name string.",
+    "compiler_forces_it": false,
+    "how_found": "rg for stepover in the viz properties folder; ui/properties/CLAUDE.md"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/operations/registry.rs:421-436",
+    "change": "If the value has a cross-field rule (for example below the tool diameter), add a validation arm and register it on the Pocket row (lines 457-472). The arm runs in the GUI only.",
+    "compiler_forces_it": false,
+    "how_found": "rg for 'Stepover must be less than tool diameter'"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:1385-1415",
+    "change": "Only if the value changes the Z ladder: cutting_levels lists Pocket explicitly and builds DepthStepping from named fields. Edit it there.",
+    "compiler_forces_it": false,
+    "how_found": "rg for finishing_passes (the sibling field)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/operation_configs.rs:2873-2879",
+    "change": "Only if the value is a universal accessor (stepover, depth, ramp feed): add a clause to the impl_operation_params! invocation. A plain new dial needs no change here.",
+    "compiler_forces_it": false,
+    "how_found": "reading the macro doc at lines 2750-2790"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/compute/params.rs:380-455",
+    "change": "No edit. MCP set_toolpath_param and the CLI job both reach the generic JSON path. It reads the schema, runs check_param_range and round-trips through serde. A named arm is needed only for provenance (the ramp_feed_rate case at line 455).",
+    "compiler_forces_it": false,
+    "how_found": "rg for set_toolpath_param; cli/CLAUDE.md C2 says the job reads the schema"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/job.rs:223",
+    "change": "No edit. Choose a name that is not in OperationDef::JOB_KEYS. The test at job.rs:1493 fails if a schema name equals a job key.",
+    "compiler_forces_it": false,
+    "how_found": "cli/CLAUDE.md (C2)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/tests/common/op_fixtures.rs:264",
+    "change": "Check the shared Pocket fixtures. Most literals end with ..PocketConfig::default(), so they compile. If the default changes the output, re-bless G-OPGOLDEN (RS_CAM_BLESS_OPGOLDEN=1) for Pocket only.",
+    "compiler_forces_it": false,
+    "how_found": "compute/CLAUDE.md sentries"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog/tests.rs:143",
+    "change": "No edit. every_declared_range_holds_the_default and the W4 check6 round trip (tests/every_op_conforms_w4.rs:1148) run the new field. They fail if the default is outside the range or does not round-trip.",
+    "compiler_forces_it": false,
+    "how_found": "compute/CLAUDE.md sentries"
+   },
+   {
+    "path_line": "FEATURE_CATALOG.md:21",
+    "change": "Add the capability claim to the Pocket row (GUI label, MCP name, CLI name, sentry). Root CLAUDE.md requires this for a visible surface change.",
+    "compiler_forces_it": false,
+    "how_found": "root CLAUDE.md (Sources of truth)"
+   },
+   {
+    "path_line": "toolpath_stress_test/PARAMETER_MATRIX.md:35",
+    "change": "Add a row to the Pocket table. This file has a hand-written copy of the default and the range.",
+    "compiler_forces_it": false,
+    "how_found": "rg for Pocket stepover in *.md"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/project_file.rs:38",
+    "change": "The saved project is the serde form of PocketConfig, so no save code changes. The serde default on the field (first site) decides whether an older file still loads. Format version stays 3.",
+    "compiler_forces_it": false,
+    "how_found": "rg for format_version; reading how stepover is stored"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_core/src/compute/operation_configs.rs:492-529 - a plain f64 field with no #[serde(default)] makes every saved project and fixture with a Pocket fail to load with a missing-field error. stepover, depth and the other old fields have no serde default, so the closest example teaches the wrong habit. ramp_feed_rate (line 504) and region_ordering (line 517) show the safe form. No compiler error or sentry covers it. Fixtures under planning/fixtures and test_data/*.toml break at run time.",
+   "crates/rs_cam_core/src/compute/operation_configs.rs:493 - a field with no range = ... in #[param] compiles. The schema then publishes the value with no domain (compute/catalog/schema.rs:200-232, DR-LIVE), so MCP set_toolpath_param and the CLI job accept 0, a negative value or a huge value. Only the doc comment says a range is needed. The help-text test is a ratchet (catalog/tests.rs:837) and does not name a new helpless field.",
+   "crates/rs_cam_core/src/compute/catalog/schema.rs:228-232 - project TOML is not checked against the range (load runs serde with no registry). A range on the field protects MCP, the CLI and the GUI, but a hand-edited or old project file can hold an out-of-range value. The kernel needs its own guard (see the ops/drill.rs fed_descents pattern). Nothing tells a new contributor to add it.",
+   "crates/rs_cam_core/src/compute/execute/clearing_2d.rs:159-168 - the Zigzag pattern of Pocket builds ZigzagRaster from named fields, not from PocketParams. Adding the field to the Contour arm compiles. The Zigzag pattern then ignores the value with no error. The G2 comment in ops/pocket.rs:12-16 warns of this only for PocketParams.",
+   "crates/rs_cam_viz/src/ui/properties/operations/boundary_2d.rs:69-130 - no compiler error and no sentry requires a GUI row for a new schema field. The_help_key_is_the_param_name_ui04 checks the rows that exist and not the rows that are missing. The field is then settable by MCP and CLI only, and the GUI shows nothing. A GUI save still keeps the value because the config is serialised whole.",
+   "crates/rs_cam_viz/src/ui/properties/operations/registry.rs:421-436 - cross-field validation (value against tool diameter and so on) lives in the viz OP_UI_ROWS arm. It runs in the GUI only. MCP, the CLI and the saved project never run it. The core stale-default check (compute/validate.rs:273) is a separate list that names ops by hand.",
+   "crates/rs_cam_viz/src/ui/properties/operations/boundary_2d.rs:137-152 - an integer field cannot use dv() (ValueRow edits f64). The contributor must copy finishing_passes_row. A usize field with dv() does not compile, but the reason is not stated at the call site.",
+   "crates/rs_cam_core/src/compute/catalog.rs:1385-1415 - cutting_levels names Pocket and builds DepthStepping field by field. A value that changes the Z ladder is lost here with no error. The doc says there is no wildcard, but the Pocket arm is a literal that does not know the new field.",
+   "crates/rs_cam_core/src/feeds/predict.rs:991 and src/feeds/suggest - if the value changes load or cycle time, the feeds predictor and the Suggest rationale read OperationParams accessors, not the new field. No test lists them. The new field is invisible to the chipload, power and cycle-time gates unless a contributor finds them.",
+   "toolpath_stress_test/PARAMETER_MATRIX.md:35 and FEATURE_CATALOG.md:21 - docs hold a second copy of the default and the range. No test compares them. They drift without a signal.",
+   "crates/rs_cam_core/benches/hot_paths.rs:812 - the bench has a PocketConfig literal. It is in the in-flux list (other sessions edit it). A required field with no ..default() there would break the bench build, and cargo test does not build benches."
+  ],
+  "reuse_traps": [
+   "Range and tooltip in the GUI: linking_dressup.rs:45 schema_range, :92 help_for and :53 dv read the registry by param name. A contributor may hard-code a DragValue range and a hover text (as finishing_passes_row does at boundary_2d.rs:143-146 for the range via schema_range, but with its own hover string at :147).",
+   "Range check at the setter: check_param_range (session/compute/params.rs, called near line 424) and OperationConfig::param_range_for_type (catalog.rs:1277). A contributor may write a second validator in the MCP handler or the CLI. The derive already gives both surfaces the same check.",
+   "Shared help text: HELP_STEPOVER, HELP_DEPTH, HELP_ANGLE and others at operation_configs.rs:21-60. A contributor may paste the same sentence in a second op and let the texts drift.",
+   "impl_operation_params! (operation_configs.rs:2750-2880): a contributor may hand-write an OperationParams impl for a new accessor. The macro already writes the universal six accessors.",
+   "CLI job parsing: rs_cam_cli/src/job.rs reads the schema (CLAUDE.md C2). A contributor may add a per-op key map or a CLI default. The default must come only from Default for PocketConfig.",
+   "Set by name: ProjectSession set_toolpath_param goes through serde JSON. A contributor may add a typed setter on PocketConfig and a new Command row. session/CLAUDE.md says a setter needs a command row and the registry test fails, so the generic path is the intended door.",
+   "region_ordering_row (boundary_2d.rs:156) is shared by Pocket, Profile, Zigzag and Trace. finishing_passes_row (boundary_2d.rs:137) is shared by Pocket and Profile. A contributor who does not see them will write a fourth copy.",
+   "PocketParams restamp: ops/pocket.rs:12-16 says use PocketParams { cut_depth: z, ..*params } and do not list all fields. A contributor may re-list the fields in a new adapter.",
+   "Default for new tests: ..PocketConfig::default() (about 94 literal sites). A contributor may add every field by hand in a new fixture."
+  ],
+  "ambiguity": [
+   "Three serde conventions sit side by side in PocketConfig: plain f64 with no default (stepover, depth, line 494), Option<f64> with #[serde(default, skip_serializing_if = ...)] (ramp_feed_rate, line 504), and a named default fn (region_ordering, line 517). The old-file load behaviour differs for each. The CLAUDE.md files do not say which one a new numeric field must use.",
+   "Two closest examples: finishing_passes (usize, special GUI row, read by cutting_levels at catalog.rs:1405 and by DepthStepping) and stepover (f64, dv_pill row, macro accessor, feeds readers). A depth-like field copies the first. A cut-geometry field copies the second.",
+   "Option<f64> with None meaning a derived value (ramp_feed_rate) or a plain f64 with a fixed default (angle, stepover). The ramp_feed_rate pattern also pulls in feeds provenance (feeds/provenance.rs, params.rs:455), which a plain dial must not copy.",
+   "Validation has four homes: #[param(range)] (schema, GUI clamp, MCP refuse), a viz OP_UI_ROWS validate arm (GUI only), core compute/validate.rs stale-default checks, and a kernel guard (ops/drill.rs fed_descents). Each has a precedent. The docs do not say which one owns which rule. The operator ruling 2026-10-15 (single-field floor goes in the schema, not in the GUI) covers only one case.",
+   "Contour pattern and Zigzag pattern of Pocket are two LayeredOp adapters in one file (PocketContour at clearing_2d.rs:176 and ZigzagRaster at :247, shared with the Zigzag op). The new value may belong to one pattern, to both, or to ZigzagConfig as well. The GUI already hides angle unless the pattern is Zigzag (boundary_2d.rs:108)."
+  ]
+ },
+ "without": {
+  "task": "Add a new numeric parameter to an existing op (Pocket) so it shows in the GUI, MCP schema, CLI job file and saved project, with a default and validation.",
+  "variant": "no-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/src/compute/operation_configs.rs:491-529",
+    "change": "Add the field to `PocketConfig` with `#[param(help = ..., range = a..=b)]`, `#[serde(default = ...)]` (or `#[serde(default)]`), and a value in `impl Default for PocketConfig`. The `#[derive(OpParams)]` on this struct writes the `ParamDef` table, so this one edit publishes the param to MCP `get_operation_schema`, MCP `set_toolpath_param`, the CLI `run --list-params`/`--set`, the CLI job TOML key and the project TOML. Closest model: `angle` (f64 with a range, line ~506) or `finishing_passes` (usize, line ~508).",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (rg PocketConfig, then reading the struct and the rs_cam_derive header doc)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/operation_configs.rs:531-550",
+    "change": "`Default` value. The compiler forces it because the struct literal in `Default` names every field. The default must also match the old behaviour so old projects and golden fixtures do not change.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/operation_configs.rs:36-60 (HELP_* consts)",
+    "change": "If the help text is shared by two or more fields, add a `const HELP_X` here and use `help = HELP_X`. A text used once is inline.",
+    "compiler_forces_it": false,
+    "how_found": "comment at line 17-20"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/execute/clearing_2d.rs:150-260 (PocketContour::emit_level, ZigzagRaster)",
+    "change": "Consume the field. Contour pattern reads `self.cfg`; the Zigzag pattern copies fields one by one into the `ZigzagRaster` struct (line 160-168 and 250-257), so a field needed by both patterns must be added to that adapter struct as well. Also add it to the kernel params struct (`crate::ops::pocket::PocketParams`, built at ~line 235).",
+    "compiler_forces_it": false,
+    "how_found": "rg of cfg.angle / cfg.region_ordering; the compiler only forces it for struct literals of the adapter or PocketParams, not for ignoring the new field"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/compute/catalog.rs:1401-1407 (OperationConfig::cutting_levels)",
+    "change": "Only if the new param changes the Z ladder: this match re-reads Pocket fields into `DepthStepping`. Second consumer of the config beside the generator.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'Self::Pocket(cfg)' / 'finishing_passes' sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/operations/boundary_2d.rs:70-130 (draw_pocket_params)",
+    "change": "Add a `dv(ui, p(OperationType::Pocket, \"<name>\", \"Label:\"), &mut cfg.<name>, \" mm\", step)` row. The name string must equal the field name; the clamp range comes from the schema via `schema_range` (linking_dressup.rs:45), so no GUI range is written. For a usize use the `finishing_passes_row` pattern (line 133-152) because `dv` edits an f64. For an advanced param put it inside the `advanced(ui, \"pocket_adv\", ...)` block (line 125).",
+    "compiler_forces_it": false,
+    "how_found": "rg 'angle' in ui/properties; sibling rows"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/tests/the_help_key_is_the_param_name_ui04.rs (reads boundary_2d.rs call sites as text)",
+    "change": "No edit, but this sentry fails the build if the new `dv` row names a param the registry lacks, or one with no `help`, or one with no `range` (arm 5). So the help and range from the struct are mandatory in practice.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'dv(' sentries in crates/rs_cam_viz/tests; this is a SENTRY, not a compile error"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/compute/params.rs:216-330 (set_toolpath_param_impl, generic `_` arm)",
+    "change": "No edit for a normal f64 field: the generic serde round trip plus `check_param_range` reads the derived range. For an integer field the type string must be one of usize/u32/option<..> (line ~131 `is_integer_param_type`); a new integer type (e.g. u8, i32) would silently take the float path. Named arms (feed_rate, stepover, depth_per_pass, spindle_rpm) exist only for params with provenance or special handling.",
+    "compiler_forces_it": false,
+    "how_found": "reading params.rs to see how MCP set_toolpath_param validates"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/job.rs:213-260 (OperationDef::operation_type)",
+    "change": "No edit. The CLI job TOML key is checked against `registry_entry().params.defs` and applied through the same core setter, so the derived table is the only source. Same for crates/rs_cam_cli/src/run.rs (--list-params, --set).",
+    "compiler_forces_it": false,
+    "how_found": "reading the doc comment on OperationDef"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/project_file.rs (OperationConfig serialised via serde; no per-field site)",
+    "change": "No edit, but the field MUST carry `#[serde(default ...)]` or every saved project that lacks the key fails to load. There is no format-version bump for an additive field (format_version = 3, line 22-60). Add `skip_serializing_if` only if the old file bytes must stay identical.",
+    "compiler_forces_it": false,
+    "how_found": "comparing Pocket fields: region_ordering/ramp_feed_rate/spindle_rpm all carry serde(default)"
+   },
+   {
+    "path_line": "Every `PocketConfig { ... }` struct literal without `..Default::default()`: crates/rs_cam_core/benches/hot_paths.rs:812, crates/rs_cam_core/src/feeds/predict.rs:991,1071,1107, crates/rs_cam_core/src/feeds/suggest/tests.rs:705,1285, crates/rs_cam_core/src/stock/sim_triage.rs:2271, crates/rs_cam_core/src/compute/simulate.rs:2722, crates/rs_cam_core/src/compute/execute/pinned_bottom_z_reaches_motion_g_bottompin.rs:73, crates/rs_cam_core/tests/*.rs (drill_runtime_survives_retime_n2.rs:183, post_format_round_trip_p1.rs:166, face_stock_top_frame_f028.rs:376), crates/rs_cam_viz/tests/limits_fixture/mod.rs:165, crates/rs_cam_viz/tests/the_inspector_text_is_bounded_ic1.rs:143, crates/rs_cam_viz/tests/export_states_the_feed_stage_w2_5.rs:139, crates/rs_cam_viz/src/controller/tests/stock_frame.rs:232, crates/rs_cam_cli/tests/integration.rs:237",
+    "change": "Each literal that lists all fields breaks with E0063 (missing field). Fix with `..PocketConfig::default()` or the new field. (benches/hot_paths.rs:812 is only built by `cargo bench`/`--all-targets`, so a plain `cargo build` would not point there.)",
+    "compiler_forces_it": true,
+    "how_found": "compiler (rg 'PocketConfig \\{' to pre-list them)"
+   },
+   {
+    "path_line": "FEATURE_CATALOG.md:21 (Pocket row)",
+    "change": "Prose row names each Pocket option (e.g. region_ordering with GUI/MCP/CLI note) and a sentry. Add the new option here.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'region_ordering' over non-rs files"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/operations/registry.rs:420-433 (val_stepover_under_diameter and sibling val_* fns)",
+    "change": "Only if the param has a cross-field rule against the tool (e.g. stepover < tool diameter). Range validation is in the struct attribute; cross-field validation is a separate hand-written match with a `_ => return` wildcard in the viz crate (GUI-only).",
+    "compiler_forces_it": false,
+    "how_found": "rg 'Pocket(c)' for a field read outside the executor"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/feeds/predict.rs:757 (MoveCountModel::PocketCell) and crates/rs_cam_core/src/compute/catalog/registry.rs:96-135 (REG_POCKET capabilities)",
+    "change": "Only if the param changes cut time, move count, feeds family or an op capability. These read the config through the OperationParams trait / capability rows, not through the new field, so they ignore it unless edited.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'Pocket' in feeds and registry"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_core/src/compute/operation_configs.rs:491-529: no `#[serde(default)]` on the new field. Nothing fails to compile; saved projects and test fixtures that lack the key fail to load (`missing field`). Only a fixture round-trip would show it (e.g. crates/rs_cam_core/tests/fixtures/*.toml). Found only by comparing neighbouring fields that all carry serde(default).",
+   "crates/rs_cam_core/src/compute/operation_configs.rs:491-529: no `range = ..` (or help) on the new field. The derive accepts it and the field is published, but `check_param_range` (crates/rs_cam_core/src/session/compute/params.rs:64-83) then accepts any value (absent range = not stated), so MCP/CLI have no validation. The only catch is the viz sentry the_help_key_is_the_param_name_ui04.rs, and only after a GUI `dv` row exists; a param that is GUI-less or edited through a non-`dv` widget escapes it. The `usize` finishing_passes row also declares range so the GUI and MCP agree.",
+   "crates/rs_cam_core/src/compute/execute/clearing_2d.rs:160-168, 250-257: Zigzag pattern of Pocket copies Pocket fields into a separate `ZigzagRaster` struct. A new field read only by the Contour adapter works; forgetting the Zigzag adapter silently ignores the param for pattern=zigzag. No compiler error, since the adapter has no per-field link to the config.",
+   "crates/rs_cam_core/src/compute/catalog.rs:1401-1407: `cutting_levels` is a second, hand-listed reader of Pocket depth fields (also Profile at 1407). A depth-affecting param added to the executor only leaves depth-pass spans, simulation level lists, estimators and Z-level consumers out of step.",
+   "crates/rs_cam_viz/src/ui/properties/operations/boundary_2d.rs:70-130: GUI row. Omitting it compiles and passes; the param is just MCP/CLI-only. The sentry the_help_key_is_the_param_name_ui04.rs checks rows that exist, not rows that are missing (no 'every published param has a GUI row' test was found).",
+   "crates/rs_cam_viz/src/ui/properties/operations/boundary_2d.rs: the `dv` name string and the OperationType::Pocket tag are free text (`p(OperationType::Pocket, \"angle\", ...)`). A typo compiles; only the ui04 text-scanning sentry catches it.",
+   "crates/rs_cam_core/src/session/compute/params.rs:131 (`is_integer_param_type` matches only usize|u32|option<usize>|option<u32>): a new numeric type outside this list is treated as a float in the MCP path with no error.",
+   "crates/rs_cam_viz/src/ui/properties/operations/registry.rs:420-433 and similar `val_*` fns: GUI-only cross-field validation. A tool-dependent rule added here is not enforced on MCP or CLI generation paths; the core refusals live in crates/rs_cam_core/src/compute/validate.rs and ops, a separate place.",
+   "crates/rs_cam_core/src/compute/validate.rs:1-40 reads like the home for validation (named 'validate') but is a CLOSED four-rule stale-default list for old projects, not input validation. Easy to mistake as the place to add a check.",
+   "FEATURE_CATALOG.md:21: docs row for Pocket; nothing enforces updating it.",
+   "planning/F5_FRESH_DEFAULTS_POLICY.md (referenced from validate.rs:5): a changed default affects projects already saved with the old default; the policy says whether to add a stale-default rule, and the module header says the rule list is closed. Found by reading far away."
+  ],
+  "reuse_traps": [
+   "GUI range clamp: `schema_range(op, name)` at crates/rs_cam_viz/src/ui/properties/linking_dressup.rs:45 reads the derived range from the registry. Easy to hand-write `.range(0.0..=10.0)` on an egui DragValue instead (used correctly in boundary_2d.rs:143 finishing_passes_row).",
+   "GUI numeric row: `dv` / `dv_pill` (linking_dressup.rs:53, 247) plus `p(op, name, label)` (linking_dressup.rs:35) instead of a new egui DragValue helper; for integers the existing `finishing_passes_row` (boundary_2d.rs:133) instead of a new one.",
+   "Region ordering row: `region_ordering_row` (boundary_2d.rs:156) is shared by Pocket, Profile, Zigzag and Trace. An enum param row can copy it rather than inline a ComboBox as surface_3d.rs:245-251 does (a second pattern for the same widget).",
+   "Default helper: `default_layered_region_ordering()` (operation_configs.rs:~118) is the pattern for `serde(default = fn)`; a new default function can be written near it instead of an ad hoc one.",
+   "Param help text consts `HELP_*` at operation_configs.rs:22-60 (e.g. HELP_STEPOVER, HELP_DEPTH_PER_PASS, HELP_ANGLE): reuse the const rather than re-typing the text.",
+   "MCP/CLI plumbing: `OperationConfig::new_default`, `OperationDef::operation_type` (job.rs), `check_param_range` (params.rs:64) and `driver_set_field` are the existing doors. A contributor could write a CLI flag, an MCP argument struct or a job-file field by hand; none is needed.",
+   "Test fixtures: `PocketConfig::default()` with `..` for struct literals instead of listing all fields; `crates/rs_cam_core/tests/common/op_fixtures.rs` and `common/session.rs` are shared op fixtures that a new test should reuse.",
+   "Depth ladder: `crate::ops::depth::DepthStepping` / `all_levels()` is what both catalog.rs:1401 and the executor read; do not write a second one."
+  ],
+  "ambiguity": [
+   "Integer vs float param: `finishing_passes: usize` (GUI via custom `finishing_passes_row`, own i32 DragValue) versus `angle: f64` (via `dv`). Two patterns for a numeric row; which to copy depends on the type, and the usize one is a per-param helper, not generic.",
+   "Optional numeric param: `ramp_feed_rate: Option<f64>` (serde default + skip_serializing_if + help const, no GUI row visible in the Pocket panel) versus `spindle_rpm: Option<u32>` (named setter arm in params.rs and trait methods in impl_operation_params!). Two styles for 'may be absent'.",
+   "A feeds-related param (feed_rate, plunge_rate, stepover, depth_per_pass, spindle_rpm) has special named arms in `set_toolpath_param_impl` and entries in `impl_operation_params!(PocketConfig { ... })` (operation_configs.rs:2873), stamping feeds provenance; an ordinary geometry param (angle, finishing_passes) goes through the generic serde arm. A contributor choosing which mechanism may put a new param in the wrong one.",
+   "Enum vs numeric: `region_ordering` (ParamEnum, serde default fn, shared GUI row) is the newest 'add an option to Pocket' change recorded in FEATURE_CATALOG.md:21, but is an enum; the numeric siblings are older. Both look like 'the example to copy'.",
+   "Where validation goes: `#[param(range = ..)]` (core, applies to MCP/CLI/GUI), `val_*` functions in viz registry.rs (GUI-only cross-field), `compute/validate.rs` (stale defaults), and refusals inside the generator (`OperationError`). Four places named like validation.",
+   "Where the GUI row goes: the main `param_grid` versus the `advanced(ui, \"pocket_adv\", ...)` block (boundary_2d.rs:125); no rule seen for which one a new param belongs in."
+  ]
+ }
+}

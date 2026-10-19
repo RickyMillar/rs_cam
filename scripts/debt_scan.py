@@ -1,7 +1,9 @@
-"""Mechanical debt instruments. Output: evidence/*.md under planning/tech_debt_2026-09-16."""
+"""Mechanical debt instruments. Usage: debt_scan.py <evidence-dir>; writes *.md into that dir."""
 import re, os, sys, collections, pathlib
-ROOT = pathlib.Path('/home/ricky/personal_repos/rs_cam'); EV = ROOT/'planning/tech_debt_2026-09-16/evidence'
-CRATES = ['rs_cam_core','rs_cam_viz','rs_cam_cli','rs_cam_mcp']
+ROOT = pathlib.Path('/home/ricky/personal_repos/rs_cam')
+if len(sys.argv) != 2: sys.exit('usage: debt_scan.py <evidence-dir>  (never point it at an earlier baseline)')
+EV = ROOT/sys.argv[1]; EV.mkdir(parents=True, exist_ok=True)
+CRATES = sorted(p.name for p in (ROOT/'crates').iterdir() if (p/'Cargo.toml').exists())
 def rs_files(sub):
     for c in CRATES:
         for dp,_,fs in os.walk(ROOT/'crates'/c/sub):

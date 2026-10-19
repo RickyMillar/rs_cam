@@ -1,0 +1,1555 @@
+{
+ "counts": {
+  "CONFIRMED": 127,
+  "PLAUSIBLE": 20
+ },
+ "finders": [
+  {
+   "key": "primitive-newtype",
+   "n": 13,
+   "coverage": "Swept all crates under crates/ (core, viz, cli, mcp, mcp_proxy, derive) with rg, production code first; tests only for counts. Read the CHECKLIST primitive-newtype section, all 10 area maps, the register and the 2026-09-16 plan and findings (Q10 cited). Ran a signature scan script for adjacent f64 parameters. Not verified: no cargo build, so no compile-checked blast radius for the newtype changes; the feed ceiling sources of viz issue_triage and metrology/costing were not traced, so finding 2 leaves them out; I did not confirm with a fixture that the advisor travel-rate cap changes a ranking, so finding 2 is B, not A. Selection types beyond item/rule/resolve/selection_status were not read in depth. The (f64, f64) and [f64; 4] counts include some uses that are not points or boxes. Report written to /home/ricky/personal_repos/rs_cam/planning/tech_debt_2026-10-19/findings/primitive-newtype.md."
+  },
+  {
+   "key": "bool-string-params",
+   "n": 14,
+   "coverage": "I swept the whole workspace. Production code came first: rs_cam_core, rs_cam_viz, rs_cam_mcp, rs_cam_cli, rs_cam_derive, and the proxy (reached through the map lead only).\n\nMethod:\n- The CHECKLIST section-2 detection commands.\n- A multi-line Python scan for bool parameters (191 fns).\n- A scan of bare true/false call arguments (~381 sites).\n- `\"x\" =>` string-dispatch counts per file.\n- A manual pass of the MCP wire String fields, the viz MCP door parsers, the CLI clap args, the core from_key parsers and the param-schema type strings.\n- The map leads (core-compute, core-session 26, core-strategies 20, core-finish 13, viz-rest 291) and coldstart task2/task3.\n\nNot covered:\n- I did not inspect the rs_cam_mcp_proxy stringly state (proxy.rs:107-114) beyond the map lead.\n- I did not audit the 32 viewport show_* bools beyond confirming that they are independent toggles.\n- I did not trace the 26 viz `_ =>` matches in ui/overlays/live.rs and present_mode.rs.\n- I did not verify all 381 bool-literal call sites one by one. The top callees were checked.\n- The advisor was rate-limited, so I could not get a second review.\n\nThe findings file is /home/ricky/personal_repos/rs_cam/planning/tech_debt_2026-10-19/findings/bool-string-params.md."
+  },
+  {
+   "key": "illegal-states",
+   "n": 12,
+   "coverage": "I swept production code in rs_cam_core, rs_cam_viz, rs_cam_cli and rs_cam_mcp with rg. The searches: validate/check fns returning ()/bool, range-check counts, co-dependent Option and bool-plus-value fields, min/max and from/to pairs, the enum-plus-flag agreement, deny_unknown_fields, and the run-time variant guards. I read the illegal-states section of CHECKLIST.md, every map's leads for this category, the coldstart silent-miss lists, the register and the 09-16 plan (both above and below the cut line). I wrote planning/tech_debt_2026-10-19/findings/illegal-states.md. Not swept: rs_cam_mcp_proxy, rs_cam_derive, and test code (read only where a test hid a defect). I skimmed compute/validate.rs (in flux) for its signatures only; it has no ()/bool validator. I did not test each of the 84 `.max(1e-N)` floors one by one. I followed horizontal_finish as the confirmed unguarded case, and other kernels may have the same gap. Two candidates were dropped as working as designed: the feeds::calculate preview path, and vendor_lut validate_observation (known L16). in_flux rule: true when any cited site is in in_flux_paths.txt, so all 12 findings are true. For findings 3 and 4 the primary site is not in flux; only secondary sites are (operation_configs.rs; pins.rs and entry.rs)."
+  },
+  {
+   "key": "encapsulation-visibility",
+   "n": 11,
+   "coverage": "Swept all crates under crates/ (production first). Read CHECKLIST section 4, every map's traits/recurring-pattern/lead rows matching visibility terms, instruments dead_pub_surface.md and test_only_pub_api.md, the cold-start silent misses, TECH_DEBT_REGISTER.md and the 09-16 plan (S25, S29, S30, L12). Verified with rg: all *_mut accessors in core, every pub &mut self method on ProjectSession, ProjectSession field visibility, direct session-field writes outside session/, all 25 viz direct session.apply sites and the MCP core route mirroring, pub traits and implementors, pub statics, doc(hidden), Test-door gating (scripted), the feeds apply funnel, rest_field, dexel grid writers, AnnotatedToolpath writers, ExecutionContext. Not filed on purpose: the three session *_mut hatches (closed by WP7/S30; finding 4 is the residue), the other COMPUTE_DOORS (ruling \u00a725.4; generate_toolpath goes through AdoptResult), from_key as its own defect (L12). Left to other categories: ids.rs pub usize tuple fields (primitive-newtype), viz building core ToolpathComputeResult/SimulationResult by struct literal (D11, duplication), Effects.stale overloading revision bumps with true staleness (MCP RemoveToolpath arm commands.rs:2441 stamps nothing while GUI apply_quietly stamps all; illegal-states/inconsistency), CLI direct session.apply at project.rs:309 and smoke.rs:751 bypassing apply_command (harmless; inconsistency). Did not run cargo or any test; the consequences in findings 1 and 2 are read from code, not observed on screen. Viz own-file-only pub rows (45) and ui pub-mod test surface were counted, not individually verified. Report file: /home/ricky/personal_repos/rs_cam/planning/tech_debt_2026-10-19/findings/encapsulation-visibility.md"
+  },
+  {
+   "key": "error-handling",
+   "n": 15,
+   "coverage": "Swept production src of all crates with the CHECKLIST detection commands: Result<_, String> (52 sites, per-file counts), `let _ =` (822 hits; read the controller, CLI, core and MCP ones; setup_sheet fmt writes, channel sends, proxy kill/cleanup and test modules classified as benign), `.ok();`/`.ok()?`, catch-all Other/Message(String) variants, SessionError and its readers in viz/cli/mcp, VizError, ComputeError, SimulationError, OperationError, ExportError, the MCP reply/toast path (mcp_bridge, app/mcp.rs, mcp_server.rs format_result). Read crates/rs_cam_mcp/src/response.rs: it holds response-size caps, not error mapping. Zero sentinels: 197 `unwrap_or(0|0.0|f64::)` hits in core triaged by path; read only the feeds/tool_load/project_file/findings sites; conformal_spiral.rs and direction_field.rs (research arms) and most geometry/index fallbacks not read. Not verified: whether Suggest writes an RPM before axial-envelope pass 0 (EH-8 reachability). rs_cam_mcp_proxy only skimmed (signatures). Tests read only to classify discards and to find the generate_all test-hiding case. No cargo run; no lint counts for let_underscore_must_use or missing_errors_doc (neither lint is configured in Cargo.toml). Findings file: /home/ricky/personal_repos/rs_cam/planning/tech_debt_2026-10-19/findings/error-handling.md"
+  },
+  {
+   "key": "duplication",
+   "n": 19,
+   "coverage": "Index wait: SocratiCode index went from in-progress to completed inside the poll (about 8 minutes); both sweeps ran on fresh vectors. Counts: 0.88 --src-only now 15 123 chunks, 45 clusters, 168 src / 1 449 test pairs, against 2026-09-16 evidence/dup_sweep_0.88_src.md 10 808 chunks, 31 clusters, 137 src / 1 017 test. 0.93 all now 14 683 chunks, 68 clusters, 13 src / 388 test, against rerun_2026-09-16.md (0.92) 10 808 chunks, 47 clusters, 14 src / 413 test. Index grew 40 %, src pairs 23 %, so density fell. The two new runs report different chunk totals on one index; I did not check why. Old D rows that resurfaced: D14 (third copy in swept.rs), D8 (scaffold residue), D10 (sibling pair, six new private copies), D1 (project-file mirrors), T-20 (unchanged). Read and dropped as false positives: cycle_time/readiness wrapper, generation_plan Step->PlanStep adapter, build_sim_request, XyTerritory/TerritoryXy, CLI ToolpathDiagnostic (C3 exhaustive destructure), MCP From<XParam> wire mirrors (documented pattern; mostly selection programme), memory_budget, territory/capabilities. I read every 0.93 src pair and clusters 1-30 of 0.88; clusters 31-45 (single small pairs) were skimmed by header only, except 33 (export) which became DUP-02. Knowledge duplication found outside the vectors: verdict ladder, export pipeline, rapid-feed resolver, post mirror, gate context, stepover rule, CLI tool builder, Params defaults, label tables. Not swept: test-only duplication (1 449 test pairs, e.g. 10+ SilentBackend doubles named in the viz map), rs_cam_derive, GUI literal ranges vs core param ranges (viz-ui map #20), the ToolpathEntry projection (stored.clone() first, so not lossy). The A grading of DUP-01 rests on the verdict field only; the same MCP response carries collision_count and the triage block. Findings file: /home/ricky/personal_repos/rs_cam/planning/tech_debt_2026-10-19/findings/duplication.md; instruments: /home/ricky/personal_repos/rs_cam/planning/tech_debt_2026-10-19/instruments/dup_sweep_0.88_src.md and dup_sweep_0.93_all.md."
+  },
+  {
+   "key": "dead-code",
+   "n": 10,
+   "coverage": "Swept all crates' production sources (core, viz, cli, mcp, mcp_proxy, derive). Verified with rg every row of dead_pub_surface.md's zero-reference table, the first 40 own-file rows (all have same-file callers, so they are visibility debt, not dead code), 6 of 44 test_only_pub_api.md rows, both cargo_machete rows, and the dead-code leads in all 10 maps. Rejected after checking: CleanupStrategy::Legacy (live GUI mode), ClassificationSampler arms (schema escape hatch), ReferenceEngagement/enforce_unmodeled_policy/MoveKinematics (instrument false positives), viz_project_evidence (5 callers), scallop/research.rs (production), W4 residue (already deleted), the MoveIntent::Unknown doc claim (no generator emits it outside tests), pre_gcode/post_gcode (wired; only a stale comment at toolpath_panel.rs:1185), dexel simulate_* variants (all called), and the stale-defaults validator (ruled closed CMP-25). The production allow(dead_code) sites (session/mod.rs:368, crest_lines.rs:106, session/compute/params.rs:122) all carry a SAFETY reason. params.rs:122 keeps a non-test function alive only so a sentry can read its body as text; noted, not filed. The 73 'commented-out code' hits are prose. L16 (LEGACY_DEGENERATE_RANGE_ROWS) is test-side and unchanged. Not done: cargo was not run (no cargo-udeps/machete rerun, no compile check of the proposed deletions), and the 101 remaining own-file rows and 38 test-only rows were not checked one by one. Report: /home/ricky/personal_repos/rs_cam/planning/tech_debt_2026-10-19/findings/dead-code.md"
+  },
+  {
+   "key": "inconsistency",
+   "n": 18,
+   "coverage": "Swept all five crates under crates/*/src (production first) by comparing the recurring-pattern tables and candidate leads of all 10 maps, then checking each candidate with rg and file reads at HEAD on geo-select. Counts come from rg over crates/*/src with /tests/ directories excluded; inline #[cfg(test)] modules are included unless a finding says otherwise (INC-06 and INC-07 exclude them). The checks included: cancellation idioms, entry-point suffixes, digest recipes, token methods and unknown-token policies, ALL arrays (diagnostic ids checked by script), MCP wire String fields, viz and CLI apply doors, severity enums, mirror-enum conversions, id newtype adoption, session lookup names, error styles, module layout, engine Params defaults, render colours and display-lift helpers. Left to other finders: tolerance/epsilon constants, tuple geometry primitives and the bare-usize inventory (primitive-newtype), String error payloads (error-handling), test doubles and test allow blocks (test-debt), _ => wildcard arms (enforcement-gap). The ui components Widget-vs-show split was checked and dropped (show returns domain outcomes, so it is a reasonable variant). No churn-based severity raise was applied. In-flux status comes from instruments/in_flux_paths.txt; INC-13 lists only non-flux sites (gcode/mod.rs is in flux and left out). The file is planning/tech_debt_2026-10-19/findings/inconsistency.md."
+  },
+  {
+   "key": "architecture-layering",
+   "n": 15,
+   "coverage": "Swept all crates under crates/: core folder-to-folder import edges by a production-line scan (comments and cfg(test) tails skipped), viz/cli/mcp by rg and file reads. Read CHECKLIST section 9, section 3 of all 10 maps, coldstart silent misses, the register and the 2026-09-16 plan. Verified the session mutation contract (pub &mut doors), verdict producers, both Suggest-apply funnels, CLI job export path, viz ui-import inversions, gcode/export coupling. Not checked: rs_cam_mcp_proxy beyond its manifest, rs_cam_derive beyond its generated crate:: paths, test trees. AL-3 viewport/export feed divergence is read from code, not run. No cargo run. Findings file: /home/ricky/personal_repos/rs_cam/planning/tech_debt_2026-10-19/findings/architecture-layering.md. The advisor was rate-limited and was not consulted."
+  },
+  {
+   "key": "complexity-size",
+   "n": 10,
+   "coverage": "Swept all production .rs under crates/*/src (six crates) with a brace-matched function-length and production-file-length scan (skipping tests.rs, *_tests.rs, tests/ dirs and inline #[cfg(test)] mod tails); census of too_many_arguments/type_complexity/too_many_lines allows; adjacent same-type param runs; long tuple returns; deep nesting; impl spread. Read CHECKLIST section 10, all 10 maps, instruments, cold-start tasks, TECH_DEBT_REGISTER and the 09-16 plan/Q findings. Read in full: dexel simulate_* signatures, scallop entry rungs and research.rs header, dressup_apply pipeline, feeds::calculate banners, upload_gpu_data slot structure. Checked and not filed: ProjectSession impl in 24 files (no public &mut self outside apply/builder), local deep nesting, session/command.rs row table, feature-gated research arms. Not done: per-arm read of describe_core/core_command_for, defect hunt inside the 67 long functions, test-file size, no cargo/clippy pedantic run. Report written to /home/ricky/personal_repos/rs_cam/planning/tech_debt_2026-10-19/findings/complexity-size.md."
+  },
+  {
+   "key": "navigability-docs",
+   "n": 13,
+   "coverage": "Wrote /home/ricky/personal_repos/rs_cam/planning/tech_debt_2026-10-19/findings/navigability-docs.md. Read all 44 CLAUDE.md files under crates/ (instruments/claude_md_paths.txt lists 37; it misses 7 in viz ui/*, app/mcp and core tests). Backticked .rs paths were resolved by script (all resolve contextually); identifiers were word-presence checked over all .rs, which cannot see method-vs-field or wrong-module drift, so those rows come from hand reads. CLAUDE.md invariants were spot-checked by rg (~25 rows), not exhaustively. FEATURE_CATALOG.md checked for file references only, not capability claims. Line-citation scan matched by basename and excluded external-crate paths; it found past-EOF cites only, not wrong-line-within-file. Module-doc coverage counted by '^//!' grep. Seen but not filed (other categories): wp6b sentry stale controller/tests.rs path and ticket-coded test file names (test-debt); selection/CLAUDE.md outlines_pre_selection drift not verified and left to the selection programme. Map claim that unified_finish.rs:371 has no tracing::warn was checked and is wrong (:1543 has it), so dropped. No cargo/rustdoc run, so the rustdoc warning count is the 2026-09-16 figure."
+  },
+  {
+   "key": "test-debt",
+   "n": 9,
+   "coverage": "I swept every crate's tests/ directory (core 495 files, viz 112, cli 8, mcp_proxy 1), the in-source test modules, the core Cargo.toml test targets and features, .github/workflows/ci.yml, all 37 CLAUDE.md sentry lists, test_only_pub_api.md, the register (T-2, T-3), the 2026-09-16 plan (S25, cut line) and the cold-start task JSONs. Checks done with rg and scripts: ignore attributes and reasons, all-ignored files, tests with no assertion, skip-then-return paths, home and planning paths, exact float asserts, bless goldens, source-scan population, every CLAUDE.md sentry name (all resolve), and the ARCHIVED_HARNESSES list (nothing archived still compiles). Not done: no cargo run. So the pencil vacuous skip in capability_link_moves_safety is PLAUSIBLE, not run, and I did not measure compile or link times. The no-assertion scan is a heuristic: it skips tests that delegate to helpers. I did not audit benches. The register says T-3 covers ten files; I count 6 that read viz paths in code. The written file is /home/ricky/personal_repos/rs_cam/planning/tech_debt_2026-10-19/findings/test-debt.md."
+  },
+  {
+   "key": "enforcement-gap",
+   "n": 16,
+   "coverage": "Swept all crates under crates/ (production first) with rg and file reads; inputs were CHECKLIST.md section 13, the recurring-pattern tables and section-9 leads of all 10 maps, the instruments (allows_without_safety.md re-classified row by row), the 8 coldstart task JSONs (silent_misses, both variants), TECH_DEBT_REGISTER.md and the 09-16 plan (Q7-Q12, T-2, T-3). Written: planning/tech_debt_2026-10-19/findings/enforcement-gap.md. Not done: no cargo run; I did not grade every must/never/only line in all 37 CLAUDE.md files one by one (I worked from map drift tables and leads, then did one rg skim of never/do-not lines, which added compute/CLAUDE.md:20 to EG-02 and found no other broken rule I could confirm quickly). The 490 `_ =>` count is lines, not enum arms. Unverified: the consumer of the SimulationProvenance tool hash (EG-01) and the downstream path for a feed_rate <= 0 (EG-04); the GUI caller of apply_stale_default_to_op is cited from its doc and the map, not a read of tab_badges.rs; the 64-unbounded-param count is a regex scan and may include a few false positives. Test-module allows were not graded. The ZDatum fallback reaches header text, not motion (FixedOffset is not applied), so EG-06 stays B. In-flux flags follow instruments/in_flux_paths.txt per site."
+  },
+  {
+   "key": "cold-start",
+   "n": 19,
+   "coverage": "Read all 8 cold-start files in full (16 traces, 370 sites, 196 silent misses). Verified by rg and file reads: PostFormat enum/ALL/from_token/post_format_or_grbl, ToolType/CutterKind ALL, the 48 `const ALL` sites, ids.rs vs ids::ALL (8 missing), diagnostics/tests.rs lists, dressup owner/enabled matches and FIELD_DEFS, segment_merge absence in viz, dressup_active_count, SetStockConfigParam vs StockConfig, SetPostConfig reach, set_tool_param keys, ProjectStockConfig/ProjectToolSection twins, tool_type_to_key, dedupe_key and its GUI caller, the GUI stepover validator vs core stepover_checks, build_mcp_diagnostics and the three 40.0 bars, CLI build_tool vs build_cutter, simulate.rs provenance hashes and their readers, TriageSessionKey, evidence_fingerprint, ReportKey, DRESSUP_PIPELINE readers, OP_UI_ROWS row(), the OpParams derive rules and a scan of 269 published params (107 numeric with no domain, 19 with no GUI reference), check_param_range, the feed<=0 search, triage buckets and draw_triage_rows, detect_firmware and ControllerFirmware, config_guard! and dressup_policy_table_is_pinned, the hard-coded counts, and the stale architecture doc. Wildcard counts come from a heuristic Python scan of production `_ =>` arms (test modules cut), so they are approximate. Not re-read (trace claims left out of site lists): sim_debug.rs help wildcard, normalize_for_op strip list, for_role ..base, dressup_changes, from_preconditions semantics, sim_op_list.rs kind list, formula_backing, tool_family_score, the datum from_key, export_wizard.rs:590 and machine_panel.rs:542 gates. The transit-filter copy in stock/simulation_cut/accumulate.rs:44,118 feeds reported peaks, not gates, so it is not filed. Not measured: whether a feed of 0 reaches emitted G-code. Summary written to /home/ricky/personal_repos/rs_cam/planning/tech_debt_2026-10-19/findings/cold-start.md. No finding is a geometry-selection programme property."
+  }
+ ],
+ "merged_n": 147,
+ "raw_n": 194,
+ "survivors": [
+  {
+   "id": "F001",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "primitive-newtype",
+   "title": "One P3 type for three coordinate frames",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F002",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "primitive-newtype",
+   "title": "max_feed_mm_min names two quantities; the advisor modulates against the travel rate",
+   "known": "T-18",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F004",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "primitive-newtype",
+   "title": "The id newtypes are optional: core records and commands carry raw usize ids",
+   "known": "R3 (review 2026-06-10)",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F005",
+   "tier": "C",
+   "verdict": "CONFIRMED",
+   "category": "primitive-newtype",
+   "title": "Feedrate and SafeZ newtypes are dead; the G-code IR is bare f64 / u32",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F006",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "primitive-newtype",
+   "title": "The feeds quantity newtypes stop at the gate; the source records stay bare",
+   "known": "T-11 (same class, closed 809d28b9)",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F007",
+   "tier": "D",
+   "verdict": "PLAUSIBLE",
+   "category": "primitive-newtype",
+   "title": "2D boxes and points as anonymous [f64; 4] / tuples",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F008",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "primitive-newtype",
+   "title": "Angles: degrees in configs, radians in kernels, and no suffix on either",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F009",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "primitive-newtype",
+   "title": "cut_summary_metrics returns the two air-cut percentages as a bare tuple",
+   "known": "T-2 (related)",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F010",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "primitive-newtype",
+   "title": "Grid kernels take &[T] + rows, cols beside Grid2",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F011",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "primitive-newtype",
+   "title": "DiagnosticId(pub String) and other pub-field newtypes accept any value",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F012",
+   "tier": "E",
+   "verdict": "PLAUSIBLE",
+   "category": "primitive-newtype",
+   "title": "Units live in names only; ad-hoc / 60.0; long runs of f64 parameters",
+   "known": "Q10 (tech_debt_2026-09-16, below cut line)",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F013",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "primitive-newtype",
+   "title": "Selection: one ResolvedSelection type for the model frame and the setup frame",
+   "known": "",
+   "in_flux": true,
+   "sel": true
+  },
+  {
+   "id": "F014",
+   "tier": "A",
+   "verdict": "CONFIRMED",
+   "category": "bool-string-params",
+   "title": "CLI strategy and skip flags accept any string and fall back in silence",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F015",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "bool-string-params",
+   "title": "Setup datum parsers fail open; CMP-15 fixed only face_up/z_rotation",
+   "known": "CMP-15 (design_audit_2026-09-17); that fix covered face_up/z_rotation only",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F016",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "bool-string-params",
+   "title": "Dressup field vocabulary is string tables with wildcard arms; CUT-13 fold incomplete",
+   "known": "CUT-13 / CMP-17 (design_audit_2026-09-17); feed_optimization holdout reason now stale",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F017",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "bool-string-params",
+   "title": "Debug-span kind vocabulary is free strings in three crates and has drifted",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F018",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "bool-string-params",
+   "title": "Arc direction is a positional clockwise: bool at ~20 motion/safety sites",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F019",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "bool-string-params",
+   "title": "OperationTransformCapabilities encodes reorder freedom as interacting bools built by new(bool,bool,bool,bool)",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F020",
+   "tier": "C",
+   "verdict": "CONFIRMED",
+   "category": "bool-string-params",
+   "title": "SimulationOptions.auto_resolution is a dead flag with a false doc; SimulationResolution enum already exists",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F022",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "bool-string-params",
+   "title": "Capabilities name config fields by &'static str; the advisor writes through serde JSON by name",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F023",
+   "tier": "C",
+   "verdict": "CONFIRMED",
+   "category": "bool-string-params",
+   "title": "Param-schema type is a string; vec< branches match a type no ParamType publishes",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F025",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "bool-string-params",
+   "title": "ApplyScope unpacked into two positional bools for the provenance stamp",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F027",
+   "tier": "F",
+   "verdict": "CONFIRMED",
+   "category": "bool-string-params",
+   "title": "Positional bool parameters elsewhere; clippy excessive-bools lints off",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F028",
+   "tier": "A",
+   "verdict": "CONFIRMED",
+   "category": "illegal-states",
+   "title": "An unknown post token becomes GRBL with no message",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F029",
+   "tier": "A",
+   "verdict": "CONFIRMED",
+   "category": "illegal-states",
+   "title": "A tool record can hold geometry that panics the GUI thread",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F030",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "illegal-states",
+   "title": "Positive quantities are clamped at use, not parsed at the door",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F031",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "illegal-states",
+   "title": "GUI run record can say Done with no result",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F032",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "illegal-states",
+   "title": "Stock fit-to-model flag is reconciled by hand at four doors",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F033",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "illegal-states",
+   "title": "Height plane order is a warning, checked twice with two rules",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F034",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "illegal-states",
+   "title": "Project and config files accept unknown keys; renames rely on a denylist",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F036",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "illegal-states",
+   "title": "Ordered angle pairs are independent fields with no order check",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F037",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "illegal-states",
+   "title": "Registry adapters re-check config variant and geometry at run time",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F038",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "illegal-states",
+   "title": "Toolpath ownership is stored by position in three places",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F040",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "encapsulation-visibility",
+   "title": "The multi-tool planner is a second write door that drops its Effects",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F042",
+   "tier": "E",
+   "verdict": "PLAUSIBLE",
+   "category": "encapsulation-visibility",
+   "title": "Three pub feeds writers bypass the 'single write' ApplicableRecommendation gate",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F046",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "encapsulation-visibility",
+   "title": "Invariant-bearing core types publish their fields (DexelGrid, AnnotatedToolpath, ExecutionContext)",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F047",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "encapsulation-visibility",
+   "title": "detect_rest_valleys is pub though a rule says a product rest field comes only from detect_rest",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F048",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "encapsulation-visibility",
+   "title": "Two pub(crate) not-measured reason strings force viz to copy them as literals",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F049",
+   "tier": "F",
+   "verdict": "CONFIRMED",
+   "category": "encapsulation-visibility",
+   "title": "One sealed trait; core traits with no outside user are pub and unsealed",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F050",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "encapsulation-visibility",
+   "title": "ZRange and DiameterRange publish raw fields; MCP builds them unchecked",
+   "known": "",
+   "in_flux": true,
+   "sel": true
+  },
+  {
+   "id": "F051",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "error-handling",
+   "title": "Export load gate drops its advisory note at both production doors; an override erases its own record",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F053",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "error-handling",
+   "title": "Project loader binds a missing tool_id/model_id to id 0 (first-item fallback)",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F054",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "error-handling",
+   "title": "Typed errors are flattened to String at every layer boundary; viz recovers causes from side channels",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F055",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "error-handling",
+   "title": "SessionError::MissingGeometry carries three meanings and is matched as control flow",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F056",
+   "tier": "E",
+   "verdict": "PLAUSIBLE",
+   "category": "error-handling",
+   "title": "GUI apply doors drop core refusals with no trace (apply_quietly, panel apply, .ok()?)",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F057",
+   "tier": "E",
+   "verdict": "PLAUSIBLE",
+   "category": "error-handling",
+   "title": "CLI smoke harness drops the resolution refusal and stamps the unused cell on the row",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F058",
+   "tier": "E",
+   "verdict": "PLAUSIBLE",
+   "category": "error-handling",
+   "title": "T-4 sentinel shape recurs: invert_deflection encodes 'unmodelled' as numbers; absent RPM becomes a zero chip",
+   "known": "T-4",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F059",
+   "tier": "C",
+   "verdict": "CONFIRMED",
+   "category": "error-handling",
+   "title": "ProjectSession::generate_all cannot fail and has only test callers",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F061",
+   "tier": "E",
+   "verdict": "PLAUSIBLE",
+   "category": "error-handling",
+   "title": "ExportError is one string for five refusal kinds, and its text carries MCP parameter spellings",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F062",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "error-handling",
+   "title": "MCP refusals travel as strings inside success replies, in three shapes",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F063",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "error-handling",
+   "title": "OperationError::Other(String) mixes internal wiring defects with operator parameter refusals",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F064",
+   "tier": "F",
+   "verdict": "PLAUSIBLE",
+   "category": "error-handling",
+   "title": "Result<_, String> in library APIs (settings, vendor LUT, MCP helpers, proxy)",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F065",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "error-handling",
+   "title": "Serialise failure folds to empty inside change-detection signatures",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F067",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "duplication",
+   "title": "Two G-code export pipelines; only GUI/MCP rewrite rapids and run the machine-safety pass",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F070",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "duplication",
+   "title": "Tool-load gate context assembled by hand on export and on GUI cards; PassRole map x4",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F071",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "duplication",
+   "title": "Two simulation-group builders held by a doc list; rapid feed resolved four times",
+   "known": "D11 residue (G-MCPSIMMIRROR / WP28)",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F072",
+   "tier": "E",
+   "verdict": "PLAUSIBLE",
+   "category": "duplication",
+   "title": "GuiState::post is a second copy of the post config and GUI export reads the copy",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F074",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "duplication",
+   "title": "Display-label tables re-typed per surface with drift; one span shows two names",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F075",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "duplication",
+   "title": "Cutter engaged-diameter geometry implemented twice, held by a parity sentry",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F076",
+   "tier": "D",
+   "verdict": "PLAUSIBLE",
+   "category": "duplication",
+   "title": "Geometric and statistical primitives copied per module with different edge rules",
+   "known": "D10 (sibling pair; six copies added since)",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F077",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "duplication",
+   "title": "SweptDispatch is a third band dispatcher; STK-09 merged only two",
+   "known": "D14 (two of three copies merged by STK-09)",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F078",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "duplication",
+   "title": "3D Rough planner restates the emitter's descent-floor rule by hand",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F080",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "duplication",
+   "title": "UnmodeledReason has four renderers with different wording",
+   "known": "T-20 (open, unchanged since 2026-09-18)",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F082",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "duplication",
+   "title": "Deflection-cap inputs assembled twice although the doc says one assembly",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F084",
+   "tier": "F",
+   "verdict": "CONFIRMED",
+   "category": "duplication",
+   "title": "Map-cache scaffolding and same-named epsilon constants repeated",
+   "known": "D8 residue",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F085",
+   "tier": "C",
+   "verdict": "CONFIRMED",
+   "category": "dead-code",
+   "title": "Test instruments and test-only wrappers compile into the product library with no gate",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F086",
+   "tier": "C",
+   "verdict": "CONFIRMED",
+   "category": "dead-code",
+   "title": "pub items with zero references anywhere (incl. expired S1 hold)",
+   "known": "S1 (TECH_DEBT_PLAN.md:53, hold now ownerless since UP8 16df6dcd)",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F087",
+   "tier": "C",
+   "verdict": "CONFIRMED",
+   "category": "dead-code",
+   "title": "Enum variants that no code constructs (VizError, gcode_validator FindingKind, diagnostics Scope)",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F088",
+   "tier": "C",
+   "verdict": "CONFIRMED",
+   "category": "dead-code",
+   "title": "chipload_envelope_for_toolpath is documented as the advisor/modulator door but only the G1 sentry calls it",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F089",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "dead-code",
+   "title": "ui/theme.rs alias layer outlived its UP2-UP8 migration",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F090",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "dead-code",
+   "title": "Legacy read paths survive the no-legacy ruling (PostFormat aliases, emit_program re-export, post tool_change default)",
+   "known": "L15 (post.rs default_tool_change, deferred 2026-09-16, unchanged)",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F091",
+   "tier": "C",
+   "verdict": "CONFIRMED",
+   "category": "dead-code",
+   "title": "Material::to_key/from_key: 250 lines with no production caller, a legacy alias and a silent softwood default",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F093",
+   "tier": "F",
+   "verdict": "CONFIRMED",
+   "category": "dead-code",
+   "title": "truck-geometry and truck-polymesh are declared but never used",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F094",
+   "tier": "C",
+   "verdict": "CONFIRMED",
+   "category": "dead-code",
+   "title": "outlines_pre_selection outlived its planned P2.3 deletion and production still carries it",
+   "known": "",
+   "in_flux": true,
+   "sel": true
+  },
+  {
+   "id": "F095",
+   "tier": "B",
+   "verdict": "PLAUSIBLE",
+   "category": "inconsistency",
+   "title": "INC-01 The viz re-derives the drill-family predicate and other op-type rules",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F096",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "inconsistency",
+   "title": "INC-02 The post-apply epilogue has 6 named doors and about 15 inline copies",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F101",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "inconsistency",
+   "title": "INC-07 Five content-digest recipes for one job (freshness and cache keys)",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F102",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "inconsistency",
+   "title": "INC-08 Engine Params defaults: three conventions, finish keeps a second copy in lockstep",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F103",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "inconsistency",
+   "title": "INC-09 Mirror enums convert by From, by a free fn, and by inline copies",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F104",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "inconsistency",
+   "title": "INC-10 Three op-type token parsers and two workspace-key parsers",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F105",
+   "tier": "D",
+   "verdict": "PLAUSIBLE",
+   "category": "inconsistency",
+   "title": "INC-11 Three mark-above-stock-top helpers with two lifts and a literal",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F106",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "inconsistency",
+   "title": "INC-12 Two cancellation vocabularies; the FlagCancel adapter has no production caller",
+   "known": "Q5",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F109",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "inconsistency",
+   "title": "INC-15 Five Severity vocabularies; the MCP banner re-derives the threshold by string",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F110",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "inconsistency",
+   "title": "INC-16 Error-type style differs inside core and per crate",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F111",
+   "tier": "F",
+   "verdict": "CONFIRMED",
+   "category": "inconsistency",
+   "title": "INC-17 ProjectSession lookup names: get_ means by index and by id",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F112",
+   "tier": "F",
+   "verdict": "CONFIRMED",
+   "category": "inconsistency",
+   "title": "INC-18 Module layout: 44 mod.rs against 19 foo.rs + foo/",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F113",
+   "tier": "A",
+   "verdict": "CONFIRMED",
+   "category": "architecture-layering",
+   "title": "Three surfaces build the project verdict; MCP says OK over holder collisions that the CLI calls ERROR",
+   "known": "L11 (09-16 plan retired the core verdict key; the surfaces now each derive it)",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F114",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "architecture-layering",
+   "title": "Two apply-Suggest funnels: GUI/MCP Apply skips the drill defaults that CLI --apply-suggest writes",
+   "known": "\u00a715 ruling 4 holdout (session/command.rs:50-55); Q1 remainder in 09-16 plan covers only model_bbox",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F115",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "architecture-layering",
+   "title": "Feed modulation writes session.results outside apply(Command); the viz result twin keeps the planned feeds",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F116",
+   "tier": "B",
+   "verdict": "PLAUSIBLE",
+   "category": "architecture-layering",
+   "title": "The CLI job pipeline is a parallel flow: own cutter builder, hand-built phases, export with an empty load report",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F117",
+   "tier": "B",
+   "verdict": "PLAUSIBLE",
+   "category": "architecture-layering",
+   "title": "Pre-generation refusals live in the viz UI folder; the CLI never runs them and core has a different stepover rule",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F118",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "architecture-layering",
+   "title": "MCP wire patch structs are hand-kept partial copies of core args; padding is unreachable from MCP",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F120",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "architecture-layering",
+   "title": "Surfaces hold copies of core domain rules (load-context loop, rest-source staleness, ProjectCurve projection)",
+   "known": "D12 (09-16 plan) merged two mesh-Z readers; gpu_upload copy is a third",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F121",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "architecture-layering",
+   "title": "gcode/mod.rs owns session-level policy: load report, trace freshness, export orchestration",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F122",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "architecture-layering",
+   "title": "Core layering is prose only: 42 folder-level import cycles in production code",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F123",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "architecture-layering",
+   "title": "Core has no facade: 34 pub mod and 689 deep paths from viz/cli/mcp into core internals",
+   "known": "S29 (09-16 plan) demoted items one by one; module-level facade not done",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F124",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "architecture-layering",
+   "title": "The toolpath IR file depends on planner types and hosts raster generators",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F125",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "architecture-layering",
+   "title": "viz state/, render/, io/ and controller/ import the ui/ folder",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F126",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "architecture-layering",
+   "title": "compute::validate::apply_stale_default_fix is a public session mutator outside apply, with test callers only",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F127",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "architecture-layering",
+   "title": "selection imports session and compute, and both import it back",
+   "known": "",
+   "in_flux": true,
+   "sel": true
+  },
+  {
+   "id": "F128",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "complexity-size",
+   "title": "Dressup order lives in the statement order of a 470-line apply_dressups; DRESSUP_PIPELINE is read only by a test",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F129",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "complexity-size",
+   "title": "27 stamping/simulation signatures pass a radial LUT and a separate radius; one kernel reads both",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F130",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "complexity-size",
+   "title": "Entry-point ladders: each new knob adds a sibling fn with one more positional argument",
+   "known": "Q10",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F131",
+   "tier": "F",
+   "verdict": "CONFIRMED",
+   "category": "complexity-size",
+   "title": "feeds::calculate is 1321 lines with 23 mutable locals across 19 step banners",
+   "known": "T-5",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F132",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "complexity-size",
+   "title": "upload_gpu_data is one 1327-line fn with about twelve keyed upload slots inline",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F133",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "complexity-size",
+   "title": "Grids and bounding boxes travel as anonymous tuples",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F134",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "complexity-size",
+   "title": "The debt instrument mis-measures function and file size; the 09-16 Q11 list inherited the errors",
+   "known": "Q11",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F136",
+   "tier": "F",
+   "verdict": "CONFIRMED",
+   "category": "complexity-size",
+   "title": "app/mcp/commands.rs is 3197 lines; describe_core 899 and core_command_for 505",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F138",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "navigability-docs",
+   "title": "N1 Folder CLAUDE.md rules that the code already breaks",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F139",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "navigability-docs",
+   "title": "N2 User-facing text still says 'Kc' after the Kc model was removed",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F140",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "navigability-docs",
+   "title": "N3 Folder file maps and symbol names point to the wrong place; nothing checks them",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F141",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "navigability-docs",
+   "title": "N4 The 40-line CLAUDE.md limit is met by line width, not size",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F142",
+   "tier": "E",
+   "verdict": "PLAUSIBLE",
+   "category": "navigability-docs",
+   "title": "N5 Broken intra-doc links and no rustdoc lint in the gate",
+   "known": "TECH_DEBT_PLAN.md W4 residue 3",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F143",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "navigability-docs",
+   "title": "N6 Doc comments and module docs describe a past state",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F144",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "navigability-docs",
+   "title": "N7 feeds/INTEGRATION.md is a second, stale description of the feeds flow",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F145",
+   "tier": "F",
+   "verdict": "CONFIRMED",
+   "category": "navigability-docs",
+   "title": "N8 No module-doc discipline and no missing_docs lint",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F146",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "navigability-docs",
+   "title": "N9 Live product code sits in a file named research",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F147",
+   "tier": "F",
+   "verdict": "CONFIRMED",
+   "category": "navigability-docs",
+   "title": "N10 path:line citations in comments rot",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F148",
+   "tier": "F",
+   "verdict": "CONFIRMED",
+   "category": "navigability-docs",
+   "title": "N11 Code cites purged planning/ paths, some not retrievable from the purge tag",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F150",
+   "tier": "F",
+   "verdict": "PLAUSIBLE",
+   "category": "navigability-docs",
+   "title": "N13 Two names for one place",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F151",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "test-debt",
+   "title": "CI never runs: ci.yml triggers on branch main, the trunk is master",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F152",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "test-debt",
+   "title": "#[ignore] parks known-red and retired tests; print-only tests run unignored",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F153",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "test-debt",
+   "title": "Named sentries pass vacuously through skip-and-return paths",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F155",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "test-debt",
+   "title": "Gate tests load operator work files from planning/ and absolute home paths",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F156",
+   "tier": "E",
+   "verdict": "PLAUSIBLE",
+   "category": "test-debt",
+   "title": "Source-scan sentries re-check rules that visibility now enforces; population grows",
+   "known": "T-2, T-3",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F158",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "test-debt",
+   "title": "Three fixture builders encode the same stock-below-Z0 frame knowledge",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F159",
+   "tier": "F",
+   "verdict": "CONFIRMED",
+   "category": "test-debt",
+   "title": "41 instrument-only test binaries build in every core test run; tests/CLAUDE.md count stale",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F161",
+   "tier": "B",
+   "verdict": "PLAUSIBLE",
+   "category": "enforcement-gap",
+   "title": "Enum dispatch fails open: `_ =>`, `matches!` and `==` swallow a new variant",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F162",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "Hand-kept `ALL` arrays beside the enum; diagnostics ids::ALL misses 8 of 100",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F163",
+   "tier": "B",
+   "verdict": "PLAUSIBLE",
+   "category": "enforcement-gap",
+   "title": "Op-param macros accept a missing decision: no range means any value, optional role clauses mean None",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F166",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "rs_cam_mcp wire tokens are String, against its own CLAUDE.md; legal values live in prose error strings",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F170",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "The `// SAFETY:` rule for allow(...) has no enforcer; no #[expect] in use",
+   "known": "Q7-Q10",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F171",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "Cross-crate source-scan sentries run in no per-crate gate",
+   "known": "T-3",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F172",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "Lint policy has no design lint for the dominant cold-start silent-miss class",
+   "known": "Q12",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F173",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "\"No literal colour in a pipeline\" has a blind sentry and is broken",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F176",
+   "tier": "A",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "A library Save overwrites a different tool: dedupe_key names 7 of 20 ToolConfig fields",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F181",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "MCP replies and the CLI report copy core structs field by field in json!",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F182",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "Tool-shape facts are wildcard arms and a trait default (geometry_hint returns Flat)",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F183",
+   "tier": "B",
+   "verdict": "PLAUSIBLE",
+   "category": "enforcement-gap",
+   "title": "Per-op facts sit in `_ =>` decision arms on OperationConfig instead of registry capabilities",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F185",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "OpParams derive publishes a number with no domain: 107 of 269 numeric params, every feed and spindle dial",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F186",
+   "tier": "D",
+   "verdict": "CONFIRMED",
+   "category": "duplication",
+   "title": "Project-file twin structs for stock and tool, with defaults typed twice and per-field serde defaults",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F187",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "Cache and staleness keys list their inputs by hand, so the GUI and MCP can show two numbers",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F188",
+   "tier": "B",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "'None means not measured' is prose; a plain f64 figure compiles and reads 0 as clean",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F189",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "Triage class is a choice of Vec; the Warnings tab reads 2 of 3 buckets beside a second issue route",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F191",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "GUI rows name a param by string; only a text-scan sentry checks the name",
+   "known": "",
+   "in_flux": false,
+   "sel": false
+  },
+  {
+   "id": "F192",
+   "tier": "E",
+   "verdict": "CONFIRMED",
+   "category": "enforcement-gap",
+   "title": "Agent and CLI help text lists op, tool and post tokens by hand",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  },
+  {
+   "id": "F194",
+   "tier": "F",
+   "verdict": "CONFIRMED",
+   "category": "navigation",
+   "title": "Hard-coded counts and stale 'how to add' prose",
+   "known": "",
+   "in_flux": true,
+   "sel": false
+  }
+ ],
+ "refuted": [],
+ "report": "I wrote the ranked review to `/home/ricky/personal_repos/rs_cam/planning/tech_debt_2026-10-19/REVIEW.md`.\n\n- **Findings:** 147 primary findings. As filed, the tiers are 5 A, 44 B, 10 C, 22 D, 51 E, 15 F. As verified, they are 4 A, 40 B, 11 C, 23 D, 54 E, 15 F. Six tiers are contested and marked in the table.\n- **Verdicts and status:** 127 are CONFIRMED and 20 are PLAUSIBLE. 28 match known debt. 104 cite an in-flux path. 4 are notes for the selection programme.\n- **Ranked table:** 27 rows sit above the cut. Many rows are themes that one type-level change fixes.\n- **Waves:** 16 fix waves, with the paths that need coordination with rs-cam-f6 named.\n- **Other sections:** an index of the 47 merged ids, 20 refuted sub-claims plus the candidates the finders dropped, a list of decisions for the operator, and the method notes.\n\n**Enforcement:** two independent measures agree that the compiler enforces about one pattern in three. The area maps grade 61 of 166 pattern rows as TYPES (37 %). The cold-start traces show 120 of 370 sites forced by the compiler (32 %).\n\nNo agent ran cargo, so none of the proposed fixes are compile-checked. I wrote only `REVIEW.md` and changed no code.",
+ "critic": "# Completeness critic for REVIEW.md (2026-10-19)\n\nFile: /home/ricky/personal_repos/rs_cam/planning/tech_debt_2026-10-19/CRITIC.md\n\nScope: `REVIEW.md`, `CHECKLIST.md`, the ten `maps/*.md` and the 14 `findings/*.md`. The critic read the code at HEAD `2d8f5dbf`, which is six commits after the baseline `99b6fb41`. The critic used `rg` and file reads. No cargo ran. No file under `crates/` or `scripts/` changed.\n\n## 0. The most important result\n\nF162 broke again during the review. At HEAD, `diagnostics/ids.rs` has 101 id constants and `ALL` lists 93 of them. At the baseline, `ALL` missed 8. Commit `e76f82c8` (selection P5, tabs) added `GEOM_TAB_PLACEMENT` at `diagnostics/ids.rs:279` and did not add it to `ALL`.\n- Change the F162 count to 9.\n- Cite `e76f82c8` as a present break.\n- `ids.rs` is also a top-churn file: 30 commits since 2026-09-18.\n\n## 1. Checklist signals that no finder swept\n\n**Not swept:**\n- **Numeric casts.** Core and viz production code hold 398 `) as uN` casts. Core holds 175 float-to-`usize` casts through `floor`, `ceil` or `round`. No `Cargo.toml` turns on a cast lint.\n  - Examples: `dressup/entry_descent.rs:702`, `compute/execute/standing_material.rs:181`.\n  - A step of 0 gives `inf`, and `as usize` saturates to `usize::MAX`. This is the mechanism under F030.\n  - Tag: E \u00b7 L \u00b7 NONE \u2192 LINT. It belongs in TH-LINT.\n- **Candidate lints.** REVIEW and the findings never mention `float_cmp`, `match_same_arms`, `missing_errors_doc` or `must_use_candidate`.\n- **Impl spread.** `impl ProjectSession` occurs in 25 files. No finding covers this. Tag: F \u00b7 M \u00b7 CONVENTION.\n- **FEATURE_CATALOG claims.** No finder checked them against the code.\n- **Churn raise.** The rubric says \"raise one level\" on a hot change path. REVIEW does not apply this rule to any tier. The hot files that carry findings:\n  - `session/compute.rs`: 46 commits\n  - `session/mod.rs`: 41\n  - viz `mcp_server.rs`: 33\n  - `compute/catalog/registry.rs`: 33\n  - viz `ui/properties/mod.rs`: 31\n  - `diagnostics/ids.rs`: 30\n  - viz `app/mcp/commands.rs`: 27\n\n**Partly swept:**\n- **`#![allow` inner attributes.** The crates hold 703. F170 covers part of them. One production site outside the CLI has no `SAFETY:` line: viz `controller/events/preferences.rs:117`. Add it to F170.\n\n**Swept now, no debt:**\n- Commented-out code: 1 false positive.\n- Exact-float asserts: 3, all on printed constants.\n- `Box<dyn Error>` in library code: 0.\n\n**Outside the 13 categories.** The checklist has no category for work done during a frame, so the critic records these and does not file them:\n- The toolpath panel runs the feeds calculation and a dry run of the apply funnel on every frame (`ui/properties/toolpath_panel.rs:514-538`).\n- The panel sends `ReplaceToolpathConfig` on every frame (`ui/properties/mod.rs:807-829`).\n- Blocking `rfd::FileDialog` calls run inside the draw pass (`ui/menu_bar.rs:40`, `:50`, `:60`, `:70` and three more sites). A blocked frame also blocks the MCP pump.\n\n## 2. Map leads with no finding (the critic checked each one)\n\nThe four B-tier items come first.\n\n- **2.1 Four hand copies of the stale-trace rewrite.**\n  - Tag: B \u00b7 S \u00b7 CONVENTION \u2192 TYPES \u00b7 in flux \u00b7 known_id T-21. T-21 closed the instance; the pattern stays.\n  - Sites: `gcode/mod.rs:641`, `:652`, `:663`, `:680`. The doc at `:672-679` says the depth gate was missed once before.\n  - Fix: one `ToolpathLoadVerdict` method that destructures the struct with no `..`.\n- **2.3 The plain and `_clamped` region-mask functions hide the cap of 64 regions.**\n  - Tag: B \u00b7 S \u00b7 DOC \u2192 TYPES \u00b7 partly in flux.\n  - Callers that hide the cap: `finish/finish_planner.rs:537`, `:957` and `session/multitool.rs:1291`.\n  - Evidence: `maps/tier_islands.rs:16-18` measured 502 of 566 islands dropped on the wanaka mesh.\n  - Fix: keep only `_reported`, with `#[must_use]` on the report.\n- **2.5 Numbers with no source drive production feeds.**\n  - Tag: B \u00b7 M \u00b7 DOC \u2192 SENTRY.\n  - Sites: `material/mod.rs:962-1010` (the code comment says \"placeholder\"), read at `feeds/mod.rs:1547` and `:2545`. Also the factor table at `feeds/mod.rs:2822-2929` and `NAME_MATCH_REL_TOL` at `compute/tool_config.rs:928`.\n  - These sites break the root `CLAUDE.md` rule and the `material/CLAUDE.md` rule against numbers typed from memory.\n- **2.11 A non-JSON MCP reply reads as `Succeeded`.**\n  - Tag: B \u00b7 M \u00b7 DOC \u2192 TYPES \u00b7 in flux.\n  - Sites: `mcp_bridge.rs:1124-1127`. G-MCPTOAST is a past break of this toast class.\n  - `findings/error-handling.md:240` records this site, but REVIEW does not carry it. The merge lost it.\n\nThe other checked candidates:\n- **2.2** The G-code IR carries modal state (coolant, cutter compensation, dwell) as text in `Statement::Raw(String)` (`gcode/ir.rs:44-47`). There are 20 `Raw` pushes and three text scanners. Tag: D \u00b7 M \u00b7 NONE \u2192 TYPES.\n- **2.4** The 0.02 / 0.10 engagement partition is typed at six sites (`stock/sim_triage.rs:199-201` and five more). None of them reads `AIR_CUT_RADIAL_WOC_FRACTION`. Tag: D \u00b7 S.\n- **2.6** The `$341` tool-change mode is an `Option<u32>` in core (`machine/mod.rs:296`, `:333`), but the MCP wire already has the enum `ToolChangeModeParam`. Tag: E \u00b7 S.\n- **2.7** Two runtime-row creators hard-code `auto_regen = true` (`state/runtime.rs:356`, `ui/properties/mod.rs:275`). This breaks the rule at `state/stale.rs:35-41`. The critic found no live defect, because load and add create every row first. Tag: E \u00b7 S.\n- **2.8** The test at viz `lib.rs:222-228` calls `run(true)`, but `run` takes two arguments. The test is compiled only without the `mcp` feature, which is on by default. Tag: C \u00b7 S.\n- **2.9** `ComputeBackend` has silent no-op default methods (`compute/mod.rs:492`, `:500`, `:518`) and a hard-coded `[LaneSnapshot; 4]`. Viz has 29 implementations; 28 are test doubles. Tag: E \u00b7 S.\n- **2.10** `rs_cam_derive` has no tests. TH-DOMAIN puts its `compile_error!` fix into this crate. Tag: E \u00b7 S, and a precondition for W6.\n\n**2.12 Sites that belong to an existing theme:**\n- `app/mcp/commands.rs:1914`, `:1923`: a `_ =>` arm over `SessionError` \u2192 TH-WILDCARD.\n- The overlay registry looks up controls by string id (`ui/overlays/registry.rs:204-209` and 16 `row(\"\u2026\")` calls). A renamed id hides the control with no message.\n- `project_entry_onto` (`ui/properties/mod.rs:746-800`) copies 16 fields by hand \u2192 TH-FIELDLIST. The map is wrong on one point: a new `ToolpathEntry` field is lost, not a new `ToolpathConfig` field.\n- 31 GUI literal ranges in the property panels \u2192 TH-DOMAIN and F029. REVIEW says it did not sweep them, but one `rg` sweeps them.\n- The trace recorders and the worker use two lock-poisoning rules \u2192 inconsistency.\n- The process-global `PATHS` in `settings/paths.rs:174-200` is a hidden input to every library resolver \u2192 encapsulation.\n\n## 3. REVIEW claims that a finding does not back\n\n1. **Section 1.3 grade counts.** REVIEW says \"166 rows / 61 TYPES\". The critic cannot get these numbers from the maps. The section 5 tables give 153 rows and 50 TYPES. All map tables together give 192 rows and 66 TYPES. The \"about one in three\" result holds. State the counting rule.\n2. **F162 count.** It is now 9, not 8 (section 0).\n3. **CS-17 is mapped to the wrong finding.** The alias index maps CS-17 to F192 (help text). CS-17 is a different problem: the dialect table in `export/gcode_validator.rs:153-203` restates facts that the post data holds (`gcode/post.rs:299`, `:432`). The merge lost a D finding into an E finding.\n4. **W3 in-flux column.** It names only `tab_badges.rs`. `app/mcp/project.rs` is also in flux, and a commit changed it after the baseline.\n5. **W2 line numbers.** `cli/src/job.rs` changed after the baseline. Re-read the F028 and F116 line numbers before W2 starts.\n6. **Row 7 members with no wave.** F118, F166 and F048 are in no wave.\n7. **Stale re-check note.** The tabs session landed. F016, F128 and F185 need a re-check at HEAD.\n\nSpot checks that held at HEAD: F176, F028, F151 and F094.\n\n## 4. Fixes that conflict with each other or with geometry selection\n\n1. **F033 (W3, \"first\") against selection P3.** Both change the heights resolution in `compute/config.rs`. F033 must wait for P3, or P3 must own F033.\n2. **TH-APPLY (W9) against selection P4.** A private `AppState.session` affects 435 references in 55 viz files, so the cost is L. P4 edits the same files. Run W9 after P4.\n3. **W6 against P5b.** W6 adds a `compile_error!` to the derive, and P5b is changing the tab params now. First audit the P5 params and add derive tests. Then run W6.\n4. **W1 against W7.** The `ToolShape` enum in W1 replaces the `ToolType` matches that W7 rewrites (F182). Also, the F176 destructure changes when `ToolShape` lands.\n5. **F015 (W4) against F091 (W15).** F015 retypes `Material::from_key`, and F091 deletes it. Delete it in W4.\n6. **`deny_unknown_fields` (W4) against P4 and P6.** P4 and P6 add project-file keys, and operator decision 5 is open.\n7. **`#[expect]` (W16) against feature gating (TH-TESTDOOR).** An expectation that is fulfilled in one feature set gives `unfulfilled_lint_expectations` in another set. Check both feature sets.\n\n## 5. Areas that a map reader expects to see and does not\n\nThe critic recounted with a per-section reset. These areas have zero or one finding although their map lists leads:\n- viz `ui/overlays/`: 0 findings (`viz-ui.md` lead 8)\n- viz `ui/components/`: 1 finding\n- `rs_cam_derive`: no finding of its own\n- `machine/` `$341` and `effective_kinematics` (`core-io-output.md` leads 22, 36)\n- the `settings/` global state (`core-session.md` lead 27)\n- `gcode/ir.rs` modal text (`core-io-output.md` lead 7)\n- the `stock/` engagement partition (`core-stock.md` lead 1)\n- the viz `compute/` backend trait (`viz-rest-and-small-crates.md` leads 6, 7)\n- `geometry/region_mask.rs` (`core-io-output.md` lead 16)\n- `dressup/arcfit.rs`: 0 findings (`core-strategies.md` lead 27; the critic did not check it)\n\nWhere the critic checked it, the review is sound. The gaps are:\n- 11 checked candidates, 4 of them at tier B\n- 1 D finding lost in a merge (CS-17)\n- 1 count that grew during the review (F162)\n- 7 checklist signals that no finder swept\n- 7 wave conflicts, 4 of them with selection P3, P4, P5b and P6"
+}

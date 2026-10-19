@@ -1,0 +1,343 @@
+{
+ "with": {
+  "task": "Add a new G-code dialect / post-processor variant for a different controller, selectable from the machine profile.",
+  "variant": "with-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/posts/grblhal.toml:1 (new file posts/<name>.toml)",
+    "change": "Write the new PostDefinition TOML (name, wcs, units, preamble, tool_change, comment.format, unsupported_mcodes, mist_option, etc.). Copy grblhal.toml (newest, most documented) or mach3.toml/linuxcnc.toml for a non-Grbl controller.",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md (crates/rs_cam_core/src/gcode/CLAUDE.md:25 'A post-processor is data... Add a PostDefinition row') + rg for a sibling (include_str! in post.rs:443-446)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/post.rs:443-446",
+    "change": "Add `const X_TOML: &str = include_str!(\"../../posts/x.toml\")`.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (GRBLHAL_TOML)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/post.rs:448-487",
+    "change": "Add a `static X: OnceLock<PostDefinition>` and a `pub fn x() -> &'static PostDefinition` with the SAFETY-commented expect (copy grblhal() at 465 / mach3() at 483).",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling; becomes a compile error only after PostFormat::definition calls it (it is the callee, so nothing forces creating it first)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/post.rs:499",
+    "change": "Add the new post to the `for post in [grbl(), grblhal(), linuxcnc(), mach3()]` list in the test shipped_posts_load, otherwise the new TOML parse and sanity checks never run.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (grblhal())"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/mod.rs:1414-1431",
+    "change": "Add the PostFormat variant with a serde `rename` (and `alias` if it has an underscore spelling) so the serde spelling equals to_token (UI-07).",
+    "compiler_forces_it": false,
+    "how_found": "rg 'PostFormat::Mach3'. The variant is the root; adding it is what triggers the compiler errors below."
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/mod.rs:1434-1440",
+    "change": "Add the variant to `PostFormat::ALL`. This feeds the GUI dropdown (viz properties/post.rs:17, export_wizard.rs:143) and the CLI error text (cli job.rs:362).",
+    "compiler_forces_it": false,
+    "how_found": "rg 'PostFormat::ALL'. A const slice: a missing entry compiles. Only the length asserts in viz state/job.rs:626 and the token vec in viz state/runtime.rs:405 would catch it."
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/mod.rs:1443-1450",
+    "change": "Add the arm to `label()`.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (exhaustive match, no wildcard)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/mod.rs:1453-1460",
+    "change": "Add the arm to `definition()`, returning post::x().",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/mod.rs:1467-1474",
+    "change": "Add the arm to `to_token()`.",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/mod.rs:1489-1496",
+    "change": "Add the token (and any underscore alias) to `from_token()`. This is the ONE resolver for the project file, the CLI `--post` flag and the job file.",
+    "compiler_forces_it": false,
+    "how_found": "comment at mod.rs:1476-1488 and rg 'from_token'. The match ends in `_ => None`, so a forgotten arm compiles; a project then silently loads as Grbl via post_format_or_grbl (mod.rs:1606-1613)."
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/export/gcode_validator.rs:154-203",
+    "change": "Add the arm to `invariants_for` and choose the nine PostInvariants fields (supports_m6, requires_g91_1, requires_wcs, line_limit, ascii_only, realtime_chars_in_comments, grblhal_words, no_canned_cycles, requires_percent_brackets).",
+    "compiler_forces_it": true,
+    "how_found": "compiler (exhaustive match, struct literal with every field)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/machine/mod.rs:237-268",
+    "change": "To make the dialect selectable from the machine profile: add a `ControllerFirmware` variant and its arm in `post_format()`. The arm is compiler-forced once the variant exists, but nothing forces the variant itself.",
+    "compiler_forces_it": true,
+    "how_found": "reading config.rs:696-712 ('the machine profile, not a separate project choice, selects the dialect') then rg 'post_format()'"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/machine/kinematics.rs:532-549",
+    "change": "Teach `detect_firmware` to recognise the new controller's welcome or identify line. It is an if/else on string prefixes with no match, so nothing flags it. Also extend ControllerSettings parsing (kinematics.rs:~505) if the controller has its own setting numbers.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'firmware' (by luck, far from gcode/)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/mutation/config.rs:696-712",
+    "change": "No code change if you reuse post_format(): import_machine_settings copies firmware.post_format() into session.post.format. Check that a firmware with no mapping does not clobber a manual post choice.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'post_format()'"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/mod.rs:1565-1583",
+    "change": "PostConfig::apply_controller_options reads controller facts (waits_for_spindle, mist_output, rpm_range, ignores_m6) that are grblHAL `$` settings. Decide whether the new controller needs new PostConfig fields and WizardOverlay fields (wizard_overlay.rs:93-115).",
+    "compiler_forces_it": false,
+    "how_found": "reading PostConfig; new PostConfig fields have `#[serde(default)]` so old files load, and the struct literal in Default at mod.rs:1587 would force the new field"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/export_wizard.rs:590",
+    "change": "The controller option block is gated by `post.format == PostFormat::GrblHal`. A new controller with options needs its own gate and draw fn; a Grbl-derived controller gets none.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'PostFormat::GrblHal' (== comparison, not a match)"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/machine_panel.rs:542",
+    "change": "The controller-detected label compares `firmware == GrblHal` and shows 'post dialect follows'. Add a branch for the new firmware, or the machine panel shows nothing.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'ControllerFirmware'"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/app/mcp/commands.rs:2714-2745",
+    "change": "The MCP import_machine_settings reply reports `controller` and `post_format`. Check that the reply and the GUI mirror (refresh_post_mirror) carry the new dialect. It probably needs no change.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'post_format' in viz"
+   },
+   {
+    "path_line": "crates/rs_cam_core/tests/common/gcode_fixtures.rs:26-31",
+    "change": "Extend the `DIALECTS: [(&str, PostFormat); 4]` array. The array length is typed, so a fifth entry fails to compile until the 4 becomes 5. Then bless new golden files in tests/fixtures/gcode_golden/ (<fixture>_<dialect>.nc for each fixture) with the capture test.",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md sentry list (gcode_phase0_capture) then reading the test. Only a fixed-size array, so the compiler does not ask for it until someone edits it."
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/state/job.rs:626-629",
+    "change": "Update the hard-coded `PostFormat::ALL.len() == 4` assert and comment.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'PostFormat::ALL' (test fails at runtime)"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/state/runtime.rs:405-406",
+    "change": "Update the hard-coded token vec `[\"grbl\",\"grblhal\",\"linuxcnc\",\"mach3\"]` in the round-trip test.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'PostFormat::ALL' (test fails at runtime)"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/main.rs:116",
+    "change": "Update the `--post` help string 'grbl, grblhal, linuxcnc, mach3'. The same list may sit in the cli job-file docs and in cli/run.rs.",
+    "compiler_forces_it": false,
+    "how_found": "rg '\"grblhal\"|linuxcnc' (string literal in doc comment)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/export/gcode_validator.rs:1017-1052 and gcode_validator_baseline test",
+    "change": "Add validator tests and a baseline row for the new dialect.",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md sentries list (gcode_validator_baseline)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/tests/post_format_round_trip_p1.rs:59-101",
+    "change": "Add the new format to the project round-trip sentry.",
+    "compiler_forces_it": false,
+    "how_found": "CLAUDE.md sentries list"
+   },
+   {
+    "path_line": "README.md:8 and FEATURE_CATALOG.md:131-134",
+    "change": "Update the output-format claim and the dialect paragraph. Add CREDITS.md entries for any controller source cited in the new TOML.",
+    "compiler_forces_it": false,
+    "how_found": "root CLAUDE.md (visible-surface docs, CREDITS.md rule)"
+   },
+   {
+    "path_line": "crates/rs_cam_mcp/src/server.rs:239-271 and :2010-2017",
+    "change": "The MCP export_gcode doc comments state per-dialect defaults ('post default is m6 on grblHAL, LinuxCNC and Mach3 and pause on Grbl'). Update them, and add a capability probe string if the surface changes.",
+    "compiler_forces_it": false,
+    "how_found": "rg 'grblhal' in rs_cam_mcp"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_core/src/gcode/mod.rs:1489-1496: `from_token` ends in `_ => None`. A forgotten token compiles. A saved project then loads as GRBL through `post_format_or_grbl` (mod.rs:1606-1613), so the wrong dialect exports with no error. The sibling test at mod.rs:1922 loops over ALL, so it only catches this if ALL was extended first.",
+   "crates/rs_cam_core/src/gcode/mod.rs:1434-1440: `PostFormat::ALL` is a hand-kept const slice. A forgotten entry compiles. The dropdown, the wizard and the CLI error list omit the dialect. Only the two hard-coded length/token asserts in rs_cam_viz (state/job.rs:626, state/runtime.rs:405) fail, in a different crate.",
+   "crates/rs_cam_core/src/gcode/post.rs:499: the shipped_posts_load test lists the posts by hand. A new post that is missing there is never parse-checked in that test. The `expect` in the accessor is justified by a SAFETY comment that says the TOML is 'test-gated' (post.rs ~455), but only this list gates it.",
+   "crates/rs_cam_core/src/machine/kinematics.rs:541-549: `detect_firmware` is string matching. A new controller's firmware is never detected unless this changes, so the machine profile never selects the new dialect. Nothing relates it to the ControllerFirmware enum.",
+   "crates/rs_cam_core/src/machine/mod.rs:237-268: ControllerFirmware only has Unknown/Grbl/GrblHal. The request says 'selectable from the machine profile', but the machine profile holds no post field. The dialect is stored in PostConfig (gcode/mod.rs:1536) and the profile only sets it as a side effect of a `$$` import (session/mutation/config.rs:708). A contributor who reads the request literally looks for a field that does not exist.",
+   "crates/rs_cam_viz/src/ui/export_wizard.rs:590: `state.gui.post.format == PostFormat::GrblHal` is an equality test, not a match. A new controller with options never gets a UI block. Also ui/properties/machine_panel.rs:542.",
+   "crates/rs_cam_core/src/export/gcode_validator.rs:116-137: PostInvariants has a field named `grblhal_words` and `no_canned_cycles`. They are booleans keyed on a dialect, not capabilities. The struct literal forces a value, but a contributor may set `grblhal_words: true` for a Grbl-derived controller without knowing what it enables (gcode_validator.rs:588).",
+   "crates/rs_cam_core/tests/fixtures/gcode_golden/*: the capture test only compares a golden when a file exists; a fixture that a post refuses has no golden by design (tests/gcode_phase0_capture.rs:18). A forgotten golden for the new dialect can look like a refusal. DIALECTS (tests/common/gcode_fixtures.rs:26) is the only list.",
+   "crates/rs_cam_core/src/gcode/post.rs:253-316 (unsupported_mcodes, mist_option, cutter comp): behaviour flags live in the TOML as optional fields with defaults. A wrong or missing flag is not an error; the emitter falls back to the default silently.",
+   "README.md:8, FEATURE_CATALOG.md:131 and the cli `--post` help (main.rs:116): doc and help lists that nothing checks.",
+   "crates/rs_cam_core/src/gcode/CLAUDE.md:25 states the rule 'add a PostDefinition row, not a branch in the emitter', but there is no row: the real steps are a TOML plus five code sites. The CLAUDE.md does not list them."
+  ],
+  "reuse_traps": [
+   "`PostFormat::from_token` (gcode/mod.rs:1489) is the ONE resolver. `get_post_definition` (mod.rs:1617) wraps it for CLI strings. A contributor adding a CLI or MCP flag would re-write a string match; the comment at mod.rs:1476-1488 explains that this caused the W9/P-1 bug.",
+   "`PostFormat::to_token` (mod.rs:1467) and the serde `rename` on the variant must agree (UI-07). A contributor may add a different serde spelling and break project round-trips.",
+   "`PostConfig::apply_controller_options` (mod.rs:1565) is the one place that merges the machine profile's controller facts into the export overlay. Every export door (GUI, MCP, CLI) calls it. A new controller option written straight into WizardOverlay in one door would make the surfaces differ.",
+   "`ControllerFirmware::post_format` (machine/mod.rs:262) is the machine-profile-to-dialect map. A contributor might add a new `post` field to MachineProfile instead.",
+   "`PostDefinition::from_toml` plus the OnceLock accessor pattern (post.rs:454-489) already exists for all four posts. A contributor may write a runtime registry or a user-post loader instead.",
+   "`gcode_validator::validate` and `validate_export` (viz io/export.rs) take the same overlay options as the emitter (G8), so the validator and the emitter agree. app/export.rs:226 shows the branch."
+  ],
+  "ambiguity": [
+   "Closest examples: the grblHAL addition (2026-10-08, FEATURE_CATALOG.md:132-133, G1..G11) versus Mach3/LinuxCNC. grblHAL is a Grbl-derived controller that also added machine-profile firmware detection, overlay options and GUI options. Mach3/LinuxCNC are plain TOML plus enum arms with no controller facts. For 'selectable from the machine profile' the grblHAL path is the only one that touches the machine profile, but it also carries grblHAL-only options that a generic controller does not need.",
+   "Where 'selectable' lives: the post dropdown in PostConfig (viz ui/properties/post.rs:17, project-level) versus ControllerFirmware on the machine profile (machine/mod.rs:237). Both exist and both set session.post.format. The request names the machine profile, but the code treats the dialect as a project choice that a `$$` import overrides.",
+   "Validator flags: copy the Grbl row (line-limited, no M6, no canned cycles) or the grblHAL row (M6, canned cycles, whole-line limit). `grblhal_words` is a boolean named for one dialect.",
+   "Per-dialect options: PostConfig fields with `Option<bool>` and an `apply_controller_options` merge (grblHAL style) versus fields inside the TOML. Both exist (post.rs:253-316 TOML flags like mist_option, and PostConfig mist_output at mod.rs:1550)."
+  ]
+ },
+ "without": {
+  "task": "Add a new G-code dialect / post-processor variant for a different controller, selectable from the machine profile.",
+  "variant": "no-claude-md",
+  "sites": [
+   {
+    "path_line": "crates/rs_cam_core/posts/ (new file, siblings grbl.toml, grblhal.toml, linuxcnc.toml, mach3.toml)",
+    "change": "Add <new>.toml PostDefinition data (name, decimals, preamble, postamble, program_pause, tool_change, comment, limits, flags). Closest example: grblhal.toml (newest, most flags).",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (include_str! in post.rs:443-446)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/post.rs:443-446,449-452",
+    "change": "Add const <NEW>_TOML = include_str!(...) and static <NEW>: OnceLock<PostDefinition>.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/post.rs:454-490",
+    "change": "Add pub fn <new>() -> &'static PostDefinition accessor (copy of mach3()).",
+    "compiler_forces_it": true,
+    "how_found": "compiler (the PostFormat::definition match arm needs it; the fn itself is copied from a sibling)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/mod.rs:1414-1431",
+    "change": "Add enum variant on PostFormat with serde rename/alias (mind the 'grblhal' vs snake_case 'grbl_hal' trap documented at 1419-1425).",
+    "compiler_forces_it": true,
+    "how_found": "compiler (starting point for the whole change)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/mod.rs:1435-1440",
+    "change": "Add variant to PostFormat::ALL (a hand-written const slice).",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (PostFormat::ALL); only guarded by a hard-coded len==4 test at crates/rs_cam_viz/src/state/job.rs:624-629"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/mod.rs:1443-1450",
+    "change": "label() arm.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (exhaustive match, no wildcard)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/mod.rs:1453-1460",
+    "change": "definition() arm -> post::<new>().",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/mod.rs:1467-1474",
+    "change": "to_token() arm (canonical on-disk spelling).",
+    "compiler_forces_it": true,
+    "how_found": "compiler"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/mod.rs:1488-1496",
+    "change": "from_token() string arm (and any aliases). Has a _ => None wildcard, so a missing arm compiles and the dialect silently reads as Grbl on project load via post_format_or_grbl (1608-1614).",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (to_token/from_token pair); caught only by tests every_post_format_survives_the_session_round_trip (viz/state/runtime.rs:382) and gcode/mod.rs:1922 which loop over ALL"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/export/gcode_validator.rs:153-210",
+    "change": "Add PostFormat arm to invariants_for with PostInvariants (supports_m6, requires_g91_1, line_limit, ascii_only, realtime chars, grblhal_words, no_canned_cycles). Validation is a second per-dialect parallel table, not in the TOML.",
+    "compiler_forces_it": true,
+    "how_found": "compiler (const fn exhaustive match)"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/machine/mod.rs:248-269",
+    "change": "This is the real 'selectable from the machine profile' hook: add a ControllerFirmware variant and a post_format() arm. The post_format() match is exhaustive (compiler forces the arm); the variant itself is not forced by anything.",
+    "compiler_forces_it": true,
+    "how_found": "rg post_format( / CLI grep for ControllerFirmware; comment at machine/mod.rs:232-236 and config.rs:696-699"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/machine/kinematics.rs:532-550",
+    "change": "detect_firmware() only returns GrblHal or Unknown (if/else, no match). Needs detection text for the new controller from the pasted dump. Nothing connects a new variant to this.",
+    "compiler_forces_it": false,
+    "how_found": "rg ControllerFirmware"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/session/mutation/config.rs:696-711",
+    "change": "import_machine_settings copies firmware.post_format() into session.post.format. Works automatically once post_format() has the arm, but is the only machine-to-post path.",
+    "compiler_forces_it": false,
+    "how_found": "rg post_format("
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/machine_panel.rs:542-551",
+    "change": "Import preview label only handles ControllerFirmware::GrblHal via == compare; add a line for the new firmware.",
+    "compiler_forces_it": false,
+    "how_found": "rg ControllerFirmware"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/ui/properties/post.rs:17 and crates/rs_cam_viz/src/ui/export_wizard.rs:143",
+    "change": "Dropdowns iterate PostFormat::ALL so they pick up the variant automatically (only if ALL was updated).",
+    "compiler_forces_it": false,
+    "how_found": "rg PostFormat"
+   },
+   {
+    "path_line": "crates/rs_cam_cli/src/main.rs:116",
+    "change": "Hand-written help text 'grbl, grblhal, linuxcnc, mach3' for --post; also check crates/rs_cam_cli/src/job.rs:10 doc and job.rs:366 error text (that one derives from ALL).",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling string"
+   },
+   {
+    "path_line": "crates/rs_cam_core/tests/common/gcode_fixtures.rs:26-31",
+    "change": "Add to DIALECTS (fixed-size array [(&str,PostFormat);4], so the length literal must change; this one is compiler-forced for the length once an entry is added) and generate golden .nc files under crates/rs_cam_core/tests/fixtures/gcode_golden/.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling"
+   },
+   {
+    "path_line": "crates/rs_cam_core/src/gcode/post.rs:499,612,720 (tests)",
+    "change": "Tests hard-code [grbl(), grblhal(), linuxcnc(), mach3()] instead of iterating PostFormat::ALL; add the new post to each (shipped_posts_load, arc_linearize, comment_renderer_is_ascii_only). Similar hard-coded lists at crates/rs_cam_core/src/gcode/emitter.rs:602-605.",
+    "compiler_forces_it": false,
+    "how_found": "rg for a sibling (grblhal())"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/src/state/job.rs:624-629",
+    "change": "Bump the hard-coded PostFormat::ALL.len() == 4 assertion and comment.",
+    "compiler_forces_it": false,
+    "how_found": "rg PostFormat::ALL (test failure would point here)"
+   },
+   {
+    "path_line": "crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json, README.md:131, FEATURE_CATALOG.md:131-133, crates/rs_cam_mcp/src/server.rs:239-271",
+    "change": "Docs/prose that list the dialects; the wire snapshot may change if the MCP schema text mentions dialects.",
+    "compiler_forces_it": false,
+    "how_found": "rg grblhal across repo"
+   }
+  ],
+  "silent_misses": [
+   "crates/rs_cam_core/src/gcode/mod.rs:1488-1496 (from_token) : the wildcard `_ => None` means forgetting the arm compiles. Project load then silently falls to Grbl via post_format_or_grbl at mod.rs:1608-1614 and CLI run.rs:175-176 / job.rs:1198-1199 also `.unwrap_or(Grbl)`. Only the round-trip tests that loop over PostFormat::ALL catch it, and only if ALL was updated.",
+   "crates/rs_cam_core/src/gcode/mod.rs:1435-1440 (PostFormat::ALL) : hand-maintained slice, not derived from the enum. Forgetting it hides the dialect from both GUI dropdowns (properties/post.rs:17, export_wizard.rs:143), the CLI error text (job.rs:366) and every ALL-driven test, so nothing fails. The only guard is the literal `4` in crates/rs_cam_viz/src/state/job.rs:626, which asserts ALL.len()==4, so adding a variant plus ALL entry fails that unrelated viz test and a contributor must find it.",
+   "crates/rs_cam_core/src/machine/kinematics.rs:541-550 (detect_firmware): the machine-profile -> dialect link is an if/else returning GrblHal or Unknown. A new ControllerFirmware variant compiles with zero detection logic and is unreachable; only the post_format() match (machine/mod.rs:262) is forced. The task says 'selectable from the machine profile' but the only profile-driven selection is auto-detection from a pasted $$/$I dump; there is no manual firmware picker anywhere (machine_panel.rs has none), and the dialect is otherwise chosen by PostConfig.format in the project (export_wizard.rs:137-149, properties/post.rs:17). Nothing tells you this: the real 'machine profile selects dialect' feature is only comments at session/mutation/config.rs:696-699 and machine/mod.rs:232-236.",
+   "crates/rs_cam_viz/src/ui/properties/machine_panel.rs:542: `c.firmware == ControllerFirmware::GrblHal` is an == compare, not a match, so the new variant gets no 'post dialect follows' label and no compile error.",
+   "crates/rs_cam_viz/src/ui/export_wizard.rs:590: `if state.gui.post.format == PostFormat::GrblHal { draw_grblhal_options }` : controller-specific options UI is keyed on a single enum value; a new controller with its own options would need a parallel block, and nothing flags this. Same for MCP/CLI option fields (rs_cam_mcp/src/server.rs:258-271, rs_cam_cli/src/job.rs:113, run.rs:46) which are named for grblHAL.",
+   "crates/rs_cam_core/src/gcode/post.rs:499,612,720 and gcode/emitter.rs:602-605: unit tests hard-code the four post accessors; the new TOML would not be exercised by shipped_posts_load, arc_linearize and ASCII-only checks unless added by hand, and a malformed TOML only panics lazily at first use (`expect(\"shipped ... must parse\")`, post.rs:455-460), not at build time.",
+   "crates/rs_cam_core/tests/common/gcode_fixtures.rs:26-31 DIALECTS: golden coverage is a separate list; a new dialect gets NO byte goldens or validator-baseline coverage (gcode_phase0_capture.rs, gcode_validator_baseline.rs) unless added, and goldens must be generated by a regen procedure documented only in the test header (gcode_phase0_capture.rs:1-20).",
+   "crates/rs_cam_cli/src/main.rs:116 : doc string for --post lists dialects by hand; job.rs:10 and sweep.rs:526 sample TOML use 'grbl' literal.",
+   "crates/rs_cam_viz/src/app/mcp/commands.rs:2733 and rs_cam_viz/src/mcp_server.rs: the MCP surface has no way to set post.format directly (set_post_config only appears via spindle strategy / export options, mcp.rs:796-815); the only MCP route to a dialect is import_machine_settings. A new dialect is thus not selectable over MCP/headless unless firmware detection or a new param is added, and nothing enforces parity with the GUI dropdown (parallel surface).",
+   "Behaviour flags that gate emitter logic are TOML fields on PostDefinition (post.rs:238-266: prefer_one_file_per_setup, canned_drill_cycles, mist_option, supports_cutter_comp, unsupported_mcodes) and need to be set in the new TOML consistently with the separate PostInvariants in gcode_validator.rs; the two are not cross-checked, so they can drift silently (e.g. TOML says no M6 but invariants say supports_m6)."
+  ],
+  "reuse_traps": [
+   "PostFormat::from_token (crates/rs_cam_core/src/gcode/mod.rs:1488) vs get_post_definition (mod.rs:1617) vs hand-written string matches: from_token is THE resolver (doc at 1478-1487); a contributor adding a CLI or MCP param might re-write a match instead of calling it. Also post_format_or_grbl (mod.rs:1608) is the private serde fallback.",
+   "PostFormat::to_token (mod.rs:1467) vs serde rename attributes on the enum (mod.rs:1414-1431): two spellings that must agree; easy to copy the snake_case default (as Mach3 does) and get 'grbl_hal'-style drift.",
+   "PostConfig::apply_controller_options (mod.rs:1536-1555) already maps machine.controller facts into WizardOverlay; a contributor wanting machine-profile-driven behaviour might add a new reader instead of extending it. Related WizardOverlay::applied_post (gcode/wizard_overlay.rs, used in tests at 667, 798) is where per-export overrides of a PostDefinition are applied.",
+   "PostDefinition::render_* helpers (post.rs:343-440: render_preamble_with_tool, render_message_line, render_tool_change, tool_change_commands_m6) and sanitize_comment_text (post.rs:~150): easy to re-implement comment/tool-change handling in code rather than using TOML templates.",
+   "ControllerFirmware::post_format (machine/mod.rs:262) is the existing firmware->dialect mapping; ControllerSettings::merge_stated (machine/mod.rs:370) names every field in a destructure so new fields are compiler-forced there.",
+   "gcode_validator::invariants_for (export/gcode_validator.rs:153) is a second per-dialect table; PostDefinition fields in TOML overlap with it conceptually."
+  ],
+  "ambiguity": [
+   "Two plausible 'where does the dialect live' patterns: (a) project-level PostConfig.format chosen via the Post dropdown / PostFormat::ALL (gcode/mod.rs:1507-1530, properties/post.rs:17), and (b) machine-profile-level ControllerSettings.firmware auto-selecting the dialect on $$ import (machine/mod.rs:248-269, session/mutation/config.rs:708). 'Selectable from the machine profile' matches (b) in spirit but (b) only supports Unknown/Grbl/GrblHal and only auto-detects; MachineProfile (machine/mod.rs:177-246) has no dialect field of its own. A contributor could instead add a new field on MachineProfile (parallel to controller) or reuse PostConfig.format.",
+   "Firmware-variant pattern vs PostFormat pattern: ControllerFirmware::Grbl has a post_format mapping but detect_firmware never returns Grbl (kinematics.rs:541, test at 2209), so it is unclear whether a new firmware should follow GrblHal (auto-detected) or Grbl (mapped but never produced).",
+   "Copy source for the TOML: grbl.toml (pause-style tool change, no cutter comp) vs grblhal.toml (M6, MSG, canned cycles) vs linuxcnc.toml/mach3.toml (4 decimals, M6, cutter comp); and for the enum serde spelling: Mach3 (plain) vs GrblHal/LinuxCnc (rename+alias).",
+   "Controller-specific options: grblHAL-gated UI/CLI/MCP options (export_wizard.rs:590, rs_cam_cli/src/run.rs:46, rs_cam_mcp/src/server.rs:258-271) vs the data-driven PostDefinition flags (post.rs:238-266); either could be copied for a new controller's special options."
+  ]
+ }
+}
