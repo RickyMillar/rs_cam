@@ -117,14 +117,20 @@ fn viewport_key(s: &ProjectSession) -> MatchKey {
 
 fn edit(s: &mut ProjectSession, edit: SelectionEdit) {
     let _ = s
-        .apply(Command::EditSelection(EditSelectionArgs { index: 0, edit }))
+        .apply(Command::EditSelection(EditSelectionArgs {
+            index: 0,
+            target: rs_cam_core::session::SelectionTarget::Op,
+            edit,
+        }))
         .expect("the drill holds a selection");
 }
 
 /// The viewport click: `pick_edit` reads the memo and chooses the edit.
 fn click(s: &mut ProjectSession, key: MatchKey) {
     let tc = s.toolpath_configs()[0].clone();
-    let e = s.pick_edit(&tc, key).expect("the selection resolves");
+    let e = s
+        .pick_edit(&tc, rs_cam_core::session::SelectionTarget::Op, key)
+        .expect("the selection resolves");
     edit(s, e);
 }
 
@@ -177,7 +183,9 @@ fn an_agent_pick_and_a_click_on_one_item_are_one_pick() {
 
     // The status counts one hole.
     let tc = s.toolpath_configs()[0].clone();
-    let report = s.selection_status(&tc).expect("the selection resolves");
+    let report = s
+        .selection_status(&tc, rs_cam_core::session::SelectionTarget::Op)
+        .expect("the selection resolves");
     assert_eq!(report.counts.get(&ItemKind::Circle), Some(&1));
 }
 
@@ -231,7 +239,9 @@ fn a_pick_on_the_own_model_follows_a_retarget_and_flags() {
     add_plain_model(&mut s);
     retarget(&mut s, 1);
     let tc = s.toolpath_configs()[0].clone();
-    let report = s.selection_status(&tc).expect("the selection resolves");
+    let report = s
+        .selection_status(&tc, rs_cam_core::session::SelectionTarget::Op)
+        .expect("the selection resolves");
     assert_eq!(
         report.lost.len(),
         1,
@@ -255,7 +265,9 @@ fn a_pick_on_another_model_stays_bound_to_it() {
         "a pick on another model keeps its model: {sel:?}"
     );
     let tc = s.toolpath_configs()[0].clone();
-    let report = s.selection_status(&tc).expect("the selection resolves");
+    let report = s
+        .selection_status(&tc, rs_cam_core::session::SelectionTarget::Op)
+        .expect("the selection resolves");
     assert!(report.lost.is_empty(), "{report:?}");
     assert_eq!(report.counts.get(&ItemKind::Circle), Some(&1));
 }

@@ -13,7 +13,7 @@
 use rs_cam_core::selection::{ItemCounts, MatchKey};
 use rs_cam_core::session::{
     Command, EditSelectionArgs, Effects, ListItemsArgs, ModelItem, ProjectSession, Query,
-    QueryAnswer, SelectionReport, SelectionStatusArgs,
+    QueryAnswer, SelectionReport, SelectionStatusArgs, SelectionTarget,
 };
 use rs_cam_mcp::server::{EditToolpathSelectionParam, ListModelItemsParam, json_str};
 
@@ -89,20 +89,28 @@ pub(crate) fn item_counts_json(counts: &ItemCounts) -> serde_json::Value {
     })
 }
 
-/// The `selection_status` reply for the toolpath at `index`: the answer
-/// of the core query row, with the toolpath's name, op and stored
-/// selection.
-pub(crate) fn selection_status_reply(session: &ProjectSession, index: usize) -> serde_json::Value {
+/// The `selection_status` reply for the selection `target` of the
+/// toolpath at `index`: the answer of the core query row, with the
+/// toolpath's name, op, the target and its stored selection.
+pub(crate) fn selection_status_reply(
+    session: &ProjectSession,
+    index: usize,
+    target: SelectionTarget,
+) -> serde_json::Value {
     let Some(tc) = session.get_toolpath_config(index) else {
         return serde_json::json!({
             "error": format!("Toolpath index {index} not found"),
         });
     };
-    match session.query(Query::SelectionStatus(SelectionStatusArgs { index })) {
+    match session.query(Query::SelectionStatus(SelectionStatusArgs {
+        index,
+        target,
+    })) {
         Ok(QueryAnswer::SelectionStatus(report)) => {
             let mut reply = selection_report_json(&report);
             if let Some(obj) = reply.as_object_mut() {
                 obj.insert("index".into(), serde_json::json!(index));
+                obj.insert("target".into(), serde_json::json!(target));
                 obj.insert("id".into(), serde_json::json!(tc.id));
                 obj.insert("name".into(), serde_json::json!(tc.name));
                 obj.insert(
@@ -111,7 +119,9 @@ pub(crate) fn selection_status_reply(session: &ProjectSession, index: usize) -> 
                 );
                 obj.insert(
                     "selection".into(),
-                    serde_json::to_value(tc.operation.selection())
+                    tc.selection_of(target)
+                        .ok()
+                        .and_then(|selection| serde_json::to_value(selection).ok())
                         .unwrap_or(serde_json::Value::Null),
                 );
             }
@@ -126,10 +136,11 @@ pub(crate) fn selection_status_reply(session: &ProjectSession, index: usize) -> 
 
 impl RsCamApp {
     /// The `selection_status` read: the core query row.
-    pub(crate) fn mcp_selection_status(&self, index: usize) -> String {
+    pub(crate) fn mcp_selection_status(&self, index: usize, target: SelectionTarget) -> String {
         json_str(selection_status_reply(
             &self.controller.state().session,
             index,
+            target,
         ))
     }
 
@@ -159,11 +170,14 @@ impl RsCamApp {
         p: EditToolpathSelectionParam,
         mut before: CoreBefore,
     ) -> CorePlan {
+        let target: SelectionTarget = p.target.into();
         before.index = Some(p.index);
         before.field = Some("edit".to_owned());
+        before.extra = serde_json::json!({ "target": target });
         CorePlan::Apply(
             Command::EditSelection(EditSelectionArgs {
                 index: p.index,
+                target,
                 edit: p.edit.into(),
             }),
             Box::new(before),
@@ -180,16 +194,23 @@ impl RsCamApp {
         self.controller.state_mut().gui.mark_edited();
         let stale = self.core_stale(effects);
         let index = before.index();
+        // `plan_edit_selection` writes the target into `extra`.
+        let target: SelectionTarget = before
+            .extra
+            .get("target")
+            .and_then(|t| serde_json::from_value(t.clone()).ok())
+            .unwrap_or_default();
         let applied = {
             let session = &self.controller.state().session;
             session
                 .get_toolpath_config(index)
                 .map_or(serde_json::Value::Null, |tc| {
                     let status = session
-                        .selection_status(tc)
+                        .selection_status(tc, target)
                         .map_or(serde_json::Value::Null, |r| selection_report_json(&r));
                     serde_json::json!({
-                        "selection": tc.operation.selection(),
+                        "target": target,
+                        "selection": tc.selection_of(target).ok().flatten(),
                         "status": status,
                     })
                 })
@@ -268,7 +289,14 @@ mod tests {
     }
 
     fn edit(s: &mut ProjectSession, index: usize, edit: SelectionEdit) {
-        let _ = apply(s, Command::EditSelection(EditSelectionArgs { index, edit }));
+        let _ = apply(
+            s,
+            Command::EditSelection(EditSelectionArgs {
+                index,
+                target: SelectionTarget::Op,
+                edit,
+            }),
+        );
     }
 
     /// The five ops: 0 Pocket with a rule on `CUT`; 1 Drill with one
@@ -349,16 +377,21 @@ mod tests {
         assert_eq!(s.toolpath_count(), 5);
         for index in 0..5 {
             let tc = s.get_toolpath_config(index).unwrap().clone();
-            let memo = s.selection_status(&tc).expect("the selection resolves");
+            let memo = s
+                .selection_status(&tc, SelectionTarget::Op)
+                .expect("the selection resolves");
             let QueryAnswer::SelectionStatus(query) = s
-                .query(Query::SelectionStatus(SelectionStatusArgs { index }))
+                .query(Query::SelectionStatus(SelectionStatusArgs {
+                    index,
+                    target: SelectionTarget::Op,
+                }))
                 .unwrap()
             else {
                 panic!("the selection_status row answered another kind");
             };
             assert_eq!(query, *memo, "op {index}: the query row is the memo");
 
-            let reply = selection_status_reply(&s, index);
+            let reply = selection_status_reply(&s, index, SelectionTarget::Op);
             let name = &tc.name;
             assert_eq!(
                 reply["counts"],
@@ -396,7 +429,7 @@ mod tests {
 
         // The numbers themselves, so a reply that agrees on an empty
         // report cannot pass.
-        let reply = |i| selection_status_reply(&s, i);
+        let reply = |i| selection_status_reply(&s, i, SelectionTarget::Op);
         let pocket = reply(0);
         assert_eq!((count(&pocket, "loop"), count(&pocket, "circle")), (1, 0));
         assert!(pocket["refusal"].is_null(), "{pocket}");
@@ -434,6 +467,106 @@ mod tests {
         let lost = reply(4);
         assert_eq!(lost["lost"].as_array().unwrap().len(), 1);
         assert!(lost["refusal"].is_string(), "{lost}");
+    }
+
+    /// Geometry selection P4.1: the `target` wire field. An absent target
+    /// reads `"op"`; `"boundary"` reaches the boundary selection. The MCP
+    /// reply, the core query row and the memo the GUI reads (the face
+    /// highlight, `pick_edit`) give one boundary report, and a boundary
+    /// that is not a selection gives the error that names the fix.
+    #[test]
+    fn mcp_core_and_gui_give_one_boundary_status_p4_1() {
+        use rs_cam_core::compute::config::{BoundaryContainment, BoundarySource};
+        use rs_cam_core::session::SetBoundaryConfigArgs;
+        use rs_cam_mcp::server::{
+            EditToolpathSelectionParam, SelectionStatusParam, SelectionTargetParam,
+        };
+
+        // The wire: the default and the two spellings, as the file spells
+        // `SelectionTarget`.
+        let absent: SelectionStatusParam =
+            serde_json::from_value(serde_json::json!({ "index": 3 })).unwrap();
+        assert_eq!(absent.target, SelectionTargetParam::Op);
+        for target in [SelectionTarget::Op, SelectionTarget::Boundary] {
+            let file = serde_json::to_value(target).unwrap();
+            let wire: SelectionTargetParam = serde_json::from_value(file.clone()).unwrap();
+            assert_eq!(SelectionTarget::from(wire), target, "{file}");
+        }
+
+        let mut s = project();
+        let circles = s
+            .list_model_items(0, Some("HOLES"), Some(ItemKind::Circle))
+            .unwrap();
+        // Toolpath 3 (a default Pocket) gets a selection boundary with no
+        // item, then one circle through the wire edit.
+        let _ = apply(
+            &mut s,
+            Command::SetBoundaryConfig(SetBoundaryConfigArgs {
+                index: 3,
+                boundary: BoundaryConfig {
+                    enabled: true,
+                    source: BoundarySource::Selection {
+                        selection: Selection::empty(),
+                        holes: false,
+                    },
+                    containment: BoundaryContainment::Center,
+                    offset: 0.0,
+                },
+            }),
+        );
+        let wire: EditToolpathSelectionParam = serde_json::from_value(serde_json::json!({
+            "index": 3,
+            "target": "boundary",
+            "edit": { "add_pick": key_json(&circles[0].key) },
+        }))
+        .unwrap();
+        let _ = apply(
+            &mut s,
+            Command::EditSelection(EditSelectionArgs {
+                index: wire.index,
+                target: wire.target.into(),
+                edit: wire.edit.into(),
+            }),
+        );
+
+        let tc = s.get_toolpath_config(3).unwrap().clone();
+        let memo = s.selection_status(&tc, SelectionTarget::Boundary).unwrap();
+        let QueryAnswer::SelectionStatus(query) = s
+            .query(Query::SelectionStatus(SelectionStatusArgs {
+                index: 3,
+                target: SelectionTarget::Boundary,
+            }))
+            .unwrap()
+        else {
+            panic!("the selection_status row answered another kind");
+        };
+        assert_eq!(query, *memo, "the query row is the memo");
+        let reply = selection_status_reply(&s, 3, SelectionTarget::Boundary);
+        assert_eq!(reply["target"], serde_json::json!("boundary"));
+        assert_eq!(count(&reply, "circle"), 1, "{reply}");
+        assert_eq!(reply["counts"], serde_json::to_value(&memo.counts).unwrap());
+        assert!(reply["refusal"].is_null(), "{reply}");
+        assert_eq!(
+            reply["selection"]["picks"][0]["source"],
+            serde_json::json!("toolpath_model"),
+            "a wire key on the own model is stored as toolpath_model"
+        );
+        // The op selection of the same toolpath is untouched: the default.
+        let op = selection_status_reply(&s, 3, SelectionTarget::Op);
+        assert_eq!(op["target"], serde_json::json!("op"));
+        assert_eq!(
+            op["selection"],
+            serde_json::to_value(Selection::drawing()).unwrap()
+        );
+
+        // A boundary that is not a selection: the reply names the fix.
+        let stock = selection_status_reply(&s, 0, SelectionTarget::Boundary);
+        assert!(
+            stock["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("set the boundary source to Selection")),
+            "{stock}"
+        );
     }
 
     #[test]

@@ -174,7 +174,11 @@ fn pick_of(item: &Item) -> MatchKey {
 
 fn edit(session: &mut ProjectSession, edit: SelectionEdit) -> Result<(), SessionError> {
     session
-        .apply(Command::EditSelection(EditSelectionArgs { index: 0, edit }))
+        .apply(Command::EditSelection(EditSelectionArgs {
+            index: 0,
+            target: rs_cam_core::session::SelectionTarget::Op,
+            edit,
+        }))
         .map(|_| ())
 }
 
@@ -184,7 +188,7 @@ fn edit(session: &mut ProjectSession, edit: SelectionEdit) -> Result<(), Session
 fn refusal_of(session: &mut ProjectSession) -> SelectionRefusal {
     let tc = session.toolpath_configs()[0].clone();
     let status = session
-        .selection_status(&tc)
+        .selection_status(&tc, rs_cam_core::session::SelectionTarget::Op)
         .expect("the status answers")
         .refusal
         .clone()
@@ -279,6 +283,79 @@ fn lost_pick() {
     assert_names(
         &r,
         &["closed loop on layer 'CUT'", "centre X 0.000 Y 0.000"],
+    );
+}
+
+/// P4.1: the boundary selection refuses as the op selection does. A pick
+/// of the boundary selection that the drawing no longer holds: generation
+/// stops on the boundary, and its text holds the refusal that
+/// `selection_status` gives for the boundary target, word for word.
+#[test]
+fn a_lost_boundary_pick_refuses_as_its_status_says_p4_1() {
+    use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
+    use rs_cam_core::session::SelectionTarget;
+
+    let a = loop_item("CUT", 0.0);
+    let b = loop_item("CUT", GAP_X);
+    let mut s = pocket_session(
+        drawing_model(vec![a.clone(), b]),
+        Selection::drawing(),
+        |tc| {
+            tc.boundary = BoundaryConfig {
+                enabled: true,
+                source: BoundarySource::Selection {
+                    selection: Selection::empty(),
+                    holes: false,
+                },
+                containment: BoundaryContainment::Center,
+                offset: 0.0,
+            };
+        },
+    );
+    let _ = s
+        .apply(Command::EditSelection(EditSelectionArgs {
+            index: 0,
+            target: SelectionTarget::Boundary,
+            edit: SelectionEdit::AddPick(pick_of(&a)),
+        }))
+        .unwrap();
+    let model_id = s.toolpath_configs()[0].model_id;
+    let _ = s
+        .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
+            model_id,
+            geometry: Box::new(drawing_model(vec![loop_item("CUT", GAP_X)])),
+            units: None,
+        }))
+        .unwrap();
+
+    let tc = s.toolpath_configs()[0].clone();
+    let status = s
+        .selection_status(&tc, SelectionTarget::Boundary)
+        .expect("the boundary status answers")
+        .refusal
+        .clone()
+        .expect("the boundary status gives a refusal");
+    assert_eq!(status.cause, RefusalCause::LostPick);
+    let text = status.to_string();
+    assert!(
+        text.starts_with("Machining boundary: ") && text.contains("closed loop on layer 'CUT'"),
+        "the boundary refusal names the boundary and the item: {text}"
+    );
+    // The op selection is not the one that refuses.
+    assert!(
+        s.selection_status(&tc, SelectionTarget::Op)
+            .unwrap()
+            .refusal
+            .is_none()
+    );
+    let cancel = AtomicBool::new(false);
+    let Err(err) = s.generate_toolpath(0, &cancel) else {
+        panic!("generation did not refuse; the status said: {text}");
+    };
+    assert!(
+        err.to_string().contains(&text),
+        "generation and the boundary status give different refusals:\n  generation: {err}\n  \
+         status: {text}"
     );
 }
 

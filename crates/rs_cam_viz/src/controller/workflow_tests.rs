@@ -169,22 +169,27 @@ fn find_horizontal_face(enriched: &EnrichedMesh) -> FaceGroupId {
 }
 
 /// The face click of the viewport (P2.6): the key of the Face item of
-/// `face`, sent as `TogglePick`.
+/// `face`, sent as `TogglePick` to the selection a face click edits
+/// (P4.1: `SelectionTarget::for_face_pick`, as `app/viewport.rs` does).
 fn click_face(
     c: &mut AppController<ScriptedBackend>,
     tp_id: ToolpathId,
     model_id: ModelId,
     face: FaceGroupId,
 ) {
-    let key = {
+    let (target, key) = {
         let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
-        c.state
-            .session
-            .face_pick_key(tc, model_id.0, face)
-            .expect("a flat face has a Face item")
+        (
+            rs_cam_core::session::SelectionTarget::for_face_pick(tc),
+            c.state
+                .session
+                .face_pick_key(tc, model_id.0, face)
+                .expect("a flat face has a Face item"),
+        )
     };
     c.handle_internal_event(AppEvent::TogglePick {
         toolpath_id: tp_id,
+        target,
         key,
     });
 }
@@ -577,6 +582,147 @@ fn w4_a_boundary_selection_edit_undoes_d11() {
     );
 }
 
+/// A 3D rough on the STEP cube with `boundary`, made the selected
+/// toolpath. Its op holds no selection (DESIGN 6).
+fn add_3d_rough(
+    c: &mut AppController<ScriptedBackend>,
+    boundary: rs_cam_core::compute::config::BoundaryConfig,
+) -> ToolpathId {
+    let tp_id = add_pocket(c);
+    let index = c.state.session.find_toolpath_config_by_id(tp_id).unwrap().0;
+    let _ = c
+        .state
+        .session
+        .apply(Command::SetToolpathOperation(
+            rs_cam_core::session::SetToolpathOperationArgs {
+                index,
+                operation: Box::new(rs_cam_core::compute::catalog::OperationConfig::new_default(
+                    OperationType::Adaptive3d,
+                )),
+            },
+        ))
+        .unwrap();
+    let _ = c
+        .state
+        .session
+        .apply(Command::SetBoundaryConfig(
+            rs_cam_core::session::SetBoundaryConfigArgs { index, boundary },
+        ))
+        .unwrap();
+    tp_id
+}
+
+/// The BREP ids of the face picks in the boundary selection of `tp_id`.
+fn boundary_face_picks(c: &AppController<ScriptedBackend>, tp_id: ToolpathId) -> Vec<u16> {
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+    tc.selection_of(rs_cam_core::session::SelectionTarget::Boundary)
+        .expect("the boundary is a selection")
+        .expect("a boundary selection exists")
+        .face_picks()
+        .filter_map(|k| k.brep)
+        .collect()
+}
+
+/// Geometry selection P4.1 (ruling O-1 A): a face click on a 3D op adds
+/// one face pick to its boundary selection, stales the toolpath, leaves
+/// the op alone, and undoes in one step (D11: the snapshot holds the
+/// boundary). A second click removes the pick.
+#[test]
+fn w4_a_3d_op_face_click_writes_its_boundary_p4_1() {
+    use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
+
+    let mut c = step_controller();
+    let empty = BoundaryConfig {
+        enabled: true,
+        source: BoundarySource::Selection {
+            selection: rs_cam_core::selection::Selection::empty(),
+            holes: false,
+        },
+        containment: BoundaryContainment::Center,
+        offset: 0.0,
+    };
+    let tp_id = add_3d_rough(&mut c, empty.clone());
+    let model_id = ModelId(c.state.session.models()[0].id);
+    let enriched = c.state.session.models()[0].enriched_mesh.as_ref().unwrap();
+    let face_a = find_horizontal_face(enriched);
+    let op_before = {
+        let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+        serde_json::to_value(&tc.operation).unwrap()
+    };
+
+    take_snapshot(&mut c, tp_id);
+    c.state.gui.toolpath_rt.get_mut(&tp_id).unwrap().stale_since = None;
+    click_face(&mut c, tp_id, model_id, face_a);
+    assert_eq!(
+        boundary_face_picks(&c, tp_id),
+        vec![face_a.0],
+        "the click writes one boundary pick"
+    );
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+    assert_eq!(
+        serde_json::to_value(&tc.operation).unwrap(),
+        op_before,
+        "the click does not touch the op"
+    );
+    assert!(
+        c.state
+            .gui
+            .toolpath_rt
+            .get(&tp_id)
+            .unwrap()
+            .stale_since
+            .is_some(),
+        "the boundary pick stales the toolpath"
+    );
+    flush_snapshot(&mut c);
+
+    c.handle_internal_event(AppEvent::Undo);
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+    assert_eq!(tc.boundary, empty, "one undo removes the pick");
+    c.handle_internal_event(AppEvent::Redo);
+    assert_eq!(boundary_face_picks(&c, tp_id), vec![face_a.0], "the redo");
+
+    // The second click on the same face removes it (`pick_edit` reads the
+    // boundary report).
+    click_face(&mut c, tp_id, model_id, face_a);
+    assert!(boundary_face_picks(&c, tp_id).is_empty(), "the toggle off");
+}
+
+/// Ruling L-8: a face click on a 3D op whose boundary is not a selection
+/// gives a notice and no edit. The boundary source does not change.
+#[test]
+fn w4_a_3d_op_face_click_without_a_selection_boundary_is_a_notice_p4_1() {
+    use rs_cam_core::compute::config::{BoundaryConfig, BoundarySource};
+
+    let mut c = step_controller();
+    let stock_boundary = BoundaryConfig {
+        enabled: true,
+        source: BoundarySource::Stock,
+        ..BoundaryConfig::default()
+    };
+    let tp_id = add_3d_rough(&mut c, stock_boundary.clone());
+    let model_id = ModelId(c.state.session.models()[0].id);
+    let enriched = c.state.session.models()[0].enriched_mesh.as_ref().unwrap();
+    let face_a = find_horizontal_face(enriched);
+    let notes_before = c.notifications().len();
+
+    click_face(&mut c, tp_id, model_id, face_a);
+
+    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+    assert_eq!(tc.boundary, stock_boundary, "no edit");
+    let notes = c.notifications();
+    assert_eq!(notes.len(), notes_before + 1, "one notice");
+    assert!(
+        notes
+            .last()
+            .unwrap()
+            .message
+            .contains("set the boundary source to Selection"),
+        "the notice names the fix: {}",
+        notes.last().unwrap().message
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // W5: Project Save/Load Round-Trip
 // ═══════════════════════════════════════════════════════════════════════
@@ -636,6 +782,7 @@ fn w5_project_round_trip_preserves_step_face_selection() {
         .apply(Command::EditSelection(
             rs_cam_core::session::EditSelectionArgs {
                 index: 0,
+                target: rs_cam_core::session::SelectionTarget::Op,
                 edit: rs_cam_core::selection::SelectionEdit::AddPick(key.clone()),
             },
         ))

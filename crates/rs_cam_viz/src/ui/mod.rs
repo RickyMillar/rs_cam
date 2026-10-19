@@ -340,16 +340,21 @@ pub enum AppEvent {
 
     // Geometry selection P2.6: one viewport click on an item (a hole
     // marker or a flat face) of the selected toolpath. `key` is the match
-    // key a pick of the item stores. The controller resolves first
-    // (`ProjectSession::pick_edit`), then sends `AddPick` or `RemovePick`.
+    // key a pick of the item stores; `target` is the selection it toggles
+    // in (P4.1: the boundary selection for an op with no selection slot).
+    // The controller resolves first (`ProjectSession::pick_edit`), then
+    // sends `AddPick` or `RemovePick`.
     TogglePick {
         toolpath_id: ToolpathId,
+        target: rs_cam_core::session::SelectionTarget,
         key: rs_cam_core::selection::MatchKey,
     },
 
-    // One edit of the op selection from a panel (the face Clear button).
+    // One edit of a selection of the toolpath from a panel (the face Clear
+    // button).
     EditToolpathSelection {
         toolpath_id: ToolpathId,
+        target: rs_cam_core::session::SelectionTarget,
         edit: rs_cam_core::selection::SelectionEdit,
     },
 

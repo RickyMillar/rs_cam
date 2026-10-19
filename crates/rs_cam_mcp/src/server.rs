@@ -1142,14 +1142,53 @@ impl From<SelectionEditParam> for rs_cam_core::selection::SelectionEdit {
     }
 }
 
-/// `edit_toolpath_selection` (P2.7): apply one edit to the selection of
-/// the op of a toolpath. The edit stales that toolpath and its dependents.
+/// Which selection of a toolpath (P4.1): `"op"` (what the op cuts) or
+/// `"boundary"` (the selection of a `Selection` machining boundary: where
+/// the tool may go). A 3D op holds no op selection; its face picks go in
+/// the boundary. The spelling is the project-file spelling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum SelectionTargetParam {
+    /// The selection of the op.
+    #[default]
+    Op,
+    /// The selection of the machining boundary.
+    Boundary,
+}
+
+impl From<SelectionTargetParam> for rs_cam_core::session::SelectionTarget {
+    fn from(p: SelectionTargetParam) -> Self {
+        match p {
+            SelectionTargetParam::Op => Self::Op,
+            SelectionTargetParam::Boundary => Self::Boundary,
+        }
+    }
+}
+
+/// `edit_toolpath_selection` (P2.7): apply one edit to the selection
+/// `target` of a toolpath. The edit stales that toolpath and its
+/// dependents.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct EditToolpathSelectionParam {
     /// Toolpath index (0-based).
     pub index: usize,
+    /// The selection the edit writes. Absent: `"op"`.
+    #[serde(default)]
+    pub target: SelectionTargetParam,
     /// The edit.
     pub edit: SelectionEditParam,
+}
+
+/// `selection_status` (P2.7, P4.1): what the selection `target` of a
+/// toolpath resolves to.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct SelectionStatusParam {
+    /// Toolpath index (0-based).
+    pub index: usize,
+    /// The selection to read. Absent: `"op"`.
+    #[serde(default)]
+    pub target: SelectionTargetParam,
 }
 
 /// `list_model_items` (P2.7): the items of one model, each with its match

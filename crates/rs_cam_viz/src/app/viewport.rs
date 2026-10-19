@@ -206,29 +206,41 @@ impl RsCamApp {
                 // inspector undo snapshot covers.
                 self.controller
                     .events_mut()
-                    .push(crate::ui::AppEvent::TogglePick { toolpath_id, key });
+                    .push(crate::ui::AppEvent::TogglePick {
+                        toolpath_id,
+                        target: rs_cam_core::session::SelectionTarget::Op,
+                        key,
+                    });
             }
             (Workspace::Toolpaths, PickHit::ModelFace { model_id, face_id }) => {
-                // A face pick is a `MatchKey` pick of the op selection
-                // (P2.6). The key comes from the Face item of the face; a
-                // face that is not flat has no item and is named.
+                // A face pick is a `MatchKey` pick (P2.6). The key comes
+                // from the Face item of the face; a face that is not flat
+                // has no item and is named. P4.1: an op with no selection
+                // slot (Face, a 3D op) takes the pick in its boundary
+                // selection. A boundary that is not a selection refuses in
+                // `pick_edit`, and the controller names it (L-8: a notice,
+                // no edit).
                 if let Selection::Toolpath(tp_id) = self.controller.state().selection {
-                    let key = {
+                    let pick = {
                         let session = &self.controller.state().session;
-                        session
-                            .find_toolpath_config_by_id(tp_id)
-                            .map(|(_, tc)| session.face_pick_key(tc, model_id.0, face_id))
+                        session.find_toolpath_config_by_id(tp_id).map(|(_, tc)| {
+                            (
+                                rs_cam_core::session::SelectionTarget::for_face_pick(tc),
+                                session.face_pick_key(tc, model_id.0, face_id),
+                            )
+                        })
                     };
-                    match key {
-                        Some(Ok(key)) => {
+                    match pick {
+                        Some((target, Ok(key))) => {
                             self.controller
                                 .events_mut()
                                 .push(crate::ui::AppEvent::TogglePick {
                                     toolpath_id: tp_id,
+                                    target,
                                     key,
                                 });
                         }
-                        Some(Err(refusal)) => self.controller.push_notification(
+                        Some((_, Err(refusal))) => self.controller.push_notification(
                             format!("Could not pick the face: {refusal}"),
                             crate::controller::Severity::Warning,
                         ),

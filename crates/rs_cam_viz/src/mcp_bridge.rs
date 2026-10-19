@@ -551,9 +551,10 @@ pub enum McpRequestKind {
         model_id: usize,
     },
     /// Geometry selection P2.7: the `selection_status` query row of the
-    /// toolpath at `index`.
+    /// selection `target` of the toolpath at `index` (P4.1).
     SelectionStatus {
         index: usize,
+        target: rs_cam_core::session::SelectionTarget,
     },
     /// Geometry selection P2.7: the `list_model_items` query row.
     ListModelItems(rs_cam_mcp::server::ListModelItemsParam),

@@ -178,9 +178,16 @@ impl ProjectSession {
         // (Face, a 3D op) resolves to no item; its prologue reads no item.
         // P2.4: THE resolution (`resolve_selection_frames`) is the one the
         // `selection_status` query reads, so the two give the same refusal.
-        let selection = self.resolve_selection_frames(tc, &ctx)?.setup;
-        // DESIGN 7.2: the top of the picked faces, in the SETUP frame.
-        let face_top_z = selection.face_top_z();
+        let selection = self
+            .resolve_selection_frames(tc, super::super::SelectionTarget::Op, &ctx)?
+            .setup;
+        // DESIGN 7.2: the top of the picked faces, in the SETUP frame. An op
+        // with no selection slot takes the faces of its boundary selection
+        // (P4.1, ruling O-1 A: the behaviour before P2.6).
+        let face_top_z = match selection.face_top_z() {
+            Some(top) => Some(top),
+            None => self.boundary_face_top_z(tc, &ctx)?,
+        };
 
         // F-028 (2026-05-25) established this frame for the height context
         // (heights.top_z anchors 2.5D depth stepping and must match where
@@ -562,40 +569,35 @@ impl ProjectSession {
             ))
         };
 
-        let resolved = crate::selection::resolve(
-            selection,
-            &crate::selection::ResolveScope {
-                toolpath_model: self.toolpath_model(tc),
-                models: &self.models,
-                stock_bbox: &ctx.heights_stock_bbox,
-                setup: ctx.local_to_global.as_ref(),
-            },
-        );
-        let resolved = match ctx.local_to_global.as_ref() {
-            Some(info) => resolved
-                .to_setup_frame(info)
-                .map_err(|e| refuse(e.to_string()))?,
-            None => resolved,
-        };
-        let (items, _open_path_notes) =
-            crate::selection::view(&resolved, crate::compute::catalog::ItemUse::Regions).map_err(
-                |refusal| {
-                    let missing = matches!(
-                        refusal.cause,
-                        crate::selection::RefusalCause::MissingSource(_)
-                    );
-                    let mut reason = refusal.for_op("Machining boundary").to_string();
-                    if missing {
-                        let known: Vec<String> = self
-                            .models
-                            .iter()
-                            .map(|m| format!("{} ('{}')", m.id, m.name))
-                            .collect();
-                        reason.push_str(&format!(" Project models: [{}].", known.join(", ")));
-                    }
-                    refuse(reason)
-                },
-            )?;
+        // P4.1: THE resolution of a selection (`resolve_spec_frames`), the
+        // one the boundary report of `selection_status` reads, with the same
+        // `ItemUse` and op name. So the two give the same refusal.
+        let resolved = self
+            .resolve_spec_frames(tc, selection, &ctx)
+            .map_err(|e| refuse(e.to_string()))?
+            .setup;
+        let (items, _open_path_notes) = crate::selection::view(
+            &resolved,
+            crate::session::selection_status::BOUNDARY_ITEM_USE,
+        )
+        .map_err(|refusal| {
+            let missing = matches!(
+                refusal.cause,
+                crate::selection::RefusalCause::MissingSource(_)
+            );
+            let mut reason = refusal
+                .for_op(crate::session::selection_status::BOUNDARY_LABEL)
+                .to_string();
+            if missing {
+                let known: Vec<String> = self
+                    .models
+                    .iter()
+                    .map(|m| format!("{} ('{}')", m.id, m.name))
+                    .collect();
+                reason.push_str(&format!(" Project models: [{}].", known.join(", ")));
+            }
+            refuse(reason)
+        })?;
         let regions = items.regions().map_or(&[][..], |r| r.as_slice());
 
         let union = crate::polygon::Polygon2::union_all(regions);

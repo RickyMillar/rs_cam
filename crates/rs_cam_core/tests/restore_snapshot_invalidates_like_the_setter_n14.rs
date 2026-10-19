@@ -338,6 +338,7 @@ fn a_drill_pick_drops_the_chain_n6() {
     let effects = s
         .apply(Command::EditSelection(EditSelectionArgs {
             index: 0,
+            target: rs_cam_core::session::SelectionTarget::Op,
             edit: SelectionEdit::AddPick(MatchKey {
                 source: SourceRef::ToolpathModel,
                 kind: ItemKind::Point,

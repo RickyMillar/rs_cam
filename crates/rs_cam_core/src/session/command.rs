@@ -1702,6 +1702,9 @@ pub struct ToolpathCycleTimeAnswer {
 pub struct SelectionStatusArgs {
     /// The index of the toolpath to read.
     pub index: usize,
+    /// The selection to read: the op selection or the boundary selection
+    /// (P4.1).
+    pub target: crate::session::SelectionTarget,
 }
 
 /// The arguments of the `list_model_items` read (geometry selection
@@ -1778,13 +1781,21 @@ pub struct RemoveModelArgs {
 /// selection P2.3c).
 ///
 /// The command applies one [`crate::selection::SelectionEdit`] to the
-/// selection of the op (`Selection::apply`). It refuses a toolpath whose op
-/// holds no selection. `Reset` restores the default of that op
-/// (`OperationConfig::default_selection`).
+/// selection `target` of the toolpath (`Selection::apply`, P4.1).
+///
+/// - `Op`: the op selection. It refuses a toolpath whose op holds no
+///   selection. `Reset` restores the default of that op
+///   (`OperationConfig::default_selection`).
+/// - `Boundary`: the selection inside `BoundarySource::Selection`. It
+///   refuses a boundary whose source is not a selection, and it never
+///   changes the source. `Reset` restores
+///   `ProjectSession::boundary_selection_default`.
 #[derive(Debug, Clone)]
 pub struct EditSelectionArgs {
     /// The index of the toolpath the command writes.
     pub index: usize,
+    /// The selection the edit writes.
+    pub target: crate::session::SelectionTarget,
     /// The edit.
     pub edit: crate::selection::SelectionEdit,
 }
@@ -2524,7 +2535,9 @@ impl ProjectSession {
             // derives a stale set of its own.
             Command::ReorderToolpath(args) => self.reorder_toolpath(args.from_index, args.to_index),
             Command::RemoveModel(args) => self.remove_model(args.index),
-            Command::EditSelection(args) => self.edit_toolpath_selection(args.index, args.edit),
+            Command::EditSelection(args) => {
+                self.edit_toolpath_selection(args.index, args.target, args.edit)
+            }
             Command::AddObstacle(args) => self.add_obstacle(args.setup_index, *args.obstacle),
             Command::ReplaceObstacle(args) => {
                 self.replace_obstacle(args.setup_index, args.obstacle_id, *args.obstacle)
@@ -2679,7 +2692,7 @@ impl ProjectSession {
                     .toolpath_configs()
                     .get(args.index)
                     .ok_or(SessionError::ToolpathNotFound(args.index))?;
-                let report = self.selection_status(tc)?;
+                let report = self.selection_status(tc, args.target)?;
                 Ok(QueryAnswer::SelectionStatus(SelectionReport::clone(
                     &report,
                 )))

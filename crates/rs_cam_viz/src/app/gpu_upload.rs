@@ -23,17 +23,21 @@ type ReachOverlaySource = (Arc<rs_cam_core::mesh::TriangleMesh>, Arc<Vec<[f32; 3
 
 impl RsCamApp {
     /// Get selected BREP face IDs for rendering highlights.
-    /// Reads the faces that the op selection of the selected toolpath
-    /// resolves to (geometry selection P2.6: the `selection_status` memo,
-    /// so a face that a rule matches is lit too), or the visual
-    /// Selection::Face/Faces state otherwise.
+    /// Reads the faces that the selection of the selected toolpath that a
+    /// face click edits resolves to (geometry selection P2.6: the
+    /// `selection_status` memo, so a face that a rule matches is lit too;
+    /// P4.1: the boundary selection of an op with no selection slot), or
+    /// the visual Selection::Face/Faces state otherwise.
     fn selected_face_ids(&self) -> Vec<rs_cam_core::geometry::enriched_mesh::FaceGroupId> {
         let state = self.controller.state();
         match &state.selection {
             Selection::Toolpath(tp_id) => state
                 .session
                 .find_toolpath_config_by_id(*tp_id)
-                .and_then(|(_, tc)| state.session.selection_status(tc).ok())
+                .and_then(|(_, tc)| {
+                    let target = rs_cam_core::session::SelectionTarget::for_face_pick(tc);
+                    state.session.selection_status(tc, target).ok()
+                })
                 .map(|report| {
                     report
                         .selected

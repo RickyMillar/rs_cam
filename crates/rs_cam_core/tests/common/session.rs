@@ -349,6 +349,22 @@ pub fn pick_faces(
     index: usize,
     faces: &[u16],
 ) -> Result<(), rs_cam_core::selection::SelectionRefusal> {
+    pick_faces_in(
+        session,
+        index,
+        rs_cam_core::session::SelectionTarget::Op,
+        faces,
+    )
+}
+
+/// [`pick_faces`] into the selection `target` of toolpath `index` (P4.1:
+/// the boundary selection of an op with no selection slot).
+pub fn pick_faces_in(
+    session: &mut ProjectSession,
+    index: usize,
+    target: rs_cam_core::session::SelectionTarget,
+    faces: &[u16],
+) -> Result<(), rs_cam_core::selection::SelectionRefusal> {
     for face in faces {
         let tc = session.toolpath_configs()[index].clone();
         let key = session.face_pick_key(
@@ -360,10 +376,11 @@ pub fn pick_faces(
             .apply(rs_cam_core::session::Command::EditSelection(
                 rs_cam_core::session::EditSelectionArgs {
                     index,
+                    target,
                     edit: rs_cam_core::selection::SelectionEdit::AddPick(key),
                 },
             ))
-            .expect("the op holds a selection");
+            .expect("the target holds a selection");
     }
     Ok(())
 }

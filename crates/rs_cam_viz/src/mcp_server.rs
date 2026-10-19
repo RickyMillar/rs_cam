@@ -32,14 +32,14 @@ use rs_cam_mcp::server::{
     LoadProjectParam, ModelIdParam, MoveAlignmentPinsParam, OperationSchemaParam,
     PlaceAlignmentPatternParam, PlanMultitoolFinishingParam, PreviewTierMapParam, ReachMapParam,
     RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam,
-    ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam, SetAlignmentPinsParam,
-    SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam, SetMachineHeadParam,
-    SetMachineKinematicsParam, SetRestAnalysisConfigParam, SetSetupRotationParam,
-    SetSimulationResolutionParam, SetSpindleStrategyParam, SetStockConfigParam,
-    SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam, SetToolpathHeightsParam,
-    SetToolpathModelParam, SetToolpathParamInput, SetToolpathShoeParam, SetToolpathToolParam,
-    SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam,
-    SimulationParam, json_str,
+    ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam, SelectionStatusParam,
+    SetAlignmentPinsParam, SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam,
+    SetMachineHeadParam, SetMachineKinematicsParam, SetRestAnalysisConfigParam,
+    SetSetupRotationParam, SetSimulationResolutionParam, SetSpindleStrategyParam,
+    SetStockConfigParam, SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam,
+    SetToolpathHeightsParam, SetToolpathModelParam, SetToolpathParamInput, SetToolpathShoeParam,
+    SetToolpathToolParam, SetUiViewParam, SimJumpToMoveParam, SimJumpToToolpathBoundaryParam,
+    SimScrubToolpathParam, SimulationParam, json_str,
 };
 
 /// How long a cheap read waits for the GUI frame loop before falling back to
@@ -686,21 +686,24 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "selection_status",
-        description = "Geometry selection: what the selection of the toolpath at `index` resolves to, with no generation. The answer generation gives: `counts` (items cut, by kind), `islands`, `skipped_by_kind` (items the default rule matched that the op cannot cut), `notes` (the skipped open paths), `lost` (picks that name no item or more than one), `refusal` (the refusal text, or null), `holes` (a drill op: the holes it drills, in the model frame) and `selected` (the key of every selected item). The GUI reads the same report."
+        description = "Geometry selection: what a selection of the toolpath at `index` resolves to, with no generation. `target` is `\"op\"` (default: the selection of the op) or `\"boundary\"` (the selection of a `Selection` machining boundary; a 3D op holds its face picks there). The answer generation gives: `counts` (items cut, by kind), `islands`, `skipped_by_kind` (items the default rule matched that the op cannot cut), `notes` (the skipped open paths), `lost` (picks that name no item or more than one), `refusal` (the refusal text, or null), `holes` (a drill op: the holes it drills, in the model frame) and `selected` (the key of every selected item). The GUI reads the same report."
     )]
     async fn selection_status(
         &self,
-        Parameters(IndexParam { index }): Parameters<IndexParam>,
+        Parameters(SelectionStatusParam { index, target }): Parameters<SelectionStatusParam>,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::SelectionStatus { index })
-                .await,
+            self.send_request(McpRequestKind::SelectionStatus {
+                index,
+                target: target.into(),
+            })
+            .await,
         )
     }
 
     #[tool(
         name = "edit_toolpath_selection",
-        description = "Geometry selection: apply one edit to the selection of the op of the toolpath at `index` (a 2.5D op; a 3D op holds no selection and refuses). `edit` is exactly one of: `{\"add_pick\": <key>}` (a key from `list_model_items`), `{\"remove_pick\": <key>}` (with no pick of the item, it excludes the item from the rule matches), `{\"add_rule\": {\"source\": \"toolpath_model\", \"filter\": {\"layers\": [\"CUT\"]}}}`, `{\"remove_rule\": <index>}`, `{\"replace\": {\"rules\": [...], \"picks\": [...], \"excludes\": [...]}}` or `\"reset\"` (the default of the op). The JSON is the project-file JSON. The edit stales the toolpath; read `selection_status` to see what it cuts."
+        description = "Geometry selection: apply one edit to a selection of the toolpath at `index`. `target` is `\"op\"` (default: the selection of a 2.5D op; a 3D op holds none and refuses) or `\"boundary\"` (the selection of the machining boundary; it refuses when the boundary source is not `Selection` — set it with `set_boundary_config` first; a face pick there also sets the auto top of an op with no selection). `edit` is exactly one of: `{\"add_pick\": <key>}` (a key from `list_model_items`), `{\"remove_pick\": <key>}` (with no pick of the item, it excludes the item from the rule matches), `{\"add_rule\": {\"source\": \"toolpath_model\", \"filter\": {\"layers\": [\"CUT\"]}}}`, `{\"remove_rule\": <index>}`, `{\"replace\": {\"rules\": [...], \"picks\": [...], \"excludes\": [...]}}` or `\"reset\"` (the default of the op; for the boundary, the closed shapes of the first drawing model, else nothing). The JSON is the project-file JSON. The edit stales the toolpath; read `selection_status` to see what it cuts."
     )]
     async fn edit_toolpath_selection(
         &self,

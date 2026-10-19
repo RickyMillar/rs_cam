@@ -124,7 +124,9 @@ fn a_two_face_pick_keeps_both_faces_p2_4() {
     pick_faces(&mut s, 0, &[0, 1]).unwrap();
 
     let tc = s.toolpath_configs()[0].clone();
-    let report = s.selection_status(&tc).unwrap();
+    let report = s
+        .selection_status(&tc, rs_cam_core::session::SelectionTarget::Op)
+        .unwrap();
     assert_eq!(report.refusal, None, "the two-face pick refuses");
     assert_eq!(
         report.counts.get(&ItemKind::Face),

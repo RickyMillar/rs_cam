@@ -90,7 +90,10 @@ fn session() -> ProjectSession {
 /// The report of toolpath 0 through the query door.
 fn status(s: &ProjectSession) -> SelectionReport {
     match s
-        .query(Query::SelectionStatus(SelectionStatusArgs { index: 0 }))
+        .query(Query::SelectionStatus(SelectionStatusArgs {
+            index: 0,
+            target: rs_cam_core::session::SelectionTarget::Op,
+        }))
         .unwrap()
     {
         QueryAnswer::SelectionStatus(report) => report,
@@ -134,6 +137,7 @@ fn a_read_builds_once_and_only_a_selection_input_builds_again() {
     let _ = s
         .apply(Command::EditSelection(EditSelectionArgs {
             index: 0,
+            target: rs_cam_core::session::SelectionTarget::Op,
             edit: SelectionEdit::Replace(Box::new(Selection::from_rules(vec![Rule {
                 source: SourceRef::ToolpathModel,
                 filter: Filter {

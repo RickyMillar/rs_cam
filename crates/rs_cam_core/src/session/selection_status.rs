@@ -24,13 +24,16 @@
 //! identity, as the tool-load memo does (`load_report.rs`). No key part is
 //! a counter, so no mutation path can forget to move it:
 //!
-//! - the selection of the op (serialized), the op type, its `ItemUse` and
-//!   the model id of the toolpath;
+//! - the target (P4.1: the op selection or the boundary selection), the
+//!   selection of that target (serialized), the op type, the `ItemUse` that
+//!   reads the target and the model id of the toolpath;
 //! - the item set of each model, by `Weak` identity (a re-import gives a
 //!   new `Arc`), and its id;
 //! - the setup orientation and the stock box in both frames (the face
 //!   filter and the frame door read them).
 //!
+//! The key does not hold the `holes` flag of a boundary: the report does
+//! not read it (the holes of the union are a generation step after `view`).
 //! The key does not hold `generation_inputs_signature`: that signature
 //! also holds the feeds, the dressups, the heights and the tool, which the
 //! selection does not read, so an edit of those would build again.
@@ -39,18 +42,68 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
+use serde::{Deserialize, Serialize};
+
 use crate::compute::catalog::{GeometryRequirement, ItemUse, OperationType};
+use crate::compute::config::BoundarySource;
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::geo::{BoundingBox3, P2};
 use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::{ModelId, ToolpathId};
 use crate::selection::{
-    Hole, ItemKind, ItemRef, ItemSet, MatchKey, RefusalCause, ResolveScope, ResolvedSelection,
-    Selection, SelectionEdit, SelectionNote, SelectionRefusal, Shape, SourceRef,
+    Hole, ItemError, ItemKind, ItemRef, ItemSet, MatchKey, RefusalCause, ResolveScope,
+    ResolvedSelection, Selection, SelectionEdit, SelectionNote, SelectionRefusal, Shape, SourceRef,
 };
 use crate::session::{LoadedModel, ProjectSession, SessionError, ToolpathConfig};
 
 use super::SetupEvalContext;
+
+/// Which selection of a toolpath a command or a read names (geometry
+/// selection P4.1). A toolpath holds up to two selections: the selection of
+/// its op (`OperationConfig::selection`) and the selection of its machining
+/// boundary (`BoundarySource::Selection`). DESIGN 6: a 3D op uses a
+/// selection only through its boundary.
+///
+/// The wire spelling is the file spelling: `"op"` or `"boundary"`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SelectionTarget {
+    /// The selection of the op: what the op cuts.
+    #[default]
+    Op,
+    /// The selection inside `BoundarySource::Selection`: where the tool may
+    /// go.
+    Boundary,
+}
+
+impl SelectionTarget {
+    /// The selection that a viewport face click on `tc` edits: the op
+    /// selection when the op holds one, else the boundary selection (an op
+    /// with no selection slot: Face and every 3D op).
+    pub fn for_face_pick(tc: &ToolpathConfig) -> Self {
+        match tc.operation.selection() {
+            Some(_) => Self::Op,
+            None => Self::Boundary,
+        }
+    }
+}
+
+/// The `ItemUse` that reads a boundary selection: closed regions
+/// (`resolve_boundary_selection_polys` and the boundary report).
+pub(crate) const BOUNDARY_ITEM_USE: ItemUse = ItemUse::Regions;
+
+/// The name that a refusal of a boundary selection gives as its op.
+pub(crate) const BOUNDARY_LABEL: &str = "Machining boundary";
+
+/// The refusal of a boundary edit or read when the boundary source of
+/// `name` is not a selection. No command changes the source in silence.
+pub(crate) fn boundary_not_a_selection(name: &str) -> SessionError {
+    SessionError::InvalidParam(format!(
+        "the boundary of '{name}' is not a selection: set the boundary source to Selection"
+    ))
+}
 
 /// One point or circle of a toolpath model, for the drill picker.
 #[derive(Debug, Clone, PartialEq)]
@@ -160,43 +213,93 @@ pub(crate) struct SelectionFrames {
 
 impl ProjectSession {
     /// THE selection resolution of `tc`, for generation and for every
-    /// reader: the op's own selection (`OperationConfig::selection`),
-    /// resolved against the items of the models and the stock, then moved
-    /// into the setup frame (`to_setup_frame`). A face pick is a pick of
-    /// that selection (geometry selection P2.6).
+    /// reader: the selection `target` of `tc` (the op selection,
+    /// `OperationConfig::selection`, or the boundary selection), resolved
+    /// against the items of the models and the stock, then moved into the
+    /// setup frame (`to_setup_frame`). A face pick is a pick of that
+    /// selection (geometry selection P2.6, P4.1).
     ///
     /// `ctx` is the setup context of the toolpath: the stock in the
     /// emission frame (the stock source) and the setup transform (the face
     /// filter and the frame door). An op that holds no selection resolves
-    /// to no item.
+    /// to no item. A boundary whose source is not a selection refuses.
     pub(crate) fn resolve_selection_frames(
         &self,
         tc: &ToolpathConfig,
+        target: SelectionTarget,
         ctx: &SetupEvalContext,
     ) -> Result<SelectionFrames, SessionError> {
-        let model = self.toolpath_model(tc);
         let empty = Selection::empty();
-        let spec = tc.operation.selection().unwrap_or(&empty);
+        let spec = tc.selection_of(target)?.unwrap_or(&empty);
+        self.resolve_spec_frames(tc, spec, ctx)
+            .map_err(|e| SessionError::OperationFailed(e.to_string()))
+    }
+
+    /// [`Self::resolve_selection_frames`] for one stored selection `spec`
+    /// of `tc`. The boundary generation (`resolve_boundary_selection_polys`)
+    /// and the status report share it, so the two cannot differ. `Err` is
+    /// an item that the frame door cannot move.
+    pub(crate) fn resolve_spec_frames(
+        &self,
+        tc: &ToolpathConfig,
+        spec: &Selection,
+        ctx: &SetupEvalContext,
+    ) -> Result<SelectionFrames, ItemError> {
         let resolved = crate::selection::resolve(
             spec,
             &ResolveScope {
-                toolpath_model: model,
+                toolpath_model: self.toolpath_model(tc),
                 models: &self.models,
                 stock_bbox: &ctx.heights_stock_bbox,
                 setup: ctx.local_to_global.as_ref(),
             },
         );
         let setup = match ctx.local_to_global.as_ref() {
-            Some(info) => resolved
-                .clone()
-                .to_setup_frame(info)
-                .map_err(|e| SessionError::OperationFailed(e.to_string()))?,
+            Some(info) => resolved.clone().to_setup_frame(info)?,
             None => resolved.clone(),
         };
         Ok(SelectionFrames {
             model: resolved,
             setup,
         })
+    }
+
+    /// The auto top of an op with no selection slot (geometry selection
+    /// P4.1, ruling O-1 A): the highest plane Z of the faces that its
+    /// boundary selection picks, in the SETUP frame. `None` when the op
+    /// holds a selection (its own faces give the top), when the boundary is
+    /// off, when its source is not a selection, or when it picks no face.
+    pub(crate) fn boundary_face_top_z(
+        &self,
+        tc: &ToolpathConfig,
+        ctx: &SetupEvalContext,
+    ) -> Result<Option<f64>, SessionError> {
+        if tc.operation.selection().is_some() || !tc.boundary.enabled {
+            return Ok(None);
+        }
+        match &tc.boundary.source {
+            BoundarySource::Selection { .. } => Ok(self
+                .resolve_selection_frames(tc, SelectionTarget::Boundary, ctx)?
+                .setup
+                .face_top_z()),
+            BoundarySource::Stock
+            | BoundarySource::ModelSilhouette
+            | BoundarySource::DerivedRestRegions { .. }
+            | BoundarySource::PlannedTierRegions { .. } => Ok(None),
+        }
+    }
+
+    /// The selection that a boundary `Reset` restores, and that the
+    /// "Selection" boundary source writes (P4.3): the closed shapes of the
+    /// first model that has a closed ring, else no item. With no item the
+    /// boundary refuses `Empty` until the first pick.
+    pub fn boundary_selection_default(&self) -> Selection {
+        self.models
+            .iter()
+            .find(|m| m.items.has_closed_ring())
+            .map_or_else(Selection::empty, |m| {
+                Selection::closed_shapes_of(ModelId(m.id))
+            })
     }
 
     /// The model of `tc` by its EXACT id, or the id when no model has it.
@@ -214,19 +317,24 @@ impl ProjectSession {
     ) -> Result<ResolvedSelection, SessionError> {
         let setup = self.find_setup_for_toolpath_id(tc.id);
         let ctx = SetupEvalContext::build_for_setup(self, setup);
-        Ok(self.resolve_selection_frames(tc, &ctx)?.model)
+        Ok(self
+            .resolve_selection_frames(tc, SelectionTarget::Op, &ctx)?
+            .model)
     }
 
-    /// The `selection_status` answer for `tc`: what generation does with
-    /// its selection, with no kernel (DESIGN 5.4).
+    /// The `selection_status` answer for the selection `target` of `tc`:
+    /// what generation does with that selection, with no kernel (DESIGN
+    /// 5.4, P4.1).
     ///
     /// The memo gives the stored report while no input of its key moves
     /// (see the module documentation). `Err` is an error that is not a
-    /// selection refusal (an item that the frame door cannot move); the
-    /// memo does not keep it.
+    /// selection refusal (an item that the frame door cannot move, or a
+    /// boundary whose source is not a selection); the memo does not keep
+    /// it.
     pub fn selection_status(
         &self,
         tc: &ToolpathConfig,
+        target: SelectionTarget,
     ) -> Result<Arc<SelectionReport>, SessionError> {
         let setup = self.find_setup_for_toolpath_id(tc.id);
         let ctx = SetupEvalContext::build_for_setup(self, setup);
@@ -236,8 +344,8 @@ impl ProjectSession {
             // in an earlier build leaves no partial entry.
             Err(poisoned) => poisoned.into_inner(),
         };
-        let key = StatusKey::capture(self, tc, &ctx);
-        if let (Some(key), Some(entry)) = (key.as_ref(), guard.get(&tc.id))
+        let key = StatusKey::capture(self, tc, target, &ctx);
+        if let (Some(key), Some(entry)) = (key.as_ref(), guard.get(&(tc.id, target)))
             && entry.key.answers(key)
         {
             return Ok(Arc::clone(&entry.report));
@@ -245,13 +353,13 @@ impl ProjectSession {
         self.selection_status_memo
             .builds
             .fetch_add(1, Ordering::Relaxed);
-        let report = Arc::new(self.build_selection_report(tc, &ctx)?);
+        let report = Arc::new(self.build_selection_report(tc, target, &ctx)?);
         // Drop the entries of the toolpaths that no longer exist.
-        guard.retain(|id, _| self.toolpath_configs.iter().any(|t| t.id == *id));
+        guard.retain(|(id, _), _| self.toolpath_configs.iter().any(|t| t.id == *id));
         match key {
             Some(key) => {
                 guard.insert(
-                    tc.id,
+                    (tc.id, target),
                     StatusEntry {
                         key,
                         report: Arc::clone(&report),
@@ -259,7 +367,7 @@ impl ProjectSession {
                 );
             }
             None => {
-                guard.remove(&tc.id);
+                guard.remove(&(tc.id, target));
             }
         }
         Ok(report)
@@ -276,20 +384,35 @@ impl ProjectSession {
     fn build_selection_report(
         &self,
         tc: &ToolpathConfig,
+        target: SelectionTarget,
         ctx: &SetupEvalContext,
     ) -> Result<SelectionReport, SessionError> {
         let op_type = tc.operation.op_type();
-        let label = op_type.label();
-        let item_use = tc.operation.capabilities().item_use;
-        let frames = self.resolve_selection_frames(tc, ctx)?;
+        let (label, item_use, runs_view) = match target {
+            SelectionTarget::Op => (
+                op_type.label(),
+                tc.operation.capabilities().item_use,
+                // The prologue runs `view` for an op whose row reads items,
+                // and only for it (`prologue::check_inputs`).
+                reads_items(op_type),
+            ),
+            // The boundary generation always runs `view` with `Regions`
+            // (`resolve_boundary_selection_polys`).
+            SelectionTarget::Boundary => (BOUNDARY_LABEL, BOUNDARY_ITEM_USE, true),
+        };
+        let frames = self.resolve_selection_frames(tc, target, ctx)?;
         let selected: Vec<MatchKey> = frames
             .model
             .items()
             .iter()
             .map(|r| r.identity().clone())
             .collect();
+        let hole_items = match target {
+            SelectionTarget::Op => self.hole_items(tc, &selected),
+            SelectionTarget::Boundary => Vec::new(),
+        };
         let mut report = SelectionReport {
-            hole_items: self.hole_items(tc, &selected),
+            hole_items,
             selected,
             ..SelectionReport::default()
         };
@@ -305,9 +428,7 @@ impl ProjectSession {
                 *report.counts.entry(kind).or_insert(0) += 1;
             }
         }
-        // The prologue runs `view` for an op whose row reads items, and
-        // only for it (`prologue::check_inputs`).
-        if !reads_items(op_type) {
+        if !runs_view {
             return Ok(report);
         }
         match crate::selection::view(&frames.setup, item_use) {
@@ -379,7 +500,7 @@ impl ProjectSession {
             ItemUse::Holes { .. } => {}
             ItemUse::None | ItemUse::Regions | ItemUse::Curves => return None,
         }
-        Some(match self.selection_status(tc) {
+        Some(match self.selection_status(tc, SelectionTarget::Op) {
             Ok(report) => HoleSelection {
                 items: report.hole_items.clone(),
                 holes: report.holes.clone(),
@@ -438,8 +559,9 @@ impl ProjectSession {
             })
     }
 
-    /// The edit that a viewport click on `key` sends to the selection of
-    /// `tc` (lead ruling P2.2: no toggle edit in the selection). It reads
+    /// The edit that a viewport click on `key` sends to the selection
+    /// `target` of `tc` (lead ruling P2.2: no toggle edit in the selection;
+    /// P4.1: the target). It reads
     /// THE resolution through the memo ([`Self::selection_status`]): an
     /// item that the selection holds gives `RemovePick` (a rule match then
     /// gets an exclude), any other item gives `AddPick`.
@@ -449,13 +571,14 @@ impl ProjectSession {
     pub fn pick_edit(
         &self,
         tc: &ToolpathConfig,
+        target: SelectionTarget,
         key: MatchKey,
     ) -> Result<SelectionEdit, SessionError> {
         let source = match key.source {
             SourceRef::ToolpathModel => SourceRef::Model(ModelId(tc.model_id)),
             other @ (SourceRef::Model(_) | SourceRef::Stock) => other,
         };
-        let report = self.selection_status(tc)?;
+        let report = self.selection_status(tc, target)?;
         let selected = report
             .selected
             .iter()
@@ -508,6 +631,30 @@ fn reads_items(op_type: OperationType) -> bool {
     }
 }
 
+impl ToolpathConfig {
+    /// The stored selection `target` of this toolpath (P4.1). `Ok(None)`:
+    /// an op that holds no selection (it resolves to no item). A boundary
+    /// whose source is not a selection refuses
+    /// ([`boundary_not_a_selection`]).
+    pub fn selection_of(
+        &self,
+        target: SelectionTarget,
+    ) -> Result<Option<&Selection>, SessionError> {
+        match target {
+            SelectionTarget::Op => Ok(self.operation.selection()),
+            SelectionTarget::Boundary => match &self.boundary.source {
+                BoundarySource::Selection { selection, .. } => Ok(Some(selection)),
+                BoundarySource::Stock
+                | BoundarySource::ModelSilhouette
+                | BoundarySource::DerivedRestRegions { .. }
+                | BoundarySource::PlannedTierRegions { .. } => {
+                    Err(boundary_not_a_selection(&self.name))
+                }
+            },
+        }
+    }
+}
+
 /// The bit patterns of a box, for an exact compare.
 fn box_bits(b: &BoundingBox3) -> [u64; 6] {
     [
@@ -522,6 +669,7 @@ fn box_bits(b: &BoundingBox3) -> [u64; 6] {
 
 /// Every input of one report (see the module documentation).
 struct StatusKey {
+    target: SelectionTarget,
     selection: Vec<u8>,
     op_type: OperationType,
     item_use: ItemUse,
@@ -539,12 +687,18 @@ impl StatusKey {
     fn capture(
         session: &ProjectSession,
         tc: &ToolpathConfig,
+        target: SelectionTarget,
         ctx: &SetupEvalContext,
     ) -> Option<Self> {
+        let item_use = match target {
+            SelectionTarget::Op => tc.operation.capabilities().item_use,
+            SelectionTarget::Boundary => BOUNDARY_ITEM_USE,
+        };
         Some(Self {
-            selection: serde_json::to_vec(&tc.operation.selection()).ok()?,
+            target,
+            selection: serde_json::to_vec(&tc.selection_of(target).ok()?).ok()?,
             op_type: tc.operation.op_type(),
-            item_use: tc.operation.capabilities().item_use,
+            item_use,
             model_id: tc.model_id,
             models: session
                 .models
@@ -562,7 +716,8 @@ impl StatusKey {
     /// set compares by allocation: a live `Weak` keeps the address
     /// reserved, so no later set can take it (no ABA).
     fn answers(&self, now: &StatusKey) -> bool {
-        self.selection == now.selection
+        self.target == now.target
+            && self.selection == now.selection
             && self.op_type == now.op_type
             && self.item_use == now.item_use
             && self.model_id == now.model_id
@@ -585,13 +740,14 @@ struct StatusEntry {
     report: Arc<SelectionReport>,
 }
 
-/// The session's selection-status memo, one entry per toolpath.
+/// The session's selection-status memo, one entry per toolpath and
+/// target.
 ///
 /// A clone of the session starts with an empty memo. The memo is derived
 /// data, and a what-if copy diverges from its source at once.
 #[derive(Default)]
 pub(crate) struct SelectionStatusMemo {
-    entries: Mutex<BTreeMap<ToolpathId, StatusEntry>>,
+    entries: Mutex<BTreeMap<(ToolpathId, SelectionTarget), StatusEntry>>,
     /// How many times the memo built a report. Read by the sentries
     /// through [`ProjectSession::selection_status_builds`].
     builds: AtomicU64,

@@ -275,7 +275,7 @@ fn a_model_removal_stales_every_reader_p2_6() {
     assert_eq!(session.toolpath_count(), 7, "a removal deletes no toolpath");
     let own = session.toolpath_configs()[0].clone();
     let refusal = session
-        .selection_status(&own)
+        .selection_status(&own, rs_cam_core::session::SelectionTarget::Op)
         .unwrap()
         .refusal
         .clone()

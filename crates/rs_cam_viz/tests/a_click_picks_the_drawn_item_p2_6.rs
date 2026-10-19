@@ -283,6 +283,7 @@ fn a_click_on_a_drawn_hole_toggles_it(face_up: FaceUp, turn: ZRotation) {
         assert!(is_selected(&c, &key), "fixture: the default holds the hole");
         c.handle_internal_event(AppEvent::TogglePick {
             toolpath_id: tp_id,
+            target: rs_cam_core::session::SelectionTarget::Op,
             key: key.clone(),
         });
         assert!(
@@ -293,6 +294,7 @@ fn a_click_on_a_drawn_hole_toggles_it(face_up: FaceUp, turn: ZRotation) {
         // A second click puts it back.
         c.handle_internal_event(AppEvent::TogglePick {
             toolpath_id: tp_id,
+            target: rs_cam_core::session::SelectionTarget::Op,
             key: key.clone(),
         });
         assert!(
@@ -396,6 +398,7 @@ fn a_click_on_a_drawn_face_picks_it_on_a_flipped_setup() {
     };
     c.handle_internal_event(AppEvent::TogglePick {
         toolpath_id: tp_id,
+        target: rs_cam_core::session::SelectionTarget::Op,
         key,
     });
     let picks: Vec<u16> = c.state().session.toolpath_configs()[0]

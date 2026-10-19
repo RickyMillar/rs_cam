@@ -1204,6 +1204,7 @@ fn execute_op_via_session(
     if let Some(selection) = &op.selection {
         let command = Command::EditSelection(EditSelectionArgs {
             index: tp_index,
+            target: rs_cam_core::session::SelectionTarget::Op,
             edit: rs_cam_core::selection::SelectionEdit::Replace(Box::new(selection.clone())),
         });
         let _ = crate::command::apply_command(&mut session, command)

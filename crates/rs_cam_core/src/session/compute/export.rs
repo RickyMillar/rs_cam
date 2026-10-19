@@ -268,13 +268,14 @@ impl ProjectSession {
         // Geometry selection P2.3c, P2.4: the holes and the refusal come
         // from the resolution generation reads (`selection_status`, the
         // memo), for every op.
-        let (selection_holes, selection_refusal) = match self.selection_status(tc) {
-            Ok(report) => (
-                report.holes.len(),
-                report.refusal.as_ref().map(ToString::to_string),
-            ),
-            Err(error) => (0, Some(error.to_string())),
-        };
+        let (selection_holes, selection_refusal) =
+            match self.selection_status(tc, super::super::SelectionTarget::Op) {
+                Ok(report) => (
+                    report.holes.len(),
+                    report.refusal.as_ref().map(ToString::to_string),
+                ),
+                Err(error) => (0, Some(error.to_string())),
+            };
 
         let any_loaded_model_has_mesh = self.models.iter().any(|m| m.mesh.is_some());
 

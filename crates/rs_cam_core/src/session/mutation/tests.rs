@@ -737,7 +737,11 @@ fn a_face_pick_edit_invalidates() {
         brep: Some(3),
     };
     let _ = s
-        .edit_toolpath_selection(0, crate::selection::SelectionEdit::AddPick(key.clone()))
+        .edit_toolpath_selection(
+            0,
+            crate::session::SelectionTarget::Op,
+            crate::selection::SelectionEdit::AddPick(key.clone()),
+        )
         .unwrap();
 
     let picks = s.toolpath_configs()[0]

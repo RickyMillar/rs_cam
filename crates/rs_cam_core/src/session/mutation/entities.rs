@@ -243,51 +243,78 @@ impl ProjectSession {
         idx
     }
 
-    /// Apply one edit to the selection of a toolpath's op (geometry
-    /// selection P2.3c), invalidating its cached result and the results of
-    /// every operation downstream of it.
+    /// Apply one edit to the selection `target` of a toolpath (geometry
+    /// selection P2.3c; P4.1: the op selection or the boundary selection),
+    /// invalidating its cached result and the results of every operation
+    /// downstream of it.
     ///
-    /// A selection edit changes which items the op cuts, so it changes the
-    /// stock a downstream `StockSource::FromRemainingStock` operation
-    /// reads (N6: the chain walk, not `drop_result` alone).
+    /// A selection edit changes which items the op cuts, or where the tool
+    /// may go, so it changes the stock a downstream
+    /// `StockSource::FromRemainingStock` operation reads (N6: the chain
+    /// walk, not `drop_result` alone).
     ///
-    /// Errors if the toolpath's op holds no selection, or if the edit
-    /// refuses (`SelectionEdit::RemoveRule` of an index that names no
-    /// rule).
+    /// Errors if the op holds no selection (`Op`), if the boundary source
+    /// is not a selection (`Boundary`: the command never changes the
+    /// source), or if the edit refuses (`SelectionEdit::RemoveRule` of an
+    /// index that names no rule).
     #[instrument(skip(self, edit))]
     pub(crate) fn edit_toolpath_selection(
         &mut self,
         index: usize,
+        target: crate::session::SelectionTarget,
         edit: crate::selection::SelectionEdit,
     ) -> Result<Effects, SessionError> {
+        use crate::session::SelectionTarget;
         self.try_with_effects(Some(index), move |session| {
+            // Read before the slot borrow: `tc` is borrowed mutably there.
+            let boundary_default = session.boundary_selection_default();
             let tc = session
                 .toolpath_configs
                 .get_mut(index)
                 .ok_or(SessionError::ToolpathNotFound(index))?;
-            // Read before the slot borrow: `tc` is borrowed mutably there.
             let enabled = tc.enabled;
             let name = tc.name.clone();
-            let op_default = tc.operation.default_selection();
-            let Some(op_default) = op_default else {
-                return Err(SessionError::InvalidParam(format!(
-                    "Toolpath '{name}' holds no selection: its operation cuts no drawing item"
-                )));
-            };
-            let label = tc.operation.op_type().label();
             // P2.7: one stored spelling per item. A key or a rule on the
             // model of the toolpath is stored as `ToolpathModel`, in the
             // edit AND in the selection it edits, so a `list_model_items`
-            // key and a viewport pick of one item are one pick.
+            // key and a viewport pick of one item are one pick. The
+            // boundary selection takes the same rule (P4.1).
             let model = crate::ids::ModelId(tc.model_id);
-            let Some(slot) = tc.operation.selection_slot() else {
-                return Err(SessionError::InvalidParam(format!(
-                    "Toolpath '{name}' holds no selection: its operation cuts no drawing item"
-                )));
+            let (slot, op_default, label) = match target {
+                SelectionTarget::Op => {
+                    let no_selection = || {
+                        SessionError::InvalidParam(format!(
+                            "Toolpath '{name}' holds no selection: its operation cuts no \
+                             drawing item"
+                        ))
+                    };
+                    let op_default = tc.operation.default_selection().ok_or_else(no_selection)?;
+                    let label = tc.operation.op_type().label();
+                    let slot = tc.operation.selection_slot().ok_or_else(no_selection)?;
+                    (slot, op_default, label)
+                }
+                SelectionTarget::Boundary => match &mut tc.boundary.source {
+                    crate::compute::config::BoundarySource::Selection { selection, .. } => (
+                        selection,
+                        boundary_default,
+                        crate::session::selection_status::BOUNDARY_LABEL,
+                    ),
+                    crate::compute::config::BoundarySource::Stock
+                    | crate::compute::config::BoundarySource::ModelSilhouette
+                    | crate::compute::config::BoundarySource::DerivedRestRegions { .. }
+                    | crate::compute::config::BoundarySource::PlannedTierRegions { .. } => {
+                        return Err(crate::session::selection_status::boundary_not_a_selection(
+                            &name,
+                        ));
+                    }
+                },
             };
             let mut next = slot.clone().for_toolpath_model(model);
-            next.apply(edit.for_toolpath_model(model), &op_default)
-                .map_err(|e| SessionError::Selection(e.for_op(label)))?;
+            next.apply(
+                edit.for_toolpath_model(model),
+                &op_default.for_toolpath_model(model),
+            )
+            .map_err(|e| SessionError::Selection(e.for_op(label)))?;
             *slot = next;
             session.invalidate_result_chain(index, enabled);
             Ok(())

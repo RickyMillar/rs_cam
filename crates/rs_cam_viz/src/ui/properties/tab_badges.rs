@@ -552,6 +552,7 @@ pub(super) fn draw_geometry_wiring(
                     }
                     events.push(crate::ui::AppEvent::EditToolpathSelection {
                         toolpath_id: entry.id,
+                        target: rs_cam_core::session::SelectionTarget::Op,
                         edit: rs_cam_core::selection::SelectionEdit::Replace(Box::new(cleared)),
                     });
                 }

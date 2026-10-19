@@ -604,6 +604,7 @@ fn n6_a_drill_pick_invalidates_the_chain() {
     let _ = s
         .apply(Command::EditSelection(EditSelectionArgs {
             index: 0,
+            target: rs_cam_core::session::SelectionTarget::Op,
             edit: SelectionEdit::AddPick(MatchKey {
                 source: SourceRef::ToolpathModel,
                 kind: ItemKind::Point,

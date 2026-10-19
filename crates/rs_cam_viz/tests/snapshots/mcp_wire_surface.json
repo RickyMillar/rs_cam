@@ -918,7 +918,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "description": "`edit_toolpath_selection` (P2.7): apply one edit to the selection of\nthe op of a toolpath. The edit stales that toolpath and its dependents.",
+      "description": "`edit_toolpath_selection` (P2.7): apply one edit to the selection\n`target` of a toolpath. The edit stales that toolpath and its\ndependents.",
       "properties": {
         "edit": {
           "description": "The edit.",
@@ -1766,6 +1766,21 @@
           "format": "uint",
           "minimum": 0,
           "type": "integer"
+        },
+        "target": {
+          "description": "The selection the edit writes. Absent: `\"op\"`.",
+          "oneOf": [
+            {
+              "const": "op",
+              "description": "The selection of the op.",
+              "type": "string"
+            },
+            {
+              "const": "boundary",
+              "description": "The selection of the machining boundary.",
+              "type": "string"
+            }
+          ]
         }
       },
       "required": [
@@ -3342,18 +3357,34 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "`selection_status` (P2.7, P4.1): what the selection `target` of a\ntoolpath resolves to.",
       "properties": {
         "index": {
-          "description": "Toolpath index (0-based)",
+          "description": "Toolpath index (0-based).",
           "format": "uint",
           "minimum": 0,
           "type": "integer"
+        },
+        "target": {
+          "description": "The selection to read. Absent: `\"op\"`.",
+          "oneOf": [
+            {
+              "const": "op",
+              "description": "The selection of the op.",
+              "type": "string"
+            },
+            {
+              "const": "boundary",
+              "description": "The selection of the machining boundary.",
+              "type": "string"
+            }
+          ]
         }
       },
       "required": [
         "index"
       ],
-      "title": "IndexParam",
+      "title": "SelectionStatusParam",
       "type": "object"
     },
     "name": "selection_status"
