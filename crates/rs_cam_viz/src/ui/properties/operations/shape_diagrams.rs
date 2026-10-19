@@ -453,7 +453,9 @@ pub(in crate::ui::properties) fn draw_lead_in_out_diagram(ui: &mut egui::Ui, rad
 
 // ── Tab Placement Diagram ───────────────────────────────────────────────
 
-/// Draw a simplified top-down perimeter with tab markers at even spacing.
+/// Draw a simplified top-down perimeter with tab markers. A sketch only:
+/// the generator puts at least one tab on each straight side that holds
+/// one, and at least `tab_count` per loop (P5, `dressup::tabs::auto_tabs`).
 pub(in crate::ui::properties) fn draw_tab_diagram(
     ui: &mut egui::Ui,
     tab_count: usize,
@@ -529,7 +531,7 @@ pub(in crate::ui::properties) fn draw_tab_diagram(
         egui::pos2(rect.center().x, rect.bottom() - 4.0),
         egui::Align2::CENTER_BOTTOM,
         format!(
-            "{tab_count} tab{} \u{00D7} {tab_width:.1}mm \u{00D7} {tab_height:.1}mm",
+            "min {tab_count} tab{}/loop, 1+ per side \u{00D7} {tab_width:.1}mm \u{00D7} {tab_height:.1}mm",
             if tab_count == 1 { "" } else { "s" }
         ),
         egui::FontId::proportional(9.0),

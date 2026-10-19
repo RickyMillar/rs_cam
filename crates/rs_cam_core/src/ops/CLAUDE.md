@@ -7,7 +7,7 @@ module is reached through `compute::execute_operation_annotated`.
 
 - `mod.rs`, `depth.rs`, `adaptive_shared.rs` — facade, depth stepping, shared
   adaptive helpers. `waterline.rs` — constant-Z contours.
-- `pocket.rs`, `profile.rs`, `face.rs`, `zigzag.rs` — the 2.5D clearing family (a rest pass is a remaining-stock Pocket,
+- `pocket.rs`, `profile.rs` (`profile_ring` = the ONE cut ring; tabs measure on it, P5), `face.rs`, `zigzag.rs` — the 2.5D clearing family (a rest pass is a remaining-stock Pocket,
   R3). Pocket, Zigzag, Profile, Trace, Face give Z-free geometry + one level; `compute/execute/layered.rs` steps Z (W3). D3: no per-op public wrapper; a test reads `tests/common/kernels.rs` or `op_fixtures::generated_op`. `face::face_levels` = the ONE Face ladder.
 - `drill.rs`, `drill_op.rs`, `drill_metrics.rs` — the drilling family.
 - `vcarve.rs`, `inlay.rs`, `chamfer.rs`, `trace_path.rs`, `project_curve.rs` — the engraving

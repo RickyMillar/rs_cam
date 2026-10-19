@@ -108,6 +108,13 @@ pub(crate) fn generate_trace(
 /// Each Profile pass ends with its own retract to `safe_z`
 /// (`Toolpath::emit_closed_contour_with_intent`), so the runner's retract
 /// between levels is a no-op here, as it was in the hand-written ladder.
+///
+/// P5: the hand tabs (`tab_points`) resolve here, once, against every
+/// region of the op, because the nearest loop is a question over all of
+/// them. A point farther than [`hand_tab_reach`] from every loop refuses
+/// the op: a dropped hand tab is a part with less hold than the user set.
+///
+/// [`hand_tab_reach`]: crate::dressup::tabs::hand_tab_reach
 pub(crate) fn generate_profile(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
@@ -115,8 +122,12 @@ pub(crate) fn generate_profile(
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Profile, "generate_profile");
     let feeds = LayerFeeds::new(ctx, op);
+    let regions = prepared.regions()?.as_slice();
+    let hand_tabs = resolve_hand_tabs(ctx, cfg, regions)?;
     let pass = ProfilePass {
         cfg,
+        regions,
+        hand_tabs,
         rest_use: op.capabilities().rest_use,
         base: crate::ops::profile::ProfileParams {
             tool_radius: feeds.tool_radius,
@@ -427,19 +438,165 @@ impl LayeredOp for TracePass<'_> {
     }
 }
 
+/// A hand tab, snapped to the outline of the region it names (setup
+/// frame).
+struct HandTab {
+    region: usize,
+    on_outline: P2,
+}
+
+/// The hand tabs of `cfg` in the setup frame, each snapped to the nearest
+/// region exterior (the loop a Profile cuts). Refuses a point farther than
+/// [`crate::dressup::tabs::hand_tab_reach`] from every exterior, and names
+/// it.
+fn resolve_hand_tabs(
+    ctx: &ExecutionContext<'_>,
+    cfg: &ProfileConfig,
+    regions: &[Polygon2],
+) -> Result<Vec<HandTab>, OperationError> {
+    let reach = crate::dressup::tabs::hand_tab_reach(ctx.tool_def.radius());
+    cfg.tab_points
+        .iter()
+        .map(|&[x, y]| {
+            let drawn = P2::new(x, y);
+            // The points are in the drawing frame, as the items are; the
+            // setup moves them as it moves the loops (`to_setup_frame`).
+            let local = ctx
+                .setup_transform
+                .map_or(drawn, |info| info.drawing_to_local(drawn));
+            let nearest = regions
+                .iter()
+                .enumerate()
+                .filter_map(|(i, r)| {
+                    crate::dressup::tabs::nearest_on_loop(&r.exterior, local)
+                        .map(|(q, _, d)| (i, q, d))
+                })
+                .min_by(|a, b| a.2.total_cmp(&b.2));
+            match nearest {
+                Some((region, on_outline, d)) if d <= reach => Ok(HandTab { region, on_outline }),
+                _ => Err(OperationError::Other(format!(
+                    "Profile: the hand tab at X{x:.3} Y{y:.3} is {} from every loop this \
+                     operation cuts; a tab must be within {reach:.3} mm (one tool diameter) of a \
+                     loop. Move the point onto the outline or delete it from tab_points.",
+                    nearest.map_or_else(|| "far".to_owned(), |(_, _, d)| format!("{d:.3} mm"))
+                ))),
+            }
+        })
+        .collect()
+}
+
 /// The Profile op: the tool-centre contour of each region, cut at each
 /// level, with tabs at the final Z.
 struct ProfilePass<'a> {
     cfg: &'a ProfileConfig,
+    /// The regions of the op (`Prepared::regions`), to find the region of
+    /// an outline in `prepare` and its hand tabs.
+    regions: &'a [Polygon2],
+    hand_tabs: Vec<HandTab>,
     rest_use: RestUse,
     /// The params of every level; `emit_level` sets `cut_depth`.
     base: crate::ops::profile::ProfileParams,
 }
 
+/// One contour of a Profile region: the ring the pass cuts (in cut order,
+/// its start in a gap between tabs) and the tabs of the final Z.
+struct ProfileContour {
+    ring: Vec<P2>,
+    tabs: Vec<crate::dressup::Tab>,
+}
+
+/// What one Profile `prepare` reports: its offset failures and its tab
+/// notes.
+struct ProfileReport {
+    offsets: OffsetFailures,
+    tabs: Option<crate::compute::toolpath_stats::TabPlacementFinding>,
+}
+
+impl super::findings::RecordFindings for ProfileReport {
+    fn record_into(&self, findings: &mut super::GenerationFindings) {
+        findings.record(&self.offsets);
+        findings.record(&self.tabs);
+    }
+}
+
+impl ProfilePass<'_> {
+    /// The tabs of one contour of `outline`, the outline at index `region`
+    /// of the op (`None` when the outline is not one of the op's regions).
+    ///
+    /// The rule (P5): the hand tabs of the region replace its automatic
+    /// tabs. Without a hand tab, `tab_count > 0` asks for the side rule
+    /// ([`crate::dressup::tabs::auto_tabs`]); a loop with no side that
+    /// holds a tab takes `tab_count` tabs spaced evenly by length, and the
+    /// note says so.
+    fn contour_tabs(
+        &self,
+        outline: &Polygon2,
+        region: Option<usize>,
+        ring: &[P2],
+        notes: &mut Vec<crate::compute::toolpath_stats::TabNote>,
+    ) -> crate::dressup::tabs::TabbedRing {
+        use crate::compute::toolpath_stats::TabNote;
+        use crate::dressup::tabs::{AutoTabs, auto_tabs, even_centres, tabbed_ring};
+        let hand: Vec<P2> = self
+            .hand_tabs
+            .iter()
+            .filter(|h| Some(h.region) == region)
+            .map(|h| h.on_outline)
+            .collect();
+        let centre = || {
+            let (lo, hi) = outline.exterior.iter().fold(
+                ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]),
+                |(lo, hi), p| {
+                    (
+                        [lo[0].min(p.x), lo[1].min(p.y)],
+                        [hi[0].max(p.x), hi[1].max(p.y)],
+                    )
+                },
+            );
+            [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0]
+        };
+        let loop_index = region.unwrap_or(usize::MAX);
+        let asked = self.cfg.tab_count;
+        let centres = if !hand.is_empty() {
+            hand
+        } else if asked == 0 {
+            Vec::new()
+        } else {
+            match auto_tabs(
+                &outline.exterior,
+                asked,
+                self.cfg.tab_width,
+                self.base.tool_radius,
+            ) {
+                AutoTabs::OnSides { centres, .. } => {
+                    if centres.len() < asked {
+                        notes.push(TabNote::FewerThanAsked {
+                            loop_index,
+                            centre: centre(),
+                            placed: centres.len(),
+                            asked,
+                        });
+                    }
+                    centres
+                }
+                AutoTabs::NoSide => {
+                    notes.push(TabNote::EvenSpacing {
+                        loop_index,
+                        centre: centre(),
+                        count: asked,
+                    });
+                    even_centres(ring, asked)
+                }
+            }
+        };
+        tabbed_ring(ring, &centres, self.cfg.tab_width)
+    }
+}
+
 impl LayeredOp for ProfilePass<'_> {
     type Input = Polygon2;
-    type Geometry = Vec<Vec<P2>>;
-    type Report = OffsetFailures;
+    type Geometry = Vec<ProfileContour>;
+    type Report = ProfileReport;
 
     fn depth_per_pass(&self) -> f64 {
         self.cfg.depth_per_pass
@@ -459,7 +616,7 @@ impl LayeredOp for ProfilePass<'_> {
     /// to one side, so the band is two radii wide on each side.
     fn reach_band(&self, geometry: &Self::Geometry, tool_radius: f64) -> ReachBand {
         ReachBand {
-            rings: geometry.clone(),
+            rings: geometry.iter().map(|c| c.ring.clone()).collect(),
             half_width: if self.base.compensate_in_controller {
                 2.0 * tool_radius
             } else {
@@ -470,25 +627,62 @@ impl LayeredOp for ProfilePass<'_> {
 
     /// The side offset (or the outline itself when the controller
     /// compensates): one contour per piece. A piece whose offset collapses
-    /// gives no contour.
+    /// gives no contour, so it cuts nothing and needs no tab.
+    ///
+    /// P5: the tabs are Z-free, so they are placed here, once per region
+    /// ([`Self::contour_tabs`]). The piece finds its region by its
+    /// exterior: a Profile is not a `LevelClip` op, so the runner gives it
+    /// the region polygons whole.
     fn prepare(
         &self,
         region: &[Polygon2],
         _layer: &LayerCtx<'_>,
     ) -> Result<(Self::Geometry, Self::Report), OperationError> {
+        let tabs_on = self.cfg.tab_count > 0 || !self.hand_tabs.is_empty();
         let mut contours = Vec::new();
         let mut failures = 0;
+        let mut notes = Vec::new();
         for piece in region {
             let (contour, piece_failures) =
                 crate::ops::profile::profile_path_reported(piece, &self.base);
             failures += piece_failures;
-            contours.extend(contour);
+            let Some(contour) = contour else { continue };
+            let ring = crate::ops::profile::profile_ring(&contour, self.base.climb);
+            let contour = if tabs_on {
+                let index = self
+                    .regions
+                    .iter()
+                    .position(|r| r.exterior == piece.exterior);
+                let tabbed = self.contour_tabs(piece, index, &ring, &mut notes);
+                ProfileContour {
+                    tabs: tabbed.tabs(self.cfg.tab_width, self.cfg.tab_height),
+                    ring: tabbed.ring,
+                }
+            } else {
+                ProfileContour {
+                    ring,
+                    tabs: Vec::new(),
+                }
+            };
+            contours.push(contour);
         }
-        Ok((contours, OffsetFailures(failures)))
+        let tabs =
+            (!notes.is_empty()).then(|| crate::compute::toolpath_stats::TabPlacementFinding {
+                op: crate::compute::catalog::OperationType::Profile.label(),
+                notes,
+            });
+        Ok((
+            contours,
+            ProfileReport {
+                offsets: OffsetFailures(failures),
+                tabs,
+            },
+        ))
     }
 
     /// Each contour at `level.z`, climb or conventional. On a level at the
-    /// final Z each contour gets its own evenly spaced tabs.
+    /// final Z each contour gets its own tabs (placed in `prepare`), cut by
+    /// the one lift emitter, [`crate::dressup::apply_tabs`].
     fn emit_level(
         &self,
         geometry: &Self::Geometry,
@@ -500,15 +694,13 @@ impl LayeredOp for ProfilePass<'_> {
             cut_depth: level.z,
             ..self.base
         };
-        let tabs = (self.cfg.tab_count > 0 && level.is_final).then(|| {
-            crate::dressup::even_tabs(self.cfg.tab_count, self.cfg.tab_width, self.cfg.tab_height)
-        });
         let mut tp = Toolpath::new();
         for contour in geometry {
-            let pass = crate::ops::profile::profile_path_to_toolpath(contour, &params);
-            let pass = match &tabs {
-                Some(tabs) => crate::dressup::apply_tabs(pass, tabs, level.z),
-                None => pass,
+            let pass = crate::ops::profile::profile_ring_to_toolpath(&contour.ring, &params);
+            let pass = if level.is_final && !contour.tabs.is_empty() {
+                crate::dressup::apply_tabs(pass, &contour.tabs, level.z)
+            } else {
+                pass
             };
             tp.moves.extend(pass.moves);
         }

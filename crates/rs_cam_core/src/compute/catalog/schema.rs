@@ -178,9 +178,11 @@ impl ParamType for bool {
     const OPTION_TYPE_NAME: &'static str = "option<bool>";
 }
 
+/// A list of XY points. The `vec<` prefix is the list mark that the
+/// setter (`null` clears to `[]`) and `params_value_including_nulls` read.
 impl ParamType for Vec<[f64; 2]> {
-    const TYPE_NAME: &'static str = "array<[f64;2]>";
-    const OPTION_TYPE_NAME: &'static str = "option<array<[f64;2]>>";
+    const TYPE_NAME: &'static str = "vec<[f64;2]>";
+    const OPTION_TYPE_NAME: &'static str = "option<vec<[f64;2]>>";
 }
 
 /// A tool id is a plain index on the wire.

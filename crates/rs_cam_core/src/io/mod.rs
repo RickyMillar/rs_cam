@@ -93,8 +93,9 @@ pub(crate) fn load_geometry(
         ModelKind::Dxf => {
             // Two scales, in this order: `$INSUNITS` inside the door, then
             // the declared units here.
-            let import = crate::io::dxf_input::load_dxf(path, 5.0)
-                .map_err(|e| format!("DXF load failed: {e}"))?;
+            let import =
+                crate::io::dxf_input::load_dxf(path, crate::selection::item::CIRCLE_ARC_STEP_DEG)
+                    .map_err(|e| format!("DXF load failed: {e}"))?;
             let items = import
                 .items
                 .scaled(scale)

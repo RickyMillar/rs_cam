@@ -303,12 +303,21 @@ pub struct ThroughCut {
     pub stock_thickness_mm: f64,
     /// The Profile's tab count at the time the rule was read.
     pub tab_count: usize,
+    /// The Profile's hand-placed tabs (`tab_points`, P5) at that time.
+    pub hand_tabs: usize,
 }
 
 impl ThroughCut {
-    /// The one line the Profile form prints beside Depth.
+    /// The one line the Profile form prints beside Depth. Hand tabs hold
+    /// the part too, so a count of 0 with hand tabs is not "no tabs".
     pub fn message(&self) -> String {
-        through_cut_message(self.stock_thickness_mm, self.tab_count)
+        let line = through_cut_message(self.stock_thickness_mm, self.tab_count);
+        match (self.tab_count, self.hand_tabs) {
+            (_, 0) => line,
+            (0, 1) => through_cut_holding(self.stock_thickness_mm, "1 hand tab"),
+            (0, h) => through_cut_holding(self.stock_thickness_mm, &format!("{h} hand tabs")),
+            (_, h) => format!("{line} + {h} hand placed"),
+        }
     }
 }
 
@@ -329,6 +338,11 @@ fn through_cut_message(stock_thickness_mm: f64, tab_count: usize) -> String {
         1 => "1 tab".to_owned(),
         k => format!("{k} tabs"),
     };
+    format!("Through cut of a {board} mm board · Holding: {holding}")
+}
+
+fn through_cut_holding(stock_thickness_mm: f64, holding: &str) -> String {
+    let board = board_thickness_text(stock_thickness_mm);
     format!("Through cut of a {board} mm board · Holding: {holding}")
 }
 
@@ -379,6 +393,7 @@ pub fn profile_through_cut(
         depth_mm,
         stock_thickness_mm,
         tab_count: cfg.tab_count,
+        hand_tabs: cfg.tab_points.len(),
     })
 }
 

@@ -46,8 +46,8 @@ use rs_cam_core::compute::toolpath_stats::{
     BandHeightClip, BoundaryClipDroppedFinding, BuriedCurveFinding, ClaimsReferenceFinding,
     ClippedBandFinding, DerivedStepoverFinding, DroppedBandFinding, HeightClip,
     InertClaimsDialFinding, MeasuredBands, RestLevelsFallback, RestLevelsFinding,
-    SelectionNoteFinding, TipFloatFinding, ToolpathStats, WaterlineLadderFinding,
-    ZeroRemovalFinding,
+    SelectionNoteFinding, TabNote, TabPlacementFinding, TipFloatFinding, ToolpathStats,
+    WaterlineLadderFinding, ZeroRemovalFinding,
 };
 use rs_cam_core::compute::{compute_stats_with_spans, stats_with_findings};
 use rs_cam_core::finish::finish_planner::FinishBand;
@@ -202,6 +202,16 @@ fn every_finding_recorded() -> GenerationFindings {
                 item_use: ItemUse::Regions,
             }],
         }),
+        // P5. Recorded by the Profile adapter for a loop whose tabs did
+        // not follow the side rule.
+        tab_placement: Some(TabPlacementFinding {
+            op: "Profile",
+            notes: vec![TabNote::EvenSpacing {
+                loop_index: 1,
+                centre: [20.0, -5.0],
+                count: 3,
+            }],
+        }),
         // Checkpoint C (Q1 / D-2). `Some(2)` rather than `Some(0)` on
         // purpose: this fixture's job is to make a dropped field read as its
         // default, and `Some(0)` is itself a meaningful measured value here.
@@ -327,6 +337,7 @@ fn every_recorded_finding_survives_the_single_join() {
         zero_removal,
         buried_curve,
         selection_note,
+        tab_placement,
         offset_library_failures,
         boundary_clip_dropped,
         waterline_ladder,
@@ -377,6 +388,7 @@ fn every_recorded_finding_survives_the_single_join() {
     assert_eq!(zero_removal, findings.zero_removal);
     assert_eq!(buried_curve, findings.buried_curve);
     assert_eq!(selection_note, findings.selection_note);
+    assert_eq!(tab_placement, findings.tab_placement);
     assert_eq!(offset_library_failures, findings.offset_library_failures);
     assert_eq!(boundary_clip_dropped, findings.boundary_clip_dropped);
     assert_eq!(waterline_ladder, findings.waterline_ladder);
@@ -441,6 +453,7 @@ fn an_unrecorded_generation_still_reads_as_not_measured() {
     assert_eq!(stats.zero_removal, None);
     assert_eq!(stats.buried_curve, None);
     assert_eq!(stats.selection_note, None);
+    assert_eq!(stats.tab_placement, None);
     assert_eq!(
         stats.offset_library_failures, None,
         "an operation that ran no reporting offset has measured nothing — \

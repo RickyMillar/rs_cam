@@ -24,7 +24,7 @@ use super::key::MatchKey;
 
 /// The arc step of [`Shape::circle`]: the arc tolerance (degrees) that the
 /// model door passes to the DXF door (`io::load_geometry`).
-const CIRCLE_ARC_STEP_DEG: f64 = 5.0;
+pub(crate) const CIRCLE_ARC_STEP_DEG: f64 = 5.0;
 
 /// Where an item comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

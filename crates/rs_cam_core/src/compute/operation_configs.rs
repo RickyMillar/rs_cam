@@ -564,7 +564,14 @@ pub struct ProfileConfig {
     #[param(help = RAMP_FEED_RATE_HELP)]
     pub ramp_feed_rate: Option<f64>,
     pub climb: bool,
-    #[param(range = 0.0..=20.0)]
+    /// The minimum count of automatic tabs per loop (P5, S12). Every
+    /// straight side that holds a tab gets one, so a loop can take more;
+    /// see `dressup::tabs::auto_tabs`. `0` turns the automatic tabs off.
+    #[param(
+        help = "Minimum holding tabs per loop. Each straight side long enough gets one; extra tabs \
+                go to the longest sides. 0 = no automatic tabs.",
+        range = 0.0..=20.0,
+    )]
     pub tab_count: usize,
     #[param(
         help = "Width of holding tabs that keep the part attached to stock.",
@@ -576,6 +583,20 @@ pub struct ProfileConfig {
         range = 0.5..=20.0,
     )]
     pub tab_height: f64,
+    /// Hand-placed tabs (P5, S13): XY points in the drawing frame (the
+    /// frame of the model items), each snapped at generation to the
+    /// nearest loop the op cuts. A point farther than one tool diameter
+    /// from every loop refuses the op. The hand tabs of a loop replace its
+    /// automatic tabs; a loop with no hand tab keeps `tab_count`.
+    // `optional`: an empty list is not written to the file (no key), so
+    // the param is optional by fact.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[param(
+        optional,
+        help = "Hand-placed tabs: [[x, y], ...] in drawing coordinates. Each snaps to the nearest \
+                loop (within one tool diameter) and replaces the automatic tabs of that loop."
+    )]
+    pub tab_points: Vec<[f64; 2]>,
     #[param(range = 0.0..=10.0)]
     pub finishing_passes: usize,
     pub compensation: CompensationType,
@@ -610,6 +631,7 @@ impl Default for ProfileConfig {
             tab_count: 0,
             tab_width: 6.0,
             tab_height: 2.0,
+            tab_points: Vec::new(),
             finishing_passes: 0,
             compensation: CompensationType::InComputer,
             spindle_rpm: None,

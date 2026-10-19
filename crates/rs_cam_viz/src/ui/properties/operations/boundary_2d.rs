@@ -259,7 +259,8 @@ pub(in crate::ui::properties) fn draw_profile_params(
 
 /// The Tabs disclosure of Profile, with its diagram.
 fn draw_profile_tabs(ui: &mut egui::Ui, cfg: &mut ProfileConfig, through_cut: Option<&ThroughCut>) {
-    let tabs_default_open = through_cut.is_some() && cfg.tab_count == 0;
+    let tabs_default_open =
+        through_cut.is_some() && cfg.tab_count == 0 && cfg.tab_points.is_empty();
     let tabs_seen_id = ui.id().with("prof_tabs_through_cut_seen");
     let tabs_seen_open: Option<bool> = ui.data(|d| d.get_temp(tabs_seen_id));
     ui.data_mut(|d| d.insert_temp(tabs_seen_id, tabs_default_open));
@@ -283,7 +284,19 @@ fn draw_profile_tabs(ui: &mut egui::Ui, cfg: &mut ProfileConfig, through_cut: Op
                     cfg.tab_count = count.max(0) as usize;
                 }
                 ui.end_row();
-                if cfg.tab_count > 0 {
+                // P5: hand tabs come from `tab_points` (MCP or the project
+                // file); the viewport editor is open work (P4).
+                if !cfg.tab_points.is_empty() {
+                    ui.label("Hand tabs:");
+                    ui.horizontal(|ui| {
+                        ui.label(cfg.tab_points.len().to_string());
+                        if ui.small_button("Clear").clicked() {
+                            cfg.tab_points.clear();
+                        }
+                    });
+                    ui.end_row();
+                }
+                if cfg.tab_count > 0 || !cfg.tab_points.is_empty() {
                     dv(
                         ui,
                         p(OperationType::Profile, "tab_width", "Width:"),

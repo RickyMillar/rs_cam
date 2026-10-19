@@ -252,6 +252,10 @@ pub struct ToolpathStats {
     /// ([`SelectionNoteFinding`]). `None` = nothing was left out.
     /// Report-only.
     pub selection_note: Option<SelectionNoteFinding>,
+    /// P5: the loops whose tabs did not follow the side rule
+    /// ([`TabPlacementFinding`]). `None` = every tabbed loop took its tabs
+    /// on its sides, or no loop has tabs. Report-only.
+    pub tab_placement: Option<TabPlacementFinding>,
     /// Checkpoint C (Q1 / D-2): how many times this generation's 2D offsets
     /// came back with a [`crate::polygon::OffsetFailure`] instead of a
     /// result — a `cavalier_contours` panic the chokepoint contained, or an
@@ -1063,6 +1067,72 @@ impl SelectionNoteFinding {
             self.op,
             notes.join(" ")
         )
+    }
+}
+
+/// P5 (S12): the loops of a Profile whose automatic tabs did not follow
+/// the side rule. One note per loop, in the order the op cut them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TabPlacementFinding {
+    /// The op label (`OperationType::label`).
+    pub op: &'static str,
+    /// Never empty on a recorded finding.
+    pub notes: Vec<TabNote>,
+}
+
+/// One loop whose automatic tabs did not follow the side rule.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TabNote {
+    /// No straight side of the loop holds a tab clear of its corners (a
+    /// circle, an organic shape). The tabs are spaced evenly by length.
+    EvenSpacing {
+        /// The loop: its index in the op's regions and the centre of its
+        /// bounding box (setup frame).
+        loop_index: usize,
+        centre: [f64; 2],
+        count: usize,
+    },
+    /// The sides hold fewer tabs than the count asks, with the gap rule.
+    FewerThanAsked {
+        loop_index: usize,
+        centre: [f64; 2],
+        placed: usize,
+        asked: usize,
+    },
+}
+
+impl std::fmt::Display for TabNote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::EvenSpacing {
+                loop_index,
+                centre: [x, y],
+                count,
+            } => write!(
+                f,
+                "Loop {loop_index} (centre X{x:.2} Y{y:.2}): no straight side holds a tab \
+                 clear of its corners, so its {count} tabs are spaced evenly by length."
+            ),
+            Self::FewerThanAsked {
+                loop_index,
+                centre: [x, y],
+                placed,
+                asked,
+            } => write!(
+                f,
+                "Loop {loop_index} (centre X{x:.2} Y{y:.2}): its straight sides hold {placed} \
+                 of the {asked} tabs asked, clear of the corners and of each other."
+            ),
+        }
+    }
+}
+
+impl TabPlacementFinding {
+    /// The operator-facing sentence of the finding.
+    #[must_use]
+    pub fn message(&self) -> String {
+        let notes: Vec<String> = self.notes.iter().map(ToString::to_string).collect();
+        format!("{}: {}", self.op, notes.join(" "))
     }
 }
 

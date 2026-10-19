@@ -17,8 +17,8 @@ use super::dressup_apply::SHALLOW_SLOPE_DERATE_BASIS;
 use crate::compute::toolpath_stats::{
     BoundaryClipDroppedFinding, BuriedCurveFinding, ClaimsReferenceFinding, ClippedBandFinding,
     DerivedStepoverFinding, DroppedBandFinding, InertClaimsDialFinding, RestLevelsFinding,
-    SelectionNoteFinding, SlopeDerateDetail, TipFloatFinding, WaterlineLadderFinding,
-    ZeroRemovalFinding,
+    SelectionNoteFinding, SlopeDerateDetail, TabPlacementFinding, TipFloatFinding,
+    WaterlineLadderFinding, ZeroRemovalFinding,
 };
 
 /// A report that writes itself into [`GenerationFindings`].
@@ -380,6 +380,17 @@ impl RecordFindings for BuriedCurveFinding {
 impl RecordFindings for SelectionNoteFinding {
     fn record_into(&self, findings: &mut GenerationFindings) {
         findings.selection_note = Some(self.clone());
+    }
+}
+
+/// P5: the tab notes of one Profile region. APPENDS: each region of the op
+/// prepares once and adds its own notes.
+impl RecordFindings for TabPlacementFinding {
+    fn record_into(&self, findings: &mut GenerationFindings) {
+        match &mut findings.tab_placement {
+            Some(f) => f.notes.extend(self.notes.iter().copied()),
+            None => findings.tab_placement = Some(self.clone()),
+        }
     }
 }
 

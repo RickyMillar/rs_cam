@@ -46,6 +46,7 @@ pub fn diagnostics_from_generation(
     out.extend(zero_removal(toolpath_id, stats));
     out.extend(buried_curve(toolpath_id, stats));
     out.extend(selection_note(toolpath_id, stats));
+    out.extend(tab_placement(toolpath_id, stats));
     out.extend(offset_library_failures(toolpath_id, stats));
     out.extend(boundary_clip_dropped(toolpath_id, stats));
     out.extend(waterline_ladder(toolpath_id, stats));
@@ -395,6 +396,30 @@ fn selection_note(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnos
         category: Category::Geometry,
         severity: Severity::Caution,
         // Counted at generation over the drawing the op reads.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: f.message(),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
+}
+
+/// P5: a Profile loop did not take its tabs on its straight sides. `Info`:
+/// the loop still has tabs, but not where the side rule puts them, or
+/// fewer than asked. Silent when every loop followed the rule.
+fn tab_placement(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    let Some(f) = &stats.tab_placement else {
+        return Vec::new();
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::GEOM_TAB_PLACEMENT),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Geometry,
+        severity: Severity::Info,
+        // Decided at generation over the loops the op cuts.
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,

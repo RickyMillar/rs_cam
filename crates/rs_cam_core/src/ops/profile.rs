@@ -140,23 +140,30 @@ pub fn profile_contour_reported(
 /// `params.cut_depth` is the only thing a depth-stepped caller varies across
 /// levels. See [`profile_path_reported`] for the other half.
 pub fn profile_path_to_toolpath(contour: &[P2], params: &ProfileParams) -> Toolpath {
-    let mut tp = Toolpath::new();
+    profile_ring_to_toolpath(&profile_ring(contour, params.climb), params)
+}
 
-    if contour.is_empty() {
-        return tp;
-    }
-
-    // Optionally reverse for climb milling.
-    let ordered: Vec<&P2> = if params.climb {
-        contour.iter().rev().collect()
+/// The closed ring a profile pass cuts, in cut order: the contour, reversed
+/// for climb milling. The pass plunges at its first point and closes back
+/// to it. The tab placer (P5) measures along this ring, so a tab position
+/// lands where [`crate::dressup::apply_tabs`] measures it.
+#[must_use]
+pub fn profile_ring(contour: &[P2], climb: bool) -> Vec<P2> {
+    if climb {
+        contour.iter().rev().copied().collect()
     } else {
-        contour.iter().collect()
-    };
-    let points: Vec<P3> = ordered
+        contour.to_vec()
+    }
+}
+
+/// One pass along `ring` (already in cut order, see [`profile_ring`]) at
+/// `params.cut_depth`.
+pub fn profile_ring_to_toolpath(ring: &[P2], params: &ProfileParams) -> Toolpath {
+    let mut tp = Toolpath::new();
+    let points: Vec<P3> = ring
         .iter()
         .map(|p| P3::new(p.x, p.y, params.cut_depth))
         .collect();
-
     tp.emit_closed_contour_with_intent(
         &points,
         params.safe_z,
@@ -164,7 +171,6 @@ pub fn profile_path_to_toolpath(contour: &[P2], params: &ProfileParams) -> Toolp
         params.plunge_rate,
         MoveIntent::FinishingCut,
     );
-
     tp
 }
 

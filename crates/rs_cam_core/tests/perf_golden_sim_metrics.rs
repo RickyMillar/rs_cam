@@ -448,6 +448,7 @@ fn fixture_session_2d() -> ProjectSession {
                 tab_count: 0,
                 tab_width: 6.0,
                 tab_height: 2.0,
+                tab_points: Vec::new(),
                 finishing_passes: 0,
                 compensation: rs_cam_core::compute::operation_configs::CompensationType::InComputer,
                 spindle_rpm: Some(18_000),

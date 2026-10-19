@@ -155,6 +155,10 @@ pub struct GenerationFindings {
     /// no open path was left out. Written by the prologue. See
     /// [`crate::compute::toolpath_stats::SelectionNoteFinding`].
     pub selection_note: Option<crate::compute::toolpath_stats::SelectionNoteFinding>,
+    /// P5: the loops whose tabs did not follow the side rule. `None` =
+    /// none. Written by the Profile adapter. See
+    /// [`crate::compute::toolpath_stats::TabPlacementFinding`].
+    pub tab_placement: Option<crate::compute::toolpath_stats::TabPlacementFinding>,
     /// Checkpoint C (Q1 / D-2): how many of this generation's 2D offset
     /// calls came back with a [`crate::polygon::OffsetFailure`].
     ///
@@ -348,8 +352,9 @@ pub struct ExecutionContext<'a> {
     /// by the driver before generation, and `stock_bbox` is the
     /// emission-frame bbox. The drill picks took this transform until
     /// geometry selection P2.3c; they are items of the selection now and
-    /// take the frame door (`ResolvedSelection::to_setup_frame`). The one
-    /// reader left is [`Self::z_flipped`] (W6.5).
+    /// take the frame door (`ResolvedSelection::to_setup_frame`). Two
+    /// readers are left: [`Self::z_flipped`] (W6.5) and the Profile hand
+    /// tabs (P5), which are drawing-frame points like the items.
     ///
     /// `None` MUST be a no-op: identity setups already emit in world, so an
     /// adapter that reaches for this has to leave world coordinates alone

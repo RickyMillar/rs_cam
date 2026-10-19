@@ -274,6 +274,9 @@ pub const GEOM_BURIED_CURVE: &str = "geom.buried_curve";
 /// P1 (geometry selection): a closed-region op left open paths of the
 /// drawing out. It cut the closed loops; the open paths are not cut.
 pub const GEOM_SELECTION_NOTE: &str = "geom.selection_note";
+/// P5 (S12): a Profile loop took its tabs by the even-spacing fallback, or
+/// its sides hold fewer tabs than asked.
+pub const GEOM_TAB_PLACEMENT: &str = "geom.tab_placement";
 /// Checkpoint C (Q1 / D-2): a 2D offset call inside this generation FAILED —
 /// `cavalier_contours` panicked and was contained, or one of the offset
 /// module's own input guards refused the ring — rather than collapsing.
