@@ -20,8 +20,7 @@ use rs_cam_core::stock::simulation_cut::{SimulationCutSample, SimulationCutTrace
 use rs_cam_core::stock::stock_mesh::StockMesh;
 use rs_cam_core::tool_load::verdict::CriterionKind;
 use rs_cam_core::tool_load::{
-    DistributionMetric, DistributionOutcome, GateEnv, ToleranceBands, ToolpathLoadContext,
-    ToolpathLoadVerdict,
+    DistributionMetric, DistributionOutcome, GateEnv, ToleranceBands, ToolpathLoadVerdict,
 };
 use rs_cam_core::trace::semantic_trace::{ToolpathSemanticItem, ToolpathSemanticTrace};
 use rs_cam_core::trace::toolpath_spans::SpanId;
@@ -310,8 +309,8 @@ impl SimulationState {
 /// is the rule the load report applies. A stale trace therefore gives no
 /// engagement histogram, because engagement has no verdict to refuse it.
 ///
-/// Residual: core has no public door that builds this context for one
-/// toolpath of a session, so this function holds a copy of that loop body.
+/// F070: the context comes from `ProjectSession::load_context_parts`, the
+/// door the load report reads, so the two cannot build different contexts.
 fn build_cut_metric_set(
     session: &rs_cam_core::session::ProjectSession,
     verdict: Option<&ToolpathLoadVerdict>,
@@ -325,40 +324,19 @@ fn build_cut_metric_set(
     let Some(verdict) = verdict else {
         return set;
     };
-    let Some((index, config)) = session
+    let Some(index) = session
         .toolpath_configs()
         .iter()
-        .enumerate()
-        .find(|(_, config)| config.id == toolpath_id)
+        .position(|config| config.id == toolpath_id)
     else {
         return set;
     };
-    let Some(tool_config) =
-        session.get_tool(rs_cam_core::compute::tool_config::ToolId(config.tool_id))
-    else {
+    // F070: the context door the export load report reads. `None` for a
+    // removed tool or a tool outside its domain (F029): no load set.
+    let Some(parts) = session.load_context_parts(index) else {
         return set;
     };
-    // F029: a tool outside its domain gets no load set.
-    let Ok(tool) = rs_cam_core::compute::cutter::build_cutter(tool_config) else {
-        return set;
-    };
-    let (family, pass_role) = config.operation.feeds_style();
-    let result = session.get_result(index);
-    let spans = result
-        .filter(|result| result.annotated().spans_valid)
-        .map(|result| result.annotated().spans.as_slice());
-    let drill_op = result.and_then(|result| result.drill_op());
-    let ctx = ToolpathLoadContext {
-        toolpath_id: config.id,
-        tool: &tool,
-        material: &session.stock_config().material,
-        operation_family: rs_cam_core::feeds::vendor_normalize::op_family_to_lut(family),
-        pass_role: lut_pass_role(pass_role),
-        operation_feed_rate_mm_min: config.operation.feed_rate(),
-        operation_kind: config.operation.op_type(),
-        spans,
-        drill_op: drill_op.map(|op| op.as_ref()),
-    };
+    let ctx = parts.ctx();
     let tolerance = ToleranceBands::default();
     let env = GateEnv {
         // G-STALECARDS: this operation's own provenance, not the whole
@@ -488,20 +466,6 @@ pub fn series_with_breaks(
         previous = Some((sample.sample_index, sample.move_index));
     }
     series
-}
-
-/// The LUT pass role of a feeds pass role. Core holds the same three arms
-/// as a crate-private function.
-fn lut_pass_role(
-    role: rs_cam_core::feeds::PassRole,
-) -> rs_cam_core::feeds::vendor_lut::LutPassRole {
-    use rs_cam_core::feeds::PassRole;
-    use rs_cam_core::feeds::vendor_lut::LutPassRole;
-    match role {
-        PassRole::Roughing => LutPassRole::Roughing,
-        PassRole::SemiFinish => LutPassRole::SemiFinish,
-        PassRole::Finish => LutPassRole::Finish,
-    }
 }
 
 /// Cached [`rs_cam_core::stock::sim_triage::SimulationTriage`] for the inspector.

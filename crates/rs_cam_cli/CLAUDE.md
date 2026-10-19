@@ -12,7 +12,10 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
 - Reports must preserve core evidence states: current vs stale, measured zero
   vs not measured, and planned vs emitted feeds provenance.
 - Generated G-code must use the core export path, including coolant,
-  stale-geometry refusal and explicit safety overrides.
+  stale-geometry refusal and explicit safety overrides. F067/F051: `project
+  --emit-gcode` and `run` take `ProjectSession::export_gcode_checked` (the
+  machine-safety pass, the rapid rewrite); both refuse a load verdict unless
+  `--accept-unmodeled-tool-load` / `--accept-exceeded-tool-load` is given.
 - Treat a missing diagnostic row as absent evidence, not a clean verdict.
   A blocked operation is LISTED in `summary.json` under
   `awaiting_prior_stock`, never left absent.

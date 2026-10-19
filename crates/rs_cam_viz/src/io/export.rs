@@ -1,29 +1,14 @@
-use rs_cam_core::export::gcode_validator::{
-    Finding, MachineSafety, Severity, emission_frame_clearance_z, validate_machine_safety,
-};
+use rs_cam_core::export::gcode_validator::{Finding, Severity};
 use rs_cam_core::gcode::{
-    ExportPhases, GcodePhase, PhaseTool, ToolLoadExportPolicy, WizardOverlay,
-    arrange_phases_by_setup, export_gcode_multi_setup_with_overlay_checked,
-    export_gcode_phases_with_overlay_checked, replace_rapids_with_feed,
+    ExportPhases, ExportRequest, GcodePhase, LoadPolicyOutcome, PhaseTool, ToolLoadExportPolicy,
+    WizardOverlay, arrange_phases_by_setup,
 };
 use rs_cam_core::session::{FeedStage, ProjectSession};
 
-/// A finished G-code export and what the machine-safety pass found in it.
-///
-/// EDG-06: the pass already ran on every export, and only the server log
-/// read it. A caller that reports to an operator or to an agent reads
-/// `machine_safety` here instead.
-pub struct ExportedGcode {
-    /// The emitted program, after any high-feedrate rapid→feed rewrite.
-    pub gcode: String,
-    /// What the machine-safety pass found, in emission order. Empty is a
-    /// clean pass.
-    pub machine_safety: Vec<Finding>,
-    /// W2.5 (D10): one line per emitted toolpath whose feeds came from a
-    /// simulation the session no longer holds ([`feeds_cautions`]). A
-    /// caution, not a refusal.
-    pub feeds_cautions: Vec<String>,
-}
+/// F067: the export result is core's, from the one session door
+/// (`ProjectSession::export_program`): the program, the machine-safety
+/// findings, the load outcome and the feeds cautions.
+pub use rs_cam_core::gcode::ExportedGcode;
 
 /// One toolpath an export emits: its index, its motion in the export
 /// datum, and the feed stage of that motion (W2.5, D10).
@@ -35,24 +20,13 @@ struct EmittedToolpath<'a> {
 
 /// W2.5 (D10): the caution line of each toolpath in `indices` whose
 /// session result was modulated from a simulation the session no longer
-/// holds. The export door and the pre-flight modal read this one list.
-/// A viz-store fallback emits planned feeds, so it adds no line.
+/// holds. The pre-flight modal reads it; the export door reads the same
+/// core list (`ProjectSession::feeds_cautions`).
 pub fn feeds_cautions(
     session: &ProjectSession,
     indices: impl Iterator<Item = usize>,
 ) -> Vec<String> {
-    indices
-        .filter_map(|idx| {
-            let tc = session.toolpath_configs().get(idx)?;
-            if !tc.enabled {
-                return None;
-            }
-            let feeds = session.feed_stage(idx)?;
-            feeds
-                .is_superseded()
-                .then(|| format!("'{}': {}", tc.name, feeds.statement()))
-        })
-        .collect()
+    session.feeds_cautions(indices)
 }
 
 /// The text an export reply appends for [`feeds_cautions`]; `None` when
@@ -69,63 +43,6 @@ pub fn feeds_caution_report(cautions: &[String]) -> Option<String> {
         report.push_str(&format!("\n  {caution}"));
     }
     Some(report)
-}
-
-/// Run the machine-safety pass over freshly emitted G-code. Log the
-/// findings (non-blocking) and return them.
-///
-/// The clearance plane is the retract plane the program emits, in the
-/// program's own frame: [`emission_frame_clearance_z`] over the toolpaths
-/// in `emitted_indices`. R11 (2026-09-18): the pass used to compare
-/// against the raw `gui.post.safe_z`, a world-frame value. The export
-/// writes Z0 at the stock top. A stock 0..23 therefore emitted its
-/// retract plane at Z5, and the check read every rapid there as a
-/// traverse through the part (18 680 errors on the Corne case). The feed
-/// cap is the session machine's `max_feed_mm_min`.
-///
-/// **Which feed limit, and why that one.** `max_feed_mm_min` is the gantry
-/// TRAVEL rate — the kinematic maximum, GRBL's `$110`/`$111`. It is NOT
-/// `cutting_feed_ceiling_mm_min()`, which is the lower advisory cut-quality
-/// ceiling. The validator checks every `F` word, and
-/// `replace_rapids_with_feed` rewrites rapids as feeds at the travel rate,
-/// so the cutting ceiling would raise a finding on every rewritten rapid.
-/// The travel rate catches a true kinematic overrun and nothing else. See
-/// T-9 in `planning/TECH_DEBT_REGISTER.md`.
-///
-/// The depth-floor check stays off: no caller has a stock-bottom limit to
-/// hand it, and turning it on without one would risk false positives.
-///
-/// Runs before any high-feedrate rapid→feed rewrite so the rapid
-/// structure is still intact to check. A caller must therefore keep the
-/// findings this returns; the rewritten program has no G0 left to check.
-fn machine_safety_pass(
-    gcode: &str,
-    session: &ProjectSession,
-    emitted_indices: impl IntoIterator<Item = usize>,
-) -> Vec<Finding> {
-    let findings = validate_machine_safety(
-        gcode,
-        MachineSafety {
-            clearance_z: emission_frame_clearance_z(session, emitted_indices),
-            min_z: None,
-            max_feed_mm_min: Some(session.machine().max_feed_mm_min),
-        },
-    );
-    if findings.is_empty() {
-        return findings;
-    }
-    let errors = findings
-        .iter()
-        .filter(|f| f.severity == Severity::Error)
-        .count();
-    tracing::warn!(
-        total = findings.len(),
-        errors,
-        "g-code machine-safety pass raised findings; first: line {} — {}",
-        findings.first().map(|f| f.line).unwrap_or(0),
-        findings.first().map(|f| f.message.as_str()).unwrap_or(""),
-    );
-    findings
 }
 
 /// How many findings a text report names one by one. The rest reach the
@@ -192,13 +109,18 @@ pub fn export_success_text(header: String, findings: &[Finding]) -> String {
 }
 
 /// The reply an export surface gives an agent: [`export_success_text`],
+/// then the load outcome (F051: the advisories and every override used),
 /// then the [`feeds_caution_report`] when there is one (W2.5, D10).
 pub fn export_reply_text(
     header: String,
     findings: &[Finding],
+    load_outcome: &LoadPolicyOutcome,
     feeds_cautions: &[String],
 ) -> String {
-    let text = export_success_text(header, findings);
+    let mut text = export_success_text(header, findings);
+    if let Some(report) = load_outcome.report() {
+        text = format!("{text}\n{report}");
+    }
     match feeds_caution_report(feeds_cautions) {
         Some(report) => format!("{text}\n{report}"),
         None => text,
@@ -215,8 +137,8 @@ use crate::state::simulation::SimulationState;
 /// the pre-overlay export path.
 ///
 /// Dry-run resolution: when `wizard.dry_run` is true, `dry_run_safe_z`
-/// is set to the effective safe-Z (`wizard.safe_z_override` or
-/// `gui.post.safe_z`). Otherwise it stays `None` and the overlay's
+/// is set to the effective safe-Z (`wizard.safe_z_override` or the
+/// session post config's `safe_z`). Otherwise it stays `None` and the overlay's
 /// `apply_to_program` no-ops on cutting Z values.
 ///
 /// The controller options (spindle wait, mist, native drill cycles, the S
@@ -226,7 +148,7 @@ use crate::state::simulation::SimulationState;
 pub fn overlay_for(session: &ProjectSession, gui: &GuiState) -> WizardOverlay {
     let w = &gui.wizard;
     let dry_run_safe_z = if w.dry_run {
-        Some(w.safe_z_override.unwrap_or(gui.post.safe_z))
+        Some(w.safe_z_override.unwrap_or(session.post_config().safe_z))
     } else {
         None
     };
@@ -251,7 +173,7 @@ pub fn validate_export(session: &ProjectSession, gui: &GuiState, gcode: &str) ->
     let overlay = overlay_for(session, gui);
     rs_cam_core::export::gcode_validator::validate_with(
         gcode,
-        gui.post.format,
+        session.post_config().format,
         &rs_cam_core::export::gcode_validator::ValidatorOptions::from_overlay(&overlay),
     )
 }
@@ -512,23 +434,20 @@ fn blocking_refusal_text(blockers: &[BlockingToolpath]) -> String {
 
 fn gcode_phase_for_session_toolpath<'a>(
     session: &'a ProjectSession,
-    gui: &'a GuiState,
     tc: &'a rs_cam_core::session::ToolpathConfig,
     toolpath: &'a rs_cam_core::toolpath::Toolpath,
     feeds: FeedStage,
-) -> Option<GcodePhase<'a>> {
+) -> GcodePhase<'a> {
     let tool = session.tools().iter().find(|t| t.id.0 == tc.tool_id);
 
-    Some(GcodePhase {
+    GcodePhase {
         toolpath,
         // Per-toolpath spindle RPM: the op's own override wins, the
         // project default is only a fallback — same resolution as the
-        // core export path (`export_gcode_checked`). Pre-fix this read
-        // `gui.post.spindle_speed` unconditionally, flattening every
-        // op's RPM (WANAKA's 12194/10610/21000) to the project default.
+        // core export path (`ProjectSession::export_gcode_checked`).
         spindle_rpm: rs_cam_core::compute::catalog::effective_spindle_rpm(
             &tc.operation,
-            gui.post.spindle_speed,
+            session.post_config().spindle_speed,
         ),
         label: &tc.name,
         pre_gcode: tc.pre_gcode.as_deref(),
@@ -538,14 +457,14 @@ fn gcode_phase_for_session_toolpath<'a>(
         controller_compensation: rs_cam_core::gcode::controller_compensation_for(tc),
         drill: rs_cam_core::gcode::phase_drill_for(tc),
         feeds: Some(feeds.statement()),
-    })
+    }
 }
 
-/// Build the tool-load report the checked export functions enforce the
-/// policy against (C1, 2026-06-11). Evaluated from the shared session +
-/// the viz-side cut trace — the same inputs the readiness panel and the
-/// MCP `tool_load_report` tool use, so what the user sees is what the
-/// gate enforces. The cut trace lives on viz `SimulationState`, not on
+/// Build the tool-load report the checked export enforces the policy
+/// against (C1, 2026-06-11). Evaluated from the shared session + the
+/// viz-side cut trace — the same inputs the readiness panel and the MCP
+/// `tool_load_report` tool use, so what the user sees is what the gate
+/// enforces. The cut trace lives on viz `SimulationState`, not on
 /// `session.simulation`, so the report reads it from there. The session
 /// memo answers, so the gate and the panels read one report.
 fn viz_load_report(
@@ -555,7 +474,35 @@ fn viz_load_report(
     sim.cached_load_report(session)
 }
 
+/// F067: hand the GUI's phases to the one core door. The door runs the
+/// load gate, the machine-safety pass and the rapid rewrite; this crate
+/// holds no copy of any of them.
+fn export_through_core(
+    session: &ProjectSession,
+    gui: &GuiState,
+    sim: &SimulationState,
+    phases: ExportPhases<'_>,
+    emitted: &[EmittedToolpath<'_>],
+    policy: ToolLoadExportPolicy,
+) -> Result<ExportedGcode, crate::error::VizError> {
+    let report = viz_load_report(session, sim);
+    let overlay = overlay_for(session, gui);
+    session
+        .export_program(ExportRequest {
+            phases,
+            emitted: emitted.iter().map(|e| e.index).collect(),
+            report: &report,
+            policy,
+            overlay: &overlay,
+        })
+        .map_err(|e| crate::error::VizError::Export(e.to_string()))
+}
+
 /// Export all enabled toolpaths as a single G-code file (session-based).
+///
+/// The text only: the wizard preview and the keyboard route. A door that
+/// writes a file for an operator takes [`export_gcode_from_session_reporting`]
+/// and shows the load outcome and the machine-safety findings.
 pub fn export_gcode_from_session(
     session: &ProjectSession,
     gui: &GuiState,
@@ -572,9 +519,7 @@ pub fn export_gcode_from_session(
 
 /// Same as [`export_gcode_from_session`], but lets the caller supply an
 /// explicit tool-load policy and stale-result policy instead of reading
-/// `gui.tool_load_overrides` / `gui.stale_export`. Used by the MCP export
-/// path so an automation client can pass its accept flags directly
-/// without mutating GUI state.
+/// `gui.tool_load_overrides` / `gui.stale_export`.
 pub fn export_gcode_from_session_with_policy(
     session: &ProjectSession,
     gui: &GuiState,
@@ -582,18 +527,29 @@ pub fn export_gcode_from_session_with_policy(
     policy: ToolLoadExportPolicy,
     stale: StaleResultPolicy,
 ) -> Result<String, crate::error::VizError> {
-    export_gcode_from_session_reporting(session, gui, sim, policy, stale).map(|e| e.gcode)
+    export_gcode_from_session_reporting(session, gui, sim, policy, stale).map(text_only)
+}
+
+/// The program text of an export, for a caller that shows nothing else.
+fn text_only(exported: ExportedGcode) -> String {
+    let ExportedGcode {
+        gcode,
+        // The text-only doors feed a preview or a test. A door that writes
+        // a file for an operator takes a `_reporting` door instead.
+        machine_safety: _,
+        load_outcome: _,
+        feeds_cautions: _,
+    } = exported;
+    gcode
 }
 
 /// The same export as [`export_gcode_from_session_with_policy`], and it
-/// also hands back what the machine-safety pass found (EDG-06).
+/// also hands back what the checks found (EDG-06, F051).
 ///
-/// Two doors, because the two callers ask different questions. A caller
-/// that only writes a file takes the door above. A caller that reports
-/// to an operator or to an agent takes this one, and must not re-run
-/// `validate_machine_safety` on the returned text: the pass runs before
-/// the high-feedrate rapid→feed rewrite, so a re-run on the returned
-/// program can miss every rapid finding.
+/// A caller that reports to an operator or to an agent takes this door,
+/// and must not re-run `validate_machine_safety` on the returned text:
+/// the pass runs before the high-feedrate rapid→feed rewrite, so a re-run
+/// on the returned program can miss every rapid finding.
 pub fn export_gcode_from_session_reporting(
     session: &ProjectSession,
     gui: &GuiState,
@@ -601,17 +557,18 @@ pub fn export_gcode_from_session_reporting(
     policy: ToolLoadExportPolicy,
     stale: StaleResultPolicy,
 ) -> Result<ExportedGcode, crate::error::VizError> {
-    let post = gui.post.format.definition();
-
     let emitted = emitted_toolpaths(session, gui, 0..session.toolpath_configs().len(), stale)?;
     // G3 (SAFETY, 2026-10-08): two or more setups get an M0 pause between
     // them, through the core arrangement every single-file door shares.
-    // This door used to emit every phase in one run, so setup 2 cut on the
-    // unflipped part with no stop.
     let arranged = arrange_phases_by_setup(session, |idx| {
         let emitted = emitted.iter().find(|e| e.index == idx)?;
         let tc = session.toolpath_configs().get(idx)?;
-        gcode_phase_for_session_toolpath(session, gui, tc, emitted.toolpath.as_ref(), emitted.feeds)
+        Some(gcode_phase_for_session_toolpath(
+            session,
+            tc,
+            emitted.toolpath.as_ref(),
+            emitted.feeds,
+        ))
     });
 
     if arranged.phases().is_empty() {
@@ -619,35 +576,7 @@ pub fn export_gcode_from_session_reporting(
             "No computed toolpaths to export".to_owned(),
         ));
     }
-
-    let report = viz_load_report(session, sim);
-    let overlay = overlay_for(session, gui);
-    let mut gcode = match arranged {
-        ExportPhases::OneSetup(phases) => {
-            export_gcode_phases_with_overlay_checked(&phases, post, &report, policy, &overlay)
-        }
-        ExportPhases::Setups(setups) => export_gcode_multi_setup_with_overlay_checked(
-            &setups,
-            post,
-            gui.post.safe_z,
-            &report,
-            policy,
-            &overlay,
-        ),
-    }
-    .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
-
-    let machine_safety = machine_safety_pass(&gcode, session, emitted.iter().map(|e| e.index));
-
-    if gui.post.high_feedrate_mode {
-        gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
-    }
-
-    Ok(ExportedGcode {
-        gcode,
-        machine_safety,
-        feeds_cautions: feeds_cautions(session, emitted.iter().map(|e| e.index)),
-    })
+    export_through_core(session, gui, sim, arranged, &emitted, policy)
 }
 
 /// Export all setups as a single G-code file with M0 pauses (session-based).
@@ -687,6 +616,8 @@ pub struct SetupFile {
     pub gcode: String,
     /// What the machine-safety pass found in this file (EDG-06).
     pub machine_safety: Vec<Finding>,
+    /// F051: what the load gate let through for this file.
+    pub load_outcome: LoadPolicyOutcome,
     /// W2.5: the feeds cautions of this file ([`feeds_cautions`]).
     pub feeds_cautions: Vec<String>,
 }
@@ -727,7 +658,7 @@ pub fn export_per_setup_files(
         .map_err(|e| crate::error::VizError::Export(format!("setup '{}': {e}", setup.name)))?;
         files.push((setup.id, setup.name.clone(), exported));
     }
-    let post = gui.post.format.definition();
+    let post = session.post_config().format.definition();
     let total = files.len();
     // The setup of the file before each file: its header compares the two
     // orientations, so a reminder to turn the part appears only when the
@@ -742,23 +673,32 @@ pub fn export_per_setup_files(
     Ok(files
         .into_iter()
         .enumerate()
-        .map(|(i, (setup_id, name, exported))| SetupFile {
-            gcode: format!(
-                "{}{}",
-                setup_file_header(
-                    session,
-                    post,
-                    setup_id,
-                    previous_ids.get(i).copied().flatten(),
-                    i,
-                    total
+        .map(|(i, (setup_id, name, exported))| {
+            let ExportedGcode {
+                gcode,
+                machine_safety,
+                load_outcome,
+                feeds_cautions,
+            } = exported;
+            SetupFile {
+                gcode: format!(
+                    "{}{}",
+                    setup_file_header(
+                        session,
+                        post,
+                        setup_id,
+                        previous_ids.get(i).copied().flatten(),
+                        i,
+                        total
+                    ),
+                    gcode
                 ),
-                exported.gcode
-            ),
-            setup_id,
-            name,
-            machine_safety: exported.machine_safety,
-            feeds_cautions: exported.feeds_cautions,
+                setup_id,
+                name,
+                machine_safety,
+                load_outcome,
+                feeds_cautions,
+            }
         })
         .collect())
 }
@@ -877,14 +817,24 @@ pub fn setup_file_header(
 }
 
 /// Export a single toolpath (by semantic id) as G-code (session-based).
+/// The text only; see [`export_single_toolpath_reporting`].
 pub fn export_single_toolpath_from_session(
     session: &ProjectSession,
     gui: &GuiState,
     sim: &SimulationState,
     toolpath_id: rs_cam_core::ToolpathId,
 ) -> Result<String, crate::error::VizError> {
-    let post = gui.post.format.definition();
+    export_single_toolpath_reporting(session, gui, sim, toolpath_id).map(text_only)
+}
 
+/// The single-toolpath export, with what the checks found. The GUI "one
+/// file per toolpath" layout takes it.
+pub fn export_single_toolpath_reporting(
+    session: &ProjectSession,
+    gui: &GuiState,
+    sim: &SimulationState,
+    toolpath_id: rs_cam_core::ToolpathId,
+) -> Result<ExportedGcode, crate::error::VizError> {
     let tp_index = session
         .toolpath_configs()
         .iter()
@@ -908,41 +858,19 @@ pub fn export_single_toolpath_from_session(
     // The `first()` fallback is unreachable after that `?` and keeps the
     // same sentence.
     let emitted = emitted_toolpaths(session, gui, std::iter::once(tp_index), gui.stale_export)?;
-    let emitted = emitted.first().ok_or_else(|| {
+    let first = emitted.first().ok_or_else(|| {
         let freshness = freshness_at(session, gui, tp_index).unwrap_or(FreshnessState::NoResult);
         crate::error::VizError::Export(blocking_toolpath_message(&tc.name, &freshness))
     })?;
-    let phase = gcode_phase_for_session_toolpath(
+    let phase = gcode_phase_for_session_toolpath(session, tc, first.toolpath.as_ref(), first.feeds);
+    export_through_core(
         session,
         gui,
-        tc,
-        emitted.toolpath.as_ref(),
-        emitted.feeds,
-    )
-    .ok_or_else(|| {
-        crate::error::VizError::Export(format!(
-            "Toolpath '{}' has no computed result — generate it first",
-            tc.name
-        ))
-    })?;
-
-    let mut gcode = export_gcode_phases_with_overlay_checked(
-        std::slice::from_ref(&phase),
-        post,
-        &viz_load_report(session, sim),
+        sim,
+        ExportPhases::OneSetup(vec![phase]),
+        &emitted,
         gui.tool_load_overrides.as_policy(),
-        &overlay_for(session, gui),
     )
-    .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
-
-    // No reporting caller on this door yet: the pass logs, as it always did.
-    machine_safety_pass(&gcode, session, std::iter::once(tp_index));
-
-    if gui.post.high_feedrate_mode {
-        gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
-    }
-
-    Ok(gcode)
 }
 
 /// Export only the toolpaths from a single setup as G-code (session-based).
@@ -974,7 +902,7 @@ pub fn export_setup_gcode_from_session_with_policy(
     stale: StaleResultPolicy,
 ) -> Result<String, crate::error::VizError> {
     export_setup_gcode_from_session_reporting(session, gui, sim, setup_id, policy, stale)
-        .map(|e| e.gcode)
+        .map(text_only)
 }
 
 /// The same per-setup export, and it also hands back what the
@@ -995,14 +923,17 @@ pub fn export_setup_gcode_from_session_reporting(
         .find(|s| s.id == setup_id.0)
         .ok_or_else(|| crate::error::VizError::Export(format!("Setup {setup_id:?} not found")))?;
 
-    let post = gui.post.format.definition();
-
     let emitted = emitted_toolpaths(session, gui, setup.toolpath_indices.iter().copied(), stale)?;
     let phases: Vec<GcodePhase<'_>> = emitted
         .iter()
         .filter_map(|e| {
             let tc = session.toolpath_configs().get(e.index)?;
-            gcode_phase_for_session_toolpath(session, gui, tc, e.toolpath.as_ref(), e.feeds)
+            Some(gcode_phase_for_session_toolpath(
+                session,
+                tc,
+                e.toolpath.as_ref(),
+                e.feeds,
+            ))
         })
         .collect();
 
@@ -1012,25 +943,12 @@ pub fn export_setup_gcode_from_session_reporting(
             setup.name,
         )));
     }
-
-    let mut gcode = export_gcode_phases_with_overlay_checked(
-        &phases,
-        post,
-        &viz_load_report(session, sim),
+    export_through_core(
+        session,
+        gui,
+        sim,
+        ExportPhases::OneSetup(phases),
+        &emitted,
         policy,
-        &overlay_for(session, gui),
     )
-    .map_err(|e| crate::error::VizError::Export(e.to_string()))?;
-
-    let machine_safety = machine_safety_pass(&gcode, session, emitted.iter().map(|e| e.index));
-
-    if gui.post.high_feedrate_mode {
-        gcode = replace_rapids_with_feed(&gcode, gui.post.high_feedrate, post);
-    }
-
-    Ok(ExportedGcode {
-        gcode,
-        machine_safety,
-        feeds_cautions: feeds_cautions(session, emitted.iter().map(|e| e.index)),
-    })
 }

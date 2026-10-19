@@ -242,14 +242,15 @@ fn export_session_gcode(session: &ProjectSession) -> String {
         accept_unmodeled: true,
         accept_exceeded: true,
     };
-    rs_cam_core::gcode::export_gcode_checked(
-        session,
-        session
-            .simulation_result()
-            .and_then(|s| s.cut_trace.as_deref()),
-        policy,
-    )
-    .expect("export_gcode_checked succeeds on AS001 pocket")
+    session
+        .export_gcode_checked(
+            session
+                .simulation_result()
+                .and_then(|s| s.cut_trace.as_deref()),
+            policy,
+        )
+        .expect("export_gcode_checked succeeds on AS001 pocket")
+        .gcode
 }
 
 /// Count standalone F-words emitted in `gcode`, returning the list of

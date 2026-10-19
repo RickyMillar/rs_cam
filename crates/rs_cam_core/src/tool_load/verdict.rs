@@ -305,7 +305,100 @@ pub struct ToolpathLoadVerdict {
     pub material_split: Option<Box<super::MaterialSplit>>,
 }
 
+/// F197: `SimulationRequired` → `StaleSimulation` on one reason; every
+/// other reason stays.
+fn stale_reason(reason: &mut UnmodeledReason) {
+    if matches!(reason, UnmodeledReason::SimulationRequired) {
+        *reason = UnmodeledReason::StaleSimulation;
+    }
+}
+
+fn stale_chipload(verdict: &mut ChiploadVerdict) {
+    match verdict {
+        ChiploadVerdict::Unmodeled { reason } => stale_reason(reason),
+        ChiploadVerdict::Within { .. } | ChiploadVerdict::Exceeds { .. } => {}
+    }
+}
+
+fn stale_power(verdict: &mut PowerVerdict) {
+    match verdict {
+        PowerVerdict::Unmodeled { reason } => stale_reason(reason),
+        PowerVerdict::Within { .. } | PowerVerdict::Exceeds { .. } => {}
+    }
+}
+
+fn stale_deflection(verdict: &mut DeflectionVerdict) {
+    match verdict {
+        DeflectionVerdict::Unmodeled { reason } => stale_reason(reason),
+        DeflectionVerdict::Within { .. } | DeflectionVerdict::Exceeds { .. } => {}
+    }
+}
+
+fn stale_depth(verdict: &mut DepthVerdict) {
+    match verdict {
+        DepthVerdict::Unmodeled { reason } => stale_reason(reason),
+        DepthVerdict::Within { .. }
+        | DepthVerdict::Reported { .. }
+        | DepthVerdict::Exceeds { .. } => {}
+    }
+}
+
 impl ToolpathLoadVerdict {
+    /// F197 (T-21): mark every gate row that asked for a simulation as
+    /// asking for a FRESH one.
+    ///
+    /// The load report calls this on a row whose trace it threw away as
+    /// stale: the row was evaluated with no trace, so each trace-reading
+    /// gate says `SimulationRequired`. This rewrites each of them to
+    /// `StaleSimulation`, which the diagnostics adapter shows as
+    /// `StaleEvidence` ("re-run simulation").
+    ///
+    /// The destructure names every field with no `..`. A new field does
+    /// not compile until it states here whether a stale trace touches it.
+    /// S3 once added the depth gate and no rewrite, so one toolpath read
+    /// three rows stale and one row never simulated.
+    pub fn mark_simulation_stale(&mut self) {
+        let Self {
+            toolpath_id: _,
+            chipload,
+            power,
+            deflection,
+            depth,
+            // The drill gates read the drill op's geometry and feeds,
+            // never a trace, and `DrillGateOutcome` has no `Unmodeled`
+            // arm.
+            drill_gates: _,
+            // Report-only records; no gate reads them.
+            modulation_summary: _,
+            feed_explanation: _,
+            kinematic_utilization: _,
+            material_split,
+        } = self;
+        stale_chipload(chipload);
+        stale_power(power);
+        stale_deflection(deflection);
+        stale_depth(depth);
+        // S6: a split comes only from trace samples, so a row evaluated
+        // with no trace holds none. The rows are rewritten anyway, so the
+        // rule does not depend on that.
+        if let Some(split) = material_split.as_deref_mut() {
+            for own in &mut split.own {
+                let super::OwnMaterialVerdict {
+                    material: _,
+                    samples: _,
+                    chipload,
+                    power,
+                    deflection,
+                    depth,
+                } = own;
+                stale_chipload(chipload);
+                stale_power(power);
+                stale_deflection(deflection);
+                stale_depth(depth);
+            }
+        }
+    }
+
     /// S6: the not-judged sample counts of this toolpath, per material.
     /// Empty when every sample was judged.
     #[must_use]

@@ -307,11 +307,7 @@ pub fn chip_target_for_toolpath(
     let tool_def = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
     let spec = operation.spec();
     let lut_op_family = op_family_to_lut(spec.feeds_family);
-    let lut_pass_role = match spec.feeds_pass_role {
-        crate::feeds::PassRole::Roughing => LutPassRole::Roughing,
-        crate::feeds::PassRole::SemiFinish => LutPassRole::SemiFinish,
-        crate::feeds::PassRole::Finish => LutPassRole::Finish,
-    };
+    let lut_pass_role: LutPassRole = spec.feeds_pass_role.into();
     // Peak axial DOC over the same sample population the gate
     // measures: steady-state only. F3.4 — pre-fix this folded over
     // every cutting sample, so a phantom transit reading (the F2
@@ -445,6 +441,58 @@ pub struct ToolpathLoadContext<'a> {
     /// existing chipload / power / deflection criteria do all the
     /// load-checking for non-drill ops.
     pub drill_op: Option<&'a crate::ops::drill_op::DrillOp>,
+}
+
+/// F070: the parts of one operation's [`ToolpathLoadContext`], with the
+/// cutter OWNED.
+///
+/// The context borrows its `&ToolDefinition`, and the cutter is built
+/// from the tool config at the call site, so no door can hand back a
+/// finished context. This type holds the built cutter and the borrowed
+/// rest, and [`Self::ctx`] lends the context. The export load report and
+/// the GUI cut-metric cards build it through one door,
+/// `ProjectSession::load_context_parts`; neither assembles the fields by
+/// hand.
+pub struct LoadContextParts<'s> {
+    pub toolpath_id: ToolpathId,
+    pub tool: ToolDefinition,
+    pub material: &'s Material,
+    pub operation_family: LutOperationFamily,
+    pub pass_role: LutPassRole,
+    pub operation_feed_rate_mm_min: f64,
+    pub operation_kind: OperationType,
+    pub spans: Option<&'s [crate::trace::toolpath_spans::Span]>,
+    pub drill_op: Option<&'s crate::ops::drill_op::DrillOp>,
+}
+
+impl LoadContextParts<'_> {
+    /// The gate context, borrowed from these parts. The destructure names
+    /// every field, so a new context field must be added here.
+    #[must_use]
+    pub fn ctx(&self) -> ToolpathLoadContext<'_> {
+        let Self {
+            toolpath_id,
+            tool,
+            material,
+            operation_family,
+            pass_role,
+            operation_feed_rate_mm_min,
+            operation_kind,
+            spans,
+            drill_op,
+        } = self;
+        ToolpathLoadContext {
+            toolpath_id: *toolpath_id,
+            tool,
+            material,
+            operation_family: *operation_family,
+            pass_role: *pass_role,
+            operation_feed_rate_mm_min: *operation_feed_rate_mm_min,
+            operation_kind: *operation_kind,
+            spans: *spans,
+            drill_op: *drill_op,
+        }
+    }
 }
 
 /// Evaluation environment shared by the per-criterion gates — the

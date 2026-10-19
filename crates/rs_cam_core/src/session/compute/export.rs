@@ -4,8 +4,6 @@
 //! read — model reference, preconditions, heights and feeds. Split out of
 //! `session/compute.rs` (P4).
 
-use std::path::Path;
-
 use tracing::instrument;
 
 use crate::compute::tool_config::{ToolConfig, ToolId};
@@ -44,33 +42,242 @@ fn transform_bbox_world_to_local(
 }
 
 impl ProjectSession {
-    /// Export G-code for all computed toolpaths under the default tool-load
-    /// policy (refuse on Exceeds or Unmodeled). For an override-capable
-    /// variant see [`export_gcode_with_policy`].
-    #[instrument(skip(self))]
-    pub fn export_gcode(&self, path: &Path) -> Result<(), SessionError> {
-        self.export_gcode_with_policy(path, crate::gcode::ToolLoadExportPolicy::default())
+    /// **F067: the one checked export door.** The GUI, MCP and the CLI
+    /// all emit through here, so one project state gives one program and
+    /// one set of checks on every surface.
+    ///
+    /// In order:
+    /// 1. [`crate::gcode::emit_checked`]: the inch and controller
+    ///    compensation refusals, the load gate, the program. The post and
+    ///    the inter-setup retract come from THIS session's post config,
+    ///    never from a caller's copy (F072).
+    /// 2. The machine-safety pass ([`validate_machine_safety`]) on the
+    ///    program as emitted, BEFORE any rewrite, while the rapids are
+    ///    still `G0`. The clearance plane is the emitted retract plane of
+    ///    the toolpaths in `request.emitted`
+    ///    ([`emission_frame_clearance_z`], R11). The feed cap is the
+    ///    machine's travel rate, `max_feed_mm_min`: the rapid rewrite
+    ///    writes rapids as feeds at the travel rate, so the cutting
+    ///    ceiling would flag every rewritten rapid (T-9). The depth-floor
+    ///    check stays off: no caller has a stock-bottom limit to hand it.
+    /// 3. The high-feedrate rapid→feed rewrite, when the post config asks
+    ///    for it (`high_feedrate_mode`).
+    ///
+    /// Until F067 only the GUI/MCP door ran 2 and 3, so the CLI emitted
+    /// `G0` rapids where the GUI emitted `G1` traverses, and no CLI file
+    /// was safety-checked. The findings are advisory on every surface: no
+    /// door refuses on them.
+    ///
+    /// [`validate_machine_safety`]: crate::export::gcode_validator::validate_machine_safety
+    /// [`emission_frame_clearance_z`]: crate::export::gcode_validator::emission_frame_clearance_z
+    pub fn export_program(
+        &self,
+        request: crate::gcode::ExportRequest<'_>,
+    ) -> Result<crate::gcode::ExportedGcode, crate::gcode::ExportRefusal> {
+        use crate::export::gcode_validator::{
+            MachineSafety, Severity, emission_frame_clearance_z, validate_machine_safety,
+        };
+
+        let crate::gcode::ExportRequest {
+            phases,
+            emitted,
+            report,
+            policy,
+            overlay,
+        } = request;
+        let post_config = &self.post;
+        let post = post_config.format.definition();
+        let crate::gcode::CheckedProgram {
+            mut gcode,
+            load_outcome,
+        } = crate::gcode::emit_checked(&phases, post, post_config.safe_z, report, policy, overlay)?;
+
+        let machine_safety = validate_machine_safety(
+            &gcode,
+            MachineSafety {
+                clearance_z: emission_frame_clearance_z(self, emitted.iter().copied()),
+                min_z: None,
+                max_feed_mm_min: Some(self.machine.max_feed_mm_min),
+            },
+        );
+        if let Some(first) = machine_safety.first() {
+            let errors = machine_safety
+                .iter()
+                .filter(|f| f.severity == Severity::Error)
+                .count();
+            tracing::warn!(
+                total = machine_safety.len(),
+                errors,
+                "g-code machine-safety pass raised findings; first: line {} — {}",
+                first.line,
+                first.message,
+            );
+        }
+
+        if post_config.high_feedrate_mode {
+            gcode = crate::gcode::replace_rapids_with_feed(&gcode, post_config.high_feedrate, post);
+        }
+
+        Ok(crate::gcode::ExportedGcode {
+            gcode,
+            machine_safety,
+            load_outcome,
+            feeds_cautions: self.feeds_cautions(emitted.iter().copied()),
+        })
     }
 
-    /// Export G-code with an explicit tool-load policy. Used by callers that
-    /// want to override `Exceeds` or `Unmodeled` verdicts (UI checkbox,
-    /// `--accept-…` CLI flag, MCP parameter).
-    #[instrument(skip(self))]
-    pub fn export_gcode_with_policy(
+    /// Export every enabled toolpath that holds a session result, through
+    /// [`Self::export_program`]. The CLI and the core tests take this
+    /// door; the GUI and MCP build their own phases (they may emit an
+    /// edited operation's previous geometry) and take `export_program`.
+    ///
+    /// The load gate reads [`crate::gcode::project_load_report`] over
+    /// `sim_trace`. The overlay is the default with the controller options
+    /// of the session's post config and machine profile (G5-G7, G10).
+    #[instrument(skip(self, sim_trace))]
+    pub fn export_gcode_checked(
         &self,
-        path: &Path,
+        sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
         policy: crate::gcode::ToolLoadExportPolicy,
-    ) -> Result<(), SessionError> {
-        let gcode = crate::gcode::export_gcode_checked(
-            self,
-            self.simulation
-                .as_ref()
-                .and_then(|simulation| simulation.cut_trace.as_deref()),
+    ) -> Result<crate::gcode::ExportedGcode, crate::gcode::ExportRefusal> {
+        use crate::gcode::{GcodePhase, PhaseTool};
+
+        let report = crate::gcode::project_load_report(self, sim_trace);
+
+        // G-EXPORT-DATUM: re-express each toolpath in the shared export
+        // datum BEFORE building phases, so the emitted program has one XY
+        // zero across every setup. Owned here (not written back to the
+        // session) so nothing downstream of generation is disturbed.
+        let emitted: Vec<(usize, std::borrow::Cow<'_, crate::toolpath::Toolpath>)> = self
+            .toolpath_configs
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, tc)| {
+                if !tc.enabled {
+                    return None;
+                }
+                let result = self.get_result(idx)?;
+                let shift = crate::gcode::export_datum_shift_for_toolpath(self, idx);
+                Some((
+                    idx,
+                    crate::gcode::toolpath_in_export_datum(result.toolpath(), shift),
+                ))
+            })
+            .collect();
+
+        let mut by_index: Vec<(usize, GcodePhase<'_>)> = emitted
+            .iter()
+            .filter_map(|(idx, emitted_toolpath)| {
+                let tc = self.toolpath_configs.get(*idx)?;
+                // Tool identity (config id) + display number + name, so the
+                // emitter inserts the post's tool-change block between
+                // toolpaths that use different tools. Change detection keys
+                // on the config id — NOT the user-curated T-number, which
+                // collides in real projects (WANAKA: two distinct tools both
+                // T1).
+                let tool = self
+                    .tools()
+                    .iter()
+                    .find(|t| t.id.0 == tc.tool_id)
+                    .map(|t| PhaseTool {
+                        id: t.id.0,
+                        number: t.tool_number,
+                        label: t.name.as_str(),
+                    });
+                let phase = GcodePhase {
+                    toolpath: emitted_toolpath.as_ref(),
+                    spindle_rpm: crate::compute::catalog::effective_spindle_rpm(
+                        &tc.operation,
+                        self.post.spindle_speed,
+                    ),
+                    label: &tc.name,
+                    tool,
+                    // P0-D1 (2026-09-11): the operation's own coolant.
+                    coolant: tc.coolant,
+                    pre_gcode: tc.pre_gcode.as_deref(),
+                    post_gcode: tc.post_gcode.as_deref(),
+                    controller_compensation: crate::gcode::controller_compensation_for(tc),
+                    drill: crate::gcode::phase_drill_for(tc),
+                    // W2.5 (D10): this door emits the session slot, so the
+                    // slot's tag names the feeds.
+                    feeds: self
+                        .feed_stage(*idx)
+                        .map(|provenance| provenance.statement()),
+                };
+                Some((*idx, phase))
+            })
+            .collect();
+
+        // G3 (SAFETY, 2026-10-08): a project with more than one setup gets
+        // an M0 pause between the setups.
+        let phases = crate::gcode::arrange_phases_by_setup(self, |idx| {
+            let pos = by_index.iter().position(|(i, _)| *i == idx)?;
+            Some(by_index.swap_remove(pos).1)
+        });
+
+        let mut overlay = crate::gcode::WizardOverlay::default();
+        self.post
+            .apply_controller_options(&self.machine, &mut overlay);
+        self.export_program(crate::gcode::ExportRequest {
+            phases,
+            emitted: emitted.iter().map(|(idx, _)| *idx).collect(),
+            report: &report,
             policy,
-        )
-        .map_err(|e| SessionError::Export(e.to_string()))?;
-        std::fs::write(path, gcode).map_err(|e| {
-            SessionError::Export(format!("Failed to write G-code to {}: {e}", path.display()))
+            overlay: &overlay,
+        })
+    }
+
+    /// W2.5 (D10): the caution line of each toolpath in `indices` whose
+    /// session result was modulated from a simulation the session no
+    /// longer holds. The export door and the GUI pre-flight modal read
+    /// this one list. A toolpath with no session result (the GUI emits
+    /// its previous geometry with planned feeds) adds no line.
+    #[must_use]
+    pub fn feeds_cautions(&self, indices: impl Iterator<Item = usize>) -> Vec<String> {
+        indices
+            .filter_map(|idx| {
+                let tc = self.toolpath_configs.get(idx)?;
+                if !tc.enabled {
+                    return None;
+                }
+                let feeds = self.feed_stage(idx)?;
+                feeds
+                    .is_superseded()
+                    .then(|| format!("'{}': {}", tc.name, feeds.statement()))
+            })
+            .collect()
+    }
+
+    /// F070: the gate-context parts of the toolpath at `index`, built once
+    /// for the export load report and the GUI cut-metric cards.
+    ///
+    /// `None` when the index holds no config, the config names a removed
+    /// tool, or the tool is outside its domain (F029): such a toolpath
+    /// gets no verdict. The spans and the drill payload come from the
+    /// stored result; the spans are `None` when a transform invalidated
+    /// them (F2.2), so the gates fall back to the per-sample transit flag.
+    #[must_use]
+    pub fn load_context_parts(
+        &self,
+        index: usize,
+    ) -> Option<crate::tool_load::LoadContextParts<'_>> {
+        let tc = self.toolpath_configs.get(index)?;
+        let tool_cfg = self.get_tool(ToolId(tc.tool_id))?;
+        let tool = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
+        let (family, pass_role) = tc.operation.feeds_style();
+        let result = self.get_result(index);
+        Some(crate::tool_load::LoadContextParts {
+            toolpath_id: tc.id,
+            tool,
+            material: &self.stock.material,
+            operation_family: crate::feeds::vendor_normalize::op_family_to_lut(family),
+            pass_role: pass_role.into(),
+            operation_feed_rate_mm_min: tc.operation.feed_rate(),
+            operation_kind: tc.operation.op_type(),
+            spans: result
+                .filter(|r| r.annotated().spans_valid)
+                .map(|r| r.annotated().spans.as_slice()),
+            drill_op: result.and_then(|r| r.drill_op()).map(AsRef::as_ref),
         })
     }
 

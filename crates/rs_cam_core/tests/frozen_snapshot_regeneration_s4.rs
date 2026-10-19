@@ -323,15 +323,16 @@ fn snapshot_id(session: &ProjectSession, index: usize) -> SnapshotId {
 /// trace, and a policy that accepts every load verdict, so nothing about the
 /// text can move because a *gate* moved.
 fn gcode_of(session: &ProjectSession) -> String {
-    rs_cam_core::gcode::export_gcode_checked(
-        session,
-        None,
-        ToolLoadExportPolicy {
-            accept_unmodeled: true,
-            accept_exceeded: true,
-        },
-    )
-    .expect("export must succeed under an all-accepting policy")
+    session
+        .export_gcode_checked(
+            None,
+            ToolLoadExportPolicy {
+                accept_unmodeled: true,
+                accept_exceeded: true,
+            },
+        )
+        .expect("export must succeed under an all-accepting policy")
+        .gcode
 }
 
 fn capture(session: &mut ProjectSession, index: usize) -> Capture {

@@ -237,6 +237,18 @@ enum Commands {
         /// (true/false)
         #[arg(long)]
         native_drill_cycles: Option<bool>,
+
+        /// F051: export even when a tool-load criterion could not be
+        /// modelled (no simulation, no vendor row, a stale trace). The
+        /// MCP `export_gcode` key `accept_unmodeled_tool_load`. Off: refuse.
+        #[arg(long = rs_cam_core::gcode::LoadOverride::AcceptUnmodeled.cli_flag())]
+        accept_unmodeled_tool_load: bool,
+
+        /// F051: export even when a tool-load criterion exceeded a bound
+        /// that gates an export (a known-dangerous override). The MCP
+        /// `export_gcode` key `accept_exceeded_tool_load`. Off: refuse.
+        #[arg(long = rs_cam_core::gcode::LoadOverride::AcceptExceeded.cli_flag())]
+        accept_exceeded_tool_load: bool,
     },
 
     /// Run a parameter sweep on a TOML job file
@@ -315,6 +327,18 @@ enum Commands {
         /// would produce in the same state.
         #[arg(long)]
         emit_gcode: Option<PathBuf>,
+
+        /// F051: export even when a tool-load criterion could not be
+        /// modelled (no simulation, no vendor row, a stale trace). The
+        /// MCP `export_gcode` key `accept_unmodeled_tool_load`. Off: refuse.
+        #[arg(long = rs_cam_core::gcode::LoadOverride::AcceptUnmodeled.cli_flag())]
+        accept_unmodeled_tool_load: bool,
+
+        /// F051: export even when a tool-load criterion exceeded a bound
+        /// that gates an export (a known-dangerous override). The MCP
+        /// `export_gcode` key `accept_exceeded_tool_load`. Off: refuse.
+        #[arg(long = rs_cam_core::gcode::LoadOverride::AcceptExceeded.cli_flag())]
+        accept_exceeded_tool_load: bool,
 
         /// Disable F-036's per-segment adaptive feed modulation during
         /// simulation.
@@ -567,6 +591,8 @@ fn main() -> Result<()> {
             controller_waits_for_spindle,
             mist_output,
             native_drill_cycles,
+            accept_unmodeled_tool_load,
+            accept_exceeded_tool_load,
         } => {
             run::run_generic(&run::RunArgs {
                 op,
@@ -585,6 +611,10 @@ fn main() -> Result<()> {
                 controller_waits_for_spindle,
                 mist_output,
                 native_drill_cycles,
+                tool_load: rs_cam_core::gcode::ToolLoadExportPolicy {
+                    accept_unmodeled: accept_unmodeled_tool_load,
+                    accept_exceeded: accept_exceeded_tool_load,
+                },
             })?;
         }
 
@@ -609,6 +639,8 @@ fn main() -> Result<()> {
             resolution,
             summary,
             emit_gcode,
+            accept_unmodeled_tool_load,
+            accept_exceeded_tool_load,
             no_adaptive_feed_modulation,
             modulation_strategy,
             modulation_feed_scale,
@@ -627,6 +659,10 @@ fn main() -> Result<()> {
                 resolution,
                 summary,
                 emit_gcode.as_deref(),
+                rs_cam_core::gcode::ToolLoadExportPolicy {
+                    accept_unmodeled: accept_unmodeled_tool_load,
+                    accept_exceeded: accept_exceeded_tool_load,
+                },
                 // Checkpoint K (g1) — default ON, opt out explicitly.
                 !no_adaptive_feed_modulation,
                 modulation_strategy.into(),
@@ -900,6 +936,42 @@ mod tests {
             panic!("not the run command");
         };
         assert_eq!(post, PostFormat::Grbl);
+    }
+
+    /// F051 (W5): the tool-load overrides are explicit flags, named from
+    /// core's `LoadOverride::cli_flag`, and both default to refuse.
+    #[test]
+    fn f051_the_tool_load_overrides_are_explicit_flags() {
+        use rs_cam_core::gcode::LoadOverride;
+        let unmodeled = format!("--{}", LoadOverride::AcceptUnmodeled.cli_flag());
+        let exceeded = format!("--{}", LoadOverride::AcceptExceeded.cli_flag());
+        let flags = |args: &[&str]| {
+            let mut argv = vec!["rs_cam", "run", "pocket"];
+            argv.extend_from_slice(args);
+            let Commands::Run {
+                accept_unmodeled_tool_load,
+                accept_exceeded_tool_load,
+                ..
+            } = Cli::try_parse_from(argv).unwrap().command
+            else {
+                panic!("not the run command");
+            };
+            (accept_unmodeled_tool_load, accept_exceeded_tool_load)
+        };
+        assert_eq!(flags(&[]), (false, false), "the default refuses");
+        assert_eq!(flags(&[&unmodeled]), (true, false));
+        assert_eq!(flags(&[&exceeded]), (false, true));
+        let Commands::Project {
+            accept_unmodeled_tool_load,
+            accept_exceeded_tool_load,
+            ..
+        } = Cli::try_parse_from(project_args(&[&unmodeled, &exceeded]))
+            .unwrap()
+            .command
+        else {
+            panic!("not the project command");
+        };
+        assert!(accept_unmodeled_tool_load && accept_exceeded_tool_load);
     }
 
     /// F057: a cell size that is not a positive number of mm is a clap error

@@ -13,7 +13,7 @@ impl RsCamApp {
     pub(super) fn handle_wizard_save(&mut self) {
         let state = self.controller.state();
         let layout = state.gui.wizard.effective_layout(
-            state.gui.post.format.definition(),
+            state.session.post_config().format.definition(),
             crate::io::export::setups_with_enabled_ops(&state.session),
         );
         let template = state.gui.wizard.filename_template.clone();
@@ -24,21 +24,31 @@ impl RsCamApp {
             slugify(state.session.name())
         };
         let last_dir = state.gui.wizard.last_save_dir.clone();
-        let post_format = state.gui.post.format;
+        let post_format = state.session.post_config().format;
 
         match layout {
             OutputLayout::SingleFile => {
-                let gcode = match crate::io::export::export_gcode_from_session(
+                let exported = match crate::io::export::export_gcode_from_session_reporting(
                     &state.session,
                     &state.gui,
                     &state.simulation,
+                    state.gui.tool_load_overrides.as_policy(),
+                    state.gui.stale_export,
                 ) {
-                    Ok(s) => s,
+                    Ok(e) => e,
                     Err(err) => {
                         self.controller.push_error(&err);
                         return;
                     }
                 };
+                let crate::io::export::ExportedGcode {
+                    gcode,
+                    machine_safety,
+                    load_outcome,
+                    // The pre-flight modal shows the feeds cautions.
+                    feeds_cautions: _,
+                } = exported;
+                self.notify_export_checks(&machine_safety, &load_outcome);
                 if !self.gate(&gcode, post_format, allow_errors) {
                     return;
                 }
@@ -152,7 +162,22 @@ impl RsCamApp {
                 );
                 Err(())
             }
-            Ok(files) => Ok(files.into_iter().map(|f| (f.name, f.gcode)).collect()),
+            Ok(files) => {
+                let mut out = Vec::with_capacity(files.len());
+                for file in files {
+                    let crate::io::export::SetupFile {
+                        setup_id: _,
+                        name,
+                        gcode,
+                        machine_safety,
+                        load_outcome,
+                        feeds_cautions: _,
+                    } = file;
+                    self.notify_export_checks(&machine_safety, &load_outcome);
+                    out.push((name, gcode));
+                }
+                Ok(out)
+            }
             Err(e) => {
                 self.controller.push_error(&e);
                 Err(())
@@ -173,13 +198,22 @@ impl RsCamApp {
         let mut out = Vec::new();
         for (id, name) in toolpaths {
             let state = self.controller.state();
-            match crate::io::export::export_single_toolpath_from_session(
+            match crate::io::export::export_single_toolpath_reporting(
                 &state.session,
                 &state.gui,
                 &state.simulation,
                 id,
             ) {
-                Ok(g) => out.push((name, g)),
+                Ok(exported) => {
+                    let crate::io::export::ExportedGcode {
+                        gcode,
+                        machine_safety,
+                        load_outcome,
+                        feeds_cautions: _,
+                    } = exported;
+                    self.notify_export_checks(&machine_safety, &load_outcome);
+                    out.push((name, gcode));
+                }
                 Err(e) => {
                     self.controller.push_error(&e);
                     return Err(());
@@ -194,6 +228,29 @@ impl RsCamApp {
             return Err(());
         }
         Ok(out)
+    }
+
+    /// F051/EDG-06: show what the export checks found. The load outcome
+    /// (an advisory, or an override the operator used) and the
+    /// machine-safety findings each become one warning; a clean export
+    /// adds nothing. The pre-flight modal already shows the feeds
+    /// cautions.
+    fn notify_export_checks(
+        &mut self,
+        machine_safety: &[rs_cam_core::export::gcode_validator::Finding],
+        load_outcome: &rs_cam_core::gcode::LoadPolicyOutcome,
+    ) {
+        for report in [
+            crate::io::export::machine_safety_report(machine_safety),
+            load_outcome.report(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            tracing::warn!("{report}");
+            self.controller
+                .push_notification(report, crate::controller::Severity::Warning);
+        }
     }
 
     fn write_one(&mut self, path: &Path, gcode: &str) {
@@ -223,7 +280,7 @@ impl RsCamApp {
         }
         // G8: the controller options this export emits with.
         let state = self.controller.state();
-        let findings = if state.gui.post.format == post {
+        let findings = if state.session.post_config().format == post {
             crate::io::export::validate_export(&state.session, &state.gui, gcode)
         } else {
             rs_cam_core::export::gcode_validator::validate(gcode, post)
@@ -285,8 +342,16 @@ fn render_filename(
 // conflict with the original methods below.
 impl RsCamApp {
     pub(super) fn export_gcode_with_summary(&mut self) {
-        match self.controller.export_gcode() {
-            Ok(gcode) => {
+        match self.controller.export_gcode_reporting() {
+            Ok(exported) => {
+                let crate::io::export::ExportedGcode {
+                    gcode,
+                    machine_safety,
+                    load_outcome,
+                    // The pre-flight modal shows the feeds cautions.
+                    feeds_cautions: _,
+                } = exported;
+                self.notify_export_checks(&machine_safety, &load_outcome);
                 let line_count = gcode.lines().count();
                 let mut total_moves = 0usize;
                 let mut cutting_dist = 0.0f64;

@@ -69,7 +69,7 @@ use std::sync::Arc;
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
-use rs_cam_core::gcode::{CoolantMode, ToolLoadExportPolicy, export_gcode_checked};
+use rs_cam_core::gcode::{CoolantMode, ToolLoadExportPolicy};
 use rs_cam_core::geo::P3;
 use rs_cam_core::session::{AdoptResultArgs, Command, ProjectSession, ToolpathComputeResult};
 use rs_cam_core::toolpath::Toolpath;
@@ -141,7 +141,10 @@ fn export(session: &ProjectSession) -> String {
         accept_unmodeled: true,
         accept_exceeded: true,
     };
-    export_gcode_checked(session, None, policy).expect("the core door exports")
+    session
+        .export_gcode_checked(None, policy)
+        .expect("the core door exports")
+        .gcode
 }
 
 /// True when any line of `gcode` is exactly `word`.

@@ -15,7 +15,7 @@ is `export::mod`, which re-exports the four surfaces.
 ## Invariants
 
 - The datum rule for Z zero lives in `../gcode/CLAUDE.md`.
-- The validator reads emitted bytes, not the plan.
+- The validator reads emitted bytes, not the plan. F214: `supports_m6`, `no_canned_cycles` come from the post data.
 - The 6-view composite renderer keeps one camera convention: every panel uses
   `StockConfig::origin`, one shared scale and consistent polar handedness.
 - Colour lives here, not in the core model. `ribbon.rs` reads one classifier,

@@ -656,11 +656,24 @@ impl<B: ComputeBackend> AppController<B> {
         tracing::info!("Loaded project via unified session path");
         Ok(())
     }
+    /// The single-file export text, under the GUI's own overrides.
     pub fn export_gcode(&self) -> Result<String, VizError> {
         crate::io::export::export_gcode_from_session(
             &self.state.session,
             &self.state.gui,
             &self.state.simulation,
+        )
+    }
+
+    /// The single-file export with every check it ran (F067/F051), under
+    /// the GUI's own overrides. The File menu export takes it.
+    pub fn export_gcode_reporting(&self) -> Result<crate::io::export::ExportedGcode, VizError> {
+        crate::io::export::export_gcode_from_session_reporting(
+            &self.state.session,
+            &self.state.gui,
+            &self.state.simulation,
+            self.state.gui.tool_load_overrides.as_policy(),
+            self.state.gui.stale_export,
         )
     }
 

@@ -51,6 +51,20 @@ use rs_cam_viz::state::simulation::SimulationState;
 use rs_cam_viz::state::toolpath::{OperationConfig, ToolpathResult};
 use rs_cam_viz::state::wizard::OutputLayout;
 
+/// F072: every export door reads the session post config, so a test sets
+/// the dialect through the command door, not on `GuiState::post`.
+fn set_post_format(session: &mut ProjectSession, format: PostFormat) {
+    let mut post = session.post_config().clone();
+    post.format = format;
+    let _ = session
+        .apply(Command::SetPostConfig(
+            rs_cam_core::session::SetPostConfigArgs {
+                post: Box::new(post),
+            },
+        ))
+        .expect("set the post format");
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -279,11 +293,12 @@ fn wizard_per_toolpath_save_writes_one_file_per_toolpath() {
 /// export_gcode_phases_with_overlay_checked → emitter.
 #[test]
 fn wizard_overlay_overrides_reflect_in_emitted_gcode() {
-    let (session, mut gui, sim) = build_session();
+    let (mut session, mut gui, sim) = build_session();
 
     // grblHAL preamble emits {wcs_line} + {units_word} + M3 S{rpm}, so
     // overrides on those words show up in the rendered preamble.
-    gui.post.format = rs_cam_core::gcode::PostFormat::GrblHal;
+    // F072: the export reads the session post config.
+    set_post_format(&mut session, PostFormat::GrblHal);
 
     gui.wizard.wcs_override = Some(rs_cam_core::gcode::WcsCode::G56);
     gui.wizard.spindle_warmup_secs = 9;
@@ -335,7 +350,7 @@ fn wizard_inch_units_override_blocks_export() {
 /// viz-export entry point that the wizard's Save handler calls.
 #[test]
 fn default_wizard_state_does_not_mutate_export() {
-    use rs_cam_core::gcode::{ToolLoadExportPolicy, export_gcode_phases_with_overlay_checked};
+    use rs_cam_core::gcode::{ExportPhases, ToolLoadExportPolicy, emit_checked};
 
     let (session, gui, sim) = build_session();
     // build_session leaves WizardState at its default — no overrides set.
@@ -349,7 +364,7 @@ fn default_wizard_state_does_not_mutate_export() {
 
     // Build the equivalent default-overlay export by hand to confirm the
     // helper isn't injecting anything unexpected. Both paths route
-    // through `export_gcode_phases_with_overlay_checked` — only the
+    // through `rs_cam_core::gcode::emit_checked` — only the
     // overlay-construction step differs.
     use rs_cam_core::gcode::{CoolantMode, GcodePhase, PhaseTool};
     // G-EXPORT-DATUM (2026-08-19): the baseline must apply the same
@@ -379,7 +394,7 @@ fn default_wizard_state_does_not_mutate_export() {
                 toolpath: emitted_toolpath.as_ref(),
                 spindle_rpm: rs_cam_core::compute::catalog::effective_spindle_rpm(
                     &tc.operation,
-                    gui.post.spindle_speed,
+                    session.post_config().spindle_speed,
                 ),
                 label: &tc.name,
                 pre_gcode: tc.pre_gcode.as_deref(),
@@ -400,9 +415,10 @@ fn default_wizard_state_does_not_mutate_export() {
             })
         })
         .collect();
-    let baseline = export_gcode_phases_with_overlay_checked(
-        &phases,
-        gui.post.format.definition(),
+    let baseline = emit_checked(
+        &ExportPhases::OneSetup(phases),
+        session.post_config().format.definition(),
+        session.post_config().safe_z,
         // No load evaluation on the hand-built baseline path (C1 — the
         // report parameter is non-optional; empty = nothing evaluated).
         &rs_cam_core::tool_load::ToolLoadReport {
@@ -411,7 +427,8 @@ fn default_wizard_state_does_not_mutate_export() {
         ToolLoadExportPolicy::default(),
         &Default::default(),
     )
-    .expect("baseline export succeeds");
+    .expect("baseline export succeeds")
+    .gcode;
 
     assert_eq!(
         with_overlay, baseline,
@@ -929,9 +946,9 @@ fn single_file_export_pauses_between_setups_g3() {
 /// one file per setup.
 #[test]
 fn per_setup_files_carry_one_header_g3() {
-    let (session, mut gui, sim) = two_setup_session();
+    let (mut session, gui, sim) = two_setup_session();
     for format in [PostFormat::Grbl, PostFormat::GrblHal] {
-        gui.post.format = format;
+        set_post_format(&mut session, format);
         let files = rs_cam_viz::io::export::export_per_setup_files(
             &session,
             &gui,
@@ -999,7 +1016,7 @@ fn a_same_orientation_setup_says_same_position_not_turn() {
     path.rapid_to(P3::new(0.0, 0.0, 5.0));
     path.feed_to(P3::new(20.0, 0.0, -1.0), 600.0);
     seed_generated_result(&mut session, &mut gui, tp_id, path);
-    gui.post.format = PostFormat::GrblHal;
+    set_post_format(&mut session, PostFormat::GrblHal);
     let files = rs_cam_viz::io::export::export_per_setup_files(
         &session,
         &gui,

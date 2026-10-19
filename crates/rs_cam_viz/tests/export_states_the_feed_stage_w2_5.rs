@@ -222,14 +222,15 @@ fn gui_for(session: &ProjectSession) -> GuiState {
 }
 
 fn core_gcode(session: &ProjectSession) -> String {
-    rs_cam_core::gcode::export_gcode_checked(
-        session,
-        session
-            .simulation_result()
-            .and_then(|s| s.cut_trace.as_deref()),
-        PERMISSIVE,
-    )
-    .expect("the core door exports")
+    session
+        .export_gcode_checked(
+            session
+                .simulation_result()
+                .and_then(|s| s.cut_trace.as_deref()),
+            PERMISSIVE,
+        )
+        .expect("the core door exports")
+        .gcode
 }
 
 fn viz_export(session: &ProjectSession, gui: &GuiState, stale: StaleResultPolicy) -> ExportedGcode {
@@ -333,6 +334,7 @@ fn every_export_states_the_feed_stage_it_emits() {
     let reply = rs_cam_viz::io::export::export_reply_text(
         "G-code exported".to_owned(),
         &exported.machine_safety,
+        &exported.load_outcome,
         &exported.feeds_cautions,
     );
     assert!(

@@ -66,12 +66,7 @@ pub fn run_sweep(
     // Write baseline artifacts
     write_json(&output_dir.join("baseline.json"), &base_fp)?;
     write_toolpath_svg(&output_dir.join("baseline.svg"), base_tp)?;
-    write_gcode(
-        &output_dir.join("baseline.nc"),
-        base_tp,
-        &base_job,
-        &base_result,
-    )?;
+    write_gcode(&output_dir.join("baseline.nc"), &base_job, &base_result)?;
 
     // Simulate baseline if requested
     let base_stock_fp = if simulate {
@@ -119,7 +114,6 @@ pub fn run_sweep(
         write_toolpath_svg(&output_dir.join(format!("variant_{safe_val}.svg")), var_tp)?;
         write_gcode(
             &output_dir.join(format!("variant_{safe_val}.nc")),
-            var_tp,
             &patched_job,
             &var_result,
         )?;
@@ -328,16 +322,20 @@ fn write_toolpath_svg(path: &Path, tp: &rs_cam_core::toolpath::Toolpath) -> Resu
     std::fs::write(path, svg).context(format!("Writing {}", path.display()))
 }
 
-#[allow(clippy::needless_pass_by_value)]
-fn write_gcode(
-    path: &Path,
-    tp: &rs_cam_core::toolpath::Toolpath,
-    job: &job::JobFile,
-    _result: &job::JobResult,
-) -> Result<()> {
+/// W5: the sweep writes the program the job-file door writes — every
+/// phase with its own spindle speed, tool change, coolant and label,
+/// through the checked emit (`job::emit_job_program`). It used to call
+/// the raw `emit_gcode` on the combined toolpath at one spindle speed.
+fn write_gcode(path: &Path, job: &job::JobFile, result: &job::JobResult) -> Result<()> {
     // F028: the job file parser already refused an unknown post token.
     let post = job.job.post.definition();
-    let gcode = rs_cam_core::gcode::emit_gcode(tp, post, job.job.spindle_speed);
+    let phases: Vec<_> = result.phases.iter().map(job::job_phase).collect();
+    let gcode = job::emit_job_program(
+        &rs_cam_core::gcode::ExportPhases::OneSetup(phases),
+        post,
+        job.job.safe_z,
+        &job::job_overlay(job),
+    )?;
     std::fs::write(path, gcode).context(format!("Writing G-code to {}", path.display()))
 }
 

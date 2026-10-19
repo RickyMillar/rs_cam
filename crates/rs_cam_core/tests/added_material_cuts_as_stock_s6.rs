@@ -117,15 +117,17 @@ impl Run {
     /// Every G-code line that is not a comment: the moves and their
     /// F-words.
     fn gcode_motion(&self) -> Vec<String> {
-        let gcode = rs_cam_core::gcode::export_gcode_checked(
-            &self.session,
-            Some(self.trace()),
-            rs_cam_core::gcode::ToolLoadExportPolicy {
-                accept_unmodeled: true,
-                accept_exceeded: true,
-            },
-        )
-        .expect("the export runs");
+        let gcode = self
+            .session
+            .export_gcode_checked(
+                Some(self.trace()),
+                rs_cam_core::gcode::ToolLoadExportPolicy {
+                    accept_unmodeled: true,
+                    accept_exceeded: true,
+                },
+            )
+            .expect("the export runs")
+            .gcode;
         gcode
             .lines()
             .filter(|l| !l.trim_start().starts_with('(') && !l.trim_start().starts_with(';'))

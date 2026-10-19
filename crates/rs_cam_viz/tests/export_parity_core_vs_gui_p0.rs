@@ -49,23 +49,21 @@
 //!   The fixture never touches the wizard, so `WizardState::default()`
 //!   (`session/wizard.rs:72`: `dry_run` false, every override `None`,
 //!   `spindle_warmup_secs` 0) gives the default overlay.
-//! - High-feedrate rewrite. `replace_rapids_with_feed` runs only when
-//!   `gui.post.high_feedrate_mode` (`io/export.rs:438-440`). The
-//!   fixture leaves it false, which is `ProjectPostConfig::default()`
-//!   (`session/project_file.rs:158`).
+//! - High-feedrate rewrite. F067 (W5): both doors now run it inside the
+//!   one core door (`ProjectSession::export_program`), from the session
+//!   post config. The test
+//!   `core_and_gui_export_agree_under_high_feedrate_mode` turns it on; the
+//!   other tests leave it false, which is `PostConfig::default()`.
 //! - Result store and refusal. The GUI door refuses an enabled
 //!   operation whose result is missing or stale (G-EXPORTSKIP,
 //!   G-STALEXPORT). The fixture gives every enabled operation a core
 //!   result and no `gui.toolpath_rt` entry, so `freshness` returns
 //!   `Current` (`state/freshness.rs:78-96`) and the door emits the same
 //!   toolpath the core door reads.
-//! - Post store. The core door resolves the post from
-//!   `project.post_config().format` (`gcode/mod.rs:316-318`). The GUI
-//!   door resolves it from `gui.post.format` (`io/export.rs:410`). The
-//!   fixture bridges the two with `GuiState::post_from_session`
-//!   (`state/runtime.rs:357`), so both emit through the shipped GRBL
-//!   post (`crates/rs_cam_core/posts/grbl.toml`), the `"grbl"` default
-//!   token.
+//! - Post store. F072 (W5): both doors resolve the post from
+//!   `project.post_config()`; the GUI door no longer reads `gui.post`.
+//!   Both emit through the shipped GRBL post
+//!   (`crates/rs_cam_core/posts/grbl.toml`), the `"grbl"` default token.
 //!
 //! Two more inputs are held equal by hand. The simulation trace is
 //! absent on both sides: `None` for the core door, `SimulationState::
@@ -337,7 +335,10 @@ fn policy() -> ToolLoadExportPolicy {
 }
 
 fn core_export(session: &ProjectSession) -> String {
-    rs_cam_core::gcode::export_gcode_checked(session, None, policy()).expect("core export")
+    session
+        .export_gcode_checked(None, policy())
+        .expect("core export")
+        .gcode
 }
 
 fn gui_export(session: &ProjectSession, gui: &GuiState, sim: &SimulationState) -> String {
@@ -636,4 +637,34 @@ fn core_and_gui_export_agree_on_coolant() {
          coolant words above, so the coolant field itself is NOT the \
          cause. Test A states what the remaining properties are."
     );
+}
+
+/// F067 (W5): with `high_feedrate_mode` on, the core door (the CLI) and
+/// the GUI door emit the same bytes, and neither keeps a `G0`. Before W5
+/// only the GUI door rewrote the rapids, so the CLI file kept `G0` where
+/// the GUI file had `G1` traverses.
+#[test]
+fn core_and_gui_export_agree_under_high_feedrate_mode() {
+    let (mut session, gui, sim) = build_state(CoolantMode::Off);
+    let mut post = session.post_config().clone();
+    post.high_feedrate_mode = true;
+    let _ = session
+        .apply(Command::SetPostConfig(
+            rs_cam_core::session::SetPostConfigArgs {
+                post: Box::new(post),
+            },
+        ))
+        .expect("turn the rewrite on");
+
+    let core = core_export(&session);
+    let gui_bytes = gui_export(&session, &gui, &sim);
+    let is_g0 = |line: &str| {
+        let t = line.trim_start();
+        t.starts_with("G0 ") || t.starts_with("G0X")
+    };
+    assert!(
+        !core.lines().any(is_g0),
+        "the core door rewrites every rapid:\n{core}"
+    );
+    assert_eq!(core, gui_bytes, "one project state, one program");
 }

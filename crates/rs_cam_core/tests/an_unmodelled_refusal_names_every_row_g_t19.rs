@@ -263,9 +263,10 @@ fn a_depth_only_refusal_names_the_depth_row_and_its_reason() {
     );
 }
 
-/// The first line and the override hint are the ones the gate has
-/// always printed. T-19 changes what sits between them and nothing
-/// else.
+/// The first line is the one the gate has always printed. T-19 changes
+/// what sits after it. F061 (W5): the override hint names the override
+/// as each surface spells it (MCP key, CLI flag, GUI checkbox), not the
+/// core field `accept_unmodeled`, which no surface accepts.
 #[test]
 fn the_refusal_keeps_its_headline_and_its_override_hint() {
     let msg = refuse(depth_only_verdict());
@@ -273,9 +274,14 @@ fn the_refusal_keeps_its_headline_and_its_override_hint() {
         msg.starts_with("G-code export refused: tool load not fully modeled for toolpath(s):\n"),
         "headline unchanged: {msg}"
     );
+    let hint = rs_cam_core::gcode::LoadOverride::AcceptUnmodeled.spellings();
     assert!(
-        msg.ends_with("Pass `accept_unmodeled=true` to acknowledge unmodeled criteria."),
-        "override hint unchanged: {msg}"
+        msg.ends_with(&format!("To acknowledge unmodeled criteria: {hint}.")),
+        "the override hint names every surface spelling: {msg}"
+    );
+    assert!(
+        !msg.contains("accept_unmodeled=true"),
+        "no surface accepts the core field name: {msg}"
     );
 }
 
@@ -300,9 +306,14 @@ fn a_stale_trace_keeps_its_own_headline_and_names_its_row() {
         "a stale trace reads as stale, not as never simulated: {msg}"
     );
     assert!(msg.contains("chipload"), "names the stale row: {msg}");
+    // F061 (W5): the stale hint names the unmodelled override as each
+    // surface spells it.
+    let hint = rs_cam_core::gcode::LoadOverride::AcceptUnmodeled.spellings();
     assert!(
-        msg.ends_with("export against the stale evidence anyway."),
-        "the stale override hint is unchanged: {msg}"
+        msg.ends_with(&format!(
+            "To export against the stale evidence anyway: {hint}."
+        )),
+        "the stale override hint names every surface spelling: {msg}"
     );
 }
 

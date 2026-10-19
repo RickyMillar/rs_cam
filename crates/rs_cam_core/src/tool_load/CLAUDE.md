@@ -22,6 +22,8 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
 - B6: power and deflection read `Material::force_line()`. Power is `line ×
   grain_factor` (1.0 on every line); no line is `MaterialUnvalidated`. A
   force-line or grain-factor change needs the slow `--test` sims, not `--lib`.
+- F197: a stale trace rewrites a verdict through `ToolpathLoadVerdict::mark_simulation_stale` only; it
+  destructures every field. F070: build a gate context with `ProjectSession::load_context_parts(..).ctx()`.
 - The drill gates model the R-plane-rooted emitted schedule and read cutting
   geometry, not fed distance; a tapered drill uses the envelope diameter.
 

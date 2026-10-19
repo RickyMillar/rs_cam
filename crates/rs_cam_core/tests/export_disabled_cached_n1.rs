@@ -14,7 +14,7 @@ use common::session::{polygon_model, stock_under, toolpath_config};
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::TraceConfig;
-use rs_cam_core::gcode::{ToolLoadExportPolicy, export_gcode_checked};
+use rs_cam_core::gcode::ToolLoadExportPolicy;
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{Command, ProjectSessionBuilder, SetToolpathEnabledArgs};
@@ -122,15 +122,16 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
         "disabled trace cache is intentionally retained for re-enable"
     );
 
-    let gcode = export_gcode_checked(
-        &session,
-        None,
-        ToolLoadExportPolicy {
-            accept_unmodeled: true,
-            accept_exceeded: true,
-        },
-    )
-    .expect("export with load gates explicitly accepted");
+    let gcode = session
+        .export_gcode_checked(
+            None,
+            ToolLoadExportPolicy {
+                accept_unmodeled: true,
+                accept_exceeded: true,
+            },
+        )
+        .expect("export with load gates explicitly accepted")
+        .gcode;
 
     assert!(
         gcode.contains(ENABLED_LABEL),
@@ -168,15 +169,16 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
         "re-enabling retains the cached trace result"
     );
 
-    let gcode = export_gcode_checked(
-        &session,
-        None,
-        ToolLoadExportPolicy {
-            accept_unmodeled: true,
-            accept_exceeded: true,
-        },
-    )
-    .expect("export re-enabled cached trace with load gates explicitly accepted");
+    let gcode = session
+        .export_gcode_checked(
+            None,
+            ToolLoadExportPolicy {
+                accept_unmodeled: true,
+                accept_exceeded: true,
+            },
+        )
+        .expect("export re-enabled cached trace with load gates explicitly accepted")
+        .gcode;
 
     assert!(
         gcode.contains(DISABLED_LABEL),

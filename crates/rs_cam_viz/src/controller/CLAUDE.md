@@ -30,7 +30,8 @@
 - One plan at a time: `process_auto_regen` returns early while one runs, an edit cancels it, and a
   blocked submit never toasts (the row reads WAIT).
 - `GuiState::post` is a CLONE of `session.post_config()` — one type, `gcode::PostConfig`. `io.rs`'s
-  `refresh_post_mirror` rebuilds it. Never copy one post field by hand.
+  `refresh_post_mirror` rebuilds it. Never copy one post field by hand. F072: it is the Post panel's edit
+  buffer only; export, undo and the setup sheet read `session.post_config()`.
 
 ## Sentries
 

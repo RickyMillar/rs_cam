@@ -893,9 +893,14 @@ impl super::RsCamApp {
         // mid-program jog. tool_change_mode (set on the wizard above) still
         // applies within each file.
         // G3: omitted, the post decides (grblHAL: one file per setup).
-        let split_setups = param
-            .split_setups
-            .unwrap_or(state.gui.post.format.definition().prefer_one_file_per_setup);
+        let split_setups = param.split_setups.unwrap_or(
+            state
+                .session
+                .post_config()
+                .format
+                .definition()
+                .prefer_one_file_per_setup,
+        );
         if split_setups {
             let setups_with_ops = crate::io::export::setups_with_enabled_ops(&state.session);
             if setups_with_ops > 1 {
@@ -930,9 +935,12 @@ impl super::RsCamApp {
                     Vec::new();
                 // W2.5 (D10): the feeds cautions of every file, the same way.
                 let mut feeds_cautions: Vec<String> = Vec::new();
+                // F051: and the load outcome of every file.
+                let mut load_outcome = rs_cam_core::gcode::LoadPolicyOutcome::default();
                 for (i, file) in files.into_iter().enumerate() {
                     machine_safety.extend(file.machine_safety);
                     feeds_cautions.extend(file.feeds_cautions);
+                    load_outcome.merge(file.load_outcome);
                     let safe_name: String = file
                         .name
                         .chars()
@@ -954,6 +962,7 @@ impl super::RsCamApp {
                         written.join("\n")
                     ),
                     &machine_safety,
+                    &load_outcome,
                     &feeds_cautions,
                 ));
             }
@@ -978,6 +987,7 @@ impl super::RsCamApp {
             Ok(()) => text(crate::io::export::export_reply_text(
                 format!("G-code exported to {path}"),
                 &exported.machine_safety,
+                &exported.load_outcome,
                 &exported.feeds_cautions,
             )),
             Err(e) => text(format!("Export failed: {e}")),

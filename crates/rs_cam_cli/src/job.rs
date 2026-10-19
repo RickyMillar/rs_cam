@@ -49,8 +49,8 @@ use rs_cam_core::{
     compute::{ModelUnits, build_cutter},
     dexel_stock::{StockCutDirection, TriDexelStock},
     gcode::{
-        CoolantMode, GcodePhase, PhaseTool, PostFormat, ToolLoadExportPolicy, WizardOverlay,
-        export_gcode_phases_with_overlay_checked,
+        CheckedProgram, CoolantMode, ExportPhases, GcodePhase, PhaseTool, PostFormat,
+        ToolLoadExportPolicy, WizardOverlay, emit_checked,
     },
     geo::BoundingBox3,
     session::{
@@ -384,22 +384,7 @@ pub fn run_job_command(
 
     // Emit G-code with per-operation spindle speed support
     let post_def = job_file.job.post.definition();
-    // G11: the controller options, resolved by the one core rule. The job
-    // file has no machine profile, so an omitted option is off.
-    let overlay = {
-        let post = rs_cam_core::gcode::PostConfig {
-            controller_waits_for_spindle: job_file.job.controller_waits_for_spindle,
-            mist_output: job_file.job.mist_output,
-            native_drill_cycles: job_file.job.native_drill_cycles,
-            ..rs_cam_core::gcode::PostConfig::default()
-        };
-        let mut overlay = WizardOverlay::default();
-        post.apply_controller_options(
-            &rs_cam_core::machine::MachineProfile::default(),
-            &mut overlay,
-        );
-        overlay
-    };
+    let overlay = job_overlay(&job_file);
     // A job file with setups has always written one file per setup, on
     // every post; that stays the default.
     let split = job_file.job.one_file_per_setup.unwrap_or(true);
@@ -420,14 +405,10 @@ pub fn run_job_command(
             })
             .filter(|g| !g.phases.is_empty())
             .collect();
-        let gcode = rs_cam_core::gcode::export_gcode_multi_setup_with_overlay_checked(
-            &groups,
+        let gcode = emit_job_program(
+            &ExportPhases::Setups(groups),
             post_def,
             job_file.job.safe_z,
-            &rs_cam_core::tool_load::ToolLoadReport {
-                per_toolpath: vec![],
-            },
-            ToolLoadExportPolicy::default(),
             &overlay,
         )?;
         std::fs::write(&output, &gcode).context("Failed to write output file")?;
@@ -463,17 +444,10 @@ pub fn run_job_command(
                     ))
                 });
 
-            // The job-file pipeline has no ProjectSession / load
-            // evaluation context: pass an explicitly empty report
-            // ("no load evaluation performed") so the gate is
-            // visible at the call site rather than skippable.
-            let gcode = export_gcode_phases_with_overlay_checked(
-                &setup_phases,
+            let gcode = emit_job_program(
+                &ExportPhases::OneSetup(setup_phases),
                 post_def,
-                &rs_cam_core::tool_load::ToolLoadReport {
-                    per_toolpath: vec![],
-                },
-                ToolLoadExportPolicy::default(),
+                job_file.job.safe_z,
                 &overlay,
             )?;
             std::fs::write(&setup_output, &gcode).context("Failed to write setup output file")?;
@@ -487,15 +461,10 @@ pub fn run_job_command(
     } else {
         let phases: Vec<GcodePhase<'_>> = job_result.phases.iter().map(job_phase).collect();
         info!("Emitting G-code ({})...", post_def.name);
-        // See the per-setup branch above: the job-file path has no
-        // load-evaluation context — explicitly empty report.
-        let gcode = export_gcode_phases_with_overlay_checked(
-            &phases,
+        let gcode = emit_job_program(
+            &ExportPhases::OneSetup(phases),
             post_def,
-            &rs_cam_core::tool_load::ToolLoadReport {
-                per_toolpath: vec![],
-            },
-            ToolLoadExportPolicy::default(),
+            job_file.job.safe_z,
             &overlay,
         )?;
         std::fs::write(&output, &gcode).context("Failed to write output file")?;
@@ -902,8 +871,60 @@ pub struct JobResult {
     pub trace_artifacts: Vec<ToolpathTraceArtifact>,
 }
 
+/// G11: the controller options of a job file, resolved by the one core
+/// rule. The job file has no machine profile, so an omitted option is off.
+pub(crate) fn job_overlay(job_file: &JobFile) -> WizardOverlay {
+    let post = rs_cam_core::gcode::PostConfig {
+        controller_waits_for_spindle: job_file.job.controller_waits_for_spindle,
+        mist_output: job_file.job.mist_output,
+        native_drill_cycles: job_file.job.native_drill_cycles,
+        ..rs_cam_core::gcode::PostConfig::default()
+    };
+    let mut overlay = WizardOverlay::default();
+    post.apply_controller_options(
+        &rs_cam_core::machine::MachineProfile::default(),
+        &mut overlay,
+    );
+    overlay
+}
+
+/// The checked emit of a job program, the one job-file door (`run_job`
+/// and `sweep`).
+///
+/// F116 (not done): the job-file pipeline has no `ProjectSession`, so it
+/// passes an explicitly empty load report ("no load evaluation
+/// performed") and the default policy, and it runs neither the
+/// machine-safety pass nor the high-feedrate rewrite: both read the
+/// session (retract plane, machine feed limit, post config). The load
+/// outcome is still destructured, so a report that gains rows cannot be
+/// dropped here.
+pub(crate) fn emit_job_program(
+    phases: &ExportPhases<'_>,
+    post: &rs_cam_core::gcode::PostDefinition,
+    safe_z: f64,
+    overlay: &WizardOverlay,
+) -> Result<String> {
+    let CheckedProgram {
+        gcode,
+        load_outcome,
+    } = emit_checked(
+        phases,
+        post,
+        safe_z,
+        &rs_cam_core::tool_load::ToolLoadReport {
+            per_toolpath: vec![],
+        },
+        ToolLoadExportPolicy::default(),
+        overlay,
+    )?;
+    if let Some(report) = load_outcome.report() {
+        warn!("{report}");
+    }
+    Ok(gcode)
+}
+
 /// The emitter phase of one job operation.
-fn job_phase(phase: &OpResult) -> GcodePhase<'_> {
+pub(crate) fn job_phase(phase: &OpResult) -> GcodePhase<'_> {
     GcodePhase {
         toolpath: &phase.toolpath,
         spindle_rpm: phase.spindle_speed,

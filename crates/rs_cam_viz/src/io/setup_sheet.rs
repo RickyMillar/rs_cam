@@ -406,9 +406,9 @@ tr:nth-child(even) {{ background: #24242e; }}
              <tr><td>Spindle Speed</td><td>{} RPM</td></tr>\n\
              <tr><td>Safe Z</td><td>{:.2} mm</td></tr>\n\
              </table>\n",
-            gui.post.format.label(),
-            gui.post.spindle_speed,
-            gui.post.safe_z,
+            session.post_config().format.label(),
+            session.post_config().spindle_speed,
+            session.post_config().safe_z,
         ),
     );
 

@@ -107,8 +107,8 @@ pub struct Finding {
     pub message: String,
 }
 
-/// Per-post invariant configuration. Eventually becomes a field of
-/// `PostDefinition` (Phase 3); for Phase 1 it's a hardcoded lookup.
+/// Per-post invariant configuration. `supports_m6` and `no_canned_cycles`
+/// come from the post data (F214); the rest is a per-dialect table.
 #[derive(Debug, Clone, Copy)]
 struct PostInvariants {
     /// Whether the post may emit `M6` for tool changes. Grbl 1.1
@@ -133,7 +133,8 @@ struct PostInvariants {
     realtime_chars_in_comments: bool,
     /// G8: the grblHAL word set (G90.1, G64, M7 rules).
     grblhal_words: bool,
-    /// G8: Grbl 1.1 has no canned drill cycles.
+    /// G8: the controller runs no canned drill cycles. F214: read from
+    /// the post data (`!canned_drill_cycles`), so only grblHAL allows them.
     no_canned_cycles: bool,
 }
 
@@ -150,10 +151,21 @@ enum LineLimit {
     WholeLine(usize),
 }
 
-const fn invariants_for(post: PostFormat) -> PostInvariants {
+/// The invariants of `post`.
+///
+/// F214: the two facts the post data states are READ from it, not
+/// restated: `supports_m6` is the post's own tool-change template
+/// ([`crate::gcode::PostDefinition::tool_change_commands_m6`]) and
+/// `no_canned_cycles` is `!canned_drill_cycles`. An edited post TOML
+/// therefore cannot disagree with the validator. The other fields have
+/// no post-data source yet and stay per dialect.
+fn invariants_for(post: PostFormat) -> PostInvariants {
+    let def = post.definition();
+    let supports_m6 = def.tool_change_commands_m6();
+    let no_canned_cycles = !def.canned_drill_cycles;
     match post {
         PostFormat::Grbl => PostInvariants {
-            supports_m6: false,
+            supports_m6,
             requires_g91_1: false,
             requires_percent_brackets: false,
             requires_wcs: true,
@@ -161,10 +173,10 @@ const fn invariants_for(post: PostFormat) -> PostInvariants {
             ascii_only: true,
             realtime_chars_in_comments: true,
             grblhal_words: false,
-            no_canned_cycles: true,
+            no_canned_cycles,
         },
         PostFormat::LinuxCnc => PostInvariants {
-            supports_m6: true,
+            supports_m6,
             requires_g91_1: true,
             requires_percent_brackets: false,
             requires_wcs: true,
@@ -172,10 +184,10 @@ const fn invariants_for(post: PostFormat) -> PostInvariants {
             ascii_only: false,
             realtime_chars_in_comments: false,
             grblhal_words: false,
-            no_canned_cycles: false,
+            no_canned_cycles,
         },
         PostFormat::Mach3 => PostInvariants {
-            supports_m6: true,
+            supports_m6,
             requires_g91_1: false,
             requires_percent_brackets: false,
             requires_wcs: true,
@@ -183,14 +195,14 @@ const fn invariants_for(post: PostFormat) -> PostInvariants {
             ascii_only: false,
             realtime_chars_in_comments: false,
             grblhal_words: false,
-            no_canned_cycles: false,
+            no_canned_cycles,
         },
-        // grblHAL accepts the Grbl 1.1 word set and adds M6 (the board
-        // runs the change with `$341`), canned cycles and MSG comments.
-        // The grblhal post emits an explicit G54 (validator still
-        // requires WCS).
+        // grblHAL accepts the Grbl 1.1 word set and adds MSG comments; its
+        // post data adds M6 (the board runs the change with `$341`) and
+        // canned cycles. The grblhal post emits an explicit G54 (validator
+        // still requires WCS).
         PostFormat::GrblHal => PostInvariants {
-            supports_m6: true,
+            supports_m6,
             requires_g91_1: false,
             requires_percent_brackets: false,
             requires_wcs: true,
@@ -198,7 +210,7 @@ const fn invariants_for(post: PostFormat) -> PostInvariants {
             ascii_only: true,
             realtime_chars_in_comments: false,
             grblhal_words: true,
-            no_canned_cycles: false,
+            no_canned_cycles,
         },
     }
 }
@@ -610,7 +622,8 @@ fn rule_word_set(
         }
         if inv.no_canned_cycles && [73, 81, 82, 83].iter().any(|&n| has_word_int(line, 'G', n)) {
             flag(format!(
-                "{} has no canned drill cycles. Export the drill moves expanded.",
+                "The {} post data has no canned drill cycles (`canned_drill_cycles` is off). \
+                 Export the drill moves expanded.",
                 post.label()
             ));
         }

@@ -573,6 +573,111 @@ struct ProjectSummary {
     /// closing simulation measured. Absent when the project has none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     stock_changes: Vec<StockChangeSummaryEntry>,
+    /// F051/F067: what the G-code export checks found. Absent without
+    /// `--emit-gcode`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gcode_export: Option<GcodeExportSummary>,
+}
+
+/// The program text and its `summary.json` record, or the refusal.
+type CheckedExport = Result<(String, GcodeExportSummary), rs_cam_core::gcode::ExportRefusal>;
+
+/// The G-code export of one `project` run in `summary.json` (F051, F067).
+#[derive(Clone, Serialize)]
+pub(crate) struct GcodeExportSummary {
+    /// The refusal text when the export refused; `null` when it wrote.
+    refused: Option<String>,
+    /// How many machine-safety findings the pass raised, and how many are
+    /// at error severity. The pass runs before the rapid rewrite.
+    machine_safety_findings: usize,
+    machine_safety_errors: usize,
+    /// One line per criterion that exceeded a bound that may not refuse.
+    load_advisories: Vec<String>,
+    /// The refusals an override flag waived for this export.
+    overrides_used: Vec<String>,
+    /// W2.5: feeds modulated from a simulation the session no longer holds.
+    feeds_cautions: Vec<String>,
+}
+
+impl GcodeExportSummary {
+    fn refused(refusal: &rs_cam_core::gcode::ExportRefusal) -> Self {
+        Self {
+            refused: Some(refusal.to_string()),
+            machine_safety_findings: 0,
+            machine_safety_errors: 0,
+            load_advisories: Vec::new(),
+            overrides_used: Vec::new(),
+            feeds_cautions: Vec::new(),
+        }
+    }
+}
+
+/// How many machine-safety findings stderr names one by one; the rest are
+/// a count. The same cap as the GUI and MCP reply
+/// (`rs_cam_viz::io::export::machine_safety_report`). One program once
+/// raised 18 680 findings.
+const MACHINE_SAFETY_STDERR_LINES: usize = 5;
+
+/// F051/F067: print what the export checks found to stderr, and return
+/// the program text and the `summary.json` record. `run` and `project`
+/// both take it. The destructure names every field, so a check the core
+/// door adds does not compile until this surface shows it.
+pub(crate) fn report_export_checks(
+    exported: rs_cam_core::gcode::ExportedGcode,
+) -> (String, GcodeExportSummary) {
+    use rs_cam_core::export::gcode_validator::Severity;
+    let rs_cam_core::gcode::ExportedGcode {
+        gcode,
+        machine_safety,
+        load_outcome,
+        feeds_cautions,
+    } = exported;
+    let errors = machine_safety
+        .iter()
+        .filter(|f| f.severity == Severity::Error)
+        .count();
+    if !machine_safety.is_empty() {
+        eprintln!(
+            "machine-safety: {} findings, {errors} at error severity{}",
+            machine_safety.len(),
+            if errors > 0 {
+                ". Do not run this program until you fix them."
+            } else {
+                "."
+            }
+        );
+    }
+    for finding in machine_safety.iter().take(MACHINE_SAFETY_STDERR_LINES) {
+        eprintln!(
+            "  [{:?}] line {}: {}",
+            finding.severity, finding.line, finding.message
+        );
+    }
+    if machine_safety.len() > MACHINE_SAFETY_STDERR_LINES {
+        eprintln!(
+            "  ... and {} more.",
+            machine_safety.len() - MACHINE_SAFETY_STDERR_LINES
+        );
+    }
+    if let Some(report) = load_outcome.report() {
+        eprintln!("{report}");
+    }
+    for caution in &feeds_cautions {
+        eprintln!("feeds caution: {caution}");
+    }
+    let rs_cam_core::gcode::LoadPolicyOutcome {
+        advisories,
+        overridden,
+    } = load_outcome;
+    let summary = GcodeExportSummary {
+        refused: None,
+        machine_safety_findings: machine_safety.len(),
+        machine_safety_errors: errors,
+        load_advisories: advisories,
+        overrides_used: overridden.iter().map(|r| r.body()).collect(),
+        feeds_cautions,
+    };
+    (gcode, summary)
 }
 
 /// One stock change in `summary.json` (S4). `volume_label` is the text the
@@ -690,6 +795,7 @@ pub fn run_project_command(
     resolution: Option<f64>,
     summary: bool,
     emit_gcode: Option<&Path>,
+    tool_load: rs_cam_core::gcode::ToolLoadExportPolicy,
     adaptive_feed_modulation: bool,
     modulation_strategy: rs_cam_core::dressup::feed_modulation::ModulationStrategy,
     modulation_feed_scale: f64,
@@ -1036,6 +1142,28 @@ pub fn run_project_command(
         }
     }
 
+    // 9. Optional G-code emit (F-036c calibration helper), through the one
+    // core door (F067): the machine-safety pass and the rapid rewrite run
+    // as in the GUI. F051: the overrides are the explicit flags
+    // `--accept-unmodeled-tool-load` / `--accept-exceeded-tool-load`; the
+    // default refuses. The outcome goes into `summary.json` before the
+    // file is written, so a refusal is still on record.
+    let gcode_emit: Option<(&Path, CheckedExport)> = emit_gcode.map(|path| {
+        let trace = session
+            .simulation_result()
+            .and_then(|s| s.cut_trace.as_deref());
+        (
+            path,
+            session
+                .export_gcode_checked(trace, tool_load)
+                .map(report_export_checks),
+        )
+    });
+    let gcode_export_summary = gcode_emit.as_ref().map(|(_, result)| match result {
+        Ok((_, summary)) => summary.clone(),
+        Err(refusal) => GcodeExportSummary::refused(refusal),
+    });
+
     let project_summary = ProjectSummary {
         project: session.name().to_owned(),
         setup_count: session.setup_count().max(1),
@@ -1063,6 +1191,7 @@ pub fn run_project_command(
             .iter()
             .map(StockChangeSummaryEntry::of)
             .collect(),
+        gcode_export: gcode_export_summary,
     };
 
     let summary_path = output_dir.join("summary.json");
@@ -1072,17 +1201,9 @@ pub fn run_project_command(
         .context(format!("Failed to write {}", summary_path.display()))?;
     info!(path = %summary_path.display(), "Wrote project summary");
 
-    // 10. Optional G-code emit (F-036c calibration helper)
-    if let Some(gcode_path) = emit_gcode {
-        let trace = session
-            .simulation_result()
-            .and_then(|s| s.cut_trace.as_deref());
-        let policy = rs_cam_core::gcode::ToolLoadExportPolicy {
-            accept_unmodeled: true,
-            accept_exceeded: true,
-        };
-        let gcode = rs_cam_core::gcode::export_gcode_checked(&session, trace, policy)
-            .context("Emit G-code from session")?;
+    // 10. Write the G-code, or fail with the refusal.
+    if let Some((gcode_path, result)) = gcode_emit {
+        let (gcode, _) = result.map_err(|refusal| anyhow::anyhow!("Emit G-code: {refusal}"))?;
         std::fs::write(gcode_path, &gcode)
             .context(format!("Failed to write {}", gcode_path.display()))?;
         info!(

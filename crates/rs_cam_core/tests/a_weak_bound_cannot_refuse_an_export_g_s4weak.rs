@@ -189,8 +189,10 @@ fn only_the_rule_of_thumb_declines_to_gate() {
 #[test]
 fn a_weak_exceedance_alone_exports_and_is_still_reported() {
     let per = vec![(TP, vec![within_row(), weak_exceedance()])];
-    let note = enforce_exceedance_policy(&per, false).expect("a weak bound must not refuse");
-    let note = note.expect("the operator must still be told");
+    let outcome = enforce_exceedance_policy(&per, false).expect("a weak bound must not refuse");
+    let note = outcome
+        .advisory_note()
+        .expect("the operator must still be told");
     assert!(
         note.contains("toolpath 4"),
         "the note names the toolpath: {note}"
@@ -245,17 +247,29 @@ fn a_hard_exceedance_refuses_and_the_message_names_both() {
 #[test]
 fn the_override_never_hides_the_advisory() {
     let per = vec![(TP, vec![weak_exceedance(), power_exceedance()])];
-    let note = enforce_exceedance_policy(&per, true).expect("the override accepts the exceedance");
-    let note = note.expect("the weak row is still reported");
+    let outcome =
+        enforce_exceedance_policy(&per, true).expect("the override accepts the exceedance");
+    let note = outcome
+        .advisory_note()
+        .expect("the weak row is still reported");
     assert!(note.contains("deflection"), "{note}");
+    // F051: the override keeps a record of what it waived.
+    assert_eq!(outcome.overridden.len(), 1, "{outcome:?}");
+    assert!(
+        outcome
+            .overridden
+            .iter()
+            .all(|r| r.body().contains("power")),
+        "the record names the row the override waived: {outcome:?}"
+    );
 }
 
 /// A clean list produces neither a refusal nor a note.
 #[test]
 fn nothing_exceeded_says_nothing() {
     let per = vec![(TP, vec![within_row()])];
-    let note = enforce_exceedance_policy(&per, false).expect("a clean list exports");
-    assert_eq!(note, None, "silence is the right answer here");
+    let outcome = enforce_exceedance_policy(&per, false).expect("a clean list exports");
+    assert!(outcome.is_empty(), "silence is the right answer here");
 }
 
 // ── (c) the shipped gate still refuses on the gates that gate ────────

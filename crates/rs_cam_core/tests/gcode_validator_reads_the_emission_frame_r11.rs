@@ -116,15 +116,9 @@ fn export_program() -> (ProjectSession, String) {
         .generate_toolpath(1, &cancel)
         .expect("generate trace B");
 
-    // Unique per call: the tests below run concurrently in one binary.
-    static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    let dir = std::env::temp_dir().join(format!("rs_cam_r11_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("temp dir");
-    let path = dir.join(format!("stock_top_23_{seq}.nc"));
-    session
-        .export_gcode_with_policy(
-            &path,
+    let gcode = session
+        .export_gcode_checked(
+            None,
             rs_cam_core::gcode::ToolLoadExportPolicy {
                 // No simulation runs here, so every load gate reads
                 // `Unmodeled`. This file is about frames, not load.
@@ -132,9 +126,8 @@ fn export_program() -> (ProjectSession, String) {
                 accept_exceeded: true,
             },
         )
-        .expect("export the program");
-    let gcode = std::fs::read_to_string(&path).expect("read the exported program");
-    let _ = std::fs::remove_file(&path);
+        .expect("export the program")
+        .gcode;
     (session, gcode)
 }
 

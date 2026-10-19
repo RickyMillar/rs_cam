@@ -516,9 +516,11 @@ fn a_hand_set_depth_above_the_cap_exceeds_but_does_not_refuse_the_export() {
     let report = ToolLoadReport {
         per_toolpath: vec![v],
     };
-    let note = enforce_load_policy(&report, &policy)
+    let outcome = enforce_load_policy(&report, &policy)
         .expect("a depth exceedance alone must not refuse the export");
-    let note = note.expect("the export gate must still REPORT the exceedance");
+    let note = outcome
+        .advisory_note()
+        .expect("the export gate must still REPORT the exceedance");
     assert!(
         note.contains("depth of cut"),
         "the note must name the depth row: {note}"

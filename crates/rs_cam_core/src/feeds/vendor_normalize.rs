@@ -149,6 +149,19 @@ pub fn missing_project_curve_rows(tool_family: ToolFamily) -> &'static str {
 /// F3.2: extracted from `to_lookup_query` so the loader's reachability
 /// rule and gate-side query builders share one mapping instead of
 /// re-deriving it inline (defect class C5).
+/// F070: the one `PassRole` → `LutPassRole` mapping. The export gate,
+/// the chip target, the GUI cut-metric cards and the LUT query read it
+/// through `.into()`; each held its own `match` before.
+impl From<PassRole> for LutPassRole {
+    fn from(role: PassRole) -> Self {
+        match role {
+            PassRole::Roughing => LutPassRole::Roughing,
+            PassRole::SemiFinish => LutPassRole::SemiFinish,
+            PassRole::Finish => LutPassRole::Finish,
+        }
+    }
+}
+
 pub fn op_family_to_lut(family: OperationFamily) -> LutOperationFamily {
     match family {
         OperationFamily::Adaptive => LutOperationFamily::Adaptive,
@@ -211,11 +224,7 @@ pub fn to_lookup_query_unrouted(input: &FeedsInput) -> LookupQuery {
         hardness_kind: Some(material_to_lut(input.material).1),
         hardness_value: Some(material_to_lut(input.material).2),
         operation_family: op_family_to_lut(input.operation),
-        pass_role: match input.pass_role {
-            PassRole::Roughing => LutPassRole::Roughing,
-            PassRole::SemiFinish => LutPassRole::SemiFinish,
-            PassRole::Finish => LutPassRole::Finish,
-        },
+        pass_role: input.pass_role.into(),
     }
 }
 
