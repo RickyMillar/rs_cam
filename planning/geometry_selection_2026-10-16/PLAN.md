@@ -446,3 +446,17 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
   user scale (DXF after `$INSUNITS`), and the dialog hover says so; the
   dialog reads the file on the frame thread, on a committed value only.
   SVG_DEFAULT_UNITS is the one place the O-2 ruling changes.
+
+## Operator rulings, 2026-10-20 morning
+
+- **D9: one floor field that names its reference.** Pocket, Profile,
+  Zigzag and Adaptive2D get one floor value with a reference (stock top,
+  model top, a face, or absolute Z). The op depth and the pinned bottom
+  stop being two fields that can disagree. This unblocks P3. Retired keys
+  go in `RETIRED_KEYS`, and the break goes in the commit.
+- **O-2 (SVG scale): the full fix.** The SVG door applies every
+  transform (`abs_transform`) and honours the declared `width`/`height`
+  (mm, in, px; a unitless value is px per the SVG spec). A file imports at
+  the size it states. Some SVG imports change size; the commit states it.
+  `SVG_DEFAULT_UNITS` (P4.8) changes in the same item. The P4.0 probe rows
+  become sentry arms with the corrected sizes.
