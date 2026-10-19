@@ -963,7 +963,7 @@ fn a_session_ladder_hits_the_memo_on_its_second_round() {
         common::session::polygon_model(vec![common::session::square_polygon(15.0)], "square"),
         "Pocket 1",
         OperationConfig::Pocket(PocketConfig {
-            depth: 2.0,
+            floor: rs_cam_core::compute::floor::Floor::top(2.0),
             depth_per_pass: 1.0,
             ..PocketConfig::default()
         }),
@@ -975,7 +975,7 @@ fn a_session_ladder_hits_the_memo_on_its_second_round() {
     let second = common::session::toolpath_config(
         "Pocket 2",
         OperationConfig::Pocket(PocketConfig {
-            depth: 3.0,
+            floor: rs_cam_core::compute::floor::Floor::top(3.0),
             depth_per_pass: 1.0,
             ..PocketConfig::default()
         }),

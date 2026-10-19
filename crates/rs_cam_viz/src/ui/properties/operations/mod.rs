@@ -249,9 +249,11 @@ fn find_nearest_reference(z: f64, ctx: &HeightContext) -> HeightReference {
 /// `Some(note)` names the dial that really sets the floor.
 ///
 /// The core half measured the fact and declared it as
-/// [`rs_cam_core::compute::catalog::Capabilities::honors_pinned_bottom_z`]:
-/// three of the twenty-four operations read `heights.bottom_z`, and on the
-/// other twenty-one a pinned bottom reaches no emitted motion. This match
+/// [`rs_cam_core::compute::catalog::Capabilities::floor_owner`]: three of
+/// the twenty-four operations read `heights.bottom_z` (`HeightsBottom`). On
+/// Pocket, Profile, Zigzag and Adaptive 2D (`OpFloor`, P3.2) the session
+/// refuses a pinned bottom, and on the other seventeen (`OpDial`) a pinned
+/// bottom reaches no emitted motion. This match
 /// carries its own arm per operation because each family names a DIFFERENT
 /// dial, and the sentry
 /// (`crates/rs_cam_viz/tests/bottom_z_pin_note_g_bottompin.rs`) ties the two
@@ -266,6 +268,8 @@ pub fn bottom_z_pin_note(op_type: OperationType) -> Option<&'static str> {
     use crate::state::toolpath::OperationType as Op;
 
     const DEPTH: &str = "Not used by this operation. Its Depth field sets the floor.";
+    const FLOOR: &str = "Not used by this operation. Its Depth row (the floor) sets the floor, \
+         and a pinned Bottom Z is refused.";
     const MAX_DEPTH: &str = "Not used by this operation. Its Max Depth sets the floor.";
     const POCKET_DEPTH: &str = "Not used by this operation. Its Pocket Depth sets the floor.";
     const PLUG_DEPTH: &str =
@@ -277,15 +281,15 @@ pub fn bottom_z_pin_note(op_type: OperationType) -> Option<&'static str> {
 
     // One arm per operation. The `match` is exhaustive, so a new operation
     // cannot be added to the catalog without an answer here, and the sentry
-    // ties every answer to `capabilities().honors_pinned_bottom_z`.
+    // ties every answer to `capabilities().floor_owner`.
     match op_type {
         // The three that read `heights.bottom_z`. No note.
         Op::Adaptive3d | Op::UnifiedFinish | Op::Waterline => None,
         Op::Face => Some(DEPTH),
-        Op::Pocket => Some(DEPTH),
-        Op::Profile => Some(DEPTH),
-        Op::Adaptive => Some(DEPTH),
-        Op::Zigzag => Some(DEPTH),
+        Op::Pocket => Some(FLOOR),
+        Op::Profile => Some(FLOOR),
+        Op::Adaptive => Some(FLOOR),
+        Op::Zigzag => Some(FLOOR),
         Op::Trace => Some(DEPTH),
         Op::Drill => Some(DEPTH),
         Op::VCarve => Some(MAX_DEPTH),
@@ -467,6 +471,7 @@ mod tests {
             stock_bottom_z: 0.0,
             model_top_z: Some(24.0),
             model_bottom_z: Some(2.0),
+            floor: None,
         }
     }
 

@@ -340,7 +340,6 @@ pub(crate) fn generate_waterline(
         cutter: ctx.tool_def,
         params,
         levels: ladder.levels,
-        z_step: cfg.z_step,
         hookup_mm: cfg.hookup_mm,
         op_type: op.op_type(),
         rest_use: op.capabilities().rest_use,
@@ -359,7 +358,6 @@ struct WaterlinePass<'a> {
     /// The ladder of `waterline_ladder`: nudged off the flat facets and
     /// floored at the stock bottom.
     levels: Vec<f64>,
-    z_step: f64,
     /// The cap (mm) of the after-plan link stage. `0.0`: no stage.
     hookup_mm: f64,
     op_type: OperationType,
@@ -378,11 +376,6 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
 
     /// Waterline offsets no polygon, so it claims no offset zero.
     const MEASURES_OFFSETS: bool = false;
-
-    /// The Z step. [`Self::ladder`] reads the ladder built from it.
-    fn depth_per_pass(&self) -> f64 {
-        self.z_step
-    }
 
     /// One surface, so the order changes nothing.
     fn region_ordering(&self) -> RegionOrdering {
@@ -404,8 +397,8 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
         Ok(Cow::Borrowed(std::slice::from_ref(&self.surface)))
     }
 
-    fn ladder(&self, _ctx: &ExecutionContext<'_>) -> Vec<f64> {
-        self.levels.clone()
+    fn ladder(&self, _ctx: &ExecutionContext<'_>) -> Result<Vec<f64>, OperationError> {
+        Ok(self.levels.clone())
     }
 
     fn prepare(

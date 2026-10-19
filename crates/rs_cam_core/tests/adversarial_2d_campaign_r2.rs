@@ -168,7 +168,7 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
             "pocket",
             OperationConfig::Pocket(PocketConfig {
                 stepover,
-                depth: DEPTH_MM,
+                floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
                 depth_per_pass: DEPTH_MM,
                 ..PocketConfig::default()
             }),
@@ -178,7 +178,7 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
             "adaptive",
             OperationConfig::Adaptive(AdaptiveConfig {
                 stepover,
-                depth: DEPTH_MM,
+                floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
                 depth_per_pass: DEPTH_MM,
                 ..AdaptiveConfig::default()
             }),
@@ -187,7 +187,7 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
         (
             "profile",
             OperationConfig::Profile(ProfileConfig {
-                depth: DEPTH_MM,
+                floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
                 depth_per_pass: DEPTH_MM,
                 ..ProfileConfig::default()
             }),
@@ -206,7 +206,7 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
             "zigzag",
             OperationConfig::Zigzag(ZigzagConfig {
                 stepover,
-                depth: DEPTH_MM,
+                floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
                 depth_per_pass: DEPTH_MM,
                 ..ZigzagConfig::default()
             }),

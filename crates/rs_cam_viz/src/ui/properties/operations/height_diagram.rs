@@ -6,6 +6,7 @@
 
 use super::bottom_z_pin_note;
 use crate::state::toolpath::{HeightContext, HeightMode, HeightsConfig, OperationType};
+use rs_cam_core::compute::catalog::FloorOwner;
 
 /// Height line definition for diagram rendering and interaction.
 struct DiagramLine {
@@ -189,7 +190,7 @@ pub(crate) fn model_profile(ctx: &HeightContext) -> ModelProfile {
 /// # F-6 / ruling R33 (2026-09-14): the diagram agrees with the panel
 ///
 /// The diagram drew a `DANGER` red floor at `resolved.bottom_z` on every
-/// operation. `Capabilities::honors_pinned_bottom_z` says three of the
+/// operation. `Capabilities::floor_owner` (`HeightsBottom`) says three of the
 /// twenty-four read that dial, so on the other twenty-one the panel printed
 /// "Bottom: Not used by this operation. …" and the diagram under it drew a
 /// red floor. Two surfaces gave opposite answers about where the cut stops,
@@ -233,12 +234,17 @@ pub fn draw_height_diagram(
     let resolved = answer.resolve(heights);
     let profile = model_profile(ctx);
 
-    // R33. One fact — `honors_pinned_bottom_z` — drives the colour and the
-    // text, and the same fact drives `bottom_z_pin_note` in the panel above.
+    // R33. One fact — `floor_owner` — drives the colour and the text, and
+    // the same fact drives `bottom_z_pin_note` in the panel above. P3.2: an
+    // `OpFloor` op takes its floor from its floor field; its Bottom row is
+    // not a pin it reads (the floor line is P3.7).
     // The inert run names the state and carries NO value: this diagram
     // pictures cut limits, and an inert pin is not one. See the ruling in
     // this function's doc comment before changing the text.
-    let bottom_drives_the_cut = op_type.capabilities().honors_pinned_bottom_z;
+    let bottom_drives_the_cut = match op_type.capabilities().floor_owner {
+        FloorOwner::HeightsBottom => true,
+        FloorOwner::OpFloor | FloorOwner::OpDial => false,
+    };
     let (bottom_color, bottom_text) = if bottom_drives_the_cut {
         (tokens::DANGER, format!("BZ {:.1}", resolved.bottom_z))
     } else {

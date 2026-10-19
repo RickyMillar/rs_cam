@@ -342,7 +342,13 @@ fn cutting_levels_is_exhaustive_per_op() {
         let params = config.as_params();
         let steps_down = matches!(params.depth_semantics(), DepthSemantics::Explicit(_))
             && params.depth_per_pass().is_some();
-        let levels = config.cutting_levels(0.0);
+        let heights = crate::compute::config::HeightsConfig::default().resolve(
+            &crate::compute::config::HeightContext::simple(
+                10.0,
+                config.default_depth_for_heights(),
+            ),
+        );
+        let levels = config.cutting_levels(&heights);
         assert_eq!(
             !levels.is_empty(),
             steps_down,

@@ -207,7 +207,7 @@ fn boundary_session(faces: &[u16]) -> ProjectSession {
 /// A Pocket that picks `faces`, on a setup with `face_up`.
 fn pocket_session(faces: &[u16], face_up: FaceUp) -> ProjectSession {
     let op = OperationConfig::Pocket(PocketConfig {
-        depth: POCKET_DEPTH,
+        floor: rs_cam_core::compute::floor::Floor::top(POCKET_DEPTH),
         depth_per_pass: POCKET_DEPTH,
         ..PocketConfig::default()
     });

@@ -118,7 +118,7 @@ fn carbide_vbit() -> ToolConfig {
 /// speed. Every input the predictor reads is set.
 fn roughing_pocket(depth_per_pass: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        depth: 4.0 * depth_per_pass,
+        floor: rs_cam_core::compute::floor::Floor::top(4.0 * depth_per_pass),
         depth_per_pass,
         stepover: 2.0,
         feed_rate: 1800.0,

@@ -52,8 +52,8 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::kinematics::MachineKinematics;
 use rs_cam_core::session::generation_plan::{Scope, Step, plan};
 use rs_cam_core::session::{
-    AddSetupArgs, AddToolpathArgs, Command, FeedStage, ProjectSession, SetMachineKinematicsArgs,
-    SetSimulationResolutionArgs, SetToolpathParamArgs, SimulationOptions, SimulationResolution,
+    AddSetupArgs, AddToolpathArgs, Command, FeedStage, ProjectSession, ReplaceToolpathConfigArgs,
+    SetMachineKinematicsArgs, SetSimulationResolutionArgs, SimulationOptions, SimulationResolution,
 };
 
 mod common;
@@ -70,7 +70,7 @@ const CELL_MM: f64 = 1.0;
 fn pocket_to(depth: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         stepover: 2.0,
-        depth,
+        floor: rs_cam_core::compute::floor::Floor::top(depth),
         depth_per_pass: 3.0,
         ..PocketConfig::default()
     })
@@ -211,14 +211,17 @@ fn an_upstream_change_supersedes_the_downstream_modulation_b5() {
     };
 
     // Edit the first operation and regenerate it alone.
+    // P3.2: the floor is not a parameter; the whole config carries it (the
+    // GUI door).
     let pocket = index_of(&session, "Pocket");
+    let mut edited = session.toolpath_configs()[pocket].clone();
+    edited.operation = pocket_to(2.0);
     let _ = session
-        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+        .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
             index: pocket,
-            param: "depth".to_owned(),
-            value: serde_json::json!(2.0),
+            config: Box::new(edited),
         }))
-        .expect("the pocket takes a depth");
+        .expect("the pocket takes a floor");
     let _ = session
         .generate_toolpath(pocket, &AtomicBool::new(false))
         .expect("regenerate the pocket");

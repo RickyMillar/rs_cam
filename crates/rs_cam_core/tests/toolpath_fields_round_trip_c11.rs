@@ -130,11 +130,13 @@ fn finish_dressups() -> DressupConfig {
     }
 }
 
-/// The non-default heights the finish operation carries.
+/// The non-default heights the finish operation carries. P3.2: the finish
+/// is a Pocket, which refuses a pinned Bottom Z (its floor is its `floor`
+/// field), so the second pinned row is the Top Z.
 fn finish_heights() -> HeightsConfig {
     HeightsConfig {
         clearance_z: HeightMode::Manual(18.0),
-        bottom_z: HeightMode::Manual(-4.2),
+        top_z: HeightMode::Manual(-4.2),
         ..HeightsConfig::default()
     }
 }
@@ -330,7 +332,7 @@ fn every_editable_toolpath_field_survives_a_save_and_a_load() {
         HeightMode::Manual(v) if (v - 18.0).abs() < 1e-9
     ));
     assert!(matches!(
-        finish.heights.bottom_z,
+        finish.heights.top_z,
         HeightMode::Manual(v) if (v + 4.2).abs() < 1e-9
     ));
 

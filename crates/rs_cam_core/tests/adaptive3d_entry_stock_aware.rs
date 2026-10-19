@@ -621,7 +621,7 @@ fn pocket_toolpath(style: Style) -> Toolpath {
         operation: OperationConfig::Pocket(PocketConfig {
             ramp_feed_rate: None,
             stepover: 2.0,
-            depth: 12.0,
+            floor: rs_cam_core::compute::floor::Floor::top(12.0),
             depth_per_pass: POCKET_DPP,
             feed_rate: 770.0,
             plunge_rate: 385.0,

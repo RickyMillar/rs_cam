@@ -63,7 +63,6 @@ pub(crate) fn generate_zigzag(
     let raster = ZigzagRaster {
         stepover: cfg.stepover,
         angle: cfg.angle,
-        depth_per_pass: cfg.depth_per_pass,
         region_ordering: cfg.region_ordering,
         rest_use: op.capabilities().rest_use,
         feeds: LayerFeeds::new(ctx, op),
@@ -177,7 +176,6 @@ pub(crate) fn generate_pocket(
             &ZigzagRaster {
                 stepover: cfg.stepover,
                 angle: cfg.angle,
-                depth_per_pass: cfg.depth_per_pass,
                 region_ordering: cfg.region_ordering,
                 rest_use,
                 feeds,
@@ -204,10 +202,6 @@ impl LayeredOp for PocketContour<'_> {
     /// leaves standing. The runner records it once per region, never once
     /// per level.
     type Report = Vec<crate::ops::pocket::PocketCascadeReport>;
-
-    fn depth_per_pass(&self) -> f64 {
-        self.cfg.depth_per_pass
-    }
 
     fn region_ordering(&self) -> RegionOrdering {
         self.cfg.region_ordering
@@ -268,7 +262,6 @@ impl LayeredOp for PocketContour<'_> {
 struct ZigzagRaster {
     stepover: f64,
     angle: f64,
-    depth_per_pass: f64,
     region_ordering: RegionOrdering,
     rest_use: RestUse,
     feeds: LayerFeeds,
@@ -278,10 +271,6 @@ impl LayeredOp for ZigzagRaster {
     type Input = Polygon2;
     type Geometry = Vec<[P2; 2]>;
     type Report = OffsetFailures;
-
-    fn depth_per_pass(&self) -> f64 {
-        self.depth_per_pass
-    }
 
     fn region_ordering(&self) -> RegionOrdering {
         self.region_ordering
@@ -354,10 +343,6 @@ impl LayeredOp for TracePass<'_> {
     type Input = Polygon2;
     type Geometry = Vec<Polygon2>;
     type Report = OffsetFailures;
-
-    fn depth_per_pass(&self) -> f64 {
-        self.cfg.depth_per_pass
-    }
 
     fn region_ordering(&self) -> RegionOrdering {
         self.cfg.region_ordering
@@ -483,10 +468,6 @@ impl LayeredOp for ProfilePass<'_> {
     type Input = Polygon2;
     type Geometry = Vec<ProfileContour>;
     type Report = ProfileReport;
-
-    fn depth_per_pass(&self) -> f64 {
-        self.cfg.depth_per_pass
-    }
 
     fn region_ordering(&self) -> RegionOrdering {
         self.cfg.region_ordering
@@ -691,10 +672,6 @@ impl LayeredOp for FacePass<'_> {
     type Geometry = Vec<[P2; 2]>;
     type Report = OffsetFailures;
 
-    fn depth_per_pass(&self) -> f64 {
-        self.cfg.depth_per_pass
-    }
-
     /// Region-first: each outline goes to full depth before the next. With
     /// the stock default there is one outline, so the order changes
     /// nothing.
@@ -725,8 +702,12 @@ impl LayeredOp for FacePass<'_> {
     /// The Face ladder of the config, from `heights.top_z`. Face does not
     /// read `cutting_levels`: its ladder was always its own depth dial
     /// from the stock top.
-    fn ladder(&self, ctx: &ExecutionContext<'_>) -> Vec<f64> {
-        crate::ops::face::face_levels(ctx.heights.top_z, self.cfg.depth, self.cfg.depth_per_pass)
+    fn ladder(&self, ctx: &ExecutionContext<'_>) -> Result<Vec<f64>, OperationError> {
+        Ok(crate::ops::face::face_levels(
+            ctx.heights.top_z,
+            self.cfg.depth,
+            self.cfg.depth_per_pass,
+        ))
     }
 
     fn prepare(
@@ -776,7 +757,7 @@ pub(crate) fn generate_adaptive(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Adaptive, "generate_adaptive");
-    let levels = effective_levels(ctx.cutting_levels, ctx.heights, cfg.depth_per_pass);
+    let levels = effective_levels(ctx.cutting_levels)?;
     // K3: an area op plans around the obstacles (the territory rule).
     let polys = prepared.territory().area_outlines(
         std::borrow::Cow::Borrowed(prepared.regions()?.as_slice()),

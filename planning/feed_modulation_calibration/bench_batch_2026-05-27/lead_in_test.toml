@@ -100,7 +100,7 @@ kind = "profile"
 
 [setups.toolpaths.operation.params]
 side = "outside"
-depth = 4.0
+floor = { from = "top", depth = 4.0 }
 depth_per_pass = 2.0
 feed_rate = 1800.0
 plunge_rate = 400.0

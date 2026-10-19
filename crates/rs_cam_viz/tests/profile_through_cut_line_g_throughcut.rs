@@ -137,7 +137,7 @@ fn toolpath(name: &str, model_id: usize, op: OperationConfig) -> ToolpathConfig 
 fn profile(depth: f64, tab_count: usize) -> OperationConfig {
     let mut op = OperationConfig::Profile(Default::default());
     if let OperationConfig::Profile(cfg) = &mut op {
-        cfg.depth = depth;
+        cfg.floor = rs_cam_core::compute::floor::Floor::top(depth);
         cfg.tab_count = tab_count;
     }
     op

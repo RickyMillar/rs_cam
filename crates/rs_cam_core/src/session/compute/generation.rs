@@ -220,7 +220,7 @@ impl ProjectSession {
 
         // Compute cutting levels from the operation config (empty for 3D ops,
         // actual depth levels for 2D ops like Profile, Pocket, Adaptive, etc.)
-        let cutting_levels = tc.operation.cutting_levels(heights.top_z);
+        let cutting_levels = tc.operation.cutting_levels(&heights);
 
         // R1 (pencil): resolve the real reference tool config from the Pencil
         // op's `reference_tool_id`. `None` (unset id, or id not found) falls back to the nominal

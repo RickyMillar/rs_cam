@@ -221,6 +221,59 @@ const RETIRED_VALUES: &[RetiredValue] = &[RetiredValue {
                   [boundary.source.selection] with the face picks. Pick the faces again",
 }];
 
+/// One retired key of a toolpath table that left the format for some op
+/// kinds only (geometry selection P3.2). A [`RetiredKey`] matches a path
+/// and a key, but `depth` still lives on Face, Trace, Drill and Project
+/// Curve, and `heights.bottom_z` on every op. This row reads
+/// `operation.kind` of each `setups[].toolpaths[]` entry first.
+struct RetiredOpEntry {
+    /// The `operation.kind` values the row applies to.
+    kinds: &'static [&'static str],
+    /// The path from the toolpath table to the table that holds the key.
+    table: &'static [&'static str],
+    key: &'static str,
+    /// `None`: any value retires. `Some(rule)`: only a value for which the
+    /// rule holds.
+    when: Option<fn(&toml::Value) -> bool>,
+    replacement: &'static str,
+}
+
+/// The kinds whose floor is the `floor` field (ruling D9).
+const FLOOR_OP_KINDS: &[&str] = &["pocket", "profile", "zigzag", "adaptive"];
+
+/// A Heights row that is not Auto (`mode` is not `"auto"`).
+fn pinned_height(value: &toml::Value) -> bool {
+    value.get("mode").and_then(toml::Value::as_str) != Some("auto")
+}
+
+/// Every retired op-kind key. The loader refuses a file that holds one,
+/// with the same refusal as a retired key ([`check_retired_keys`]).
+///
+/// P3.2 (lead ruling O-1): nothing converts. `depth = d` would cut the same
+/// as `floor = { from = "top", depth = d }`, but a conversion is an alias.
+/// A pinned Bottom Z on these ops never reached the cut (G-BOTTOMPIN), and
+/// a conversion to a Z floor would cut deeper with no word.
+const RETIRED_OP_ENTRIES: &[RetiredOpEntry] = &[
+    RetiredOpEntry {
+        kinds: FLOOR_OP_KINDS,
+        table: &["operation", "params"],
+        key: "depth",
+        when: None,
+        replacement: "Removed (geometry selection P3, ruling D9): the floor of this op is \
+                      operation.params.floor. For the same cut write floor = { from = \"top\", \
+                      depth = <this value> } in the same table. Delete the key",
+    },
+    RetiredOpEntry {
+        kinds: FLOOR_OP_KINDS,
+        table: &["heights"],
+        key: "bottom_z",
+        when: Some(pinned_height),
+        replacement: "Removed (geometry selection P3, ruling D9): the floor of this op is \
+                      operation.params.floor. A pinned Bottom Z never reached the cut of this op \
+                      (G-BOTTOMPIN). Set bottom_z to { mode = \"auto\" } and set the floor",
+    },
+];
+
 /// Push the path of every table under `steps` for which `hit` holds onto
 /// `found`, with `name` (the key) appended.
 fn find_retired(
@@ -257,9 +310,10 @@ fn find_retired(
     }
 }
 
-/// Refuse a project file that holds a key from [`RETIRED_KEYS`] or a
-/// value from [`RETIRED_VALUES`]. C2: the refusal names EVERY retired key
-/// and value in the file, so one edit pass clears them all.
+/// Refuse a project file that holds a key from [`RETIRED_KEYS`], a value
+/// from [`RETIRED_VALUES`] or an op-kind key from [`RETIRED_OP_ENTRIES`].
+/// C2: the refusal names EVERY retired key and value in the file, so one
+/// edit pass clears them all.
 fn check_retired_keys(raw: &toml::Value) -> Result<(), SessionError> {
     let mut found = Vec::new();
     for retired in RETIRED_KEYS {
@@ -282,11 +336,52 @@ fn check_retired_keys(raw: &toml::Value) -> Result<(), SessionError> {
             replacement: retired.replacement,
         }));
     }
+    found.extend(retired_op_entries(raw));
     if found.is_empty() {
         Ok(())
     } else {
         Err(SessionError::RetiredKeys(found))
     }
+}
+
+/// The [`RETIRED_OP_ENTRIES`] hits of a raw project file: one per old key,
+/// in the file order of the toolpaths.
+fn retired_op_entries(raw: &toml::Value) -> Vec<super::RetiredKeyFound> {
+    let mut found = Vec::new();
+    let setups = raw.get("setups").and_then(toml::Value::as_array);
+    for (si, setup) in setups.into_iter().flatten().enumerate() {
+        let toolpaths = setup.get("toolpaths").and_then(toml::Value::as_array);
+        for (ti, toolpath) in toolpaths.into_iter().flatten().enumerate() {
+            let kind = toolpath
+                .get("operation")
+                .and_then(|op| op.get("kind"))
+                .and_then(toml::Value::as_str);
+            for entry in RETIRED_OP_ENTRIES {
+                if !kind.is_some_and(|k| entry.kinds.contains(&k)) {
+                    continue;
+                }
+                let table = entry
+                    .table
+                    .iter()
+                    .try_fold(toolpath, |value, step| value.get(*step));
+                let Some(value) = table.and_then(|t| t.get(entry.key)) else {
+                    continue;
+                };
+                if entry.when.is_some_and(|rule| !rule(value)) {
+                    continue;
+                }
+                found.push(super::RetiredKeyFound {
+                    path: format!(
+                        "setups[{si}].toolpaths[{ti}].{}.{}",
+                        entry.table.join("."),
+                        entry.key
+                    ),
+                    replacement: entry.replacement,
+                });
+            }
+        }
+    }
+    found
 }
 
 impl ProjectFile {

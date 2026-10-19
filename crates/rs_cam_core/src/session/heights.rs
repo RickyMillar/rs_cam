@@ -15,6 +15,14 @@
 //!    DESIGN 7.2), and an auto bottom follows that top by the op depth
 //!    (defect D-A: the GUI and MCP did not apply this step).
 //!
+//! P3.2: the floor of a Pocket, Profile, Zigzag or Adaptive 2D
+//! (`compute::floor::Floor`) resolves against the context of step 1 into
+//! `HeightContext::floor`, so the auto bottom of step 2 and of step 3 IS the
+//! floor. A floor that does not resolve, or that sits at or above the top,
+//! is a value of the answer ([`ToolpathHeights::floor_refusal`]);
+//! generation refuses with it. A pinned Bottom Z on those four ops refuses
+//! at every door ([`ToolpathConfig::floor_conflict`]).
+//!
 //! L-4: a Top Z or a Bottom Z that reads the Model Top or the Model Bottom
 //! refuses when the toolpath has no mesh. Before P3.1 generation used the
 //! stock top there and the GUI used Z 0. The answer carries the refusal
@@ -31,9 +39,11 @@
 use std::sync::Arc;
 
 use crate::compute::BoundarySource;
+use crate::compute::catalog::FloorOwner;
 use crate::compute::config::{
     HeightContext, HeightMode, HeightReference, HeightsConfig, ResolvedHeights,
 };
+use crate::compute::floor::{FloorRef, FloorRefusal};
 use crate::mesh::TriangleMesh;
 use crate::session::{ProjectSession, SessionError, ToolpathConfig};
 
@@ -75,6 +85,9 @@ pub struct ToolpathHeights {
     pub top_from: TopSource,
     /// The top of the up faces of the selection, in the setup frame.
     face_top_z: Option<f64>,
+    /// The floor of an `OpFloor` op resolved against [`Self::context`]
+    /// (P3.2), or why it does not resolve. `None` for every other op.
+    floor: Option<Result<FloorRef, FloorRefusal>>,
 }
 
 impl ToolpathHeights {
@@ -95,6 +108,22 @@ impl ToolpathHeights {
     #[must_use]
     pub const fn face_top_z(&self) -> Option<f64> {
         self.face_top_z
+    }
+
+    /// P3.2: the refusal of the floor of this toolpath under `heights`, or
+    /// `None`. A floor that does not resolve (L-4, P3.5, a value that is not
+    /// finite) refuses, and so does a floor at or above the resolved top
+    /// (L-16): its ladder would be empty.
+    #[must_use]
+    pub fn floor_refusal(&self, heights: &HeightsConfig) -> Option<FloorRefusal> {
+        match self.floor? {
+            Err(refusal) => Some(refusal),
+            Ok(floor) => {
+                let top_z = self.resolve(heights).top_z;
+                let floor_z = floor.z(top_z);
+                (floor_z >= top_z).then_some(FloorRefusal::AboveTop { floor_z, top_z })
+            }
+        }
     }
 
     /// L-4: the refusal of `heights` on this toolpath, or `None`. A Top Z or
@@ -126,6 +155,7 @@ impl ToolpathHeights {
             heights: resolved,
             top_from,
             face_top_z: None,
+            floor: context.floor.map(Ok),
         }
     }
 }
@@ -146,7 +176,12 @@ fn apply_rule(
         Some(top) => {
             heights.top_z = top;
             if cfg.bottom_z.is_auto() {
-                heights.bottom_z = top - ctx.op_depth.abs();
+                // P3.2: the floor of an `OpFloor` op follows the face top by
+                // its own rule; every other op keeps `top - depth`.
+                heights.bottom_z = match ctx.floor {
+                    Some(floor) => floor.z(top),
+                    None => top - ctx.op_depth.abs(),
+                };
             }
             (heights, TopSource::AutoFaces)
         }
@@ -211,7 +246,14 @@ impl ProjectSession {
         setup_mesh: Option<&TriangleMesh>,
         face_top_z: Option<f64>,
     ) -> Result<ResolvedHeights, SessionError> {
+        tc.floor_conflict()?;
         let answer = self.heights_in_setup(tc, ctx, setup_mesh, face_top_z);
+        if let Some(refusal) = answer.floor_refusal(&tc.heights) {
+            return Err(SessionError::InvalidParam(format!(
+                "Toolpath '{}': {refusal}",
+                tc.name
+            )));
+        }
         if let Some(refusal) = answer.model_reference_refusal(&tc.heights) {
             return Err(SessionError::MissingGeometry(format!(
                 "Toolpath '{}': {refusal}",
@@ -233,16 +275,21 @@ impl ProjectSession {
     ) -> ToolpathHeights {
         // K3: the heights do not read the obstacles. The obstacle step
         // after the dressups lifts only the moves that cross one.
-        let context = ctx.height_context(
+        let mut context = ctx.height_context(
             tc.operation.default_depth_for_heights(),
             setup_mesh.map(|m| &m.bbox),
         );
+        // P3.2: the floor resolves against the stock and the model of this
+        // context. The top is not known yet, so `Floor::Top` stays relative.
+        let floor = tc.operation.floor().map(|floor| floor.resolve(&context));
+        context.floor = floor.and_then(Result::ok);
         let (heights, top_from) = apply_rule(&tc.heights, &context, face_top_z);
         ToolpathHeights {
             context,
             heights,
             top_from,
             face_top_z,
+            floor,
         }
     }
 
@@ -281,5 +328,32 @@ impl ProjectSession {
         tc.operation.selection().is_none()
             && tc.boundary.enabled
             && matches!(tc.boundary.source, BoundarySource::Selection { .. })
+    }
+}
+
+impl ToolpathConfig {
+    /// P3.2 (ruling D9, design 2.6): the one floor field. On an op whose
+    /// floor is its `floor` field (`FloorOwner::OpFloor`: Pocket, Profile,
+    /// Zigzag, Adaptive 2D) the Heights Bottom Z must be Auto. A pinned
+    /// bottom never reached the cut of these ops (G-BOTTOMPIN), so a pin
+    /// refuses at every door: `set_heights_config`,
+    /// `replace_toolpath_config`, the op change, `add_toolpath` and
+    /// generation. The loader refuses it before (`RETIRED_OP_ENTRIES`).
+    ///
+    /// # Errors
+    ///
+    /// [`SessionError::InvalidParam`] that names the toolpath and the fix.
+    pub fn floor_conflict(&self) -> Result<(), SessionError> {
+        match self.operation.capabilities().floor_owner {
+            FloorOwner::OpFloor if !self.heights.bottom_z.is_auto() => {
+                Err(SessionError::InvalidParam(format!(
+                    "{} '{}' takes its floor from its floor field (operation.params.floor), \
+                     not from the Heights Bottom Z. Set Bottom Z to Auto, and set the floor",
+                    self.operation.label(),
+                    self.name
+                )))
+            }
+            FloorOwner::OpFloor | FloorOwner::HeightsBottom | FloorOwner::OpDial => Ok(()),
+        }
     }
 }

@@ -6,11 +6,22 @@ fn feed_rate_of(op: &OperationConfig) -> f64 {
 }
 
 /// Extract depth (mm) from an operation config, if applicable.
-fn depth_of(op: &OperationConfig) -> Option<f64> {
-    match op.depth_semantics() {
+///
+/// A floor that names another reference than the Top Z (geometry selection
+/// P3.2) has no depth in the config: the depth is the distance from the
+/// resolved top to the resolved floor, from THE session heights.
+fn depth_of(
+    session: &rs_cam_core::session::ProjectSession,
+    tc: &rs_cam_core::session::ToolpathConfig,
+) -> Option<f64> {
+    match tc.operation.depth_semantics() {
         crate::state::toolpath::DepthSemantics::Explicit(value)
         | crate::state::toolpath::DepthSemantics::DerivedStockTop(value) => Some(value),
         crate::state::toolpath::DepthSemantics::None => None,
+        crate::state::toolpath::DepthSemantics::Resolved => session
+            .toolpath_heights(tc)
+            .ok()
+            .map(|answer| answer.heights.top_z - answer.heights.bottom_z),
     }
 }
 
@@ -354,7 +365,7 @@ tr:nth-child(even) {{ background: #24242e; }}
             .map(|t| t.name.as_str())
             .unwrap_or("(unknown)");
         let feed = feed_rate_of(&tc.operation);
-        let depth_str = match depth_of(&tc.operation) {
+        let depth_str = match depth_of(session, tc) {
             Some(d) => format!("{:.2} mm", d),
             None => "-".to_owned(),
         };

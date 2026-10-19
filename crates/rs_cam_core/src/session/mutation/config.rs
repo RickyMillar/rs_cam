@@ -185,7 +185,13 @@ impl ProjectSession {
                 .toolpath_configs
                 .get_mut(index)
                 .ok_or(SessionError::ToolpathNotFound(index))?;
-            tc.heights = heights;
+            // P3.2: a pinned Bottom Z on an `OpFloor` op refuses; nothing
+            // is written.
+            let before = std::mem::replace(&mut tc.heights, heights);
+            if let Err(refusal) = tc.floor_conflict() {
+                tc.heights = before;
+                return Err(refusal);
+            }
             let enabled = tc.enabled;
             session.invalidate_result_chain(index, enabled);
             Ok(())

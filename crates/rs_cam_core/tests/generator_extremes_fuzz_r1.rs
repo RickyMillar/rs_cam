@@ -156,7 +156,7 @@ fn fast_two_d_generators_survive_search_space_corners() {
         (
             "pocket@stepover-ceiling",
             OperationConfig::Pocket(PocketConfig {
-                depth: DEPTH_MM,
+                floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
                 depth_per_pass: FLOOR_MM,
                 stepover: TOOL_DIAMETER_MM,
                 ..PocketConfig::default()
@@ -165,7 +165,7 @@ fn fast_two_d_generators_survive_search_space_corners() {
         (
             "adaptive@stepover-ceiling",
             OperationConfig::Adaptive(AdaptiveConfig {
-                depth: DEPTH_MM,
+                floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
                 depth_per_pass: FLOOR_MM,
                 stepover: TOOL_DIAMETER_MM,
                 ..AdaptiveConfig::default()
@@ -174,7 +174,7 @@ fn fast_two_d_generators_survive_search_space_corners() {
         (
             "profile@floors",
             OperationConfig::Profile(ProfileConfig {
-                depth: DEPTH_MM,
+                floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
                 depth_per_pass: FLOOR_MM,
                 ..ProfileConfig::default()
             }),
@@ -182,7 +182,7 @@ fn fast_two_d_generators_survive_search_space_corners() {
         (
             "zigzag@floors",
             OperationConfig::Zigzag(ZigzagConfig {
-                depth: DEPTH_MM,
+                floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
                 depth_per_pass: FLOOR_MM,
                 stepover: FLOOR_MM,
                 ..ZigzagConfig::default()
@@ -208,7 +208,7 @@ fn slow_two_d_clearing_at_stepover_floor() {
         (
             "pocket@floors",
             OperationConfig::Pocket(PocketConfig {
-                depth: DEPTH_MM,
+                floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
                 depth_per_pass: FLOOR_MM,
                 stepover: FLOOR_MM,
                 ..PocketConfig::default()
@@ -217,7 +217,7 @@ fn slow_two_d_clearing_at_stepover_floor() {
         (
             "adaptive@floors",
             OperationConfig::Adaptive(AdaptiveConfig {
-                depth: DEPTH_MM,
+                floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
                 depth_per_pass: FLOOR_MM,
                 stepover: FLOOR_MM,
                 ..AdaptiveConfig::default()

@@ -879,7 +879,7 @@ fn all_operation_families_emit_expected_structural_span_kinds() {
     let pins = span_coverage_pins();
     for case in span_coverage_cases() {
         let (tool_def, tool_cfg) = make_tool(case.tool_type);
-        let cutting_levels = case.op.cutting_levels(heights.top_z);
+        let cutting_levels = case.op.cutting_levels(&heights);
         let mesh_and_index = match case.mesh {
             Some(MeshFixture::Flat) => Some((&flat_mesh, &flat_index)),
             Some(MeshFixture::Hemisphere) => Some((&hemisphere_mesh, &hemisphere_index)),
@@ -1055,7 +1055,7 @@ fn cancellable_families_honour_a_preset_cancel_flag() {
             .find(|&k| op_type.tool_refusal(k).is_some());
         let kind = refused.unwrap_or(crate::feeds::CutterKind::Flat);
         let (tool_def, tool_cfg) = make_tool(kind.tool_type());
-        let cutting_levels = op.cutting_levels(heights.top_z);
+        let cutting_levels = op.cutting_levels(&heights);
         let cancel = AtomicBool::new(true);
         let findings = std::cell::RefCell::new(GenerationFindings::default());
         let ctx = ExecutionContext::new(
@@ -1111,7 +1111,7 @@ fn every_generator_polls_a_preset_cancel_flag_past_the_prologue() {
         }
         let op = quick_config(op_type);
         let (tool_def, tool_cfg) = make_tool(admitted_kind(op_type).tool_type());
-        let cutting_levels = op.cutting_levels(heights.top_z);
+        let cutting_levels = op.cutting_levels(&heights);
         let cancel = AtomicBool::new(true);
         let findings = std::cell::RefCell::new(GenerationFindings::default());
         let ctx = ExecutionContext {
@@ -1164,7 +1164,7 @@ fn every_tool_refusal_is_the_registry_rows_through_the_dispatch() {
         let mut refused_here = 0;
         for &kind in crate::feeds::CutterKind::ALL {
             let (tool_def, tool_cfg) = make_tool(kind.tool_type());
-            let cutting_levels = op.cutting_levels(heights.top_z);
+            let cutting_levels = op.cutting_levels(&heights);
             let cancel = AtomicBool::new(false);
             let findings = std::cell::RefCell::new(GenerationFindings::default());
             let ctx = ExecutionContext {
@@ -1245,7 +1245,7 @@ fn the_static_check_and_the_generator_refuse_the_same_tools() {
                 .map(|d| d.message)
                 .collect();
 
-            let cutting_levels = op.cutting_levels(heights.top_z);
+            let cutting_levels = op.cutting_levels(&heights);
             let cancel = AtomicBool::new(false);
             let findings = std::cell::RefCell::new(GenerationFindings::default());
             let ctx = ExecutionContext {
@@ -1282,7 +1282,7 @@ fn trace_annotated_output_has_depth_and_region_spans() {
     let bbox = test_stock_bbox();
     let cancel = AtomicBool::new(false);
     let polys = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
-    let levels = op.cutting_levels(heights.top_z);
+    let levels = op.cutting_levels(&heights);
 
     let findings = std::cell::RefCell::new(GenerationFindings::default());
     let ctx = ExecutionContext {
@@ -1373,7 +1373,7 @@ fn trace_semantic_trace_has_depth_and_chain_children() {
     let bbox = test_stock_bbox();
     let cancel = AtomicBool::new(false);
     let polys = vec![Polygon2::rectangle(10.0, 10.0, 50.0, 50.0)];
-    let levels = op.cutting_levels(heights.top_z);
+    let levels = op.cutting_levels(&heights);
     let recorder = crate::trace::semantic_trace::ToolpathSemanticRecorder::new("Trace", "Trace");
     let ctx = recorder.root_context();
 
@@ -1560,7 +1560,7 @@ fn rest_analysis_attaches_artifacts_for_non_pencil_op() {
     let bbox = test_stock_bbox();
     let cancel = AtomicBool::new(false);
     let op = OperationConfig::new_default(OperationType::Scallop);
-    let levels = op.cutting_levels(heights.top_z);
+    let levels = op.cutting_levels(&heights);
     let rest_analysis = crate::compute::config::RestAnalysisConfig {
         enabled: true,
         reference_tool_id: None,
@@ -1603,7 +1603,7 @@ fn rest_analysis_disabled_leaves_artifacts_none() {
     let bbox = test_stock_bbox();
     let cancel = AtomicBool::new(false);
     let op = OperationConfig::new_default(OperationType::Scallop);
-    let levels = op.cutting_levels(heights.top_z);
+    let levels = op.cutting_levels(&heights);
     let rest_analysis = crate::compute::config::RestAnalysisConfig::default(); // disabled
 
     let findings = std::cell::RefCell::new(GenerationFindings::default());
@@ -1657,7 +1657,7 @@ fn pencil_rest_depth_precedence_skips_generic_pass() {
         rest_cell_mm: pencil_cell_mm,
         ..PencilConfig::default()
     });
-    let levels = op.cutting_levels(heights.top_z);
+    let levels = op.cutting_levels(&heights);
     let rest_analysis = crate::compute::config::RestAnalysisConfig {
         enabled: true,
         reference_tool_id: None,

@@ -815,7 +815,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
         OperationConfig::Pocket(PocketConfig {
             ramp_feed_rate: None,
             stepover: 3.0,
-            depth: 6.0,
+            floor: rs_cam_core::compute::floor::Floor::top(6.0),
             depth_per_pass: 3.0,
             feed_rate: 1000.0,
             plunge_rate: 400.0,
@@ -833,7 +833,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
         OperationConfig::Zigzag(ZigzagConfig {
             ramp_feed_rate: None,
             stepover: 3.0,
-            depth: 3.0,
+            floor: rs_cam_core::compute::floor::Floor::top(3.0),
             depth_per_pass: 3.0,
             feed_rate: 1000.0,
             plunge_rate: 400.0,
@@ -847,7 +847,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
         "Profile",
         OperationConfig::Profile(ProfileConfig {
             side: ProfileSide::Outside,
-            depth: 6.0,
+            floor: rs_cam_core::compute::floor::Floor::top(6.0),
             depth_per_pass: 3.0,
             feed_rate: 1000.0,
             plunge_rate: 400.0,

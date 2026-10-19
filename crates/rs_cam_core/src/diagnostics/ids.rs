@@ -223,9 +223,10 @@ pub const GEOM_PLUNGE_EXCEEDS_FEED: &str = "geom.plunge_exceeds_feed";
 /// the stock: the tool goes through the board and into whatever holds it.
 ///
 /// Read from EMITTED motion only — the operation's depth from the resolved
-/// Top Z. A pinned Bottom Z is deliberately not part of this rule; for every
-/// operation the rule applies to, the pin reaches no motion
-/// (`Capabilities::honors_pinned_bottom_z`, F1.19).
+/// Top Z, or the resolved floor of an `OpFloor` op (P3.2). A pinned Bottom Z
+/// is deliberately not part of this rule; for every operation the rule
+/// applies to, the pin reaches no motion or refuses
+/// (`Capabilities::floor_owner`, F1.19).
 ///
 /// The string matches the GUI-side rule F1.6 shipped
 /// (`ui/properties/operations/mod.rs`), so the switchover is a deletion there

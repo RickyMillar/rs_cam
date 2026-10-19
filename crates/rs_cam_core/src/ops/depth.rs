@@ -202,6 +202,27 @@ pub fn pass_count(total_depth_mm: f64, step_mm: f64) -> Option<usize> {
 /// merge two depths an operator could tell apart.
 const PASS_COUNT_EPS: f64 = 1e-9;
 
+/// The 2.5D ladder of an op whose floor is a Z (geometry selection P3.2):
+/// from `top_z` down to `floor_z`, then `finishing_passes` spring passes at
+/// the floor. Pocket, Profile, Zigzag and Adaptive 2D read it through
+/// `OperationConfig::cutting_levels`; Zigzag and Adaptive pass no spring
+/// pass. A floor at or above the top gives an empty ladder, which the
+/// session refuses before any ladder runs (`FloorRefusal::AboveTop`).
+pub fn floor_ladder(
+    top_z: f64,
+    floor_z: f64,
+    max_step_down: f64,
+    finishing_passes: usize,
+) -> Vec<f64> {
+    DepthStepping {
+        start_z: top_z,
+        final_z: floor_z,
+        max_step_down,
+        finishing_passes,
+    }
+    .all_levels()
+}
+
 impl DepthStepping {
     /// Create with defaults: even distribution, no finish allowance.
     pub fn new(start_z: f64, final_z: f64, max_step_down: f64) -> Self {

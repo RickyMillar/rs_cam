@@ -94,7 +94,7 @@ fn stock() -> StockConfig {
 fn pocket() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         stepover: 2.0,
-        depth: DEPTH,
+        floor: rs_cam_core::compute::floor::Floor::top(DEPTH),
         depth_per_pass: 1.0,
         ..PocketConfig::default()
     })

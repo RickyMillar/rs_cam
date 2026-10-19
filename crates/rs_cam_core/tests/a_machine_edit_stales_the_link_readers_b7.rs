@@ -66,7 +66,7 @@ fn two_ops() -> ProjectSession {
         "Pocket",
         OperationConfig::Pocket(PocketConfig {
             stepover: 2.0,
-            depth: 1.0,
+            floor: rs_cam_core::compute::floor::Floor::top(1.0),
             depth_per_pass: 1.0,
             ..PocketConfig::default()
         }),

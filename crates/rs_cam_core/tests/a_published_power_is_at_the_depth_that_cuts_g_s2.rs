@@ -142,7 +142,7 @@ fn pocket_op(dpp: f64) -> OperationConfig {
         stepover: STEPOVER_MM,
         // Two full passes, so `realised_step_down` snaps the depth to itself
         // and the entry value the invariants see is the requested one.
-        depth: 2.0 * dpp,
+        floor: rs_cam_core::compute::floor::Floor::top(2.0 * dpp),
         depth_per_pass: dpp,
         feed_rate: 1000.0,
         plunge_rate: 400.0,
@@ -439,7 +439,7 @@ fn the_door_and_pass_ten_are_one_evaluation() {
 
     let mut operation = OperationConfig::Adaptive(AdaptiveConfig {
         stepover: T15_STEPOVER_MM,
-        depth: 2.0 * T15_ENTRY_DPP_MM,
+        floor: rs_cam_core::compute::floor::Floor::top(2.0 * T15_ENTRY_DPP_MM),
         depth_per_pass: T15_ENTRY_DPP_MM,
         feed_rate: 1000.0,
         plunge_rate: 400.0,

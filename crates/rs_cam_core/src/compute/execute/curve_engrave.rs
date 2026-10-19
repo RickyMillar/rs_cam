@@ -263,12 +263,6 @@ impl LayeredOp for ChamferPass {
     type Geometry = Vec<Vec<P2>>;
     type Report = OffsetFailures;
 
-    /// The chamfer depth. [`Self::ladder`] does not read it: the one level
-    /// comes from the tool angle.
-    fn depth_per_pass(&self) -> f64 {
-        crate::ops::chamfer::chamfer_depth(&self.params)
-    }
-
     /// One level, so the order of the outlines is the order of the cuts in
     /// both modes. Chamfer has no ordering option.
     fn region_ordering(&self) -> RegionOrdering {
@@ -298,8 +292,10 @@ impl LayeredOp for ChamferPass {
     /// One level: the tip at `top_z - (w + t) / tan(a)`. The catalogue
     /// gives Chamfer no `cutting_levels`, and the heights' depth is not its
     /// depth.
-    fn ladder(&self, _ctx: &ExecutionContext<'_>) -> Vec<f64> {
-        vec![self.params.top_z - crate::ops::chamfer::chamfer_depth(&self.params)]
+    fn ladder(&self, _ctx: &ExecutionContext<'_>) -> Result<Vec<f64>, OperationError> {
+        Ok(vec![
+            self.params.top_z - crate::ops::chamfer::chamfer_depth(&self.params),
+        ])
     }
 
     fn prepare(

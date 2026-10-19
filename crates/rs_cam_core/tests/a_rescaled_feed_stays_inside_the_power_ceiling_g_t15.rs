@@ -236,7 +236,7 @@ fn adaptive_op(dpp: f64) -> OperationConfig {
         stepover: STEPOVER_MM,
         // Two full passes, so `realised_step_down` snaps the depth to itself
         // and the entry value the invariants see is the requested one.
-        depth: 2.0 * dpp,
+        floor: rs_cam_core::compute::floor::Floor::top(2.0 * dpp),
         depth_per_pass: dpp,
         feed_rate: 1000.0,
         plunge_rate: 400.0,

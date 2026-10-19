@@ -85,8 +85,11 @@ impl ResolvedHeights {
     /// [`depth_beyond_stock`] misses a Top Z pinned below the stock top.
     ///
     /// A caller that holds the toolpath's own [`HeightsConfig`] calls
-    /// [`Self::from_heights`] instead. N4 (2026-09-10) moved the
-    /// session route across for exactly that reason.
+    /// [`Self::from_toolpath_heights`] instead. N4 (2026-09-10) moved the
+    /// session route across for exactly that reason; P3.1 put it on THE
+    /// session rule. The snapshot still carries no pin FLAG, which is why
+    /// [`depth_beyond_stock_applies`] abstains for the three operations
+    /// whose floor can be a pinned Bottom Z.
     pub fn from_context(ctx: &HeightContext) -> Self {
         Self {
             top_z: ctx.stock_top_z,
@@ -97,24 +100,6 @@ impl ResolvedHeights {
             stock_top_z: Some(ctx.stock_top_z),
             stock_bottom_z: Some(ctx.stock_bottom_z),
         }
-    }
-
-    /// Build from the toolpath's own [`HeightsConfig`], resolved against
-    /// `ctx` (N4, 2026-09-10).
-    ///
-    /// This is the constructor for every caller that holds a
-    /// `HeightsConfig`. The snapshot carries the planes the operator
-    /// pinned, so `heights_checks` compares the heights the machine
-    /// gets and [`depth_beyond_stock`] reads a pinned Top Z.
-    ///
-    /// The snapshot still carries no pin FLAG: it holds five numbers and
-    /// no record of which of them the operator set. That is why
-    /// [`depth_beyond_stock_applies`] abstains for the three operations
-    /// whose floor can be a pinned Bottom Z.
-    ///
-    /// The stock span is `Some` because the context always carries it.
-    pub fn from_heights(heights: &HeightsConfig, ctx: &HeightContext) -> Self {
-        Self::from_resolved(&heights.resolve(ctx), ctx)
     }
 
     /// Build from THE heights of the session (geometry selection P3.1):
@@ -556,9 +541,9 @@ impl DepthBeyondStock {
 /// OWN depth dial. Three groups are excluded, and each `false` here means
 /// **NOT MEASURED** — never "this operation stays inside the board":
 ///
-/// * The operations that read `ResolvedHeights::bottom_z` as their floor —
+/// * The operations whose floor is the Heights Bottom Z —
 ///   `Adaptive3d`, `UnifiedFinish`, `Waterline`
-///   ([`crate::compute::catalog::Capabilities::honors_pinned_bottom_z`]).
+///   ([`crate::compute::catalog::FloorOwner::HeightsBottom`]).
 ///   Their floor CAN be a pinned Bottom Z, and this adapter's snapshot
 ///   carries no pin FLAG: [`ResolvedHeights`] holds five numbers and no
 ///   record of which of them the operator set, whichever constructor built
@@ -571,15 +556,25 @@ impl DepthBeyondStock {
 ///
 /// `Drill` is included: it has a depth dial anchored at the top and no
 /// spoilboard allowance of its own (`DrillConfig`).
+///
+/// P3.2: Pocket, Profile, Zigzag and Adaptive 2D
+/// ([`crate::compute::catalog::FloorOwner::OpFloor`]) are answered for with
+/// every floor reference: their `ResolvedHeights::bottom_z` IS the floor.
 pub fn depth_beyond_stock_applies(op: &OperationConfig) -> bool {
-    // Subsumed today — all three of Adaptive3d / UnifiedFinish / Waterline
-    // declare `DepthSemantics::None`, so the `Explicit` requirement below
-    // already excludes them. It is kept because it states the REASON they
-    // cannot be answered for, which the `Explicit` check does not: their
-    // floor can be a pinned Bottom Z, and this snapshot carries no pin flag.
     let caps = op.capabilities();
-    if caps.honors_pinned_bottom_z || !caps.floor_inside_stock {
+    if !caps.floor_inside_stock {
         return false;
+    }
+    match caps.floor_owner {
+        // Subsumed today — all three of Adaptive3d / UnifiedFinish /
+        // Waterline declare `DepthSemantics::None`, so the `Explicit`
+        // requirement below already excludes them. The arm states the
+        // REASON they cannot be answered for: their floor can be a pinned
+        // Bottom Z, and this snapshot carries no pin flag.
+        crate::compute::catalog::FloorOwner::HeightsBottom => return false,
+        // P3.2: every floor reference of these four ops is answered for.
+        crate::compute::catalog::FloorOwner::OpFloor => return true,
+        crate::compute::catalog::FloorOwner::OpDial => {}
     }
     // `Explicit(_)` and nothing else. `DepthSemantics::None` is the
     // surface-riding family, where the mesh is the floor. `DerivedStockTop`
@@ -604,9 +599,10 @@ pub fn depth_beyond_stock_applies(op: &OperationConfig) -> bool {
 /// the first from the other two.
 ///
 /// **The pinned Bottom Z is deliberately not part of this comparison.** For
-/// every operation this rule applies to, a pinned bottom reaches no emitted
-/// motion (F1.19), so folding it in would caution on a number the machine
-/// never cuts. The GUI rule F1.6 shipped takes the deeper of the two bottoms;
+/// every `OpDial` operation this rule applies to, a pinned bottom reaches no
+/// emitted motion (F1.19), so folding it in would caution on a number the
+/// machine never cuts. An `OpFloor` op refuses a pin; its bottom is its
+/// floor. The GUI rule F1.6 shipped takes the deeper of the two bottoms;
 /// this one takes only the one that becomes motion, and that is the single
 /// behavioural difference between them.
 pub fn depth_beyond_stock(op: &OperationConfig, h: &ResolvedHeights) -> Option<DepthBeyondStock> {
@@ -615,7 +611,17 @@ pub fn depth_beyond_stock(op: &OperationConfig, h: &ResolvedHeights) -> Option<D
     }
     let stock_top_z = h.stock_top_z?;
     let stock_bottom_z = h.stock_bottom_z?;
-    let cut_floor_z = h.top_z - op.default_depth_for_heights().abs();
+    // P3.2: a floor that names another reference than the Top Z
+    // (`DepthSemantics::Resolved`) is the resolved bottom of the session
+    // heights. Every other depth is `top - depth`, as before.
+    let cut_floor_z = match op.depth_semantics() {
+        crate::compute::catalog::DepthSemantics::Resolved => h.bottom_z,
+        crate::compute::catalog::DepthSemantics::Explicit(_)
+        | crate::compute::catalog::DepthSemantics::DerivedStockTop(_)
+        | crate::compute::catalog::DepthSemantics::None => {
+            h.top_z - op.default_depth_for_heights().abs()
+        }
+    };
     let excess_mm = stock_bottom_z - cut_floor_z;
     if excess_mm <= DEPTH_BEYOND_STOCK_EPS_MM {
         return None;

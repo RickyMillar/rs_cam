@@ -15,15 +15,15 @@ module is reached through `compute::execute_operation_annotated`.
 
 ## Invariants
 
-- A pinned Bottom Z is honoured only by `Adaptive3d`, `UnifiedFinish` and
-  `Waterline`. Query `OperationType::honors_pinned_bottom_z()` before you assume.
+- A pinned Bottom Z is honoured only by `Adaptive3d`, `UnifiedFinish` and `Waterline`; Pocket, Profile,
+  Zigzag, Adaptive 2D refuse it (P3.2). Read `capabilities().floor_owner` before you assume.
 - An explicit-depth operation diagnoses a cut below the stock bottom. Another
   depth semantic abstains; it does not pass.
 - Drill removal uses the supplied `StockCutDirection`, never the order of a hole's Z
   pair. The R-plane is per hole (`DrillHole::retract_z`, D8); emitter and metrics read it.
 - The drill metrics live in `drill_metrics.rs` and reach the report as
   `drill_summaries`; the gates that read them live in `tool_load/`.
-- `depth.rs` holds the crate's ONE Z-ladder, `z_ladder`, with two named arms
+- `depth.rs` holds the crate's ONE Z-ladder, `z_ladder` (`floor_ladder`, P3.2, is its 2.5D top-to-floor form), with two named arms
   (CUT-14): `EvenRedistributed` for 2.5D (equal passes,
   `total / ceil(total / per_pass)`, top excluded) and `ConstantStep` for
   finishing (constant step from the top, top included). Build no third.

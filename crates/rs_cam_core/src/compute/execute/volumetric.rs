@@ -68,8 +68,8 @@ pub(crate) enum TopAnchor {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct HeightsPolicy {
     pub top: TopAnchor,
-    /// A pinned bottom Z floors the plan. Equal to
-    /// `Capabilities::honors_pinned_bottom_z` of the row.
+    /// A pinned bottom Z floors the plan. True exactly when the row's
+    /// `Capabilities::floor_owner` is `FloorOwner::HeightsBottom`.
     pub pinned_bottom: bool,
 }
 
@@ -218,7 +218,11 @@ mod tests {
         check(
             "pinned_bottom",
             heights.pinned_bottom,
-            caps.honors_pinned_bottom_z,
+            match caps.floor_owner {
+                crate::compute::catalog::FloorOwner::HeightsBottom => true,
+                crate::compute::catalog::FloorOwner::OpFloor
+                | crate::compute::catalog::FloorOwner::OpDial => false,
+            },
         );
         check(
             "top",

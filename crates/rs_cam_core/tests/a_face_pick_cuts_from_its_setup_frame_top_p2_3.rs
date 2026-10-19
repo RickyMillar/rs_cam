@@ -149,7 +149,7 @@ fn session(face: u16, face_up: FaceUp) -> ProjectSession {
     let tool_id = builder.tools()[tool_idx].id.0;
     let model_id = builder.add_model(part_model());
     let op = OperationConfig::Pocket(PocketConfig {
-        depth: POCKET_DEPTH,
+        floor: rs_cam_core::compute::floor::Floor::top(POCKET_DEPTH),
         depth_per_pass: POCKET_DEPTH,
         ..PocketConfig::default()
     });

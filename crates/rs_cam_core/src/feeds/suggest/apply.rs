@@ -1005,16 +1005,16 @@ pub fn apply_stock_defaults(operation: &mut OperationConfig, ctx: &StockContext)
             cfg.depth = ctx.stock_padding.max(1.0);
         }
         OperationConfig::Profile(cfg) => {
-            cfg.depth = ctx.stock_z;
+            cfg.floor = crate::compute::floor::Floor::top(ctx.stock_z);
         }
         OperationConfig::Drill(cfg) => {
             cfg.depth = ctx.stock_z;
         }
         OperationConfig::Pocket(cfg) => {
-            cfg.depth = (ctx.stock_z * 0.5).min(5.0);
+            cfg.floor = crate::compute::floor::Floor::top((ctx.stock_z * 0.5).min(5.0));
         }
         OperationConfig::Adaptive(cfg) => {
-            cfg.depth = ctx.stock_z * 0.5;
+            cfg.floor = crate::compute::floor::Floor::top(ctx.stock_z * 0.5);
         }
         _ => {}
     }

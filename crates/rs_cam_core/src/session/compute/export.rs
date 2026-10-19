@@ -9,38 +9,6 @@ use tracing::instrument;
 use crate::compute::tool_config::{ToolConfig, ToolId};
 use crate::session::{ProjectEvidence, ProjectSession, SessionError};
 
-/// Transform an axis-aligned bbox from world frame into a setup-local
-/// frame defined by `info`. Result remains axis-aligned because all
-/// setup transforms are 90° increments + translation.
-fn transform_bbox_world_to_local(
-    bbox: &crate::geo::BoundingBox3,
-    info: &crate::compute::transform::SetupTransformInfo,
-) -> crate::geo::BoundingBox3 {
-    use crate::geo::P3;
-    let corners = [
-        P3::new(bbox.min.x, bbox.min.y, bbox.min.z),
-        P3::new(bbox.max.x, bbox.min.y, bbox.min.z),
-        P3::new(bbox.min.x, bbox.max.y, bbox.min.z),
-        P3::new(bbox.max.x, bbox.max.y, bbox.min.z),
-        P3::new(bbox.min.x, bbox.min.y, bbox.max.z),
-        P3::new(bbox.max.x, bbox.min.y, bbox.max.z),
-        P3::new(bbox.min.x, bbox.max.y, bbox.max.z),
-        P3::new(bbox.max.x, bbox.max.y, bbox.max.z),
-    ];
-    let mut min = P3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
-    let mut max = P3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
-    for c in corners {
-        let p = info.world_to_local(c);
-        min.x = min.x.min(p.x);
-        min.y = min.y.min(p.y);
-        min.z = min.z.min(p.z);
-        max.x = max.x.max(p.x);
-        max.y = max.y.max(p.y);
-        max.z = max.z.max(p.z);
-    }
-    crate::geo::BoundingBox3 { min, max }
-}
-
 impl ProjectSession {
     /// **F067: the one checked export door.** The GUI, MCP and the CLI
     /// all emit through here, so one project state gives one program and
@@ -320,10 +288,10 @@ impl ProjectSession {
     /// sim trace. Used by the GUI MCP handler where the active sim
     /// trace lives on the viz-side state, not on the core session.
     ///
-    /// PR-5 polish: computes heights via [`Self::height_context_for_toolpath`]
-    /// and the feeds-calculator result via [`Self::feeds_result_for_toolpath`],
-    /// so MCP consumers see the same heights / pre-sim hint diagnostics the
-    /// GUI panel renders.
+    /// The heights come from THE session rule ([`Self::toolpath_heights`],
+    /// geometry selection P3.1) and the feeds-calculator result from
+    /// [`Self::feeds_result_for_toolpath`], so MCP consumers see the same
+    /// heights / pre-sim hint diagnostics the GUI panel renders.
     pub fn diagnose_toolpath_with_trace(
         &self,
         index: usize,
@@ -348,19 +316,17 @@ impl ProjectSession {
         let report = crate::gcode::project_load_report(self, sim_trace);
         let load_verdict = report.per_toolpath.iter().find(|v| v.toolpath_id == tc.id);
 
-        let height_ctx = self.height_context_for_toolpath(tc);
-        // N4 (2026-09-10): resolve the toolpath's OWN heights. This used to
-        // call `ResolvedHeights::from_context`, which projects the stock top
-        // and the safe Z into the five slots and drops every pin. Three of the
-        // four plane-order checks could not fire on this route at all, the
-        // fourth only on a bad safe Z, and a pinned Top Z never reached
-        // `geom.depth_beyond_stock`. The GUI ribbon resolved the same config
-        // all along; the two surfaces now share one derivation.
-        let heights =
-            crate::diagnostics::adapters::from_static_checks::ResolvedHeights::from_heights(
+        // N4 (2026-09-10): resolve the toolpath's OWN heights, pins and
+        // all. P3.1: through THE session rule, so the snapshot holds the
+        // face top that generation cuts from. A selection that does not
+        // resolve gives no heights snapshot; the selection diagnostics name
+        // it.
+        let heights = self.toolpath_heights(tc).ok().map(|answer| {
+            crate::diagnostics::adapters::from_static_checks::ResolvedHeights::from_toolpath_heights(
+                &answer,
                 &tc.heights,
-                &height_ctx,
-            );
+            )
+        });
         let feeds_result = self.feeds_result_for_toolpath(tc, tool);
         let suggest_warnings = self.suggest_warnings_for_toolpath(tc, tool);
         let preconditions = self.precondition_context_for_toolpath(tc);
@@ -379,7 +345,7 @@ impl ProjectSession {
             toolpath_id: tc.id,
             operation: &tc.operation,
             tool,
-            heights: Some(&heights),
+            heights: heights.as_ref(),
             feeds_result: feeds_result.as_ref(),
             suggest_warnings: suggest_warnings.as_deref(),
             load_verdict,
@@ -500,36 +466,6 @@ impl ProjectSession {
             selection_holes,
             selection_refusal,
         }
-    }
-
-    /// Build a [`HeightContext`] for a given toolpath. Mirrors the GUI's
-    /// `height_context_from_session` so MCP consumers see the same heights
-    /// diagnostics the params panel renders.
-    ///
-    /// F-030: stock-frame + transform decisions delegate to
-    /// [`super::SetupEvalContext`] so this path and the generation path
-    /// (`generate_toolpath`) share a single source of truth for
-    /// `stock_top_z` / `safe_z` / model-bbox-in-frame.
-    pub fn height_context_for_toolpath(
-        &self,
-        tc: &super::ToolpathConfig,
-    ) -> crate::compute::config::HeightContext {
-        let setup = self.find_setup_for_toolpath_id(tc.id);
-        let ctx = super::SetupEvalContext::build_for_setup(self, setup);
-        let raw_mb = self
-            .models
-            .iter()
-            .find(|m| m.id == tc.model_id)
-            .and_then(crate::session::LoadedModel::bbox);
-        // Apply the setup transform that owns this toolpath so
-        // model_top/bottom_z are in the setup-local frame for non-identity
-        // setups. Identity setups leave the world bbox untouched.
-        let mb = match (raw_mb, ctx.local_to_global.as_ref()) {
-            (Some(b), Some(info)) => Some(transform_bbox_world_to_local(&b, info)),
-            (Some(b), None) => Some(b),
-            _ => None,
-        };
-        ctx.height_context(tc.operation.default_depth_for_heights(), mb.as_ref())
     }
 
     /// Run the feeds calculator for a single toolpath against the session's

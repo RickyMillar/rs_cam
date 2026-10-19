@@ -169,7 +169,7 @@ pub fn adaptive_session_with(
 ) -> ProjectSession {
     let cfg = AdaptiveConfig {
         stepover: STEPOVER_MM,
-        depth: 6.0,
+        floor: rs_cam_core::compute::floor::Floor::top(6.0),
         depth_per_pass: 3.0,
         feed_rate: 1500.0,
         plunge_rate: 500.0,

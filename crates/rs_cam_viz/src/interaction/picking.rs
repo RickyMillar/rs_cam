@@ -398,7 +398,7 @@ pub fn drawing_plane_z(
                 Ok(resolved) => {
                     let heights = resolved.heights;
                     tc.operation
-                        .cutting_levels(heights.top_z)
+                        .cutting_levels(&heights)
                         .last()
                         .copied()
                         .unwrap_or(heights.top_z)

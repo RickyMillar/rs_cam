@@ -165,7 +165,7 @@ fn six_mm_flat() -> ToolConfig {
 fn pocket_op() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         stepover: RADIAL_WOC_MM,
-        depth: 12.0,
+        floor: rs_cam_core::compute::floor::Floor::top(12.0),
         depth_per_pass: AXIAL_DOC_MM,
         feed_rate: 1292.0,
         spindle_rpm: Some(17_000),

@@ -69,7 +69,7 @@ fn pocket_on(
         polygon,
         OperationConfig::Pocket(PocketConfig {
             stepover,
-            depth,
+            floor: rs_cam_core::compute::floor::Floor::top(depth),
             depth_per_pass: depth,
             feed_rate,
             plunge_rate,
@@ -213,7 +213,7 @@ fn pocket_and_profile_on_same_polygon() {
         &polygon,
         OperationConfig::Profile(ProfileConfig {
             side: ProfileSide::Outside,
-            depth: 3.0,
+            floor: rs_cam_core::compute::floor::Floor::top(3.0),
             depth_per_pass: 3.0,
             feed_rate: 1000.0,
             plunge_rate: 500.0,

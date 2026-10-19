@@ -634,7 +634,7 @@ fn endmill() -> ToolConfig {
 fn pocket(ap: f64, ae: f64, feed: f64, rpm: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         stepover: ae,
-        depth: 4.0 * ap,
+        floor: rs_cam_core::compute::floor::Floor::top(4.0 * ap),
         depth_per_pass: ap,
         feed_rate: feed,
         plunge_rate: 400.0,

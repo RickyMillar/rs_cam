@@ -126,7 +126,7 @@ fn the_returned_band_carries_the_feed_depth_derate_fm3() {
 
 fn pocket(dpp: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        depth: 60.0,
+        floor: rs_cam_core::compute::floor::Floor::top(60.0),
         depth_per_pass: dpp,
         ..PocketConfig::default()
     })

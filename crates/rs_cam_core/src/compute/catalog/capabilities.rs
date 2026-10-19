@@ -50,15 +50,11 @@ pub struct Capabilities<P = EntryProbe> {
     /// The denominator is TOTAL runtime (cutting + rapids), never
     /// `air_cut_pct_of_cutting_time` (`MEASUREMENT_DOMAINS.md` LH-1).
     pub air_cut_high_threshold_pct: Option<f64>,
-    /// A pinned Bottom Z on the Heights tab reaches the EMITTED motion
-    /// (F1.19). Only three operations read `ResolvedHeights::bottom_z`:
-    /// Adaptive3d (`z_floor`), UnifiedFinish (the band ladder) and
-    /// Waterline (the level ladder). Every other operation anchors its floor
-    /// at `top_z` minus its own depth dial, or rides the mesh, so a pinned
-    /// bottom changes nothing it emits.
+    /// Which field sets the floor of the op (F1.19, geometry selection
+    /// P3.2). It replaces the bool `honors_pinned_bottom_z`.
     ///
     /// This states what the generator does. It is not a recommendation.
-    pub honors_pinned_bottom_z: bool,
+    pub floor_owner: FloorOwner,
     /// The entry-move surface probe (G-RAMPTERRAIN, design amendment 1).
     /// A row holds the rule ([`EntryProbeRule`]); a config's capabilities
     /// hold the resolved probe ([`EntryProbe`]).
@@ -136,6 +132,24 @@ pub struct Capabilities<P = EntryProbe> {
     pub item_use: ItemUse,
 }
 
+/// Which field sets the floor of an op (geometry selection P3.2, design
+/// 2.5). Each reader `match`es it, so a new owner names every reader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloorOwner {
+    /// The Heights Bottom Z: a pinned bottom reaches the EMITTED motion.
+    /// Adaptive3d (`z_floor`), UnifiedFinish (the band ladder) and
+    /// Waterline (the level ladder).
+    HeightsBottom,
+    /// The op `floor` field (`compute::floor::Floor`, ruling D9): Pocket,
+    /// Profile, Zigzag and Adaptive 2D. `ResolvedHeights::bottom_z` IS the
+    /// floor, and a pinned Heights Bottom Z refuses
+    /// (`ToolpathConfig::floor_conflict`).
+    OpFloor,
+    /// The op's own dial (a depth, a width) or the surface. A pinned Heights
+    /// Bottom Z changes nothing it emits. The other 17 ops.
+    OpDial,
+}
+
 /// The capabilities a registry row states: the entry probe is a rule.
 pub type RowCapabilities = Capabilities<EntryProbeRule>;
 
@@ -162,7 +176,7 @@ impl<P> Capabilities<P> {
         Capabilities {
             transform: self.transform,
             air_cut_high_threshold_pct: self.air_cut_high_threshold_pct,
-            honors_pinned_bottom_z: self.honors_pinned_bottom_z,
+            floor_owner: self.floor_owner,
             entry_probe,
             link_ceiling: self.link_ceiling,
             feeds_hints: self.feeds_hints,

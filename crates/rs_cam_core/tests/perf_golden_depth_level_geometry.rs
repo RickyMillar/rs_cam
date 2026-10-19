@@ -135,7 +135,7 @@ fn pocket_levels(poly: &Polygon2, n: usize) -> Toolpath {
     session_levels(
         OperationConfig::Pocket(PocketConfig {
             stepover: STEPOVER,
-            depth: LEVEL_STEP * n as f64,
+            floor: rs_cam_core::compute::floor::Floor::top(LEVEL_STEP * n as f64),
             depth_per_pass: LEVEL_STEP,
             feed_rate: 1200.0,
             plunge_rate: 400.0,
@@ -150,7 +150,7 @@ fn profile_levels(poly: &Polygon2, n: usize) -> Toolpath {
     session_levels(
         OperationConfig::Profile(ProfileConfig {
             side: ProfileSide::Outside,
-            depth: LEVEL_STEP * n as f64,
+            floor: rs_cam_core::compute::floor::Floor::top(LEVEL_STEP * n as f64),
             depth_per_pass: LEVEL_STEP,
             feed_rate: 1200.0,
             plunge_rate: 400.0,
@@ -165,7 +165,7 @@ fn zigzag_levels(poly: &Polygon2, n: usize) -> Toolpath {
     session_levels(
         OperationConfig::Zigzag(ZigzagConfig {
             stepover: STEPOVER,
-            depth: LEVEL_STEP * n as f64,
+            floor: rs_cam_core::compute::floor::Floor::top(LEVEL_STEP * n as f64),
             depth_per_pass: LEVEL_STEP,
             feed_rate: 1200.0,
             plunge_rate: 400.0,

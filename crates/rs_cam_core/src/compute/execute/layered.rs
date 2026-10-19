@@ -67,7 +67,6 @@ use std::borrow::Cow;
 use std::cell::Cell;
 
 use crate::compute::catalog::RestUse;
-use crate::compute::config::ResolvedHeights;
 use crate::compute::operation_configs::RegionOrdering;
 use crate::compute::toolpath_stats::RestLevelsFinding;
 use crate::dexel_stock::TriDexelStock;
@@ -233,9 +232,6 @@ pub(crate) trait LayeredOp {
     /// nothing (Waterline) must not claim a zero.
     const MEASURES_OFFSETS: bool = true;
 
-    /// The depth per pass (mm) of the default ladder.
-    fn depth_per_pass(&self) -> f64;
-
     /// The order in which the runner visits outlines and levels.
     fn region_ordering(&self) -> RegionOrdering;
 
@@ -310,12 +306,15 @@ pub(crate) trait LayeredOp {
             .map(|regions| Self::Input::from_polygons(Cow::Borrowed(regions.as_slice())))
     }
 
-    /// The Z ladder, top first. The default is the 2.5D ladder of the
-    /// heights and [`Self::depth_per_pass`]. The catalogue's
-    /// `cutting_levels` already hold the spring passes of an op that has
-    /// them (Pocket, Profile).
-    fn ladder(&self, ctx: &ExecutionContext<'_>) -> Vec<f64> {
-        effective_levels(ctx.cutting_levels, ctx.heights, self.depth_per_pass())
+    /// The Z ladder, top first. The default is the catalogue's
+    /// `cutting_levels`, which already hold the spring passes of an op that
+    /// has them (Pocket, Profile).
+    ///
+    /// # Errors
+    ///
+    /// The default refuses an empty ladder ([`effective_levels`], L-16).
+    fn ladder(&self, ctx: &ExecutionContext<'_>) -> Result<Vec<f64>, OperationError> {
+        effective_levels(ctx.cutting_levels)
     }
 
     /// The spans of the finished toolpath. The default builds one depth
@@ -373,7 +372,7 @@ pub(crate) fn run_layered<O: LayeredOp>(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let levels = op.ladder(ctx);
+    let levels = op.ladder(ctx)?;
     let outlines = area_outlines_less_obstacles(op, prepared, op.outlines(prepared)?, &levels);
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = ctx.cancel_fn();
@@ -638,23 +637,27 @@ fn prepare_outline<O: LayeredOp>(
     })
 }
 
-/// The 2.5D ladder: the pre-computed `cutting_levels` when the caller gave
-/// them, else the `DepthStepping` ladder of the heights.
-pub(super) fn effective_levels(
-    cutting_levels: &[f64],
-    heights: &ResolvedHeights,
-    depth_per_pass: f64,
-) -> Vec<f64> {
-    if !cutting_levels.is_empty() {
-        cutting_levels.to_vec()
-    } else {
-        let stepping = crate::ops::depth::DepthStepping::new(
-            heights.top_z,
-            heights.top_z - heights.depth(),
-            depth_per_pass,
-        );
-        stepping.all_levels()
+/// The 2.5D ladder: the pre-computed `cutting_levels` of the catalogue.
+///
+/// L-16 (geometry selection P3.2): an empty ladder refuses. Before P3.2 an
+/// empty ladder fell back to `top - heights.depth()`, and `depth()` is
+/// `(top - bottom).abs()`: a floor 5 mm ABOVE the top cut 5 mm BELOW it.
+/// The session refuses a floor at or above the top first
+/// (`FloorRefusal::AboveTop`); this refusal is the last guard.
+///
+/// # Errors
+///
+/// [`OperationError::Other`] when the ladder is empty.
+pub(super) fn effective_levels(cutting_levels: &[f64]) -> Result<Vec<f64>, OperationError> {
+    if cutting_levels.is_empty() {
+        return Err(OperationError::Other(
+            "the Z ladder of this op is empty: its floor is at or above its top, or its depth \
+             or depth per pass is zero. Set a floor below the top and a depth per pass above \
+             zero"
+                .to_owned(),
+        ));
     }
+    Ok(cutting_levels.to_vec())
 }
 
 #[cfg(test)]
@@ -669,6 +672,7 @@ mod tests {
 
     use super::*;
     use crate::compute::catalog::{OperationConfig, OperationType};
+    use crate::compute::config::ResolvedHeights;
     use crate::compute::cutter::build_cutter;
     use crate::compute::execute::GenerationFindings;
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -689,10 +693,6 @@ mod tests {
         type Input = Polygon2;
         type Geometry = ();
         type Report = OffsetFailures;
-
-        fn depth_per_pass(&self) -> f64 {
-            1.0
-        }
 
         fn region_ordering(&self) -> RegionOrdering {
             self.ordering
@@ -736,6 +736,19 @@ mod tests {
         ])
     }
 
+    /// L-16 (geometry selection P3.2): an empty ladder refuses. It never
+    /// falls back to a ladder from `ResolvedHeights::depth()`, which cut an
+    /// inverted floor below the top. Part of G-BOTTOMPIN arm 5.
+    #[test]
+    fn an_empty_ladder_refuses_l16() {
+        let refused = effective_levels(&[]);
+        assert!(
+            matches!(&refused, Err(OperationError::Other(text)) if text.contains("ladder")),
+            "an empty ladder must refuse, got {refused:?}"
+        );
+        assert_eq!(effective_levels(&[-1.0, -2.0]).unwrap(), vec![-1.0, -2.0]);
+    }
+
     #[test]
     fn a_cancel_set_mid_ladder_stops_at_the_next_level() {
         let heights = ResolvedHeights {
@@ -754,19 +767,15 @@ mod tests {
         let tool_cfg = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
         let tool_def = build_cutter(&tool_cfg).unwrap();
         let polys = vec![square(-10.0), square(10.0)];
+        // L-16: the runner reads the catalogue ladder; an empty one refuses.
+        let levels = crate::ops::depth::floor_ladder(heights.top_z, heights.bottom_z, 1.0, 0);
         for ordering in [RegionOrdering::ByArea, RegionOrdering::Global] {
             let cancel = AtomicBool::new(false);
             let findings = RefCell::new(GenerationFindings::default());
             let ctx = ExecutionContext {
                 selection: crate::compute::execute::SelectionInputs::from_polygons(&polys),
                 ..ExecutionContext::new(
-                    &findings,
-                    &tool_def,
-                    &tool_cfg,
-                    &heights,
-                    &[],
-                    &bbox,
-                    &cancel,
+                    &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
                 )
             };
             let prepared = crate::compute::execute::prologue::prepare(
@@ -779,7 +788,7 @@ mod tests {
                 emitted: RefCell::new(Vec::new()),
                 ordering,
             };
-            let ladder = op.ladder(&ctx);
+            let ladder = op.ladder(&ctx).unwrap();
             assert!(
                 ladder.len() > CANCEL_AT + 1,
                 "{ordering:?}: the ladder must reach past the cancel level: {ladder:?}"

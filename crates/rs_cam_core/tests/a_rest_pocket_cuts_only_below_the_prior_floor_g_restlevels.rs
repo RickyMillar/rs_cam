@@ -158,7 +158,7 @@ fn pocket(depth: f64) -> OperationConfig {
 fn pocket_with(depth: f64, pattern: PocketPattern) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         stepover: 2.0,
-        depth,
+        floor: rs_cam_core::compute::floor::Floor::top(depth),
         depth_per_pass: DPP,
         pattern,
         ..PocketConfig::default()
@@ -698,7 +698,7 @@ fn cut_bits_at(moves: &[Move], z: f64) -> Vec<(u64, u64)> {
 fn zigzag_op(depth: f64) -> OperationConfig {
     OperationConfig::Zigzag(ZigzagConfig {
         stepover: 2.0,
-        depth,
+        floor: rs_cam_core::compute::floor::Floor::top(depth),
         depth_per_pass: DPP,
         ..ZigzagConfig::default()
     })
@@ -771,7 +771,7 @@ fn a_rest_zigzag_cuts_only_below_the_prior_floor() {
 fn inside_profile(depth: f64) -> OperationConfig {
     OperationConfig::Profile(ProfileConfig {
         side: ProfileSide::Inside,
-        depth,
+        floor: rs_cam_core::compute::floor::Floor::top(depth),
         depth_per_pass: DPP,
         ..ProfileConfig::default()
     })
@@ -1177,7 +1177,7 @@ fn a_rest_chamfer_skips_an_edge_a_prior_op_removed() {
 fn adaptive(depth: f64) -> OperationConfig {
     OperationConfig::Adaptive(AdaptiveConfig {
         stepover: 2.0,
-        depth,
+        floor: rs_cam_core::compute::floor::Floor::top(depth),
         depth_per_pass: DPP,
         ..AdaptiveConfig::default()
     })
@@ -1539,7 +1539,7 @@ fn a_rest_zigzag_cuts_on_the_fresh_rows() {
             OperationConfig::Zigzag(ZigzagConfig {
                 stepover: ZIGZAG_B9_STEPOVER,
                 angle: ZIGZAG_B9_ANGLE,
-                depth: B_DEPTH,
+                floor: rs_cam_core::compute::floor::Floor::top(B_DEPTH),
                 depth_per_pass: DPP,
                 ..ZigzagConfig::default()
             }),
@@ -1549,7 +1549,7 @@ fn a_rest_zigzag_cuts_on_the_fresh_rows() {
             OperationConfig::Pocket(PocketConfig {
                 stepover: ZIGZAG_B9_STEPOVER,
                 angle: ZIGZAG_B9_ANGLE,
-                depth: B_DEPTH,
+                floor: rs_cam_core::compute::floor::Floor::top(B_DEPTH),
                 depth_per_pass: DPP,
                 pattern: PocketPattern::Zigzag,
                 ..PocketConfig::default()
@@ -1704,7 +1704,7 @@ fn waterline_after_pocket(source: StockSource, feed_rate: f64) -> WaterlineArm {
     ));
     let pocket = OperationConfig::Pocket(PocketConfig {
         stepover: 2.0,
-        depth: WL_POCKET_DEPTH,
+        floor: rs_cam_core::compute::floor::Floor::top(WL_POCKET_DEPTH),
         depth_per_pass: WL_POCKET_DPP,
         ..PocketConfig::default()
     });

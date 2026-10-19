@@ -510,7 +510,7 @@ fn e_inlay_plus_the_clipped_floor_pocket_make_the_whole_pocket() {
 
     // The floor Pocket, as the Inlay help text says.
     let pocket = PocketConfig {
-        depth: inlay.pocket_depth,
+        floor: rs_cam_core::compute::floor::Floor::top(inlay.pocket_depth),
         depth_per_pass: 1.5,
         stepover: 1.6,
         ..PocketConfig::default()

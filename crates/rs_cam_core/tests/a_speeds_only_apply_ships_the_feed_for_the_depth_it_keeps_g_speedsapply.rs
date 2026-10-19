@@ -90,7 +90,7 @@ fn mini_oak() -> Material {
 fn pocket(depth_per_pass: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         stepover: STEPOVER_MM,
-        depth: 30.0,
+        floor: rs_cam_core::compute::floor::Floor::top(30.0),
         depth_per_pass,
         feed_rate: 3877.0,
         plunge_rate: 1938.0,

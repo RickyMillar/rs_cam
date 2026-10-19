@@ -169,7 +169,7 @@ fn issue_channel_census_synthetic_2d() {
         (
             "pocket-real",
             OperationConfig::Pocket(PocketConfig {
-                depth: 6.0,
+                floor: rs_cam_core::compute::floor::Floor::top(6.0),
                 depth_per_pass: 2.0,
                 ..PocketConfig::default()
             }),
@@ -177,7 +177,7 @@ fn issue_channel_census_synthetic_2d() {
         (
             "pocket-recut-air",
             OperationConfig::Pocket(PocketConfig {
-                depth: 6.0,
+                floor: rs_cam_core::compute::floor::Floor::top(6.0),
                 depth_per_pass: 2.0,
                 ..PocketConfig::default()
             }),
@@ -185,7 +185,7 @@ fn issue_channel_census_synthetic_2d() {
         (
             "profile",
             OperationConfig::Profile(ProfileConfig {
-                depth: 6.0,
+                floor: rs_cam_core::compute::floor::Floor::top(6.0),
                 depth_per_pass: 2.0,
                 ..ProfileConfig::default()
             }),
@@ -327,13 +327,13 @@ fn engagement_is_unmeasurable_below_the_fresh_material_floor() {
 
     // Shallow arm: one pass, 0.02 mm — well under the 0.05 mm floor.
     let shallow = OperationConfig::Pocket(PocketConfig {
-        depth: 0.02,
+        floor: rs_cam_core::compute::floor::Floor::top(0.02),
         depth_per_pass: 0.02,
         ..PocketConfig::default()
     });
     // Deep arm: identical geometry, 2.0 mm — well over it.
     let deep = OperationConfig::Pocket(PocketConfig {
-        depth: 2.0,
+        floor: rs_cam_core::compute::floor::Floor::top(2.0),
         depth_per_pass: 2.0,
         ..PocketConfig::default()
     });

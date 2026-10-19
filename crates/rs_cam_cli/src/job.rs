@@ -1595,7 +1595,7 @@ mod tests {
         );
         assert_eq!(
             checked(
-                "type = \"pocket\"\ninput = \"m.svg\"\ntool = \"a\"\ndepth = 3.0\n\
+                "type = \"pocket\"\ninput = \"m.svg\"\ntool = \"a\"\n\
                  [dressups]\nentry_style = \"helix\"\ndogbone = true\n",
             )
             .unwrap(),
@@ -1651,7 +1651,7 @@ mod tests {
             let source = format!(
                 "[job]\noutput = \"o.nc\"\n[tools.t]\ntype = \"end_mill\"\ndiameter = 6.0\n\
                  [[operation]]\ntype = \"pocket\"\ninput = \"demo_pocket.svg\"\ntool = \"t\"\n\
-                 depth = 3.0\n{extra}"
+                 {extra}"
             );
             let job: JobFile = toml::from_str(&source).unwrap();
             let _ = job.operation.first().unwrap().operation_type().unwrap();

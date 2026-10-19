@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::feeds::{OperationFamily as FeedsOperationFamily, PassRole};
 
-use super::config::StockSource;
+use super::config::{ResolvedHeights, StockSource};
 use super::operation_configs::{
     Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, DrillConfig,
     DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig, InlayPlugConfig,
@@ -17,8 +17,9 @@ mod schema;
 
 pub use capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
-    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, ItemUse,
-    LutRoute, MoveCountModel, RestUse, RowCapabilities, TRANSFORM_DISCRETE_SCALLOP, TerritoryXy,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, FloorOwner,
+    ItemUse, LutRoute, MoveCountModel, RestUse, RowCapabilities, TRANSFORM_DISCRETE_SCALLOP,
+    TerritoryXy,
 };
 
 pub use schema::{
@@ -77,6 +78,11 @@ pub enum DepthSemantics {
     Explicit(f64),
     DerivedStockTop(f64),
     None,
+    /// The floor of the op names a reference other than its Top Z
+    /// (`Floor`, geometry selection P3.2). The session resolves it; read
+    /// `ResolvedHeights::bottom_z`. A reader with no height context treats
+    /// it as "no depth" (ruling L-6).
+    Resolved,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -984,6 +990,38 @@ impl OperationConfig {
         }
     }
 
+    /// The floor of the op (geometry selection P3.2, ruling D9): `Some` for
+    /// Pocket, Profile, Zigzag and Adaptive 2D, the `FloorOwner::OpFloor`
+    /// ops. The match names every variant.
+    pub fn floor(&self) -> Option<crate::compute::floor::Floor> {
+        match self {
+            OperationConfig::Pocket(c) => Some(c.floor),
+            OperationConfig::Profile(c) => Some(c.floor),
+            OperationConfig::Adaptive(c) => Some(c.floor),
+            OperationConfig::Zigzag(c) => Some(c.floor),
+            OperationConfig::Face(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => None,
+        }
+    }
+
     /// The selection of the op: the items it cuts (geometry selection
     /// P2.3b, DESIGN 3.1). `None` for an op that cuts no drawing item. The
     /// match names every variant, so a new op states whether it holds a
@@ -1209,7 +1247,7 @@ impl OperationConfig {
     pub fn default_depth_for_heights(&self) -> f64 {
         match self.depth_semantics() {
             DepthSemantics::Explicit(value) | DepthSemantics::DerivedStockTop(value) => value.abs(),
-            DepthSemantics::None => 0.0,
+            DepthSemantics::None | DepthSemantics::Resolved => 0.0,
         }
     }
 
@@ -1400,30 +1438,29 @@ impl OperationConfig {
     /// step down uniformly says so in the last arm, which is a recorded
     /// decision and not a fallback: a new 2.5D operation fails to compile
     /// until it decides, instead of silently generating at one Z level.
-    pub fn cutting_levels(&self, top_z: f64) -> Vec<f64> {
-        use crate::ops::depth::DepthStepping;
-        // The four uniform steppers had byte-identical arms. One closure
-        // now holds the construction; the arms hold only the two fields.
+    ///
+    /// P3.2: Pocket, Profile, Zigzag and Adaptive 2D step from
+    /// `heights.top_z` to `heights.bottom_z`, which IS their resolved
+    /// [`crate::compute::floor::Floor`] (`ops::depth::floor_ladder`). Every
+    /// other arm reads `heights.top_z` and its own depth, as before.
+    pub fn cutting_levels(&self, heights: &ResolvedHeights) -> Vec<f64> {
+        use crate::ops::depth::{DepthStepping, floor_ladder};
+        let top_z = heights.top_z;
+        // The uniform steppers had byte-identical arms. One closure now
+        // holds the construction; the arms hold only the two fields.
         let uniform = |depth: f64, step: f64| {
             DepthStepping::new(top_z, top_z - depth.abs(), step).all_levels()
         };
+        let floor = heights.bottom_z;
         match self {
-            Self::Pocket(cfg) => DepthStepping {
-                start_z: top_z,
-                final_z: top_z - cfg.depth.abs(),
-                max_step_down: cfg.depth_per_pass,
-                finishing_passes: cfg.finishing_passes,
+            Self::Pocket(cfg) => {
+                floor_ladder(top_z, floor, cfg.depth_per_pass, cfg.finishing_passes)
             }
-            .all_levels(),
-            Self::Profile(cfg) => DepthStepping {
-                start_z: top_z,
-                final_z: top_z - cfg.depth.abs(),
-                max_step_down: cfg.depth_per_pass,
-                finishing_passes: cfg.finishing_passes,
+            Self::Profile(cfg) => {
+                floor_ladder(top_z, floor, cfg.depth_per_pass, cfg.finishing_passes)
             }
-            .all_levels(),
-            Self::Adaptive(cfg) => uniform(cfg.depth, cfg.depth_per_pass),
-            Self::Zigzag(cfg) => uniform(cfg.depth, cfg.depth_per_pass),
+            Self::Adaptive(cfg) => floor_ladder(top_z, floor, cfg.depth_per_pass, 0),
+            Self::Zigzag(cfg) => floor_ladder(top_z, floor, cfg.depth_per_pass, 0),
             Self::Trace(cfg) => uniform(cfg.depth, cfg.depth_per_pass),
             // The plug kernel walks the same `z_ladder` arm over the same
             // total (`ops::inlay::inlay_plug_toolpath_with_cancel`).

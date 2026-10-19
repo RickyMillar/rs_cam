@@ -259,7 +259,7 @@ fn the_fresh_split_target_is_the_stock_top_not_a_pinned_top() {
     const TOP: f64 = 20.0;
     const PINNED: f64 = 10.0;
     let cfg = AdaptiveConfig {
-        depth: 3.0,
+        floor: rs_cam_core::compute::floor::Floor::top(3.0),
         depth_per_pass: 3.0,
         ..AdaptiveConfig::default()
     };
@@ -273,7 +273,8 @@ fn the_fresh_split_target_is_the_stock_top_not_a_pinned_top() {
             tc.stock_source = StockSource::Fresh;
             tc.dressups.entry_style = DressupEntryStyle::None;
             tc.heights.top_z = HeightMode::Manual(PINNED);
-            tc.heights.bottom_z = HeightMode::Manual(PINNED - 3.0);
+            // P3.2: the floor is `Floor::Top { depth: 3.0 }`, so the bottom
+            // is PINNED - 3 with no Bottom Z pin (an Adaptive refuses one).
         },
     );
     common::session::generate(&mut s, 0);

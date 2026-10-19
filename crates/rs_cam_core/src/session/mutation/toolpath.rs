@@ -28,6 +28,8 @@ impl ProjectSession {
         setup_index: usize,
         config: ToolpathConfig,
     ) -> Result<Effects, SessionError> {
+        // P3.2: a new toolpath states one floor field.
+        config.floor_conflict()?;
         let mut created = None;
         // The error type is named because this call is not in tail
         // position: the `?` below leaves `E` constrained by two `From`
@@ -508,7 +510,13 @@ impl ProjectSession {
                     }
                 }
             }
-            tc.operation = operation;
+            // P3.2: an op change onto an `OpFloor` op with a pinned Bottom Z
+            // refuses; nothing is written.
+            let before = std::mem::replace(&mut tc.operation, operation);
+            if let Err(refusal) = tc.floor_conflict() {
+                tc.operation = before;
+                return Err(refusal);
+            }
             // Same invariant set_dressup_config enforces: the surviving
             // dressups must be legal for the NEW operation kind.
             let mut dressups = tc.dressups.clone();

@@ -4,7 +4,7 @@
 //!
 //! The capability answers were `match` lists outside the registry:
 //! `transform_capabilities_without_lap_cap`, `air_cut_high_threshold_pct`,
-//! `honors_pinned_bottom_z` and `entry_probe_leave` in `catalog.rs`,
+//! `floor_owner` and `entry_probe_leave` in `catalog.rs`,
 //! `link_ceiling_need` in `execute/shared.rs`, two lists in
 //! `feeds/predict.rs` (one ended `_ => {}`, so a new op failed open), one
 //! in `feeds/suggest/axial_envelope.rs` and three in `trace/narrate.rs`.
@@ -75,7 +75,7 @@
 )]
 
 use rs_cam_core::compute::catalog::{
-    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, FloorOwner,
     GeometryRequirement, ItemUse, LutRoute, MoveCountModel, OperationConfig, OperationType,
     RestUse, RowCapabilities, TerritoryXy,
 };
@@ -93,7 +93,7 @@ struct Row {
     transform: [bool; 9],
     lap_cap: Option<u32>,
     air_cut_pct: Option<f64>,
-    honors_pinned_bottom_z: bool,
+    floor_owner: FloorOwner,
     entry_probe: EntryProbeRule,
     link_ceiling: LinkCeilingNeed,
     move_count: MoveCountModel,
@@ -113,7 +113,7 @@ type Columns = (
     [bool; 9],
     Option<u32>,
     Option<f64>,
-    bool,
+    FloorOwner,
     EntryProbeRule,
     LinkCeilingNeed,
     MoveCountModel,
@@ -131,7 +131,7 @@ fn row(c: Columns) -> Row {
         transform: c.1,
         lap_cap: c.2,
         air_cut_pct: c.3,
-        honors_pinned_bottom_z: c.4,
+        floor_owner: c.4,
         entry_probe: c.5,
         link_ceiling: c.6,
         move_count: c.7,
@@ -147,30 +147,30 @@ fn row(c: Columns) -> Row {
 #[rustfmt::skip]
 fn frozen() -> Vec<Row> {
     vec![
-    row((OperationType::Face, [false, false, false, false, false, false, false, false, false], None, Some(40.0), false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelClip, TerritoryXy::ClipAfter)),
-    row((OperationType::Pocket, [true, false, true, false, false, false, false, false, false], None, Some(40.0), false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::PocketCell, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelClip, TerritoryXy::ClipAfter)),
-    row((OperationType::Profile, [true, false, true, false, false, false, false, false, false], None, Some(40.0), false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelSkip, TerritoryXy::ClipAfter)),
-    row((OperationType::Adaptive, [false, false, true, false, false, true, true, true, false], None, Some(40.0), false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::Adaptive2d, DocBasis::DepthPerPass, AirCutHint::Roughing, None, AxialEnvelope::NotApplied, RestUse::LevelMask, TerritoryXy::ClipAfter)),
-    row((OperationType::VCarve, [true, false, false, false, false, false, false, false, false], Some(3), Some(40.0), false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::VBitDepth, AirCutHint::CurveFollowing, None, AxialEnvelope::VBitGroove, RestUse::None, TerritoryXy::ClipAfter)),
-    row((OperationType::Inlay, [true, false, false, false, false, false, false, false, false], Some(3), Some(40.0), false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::None, TerritoryXy::ClipAfter)),
-    row((OperationType::InlayPlug, [true, false, false, false, false, false, false, false, false], Some(3), Some(40.0), false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::None, TerritoryXy::ClipAfter)),
-    row((OperationType::Zigzag, [true, false, true, false, false, false, false, false, false], None, Some(40.0), false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::Raster, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelClip, TerritoryXy::ClipAfter)),
-    row((OperationType::Trace, [true, false, true, false, false, false, false, false, true], Some(3), Some(40.0), false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::CurveFollowing, None, AxialEnvelope::NotApplied, RestUse::LevelSkip, TerritoryXy::ClipAfter)),
-    row((OperationType::Drill, [true, true, false, false, true, false, false, false, false], None, None, false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::PeckDepth, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::StockColumn, TerritoryXy::ClipAfter)),
-    row((OperationType::Chamfer, [true, false, false, false, true, false, false, false, false], Some(3), Some(40.0), false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelSkip, TerritoryXy::ClipAfter)),
-    row((OperationType::DropCutter, [true, true, false, false, true, false, false, false, false], Some(3), Some(45.0), false, EntryProbeRule::SurfaceFixed { leave_mm: 0.0 }, LinkCeilingNeed::WithRemainingStock, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, Some("hookup_mm"), AxialEnvelope::Finish3d, RestUse::LinkSafetyOnly, TerritoryXy::Regions)),
-    row((OperationType::Adaptive3d, [false, false, true, false, false, true, false, false, false], None, Some(40.0), true, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::Adaptive3d, DocBasis::DepthPerPass, AirCutHint::Roughing, None, AxialEnvelope::Roughing3d, RestUse::Planner, TerritoryXy::PlannerBounds)),
-    row((OperationType::Waterline, [true, false, true, false, false, false, false, false, false], Some(3), Some(45.0), true, EntryProbeRule::SurfaceFixed { leave_mm: 0.0 }, LinkCeilingNeed::WithRemainingStock, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, Some("hookup_mm"), AxialEnvelope::Finish3d, RestUse::ContourFilter, TerritoryXy::Regions)),
-    row((OperationType::Pencil, [true, false, false, false, true, false, false, false, false], Some(3), Some(45.0), false, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::WithRemainingStock, MoveCountModel::FeatureDriven, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, None, AxialEnvelope::NotApplied, RestUse::Reference, TerritoryXy::ClipAfter)),
-    row((OperationType::Scallop, [true, false, false, true, false, false, false, false, false], Some(3), Some(45.0), false, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::WithRemainingStock, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, Some("intra_pass_hookup_mm"), AxialEnvelope::Finish3d, RestUse::LinkSafetyOnly, TerritoryXy::Regions)),
-    row((OperationType::UnifiedFinish, [true, false, false, false, false, false, false, false, false], Some(3), Some(45.0), true, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::WithRemainingStock, MoveCountModel::NotModelled, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, Some("intra_region_hookup_mm"), AxialEnvelope::Finish3d, RestUse::Reference, TerritoryXy::Regions)),
-    row((OperationType::SteepShallow, [true, false, false, false, false, false, false, false, false], Some(3), Some(45.0), false, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::WithRemainingStock, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, Some("hookup_mm"), AxialEnvelope::Finish3d, RestUse::ContourFilter, TerritoryXy::Regions)),
-    row((OperationType::RampFinish, [true, false, false, true, false, false, false, false, false], Some(3), Some(45.0), false, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, None, AxialEnvelope::NotApplied, RestUse::None, TerritoryXy::Regions)),
-    row((OperationType::SpiralFinish, [true, false, false, true, false, false, false, false, false], Some(3), Some(45.0), false, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::NoLink, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, None, AxialEnvelope::Finish3d, RestUse::None, TerritoryXy::Regions)),
-    row((OperationType::RadialFinish, [true, false, false, false, true, false, false, false, false], Some(3), Some(45.0), false, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::NoLink, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, None, AxialEnvelope::Finish3d, RestUse::None, TerritoryXy::Regions)),
-    row((OperationType::HorizontalFinish, [true, false, false, false, true, false, false, false, false], Some(3), Some(45.0), false, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::NoLink, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, None, AxialEnvelope::Finish3d, RestUse::None, TerritoryXy::Regions)),
-    row((OperationType::ProjectCurve, [true, true, false, false, true, false, false, false, false], Some(3), Some(60.0), false, EntryProbeRule::Prism, LinkCeilingNeed::Always, MoveCountModel::FeatureDriven, DocBasis::CurveOnSurface, AirCutHint::CurveFollowing, Some("chain_distance_mm"), AxialEnvelope::CurveRough, RestUse::LinkSafetyOnly, TerritoryXy::Regions)),
-    row((OperationType::AlignmentPinDrill, [true, true, false, false, true, false, false, false, false], None, None, false, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::PeckDepth, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::None, TerritoryXy::SetupMap)),
+    row((OperationType::Face, [false, false, false, false, false, false, false, false, false], None, Some(40.0), FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelClip, TerritoryXy::ClipAfter)),
+    row((OperationType::Pocket, [true, false, true, false, false, false, false, false, false], None, Some(40.0), FloorOwner::OpFloor, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::PocketCell, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelClip, TerritoryXy::ClipAfter)),
+    row((OperationType::Profile, [true, false, true, false, false, false, false, false, false], None, Some(40.0), FloorOwner::OpFloor, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelSkip, TerritoryXy::ClipAfter)),
+    row((OperationType::Adaptive, [false, false, true, false, false, true, true, true, false], None, Some(40.0), FloorOwner::OpFloor, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::Adaptive2d, DocBasis::DepthPerPass, AirCutHint::Roughing, None, AxialEnvelope::NotApplied, RestUse::LevelMask, TerritoryXy::ClipAfter)),
+    row((OperationType::VCarve, [true, false, false, false, false, false, false, false, false], Some(3), Some(40.0), FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::VBitDepth, AirCutHint::CurveFollowing, None, AxialEnvelope::VBitGroove, RestUse::None, TerritoryXy::ClipAfter)),
+    row((OperationType::Inlay, [true, false, false, false, false, false, false, false, false], Some(3), Some(40.0), FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::None, TerritoryXy::ClipAfter)),
+    row((OperationType::InlayPlug, [true, false, false, false, false, false, false, false, false], Some(3), Some(40.0), FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::None, TerritoryXy::ClipAfter)),
+    row((OperationType::Zigzag, [true, false, true, false, false, false, false, false, false], None, Some(40.0), FloorOwner::OpFloor, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::Raster, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelClip, TerritoryXy::ClipAfter)),
+    row((OperationType::Trace, [true, false, true, false, false, false, false, false, true], Some(3), Some(40.0), FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::CurveFollowing, None, AxialEnvelope::NotApplied, RestUse::LevelSkip, TerritoryXy::ClipAfter)),
+    row((OperationType::Drill, [true, true, false, false, true, false, false, false, false], None, None, FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::PeckDepth, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::StockColumn, TerritoryXy::ClipAfter)),
+    row((OperationType::Chamfer, [true, false, false, false, true, false, false, false, false], Some(3), Some(40.0), FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelSkip, TerritoryXy::ClipAfter)),
+    row((OperationType::DropCutter, [true, true, false, false, true, false, false, false, false], Some(3), Some(45.0), FloorOwner::OpDial, EntryProbeRule::SurfaceFixed { leave_mm: 0.0 }, LinkCeilingNeed::WithRemainingStock, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, Some("hookup_mm"), AxialEnvelope::Finish3d, RestUse::LinkSafetyOnly, TerritoryXy::Regions)),
+    row((OperationType::Adaptive3d, [false, false, true, false, false, true, false, false, false], None, Some(40.0), FloorOwner::HeightsBottom, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::Adaptive3d, DocBasis::DepthPerPass, AirCutHint::Roughing, None, AxialEnvelope::Roughing3d, RestUse::Planner, TerritoryXy::PlannerBounds)),
+    row((OperationType::Waterline, [true, false, true, false, false, false, false, false, false], Some(3), Some(45.0), FloorOwner::HeightsBottom, EntryProbeRule::SurfaceFixed { leave_mm: 0.0 }, LinkCeilingNeed::WithRemainingStock, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, Some("hookup_mm"), AxialEnvelope::Finish3d, RestUse::ContourFilter, TerritoryXy::Regions)),
+    row((OperationType::Pencil, [true, false, false, false, true, false, false, false, false], Some(3), Some(45.0), FloorOwner::OpDial, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::WithRemainingStock, MoveCountModel::FeatureDriven, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, None, AxialEnvelope::NotApplied, RestUse::Reference, TerritoryXy::ClipAfter)),
+    row((OperationType::Scallop, [true, false, false, true, false, false, false, false, false], Some(3), Some(45.0), FloorOwner::OpDial, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::WithRemainingStock, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, Some("intra_pass_hookup_mm"), AxialEnvelope::Finish3d, RestUse::LinkSafetyOnly, TerritoryXy::Regions)),
+    row((OperationType::UnifiedFinish, [true, false, false, false, false, false, false, false, false], Some(3), Some(45.0), FloorOwner::HeightsBottom, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::WithRemainingStock, MoveCountModel::NotModelled, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, Some("intra_region_hookup_mm"), AxialEnvelope::Finish3d, RestUse::Reference, TerritoryXy::Regions)),
+    row((OperationType::SteepShallow, [true, false, false, false, false, false, false, false, false], Some(3), Some(45.0), FloorOwner::OpDial, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::WithRemainingStock, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, Some("hookup_mm"), AxialEnvelope::Finish3d, RestUse::ContourFilter, TerritoryXy::Regions)),
+    row((OperationType::RampFinish, [true, false, false, true, false, false, false, false, false], Some(3), Some(45.0), FloorOwner::OpDial, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, None, AxialEnvelope::NotApplied, RestUse::None, TerritoryXy::Regions)),
+    row((OperationType::SpiralFinish, [true, false, false, true, false, false, false, false, false], Some(3), Some(45.0), FloorOwner::OpDial, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::NoLink, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, None, AxialEnvelope::Finish3d, RestUse::None, TerritoryXy::Regions)),
+    row((OperationType::RadialFinish, [true, false, false, false, true, false, false, false, false], Some(3), Some(45.0), FloorOwner::OpDial, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::NoLink, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, None, AxialEnvelope::Finish3d, RestUse::None, TerritoryXy::Regions)),
+    row((OperationType::HorizontalFinish, [true, false, false, false, true, false, false, false, false], Some(3), Some(45.0), FloorOwner::OpDial, EntryProbeRule::SurfaceFromConfig, LinkCeilingNeed::NoLink, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, None, AxialEnvelope::Finish3d, RestUse::None, TerritoryXy::Regions)),
+    row((OperationType::ProjectCurve, [true, true, false, false, true, false, false, false, false], Some(3), Some(60.0), FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::Always, MoveCountModel::FeatureDriven, DocBasis::CurveOnSurface, AirCutHint::CurveFollowing, Some("chain_distance_mm"), AxialEnvelope::CurveRough, RestUse::LinkSafetyOnly, TerritoryXy::Regions)),
+    row((OperationType::AlignmentPinDrill, [true, true, false, false, true, false, false, false, false], None, None, FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::PeckDepth, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::None, TerritoryXy::SetupMap)),
     ]
 }
 
@@ -200,10 +200,7 @@ fn assert_row(c: &RowCapabilities, r: &Row, what: &str) {
         c.air_cut_high_threshold_pct, r.air_cut_pct,
         "{op:?} ({what}): air-cut bar"
     );
-    assert_eq!(
-        c.honors_pinned_bottom_z, r.honors_pinned_bottom_z,
-        "{op:?} ({what}): pinned bottom"
-    );
+    assert_eq!(c.floor_owner, r.floor_owner, "{op:?} ({what}): floor owner");
     assert_eq!(c.entry_probe, r.entry_probe, "{op:?} ({what}): probe");
     assert_eq!(
         c.link_ceiling, r.link_ceiling,
@@ -263,7 +260,7 @@ fn a_default_config_overrides_only_what_it_reads() {
             c.air_cut_high_threshold_pct,
             kind.air_cut_high_threshold_pct
         );
-        assert_eq!(c.honors_pinned_bottom_z, kind.honors_pinned_bottom_z);
+        assert_eq!(c.floor_owner, kind.floor_owner);
         if r.op != OperationType::Scallop {
             assert_eq!(c.transform, kind.transform, "{:?}", r.op);
         }
@@ -776,7 +773,7 @@ fn every_field_has_a_frozen_column() {
     let Capabilities {
         transform: _,                  // frozen(), transform and lap cap
         air_cut_high_threshold_pct: _, // frozen()
-        honors_pinned_bottom_z: _,     // frozen()
+        floor_owner: _,                // frozen()
         entry_probe: _,                // frozen(), a_surface_probe_reads_the_ops_own_leave
         link_ceiling: _,               // frozen()
         feeds_hints: _,                // the_feeds_hints_read_the_ops_own_fields

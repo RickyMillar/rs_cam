@@ -224,6 +224,11 @@ pub struct HeightContext {
     pub stock_bottom_z: f64,
     pub model_top_z: Option<f64>,
     pub model_bottom_z: Option<f64>,
+    /// The resolved floor of a Pocket, Profile, Zigzag or Adaptive 2D
+    /// (geometry selection P3.2). `None` for every other op. The session
+    /// fills it (`ProjectSession::toolpath_heights`); the Auto bottom reads
+    /// it first ([`HeightsConfig::auto_bottom_z`]).
+    pub floor: Option<crate::compute::floor::FloorRef>,
 }
 
 impl HeightContext {
@@ -237,6 +242,7 @@ impl HeightContext {
             stock_bottom_z: -op_depth,
             model_top_z: None,
             model_bottom_z: None,
+            floor: None,
         }
     }
 }
@@ -352,17 +358,23 @@ impl HeightsConfig {
 
     /// The Auto bottom for a resolved `top_z` (R3).
     ///
+    /// * A context with a floor (P3.2: Pocket, Profile, Zigzag, Adaptive 2D)
+    ///   gives the floor: `FloorRef::z(top_z)`. The four ops refuse a pinned
+    ///   bottom (`ToolpathConfig::floor_conflict`), so their
+    ///   `ResolvedHeights::bottom_z` IS the floor
+    ///   (`the_floor_reaches_the_motion_g_bottompin`). This arm comes first,
+    ///   so a floor never falls into the zero-depth arm below.
     /// * A context WITH a depth keeps the F-028 arithmetic exactly:
-    ///   `top_z - op_depth`. The 2.5D family and `cutting_levels` anchor on
-    ///   it, and a pinned bottom on those ops reaches no motion
-    ///   (`pinned_bottom_z_reaches_motion_g_bottompin`).
+    ///   `top_z - op_depth`.
     /// * A ZERO-depth context has no dial to subtract, so the floor is the
     ///   model bottom when the context carries a model, else the stock
     ///   bottom; either way never below the stock bottom. `top_z` is not
     ///   read on this arm: a pinned top below the model bottom yields an
     ///   inverted range, which the waterline ladder reports as empty.
     pub fn auto_bottom_z(top_z: f64, ctx: &HeightContext) -> f64 {
-        if ctx.op_depth.abs() < ZERO_DEPTH_EPSILON {
+        if let Some(floor) = ctx.floor {
+            floor.z(top_z)
+        } else if ctx.op_depth.abs() < ZERO_DEPTH_EPSILON {
             ctx.model_bottom_z
                 .map_or(ctx.stock_bottom_z, |model_bottom| {
                     model_bottom.max(ctx.stock_bottom_z)
@@ -1501,6 +1513,7 @@ mod tests {
             stock_bottom_z: 0.0,
             model_top_z: Some(20.0),
             model_bottom_z: Some(2.0),
+            floor: None,
         }
     }
 

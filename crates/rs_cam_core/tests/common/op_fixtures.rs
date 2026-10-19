@@ -263,7 +263,7 @@ pub fn flat_prior_model() -> LoadedModel {
 pub fn flat_prior_op() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         stepover: PRIOR_POCKET_STEPOVER,
-        depth: PRIOR_POCKET_DEPTH,
+        floor: rs_cam_core::compute::floor::Floor::top(PRIOR_POCKET_DEPTH),
         depth_per_pass: PRIOR_POCKET_DEPTH_PER_PASS,
         ..PocketConfig::default()
     })

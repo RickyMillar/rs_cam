@@ -36,7 +36,7 @@
 
 use std::path::{Path, PathBuf};
 
-use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::compute::catalog::{FloorOwner, OperationType};
 use rs_cam_viz::ui::properties::bottom_z_pin_note;
 
 /// The panel module the Heights tab draws from.
@@ -58,12 +58,16 @@ fn every_operation_annotates_the_bottom_row_unless_it_honours_the_pin() {
     for &op in OperationType::ALL {
         walked += 1;
         let note = bottom_z_pin_note(op);
-        let honours = op.capabilities().honors_pinned_bottom_z;
+        let owner = op.capabilities().floor_owner;
+        let honours = match owner {
+            FloorOwner::HeightsBottom => true,
+            FloorOwner::OpFloor | FloorOwner::OpDial => false,
+        };
         assert_eq!(
             note.is_some(),
             !honours,
             "{op:?}: the Heights tab annotates the Bottom row iff the \
-             operation ignores the pin (honors_pinned_bottom_z = {honours})"
+             operation does not read the pin (floor_owner = {owner:?})"
         );
         if note.is_some() {
             annotated.push(op.label());

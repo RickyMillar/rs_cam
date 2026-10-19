@@ -599,7 +599,7 @@ kind = "pocket"
 
 [setups.toolpaths.operation.params]
 stepover = 1.637
-depth = 9.0
+floor = { from = "top", depth = 9.0 }
 depth_per_pass = 1.125
 feed_rate = 2360.0
 plunge_rate = 720.0
@@ -694,7 +694,7 @@ kind = "pocket"
 
 [setups.toolpaths.operation.params]
 stepover = 0.736
-depth = 13.0
+floor = { from = "top", depth = 13.0 }
 depth_per_pass = 0.5238095238095238
 feed_rate = 1888.0
 plunge_rate = 372.0
@@ -790,7 +790,7 @@ kind = "pocket"
 
 [setups.toolpaths.operation.params]
 stepover = 0.736
-depth = 14.0
+floor = { from = "top", depth = 14.0 }
 depth_per_pass = 0.5
 feed_rate = 1888.0
 plunge_rate = 372.0
@@ -1045,7 +1045,7 @@ kind = "pocket"
 
 [setups.toolpaths.operation.params]
 stepover = 1.637
-depth = 1.1
+floor = { from = "top", depth = 1.1 }
 depth_per_pass = 1.1
 feed_rate = 2360.0
 plunge_rate = 720.0

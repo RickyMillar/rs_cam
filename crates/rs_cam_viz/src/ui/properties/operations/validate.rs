@@ -242,9 +242,9 @@ const DEPTH_BEYOND_STOCK_EPSILON_MM: f64 = core_static_checks::DEPTH_BEYOND_STOC
 /// The resolved-heights snapshot every GUI diagnostic surface hands to core.
 ///
 /// One line, because the derivation belongs to core. N4 (2026-09-10) hoisted
-/// the body into `ResolvedHeights::from_heights`, and the session route —
-/// which MCP `get_toolpath_diagnostics` calls — now uses the same
-/// constructor. Before that this GUI copy was the only caller that read the
+/// the body into core, and P3.1 put it on THE session heights
+/// (`ResolvedHeights::from_toolpath_heights`); the session route — which MCP
+/// `get_toolpath_diagnostics` calls — uses the same constructor. Before that this GUI copy was the only caller that read the
 /// entry's OWN `HeightsConfig`; the session route called
 /// `ResolvedHeights::from_context`, which projects the stock top and the safe
 /// Z into the five slots and drops every pin.
@@ -380,9 +380,9 @@ pub fn profile_through_cut_line(
 /// The form of [`profile_through_cut_line`] the inspector reads: the depth is
 /// the Profile's cut bottom measured from the stock top, so a Top Z pinned
 /// below the stock top counts towards the through cut the same way it does
-/// in [`depth_beyond_stock`]. The generator cuts `top_z - cfg.depth`
-/// (`OperationConfig::cutting_levels`), so that is the bottom read here; a
-/// pinned Bottom Z does not reach the profile generator and is not read.
+/// in [`depth_beyond_stock`]. The generator cuts to the resolved floor
+/// (`OperationConfig::cutting_levels`, geometry selection P3.2), which is
+/// the resolved Bottom Z of a Profile, so that is the bottom read here.
 pub fn profile_through_cut(
     cfg: &ProfileConfig,
     heights: &HeightsConfig,
@@ -390,7 +390,7 @@ pub fn profile_through_cut(
 ) -> Option<ThroughCut> {
     let ctx = &answer.context;
     let resolved = answer.resolve(heights);
-    let bottom_z = resolved.top_z - cfg.depth;
+    let bottom_z = resolved.bottom_z;
     let depth_mm = ctx.stock_top_z - bottom_z;
     let stock_thickness_mm = ctx.stock_top_z - ctx.stock_bottom_z;
     profile_through_cut_line(depth_mm, stock_thickness_mm, cfg.tab_count).map(|_| ThroughCut {

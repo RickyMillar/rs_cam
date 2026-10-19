@@ -24,7 +24,7 @@ type = "adaptive"
 input = "demo_pocket.svg"
 tool = "flat_6mm"
 stepover = 2.0
-depth = 6.0
+# The floor is the default: 6 mm below the top (geometry selection P3.2).
 depth_per_pass = 3.0
 feed_rate = 2000
 plunge_rate = 500
@@ -34,7 +34,7 @@ plunge_rate = 500
 type = "profile"
 input = "demo_pocket.svg"
 tool = "flat_3mm"
-depth = 6.0
+# The floor is the default: 6 mm below the top (geometry selection P3.2).
 depth_per_pass = 2.0
 side = "inside"
 feed_rate = 1000

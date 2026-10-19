@@ -72,7 +72,7 @@ const CELL_MM: f64 = 1.0;
 fn pocket_to(depth: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         stepover: 2.0,
-        depth,
+        floor: rs_cam_core::compute::floor::Floor::top(depth),
         depth_per_pass: 3.0,
         ..PocketConfig::default()
     })

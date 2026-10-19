@@ -103,7 +103,7 @@ fn stl_pocket() -> ProjectSession {
         mesh_model(stepped_top(), "p4_7_stepped"),
         "p4_7 pocket",
         OperationConfig::Pocket(PocketConfig {
-            depth: POCKET_DEPTH,
+            floor: rs_cam_core::compute::floor::Floor::top(POCKET_DEPTH),
             depth_per_pass: POCKET_DEPTH,
             ..PocketConfig::default()
         }),

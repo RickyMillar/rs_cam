@@ -165,6 +165,9 @@ impl SetupEvalContext {
             stock_bottom_z: self.heights_stock_bbox.min.z,
             model_top_z: model_bbox.map(|b| b.max.z),
             model_bottom_z: model_bbox.map(|b| b.min.z),
+            // The session resolves the floor of the op into it
+            // (`ProjectSession::heights_in_setup`, P3.2).
+            floor: None,
         }
     }
 

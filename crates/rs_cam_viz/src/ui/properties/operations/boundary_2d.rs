@@ -10,6 +10,34 @@ use super::super::{advanced, depth_caution_row, dv, dv_pill, p, schema_range, th
 use super::{DepthBeyondStock, ThroughCut, draw_tab_diagram};
 use crate::ui::components::{Button, UiExt as _};
 use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::compute::floor::Floor;
+
+/// The floor row of Pocket, Profile, Zigzag and Adaptive 2D (geometry
+/// selection P3.2). The default floor `Floor::Top { depth }` keeps the
+/// Depth row of before: it edits the depth below the Top Z. Another
+/// reference shows read-only; the floor editor with its reference is P3.7.
+///
+/// The floor has no schema range (it is a driver-set field), so the row
+/// does not clamp. The session refuses a floor at or above the top.
+fn floor_row(ui: &mut egui::Ui, op: OperationType, floor: &mut Floor) {
+    let reference = floor.reference_label();
+    match floor {
+        Floor::Top { depth } => dv(ui, p(op, "floor", "Depth:"), depth, " mm", 0.1),
+        Floor::StockTop { depth }
+        | Floor::StockBottom { depth }
+        | Floor::ModelTop { depth }
+        | Floor::EachFace { depth } => {
+            ui.label("Floor:");
+            ui.label(format!("{depth:.2} mm below {reference}"));
+            ui.end_row();
+        }
+        Floor::Z { z } => {
+            ui.label("Floor:");
+            ui.label(format!("Z {z:.2} mm"));
+            ui.end_row();
+        }
+    }
+}
 
 pub(in crate::ui::properties) fn draw_face_params(
     ui: &mut egui::Ui,
@@ -95,13 +123,7 @@ pub(in crate::ui::properties) fn draw_pocket_params(
             0.1,
             stepover_sugg,
         );
-        dv(
-            ui,
-            p(OperationType::Pocket, "depth", "Depth:"),
-            &mut cfg.depth,
-            " mm",
-            0.1,
-        );
+        floor_row(ui, OperationType::Pocket, &mut cfg.floor);
         depth_caution_row(ui, depth_caution);
         dv_pill(
             ui,
@@ -206,13 +228,7 @@ pub(in crate::ui::properties) fn draw_profile_params(
                 ui.selectable_value(&mut cfg.side, ProfileSide::Inside, "Inside");
             });
         ui.end_row();
-        dv(
-            ui,
-            p(OperationType::Profile, "depth", "Depth:"),
-            &mut cfg.depth,
-            " mm",
-            0.1,
-        );
+        floor_row(ui, OperationType::Profile, &mut cfg.floor);
         through_cut_row(ui, through_cut);
         depth_caution_row(ui, depth_caution);
         dv_pill(
@@ -364,13 +380,7 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
             0.1,
             stepover_sugg,
         );
-        dv(
-            ui,
-            p(OperationType::Adaptive, "depth", "Depth:"),
-            &mut cfg.depth,
-            " mm",
-            0.1,
-        );
+        floor_row(ui, OperationType::Adaptive, &mut cfg.floor);
         depth_caution_row(ui, depth_caution);
         dv_pill(
             ui,
@@ -614,13 +624,7 @@ pub(in crate::ui::properties) fn draw_zigzag_params(
             0.1,
             stepover_sugg,
         );
-        dv(
-            ui,
-            p(OperationType::Zigzag, "depth", "Depth:"),
-            &mut cfg.depth,
-            " mm",
-            0.1,
-        );
+        floor_row(ui, OperationType::Zigzag, &mut cfg.floor);
         depth_caution_row(ui, depth_caution);
         dv_pill(
             ui,

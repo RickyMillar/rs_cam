@@ -126,7 +126,7 @@ fn toolpath(name: &str, model_id: usize, op: OperationConfig) -> ToolpathConfig 
 fn pocket(depth: f64) -> OperationConfig {
     let mut op = OperationConfig::Pocket(Default::default());
     if let OperationConfig::Pocket(cfg) = &mut op {
-        cfg.depth = depth;
+        cfg.floor = rs_cam_core::compute::floor::Floor::top(depth);
     }
     op
 }

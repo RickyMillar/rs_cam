@@ -192,7 +192,7 @@ fn end_mill() -> ToolConfig {
 fn pocket_op() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         stepover: 1.0,
-        depth: POCKET_DEPTH,
+        floor: rs_cam_core::compute::floor::Floor::top(POCKET_DEPTH),
         depth_per_pass: 2.0,
         ..PocketConfig::default()
     })

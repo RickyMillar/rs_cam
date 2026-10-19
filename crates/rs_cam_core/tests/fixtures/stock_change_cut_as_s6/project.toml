@@ -53,7 +53,7 @@ kind = "pocket"
 
 [setups.toolpaths.operation.params]
 stepover = 2.0
-depth = 3.0
+floor = { from = "top", depth = 3.0 }
 depth_per_pass = 1.0
 feed_rate = 1000.0
 plunge_rate = 500.0
@@ -75,7 +75,7 @@ kind = "pocket"
 
 [setups.toolpaths.operation.params]
 stepover = 1.5
-depth = 3.5
+floor = { from = "top", depth = 3.5 }
 depth_per_pass = 3.5
 feed_rate = 1000.0
 plunge_rate = 500.0

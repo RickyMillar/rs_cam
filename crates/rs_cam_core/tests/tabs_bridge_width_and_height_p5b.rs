@@ -74,7 +74,7 @@ fn board() -> StockConfig {
 fn profile(tab_count: usize, depth: f64, depth_per_pass: f64, tab_height: f64) -> ProfileConfig {
     ProfileConfig {
         side: ProfileSide::Outside,
-        depth,
+        floor: rs_cam_core::compute::floor::Floor::top(depth),
         depth_per_pass,
         tab_count,
         tab_width: W,

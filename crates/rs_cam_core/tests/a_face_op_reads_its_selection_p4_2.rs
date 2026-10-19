@@ -462,7 +462,7 @@ fn a_pocket_on_the_stock_clears_round_a_drawing_loop_p4_2() {
     ));
     let op = OperationConfig::Pocket(PocketConfig {
         stepover: 1.0,
-        depth: 1.0,
+        floor: rs_cam_core::compute::floor::Floor::top(1.0),
         depth_per_pass: 1.0,
         ..PocketConfig::default()
     });

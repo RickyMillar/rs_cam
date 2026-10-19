@@ -658,16 +658,6 @@ pub(crate) fn execute_operation_annotated(
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
-)]
-mod pinned_bottom_z_reaches_motion_g_bottompin;
-
-#[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
     clippy::print_stdout
 )]
 mod project_curve_chaining;

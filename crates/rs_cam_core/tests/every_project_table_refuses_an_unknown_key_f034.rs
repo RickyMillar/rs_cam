@@ -95,7 +95,7 @@ kind = "pocket"
 
 [setups.toolpaths.operation.params]
 stepover = 2.0
-depth = 3.0
+floor = { from = "top", depth = 3.0 }
 depth_per_pass = 3.0
 feed_rate = 1000.0
 plunge_rate = 500.0
@@ -272,7 +272,7 @@ fn two_entries_with_one_id_refuse_f053() {
     let twin_toolpath = format!(
         "{PROJECT}\n[[setups.toolpaths]]\nid = 0\nname = \"Twin\"\ntool_id = 0\nmodel_id = 0\n\n\
          [setups.toolpaths.operation]\nkind = \"pocket\"\n\n\
-         [setups.toolpaths.operation.params]\nstepover = 2.0\ndepth = 3.0\n\
+         [setups.toolpaths.operation.params]\nstepover = 2.0\nfloor = {{ from = \"top\", depth = 3.0 }}\n\
          depth_per_pass = 3.0\nfeed_rate = 1000.0\nplunge_rate = 500.0\nclimb = true\n\
          pattern = \"contour\"\nangle = 0.0\nfinishing_passes = 0\n"
     );

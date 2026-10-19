@@ -10,7 +10,9 @@
 //!     stays enabled;
 //! (b) depth 18 mm on 18 mm stock (a through cut): no caution;
 //! (c) a 3D operation (DropCutter): the rule does not apply;
-//! (d) a pinned bottom Z below the stock bottom: NO caution;
+//! (d) a pinned bottom Z below the stock bottom: NO caution on a Trace (the
+//!     pin reaches no motion), and a refusal on a Pocket (geometry
+//!     selection P3.2: one floor field);
 //! plus a flipped setup, which has the same thickness and the same excess.
 //!
 //! # Case (d) changed its expectation on 2026-09-10 (F1.18 / J8)
@@ -135,12 +137,36 @@ fn toolpath(name: &str, model_id: usize, op: OperationConfig) -> ToolpathConfig 
 fn pocket(depth: f64) -> OperationConfig {
     let mut op = OperationConfig::Pocket(Default::default());
     if let OperationConfig::Pocket(cfg) = &mut op {
-        cfg.depth = depth;
+        cfg.floor = rs_cam_core::compute::floor::Floor::top(depth);
     }
     op
 }
 
 /// One tool, one 2D model, one 3D model, 18 mm stock, one setup.
+/// An `OpDial` op with an explicit depth: the pin reaches no motion on it.
+fn trace(depth: f64) -> OperationConfig {
+    let mut op = OperationConfig::Trace(Default::default());
+    if let OperationConfig::Trace(cfg) = &mut op {
+        cfg.depth = depth;
+    }
+    op
+}
+
+/// P3.2: a Pocket takes its floor from its floor field, so a pinned Bottom
+/// Z on it refuses at the add door.
+fn assert_pocket_pin_refuses(session: &mut ProjectSession, bottom_z: HeightMode) {
+    let mut tc = toolpath("Pocket", MODEL_2D, pocket(6.0));
+    tc.heights.bottom_z = bottom_z;
+    let refused = session.apply(Command::AddToolpath(AddToolpathArgs {
+        setup_index: 0,
+        config: Box::new(tc),
+    }));
+    assert!(
+        refused.is_err(),
+        "(d) P3.2: a pinned Bottom Z on a Pocket refuses at the add door"
+    );
+}
+
 fn session() -> ProjectSession {
     let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
@@ -402,16 +428,22 @@ fn c2_alignment_pin_drill_penetrates_the_spoilboard_by_design() {
 
 /// RE-PINNED 2026-09-10 (F1.18 / J8). Before: the rule fired and the message
 /// read `Depth exceeds stock thickness by 3.00 mm`. Now: silence, because the
-/// pocket cuts 6 mm into an 18 mm board and the pin reaches no emitted motion
+/// op cuts 6 mm into an 18 mm board and the pin reaches no emitted motion
 /// (F1.19). See this file's header for the full argument.
+///
+/// RE-PINNED 2026-10-20 (geometry selection P3.2): a Pocket refuses the pin
+/// (one floor field), so the claim runs on a Trace, an `OpDial` op with an
+/// explicit depth.
 #[test]
 fn d_a_bottom_z_pinned_below_the_stock_bottom_is_not_a_caution() {
     let mut session = session();
-    let mut tc = toolpath("Pocket", MODEL_2D, pocket(6.0));
-    tc.heights.bottom_z = HeightMode::FromReference(ReferenceOffset {
+    let pin = HeightMode::FromReference(ReferenceOffset {
         reference: HeightReference::StockBottom,
         offset: -3.0,
     });
+    assert_pocket_pin_refuses(&mut session, pin);
+    let mut tc = toolpath("Trace", MODEL_2D, trace(6.0));
+    tc.heights.bottom_z = pin;
     let idx = session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
@@ -423,7 +455,7 @@ fn d_a_bottom_z_pinned_below_the_stock_bottom_is_not_a_caution() {
     assert_eq!(
         rule(&session, idx),
         None,
-        "(d) the pin moves no motion on a pocket, so it raises no caution"
+        "(d) the pin moves no motion on a trace, so it raises no caution"
     );
 
     // The header must agree: the rule and the ribbon are one predicate.
@@ -452,8 +484,9 @@ fn d_the_heights_tab_says_the_pin_is_not_used_on_a_pocket() {
 #[test]
 fn d2_a_manual_bottom_z_at_the_stock_bottom_is_not_a_caution() {
     let mut session = session();
-    let mut tc = toolpath("Pocket", MODEL_2D, pocket(6.0));
     let stock_bottom_z = session.stock_config().bbox().min.z;
+    assert_pocket_pin_refuses(&mut session, HeightMode::Manual(stock_bottom_z));
+    let mut tc = toolpath("Trace", MODEL_2D, trace(6.0));
     tc.heights.bottom_z = HeightMode::Manual(stock_bottom_z);
     let idx = session
         .apply(Command::AddToolpath(AddToolpathArgs {

@@ -416,8 +416,9 @@ mod tests {
         // Levels -2, -4, -6; the tab top is -6 + 3 = -3. The level at -4
         // is below the tab top, so it lifts over each tab too (P5b); the
         // level at -2 is above it and cuts through.
+        const DEPTH: f64 = 6.0;
         let cfg = ProfileConfig {
-            depth: 6.0,
+            floor: rs_cam_core::compute::floor::Floor::top(DEPTH),
             depth_per_pass: 2.0,
             tab_count: 4,
             tab_width: 6.0,
@@ -430,7 +431,7 @@ mod tests {
             ToolType::EndMill,
         ));
 
-        let final_z = -cfg.depth;
+        let final_z = -DEPTH;
         let tab_z = final_z + cfg.tab_height;
 
         // A vertical fed rise from `from_z` to the tab top.
@@ -458,7 +459,7 @@ mod tests {
 
         let depth_stepping = rs_cam_core::ops::depth::DepthStepping {
             start_z: 0.0,
-            final_z: -cfg.depth.abs(),
+            final_z,
             max_step_down: cfg.depth_per_pass,
             finishing_passes: cfg.finishing_passes,
         };
@@ -546,7 +547,7 @@ mod tests {
         let cfg = ZigzagConfig {
             angle: 90.0,
             stepover: 6.0,
-            depth: 2.0,
+            floor: rs_cam_core::compute::floor::Floor::top(2.0),
             depth_per_pass: 2.0,
             ..ZigzagConfig::default()
         };

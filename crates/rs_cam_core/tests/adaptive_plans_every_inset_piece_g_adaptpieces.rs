@@ -139,7 +139,7 @@ fn stock() -> StockConfig {
 
 fn adaptive(cleanup: CleanupStrategy) -> OperationConfig {
     OperationConfig::Adaptive(AdaptiveConfig {
-        depth: DEPTH,
+        floor: rs_cam_core::compute::floor::Floor::top(DEPTH),
         depth_per_pass: DPP,
         cleanup_strategy: cleanup,
         ..AdaptiveConfig::default()

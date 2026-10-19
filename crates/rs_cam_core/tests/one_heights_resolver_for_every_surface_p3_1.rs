@@ -15,8 +15,8 @@
 //! 2. The same on a Bottom setup: the down face is up there, at the setup
 //!    Z `stock top - model Z`.
 //! 3. A `ModelTop` top on an STL, Top and Bottom setups: the top is the mesh
-//!    top in the setup frame plus the offset. The MCP diagnostics path of
-//!    today (`height_context_for_toolpath`) gives the same numbers here.
+//!    top in the setup frame plus the offset. The MCP diagnostics path
+//!    (`toolpath_heights`) gives the same numbers here.
 //! 4. L-4 and D-B: a drawing has no mesh, so its context holds no model Z.
 //!    A `ModelTop` top on it refuses generation, and the session answer
 //!    names the same refusal for the Heights tab.
@@ -24,16 +24,13 @@
 //!    by itself (a source scan; `HeightsConfig::resolve` is `pub(crate)`,
 //!    and the scan covers the one open door, `ToolpathHeights::from_context`).
 //!
-//! The MCP arm of the face pick is `#[ignore]` until the lead swaps
-//! `session/compute/export.rs` (`height_context_for_toolpath`) for the
-//! session resolver: today the MCP diagnostics resolve without the face
-//! top. It reads the MCP diagnostics themselves: a Pocket whose floor is
-//! below the stock bottom only when it cuts from the face gives
-//! `geom.depth_beyond_stock` only when the MCP path applies the face top.
+//! The MCP arm of the face pick reads the MCP diagnostics themselves: a
+//! Pocket whose floor is below the stock bottom only when it cuts from the
+//! face gives `geom.depth_beyond_stock` only when the MCP path applies the
+//! face top (the P3.1 swap of `session/compute/export.rs`, landed in P3.2).
 //!
 //! ```text
 //! cargo test -p rs_cam_core -q --test one_heights_resolver_for_every_surface_p3_1
-//! cargo test -p rs_cam_core -q --test one_heights_resolver_for_every_surface_p3_1 -- --ignored
 //! ```
 
 #![allow(
@@ -200,7 +197,7 @@ fn session_with(
 
 fn pocket(depth: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        depth,
+        floor: rs_cam_core::compute::floor::Floor::top(depth),
         depth_per_pass: depth,
         ..PocketConfig::default()
     })
@@ -257,14 +254,13 @@ fn session_heights(session: &ProjectSession) -> (f64, f64) {
     (answer.heights.top_z, answer.heights.bottom_z)
 }
 
-/// The (top, bottom) of the path that the MCP diagnostics read TODAY
-/// (`diagnose_toolpath_with_trace`: `height_context_for_toolpath`, then
-/// `ResolvedHeights::from_heights`). The lead swaps that path for the
-/// session resolver after W5; this helper then reads
-/// `ResolvedHeights::from_toolpath_heights`.
+/// The (top, bottom) of the path that the MCP diagnostics read
+/// (`diagnose_toolpath_with_trace`: `toolpath_heights`, then
+/// `ResolvedHeights::from_toolpath_heights`).
 fn mcp_today(session: &ProjectSession) -> (f64, f64) {
     let tc = &session.toolpath_configs()[0];
-    let h = McpHeights::from_heights(&tc.heights, &session.height_context_for_toolpath(tc));
+    let answer = session.toolpath_heights(tc).expect("the heights resolve");
+    let h = McpHeights::from_toolpath_heights(&answer, &tc.heights);
     (h.top_z, h.bottom_z)
 }
 
@@ -381,10 +377,8 @@ fn a_model_top_on_a_drawing_refuses_l4() {
 
 /// The MCP diagnostics apply the face top. A Pocket from the up face at Z 0
 /// with a depth past the stock bottom cautions `geom.depth_beyond_stock`;
-/// from the stock top it would not. Red until the lead swaps
-/// `height_context_for_toolpath` in `session/compute/export.rs`.
+/// from the stock top it would not.
 #[test]
-#[ignore = "red until the lead swaps export.rs height_context_for_toolpath for toolpath_heights (P3.1, after W5)"]
 fn the_mcp_diagnostics_read_the_face_top() {
     // Floor from the face: 0 - depth, below the stock bottom. Floor from
     // the stock top: (stock top) - depth, above it.

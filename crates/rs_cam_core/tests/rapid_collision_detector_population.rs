@@ -158,7 +158,7 @@ fn build_session(retract_z: HeightMode) -> ProjectSession {
         operation: OperationConfig::Pocket(PocketConfig {
             ramp_feed_rate: None,
             stepover: 2.4,
-            depth: 4.0,
+            floor: rs_cam_core::compute::floor::Floor::top(4.0),
             depth_per_pass: 2.0,
             feed_rate: 2400.0,
             plunge_rate: 600.0,

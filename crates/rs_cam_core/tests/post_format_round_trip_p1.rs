@@ -169,7 +169,7 @@ fn build_project_with_mist(dir: &Path, format: PostFormat, mist: Option<bool>) -
         operation: OperationConfig::Pocket(PocketConfig {
             ramp_feed_rate: None,
             stepover: 3.0,
-            depth: 2.0,
+            floor: rs_cam_core::compute::floor::Floor::top(2.0),
             depth_per_pass: 2.0,
             feed_rate: 1000.0,
             plunge_rate: 300.0,

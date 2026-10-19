@@ -2397,7 +2397,7 @@ mod tests {
         // 22 mm at 0.9 mm asks for 24.4 levels, so the pocket cuts 25
         // levels of 0.88 mm.
         let pocket = OperationConfig::Pocket(PocketConfig {
-            depth: 22.0,
+            floor: crate::compute::floor::Floor::top(22.0),
             depth_per_pass: 0.9,
             ..PocketConfig::default()
         });

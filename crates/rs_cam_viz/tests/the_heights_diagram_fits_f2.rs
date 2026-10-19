@@ -43,7 +43,7 @@
 //!
 //! Arm 5 carries ruling R33 (F-6): the Bottom line must agree with the
 //! sentence the panel prints beside it. It runs over every `OperationType`,
-//! both sides of `honors_pinned_bottom_z`.
+//! both sides of `floor_owner` (`HeightsBottom`).
 
 #![allow(
     clippy::unwrap_used,
@@ -99,6 +99,7 @@ fn solid_ctx() -> HeightContext {
         stock_bottom_z: -17.2,
         model_top_z: Some(9.8),
         model_bottom_z: Some(0.0),
+        floor: None,
     }
 }
 
@@ -247,6 +248,7 @@ fn the_diagram_draws_inside_its_own_rect_f2() {
                 stock_bottom_z: -500.0,
                 model_top_z: Some(-100.0),
                 model_bottom_z: Some(-480.0),
+                floor: None,
             },
             BOTTOM_HONOURED,
         ),
@@ -392,6 +394,7 @@ fn the_layout_still_measures_its_text_f2() {
             stock_bottom_z: -1.0,
             model_top_z: Some(0.0),
             model_bottom_z: Some(-1.0),
+            floor: None,
         },
         BOTTOM_HONOURED,
     );
@@ -403,6 +406,7 @@ fn the_layout_still_measures_its_text_f2() {
             stock_bottom_z: -200.0,
             model_top_z: Some(200.0),
             model_bottom_z: Some(-100.0),
+            floor: None,
         },
         BOTTOM_HONOURED,
     );
@@ -442,7 +446,7 @@ fn the_layout_still_measures_its_text_f2() {
 /// # The defect
 ///
 /// The diagram drew a `DANGER` red floor at `resolved.bottom_z` on every
-/// operation. `Capabilities::honors_pinned_bottom_z`
+/// operation. `Capabilities::floor_owner` (`HeightsBottom`)
 /// (`rs_cam_core::compute::catalog`) says three of the twenty-four read that
 /// dial. On the other twenty-one the panel printed "Bottom: Not used by this
 /// operation. …" and the diagram under it drew a red floor: two surfaces
@@ -473,7 +477,10 @@ fn the_bottom_line_agrees_with_the_panel_r33() {
     for &op_type in OperationType::ALL {
         let drawn = draw_in(&ctx, &solid_ctx(), op_type);
         let reds = drawn.segment_count(tokens::DANGER);
-        if op_type.capabilities().honors_pinned_bottom_z {
+        if matches!(
+            op_type.capabilities().floor_owner,
+            rs_cam_core::compute::catalog::FloorOwner::HeightsBottom
+        ) {
             honoured += 1;
             assert!(
                 reds >= 1,
@@ -520,6 +527,6 @@ fn the_bottom_line_agrees_with_the_panel_r33() {
     assert!(
         honoured >= 1 && inert >= 1,
         "the arm drove {honoured} honouring and {inert} inert operations, so \
-         it exercised only one side of `honors_pinned_bottom_z`."
+         it exercised only one side of `floor_owner`."
     );
 }

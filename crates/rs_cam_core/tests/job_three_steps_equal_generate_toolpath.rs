@@ -105,7 +105,7 @@ const EDITED_FEED_RATE: f64 = 4321.0;
 fn pocket_op() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         stepover: 2.0,
-        depth: 3.0,
+        floor: rs_cam_core::compute::floor::Floor::top(3.0),
         depth_per_pass: 3.0,
         ..PocketConfig::default()
     })

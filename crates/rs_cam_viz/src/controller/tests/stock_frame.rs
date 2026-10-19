@@ -235,7 +235,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     let pocket = PocketConfig {
         ramp_feed_rate: None,
         stepover: 2.4,
-        depth: 6.0,
+        floor: rs_cam_core::compute::floor::Floor::top(6.0),
         depth_per_pass: 2.0,
         feed_rate: 900.0,
         plunge_rate: 350.0,

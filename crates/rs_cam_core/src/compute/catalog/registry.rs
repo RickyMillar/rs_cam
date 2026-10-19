@@ -21,8 +21,8 @@ use crate::feeds::{CutterKind, OperationFamily as FeedsOperationFamily, PassRole
 
 use super::capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
-    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbeRule, ItemUse, LutRoute,
-    MoveCountModel, RestUse, TRANSFORM_ADAPTIVE_2D, TRANSFORM_ADAPTIVE_3D,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbeRule, FloorOwner, ItemUse,
+    LutRoute, MoveCountModel, RestUse, TRANSFORM_ADAPTIVE_2D, TRANSFORM_ADAPTIVE_3D,
     TRANSFORM_BARRIERED_NODES, TRANSFORM_CONTINUOUS, TRANSFORM_DEPTH_ORDER, TRANSFORM_FACE,
     TRANSFORM_ORDERED_LINKABLE, TRANSFORM_TRACE, TRANSFORM_V_WIDTH, TRANSFORM_XY_INDEPENDENT,
     TerritoryXy,
@@ -56,7 +56,7 @@ pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_FACE,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -102,7 +102,7 @@ pub(super) static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_DEPTH_ORDER,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpFloor,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -148,7 +148,7 @@ pub(super) static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_DEPTH_ORDER,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpFloor,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -197,7 +197,7 @@ pub(super) static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_ADAPTIVE_2D,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpFloor,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -255,7 +255,7 @@ pub(super) static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_V_WIDTH,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -311,7 +311,7 @@ pub(super) static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_V_WIDTH,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -367,7 +367,7 @@ pub(super) static REG_INLAY_PLUG: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_V_WIDTH,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -413,7 +413,7 @@ pub(super) static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_DEPTH_ORDER,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpFloor,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -460,7 +460,7 @@ pub(super) static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_TRACE,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -511,7 +511,7 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,
         air_cut_high_threshold_pct: None,
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -562,7 +562,7 @@ pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_ORDERED_LINKABLE,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -614,7 +614,7 @@ pub(super) static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::SurfaceFixed { leave_mm: 0.0 },
         link_ceiling: LinkCeilingNeed::WithRemainingStock,
         feeds_hints: FeedsHints::NONE,
@@ -666,7 +666,7 @@ pub(super) static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_ADAPTIVE_3D,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
-        honors_pinned_bottom_z: true,
+        floor_owner: FloorOwner::HeightsBottom,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -712,7 +712,7 @@ pub(super) static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_DEPTH_ORDER,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
-        honors_pinned_bottom_z: true,
+        floor_owner: FloorOwner::HeightsBottom,
         entry_probe: EntryProbeRule::SurfaceFixed { leave_mm: 0.0 },
         link_ceiling: LinkCeilingNeed::WithRemainingStock,
         feeds_hints: FeedsHints::NONE,
@@ -763,7 +763,7 @@ pub(super) static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_ORDERED_LINKABLE,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::SurfaceFromConfig,
         link_ceiling: LinkCeilingNeed::WithRemainingStock,
         feeds_hints: FeedsHints::NONE,
@@ -812,7 +812,7 @@ pub(super) static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_CONTINUOUS,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::SurfaceFromConfig,
         link_ceiling: LinkCeilingNeed::WithRemainingStock,
         feeds_hints: FeedsHints::NONE,
@@ -876,7 +876,7 @@ pub(super) static REG_UNIFIED_FINISH: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_BARRIERED_NODES,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
-        honors_pinned_bottom_z: true,
+        floor_owner: FloorOwner::HeightsBottom,
         entry_probe: EntryProbeRule::SurfaceFromConfig,
         link_ceiling: LinkCeilingNeed::WithRemainingStock,
         feeds_hints: FeedsHints::NONE,
@@ -922,7 +922,7 @@ pub(super) static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_BARRIERED_NODES,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::SurfaceFromConfig,
         // W6.4.6: the `hookup_mm` link stage reads the remaining stock.
         link_ceiling: LinkCeilingNeed::WithRemainingStock,
@@ -971,7 +971,7 @@ pub(super) static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_CONTINUOUS,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::SurfaceFromConfig,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -1024,7 +1024,7 @@ pub(super) static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_CONTINUOUS,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::SurfaceFromConfig,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -1070,7 +1070,7 @@ pub(super) static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_ORDERED_LINKABLE,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::SurfaceFromConfig,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -1123,7 +1123,7 @@ pub(super) static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_ORDERED_LINKABLE,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_SURFACE_FINISH_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::SurfaceFromConfig,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -1173,7 +1173,7 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_PROJECT_CURVE_PCT),
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::Always,
         feeds_hints: FeedsHints::NONE,
@@ -1230,7 +1230,7 @@ pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,
         air_cut_high_threshold_pct: None,
-        honors_pinned_bottom_z: false,
+        floor_owner: FloorOwner::OpDial,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,

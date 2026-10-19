@@ -93,7 +93,7 @@ fn bull_3175() -> ToolConfig {
 fn pocket_op(ramp_feed: Option<f64>) -> OperationConfig {
     let mut op = OperationConfig::new_default(OperationType::Pocket);
     if let OperationConfig::Pocket(cfg) = &mut op {
-        cfg.depth = POCKET_DEPTH;
+        cfg.floor = rs_cam_core::compute::floor::Floor::top(POCKET_DEPTH);
         cfg.depth_per_pass = POCKET_DEPTH;
         cfg.stepover = 1.0;
         cfg.feed_rate = FEED;

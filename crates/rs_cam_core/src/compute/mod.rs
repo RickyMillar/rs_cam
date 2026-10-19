@@ -11,6 +11,7 @@ pub mod collision_check;
 pub mod config;
 pub mod cutter;
 pub mod execute;
+pub mod floor;
 pub mod generated_empty;
 pub mod obstacle;
 pub mod operation_configs;

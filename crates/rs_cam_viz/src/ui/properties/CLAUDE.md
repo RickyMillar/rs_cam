@@ -19,7 +19,8 @@
 - The toolpath panel takes `ToolpathPanelSnapshot` and `ToolpathPanelInputs`. Add a field there, not a
   parameter. The width does not depend on the tab.
 - A panel door marks the project edited on success; `app.rs` guards on it. A pinned Bottom Z note names
-  the ops `honors_pinned_bottom_z()` lists.
+  the ops that `capabilities().floor_owner` does not mark `HeightsBottom`. P3.2: the Depth row of Pocket,
+  Profile, Zigzag, Adaptive 2D edits `Floor::Top { depth }`; another floor shows read-only (P3.7: the row).
 - A draw never writes `rest_analysis.enabled`; `apply_auto_enable` is the door. Do not draw a raw egui
   widget where `ui/components/` has one. A tooltip keys on the registry parameter NAME, never the label.
 - The Selection section writes `EditToolpathSelection` only (L-1), never the draft. The Profile Tabs

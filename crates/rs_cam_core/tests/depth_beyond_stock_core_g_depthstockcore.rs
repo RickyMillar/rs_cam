@@ -22,11 +22,11 @@
 //! operation's depth dial, and the Heights tab's resolved Bottom Z. This one
 //! reads the depth dial alone.
 //!
-//! The reason is F1.19, measured in
-//! `pinned_bottom_z_reaches_motion_g_bottompin.rs`: for every operation this
-//! rule applies to, a pinned Bottom Z reaches no emitted motion. Folding it
-//! in would caution on a number the machine never cuts — which is the class
-//! of defect the whole programme is closing.
+//! The reason is F1.19, measured in `the_floor_reaches_the_motion_g_bottompin`
+//! (P3.2): for every operation this rule applies to, a pinned Bottom Z
+//! reaches no emitted motion, or it refuses (Pocket, Profile, Zigzag and
+//! Adaptive 2D). Folding it in would caution on a number the machine never
+//! cuts — which is the class of defect the whole programme is closing.
 //!
 //! The three operations whose floor really CAN be a pinned bottom —
 //! Adaptive3d, UnifiedFinish, Waterline — abstain here rather than guess,
@@ -87,8 +87,8 @@ fn flat_endmill() -> ToolConfig {
 ///
 /// The arms below use it to exercise the RULE, which reads five numbers and
 /// a stock span. It is no longer what the session builds — N4 (2026-09-10)
-/// moved that route to `ResolvedHeights::from_heights`, which resolves the
-/// toolpath's own `HeightsConfig`. The two constructors put different
+/// moved that route to the toolpath's own `HeightsConfig`, and P3.1 to
+/// `ResolvedHeights::from_toolpath_heights` (THE session heights). The two constructors put different
 /// numbers in `feed_z`, `bottom_z` and `clearance_z`. They agree on `top_z`
 /// and the stock span whenever Top Z is Auto, and those three values are
 /// the whole input to the rule this file measures.
@@ -100,12 +100,13 @@ fn snapshot(op_depth: f64) -> ResolvedHeights {
         stock_bottom_z: STOCK_BOTTOM_Z,
         model_top_z: None,
         model_bottom_z: None,
+        floor: None,
     })
 }
 
 fn pocket(depth: f64) -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
-        depth,
+        floor: rs_cam_core::compute::floor::Floor::top(depth),
         depth_per_pass: 2.0,
         ..PocketConfig::default()
     })
@@ -226,9 +227,8 @@ fn the_operations_this_rule_cannot_answer_for_abstain() {
         assert!(depth_beyond_stock(&op, &h).is_none(), "{name}");
     }
     assert!(
-        OperationType::Adaptive3d
-            .capabilities()
-            .honors_pinned_bottom_z,
+        OperationType::Adaptive3d.capabilities().floor_owner
+            == rs_cam_core::compute::catalog::FloorOwner::HeightsBottom,
         "Adaptive3d abstains BECAUSE the pin is its floor; if that stops \
          being true the reason for abstaining changes"
     );
@@ -310,7 +310,7 @@ fn pocket_session(depth: f64) -> ProjectSession {
         operation: OperationConfig::Pocket(PocketConfig {
             ramp_feed_rate: None,
             stepover: 2.0,
-            depth,
+            floor: rs_cam_core::compute::floor::Floor::top(depth),
             depth_per_pass: 2.0,
             feed_rate: 770.0,
             plunge_rate: 385.0,
@@ -347,11 +347,11 @@ fn pocket_session(depth: f64) -> ProjectSession {
 ///
 /// Everything above proves the RULE. This proves the ROUTE:
 /// `ProjectSession::diagnose_toolpath` is the entry MCP
-/// `get_toolpath_diagnostics` calls, and it builds its own
-/// `HeightContext` through `height_context_for_toolpath`. Reading that
-/// chain is not the same as running it — the stock span has to survive
-/// `HeightContext` -> `ResolvedHeights::from_heights` -> the rule, and only
-/// a run shows that it does.
+/// `get_toolpath_diagnostics` calls, and it reads THE session heights
+/// through `toolpath_heights` (geometry selection P3.1). Reading that chain
+/// is not the same as running it — the stock span has to survive
+/// `toolpath_heights` -> `ResolvedHeights::from_toolpath_heights` -> the
+/// rule, and only a run shows that it does.
 ///
 /// The MCP server is down this session, so this is the MCP route minus the
 /// transport. It is not a live GUI check and must not be reported as one.

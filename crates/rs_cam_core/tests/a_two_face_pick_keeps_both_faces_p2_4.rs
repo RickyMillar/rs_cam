@@ -126,7 +126,7 @@ fn pocket_on(model: LoadedModel) -> ProjectSession {
         model,
         "two faces",
         OperationConfig::Pocket(PocketConfig {
-            depth: POCKET_DEPTH,
+            floor: rs_cam_core::compute::floor::Floor::top(POCKET_DEPTH),
             depth_per_pass: POCKET_DEPTH,
             ..PocketConfig::default()
         }),

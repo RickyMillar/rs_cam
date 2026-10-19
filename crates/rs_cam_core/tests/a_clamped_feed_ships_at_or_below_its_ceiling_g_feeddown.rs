@@ -93,7 +93,7 @@ fn endmill() -> ToolConfig {
 fn heavy_pocket() -> OperationConfig {
     OperationConfig::Pocket(PocketConfig {
         stepover: DIAMETER_MM,
-        depth: 4.0 * DIAMETER_MM,
+        floor: rs_cam_core::compute::floor::Floor::top(4.0 * DIAMETER_MM),
         depth_per_pass: 2.0 * DIAMETER_MM,
         feed_rate: 1000.0,
         plunge_rate: 500.0,

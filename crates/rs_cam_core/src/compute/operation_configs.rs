@@ -2,6 +2,7 @@ use rs_cam_derive::{OpParams, ParamEnum};
 use serde::{Deserialize, Serialize};
 
 use super::catalog::{DepthSemantics, OperationParams};
+use super::floor::Floor;
 use super::tool_config::ToolId;
 use crate::finish::finish_planner::FinishPlannerParams;
 use crate::selection::Selection;
@@ -66,6 +67,13 @@ const HELP_OVERLAP_MM: &str = "Overlap between steep and shallow regions.";
 
 const DRIVER_SET_SELECTION: &str =
     "the selection command writes the selection (rules and picks), not the parameter setter";
+
+/// The floor of Pocket, Profile, Zigzag and Adaptive 2D is one value with a
+/// reference (geometry selection P3.2, ruling D9), not a number. The GUI
+/// writes it through the whole config; the floor command is P3.3.
+const DRIVER_SET_FLOOR: &str = "the floor names its reference (operation.params.floor, for example \
+     { from = \"top\", depth = 6.0 }), so the parameter setter does not write it. The op form \
+     writes the whole config";
 
 /// The three runtime numbers every finishing `…Params` carries and no
 /// config holds (FIN-02).
@@ -515,8 +523,10 @@ impl Default for ChamferConfig {
 pub struct PocketConfig {
     #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
     pub stepover: f64,
-    #[param(help = HELP_DEPTH, range = 0.1..=100.0)]
-    pub depth: f64,
+    /// The floor and its reference (geometry selection P3.2, ruling D9).
+    /// The file has no default for it: a file states it.
+    #[param(driver_set = DRIVER_SET_FLOOR)]
+    pub floor: Floor,
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
     pub depth_per_pass: f64,
     #[param(gt = 0.0)]
@@ -558,7 +568,7 @@ impl Default for PocketConfig {
     fn default() -> Self {
         Self {
             stepover: 2.0,
-            depth: 3.0,
+            floor: Floor::top(3.0),
             depth_per_pass: 1.5,
             feed_rate: 1000.0,
             plunge_rate: 500.0,
@@ -577,8 +587,10 @@ impl Default for PocketConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct ProfileConfig {
     pub side: ProfileSide,
-    #[param(help = HELP_DEPTH, range = 0.1..=100.0)]
-    pub depth: f64,
+    /// The floor and its reference (geometry selection P3.2, ruling D9).
+    /// The file has no default for it: a file states it.
+    #[param(driver_set = DRIVER_SET_FLOOR)]
+    pub floor: Floor,
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
     pub depth_per_pass: f64,
     #[param(gt = 0.0)]
@@ -659,7 +671,7 @@ impl Default for ProfileConfig {
     fn default() -> Self {
         Self {
             side: ProfileSide::Outside,
-            depth: 6.0,
+            floor: Floor::top(6.0),
             depth_per_pass: 2.0,
             feed_rate: 1000.0,
             plunge_rate: 500.0,
@@ -682,8 +694,10 @@ impl Default for ProfileConfig {
 pub struct AdaptiveConfig {
     #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
     pub stepover: f64,
-    #[param(help = HELP_DEPTH, range = 0.1..=100.0)]
-    pub depth: f64,
+    /// The floor and its reference (geometry selection P3.2, ruling D9).
+    /// The file has no default for it: a file states it.
+    #[param(driver_set = DRIVER_SET_FLOOR)]
+    pub floor: Floor,
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
     pub depth_per_pass: f64,
     #[param(gt = 0.0)]
@@ -750,7 +764,7 @@ impl Default for AdaptiveConfig {
     fn default() -> Self {
         Self {
             stepover: 2.0,
-            depth: 6.0,
+            floor: Floor::top(6.0),
             depth_per_pass: 2.0,
             feed_rate: 1500.0,
             plunge_rate: 500.0,
@@ -1044,8 +1058,10 @@ impl Default for InlayPlugConfig {
 pub struct ZigzagConfig {
     #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
     pub stepover: f64,
-    #[param(help = HELP_DEPTH, range = 0.1..=100.0)]
-    pub depth: f64,
+    /// The floor and its reference (geometry selection P3.2, ruling D9).
+    /// The file has no default for it: a file states it.
+    #[param(driver_set = DRIVER_SET_FLOOR)]
+    pub floor: Floor,
     #[param(help = HELP_DEPTH_PER_PASS, range = 0.1..=50.0)]
     pub depth_per_pass: f64,
     #[param(gt = 0.0)]
@@ -1083,7 +1099,7 @@ impl Default for ZigzagConfig {
     fn default() -> Self {
         Self {
             stepover: 2.0,
-            depth: 3.0,
+            floor: Floor::top(3.0),
             depth_per_pass: 1.5,
             feed_rate: 1000.0,
             plunge_rate: 500.0,
@@ -2855,12 +2871,20 @@ impl Default for ProjectCurveConfig {
 /// the two `self`s apart. A FORM plus a field name carries the same
 /// information and reads as a declaration. `ExplicitFrom(method)` names a
 /// method for a depth that no single field holds (the inlay plug).
+/// `Floor(field)` reads a [`Floor`] (P3.2): `Top { depth }` is `Explicit`,
+/// every other reference is `Resolved`.
 macro_rules! depth_semantics_form {
     ($s:ident, Explicit($f:ident)) => {
         DepthSemantics::Explicit($s.$f)
     };
     ($s:ident, ExplicitFrom($m:ident)) => {
         DepthSemantics::Explicit($s.$m())
+    };
+    ($s:ident, Floor($f:ident)) => {
+        match $s.$f.depth_below_top() {
+            Some(depth) => DepthSemantics::Explicit(depth),
+            None => DepthSemantics::Resolved,
+        }
     };
     ($s:ident, DerivedStockTop($f:ident)) => {
         DepthSemantics::DerivedStockTop($s.$f.abs())
@@ -2910,6 +2934,11 @@ macro_rules! op_role {
         }
     };
     (total_depth: none) => {};
+    (total_depth: floor) => {
+        fn total_depth(&self) -> Option<f64> {
+            self.floor.depth_below_top()
+        }
+    };
     (total_depth: $f:ident) => {
         fn total_depth(&self) -> Option<f64> {
             Some(self.$f)
@@ -2945,7 +2974,8 @@ macro_rules! op_role {
 ///   (D2: no setter alias remains).
 /// - `depth_per_pass:` the field behind `depth_per_pass` /
 ///   `set_depth_per_pass`, or `none`.
-/// - `total_depth:` the field behind `total_depth`, or `none`.
+/// - `total_depth:` the field behind `total_depth`, or `none`. `floor`
+///   reads the `Floor` field: the depth of `Floor::Top`, else `None` (L-6).
 /// - `scallop_height:` an `f64` field; `scallop_height_opt:` an
 ///   `Option<f64>` field. The two differ only in where the `Option` sits.
 /// - `extra { ... }` — verbatim trait methods, for a config whose
@@ -3027,8 +3057,8 @@ impl_operation_params!(PocketConfig {
     ramp_feed_rate: ramp_feed_rate,
     stepover: stepover,
     depth_per_pass: depth_per_pass,
-    total_depth: depth,
-    depth_semantics: Explicit(depth)
+    total_depth: floor,
+    depth_semantics: Floor(floor)
 });
 
 impl_operation_params!(ProfileConfig {
@@ -3036,8 +3066,8 @@ impl_operation_params!(ProfileConfig {
     ramp_feed_rate: ramp_feed_rate,
     stepover: none,
     depth_per_pass: depth_per_pass,
-    total_depth: depth,
-    depth_semantics: Explicit(depth)
+    total_depth: floor,
+    depth_semantics: Floor(floor)
 });
 
 impl_operation_params!(AdaptiveConfig {
@@ -3045,8 +3075,8 @@ impl_operation_params!(AdaptiveConfig {
     ramp_feed_rate: ramp_feed_rate,
     stepover: stepover,
     depth_per_pass: depth_per_pass,
-    total_depth: depth,
-    depth_semantics: Explicit(depth)
+    total_depth: floor,
+    depth_semantics: Floor(floor)
 });
 
 impl_operation_params!(VCarveConfig {
@@ -3081,8 +3111,8 @@ impl_operation_params!(ZigzagConfig {
     ramp_feed_rate: ramp_feed_rate,
     stepover: stepover,
     depth_per_pass: depth_per_pass,
-    total_depth: depth,
-    depth_semantics: Explicit(depth)
+    total_depth: floor,
+    depth_semantics: Floor(floor)
 });
 
 impl_operation_params!(TraceConfig {

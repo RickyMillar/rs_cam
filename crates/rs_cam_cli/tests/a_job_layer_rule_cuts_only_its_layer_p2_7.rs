@@ -56,7 +56,6 @@ diameter = 3.0
 type = "pocket"
 input = "{input}"
 tool = "flat_3mm"
-depth = 2.0
 {selection}
 "#,
         input = drawing().display(),

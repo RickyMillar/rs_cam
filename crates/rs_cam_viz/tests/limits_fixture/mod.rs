@@ -165,7 +165,7 @@ pub fn simulated_state(cut: Cut) -> AppState {
     let operation = OperationConfig::Pocket(PocketConfig {
         // Four passes at the shallow depth, two at the deep one, so both arms
         // run steady-state cutting rather than one entry move.
-        depth: cap * 8.0 / 3.0,
+        floor: rs_cam_core::compute::floor::Floor::top(cap * 8.0 / 3.0),
         depth_per_pass: dpp,
         // Inside the matched vendor chip band on both sides; see the
         // constant's own doc for the window it sits in.

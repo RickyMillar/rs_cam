@@ -2697,6 +2697,9 @@ impl ProjectSession {
                 if index >= self.toolpath_count() {
                     return Err(SessionError::ToolpathNotFound(index));
                 }
+                // P3.2: the GUI door refuses a pinned Bottom Z on an
+                // `OpFloor` op before it writes anything.
+                config.floor_conflict()?;
                 Ok(self.with_effects(Some(index), move |session| {
                     let after = config.generation_inputs_signature();
                     let Some(slot) = session.toolpath_configs.get_mut(index) else {
