@@ -343,14 +343,6 @@ impl MachineHead {
     /// The preset names.
     pub const PRESETS: [&'static str; 2] = ["Bare collet", "Dust shoe"];
 
-    /// The diameter (mm) of the first fixed part with a width: the part a
-    /// tool preview draws as the holder. `None` when every fixed part is a
-    /// shelf.
-    #[must_use]
-    pub fn holder_diameter_mm(&self) -> Option<f64> {
-        self.parts.iter().find_map(|part| part.diameter_mm)
-    }
-
     /// Is this the head a project without a `head` table reads? The
     /// writer leaves the table out for it, so an old file saves as it
     /// loaded.

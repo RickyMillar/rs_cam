@@ -68,8 +68,7 @@
 
 use rs_cam_core::adaptive3d::{
     Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
-    EntryStyle3d, RegionOrdering, adaptive_3d_toolpath_with_cancel,
-    debug_adaptive_3d_segments_for_f029_probe,
+    EntryStyle3d, RegionOrdering, debug_adaptive_3d_segments_for_f029_probe,
 };
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::P2;
@@ -328,8 +327,16 @@ fn measure(label: &str, strategy: ClearingStrategy3d, boundary: Option<&Polygon2
         origin_v: pg_ov,
     };
 
-    let toolpath = adaptive_3d_toolpath_with_cancel(&mesh, &si, &cutter, &params, &never_cancel)
-        .expect("toolpath should succeed");
+    let toolpath = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &si,
+        &cutter,
+        &params,
+        &never_cancel,
+        None,
+    )
+    .map(|out| out.toolpath)
+    .expect("toolpath should succeed");
 
     let (effective, offset_failure) = match boundary {
         Some(b) => effective_boundary_reported(b, ToolContainment::Inside, r),

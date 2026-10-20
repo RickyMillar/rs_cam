@@ -142,12 +142,6 @@ impl BudgetGuard {
         &self.flag
     }
 
-    /// A second owner of the flag.
-    #[must_use]
-    pub fn shared_flag(&self) -> Arc<AtomicBool> {
-        Arc::clone(&self.flag)
-    }
-
     /// The budget this guard enforces.
     #[must_use]
     pub fn budget(&self) -> MemoryBudget {

@@ -46,9 +46,6 @@ pub const STOCK_SOLID_FACE: [f32; 3] = [0.65, 0.50, 0.30];
 /// `app/gpu_upload.rs` `solid_sim_colors`).
 pub const SIM_STOCK_WOOD: [f32; 3] = [0.65, 0.45, 0.25];
 
-/// Collision point marker.
-pub const COLLISION_POINT: [f32; 3] = [1.0, 0.0, 0.0];
-
 // ── Obstacles (K2) ──────────────────────────────────────────────────────
 //
 // The line pipeline has no alpha, so a "faint" line is a darker colour.

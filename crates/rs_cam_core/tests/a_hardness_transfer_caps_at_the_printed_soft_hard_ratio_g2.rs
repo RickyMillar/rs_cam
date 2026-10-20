@@ -79,7 +79,7 @@ use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsSupport, SpindleStrategy};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, SheetGoodKind, WoodSpecies};
-use rs_cam_core::tool_load::chipload_envelope_for_toolpath;
+use rs_cam_core::tool_load::chip_target_for_toolpath;
 
 const TOL: f64 = 1e-12;
 
@@ -258,13 +258,14 @@ fn assert_one_capped_band(op: OperationType, tool: &ToolConfig, band: (f64, f64)
 
     // The modulator's and the advisor's door, with no simulation (no depth
     // de-rate).
-    let range = chipload_envelope_for_toolpath(
+    let range = chip_target_for_toolpath(
         &material,
         tool,
         &OperationConfig::new_default(op),
         ToolpathId(0),
         None,
     )
+    .and_then(|target| target.band_range())
     .unwrap_or_else(|| panic!("{label}: the door gave no band"));
     assert!((range.start - band.0).abs() < 1e-11, "{label}: {range:?}");
     assert!((range.end - band.1).abs() < 1e-11, "{label}: {range:?}");

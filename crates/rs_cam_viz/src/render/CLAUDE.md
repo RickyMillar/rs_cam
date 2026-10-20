@@ -9,7 +9,7 @@ Every viewport pipeline. The entry point is `render::mod`, called from `app/view
 - `toolpath_render.rs`, `sim_render.rs`, `stock_render.rs`, `mesh_render.rs` — the four content pipelines.
 - `grid_render.rs`, `fixture_render.rs`, `height_planes.rs` — the reference
   geometry.
-- `colors.rs` — every colour constant (`COLLISION_POINT` too). A selection state colour is its UI token
+- `colors.rs` — every colour constant. A selection state colour is its UI token
   / 255 (`token_rgb`); `DRAWING_NEUTRAL` colours a drawing that no drawn toolpath reads.
 - `mod.rs` `hover_lines` (the pick hover ring) and `tab_lines` (the tab editor marks, `TAB_AUTO`, `TAB_HAND`,
   `TAB_DRAGGED`) — each its own buffer, drawn after the drawing. The tab marks draw with the curves off too.

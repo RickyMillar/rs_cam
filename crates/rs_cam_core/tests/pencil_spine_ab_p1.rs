@@ -41,15 +41,14 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use rs_cam_core::finish::rest_detector::{RestDetection, RestReferenceChoice, detect_rest};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::surface::flow_accum::{
     FILL_EPSILON_MM, FlowField, d8_accumulation, d8_receivers, priority_flood_epsilon,
     resolve_flats,
 };
-use rs_cam_core::surface::rest_field::{
-    RestFieldParams, RestFieldResult, RestGrid, RestReference, detect_rest_valleys,
-};
+use rs_cam_core::surface::rest_field::{RestFieldParams, RestGrid};
 use rs_cam_core::tool::{BallEndmill, MillingCutter};
 
 mod common;
@@ -306,7 +305,7 @@ fn report_from_polylines(
 
 /// Extractor A: the shipped detector's own output, read into the shared shape.
 fn report_extractor_a(
-    result: &RestFieldResult,
+    result: &RestDetection,
     grid: &RestGrid,
     min_cut_length_mm: f64,
     pencil_diam_mm: f64,
@@ -625,17 +624,21 @@ fn run_ab(fixture: &str, mesh: &TriangleMesh, cell_mm: f64, truth_xy: Option<&[(
         min_cut_length: 2.0,
         region_margin_mm: 0.5,
     };
-    let result = detect_rest_valleys(
+    let result = detect_rest(
         mesh,
         &index,
         &pencil,
-        RestReference::Cutter {
-            tool: &reference as &dyn MillingCutter,
-            is_surface_probe: false,
+        RestReferenceChoice {
+            stock: None,
+            tool: Some(&reference as &dyn MillingCutter),
         },
         &params,
     );
-    let grid = &result.rest_grid;
+    let grid = result
+        .produced
+        .rest_grid
+        .as_deref()
+        .expect("the rest stage fills the rest grid");
 
     // A2: T = area of a disc one pencil (tip) DIAMETER across, plus the
     // sensitivity sweep {0.5T, T, 2T}.

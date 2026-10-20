@@ -56,7 +56,7 @@
 
 use rs_cam_core::adaptive3d::{
     Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
-    EntryStyle3d, RegionOrdering, adaptive_3d_toolpath_with_cancel,
+    EntryStyle3d, RegionOrdering,
 };
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere};
 use rs_cam_core::polygon::Polygon2;
@@ -154,8 +154,16 @@ fn generate(case: &str) -> Toolpath {
     let (mesh, index) = hemisphere();
     let cutter = FlatEndmill::new(TOOL_RADIUS * 2.0, 30.0);
     let params = case_params(case);
-    adaptive_3d_toolpath_with_cancel(&mesh, &index, &cutter, &params, &(|| false))
-        .expect("generation must not be cancelled")
+    rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &cutter,
+        &params,
+        &(|| false),
+        None,
+    )
+    .map(|out| out.toolpath)
+    .expect("generation must not be cancelled")
 }
 
 /// One move, one line, every number as its raw bit pattern. A hash would be

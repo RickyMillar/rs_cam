@@ -390,3 +390,43 @@ pub fn pick_faces_in(
     }
     Ok(())
 }
+
+// ── Generation ──────────────────────────────────────────────────────────
+
+/// Generate every enabled toolpath of `session` in plan order, and return
+/// the failures.
+///
+/// The walk is `session::generation_plan::plan` over the whole project, the
+/// same plan the GUI, the MCP server and the CLI drive. A `Step::Simulate`
+/// runs the session simulation at the project cell
+/// (`ProjectSession::simulation_resolution_mm`), so a rest toolpath reads a
+/// prior stock at the cell its snapshot check asks for. A failed step does not stop the
+/// walk: the caller decides whether a failure is red.
+pub fn generate_all_in_plan_order(
+    session: &mut ProjectSession,
+    cancel: &AtomicBool,
+) -> Vec<(ToolpathId, rs_cam_core::session::SessionError)> {
+    use rs_cam_core::session::SimulationOptions;
+    use rs_cam_core::session::generation_plan::{Scope, Step, plan};
+
+    let mut failures = Vec::new();
+    for step in plan(session, Scope::Project) {
+        match step {
+            Step::Simulate { upto, .. } => {
+                let options = SimulationOptions {
+                    resolution: session.simulation_resolution_mm(),
+                    ..SimulationOptions::default()
+                };
+                if let Err(error) = session.run_simulation(&options, cancel) {
+                    failures.push((upto, error));
+                }
+            }
+            Step::Generate { toolpath, index } => {
+                if let Err(error) = session.generate_toolpath(index, cancel) {
+                    failures.push((toolpath, error));
+                }
+            }
+        }
+    }
+    failures
+}

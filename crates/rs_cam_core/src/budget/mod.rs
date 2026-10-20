@@ -82,15 +82,6 @@ impl MemoryBudget {
         Self::with_limit(limit as u64)
     }
 
-    /// `fraction` of the system memory. When the system memory is unknown,
-    /// the budget has no limit.
-    #[must_use]
-    pub fn from_system_fraction(fraction: f64) -> Self {
-        system_memory_bytes().map_or(Self::UNLIMITED, |total| {
-            Self::from_fraction_of(total, fraction)
-        })
-    }
-
     /// The budget for a configured limit. [`MemoryLimit::Default`] reads
     /// [`DEFAULT_SYSTEM_FRACTION`] of the system memory (half). When the
     /// platform gives no system memory, the default has no limit.

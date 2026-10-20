@@ -20,13 +20,14 @@
     clippy::print_stdout
 )]
 
+use rs_cam_core::finish::rest_detector::{RestDetection, RestReferenceChoice, detect_rest};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::surface::reach::{
     LocalValley, RoutingVerdict, ValleySide, coverage_cap_passes, offset_passes_per_side, route,
     solve_reach,
 };
-use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
+use rs_cam_core::surface::rest_field::RestFieldParams;
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 
 /// The tool this project finishes with: Ø1 tip, 7° half-angle, Ø6 shank.
@@ -127,13 +128,13 @@ fn every_centreline_carries_a_per_point_cross_section() {
     let index = SpatialIndex::build(&mesh, 4.0);
     let cutter = wanaka_taper();
     let refc = reference();
-    let rf = detect_rest_valleys(
+    let rf = detect_rest(
         &mesh,
         &index,
         &cutter,
-        RestReference::Cutter {
-            tool: &refc as &dyn MillingCutter,
-            is_surface_probe: false,
+        RestReferenceChoice {
+            stock: None,
+            tool: Some(&refc as &dyn MillingCutter),
         },
         &params(&cutter),
     );
@@ -182,13 +183,13 @@ fn envelope_cusp_and_reach_give_three_different_answers_on_measured_geometry() {
     let index = SpatialIndex::build(&mesh, 4.0);
     let cutter = wanaka_taper();
     let refc = reference();
-    let rf = detect_rest_valleys(
+    let rf = detect_rest(
         &mesh,
         &index,
         &cutter,
-        RestReference::Cutter {
-            tool: &refc as &dyn MillingCutter,
-            is_surface_probe: false,
+        RestReferenceChoice {
+            stock: None,
+            tool: Some(&refc as &dyn MillingCutter),
         },
         &params(&cutter),
     );
@@ -268,13 +269,13 @@ fn routing_dials_do_not_move_the_envelope_derived_geometry() {
     let cutter = wanaka_taper();
     let refc = reference();
     let run = |num_offset_passes_cap: usize| {
-        detect_rest_valleys(
+        detect_rest(
             &mesh,
             &index,
             &cutter,
-            RestReference::Cutter {
-                tool: &refc as &dyn MillingCutter,
-                is_surface_probe: false,
+            RestReferenceChoice {
+                stock: None,
+                tool: Some(&refc as &dyn MillingCutter),
             },
             &RestFieldParams {
                 num_offset_passes_cap,
@@ -284,17 +285,31 @@ fn routing_dials_do_not_move_the_envelope_derived_geometry() {
     };
     let a = run(0);
     let b = run(64);
+    let grid = |r: &RestDetection| {
+        r.produced
+            .rest_grid
+            .clone()
+            .expect("the rest stage fills the rest grid")
+    };
+    let regions = |r: &RestDetection| {
+        r.produced
+            .rest_regions
+            .clone()
+            .expect("the rest stage fills the rest regions")
+    };
+    let (grid_a, grid_b) = (grid(&a), grid(&b));
+    let (regions_a, regions_b) = (regions(&a), regions(&b));
     assert_eq!(
-        (a.rest_grid.grid.nx, a.rest_grid.grid.ny),
-        (b.rest_grid.grid.nx, b.rest_grid.grid.ny),
+        (grid_a.grid.nx, grid_a.grid.ny),
+        (grid_b.grid.nx, grid_b.grid.ny),
         "grid extent moved with the routing dials"
     );
     assert_eq!(
-        a.region_polygons.len(),
-        b.region_polygons.len(),
+        regions_a.len(),
+        regions_b.len(),
         "region-polygon reach-back moved with the routing dials"
     );
-    for (pa, pb) in a.region_polygons.iter().zip(b.region_polygons.iter()) {
+    for (pa, pb) in regions_a.iter().zip(regions_b.iter()) {
         assert_eq!(
             pa.exterior.len(),
             pb.exterior.len(),
@@ -302,7 +317,7 @@ fn routing_dials_do_not_move_the_envelope_derived_geometry() {
         );
     }
     assert!(
-        !a.region_polygons.is_empty(),
+        !regions_a.is_empty(),
         "fixture produced no region polygons — the assertion above is vacuous"
     );
 }
@@ -325,30 +340,26 @@ fn a_six_millimetre_reference_is_not_the_same_measurement_as_the_surface_probe()
     let index = SpatialIndex::build(&mesh, 4.0);
     let cutter = wanaka_taper();
     let nominal = BallEndmill::new(6.0, 25.0);
-    let probe = BallEndmill::new(0.1, 10.0);
 
-    let with_nominal = detect_rest_valleys(
+    let with_nominal = detect_rest(
         &mesh,
         &index,
         &cutter,
-        RestReference::Cutter {
-            tool: &nominal as &dyn MillingCutter,
-            is_surface_probe: false,
+        RestReferenceChoice {
+            stock: None,
+            tool: Some(&nominal as &dyn MillingCutter),
         },
         &params(&cutter),
     );
-    let with_probe = detect_rest_valleys(
+    // No tool tier: the stage's own bare-surface probe (Ø0.1 mm ball).
+    let with_probe = detect_rest(
         &mesh,
         &index,
         &cutter,
-        RestReference::Cutter {
-            tool: &probe as &dyn MillingCutter,
-            is_surface_probe: true,
-        },
+        RestReferenceChoice::default(),
         &params(&cutter),
     );
-    let vol =
-        |r: &rs_cam_core::surface::rest_field::RestFieldResult| r.report.total_rest_volume_mm3;
+    let vol = |r: &RestDetection| r.report.total_rest_volume_mm3;
     println!(
         "Ø6 nominal reference: {} centrelines, {:.2} mm³ rest; \
          self-referenced probe: {} centrelines, {:.2} mm³ rest",

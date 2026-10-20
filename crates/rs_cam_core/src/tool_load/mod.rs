@@ -251,29 +251,6 @@ pub fn modulation_bands_for_session(
         .collect()
 }
 
-/// The DOC-derated advance-per-tooth envelope of ONE toolpath: a band
-/// only. A thin wrapper over [`chip_target_for_toolpath`].
-///
-/// The per-toolpath half of [`chipload_envelopes_for_session`]. It takes
-/// the toolpath's STORED operation and the cutter that toolpath is bound
-/// to, so a caller that holds no session — the strategy advisor's `Job`
-/// step (ii) — reads the same row the session-wide resolver would have
-/// written for it.
-///
-/// `None` means NOT AVAILABLE: a custom material publishes no vendor row,
-/// the resolver matched no row for this tool and pass role, or the row
-/// prints one value (a point, A2). A `Range` does not express a point;
-/// read [`chip_target_for_toolpath`] for it.
-pub fn chipload_envelope_for_toolpath(
-    material: &Material,
-    tool_cfg: &crate::compute::tool_config::ToolConfig,
-    operation: &crate::compute::catalog::OperationConfig,
-    toolpath_id: ToolpathId,
-    sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
-) -> Option<std::ops::Range<f64>> {
-    chip_target_for_toolpath(material, tool_cfg, operation, toolpath_id, sim_trace)?.band_range()
-}
-
 /// The DOC-derated chipload target of ONE toolpath (A2, point mode), and
 /// the only place the target is derived.
 ///

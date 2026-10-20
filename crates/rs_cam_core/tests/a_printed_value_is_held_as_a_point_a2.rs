@@ -13,7 +13,7 @@
 //!   `VendorLutPointPreset`: hard above the point, a burn ADVISORY below it,
 //!   never `Exceeds(Low)` (decision Q1 (a));
 //! - the envelope resolver gives `ChipTarget::Point`; the band-only envelope
-//!   (`chipload_envelope_for_toolpath`, the viewport) gives `None` (Q3); the
+//!   (`ChipTarget::band_range`, the viewport) gives `None` (Q3); the
 //!   modulator reads `ChipTarget::modulation_band()`, which is a point with no
 //!   floor.
 //!
@@ -76,7 +76,6 @@ use rs_cam_core::stock::simulation_cut::{
 use rs_cam_core::tool_load::verdict::{ChipBoundsSource, ChiploadVerdict};
 use rs_cam_core::tool_load::{
     ChipTarget, GateEnv, ToleranceBands, ToolpathLoadContext, chip_target_for_toolpath,
-    chipload_envelope_for_toolpath,
 };
 
 const TOL: f64 = 1e-9;
@@ -501,13 +500,14 @@ fn assert_the_cell_is_held_as_a_point(cell: &PointCell) {
     }
 
     // The band-only envelope (the viewport, Q3) carries no point.
-    let envelope = chipload_envelope_for_toolpath(
+    let envelope = chip_target_for_toolpath(
         &material,
         &cell.tool,
         &operation,
         ToolpathId(0),
         Some(&trace),
-    );
+    )
+    .and_then(|target| target.band_range());
     assert!(
         envelope.is_none(),
         "{label}: the band-only envelope must not carry a point; got {envelope:?}"

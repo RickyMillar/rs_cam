@@ -71,6 +71,8 @@
     clippy::print_stdout
 )]
 
+mod common;
+
 use std::f64::consts::TAU;
 
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
@@ -690,14 +692,14 @@ fn verdict_delta_probe_on_the_committed_fixture() {
             rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
         modulation_feed_scale: 1.0,
     };
-    let _ = session.generate_all(&[], &cancel);
+    let _ = common::session::generate_all_in_plan_order(&mut session, &cancel);
     session
         .run_simulation(&opts, &cancel)
         .expect("first simulation completes");
     // `FromRemainingStock` ops need the simulated upstream stock, so
     // regenerate after the first sim and re-simulate (same shape as the M1
     // Rivers probe).
-    let _ = session.generate_all(&[], &cancel);
+    let _ = common::session::generate_all_in_plan_order(&mut session, &cancel);
     session
         .run_simulation(&opts, &cancel)
         .expect("second simulation completes");

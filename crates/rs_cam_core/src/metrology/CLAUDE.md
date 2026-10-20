@@ -1,7 +1,9 @@
 # `metrology/` — the finishing programme's rulers
 
 The shared instruments that measure a finished surface. The entry point is
-`metrology::mod`, which re-exports each ruler.
+`metrology::mod`, which re-exports each ruler. No product path reads one, so
+`lib.rs` gates the module behind `test-support` (F085); a reader needs that
+feature and a `required-features` row in `Cargo.toml`.
 
 ## Files
 
@@ -27,10 +29,10 @@ The shared instruments that measure a finished surface. The entry point is
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --test bikeseat_gate_d1`
-- `cargo test -p rs_cam_core -q --test zone_coherence_census`
-- `cargo test -p rs_cam_core -q --test union_coverage_m1`
-- `cargo test -p rs_cam_core -q --test wanaka_curvature_anisotropy`
+- `cargo test -p rs_cam_core -q --features test-support --test bikeseat_gate_d1`
+- `cargo test -p rs_cam_core -q --features test-support --test zone_coherence_census`
+- `cargo test -p rs_cam_core -q --features test-support --test union_coverage_m1`
+- `cargo test -p rs_cam_core -q --features test-support --test wanaka_curvature_anisotropy`
 - `cargo test -p rs_cam_core -q --test spacing_prize_split_f1`
 
 ## Do not

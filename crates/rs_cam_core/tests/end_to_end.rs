@@ -556,7 +556,7 @@ fn tridexel_simulation_two_toolpaths_carry_forward() {
 fn test_adaptive3d_rapids_lift_before_xy_traverse() {
     use rs_cam_core::adaptive3d::{
         Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams,
-        ClearingStrategy3d, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
+        ClearingStrategy3d, EntryStyle3d, RegionOrdering,
     };
 
     let stl_path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -612,7 +612,16 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
         z_blend: true,
     };
 
-    let tp = adaptive_3d_toolpath(&mesh, &index, &tool, &params);
+    let tp = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &tool,
+        &params,
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
     assert!(!tp.moves.is_empty(), "adaptive3d should produce moves");
 
     // Walk the move list and check every Rapid that changes XY relative

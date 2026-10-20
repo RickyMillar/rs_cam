@@ -143,8 +143,9 @@ use rs_cam_core::finish::pencil::{
     PencilDetector, PencilParams, PencilRuntimeEvent, PencilStock,
     pencil_toolpath_structured_annotated_with_cancel,
 };
+use rs_cam_core::finish::rest_detector::{RestReferenceChoice, detect_rest};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
+use rs_cam_core::surface::rest_field::RestFieldParams;
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 
 mod common;
@@ -1727,13 +1728,13 @@ fn probe_ball_control_routing_is_invariant_to_the_swap() {
     let mesh = grooved_block(1.5, 70.0, 1.2);
     let index = SpatialIndex::build(&mesh, 4.0);
     let cutter = ball_control();
-    let rf = detect_rest_valleys(
+    let rf = detect_rest(
         &mesh,
         &index,
         &cutter,
-        RestReference::Cutter {
-            tool: &BallEndmill::new(12.0, 25.0) as &dyn MillingCutter,
-            is_surface_probe: false,
+        RestReferenceChoice {
+            stock: None,
+            tool: Some(&BallEndmill::new(12.0, 25.0) as &dyn MillingCutter),
         },
         &RestFieldParams {
             cell_mm: 0.3,

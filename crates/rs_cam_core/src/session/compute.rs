@@ -2595,42 +2595,6 @@ impl ProjectSession {
         Ok(&self.results[&index])
     }
 
-    /// Generate all enabled toolpaths, skipping those whose IDs are in `skip`.
-    #[instrument(skip(self, skip_ids, cancel))]
-    pub fn generate_all(
-        &mut self,
-        skip_ids: &[ToolpathId],
-        cancel: &AtomicBool,
-    ) -> Result<(), SessionError> {
-        // Collect info needed for skip/logging before mutable borrow
-        let tp_info: Vec<(usize, ToolpathId, String, bool)> = self
-            .toolpath_configs
-            .iter()
-            .enumerate()
-            .map(|(idx, tc)| (idx, tc.id, tc.name.clone(), tc.enabled))
-            .collect();
-
-        for (idx, tp_id, tp_name, enabled) in &tp_info {
-            if !enabled {
-                continue;
-            }
-            if skip_ids.contains(tp_id) {
-                tracing::info!(id = tp_id.0, name = %tp_name, "Skipping toolpath (skip list)");
-                continue;
-            }
-            match self.generate_toolpath(*idx, cancel) {
-                Ok(_) => {}
-                Err(SessionError::MissingGeometry(msg)) => {
-                    tracing::warn!(id = tp_id.0, name = %tp_name, reason = %msg, "Skipping toolpath");
-                }
-                Err(e) => {
-                    tracing::error!(id = tp_id.0, name = %tp_name, error = %e, "Toolpath failed");
-                }
-            }
-        }
-        Ok(())
-    }
-
     // ── Analysis ───────────────────────────────────────────────────
 }
 

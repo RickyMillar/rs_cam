@@ -48,6 +48,9 @@ pub mod maps;
 pub mod material;
 pub mod measurement;
 pub mod mesh;
+// The measurement instruments: only the harnesses read them, so the module
+// sits behind `test-support` (F085).
+#[cfg(feature = "test-support")]
 pub mod metrology;
 pub mod ops;
 pub mod polygon;

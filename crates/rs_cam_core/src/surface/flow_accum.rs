@@ -24,7 +24,9 @@
 //! are therefore bounded by construction; the `#[allow(clippy::indexing_slicing)]`
 //! attributes carry a SAFETY note for the specific invariant.
 
+#[cfg(feature = "test-support")]
 use std::cmp::Reverse;
+#[cfg(feature = "test-support")]
 use std::collections::{BinaryHeap, VecDeque};
 
 /// The strict rise the priority flood adds inside a filled flat — the
@@ -99,16 +101,20 @@ pub fn neighbour(field: &FlowField, i: usize, k: usize) -> Option<(usize, f64)> 
 
 /// Ordering shim: `f64` has no `Ord`, and the priority flood needs a min-heap.
 #[derive(PartialEq)]
+#[cfg(feature = "test-support")]
 struct HeapItem(f64, usize);
 
+#[cfg(feature = "test-support")]
 impl Eq for HeapItem {}
 
+#[cfg(feature = "test-support")]
 impl Ord for HeapItem {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.0.total_cmp(&other.0).then(self.1.cmp(&other.1))
     }
 }
 
+#[cfg(feature = "test-support")]
 impl PartialOrd for HeapItem {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -129,9 +135,11 @@ impl PartialOrd for HeapItem {
 /// bounded.
 ///
 /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
-/// only callers. No production path reads it.
+/// only callers. No production path reads it, so it sits
+/// behind `test-support` (F085).
 #[allow(clippy::indexing_slicing)]
 #[must_use]
+#[cfg(feature = "test-support")]
 pub fn priority_flood_epsilon(field: &FlowField) -> Vec<f64> {
     let n = field.len();
     let mut out = vec![f64::NAN; n];
@@ -197,9 +205,11 @@ pub fn priority_flood_epsilon(field: &FlowField) -> Vec<f64> {
 /// ids in `0..n`; `neighbour` returns only in-range cells.
 ///
 /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
-/// only callers. No production path reads it.
+/// only callers. No production path reads it, so it sits
+/// behind `test-support` (F085).
 #[allow(clippy::indexing_slicing)]
 #[must_use]
+#[cfg(feature = "test-support")]
 pub fn resolve_flats(field: &FlowField, filled: &[f64]) -> (Vec<f64>, usize, usize, usize) {
     let n = field.len();
     let drains_off_board = |i: usize| -> bool {
@@ -379,9 +389,11 @@ pub fn d8_receivers(field: &FlowField, filled: &[f64]) -> Vec<Option<u32>> {
 /// `len == n`; each receiver id came from [`d8_receivers`] and is in range.
 ///
 /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
-/// only callers. No production path reads it.
+/// only callers. No production path reads it, so it sits
+/// behind `test-support` (F085).
 #[allow(clippy::indexing_slicing)]
 #[must_use]
+#[cfg(feature = "test-support")]
 pub fn d8_accumulation(field: &FlowField, filled: &[f64], receivers: &[Option<u32>]) -> Vec<f64> {
     let n = field.len();
     let mut acc = vec![0.0f64; n];

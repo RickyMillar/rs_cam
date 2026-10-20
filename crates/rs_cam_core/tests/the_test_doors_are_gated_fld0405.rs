@@ -1,4 +1,4 @@
-//! FLD-04 + FLD-05 — the `maps/` and `surface/` test doors stay behind the
+//! FLD-04 + FLD-05 + F085 — the test doors of this crate stay behind the
 //! `test-support` feature, and no product file reaches them.
 //!
 //! # What this file guards
@@ -15,6 +15,25 @@
 //! - `maps::tier_map::reset_drop_call_count`,
 //! - `maps::tier_map::TierMap::label_at`,
 //! - `surface::slope::GridZ::is_covered`.
+//!
+//! F085 (2026-10-20) added seventeen more, in other folders:
+//!
+//! - `pub mod metrology;` in `lib.rs` — the measurement instruments,
+//! - the F-029 planner probe `debug_adaptive_3d_segments_for_f029_probe`
+//!   (its declaration and its re-export),
+//! - `dressup::entry_audit::fed_moves_outside_region` and its
+//!   `OutsideRegionChord`,
+//! - `polygon::Polygon2::with_holes_closed`,
+//! - `stock::dexel_mesh::dexel_stock_to_top_surface_mesh`,
+//! - `export::fingerprint::{render_mesh_composite, CompositePanel,
+//!   composite_panel_layout}`,
+//! - `surface::flow_accum::{priority_flood_epsilon, resolve_flats,
+//!   d8_accumulation}`,
+//! - `maps::tier_map::drop_call_count`,
+//! - `session::multitool` `planned_tier_boundary_polys`,
+//! - `mesh::make_test_hemisphere` and `mesh::make_test_flat`. These two have
+//!   unit-test callers in this crate, so their gate is
+//!   `#[cfg(any(test, feature = "test-support"))]`. Arm 1 accepts both forms.
 //!
 //! No product path reads any of them. Each one is bound by an integration-test
 //! crate, so `#[cfg(test)]` cannot hide them: FLD-04 + FLD-05 puts them behind
@@ -35,12 +54,11 @@
 //!
 //! # The two arms
 //!
-//! 1. Every one of the twenty-four declarations carries
-//!    `#[cfg(feature = "test-support")]` in the attribute run directly above
-//!    it. A declaration that loses the attribute puts the door back into the
+//! 1. Every one of the forty-one declarations carries one of [`GATES`] in
+//!    the attribute run directly above it. A declaration that loses the attribute puts the door back into the
 //!    default public API of the crate.
-//! 2. No `.rs` file under `crates/rs_cam_core/src`, outside the seven files
-//!    that declare them, names one of the ten needle identifiers in code. A
+//! 2. No `.rs` file under `crates/rs_cam_core/src`, outside the files that
+//!    declare them ([`OWNERS`]), names one of the [`NEEDLES`] in code. A
 //!    comment line may name them; prose costs no build.
 //!
 //! # Non-vacuity
@@ -59,6 +77,11 @@
 //!
 //! That is the same trade `the_research_arms_are_feature_gated_fin01.rs`
 //! makes: a false red that a reader resolves in one line beats a silent gap.
+//!
+//! `make_test_hemisphere` and `make_test_flat` are NOT needles either. About
+//! twenty-five `src/` files call them from `#[cfg(test)]` modules, and this
+//! arm does not see a `cfg(test)` boundary. Arm 1 pins both declarations,
+//! and the default build fails to compile if a product file calls one.
 //!
 //! `clear` is NOT a needle, and cannot be: `Vec::clear`, `String::clear` and
 //! every other `clear()` in the crate would read as a hit, and the arm would
@@ -80,6 +103,12 @@
 //! default features, because `MeshMemo::entry_count` under it carries the same
 //! gate — a second, stricter guard on three of the twelve.
 //!
+//! F085 was checked the same way: the `#[cfg]` line above
+//! `Polygon2::with_holes_closed` was deleted and arm 1 named
+//! `polygon.rs:167`; a code line `const TEETH: &str = "resolve_flats";`
+//! appended to `budget/mod.rs` made arm 2 name `budget/mod.rs:293`. Both
+//! files were restored.
+//!
 //! The teeth check for arm 2 ran under `--features test-support`, and it has
 //! to: with the default features the product reader stops the crate compiling
 //! before a test can run. Arm 1 goes red either way, because removing a
@@ -94,8 +123,12 @@
 
 use std::path::{Path, PathBuf};
 
-/// The attribute every test door carries.
-const GATE: &str = "#[cfg(feature = \"test-support\")]";
+/// The attributes a test door may carry. The second form is for a door that
+/// a `#[cfg(test)]` module of this crate also calls.
+const GATES: &[&str] = &[
+    "#[cfg(feature = \"test-support\")]",
+    "#[cfg(any(test, feature = \"test-support\"))]",
+];
 
 /// One gated declaration: the file under `src/`, and the declaration line as
 /// it appears there, trimmed.
@@ -202,6 +235,75 @@ const DOORS: &[Door] = &[
         file: "maps/tier_map_cache.rs",
         declaration: "pub fn clear() {",
     },
+    // ── F085 ──
+    Door {
+        file: "lib.rs",
+        declaration: "pub mod metrology;",
+    },
+    Door {
+        file: "adaptive3d/mod.rs",
+        declaration: "pub use path::debug_adaptive_3d_segments_for_f029_probe;",
+    },
+    Door {
+        file: "adaptive3d/path.rs",
+        declaration: "pub fn debug_adaptive_3d_segments_for_f029_probe(",
+    },
+    Door {
+        file: "dressup/entry_audit.rs",
+        declaration: "pub struct OutsideRegionChord {",
+    },
+    Door {
+        file: "dressup/entry_audit.rs",
+        declaration: "pub fn fed_moves_outside_region(",
+    },
+    Door {
+        file: "polygon.rs",
+        declaration: "pub fn with_holes_closed(exterior: Vec<P2>, holes: Vec<Vec<P2>>, closed: bool) -> Self {",
+    },
+    Door {
+        file: "stock/dexel_mesh.rs",
+        declaration: "pub fn dexel_stock_to_top_surface_mesh(stock: &TriDexelStock) -> StockMesh {",
+    },
+    Door {
+        file: "export/fingerprint.rs",
+        declaration: "pub fn render_mesh_composite(",
+    },
+    Door {
+        file: "export/fingerprint.rs",
+        declaration: "pub struct CompositePanel {",
+    },
+    Door {
+        file: "export/fingerprint.rs",
+        declaration: "pub fn composite_panel_layout(width: u32, height: u32) -> Vec<CompositePanel> {",
+    },
+    Door {
+        file: "surface/flow_accum.rs",
+        declaration: "pub fn priority_flood_epsilon(field: &FlowField) -> Vec<f64> {",
+    },
+    Door {
+        file: "surface/flow_accum.rs",
+        declaration: "pub fn resolve_flats(field: &FlowField, filled: &[f64]) -> (Vec<f64>, usize, usize, usize) {",
+    },
+    Door {
+        file: "surface/flow_accum.rs",
+        declaration: "pub fn d8_accumulation(field: &FlowField, filled: &[f64], receivers: &[Option<u32>]) -> Vec<f64> {",
+    },
+    Door {
+        file: "maps/tier_map.rs",
+        declaration: "pub fn drop_call_count() -> u64 {",
+    },
+    Door {
+        file: "session/multitool.rs",
+        declaration: "pub fn planned_tier_boundary_polys(",
+    },
+    Door {
+        file: "mesh.rs",
+        declaration: "pub fn make_test_hemisphere(radius: f64, divisions: usize) -> TriangleMesh {",
+    },
+    Door {
+        file: "mesh.rs",
+        declaration: "pub fn make_test_flat(size: f64) -> TriangleMesh {",
+    },
 ];
 
 /// The identifiers arm 2 looks for.
@@ -218,10 +320,26 @@ const NEEDLES: &[&str] = &[
     "is_covered",
     "reset_stats",
     "cache_len",
+    // F085.
+    "metrology",
+    "debug_adaptive_3d_segments_for_f029_probe",
+    "fed_moves_outside_region",
+    "OutsideRegionChord",
+    "with_holes_closed",
+    "dexel_stock_to_top_surface_mesh",
+    "render_mesh_composite",
+    "CompositePanel",
+    "composite_panel_layout",
+    "priority_flood_epsilon",
+    "resolve_flats",
+    "d8_accumulation",
+    "drop_call_count",
+    "planned_tier_boundary_polys",
 ];
 
-/// The files that declare the twelve. Arm 2 skips them and measures its own
-/// matcher on them.
+/// The files that declare the doors. Arm 2 skips them and measures its own
+/// matcher on them. The seven `metrology/` files name `crate::metrology` in
+/// code, so they are owners too.
 const OWNERS: &[&str] = &[
     "maps/finish_surface_cache.rs",
     "maps/geom_cache.rs",
@@ -230,6 +348,23 @@ const OWNERS: &[&str] = &[
     "maps/tier_map.rs",
     "maps/tier_map_cache.rs",
     "surface/slope.rs",
+    // F085.
+    "lib.rs",
+    "adaptive3d/mod.rs",
+    "adaptive3d/path.rs",
+    "dressup/entry_audit.rs",
+    "polygon.rs",
+    "stock/dexel_mesh.rs",
+    "export/fingerprint.rs",
+    "surface/flow_accum.rs",
+    "session/multitool.rs",
+    "metrology/census.rs",
+    "metrology/costing.rs",
+    "metrology/floor.rs",
+    "metrology/mod.rs",
+    "metrology/monge.rs",
+    "metrology/spacing.rs",
+    "metrology/union_coverage.rs",
 ];
 
 /// The lowest number of files arm 2 must visit. `src/` held 314 `.rs` files on
@@ -240,7 +375,9 @@ const MIN_FILES_WALKED: usize = 250;
 /// identifiers is named at least once by its own declaration, the four
 /// cache-stats types are named again by the `stats()` return type, and
 /// `reset_stats` and `cache_len` are each declared four times, once per cache.
-const MIN_OWNER_HITS: usize = 20;
+/// F085 adds fourteen needles, and each one is named at least once by its own
+/// declaration: 20 + 14.
+const MIN_OWNER_HITS: usize = 34;
 
 /// This crate's `src` directory.
 fn src_root() -> PathBuf {
@@ -359,7 +496,7 @@ fn every_test_door_carries_the_feature_gate() {
             if !above.starts_with("#[") {
                 break;
             }
-            if above == GATE {
+            if GATES.contains(&above) {
                 gated = true;
             }
             index -= 1;
@@ -384,9 +521,9 @@ fn every_test_door_carries_the_feature_gate() {
     );
     assert!(
         ungated.is_empty(),
-        "FLD-04 + FLD-05: every `maps/` and `surface/` test door sits behind \
-         `{GATE}`. No product path reads them, and an ungated door puts a \
-         test seam back into the default public API of this crate. The eight \
+        "FLD-04 + FLD-05 + F085: every test door sits behind one of \
+         {GATES:?}. No product path reads them, and an ungated door puts a \
+         test seam back into the default public API of this crate. The \
          binding harnesses carry `required-features = [\"test-support\"]` in \
          `Cargo.toml`. I read {} ungated declaration(s):\n  {}",
         ungated.len(),

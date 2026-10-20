@@ -16,7 +16,7 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
-use rs_cam_core::machine::head::{ResolvedShoe, ShoeSetting};
+use rs_cam_core::machine::head::ShoeSetting;
 use rs_cam_core::session::{ProjectSession, ShoePlanRow};
 
 /// The shoe plan of the project, as the GUI reads it.
@@ -198,13 +198,6 @@ pub fn auto_text(view: &ShoePlanView, index: usize) -> String {
     }
 }
 
-/// The text of the resolved shoe of one row, for a surface that prints
-/// it: core's label, or "no shoe".
-#[must_use]
-pub fn resolved_text(resolved: ResolvedShoe) -> String {
-    resolved.label().unwrap_or_else(|| "no shoe".to_owned())
-}
-
 #[cfg(test)]
 #[allow(
     // SAFETY: test code; a failed lookup is a failed test.
@@ -216,6 +209,7 @@ pub fn resolved_text(resolved: ResolvedShoe) -> String {
 mod tests {
     use super::*;
     use rs_cam_core::ToolpathId;
+    use rs_cam_core::machine::head::ResolvedShoe;
 
     fn row(index: usize, tool: usize, run_start: bool, resolved: ResolvedShoe) -> ShoePlanRow {
         ShoePlanRow {

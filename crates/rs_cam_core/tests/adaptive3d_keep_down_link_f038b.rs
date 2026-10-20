@@ -64,7 +64,7 @@
 
 use rs_cam_core::adaptive3d::{
     Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
-    EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
+    EntryStyle3d, RegionOrdering,
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -264,11 +264,29 @@ fn stay_down_link_emitted_when_terrain_permits_f038b() {
     // enough (8 mm gap + half each peak = ~21 mm centre-to-centre on a
     // pass that spans the gap) for the keep-down link to engage.
     let params_on = make_params(tool.radius(), Some(50.0), true);
-    let tp_on = adaptive_3d_toolpath(&mesh, &index, &tool, &params_on);
+    let tp_on = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &tool,
+        &params_on,
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
 
     // Baseline: stay-down disabled (Some(0.0) ⇒ off).
     let params_off = make_params(tool.radius(), Some(0.0), true);
-    let tp_off = adaptive_3d_toolpath(&mesh, &index, &tool, &params_off);
+    let tp_off = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &tool,
+        &params_off,
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
 
     let entries_on = count_entry_plunges(&tp_on);
     let entries_off = count_entry_plunges(&tp_off);
@@ -328,7 +346,16 @@ fn stay_down_falls_back_to_retract_when_gap_has_high_peak_f038b() {
     // 0.5 mm the would-be link_z = bump_top + 0.5 = PEAK_Z + 10.5 >
     // safe_z. The guard must reject and emit retract.
     let params_on = make_params(tool.radius(), Some(50.0), true);
-    let tp_on = adaptive_3d_toolpath(&mesh, &index, &tool, &params_on);
+    let tp_on = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &tool,
+        &params_on,
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
 
     // Inspection: no Linking-tagged feed (Linear) should travel
     // straight across the bump XY at a Z below the bump top minus
@@ -417,13 +444,31 @@ fn stay_down_default_caps_at_eight_tool_diameters_f038b() {
 
     // Stay-down default = None ⇒ planner picks 8×diameter (48 mm).
     let params_default = make_params(tool.radius(), None, true);
-    let tp_default = adaptive_3d_toolpath(&mesh, &index, &tool, &params_default);
+    let tp_default = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &tool,
+        &params_default,
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
 
     // Also build the override-Some(150 mm) version. With a 58 mm gap
     // (peak edge to peak edge ~ 58 mm), 150 mm is well above the cap;
     // the planner should now emit a stay-down link.
     let params_override = make_params(tool.radius(), Some(150.0), true);
-    let tp_override = adaptive_3d_toolpath(&mesh, &index, &tool, &params_override);
+    let tp_override = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &tool,
+        &params_override,
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
 
     let entries_default = count_entry_plunges(&tp_default);
     let entries_override = count_entry_plunges(&tp_override);
@@ -524,16 +569,52 @@ fn stay_down_respects_cutter_cutting_length_f038b() {
     // every stay-down candidate (link_z lift > to.z + 0.5).
     let short_tool = FlatEndmill::new(6.0, 0.5);
     let params_short_on = make_params(short_tool.radius(), Some(50.0), false);
-    let tp_short_on = adaptive_3d_toolpath(&mesh, &index, &short_tool, &params_short_on);
+    let tp_short_on = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &short_tool,
+        &params_short_on,
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
     let params_short_off = make_params(short_tool.radius(), Some(0.0), false);
-    let tp_short_off = adaptive_3d_toolpath(&mesh, &index, &short_tool, &params_short_off);
+    let tp_short_off = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &short_tool,
+        &params_short_off,
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
 
     // Long cutter: 25 mm — the same fixture should permit stay-down.
     let long_tool = FlatEndmill::new(6.0, 25.0);
     let params_long_on = make_params(long_tool.radius(), Some(50.0), true);
-    let tp_long_on = adaptive_3d_toolpath(&mesh, &index, &long_tool, &params_long_on);
+    let tp_long_on = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &long_tool,
+        &params_long_on,
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
     let params_long_off = make_params(long_tool.radius(), Some(0.0), true);
-    let tp_long_off = adaptive_3d_toolpath(&mesh, &index, &long_tool, &params_long_off);
+    let tp_long_off = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &long_tool,
+        &params_long_off,
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
 
     let short_entries_on = count_entry_plunges(&tp_short_on);
     let short_entries_off = count_entry_plunges(&tp_short_off);

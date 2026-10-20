@@ -13,7 +13,7 @@ Every 3D finishing strategy and the unified planner. The entry point is
   detectors, chaining, emission. `crest_lines.rs`, `crease_paths.rs`, `classify_probe.rs`.
 - `steep_shallow.rs`, `horizontal_finish.rs`, `ramp_finish.rs`, `radial_finish.rs`, `spiral_finish*.rs`
   — single-strategy finishes. `surface_link.rs` — `relink_fragments`, `shape_under_ceiling`.
-- Research (`--features research`, `-- --ignored`): `conformal_spiral*`, `direction_field.rs`, `spiral_finish_compact.rs`.
+- Research (`--features research,test-support`, `-- --ignored`): `conformal_spiral*`, `direction_field.rs`, `spiral_finish_compact.rs`.
 
 ## Invariants
 

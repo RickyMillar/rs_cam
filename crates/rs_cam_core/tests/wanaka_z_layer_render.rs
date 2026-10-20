@@ -29,7 +29,7 @@ use std::path::Path;
 use rs_cam_core::{
     adaptive3d::{
         Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams,
-        ClearingStrategy3d, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath_annotated,
+        ClearingStrategy3d, EntryStyle3d, RegionOrdering,
     },
     mesh::{SpatialIndex, TriangleMesh},
     tool::{FlatEndmill, MillingCutter},
@@ -245,7 +245,23 @@ fn wanaka_back_rough_first_and_last_z_layers() {
 
     // ── Generate ───────────────────────────────────────────────────
     eprintln!("generating adaptive3d Back Rough...");
-    let (toolpath, annotations) = adaptive_3d_toolpath_annotated(&mesh, &si, &cutter, &params);
+    let (toolpath, annotations) = {
+        let out = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            &params,
+            &rs_cam_core::interrupt::NeverCancel,
+            None,
+        )
+        .expect("NeverCancel never cancels");
+        let labels: Vec<(usize, String)> = out
+            .annotations
+            .iter()
+            .map(|a| (a.move_index, a.event.label()))
+            .collect();
+        (out.toolpath, labels)
+    };
     eprintln!(
         "toolpath: {} moves, {} annotations",
         toolpath.moves.len(),

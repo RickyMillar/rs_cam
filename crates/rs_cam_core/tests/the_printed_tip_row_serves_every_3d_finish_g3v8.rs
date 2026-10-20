@@ -39,7 +39,7 @@ use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsSupport, SpindleStrategy};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
-use rs_cam_core::tool_load::chipload_envelope_for_toolpath;
+use rs_cam_core::tool_load::chip_target_for_toolpath;
 
 const TOL: f64 = 1e-12;
 
@@ -178,9 +178,9 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
 
         // The modulator's and the advisor's door (no simulation, so no
         // depth de-rate): the printed band.
-        let door =
-            chipload_envelope_for_toolpath(&material, &tool, &operation, ToolpathId(0), None)
-                .unwrap_or_else(|| panic!("{label}: the door gave no band"));
+        let door = chip_target_for_toolpath(&material, &tool, &operation, ToolpathId(0), None)
+            .and_then(|target| target.band_range())
+            .unwrap_or_else(|| panic!("{label}: the door gave no band"));
         assert!((door.start - lo).abs() < TOL, "{label}: {door:?}");
         assert!((door.end - hi).abs() < TOL, "{label}: {door:?}");
         checked += 1;

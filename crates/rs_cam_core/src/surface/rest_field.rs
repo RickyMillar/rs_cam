@@ -1029,7 +1029,11 @@ fn clearing_regions_for(
 /// - 5 — skeleton tracing to polylines, then graph cleanup.
 /// - 6 — route each polyline by coverage.
 /// - 7 — `clearing_regions_for`: the regions the routing handed over.
-pub fn detect_rest_valleys(
+///
+/// Crate-private (F047). The one door outside this crate is
+/// [`crate::finish::rest_detector::detect_rest`], which owns the reference
+/// rule.
+pub(crate) fn detect_rest_valleys(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     pencil: &dyn MillingCutter,

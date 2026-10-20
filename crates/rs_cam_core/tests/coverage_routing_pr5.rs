@@ -23,9 +23,10 @@ use rs_cam_core::finish::pencil::{
     PencilDetector, PencilParams, PencilRuntimeEvent, PencilStock,
     pencil_toolpath_structured_annotated_with_cancel,
 };
+use rs_cam_core::finish::rest_detector::{RestReferenceChoice, detect_rest};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
+use rs_cam_core::surface::rest_field::RestFieldParams;
 use rs_cam_core::tool::{BallEndmill, MillingCutter, TaperedBallEndmill};
 
 fn wanaka_taper() -> TaperedBallEndmill {
@@ -202,13 +203,13 @@ fn offset_passes_never_exceed_the_physical_count() {
     let index = SpatialIndex::build(&mesh, 4.0);
     let cutter = wanaka_taper();
     let refc = BallEndmill::new(12.0, 25.0);
-    let rf = detect_rest_valleys(
+    let rf = detect_rest(
         &mesh,
         &index,
         &cutter,
-        RestReference::Cutter {
-            tool: &refc as &dyn MillingCutter,
-            is_surface_probe: false,
+        RestReferenceChoice {
+            stock: None,
+            tool: Some(&refc as &dyn MillingCutter),
         },
         &RestFieldParams {
             cell_mm: 0.25,
@@ -337,13 +338,13 @@ fn a_pass_is_truncated_where_the_valley_pinches_not_dropped_wholesale() {
     let index = SpatialIndex::build(&mesh, 4.0);
     let cutter = wanaka_taper();
     let refc = BallEndmill::new(12.0, 25.0);
-    let rf = detect_rest_valleys(
+    let rf = detect_rest(
         &mesh,
         &index,
         &cutter,
-        RestReference::Cutter {
-            tool: &refc as &dyn MillingCutter,
-            is_surface_probe: false,
+        RestReferenceChoice {
+            stock: None,
+            tool: Some(&refc as &dyn MillingCutter),
         },
         &RestFieldParams {
             cell_mm: 0.25,

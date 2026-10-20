@@ -280,12 +280,6 @@ pub fn ray_top_material(ray: &DexelRay) -> Option<MaterialSlot> {
     ray.last().map(|s| s.material)
 }
 
-/// `true` when some segment of the ray is not the stock material.
-#[inline]
-pub fn ray_has_added_material(ray: &DexelRay) -> bool {
-    ray.iter().any(|s| !s.material.is_stock())
-}
-
 /// Total material length along this ray.
 pub fn ray_material_length(ray: &DexelRay) -> f32 {
     ray.iter().map(|s| s.length()).sum()

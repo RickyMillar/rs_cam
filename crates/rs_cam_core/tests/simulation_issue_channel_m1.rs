@@ -62,6 +62,8 @@
 // Deliberately does NOT `mod common;` — R2's wave is editing
 // `tests/common/` concurrently and this research instrument must not
 // couple its compile to that lane. The one helper it needed is inlined.
+mod common;
+
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -520,7 +522,7 @@ fn rivers_b4_probe_project_curve_on_remaining_stock() {
     }
 
     let cancel = AtomicBool::new(false);
-    let _ = session.generate_all(&[], &cancel);
+    let _ = common::session::generate_all_in_plan_order(&mut session, &cancel);
     // G-RESTRES: the project stores the ONE cell every simulation reads.
     let _ = session
         .apply(rs_cam_core::session::Command::SetSimulationResolution(
@@ -534,7 +536,7 @@ fn rivers_b4_probe_project_curve_on_remaining_stock() {
         .expect("simulation completes");
     // FromRemainingStock ops need the simulated upstream stock, so
     // regenerate after the first sim and re-simulate.
-    let _ = session.generate_all(&[], &cancel);
+    let _ = common::session::generate_all_in_plan_order(&mut session, &cancel);
     // G-RESTRES: the project stores the ONE cell every simulation reads.
     let _ = session
         .apply(rs_cam_core::session::Command::SetSimulationResolution(

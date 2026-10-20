@@ -30,7 +30,9 @@
 )]
 
 use rs_cam_core::geo::P3;
-use rs_cam_core::mesh::{TriangleMesh, make_test_hemisphere};
+use rs_cam_core::mesh::TriangleMesh;
+#[cfg(feature = "test-support")]
+use rs_cam_core::mesh::make_test_hemisphere;
 
 // ── Height fields ───────────────────────────────────────────────────────
 
@@ -465,6 +467,10 @@ pub fn non_manifold_fin(size: f64, height: f64) -> TriangleMesh {
 /// migration policy in `common/mod.rs` says a working sentry moves over
 /// only when it is being edited anyway. The vertex and triangle operand
 /// order below reproduces that copy exactly.
+///
+/// It reads the `make_test_hemisphere` test door, so it exists only under
+/// `test-support` (F085).
+#[cfg(feature = "test-support")]
 pub fn disconnected_hemispheres(
     centres: &[(f64, f64)],
     radius: f64,

@@ -13,7 +13,7 @@
 
 use rs_cam_core::adaptive3d::{
     Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
-    EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
+    EntryStyle3d, RegionOrdering,
 };
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
@@ -127,7 +127,16 @@ fn agent_search_axial_doc_diag() {
         z_blend: true,
     };
 
-    let tp = adaptive_3d_toolpath(&mesh, &index, &cutter, &params);
+    let tp = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &cutter,
+        &params,
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
     println!(
         "toolpath: {} moves, cutting {:.0}mm, rapid {:.0}mm",
         tp.moves.len(),

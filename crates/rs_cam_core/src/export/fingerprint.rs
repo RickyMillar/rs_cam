@@ -852,7 +852,9 @@ pub fn render_toolpath_composite_subject(
 ///
 /// **Test door.** The harness
 /// `crates/rs_cam_core/tests/composite_render_convention.rs` is the only
-/// caller. No production path reads it.
+/// caller. No production path reads it, so it sits
+/// behind `test-support` (F085).
+#[cfg(feature = "test-support")]
 pub fn render_mesh_composite(
     mesh: &crate::stock::stock_mesh::StockMesh,
     width: u32,
@@ -984,6 +986,7 @@ fn composite_layout(w: usize, h: usize) -> Option<CompositeLayout> {
 
 /// One panel of a composite, located in the output image.
 #[derive(Debug, Clone, Copy)]
+#[cfg(feature = "test-support")]
 pub struct CompositePanel {
     /// Where the camera is, in machine terms (+X table right, +Y away from
     /// the operator). Matches the caption drawn on the panel.
@@ -1005,7 +1008,9 @@ pub struct CompositePanel {
 ///
 /// **Test door.** The harness
 /// `crates/rs_cam_core/tests/composite_render_convention.rs` is the only
-/// caller. No production path reads it.
+/// caller. No production path reads it, so it sits
+/// behind `test-support` (F085).
+#[cfg(feature = "test-support")]
 pub fn composite_panel_layout(width: u32, height: u32) -> Vec<CompositePanel> {
     let Some(l) = composite_layout(width as usize, height as usize) else {
         return Vec::new();

@@ -51,7 +51,7 @@ use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::adaptive3d::{
     Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
-    EntryStyle3d, RegionOrdering, adaptive_3d_toolpath, adaptive_3d_toolpath_annotated,
+    EntryStyle3d, RegionOrdering,
 };
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{
@@ -182,12 +182,16 @@ fn generate_on(
 ) -> (Toolpath, FlatEndmill) {
     let index = SpatialIndex::build(mesh, 8.0);
     let tool = FlatEndmill::new(6.0, 25.0);
-    let tp = adaptive_3d_toolpath(
+    let tp = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
         mesh,
         &index,
         &tool,
         &params(style.adaptive3d(), stay_down, dpp),
-    );
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
     assert!(!tp.moves.is_empty(), "the rough emitted nothing");
     (tp, tool)
 }
@@ -827,7 +831,23 @@ fn waterline_helix_entry_reads_its_floor_over_the_helix_turns() {
     let tool = FlatEndmill::new(6.0, 25.0);
     let mut p = params(Style::Helix.adaptive3d(), None, 4.0);
     p.linking.region_ordering = RegionOrdering::Global;
-    let (tp, annotations) = adaptive_3d_toolpath_annotated(&mesh, &index, &tool, &p);
+    let (tp, annotations) = {
+        let out = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+            &mesh,
+            &index,
+            &tool,
+            &p,
+            &rs_cam_core::interrupt::NeverCancel,
+            None,
+        )
+        .expect("NeverCancel never cancels");
+        let labels: Vec<(usize, String)> = out
+            .annotations
+            .iter()
+            .map(|a| (a.move_index, a.event.label()))
+            .collect();
+        (out.toolpath, labels)
+    };
     let waterline_starts: Vec<usize> = annotations
         .iter()
         .filter(|(_, label)| label.contains("Waterline"))

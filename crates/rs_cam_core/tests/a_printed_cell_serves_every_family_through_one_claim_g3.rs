@@ -75,7 +75,7 @@ use rs_cam_core::feeds::{
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
-use rs_cam_core::tool_load::chipload_envelope_for_toolpath;
+use rs_cam_core::tool_load::chip_target_for_toolpath;
 
 const TOL: f64 = 1e-12;
 
@@ -410,13 +410,14 @@ fn every_consumer_reads_the_transferred_band_g3() {
 
     // With no simulation the depth is 0, so the de-rate is 1.0 and the
     // door's band is the row's band.
-    let door = chipload_envelope_for_toolpath(
+    let door = chip_target_for_toolpath(
         &material,
         &tool,
         &OperationConfig::new_default(OperationType::Trace),
         ToolpathId(0),
         None,
     )
+    .and_then(|target| target.band_range())
     .expect("the modulator's door reads the transferred band");
     assert!((door.start - 0.0762).abs() < TOL, "{door:?}");
     assert!((door.end - 0.127).abs() < TOL, "{door:?}");
@@ -640,13 +641,14 @@ fn a_bull_finish_reads_the_home_row_through_two_claims_g3() {
         assert_eq!(row.chip_load_min_mm, recipe.chip_load_min_mm);
         assert_eq!(row.chip_load_max_mm, recipe.chip_load_max_mm);
     }
-    let door = chipload_envelope_for_toolpath(
+    let door = chip_target_for_toolpath(
         &material,
         &tool,
         &OperationConfig::new_default(OperationType::DropCutter),
         ToolpathId(0),
         None,
     )
+    .and_then(|target| target.band_range())
     .expect("the modulator's door reads the transferred band");
     assert!((door.start - min).abs() < 1e-12, "{door:?}");
     assert!((door.end - max).abs() < 1e-12, "{door:?}");

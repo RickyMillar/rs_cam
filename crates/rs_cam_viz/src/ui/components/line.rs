@@ -40,12 +40,6 @@ impl OneLine {
         self.detail = Some(detail.into());
         self
     }
-
-    /// The detail when there is one.
-    pub fn detail_opt(mut self, detail: Option<impl Into<String>>) -> Self {
-        self.detail = detail.map(Into::into);
-        self
-    }
 }
 
 impl egui::Widget for OneLine {

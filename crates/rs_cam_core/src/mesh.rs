@@ -792,6 +792,10 @@ impl QueryScratch {
 }
 
 /// Generate a test hemisphere mesh for testing drop-cutter.
+///
+/// **Test door.** Unit tests and the harnesses are the only callers, so it
+/// exists only under `cfg(test)` or `test-support` (F085).
+#[cfg(any(test, feature = "test-support"))]
 pub fn make_test_hemisphere(radius: f64, divisions: usize) -> TriangleMesh {
     let mut vertices = Vec::new();
     let mut triangles = Vec::new();
@@ -839,6 +843,10 @@ pub fn make_test_hemisphere(radius: f64, divisions: usize) -> TriangleMesh {
 }
 
 /// Generate a simple flat square mesh at z=0 for testing.
+///
+/// **Test door.** Unit tests and the harnesses are the only callers, so it
+/// exists only under `cfg(test)` or `test-support` (F085).
+#[cfg(any(test, feature = "test-support"))]
 pub fn make_test_flat(size: f64) -> TriangleMesh {
     let h = size / 2.0;
     let vertices = vec![

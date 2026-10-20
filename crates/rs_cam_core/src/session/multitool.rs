@@ -719,7 +719,9 @@ impl ProjectSession {
     /// CLI and the operator's veto all describe the same islands.
     ///
     /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
-    /// only callers. No production path reads it.
+    /// only callers. No production path reads it, so it sits
+    /// behind `test-support` (F085).
+    #[cfg(feature = "test-support")]
     pub fn planned_tier_boundary_polys(
         &self,
         toolpath_id: ToolpathId,

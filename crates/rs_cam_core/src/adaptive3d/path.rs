@@ -559,8 +559,18 @@ pub(super) struct Adaptive3dSegmentsResult {
     /// for Global. Evidence only: no planner stage reads it.
     pub area_regions: Option<AreaRegionMap>,
     /// Test-only: planner's internal dexel state at the end of the run.
+    /// The F-029 probe and the `#[cfg(test)]` module read it.
+    // SAFETY: only the `test-support` probe and the unit tests read it, so
+    // the default build reads it nowhere.
+    #[cfg_attr(
+        not(any(test, feature = "test-support")),
+        allow(dead_code, reason = "read only by the test-support probe")
+    )]
     pub final_material_stock: TriDexelStock,
-    /// Test-only: heightmap used to surface-drape Cut paths.
+    /// Test-only: heightmap used to surface-drape Cut paths. Only the
+    /// `#[cfg(test)]` module reads it.
+    // SAFETY: only the unit tests read it.
+    #[cfg_attr(not(test), allow(dead_code, reason = "read only by the unit tests"))]
     pub surface_heightmap: SurfaceHeightmap,
 }
 
@@ -568,7 +578,10 @@ pub(super) struct Adaptive3dSegmentsResult {
 /// for an adaptive3d run with the given params. Exposed so the F-029
 /// acceptance test can compare planner stock state to simulator stock state
 /// at the same cell layout to confirm parity.
-#[doc(hidden)]
+///
+/// **Test door** behind `test-support` (F085). The harnesses under
+/// `crates/rs_cam_core/tests` are the only callers.
+#[cfg(feature = "test-support")]
 #[allow(clippy::type_complexity)] // diagnostic probe; returns raw cell-grid metadata
 pub fn debug_adaptive_3d_segments_for_f029_probe(
     mesh: &TriangleMesh,
@@ -578,8 +591,6 @@ pub fn debug_adaptive_3d_segments_for_f029_probe(
     cancel: &dyn CancelCheck,
 ) -> Result<(Vec<f32>, usize, usize, f64, f64, f64, f64, f64), Cancelled> {
     let res = adaptive_3d_segments(mesh, index, cutter, params, None, cancel)?;
-    let _ = &res.segments;
-    let _ = &res.surface_heightmap;
     let grid = &res.final_material_stock.z_grid;
     // Return the ray top z values (using top of last segment) per cell
     let mut tops = Vec::with_capacity(grid.rows * grid.cols);

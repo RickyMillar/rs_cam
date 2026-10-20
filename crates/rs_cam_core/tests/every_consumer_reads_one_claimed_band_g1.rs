@@ -12,7 +12,7 @@
 //!
 //! - form A, B and C cells: Suggest's pre-derate band
 //!   (`FeedsResult::matched_lut_row`), the envelope resolver's band on the
-//!   same query, and `tool_load::chipload_envelope_for_toolpath` (the
+//!   same query, and `tool_load::chip_target_for_toolpath(..)?.band_range()` (the
 //!   modulator's and the advisor's door, with no simulation, so no depth
 //!   de-rate) are one band, and the scale on the row is the claim's scale;
 //! - a refused cell (a 1.0 mm tapered Scallop in plywood; in hardwood until
@@ -88,7 +88,7 @@ use rs_cam_core::stock::simulation_cut::{
     CutKinematics, Engagement, SimulationCutSample, SimulationCutTrace,
 };
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};
-use rs_cam_core::tool_load::chipload_envelope_for_toolpath;
+use rs_cam_core::tool_load::chip_target_for_toolpath;
 use rs_cam_core::tool_load::verdict::{
     ChipBoundsSource, ChiploadVerdict, DeflectionVerdict, DepthVerdict, PowerVerdict,
     ToolpathLoadVerdict, UnmodeledReason,
@@ -234,13 +234,14 @@ fn assert_one_claimed_band(
     // is 0, so the de-rate is 1.0 and the band is the row's band. It needs
     // both bounds (a `Range`); a max-only row gives `None` here, as it
     // gives Suggest no `chipload_bounds`.
-    let door = chipload_envelope_for_toolpath(
+    let door = chip_target_for_toolpath(
         material,
         tool,
         &OperationConfig::new_default(op),
         ToolpathId(0),
         None,
-    );
+    )
+    .and_then(|target| target.band_range());
     match band.0 {
         Some(min) => {
             let range = door.unwrap_or_else(|| panic!("{label}: the door gave no band"));
@@ -477,13 +478,14 @@ fn a_refused_cell_has_no_band_anywhere_g1() {
     // The modulator's and the advisor's door (and so the gate and the
     // viewport, which share `matched_chip_envelope`) gives no band.
     assert!(
-        chipload_envelope_for_toolpath(
+        chip_target_for_toolpath(
             &material,
             &tool,
             &OperationConfig::new_default(op),
             ToolpathId(0),
             None,
         )
+        .and_then(|target| target.band_range())
         .is_none()
     );
 

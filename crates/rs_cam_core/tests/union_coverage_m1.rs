@@ -30,6 +30,8 @@
 )]
 #![allow(clippy::print_stderr)]
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -88,7 +90,7 @@ fn run_arm(label: &str, project: &Path) -> UnionCoverageReport {
         .collect();
     for round in 0..MAX_FIXPOINT_ROUNDS {
         let start = std::time::Instant::now();
-        session.generate_all(&[], &cancel).expect("generate_all");
+        let _ = common::session::generate_all_in_plan_order(&mut session, &cancel);
         session.run_simulation(&opts, &cancel).expect("simulate");
         let pending: Vec<usize> = enabled
             .iter()

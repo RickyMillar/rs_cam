@@ -46,9 +46,10 @@
     clippy::indexing_slicing
 )]
 
+use rs_cam_core::finish::rest_detector::{RestReferenceChoice, detect_rest};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
+use rs_cam_core::surface::rest_field::RestFieldParams;
 use rs_cam_core::tool::{BallEndmill, BullNoseEndmill, FlatEndmill, MillingCutter, VBitEndmill};
 
 mod common;
@@ -119,17 +120,21 @@ fn derived_regions(
     cutter: &dyn MillingCutter,
 ) -> Vec<Polygon2> {
     let reference = BallEndmill::new(12.0, 25.0);
-    let rf = detect_rest_valleys(
+    let rf = detect_rest(
         mesh,
         index,
         cutter,
-        RestReference::Cutter {
-            tool: &reference as &dyn MillingCutter,
-            is_surface_probe: false,
+        RestReferenceChoice {
+            stock: None,
+            tool: Some(&reference as &dyn MillingCutter),
         },
         &params(),
     );
-    rf.region_polygons
+    rf.produced
+        .rest_regions
+        .as_deref()
+        .expect("the rest stage fills the rest regions")
+        .clone()
 }
 
 fn total_region_area_mm2(regions: &[Polygon2]) -> f64 {
@@ -230,20 +235,21 @@ fn the_moat_erosion_is_sized_off_the_tip_not_the_shank() {
     let mesh = comb_plate();
     let index = SpatialIndex::build_auto(&mesh);
     let taper = wanaka_taper();
-    let probe = BallEndmill::new(0.1, 10.0);
-
-    let rf = detect_rest_valleys(
+    // No tool tier: the stage's own bare-surface probe (Ø0.1 mm ball).
+    let rf = detect_rest(
         &mesh,
         &index,
         &taper,
-        RestReference::Cutter {
-            tool: &probe as &dyn MillingCutter,
-            is_surface_probe: true,
-        },
+        RestReferenceChoice::default(),
         &params(),
     );
 
-    let trusted = rf.rest_grid.covered_footprint_area_mm2();
+    let trusted = rf
+        .produced
+        .rest_grid
+        .as_deref()
+        .expect("the rest stage fills the rest grid")
+        .covered_footprint_area_mm2();
     let plate = plate_area_mm2();
     assert!(
         trusted > 0.88 * plate,

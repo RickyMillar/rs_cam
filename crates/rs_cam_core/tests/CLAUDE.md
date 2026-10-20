@@ -21,9 +21,9 @@ part says what the file protects. Search by claim words, not by code.
 - One sentry: `cargo test -p rs_cam_core -q --test <name>`. Each folder
   `CLAUDE.md` under `src/` names the sentries for that folder.
 - `heavy-tests` (twelve heavy binaries plus one table set), `research` (8)
-  and `test-support` (9, which bind a door) gate targets in `Cargo.toml`; a
-  named run without its feature errors. No CI exists. Locally, name one
-  binary and ask the operator first.
+  and `test-support` (66 that bind a door, ten of them also heavy or
+  research) gate targets in `Cargo.toml`; a named run without its feature
+  errors. No CI exists. Locally, name one binary and ask the operator first.
 - `#[ignore]` marks an instrument or an evidence run, not a broken test.
   Run one by name with `-- --ignored`. Never use `--include-ignored`.
 - A `planning/…` path in a doc comment may no longer exist; the tag

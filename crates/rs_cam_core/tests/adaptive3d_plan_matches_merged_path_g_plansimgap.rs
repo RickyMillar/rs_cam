@@ -50,7 +50,7 @@ mod common;
 
 use rs_cam_core::adaptive3d::{
     Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
-    EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
+    EntryStyle3d, RegionOrdering,
 };
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{DressupConfig, SegmentMergeParams};
@@ -228,7 +228,16 @@ fn the_shipped_rough_leaves_no_material_the_planner_removed() {
     let tool = FlatEndmill::new(6.0, 25.0);
     let cfg = rough_dressups();
     let merge = cfg.segment_merge.map(|m| m.tolerance);
-    let planned = adaptive_3d_toolpath(&mesh, &index, &tool, &params(merge));
+    let planned = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &tool,
+        &params(merge),
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
     let shipped = ship(&planned, &cfg);
 
     let plan_tops = replay_tops(&planned, &tool);
@@ -265,13 +274,30 @@ fn the_segment_merge_still_cuts_the_move_count() {
     let index = SpatialIndex::build(&mesh, 8.0);
     let tool = FlatEndmill::new(6.0, 25.0);
     let merge = SegmentMergeParams::default().tolerance;
-    let merged = clearing_cuts(&adaptive_3d_toolpath(
-        &mesh,
-        &index,
-        &tool,
-        &params(Some(merge)),
-    ));
-    let unmerged = clearing_cuts(&adaptive_3d_toolpath(&mesh, &index, &tool, &params(None)));
+    let merged = clearing_cuts(
+        &rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+            &mesh,
+            &index,
+            &tool,
+            &params(Some(merge)),
+            &rs_cam_core::interrupt::NeverCancel,
+            None,
+        )
+        .expect("NeverCancel never cancels")
+        .toolpath,
+    );
+    let unmerged = clearing_cuts(
+        &rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+            &mesh,
+            &index,
+            &tool,
+            &params(None),
+            &rs_cam_core::interrupt::NeverCancel,
+            None,
+        )
+        .expect("NeverCancel never cancels")
+        .toolpath,
+    );
     eprintln!("planner clearing cuts: merge {merge} mm {merged}, no merge {unmerged}");
     assert!(
         merged < unmerged,

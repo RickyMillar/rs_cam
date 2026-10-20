@@ -51,7 +51,7 @@ pub(crate) fn surface_probe_ball() -> BallEndmill {
 
 /// The tiers a caller offers, in the order the stage tries them.
 #[derive(Clone, Copy, Default)]
-pub(crate) struct RestReferenceChoice<'a> {
+pub struct RestReferenceChoice<'a> {
     /// The machined stock, after the shared W2.1 guard. First tier.
     pub stock: Option<&'a TriDexelStock>,
     /// A reference cutter: a real library tool, or a nominal ball. Second
@@ -61,8 +61,10 @@ pub(crate) struct RestReferenceChoice<'a> {
 
 /// Which tier the stage used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RestTier {
+pub enum RestTier {
+    /// The machined stock.
     Stock,
+    /// The caller's reference cutter.
     Tool,
     /// The bare-surface probe, sign flipped: `rest = pencil_z - probe_z`.
     SelfProbe,
@@ -98,7 +100,7 @@ impl RestReferenceChoice<'_> {
 
 /// What the stage gives back: the detector's paths and reports, and its
 /// grid and regions already wrapped as [`Produced`].
-pub(crate) struct RestDetection {
+pub struct RestDetection {
     /// The tier the reference came from.
     pub tier: RestTier,
     /// The pencil-routed centrelines.
@@ -115,7 +117,7 @@ pub(crate) struct RestDetection {
 
 /// Run the rest-depth detector with `cutter` as the fine tool, against the
 /// first tier `choice` offers.
-pub(crate) fn detect_rest(
+pub fn detect_rest(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,

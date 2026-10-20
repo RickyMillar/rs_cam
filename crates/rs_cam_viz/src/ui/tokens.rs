@@ -32,8 +32,6 @@ use egui::{Color32, FontFamily, FontId, TextStyle, epaint::Shadow};
 /// row-rhythm tokens below, which are deliberately off the scale.
 pub const GRID: f32 = 4.0;
 
-/// Flush.
-pub const SPACE_0: f32 = 0.0;
 /// Inside a chip, between a glyph and its word.
 pub const SPACE_1: f32 = 2.0;
 /// Between rows of one group. Also `item_spacing`.
@@ -756,12 +754,6 @@ pub fn as_unit_rgb(c: Color32) -> [f64; 3] {
 pub fn from_linear_rgb(c: [f32; 3]) -> Color32 {
     let to_u8 = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
     Color32::from_rgb(to_u8(c[0]), to_u8(c[1]), to_u8(c[2]))
-}
-
-/// [`ACCENT`] at a given alpha, for a highlight wash over a diagram.
-#[must_use]
-pub fn accent_wash(alpha: u8) -> Color32 {
-    Color32::from_rgba_unmultiplied(ACCENT.r(), ACCENT.g(), ACCENT.b(), alpha)
 }
 
 // ---- The axis triple (ruling R22) ---------------------------------------

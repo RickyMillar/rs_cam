@@ -63,9 +63,10 @@
     clippy::print_stdout
 )]
 
+use rs_cam_core::finish::rest_detector::{RestReferenceChoice, detect_rest};
 use rs_cam_core::geo::polyline_length;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::surface::rest_field::{RestFieldParams, RestReference, detect_rest_valleys};
+use rs_cam_core::surface::rest_field::RestFieldParams;
 use rs_cam_core::tool::{BallEndmill, MillingCutter};
 
 mod common;
@@ -100,13 +101,13 @@ fn measure(
     // these grooves, so the groove IS the rest field. Same reference at every
     // cell size.
     let reference = BallEndmill::new(12.0, 25.0);
-    let rf = detect_rest_valleys(
+    let rf = detect_rest(
         mesh,
         index,
         cutter,
-        RestReference::Cutter {
-            tool: &reference as &dyn MillingCutter,
-            is_surface_probe: false,
+        RestReferenceChoice {
+            stock: None,
+            tool: Some(&reference as &dyn MillingCutter),
         },
         &RestFieldParams {
             cell_mm: cell,

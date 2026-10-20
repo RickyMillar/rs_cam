@@ -1,4 +1,4 @@
-# `adaptive3d/` — 3D adaptive clearing (entry `adaptive_3d_toolpath`)
+# `adaptive3d/` — 3D adaptive clearing (entry `adaptive_3d_toolpath_output_with_cancel`)
 
 ## Files
 
@@ -28,7 +28,7 @@
 - The Z plan is ONE Depth/Pass (`path.rs::step_levels`, plus Detect Flat
   shelves); every level drapes. No step ladder (operator, 2026-09-24).
 
-## Sentries: `cargo test -p rs_cam_core -q --test <name>`
+## Sentries: `cargo test -p rs_cam_core -q --features test-support --test <name>`
 
 `adaptive3d_boundary_clear_parity`, `adaptive3d_keep_down_link_f038b`,
 `adaptive3d_entry_stock_aware`, `adaptive3d_entry_coalescing_f038`,

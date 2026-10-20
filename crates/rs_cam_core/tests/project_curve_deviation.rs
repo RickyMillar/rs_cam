@@ -23,6 +23,8 @@
     dead_code
 )]
 
+mod common;
+
 use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 
@@ -223,7 +225,7 @@ fn live_project_pc6_has_no_phantom_cuts() {
         .expect("PC6 exists in fixture");
 
     let cancel = std::sync::atomic::AtomicBool::new(false);
-    let _ = session.generate_all(&[], &cancel);
+    let _ = common::session::generate_all_in_plan_order(&mut session, &cancel);
     let sim_opts = rs_cam_core::session::SimulationOptions {
         resolution: 0.5,
         auto_resolution: true,

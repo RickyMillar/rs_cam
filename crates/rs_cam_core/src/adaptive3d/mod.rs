@@ -13,7 +13,6 @@
 //! - Boundary cleanup: waterline contours (not polygon offset contours)
 
 use crate::dexel_stock::TriDexelStock;
-use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::stock::dexel::ray_top;
@@ -31,10 +30,10 @@ mod search;
 use path::{adaptive_3d_segments, segments_to_toolpath};
 pub use region_map::{AreaRegion, AreaRegionMap, AreaRegionRun};
 
-// F-029 probe: re-export the planner-state probe for the F-029 acceptance
-// test. Internal — hidden from rustdoc. Will be removed once F-029 lands and
-// the parity gap is closed.
-#[doc(hidden)]
+// F-029 probe: re-export the planner-state probe for the harnesses that
+// compare planner stock to simulator stock. A test door behind
+// `test-support` (F085).
+#[cfg(feature = "test-support")]
 pub use path::debug_adaptive_3d_segments_for_f029_probe;
 
 /// Region ordering strategy for 3D adaptive clearing.
@@ -479,34 +478,20 @@ pub struct Adaptive3dRuntimeAnnotation {
     pub event: Adaptive3dRuntimeEvent,
 }
 
-/// Generate a 3D adaptive clearing toolpath for roughing a mesh surface.
-///
-/// Starting from flat stock at `stock_top_z`, roughs out material following
-/// the STL mesh surface with constant engagement control. Multi-level
-/// passes from top to bottom, waterline boundary cleanup at each level.
-#[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.geometry.tool_radius, stepover = params.geometry.stepover))]
-pub fn adaptive_3d_toolpath(
+/// **Test door.** The `#[cfg(test)]` module of this file is the only
+/// caller: [`adaptive_3d_toolpath_output_with_cancel`] under
+/// [`crate::interrupt::NeverCancel`], the toolpath only.
+#[cfg(test)]
+pub(crate) fn adaptive_3d_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
     cutter: &dyn MillingCutter,
     params: &Adaptive3dParams,
 ) -> Toolpath {
     crate::interrupt::run_uncancellable(|cancel| {
-        adaptive_3d_toolpath_with_cancel(mesh, index, cutter, params, cancel)
+        adaptive_3d_toolpath_output_with_cancel(mesh, index, cutter, params, cancel, None)
+            .map(|out| out.toolpath)
     })
-}
-
-pub fn adaptive_3d_toolpath_with_cancel(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &Adaptive3dParams,
-    cancel: &dyn CancelCheck,
-) -> Result<Toolpath, Cancelled> {
-    let (tp, _) = adaptive_3d_toolpath_annotated_traced_with_cancel(
-        mesh, index, cutter, params, cancel, None,
-    )?;
-    Ok(tp)
 }
 
 /// **Test door.** The `#[cfg(test)]` module of this file is the only
@@ -520,38 +505,8 @@ pub(crate) fn adaptive_3d_toolpath_traced_with_cancel(
     cancel: &dyn CancelCheck,
     debug: Option<&ToolpathDebugContext>,
 ) -> Result<Toolpath, Cancelled> {
-    let (tp, _) = adaptive_3d_toolpath_annotated_traced_with_cancel(
-        mesh, index, cutter, params, cancel, debug,
-    )?;
-    Ok(tp)
-}
-
-/// Like `adaptive_3d_toolpath` but also returns annotations for simulation display.
-/// Each annotation is `(move_index, label)`.
-///
-/// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
-/// only callers. No production path reads it.
-#[tracing::instrument(skip(mesh, index, cutter, params), fields(tool_radius = params.geometry.tool_radius, stepover = params.geometry.stepover))]
-#[allow(clippy::expect_used)]
-pub fn adaptive_3d_toolpath_annotated(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &Adaptive3dParams,
-) -> (Toolpath, Vec<(usize, String)>) {
-    crate::interrupt::run_uncancellable(|cancel| {
-        adaptive_3d_toolpath_annotated_with_cancel(mesh, index, cutter, params, cancel)
-    })
-}
-
-pub(crate) fn adaptive_3d_toolpath_annotated_with_cancel(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &Adaptive3dParams,
-    cancel: &dyn CancelCheck,
-) -> Result<(Toolpath, Vec<(usize, String)>), Cancelled> {
-    adaptive_3d_toolpath_annotated_traced_with_cancel(mesh, index, cutter, params, cancel, None)
+    adaptive_3d_toolpath_output_with_cancel(mesh, index, cutter, params, cancel, debug)
+        .map(|out| out.toolpath)
 }
 
 /// The full output of one adaptive3d run.
@@ -567,7 +522,7 @@ pub struct Adaptive3dOutput {
 }
 
 /// Run the planner and return every output. The compute adapter calls
-/// this form.
+/// this form, and it is the one public door of this folder (F085).
 pub fn adaptive_3d_toolpath_output_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -606,47 +561,6 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
             ..crate::trace::produced::Produced::default()
         },
     })
-}
-
-// Stage 4 — the third tuple element carries planner-predicted leading-arc
-// engagement samples `(cut_point, α/2π)`; empty for non-ContourSpiral
-// strategies. The return is a 3-tuple rather than a named struct to keep
-// the existing callers' destructuring; the `type_complexity` allow is
-// scoped to this one signature.
-// SAFETY: the 3-tuple return keeps the destructuring of the existing callers.
-#[allow(clippy::type_complexity)]
-pub fn adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &Adaptive3dParams,
-    cancel: &dyn CancelCheck,
-    debug: Option<&ToolpathDebugContext>,
-) -> Result<(Toolpath, Vec<Adaptive3dRuntimeAnnotation>, Vec<(P3, f64)>), Cancelled> {
-    let out = adaptive_3d_toolpath_output_with_cancel(mesh, index, cutter, params, cancel, debug)?;
-    Ok((
-        out.toolpath,
-        out.annotations,
-        out.produced.planner_engagement,
-    ))
-}
-
-pub fn adaptive_3d_toolpath_annotated_traced_with_cancel(
-    mesh: &TriangleMesh,
-    index: &SpatialIndex,
-    cutter: &dyn MillingCutter,
-    params: &Adaptive3dParams,
-    cancel: &dyn CancelCheck,
-    debug: Option<&ToolpathDebugContext>,
-) -> Result<(Toolpath, Vec<(usize, String)>), Cancelled> {
-    let (tp, annotations, _planner_engagement) =
-        adaptive_3d_toolpath_structured_annotated_traced_with_cancel(
-            mesh, index, cutter, params, cancel, debug,
-        )?;
-    Ok((
-        tp,
-        crate::compute::spans::runtime_annotations_to_labels(&annotations),
-    ))
 }
 
 #[cfg(test)]

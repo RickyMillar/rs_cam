@@ -67,10 +67,16 @@ pub mod fingerprint;
 pub mod gcode_fixtures;
 pub mod kernels;
 pub mod meshes;
+// `monge`, `reference_plate` and `scallop_oracle` read `rs_cam_core::metrology`,
+// which sits behind `test-support` (F085). A binary that uses one of them
+// carries `required-features = ["test-support"]` in `Cargo.toml`.
+#[cfg(feature = "test-support")]
 pub mod monge;
 pub mod offset_lab;
 pub mod op_fixtures;
+#[cfg(feature = "test-support")]
 pub mod reference_plate;
+#[cfg(feature = "test-support")]
 pub mod scallop_oracle;
 pub mod session;
 pub mod tools;

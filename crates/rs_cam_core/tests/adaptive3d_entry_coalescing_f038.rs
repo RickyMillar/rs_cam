@@ -59,7 +59,7 @@
 
 use rs_cam_core::adaptive3d::{
     Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
-    EntryStyle3d, RegionOrdering, adaptive_3d_toolpath,
+    EntryStyle3d, RegionOrdering,
 };
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -216,12 +216,30 @@ fn entry_plunge_count_bounded_by_terrain_area_f038() {
 
     // Pre-fix behaviour: threshold disabled.
     let params_off = make_params(tool.radius(), 0.0);
-    let tp_off = adaptive_3d_toolpath(&mesh, &index, &tool, &params_off);
+    let tp_off = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &tool,
+        &params_off,
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
     let entries_off = count_entry_plunges(&tp_off);
 
     // Post-fix behaviour: default threshold (15 mm).
     let params_on = make_params(tool.radius(), 15.0);
-    let tp_on = adaptive_3d_toolpath(&mesh, &index, &tool, &params_on);
+    let tp_on = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+        &mesh,
+        &index,
+        &tool,
+        &params_on,
+        &rs_cam_core::interrupt::NeverCancel,
+        None,
+    )
+    .expect("NeverCancel never cancels")
+    .toolpath;
     let entries_on = count_entry_plunges(&tp_on);
 
     eprintln!(

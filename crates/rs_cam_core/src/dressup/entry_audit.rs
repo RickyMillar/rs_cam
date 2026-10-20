@@ -9,8 +9,11 @@
 //! operation's cutter.
 
 use crate::dressup::EntrySurfaceProbe;
-use crate::geo::{P2, P3};
+#[cfg(feature = "test-support")]
+use crate::geo::P2;
+use crate::geo::P3;
 use crate::geometry::arc_util::linearize_arc;
+#[cfg(feature = "test-support")]
 use crate::polygon::Polygon2;
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 
@@ -139,6 +142,7 @@ pub fn buried_fed_chords(
 /// Stays `pub`: `fed_moves_outside_region` returns it, so a crate-private
 /// form raises `private_interfaces` (S29, 2026-09-16).
 #[derive(Debug, Clone, Copy)]
+#[cfg(feature = "test-support")]
 pub struct OutsideRegionChord {
     /// Index of the move in `Toolpath::moves`.
     pub move_index: usize,
@@ -156,6 +160,7 @@ pub struct OutsideRegionChord {
 /// Zero where the whole disc is inside. Inside the polygon the answer is
 /// `radius - distance_to_boundary`; outside it is `radius + distance`,
 /// because the centre itself has already left.
+#[cfg(feature = "test-support")]
 fn disc_outside_polygon(region: &Polygon2, p: &P2, tool_radius_mm: f64) -> f64 {
     let d = region.distance_to_boundary(p);
     if region.contains_point(p) {
@@ -186,6 +191,11 @@ fn disc_outside_polygon(region: &Polygon2, p: &P2, tool_radius_mm: f64) -> f64 {
 /// "not measured", not "clean". The first move of a toolpath has no start
 /// position and is skipped. `filter` selects the moves to audit by intent
 /// — pass [`is_entry_intent`] for the entry sentry.
+///
+/// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
+/// only callers. No production path reads it, so it sits behind
+/// `test-support` (F085).
+#[cfg(feature = "test-support")]
 pub fn fed_moves_outside_region(
     toolpath: &Toolpath,
     region: &[Polygon2],

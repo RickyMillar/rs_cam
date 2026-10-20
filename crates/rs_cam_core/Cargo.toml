@@ -8,14 +8,15 @@ description = "Core CAM library for 3-axis wood router toolpath generation"
 [features]
 default = ["parallel"]
 parallel = ["rayon"]
-step = ["truck-stepio", "truck-topology", "truck-meshalgo", "truck-geometry", "truck-polymesh"]
+step = ["truck-stepio", "truck-topology", "truck-meshalgo"]
 # Gates the twelve heaviest test binaries, and one set of research tables
 # that is not heavy but is not a gate either (the `[[test]]` sections at the
 # bottom of this file). They were 75% of the 1,663 s serial rs_cam_core suite
 # on the 2026-08-27 profile, so the dev loop neither compiles nor runs them.
 # They are load-bearing sentries, NOT instruments: the commit gate must
-# pass `--features heavy-tests` (or `--features rs_cam_core/heavy-tests` from
-# the workspace root) for both `cargo test` and `cargo clippy`.
+# pass `--features heavy-tests,test-support` (or the `rs_cam_core/` forms from
+# the workspace root) for both `cargo test` and `cargo clippy`: five heavy
+# binaries also bind a `test-support` door (F085).
 heavy-tests = []
 # Gates the three research arms in `finish/` — `conformal_spiral` (and its
 # `conformal_spiral/` folder), `direction_field` and `spiral_finish_compact`.
@@ -24,7 +25,8 @@ heavy-tests = []
 # Off by default, so a product build neither compiles nor lints them. The
 # eight `[[test]]` sections below name the evidence harnesses that read them.
 # Build and run one with, for example:
-#   cargo test -p rs_cam_core --features research --test spiral_finish_compact_c1
+#   cargo test -p rs_cam_core --features research,test-support --test spiral_finish_compact_c1
+# (five research harnesses also read `metrology`, behind `test-support`).
 # Most of their tests are `#[ignore]` evidence runs and need `-- --ignored`.
 research = []
 # Gates the twenty-four test doors in `maps/` and `surface/` — the four
@@ -36,6 +38,11 @@ research = []
 # public API of this crate carries no test door. The eight `[[test]]` sections
 # below name the harnesses that bind them, and `rs_cam_viz` enables the
 # feature from its `[dev-dependencies]` for `tests/reach_overlay_p5.rs`.
+# F085 (2026-10-20) adds the other test doors: the `metrology/` module,
+# `mesh::make_test_flat` / `make_test_hemisphere`, the F-029 planner probe,
+# `fed_moves_outside_region`, `Polygon2::with_holes_closed`,
+# `dexel_stock_to_top_surface_mesh`, the composite-render doors, three
+# `flow_accum` doors, `drop_call_count` and `planned_tier_boundary_polys`.
 # Run one with, for example:
 #   cargo test -p rs_cam_core --features test-support --test reach_map_p5
 test-support = []
@@ -58,8 +65,6 @@ smallvec = { workspace = true }
 truck-stepio = { version = "0.3", features = ["in"], optional = true }
 truck-topology = { version = "0.6", optional = true }
 truck-meshalgo = { version = "0.4", optional = true }
-truck-geometry = { version = "0.5", optional = true }
-truck-polymesh = { version = "0.6", optional = true }
 image = { version = "0.25", default-features = false, features = ["png"] }
 # The memory budget (`src/budget/`). `memory-stats` reads the process
 # resident size (`memory_stats::memory_stats()`); `sysinfo` reads the total
@@ -88,6 +93,9 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 [[bench]]
 name = "perf_suite"
 harness = false
+# Reads `make_test_hemisphere` and `dexel_stock_to_top_surface_mesh`, two
+# test doors behind `test-support` (F085).
+required-features = ["test-support"]
 
 # M3 classification-grid baseline + candidate arms.
 [[bench]]
@@ -119,11 +127,11 @@ required-features = ["heavy-tests"]
 
 [[test]]
 name = "scallop_isofield_gouge_m4" # 237 s
-required-features = ["heavy-tests"]
+required-features = ["heavy-tests", "test-support"]
 
 [[test]]
 name = "scallop_candidates_m4" # 143 s
-required-features = ["heavy-tests"]
+required-features = ["heavy-tests", "test-support"]
 
 [[test]]
 name = "machine_kinematics_cycle_time_f034" # 91 s
@@ -139,11 +147,11 @@ required-features = ["heavy-tests"]
 
 [[test]]
 name = "scallop_oracle_validation_m4" # 79 s
-required-features = ["heavy-tests"]
+required-features = ["heavy-tests", "test-support"]
 
 [[test]]
 name = "air_cut_family_calibration_w5bf4" # 62 s
-required-features = ["heavy-tests"]
+required-features = ["heavy-tests", "test-support"]
 
 [[test]]
 name = "adaptive3d_planner_stock_xy_f027" # 58 s
@@ -151,7 +159,7 @@ required-features = ["heavy-tests"]
 
 [[test]]
 name = "offset_candidates_m5" # 54 s
-required-features = ["heavy-tests"]
+required-features = ["heavy-tests", "test-support"]
 
 [[test]]
 name = "adaptive3d_interior_cell_parity_f029" # 48 s
@@ -179,23 +187,23 @@ required-features = ["research"]
 
 [[test]]
 name = "valley_branch_falsifier_h1"
-required-features = ["research"]
+required-features = ["research", "test-support"]
 
 [[test]]
 name = "direction_field_wanaka_f1"
-required-features = ["research"]
+required-features = ["research", "test-support"]
 
 [[test]]
 name = "conformal_spiral_synthetic_f2"
-required-features = ["research"]
+required-features = ["research", "test-support"]
 
 [[test]]
 name = "spiral_finish_compact_c1"
-required-features = ["research"]
+required-features = ["research", "test-support"]
 
 [[test]]
 name = "whole_board_spiral_ledger_g1"
-required-features = ["research"]
+required-features = ["research", "test-support"]
 
 # The test-door harnesses. Each one binds a `maps/` or `surface/` item behind
 # the `test-support` feature, so each one needs that feature to compile. The
@@ -235,4 +243,201 @@ required-features = ["test-support"]
 
 [[test]]
 name = "tier_map_walk_t1"
+required-features = ["test-support"]
+
+# F085: the harnesses that bind a test door behind `test-support` — the
+# `metrology/` instruments (directly or through `tests/common`'s `monge`,
+# `scallop_oracle` and `reference_plate`), `mesh::make_test_flat` and
+# `make_test_hemisphere`, the F-029 planner probe, `fed_moves_outside_region`,
+# `Polygon2::with_holes_closed`, `dexel_stock_to_top_surface_mesh`, the
+# composite-render doors, the three `flow_accum` hydrology doors and
+# `planned_tier_boundary_polys`. A heavy or research harness above carries
+# both features.
+
+[[test]]
+name = "a_face_op_reads_its_selection_p4_2"
+required-features = ["test-support"]
+
+[[test]]
+name = "a_helix_leaves_no_core_and_a_ramp_never_outruns_the_feed_g10"
+required-features = ["test-support"]
+
+[[test]]
+name = "a_selection_boundary_confines_g_modeloutline"
+required-features = ["test-support"]
+
+[[test]]
+name = "adaptive3d_boundary_clear_parity"
+required-features = ["test-support"]
+
+[[test]]
+name = "adaptive3d_by_area_matches_global_stock"
+required-features = ["test-support"]
+
+[[test]]
+name = "adaptive3d_emission_byte_parity"
+required-features = ["test-support"]
+
+[[test]]
+name = "adaptive3d_entry_stock_aware"
+required-features = ["test-support"]
+
+[[test]]
+name = "adaptive3d_global_gate_drapes_below_floor"
+required-features = ["test-support"]
+
+[[test]]
+name = "adaptive3d_lift_bridge_b1"
+required-features = ["test-support"]
+
+[[test]]
+name = "adaptive3d_planner_never_ahead_of_emitted_path"
+required-features = ["test-support"]
+
+[[test]]
+name = "bikeseat_gate_d1"
+required-features = ["test-support"]
+
+[[test]]
+name = "capability_link_moves_safety"
+required-features = ["test-support"]
+
+[[test]]
+name = "catchment_basin_census_w0"
+required-features = ["test-support"]
+
+[[test]]
+name = "composite_depth_per_pixel_f11"
+required-features = ["test-support"]
+
+[[test]]
+name = "composite_render_convention"
+required-features = ["test-support"]
+
+[[test]]
+name = "disconnected_finish_retract_structure_p0"
+required-features = ["test-support"]
+
+[[test]]
+name = "end_to_end"
+required-features = ["test-support"]
+
+[[test]]
+name = "monotone_cell_decomposition_c2"
+required-features = ["test-support"]
+
+[[test]]
+name = "multitool_preview_u1"
+required-features = ["test-support"]
+
+[[test]]
+name = "one_heights_resolver_for_every_surface_p3_1"
+required-features = ["test-support"]
+
+[[test]]
+name = "op_precondition_static_validation_f015"
+required-features = ["test-support"]
+
+[[test]]
+name = "param_sweep"
+required-features = ["test-support"]
+
+[[test]]
+name = "pencil_spine_ab_p1"
+required-features = ["test-support"]
+
+[[test]]
+name = "perf_golden_sim_metrics"
+required-features = ["test-support"]
+
+[[test]]
+name = "project_curve_depth_sign"
+required-features = ["test-support"]
+
+[[test]]
+name = "pushcutter_band_query_g1"
+required-features = ["test-support"]
+
+[[test]]
+name = "ramp_contained_in_region_g_rampcontain"
+required-features = ["test-support"]
+
+[[test]]
+name = "reference_plate_contract"
+required-features = ["test-support"]
+
+[[test]]
+name = "reference_repeatability"
+required-features = ["test-support"]
+
+[[test]]
+name = "retract_intent_move_type_census_w6"
+required-features = ["test-support"]
+
+[[test]]
+name = "ring_sample_bound_w14"
+required-features = ["test-support"]
+
+[[test]]
+name = "scallop_solo_vs_unified_s1"
+required-features = ["test-support"]
+
+[[test]]
+name = "scallop_untouched_standing_h4"
+required-features = ["test-support"]
+
+[[test]]
+name = "shallow_band_stock_to_leave_exhibit_d16_2"
+required-features = ["test-support"]
+
+[[test]]
+name = "shipped_raster_spacing_b1"
+required-features = ["test-support"]
+
+[[test]]
+name = "standing_material_channel_am9"
+required-features = ["test-support"]
+
+[[test]]
+name = "step5_marching_cubes"
+required-features = ["test-support"]
+
+[[test]]
+name = "stock_materials_show_in_every_view_s5"
+required-features = ["test-support"]
+
+[[test]]
+name = "stock_mesh_faces_outward_f1"
+required-features = ["test-support"]
+
+[[test]]
+name = "strategy_comparison_h4"
+required-features = ["test-support"]
+
+[[test]]
+name = "thin_organic_island_widths"
+required-features = ["test-support"]
+
+[[test]]
+name = "union_coverage_m1"
+required-features = ["test-support"]
+
+[[test]]
+name = "valley_prize_census_h0"
+required-features = ["test-support"]
+
+[[test]]
+name = "wanaka_curvature_anisotropy"
+required-features = ["test-support"]
+
+[[test]]
+name = "wanaka_region_capture_f1"
+required-features = ["test-support"]
+
+[[test]]
+name = "waterline_auto_ladder_is_model_top_to_bottom_r3"
+required-features = ["test-support"]
+
+[[test]]
+name = "zone_coherence_census"
 required-features = ["test-support"]

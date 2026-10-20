@@ -161,7 +161,8 @@ pub fn dexel_stock_to_entry_surface_mesh(
 ///
 /// **Test door.** The harnesses under `crates/rs_cam_core/tests` and the
 /// bench `benches/perf_suite.rs` are the only callers. No production path
-/// reads it.
+/// reads it, so it sits behind `test-support` (F085).
+#[cfg(feature = "test-support")]
 pub fn dexel_stock_to_top_surface_mesh(stock: &TriDexelStock) -> StockMesh {
     dexel_stock_to_entry_surface_mesh(stock, StockCutDirection::FromTop)
 }

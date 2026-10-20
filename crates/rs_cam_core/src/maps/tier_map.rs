@@ -135,7 +135,9 @@
 //! a big board cannot be interrupted; this one can.
 
 use std::fmt;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
+#[cfg(feature = "test-support")]
+use std::sync::atomic::Ordering;
 
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::maps::grid::{GridSpec, walk_rows};
@@ -160,7 +162,12 @@ pub const MAX_TIERS: usize = 255;
 static DROP_CALLS: AtomicU64 = AtomicU64::new(0);
 
 /// Read the cumulative drop-cutter work counter — the T3 instrument.
+///
+/// **Test door.** The harnesses `tier_map_slope_t2.rs` and
+/// `tier_map_cache_t3.rs` are the only readers, so it sits behind
+/// `test-support` (F085).
 #[must_use]
+#[cfg(feature = "test-support")]
 pub fn drop_call_count() -> u64 {
     DROP_CALLS.load(Ordering::Relaxed)
 }

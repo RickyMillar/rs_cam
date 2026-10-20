@@ -34,6 +34,8 @@
     clippy::indexing_slicing
 )]
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
@@ -261,9 +263,11 @@ fn probe_cell(session: &mut ProjectSession, index: usize, dpp: f64, stepover: f6
             .expect("the param applies");
     }
     let cancel = AtomicBool::new(false);
-    session
-        .generate_all(&[], &cancel)
-        .expect("every enabled toolpath generates");
+    let failures = common::session::generate_all_in_plan_order(session, &cancel);
+    assert!(
+        failures.is_empty(),
+        "every enabled toolpath generates: {failures:?}"
+    );
     let opts = probe_sim_options(session);
     let _ = session
         .run_simulation(&opts, &cancel)

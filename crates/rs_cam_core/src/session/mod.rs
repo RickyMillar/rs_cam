@@ -6,7 +6,9 @@
 //! ```ignore
 //! let mut session = ProjectSession::load(Path::new("my_project.toml"))?;
 //! let cancel = AtomicBool::new(false);
-//! session.generate_all(&[], &cancel)?;
+//! for step in generation_plan::plan(&session, generation_plan::Scope::Project) {
+//!     // Simulate or generate each step in plan order.
+//! }
 //! session.run_simulation(SimulationOptions::default(), &cancel)?;
 //! let diag = session.diagnostics();
 //! ```

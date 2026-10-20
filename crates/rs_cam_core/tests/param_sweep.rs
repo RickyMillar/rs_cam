@@ -1575,7 +1575,16 @@ fn sweep_adaptive3d_stepover() {
             if let Some(v) = ov {
                 p.geometry.stepover = v.as_f64().unwrap();
             }
-            rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+                &mesh,
+                &index,
+                &cutter,
+                &p,
+                &rs_cam_core::interrupt::NeverCancel,
+                None,
+            )
+            .expect("NeverCancel never cancels")
+            .toolpath
         },
     );
     for v in &result.variants {
@@ -1600,7 +1609,16 @@ fn sweep_adaptive3d_depth_per_pass() {
             if let Some(v) = ov {
                 p.depth.depth_per_pass = v.as_f64().unwrap();
             }
-            rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+                &mesh,
+                &index,
+                &cutter,
+                &p,
+                &rs_cam_core::interrupt::NeverCancel,
+                None,
+            )
+            .expect("NeverCancel never cancels")
+            .toolpath
         },
     );
     for v in &result.variants {
@@ -1632,7 +1650,16 @@ fn sweep_adaptive3d_clearing_strategy() {
                 }
                 _ => {}
             }
-            rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+                &mesh,
+                &index,
+                &cutter,
+                &p,
+                &rs_cam_core::interrupt::NeverCancel,
+                None,
+            )
+            .expect("NeverCancel never cancels")
+            .toolpath
         },
     );
     for v in &result.variants {
@@ -1656,7 +1683,16 @@ fn sweep_adaptive3d_z_blend() {
             if let Some(v) = ov {
                 p.z_blend = v.as_bool().unwrap();
             }
-            rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+                &mesh,
+                &index,
+                &cutter,
+                &p,
+                &rs_cam_core::interrupt::NeverCancel,
+                None,
+            )
+            .expect("NeverCancel never cancels")
+            .toolpath
         },
     );
     for v in &result.variants {
@@ -1683,7 +1719,16 @@ fn sweep_adaptive3d_engagement_measure() {
             if ov.is_some() {
                 p.engagement_measure = rs_cam_core::adaptive::EngagementMeasure::LeadingArc;
             }
-            rs_cam_core::adaptive3d::adaptive_3d_toolpath(&mesh, &index, &cutter, &p)
+            rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+                &mesh,
+                &index,
+                &cutter,
+                &p,
+                &rs_cam_core::interrupt::NeverCancel,
+                None,
+            )
+            .expect("NeverCancel never cancels")
+            .toolpath
         },
     );
     for v in &result.variants {

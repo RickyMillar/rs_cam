@@ -8,7 +8,7 @@
 //!
 //! Test design:
 //! - Synthetic CONCAVE L-shape with sine-bump terrain, deterministic.
-//! - Run `adaptive_3d_toolpath_annotated` with AgentSearch + Global ordering.
+//! - Run `adaptive_3d_toolpath_output_with_cancel` with AgentSearch + Global ordering.
 //! - Use the runtime annotations ("Adaptive Z X.X (k/n)" markers) to
 //!   partition the toolpath by Z-LEVEL.
 //! - For EACH Z-level, replay the agent-search portion ONLY (the moves
@@ -35,7 +35,7 @@
 use rs_cam_core::{
     adaptive3d::{
         Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams,
-        ClearingStrategy3d, EntryStyle3d, RegionOrdering, adaptive_3d_toolpath_annotated,
+        ClearingStrategy3d, EntryStyle3d, RegionOrdering,
     },
     dexel_stock::{StockCutDirection, TriDexelStock},
     geo::P3,
@@ -255,7 +255,23 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
     };
 
     // ── Generate (annotated) ──────────────────────────────────────────
-    let (toolpath, annotations) = adaptive_3d_toolpath_annotated(&mesh, &si, &cutter, &params);
+    let (toolpath, annotations) = {
+        let out = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+            &mesh,
+            &si,
+            &cutter,
+            &params,
+            &rs_cam_core::interrupt::NeverCancel,
+            None,
+        )
+        .expect("NeverCancel never cancels");
+        let labels: Vec<(usize, String)> = out
+            .annotations
+            .iter()
+            .map(|a| (a.move_index, a.event.label()))
+            .collect();
+        (out.toolpath, labels)
+    };
     assert!(
         toolpath.moves.len() > 100,
         "AgentSearch should produce a non-trivial toolpath, got {} moves",
