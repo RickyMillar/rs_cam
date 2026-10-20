@@ -4044,6 +4044,7 @@ dependencies = [
  "memory-stats",
  "nalgebra",
  "rayon",
+ "rs_cam_core",
  "rs_cam_derive",
  "serde",
  "serde_json",
