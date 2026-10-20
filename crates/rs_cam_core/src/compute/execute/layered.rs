@@ -382,24 +382,24 @@ impl<G> OutlineLayers<G> {
 
 /// The ladders of the outlines of one run (geometry selection P3.5): one
 /// shared ladder, or one ladder per closed area under the floor "each
-/// picked face".
-struct Ladders {
+/// picked face". Adaptive 2D reads it in its own loop (P3.6, ruling L-5).
+pub(super) struct Ladders {
     /// Each distinct ladder, top first.
-    ladders: Vec<Vec<f64>>,
+    pub(super) ladders: Vec<Vec<f64>>,
     /// For each outline: the index of its ladder in `ladders`.
     of_outline: Vec<usize>,
 }
 
 impl Ladders {
     /// The ladder at `index`; empty for an index that names none.
-    fn ladder(&self, index: usize) -> &[f64] {
+    pub(super) fn ladder(&self, index: usize) -> &[f64] {
         self.ladders.get(index).map_or(&[], Vec::as_slice)
     }
 
     /// The ladders of `outline_count` outlines: the per-area ladders of the
     /// prologue when it gives them, else `shared` for every outline. Each
     /// per-area ladder passes the L-16 guard ([`effective_levels`]).
-    fn new(
+    pub(super) fn new(
         prepared: &Prepared<'_>,
         shared: Vec<f64>,
         outline_count: usize,
@@ -429,9 +429,9 @@ impl Ladders {
 
 /// The union of the ladders for level-first order (P3.5): its entries top
 /// first, and where each ladder holds each entry.
-struct UnionLadder {
+pub(super) struct UnionLadder {
     /// The Z of each entry, top first. A spring pass is its own entry.
-    z: Vec<f64>,
+    pub(super) z: Vec<f64>,
     /// For each ladder: at each entry, the position of that entry in the
     /// ladder, or `None` when the ladder does not hold it.
     at: Vec<Vec<Option<usize>>>,
@@ -454,7 +454,7 @@ impl UnionLadder {
     /// repeat index. Two entries are one entry only when the Z bits and the
     /// repeat index are equal: no float tolerance, so a spring pass never
     /// merges with its level and never doubles.
-    fn of(ladders: &[Vec<f64>]) -> Self {
+    pub(super) fn of(ladders: &[Vec<f64>]) -> Self {
         if let [only] = ladders {
             return Self {
                 z: only.clone(),
@@ -629,11 +629,25 @@ fn area_outlines_less_obstacles<'p, O: LayeredOp>(
     outlines: Cow<'p, [O::Input]>,
     ladders: &Ladders,
 ) -> (Cow<'p, [O::Input]>, Vec<usize>) {
-    let lowest = |levels: &[f64]| levels.iter().copied().fold(f64::INFINITY, f64::min);
-    let as_is = |outlines: Cow<'p, [O::Input]>| (outlines, ladders.of_outline.clone());
     if op.rest_use() != RestUse::LevelClip {
-        return as_is(outlines);
+        return (outlines, ladders.of_outline.clone());
     }
+    area_pieces_less_obstacles(prepared, outlines, ladders)
+}
+
+/// THE ladder-aware obstacle clip of the area outlines (K3, P3.5): the
+/// clip of [`area_outlines_less_obstacles`] with no rest rule check.
+/// Adaptive 2D calls it from its own loop (P3.6, ruling L-5), so both
+/// area runners group and clip the areas by one rule. The answer holds,
+/// for each piece, the index of its ladder in `ladders`. An input with no
+/// outline keeps its outlines.
+pub(super) fn area_pieces_less_obstacles<'p, I: LayerInput>(
+    prepared: &Prepared<'_>,
+    outlines: Cow<'p, [I]>,
+    ladders: &Ladders,
+) -> (Cow<'p, [I]>, Vec<usize>) {
+    let lowest = |levels: &[f64]| levels.iter().copied().fold(f64::INFINITY, f64::min);
+    let as_is = |outlines: Cow<'p, [I]>| (outlines, ladders.of_outline.clone());
     let Some(polygons) = outlines
         .iter()
         .map(|input| input.outline().cloned())
@@ -646,7 +660,7 @@ fn area_outlines_less_obstacles<'p, O: LayeredOp>(
         return match territory.area_outlines(Cow::Borrowed(polygons.as_slice()), lowest(only)) {
             Cow::Borrowed(_) => as_is(outlines),
             Cow::Owned(clipped) => {
-                let pieces = O::Input::from_polygons(Cow::Owned(clipped)).into_owned();
+                let pieces = I::from_polygons(Cow::Owned(clipped)).into_owned();
                 let count = pieces.len();
                 (Cow::Owned(pieces), vec![0; count])
             }
@@ -654,7 +668,7 @@ fn area_outlines_less_obstacles<'p, O: LayeredOp>(
     }
     // The runs of neighbour outlines on one ladder: (ladder, polygons,
     // inputs).
-    let mut runs: Vec<(usize, Vec<Polygon2>, Vec<O::Input>)> = Vec::new();
+    let mut runs: Vec<(usize, Vec<Polygon2>, Vec<I>)> = Vec::new();
     for ((polygon, input), &ladder) in polygons
         .into_iter()
         .zip(outlines.iter())
@@ -668,7 +682,7 @@ fn area_outlines_less_obstacles<'p, O: LayeredOp>(
             Some(_) | None => runs.push((ladder, vec![polygon], vec![input.clone()])),
         }
     }
-    let mut pieces: Vec<O::Input> = Vec::with_capacity(outlines.len());
+    let mut pieces: Vec<I> = Vec::with_capacity(outlines.len());
     let mut ladder_of = Vec::with_capacity(outlines.len());
     for (ladder, run_polygons, run_inputs) in runs {
         let run_pieces = match territory.area_outlines(
@@ -676,7 +690,7 @@ fn area_outlines_less_obstacles<'p, O: LayeredOp>(
             lowest(ladders.ladder(ladder)),
         ) {
             Cow::Borrowed(_) => run_inputs,
-            Cow::Owned(clipped) => O::Input::from_polygons(Cow::Owned(clipped)).into_owned(),
+            Cow::Owned(clipped) => I::from_polygons(Cow::Owned(clipped)).into_owned(),
         };
         ladder_of.extend(std::iter::repeat_n(ladder, run_pieces.len()));
         pieces.extend(run_pieces);

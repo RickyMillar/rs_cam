@@ -1705,7 +1705,7 @@ mod each_face_p3_5 {
     use crate::compute::config::ResolvedHeights;
     use crate::compute::floor::Floor;
     use crate::compute::operation_configs::{
-        PocketConfig, ProfileConfig, RegionOrdering, ZigzagConfig,
+        AdaptiveConfig, PocketConfig, ProfileConfig, RegionOrdering, ZigzagConfig,
     };
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::geo::{BoundingBox3, P2, P3, V3};
@@ -1821,6 +1821,14 @@ mod each_face_p3_5 {
         })
     }
 
+    /// P3.6: Adaptive 2D under the floor "each picked face".
+    pub fn adaptive() -> OperationConfig {
+        OperationConfig::Adaptive(AdaptiveConfig {
+            floor: Floor::EachFace { depth: 0.0 },
+            ..AdaptiveConfig::default()
+        })
+    }
+
     pub fn profile(tab_height: f64) -> OperationConfig {
         OperationConfig::Profile(ProfileConfig {
             floor: Floor::EachFace { depth: 0.0 },
@@ -1872,6 +1880,8 @@ mod each_face_p3_5 {
 ///   second region from the top.
 /// - Spring passes per region: one spring pass doubles the feed moves at
 ///   the floor of EACH region.
+/// - Adaptive 2D (P3.6, its own loop, ruling L-5): the moves in the hole
+///   reach Z 15, and no move outside it goes below Z 20.
 /// - Profile tabs stand on the floor of their own region: the tab top of
 ///   each face is its own floor plus the tab height.
 /// - A drawing loop under "each picked face" refuses `NoFaceForFloor`; a
@@ -1880,13 +1890,17 @@ mod each_face_p3_5 {
 /// Red proof: give every region the one ladder of the op
 /// (`ExecutionContext::cutting_levels`, to the deepest floor). The upper
 /// region then cuts to Z 15 and the test fails.
+/// P3.6 red proof: give every Adaptive piece the one ladder of the op
+/// (`ExecutionContext::cutting_levels`). The upper region then cuts to
+/// Z 15 and the Adaptive arm fails. With the ladder of the upper face for
+/// every piece, the lower face stops at Z 20 and the arm also fails.
 #[test]
 fn each_face_cuts_to_its_own_floor_p3_5() {
     use crate::compute::operation_configs::RegionOrdering;
     use crate::selection::{Item, RefusalCause, Shape, SourceRef};
     use each_face_p3_5::{
-        EPS, HOLE, LOWER_Z, UPPER_Z, count_at, face, feed_z, in_hole, min_of, nested_faces, pocket,
-        profile, refusal_cause, run, side_by_side_faces, zigzag,
+        EPS, HOLE, LOWER_Z, UPPER_Z, adaptive, count_at, face, feed_z, in_hole, min_of,
+        nested_faces, pocket, profile, refusal_cause, run, side_by_side_faces, zigzag,
     };
 
     // Both orderings, Pocket and Zigzag.
@@ -1926,6 +1940,23 @@ fn each_face_cuts_to_its_own_floor_p3_5() {
             }
         }
     }
+
+    // P3.6: Adaptive 2D steps each area down its own ladder in its own
+    // loop (ruling L-5). It has no region order and no spring pass.
+    let tp = run(&adaptive(), nested_faces()).unwrap();
+    let lower = feed_z(&tp, in_hole);
+    let upper = feed_z(&tp, |p| !in_hole(p));
+    assert!(!lower.is_empty() && !upper.is_empty(), "adaptive");
+    assert!(
+        (min_of(&lower) - LOWER_Z).abs() < EPS,
+        "adaptive: the lower face must reach its floor {LOWER_Z}, got {}",
+        min_of(&lower)
+    );
+    assert!(
+        min_of(&upper) > UPPER_Z - EPS,
+        "adaptive: no move outside the hole may go below {UPPER_Z}, got {}",
+        min_of(&upper)
+    );
 
     // Spring passes per region: one spring pass doubles the feed moves at
     // the floor of each region, in both orders.
@@ -1994,21 +2025,4 @@ fn each_face_cuts_to_its_own_floor_p3_5() {
         refusal_cause(run(&pocket(RegionOrdering::ByArea, 0), at_top)),
         RefusalCause::FloorAboveTop { .. }
     ));
-}
-
-/// P3.5: Adaptive 2D keeps one ladder for every outline, so it refuses the
-/// floor "each picked face" until P3.6; it never cuts every face to the
-/// deepest floor.
-#[test]
-fn adaptive_2d_refuses_each_face_until_p3_6() {
-    use crate::compute::operation_configs::AdaptiveConfig;
-    let op = OperationConfig::Adaptive(AdaptiveConfig {
-        floor: crate::compute::floor::Floor::EachFace { depth: 0.0 },
-        ..AdaptiveConfig::default()
-    });
-    let result = each_face_p3_5::run(&op, each_face_p3_5::nested_faces());
-    assert!(
-        matches!(&result, Err(OperationError::Other(text)) if text.contains("P3.6")),
-        "{result:?}"
-    );
 }

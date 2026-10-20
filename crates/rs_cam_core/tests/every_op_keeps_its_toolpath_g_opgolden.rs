@@ -39,7 +39,7 @@
 //! - `each_face` (geometry selection P3.5, design 5.7): Pocket, Zigzag and
 //!   Profile under the floor "each picked face" on two picked faces at two
 //!   Z (`op_fixtures::each_face_model`), and the Pocket on a flipped setup.
-//!   Adaptive 2D gets its arm in P3.6.
+//!   P3.6 adds the Adaptive 2D arm (its own loop, ruling L-5).
 //!
 //! # The fingerprint
 //!
@@ -356,17 +356,19 @@ fn each_face(op: &mut OperationConfig) {
         OperationConfig::Pocket(cfg) => cfg.floor = floor,
         OperationConfig::Zigzag(cfg) => cfg.floor = floor,
         OperationConfig::Profile(cfg) => cfg.floor = floor,
+        OperationConfig::Adaptive(cfg) => cfg.floor = floor,
         _ => unreachable!("an each_face arm on an op with no P3.5 floor"),
     }
 }
 
-/// The P3.5 arms: op, arm, frame. All on fresh stock, on
-/// [`CurveModel::Faces`].
+/// The P3.5 arms (and the P3.6 Adaptive 2D arm): op, arm, frame. All on
+/// fresh stock, on [`CurveModel::Faces`].
 const P35_CASES: &[(OperationType, &str, Frame)] = &[
     (OperationType::Pocket, "each_face", Frame::TopUp),
     (OperationType::Zigzag, "each_face", Frame::TopUp),
     (OperationType::Profile, "each_face", Frame::TopUp),
     (OperationType::Pocket, "each_face_flipped", Frame::Flipped),
+    (OperationType::Adaptive, "each_face", Frame::TopUp),
 ];
 
 /// Cut the faces of `each_face_model` with toolpath `index`: bind the

@@ -5961,7 +5961,7 @@
             },
             {
               "additionalProperties": false,
-              "description": "Each picked face at its own plane Z less `depth` (Pocket, Zigzag,\nProfile). Adaptive 2D refuses it until geometry selection P3.6.",
+              "description": "Each picked face at its own plane Z less `depth` (Pocket, Zigzag,\nProfile, Adaptive 2D).",
               "properties": {
                 "depth": {
                   "description": "mm below each face.",

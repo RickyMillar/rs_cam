@@ -25,7 +25,8 @@ use crate::trace::semantic_trace::ToolpathSemanticContext;
 
 use super::OffsetFailures;
 use super::layered::{
-    LayerCtx, LayeredOp, LevelInfo, LevelRest, ReachBand, effective_levels, run_layered,
+    Ladders, LayerCtx, LayeredOp, LevelInfo, LevelRest, ReachBand, UnionLadder,
+    area_pieces_less_obstacles, effective_levels, run_layered,
 };
 use super::shared::{generated_with_depth_run_spans, with_depth_run_annotation};
 use super::standing_material::{LevelSeed, OffGrid, level_masks};
@@ -757,22 +758,19 @@ pub(crate) fn generate_adaptive(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Adaptive, "generate_adaptive");
-    // Geometry selection P3.5: this loop steps one ladder for every
-    // outline. A ladder per area ("each picked face") comes in P3.6, so
-    // until then it refuses; it never cuts every face to the deepest floor.
-    if prepared.region_ladders().is_some() {
-        return Err(OperationError::Other(
-            "Adaptive 2D: the floor \"each picked face\" is not yet available for this op \
-             (geometry selection P3.6). Set the floor from the Top Z, the stock, the model or \
-             a Z value, or use Pocket"
-                .to_owned(),
-        ));
-    }
-    let levels = effective_levels(ctx.cutting_levels)?;
-    // K3: an area op plans around the obstacles (the territory rule).
-    let polys = prepared.territory().area_outlines(
-        std::borrow::Cow::Borrowed(prepared.regions()?.as_slice()),
-        levels.iter().copied().fold(f64::INFINITY, f64::min),
+    // Geometry selection P3.6 (ruling L-5): under the floor "each picked
+    // face" each area steps its own ladder (`Prepared::region_ladders`), in
+    // this loop, not in `run_layered`. One ladder (every other floor) is
+    // the loop before P3.6, bit for bit.
+    let shared = effective_levels(ctx.cutting_levels)?;
+    let regions = prepared.regions()?;
+    let ladders = Ladders::new(prepared, shared, regions.as_slice().len())?;
+    // K3: an area op plans around the obstacles (the territory rule), each
+    // run of areas at the lowest level of its own ladder (P3.5).
+    let (polys, ladder_of) = area_pieces_less_obstacles(
+        prepared,
+        std::borrow::Cow::Borrowed(regions.as_slice()),
+        &ladders,
     );
     let cancel_fn = ctx.cancel_fn();
     let safe_z = ctx.heights.retract_z;
@@ -785,18 +783,25 @@ pub(crate) fn generate_adaptive(
         .iter()
         .map(|poly| crate::adaptive::inset_piece_outlines(poly, ctx.tool_def.radius()))
         .collect();
-    let outlines = polys
-        .iter()
-        .zip(&piece_outlines)
-        .flat_map(|(poly, pieces)| {
-            if pieces.is_empty() {
-                std::slice::from_ref(poly)
-            } else {
-                pieces.as_slice()
-            }
-        });
+    // P3.6: each piece keeps the ladder of its area. The areas keep the
+    // selection order, and each piece goes to its own floor before the
+    // next (ruling L-7).
+    let outlines =
+        polys
+            .iter()
+            .zip(&piece_outlines)
+            .zip(&ladder_of)
+            .flat_map(|((poly, pieces), &ladder)| {
+                let pieces = if pieces.is_empty() {
+                    std::slice::from_ref(poly)
+                } else {
+                    pieces.as_slice()
+                };
+                pieces.iter().map(move |piece| (piece, ladder))
+            });
     let rest_use = op.capabilities().rest_use;
-    for poly in outlines {
+    for (poly, ladder) in outlines {
+        let levels = ladders.ladder(ladder);
         // G-RESTLEVELS (`RestUse::LevelMask`): one stock read per level of
         // this piece. It skips a level with no material in reach and seeds
         // each other level's planner grid.
@@ -804,7 +809,7 @@ pub(crate) fn generate_adaptive(
             let plan = level_masks(
                 prepared.territory().unguarded_stock(),
                 poly,
-                &levels,
+                levels,
                 ctx.tool_def.radius(),
                 &cancel_fn,
             )?;
@@ -872,8 +877,10 @@ pub(crate) fn generate_adaptive(
     if let Some(sem) = ctx.semantic_ctx {
         crate::compute::annotate::annotate_adaptive2d(&all_annotations, &combined, sem);
     }
+    // P3.6: the spans snap to the union of the ladders (one ladder: the
+    // ladder itself).
     Ok(with_depth_run_annotation(
-        generated_with_depth_run_spans(combined, &levels),
+        generated_with_depth_run_spans(combined, &UnionLadder::of(&ladders.ladders).z),
         ctx.semantic_ctx,
     ))
 }

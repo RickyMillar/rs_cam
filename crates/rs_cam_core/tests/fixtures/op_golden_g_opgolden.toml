@@ -3,6 +3,20 @@
 # RS_CAM_BLESS_OPGOLDEN=1. Do not edit by hand. Re-bless only the ops a
 # change names on purpose, and say so in the commit body.
 
+["adaptive/each_face"]
+outcome = "ok"
+move_count = 1143
+rapid_count = 144
+linear_count = 776
+arc_count = 223
+cutting_length_mm = 1418.298
+rapid_length_mm = 1532.479
+bbox_min = [-16.825, -8.825, -7.0]
+bbox_max = [16.8203, 8.825, 10.0]
+moves_hash = "ad4ce7fe9310567c"
+span_count = 456
+spans_hash = "f06d5d1b57ccbb2a"
+
 ["adaptive/fresh"]
 outcome = "ok"
 move_count = 1251

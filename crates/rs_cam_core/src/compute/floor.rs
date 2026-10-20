@@ -19,8 +19,8 @@
 //!   ([`FloorRef::EachFace`]), and the auto top is the stock top, not the
 //!   face top (ruling L-15). The prologue gives each area its own ladder
 //!   (`Prepared::region_ladders`); the Layered runner steps each area down
-//!   its own ladder (Pocket, Zigzag, Profile). Adaptive 2D refuses it until
-//!   P3.6.
+//!   its own ladder (Pocket, Zigzag, Profile), and Adaptive 2D does the
+//!   same in its own loop (P3.6, ruling L-5).
 //! - A pinned Heights Bottom Z on the four ops refuses
 //!   (`ToolpathConfig::floor_conflict`).
 //!
@@ -76,8 +76,8 @@ pub enum Floor {
     /// refuses there (ruling L-4).
     ModelTop { depth: f64 },
     /// Each face region of the op selection at its own plane Z less the
-    /// depth (S6, P3.5). Pocket, Zigzag and Profile cut it; Adaptive 2D
-    /// refuses it until P3.6.
+    /// depth (S6). Pocket, Zigzag and Profile cut it (P3.5), and Adaptive
+    /// 2D (P3.6).
     EachFace { depth: f64 },
     /// An absolute Z in the setup frame.
     Z { z: f64 },
@@ -467,7 +467,7 @@ const fn reference_help(floor: &Floor) -> &'static str {
         Floor::EachFace { .. } => {
             "mm below the plane Z of each picked face: each face region is cut to its own \
              floor, from the stock top (or the pinned top). Every closed area of the selection \
-             must be a face. Adaptive 2D refuses it until geometry selection P3.6"
+             must be a face"
         }
         Floor::Z { .. } => "an absolute Z in the setup frame (frame-dependent)",
     }
