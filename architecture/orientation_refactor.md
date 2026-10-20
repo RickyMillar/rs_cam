@@ -286,7 +286,7 @@ pub struct SetupOrientation {
 
 ### Completed
 - **Phase 1**: `trace_polygon_at_z` extracted as single-level function. `run_trace` uses `depth_stepped_toolpath` externally like other 2D ops.
-- **Phase 2**: `cutting_levels: Vec<f64>` added to `ComputeRequest`, computed via `OperationConfig::cutting_levels(top_z)`. All 2D ops consume pre-computed levels. `make_depth`/`make_depth_with_finishing` helpers removed. `toolpath_at_levels` added to `depth.rs`.
+- **Phase 2**: `cutting_levels: Vec<f64>` added to `ComputeRequest`, computed via `OperationConfig::cutting_levels(&ResolvedHeights)`: the ladder runs from the resolved Top Z to the resolved floor (geometry selection P3.2; before, `cutting_levels(top_z)` read the op depth). All 2D ops consume pre-computed levels. `make_depth`/`make_depth_with_finishing` helpers removed. `toolpath_at_levels` added to `depth.rs`.
 - **Phase 3**: Per-setup simulation implemented. `SetupSimGroup` carries `local_stock_bbox` + `SetupTransformInfo`. `build_simulation_groups` passes toolpaths untransformed. `run_simulation_with_phase` creates per-group stocks, always stamps FromTop, transforms mesh vertices to global, composites via `StockMesh::append_transformed`. `face_up_to_direction()` and `transform_toolpath_to_stock_frame()` removed from controller.
 
 ### Partially implemented

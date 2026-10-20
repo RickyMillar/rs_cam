@@ -11,6 +11,9 @@
 //! 3. `picking::selection_frame_bounds` gives the box the camera fits: the
 //!    display box of the item rings for a note, and the stored anchor grown
 //!    by half the key measure for a lost pick (it has no item).
+//! 4. P3.8: under the floor "each picked face", a face at the top gives a
+//!    note that names that face. "Show me" on the note frames that one
+//!    face, not every skipped face of its kind and layer.
 //!
 //! The test drives the production inspector (`properties::draw`) through a
 //! headless `Context`, as `the_selection_section_writes_edits_only_p4_3`
@@ -22,6 +25,8 @@
 //!   click and claim 1 went red (no frame request).
 //! - `selection_frame_bounds` with the lost-pick arm dropped (a key with
 //!   no item gives no point): claim 3 went red (`None`).
+//! - `note_item_keys` with the kind-and-layer filter for an at-the-top
+//!   note too (the P3.7 code): claim 4 went red (two keys, not one).
 
 #![allow(
     clippy::unwrap_used,
@@ -293,5 +298,158 @@ fn show_me_frames_a_note_and_a_lost_pick_p4_4() {
     assert!(
         (bbox.max.x - bbox.min.x - 2.0 * half).abs() < 1e-9,
         "the box is one key measure wide"
+    );
+}
+
+// ── P3.8: "Show me" on an at-the-top note frames the face of the note ──
+
+/// A flat up face of the synthetic part: the square `[x0, x0 + 20]` by
+/// `[-10, 10]` at `z`.
+fn flat(x0: f64, z: f64) -> rs_cam_core::geometry::enriched_mesh::FaceTessellation {
+    use rs_cam_core::geo::{P3, V3};
+    use rs_cam_core::geometry::enriched_mesh::{FaceTessellation, SurfaceParams, SurfaceType};
+    let v = vec![
+        P3::new(x0, -10.0, z),
+        P3::new(x0 + 20.0, -10.0, z),
+        P3::new(x0 + 20.0, 10.0, z),
+        P3::new(x0, 10.0, z),
+    ];
+    FaceTessellation {
+        boundary_loops: vec![v.clone()],
+        vertices: v,
+        triangles: vec![[0, 1, 2], [0, 2, 3]],
+        surface_type: SurfaceType::Plane,
+        surface_params: SurfaceParams::Plane {
+            normal: V3::new(0.0, 0.0, 1.0),
+            d: z,
+        },
+    }
+}
+
+/// A Pocket under "each picked face" (depth 0) on a synthetic STEP part
+/// with three up faces: two at the stock top (Z 0) and one at Z -4. The
+/// two faces at the top give two notes of one kind and one layer (a BREP
+/// face has no layer). Returns the state and the key of each face.
+fn at_the_top_state() -> (AppState, Vec<MatchKey>) {
+    use rs_cam_core::compute::floor::Floor;
+    use rs_cam_core::compute::operation_configs::PocketConfig;
+    use rs_cam_core::selection::SourceRef;
+    use std::sync::Arc;
+
+    let enriched = rs_cam_core::geometry::enriched_mesh::build_enriched_mesh(
+        vec![flat(-40.0, 0.0), flat(-15.0, 0.0), flat(10.0, -4.0)],
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+    let model = rs_cam_core::session::LoadedModel {
+        id: 0,
+        path: std::path::PathBuf::from("synthetic://at_the_top.step"),
+        name: "At the top".to_owned(),
+        kind: None,
+        mesh: Some(Arc::clone(&enriched.mesh)),
+        items: Arc::new(rs_cam_core::io::brep_face_items(&enriched)),
+        enriched_mesh: Some(Arc::new(enriched)),
+        units: None,
+        winding_report: None,
+        load_error: None,
+        import_options: Default::default(),
+        import_report: None,
+        drawing: Default::default(),
+    };
+    let keys: Vec<MatchKey> = model
+        .items
+        .iter()
+        .map(|item| MatchKey {
+            source: SourceRef::ToolpathModel,
+            ..item.key().clone()
+        })
+        .collect();
+    assert_eq!(keys.len(), 3, "the part holds three faces");
+    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    tool.diameter = 3.0;
+    let mut pocket = toolpath("Pocket", OperationType::Pocket);
+    pocket.operation = OperationConfig::Pocket(PocketConfig {
+        floor: Floor::EachFace { depth: 0.0 },
+        selection: Selection::empty(),
+        ..PocketConfig::default()
+    });
+    let mut builder = ProjectSessionBuilder::new()
+        .stock(StockConfig {
+            x: 80.0,
+            y: 40.0,
+            z: 15.0,
+            origin_x: -40.0,
+            origin_y: -20.0,
+            origin_z: -15.0,
+            auto_from_model: false,
+            ..StockConfig::default()
+        })
+        .tool(tool)
+        .model(model);
+    builder.add_toolpath(0, pocket).unwrap();
+    let mut state = AppState::new();
+    state.session = builder.build();
+    for key in &keys {
+        let _ = state
+            .session
+            .apply(Command::EditSelection(EditSelectionArgs {
+                index: 0,
+                target: SelectionTarget::Op,
+                edit: SelectionEdit::AddPick(key.clone()),
+            }))
+            .unwrap();
+    }
+    for config in state.session.toolpath_configs() {
+        state
+            .gui
+            .toolpath_rt
+            .insert(config.id, ToolpathRuntime::new(true));
+    }
+    (state, keys)
+}
+
+/// Geometry selection P3.8 (the P3.7 gap): under "each picked face" a
+/// face at the top gives its own note, which names that face. "Show me" on
+/// the note frames that face only, not every skipped face of its kind and
+/// layer.
+///
+/// Red proof: `note_item_keys` with the kind-and-layer filter for an
+/// at-the-top note too. The first note row then frames both faces at the
+/// top, and the one-key assertion fails.
+#[test]
+fn show_me_frames_only_the_face_of_an_at_the_top_note_p3_8() {
+    let ctx = ctx();
+    let (mut state, _keys) = at_the_top_state();
+    let tc = state.session.toolpath_configs()[0].clone();
+    let report = state
+        .session
+        .selection_status(&tc, SelectionTarget::Op)
+        .expect("the selection resolves");
+    assert!(report.refusal.is_none(), "{:?}", report.refusal);
+    assert_eq!(report.notes.len(), 2, "two faces are at the top");
+    let note_faces: Vec<&MatchKey> = report.notes.iter().map(|n| &n.first.key).collect();
+    assert!(
+        !note_faces[0].names_same_geometry(note_faces[1]),
+        "the two notes name two faces"
+    );
+
+    // The keys of each note, as the panel builds them: one face per note.
+    let model = state.session.models().first();
+    let per_note = rs_cam_viz::state::selection_highlight::note_item_keys(model, &report);
+    for (note, frame) in report.notes.iter().zip(&per_note) {
+        assert_eq!(frame.len(), 1, "a note frames its one face: {frame:?}");
+        assert!(frame[0].names_same_geometry(&note.first.key), "{frame:?}");
+    }
+
+    // The production route: a click on the first note row sends one
+    // frame request with the face of that note.
+    select(&mut state, 0);
+    let row = format!("1 face is not cut {}", tokens::GLYPH_DETAIL);
+    let framed = one_frame_request(&click(&ctx, &mut state, &row));
+    assert_eq!(framed.len(), 1, "the note frames one face: {framed:?}");
+    assert!(
+        framed[0].names_same_geometry(&report.notes[0].first.key),
+        "{framed:?}"
     );
 }

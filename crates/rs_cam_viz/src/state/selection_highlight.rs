@@ -150,38 +150,50 @@ impl HoverDetector {
     }
 }
 
-/// For each note of `report`, the keys of the items that "Show me" frames:
-/// the `Skipped` items of the note's kind and layer, from `item_states`
-/// (the toolpath model `model`) and from `foreign`. The keys carry the
-/// source of the item (P4.4).
+/// For each note of `report`, the keys of the items that "Show me" frames.
+///
+/// - A note of a kind the op does not cut (`NoteCause::KindNotServed`): the
+///   `Skipped` items of the note's kind and layer, from `item_states` (the
+///   toolpath model `model`) and from `foreign` (P4.4).
+/// - A face at the top (`NoteCause::AtTheTop`, P3.7): the one face that the
+///   note names (`note.first`). Each such note names one face, so "Show me"
+///   frames that face only, not every skipped face of its layer (P3.8).
+///
+/// The keys carry the source of the item.
 pub fn note_item_keys(
     model: Option<&rs_cam_core::session::LoadedModel>,
     report: &SelectionReport,
 ) -> Vec<Vec<rs_cam_core::selection::MatchKey>> {
+    use rs_cam_core::selection::NoteCause;
     use rs_cam_core::session::ItemState;
     report
         .notes
         .iter()
-        .map(|note| {
-            let own = model.into_iter().flat_map(|m| {
-                m.items
+        .map(|note| match note.cause {
+            NoteCause::AtTheTop { .. } => vec![note.first.key.clone()],
+            NoteCause::KindNotServed => {
+                let own = model.into_iter().flat_map(|m| {
+                    m.items
+                        .iter()
+                        .zip(&report.item_states)
+                        .filter(|(item, state)| {
+                            **state == ItemState::Skipped
+                                && item.kind() == note.kind
+                                && item.layer() == note.layer.as_deref()
+                        })
+                        .map(|(item, _)| item.key().clone())
+                });
+                let foreign = report
+                    .foreign
                     .iter()
-                    .zip(&report.item_states)
-                    .filter(|(item, state)| {
-                        **state == ItemState::Skipped
-                            && item.kind() == note.kind
-                            && item.layer() == note.layer.as_deref()
+                    .filter(|(key, state)| {
+                        *state == ItemState::Skipped
+                            && key.kind == note.kind
+                            && key.layer == note.layer
                     })
-                    .map(|(item, _)| item.key().clone())
-            });
-            let foreign = report
-                .foreign
-                .iter()
-                .filter(|(key, state)| {
-                    *state == ItemState::Skipped && key.kind == note.kind && key.layer == note.layer
-                })
-                .map(|(key, _)| key.clone());
-            own.chain(foreign).collect()
+                    .map(|(key, _)| key.clone());
+                own.chain(foreign).collect()
+            }
         })
         .collect()
 }

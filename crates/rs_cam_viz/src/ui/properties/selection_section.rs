@@ -104,9 +104,9 @@ pub(crate) struct SelectionSectionInputs<'a> {
     /// The sources of a `+ Rule` draft (the `ListItems` query). Empty while
     /// no draft of this toolpath is open.
     pub sources: &'a [RuleSource],
-    /// P4.4: for each note of the report, the keys of the skipped items of
-    /// its kind and layer (`selection_highlight::note_item_keys`). "Show
-    /// me" frames them.
+    /// For each note of the report, the keys that "Show me" frames
+    /// (`selection_highlight::note_item_keys`): the skipped items of its
+    /// kind and layer, or the one face of an at-the-top note.
     pub note_items: &'a [Vec<MatchKey>],
     /// The item kinds that the toolpath model holds
     /// (`state::pick::held_kinds`): the "pick a face" fix reads it (P4.D).
@@ -522,8 +522,8 @@ fn draw_findings(
     report: &SelectionReport,
     events: &mut Vec<AppEvent>,
 ) {
-    // P4.4: a note row with items answers a click: "Show me" frames the
-    // skipped items of its kind and layer (IC2: the note stays one row).
+    // A note row with items answers a click: "Show me" frames the items
+    // of the note (`note_item_keys`; IC2: the note stays one row).
     let mut notes = DataTable::new(inputs.salt("selection_notes"));
     for (index, note) in report.notes.iter().enumerate() {
         let layer = note

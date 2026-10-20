@@ -224,4 +224,72 @@ mod tests {
             );
         }
     }
+
+    /// Geometry selection P3.8 (design section 9): the two refusal rows
+    /// and the schema row of the floor name the floor door.
+    ///
+    /// - `set_toolpath_param depth` on a Pocket refuses and names
+    ///   `set_toolpath_floor` (the four ops hold no `depth`).
+    /// - `get_operation_schema` gives `floor` on the four ops, written
+    ///   through `set_toolpath_floor`, with each reference; an op with no
+    ///   floor gives none.
+    ///
+    /// Red proof: the `depth` arm of `unknown_param_error` removed (the
+    /// generic "unknown parameter" text, with no floor door): the first
+    /// assertion fails.
+    #[test]
+    fn the_floor_wire_rows_name_the_floor_door_p3_8() {
+        use rs_cam_core::session::SetToolpathParamArgs;
+        let mut s = project();
+        let before = s.get_toolpath_config(0).unwrap().operation.floor();
+        let error = s
+            .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+                index: 0,
+                param: "depth".to_owned(),
+                value: serde_json::json!(6.0),
+            }))
+            .expect_err("a Pocket holds no depth");
+        let text = error.to_string();
+        assert!(
+            text.contains("set_toolpath_floor"),
+            "the refusal names the floor door: {text}"
+        );
+        assert_eq!(
+            s.get_toolpath_config(0).unwrap().operation.floor(),
+            before,
+            "the refused write keeps the floor"
+        );
+
+        for op in [
+            OperationType::Pocket,
+            OperationType::Profile,
+            OperationType::Zigzag,
+            OperationType::Adaptive,
+        ] {
+            let schema = OperationConfig::schema_for_type(op);
+            let floor = schema
+                .floor
+                .unwrap_or_else(|| panic!("{} gives a floor schema", op.label()));
+            assert_eq!(floor["set_through"], "set_toolpath_floor");
+            assert_eq!(
+                floor["variants"].as_array().map(Vec::len),
+                Some(Floor::EACH_REFERENCE.len()),
+                "{floor}"
+            );
+            assert!(
+                schema
+                    .params
+                    .iter()
+                    .all(|p| p.name != "floor" && p.name != "depth"),
+                "{}: the floor is driver-set and no depth is published",
+                op.label()
+            );
+        }
+        assert!(
+            OperationConfig::schema_for_type(OperationType::Face)
+                .floor
+                .is_none(),
+            "Face sets its depth with its own dial"
+        );
+    }
 }

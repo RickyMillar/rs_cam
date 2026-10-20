@@ -493,6 +493,40 @@ tool = "flat_6mm"
         );
     }
 
+    /// Geometry selection P3.8 (design section 9, the sweep row): Pocket,
+    /// Profile, Zigzag and Adaptive 2D hold no `depth`; their floor is the
+    /// job key `floor`. A sweep over `depth` on one of them refuses by
+    /// name (the C2 check), so it cannot repeat the baseline. A sweep over
+    /// the floor depth needs a path syntax (lead ruling L-12, open).
+    #[test]
+    fn a_depth_sweep_on_a_floor_op_refuses_p3_8() {
+        for op in ["pocket", "profile", "zigzag", "adaptive"] {
+            let source = format!(
+                r#"
+[job]
+output = "part.nc"
+
+[tools.flat_6mm]
+type = "end_mill"
+diameter = 6.35
+
+[[operation]]
+type = "{op}"
+input = "part.svg"
+tool = "flat_6mm"
+floor = {{ from = "top", depth = 3.0 }}
+"#
+            );
+            let job: JobFile = toml::from_str(&source).unwrap();
+            let err = resolve_base_value(&job, "depth", "4.0").unwrap_err();
+            let text = format!("{err:#}");
+            assert!(
+                text.contains("depth") && text.contains("floor"),
+                "{op}: the refusal names depth and the floor job key, got: {text}"
+            );
+        }
+    }
+
     /// CLI-01 sentry: the deleted job keys refuse the sweep by name.
     ///
     /// `max_stay_down_dist` was a second spelling of

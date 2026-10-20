@@ -1213,4 +1213,194 @@ mod tests {
             assert_eq!(loops.len(), gui.loops.len());
         }
     }
+
+    /// Geometry selection P3.8 (design section 9, the `selection_status`
+    /// row): under the floor "each picked face", the MCP `floor_z` of each
+    /// `item_states` row equals the report that the GUI reads (the
+    /// Selection section and the floor row), and each cut face gives its
+    /// own plane Z less the depth.
+    ///
+    /// The part is synthetic STEP: three up faces at Z 0, Z -4 and Z -8.
+    /// The Pocket picks the faces at Z 0 and Z -4 under
+    /// `EachFace { depth: 1 }`; the stock top is Z 5, so neither face is at
+    /// the top. The face at Z -8 is not selected and gives `null`.
+    ///
+    /// Red proof: `selection_report_json` with `"floor_z": null` on the
+    /// item rows. The two cut rows then give `null`, and the test fails.
+    #[test]
+    fn mcp_floor_z_of_each_cut_face_equals_the_gui_report_p3_8() {
+        use rs_cam_core::compute::floor::Floor;
+        use rs_cam_core::compute::operation_configs::PocketConfig;
+        use rs_cam_core::compute::stock_config::StockConfig;
+        use rs_cam_core::geo::{P3, V3};
+        use rs_cam_core::geometry::enriched_mesh::{
+            FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh,
+        };
+        use rs_cam_core::selection::Shape;
+        use rs_cam_core::session::{ItemState, LoadedModel, ProjectSessionBuilder};
+        use std::sync::Arc;
+
+        const DEPTH: f64 = 1.0;
+        let flat = |x0: f64, z: f64| {
+            let v = vec![
+                P3::new(x0, -10.0, z),
+                P3::new(x0 + 20.0, -10.0, z),
+                P3::new(x0 + 20.0, 10.0, z),
+                P3::new(x0, 10.0, z),
+            ];
+            FaceTessellation {
+                boundary_loops: vec![v.clone()],
+                vertices: v,
+                triangles: vec![[0, 1, 2], [0, 2, 3]],
+                surface_type: SurfaceType::Plane,
+                surface_params: SurfaceParams::Plane {
+                    normal: V3::new(0.0, 0.0, 1.0),
+                    d: z,
+                },
+            }
+        };
+        let enriched = build_enriched_mesh(
+            vec![flat(-40.0, 0.0), flat(-15.0, -4.0), flat(10.0, -8.0)],
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+        let model = LoadedModel {
+            id: 0,
+            path: std::path::PathBuf::from("synthetic://each_face.step"),
+            name: "Each face".to_owned(),
+            kind: None,
+            mesh: Some(Arc::clone(&enriched.mesh)),
+            items: Arc::new(rs_cam_core::io::brep_face_items(&enriched)),
+            enriched_mesh: Some(Arc::new(enriched)),
+            units: None,
+            winding_report: None,
+            load_error: None,
+            import_options: Default::default(),
+            import_report: None,
+            drawing: Default::default(),
+        };
+        let plane_z = |key: &MatchKey| {
+            model
+                .items
+                .iter()
+                .find(|item| item.key().names_same_geometry(key))
+                .and_then(|item| match item.shape() {
+                    Shape::Face(face) => Some(face.plane_z),
+                    _ => None,
+                })
+                .expect("a face of the part")
+        };
+        let picks: Vec<MatchKey> = model
+            .items
+            .iter()
+            .filter(|item| match item.shape() {
+                Shape::Face(face) => face.plane_z > -6.0,
+                _ => false,
+            })
+            .map(|item| MatchKey {
+                source: SourceRef::ToolpathModel,
+                ..item.key().clone()
+            })
+            .collect();
+        assert_eq!(picks.len(), 2, "the faces at Z 0 and Z -4");
+
+        let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+        tool.diameter = 3.0;
+        let config = ToolpathConfig {
+            shoe: Default::default(),
+            id: rs_cam_core::ToolpathId(0),
+            name: "Each face pocket".to_owned(),
+            enabled: true,
+            operation: OperationConfig::Pocket(PocketConfig {
+                floor: Floor::EachFace { depth: DEPTH },
+                selection: Selection::empty(),
+                ..PocketConfig::default()
+            }),
+            dressups: DressupConfig::default(),
+            heights: HeightsConfig::default(),
+            tool_id: 1,
+            model_id: 0,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: BoundaryConfig::default(),
+            boundary_inherit: true,
+            rest_analysis: RestAnalysisConfig::default(),
+            stock_source: StockSource::default(),
+            coolant: Default::default(),
+            debug_options: Default::default(),
+            feeds_provenance: Default::default(),
+            planner_origin: None,
+        };
+        let mut builder = ProjectSessionBuilder::new()
+            .stock(StockConfig {
+                x: 80.0,
+                y: 40.0,
+                z: 20.0,
+                origin_x: -40.0,
+                origin_y: -20.0,
+                origin_z: -15.0,
+                auto_from_model: false,
+                ..StockConfig::default()
+            })
+            .tool(tool)
+            .model(model.clone());
+        builder.add_toolpath(0, config).unwrap();
+        let mut s = builder.build();
+        for key in &picks {
+            edit(&mut s, 0, SelectionEdit::AddPick(key.clone()));
+        }
+
+        // MCP: the `selection_status` reply.
+        let reply = selection_status_reply(&s, 0, SelectionTarget::Op);
+        assert!(reply["refusal"].is_null(), "{reply}");
+        let rows = reply["item_states"].as_array().expect("item_states");
+        assert_eq!(rows.len(), 3, "{reply}");
+
+        // GUI: the report of the Selection section and the floor row.
+        let tc = s.get_toolpath_config(0).unwrap().clone();
+        let inputs = crate::ui::properties::toolpath_panel_inputs(
+            tc.id,
+            &s,
+            &crate::state::runtime::GuiState::default(),
+            None,
+            None,
+            false,
+        );
+        let section = inputs
+            .selection_report
+            .expect("the Pocket holds a selection")
+            .expect("the selection resolves");
+        assert_eq!(section.item_floor_z.len(), rows.len());
+        let mut cut = Vec::new();
+        for (index, row) in rows.iter().enumerate() {
+            assert_eq!(
+                row["floor_z"],
+                serde_json::json!(section.item_floor_z[index]),
+                "row {index}: MCP floor_z is the GUI report"
+            );
+            let state: ItemState = serde_json::from_value(row["state"].clone()).unwrap();
+            if state == ItemState::Cut {
+                let key: MatchKey = serde_json::from_value(row["key"].clone()).unwrap();
+                let z = row["floor_z"].as_f64().expect("a cut face has a floor Z");
+                assert!(
+                    (z - (plane_z(&key) - DEPTH)).abs() < 1e-9,
+                    "row {index}: the floor is the plane Z less the depth, got {z}"
+                );
+                cut.push(z);
+            } else {
+                assert!(row["floor_z"].is_null(), "row {index}: {row}");
+            }
+        }
+        cut.sort_by(|a, b| b.total_cmp(a));
+        assert_eq!(cut.len(), 2, "two cut faces: {reply}");
+        assert!((cut[0] - cut[1]).abs() > 1.0, "two floors: {cut:?}");
+
+        // The floor row reads the same floors (`FloorInputs`, top first).
+        let answer = s.toolpath_heights(&tc).unwrap();
+        let floor_inputs =
+            crate::ui::properties::FloorInputs::new(&answer, &tc.heights, Some(&section));
+        let row_floors: Vec<f64> = floor_inputs.face_floors.iter().map(|f| f.z).collect();
+        assert_eq!(row_floors, cut, "the floor row reads the MCP floors");
+    }
 }

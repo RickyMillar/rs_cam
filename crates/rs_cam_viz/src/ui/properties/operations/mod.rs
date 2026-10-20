@@ -29,7 +29,10 @@ pub(super) use surface_3d::{
 // The P4 split moved three topics into children beside this file. Each name
 // keeps its module path through these re-exports, so `ui/properties/mod.rs`
 // and the sibling operation editors import exactly what they imported before.
-pub use height_diagram::{DiagramFloor, FloorInputs, draw_height_diagram, pick_line, round_pin};
+pub use height_diagram::{
+    DiagramFloor, FaceFloor, FloorInputs, FloorRun, draw_height_diagram, floor_runs, pick_line,
+    round_pin,
+};
 pub(super) use shape_diagrams::{
     StepoverPattern, draw_dogbone_diagram, draw_inlay_diagram, draw_lead_in_out_diagram,
     draw_outline_diagram, draw_pencil_diagram, draw_point_set_diagram, draw_radial_diagram,

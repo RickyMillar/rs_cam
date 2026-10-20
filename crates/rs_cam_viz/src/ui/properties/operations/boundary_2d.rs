@@ -124,7 +124,7 @@ fn floor_row(
         let runs: Vec<String> = face_floors
             .iter()
             .enumerate()
-            .map(|(i, z)| format!("F{} Z {z:.2}", i + 1))
+            .map(|(i, run)| format!("F{} Z {:.2}", i + 1, run.z))
             .collect();
         format!(
             "{} \u{00B7} {count} floor{}",

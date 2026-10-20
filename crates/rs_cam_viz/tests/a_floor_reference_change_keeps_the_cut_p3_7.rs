@@ -49,7 +49,7 @@ use rs_cam_core::session::{
     Command, EditSelectionArgs, LoadedModel, ProjectSession, ProjectSessionBuilder,
     ReplaceToolpathConfigArgs, SelectionTarget, ToolpathConfig,
 };
-use rs_cam_viz::ui::properties::FloorInputs;
+use rs_cam_viz::ui::properties::{FloorInputs, floor_runs};
 
 /// The plane Z of the picked face (mm).
 const FACE_Z: f64 = -4.0;
@@ -284,4 +284,77 @@ fn a_reference_with_no_z_is_not_offered_p3_7() {
         ),
         Err(FloorRefusal::OutOfDomain { .. })
     ));
+}
+
+/// Geometry selection P3.8 (the P3.7 gap): each floor run of the height
+/// diagram has a hover with its Z and its reference, and under "each picked
+/// face" the count of faces at that floor. The runs come from THE session
+/// rule (`FloorInputs` of `toolpath_heights` and `selection_status`).
+///
+/// Red proof: the face count dropped from `FloorInputs::new` (each distinct
+/// floor counts 1 face): the "2 faces" arm fails.
+#[test]
+fn each_floor_run_names_its_reference_and_faces_p3_8() {
+    let mut s = session();
+    // One floor: "FL" with the reference of the floor.
+    let floor = Floor::Top { depth: DEPTH };
+    let runs = floor_runs(Some((&floor, &inputs(&s))), f64::NAN);
+    assert_eq!(runs.len(), 1);
+    assert!(!runs[0].dashed);
+    assert_eq!(
+        runs[0].hover,
+        format!("FL: Z {FLOOR_Z:.1}, floor from Top Z")
+    );
+
+    // Each picked face: pick the model top face too. The two faces are at
+    // Z 0 and Z -4, so with depth 0 the faces give two floors; the stock
+    // top is Z 5, so neither face is at the top.
+    let top_face = {
+        let model = model();
+        let item = model
+            .items
+            .iter()
+            .find(|item| match item.shape() {
+                Shape::Face(face) => face.plane_z.abs() < 1e-9,
+                _ => false,
+            })
+            .expect("the part holds the model top face")
+            .clone();
+        MatchKey {
+            source: SourceRef::ToolpathModel,
+            ..item.key().clone()
+        }
+    };
+    let _ = s
+        .apply(Command::EditSelection(EditSelectionArgs {
+            index: 0,
+            target: SelectionTarget::Op,
+            edit: SelectionEdit::AddPick(top_face),
+        }))
+        .unwrap();
+    let each = Floor::EachFace { depth: 0.0 };
+    write(&mut s, each);
+    let runs = floor_runs(Some((&each, &inputs(&s))), f64::NAN);
+    let hovers: Vec<&str> = runs.iter().map(|r| r.hover.as_str()).collect();
+    assert_eq!(
+        hovers,
+        [
+            "F1: Z 0.0, 1 face, floor from Each picked face",
+            "F2: Z -4.0, 1 face, floor from Each picked face",
+        ]
+    );
+    assert!(runs.iter().all(|r| r.dashed));
+
+    // Two cut faces at one floor give one run with a count of 2: a report
+    // with the floor Z -4 on two items and no floor on a third.
+    let tc = &s.toolpath_configs()[0];
+    let answer = s.toolpath_heights(tc).unwrap();
+    let report = rs_cam_core::session::SelectionReport {
+        item_floor_z: vec![Some(-4.0), None, Some(-4.0)],
+        ..Default::default()
+    };
+    let two = FloorInputs::new(&answer, &tc.heights, Some(&report));
+    let runs = floor_runs(Some((&each, &two)), f64::NAN);
+    let hovers: Vec<&str> = runs.iter().map(|r| r.hover.as_str()).collect();
+    assert_eq!(hovers, ["F1: Z -4.0, 2 faces, floor from Each picked face"]);
 }

@@ -17,9 +17,20 @@ pub struct FloorInputs {
     /// THE rule of a change of reference and of a drag (ruling L-10).
     pub refs: FloorReferences,
     /// Under "each picked face": the distinct floor Z of the cut faces, top
-    /// first (`SelectionReport::item_floor_z`, `foreign_floor_z`). Empty for
+    /// first, each with the count of faces at that floor
+    /// (`SelectionReport::item_floor_z`, `foreign_floor_z`). Empty for
     /// every other floor.
-    pub face_floors: Vec<f64>,
+    pub face_floors: Vec<FaceFloor>,
+}
+
+/// One distinct face floor under "each picked face": its Z and the count of
+/// cut faces at that Z.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FaceFloor {
+    /// The floor Z in the setup frame.
+    pub z: f64,
+    /// The count of cut faces whose floor is at `z`. Never 0.
+    pub faces: usize,
 }
 
 impl FloorInputs {
@@ -31,13 +42,19 @@ impl FloorInputs {
         heights: &HeightsConfig,
         report: Option<&rs_cam_core::session::SelectionReport>,
     ) -> Self {
-        let mut face_floors: Vec<f64> = report
+        let mut floor_z: Vec<f64> = report
             .into_iter()
             .flat_map(|r| r.item_floor_z.iter().chain(&r.foreign_floor_z))
             .filter_map(|z| *z)
             .collect();
-        face_floors.sort_by(|a, b| b.total_cmp(a));
-        face_floors.dedup_by(|a, b| a.to_bits() == b.to_bits());
+        floor_z.sort_by(|a, b| b.total_cmp(a));
+        let mut face_floors: Vec<FaceFloor> = Vec::new();
+        for z in floor_z {
+            match face_floors.last_mut() {
+                Some(last) if last.z.to_bits() == z.to_bits() => last.faces += 1,
+                _ => face_floors.push(FaceFloor { z, faces: 1 }),
+            }
+        }
         Self {
             refs: answer.floor_references(heights),
             face_floors,
@@ -65,6 +82,68 @@ struct DiagramLine {
     /// P3.7: a run of one face floor under "each picked face": drawn
     /// dashed.
     dashed: bool,
+    /// The hover of a floor run of an `OpFloor` op ([`FloorRun::hover`]).
+    hover: Option<String>,
+}
+
+/// One floor run of the height diagram of an `OpFloor` op: the one floor
+/// ("FL"), or one distinct face floor under "each picked face" ("F1",
+/// "F2", ...).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FloorRun {
+    /// The floor Z in the setup frame.
+    pub z: f64,
+    /// The label beside the run: "FL -6.0" or "F2 15.0".
+    pub text: String,
+    /// The hover of the run: the Z, the reference and, under "each picked
+    /// face", the face count ("F2: Z 15.0, 1 face, floor from Each picked
+    /// face").
+    pub hover: String,
+    /// A face floor draws dashed.
+    pub dashed: bool,
+}
+
+/// The floor runs of an `OpFloor` op (geometry selection P3.7; the hover
+/// P3.8). Under "each picked face" with resolved face floors: one dashed
+/// run per distinct face floor, top first. Else one run at the floor Z
+/// that the floor references give, or at `bottom_z` when they give none.
+#[must_use]
+pub fn floor_runs(floor: Option<(&Floor, &FloorInputs)>, bottom_z: f64) -> Vec<FloorRun> {
+    let each_face = floor
+        .filter(|(f, _)| matches!(f, Floor::EachFace { .. }))
+        .map(|(_, inputs)| inputs.face_floors.as_slice())
+        .unwrap_or_default();
+    if each_face.is_empty() {
+        let z = floor
+            .and_then(|(f, inputs)| inputs.refs.floor_z(f).ok())
+            .unwrap_or(bottom_z);
+        let reference = floor.map_or("Floor", |(f, _)| f.reference_label());
+        return vec![FloorRun {
+            z,
+            text: format!("FL {z:.1}"),
+            hover: format!("FL: Z {z:.1}, floor from {reference}"),
+            dashed: false,
+        }];
+    }
+    each_face
+        .iter()
+        .enumerate()
+        .map(|(i, run)| {
+            let n = i + 1;
+            let z = run.z;
+            let noun = if run.faces == 1 { "face" } else { "faces" };
+            FloorRun {
+                z,
+                text: format!("F{n} {z:.1}"),
+                hover: format!(
+                    "F{n}: Z {z:.1}, {} {noun}, floor from {}",
+                    run.faces,
+                    Floor::EachFace { depth: 0.0 }.reference_label()
+                ),
+                dashed: true,
+            }
+        })
+        .collect()
 }
 
 /// The `DiagramLine::index` of the Bottom row. The drag handler and the
@@ -304,34 +383,22 @@ pub fn draw_height_diagram(
         FloorOwner::OpDial => false,
     };
     // The floor runs of an `OpFloor` op: the face floors under "each picked
-    // face", else the one resolved floor.
-    let floor_runs: Vec<(f64, String, bool)> = match owner {
-        FloorOwner::OpFloor => {
-            let each_face = floor
-                .as_ref()
-                .filter(|f| matches!(f.floor, Floor::EachFace { .. }))
-                .map(|f| f.inputs.face_floors.clone())
-                .unwrap_or_default();
-            if each_face.is_empty() {
-                let z = floor
-                    .as_ref()
-                    .and_then(|f| f.inputs.refs.floor_z(f.floor).ok())
-                    .unwrap_or(resolved.bottom_z);
-                vec![(z, format!("FL {z:.1}"), false)]
-            } else {
-                each_face
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &z)| (z, format!("F{} {z:.1}", i + 1), true))
-                    .collect()
-            }
-        }
+    // face", else the one resolved floor. Each floor run has a hover.
+    let floor_runs: Vec<(f64, String, bool, Option<String>)> = match owner {
+        FloorOwner::OpFloor => floor_runs(
+            floor.as_ref().map(|f| (&*f.floor, f.inputs)),
+            resolved.bottom_z,
+        )
+        .into_iter()
+        .map(|run| (run.z, run.text, run.dashed, Some(run.hover)))
+        .collect(),
         FloorOwner::HeightsBottom => vec![(
             resolved.bottom_z,
             format!("BZ {:.1}", resolved.bottom_z),
             false,
+            None,
         )],
-        FloorOwner::OpDial => vec![(resolved.bottom_z, "BZ (not used)".to_owned(), false)],
+        FloorOwner::OpDial => vec![(resolved.bottom_z, "BZ (not used)".to_owned(), false, None)],
     };
     let bottom_color = if bottom_drives_the_cut {
         tokens::DANGER
@@ -347,6 +414,7 @@ pub fn draw_height_diagram(
             text: format!("CZ {:.1}", resolved.clearance_z),
             index: 0,
             dashed: false,
+            hover: None,
         },
         DiagramLine {
             z: resolved.retract_z,
@@ -354,6 +422,7 @@ pub fn draw_height_diagram(
             text: format!("RZ {:.1}", resolved.retract_z),
             index: 1,
             dashed: false,
+            hover: None,
         },
         DiagramLine {
             z: resolved.feed_z,
@@ -361,6 +430,7 @@ pub fn draw_height_diagram(
             text: format!("FZ {:.1}", resolved.feed_z),
             index: 2,
             dashed: false,
+            hover: None,
         },
         DiagramLine {
             z: resolved.top_z,
@@ -368,15 +438,21 @@ pub fn draw_height_diagram(
             text: format!("TZ {:.1}", resolved.top_z),
             index: 3,
             dashed: false,
+            hover: None,
         },
     ];
-    lines.extend(floor_runs.iter().map(|(z, text, dashed)| DiagramLine {
-        z: *z,
-        color: bottom_color,
-        text: text.clone(),
-        index: BOTTOM_LINE_INDEX,
-        dashed: *dashed,
-    }));
+    lines.extend(
+        floor_runs
+            .iter()
+            .map(|(z, text, dashed, hover)| DiagramLine {
+                z: *z,
+                color: bottom_color,
+                text: text.clone(),
+                index: BOTTOM_LINE_INDEX,
+                dashed: *dashed,
+                hover: hover.clone(),
+            }),
+    );
 
     // Compute Z range with margin.
     //
@@ -393,7 +469,7 @@ pub fn draw_height_diagram(
         ctx.stock_top_z,
         ctx.stock_bottom_z,
     ];
-    all_z_values.extend(floor_runs.iter().map(|(z, _, _)| *z));
+    all_z_values.extend(floor_runs.iter().map(|(z, _, _, _)| *z));
     all_z_values.extend(ctx.model_top_z);
     all_z_values.extend(ctx.model_bottom_z);
     let z_min_raw = all_z_values.iter().copied().reduce(f64::min).unwrap_or(0.0);
@@ -571,6 +647,24 @@ pub fn draw_height_diagram(
         && let Some(note) = bottom_z_pin_note(op_type)
     {
         response = response.on_hover_text(note);
+    }
+    // P3.8: a floor run of an `OpFloor` op names its reference, its Z and,
+    // under "each picked face", its face count. Every floor run shares
+    // `BOTTOM_LINE_INDEX` (the drag moves the floor), so the hover takes
+    // the floor run nearest the pointer.
+    if nearest_line == Some(BOTTOM_LINE_INDEX)
+        && let Some(pointer) = response.hover_pos()
+        && let Some(hover) = lines
+            .iter()
+            .filter(|line| line.index == BOTTOM_LINE_INDEX)
+            .filter_map(|line| {
+                let hover = line.hover.as_ref()?;
+                Some(((pointer.y - z_to_y(line.z)).abs(), hover))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, hover)| hover.clone())
+    {
+        response = response.on_hover_text(hover);
     }
 
     // Labels are pushed apart in the order they are drawn, so two heights a

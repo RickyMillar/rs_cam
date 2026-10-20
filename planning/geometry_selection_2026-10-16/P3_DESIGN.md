@@ -607,20 +607,20 @@ region under `EachFace`; a refused item shows `NoFaceForFloor`,
 
 ## 9. MCP and CLI parity (question 8)
 
-| Surface | Change |
-|---|---|
-| Core command | NEW `Command::SetToolpathFloor(SetToolpathFloorArgs { index, floor: Floor })`; registry row: `gui: Skip("the GUI inspector replaces the whole config through replace_toolpath_config")`, `mcp: Reached`, `cli: Reached` |
-| W5 schema | `floor` is `#[param(driver_set = DRIVER_SET_FLOOR)]` (NEW reason const, the `DRIVER_SET_SELECTION` pattern, `operation_configs.rs:67`); `get_operation_schema` lists it as driver-set |
-| MCP NEW tool | `set_toolpath_floor { index, floor }`; `SetToolpathFloorParam` in `rs_cam_mcp/src/server.rs`; the JSON of `floor` equals the file JSON (`{"from":"each_face","depth":0.0}`) |
-| `set_toolpath_param depth` on the four ops | refused: no such param; the message names `set_toolpath_floor` |
-| `set_toolpath_param floor` | refused with the driver-set reason |
-| `set_toolpath_heights` `bottom_z` on the four ops | refused (`floor_conflict`); the doc of `SetToolpathHeightsParam.bottom_z` (`server.rs:526`) says so |
-| `get_toolpath_params` | shows `floor` as an object |
-| `list_toolpaths` / `project_summary` / diagnostics heights | NEW `floor: { from, label, z, regions: [{ item, z }] }` and `top_from`, from `toolpath_heights` |
-| `selection_status` | `item_states` gains `floor_z` per face region (DESIGN 7.5 `floors`) |
-| CLI job file | NEW job key `floor` in `OperationDef::JOB_KEYS` (`rs_cam_cli/src/job.rs:246`), applied by `SetToolpathFloor` after the params, as `selection` is |
-| CLI sweep | a sweep over `depth` on the four ops is refused by the job check (`job.rs:268`). A sweep over the floor depth is a follow-up (needs a path syntax) **[LEAD] L-12** |
-| `mcp_wire_surface_pin` | moves by design |
+| Surface | Change | Pinned by (P3.8 audit) |
+|---|---|---|
+| Core command | NEW `Command::SetToolpathFloor(SetToolpathFloorArgs { index, floor: Floor })`; registry row: `gui: Skip("the GUI inspector replaces the whole config through replace_toolpath_config")`, `mcp: Reached`, `cli: Reached` | `command_registry_completeness`, `mcp_mutation_rows_reach_core` (core); `production_writes_go_through_apply_wp15a` (viz) |
+| W5 schema | `floor` is `#[param(driver_set = DRIVER_SET_FLOOR)]` (NEW reason const, the `DRIVER_SET_SELECTION` pattern, `operation_configs.rs:67`); `get_operation_schema` lists it as driver-set | lib `every_config_field_is_published_driver_set_or_skipped` (core); `the_floor_wire_rows_name_the_floor_door_p3_8` (viz lib: `schema_for_type` gives `floor` on the four ops, with each reference and `set_through`; no `floor` or `depth` param; Face gives none) |
+| MCP NEW tool | `set_toolpath_floor { index, floor }`; `SetToolpathFloorParam` in `rs_cam_mcp/src/server.rs`; the JSON of `floor` equals the file JSON (`{"from":"each_face","depth":0.0}`) | `mcp_and_gui_give_one_floor_p3_3` (viz lib); lib `the_file_spelling_round_trips` (core); `mcp_wire_surface_pin` (viz) |
+| `set_toolpath_param depth` on the four ops | refused: no such param; the message names `set_toolpath_floor` | `the_floor_wire_rows_name_the_floor_door_p3_8` (viz lib; NEW in P3.8) |
+| `set_toolpath_param floor` | refused with the driver-set reason | `every_op_conforms_w4` check 6 (core) |
+| `set_toolpath_heights` `bottom_z` on the four ops | refused (`floor_conflict`); the doc of `SetToolpathHeightsParam.bottom_z` (`server.rs:526`) says so | `the_floor_reaches_the_motion_g_bottompin` arm 2 (core); the doc text: `mcp_wire_surface_pin` (viz) |
+| `get_toolpath_params` | shows `floor` as an object | PARTIAL: the `heights.floor` block is `toolpath_heights_json`, pinned by `mcp_and_gui_give_one_floor_p3_3`. The reply assembly (`mcp_get_toolpath_params`) needs an `RsCamApp`, which no headless test builds |
+| `list_toolpaths` / `project_summary` / diagnostics heights | AS SHIPPED (P3.3 deviation, accepted): the `heights` block (`top_from`, `floor`, `floor_label`, `floor_z`, `floor_refusal`) is on `get_toolpath_params` and the `set_toolpath_floor` reply, not on the summary replies; the MCP diagnostics read `toolpath_heights` (`from_toolpath_heights`) | `mcp_and_gui_give_one_floor_p3_3` (viz lib); `one_heights_resolver_for_every_surface_p3_1` (core) |
+| `selection_status` | `item_states` gains `floor_z` per face region (DESIGN 7.5 `floors`) | `mcp_floor_z_of_each_cut_face_equals_the_gui_report_p3_8` (viz lib; NEW in P3.8) |
+| CLI job file | NEW job key `floor` in `OperationDef::JOB_KEYS` (`rs_cam_cli/src/job.rs:246`), applied by `SetToolpathFloor` after the params, as `selection` is | `a_job_file_sets_a_floor_p3_3`; `integration.rs` (the floor key reads back) (CLI) |
+| CLI sweep | a sweep over `depth` on the four ops is refused by the job check (`job.rs:268`). A sweep over the floor depth is a follow-up (needs a path syntax) **[LEAD] L-12** | `a_depth_sweep_on_a_floor_op_refuses_p3_8` (CLI lib; NEW in P3.8). The floor-depth sweep stays open (L-12) |
+| `mcp_wire_surface_pin` | moves by design | `mcp_wire_surface_pin` (viz) |
 
 Two write routes, on purpose (the heights pattern, not the selection
 pattern of P4 L-1): the GUI edits the draft and sends the whole config
