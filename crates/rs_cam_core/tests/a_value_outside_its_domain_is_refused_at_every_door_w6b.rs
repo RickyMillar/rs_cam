@@ -340,3 +340,49 @@ fn the_loader_refuses_each_entity_and_names_the_field() {
         Err(SessionError::OutOfDomain(DomainRefusal::Shoe { .. }))
     ));
 }
+
+// ── The doors whose command arm is in `session/command.rs` ──────────
+
+use rs_cam_core::session::{ReplaceToolpathConfigArgs, SetMachineArgs, SetStockConfigArgs};
+
+#[test]
+fn replace_toolpath_config_refuses() {
+    let mut s = session();
+    let result = s
+        .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+            index: 0,
+            config: Box::new(tp(zero_feed(OperationType::Pocket))),
+        }))
+        .map(|_| ());
+    assert_feed_refused(result);
+}
+
+#[test]
+fn set_stock_config_refuses() {
+    let mut s = session();
+    let stock = StockConfig {
+        x: -1.0,
+        ..StockConfig::default()
+    };
+    assert!(matches!(
+        s.apply(Command::SetStockConfig(SetStockConfigArgs {
+            stock: Box::new(stock)
+        })),
+        Err(SessionError::OutOfDomain(DomainRefusal::Stock(_)))
+    ));
+}
+
+#[test]
+fn set_machine_refuses() {
+    let mut s = session();
+    let machine = MachineProfile {
+        aggressiveness: 0.0,
+        ..MachineProfile::default()
+    };
+    assert!(matches!(
+        s.apply(Command::SetMachine(SetMachineArgs {
+            machine: Box::new(machine)
+        })),
+        Err(SessionError::OutOfDomain(DomainRefusal::Machine(_)))
+    ));
+}

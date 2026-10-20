@@ -579,12 +579,19 @@ impl ProjectSession {
     /// Replace the stock configuration.
     ///
     /// Drops every toolpath result — see [`Self::drop_all_results`].
+    ///
+    /// # Errors
+    /// [`SessionError::OutOfDomain`] for a stock field outside its domain
+    /// (W6b, F210); nothing is written.
     #[instrument(skip(self, stock))]
-    pub(crate) fn set_stock_config(&mut self, stock: StockConfig) -> Effects {
-        self.with_effects(None, move |session| {
+    pub(crate) fn set_stock_config(&mut self, stock: StockConfig) -> Result<Effects, SessionError> {
+        stock
+            .validate()
+            .map_err(crate::compute::domain::DomainRefusal::Stock)?;
+        Ok(self.with_effects(None, move |session| {
             session.stock = stock;
             session.drop_all_results();
-        })
+        }))
     }
 
     /// Update stock dimensions from a bounding box (used by `auto_from_model`
@@ -660,16 +667,30 @@ impl ProjectSession {
     ///
     /// B7: a profile that moves the link envelope also drops the results
     /// whose generation read it ([`Self::drop_link_readers_if_moved`]).
+    ///
+    /// # Errors
+    /// [`SessionError::OutOfDomain`] for a profile, kinematics or head
+    /// field outside its domain (W6b, F210); nothing is written.
     #[instrument(skip(self, machine))]
-    pub(crate) fn set_machine(&mut self, machine: crate::machine::MachineProfile) -> Effects {
-        self.with_effects(None, move |session| {
+    pub(crate) fn set_machine(
+        &mut self,
+        machine: crate::machine::MachineProfile,
+    ) -> Result<Effects, SessionError> {
+        machine
+            .validate()
+            .map_err(crate::compute::domain::DomainRefusal::Machine)?;
+        machine
+            .head
+            .validate()
+            .map_err(crate::compute::domain::DomainRefusal::Head)?;
+        Ok(self.with_effects(None, move |session| {
             let before = session.machine.link_kinematics();
             let head_before = session.machine.head.fixed_digest();
             session.machine = machine;
             session.drop_simulation(SimulationDropCause::Machine);
             session.drop_link_readers_if_moved(&before);
             session.drop_head_readers_if_moved(head_before);
-        })
+        }))
     }
 
     /// Write the machine head (H1).
@@ -752,17 +773,23 @@ impl ProjectSession {
     /// non-positive value, belong to the surface that collected the
     /// numbers.
     ///
+    /// # Errors
+    /// [`SessionError::OutOfDomain`] for a field outside its domain (W6b,
+    /// F210); nothing is written.
     #[instrument(skip(self, kinematics))]
     pub(crate) fn set_machine_kinematics(
         &mut self,
         kinematics: crate::machine::kinematics::MachineKinematics,
-    ) -> Effects {
-        self.with_effects(None, move |session| {
+    ) -> Result<Effects, SessionError> {
+        kinematics
+            .validate()
+            .map_err(crate::compute::domain::DomainRefusal::Machine)?;
+        Ok(self.with_effects(None, move |session| {
             let before = session.machine.link_kinematics();
             session.machine.kinematics = Some(kinematics);
             session.drop_simulation(SimulationDropCause::Machine);
             session.drop_link_readers_if_moved(&before);
-        })
+        }))
     }
 
     /// Write the machine fields a GRBL `$$` dump states.

@@ -2600,12 +2600,10 @@ impl ProjectSession {
             Command::AddTool(args) => self.add_tool(*args.tool),
             Command::AddToolFromLibrary(args) => self.add_tool(*args.tool),
             Command::RemoveTool(args) => self.remove_tool(args.index),
-            Command::SetStockConfig(args) => Ok(self.set_stock_config(*args.stock)),
+            Command::SetStockConfig(args) => self.set_stock_config(*args.stock),
             Command::SetStockSource(args) => self.set_stock_source(args.index, args.source),
-            Command::SetMachine(args) => Ok(self.set_machine(*args.machine)),
-            Command::SetMachineKinematics(args) => {
-                Ok(self.set_machine_kinematics(*args.kinematics))
-            }
+            Command::SetMachine(args) => self.set_machine(*args.machine),
+            Command::SetMachineKinematics(args) => self.set_machine_kinematics(*args.kinematics),
             Command::ImportMachineSettings(args) => Ok(self.import_machine_settings(&args.import)),
             Command::SetMachineHead(args) => self.set_machine_head(*args.head),
             Command::SetToolpathShoe(args) => self.set_toolpath_shoe(args.index, args.shoe),
@@ -2721,6 +2719,9 @@ impl ProjectSession {
                 // P3.2: the GUI door refuses a pinned Bottom Z on an
                 // `OpFloor` op before it writes anything.
                 config.floor_conflict()?;
+                // W6b (F030): every number of the op and the shoe is
+                // inside its domain.
+                crate::compute::domain::validate_toolpath(&config)?;
                 Ok(self.with_effects(Some(index), move |session| {
                     let after = config.generation_inputs_signature();
                     let Some(slot) = session.toolpath_configs.get_mut(index) else {
