@@ -253,42 +253,20 @@ fn refine_band_chords(
 }
 
 impl Default for UnifiedFinishParams {
-    /// Mirrors the standalone ops' own defaults (`ScallopConfig` /
-    /// `WaterlineConfig` / `DropCutterConfig` in
-    /// `compute::operation_configs`) so switching between the standalone
-    /// three-op stack and this orchestrator doesn't silently change
-    /// feeds/quality at the same tool. `safe_z` has no config-struct
-    /// equivalent (it's the runtime `ctx.heights.retract_z` at the op-adapter
-    /// layer, wave 2) — 30.0 mirrors `ScallopParams::default()`'s
-    /// stand-in value.
+    /// The shipped values: `UnifiedFinishConfig::default()` through its one
+    /// translation, `UnifiedFinishConfig::params` (F102). A core default
+    /// and a config default that disagree is the divergence class this
+    /// programme has found more than once, so this default has no values
+    /// of its own. The config feeds are the motion. `safe_z` has no config
+    /// field (it is the runtime `ctx.heights.retract_z` at the op-adapter
+    /// layer, wave 2), so 30 mm stands in for it.
     fn default() -> Self {
-        Self {
-            scallop_height: 0.1,
-            tolerance: 0.05,
-            raster_stepover: 1.0,
-            z_step: 1.0,
-            sampling: 0.5,
-            stock_to_leave: 0.0,
-            feed_rate: 1000.0,
-            plunge_rate: 500.0,
+        let config = crate::compute::operation_configs::UnifiedFinishConfig::default();
+        config.params(crate::compute::operation_configs::OpMotion {
+            feed_rate: config.feed_rate,
+            plunge_rate: config.plunge_rate,
             safe_z: 30.0,
-            // Kept in lockstep with
-            // `operation_configs::default_unified_finish_intra_region_hookup_mm`
-            // (ON at 6.0 since 2026-08-03, by operator ruling on wave 12's
-            // evidence). Production always overrides this from config, so
-            // only direct library callers and unit tests read it — which is
-            // exactly why it matters that it agrees: a core default and a
-            // serde default that disagree is the divergence class this
-            // programme has already found twice.
-            intra_region_hookup_mm: 6.0,
-            classification_sampler: ClassificationSampler::PRODUCTION,
-            // ON since 2026-09-01: the C4 operator surface review passed
-            // (`planning/thin_organic_2026-08-27/FINDINGS.md` §7, "C4
-            // ruling"). Kept in lockstep with
-            // `operation_configs::default_unified_finish_monotone_cell_
-            // decomposition`, for the reason the line above states.
-            monotone_cell_decomposition: true,
-        }
+        })
     }
 }
 
@@ -1668,6 +1646,10 @@ impl UnifiedFinishOp<'_> {
             link_kinematics: link_kinematics.cloned(),
             // Boundary-less: see `ClaimsConfig::crease_hookup_mm`.
             hookup_distance: claims.map_or(0.0, |c| c.crease_hookup_mm),
+            // The crease node traces the centreline only: the value it has
+            // always shipped. F102: it read the engine default's 0 before;
+            // the standalone pencil's shipped default is 1 offset pass.
+            num_offset_passes: 0,
             ..PencilParams::default()
         };
         // G-ENTRYLOAD: give crease entries the same bite-budgeted ramp the

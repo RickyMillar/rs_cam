@@ -1990,8 +1990,6 @@ fn modulate_annotated_against_trace(
         .fold(0.0_f64, f64::max);
     let nominal_axial = if max_axial > 0.0 { max_axial } else { 0.0 };
     let engagement_dia = tool_def.lookup_diameter_at(max_axial.max(0.0));
-    let stickout = tool_def.stickout.max(0.0);
-    let youngs = tool_def.tool_material.youngs_modulus_n_per_mm2();
     let machine_profile = context.machine;
     let available_kw = machine_profile.power_at_rpm(spindle_rpm as f64);
     // The deflection and power caps of one material. Materials without a
@@ -2007,22 +2005,19 @@ fn modulate_annotated_against_trace(
         // agree on a cut. Compliance is δ-per-newton at the toolpath's
         // peak axial DOC; deflection is linear in force so one scalar
         // suffices.
-        let deflection_inputs = match line_opt.map(|l| (l.ks_n_per_mm2(), l.f_edge_n_per_mm())) {
-            Some((ks, f_edge)) if stickout > 0.0 && youngs > 0.0 => {
-                let compliance = tool_def.tip_deflection_mm(1.0, max_axial.max(0.0), youngs);
-                if compliance.is_finite() && compliance > 0.0 {
-                    Some(DeflectionLimitInputs {
-                        ks_n_per_mm2: ks,
-                        f_edge_n_per_mm: f_edge,
-                        compliance_mm_per_n: compliance,
-                        max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
-                    })
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        };
+        // F082: the one compliance assembly the inspector also reads.
+        let deflection_inputs = line_opt.and_then(|line| {
+            let compliance = crate::tool_load::deflection::tip_compliance_mm_per_n(
+                &tool_def,
+                max_axial.max(0.0),
+            )?;
+            Some(DeflectionLimitInputs {
+                ks_n_per_mm2: line.ks_n_per_mm2(),
+                f_edge_n_per_mm: line.f_edge_n_per_mm(),
+                compliance_mm_per_n: compliance,
+                max_tip_deflection_mm: crate::tool_load::deflection::EXCEEDS_BOUND_MM,
+            })
+        });
         let power_inputs = match line_opt {
             Some(line) if available_kw > 0.0 => Some(PowerLimitInputs {
                 // S2-9 (2026-05-31): pass the force line; the solver applies
@@ -2191,11 +2186,7 @@ fn build_sim_request(
         stock_top_z: stock_bbox.max.z,
         resolution,
         spindle_rpm: post.spindle_speed,
-        rapid_feed_mm_min: if post.high_feedrate_mode {
-            post.high_feedrate
-        } else {
-            machine.max_feed_mm_min.max(1.0)
-        },
+        rapid_feed_mm_min: post.rapid_feed_mm_min(machine),
         model_mesh,
         kinematics: machine
             .kinematics

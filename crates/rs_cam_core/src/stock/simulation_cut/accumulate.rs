@@ -2,8 +2,8 @@
 //! and the span grouping that feeds them.
 
 use super::{
-    CutKinematics, KinematicsAccumulator, KinematicsSummary, SimulationCutSample,
-    SimulationCutSummary, SimulationToolpathCutSummary, SummaryAccumulator,
+    CutKinematics, KinematicsAccumulator, KinematicsSummary, RadialEngagementClass,
+    SimulationCutSample, SimulationCutSummary, SimulationToolpathCutSummary, SummaryAccumulator,
 };
 use crate::ids::ToolpathId;
 use crate::trace::toolpath_spans::SpanId;
@@ -132,12 +132,16 @@ impl SummaryAccumulator {
             self.cutting_runtime_s += sample.segment_time_s;
             self.engagement_time_weighted_sum +=
                 sample.engagement.radial_woc_fraction * sample.segment_time_s;
-            if sample.engagement.radial_woc_fraction < 0.02 {
-                self.air_cut_time_s += sample.segment_time_s;
-                self.air_cut_issue_count += 1;
-            } else if sample.engagement.radial_woc_fraction < 0.10 {
-                self.low_engagement_time_s += sample.segment_time_s;
-                self.low_engagement_issue_count += 1;
+            match sample.radial_engagement_class() {
+                RadialEngagementClass::Air => {
+                    self.air_cut_time_s += sample.segment_time_s;
+                    self.air_cut_issue_count += 1;
+                }
+                RadialEngagementClass::Low => {
+                    self.low_engagement_time_s += sample.segment_time_s;
+                    self.low_engagement_issue_count += 1;
+                }
+                RadialEngagementClass::Engaged => {}
             }
             // Step 2 D substrate: route cutting samples to their kinematics
             // sub-accumulator. `Rapid` is skipped (samples emitted as

@@ -275,15 +275,13 @@ pub fn chip_target_for_toolpath(
     toolpath_id: ToolpathId,
     sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
 ) -> Option<ChipTarget> {
-    use crate::feeds::vendor_normalize::op_family_to_lut;
-
     if matches!(material, Material::Custom { .. }) {
         return None;
     }
     // F029: no chip target for a tool outside its domain.
     let tool_def = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
     let spec = operation.spec();
-    let lut_op_family = op_family_to_lut(spec.feeds_family);
+    let lut_op_family: LutOperationFamily = spec.feeds_family.into();
     let lut_pass_role: LutPassRole = spec.feeds_pass_role.into();
     // Peak axial DOC over the same sample population the gate
     // measures: steady-state only. F3.4 — pre-fix this folded over

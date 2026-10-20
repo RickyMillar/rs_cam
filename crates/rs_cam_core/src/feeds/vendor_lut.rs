@@ -154,6 +154,19 @@ impl ToolFamily {
             Self::FacingBit => "facing bit",
         }
     }
+
+    /// The short title-case name a GUI table column prints for the
+    /// family. F074: the GUI read its own copy of this table before.
+    pub const fn display_label(self) -> &'static str {
+        match self {
+            Self::FlatEnd => "Flat end",
+            Self::BallNose => "Ball nose",
+            Self::BullNose => "Bull nose",
+            Self::ChamferVbit => "V-bit",
+            Self::TaperedBallNose => "Tapered ball",
+            Self::FacingBit => "Facing bit",
+        }
+    }
 }
 
 impl MaterialFamily {
@@ -173,6 +186,27 @@ impl MaterialFamily {
             Self::Delrin => "Delrin",
             Self::Aluminum => "aluminium",
             Self::Fiberglass => "fibreglass",
+        }
+    }
+
+    /// The short title-case name a GUI table column prints for the
+    /// family. F074: the GUI read its own copy of this table before, with
+    /// US spelling; this table keeps the UK spelling of [`Self::label`].
+    pub const fn display_label(self) -> &'static str {
+        match self {
+            Self::Softwood => "Softwood",
+            Self::Hardwood => "Hardwood",
+            Self::PlywoodSoftwood => "Plywood (soft)",
+            Self::PlywoodHardwood => "Plywood (hard)",
+            Self::Mdf => "MDF",
+            Self::Hdf => "HDF",
+            Self::Particleboard => "Particle board",
+            Self::Acrylic => "Acrylic",
+            Self::Hdpe => "HDPE",
+            Self::Delrin => "Delrin",
+            Self::Polycarbonate => "Polycarbonate",
+            Self::Aluminum => "Aluminium",
+            Self::Fiberglass => "Fibreglass",
         }
     }
 }
@@ -928,11 +962,10 @@ mod tests {
     #[test]
     fn embedded_rows_reachable_by_some_operation_family() {
         use crate::compute::catalog::OperationType;
-        use crate::feeds::vendor_normalize::op_family_to_lut;
 
         let reachable: std::collections::HashSet<LutOperationFamily> = OperationType::ALL
             .iter()
-            .map(|op| op_family_to_lut(op.registry_entry().spec.feeds_family))
+            .map(|op| LutOperationFamily::from(op.registry_entry().spec.feeds_family))
             .collect();
         let lut = VendorLut::embedded();
         for obs in &lut.observations {
@@ -954,7 +987,7 @@ mod tests {
     /// nothing asserted that every *queryable family* has rows.
     ///
     /// Drill is the silent inverse case. `LutOperationFamily::Drill`
-    /// exists in the schema, `op_family_to_lut` maps the Drill and
+    /// exists in the schema, `LutOperationFamily::from` maps the Drill and
     /// AlignmentPinDrill operations onto it, and
     /// `vendor_lookup::passes_must_match` returns `false` immediately on
     /// family mismatch — so every drill query is a guaranteed miss, and
@@ -980,7 +1013,6 @@ mod tests {
     #[test]
     fn queryable_families_without_rows_are_a_stated_fact() {
         use crate::compute::catalog::OperationType;
-        use crate::feeds::vendor_normalize::op_family_to_lut;
 
         /// Queryable families with zero bundled rows, as of 2026-08-04
         /// (held by ruling B5, 2026-09-24). No row is filed under one of
@@ -990,7 +1022,7 @@ mod tests {
 
         let queryable: std::collections::HashSet<LutOperationFamily> = OperationType::ALL
             .iter()
-            .map(|op| op_family_to_lut(op.registry_entry().spec.feeds_family))
+            .map(|op| LutOperationFamily::from(op.registry_entry().spec.feeds_family))
             .collect();
         let lut = VendorLut::embedded();
         let mut actual: Vec<String> = queryable

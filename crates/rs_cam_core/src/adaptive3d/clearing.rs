@@ -19,7 +19,10 @@ use std::time::Instant;
 use tracing::debug;
 
 use super::centre_clip::{CentreClip, clip_segment};
-use super::path::{Adaptive3dSegment, StayDownProof, drape_path_to_leave, drape_point};
+use super::path::{
+    Adaptive3dSegment, RAPID_DESCENT_BUFFER_MM, StayDownProof, descent_start_z,
+    drape_path_to_leave, drape_point,
+};
 use super::search::{blend_corners_3d, is_clear_path_3d};
 use super::{
     Adaptive3dRuntimeEvent, ClearingStrategy3d, ZLevelPlanMetrics, stock_has_material_above,
@@ -676,8 +679,8 @@ fn stamp_emitted_segment(
         } => {
             // Toolpath: rapid descent from safe_z (or a keep-down link) down
             // to ~rapid_floor_z (cleared air, no stamp), then the style entry
-            // from there to entry. Mirror segments_to_toolpath's
-            // `descent_floor` calc exactly so we don't stamp BELOW entry.z
+            // from there to entry. `descent_start_z` is the emitter's own
+            // descent floor, so we don't stamp BELOW entry.z
             // (which would happen if rapid_floor_z < entry.z, e.g. previous
             // pass already cut DEEPER than this entry — clearing function
             // sampled the post-stamp top).
@@ -691,10 +694,7 @@ fn stamp_emitted_segment(
                 drape.cutter,
                 drape.stock_to_leave,
             );
-            const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
-            let descent_floor = (*rapid_floor_z + RAPID_DESCENT_BUFFER_MM)
-                .min(safe_z)
-                .max(entry.z);
+            let descent_floor = descent_start_z(Some(*rapid_floor_z), safe_z, entry.z);
             let start = P3::new(entry.x, entry.y, descent_floor);
             material_stock.stamp_linear_segment(
                 lut,
@@ -1819,10 +1819,6 @@ fn polygon_signed_area(points: &[P2]) -> f64 {
 /// choice, never an unsafe move.
 const ASSUMED_RAPID_MM_MIN: f64 = 5000.0;
 
-/// Final-approach distance descended at plunge rate after the rapid
-/// descent (mirrors `RAPID_DESCENT_BUFFER_MM` in `path.rs`).
-const CROSSOVER_PLUNGE_BUFFER_MM: f64 = 0.5;
-
 /// XY length above which demoting an in-slice air run to a
 /// retract + rapid + re-plunge cycle is faster than feeding through it.
 ///
@@ -1846,8 +1842,8 @@ pub(super) fn air_run_crossover_mm(
     }
     let depth = retract_depth_mm.max(0.0);
     let overhead_s = depth / rapid
-        + (depth - CROSSOVER_PLUNGE_BUFFER_MM).max(0.0) / rapid
-        + CROSSOVER_PLUNGE_BUFFER_MM.min(depth) / plunge;
+        + (depth - RAPID_DESCENT_BUFFER_MM).max(0.0) / rapid
+        + RAPID_DESCENT_BUFFER_MM.min(depth) / plunge;
     overhead_s / (1.0 / feed - 1.0 / rapid)
 }
 

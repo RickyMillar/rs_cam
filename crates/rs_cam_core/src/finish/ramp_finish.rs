@@ -225,21 +225,21 @@ struct RampSegmentRecord {
     ramp_total: usize,
 }
 
+/// The shipped values: [`RampFinishConfig::default`] through its one
+/// translation, [`RampFinishConfig::params`] (F102). The config feeds are
+/// the motion; `safe_z` has no config field (the runtime retract height),
+/// so 30 mm stands in for it.
+///
+/// [`RampFinishConfig::default`]: crate::compute::operation_configs::RampFinishConfig
+/// [`RampFinishConfig::params`]: crate::compute::operation_configs::RampFinishConfig::params
 impl Default for RampFinishParams {
     fn default() -> Self {
-        Self {
-            max_stepdown: 1.0,
-            slope_from: 30.0,
-            slope_to: 90.0,
-            direction: CutDirection::Climb,
-            order_bottom_up: false,
-            feed_rate: 1000.0,
-            plunge_rate: 500.0,
+        let config = crate::compute::operation_configs::RampFinishConfig::default();
+        config.params(crate::compute::operation_configs::OpMotion {
+            feed_rate: config.feed_rate,
+            plunge_rate: config.plunge_rate,
             safe_z: 30.0,
-            sampling: 1.0,
-            stock_to_leave: 0.0,
-            tolerance: 0.05,
-        }
+        })
     }
 }
 

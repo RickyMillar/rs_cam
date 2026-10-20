@@ -191,6 +191,46 @@ pub enum UnmodeledReason {
     AllSamplesAirCutOrRapid,
 }
 
+impl UnmodeledReason {
+    /// **The one operator-facing clause for this reason** (F080). Lower
+    /// case, no prefix: the export refusal prints it after the criterion
+    /// name, and the GUI panels put their own prefix in front of it.
+    ///
+    /// A reason that carries a detail string prints that detail, because
+    /// the gate that refused wrote it for this reader. The match is
+    /// exhaustive: a new variant is a compile error here, not a `{:?}` in
+    /// an operator's message (T-19).
+    #[must_use]
+    pub fn operator_text(&self) -> String {
+        match self {
+            Self::SimulationRequired => "simulation has not been run".to_owned(),
+            Self::StaleSimulation => "simulation trace is stale — re-run simulation".to_owned(),
+            Self::ArcEngagementNotCaptured => {
+                "the cut trace holds no arc engagement — re-run the simulation".to_owned()
+            }
+            Self::NoVendorData => "no vendor LUT row for this tool/material combination".to_owned(),
+            Self::SteadyStateSamplesNotPresent => {
+                "no steady-state cutting samples — the toolpath runs entirely on transient \
+                 (plunge/ramp) feeds"
+                    .to_owned()
+            }
+            Self::MaterialUnvalidated => {
+                "the material has no measured force line (ruling B6)".to_owned()
+            }
+            Self::CutterModeUnsupported(why) => format!("cutter mode unsupported — {why}"),
+            Self::NotImplemented(detail) => format!("not implemented yet — {detail}"),
+            Self::NotApplicableForOp(detail) => {
+                format!("not applicable to this operation — {detail}")
+            }
+            Self::AllSamplesAirCutOrRapid => {
+                "the toolpath made no contact with material — every sample was a rapid or an \
+                 air cut; check the depth, the direction and the stock position"
+                    .to_owned()
+            }
+        }
+    }
+}
+
 /// What a "Within" or "Exceeds" verdict claims about its inputs.
 ///
 /// `Validated` is rare — it means every input was independently checked.

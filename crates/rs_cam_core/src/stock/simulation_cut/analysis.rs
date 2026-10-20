@@ -2,9 +2,9 @@
 //! accumulators they use for hotspots and semantic summaries.
 
 use super::{
-    SIMULATION_CUT_TRACE_SCHEMA_VERSION, SimulationCutHotspot, SimulationCutIssue,
-    SimulationCutIssueKind, SimulationCutSample, SimulationCutSummary, SimulationCutTrace,
-    SimulationSemanticCutSummary, SummaryAccumulator,
+    RadialEngagementClass, SIMULATION_CUT_TRACE_SCHEMA_VERSION, SimulationCutHotspot,
+    SimulationCutIssue, SimulationCutIssueKind, SimulationCutSample, SimulationCutSummary,
+    SimulationCutTrace, SimulationSemanticCutSummary, SummaryAccumulator,
 };
 use crate::ids::ToolpathId;
 use crate::ops::drill_metrics::DrillToolpathSummary;
@@ -158,12 +158,12 @@ impl SimulationCutTrace {
                 || metrics_not_applicable_toolpath_ids.contains(&sample.toolpath_id)
             {
                 None
-            } else if sample.engagement.radial_woc_fraction < 0.02 {
-                Some(SimulationCutIssueKind::AirCut)
-            } else if sample.engagement.radial_woc_fraction < 0.10 {
-                Some(SimulationCutIssueKind::LowEngagement)
             } else {
-                None
+                match sample.radial_engagement_class() {
+                    RadialEngagementClass::Air => Some(SimulationCutIssueKind::AirCut),
+                    RadialEngagementClass::Low => Some(SimulationCutIssueKind::LowEngagement),
+                    RadialEngagementClass::Engaged => None,
+                }
             };
 
             match (open_segments.get_mut(&sample.toolpath_id), kind) {

@@ -326,7 +326,11 @@ fn a_truncated_descent_is_reported_with_its_magnitudes() {
     // Max lift 4.231 -> 4.235 and holdable bottom -2.407 -> -2.352
     // (2026-09-30, G-TIERBURIAL): the drop-cutter edge contact of the taper
     // is exact now (`tool/mod.rs::edge_drop_by_profile`).
-    for needle in ["4.235", "LEFT", "-3.000", "-2.352"] {
+    // Max lift 4.235 -> 4.914 (2026-10-20, F102): `params()` fills the
+    // fields it does not set from the shipped `RampFinishConfig` default
+    // now (`sampling` 0.5 mm, was the engine copy's 1.0 mm), so the ramp
+    // samples the cone more densely and finds a deeper commanded point.
+    for needle in ["4.914", "LEFT", "-3.000", "-2.352"] {
         assert!(
             d.message.contains(needle),
             "message must carry {needle:?}: {}",

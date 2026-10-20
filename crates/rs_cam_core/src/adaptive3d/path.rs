@@ -1303,6 +1303,26 @@ fn try_emit_stay_down_link(
     true
 }
 
+/// The height (mm) above the planner's rapid floor at which an entry's
+/// rapid descent stops and the entry style takes over at the plunge feed.
+/// The emitter, the planner's stamp mirror and the air-run crossover cost
+/// all read this one value.
+pub(super) const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
+
+/// The Z at which an entry's rapid descent stops: the rapid floor plus
+/// [`RAPID_DESCENT_BUFFER_MM`], never above `safe_z` and never below the
+/// entry. With no floor (off the stock grid) the column below `safe_z` may
+/// hold uncut stock, so the descent stops at `safe_z` (UX-dial-in B1).
+///
+/// The emitter ([`segments_to_toolpath`]) and the planner's stamp mirror
+/// (`clearing.rs::stamp_emitted_segment`) both call this, so the planner
+/// stamps the descent the emitter writes.
+pub(super) fn descent_start_z(rapid_floor_z: Option<f64>, safe_z: f64, entry_z: f64) -> f64 {
+    rapid_floor_z.map_or(safe_z, |floor| {
+        (floor + RAPID_DESCENT_BUFFER_MM).min(safe_z).max(entry_z)
+    })
+}
+
 /// Convert segments to a toolpath and collect annotations.
 ///
 /// `mesh` + `index` + `cutter` were added in F-038b to enable per-link
@@ -1513,16 +1533,8 @@ pub(super) fn segments_to_toolpath(
                 let entry_start = tp.moves.len();
                 // The rapid floor: the planner's conservative stock top over
                 // the entry footprint, plus a buffer. Above it is air the op
-                // has already cleared (or never had). With no floor (off the
-                // stock grid) the column below safe_z may hold uncut stock, so
-                // the floor is safe_z and the style emitter feeds from there
-                // (UX-dial-in B1).
-                const RAPID_DESCENT_BUFFER_MM: f64 = 0.5;
-                let descent_floor = rapid_floor_z.map_or(params.safe_z, |floor| {
-                    (floor + RAPID_DESCENT_BUFFER_MM)
-                        .min(params.safe_z)
-                        .max(entry.z)
-                });
+                // has already cleared (or never had). See `descent_start_z`.
+                let descent_floor = descent_start_z(rapid_floor_z, params.safe_z, entry.z);
                 // F-038b: try a keep-tool-down feed link from the previous
                 // tool position before falling back to retract. Every entry
                 // style is a candidate, but only with the planner's stock

@@ -215,40 +215,26 @@ pub struct PencilParams {
     pub link_hop_distance_mm: Option<f64>,
 }
 
-/// Sensible test/prototyping defaults, sourced from the field-level
-/// `*_default()` fns documented above where one exists (`min_valley_depth`,
-/// `bisector_strength`, `reference_tool_diameter`, `detector`,
-/// `valley_saliency`, `curvature_smoothing`, `rest_cell_mm`) and from the
-/// doc comments' stated defaults or the
-/// most common test literal otherwise. Production callers (`execute.rs`)
-/// build every field explicitly from `PencilConfig`, so this exists purely
-/// to collapse test literal blocks via `..Default::default()` — it's never
-/// on the production path.
+/// The shipped values: `PencilConfig::default()` through its one
+/// translation, `PencilConfig::params` (F102). The engine kept a second
+/// copy here before, with 0 offset passes and a 1000 mm/min feed where the
+/// config ships 1 pass and 800 mm/min, so a test on this default measured
+/// values no surface ships. The config feeds are the motion. `safe_z` has
+/// no config field (the runtime retract height), so 15 mm stands in for
+/// it. No reference cutter and no link kinematics: the config cannot hold
+/// them.
 impl Default for PencilParams {
     fn default() -> Self {
-        Self {
-            bitangency_angle: 160.0,
-            min_cut_length: 2.0,
-            hookup_distance: 5.0,
-            num_offset_passes: 0,
-            offset_stepover: 0.5,
-            sampling: 0.5,
-            feed_rate: 1000.0,
-            plunge_rate: 500.0,
-            safe_z: 15.0,
-            stock_to_leave: 0.0,
-            min_valley_depth: reach_gap_threshold(),
-            bisector_strength: bisector_strength_default(),
-            reference_tool_diameter: reference_tool_diameter_default(),
-            detector: PencilDetector::default(),
-            valley_saliency: valley_saliency_default(),
-            curvature_smoothing: curvature_smoothing_default(),
-            rest_cell_mm: rest_cell_default(),
-            reference_cutter: None,
-            link_kinematics: None,
-            // "Same cap as `hookup_distance`" — byte-identical.
-            link_hop_distance_mm: None,
-        }
+        let config = crate::compute::operation_configs::PencilConfig::default();
+        config.params(
+            crate::compute::operation_configs::OpMotion {
+                feed_rate: config.feed_rate,
+                plunge_rate: config.plunge_rate,
+                safe_z: 15.0,
+            },
+            None,
+            None,
+        )
     }
 }
 

@@ -53,7 +53,7 @@ use crate::ids::ToolpathId;
 use crate::machine::kinematic_utilization::ToolpathKinematicUtilization;
 use crate::stock::collision::{AttributedRapidCollision, HolderCollisionCheck};
 use crate::stock::sim_measurability::MeasurabilityReport;
-use crate::stock::simulation_cut::SimulationCutTrace;
+use crate::stock::simulation_cut::{RadialEngagementClass, SimulationCutTrace};
 use crate::trace::toolpath_spans::{RegionSpanRole, SpanId};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -187,10 +187,10 @@ pub struct Finding {
 /// visible instead of inferable.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct ChannelCounts {
-    /// Cutting samples with `radial_woc_fraction < 0.02`. **One per sample.**
+    /// Cutting samples in [`RadialEngagementClass::Air`]. **One per sample.**
     /// Was `air_cut_issue_count`.
     pub flagged_samples_air: usize,
-    /// Cutting samples in `0.02..0.10`. One per sample. Was
+    /// Cutting samples in [`RadialEngagementClass::Low`]. One per sample. Was
     /// `low_engagement_issue_count`.
     pub flagged_samples_low: usize,
     /// **LEGACY.** Contiguous air/low-engagement RUNS, coalesced per
@@ -216,11 +216,10 @@ impl ChannelCounts {
         let mut air = 0usize;
         let mut low = 0usize;
         for s in trace.samples.iter().filter(|s| s.is_cutting) {
-            let r = s.engagement.radial_woc_fraction;
-            if r < 0.02 {
-                air += 1;
-            } else if r < 0.10 {
-                low += 1;
+            match s.radial_engagement_class() {
+                RadialEngagementClass::Air => air += 1,
+                RadialEngagementClass::Low => low += 1,
+                RadialEngagementClass::Engaged => {}
             }
         }
         Self {

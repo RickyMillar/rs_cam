@@ -1032,56 +1032,22 @@ pub fn refusing_unmodeled<'a>(
         .collect()
 }
 
-/// **The one operator-facing clause for an unmodelled row.** T-19
+/// **The operator-facing clause for an unmodelled row.** T-19
 /// (2026-09-18).
 ///
-/// [`crate::tool_load::UnmodeledReason`] carries no `Display`, and the
-/// refusal used to print `{:?}` — a Rust variant name in an operator's
-/// message. A vacuous row states its own clause; every other row words
-/// its reason, and a reason that carries a detail string prints that
-/// detail, because the gate that refused wrote it for this reader.
+/// The refusal used to print `{:?}` — a Rust variant name in an operator's
+/// message. A vacuous row states its own clause; every other row prints
+/// [`crate::tool_load::UnmodeledReason::operator_text`], the reason's one
+/// clause (F080).
 fn unmodeled_clause(status: &crate::tool_load::verdict::CriterionStatus<'_>) -> String {
-    use crate::tool_load::UnmodeledReason;
-
     let vacuity = status.vacuity_clause();
     if !vacuity.is_empty() {
         return vacuity;
     }
-    match status.unmodeled_reason {
-        Some(UnmodeledReason::SimulationRequired) => "simulation has not been run".to_owned(),
-        Some(UnmodeledReason::StaleSimulation) => {
-            "simulation trace is stale — re-run simulation".to_owned()
-        }
-        Some(UnmodeledReason::ArcEngagementNotCaptured) => {
-            "the cut trace holds no arc engagement — re-run the simulation".to_owned()
-        }
-        Some(UnmodeledReason::NoVendorData) => {
-            "no vendor LUT row for this tool/material combination".to_owned()
-        }
-        Some(UnmodeledReason::SteadyStateSamplesNotPresent) => {
-            "no steady-state cutting samples — the toolpath runs entirely on transient \
-             (plunge/ramp) feeds"
-                .to_owned()
-        }
-        Some(UnmodeledReason::MaterialUnvalidated) => {
-            "the material has no measured force line (ruling B6)".to_owned()
-        }
-        Some(UnmodeledReason::CutterModeUnsupported(why)) => {
-            format!("cutter mode unsupported — {why}")
-        }
-        Some(UnmodeledReason::NotImplemented(detail)) => {
-            format!("not implemented yet — {detail}")
-        }
-        Some(UnmodeledReason::NotApplicableForOp(detail)) => {
-            format!("not applicable to this operation — {detail}")
-        }
-        Some(UnmodeledReason::AllSamplesAirCutOrRapid) => {
-            "the toolpath made no contact with material — every sample was a rapid or an \
-             air cut"
-                .to_owned()
-        }
-        None => "no reason stated".to_owned(),
-    }
+    status.unmodeled_reason.map_or_else(
+        || "no reason stated".to_owned(),
+        |reason| reason.operator_text(),
+    )
 }
 
 /// **The whole unmodelled half of the export policy, pure.** T-19
@@ -1515,6 +1481,21 @@ pub struct PostConfig {
 }
 
 impl PostConfig {
+    /// The rapid rate (mm/min) the simulator, the kinematic utilisation and
+    /// the post-simulation feed pass time a rapid at: `high_feedrate` in
+    /// high-feedrate mode (the post writes rapids as G1 at that feed), else
+    /// the machine's `max_feed_mm_min`. Both arms clamp to 1 mm/min, so a
+    /// zero never reaches a divisor. F071: the one home; four sites
+    /// resolved it by hand before, and one of them had no clamp.
+    #[must_use]
+    pub fn rapid_feed_mm_min(&self, machine: &crate::machine::MachineProfile) -> f64 {
+        if self.high_feedrate_mode {
+            self.high_feedrate.max(1.0)
+        } else {
+            machine.max_feed_mm_min.max(1.0)
+        }
+    }
+
     /// Put the controller options of this config, with the machine
     /// profile's controller facts as the defaults, on `overlay` (G5, G6,
     /// G7, G10). Every export door calls it, so the GUI, MCP and the CLI

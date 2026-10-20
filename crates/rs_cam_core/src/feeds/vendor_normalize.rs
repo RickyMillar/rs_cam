@@ -145,10 +145,6 @@ pub fn missing_project_curve_rows(tool_family: ToolFamily) -> &'static str {
     }
 }
 
-/// Canonical `feeds::OperationFamily` → `LutOperationFamily` mapping.
-/// F3.2: extracted from `to_lookup_query` so the loader's reachability
-/// rule and gate-side query builders share one mapping instead of
-/// re-deriving it inline (defect class C5).
 /// F070: the one `PassRole` → `LutPassRole` mapping. The export gate,
 /// the chip target, the GUI cut-metric cards and the LUT query read it
 /// through `.into()`; each held its own `match` before.
@@ -162,17 +158,29 @@ impl From<PassRole> for LutPassRole {
     }
 }
 
-pub fn op_family_to_lut(family: OperationFamily) -> LutOperationFamily {
-    match family {
-        OperationFamily::Adaptive => LutOperationFamily::Adaptive,
-        OperationFamily::Pocket => LutOperationFamily::Pocket,
-        OperationFamily::Contour => LutOperationFamily::Contour,
-        OperationFamily::Parallel => LutOperationFamily::Parallel,
-        OperationFamily::Scallop => LutOperationFamily::Scallop,
-        OperationFamily::Trace => LutOperationFamily::Trace,
-        OperationFamily::Face => LutOperationFamily::Face,
-        OperationFamily::Drill => LutOperationFamily::Drill,
+/// Canonical `feeds::OperationFamily` → `LutOperationFamily` mapping.
+/// F3.2: extracted from `to_lookup_query` so the loader's reachability
+/// rule and gate-side query builders share one mapping instead of
+/// re-deriving it inline (defect class C5). F103: an exhaustive `From`, so
+/// a new variant on either side is a compile error here.
+impl From<OperationFamily> for LutOperationFamily {
+    fn from(family: OperationFamily) -> Self {
+        match family {
+            OperationFamily::Adaptive => LutOperationFamily::Adaptive,
+            OperationFamily::Pocket => LutOperationFamily::Pocket,
+            OperationFamily::Contour => LutOperationFamily::Contour,
+            OperationFamily::Parallel => LutOperationFamily::Parallel,
+            OperationFamily::Scallop => LutOperationFamily::Scallop,
+            OperationFamily::Trace => LutOperationFamily::Trace,
+            OperationFamily::Face => LutOperationFamily::Face,
+            OperationFamily::Drill => LutOperationFamily::Drill,
+        }
     }
+}
+
+/// [`LutOperationFamily::from`] by name, for the callers that read it so.
+pub fn op_family_to_lut(family: OperationFamily) -> LutOperationFamily {
+    family.into()
 }
 
 /// Convert a FeedsInput to a LookupQuery for vendor LUT lookup.
@@ -223,7 +231,7 @@ pub fn to_lookup_query_unrouted(input: &FeedsInput) -> LookupQuery {
         material_family: material_to_lut(input.material).0,
         hardness_kind: Some(material_to_lut(input.material).1),
         hardness_value: Some(material_to_lut(input.material).2),
-        operation_family: op_family_to_lut(input.operation),
+        operation_family: input.operation.into(),
         pass_role: input.pass_role.into(),
     }
 }

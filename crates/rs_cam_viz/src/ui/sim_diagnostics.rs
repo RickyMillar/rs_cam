@@ -26,7 +26,7 @@ use rs_cam_core::tool_load::{
     Confidence, DistributionMetric, DistributionOutcome, MetricDistribution, NotMeasuredReason,
     ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason,
 };
-use rs_cam_core::trace::toolpath_spans::{Span, SpanKind, SpanPayload};
+use rs_cam_core::trace::toolpath_spans::{Span, SpanKind};
 
 pub fn draw(
     ui: &mut egui::Ui,
@@ -1431,6 +1431,10 @@ fn verdict_tooltip(row: &LimitRow<'_>) -> String {
 /// Core's reason for an `Unmodeled` verdict, in the words every surface of
 /// this panel uses. The limit rows and the cut-metric cards share it.
 ///
+/// F080: the clause is core's [`UnmodeledReason::operator_text`]; this panel
+/// adds only its prefix and the menu path of a remedy. Two arms keep their
+/// own text, for the reasons below.
+///
 /// U3: core reports `SimulationRequired` when the gate has no cut trace. The
 /// Inspector draws these rows only while a simulation exists, so the text
 /// names the missing trace. It does not say "has not been run", which can
@@ -1438,6 +1442,10 @@ fn verdict_tooltip(row: &LimitRow<'_>) -> String {
 /// simulation, and there "run the simulation" in the same sentence is the
 /// remedy. Every run captures the cut trace (operator ruling 2026-10-02,
 /// "always capture"), so no text names a capture control.
+///
+/// Roadmap F.8: `NotApplicableForOp` reads "N/A", not "Unmodeled": the gate
+/// does not apply to the op type, and the carried detail is the
+/// operator-facing explanation.
 fn unmodeled_text(reason: Option<&UnmodeledReason>) -> String {
     match reason {
         Some(UnmodeledReason::SimulationRequired) => {
@@ -1445,42 +1453,12 @@ fn unmodeled_text(reason: Option<&UnmodeledReason>) -> String {
              Run Simulation)"
                 .to_owned()
         }
-        Some(UnmodeledReason::StaleSimulation) => {
-            "Unmodeled: simulation trace is stale — re-run simulation".to_owned()
-        }
-        Some(UnmodeledReason::ArcEngagementNotCaptured) => {
-            "Unmodeled: the cut trace holds no arc engagement \u{2014} re-run the \
-             simulation (Simulation \u{25B8} Re-run Simulation)"
-                .to_owned()
-        }
-        Some(UnmodeledReason::NoVendorData) => {
-            "Unmodeled: no vendor LUT row for this tool/material combination".to_owned()
-        }
-        Some(UnmodeledReason::SteadyStateSamplesNotPresent) => {
-            "Unmodeled: no steady-state cutting samples — toolpath runs entirely on transient (plunge/ramp) feeds".to_owned()
-        }
-        Some(UnmodeledReason::MaterialUnvalidated) => {
-            "Unmodeled: this material has no measured force line (ruling B6)".to_owned()
-        }
-        Some(UnmodeledReason::CutterModeUnsupported(why)) => {
-            format!("Unmodeled: cutter mode unsupported — {why}")
-        }
-        Some(UnmodeledReason::NotImplemented(phase)) => {
-            format!("Unmodeled: not implemented yet — {phase}")
-        }
-        // Roadmap F.8 — the gate isn't applicable to this op type
-        // (drill / alignment-pin-drill). The carried `String` is
-        // the operator-facing explanation; surface it verbatim so
-        // users read "doesn't apply" rather than the misleading
-        // "couldn't measure" framing.
-        Some(UnmodeledReason::NotApplicableForOp(detail)) => {
-            format!("N/A: {detail}")
-        }
-        // UX dial-in A10 — sim ran but toolpath never contacted the
-        // stock. The finding is the no-contact, not "missing data".
-        Some(UnmodeledReason::AllSamplesAirCutOrRapid) => {
-            "Unmodeled: toolpath made no contact with material — every sample was a rapid or air-cut. Check depth / direction / stock position.".to_owned()
-        }
+        Some(UnmodeledReason::NotApplicableForOp(detail)) => format!("N/A: {detail}"),
+        Some(reason @ UnmodeledReason::ArcEngagementNotCaptured) => format!(
+            "Unmodeled: {} (Simulation \u{25B8} Re-run Simulation)",
+            reason.operator_text()
+        ),
+        Some(reason) => format!("Unmodeled: {}", reason.operator_text()),
         None => "Unmodeled".to_owned(),
     }
 }
@@ -2280,29 +2258,12 @@ fn card_caption(distribution: &MetricDistribution, spec: &CutMetricSpec) -> Opti
 
 // ── Selected span section ───────────────────────────────────────────────
 
-fn depth_pass_chip_label(span: &Span, sid: usize) -> String {
-    match &span.payload {
-        Some(SpanPayload::DepthPass {
-            pass_index,
-            z_level,
-        }) => format!("DepthPass {pass_index} · z={z_level:.2}"),
-        _ => format!("DepthPass [{sid}]"),
-    }
-}
-
-fn region_chip_label(span: &Span, sid: usize) -> String {
-    match &span.payload {
-        Some(SpanPayload::Region { region_id, .. }) => format!("Region {region_id}"),
-        _ => format!("Region [{sid}]"),
-    }
-}
-
+/// The chip text of one span: core's payload text, else the kind's GUI
+/// name and the span id (F074). A chip reads the payload, not the set
+/// label, so a depth-pass chip keeps its Z.
 fn span_display_label(span: &Span, sid: usize) -> String {
-    match span.kind {
-        SpanKind::DepthPass => depth_pass_chip_label(span, sid),
-        SpanKind::Region => region_chip_label(span, sid),
-        kind => format!("{} [{sid}]", kind.label()),
-    }
+    span.payload_label()
+        .unwrap_or_else(|| format!("{} [{sid}]", span.kind.display_label()))
 }
 
 /// Find the deepest non-boundary span on `toolpath_id` that contains the

@@ -327,7 +327,11 @@ fn ramp_finish_fingerprint() {
 // triangle's contacts): the ramp start points moved up to 0.65 mm, the move
 // count did not; burial audit (0.02 mm samples, > 0.005 mm) 120 moves both,
 // max 0.331 (was 0.331). Was `(277, 9_451_927_284_413_260_786)`.
-const RAMP_FINISH_GEO_MEAN_FINGERPRINT: (usize, u64) = (277, 4_015_845_068_922_767_712);
+// F102 (2026-10-20): `RampFinishParams::default()` is now the shipped
+// `RampFinishConfig` default, so the fields this fixture does not set read
+// the shipped values (`sampling` 0.5 mm, was the engine copy's 1.0 mm).
+// Was `(277, 4_015_845_068_922_767_712)`.
+const RAMP_FINISH_GEO_MEAN_FINGERPRINT: (usize, u64) = (305, 73_454_994_174_612_411);
 
 /// PR-8a control: the geo-mean of two EQUAL numbers is that number, so a
 /// cutter whose cusp radius is its envelope radius must not move at all.

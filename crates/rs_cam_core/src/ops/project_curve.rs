@@ -122,23 +122,6 @@ pub struct ProjectCurveParams {
     pub setup_z_flipped: bool,
 }
 
-impl Default for ProjectCurveParams {
-    fn default() -> Self {
-        Self {
-            depth: 1.0,
-            feed_rate: 1000.0,
-            plunge_rate: 300.0,
-            safe_z: 10.0,
-            point_spacing: 0.5,
-            direction: ProjectDirection::FromAbove,
-            tool_radius: 0.0,
-            side: ProjectSide::Center,
-            projection: ProjectProjection::Cutter,
-            setup_z_flipped: false,
-        }
-    }
-}
-
 /// Return true if the vertical ray from (x, y) passes through the 2D
 /// footprint of at least one triangle in the mesh. Used by project_curve to
 /// reject points that fall inside mesh holes — `point_drop_cutter` would
@@ -552,13 +535,19 @@ mod tests {
         direction: ProjectDirection,
         depth: f64,
     ) -> ProjectCurveParams {
+        // F102: the engine has no `Default` (its values were not the
+        // shipped `ProjectCurveConfig` ones); a test names every field.
         ProjectCurveParams {
             depth,
             point_spacing: 0.5,
             safe_z: 30.0,
             direction,
             projection,
-            ..ProjectCurveParams::default()
+            feed_rate: 1000.0,
+            plunge_rate: 300.0,
+            tool_radius: 0.0,
+            side: ProjectSide::Center,
+            setup_z_flipped: false,
         }
     }
 
@@ -714,8 +703,11 @@ mod tests {
 
     #[test]
     fn default_projection_is_cutter() {
+        // F102: the shipped default is the config's, not an engine copy.
         assert_eq!(
-            ProjectCurveParams::default().projection,
+            ProjectProjection::from(
+                crate::compute::operation_configs::ProjectCurveConfig::default().projection
+            ),
             ProjectProjection::Cutter
         );
         assert_eq!(ProjectProjection::default(), ProjectProjection::Cutter);

@@ -401,11 +401,7 @@ impl<B: ComputeBackend> AppController<B> {
             stock_top_z: stock_bbox.max.z,
             resolution: request_resolution,
             spindle_rpm: self.state.gui.post.spindle_speed,
-            rapid_feed_mm_min: if self.state.gui.post.high_feedrate_mode {
-                self.state.gui.post.high_feedrate.max(1.0)
-            } else {
-                max_feed_mm_min
-            },
+            rapid_feed_mm_min: self.state.gui.post.rapid_feed_mm_min(machine),
             model_mesh,
             kinematics,
             display_stride: 1,

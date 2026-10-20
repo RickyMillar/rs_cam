@@ -858,11 +858,7 @@ impl ProjectSession {
         }
         let kinematics = self.machine.effective_kinematics();
         let max_feed = self.machine.cutting_feed_ceiling_mm_min().max(1.0);
-        let rapid_feed = if self.post.high_feedrate_mode {
-            self.post.high_feedrate.max(1.0)
-        } else {
-            self.machine.max_feed_mm_min.max(1.0)
-        };
+        let rapid_feed = self.post.rapid_feed_mm_min(&self.machine);
         let mut util = crate::machine::kinematic_utilization::analyse_toolpath(
             toolpath,
             tc.id,

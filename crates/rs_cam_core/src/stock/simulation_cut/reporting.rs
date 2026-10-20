@@ -2,8 +2,8 @@
 //! and the JSON artifact writer with its pruner.
 
 use super::{
-    RebasedCuttingTimes, SimulationCutArtifact, SimulationCutSample, SimulationCutTrace,
-    ToolpathKinematicRuntime,
+    RadialEngagementClass, RebasedCuttingTimes, SimulationCutArtifact, SimulationCutSample,
+    SimulationCutTrace, ToolpathKinematicRuntime,
 };
 use crate::ids::ToolpathId;
 use std::collections::BTreeMap;
@@ -104,13 +104,12 @@ pub fn rebase_cutting_times(
             sample.segment_time_s
         };
         modulated_sum += scaled;
-        // The two thresholds mirror `SummaryAccumulator::observe`; they
-        // must stay in step with it or the slices stop partitioning the
-        // same population.
-        if sample.engagement.radial_woc_fraction < 0.02 {
-            air_sum += scaled;
-        } else if sample.engagement.radial_woc_fraction < 0.10 {
-            low_sum += scaled;
+        // The one partition `SummaryAccumulator::observe` also reads, so
+        // the slices partition the same population.
+        match sample.radial_engagement_class() {
+            RadialEngagementClass::Air => air_sum += scaled,
+            RadialEngagementClass::Low => low_sum += scaled,
+            RadialEngagementClass::Engaged => {}
         }
     }
     if modulated_sum <= 1e-12 {

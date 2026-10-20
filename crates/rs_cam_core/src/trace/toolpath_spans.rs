@@ -70,6 +70,36 @@ impl Span {
         self
     }
 
+    /// The text of this span's payload: "Depth pass 1 · z=-3.00" (the pass
+    /// number is 1-based, as the label `compute::spans` sets) or
+    /// "Region 4". `None` when the span carries no payload.
+    ///
+    /// F074: the GUI span list, the timeline ribbon and the span chips each
+    /// typed this text, with a 0-based and a 1-based pass number. This is
+    /// the one home.
+    #[must_use]
+    pub fn payload_label(&self) -> Option<String> {
+        match self.payload.as_ref()? {
+            SpanPayload::DepthPass {
+                z_level,
+                pass_index,
+            } => Some(format!("Depth pass {} · z={z_level:.2}", pass_index + 1)),
+            SpanPayload::Region { region_id, .. } => Some(format!("Region {region_id}")),
+        }
+    }
+
+    /// The text a person reads for this span: its own `label` when one is
+    /// set, else [`Self::payload_label`], else `None`. A surface supplies
+    /// its own fallback for `None` from [`SpanKind::display_label`].
+    #[must_use]
+    pub fn display_label(&self) -> Option<String> {
+        if self.label.is_empty() {
+            self.payload_label()
+        } else {
+            Some(self.label.clone().into_owned())
+        }
+    }
+
     /// This span's [`RegionSpanRole`], or `None` when it is not a
     /// region span (or carries no payload).
     ///
@@ -275,6 +305,27 @@ impl SpanKind {
             Self::GeometryRefit => "GeometryRefit",
             Self::RapidOrderBarrier => "RapidOrderBarrier",
             Self::WaterlineCleanup => "WaterlineCleanup",
+        }
+    }
+
+    /// The name a GUI panel prints for this kind: the span list, the span
+    /// chips and the timeline ribbon. [`Self::label`] stays the CamelCase
+    /// name the MCP span reply carries; this one is the plain name a
+    /// reader of the GUI sees. F074: the span list held this table and the
+    /// other panels printed [`Self::label`] or `{:?}`.
+    #[must_use]
+    pub const fn display_label(self) -> &'static str {
+        match self {
+            Self::Operation => "Operation",
+            Self::DepthPass => "Depth pass",
+            Self::Region => "Region",
+            Self::Entry => "Entry",
+            Self::LeadOut => "Lead-out",
+            Self::LinkBridge => "Link bridge",
+            Self::DressupArtifact => "Dressup",
+            Self::GeometryRefit => "Arc fit",
+            Self::WaterlineCleanup => "Waterline cleanup",
+            Self::RapidOrderBarrier => "Order barrier",
         }
     }
 

@@ -86,33 +86,14 @@ pub(crate) fn combined_scale(row: &rs_cam_core::feeds::vendor_lookup::MatchedRow
     row.chipload_diameter_scale * row.chipload_hardness_scale
 }
 
-pub(crate) fn tool_family_label(f: ToolFamily) -> &'static str {
-    match f {
-        ToolFamily::FlatEnd => "Flat end",
-        ToolFamily::BallNose => "Ball nose",
-        ToolFamily::BullNose => "Bull nose",
-        ToolFamily::ChamferVbit => "V-bit",
-        ToolFamily::TaperedBallNose => "Tapered ball",
-        ToolFamily::FacingBit => "Facing bit",
-    }
+/// Core's [`ToolFamily::display_label`] (F074: the one table).
+pub(crate) const fn tool_family_label(f: ToolFamily) -> &'static str {
+    f.display_label()
 }
 
-pub(crate) fn material_family_label(m: MaterialFamily) -> &'static str {
-    match m {
-        MaterialFamily::Softwood => "Softwood",
-        MaterialFamily::Hardwood => "Hardwood",
-        MaterialFamily::PlywoodSoftwood => "Plywood (soft)",
-        MaterialFamily::PlywoodHardwood => "Plywood (hard)",
-        MaterialFamily::Mdf => "MDF",
-        MaterialFamily::Hdf => "HDF",
-        MaterialFamily::Particleboard => "Particle board",
-        MaterialFamily::Acrylic => "Acrylic",
-        MaterialFamily::Hdpe => "HDPE",
-        MaterialFamily::Delrin => "Delrin",
-        MaterialFamily::Polycarbonate => "Polycarbonate",
-        MaterialFamily::Aluminum => "Aluminum",
-        MaterialFamily::Fiberglass => "Fiberglass",
-    }
+/// Core's [`MaterialFamily::display_label`] (F074: the one table).
+pub(crate) const fn material_family_label(m: MaterialFamily) -> &'static str {
+    m.display_label()
 }
 
 pub(crate) fn hardness_label(kind: Option<HardnessKind>, value: Option<f64>) -> String {

@@ -980,26 +980,9 @@ fn ribbon_span_label(
     span: &rs_cam_core::trace::toolpath_spans::Span,
     fallback_index: u32,
 ) -> String {
-    use rs_cam_core::trace::toolpath_spans::{SpanKind, SpanPayload};
-
-    if !span.label.is_empty() {
-        return span.label.clone().into_owned();
-    }
-    match (&span.kind, &span.payload) {
-        (
-            SpanKind::DepthPass,
-            Some(SpanPayload::DepthPass {
-                z_level,
-                pass_index,
-            }),
-        ) => format!("DepthPass {pass_index} · z={z_level:.2}"),
-        (SpanKind::Region, Some(SpanPayload::Region { region_id, .. })) => {
-            format!("Region {region_id}")
-        }
-        (SpanKind::DepthPass, _) => format!("DepthPass {fallback_index}"),
-        (SpanKind::Region, _) => format!("Region {fallback_index}"),
-        _ => format!("{:?} {fallback_index}", span.kind),
-    }
+    // F074: core's one span text, else the kind's GUI name and the index.
+    span.display_label()
+        .unwrap_or_else(|| format!("{} {fallback_index}", span.kind.display_label()))
 }
 
 fn nearest_safety_marker_move(

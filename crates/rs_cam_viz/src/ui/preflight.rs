@@ -585,37 +585,23 @@ pub(crate) fn simulation_kept_no_trace(state: &AppState) -> bool {
         .is_some_and(|results| results.cut_trace.is_none())
 }
 
-/// The short reason of an unmodelled criterion in the gate panel.
+/// The reason of an unmodelled criterion in the gate panel.
 ///
-/// `trace_less` is [`simulation_kept_no_trace`]. Core reports
+/// F080: the clause is core's
+/// [`rs_cam_core::tool_load::UnmodeledReason::operator_text`]. One arm keeps
+/// its own text: `trace_less` is [`simulation_kept_no_trace`]. Core reports
 /// `SimulationRequired` for any missing cut trace, and after a run with no
-/// trace "run simulation first" names the wrong cause (U3).
+/// trace "simulation has not been run" names the wrong cause (U3).
 pub(crate) fn unmodeled_reason_label(
     reason: &rs_cam_core::tool_load::UnmodeledReason,
     trace_less: bool,
-) -> &'static str {
+) -> String {
     use rs_cam_core::tool_load::UnmodeledReason;
     match reason {
         UnmodeledReason::SimulationRequired if trace_less => {
-            "the simulation result holds no cut trace \u{2014} re-run the simulation"
+            "the simulation result holds no cut trace \u{2014} re-run the simulation".to_owned()
         }
-        UnmodeledReason::SimulationRequired => "run simulation first",
-        UnmodeledReason::StaleSimulation => "re-run stale simulation",
-        UnmodeledReason::ArcEngagementNotCaptured => {
-            "the cut trace holds no arc engagement \u{2014} re-run the simulation"
-        }
-        UnmodeledReason::NoVendorData => "no vendor data",
-        UnmodeledReason::SteadyStateSamplesNotPresent => "no steady-state cutting samples",
-        UnmodeledReason::MaterialUnvalidated => {
-            "this material has no measured force line (ruling B6)"
-        }
-        UnmodeledReason::CutterModeUnsupported(_) => "cutter mode unsupported",
-        UnmodeledReason::NotImplemented(_) => "not implemented",
-        // Roadmap F.8 — gate genuinely doesn't apply (drill cycles).
-        // No operator action; this surface doesn't render the carried
-        // detail string, just labels the bucket.
-        UnmodeledReason::NotApplicableForOp(_) => "not applicable for op type",
-        UnmodeledReason::AllSamplesAirCutOrRapid => "toolpath made no material contact",
+        reason => reason.operator_text(),
     }
 }
 
@@ -673,8 +659,8 @@ mod tests {
     use rs_cam_core::tool_load::UnmodeledReason;
 
     /// U3: after a run with no cut trace, the gate panel names the missing
-    /// trace, not "run simulation first". It names no capture control: every
-    /// run captures the trace (operator ruling 2026-10-02).
+    /// trace, not "simulation has not been run". It names no capture
+    /// control: every run captures the trace (operator ruling 2026-10-02).
     #[test]
     fn a_trace_less_run_names_the_missing_trace() {
         let text = unmodeled_reason_label(&UnmodeledReason::SimulationRequired, true);
@@ -683,11 +669,12 @@ mod tests {
         assert!(text.contains("re-run the simulation"), "{text}");
     }
 
+    /// With no simulation the gate panel prints core's one clause (F080).
     #[test]
-    fn no_simulation_keeps_run_simulation_first() {
+    fn no_simulation_reads_the_core_clause() {
         assert_eq!(
             unmodeled_reason_label(&UnmodeledReason::SimulationRequired, false),
-            "run simulation first"
+            UnmodeledReason::SimulationRequired.operator_text()
         );
     }
 }

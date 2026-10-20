@@ -315,10 +315,10 @@ fn specific_energy(
 /// The advance-per-tooth ceiling (mm) that holds the predicted tip
 /// deflection inside `EXCEEDS_BOUND_MM`.
 ///
-/// The inputs are assembled exactly as `session::compute` assembles them
-/// for the feed-modulation optimizer's `DeflectionLimitInputs`: the
-/// affine coefficients, the integrated cantilever compliance at this
-/// axial DOC, and the gate's own bound. One assembly, so the inspector
+/// The compliance comes from
+/// [`crate::tool_load::deflection::tip_compliance_mm_per_n`], the one
+/// assembly the feed-modulation optimizer's `DeflectionLimitInputs` also
+/// reads (`session::compute`), with the gate's own bound. So the inspector
 /// and the optimizer cannot disagree about the ceiling.
 ///
 /// `None` for every refusal — see [`force::chipload_cap_for_deflection`].
@@ -338,15 +338,8 @@ fn deflection_chipload_ceiling_mm(
     // F029: a tool outside its domain has no deflection ceiling. The tool
     // doors and `suggest_for_operation` refuse such a tool first.
     let tool_def = crate::compute::cutter::build_cutter(tool).ok()?;
-    let stickout = tool_def.stickout;
-    let youngs = tool_def.tool_material.youngs_modulus_n_per_mm2();
-    if !(stickout.is_finite() && stickout > 0.0 && youngs.is_finite() && youngs > 0.0) {
-        return None;
-    }
-    let compliance = tool_def.tip_deflection_mm(1.0, axial_doc_mm, youngs);
-    if !(compliance.is_finite() && compliance > 0.0) {
-        return None;
-    }
+    let compliance =
+        crate::tool_load::deflection::tip_compliance_mm_per_n(&tool_def, axial_doc_mm)?;
     force::chipload_cap_for_deflection(
         ks_n_per_mm2,
         f_edge_n_per_mm,

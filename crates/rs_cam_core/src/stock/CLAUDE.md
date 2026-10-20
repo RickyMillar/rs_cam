@@ -18,7 +18,8 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 - On every summary field, `None` means not measured and `Some(0.0)` means
   measured and zero. Never publish `None` for a measured zero.
 - The air-cut threshold reads `air_cut_pct_of_total_runtime`, not the
-  cutting-time denominator. Compare arms by absolute air-cut time.
+  cutting-time denominator. Compare arms by absolute air-cut time. The air /
+  low split is `SimulationCutSample::radial_engagement_class` (F200).
 - `average_engagement` is a comparative radial-WOC signal, not an absolute
   pass or fail. On a non-flat tool it uses the engaged radius.
 - In a cascade, `claims_reference` must be `machined_stock`. Re-simulating
@@ -31,9 +32,8 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 
 ## Sentries (`cargo test -p rs_cam_core -q <args>`)
 
-- `--test material_per_segment_s1`, `--test added_material_cuts_as_stock_s6`,
-  `--test measurability_abstention_r8`, `--test narration_denominator_and_hints_d7`,
-  `--test air_cut_one_time_base_g_airdenom`, `--test engagement_denominator_m3`,
+- `--test material_per_segment_s1`, `--test added_material_cuts_as_stock_s6`, `--test measurability_abstention_r8`,
+  `--test narration_denominator_and_hints_d7`, `--test air_cut_one_time_base_g_airdenom`, `--test engagement_denominator_m3`,
   `--test a_fresh_stock_pass_at_its_own_depth_is_not_an_overcut_g_overcutref`,
   `--test a_link_through_stock_is_flagged_g_linkplough` (`link_cuts_stock`; `links_on_mesh` is out)
 - `--test rapid_check_catches_real_side_strikes_g_rapid6497` and `--test

@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
 use crate::geo::P3;
-use crate::stock::simulation_cut::SimulationCutTrace;
+use crate::stock::simulation_cut::{RadialEngagementClass, SimulationCutTrace};
 use crate::tool::{MillingCutter, ToolDefinition};
 use crate::toolpath::{Move, MoveType, Toolpath};
 use crate::trace::debug_trace::ToolpathDebugTrace;
@@ -724,17 +724,15 @@ fn append_engagement_histogram(
             continue;
         }
         total += 1;
+        // The air and thin buckets are the shared partition; the three
+        // engaged buckets are this histogram's own edges.
         let engagement = sample.engagement.radial_woc_fraction;
-        let bucket = if engagement < 0.02 {
-            0
-        } else if engagement < 0.10 {
-            1
-        } else if engagement < 0.30 {
-            2
-        } else if engagement < 0.70 {
-            3
-        } else {
-            4
+        let bucket = match sample.radial_engagement_class() {
+            RadialEngagementClass::Air => 0,
+            RadialEngagementClass::Low => 1,
+            RadialEngagementClass::Engaged if engagement < 0.30 => 2,
+            RadialEngagementClass::Engaged if engagement < 0.70 => 3,
+            RadialEngagementClass::Engaged => 4,
         };
         if let Some(slot) = buckets.get_mut(bucket) {
             *slot += 1;

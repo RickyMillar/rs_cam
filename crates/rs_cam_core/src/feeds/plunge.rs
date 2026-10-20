@@ -21,7 +21,8 @@
 //! A drill cycle has one feed. Its plunge is the drill feed (calculator
 //! step 9c), so the resolver gives `None` for it.
 
-use super::extrapolation::{PlungeClaim, PlungeRefusal, plunge_rule, tool_family_label};
+use super::extrapolation::plunge::flutes_text;
+use super::extrapolation::{PlungeClaim, PlungeRefusal, plunge_rule};
 use super::provenance::ValueProvenance;
 use super::{FeedsInput, OperationFamily, ToolGeometryHint};
 use crate::tool_load::plunge_stress;
@@ -173,10 +174,10 @@ impl PlungeBasis {
                     "Plunge = {value} ({} {} claim: {}, {}, {}, {})",
                     claim.gap.group(),
                     claim.gap.label(),
-                    tool_family_label(rule.tool_family),
+                    rule.tool_family.label(),
                     rule.vendors,
                     rule.key.text(),
-                    flutes_label(rule.flutes)
+                    flutes_text(rule.flutes)
                 );
                 let (_, claim_detail) = claim.card_text();
                 let cap = tip_cap.map_or_else(String::new, |c| format!("; {}", c.text()));
@@ -241,15 +242,6 @@ impl PlungeBasis {
                 ValueProvenance::repo_rule("material_plunge_base")
             }
         }
-    }
-}
-
-/// "2 flutes" or "2-3 flutes".
-fn flutes_label(flutes: &[u32]) -> String {
-    match (flutes.first(), flutes.last()) {
-        (Some(lo), Some(hi)) if lo == hi => format!("{lo} flutes"),
-        (Some(lo), Some(hi)) => format!("{lo}-{hi} flutes"),
-        _ => "no flute count".to_owned(),
     }
 }
 

@@ -49,7 +49,7 @@
 //!   this gate predicts therefore ignores torsion.
 
 use crate::material::Material;
-use crate::stock::simulation_cut::SimulationCutSample;
+use crate::stock::simulation_cut::{RadialEngagementClass, SimulationCutSample};
 use crate::tool::ToolDefinition;
 
 use super::locality::SpanLookup;
@@ -62,6 +62,34 @@ pub const WITHIN_BOUND_MM: f64 = 0.050; // 50 µm
 
 /// Above this peak tip deflection (mm), the cut is `Exceeds`.
 pub const EXCEEDS_BOUND_MM: f64 = 0.200; // 200 µm
+
+/// The tip compliance (mm of tip deflection per newton of lateral force)
+/// of `tool` at `axial_doc_mm`: the integrated cantilever the gate uses
+/// ([`ToolDefinition::tip_deflection_mm`] at 1 N).
+///
+/// F082: the ONE assembly of the deflection-cap inputs. The Suggest
+/// inspector's ceiling (`feeds::efficiency`) and the feed-modulation
+/// optimizer's `DeflectionLimitInputs` (`session::compute`) both read it,
+/// with [`EXCEEDS_BOUND_MM`] as the bound, so the two cannot disagree
+/// about the ceiling.
+///
+/// `None` when the model refuses: a non-finite or negative axial DOC, or a
+/// non-finite or non-positive stickout, Young's modulus or compliance. A
+/// zero axial DOC is a load at the tip and has a compliance; a caller that
+/// needs an engaged cut refuses a zero DOC itself.
+#[must_use]
+pub fn tip_compliance_mm_per_n(tool: &ToolDefinition, axial_doc_mm: f64) -> Option<f64> {
+    if !(axial_doc_mm.is_finite() && axial_doc_mm >= 0.0) {
+        return None;
+    }
+    let stickout = tool.stickout;
+    let youngs = tool.tool_material.youngs_modulus_n_per_mm2();
+    if !(stickout.is_finite() && stickout > 0.0 && youngs.is_finite() && youngs > 0.0) {
+        return None;
+    }
+    let compliance = tool.tip_deflection_mm(1.0, axial_doc_mm, youngs);
+    (compliance.is_finite() && compliance > 0.0).then_some(compliance)
+}
 
 fn standard_bounds() -> DeflectionBounds {
     DeflectionBounds {
@@ -83,10 +111,7 @@ pub fn sample_tip_deflection_mm(
     sample: &SimulationCutSample,
     feed_per_tooth_mm: f64,
 ) -> Option<f64> {
-    if !sample.is_cutting
-        || sample.engagement.radial_woc_fraction < 0.02
-        || sample.axial_engagement_mm <= 0.0
-    {
+    if sample.is_air() || sample.axial_engagement_mm <= 0.0 {
         return None;
     }
     // The swept engagement arc IS the immersion angle ψ — hand it to the
@@ -234,7 +259,7 @@ pub fn evaluate(
         if !s.is_cutting {
             continue;
         }
-        if s.engagement.radial_woc_fraction < 0.02 {
+        if s.radial_engagement_class() == RadialEngagementClass::Air {
             continue;
         }
         let Some(arc) = s.arc_engagement_radians else {

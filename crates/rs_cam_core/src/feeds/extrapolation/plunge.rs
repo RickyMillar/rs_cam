@@ -330,21 +330,16 @@ pub const PLUNGE_RULES: &[PlungeRule] = &[
     },
 ];
 
-/// The name of a tool family in card text.
+/// The name of a tool family in card text: [`ToolFamily::label`], the one
+/// table (F074). New code calls the method.
 #[must_use]
 pub const fn tool_family_label(family: ToolFamily) -> &'static str {
-    match family {
-        ToolFamily::FlatEnd => "flat end mill",
-        ToolFamily::BallNose => "ball nose",
-        ToolFamily::TaperedBallNose => "tapered ball nose",
-        ToolFamily::BullNose => "bull nose",
-        ToolFamily::ChamferVbit => "V-bit",
-        ToolFamily::FacingBit => "facing bit",
-    }
+    family.label()
 }
 
-/// "2 flutes" or "2-3 flutes".
-fn flutes_text(flutes: &[u32]) -> String {
+/// "2 flutes" or "2-3 flutes". The one flute-count text of a rule; the
+/// plunge basis card (`feeds::plunge`) reads it too (F074).
+pub(crate) fn flutes_text(flutes: &[u32]) -> String {
     match (flutes.first(), flutes.last()) {
         (Some(lo), Some(hi)) if lo == hi => format!("{lo} flutes"),
         (Some(lo), Some(hi)) => format!("{lo}-{hi} flutes"),
@@ -433,7 +428,7 @@ impl PlungeClaim {
             self.gap.group(),
             self.gap.label(),
             self.fraction_text(),
-            tool_family_label(rule.tool_family),
+            rule.tool_family.label(),
             rule.key.text(),
             flutes_text(rule.flutes)
         );
@@ -498,15 +493,15 @@ impl PlungeRefusal {
                  feed-paired witness"
                     .to_owned()
             }
-            Self::NoRuleForFamily(family) => format!("{}: no rule", tool_family_label(family)),
+            Self::NoRuleForFamily(family) => format!("{}: no rule", family.label()),
             Self::OutsideRange { rule, key_value } => format!(
                 "{} {key_value:?} mm is outside {}",
-                tool_family_label(rule.tool_family),
+                rule.tool_family.label(),
                 rule.key.text()
             ),
             Self::FlutesNotPrinted { rule, flutes } => format!(
                 "{} with {flutes} flutes; the rule prints {}",
-                tool_family_label(rule.tool_family),
+                rule.tool_family.label(),
                 flutes_text(rule.flutes)
             ),
             Self::AngleNotPrinted { rule, angle_deg } => match angle_deg {
@@ -532,17 +527,17 @@ impl PlungeRefusal {
             Self::NoRuleForFamily(family) => format!(
                 "No plunge rule covers a {}. The rules cover flat end mills, ball noses, tapered \
                  ball noses and 60° V-bits.",
-                tool_family_label(family)
+                family.label()
             ),
             Self::OutsideRange { rule, key_value } => format!(
                 "The {} rule {} covers {} only; this tool is {key_value:?} mm.",
-                tool_family_label(rule.tool_family),
+                rule.tool_family.label(),
                 rule.id,
                 rule.key.text()
             ),
             Self::FlutesNotPrinted { rule, flutes } => format!(
                 "The {} rule {} covers {} only; this tool has {flutes}.",
-                tool_family_label(rule.tool_family),
+                rule.tool_family.label(),
                 rule.id,
                 flutes_text(rule.flutes)
             ),

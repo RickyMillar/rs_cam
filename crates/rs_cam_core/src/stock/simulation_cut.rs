@@ -241,17 +241,60 @@ fn is_stock_slot(slot: &MaterialSlot) -> bool {
 
 /// The radial engagement, as a fraction of the tool diameter, under which a
 /// cutting sample is an air cut. The simulator's `AirCut` issue class, its
-/// `air_cut_time_s` and the chipload and power gates all use this value.
+/// `air_cut_time_s` and the chipload and power gates all use this value,
+/// through [`SimulationCutSample::radial_engagement_class`].
+///
+/// Source: none printed. The value entered the repository with the first
+/// simulation cut module (275c64cb, 2026-03-22) with no citation.
 pub const AIR_CUT_RADIAL_WOC_FRACTION: f64 = 0.02;
 
+/// The radial engagement, as a fraction of the tool diameter, under which a
+/// cutting sample that is not an air cut is a low-engagement cut. The
+/// simulator's `LowEngagement` issue class and `low_engagement_time_s` use
+/// this value, through [`SimulationCutSample::radial_engagement_class`].
+///
+/// Source: none printed. The value entered the repository with the first
+/// simulation cut module (275c64cb, 2026-03-22) with no citation.
+pub const LOW_ENGAGEMENT_RADIAL_WOC_FRACTION: f64 = 0.10;
+
+/// The class of a sample's radial engagement (`radial_woc_fraction`). The
+/// one partition of the air / low-engagement / engaged population: the
+/// summary, the issue list, the triage counts, the time slices, the power
+/// gate and the narration all match on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RadialEngagementClass {
+    /// Under [`AIR_CUT_RADIAL_WOC_FRACTION`].
+    Air,
+    /// From [`AIR_CUT_RADIAL_WOC_FRACTION`] to under
+    /// [`LOW_ENGAGEMENT_RADIAL_WOC_FRACTION`].
+    Low,
+    /// At or over [`LOW_ENGAGEMENT_RADIAL_WOC_FRACTION`].
+    Engaged,
+}
+
 impl SimulationCutSample {
+    /// The class of this sample's radial engagement. It reads only
+    /// `radial_woc_fraction`; a caller that must leave out rapids and
+    /// retracts checks `is_cutting` itself (see [`Self::is_air`]).
+    #[must_use]
+    pub fn radial_engagement_class(&self) -> RadialEngagementClass {
+        let fraction = self.engagement.radial_woc_fraction;
+        if fraction < AIR_CUT_RADIAL_WOC_FRACTION {
+            RadialEngagementClass::Air
+        } else if fraction < LOW_ENGAGEMENT_RADIAL_WOC_FRACTION {
+            RadialEngagementClass::Low
+        } else {
+            RadialEngagementClass::Engaged
+        }
+    }
+
     /// True when the sample removes no material: a rapid or a retract
-    /// (`is_cutting == false`), or a fed move in air (radial engagement under
-    /// [`AIR_CUT_RADIAL_WOC_FRACTION`]). The chipload and power gates leave
+    /// (`is_cutting == false`), or a fed move in air
+    /// ([`RadialEngagementClass::Air`]). The chipload and power gates leave
     /// such a sample out, and the GUI breaks a metric line there.
     #[must_use]
     pub fn is_air(&self) -> bool {
-        !self.is_cutting || self.engagement.radial_woc_fraction < AIR_CUT_RADIAL_WOC_FRACTION
+        !self.is_cutting || self.radial_engagement_class() == RadialEngagementClass::Air
     }
 
     /// Neutral test fixture: a non-cutting sample at the origin with zeroed
@@ -301,8 +344,9 @@ pub struct SimulationCutIssue {
     pub cumulative_time_s: f64,
     /// Position at the first sample in the segment.
     pub position: [f64; 3],
-    /// Radial engagement at the first sample (always < 0.02 for AirCut,
-    /// < 0.10 for LowEngagement). For the worst engagement in the segment
+    /// Radial engagement at the first sample (always under
+    /// [`AIR_CUT_RADIAL_WOC_FRACTION`] for AirCut, under
+    /// [`LOW_ENGAGEMENT_RADIAL_WOC_FRACTION`] for LowEngagement). For the worst engagement in the segment
     /// use `min_radial_engagement`.
     pub radial_engagement: f64,
     pub semantic_item_id: Option<u64>,
@@ -402,7 +446,7 @@ pub struct SimulationToolpathCutSummary {
     pub total_runtime_s: f64,
     pub cutting_runtime_s: f64,
     pub rapid_runtime_s: f64,
-    /// Time spent cutting with `engagement.radial_woc_fraction < 0.02`.
+    /// Time spent cutting in [`RadialEngagementClass::Air`].
     /// Triggered on the radial-WOC axis only. For toolpaths whose
     /// kinematics make radial-WOC meaningless (drill / pin-drill — see
     /// `metrics_not_applicable`), this field still accumulates but
@@ -414,7 +458,7 @@ pub struct SimulationToolpathCutSummary {
     /// denominator — `total_runtime_s` and `cutting_runtime_s` give two
     /// different numbers and both have shipped under the name "air cut %".
     pub air_cut_time_s: f64,
-    /// Time spent cutting with `0.02 ≤ engagement.radial_woc_fraction < 0.10`.
+    /// Time spent cutting in [`RadialEngagementClass::Low`].
     /// Same axis + caveats as `air_cut_time_s`.
     pub low_engagement_time_s: f64,
     /// Time-weighted mean of `engagement.radial_woc_fraction` across
@@ -528,7 +572,7 @@ pub struct SimulationCutSummary {
     pub cutting_runtime_s: f64,
     pub rapid_runtime_s: f64,
     /// Sum of `air_cut_time_s` across toolpaths. Triggered on the
-    /// radial-WOC axis (`engagement.radial_woc_fraction < 0.02`); see
+    /// radial-WOC axis ([`RadialEngagementClass::Air`]); see
     /// per-toolpath summary's `metrics_not_applicable` flag for ops where
     /// radial-WOC is the wrong axis (drilling). For axis-aware reporting
     /// use `per_kinematics`.
@@ -603,7 +647,7 @@ pub struct SimulationCutSummary {
 /// triggered on the radial-WOC axis only, so consumers MUST suppress it when
 /// [`SimulationToolpathCutSummary::metrics_not_applicable`] is set.
 pub trait AirCutRatios {
-    /// Time at `radial_woc_fraction < 0.02` (seconds).
+    /// Time in [`RadialEngagementClass::Air`] (seconds).
     fn air_cut_seconds(&self) -> f64;
     /// Total integrator runtime including rapids (seconds).
     fn total_runtime_seconds(&self) -> f64;
@@ -680,10 +724,10 @@ pub struct RebasedCuttingTimes {
     /// `total_s − rapid_s − retract_s` from the integrator, distributed
     /// over the dexel's cutting samples.
     pub cutting_runtime_s: f64,
-    /// The share of [`Self::cutting_runtime_s`] at
-    /// `radial_woc_fraction < 0.02`.
+    /// The share of [`Self::cutting_runtime_s`] in
+    /// [`RadialEngagementClass::Air`].
     pub air_cut_time_s: f64,
-    /// The share at `0.02 ≤ radial_woc_fraction < 0.10`.
+    /// The share in [`RadialEngagementClass::Low`].
     pub low_engagement_time_s: f64,
     /// `rapid_s + retract_s` — the integrator's answer for the moves the
     /// dexel marks `is_cutting = false`.

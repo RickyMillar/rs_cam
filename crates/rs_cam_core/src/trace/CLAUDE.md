@@ -8,7 +8,7 @@ transform provenance. The agent-facing entry point is `trace::narrate`.
 - `mod.rs` — the facade.
 - `debug_trace.rs` — the per-operation debug record. F017: an emitter names a `DebugSpanKind` (`as_key`, `help`, `structural`, exhaustive), never a string.
 - `semantic_trace.rs` — the semantic items for operation-level diagnostics.
-- `toolpath_spans.rs` — the semantic ranges of moves inside a `Toolpath`.
+- `toolpath_spans.rs` — the semantic ranges of moves inside a `Toolpath`. GUI span text: `Span::display_label`, `SpanKind::display_label` (F074); `SpanKind::label` is the MCP name.
 - `produced.rs` — `Produced`, the typed side channel of a generated toolpath (W6.2).
 - `narrate.rs` — agent-friendly narration of a toolpath and a cut trace.
 - `transform_provenance.rs` — the post-generation transform provenance.

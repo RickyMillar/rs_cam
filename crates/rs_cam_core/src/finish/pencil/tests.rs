@@ -754,6 +754,9 @@ fn test_lift_to_surface_gap_splits_pass_not_stitches() {
             bitangency_angle: 170.0,
             min_cut_length: 1.0,
             hookup_distance: 0.0, // force retract/replunge — isolate the split from linking
+            // Centreline only (the assert below). F102: the default is the
+            // shipped 1 offset pass now, so the test names its 0.
+            num_offset_passes: 0,
             offset_stepover: 1.5,
             sampling: 1.0,
             stock_to_leave,

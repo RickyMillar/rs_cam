@@ -68,6 +68,7 @@
 //! and conventional sides differs there and we don't decompose.
 
 use crate::material::force_line::ForceLine;
+use crate::stock::simulation_cut::RadialEngagementClass;
 use crate::tool::MillingCutter;
 
 use super::locality::SpanLookup;
@@ -422,7 +423,7 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
         if !s.is_cutting {
             continue;
         }
-        if s.engagement.radial_woc_fraction < 0.02 {
+        if s.radial_engagement_class() == RadialEngagementClass::Air {
             continue;
         }
         let Some(arc) = s.arc_engagement_radians else {

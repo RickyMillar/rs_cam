@@ -14,7 +14,7 @@ use rs_cam_core::session::ProjectSession;
 use rs_cam_core::tool_load::verdict::{
     Confidence, CriterionKind, LoadState, ToolpathLoadVerdict, UnmodeledReason,
 };
-use rs_cam_core::trace::toolpath_spans::{Span, SpanKind, SpanPayload};
+use rs_cam_core::trace::toolpath_spans::{Span, SpanKind};
 
 /// Left panel in simulation workspace: slim operation list with visibility and jump controls.
 pub fn draw(
@@ -734,12 +734,15 @@ fn draw_span_item_row(
     ui.horizontal(|ui| {
         ui.add_space(depth as f32 * 12.0);
         ui.label(
-            egui::RichText::new(span_kind_label(span.kind))
+            egui::RichText::new(span.kind.display_label())
                 .small()
                 .color(color),
         );
 
-        let label = span_display_label(span);
+        // F074: core's one span text, else the kind's GUI name.
+        let label = span
+            .display_label()
+            .unwrap_or_else(|| span.kind.display_label().to_owned());
         let text = if is_active {
             egui::RichText::new(label).small().strong()
         } else {
@@ -790,27 +793,6 @@ fn draw_span_item_row(
     }
 }
 
-fn span_display_label(span: &Span) -> String {
-    if !span.label.is_empty() {
-        return span.label.clone().into_owned();
-    }
-    match (&span.kind, &span.payload) {
-        (
-            SpanKind::DepthPass,
-            Some(SpanPayload::DepthPass {
-                z_level,
-                pass_index,
-            }),
-        ) => {
-            format!("Pass {} @ Z {:.3}", pass_index + 1, z_level)
-        }
-        (SpanKind::Region, Some(SpanPayload::Region { region_id, .. })) => {
-            format!("Region {region_id}")
-        }
-        _ => span_kind_label(span.kind).to_owned(),
-    }
-}
-
 const fn span_kind_rank(kind: SpanKind) -> u8 {
     match kind {
         SpanKind::Operation => 0,
@@ -823,21 +805,6 @@ const fn span_kind_rank(kind: SpanKind) -> u8 {
         SpanKind::GeometryRefit => 2,
         SpanKind::WaterlineCleanup => 3,
         SpanKind::RapidOrderBarrier => 4,
-    }
-}
-
-const fn span_kind_label(kind: SpanKind) -> &'static str {
-    match kind {
-        SpanKind::Operation => "Operation",
-        SpanKind::DepthPass => "Depth pass",
-        SpanKind::Region => "Region",
-        SpanKind::Entry => "Entry",
-        SpanKind::LeadOut => "Lead-out",
-        SpanKind::LinkBridge => "Link bridge",
-        SpanKind::DressupArtifact => "Dressup",
-        SpanKind::GeometryRefit => "Arc fit",
-        SpanKind::WaterlineCleanup => "Waterline cleanup",
-        SpanKind::RapidOrderBarrier => "Order barrier",
     }
 }
 
