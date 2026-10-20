@@ -115,6 +115,29 @@ impl Default for StockConfig {
 }
 
 impl StockConfig {
+    /// F210 (W6b): check every numeric field against
+    /// [`crate::compute::stock_domain::StockDimension::domain`].
+    ///
+    /// # Errors
+    ///
+    /// The [`crate::compute::stock_domain::StockDomainError`] of the first
+    /// field outside its domain, in field order.
+    pub fn validate(&self) -> Result<(), crate::compute::stock_domain::StockDomainError> {
+        use crate::compute::stock_domain::StockDimension as D;
+        for (dimension, value) in [
+            (D::X, self.x),
+            (D::Y, self.y),
+            (D::Z, self.z),
+            (D::OriginX, self.origin_x),
+            (D::OriginY, self.origin_y),
+            (D::OriginZ, self.origin_z),
+            (D::Padding, self.padding),
+        ] {
+            dimension.check(value)?;
+        }
+        Ok(())
+    }
+
     /// Update stock dimensions from a model bounding box.
     ///
     /// XY dimensions always follow the bbox extent + padding.

@@ -30,6 +30,9 @@ impl ProjectSession {
     ) -> Result<Effects, SessionError> {
         // P3.2: a new toolpath states one floor field.
         config.floor_conflict()?;
+        // W6b (F030): every number of the op and the shoe is inside its
+        // domain.
+        crate::compute::domain::validate_toolpath(&config)?;
         let mut created = None;
         // The error type is named because this call is not in tail
         // position: the `?` below leaves `E` constrained by two `From`
@@ -442,11 +445,11 @@ impl ProjectSession {
     ///
     /// The door of the `SetToolpathShoe` command row. The shoe moves no
     /// toolpath, so every result stays. The simulation drops: its check
-    /// read the old shoe position. A stated gap must be finite and 0 or
-    /// more.
+    /// read the old shoe position. A stated gap must be inside its domain
+    /// ([`crate::machine::head::ShoeSetting::validate`]).
     ///
     /// # Errors
-    /// [`SessionError::ToolpathNotFound`], or [`SessionError::InvalidParam`]
+    /// [`SessionError::ToolpathNotFound`], or [`SessionError::OutOfDomain`]
     /// for a bad gap.
     #[instrument(skip(self))]
     pub(crate) fn set_toolpath_shoe(
@@ -454,18 +457,16 @@ impl ProjectSession {
         index: usize,
         shoe: crate::machine::head::ShoeSetting,
     ) -> Result<Effects, SessionError> {
-        if let crate::machine::head::ShoeSetting::Gap { gap_mm } = shoe
-            && !(gap_mm.is_finite() && gap_mm >= 0.0)
-        {
-            return Err(SessionError::InvalidParam(format!(
-                "a shoe gap must be a finite value of 0 or more, and it is {gap_mm}"
-            )));
-        }
         self.try_with_effects(None, |session| {
             let tc = session
                 .toolpath_configs
                 .get_mut(index)
                 .ok_or(SessionError::ToolpathNotFound(index))?;
+            shoe.validate()
+                .map_err(|refusal| crate::compute::domain::DomainRefusal::Shoe {
+                    toolpath: tc.name.clone(),
+                    refusal,
+                })?;
             if tc.shoe != shoe {
                 tc.shoe = shoe;
                 session.drop_simulation(SimulationDropCause::Machine);
@@ -516,6 +517,14 @@ impl ProjectSession {
             if let Err(refusal) = tc.floor_conflict() {
                 tc.operation = before;
                 return Err(refusal);
+            }
+            // W6b (F030): the new op passes the one operation check;
+            // nothing is written on a refusal.
+            if let Err(refusal) =
+                crate::compute::domain::validate_toolpath_operation(&tc.name, &tc.operation)
+            {
+                tc.operation = before;
+                return Err(refusal.into());
             }
             // Same invariant set_dressup_config enforces: the surviving
             // dressups must be legal for the NEW operation kind.

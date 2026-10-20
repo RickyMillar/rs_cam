@@ -55,29 +55,26 @@ fn unknown_param_error(
 /// DR-LIVE (2026-08-14): refuse a value outside the domain the registry
 /// declares for this param, BEFORE it reaches the config. A refusal, not
 /// a clamp — the caller finds out its number was rejected instead of
-/// quietly becoming another number. A param with no declared range is
-/// unchanged (see `ParamRange`'s doc: absent means *not stated*, and
-/// stating them is a per-param decision, not a sweep).
+/// quietly becoming another number.
 ///
 /// Every numeric route into `set_toolpath_param` calls this one helper,
-/// so a named arm and the generic serde arm cannot drift apart (N5).
+/// so a named arm and the generic serde arm cannot drift apart (N5). W6b:
+/// the rule is [`crate::compute::domain::check_param`], the same rule
+/// [`crate::compute::domain::validate_operation`] runs at every other
+/// door, and the refusal is [`SessionError::OutOfDomain`].
 fn check_param_range(
+    toolpath: &str,
     operation: &crate::compute::catalog::OperationConfig,
     param: &str,
     value: f64,
 ) -> Result<(), SessionError> {
-    let Some(range) = operation.param_range(param) else {
-        return Ok(());
-    };
-    if range.accepts(value) {
-        return Ok(());
-    }
-    Err(SessionError::InvalidParam(format!(
-        "'{param}' = {value} is outside the accepted range for {} \
-         ({}); the value was NOT applied",
-        operation.label(),
-        range.describe(),
-    )))
+    crate::compute::domain::check_param(operation, param, value).map_err(|refusal| {
+        crate::compute::domain::DomainRefusal::Operation {
+            toolpath: toolpath.to_owned(),
+            refusal,
+        }
+        .into()
+    })
 }
 
 impl ProjectSession {
@@ -186,7 +183,7 @@ impl ProjectSession {
                 let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("feed_rate must be a number".to_owned())
                 })?;
-                check_param_range(&tc.operation, param, v)?;
+                check_param_range(&tc.name, &tc.operation, param, v)?;
                 tc.operation.set_feed_rate(v);
                 tc.feeds_provenance.set(
                     crate::feeds::FeedsField::FeedRate,
@@ -197,7 +194,7 @@ impl ProjectSession {
                 let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("plunge_rate must be a number".to_owned())
                 })?;
-                check_param_range(&tc.operation, param, v)?;
+                check_param_range(&tc.name, &tc.operation, param, v)?;
                 tc.operation.set_plunge_rate(v);
                 tc.feeds_provenance.set(
                     crate::feeds::FeedsField::PlungeRate,
@@ -208,7 +205,7 @@ impl ProjectSession {
                 let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("stepover must be a number".to_owned())
                 })?;
-                check_param_range(&tc.operation, param, v)?;
+                check_param_range(&tc.name, &tc.operation, param, v)?;
                 // N5: `set_stepover` reports whether this config carries
                 // the field. On `false` nothing was written, so the
                 // caller gets the serde arm's own refusal. The
@@ -229,7 +226,7 @@ impl ProjectSession {
                 let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("depth_per_pass must be a number".to_owned())
                 })?;
-                check_param_range(&tc.operation, param, v)?;
+                check_param_range(&tc.name, &tc.operation, param, v)?;
                 // N5, as for `stepover` above. This arm writes through the
                 // feeds accessor, which also reaches a field with another
                 // name: RampFinish `max_stepdown` (D2) and Waterline
@@ -278,7 +275,7 @@ impl ProjectSession {
                     }
                 };
                 if let Some(r) = rpm {
-                    check_param_range(&tc.operation, param, f64::from(r))?;
+                    check_param_range(&tc.name, &tc.operation, param, f64::from(r))?;
                 }
                 tc.operation.set_spindle_rpm(rpm);
                 tc.feeds_provenance.set(
@@ -418,7 +415,7 @@ impl ProjectSession {
                 // (N5). The range gate runs BEFORE the value reaches
                 // serde.
                 if let Some(n) = value.as_f64() {
-                    check_param_range(&tc.operation, param, n)?;
+                    check_param_range(&tc.name, &tc.operation, param, n)?;
                 }
                 params_obj.insert(param.to_owned(), value);
                 let new_op: crate::compute::catalog::OperationConfig = serde_json::from_value(json)
@@ -450,6 +447,10 @@ impl ProjectSession {
                         return Err(unknown_param_error(&tc.operation, param));
                     }
                 }
+                // W6b (F036): the cross-field rules (an ordered angle
+                // pair) read the whole config, so the new config passes
+                // the one operation check before it is written.
+                crate::compute::domain::validate_toolpath_operation(&tc.name, &new_op)?;
                 tc.operation = new_op;
                 // G6 ramp: a hand-set entry feed is an override, as
                 // `feed_rate` is above.

@@ -6,6 +6,7 @@
 //! The folder holds the machine model: this profile, the kinematics, the
 //! utilisation instrument and the strategy advisor that reads them.
 
+pub mod domain;
 pub mod head;
 pub mod kinematic_utilization;
 pub mod kinematics;
@@ -576,6 +577,28 @@ fn default_aggressiveness() -> f64 {
 pub const DEFAULT_CUTTING_FEED_CAP_MM_MIN: f64 = 6000.0;
 
 impl MachineProfile {
+    /// F210 (W6b): check the numeric profile fields and the kinematics
+    /// block against [`domain::MachineDimension::domain`]. The head has its
+    /// own check ([`head::MachineHead::validate`]).
+    ///
+    /// # Errors
+    ///
+    /// The [`domain::MachineDomainError`] of the first field outside its
+    /// domain.
+    pub fn validate(&self) -> Result<(), domain::MachineDomainError> {
+        use domain::MachineDimension as D;
+        D::MaxFeed.check(self.max_feed_mm_min, None)?;
+        if let Some(cap) = self.max_cutting_feed_mm_min {
+            D::MaxCuttingFeed.check(cap, None)?;
+        }
+        D::MaxShank.check(self.max_shank_mm, None)?;
+        D::Aggressiveness.check(self.aggressiveness, None)?;
+        if let Some(kinematics) = &self.kinematics {
+            kinematics.validate()?;
+        }
+        Ok(())
+    }
+
     /// F4 — the feed ceiling for CUTTING moves. Explicit
     /// `max_cutting_feed_mm_min` when set, else
     /// `min(travel, DEFAULT_CUTTING_FEED_CAP_MM_MIN)`. Never exceeds

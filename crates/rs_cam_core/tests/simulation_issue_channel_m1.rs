@@ -328,7 +328,9 @@ fn engagement_is_unmeasurable_below_the_fresh_material_floor() {
     // Shallow arm: one pass, 0.02 mm — well under the 0.05 mm floor.
     let shallow = OperationConfig::Pocket(PocketConfig {
         floor: rs_cam_core::compute::floor::Floor::top(0.02),
-        depth_per_pass: 0.02,
+        // W6b: the declared lower bound of `depth_per_pass`. The floor
+        // above it keeps the cut to one 0.02 mm level.
+        depth_per_pass: 0.1,
         ..PocketConfig::default()
     });
     // Deep arm: identical geometry, 2.0 mm — well over it.

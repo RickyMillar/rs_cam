@@ -166,6 +166,36 @@ impl Default for MachineKinematics {
     }
 }
 
+impl MachineKinematics {
+    /// F210 (W6b): check every field against
+    /// [`crate::machine::domain::MachineDimension::domain`].
+    ///
+    /// # Errors
+    ///
+    /// The [`crate::machine::domain::MachineDomainError`] of the first
+    /// field outside its domain.
+    pub fn validate(&self) -> Result<(), crate::machine::domain::MachineDomainError> {
+        use crate::machine::domain::MachineDimension as D;
+        D::Acceleration.check(self.acceleration_mm_s2, None)?;
+        for (dimension, axes) in [
+            (D::AxisAcceleration, self.acceleration_xyz_mm_s2),
+            (D::AxisMaxRate, self.max_rate_xyz_mm_min),
+        ] {
+            for (axis, value) in axes.iter().flatten().enumerate() {
+                dimension.check(*value, Some(axis))?;
+            }
+        }
+        D::JunctionDeviation.check(self.junction_deviation_mm, None)?;
+        if let Some(jerk) = self.jerk_mm_s3 {
+            D::Jerk.check(jerk, None)?;
+        }
+        if let Some(cap) = self.max_junction_velocity_mm_min {
+            D::MaxJunctionVelocity.check(cap, None)?;
+        }
+        Ok(())
+    }
+}
+
 /// Result of parsing a GRBL / grblHAL `$$` settings dump
 /// ([`MachineKinematics::from_grbl_settings`]).
 ///

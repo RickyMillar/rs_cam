@@ -682,14 +682,14 @@ impl ProjectSession {
     /// A shoe-only change moves no toolpath.
     ///
     /// # Errors
-    /// [`SessionError::InvalidParam`] with the refusal text.
+    /// [`SessionError::OutOfDomain`] with the [`crate::machine::head::HeadRefusal`].
     #[instrument(skip(self, head))]
     pub(crate) fn set_machine_head(
         &mut self,
         head: crate::machine::head::MachineHead,
     ) -> Result<Effects, SessionError> {
         head.validate()
-            .map_err(|e| SessionError::InvalidParam(e.to_string()))?;
+            .map_err(crate::compute::domain::DomainRefusal::Head)?;
         Ok(self.with_effects(None, move |session| {
             let head_before = session.machine.head.fixed_digest();
             session.machine.head = head;

@@ -298,6 +298,11 @@ pub enum SessionError {
         /// The id that occurs twice.
         id: usize,
     },
+    /// W6b (F030, F036, F210): a value is outside the domain of its
+    /// entity: an operation config (`compute::domain::validate_operation`),
+    /// the stock, the machine, the head or a toolpath shoe. Every door of
+    /// that entity and the project loader refuse with it and write nothing.
+    OutOfDomain(crate::compute::domain::DomainRefusal),
 }
 
 impl SessionError {
@@ -408,6 +413,7 @@ impl std::fmt::Display for SessionError {
                 "Two [[{section}]] entries carry id {id}. An id names exactly one entry; \
                  give each entry its own id."
             ),
+            Self::OutOfDomain(refusal) => write!(f, "{refusal}"),
         }
     }
 }

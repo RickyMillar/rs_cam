@@ -6,7 +6,7 @@ principal type is `MachineProfile` in `mod.rs`.
 ## Files
 
 - `mod.rs` — the machine profile: spindle, power, per-axis rates and accel.
-  `head.rs` — the machine head and the dust shoe (H1).
+  `head.rs` — the machine head and the dust shoe (H1). `domain.rs` — F210: `MachineDimension`, `HeadDimension` (`domain` = math bounds, `ui_range` = GUI drag only).
 - `kinematics.rs` — the kinematics model for cycle-time estimation.
 - `kinematic_utilization.rs` — the machine-confidence instrument.
 - `strategy_advisor.rs` — suggests the clearing strategy from the profile.
@@ -35,7 +35,7 @@ principal type is `MachineProfile` in `mod.rs`.
 
 `cargo test -p rs_cam_core -q --test <name>`, one per name: `kinematics_per_axis_rate_p1`,
 `kinematic_utilization_p2`, `kinematic_surfacing_p4`, `a_downward_traverse_rounds_down_g_rpmdown`,
-`power_ceiling_parity_f2`, `the_machine_head_guards_the_checks_h1` (H1).
+`power_ceiling_parity_f2`, `the_machine_head_guards_the_checks_h1` (H1), `a_value_outside_its_domain_is_refused_at_every_door_w6b` (F210).
 
 ## Do not
 

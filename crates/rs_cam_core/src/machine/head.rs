@@ -33,6 +33,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::machine::domain::HeadDimension;
 use crate::stock::collision::{AssemblySegment, HeadBand};
 
 /// Does a part block a move?
@@ -156,12 +157,15 @@ impl Default for MachineHead {
 /// Why a head was refused. Each variant names the rule it broke.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HeadRefusal {
-    /// A value is NaN, infinite, or negative where it must not be.
+    /// A value is outside its domain
+    /// ([`crate::machine::domain::HeadDimension::domain`]).
     BadValue {
         /// The field path, for example `parts[0].diameter_mm`.
         field: String,
         /// The value.
         value: f64,
+        /// The rule the value breaks.
+        requirement: crate::tool::domain::Requirement,
     },
     /// A part stands above a shelf. A shelf has no width limit, so
     /// nothing above it can be reached.
@@ -178,11 +182,12 @@ pub enum HeadRefusal {
 impl std::fmt::Display for HeadRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::BadValue { field, value } => {
-                write!(
-                    f,
-                    "the head value {field} must be finite and positive, and it is {value}"
-                )
+            Self::BadValue {
+                field,
+                value,
+                requirement,
+            } => {
+                write!(f, "the head value {field} = {value}: must be {requirement}")
             }
             Self::PartAboveShelf { part } => write!(
                 f,
@@ -197,6 +202,23 @@ impl std::fmt::Display for HeadRefusal {
 
 impl std::error::Error for HeadRefusal {}
 
+/// F210: refuse `value` outside the domain of `dimension`, with the field
+/// path `field` builds.
+fn check_value(
+    dimension: HeadDimension,
+    value: f64,
+    field: impl FnOnce() -> String,
+) -> Result<(), HeadRefusal> {
+    match dimension.violation(value) {
+        None => Ok(()),
+        Some(requirement) => Err(HeadRefusal::BadValue {
+            field: field(),
+            value,
+            requirement,
+        }),
+    }
+}
+
 fn check_parts(parts: &[HeadPart], at: &str) -> Result<(), HeadRefusal> {
     let mut shelf_seen = false;
     for (i, part) in parts.iter().enumerate() {
@@ -205,20 +227,14 @@ fn check_parts(parts: &[HeadPart], at: &str) -> Result<(), HeadRefusal> {
                 part: part.name.clone(),
             });
         }
-        if let Some(d) = part.diameter_mm
-            && !(d.is_finite() && d > 0.0)
-        {
-            return Err(HeadRefusal::BadValue {
-                field: format!("{at}[{i}].diameter_mm"),
-                value: d,
-            });
+        if let Some(d) = part.diameter_mm {
+            check_value(HeadDimension::PartDiameter, d, || {
+                format!("{at}[{i}].diameter_mm")
+            })?;
         }
-        if !(part.height_mm.is_finite() && part.height_mm >= 0.0) {
-            return Err(HeadRefusal::BadValue {
-                field: format!("{at}[{i}].height_mm"),
-                value: part.height_mm,
-            });
-        }
+        check_value(HeadDimension::PartHeight, part.height_mm, || {
+            format!("{at}[{i}].height_mm")
+        })?;
         shelf_seen = part.is_shelf();
     }
     Ok(())
@@ -348,28 +364,25 @@ impl MachineHead {
     /// # Errors
     /// The [`HeadRefusal`] that names the first rule the head breaks.
     pub fn validate(&self) -> Result<(), HeadRefusal> {
-        if !(self.mount_mm.is_finite() && self.mount_mm >= 0.0) {
-            return Err(HeadRefusal::BadValue {
-                field: "mount_mm".to_owned(),
-                value: self.mount_mm,
-            });
-        }
+        check_value(HeadDimension::Mount, self.mount_mm, || {
+            "mount_mm".to_owned()
+        })?;
         check_parts(&self.parts, "parts")?;
         if let Some(shoe) = &self.shoe {
             if shoe.parts.is_empty() {
                 return Err(HeadRefusal::EmptyShoe);
             }
             check_parts(&shoe.parts, "shoe.parts")?;
-            if !(shoe.normal_gap_mm.is_finite() && shoe.normal_gap_mm >= 0.0) {
-                return Err(HeadRefusal::BadValue {
-                    field: "shoe.normal_gap_mm".to_owned(),
-                    value: shoe.normal_gap_mm,
-                });
-            }
+            check_value(HeadDimension::NormalGap, shoe.normal_gap_mm, || {
+                "shoe.normal_gap_mm".to_owned()
+            })?;
             if let Some(travel) = shoe.travel_mm {
-                if !(travel.min_mm.is_finite() && travel.max_mm.is_finite()) {
-                    return Err(HeadRefusal::BadTravel);
-                }
+                check_value(HeadDimension::TravelEnd, travel.min_mm, || {
+                    "shoe.travel_mm.min_mm".to_owned()
+                })?;
+                check_value(HeadDimension::TravelEnd, travel.max_mm, || {
+                    "shoe.travel_mm.max_mm".to_owned()
+                })?;
                 if travel.min_mm > travel.max_mm {
                     return Err(HeadRefusal::BadTravel);
                 }
@@ -468,6 +481,21 @@ pub enum ShoeSetting {
 }
 
 impl ShoeSetting {
+    /// F210 (W6b): a stated gap is inside
+    /// [`HeadDimension::ShoeGap`]'s domain (finite, `>= 0`). The
+    /// `SetToolpathShoe` door and the project loader call it.
+    ///
+    /// # Errors
+    /// [`HeadRefusal::BadValue`] on the field `gap_mm`.
+    pub fn validate(&self) -> Result<(), HeadRefusal> {
+        match *self {
+            Self::Gap { gap_mm } => {
+                check_value(HeadDimension::ShoeGap, gap_mm, || "gap_mm".to_owned())
+            }
+            Self::Auto | Self::Raised | Self::Off => Ok(()),
+        }
+    }
+
     /// Is this the default? The writer leaves the key out for it.
     #[must_use]
     pub fn is_auto(&self) -> bool {

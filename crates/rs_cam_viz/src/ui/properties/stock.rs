@@ -5,6 +5,7 @@ use super::pins::PinSummary;
 use crate::state::job::StockConfig;
 use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
+use rs_cam_core::compute::stock_domain::StockDimension;
 
 /// Reconcile a finished stock draft with the `auto_from_model` rule.
 ///
@@ -146,17 +147,26 @@ pub fn draw(
     // it applies; `reconcile_auto_from_model` applies the same rule at
     // the commit, so a draft cannot carry both.
     let mut geometry_edited = false;
+    // F210: every drag range below is `StockDimension::ui_range`, a GUI
+    // convenience. The domain that refuses a stock is
+    // `StockDimension::domain`, which `StockConfig::validate` reads.
     ui.label("Dimensions:");
     ui.param_grid("stock_dims", |ui| {
-        let out = ValueRow::new("X:", &mut stock.x, " mm", 0.5, 0.1..=10000.0).show(ui);
+        let out = ValueRow::new("X:", &mut stock.x, " mm", 0.5, StockDimension::X.ui_range())
+            .keep_existing()
+            .show(ui);
         edit.drag(&out.value_response);
         geometry_edited |= out.value_response.changed();
 
-        let out = ValueRow::new("Y:", &mut stock.y, " mm", 0.5, 0.1..=10000.0).show(ui);
+        let out = ValueRow::new("Y:", &mut stock.y, " mm", 0.5, StockDimension::Y.ui_range())
+            .keep_existing()
+            .show(ui);
         edit.drag(&out.value_response);
         geometry_edited |= out.value_response.changed();
 
-        let out = ValueRow::new("Z:", &mut stock.z, " mm", 0.5, 0.1..=10000.0).show(ui);
+        let out = ValueRow::new("Z:", &mut stock.z, " mm", 0.5, StockDimension::Z.ui_range())
+            .keep_existing()
+            .show(ui);
         edit.drag(&out.value_response);
         geometry_edited |= out.value_response.changed();
     });
@@ -164,18 +174,36 @@ pub fn draw(
     ui.add_space(8.0);
     ui.label("Origin:");
     ui.param_grid("stock_origin", |ui| {
-        let out =
-            ValueRow::new("X:", &mut stock.origin_x, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
+        let out = ValueRow::new(
+            "X:",
+            &mut stock.origin_x,
+            " mm",
+            0.5,
+            StockDimension::OriginX.ui_range(),
+        )
+        .show(ui);
         edit.drag(&out.value_response);
         geometry_edited |= out.value_response.changed();
 
-        let out =
-            ValueRow::new("Y:", &mut stock.origin_y, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
+        let out = ValueRow::new(
+            "Y:",
+            &mut stock.origin_y,
+            " mm",
+            0.5,
+            StockDimension::OriginY.ui_range(),
+        )
+        .show(ui);
         edit.drag(&out.value_response);
         geometry_edited |= out.value_response.changed();
 
-        let out =
-            ValueRow::new("Z:", &mut stock.origin_z, " mm", 0.5, f64::MIN..=f64::MAX).show(ui);
+        let out = ValueRow::new(
+            "Z:",
+            &mut stock.origin_z,
+            " mm",
+            0.5,
+            StockDimension::OriginZ.ui_range(),
+        )
+        .show(ui);
         edit.drag(&out.value_response);
         geometry_edited |= out.value_response.changed();
     });
@@ -203,7 +231,8 @@ pub fn draw(
                     egui::DragValue::new(&mut stock.padding)
                         .suffix(" mm")
                         .speed(0.1)
-                        .range(0.0..=100.0),
+                        .range(StockDimension::Padding.ui_range())
+                        .clamp_existing_to_range(false),
                 ),
             );
         });

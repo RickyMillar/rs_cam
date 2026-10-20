@@ -1302,6 +1302,23 @@ pub(super) fn build_session_from_project(
     check_format_version(&project)?;
 
     let mut stock = stock_from_project(&project.job.stock);
+    // W6b (F210, no-legacy ruling): the loader refuses a stock, a machine
+    // or a head outside its domain. The stock check reads the file values,
+    // before the auto-from-model refit below.
+    stock
+        .validate()
+        .map_err(crate::compute::domain::DomainRefusal::Stock)?;
+    project
+        .job
+        .machine
+        .validate()
+        .map_err(crate::compute::domain::DomainRefusal::Machine)?;
+    project
+        .job
+        .machine
+        .head
+        .validate()
+        .map_err(crate::compute::domain::DomainRefusal::Head)?;
 
     // Load tools
     let tools: Vec<ToolConfig> = project
@@ -1491,9 +1508,11 @@ pub(super) fn build_session_from_project(
                     toolpath: tp_section.name.clone(),
                 });
             };
-            toolpath_configs.push(toolpath_config_from_section(
-                tp_section, tp_id, &operation, warnings,
-            ));
+            let config = toolpath_config_from_section(tp_section, tp_id, &operation, warnings);
+            // W6b (F030, F036): the loader refuses an op number or a shoe
+            // gap outside its domain (no-legacy ruling).
+            crate::compute::domain::validate_toolpath(&config)?;
+            toolpath_configs.push(config);
             tp_indices.push(tp_idx);
         }
 

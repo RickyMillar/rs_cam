@@ -7,6 +7,7 @@
 //! [`super::ShoeRowInputs`]; the `inspect_machine` MCP tool prints the same
 //! plan.
 
+use rs_cam_core::machine::domain::HeadDimension;
 use rs_cam_core::machine::head::ShoeSetting;
 
 use super::ShoeRowInputs;
@@ -99,9 +100,18 @@ pub(super) fn draw_shoe_row(
         ShoeSetting::Gap { gap_mm } => {
             let mut gap = gap_mm;
             ui.param_grid("toolpath_shoe_gap", |ui| {
-                let out = ValueRow::new("Shoe gap", &mut gap, " mm", 0.5, 0.0..=500.0)
-                    .tooltip(Some(GAP_HOVER))
-                    .show(ui);
+                // F210: a GUI drag range; `ShoeSetting::validate` reads
+                // the domain.
+                let out = ValueRow::new(
+                    "Shoe gap",
+                    &mut gap,
+                    " mm",
+                    0.5,
+                    HeadDimension::ShoeGap.ui_range(),
+                )
+                .keep_existing()
+                .tooltip(Some(GAP_HOVER))
+                .show(ui);
                 let response = &out.value_response;
                 if response.changed() && gap != gap_mm {
                     events.push(AppEvent::SetToolpathShoe {

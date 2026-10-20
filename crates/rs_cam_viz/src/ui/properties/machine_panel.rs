@@ -15,7 +15,7 @@ use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
 use crate::ui_command::{NoArgs, UiCommand};
 use rs_cam_core::feeds::rationale::AGGRESSIVENESS_ABOVE_BASE_TEXT;
-use rs_cam_core::machine::{AGGRESSIVENESS_MAX, AGGRESSIVENESS_MIN};
+use rs_cam_core::machine::domain::MachineDimension;
 
 /// The width the Save button keeps at the end of the "Save as" row (IC1).
 const SAVE_BUTTON_WIDTH: f32 = 56.0;
@@ -179,8 +179,9 @@ pub(super) fn draw_machine_panel(
             &mut draft.max_feed_mm_min,
             " mm/min",
             50.0,
-            100.0..=30000.0,
+            MachineDimension::MaxFeed.ui_range(),
         )
+        .keep_existing()
         .tooltip(Some(
             "Travel/rapid rate ($110-class). Cutting feeds are capped separately.",
         ))
@@ -192,8 +193,9 @@ pub(super) fn draw_machine_panel(
             &mut draft.max_shank_mm,
             " mm",
             0.1,
-            1.0..=25.0,
+            MachineDimension::MaxShank.ui_range(),
         )
+        .keep_existing()
         .show(ui);
         edit.drag(&out.value_response);
     });
@@ -220,7 +222,7 @@ pub(super) fn draw_machine_panel(
         let slider = ui.add(
             egui::Slider::new(
                 &mut draft.aggressiveness,
-                AGGRESSIVENESS_MIN..=AGGRESSIVENESS_MAX,
+                MachineDimension::Aggressiveness.ui_range(),
             )
             .step_by(0.05)
             .text("")
@@ -360,10 +362,17 @@ pub(super) fn draw_machine_kinematics(
     let mut changed = false;
 
     let accel_row = |ui: &mut egui::Ui, label: &str, v: &mut f64, hint: &str| -> egui::Response {
-        ValueRow::new(label, v, " mm/s²", 5.0, 10.0..=20000.0)
-            .tooltip(Some(hint))
-            .show(ui)
-            .value_response
+        ValueRow::new(
+            label,
+            v,
+            " mm/s²",
+            5.0,
+            MachineDimension::AxisAcceleration.ui_range(),
+        )
+        .keep_existing()
+        .tooltip(Some(hint))
+        .show(ui)
+        .value_response
     };
 
     ui.param_grid("machine_kinematics", |ui| {
@@ -387,7 +396,8 @@ pub(super) fn draw_machine_kinematics(
             .add(
                 egui::DragValue::new(&mut delta)
                     .speed(0.001)
-                    .range(0.001..=1.0)
+                    .range(MachineDimension::JunctionDeviation.ui_range())
+                    .clamp_existing_to_range(false)
                     .max_decimals(4)
                     .suffix(" mm"),
             )
@@ -407,7 +417,8 @@ pub(super) fn draw_machine_kinematics(
                 let response = ui.add(
                     egui::DragValue::new(&mut jerk_val)
                         .speed(10.0)
-                        .range(1.0..=100_000.0)
+                        .range(MachineDimension::Jerk.ui_range())
+                        .clamp_existing_to_range(false)
                         .suffix(" mm/s³"),
                 );
                 changed |= response.changed();

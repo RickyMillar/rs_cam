@@ -11,6 +11,7 @@
 //! `panel_apply::apply_head` (`Command::SetMachineHead`), and a refusal
 //! comes back into the section in the core's words (the S4 contract).
 
+use rs_cam_core::machine::domain::HeadDimension;
 use rs_cam_core::machine::head::{
     DustShoe, HeadPart, MachineHead, PartKind, ShoeTravel, UNMODELLED_HEAD_DIAMETER_MM,
 };
@@ -172,9 +173,18 @@ pub fn draw_head(
         ui.add(egui::TextEdit::singleline(&mut editor.draft.name).desired_width(f32::INFINITY));
     });
     ui.param_grid("machine_head_mount", |ui| {
-        let _ = ValueRow::new("Mount", &mut editor.draft.mount_mm, " mm", 0.5, 0.0..=500.0)
-            .tooltip(Some(MOUNT_HOVER))
-            .show(ui);
+        // F210: each drag range in this editor is `HeadDimension::ui_range`,
+        // a GUI convenience. `MachineHead::validate` reads the domain.
+        let _ = ValueRow::new(
+            "Mount",
+            &mut editor.draft.mount_mm,
+            " mm",
+            0.5,
+            HeadDimension::Mount.ui_range(),
+        )
+        .keep_existing()
+        .tooltip(Some(MOUNT_HOVER))
+        .show(ui);
     });
 
     ui.label(
@@ -262,8 +272,9 @@ fn draw_shoe(ui: &mut egui::Ui, shoe: &mut DustShoe, open: &mut Option<(PartList
             &mut shoe.normal_gap_mm,
             " mm",
             0.5,
-            0.0..=500.0,
+            HeadDimension::NormalGap.ui_range(),
         )
+        .keep_existing()
         .tooltip(Some(GAP_HOVER))
         .show(ui);
     });
@@ -280,12 +291,26 @@ fn draw_shoe(ui: &mut egui::Ui, shoe: &mut DustShoe, open: &mut Option<(PartList
     }
     if let Some(travel) = shoe.travel_mm.as_mut() {
         ui.param_grid("machine_head_travel", |ui| {
-            let _ = ValueRow::new("Travel min", &mut travel.min_mm, " mm", 0.5, -500.0..=500.0)
-                .tooltip(Some(TRAVEL_HOVER))
-                .show(ui);
-            let _ = ValueRow::new("Travel max", &mut travel.max_mm, " mm", 0.5, -500.0..=500.0)
-                .tooltip(Some(TRAVEL_HOVER))
-                .show(ui);
+            let _ = ValueRow::new(
+                "Travel min",
+                &mut travel.min_mm,
+                " mm",
+                0.5,
+                HeadDimension::TravelEnd.ui_range(),
+            )
+            .keep_existing()
+            .tooltip(Some(TRAVEL_HOVER))
+            .show(ui);
+            let _ = ValueRow::new(
+                "Travel max",
+                &mut travel.max_mm,
+                " mm",
+                0.5,
+                HeadDimension::TravelEnd.ui_range(),
+            )
+            .keep_existing()
+            .tooltip(Some(TRAVEL_HOVER))
+            .show(ui);
         });
     }
     remove
@@ -368,10 +393,25 @@ fn draw_part_rows(
             ui.param_grid(
                 ("machine_head_part_d", list == PartList::Shoe, index),
                 |ui| {
-                    let _ = ValueRow::new("Diameter", d, " mm", 0.5, 0.1..=1000.0).show(ui);
-                    let _ = ValueRow::new("Height", &mut part.height_mm, " mm", 0.5, 0.0..=1000.0)
-                        .tooltip(Some(HEIGHT_HOVER))
-                        .show(ui);
+                    let _ = ValueRow::new(
+                        "Diameter",
+                        d,
+                        " mm",
+                        0.5,
+                        HeadDimension::PartDiameter.ui_range(),
+                    )
+                    .keep_existing()
+                    .show(ui);
+                    let _ = ValueRow::new(
+                        "Height",
+                        &mut part.height_mm,
+                        " mm",
+                        0.5,
+                        HeadDimension::PartHeight.ui_range(),
+                    )
+                    .keep_existing()
+                    .tooltip(Some(HEIGHT_HOVER))
+                    .show(ui);
                 },
             );
         }

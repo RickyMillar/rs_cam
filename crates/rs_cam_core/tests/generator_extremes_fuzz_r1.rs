@@ -37,7 +37,7 @@ use rs_cam_core::ids::ToolpathId;
 
 use std::sync::atomic::AtomicBool;
 
-use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, AdaptiveConfig, PocketConfig, ProfileConfig, TraceConfig, ZigzagConfig,
@@ -48,6 +48,17 @@ use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// `SearchPolicy` hard floor for DOC and stepover axes.
 const FLOOR_MM: f64 = 0.05;
+
+/// The DOC corner the door admits: the search floor, or the declared
+/// lower bound of `depth_per_pass` when that is higher. W6b: `AddToolpath`
+/// refuses a value outside the declared range, so the declared bound
+/// (0.1 mm) is the lowest DOC a generator can now receive.
+fn doc_floor(op: OperationType) -> f64 {
+    OperationConfig::param_range_for_type(op, "depth_per_pass")
+        .and_then(|range| range.min)
+        .expect("depth_per_pass declares a lower bound")
+        .max(FLOOR_MM)
+}
 
 /// Run one extreme-corner op config through the production generate
 /// funnel under `catch_unwind`; returns a failure description on
@@ -157,7 +168,7 @@ fn fast_two_d_generators_survive_search_space_corners() {
             "pocket@stepover-ceiling",
             OperationConfig::Pocket(PocketConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: FLOOR_MM,
+                depth_per_pass: doc_floor(OperationType::Pocket),
                 stepover: TOOL_DIAMETER_MM,
                 ..PocketConfig::default()
             }),
@@ -166,7 +177,7 @@ fn fast_two_d_generators_survive_search_space_corners() {
             "adaptive@stepover-ceiling",
             OperationConfig::Adaptive(AdaptiveConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: FLOOR_MM,
+                depth_per_pass: doc_floor(OperationType::Adaptive),
                 stepover: TOOL_DIAMETER_MM,
                 ..AdaptiveConfig::default()
             }),
@@ -175,7 +186,7 @@ fn fast_two_d_generators_survive_search_space_corners() {
             "profile@floors",
             OperationConfig::Profile(ProfileConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: FLOOR_MM,
+                depth_per_pass: doc_floor(OperationType::Profile),
                 ..ProfileConfig::default()
             }),
         ),
@@ -183,7 +194,7 @@ fn fast_two_d_generators_survive_search_space_corners() {
             "zigzag@floors",
             OperationConfig::Zigzag(ZigzagConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: FLOOR_MM,
+                depth_per_pass: doc_floor(OperationType::Zigzag),
                 stepover: FLOOR_MM,
                 ..ZigzagConfig::default()
             }),
@@ -192,7 +203,7 @@ fn fast_two_d_generators_survive_search_space_corners() {
             "trace@floors",
             OperationConfig::Trace(TraceConfig {
                 depth: DEPTH_MM,
-                depth_per_pass: FLOOR_MM,
+                depth_per_pass: doc_floor(OperationType::Trace),
                 ..TraceConfig::default()
             }),
         ),
@@ -209,7 +220,7 @@ fn slow_two_d_clearing_at_stepover_floor() {
             "pocket@floors",
             OperationConfig::Pocket(PocketConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: FLOOR_MM,
+                depth_per_pass: doc_floor(OperationType::Pocket),
                 stepover: FLOOR_MM,
                 ..PocketConfig::default()
             }),
@@ -218,7 +229,7 @@ fn slow_two_d_clearing_at_stepover_floor() {
             "adaptive@floors",
             OperationConfig::Adaptive(AdaptiveConfig {
                 floor: rs_cam_core::compute::floor::Floor::top(DEPTH_MM),
-                depth_per_pass: FLOOR_MM,
+                depth_per_pass: doc_floor(OperationType::Adaptive),
                 stepover: FLOOR_MM,
                 ..AdaptiveConfig::default()
             }),
