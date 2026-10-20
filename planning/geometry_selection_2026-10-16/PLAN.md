@@ -577,3 +577,12 @@ The lead approves `P3_DESIGN.md` and takes L-1 to L-17 as it recommends.
   summary replies. Open: `set_toolpath_param depth` on the four ops still
   says "unknown parameter" (its text is in a W6b file); `item_states.floor_z`
   is P3.5.
+- P3.5 (1f814929) accepted. Deviations accepted: one ladder function
+  (no new ladder hooks); `FloorRef::EachFace { highest, deepest }`; the
+  prologue refuses NoFace and AboveTop by item (status = generation);
+  Adaptive 2D refuses in its adapter until P3.6. LEAD QUESTION for P3.7:
+  under EachFace the auto top is the stock top (L-15). With an auto stock
+  from the model box, a pick of the TOP face has floor = top, and the
+  whole op refuses FloorAboveTop. Consider: such a region has nothing to
+  cut, so skip it with a SelectionNote, not refuse the op. Decide before
+  P3.7 (it is a UX rule; nothing cuts differently).
