@@ -586,3 +586,12 @@ The lead approves `P3_DESIGN.md` and takes L-1 to L-17 as it recommends.
   whole op refuses FloorAboveTop. Consider: such a region has nothing to
   cut, so skip it with a SelectionNote, not refuse the op. Decide before
   P3.7 (it is a UX rule; nothing cuts differently).
+- P3.6 (294875be) accepted. The two adaptive reds in its gate
+  (g_adaptpassload, g_adaptrapidlift) are pre-existing (full gate at
+  ca18398c) and red with P3.6 reverted.
+- Lead ruling for P3.7 (the P3.5 question): under EachFace, a face whose
+  floor is at or above the top has nothing to cut. It is skipped with a
+  `SelectionNote` that names the face ("at the top: nothing to cut"); the
+  op refuses `FloorAboveTop` only when every face is skipped. Reason: the
+  user picked the faces to cut; one face at the stock top must not block
+  the others, and the note says why it is not cut.
