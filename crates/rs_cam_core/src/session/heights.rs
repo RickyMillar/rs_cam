@@ -31,12 +31,12 @@
 //! resolved floor for every surface.
 //!
 //! P3.5: under the floor "each picked face" the floor resolves against the
-//! highest and the lowest up face of the selection
-//! (`FloorRef::EachFace`): the Bottom Z is the deepest face floor, and an
-//! auto top stays at the stock top (ruling L-15). The selection rule
-//! (`compute::floor::region_floors`) refuses an area with no face and a face
-//! floor at or above the top, by item, in `selection_status` and in the
-//! prologue; generation does not refuse them here first.
+//! lowest up face of the selection (`FloorRef::EachFace`): the Bottom Z is
+//! the deepest face floor, and an auto top stays at the stock top (ruling
+//! L-15). The selection rule (`compute::floor::region_floors`) refuses an
+//! area with no face, skips a face at the top with a note (P3.7) and
+//! refuses when every face is at the top, by item, in `selection_status`
+//! and in the prologue; generation does not refuse them here first.
 //!
 //! L-4: a Top Z or a Bottom Z that reads the Model Top or the Model Bottom
 //! refuses when the toolpath has no mesh. Before P3.1 generation used the
@@ -58,7 +58,7 @@ use crate::compute::catalog::FloorOwner;
 use crate::compute::config::{
     HeightContext, HeightMode, HeightReference, HeightsConfig, ResolvedHeights,
 };
-use crate::compute::floor::{FacePlanes, Floor, FloorRef, FloorRefusal};
+use crate::compute::floor::{Floor, FloorRef, FloorReferences, FloorRefusal};
 use crate::mesh::TriangleMesh;
 use crate::session::{Effects, ProjectSession, SessionError, ToolpathConfig};
 
@@ -100,6 +100,9 @@ pub struct ToolpathHeights {
     pub top_from: TopSource,
     /// The top of the up faces of the selection, in the setup frame.
     face_top_z: Option<f64>,
+    /// The plane Z of the lowest up face of the selection, in the setup
+    /// frame (the floor "each picked face" reads it).
+    face_bottom_z: Option<f64>,
     /// The floor of an `OpFloor` op resolved against [`Self::context`]
     /// (P3.2), or why it does not resolve. `None` for every other op.
     floor: Option<Result<FloorRef, FloorRefusal>>,
@@ -119,6 +122,24 @@ impl ToolpathHeights {
         apply_rule(heights, &self.context, self.face_top_z).1
     }
 
+    /// P3.7 (ruling L-10): the Z of each floor reference of this toolpath
+    /// under `heights`, in the setup frame. The GUI floor row and the
+    /// height diagram re-express a floor through it, so the resolved floor
+    /// Z stays when the reference changes. The Top Z is the top under a
+    /// floor that is not each face: [`Floor::Top`] reads it.
+    #[must_use]
+    pub fn floor_references(&self, heights: &HeightsConfig) -> FloorReferences {
+        let mut context = self.context;
+        context.floor = None;
+        FloorReferences {
+            top_z: apply_rule(heights, &context, self.face_top_z).0.top_z,
+            stock_top_z: self.context.stock_top_z,
+            stock_bottom_z: self.context.stock_bottom_z,
+            model_top_z: self.context.model_top_z,
+            face_bottom_z: self.face_bottom_z,
+        }
+    }
+
     /// The face top of the selection, in the setup frame.
     #[must_use]
     pub const fn face_top_z(&self) -> Option<f64> {
@@ -129,14 +150,16 @@ impl ToolpathHeights {
     /// `None`. A floor that does not resolve (L-4, no up face under each
     /// face, a value that is not finite) refuses, and so does a floor at or
     /// above the resolved top (L-16): its ladder would be empty. Under each
-    /// face the highest face floor is the one to check (P3.5).
+    /// face the deepest face floor is the one to check: a face at the top
+    /// is skipped with a note, and the op refuses only when every face is
+    /// at the top (P3.7).
     #[must_use]
     pub fn floor_refusal(&self, heights: &HeightsConfig) -> Option<FloorRefusal> {
         match self.floor? {
             Err(refusal) => Some(refusal),
             Ok(floor) => {
                 let top_z = self.resolve(heights).top_z;
-                let floor_z = floor.highest_z(top_z);
+                let floor_z = floor.z(top_z);
                 (floor_z >= top_z).then_some(FloorRefusal::AboveTop { floor_z, top_z })
             }
         }
@@ -184,6 +207,7 @@ impl ToolpathHeights {
             heights: resolved,
             top_from,
             face_top_z: None,
+            face_bottom_z: None,
             floor: context.floor.map(Ok),
         }
     }
@@ -420,11 +444,10 @@ impl ProjectSession {
         // P3.2: the floor resolves against the stock and the model of this
         // context. The top is not known yet, so `Floor::Top` stays relative.
         // P3.5: each face reads the planes of the up faces.
-        let faces = FacePlanes::from_top_and_bottom(face_top_z, face_bottom_z);
         let floor = tc
             .operation
             .floor()
-            .map(|floor| floor.resolve(&context, faces));
+            .map(|floor| floor.resolve(&context, face_bottom_z));
         context.floor = floor.and_then(Result::ok);
         let (heights, top_from) = apply_rule(&tc.heights, &context, face_top_z);
         ToolpathHeights {
@@ -432,6 +455,7 @@ impl ProjectSession {
             heights,
             top_from,
             face_top_z,
+            face_bottom_z,
             floor,
         }
     }

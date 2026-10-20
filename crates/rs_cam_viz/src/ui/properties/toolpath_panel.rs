@@ -340,13 +340,7 @@ pub(super) fn draw_toolpath_panel(
         ToolpathTab::Linking => draw_linking_params(ui, entry, tool_for_diags, toolpath_heights),
 
         ToolpathTab::Heights => {
-            draw_heights_tab(
-                ui,
-                entry,
-                inputs.toolpath_heights.as_ref(),
-                inputs.shoe.as_ref(),
-                events,
-            );
+            draw_heights_tab(ui, entry, inputs, events);
         }
 
         ToolpathTab::Dressup => draw_dressup_tab(ui, entry),
@@ -616,6 +610,12 @@ pub(super) fn draw_geometry_tab(
         );
     }
 
+    // P3.7 (O-2, option A): a face pick under a floor that is not "each
+    // picked face" keeps its floor; one line under the Selection section
+    // offers the choice. The button writes the draft floor, which goes
+    // back through the config as every op row does; the section itself
+    // writes `EditToolpathSelection` only (L-1).
+    draw_each_face_hint(ui, entry, toolpath_heights);
     draw_boundary_pick_row(ui, entry, selection_ui);
     draw_start_from(ui, entry, inputs, events);
     ui.separator();
@@ -700,6 +700,11 @@ pub(super) fn draw_geometry_tab(
         .iter()
         .find(|(id, _)| *id == entry.tool_id)
         .map_or(0.0, |(_, t)| t.diameter / 2.0);
+    // P3.7: the floor references and the face floors of an op that holds
+    // a floor (the floor row and its re-expression, L-10).
+    let floor_inputs = toolpath_heights
+        .filter(|_| entry.operation.floor().is_some())
+        .map(|answer| super::FloorInputs::new(answer, &entry.heights, op_report(inputs)));
     let mut draw_ctx = operations::registry::OpDrawCtx {
         tools,
         models,
@@ -712,6 +717,7 @@ pub(super) fn draw_geometry_tab(
         stock_source: entry.stock_source,
         toolpath_id: entry.id,
         selection_ui: &mut *selection_ui,
+        floor: floor_inputs.as_ref(),
     };
     operations::registry::draw_editor_and_diagram(ui, &mut entry.operation, &mut draw_ctx);
     // G-PILLCLAMP: a pill wrote its field this frame — stamp the
@@ -1218,6 +1224,50 @@ fn draw_feeds_tab(
     draw_vendor_lut_viewer(ui, tool_type, tool_diameter);
 }
 
+/// The text of the O-2 hint (geometry selection P3.7, design 8.1).
+pub(crate) const EACH_FACE_HINT: &str =
+    "Faces set the top. To cut down to each face, choose Each picked face.";
+
+/// The label of the button of the O-2 hint.
+pub(crate) const EACH_FACE_HINT_BUTTON: &str = "Each picked face";
+
+/// The O-2 hint (option A): when an up face is picked and the floor of the
+/// op is not "each picked face", one line offers that floor. The button
+/// sets `Floor::EachFace { depth: 0 }`: each face is cut down to its own
+/// plane. Nothing cuts differently until the operator clicks.
+fn draw_each_face_hint(
+    ui: &mut egui::Ui,
+    entry: &mut crate::state::toolpath::ToolpathEntry,
+    toolpath_heights: Option<&rs_cam_core::session::ToolpathHeights>,
+) {
+    use rs_cam_core::compute::floor::Floor;
+    let Some(floor) = entry.operation.floor() else {
+        return;
+    };
+    let face_picked = toolpath_heights
+        .and_then(|answer| answer.floor_references(&entry.heights).face_bottom_z)
+        .is_some();
+    if !face_picked || matches!(floor, Floor::EachFace { .. }) {
+        return;
+    }
+    ui.horizontal(|ui| {
+        ui.add(OneLine::new(format!(
+            "{} {EACH_FACE_HINT}",
+            crate::ui::tokens::GLYPH_DETAIL
+        )));
+    });
+    if ui
+        .add(crate::ui::components::Button::quiet(EACH_FACE_HINT_BUTTON))
+        .on_hover_text(
+            "Set the floor to Each picked face, depth 0: each face is cut down to its own \
+             plane, from the stock top.",
+        )
+        .clicked()
+    {
+        let _ = entry.operation.set_floor(Floor::EachFace { depth: 0.0 });
+    }
+}
+
 /// The Heights tab: the Z planes.
 ///
 /// P3.1: the diagram and the rows read THE heights of the session
@@ -1226,11 +1276,10 @@ fn draw_feeds_tab(
 fn draw_heights_tab(
     ui: &mut egui::Ui,
     entry: &mut crate::state::toolpath::ToolpathEntry,
-    toolpath_heights: Option<&Result<rs_cam_core::session::ToolpathHeights, String>>,
-    shoe: Option<&super::ShoeRowInputs>,
+    inputs: &super::ToolpathPanelInputs,
     events: &mut Vec<AppEvent>,
 ) {
-    let answer = match toolpath_heights {
+    let answer = match inputs.toolpath_heights.as_ref() {
         Some(Ok(answer)) => Some(answer),
         Some(Err(error)) => {
             ui.add(crate::ui::components::OneLine::new(format!(
@@ -1249,15 +1298,48 @@ fn draw_heights_tab(
     // IC1: the diagram summarises the five planes, so it comes first. The
     // rows below it set them.
     if let Some(answer) = answer {
-        draw_height_diagram(ui, &mut entry.heights, answer, op_type);
+        // P3.7: the floor of an `OpFloor` op. The diagram drags it in its
+        // own reference (L-10); the rows show it read-only (L-11). The
+        // draft floor goes back through the config, as every op row does.
+        let floor_inputs = entry
+            .operation
+            .floor()
+            .map(|_| super::FloorInputs::new(answer, &entry.heights, op_report(inputs)));
+        let mut floor = entry.operation.floor();
+        let diagram_floor = floor
+            .as_mut()
+            .zip(floor_inputs.as_ref())
+            .map(|(floor, inputs)| super::DiagramFloor { floor, inputs });
+        draw_height_diagram(ui, &mut entry.heights, answer, op_type, diagram_floor);
+        if let Some(floor) = floor
+            && entry.operation.floor() != Some(floor)
+        {
+            let _ = entry.operation.set_floor(floor);
+        }
         ui.add_space(6.0);
-        draw_heights_params(ui, &mut entry.heights, answer, op_type);
+        draw_heights_params(
+            ui,
+            &mut entry.heights,
+            answer,
+            op_type,
+            entry.operation.floor().as_ref(),
+        );
     }
     // H2: the dust shoe sits with the safety heights. It moves no
     // toolpath; it decides what the checks read above the tool.
-    if let Some(shoe) = shoe {
+    if let Some(shoe) = inputs.shoe.as_ref() {
         ui.add_space(6.0);
         super::shoe_row::draw_shoe_row(ui, entry.id, shoe, events);
+    }
+}
+
+/// The `selection_status` report of the op selection, when it answered.
+fn op_report(
+    inputs: &super::ToolpathPanelInputs,
+) -> Option<&rs_cam_core::session::SelectionReport> {
+    match inputs.selection_report.as_ref() {
+        Some(Ok(report)) => Some(report),
+        Some(Err(_)) | None => None,
     }
 }
 

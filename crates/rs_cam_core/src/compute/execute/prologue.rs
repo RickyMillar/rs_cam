@@ -31,9 +31,10 @@
 //! runs THE per-area floor rule ([`region_floors`]) after the view, and
 //! gives each closed area its own ladder: the catalogue ladder
 //! (`OperationConfig::cutting_levels`) down to the floor of that area
-//! ([`Prepared::region_ladders`]). An area with no face or a face floor at
-//! or above the top refuses with [`OperationError::Selection`], as
-//! `selection_status` refuses it.
+//! ([`Prepared::region_ladders`]). An area with no face refuses with
+//! [`OperationError::Selection`], as `selection_status` refuses it. P3.7: a
+//! face whose floor is at or above the top is left out with a note; the op
+//! refuses `FloorAboveTop` only when every face is at the top.
 
 use std::borrow::Cow;
 
@@ -42,7 +43,7 @@ use crate::compute::config::ResolvedHeights;
 use crate::compute::floor::region_floors;
 use crate::compute::toolpath_stats::SelectionNoteFinding;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::selection::{Curves, Holes, OpItems, Regions, ResolvedSelection, view};
+use crate::selection::{Curves, Holes, OpItems, Regions, ResolvedSelection, SelectionNote, view};
 
 use super::territory::Territory;
 use super::{ExecutionContext, OperationError};
@@ -238,17 +239,26 @@ pub(super) fn check_inputs<'a>(
     let op_type = op.op_type();
     let name = op_type.name();
     let item_use = op.capabilities().item_use;
-    let geometry = match op_type.geometry_requirement() {
+    let mut notes = Vec::new();
+    let mut geometry = match op_type.geometry_requirement() {
         GeometryRequirement::Items => {
-            CheckedGeometry::Items(require_items(ctx, op_type, item_use)?)
+            CheckedGeometry::Items(require_items(ctx, op_type, item_use, &mut notes)?)
         }
         GeometryRequirement::Mesh => CheckedGeometry::Mesh(require_mesh(ctx, name)?),
         GeometryRequirement::ItemsAndMesh => CheckedGeometry::ItemsAndMesh {
-            items: require_items(ctx, op_type, item_use)?,
+            items: require_items(ctx, op_type, item_use, &mut notes)?,
             mesh: require_mesh(ctx, name)?,
         },
     };
-    let region_ladders = region_ladders(ctx, op, &geometry)?;
+    let region_ladders = region_ladders(ctx, op, &mut geometry, &mut notes)?;
+    // ONE finding holds every note of the op: the open paths that `view`
+    // left out and the faces at the top (P3.7). The finding overwrites.
+    if !notes.is_empty() {
+        ctx.record(&SelectionNoteFinding {
+            op: op_type.label(),
+            notes,
+        });
+    }
     if let Some(text) = op_type.tool_refusal(ctx.tool_cfg.tool_type.cutter_kind()) {
         return Err(OperationError::InvalidTool(text));
     }
@@ -262,26 +272,26 @@ pub(super) fn check_inputs<'a>(
 
 /// P3.5: the ladder of each closed area under the floor "each picked
 /// face" (see [`Prepared::region_ladders`]), or `None`. THE per-area floor
-/// rule ([`region_floors`]) refuses an area with no face and a face floor
-/// at or above the top, by item.
+/// rule ([`region_floors`]) refuses an area with no face, and refuses when
+/// every face floor is at or above the top, by item. P3.7: it removes a
+/// face at the top from the items and adds its note to `notes`.
 fn region_ladders(
     ctx: &ExecutionContext<'_>,
     op: &OperationConfig,
-    geometry: &CheckedGeometry<'_>,
+    geometry: &mut CheckedGeometry<'_>,
+    notes: &mut Vec<SelectionNote>,
 ) -> Result<Option<Vec<Vec<f64>>>, OperationError> {
-    let regions = match geometry {
-        CheckedGeometry::Items(items) | CheckedGeometry::ItemsAndMesh { items, .. } => {
-            items.regions()
-        }
-        CheckedGeometry::Mesh(_) => None,
+    let items = match geometry {
+        CheckedGeometry::Items(items) | CheckedGeometry::ItemsAndMesh { items, .. } => items,
+        CheckedGeometry::Mesh(_) => return Ok(None),
     };
-    let (Some(floor), Some(regions)) = (op.floor(), regions) else {
+    let Some(floor) = op.floor() else {
         return Ok(None);
     };
-    let floors = region_floors(&ctx.selection.resolved, regions, floor, ctx.heights.top_z)
+    let floors = region_floors(&ctx.selection.resolved, items, floor, ctx.heights.top_z)
         .map_err(|refusal| OperationError::Selection(refusal.for_op(op.op_type().label())))?;
     Ok(floors.map(|floors| {
-        floors
+        let ladders = floors
             .as_slice()
             .iter()
             .map(|&bottom_z| {
@@ -290,14 +300,17 @@ fn region_ladders(
                     ..*ctx.heights
                 })
             })
-            .collect()
+            .collect();
+        notes.extend(floors.into_notes());
+        ladders
     }))
 }
 
 /// The items the op cuts: [`view`] over the resolved selection with the
 /// op's [`ItemUse`]. A refusal names the op (CMP-13) and stops the op with
 /// [`OperationError::Selection`]. The open paths that the default rule
-/// left out go into ONE [`SelectionNoteFinding`] through `ctx.record`.
+/// left out go into `notes`; [`check_inputs`] records them in ONE
+/// [`SelectionNoteFinding`] through `ctx.record`.
 ///
 /// A `Holes` op takes its own `may_be_empty` (P2.3c): a Drill with no hole
 /// refuses `Empty`; a Pin Drill with no extra hole runs on its stock pins.
@@ -305,15 +318,11 @@ fn require_items(
     ctx: &ExecutionContext<'_>,
     op_type: OperationType,
     item_use: ItemUse,
+    notes: &mut Vec<SelectionNote>,
 ) -> Result<OpItems, OperationError> {
-    let (items, notes) = view(&ctx.selection.resolved, item_use)
+    let (items, view_notes) = view(&ctx.selection.resolved, item_use)
         .map_err(|refusal| OperationError::Selection(refusal.for_op(op_type.label())))?;
-    if !notes.is_empty() {
-        ctx.record(&SelectionNoteFinding {
-            op: op_type.label(),
-            notes,
-        });
-    }
+    notes.extend(view_notes);
     Ok(items)
 }
 

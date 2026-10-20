@@ -282,6 +282,14 @@ pub struct SelectionReport {
     /// the flat-region faces of a mesh (P4.7). The key (with the source of
     /// the item) and the state. The viewport finds the geometry by key.
     pub foreign: Vec<(MatchKey, ItemState)>,
+    /// Geometry selection P3.7: the floor Z of each item, index-aligned
+    /// with `item_states`. `Some` only for a `Cut` face under the floor
+    /// "each picked face": the floor of its area, in the setup frame (the
+    /// per-area floor rule of the prologue).
+    pub item_floor_z: Vec<Option<f64>>,
+    /// The floor Z of each `foreign` item, index-aligned with `foreign`,
+    /// by the same rule as `item_floor_z`.
+    pub foreign_floor_z: Vec<Option<f64>>,
     /// The mesh models whose flat faces the selection names and that are
     /// not computed yet (geometry selection P4.7). While it is not empty
     /// the report holds no count and no refusal: the GUI section says
@@ -589,14 +597,14 @@ impl ProjectSession {
             |_| Vec::new(),
             |m| vec![ItemState::NotSelected; m.items.len()],
         );
+        report.item_floor_z = vec![None; report.item_states.len()];
         for excluded in frames.model.excluded() {
             set_state(
                 &mut report,
                 own_source,
-                excluded.source,
-                excluded.index,
-                &excluded.key,
+                (excluded.source, excluded.index, &excluded.key),
                 ItemState::Excluded,
+                None,
             );
         }
         report.lost = frames
@@ -617,34 +625,37 @@ impl ProjectSession {
                 }
             }
         }
-        let resolution_states = |report: &mut SelectionReport, roles: Option<&[ItemRole]>| {
-            for (at, r) in frames.model.items().iter().enumerate() {
-                let state = match roles.and_then(|roles| roles.get(at)) {
-                    Some(ItemRole::Cut) => ItemState::Cut,
-                    Some(ItemRole::Island) => ItemState::Island,
-                    Some(ItemRole::Skipped) | None => ItemState::Skipped,
-                };
-                set_state(
-                    report,
-                    own_source,
-                    r.item().source(),
-                    r.index(),
-                    r.identity(),
-                    state,
-                );
-            }
-        };
+        // P3.7: `floors` gives the floor Z of each resolution item (each
+        // face under "each picked face"), index-aligned with the items.
+        let resolution_states =
+            |report: &mut SelectionReport, roles: Option<&[ItemRole]>, floors: &[Option<f64>]| {
+                for (at, r) in frames.model.items().iter().enumerate() {
+                    let state = match roles.and_then(|roles| roles.get(at)) {
+                        Some(ItemRole::Cut) => ItemState::Cut,
+                        Some(ItemRole::Island) => ItemState::Island,
+                        Some(ItemRole::Skipped) | None => ItemState::Skipped,
+                    };
+                    let floor_z = floors.get(at).copied().flatten();
+                    set_state(
+                        report,
+                        own_source,
+                        (r.item().source(), r.index(), r.identity()),
+                        state,
+                        floor_z.filter(|_| state == ItemState::Cut),
+                    );
+                }
+            };
         // P4.7: faces that are not computed yet give no count and no
         // refusal ("computing faces"); generation computes them itself.
         if !frames.model.faces_not_ready().is_empty() {
-            resolution_states(&mut report, None);
+            resolution_states(&mut report, None, &[]);
             report.faces_not_ready = frames.model.faces_not_ready().to_vec();
             report.counts.clear();
             report.faces_by_facing = FacesByFacing::default();
             return Ok(report);
         }
         if !runs_view {
-            resolution_states(&mut report, None);
+            resolution_states(&mut report, None, &[]);
             return Ok(report);
         }
         // P3.4: a boundary keeps a down face (its outline); an op refuses
@@ -653,18 +664,39 @@ impl ProjectSession {
             SelectionTarget::Op => crate::selection::view(&frames.setup, item_use),
             SelectionTarget::Boundary => crate::selection::view_boundary(&frames.setup),
         };
-        // P3.5: under "each picked face" every closed area needs a face, and
-        // each face floor must be below the top. THE rule
-        // (`compute::floor::region_floors`) that the prologue runs, with the
-        // same top, so the status and generation give one refusal.
+        // P3.5: under "each picked face" every closed area needs a face.
+        // P3.7: a face whose floor is at or above the top is left out with a
+        // note, and the op refuses only when every face is at the top. THE
+        // rule (`compute::floor::region_floors`) that the prologue runs, with
+        // the same top, so the status and generation give one answer.
+        let mut floors = Vec::new();
         let viewed = match (viewed, target, tc.operation.floor()) {
-            (Ok((items, notes)), SelectionTarget::Op, Some(floor)) => {
-                match (items.regions(), self.each_face_top_z(tc, ctx)?) {
-                    (Some(regions), Some(top_z)) => {
-                        crate::compute::floor::region_floors(&frames.setup, regions, floor, top_z)
-                            .map(|_| (items, notes))
-                    }
-                    _ => Ok((items, notes)),
+            (Ok((mut items, mut notes)), SelectionTarget::Op, Some(floor)) => {
+                match self.each_face_top_z(tc, ctx)? {
+                    Some(top_z) => crate::compute::floor::region_floors(
+                        &frames.setup,
+                        &mut items,
+                        floor,
+                        top_z,
+                    )
+                    .map(|region_floors| {
+                        if let (Some(region_floors), Some(regions)) =
+                            (region_floors, items.regions())
+                        {
+                            floors = vec![None; frames.model.items().len()];
+                            for (index, &floor_z) in region_floors.as_slice().iter().enumerate() {
+                                if let Some(slot) = regions
+                                    .exterior_item(index)
+                                    .and_then(|at| floors.get_mut(at))
+                                {
+                                    *slot = Some(floor_z);
+                                }
+                            }
+                            notes.extend(region_floors.into_notes());
+                        }
+                        (items, notes)
+                    }),
+                    None => Ok((items, notes)),
                 }
             }
             (viewed, _, _) => viewed,
@@ -673,7 +705,7 @@ impl ProjectSession {
             Ok((items, notes)) => {
                 // The frame door keeps the order of the items, so the
                 // roles of the setup half align with the model half.
-                resolution_states(&mut report, Some(items.roles()));
+                resolution_states(&mut report, Some(items.roles()), &floors);
                 report.skipped_by_kind = items.skipped_by_kind().clone();
                 report.notes = notes;
                 report.islands = items
@@ -689,7 +721,7 @@ impl ProjectSession {
                 }
             }
             Err(refusal) => {
-                resolution_states(&mut report, None);
+                resolution_states(&mut report, None, &[]);
                 report.refusal = Some(refusal.for_op(label));
             }
         }
@@ -1138,15 +1170,17 @@ pub fn execute_build_model_faces(
 fn set_state(
     report: &mut SelectionReport,
     own: SourceRef,
-    source: SourceRef,
-    index: usize,
-    key: &MatchKey,
+    (source, index, key): (SourceRef, usize, &MatchKey),
     state: ItemState,
+    floor_z: Option<f64>,
 ) {
     if source == own
         && let Some(slot) = report.item_states.get_mut(index)
     {
         *slot = state;
+        if let Some(floor) = report.item_floor_z.get_mut(index) {
+            *floor = floor_z;
+        }
         return;
     }
     report.foreign.push((
@@ -1156,6 +1190,7 @@ fn set_state(
         },
         state,
     ));
+    report.foreign_floor_z.push(floor_z);
 }
 
 /// True when the prologue of `op_type` runs `view` (its row reads items).

@@ -34,7 +34,7 @@ use crate::geometry::enriched_mesh::HORIZONTAL_FACE_MIN_NORMAL_Z;
 use crate::polygon::{Polygon2, detect_containment, detect_containment_tagged};
 
 use super::item::{Item, ItemKind, Shape, SourceRef};
-use super::refusal::{ItemRef, RefusalCause, SelectionNote, SelectionRefusal};
+use super::refusal::{ItemRef, NoteCause, RefusalCause, SelectionNote, SelectionRefusal};
 use super::resolve::ResolvedSelection;
 use super::rule::Facing;
 
@@ -208,6 +208,35 @@ impl OpItems {
     /// reads it.
     pub fn skipped_by_kind(&self) -> &BTreeMap<ItemKind, usize> {
         &self.skipped_by_kind
+    }
+
+    /// Remove the closed areas at `indices` of [`Regions::as_slice`] (in
+    /// increasing order) and mark the item of each exterior
+    /// [`ItemRole::Skipped`] (geometry selection P3.7). THE per-area floor
+    /// rule (`compute::floor::region_floors`) calls it for a face whose
+    /// floor is at or above the top. Every other view does not change.
+    pub fn skip_regions(&mut self, indices: &[usize]) {
+        let View::Regions(regions) = &mut self.view else {
+            return;
+        };
+        for &index in indices.iter().rev() {
+            if index >= regions.curves.polygons.len() {
+                continue;
+            }
+            regions.curves.polygons.remove(index);
+            if index < regions.stock.len() {
+                regions.stock.remove(index);
+            }
+            if index < regions.plane_z.len() {
+                regions.plane_z.remove(index);
+            }
+            if index < regions.exterior_items.len() {
+                let at = regions.exterior_items.remove(index);
+                if let Some(role) = self.roles.get_mut(at) {
+                    *role = ItemRole::Skipped;
+                }
+            }
+        }
     }
 
     /// The closed areas of a `Regions` op.
@@ -391,6 +420,7 @@ fn view_with(
                 count: 1,
                 first: ItemRef::new(r.identity().clone()),
                 item_use,
+                cause: NoteCause::KindNotServed,
             }),
         }
     }

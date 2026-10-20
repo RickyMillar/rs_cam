@@ -7,6 +7,50 @@
 use super::bottom_z_pin_note;
 use crate::state::toolpath::{HeightContext, HeightMode, HeightsConfig, OperationType};
 use rs_cam_core::compute::catalog::FloorOwner;
+use rs_cam_core::compute::floor::{Floor, FloorReferences};
+
+/// What the floor row and the height diagram read beside the floor of a
+/// Pocket, Profile, Zigzag or Adaptive 2D (geometry selection P3.7).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FloorInputs {
+    /// The Z of each floor reference (`ToolpathHeights::floor_references`):
+    /// THE rule of a change of reference and of a drag (ruling L-10).
+    pub refs: FloorReferences,
+    /// Under "each picked face": the distinct floor Z of the cut faces, top
+    /// first (`SelectionReport::item_floor_z`, `foreign_floor_z`). Empty for
+    /// every other floor.
+    pub face_floors: Vec<f64>,
+}
+
+impl FloorInputs {
+    /// The inputs from the heights answer under `heights` and the op
+    /// selection report.
+    #[must_use]
+    pub fn new(
+        answer: &rs_cam_core::session::ToolpathHeights,
+        heights: &HeightsConfig,
+        report: Option<&rs_cam_core::session::SelectionReport>,
+    ) -> Self {
+        let mut face_floors: Vec<f64> = report
+            .into_iter()
+            .flat_map(|r| r.item_floor_z.iter().chain(&r.foreign_floor_z))
+            .filter_map(|z| *z)
+            .collect();
+        face_floors.sort_by(|a, b| b.total_cmp(a));
+        face_floors.dedup_by(|a, b| a.to_bits() == b.to_bits());
+        Self {
+            refs: answer.floor_references(heights),
+            face_floors,
+        }
+    }
+}
+
+/// The floor of an `OpFloor` op, for the diagram: the draft floor (a drag
+/// writes it) and its inputs.
+pub struct DiagramFloor<'a> {
+    pub floor: &'a mut Floor,
+    pub inputs: &'a FloorInputs,
+}
 
 /// Height line definition for diagram rendering and interaction.
 struct DiagramLine {
@@ -18,6 +62,9 @@ struct DiagramLine {
     text: String,
     /// Which field index (0..5) for drag targeting.
     index: usize,
+    /// P3.7: a run of one face floor under "each picked face": drawn
+    /// dashed.
+    dashed: bool,
 }
 
 /// The `DiagramLine::index` of the Bottom row. The drag handler and the
@@ -220,11 +267,21 @@ pub(crate) fn model_profile(ctx: &HeightContext) -> ModelProfile {
 /// `painter.layout` as a WRAP width, not a truncation cap, so
 /// `BZ 26.0 (not used)` would not clip. It would wrap to two rows in a
 /// five-row diagram, and then meet the label-collision push below.
+///
+/// # P3.7: the floor of Pocket, Profile, Zigzag and Adaptive 2D
+///
+/// An `OpFloor` op takes its floor from its floor field, so its bottom run
+/// is the floor, in `DANGER`: "FL" and its Z, or under "each picked face"
+/// one dashed run per distinct face floor ("F1", "F2", ...). A drag of a
+/// floor run writes `floor` in its current reference
+/// (`FloorReferences::at_z`, ruling L-10), on the 0.1 mm grid; a value the
+/// domain refuses is not written. "BZ (not used)" stays for `OpDial` ops.
 pub fn draw_height_diagram(
     ui: &mut egui::Ui,
     heights: &mut HeightsConfig,
     answer: &rs_cam_core::session::ToolpathHeights,
     op_type: OperationType,
+    mut floor: Option<DiagramFloor<'_>>,
 ) {
     use crate::ui::tokens;
 
@@ -235,55 +292,91 @@ pub fn draw_height_diagram(
     let profile = model_profile(ctx);
 
     // R33. One fact — `floor_owner` — drives the colour and the text, and
-    // the same fact drives `bottom_z_pin_note` in the panel above. P3.2: an
-    // `OpFloor` op takes its floor from its floor field; its Bottom row is
-    // not a pin it reads (the floor line is P3.7).
+    // the same fact drives `bottom_z_pin_note` in the panel above. P3.7: an
+    // `OpFloor` op takes its floor from its floor field, so its bottom runs
+    // are the floor.
     // The inert run names the state and carries NO value: this diagram
     // pictures cut limits, and an inert pin is not one. See the ruling in
     // this function's doc comment before changing the text.
-    let bottom_drives_the_cut = match op_type.capabilities().floor_owner {
-        FloorOwner::HeightsBottom => true,
-        FloorOwner::OpFloor | FloorOwner::OpDial => false,
+    let owner = op_type.capabilities().floor_owner;
+    let bottom_drives_the_cut = match owner {
+        FloorOwner::HeightsBottom | FloorOwner::OpFloor => true,
+        FloorOwner::OpDial => false,
     };
-    let (bottom_color, bottom_text) = if bottom_drives_the_cut {
-        (tokens::DANGER, format!("BZ {:.1}", resolved.bottom_z))
+    // The floor runs of an `OpFloor` op: the face floors under "each picked
+    // face", else the one resolved floor.
+    let floor_runs: Vec<(f64, String, bool)> = match owner {
+        FloorOwner::OpFloor => {
+            let each_face = floor
+                .as_ref()
+                .filter(|f| matches!(f.floor, Floor::EachFace { .. }))
+                .map(|f| f.inputs.face_floors.clone())
+                .unwrap_or_default();
+            if each_face.is_empty() {
+                let z = floor
+                    .as_ref()
+                    .and_then(|f| f.inputs.refs.floor_z(f.floor).ok())
+                    .unwrap_or(resolved.bottom_z);
+                vec![(z, format!("FL {z:.1}"), false)]
+            } else {
+                each_face
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &z)| (z, format!("F{} {z:.1}", i + 1), true))
+                    .collect()
+            }
+        }
+        FloorOwner::HeightsBottom => vec![(
+            resolved.bottom_z,
+            format!("BZ {:.1}", resolved.bottom_z),
+            false,
+        )],
+        FloorOwner::OpDial => vec![(resolved.bottom_z, "BZ (not used)".to_owned(), false)],
+    };
+    let bottom_color = if bottom_drives_the_cut {
+        tokens::DANGER
     } else {
-        (tokens::UNKNOWN, "BZ (not used)".to_owned())
+        tokens::UNKNOWN
     };
 
     // Build line definitions (ordered top to bottom for rendering)
-    let lines = [
+    let mut lines = vec![
         DiagramLine {
             z: resolved.clearance_z,
             color: tokens::DIAGRAM_INK,
             text: format!("CZ {:.1}", resolved.clearance_z),
             index: 0,
+            dashed: false,
         },
         DiagramLine {
             z: resolved.retract_z,
             color: tokens::DIAGRAM_INK,
             text: format!("RZ {:.1}", resolved.retract_z),
             index: 1,
+            dashed: false,
         },
         DiagramLine {
             z: resolved.feed_z,
             color: tokens::OK,
             text: format!("FZ {:.1}", resolved.feed_z),
             index: 2,
+            dashed: false,
         },
         DiagramLine {
             z: resolved.top_z,
             color: tokens::CAUTION,
             text: format!("TZ {:.1}", resolved.top_z),
             index: 3,
-        },
-        DiagramLine {
-            z: resolved.bottom_z,
-            color: bottom_color,
-            text: bottom_text,
-            index: BOTTOM_LINE_INDEX,
+            dashed: false,
         },
     ];
+    lines.extend(floor_runs.iter().map(|(z, text, dashed)| DiagramLine {
+        z: *z,
+        color: bottom_color,
+        text: text.clone(),
+        index: BOTTOM_LINE_INDEX,
+        dashed: *dashed,
+    }));
 
     // Compute Z range with margin.
     //
@@ -300,6 +393,7 @@ pub fn draw_height_diagram(
         ctx.stock_top_z,
         ctx.stock_bottom_z,
     ];
+    all_z_values.extend(floor_runs.iter().map(|(z, _, _)| *z));
     all_z_values.extend(ctx.model_top_z);
     all_z_values.extend(ctx.model_bottom_z);
     let z_min_raw = all_z_values.iter().copied().reduce(f64::min).unwrap_or(0.0);
@@ -498,10 +592,18 @@ pub fn draw_height_diagram(
         } else {
             LINE_STROKE
         };
-        painter.line_segment(
-            [egui::pos2(plot.left(), y), egui::pos2(line_right, y)],
-            egui::Stroke::new(stroke_width, line.color),
-        );
+        let stroke = egui::Stroke::new(stroke_width, line.color);
+        let ends = [egui::pos2(plot.left(), y), egui::pos2(line_right, y)];
+        if line.dashed {
+            painter.extend(egui::Shape::dashed_line(
+                &ends,
+                stroke,
+                tokens::SPACE_2,
+                tokens::SPACE_1,
+            ));
+        } else {
+            painter.line_segment(ends, stroke);
+        }
 
         // Label, clamped into the plot on both axes.
         let size = galley.size();
@@ -553,7 +655,21 @@ pub fn draw_height_diagram(
             3 => resolved.top_z,
             _ => resolved.bottom_z,
         };
-        *height_field(heights, idx) = HeightMode::Manual(current_z + dz);
+        // P3.7: the bottom of an `OpFloor` op is its floor. The drag moves
+        // the floor in its own reference (L-10); it never pins Bottom Z,
+        // which these ops refuse. Under each face the depth moves every
+        // face floor together.
+        match (idx, owner, floor.as_mut()) {
+            (BOTTOM_LINE_INDEX, FloorOwner::OpFloor, Some(f)) => {
+                if let Ok(z) = f.inputs.refs.floor_z(f.floor)
+                    && let Ok(moved) = f.inputs.refs.at_z(*f.floor, z + dz)
+                {
+                    *f.floor = moved;
+                }
+            }
+            (BOTTOM_LINE_INDEX, FloorOwner::OpFloor, None) => {}
+            _ => *height_field(heights, idx) = HeightMode::Manual(current_z + dz),
+        }
     }
 
     if response.drag_stopped() {
@@ -562,10 +678,19 @@ pub fn draw_height_diagram(
         // press and release under the click distance never starts a drag,
         // so a field the drag did not write is not `Manual` here and stays
         // as it was.
-        if let Some(idx) = drag_idx {
-            let field = height_field(heights, idx);
-            if let HeightMode::Manual(v) = *field {
-                *field = HeightMode::Manual(round_pin(v));
+        match (drag_idx, owner, floor.as_mut()) {
+            (Some(BOTTOM_LINE_INDEX), FloorOwner::OpFloor, Some(f)) => {
+                let rounded = f.floor.with_value(round_pin(f.floor.value()));
+                if rounded.door_refusal().is_none() {
+                    *f.floor = rounded;
+                }
+            }
+            (Some(BOTTOM_LINE_INDEX), FloorOwner::OpFloor, None) | (None, _, _) => {}
+            (Some(idx), _, _) => {
+                let field = height_field(heights, idx);
+                if let HeightMode::Manual(v) = *field {
+                    *field = HeightMode::Manual(round_pin(v));
+                }
             }
         }
         ui.memory_mut(|mem| mem.data.remove::<usize>(drag_id));

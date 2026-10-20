@@ -32,7 +32,8 @@
 //!
 //! Geometry selection P3.5 adds two arms of the floor "each picked face":
 //! `no_face_for_floor` (a drawing loop has no plane Z) and
-//! `floor_above_top` (a face floor above the stock top). The status runs
+//! `floor_above_top` (every face floor above the stock top; P3.7 skips a
+//! face at the top when another face is cut, with a note). The status runs
 //! the per-area floor rule of the prologue (`compute::floor::region_floors`)
 //! with the same top, so both give one refusal.
 //!
@@ -675,7 +676,9 @@ fn no_face_for_floor() {
 
 /// P3.5 (L-16): a face floor at or above the Top Z refuses by name. The
 /// auto top under "each picked face" is the stock top (L-15), so a
-/// negative depth puts the floor above it.
+/// negative depth puts the floor above it. P3.7: the op refuses only when
+/// EVERY face is at the top; here the one face is
+/// (`a_face_at_the_top_is_skipped_with_a_note_p3_7` holds the skip).
 #[test]
 fn floor_above_top() {
     let mut s = face_pick_session(0);
@@ -692,6 +695,123 @@ fn floor_above_top() {
         }
     );
     assert_names(&r, &["face (centre X", "is at or above the Top Z"]);
+}
+
+// ── P3.7: a face at the top is skipped with a note ──────────────────
+
+/// An up face item: the square at `cx` of [`square`], at `plane_z`.
+fn face_item(cx: f64, plane_z: f64) -> Item {
+    Item::new(
+        SourceRef::ToolpathModel,
+        Some("FACES".into()),
+        Shape::Face(rs_cam_core::selection::FaceItem {
+            rings: square(cx),
+            plane_z,
+            normal: V3::new(0.0, 0.0, 1.0),
+            brep: None,
+        }),
+    )
+    .unwrap()
+}
+
+/// Geometry selection P3.7 (lead ruling): under "each picked face" a face
+/// whose floor is at or above the top has nothing to cut. Three faces on
+/// a stock with its top at Z 0: one at Z 0 (the top), one at Z -3, one at
+/// Z -6.
+///
+/// - The status and generation agree: no refusal; ONE note that names the
+///   top face ("at the top"); the generation finding holds the same note.
+/// - The item states are `[Skipped, Cut, Cut]`, and `item_floor_z` gives
+///   the floor of each cut face.
+/// - The two lower faces are cut to their own floors, and no cutting move
+///   enters the top face.
+/// - With the top face alone, the op still refuses `FloorAboveTop` (the
+///   `floor_above_top` arm).
+///
+/// Red proof: refuse `FloorAboveTop` on the first face at the top in
+/// `compute::floor::region_floors` (the P3.5 rule). Generation and the
+/// status then refuse, and this test fails.
+#[test]
+fn a_face_at_the_top_is_skipped_with_a_note_p3_7() {
+    use rs_cam_core::selection::NoteCause;
+    use rs_cam_core::session::ItemState;
+    use rs_cam_core::toolpath::MoveType;
+
+    const TOP: f64 = 0.0;
+    let faces = vec![
+        face_item(-GAP_X, TOP),
+        face_item(0.0, -3.0),
+        face_item(GAP_X, -6.0),
+    ];
+    let mut s = pocket_session(drawing_model(faces.clone()), Selection::empty(), |_| {});
+    for item in &faces {
+        edit(&mut s, SelectionEdit::AddPick(pick_of(item))).unwrap();
+    }
+    set_floor(&mut s, Floor::EachFace { depth: 0.0 });
+
+    let tc = s.toolpath_configs()[0].clone();
+    let status = s
+        .selection_status(&tc, rs_cam_core::session::SelectionTarget::Op)
+        .unwrap();
+    assert_eq!(status.refusal, None, "one face at the top must not refuse");
+    assert_eq!(status.notes.len(), 1, "{:?}", status.notes);
+    let note = &status.notes[0];
+    assert_eq!(
+        note.cause,
+        NoteCause::AtTheTop {
+            floor_z: TOP,
+            top_z: TOP
+        }
+    );
+    assert_eq!(note.first.key.anchor, faces[0].key().anchor);
+    let text = note.to_string();
+    assert!(text.contains("at the top"), "{text}");
+    assert!(text.contains("(centre X -20.000 Y 0.000"), "{text}");
+    assert_eq!(
+        status.item_states,
+        vec![ItemState::Skipped, ItemState::Cut, ItemState::Cut]
+    );
+    assert_eq!(status.item_floor_z, vec![None, Some(-3.0), Some(-6.0)]);
+    // The Heights read agrees: the floor of the op is the deepest face.
+    let heights = s.toolpath_heights(&tc).unwrap();
+    assert_eq!(heights.floor_z(&tc.heights), Some(Ok(-6.0)));
+
+    let cancel = AtomicBool::new(false);
+    let result = s.generate_toolpath(0, &cancel).expect("generation cuts");
+    let finding = result
+        .stats
+        .selection_note
+        .as_ref()
+        .expect("generation names the face at the top");
+    assert_eq!(finding.notes, status.notes, "status = generation");
+    let cuts: Vec<P3> = result
+        .toolpath()
+        .moves
+        .iter()
+        .filter(|m| m.move_type != MoveType::Rapid)
+        .map(|m| m.target)
+        .collect();
+    let inside = |cx: f64, p: &P3| (p.x - cx).abs() < HALF && p.y.abs() < HALF;
+    let lowest = |cx: f64| {
+        cuts.iter()
+            .filter(|p| inside(cx, p))
+            .map(|p| p.z)
+            .reduce(f64::min)
+    };
+    assert_eq!(
+        lowest(0.0),
+        Some(-3.0),
+        "the middle face is cut to its floor"
+    );
+    assert_eq!(
+        lowest(GAP_X),
+        Some(-6.0),
+        "the low face is cut to its floor"
+    );
+    assert!(
+        cuts.iter().all(|p| !inside(-GAP_X, p) || p.z >= TOP),
+        "no cut enters the face at the top"
+    );
 }
 
 // ── FacesNotReady: an STL whose flat faces are not computed (P4.7) ───

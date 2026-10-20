@@ -35,7 +35,9 @@ fn key_json(key: &MatchKey) -> serde_json::Value {
 ///
 /// P4.4: `item_states` gives one `{key, state}` per item of the toolpath
 /// model, in import order, with the key as `list_model_items` gives it
-/// (source `Model(id)`); `foreign` gives the other selected items.
+/// (source `Model(id)`); `foreign` gives the other selected items. P3.7:
+/// each row also gives `floor_z`: the floor Z of a cut face under the floor
+/// "each picked face" (setup frame), else `null`.
 pub(crate) fn selection_report_json(
     session: &ProjectSession,
     tc: &rs_cam_core::session::ToolpathConfig,
@@ -47,8 +49,13 @@ pub(crate) fn selection_report_json(
             items
                 .iter()
                 .zip(&report.item_states)
-                .map(|(item, state)| {
-                    serde_json::json!({ "key": key_json(&item.key), "state": state })
+                .enumerate()
+                .map(|(index, (item, state))| {
+                    serde_json::json!({
+                        "key": key_json(&item.key),
+                        "state": state,
+                        "floor_z": report.item_floor_z.get(index).copied().flatten(),
+                    })
                 })
                 .collect()
         })
@@ -56,7 +63,14 @@ pub(crate) fn selection_report_json(
     let foreign: Vec<serde_json::Value> = report
         .foreign
         .iter()
-        .map(|(key, state)| serde_json::json!({ "key": key_json(key), "state": state }))
+        .enumerate()
+        .map(|(index, (key, state))| {
+            serde_json::json!({
+                "key": key_json(key),
+                "state": state,
+                "floor_z": report.foreign_floor_z.get(index).copied().flatten(),
+            })
+        })
         .collect();
     serde_json::json!({
         "item_states": item_states,

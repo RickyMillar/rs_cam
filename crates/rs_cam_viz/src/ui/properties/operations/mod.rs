@@ -29,7 +29,7 @@ pub(super) use surface_3d::{
 // The P4 split moved three topics into children beside this file. Each name
 // keeps its module path through these re-exports, so `ui/properties/mod.rs`
 // and the sibling operation editors import exactly what they imported before.
-pub use height_diagram::{draw_height_diagram, pick_line, round_pin};
+pub use height_diagram::{DiagramFloor, FloorInputs, draw_height_diagram, pick_line, round_pin};
 pub(super) use shape_diagrams::{
     StepoverPattern, draw_dogbone_diagram, draw_inlay_diagram, draw_lead_in_out_diagram,
     draw_outline_diagram, draw_pencil_diagram, draw_point_set_diagram, draw_radial_diagram,
@@ -268,8 +268,8 @@ pub fn bottom_z_pin_note(op_type: OperationType) -> Option<&'static str> {
     use crate::state::toolpath::OperationType as Op;
 
     const DEPTH: &str = "Not used by this operation. Its Depth field sets the floor.";
-    const FLOOR: &str = "Not used by this operation. Its Depth row (the floor) sets the floor, \
-         and a pinned Bottom Z is refused.";
+    const FLOOR: &str = "Not used by this operation. Its Floor row sets the floor, and a \
+         pinned Bottom Z is refused.";
     const MAX_DEPTH: &str = "Not used by this operation. Its Max Depth sets the floor.";
     const POCKET_DEPTH: &str = "Not used by this operation. Its Pocket Depth sets the floor.";
     const PLUG_DEPTH: &str =
@@ -324,11 +324,29 @@ const fn top_tooltip(source: rs_cam_core::session::TopSource) -> &'static str {
 /// The Bottom row tooltip for an operation that DOES read the pin.
 const BOTTOM_Z_TOOLTIP: &str = "Deepest cut depth. The tool stops at this Z.";
 
+/// The read-only Floor line of the Heights tab (geometry selection P3.7,
+/// ruling L-11): the reference and the value, as the op form states them.
+fn floor_text(floor: &rs_cam_core::compute::floor::Floor) -> String {
+    use rs_cam_core::compute::floor::Floor;
+    match *floor {
+        Floor::Z { z } => format!("{} {z:.2}", floor.reference_label()),
+        other => format!("{:.2} below {}", other.value(), other.reference_label()),
+    }
+}
+
+/// The Heights tab rows.
+///
+/// P3.7 (ruling L-11): on an op that holds a floor (`FloorOwner::OpFloor`)
+/// the Bottom row is ONE read-only Floor line: the reference and the
+/// value, the resolved floor Z (`ToolpathHeights::floor_z`) and the refusal
+/// if any. The floor has one editor, the Floor row of the op form, so the
+/// tab has no Bottom field that the session would refuse.
 pub(super) fn draw_heights_params(
     ui: &mut egui::Ui,
     heights: &mut HeightsConfig,
     answer: &rs_cam_core::session::ToolpathHeights,
     op_type: OperationType,
+    floor: Option<&rs_cam_core::compute::floor::Floor>,
 ) {
     let ctx = &answer.context;
     // What an `Auto` row shows is the value the CORE resolver produces for
@@ -343,6 +361,9 @@ pub(super) fn draw_heights_params(
     let auto = answer.resolve(heights);
     let top_source = answer.top_source(heights);
     let model_refusal = answer.model_reference_refusal(heights);
+    // P3.7: the resolved floor of an `OpFloor` op, or why it does not
+    // resolve: THE answer that generation and MCP read.
+    let floor_z = floor.and_then(|_| answer.floor_z(heights));
 
     // F1.19 / G-BOTTOMPIN: the Bottom row's own tooltip used to say that
     // pinning the row overrides the operation's floor. That is true on three
@@ -402,16 +423,20 @@ pub(super) fn draw_heights_params(
                 ctx,
                 "h_top",
             );
-            draw_height_row(
-                ui,
-                "Bottom:",
-                &bottom_tooltip,
-                &mut heights.bottom_z,
-                HeightReference::StockTop,
-                auto.bottom_z,
-                ctx,
-                "h_bottom",
-            );
+            // L-11: an `OpFloor` op has no Bottom row; its read-only Floor
+            // line follows the grid.
+            if floor.is_none() {
+                draw_height_row(
+                    ui,
+                    "Bottom:",
+                    &bottom_tooltip,
+                    &mut heights.bottom_z,
+                    HeightReference::StockTop,
+                    auto.bottom_z,
+                    ctx,
+                    "h_bottom",
+                );
+            }
         });
 
     // F1.19 / G-BOTTOMPIN: the note is drawn, not hidden behind a hover. The
@@ -427,7 +452,33 @@ pub(super) fn draw_heights_params(
     if let Some(refusal) = model_refusal {
         ui.add(crate::ui::components::OneLine::new(refusal));
     }
-    if let Some(note) = pin_note {
+    // P3.7 (L-11): the read-only Floor line: the reference, the resolved Z
+    // and the owner of the editor. The hover holds the pin note.
+    if let Some(floor) = floor {
+        let z = match &floor_z {
+            Some(Ok(z)) => format!("Z {z:.2}"),
+            Some(Err(_)) | None => "no Z".to_owned(),
+        };
+        ui.add(
+            crate::ui::components::OneLine::new(format!(
+                "Floor: {} = {z} \u{00B7} set in {}",
+                floor_text(floor),
+                op_type.label()
+            ))
+            .color(crate::ui::tokens::TEXT_BODY)
+            .detail(&bottom_tooltip),
+        );
+    }
+    // P3.7: a floor that does not resolve, or that sits at or above the
+    // top, refuses generation. The line names it (a blocking error).
+    if let Some(Err(refusal)) = &floor_z {
+        ui.add(
+            crate::ui::components::OneLine::new(format!("Floor: {refusal}"))
+                .color(crate::ui::tokens::DANGER),
+        );
+    }
+    // The Floor line carries the note on hover; the other ops print it.
+    if let (Some(note), None) = (pin_note, floor) {
         ui.add_space(2.0);
         ui.add(crate::ui::components::OneLine::new(format!(
             "Bottom: {note}"

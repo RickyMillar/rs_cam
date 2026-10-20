@@ -21,9 +21,9 @@ pub mod tool;
 mod toolpath_panel;
 
 pub use operations::{
-    DepthBeyondStock, ThroughCut, ToolpathValidationContext, bottom_z_pin_note,
-    collect_diagnostics, depth_beyond_stock, draw_height_diagram, profile_through_cut,
-    profile_through_cut_line, validate_toolpath, validate_toolpath_config,
+    DepthBeyondStock, DiagramFloor, FloorInputs, ThroughCut, ToolpathValidationContext,
+    bottom_z_pin_note, collect_diagnostics, depth_beyond_stock, draw_height_diagram,
+    profile_through_cut, profile_through_cut_line, validate_toolpath, validate_toolpath_config,
 };
 #[cfg(test)]
 pub(crate) use panel_apply::apply_head;

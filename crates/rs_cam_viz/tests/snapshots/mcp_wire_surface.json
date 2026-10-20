@@ -3200,7 +3200,7 @@
           ]
         },
         "span_kind": {
-          "description": "Optional filter. Accepts EITHER a generation-debug kind string\n(\"z_level\", \"adaptive_pass\", \"entry_search\", \"preflight\", \"pre_stamp\",\n\"widen_band\", \"waterline_cleanup\") OR a structural `SpanKind` synonym\nin snake_case (\"depth_pass\" → matches z_level/adaptive_pass/z_level_clear,\n\"entry\" → matches entry_search). Omit to include all kinds. Each\nreturned span carries a `span_kind_hint` field that maps the debug\nkind back to its structural SpanKind when one applies.",
+          "description": "Optional filter. Accepts EITHER a generation-debug kind string\n(\"z_level\", \"adaptive_pass\", \"entry_search\", \"waterline_cleanup\") OR a\nstructural `SpanKind` synonym in snake_case (\"depth_pass\" → matches\nz_level/adaptive_pass/z_level_clear,\n\"entry\" → matches entry_search). Omit to include all kinds. Each\nreturned span carries a `span_kind_hint` field that maps the debug\nkind back to its structural SpanKind when one applies.",
           "type": [
             "string",
             "null"

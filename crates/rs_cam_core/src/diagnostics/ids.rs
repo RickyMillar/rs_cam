@@ -295,6 +295,8 @@ diag_ids! {
     pub const GEOM_BURIED_CURVE: &str = "geom.buried_curve";
     /// P1 (geometry selection): a closed-region op left open paths of the
     /// drawing out. It cut the closed loops; the open paths are not cut.
+    /// P3.7: also a face at the top under "each picked face" (no material
+    /// to cut); the op cut the other faces.
     pub const GEOM_SELECTION_NOTE: &str = "geom.selection_note";
     /// P5 (S12): a Profile loop took its tabs by the even-spacing fallback, or
     /// its sides hold fewer tabs than asked.

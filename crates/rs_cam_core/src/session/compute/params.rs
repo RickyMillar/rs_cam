@@ -40,6 +40,22 @@ fn unknown_param_error(
     operation: &crate::compute::catalog::OperationConfig,
     param: &str,
 ) -> SessionError {
+    // Geometry selection P3.7 (the P3.3 open row): `depth` left the four
+    // floor ops in P3.2. The floor names its reference, and its own door
+    // writes it, so the refusal names that door.
+    if param == "depth"
+        && let Some(floor) = operation.floor()
+    {
+        return SessionError::InvalidParam(format!(
+            "unknown parameter 'depth' for {} operation: its floor names its reference \
+             (now {{ from = \"{}\", {} = {} }}). Set the floor with set_toolpath_floor \
+             {{ index, floor }}, for example {{\"from\": \"top\", \"depth\": 6.0}}",
+            operation.label(),
+            floor.from_token(),
+            floor.value_name(),
+            floor.value()
+        ));
+    }
     // CMP-08: `param_names` is every name this setter accepts, and the
     // toolpath-level names follow it. D2: no op publishes a setter alias,
     // so the named arms accept a name only when the op publishes it.

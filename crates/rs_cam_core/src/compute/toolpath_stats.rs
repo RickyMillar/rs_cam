@@ -1043,8 +1043,9 @@ impl BuriedCurveFinding {
 pub struct SelectionNoteFinding {
     /// The op label (`OperationType::label`).
     pub op: &'static str,
-    /// One note per layer, open paths only, in import order. Never empty
-    /// on a recorded finding.
+    /// One note per layer for the open paths, in import order, then one
+    /// note per face at the top under "each picked face" (P3.7). Never
+    /// empty on a recorded finding.
     pub notes: Vec<crate::selection::SelectionNote>,
 }
 

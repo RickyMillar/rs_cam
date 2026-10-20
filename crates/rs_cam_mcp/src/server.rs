@@ -783,9 +783,9 @@ pub struct GenDebugTraceParam {
     /// Toolpath index (0-based). Must have been generated first.
     pub index: usize,
     /// Optional filter. Accepts EITHER a generation-debug kind string
-    /// ("z_level", "adaptive_pass", "entry_search", "preflight", "pre_stamp",
-    /// "widen_band", "waterline_cleanup") OR a structural `SpanKind` synonym
-    /// in snake_case ("depth_pass" → matches z_level/adaptive_pass/z_level_clear,
+    /// ("z_level", "adaptive_pass", "entry_search", "waterline_cleanup") OR a
+    /// structural `SpanKind` synonym in snake_case ("depth_pass" → matches
+    /// z_level/adaptive_pass/z_level_clear,
     /// "entry" → matches entry_search). Omit to include all kinds. Each
     /// returned span carries a `span_kind_hint` field that maps the debug
     /// kind back to its structural SpanKind when one applies.

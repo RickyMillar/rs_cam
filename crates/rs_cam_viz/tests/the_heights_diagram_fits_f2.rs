@@ -127,9 +127,11 @@ fn absent_ctx() -> HeightContext {
 /// widest.
 const BOTTOM_HONOURED: OperationType = OperationType::Adaptive3d;
 
-/// An operation that does NOT read `heights.bottom_z`. Its panel prints
-/// "Bottom: Not used by this operation. Its Depth field sets the floor."
-const BOTTOM_INERT: OperationType = OperationType::Pocket;
+/// An operation that does NOT read `heights.bottom_z` (`FloorOwner::OpDial`).
+/// Its panel prints "Bottom: Not used by this operation. Its Depth field
+/// sets the floor." P3.7: Pocket owns a floor now and draws it, so the
+/// inert case is Face.
+const BOTTOM_INERT: OperationType = OperationType::Face;
 
 fn draw(height_ctx: &HeightContext, op_type: OperationType) -> Drawn {
     draw_in(&context(), height_ctx, op_type)
@@ -145,7 +147,7 @@ fn draw_in(ctx: &egui::Context, height_ctx: &HeightContext, op_type: OperationTy
         let inner = ui.scope(|ui| {
             ui.set_max_width(PANEL_WIDTH);
             let answer = rs_cam_core::session::ToolpathHeights::from_context(&heights, *height_ctx);
-            draw_height_diagram(ui, &mut heights, &answer, op_type);
+            draw_height_diagram(ui, &mut heights, &answer, op_type, None);
         });
         requested_width = inner.response.rect.width();
     });
@@ -468,16 +470,42 @@ fn the_layout_still_measures_its_text_f2() {
 /// at `top_z` minus its own depth dial. A number beside four real limits
 /// reads as operative whatever follows it in brackets. The value lives in
 /// the Bottom field above, which is about the setting rather than the cut.
+///
+/// # P3.7: the three owners
+///
+/// `HeightsBottom` draws "BZ" and its value in `DANGER`; `OpFloor` (Pocket,
+/// Profile, Zigzag, Adaptive 2D) draws its floor "FL" in `DANGER`: the floor
+/// field is its cut limit; `OpDial` draws "BZ (not used)" in `UNKNOWN`.
 #[test]
 fn the_bottom_line_agrees_with_the_panel_r33() {
     let mut honoured = 0_usize;
     let mut inert = 0_usize;
+    let mut floors = 0_usize;
 
     let ctx = context();
     for &op_type in OperationType::ALL {
         let drawn = draw_in(&ctx, &solid_ctx(), op_type);
         let reds = drawn.segment_count(tokens::DANGER);
+        // P3.7: an `OpFloor` op draws its floor, the one cut limit of its
+        // bottom, as "FL" in `DANGER`; it never says "not used".
         if matches!(
+            op_type.capabilities().floor_owner,
+            rs_cam_core::compute::catalog::FloorOwner::OpFloor
+        ) {
+            floors += 1;
+            assert!(
+                reds >= 1 && drawn.says("FL "),
+                "{op_type:?} takes its floor from its floor field, so the diagram must \
+                 draw that floor. Text runs: {:?}",
+                drawn.text_runs()
+            );
+            assert!(
+                !drawn.says("not used"),
+                "{op_type:?} draws its floor; the inert text is for `OpDial` ops only. \
+                 Text runs: {:?}",
+                drawn.text_runs()
+            );
+        } else if matches!(
             op_type.capabilities().floor_owner,
             rs_cam_core::compute::catalog::FloorOwner::HeightsBottom
         ) {
@@ -524,6 +552,10 @@ fn the_bottom_line_agrees_with_the_panel_r33() {
     // Non-vacuity: the predicate really has two sides, and this arm drove
     // both. If a future edit made every operation answer the same way, the
     // assertions above would pass without testing anything.
+    assert_eq!(
+        floors, 4,
+        "Pocket, Profile, Zigzag and Adaptive 2D own a floor (P3.7)"
+    );
     assert!(
         honoured >= 1 && inert >= 1,
         "the arm drove {honoured} honouring and {inert} inert operations, so \

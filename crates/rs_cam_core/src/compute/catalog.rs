@@ -1023,9 +1023,10 @@ impl OperationConfig {
     }
 
     /// Write the floor of the op (geometry selection P3.3, the
-    /// `SetToolpathFloor` door). `false` for an op that holds no floor
-    /// ([`Self::floor`] is `None`); nothing is written then.
-    pub(crate) fn set_floor(&mut self, floor: crate::compute::floor::Floor) -> bool {
+    /// `SetToolpathFloor` door; P3.7, the GUI draft, which the panel writes
+    /// back through `ReplaceToolpathConfig`). `false` for an op that holds
+    /// no floor ([`Self::floor`] is `None`); nothing is written then.
+    pub fn set_floor(&mut self, floor: crate::compute::floor::Floor) -> bool {
         let slot = match self {
             OperationConfig::Pocket(c) => &mut c.floor,
             OperationConfig::Profile(c) => &mut c.floor,

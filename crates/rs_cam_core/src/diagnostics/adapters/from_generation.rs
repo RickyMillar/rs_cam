@@ -383,9 +383,10 @@ fn buried_curve(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnosti
     }]
 }
 
-/// P1: an op left open paths of the drawing out. `Caution`:
-/// the toolpath is safe (a skip only removes cuts), but a line the drawing
-/// holds is not in the plan. Silent when nothing was left out.
+/// P1: an op left open paths of the drawing out (P3.7: or a face at the
+/// top under "each picked face"). `Caution`: the toolpath is safe (a skip
+/// only removes cuts), but an item the selection holds is not in the plan.
+/// Silent when nothing was left out.
 fn selection_note(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
     let Some(f) = &stats.selection_note else {
         return Vec::new();

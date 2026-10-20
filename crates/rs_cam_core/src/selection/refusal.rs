@@ -112,14 +112,46 @@ pub struct SelectionNote {
     pub first: ItemRef,
     /// How the op uses its items.
     pub item_use: ItemUse,
+    /// Why the op does not cut the items.
+    pub cause: NoteCause,
+}
+
+/// Why an op leaves an item of its selection out and cuts the rest.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NoteCause {
+    /// The default rule matched a kind that the op cannot cut (D2/D13).
+    KindNotServed,
+    /// Geometry selection P3.7 (lead ruling): under the floor "each picked
+    /// face", the floor of this face is at or above the Top Z, so it has
+    /// nothing to cut. The op cuts the other faces; it refuses
+    /// `FloorAboveTop` only when every face is at the top.
+    AtTheTop {
+        /// The floor Z of the face, in the setup frame.
+        floor_z: f64,
+        /// The resolved Top Z of the op, in the setup frame.
+        top_z: f64,
+    },
 }
 
 impl fmt::Display for SelectionNote {
     /// "2 open paths on layer 'TEXT' are not cut: the op cuts closed areas
     /// only (...). The first: open path (...)." An open path also gets the
-    /// fix that suits the op ([`note_fix`]).
+    /// fix that suits the op ([`note_fix`]). P3.7: "1 face is not cut: it
+    /// is at the top (...). The face: face (...)."
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verb = if self.count == 1 { "is" } else { "are" };
+        if let NoteCause::AtTheTop { floor_z, top_z } = self.cause {
+            return write!(
+                f,
+                "{} {}{} {verb} not cut: it is at the top, so it has nothing to cut (its \
+                 floor Z {floor_z:.3} is at or above the Top Z {top_z:.3}). The face: {}. To \
+                 cut it, set a larger floor depth or pin the Top Z above it.",
+                self.count,
+                kind_noun(self.kind, self.count),
+                layer_phrase(self.layer.as_deref()),
+                self.first
+            );
+        }
         write!(
             f,
             "{} {}{} {verb} not cut: the op {}. The first: {}.",

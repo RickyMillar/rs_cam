@@ -32,7 +32,8 @@ pub use item::{FaceItem, Item, ItemCounts, ItemError, ItemKind, ItemSet, Shape, 
 pub use key::{KEY_MATCH_EPS_MM, MatchKey};
 pub use near::{PickLine, items_near, polyline_distance};
 pub use refusal::{
-    ItemRef, RefusalCause, SelectionNote, SelectionRefusal, kind_not_cut_reason, kind_noun,
+    ItemRef, NoteCause, RefusalCause, SelectionNote, SelectionRefusal, kind_not_cut_reason,
+    kind_noun,
 };
 pub use resolve::{
     ExcludedItem, LostPick, MatchedBy, MeshFaces, ResolveScope, ResolvedItem, ResolvedSelection,

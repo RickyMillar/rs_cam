@@ -79,6 +79,10 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
     /// The viewport mode state (`SelectionUi`): the tab editor is one of its
     /// modes (L-3). Only the Profile editor writes it.
     pub selection_ui: &'a mut crate::state::pick::SelectionUi,
+    /// Geometry selection P3.7: the floor references and the face floors
+    /// of an op that holds a floor (Pocket, Profile, Zigzag, Adaptive 2D).
+    /// `None` for every other op, and when the heights do not resolve.
+    pub floor: Option<&'a super::FloorInputs>,
 }
 
 /// What shape diagram an operation shows under its parameter grid.
@@ -128,16 +132,35 @@ pub struct OpUiRow {
     pub(in crate::ui::properties) validate: Option<ValidateFn>,
 }
 
-/// The row for one operation.
-///
-/// `OP_UI_ROWS` covers `OperationType::ALL` exactly once —
-/// `operations_registry` is the sentry — so this cannot return `None` for a
-/// live operation.
+/// The row for one operation. The `match` has no wildcard: a new
+/// operation does not compile until it has a row.
 pub fn row(op: OperationType) -> &'static OpUiRow {
-    OP_UI_ROWS
-        .iter()
-        .find(|r| r.op == op)
-        .unwrap_or_else(|| unreachable!("every OperationType has a UI row (operations_registry)"))
+    match op {
+        OperationType::Face => &ROW_FACE,
+        OperationType::Pocket => &ROW_POCKET,
+        OperationType::Profile => &ROW_PROFILE,
+        OperationType::Adaptive => &ROW_ADAPTIVE,
+        OperationType::VCarve => &ROW_V_CARVE,
+        OperationType::Inlay => &ROW_INLAY,
+        OperationType::InlayPlug => &ROW_INLAY_PLUG,
+        OperationType::Zigzag => &ROW_ZIGZAG,
+        OperationType::Trace => &ROW_TRACE,
+        OperationType::Drill => &ROW_DRILL,
+        OperationType::Chamfer => &ROW_CHAMFER,
+        OperationType::DropCutter => &ROW_DROP_CUTTER,
+        OperationType::Adaptive3d => &ROW_ADAPTIVE3D,
+        OperationType::Waterline => &ROW_WATERLINE,
+        OperationType::Pencil => &ROW_PENCIL,
+        OperationType::Scallop => &ROW_SCALLOP,
+        OperationType::UnifiedFinish => &ROW_UNIFIED_FINISH,
+        OperationType::SteepShallow => &ROW_STEEP_SHALLOW,
+        OperationType::RampFinish => &ROW_RAMP_FINISH,
+        OperationType::SpiralFinish => &ROW_SPIRAL_FINISH,
+        OperationType::RadialFinish => &ROW_RADIAL_FINISH,
+        OperationType::HorizontalFinish => &ROW_HORIZONTAL_FINISH,
+        OperationType::ProjectCurve => &ROW_PROJECT_CURVE,
+        OperationType::AlignmentPinDrill => &ROW_ALIGNMENT_PIN_DRILL,
+    }
 }
 
 /// Draw the operation's editor, then its diagram.
@@ -227,7 +250,8 @@ editor!(ed_pocket, Pocket, |ui, cfg, cx| draw_pocket_params(
     ui,
     cfg,
     cx.pills,
-    cx.depth_caution
+    cx.depth_caution,
+    cx.floor
 ));
 editor!(ed_profile, Profile, |ui, cfg, cx| draw_profile_params(
     ui,
@@ -235,13 +259,15 @@ editor!(ed_profile, Profile, |ui, cfg, cx| draw_profile_params(
     cx.pills,
     cx.depth_caution,
     cx.through_cut,
+    cx.floor,
     (cx.toolpath_id, &mut *cx.selection_ui)
 ));
 editor!(ed_adaptive, Adaptive, |ui, cfg, cx| draw_adaptive_params(
     ui,
     cfg,
     cx.pills,
-    cx.depth_caution
+    cx.depth_caution,
+    cx.floor
 ));
 editor!(ed_vcarve, VCarve, |ui, cfg, cx| draw_vcarve_params(
     ui,
@@ -262,7 +288,8 @@ editor!(ed_zigzag, Zigzag, |ui, cfg, cx| draw_zigzag_params(
     ui,
     cfg,
     cx.pills,
-    cx.depth_caution
+    cx.depth_caution,
+    cx.floor
 ));
 editor!(ed_trace, Trace, |ui, cfg, cx| draw_trace_params(
     ui,
@@ -452,157 +479,185 @@ fn val_drill(op: &OperationConfig, cx: &OpValidateCtx<'_>, errs: &mut Vec<String
 
 // ── The table ───────────────────────────────────────────────────────────
 
-/// One row per operation. `operations_registry` holds it against
-/// `OperationType::ALL`, so a new operation cannot ship without a row.
-pub const OP_UI_ROWS: &[OpUiRow] = &[
-    OpUiRow {
-        op: OperationType::Face,
-        draw: ed_face,
-        diagram: OpDiagram::Stepover,
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::Pocket,
-        draw: ed_pocket,
-        diagram: OpDiagram::Stepover,
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::Profile,
-        draw: ed_profile,
-        diagram: OpDiagram::Draw(dia_profile),
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::Adaptive,
-        draw: ed_adaptive,
-        diagram: OpDiagram::Draw(dia_adaptive),
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::VCarve,
-        draw: ed_vcarve,
-        diagram: OpDiagram::Stepover,
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::Inlay,
-        draw: ed_inlay,
-        diagram: OpDiagram::Draw(dia_inlay),
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::InlayPlug,
-        draw: ed_inlay_plug,
-        diagram: OpDiagram::Draw(dia_inlay_plug),
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::Zigzag,
-        draw: ed_zigzag,
-        diagram: OpDiagram::Stepover,
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::Trace,
-        draw: ed_trace,
-        diagram: OpDiagram::Draw(dia_trace),
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::Drill,
-        draw: ed_drill,
-        diagram: OpDiagram::Draw(dia_drill),
-        validate: Some(val_drill),
-    },
-    OpUiRow {
-        op: OperationType::Chamfer,
-        draw: ed_chamfer,
-        diagram: OpDiagram::Draw(dia_chamfer),
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::DropCutter,
-        draw: ed_dropcutter,
-        diagram: OpDiagram::Stepover,
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::Adaptive3d,
-        draw: ed_adaptive3d,
-        diagram: OpDiagram::Draw(dia_adaptive3d),
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::Waterline,
-        draw: ed_waterline,
-        diagram: OpDiagram::Stepover,
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::Pencil,
-        draw: ed_pencil,
-        diagram: OpDiagram::Draw(dia_pencil),
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::Scallop,
-        draw: ed_scallop,
-        diagram: OpDiagram::Stepover,
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::UnifiedFinish,
-        draw: ed_unified_finish,
-        // UI-05: this operation drew NO diagram before the table, through
-        // the `_ => {}` fallback. It plans three bands at once, so no one
-        // stepover picture is honest about what it cuts.
-        diagram: OpDiagram::None(
-            "the unified planner runs three bands; one stepover picture would \
-             misreport two of them",
-        ),
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::SteepShallow,
-        draw: ed_steep_shallow,
-        diagram: OpDiagram::Draw(dia_steep_shallow),
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::RampFinish,
-        draw: ed_ramp_finish,
-        diagram: OpDiagram::Draw(dia_ramp_finish),
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::SpiralFinish,
-        draw: ed_spiral_finish,
-        diagram: OpDiagram::Draw(dia_spiral_finish),
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::RadialFinish,
-        draw: ed_radial_finish,
-        diagram: OpDiagram::Draw(dia_radial_finish),
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::HorizontalFinish,
-        draw: ed_horizontal_finish,
-        diagram: OpDiagram::Stepover,
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::ProjectCurve,
-        draw: ed_project_curve,
-        diagram: OpDiagram::Draw(dia_project_curve),
-        validate: None,
-    },
-    OpUiRow {
-        op: OperationType::AlignmentPinDrill,
-        draw: ed_alignment_pin_drill,
-        diagram: OpDiagram::Draw(dia_pin_drill),
-        validate: None,
-    },
+/// One row per operation, each a named constant. [`row`] matches every
+/// `OperationType` with no wildcard, so a new operation does not compile
+/// without its row.
+const ROW_FACE: OpUiRow = OpUiRow {
+    op: OperationType::Face,
+    draw: ed_face,
+    diagram: OpDiagram::Stepover,
+    validate: None,
+};
+const ROW_POCKET: OpUiRow = OpUiRow {
+    op: OperationType::Pocket,
+    draw: ed_pocket,
+    diagram: OpDiagram::Stepover,
+    validate: None,
+};
+const ROW_PROFILE: OpUiRow = OpUiRow {
+    op: OperationType::Profile,
+    draw: ed_profile,
+    diagram: OpDiagram::Draw(dia_profile),
+    validate: None,
+};
+const ROW_ADAPTIVE: OpUiRow = OpUiRow {
+    op: OperationType::Adaptive,
+    draw: ed_adaptive,
+    diagram: OpDiagram::Draw(dia_adaptive),
+    validate: None,
+};
+const ROW_V_CARVE: OpUiRow = OpUiRow {
+    op: OperationType::VCarve,
+    draw: ed_vcarve,
+    diagram: OpDiagram::Stepover,
+    validate: None,
+};
+const ROW_INLAY: OpUiRow = OpUiRow {
+    op: OperationType::Inlay,
+    draw: ed_inlay,
+    diagram: OpDiagram::Draw(dia_inlay),
+    validate: None,
+};
+const ROW_INLAY_PLUG: OpUiRow = OpUiRow {
+    op: OperationType::InlayPlug,
+    draw: ed_inlay_plug,
+    diagram: OpDiagram::Draw(dia_inlay_plug),
+    validate: None,
+};
+const ROW_ZIGZAG: OpUiRow = OpUiRow {
+    op: OperationType::Zigzag,
+    draw: ed_zigzag,
+    diagram: OpDiagram::Stepover,
+    validate: None,
+};
+const ROW_TRACE: OpUiRow = OpUiRow {
+    op: OperationType::Trace,
+    draw: ed_trace,
+    diagram: OpDiagram::Draw(dia_trace),
+    validate: None,
+};
+const ROW_DRILL: OpUiRow = OpUiRow {
+    op: OperationType::Drill,
+    draw: ed_drill,
+    diagram: OpDiagram::Draw(dia_drill),
+    validate: Some(val_drill),
+};
+const ROW_CHAMFER: OpUiRow = OpUiRow {
+    op: OperationType::Chamfer,
+    draw: ed_chamfer,
+    diagram: OpDiagram::Draw(dia_chamfer),
+    validate: None,
+};
+const ROW_DROP_CUTTER: OpUiRow = OpUiRow {
+    op: OperationType::DropCutter,
+    draw: ed_dropcutter,
+    diagram: OpDiagram::Stepover,
+    validate: None,
+};
+const ROW_ADAPTIVE3D: OpUiRow = OpUiRow {
+    op: OperationType::Adaptive3d,
+    draw: ed_adaptive3d,
+    diagram: OpDiagram::Draw(dia_adaptive3d),
+    validate: None,
+};
+const ROW_WATERLINE: OpUiRow = OpUiRow {
+    op: OperationType::Waterline,
+    draw: ed_waterline,
+    diagram: OpDiagram::Stepover,
+    validate: None,
+};
+const ROW_PENCIL: OpUiRow = OpUiRow {
+    op: OperationType::Pencil,
+    draw: ed_pencil,
+    diagram: OpDiagram::Draw(dia_pencil),
+    validate: None,
+};
+const ROW_SCALLOP: OpUiRow = OpUiRow {
+    op: OperationType::Scallop,
+    draw: ed_scallop,
+    diagram: OpDiagram::Stepover,
+    validate: None,
+};
+const ROW_UNIFIED_FINISH: OpUiRow = OpUiRow {
+    op: OperationType::UnifiedFinish,
+    draw: ed_unified_finish,
+    // UI-05: this operation drew NO diagram before the table, through
+    // the `_ => {}` fallback. It plans three bands at once, so no one
+    // stepover picture is honest about what it cuts.
+    diagram: OpDiagram::None(
+        "the unified planner runs three bands; one stepover picture would \
+         misreport two of them",
+    ),
+    validate: None,
+};
+const ROW_STEEP_SHALLOW: OpUiRow = OpUiRow {
+    op: OperationType::SteepShallow,
+    draw: ed_steep_shallow,
+    diagram: OpDiagram::Draw(dia_steep_shallow),
+    validate: None,
+};
+const ROW_RAMP_FINISH: OpUiRow = OpUiRow {
+    op: OperationType::RampFinish,
+    draw: ed_ramp_finish,
+    diagram: OpDiagram::Draw(dia_ramp_finish),
+    validate: None,
+};
+const ROW_SPIRAL_FINISH: OpUiRow = OpUiRow {
+    op: OperationType::SpiralFinish,
+    draw: ed_spiral_finish,
+    diagram: OpDiagram::Draw(dia_spiral_finish),
+    validate: None,
+};
+const ROW_RADIAL_FINISH: OpUiRow = OpUiRow {
+    op: OperationType::RadialFinish,
+    draw: ed_radial_finish,
+    diagram: OpDiagram::Draw(dia_radial_finish),
+    validate: None,
+};
+const ROW_HORIZONTAL_FINISH: OpUiRow = OpUiRow {
+    op: OperationType::HorizontalFinish,
+    draw: ed_horizontal_finish,
+    diagram: OpDiagram::Stepover,
+    validate: None,
+};
+const ROW_PROJECT_CURVE: OpUiRow = OpUiRow {
+    op: OperationType::ProjectCurve,
+    draw: ed_project_curve,
+    diagram: OpDiagram::Draw(dia_project_curve),
+    validate: None,
+};
+const ROW_ALIGNMENT_PIN_DRILL: OpUiRow = OpUiRow {
+    op: OperationType::AlignmentPinDrill,
+    draw: ed_alignment_pin_drill,
+    diagram: OpDiagram::Draw(dia_pin_drill),
+    validate: None,
+};
+
+/// Every row, in catalogue order. `operations_registry` holds it against
+/// `OperationType::ALL`.
+pub static OP_UI_ROWS: &[&OpUiRow] = &[
+    &ROW_FACE,
+    &ROW_POCKET,
+    &ROW_PROFILE,
+    &ROW_ADAPTIVE,
+    &ROW_V_CARVE,
+    &ROW_INLAY,
+    &ROW_INLAY_PLUG,
+    &ROW_ZIGZAG,
+    &ROW_TRACE,
+    &ROW_DRILL,
+    &ROW_CHAMFER,
+    &ROW_DROP_CUTTER,
+    &ROW_ADAPTIVE3D,
+    &ROW_WATERLINE,
+    &ROW_PENCIL,
+    &ROW_SCALLOP,
+    &ROW_UNIFIED_FINISH,
+    &ROW_STEEP_SHALLOW,
+    &ROW_RAMP_FINISH,
+    &ROW_SPIRAL_FINISH,
+    &ROW_RADIAL_FINISH,
+    &ROW_HORIZONTAL_FINISH,
+    &ROW_PROJECT_CURVE,
+    &ROW_ALIGNMENT_PIN_DRILL,
 ];

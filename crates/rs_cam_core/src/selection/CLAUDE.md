@@ -24,7 +24,7 @@ The items of every source and the selection of an op. Plan: `planning/geometry_s
   (`curves_of`); drills read `Holes`; `outlines_pre_selection` is a test reference only.
 - A face reads the SETUP frame (`face_in_setup_frame`); the frame door does not move a stock item. `view` runs after
   it: a face under `HORIZONTAL_FACE_MIN_NORMAL_Z` refuses `FaceNotFlat`. P3.4: `Facing::admits` is THE facing rule;
-  `face_top_z` reads UP faces only; `view` refuses a down `Regions` face (`FaceFacesDown`), `view_boundary` keeps it. P3.5: `Regions::plane_z` (setup frame) and `face_bottom_z` feed the "each face" floor; `NoFaceForFloor`, `FloorAboveTop` come from `compute::floor::region_floors` only.
+  `face_top_z` reads UP faces only; `view` refuses a down `Regions` face (`FaceFacesDown`), `view_boundary` keeps it. P3.5: `Regions::plane_z` (setup frame) and `face_bottom_z` feed the "each face" floor; `NoFaceForFloor`, `FloorAboveTop` come from `compute::floor::region_floors` only; P3.7: it drops a face at the top (`OpItems::skip_regions`, role `Skipped`) with a `SelectionNote` of `NoteCause::AtTheTop`.
 - `ResolveScope.mesh_faces` gives STL faces; a cold set gives `faces_not_ready` (no lost pick, no build), and `view`
   refuses `FacesNotReady`. A missing model is `MissingSource(Model(id))`. `FacesByFacing` counts the report faces.
 - The ledger is in FILE units (the join tolerance frame, `io/CLAUDE.md`); `DrawingEdit::scaled` converts, and

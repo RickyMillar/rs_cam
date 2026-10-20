@@ -1884,8 +1884,10 @@ mod each_face_p3_5 {
 ///   reach Z 15, and no move outside it goes below Z 20.
 /// - Profile tabs stand on the floor of their own region: the tab top of
 ///   each face is its own floor plus the tab height.
-/// - A drawing loop under "each picked face" refuses `NoFaceForFloor`; a
-///   face floor at or above the top refuses `FloorAboveTop` (L-16).
+/// - A drawing loop under "each picked face" refuses `NoFaceForFloor`. P3.7:
+///   a face floor at or above the top is skipped, and the other faces cut
+///   as they do alone; with every face at the top the op refuses
+///   `FloorAboveTop` (L-16).
 ///
 /// Red proof: give every region the one ladder of the op
 /// (`ExecutionContext::cutting_levels`, to the deepest floor). The upper
@@ -2016,7 +2018,30 @@ fn each_face_cuts_to_its_own_floor_p3_5() {
         refusal_cause(run(&pocket(RegionOrdering::ByArea, 0), items)),
         RefusalCause::NoFaceForFloor
     );
-    // A face at the top has its floor at the top: its ladder is empty.
+    // P3.7 (lead ruling): a face at the top has its floor at the top, so
+    // it has nothing to cut. Beside two lower faces it is skipped, and the
+    // two lower faces cut as they do alone.
+    let mut with_top = side_by_side_faces();
+    with_top.push(face(
+        Polygon2::rectangle(10.0, 60.0, 40.0, 90.0),
+        each_face_p3_5::TOP_Z,
+    ));
+    for (name, op) in [
+        ("pocket", pocket(RegionOrdering::ByArea, 0)),
+        ("zigzag", zigzag(RegionOrdering::Global)),
+        ("profile", profile(tab_height)),
+        ("adaptive", adaptive()),
+    ] {
+        let alone = run(&op, side_by_side_faces()).unwrap();
+        let skipped = run(&op, with_top.clone())
+            .unwrap_or_else(|e| panic!("{name}: a face at the top must not refuse: {e}"));
+        assert_eq!(
+            format!("{:?}", skipped.moves),
+            format!("{:?}", alone.moves),
+            "{name}: a face at the top must be skipped, and change no other cut"
+        );
+    }
+    // With every face at the top the ladder of the op is empty: it refuses.
     let at_top = vec![face(
         Polygon2::rectangle(10.0, 10.0, 40.0, 40.0),
         each_face_p3_5::TOP_Z,

@@ -59,7 +59,7 @@ use rs_cam_core::finish::unified_finish::{
 use rs_cam_core::geo::P3;
 use rs_cam_core::geometry::region_mask::RegionCapReport;
 use rs_cam_core::measurement::{MeasurementDomain, MeasurementProvenance, MeasurementStage};
-use rs_cam_core::selection::{ItemKind, ItemRef, MatchKey, SelectionNote, SourceRef};
+use rs_cam_core::selection::{ItemKind, ItemRef, MatchKey, NoteCause, SelectionNote, SourceRef};
 use rs_cam_core::toolpath::Toolpath;
 
 /// A hand-traced move list with a known move count, cutting distance, rapid
@@ -200,6 +200,7 @@ fn every_finding_recorded() -> GenerationFindings {
                     brep: None,
                 }),
                 item_use: ItemUse::Regions,
+                cause: NoteCause::KindNotServed,
             }],
         }),
         // P5. Recorded by the Profile adapter for a loop whose tabs did
