@@ -602,3 +602,17 @@ The lead approves `P3_DESIGN.md` and takes L-1 to L-17 as it recommends.
   the other six STEP fixtures do not move. FOLLOW-UP: `classify_face_surface`
   signs a plane normal from the plane Z, not the face (the BREP edge concave
   flag reads it).
+- P3.7 (5236e6c2) accepted, with the three tech-debt W8 follow-ups.
+  Deviations accepted: the O-2 hint draws in `toolpath_panel.rs` under the
+  section (the section writes only `EditToolpathSelection`, L-1) and sets
+  `EachFace { depth: 0 }`; a combo change into Each picked face keeps the
+  deepest floor Z; the resolved Z has its own row (rail width). Gaps for
+  P3.8: "Show me" on an at-the-top note frames every skipped face of the
+  layer; the diagram floor runs have no hover; no MCP test asserts
+  `floor_z`.
+  Operator look (release GUI built with W15a work in progress; rebuild
+  from HEAD first): each reference on a Pocket (the "= Z" row stays);
+  the Heights tab Floor line; the red FL run and dashed F1/F2 runs on
+  `stepped_block.step`; the hint button; a face at the top skipped with a
+  note; Stock bottom 0.5 for a through cut; an absolute Z on a flipped
+  setup.
