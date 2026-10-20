@@ -142,6 +142,21 @@ pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImport
             });
         }
 
+        // A closed shell must wind outward. Some STEP files give a closed
+        // shell whose triangles all face inward (`fixtures/gui_step/
+        // stepped_block.step` and `l_bracket.step`). This door turns such a
+        // shell round once, here, so every reader of the mesh (the 3D ops,
+        // the flat faces, the face items, the render normals) sees outward
+        // triangles. The turn comes before the BREP edges: the edge of a
+        // curved face reads its triangle normal.
+        orient_shell_outward(
+            shell_idx,
+            &cshell,
+            face_tessellations
+                .get_mut(face_base_idx..)
+                .unwrap_or(&mut []),
+        );
+
         // Build adjacency and BREP edges for faces within this shell
         let face_end_idx = face_tessellations.len();
         for i in face_base_idx..face_end_idx {
@@ -190,6 +205,97 @@ pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImport
             StepImportError::TooManyFaces { faces, limit }
         }
     })
+}
+
+/// Reverse the triangles of a closed shell that winds inward.
+///
+/// - The shell counts as closed when its BREP topology is closed
+///   ([`shell_is_closed`]). The tessellation does not decide this: two
+///   faces that only face each other can give a zero vector area and are
+///   not a solid.
+/// - The sign of the signed volume of the shell's triangles
+///   ([`signed_volume`]) is the winding. A negative volume is an inward
+///   shell, and every triangle of the shell is reversed.
+/// - An open shell has no inside, so it keeps its winding.
+///
+/// A face whose tessellation failed is not in `faces`. The volume of the
+/// other faces then has a small error, but its sign still gives the
+/// winding of the shell.
+fn orient_shell_outward<P, C, S>(
+    shell_idx: usize,
+    shell: &truck_topology::compress::CompressedShell<P, C, S>,
+    faces: &mut [FaceTessellation],
+) {
+    if !shell_is_closed(shell) {
+        info!(shell = shell_idx, "The shell is open; its winding is kept");
+        return;
+    }
+    if faces.len() < shell.faces.len() {
+        warn!(
+            shell = shell_idx,
+            tessellated = faces.len(),
+            faces = shell.faces.len(),
+            "Some faces of a closed shell have no tessellation; the winding test reads the others"
+        );
+    }
+    let volume = signed_volume(faces);
+    if volume < 0.0 {
+        info!(
+            shell = shell_idx,
+            volume, "The shell winds inward; its triangles are reversed"
+        );
+        for face in faces.iter_mut() {
+            for tri in &mut face.triangles {
+                tri.swap(1, 2);
+            }
+        }
+    }
+}
+
+/// True when the BREP topology of `shell` is closed: each edge bounds
+/// exactly two faces, once in each direction (the `ShellCondition::Closed`
+/// rule of `truck_topology`). A face with `orientation == false` runs its
+/// wires in reverse. A shell with faces and no edge (a sphere) is closed.
+fn shell_is_closed<P, C, S>(shell: &truck_topology::compress::CompressedShell<P, C, S>) -> bool {
+    use std::collections::HashMap;
+
+    // The (forward, backward) count of each edge.
+    let mut uses: HashMap<usize, (u32, u32)> = HashMap::new();
+    for face in &shell.faces {
+        for edge in face.boundaries.iter().flatten() {
+            let count = uses.entry(edge.index).or_default();
+            if edge.orientation == face.orientation {
+                count.0 += 1;
+            } else {
+                count.1 += 1;
+            }
+        }
+    }
+    !shell.faces.is_empty() && uses.values().all(|&count| count == (1, 1))
+}
+
+/// The signed volume (mm^3) that the triangles of `faces` enclose: positive
+/// for outward triangles, negative for inward. The reference point is the
+/// centre of the bounding box. For a closed surface the result does not
+/// depend on it; the centre keeps the sum free of a large offset.
+fn signed_volume(faces: &[FaceTessellation]) -> f64 {
+    let bbox =
+        BoundingBox3::from_points(faces.iter().flat_map(|face| face.vertices.iter().copied()));
+    let centre = bbox.center();
+    let mut volume = 0.0;
+    for face in faces {
+        for tri in &face.triangles {
+            let corner = |k: usize| {
+                tri.get(k)
+                    .and_then(|&v| face.vertices.get(v as usize))
+                    .map(|p| p - centre)
+            };
+            if let (Some(a), Some(b), Some(c)) = (corner(0), corner(1), corner(2)) {
+                volume += a.dot(&b.cross(&c)) / 6.0;
+            }
+        }
+    }
+    volume
 }
 
 /// Classify a face's surface type heuristically from vertex positions.

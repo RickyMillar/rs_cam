@@ -251,11 +251,9 @@ pub(crate) fn model_from_geometry(
 ///   triangles, so an up face points to +Z and a down face to -Z. The
 ///   plane normal of `SurfaceParams` is not used: the STEP door sets its
 ///   sign from the sign of the plane Z, not from the face.
-/// - The normal points OUT of the solid ([`outward_sign`], geometry
-///   selection P3.4). Some STEP files tessellate with every triangle wound
-///   inward (`fixtures/gui_step/stepped_block.step` and `l_bracket.step`:
-///   the top faces read -Z). A closed tessellation with a negative signed
-///   volume turns every face normal round. The up/down rule
+/// - The normal points OUT of the solid. The STEP door turns an inward
+///   closed shell round at import (`step_input::orient_shell_outward`), so
+///   the sign comes from the triangles. The up/down rule
 ///   (`selection::Facing`) reads this sign.
 /// - `plane_z` is the top of the face (`bbox.max.z`), the Z that the face
 ///   pick reads today.
@@ -265,7 +263,6 @@ pub(crate) fn model_from_geometry(
 pub fn brep_face_items(enriched: &crate::geometry::enriched_mesh::EnrichedMesh) -> ItemSet {
     use crate::selection::{FaceItem, Item, Shape, SourceRef};
     let mesh = &enriched.mesh;
-    let outward = outward_sign(mesh);
     let mut items = Vec::new();
     for group in &enriched.face_groups {
         let Some(loops) = group.boundary_loops_2d.as_ref() else {
@@ -301,7 +298,7 @@ pub fn brep_face_items(enriched: &crate::geometry::enriched_mesh::EnrichedMesh) 
         let face = FaceItem {
             rings: crate::polygon::Polygon2::with_holes(outer.clone(), holes),
             plane_z: group.bbox.max.z,
-            normal: sum * (outward / norm),
+            normal: sum / norm,
             brep: Some(group.id),
         };
         // The checks above meet every face invariant.
@@ -310,43 +307,6 @@ pub fn brep_face_items(enriched: &crate::geometry::enriched_mesh::EnrichedMesh) 
         }
     }
     ItemSet::new(items)
-}
-
-/// The relative vector area under which a tessellation counts as closed
-/// ([`outward_sign`]). A closed surface has a vector area of zero; each
-/// face of a STEP solid is tessellated alone, so its curved edges do not
-/// close exactly.
-const CLOSED_VECTOR_AREA_FRACTION: f64 = 1e-3;
-
-/// `1.0` when the triangles of `mesh` wind outward, `-1.0` when a closed
-/// tessellation winds inward (geometry selection P3.4).
-///
-/// The test is the signed volume about the centre of the bounding box. Its
-/// sign is the winding of a closed surface, and the centre makes it free of
-/// the frame. An open set of faces has no inside: its signed volume depends
-/// on the reference point, so it keeps its winding (`1.0`). The set counts
-/// as closed when its vector area is at most
-/// [`CLOSED_VECTOR_AREA_FRACTION`] of its area.
-fn outward_sign(mesh: &crate::mesh::TriangleMesh) -> f64 {
-    let centre = mesh.bbox.center();
-    let mut vector_area = crate::geo::V3::zeros();
-    let mut area = 0.0;
-    let mut volume = 0.0;
-    for tri in &mesh.triangles {
-        let corner = |k: usize| {
-            tri.get(k)
-                .and_then(|&v| mesh.vertices.get(v as usize))
-                .map(|p| p - centre)
-        };
-        if let (Some(a), Some(b), Some(c)) = (corner(0), corner(1), corner(2)) {
-            let cross = (b - a).cross(&(c - a));
-            vector_area += cross;
-            area += cross.norm();
-            volume += a.dot(&b.cross(&c));
-        }
-    }
-    let closed = area > 0.0 && vector_area.norm() <= CLOSED_VECTOR_AREA_FRACTION * area;
-    if closed && volume < 0.0 { -1.0 } else { 1.0 }
 }
 
 /// THE table of model file extensions, in lower case, with the kind each
