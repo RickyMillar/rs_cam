@@ -1690,3 +1690,325 @@ fn pencil_rest_depth_precedence_skips_generic_pass() {
         grid.grid.cell_mm
     );
 }
+
+// ── P3.5: each picked face at its own floor ─────────────────────────
+
+/// The fixture of `each_face_cuts_to_its_own_floor_p3_5`.
+mod each_face_p3_5 {
+    use std::sync::atomic::AtomicBool;
+
+    use super::{
+        ExecutionContext, GenerationFindings, OperationError, SelectionInputs, build_cutter,
+        execute_operation_annotated,
+    };
+    use crate::compute::catalog::OperationConfig;
+    use crate::compute::config::ResolvedHeights;
+    use crate::compute::floor::Floor;
+    use crate::compute::operation_configs::{
+        PocketConfig, ProfileConfig, RegionOrdering, ZigzagConfig,
+    };
+    use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use crate::geo::{BoundingBox3, P2, P3, V3};
+    use crate::polygon::Polygon2;
+    use crate::selection::{FaceItem, Item, RefusalCause, Shape, SourceRef};
+    use crate::toolpath::{MoveType, Toolpath};
+
+    /// The stock top (mm): the one Top Z of the op under "each picked
+    /// face" (L-15).
+    pub const TOP_Z: f64 = 25.0;
+    /// The plane Z of the upper face, which has a hole (mm).
+    pub const UPPER_Z: f64 = 20.0;
+    /// The plane Z of the lower face, which fills that hole (mm).
+    pub const LOWER_Z: f64 = 15.0;
+    /// The hole of the upper face, and the lower face: `[min, max]` on X
+    /// and on Y (mm).
+    pub const HOLE: [f64; 2] = [35.0, 65.0];
+    /// The float noise of a Z read back from the toolpath (mm).
+    pub const EPS: f64 = 1e-9;
+
+    fn ring(x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<P2> {
+        vec![
+            P2::new(x0, y0),
+            P2::new(x1, y0),
+            P2::new(x1, y1),
+            P2::new(x0, y1),
+        ]
+    }
+
+    /// An up face item: `rings` at `plane_z`.
+    pub fn face(rings: Polygon2, plane_z: f64) -> Item {
+        Item::new(
+            SourceRef::ToolpathModel,
+            None,
+            Shape::Face(FaceItem {
+                rings,
+                plane_z,
+                normal: V3::new(0.0, 0.0, 1.0),
+                brep: None,
+            }),
+        )
+        .unwrap()
+    }
+
+    /// The upper face (a square with the [`HOLE`]) at [`UPPER_Z`], then
+    /// the lower face (the hole) at [`LOWER_Z`]: design 5.7.
+    pub fn nested_faces() -> Vec<Item> {
+        let [h0, h1] = HOLE;
+        vec![
+            face(
+                Polygon2::with_holes(ring(10.0, 10.0, 90.0, 90.0), vec![ring(h0, h0, h1, h1)]),
+                UPPER_Z,
+            ),
+            face(Polygon2::new(ring(h0, h0, h1, h1)), LOWER_Z),
+        ]
+    }
+
+    /// Two faces side by side: the left one at [`UPPER_Z`], the right one
+    /// at [`LOWER_Z`]. A Profile ring of each stays on its own side of
+    /// X 50.
+    pub fn side_by_side_faces() -> Vec<Item> {
+        vec![
+            face(Polygon2::new(ring(10.0, 10.0, 40.0, 40.0)), UPPER_Z),
+            face(Polygon2::new(ring(60.0, 10.0, 90.0, 40.0)), LOWER_Z),
+        ]
+    }
+
+    /// The op with the floor "each picked face" (depth 0), executed past
+    /// the session. The heights are those the session gives under that
+    /// floor: the stock top, and the deepest face floor as the Bottom Z.
+    pub fn run(op: &OperationConfig, items: Vec<Item>) -> Result<Toolpath, OperationError> {
+        let tool_cfg = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let tool_def = build_cutter(&tool_cfg).unwrap();
+        let heights = ResolvedHeights {
+            clearance_z: 40.0,
+            retract_z: 30.0,
+            feed_z: 28.0,
+            top_z: TOP_Z,
+            bottom_z: LOWER_Z,
+            top_pinned: false,
+            bottom_pinned: false,
+        };
+        let bbox = BoundingBox3 {
+            min: P3::new(0.0, 0.0, 0.0),
+            max: P3::new(100.0, 100.0, TOP_Z),
+        };
+        let levels = op.cutting_levels(&heights);
+        let cancel = AtomicBool::new(false);
+        let findings = std::cell::RefCell::new(GenerationFindings::default());
+        let ctx = ExecutionContext {
+            selection: SelectionInputs::from_items(items),
+            ..ExecutionContext::new(
+                &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
+            )
+        };
+        execute_operation_annotated(&ctx, op).map(|generated| generated.toolpath)
+    }
+
+    pub fn pocket(ordering: RegionOrdering, finishing_passes: usize) -> OperationConfig {
+        OperationConfig::Pocket(PocketConfig {
+            floor: Floor::EachFace { depth: 0.0 },
+            region_ordering: ordering,
+            finishing_passes,
+            ..PocketConfig::default()
+        })
+    }
+
+    pub fn zigzag(ordering: RegionOrdering) -> OperationConfig {
+        OperationConfig::Zigzag(ZigzagConfig {
+            floor: Floor::EachFace { depth: 0.0 },
+            region_ordering: ordering,
+            ..ZigzagConfig::default()
+        })
+    }
+
+    pub fn profile(tab_height: f64) -> OperationConfig {
+        OperationConfig::Profile(ProfileConfig {
+            floor: Floor::EachFace { depth: 0.0 },
+            tab_count: 2,
+            tab_height,
+            ..ProfileConfig::default()
+        })
+    }
+
+    /// The Z of each feed move whose tool centre `inside` admits, in order.
+    pub fn feed_z(tp: &Toolpath, inside: impl Fn(P3) -> bool) -> Vec<f64> {
+        tp.moves
+            .iter()
+            .filter(|m| !matches!(m.move_type, MoveType::Rapid) && inside(m.target))
+            .map(|m| m.target.z)
+            .collect()
+    }
+
+    /// True when the tool centre is inside the [`HOLE`] (the lower face).
+    pub fn in_hole(p: P3) -> bool {
+        let [h0, h1] = HOLE;
+        p.x > h0 && p.x < h1 && p.y > h0 && p.y < h1
+    }
+
+    pub fn min_of(zs: &[f64]) -> f64 {
+        zs.iter().copied().fold(f64::INFINITY, f64::min)
+    }
+
+    pub fn count_at(zs: &[f64], z: f64) -> usize {
+        zs.iter().filter(|v| (**v - z).abs() < EPS).count()
+    }
+
+    /// The refusal cause of `result`, or a panic.
+    pub fn refusal_cause(result: Result<Toolpath, OperationError>) -> RefusalCause {
+        match result {
+            Err(OperationError::Selection(refusal)) => refusal.cause,
+            other => panic!("expected a selection refusal, got {other:?}"),
+        }
+    }
+}
+
+/// Geometry selection P3.5 (design 5.7): under the floor "each picked
+/// face" each face region is cut to its own plane Z.
+///
+/// - An upper face at Z 20 with a hole, and a lower face at Z 15 in the
+///   hole. Pocket and Zigzag, region-first and level-first: the moves in the
+///   hole reach Z 15, and no move outside it goes below Z 20. Level-first
+///   never climbs between two cuts; region-first climbs once, to start the
+///   second region from the top.
+/// - Spring passes per region: one spring pass doubles the feed moves at
+///   the floor of EACH region.
+/// - Profile tabs stand on the floor of their own region: the tab top of
+///   each face is its own floor plus the tab height.
+/// - A drawing loop under "each picked face" refuses `NoFaceForFloor`; a
+///   face floor at or above the top refuses `FloorAboveTop` (L-16).
+///
+/// Red proof: give every region the one ladder of the op
+/// (`ExecutionContext::cutting_levels`, to the deepest floor). The upper
+/// region then cuts to Z 15 and the test fails.
+#[test]
+fn each_face_cuts_to_its_own_floor_p3_5() {
+    use crate::compute::operation_configs::RegionOrdering;
+    use crate::selection::{Item, RefusalCause, Shape, SourceRef};
+    use each_face_p3_5::{
+        EPS, HOLE, LOWER_Z, UPPER_Z, count_at, face, feed_z, in_hole, min_of, nested_faces, pocket,
+        profile, refusal_cause, run, side_by_side_faces, zigzag,
+    };
+
+    // Both orderings, Pocket and Zigzag.
+    for ordering in [RegionOrdering::ByArea, RegionOrdering::Global] {
+        for (name, op) in [
+            ("pocket", pocket(ordering, 0)),
+            ("zigzag", zigzag(ordering)),
+        ] {
+            let tp = run(&op, nested_faces()).unwrap();
+            let lower = feed_z(&tp, in_hole);
+            let upper = feed_z(&tp, |p| !in_hole(p));
+            assert!(
+                !lower.is_empty() && !upper.is_empty(),
+                "{name} {ordering:?}"
+            );
+            assert!(
+                (min_of(&lower) - LOWER_Z).abs() < EPS,
+                "{name} {ordering:?}: the lower face must reach its floor {LOWER_Z}, got {}",
+                min_of(&lower)
+            );
+            assert!(
+                (min_of(&upper) - UPPER_Z).abs() < EPS,
+                "{name} {ordering:?}: the upper face must stop at its floor {UPPER_Z}, got {}",
+                min_of(&upper)
+            );
+            // The order: level-first never climbs between two cuts;
+            // region-first climbs to start the lower region at the top.
+            let all = feed_z(&tp, |_| true);
+            let climbs = all.windows(2).filter(|w| w[1] > w[0] + EPS).count();
+            match ordering {
+                RegionOrdering::Global => {
+                    assert_eq!(climbs, 0, "{name}: level-first climbed: {all:?}");
+                }
+                RegionOrdering::ByArea => {
+                    assert!(climbs > 0, "{name}: region-first did not climb: {all:?}");
+                }
+            }
+        }
+    }
+
+    // Spring passes per region: one spring pass doubles the feed moves at
+    // the floor of each region, in both orders.
+    for ordering in [RegionOrdering::ByArea, RegionOrdering::Global] {
+        let plain = run(&pocket(ordering, 0), nested_faces()).unwrap();
+        let spring = run(&pocket(ordering, 1), nested_faces()).unwrap();
+        for (region, floor, inside) in [
+            ("lower", LOWER_Z, &in_hole as &dyn Fn(_) -> bool),
+            ("upper", UPPER_Z, &|p| !in_hole(p)),
+        ] {
+            let once = count_at(&feed_z(&plain, inside), floor);
+            let twice = count_at(&feed_z(&spring, inside), floor);
+            assert!(once > 0, "{region} {ordering:?}: no cut at the floor");
+            assert_eq!(
+                twice,
+                2 * once,
+                "{region} {ordering:?}: the spring pass must repeat the floor of its own region"
+            );
+        }
+    }
+
+    // Profile tabs on each region's floor. The tab height puts each tab top
+    // between two levels of its ladder, so a move at the tab top is a tab.
+    let tab_height = 1.5;
+    let tp = run(&profile(tab_height), side_by_side_faces()).unwrap();
+    let left = feed_z(&tp, |p| p.x < 50.0);
+    let right = feed_z(&tp, |p| p.x >= 50.0);
+    assert!(
+        (min_of(&left) - UPPER_Z).abs() < EPS,
+        "left floor: {left:?}"
+    );
+    assert!(
+        (min_of(&right) - LOWER_Z).abs() < EPS,
+        "right floor: {right:?}"
+    );
+    assert!(
+        count_at(&left, UPPER_Z + tab_height) > 0,
+        "the left tabs must stand on the left floor: {left:?}"
+    );
+    assert!(
+        count_at(&right, LOWER_Z + tab_height) > 0,
+        "the right tabs must stand on the right floor: {right:?}"
+    );
+    assert_eq!(count_at(&right, UPPER_Z + tab_height), 0, "{right:?}");
+
+    // A drawing loop has no plane Z: it refuses by name.
+    let [h0, h1] = HOLE;
+    let loop_item = Item::new(
+        SourceRef::ToolpathModel,
+        Some("OUTLINE".into()),
+        Shape::Loop(Polygon2::rectangle(h0, h0, h1, h1)),
+    )
+    .unwrap();
+    let mut items = side_by_side_faces();
+    items.push(loop_item);
+    assert_eq!(
+        refusal_cause(run(&pocket(RegionOrdering::ByArea, 0), items)),
+        RefusalCause::NoFaceForFloor
+    );
+    // A face at the top has its floor at the top: its ladder is empty.
+    let at_top = vec![face(
+        Polygon2::rectangle(10.0, 10.0, 40.0, 40.0),
+        each_face_p3_5::TOP_Z,
+    )];
+    assert!(matches!(
+        refusal_cause(run(&pocket(RegionOrdering::ByArea, 0), at_top)),
+        RefusalCause::FloorAboveTop { .. }
+    ));
+}
+
+/// P3.5: Adaptive 2D keeps one ladder for every outline, so it refuses the
+/// floor "each picked face" until P3.6; it never cuts every face to the
+/// deepest floor.
+#[test]
+fn adaptive_2d_refuses_each_face_until_p3_6() {
+    use crate::compute::operation_configs::AdaptiveConfig;
+    let op = OperationConfig::Adaptive(AdaptiveConfig {
+        floor: crate::compute::floor::Floor::EachFace { depth: 0.0 },
+        ..AdaptiveConfig::default()
+    });
+    let result = each_face_p3_5::run(&op, each_face_p3_5::nested_faces());
+    assert!(
+        matches!(&result, Err(OperationError::Other(text)) if text.contains("P3.6")),
+        "{result:?}"
+    );
+}

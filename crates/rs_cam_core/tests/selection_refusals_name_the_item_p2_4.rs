@@ -30,6 +30,12 @@
 //! compile here until it has an arm; [`every_cause_has_an_arm`] holds the
 //! list of arms equal to the list of causes.
 //!
+//! Geometry selection P3.5 adds two arms of the floor "each picked face":
+//! `no_face_for_floor` (a drawing loop has no plane Z) and
+//! `floor_above_top` (a face floor above the stock top). The status runs
+//! the per-area floor rule of the prologue (`compute::floor::region_floors`)
+//! with the same top, so both give one refusal.
+//!
 //! Two arms run on a `FaceUp::Bottom` setup (`kind_not_cut_on_a_flipped_setup`,
 //! `face_faces_down`), so the frame door is proven
 //! not to change the verdict of the status.
@@ -56,6 +62,7 @@ use common::session::{pick_faces, polygon_model, single_op_session_with, stock_u
 use common::tools::endmill_tool_config;
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::floor::Floor;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::geo::{P2, P3, V3};
@@ -70,7 +77,7 @@ use rs_cam_core::selection::{
 };
 use rs_cam_core::session::{
     AdoptModelGeometryArgs, Command, EditSelectionArgs, LoadedModel, ProjectSession, SessionError,
-    SetSetupFaceArgs,
+    SetSetupFaceArgs, SetToolpathFloorArgs,
 };
 
 /// The half side of each square loop (mm).
@@ -99,6 +106,8 @@ fn arm_of(cause: &RefusalCause) -> &'static str {
         RefusalCause::KindNotCut { .. } => "kind_not_cut",
         RefusalCause::FaceNotFlat { .. } => "face_not_flat",
         RefusalCause::FaceFacesDown => "face_faces_down",
+        RefusalCause::NoFaceForFloor => "no_face_for_floor",
+        RefusalCause::FloorAboveTop { .. } => "floor_above_top",
         RefusalCause::MissingSource(_) => "missing_source",
         RefusalCause::UnknownLayer(_) => "unknown_layer",
         RefusalCause::NoSuchRule { .. } => "no_such_rule",
@@ -114,6 +123,8 @@ const ARMS: &[&str] = &[
     "kind_not_cut",
     "face_not_flat",
     "face_faces_down",
+    "no_face_for_floor",
+    "floor_above_top",
     "missing_source",
     "unknown_layer",
     "no_such_rule",
@@ -247,6 +258,11 @@ fn every_cause_has_an_arm() {
         },
         RefusalCause::FaceNotFlat { face: None },
         RefusalCause::FaceFacesDown,
+        RefusalCause::NoFaceForFloor,
+        RefusalCause::FloorAboveTop {
+            floor_z: 0.0,
+            top_z: 0.0,
+        },
         RefusalCause::MissingSource(SourceRef::Stock),
         RefusalCause::UnknownLayer(String::new()),
         RefusalCause::NoSuchRule { index: 0, rules: 0 },
@@ -621,6 +637,61 @@ fn face_faces_down() {
         &r,
         &["face (centre X", "this face faces down in this setup"],
     );
+}
+
+// ── The floor "each picked face" (geometry selection P3.5) ───────────
+
+/// Set the floor of toolpath 0 through the `SetToolpathFloor` door.
+fn set_floor(session: &mut ProjectSession, floor: Floor) {
+    let _ = session
+        .apply(Command::SetToolpathFloor(SetToolpathFloorArgs {
+            index: 0,
+            floor,
+        }))
+        .expect("the door takes the floor");
+}
+
+/// P3.5: under "each picked face" a drawing loop has no plane Z, so it has
+/// no floor. It refuses by name, with the fix.
+#[test]
+fn no_face_for_floor() {
+    let mut s = pocket_session(
+        drawing_model(vec![loop_item("OUTLINE", 0.0)]),
+        Selection::drawing(),
+        |_| {},
+    );
+    set_floor(&mut s, Floor::EachFace { depth: 0.0 });
+    let r = refusal_of(&mut s);
+    assert_eq!(r.cause, RefusalCause::NoFaceForFloor);
+    assert_names(
+        &r,
+        &[
+            "closed loop on layer 'OUTLINE'",
+            "this closed area is not a face",
+            "Pick faces only",
+        ],
+    );
+}
+
+/// P3.5 (L-16): a face floor at or above the Top Z refuses by name. The
+/// auto top under "each picked face" is the stock top (L-15), so a
+/// negative depth puts the floor above it.
+#[test]
+fn floor_above_top() {
+    let mut s = face_pick_session(0);
+    let stock = step_stock();
+    let stock_top = stock.origin_z + stock.z;
+    let depth = FACE_Z - stock_top - 1.0;
+    set_floor(&mut s, Floor::EachFace { depth });
+    let r = refusal_of(&mut s);
+    assert_eq!(
+        r.cause,
+        RefusalCause::FloorAboveTop {
+            floor_z: FACE_Z - depth,
+            top_z: stock_top,
+        }
+    );
+    assert_names(&r, &["face (centre X", "is at or above the Top Z"]);
 }
 
 // ── FacesNotReady: an STL whose flat faces are not computed (P4.7) ───

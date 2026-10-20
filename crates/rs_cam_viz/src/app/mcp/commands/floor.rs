@@ -209,7 +209,7 @@ mod tests {
 
         // A refused wire floor writes nothing.
         for refused in [
-            serde_json::json!({ "from": "each_face", "depth": 0.0 }),
+            serde_json::json!({ "from": "top", "depth": -1.0 }),
             serde_json::json!({ "from": "top", "depth": 0.0 }),
         ] {
             let error = wire_floor(&mut mcp, &refused).expect_err("the door refuses");

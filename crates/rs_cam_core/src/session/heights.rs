@@ -30,6 +30,14 @@
 //! whole config (L-17). [`ToolpathHeights::floor_z`] is the read of the
 //! resolved floor for every surface.
 //!
+//! P3.5: under the floor "each picked face" the floor resolves against the
+//! highest and the lowest up face of the selection
+//! (`FloorRef::EachFace`): the Bottom Z is the deepest face floor, and an
+//! auto top stays at the stock top (ruling L-15). The selection rule
+//! (`compute::floor::region_floors`) refuses an area with no face and a face
+//! floor at or above the top, by item, in `selection_status` and in the
+//! prologue; generation does not refuse them here first.
+//!
 //! L-4: a Top Z or a Bottom Z that reads the Model Top or the Model Bottom
 //! refuses when the toolpath has no mesh. Before P3.1 generation used the
 //! stock top there and the GUI used Z 0. The answer carries the refusal
@@ -50,7 +58,7 @@ use crate::compute::catalog::FloorOwner;
 use crate::compute::config::{
     HeightContext, HeightMode, HeightReference, HeightsConfig, ResolvedHeights,
 };
-use crate::compute::floor::{Floor, FloorRef, FloorRefusal};
+use crate::compute::floor::{FacePlanes, Floor, FloorRef, FloorRefusal};
 use crate::mesh::TriangleMesh;
 use crate::session::{Effects, ProjectSession, SessionError, ToolpathConfig};
 
@@ -118,16 +126,17 @@ impl ToolpathHeights {
     }
 
     /// P3.2: the refusal of the floor of this toolpath under `heights`, or
-    /// `None`. A floor that does not resolve (L-4, P3.5, a value that is not
-    /// finite) refuses, and so does a floor at or above the resolved top
-    /// (L-16): its ladder would be empty.
+    /// `None`. A floor that does not resolve (L-4, no up face under each
+    /// face, a value that is not finite) refuses, and so does a floor at or
+    /// above the resolved top (L-16): its ladder would be empty. Under each
+    /// face the highest face floor is the one to check (P3.5).
     #[must_use]
     pub fn floor_refusal(&self, heights: &HeightsConfig) -> Option<FloorRefusal> {
         match self.floor? {
             Err(refusal) => Some(refusal),
             Ok(floor) => {
                 let top_z = self.resolve(heights).top_z;
-                let floor_z = floor.z(top_z);
+                let floor_z = floor.highest_z(top_z);
                 (floor_z >= top_z).then_some(FloorRefusal::AboveTop { floor_z, top_z })
             }
         }
@@ -190,6 +199,12 @@ fn apply_rule(
     if !cfg.top_z.is_auto() {
         return (heights, TopSource::Pinned);
     }
+    // L-15 (P3.5): under the floor "each picked face" the auto top stays at
+    // the stock top. The faces are the floors; a top at the highest face
+    // would leave that face no depth to cut.
+    if ctx.floor.is_some_and(FloorRef::is_each_face) {
+        return (heights, TopSource::AutoStockTop);
+    }
     // N12 item 1: an AUTO top follows the picked faces. A PINNED top is the
     // operator's own answer and stays. P2.3b: the top is in the setup frame.
     match face_top_z {
@@ -238,15 +253,9 @@ impl ProjectSession {
     pub fn toolpath_heights(&self, tc: &ToolpathConfig) -> Result<ToolpathHeights, SessionError> {
         let setup = self.find_setup_for_toolpath_id(tc.id);
         let ctx = SetupEvalContext::build_for_setup(self, setup);
-        let mesh = self.toolpath_mesh(tc)?;
-        let setup_mesh = match mesh {
-            Some(raw) if ctx.needs_transform() => Some(crate::maps::geom_cache::cached_transform(
-                &raw,
-                &self.setup_transform_info(ctx.face_up, ctx.z_rotation),
-            )),
-            other => other,
-        };
-        let face_top_z = match self.selection_status(tc, SelectionTarget::Op)?.face_top_z {
+        let setup_mesh = self.setup_mesh(tc, &ctx)?;
+        let op_status = self.selection_status(tc, SelectionTarget::Op)?;
+        let face_top_z = match op_status.face_top_z {
             Some(top) => Some(top),
             None if self.reads_boundary_faces(tc) => {
                 self.selection_status(tc, SelectionTarget::Boundary)?
@@ -254,22 +263,68 @@ impl ProjectSession {
             }
             None => None,
         };
-        Ok(self.heights_in_setup(tc, &ctx, setup_mesh.as_deref(), face_top_z))
+        Ok(self.heights_in_setup(
+            tc,
+            &ctx,
+            setup_mesh.as_deref(),
+            face_top_z,
+            op_status.face_bottom_z,
+        ))
+    }
+
+    /// The resolved Top Z of `tc` under the floor "each picked face"
+    /// (geometry selection P3.5), with no read of the selection: under that
+    /// floor the auto top does not follow the faces (L-15). The
+    /// `selection_status` report reads it for the per-area floor check
+    /// (`compute::floor::region_floors`), so the status and the prologue
+    /// check against one top. `None` for every other floor.
+    pub(crate) fn each_face_top_z(
+        &self,
+        tc: &ToolpathConfig,
+        ctx: &SetupEvalContext,
+    ) -> Result<Option<f64>, SessionError> {
+        if !matches!(tc.operation.floor(), Some(Floor::EachFace { .. })) {
+            return Ok(None);
+        }
+        let setup_mesh = self.setup_mesh(tc, ctx)?;
+        Ok(Some(
+            self.heights_in_setup(tc, ctx, setup_mesh.as_deref(), None, None)
+                .heights
+                .top_z,
+        ))
+    }
+
+    /// The mesh of `tc` ([`Self::toolpath_mesh`]) in the frame of the setup
+    /// of `ctx`.
+    fn setup_mesh(
+        &self,
+        tc: &ToolpathConfig,
+        ctx: &SetupEvalContext,
+    ) -> Result<Option<Arc<TriangleMesh>>, SessionError> {
+        Ok(match self.toolpath_mesh(tc)? {
+            Some(raw) if ctx.needs_transform() => Some(crate::maps::geom_cache::cached_transform(
+                &raw,
+                &self.setup_transform_info(ctx.face_up, ctx.z_rotation),
+            )),
+            other => other,
+        })
     }
 
     /// Write the floor of toolpath `index` (geometry selection P3.3): the
     /// door of the `SetToolpathFloor` command row.
     ///
     /// The op must hold a floor (Pocket, Profile, Zigzag, Adaptive 2D), and
-    /// the floor must pass `Floor::door_refusal` (a finite number in its
-    /// domain; Each Face is not yet available). A floor at or above a
+    /// the op config with the new floor must pass the one W6b door check
+    /// (`compute::domain::validate_operation`, which reads
+    /// `Floor::door_refusal`: a finite number in its domain). A floor at or above a
     /// resolved top that is not the Top Z needs the model and the
     /// selection, so generation refuses it (L-16). A change drops the
     /// result chain of the toolpath, as a heights edit does.
     ///
     /// # Errors
-    /// [`SessionError::ToolpathNotFound`], or [`SessionError::InvalidParam`]
-    /// that names the toolpath and the fix. Nothing is written then.
+    /// [`SessionError::ToolpathNotFound`], [`SessionError::InvalidParam`]
+    /// for an op with no floor, or [`SessionError::OutOfDomain`] that names
+    /// the toolpath, the op and the fix. Nothing is written then.
     pub(crate) fn set_toolpath_floor(
         &mut self,
         index: usize,
@@ -289,14 +344,14 @@ impl ProjectSession {
                     tc.name
                 )));
             };
-            if let Some(refusal) = floor.door_refusal() {
-                return Err(SessionError::InvalidParam(format!(
-                    "Toolpath '{}': {refusal}",
-                    tc.name
-                )));
-            }
+            // W6b: THE door check of an op config (`validate_operation`,
+            // which reads `Floor::door_refusal`), on the candidate config,
+            // before any write.
+            let mut candidate = tc.operation.clone();
+            let _ = candidate.set_floor(floor);
+            crate::compute::domain::validate_toolpath_operation(&tc.name, &candidate)?;
             if before != floor {
-                let _ = tc.operation.set_floor(floor);
+                tc.operation = candidate;
                 let enabled = tc.enabled;
                 session.invalidate_result_chain(index, enabled);
             }
@@ -306,16 +361,30 @@ impl ProjectSession {
 
     /// [`Self::heights_in_setup`] for generation: the L-4 refusal is an
     /// error here.
+    ///
+    /// P3.5: under the floor "each picked face" an area with no face and a
+    /// face floor at or above the top refuse in the prologue, by item
+    /// (`compute::floor::region_floors`), as `selection_status` refuses
+    /// them. So this door does not refuse [`FloorRefusal::NoFace`] and
+    /// [`FloorRefusal::AboveTop`] of that floor first.
     pub(crate) fn generation_heights(
         &self,
         tc: &ToolpathConfig,
         ctx: &SetupEvalContext,
         setup_mesh: Option<&TriangleMesh>,
         face_top_z: Option<f64>,
+        face_bottom_z: Option<f64>,
     ) -> Result<ResolvedHeights, SessionError> {
         tc.floor_conflict()?;
-        let answer = self.heights_in_setup(tc, ctx, setup_mesh, face_top_z);
-        if let Some(refusal) = answer.floor_refusal(&tc.heights) {
+        let answer = self.heights_in_setup(tc, ctx, setup_mesh, face_top_z, face_bottom_z);
+        let each_face = matches!(tc.operation.floor(), Some(Floor::EachFace { .. }));
+        if let Some(refusal) = answer.floor_refusal(&tc.heights)
+            && !(each_face
+                && matches!(
+                    refusal,
+                    FloorRefusal::NoFace | FloorRefusal::AboveTop { .. }
+                ))
+        {
             return Err(SessionError::InvalidParam(format!(
                 "Toolpath '{}': {refusal}",
                 tc.name
@@ -331,14 +400,16 @@ impl ProjectSession {
     }
 
     /// THE rule (see the module documentation). `setup_mesh` is the mesh
-    /// of `tc` in the setup frame; `face_top_z` is the top of the up faces
-    /// of its selection, in the setup frame.
+    /// of `tc` in the setup frame; `face_top_z` and `face_bottom_z` are the
+    /// highest and the lowest plane Z of the up faces of its selection, in
+    /// the setup frame.
     pub(crate) fn heights_in_setup(
         &self,
         tc: &ToolpathConfig,
         ctx: &SetupEvalContext,
         setup_mesh: Option<&TriangleMesh>,
         face_top_z: Option<f64>,
+        face_bottom_z: Option<f64>,
     ) -> ToolpathHeights {
         // K3: the heights do not read the obstacles. The obstacle step
         // after the dressups lifts only the moves that cross one.
@@ -348,7 +419,12 @@ impl ProjectSession {
         );
         // P3.2: the floor resolves against the stock and the model of this
         // context. The top is not known yet, so `Floor::Top` stays relative.
-        let floor = tc.operation.floor().map(|floor| floor.resolve(&context));
+        // P3.5: each face reads the planes of the up faces.
+        let faces = FacePlanes::from_top_and_bottom(face_top_z, face_bottom_z);
+        let floor = tc
+            .operation
+            .floor()
+            .map(|floor| floor.resolve(&context, faces));
         context.floor = floor.and_then(Result::ok);
         let (heights, top_from) = apply_rule(&tc.heights, &context, face_top_z);
         ToolpathHeights {

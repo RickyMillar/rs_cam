@@ -757,6 +757,17 @@ pub(crate) fn generate_adaptive(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Adaptive, "generate_adaptive");
+    // Geometry selection P3.5: this loop steps one ladder for every
+    // outline. A ladder per area ("each picked face") comes in P3.6, so
+    // until then it refuses; it never cuts every face to the deepest floor.
+    if prepared.region_ladders().is_some() {
+        return Err(OperationError::Other(
+            "Adaptive 2D: the floor \"each picked face\" is not yet available for this op \
+             (geometry selection P3.6). Set the floor from the Top Z, the stock, the model or \
+             a Z value, or use Pocket"
+                .to_owned(),
+        ));
+    }
     let levels = effective_levels(ctx.cutting_levels)?;
     // K3: an area op plans around the obstacles (the territory rule).
     let polys = prepared.territory().area_outlines(

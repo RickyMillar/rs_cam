@@ -96,6 +96,9 @@ pub struct Regions {
     /// For each polygon: the index in `ResolvedSelection::items` of the
     /// item whose ring is its exterior (geometry selection P4.6).
     exterior_items: Vec<usize>,
+    /// For each polygon: the plane Z of its exterior item when that item is
+    /// a face, else `None` (geometry selection P3.5).
+    plane_z: Vec<Option<f64>>,
 }
 
 impl Regions {
@@ -118,6 +121,15 @@ impl Regions {
     /// the item, not a ring with equal coordinates.
     pub fn exterior_item(&self, index: usize) -> Option<usize> {
         self.exterior_items.get(index).copied()
+    }
+
+    /// The plane Z of the face whose ring is the exterior of the polygon at
+    /// `index` of [`Self::as_slice`], or `None` when the exterior is a
+    /// loop, a circle or the stock ring (geometry selection P3.5). [`view`]
+    /// runs after the frame door, so the Z is in the SETUP frame. The floor
+    /// "each picked face" reads it (`compute::floor::region_floors`).
+    pub fn plane_z(&self, index: usize) -> Option<f64> {
+        self.plane_z.get(index).copied().flatten()
     }
 
     /// The same polygons as lines to follow: a closed region is also a
@@ -389,7 +401,13 @@ fn view_with(
     let view = match item_use {
         ItemUse::None => View::None,
         ItemUse::Regions => {
-            let (polygons, stock, exteriors, islands) = regions_of(&served);
+            let RegionParts {
+                polygons,
+                stock,
+                exteriors,
+                plane_z,
+                islands,
+            } = regions_of(&served);
             if polygons.is_empty() {
                 return Err(empty(notes));
             }
@@ -409,6 +427,7 @@ fn view_with(
                     .into_iter()
                     .filter_map(|pos| served_at.get(pos).copied())
                     .collect(),
+                plane_z,
             })
         }
         ItemUse::Curves => {
@@ -469,41 +488,57 @@ fn mark_cut(roles: &mut [ItemRole], served_at: &[usize]) {
     }
 }
 
+/// The closed areas of the served shapes, and what [`Regions`] keeps of
+/// each ([`regions_of`]).
+struct RegionParts {
+    polygons: Vec<Polygon2>,
+    /// True for each area whose exterior is the stock ring (P4.2).
+    stock: Vec<bool>,
+    /// For each area, the position in `served` of the item whose ring is
+    /// its exterior (P4.6).
+    exteriors: Vec<usize>,
+    /// For each area, the plane Z of its exterior face, or `None` (P3.5).
+    plane_z: Vec<Option<f64>>,
+    /// The positions in `served` of the rings that became holes (P4.4).
+    islands: BTreeSet<usize>,
+}
+
 /// The closed areas of the served shapes: the loops and circle rings
 /// nested by containment, then each face with its own inner loops. The
-/// flags mark each area whose exterior is the stock ring (P4.2). The stock
-/// ring nests as any drawing ring does, so a drawing loop inside the stock
-/// is a hole of the stock region (a Pocket clears round it). The third
-/// list holds, for each area, the position in `served` of the item whose
-/// ring is its exterior (P4.6). The set holds the positions in `served` of
-/// the rings that became holes (P4.4).
-fn regions_of(served: &[&Item]) -> (Vec<Polygon2>, Vec<bool>, Vec<usize>, BTreeSet<usize>) {
+/// stock ring nests as any drawing ring does, so a drawing loop inside the
+/// stock is a hole of the stock region (a Pocket clears round it).
+fn regions_of(served: &[&Item]) -> RegionParts {
     let nested = nest_closed_rings_at(served);
-    let islands = nested.holes;
-    let mut polygons = Vec::new();
-    let mut stock = Vec::new();
-    let mut exteriors = Vec::new();
+    let mut parts = RegionParts {
+        polygons: Vec::new(),
+        stock: Vec::new(),
+        exteriors: Vec::new(),
+        plane_z: Vec::new(),
+        islands: nested.holes,
+    };
     for (polygon, at) in nested.regions {
         let from_stock = served
             .get(at)
             .is_some_and(|i| i.source() == SourceRef::Stock);
-        polygons.push(polygon);
-        stock.push(from_stock);
-        exteriors.push(at);
+        parts.polygons.push(polygon);
+        parts.stock.push(from_stock);
+        parts.exteriors.push(at);
+        parts.plane_z.push(None);
     }
     for (at, face) in served
         .iter()
         .enumerate()
         .filter_map(|(at, i)| match i.shape() {
-            Shape::Face(face) => Some((at, face.rings.clone())),
+            Shape::Face(face) => Some((at, face)),
             Shape::Loop(_) | Shape::Circle { .. } | Shape::Path(_) | Shape::Point(_) => None,
         })
     {
-        polygons.push(face);
-        stock.push(false);
-        exteriors.push(at);
+        parts.polygons.push(face.rings.clone());
+        parts.stock.push(false);
+        parts.exteriors.push(at);
+        parts.plane_z.push(Some(face.plane_z));
     }
-    (polygons, stock, exteriors, islands)
+    parts
 }
 
 /// The loops and circle rings of `items`, in this order, nested by

@@ -199,7 +199,15 @@ impl ProjectSession {
         // setup with the setup-frame mesh box, the resolver, then an auto top
         // follows the picked faces. The GUI and MCP read the same rule
         // through `toolpath_heights`.
-        let heights = self.generation_heights(tc, &ctx, mesh.as_deref(), face_top_z)?;
+        // P3.5: the lowest up face of the op selection is the deepest floor
+        // under "each picked face".
+        let heights = self.generation_heights(
+            tc,
+            &ctx,
+            mesh.as_deref(),
+            face_top_z,
+            selection.face_bottom_z(),
+        )?;
 
         // Build tool definition
         let tool_def = crate::session::session_cutter(&tool)?;

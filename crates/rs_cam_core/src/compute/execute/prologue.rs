@@ -26,10 +26,20 @@
 //! default rule left out. A selection that refuses stops the op with
 //! [`OperationError::Selection`]. No op closes an open path with a chord
 //! in silence.
+//!
+//! Geometry selection P3.5: under the floor "each picked face" the prologue
+//! runs THE per-area floor rule ([`region_floors`]) after the view, and
+//! gives each closed area its own ladder: the catalogue ladder
+//! (`OperationConfig::cutting_levels`) down to the floor of that area
+//! ([`Prepared::region_ladders`]). An area with no face or a face floor at
+//! or above the top refuses with [`OperationError::Selection`], as
+//! `selection_status` refuses it.
 
 use std::borrow::Cow;
 
 use crate::compute::catalog::{GeometryRequirement, ItemUse, OperationConfig, OperationType};
+use crate::compute::config::ResolvedHeights;
+use crate::compute::floor::region_floors;
 use crate::compute::toolpath_stats::SelectionNoteFinding;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::selection::{Curves, Holes, OpItems, Regions, ResolvedSelection, view};
@@ -129,6 +139,10 @@ pub struct Prepared<'a> {
     op_type: OperationType,
     geometry: CheckedGeometry<'a>,
     territory: Territory<'a>,
+    /// P3.5: the ladder of each closed area under the floor "each picked
+    /// face", in the order of [`Prepared::regions`]. `None` for every
+    /// other floor.
+    region_ladders: Option<Vec<Vec<f64>>>,
 }
 
 impl<'a> Prepared<'a> {
@@ -184,6 +198,16 @@ impl<'a> Prepared<'a> {
         &self.territory
     }
 
+    /// Geometry selection P3.5: under the floor "each picked face", the Z
+    /// ladder of each closed area, top first, in the order of
+    /// [`Self::regions`]. Each is the catalogue ladder of the op
+    /// (`OperationConfig::cutting_levels`, with its spring passes) from
+    /// the one Top Z to the floor of that area. `None` for every other
+    /// floor: the op steps the one ladder of `ExecutionContext::cutting_levels`.
+    pub(crate) fn region_ladders(&self) -> Option<&[Vec<f64>]> {
+        self.region_ladders.as_deref()
+    }
+
     fn mismatch(&self, what: &str) -> OperationError {
         OperationError::Other(format!(
             "registry adapter mismatch: {} reads {what}, but its row's geometry is {:?}",
@@ -224,6 +248,7 @@ pub(super) fn check_inputs<'a>(
             mesh: require_mesh(ctx, name)?,
         },
     };
+    let region_ladders = region_ladders(ctx, op, &geometry)?;
     if let Some(text) = op_type.tool_refusal(ctx.tool_cfg.tool_type.cutter_kind()) {
         return Err(OperationError::InvalidTool(text));
     }
@@ -231,7 +256,42 @@ pub(super) fn check_inputs<'a>(
         op_type,
         geometry,
         territory: Territory::resolve(ctx, op),
+        region_ladders,
     })
+}
+
+/// P3.5: the ladder of each closed area under the floor "each picked
+/// face" (see [`Prepared::region_ladders`]), or `None`. THE per-area floor
+/// rule ([`region_floors`]) refuses an area with no face and a face floor
+/// at or above the top, by item.
+fn region_ladders(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+    geometry: &CheckedGeometry<'_>,
+) -> Result<Option<Vec<Vec<f64>>>, OperationError> {
+    let regions = match geometry {
+        CheckedGeometry::Items(items) | CheckedGeometry::ItemsAndMesh { items, .. } => {
+            items.regions()
+        }
+        CheckedGeometry::Mesh(_) => None,
+    };
+    let (Some(floor), Some(regions)) = (op.floor(), regions) else {
+        return Ok(None);
+    };
+    let floors = region_floors(&ctx.selection.resolved, regions, floor, ctx.heights.top_z)
+        .map_err(|refusal| OperationError::Selection(refusal.for_op(op.op_type().label())))?;
+    Ok(floors.map(|floors| {
+        floors
+            .as_slice()
+            .iter()
+            .map(|&bottom_z| {
+                op.cutting_levels(&ResolvedHeights {
+                    bottom_z,
+                    ..*ctx.heights
+                })
+            })
+            .collect()
+    }))
 }
 
 /// The items the op cuts: [`view`] over the resolved selection with the

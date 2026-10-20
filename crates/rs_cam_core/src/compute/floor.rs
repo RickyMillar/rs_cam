@@ -13,6 +13,14 @@
 //!   ops IS the floor.
 //! - The 2.5D ladder of the four ops runs from the top to that bottom
 //!   (`ops::depth::floor_ladder`).
+//! - P3.5: under [`Floor::EachFace`] each closed area of the selection is
+//!   cut to its own floor: the plane Z of its face less the depth
+//!   ([`region_floors`]). The resolved Bottom Z is the deepest of them
+//!   ([`FloorRef::EachFace`]), and the auto top is the stock top, not the
+//!   face top (ruling L-15). The prologue gives each area its own ladder
+//!   (`Prepared::region_ladders`); the Layered runner steps each area down
+//!   its own ladder (Pocket, Zigzag, Profile). Adaptive 2D refuses it until
+//!   P3.6.
 //! - A pinned Heights Bottom Z on the four ops refuses
 //!   (`ToolpathConfig::floor_conflict`).
 //!
@@ -43,6 +51,7 @@ use serde::{Deserialize, Serialize};
 
 use super::catalog::ParamRange;
 use super::config::HeightContext;
+use crate::selection::{ItemRef, RefusalCause, Regions, ResolvedSelection, SelectionRefusal};
 
 /// The floor of a Pocket, Profile, Zigzag or Adaptive 2D: one value that
 /// names its reference (ruling D9). `depth` is always "mm below the
@@ -66,8 +75,9 @@ pub enum Floor {
     /// Below the model top. A model with no mesh has no top, so this
     /// refuses there (ruling L-4).
     ModelTop { depth: f64 },
-    /// Each face region of the op selection at its own plane Z (S6). Not
-    /// yet: generation refuses it until P3.5.
+    /// Each face region of the op selection at its own plane Z less the
+    /// depth (S6, P3.5). Pocket, Zigzag and Profile cut it; Adaptive 2D
+    /// refuses it until P3.6.
     EachFace { depth: f64 },
     /// An absolute Z in the setup frame.
     Z { z: f64 },
@@ -171,17 +181,14 @@ impl Floor {
 
     /// The refusal of the floor that is known with no model and no height
     /// context: the `set_toolpath_floor` door (P3.3). A number that is not
-    /// finite, [`Floor::EachFace`] before P3.5, and a number outside
-    /// [`Self::domain`]. A floor at or above a resolved top that is not
-    /// [`Floor::Top`] needs the session, so generation refuses it.
+    /// finite, and a number outside [`Self::domain`]. A floor at or above a
+    /// resolved top that is not [`Floor::Top`] needs the session, so
+    /// generation refuses it.
     #[must_use]
     pub fn door_refusal(&self) -> Option<FloorRefusal> {
         let value = self.value();
         if !value.is_finite() {
             return Some(FloorRefusal::NotFinite);
-        }
-        if matches!(self, Self::EachFace { .. }) {
-            return Some(FloorRefusal::EachFaceNotYet);
         }
         (!self.domain().accepts(value)).then_some(FloorRefusal::OutOfDomain {
             from: self.from_token(),
@@ -206,13 +213,19 @@ impl Floor {
     ///
     /// The top is not known yet when the context is built (an auto top can
     /// follow the picked faces), so [`Floor::Top`] stays relative
-    /// ([`FloorRef::BelowTop`]). Every other reference gives a Z.
+    /// ([`FloorRef::BelowTop`]). [`Floor::EachFace`] reads `faces`: the
+    /// plane Z of the highest and of the lowest up face of the selection,
+    /// in the setup frame (P3.5). Every other reference gives a Z.
     ///
     /// # Errors
     ///
     /// [`FloorRefusal::NotFinite`], [`FloorRefusal::NoModelMesh`] (ruling
-    /// L-4) and [`FloorRefusal::EachFaceNotYet`] (P3.5).
-    pub fn resolve(&self, ctx: &HeightContext) -> Result<FloorRef, FloorRefusal> {
+    /// L-4) and [`FloorRefusal::NoFace`] (each face, and no up face).
+    pub fn resolve(
+        &self,
+        ctx: &HeightContext,
+        faces: Option<FacePlanes>,
+    ) -> Result<FloorRef, FloorRefusal> {
         if !self.value().is_finite() {
             return Err(FloorRefusal::NotFinite);
         }
@@ -224,9 +237,36 @@ impl Floor {
                 .model_top_z
                 .map(|top| FloorRef::At(top - depth))
                 .ok_or(FloorRefusal::NoModelMesh),
-            Self::EachFace { .. } => Err(FloorRefusal::EachFaceNotYet),
+            Self::EachFace { depth } => faces
+                .map(|faces| FloorRef::EachFace {
+                    highest: faces.highest - depth,
+                    deepest: faces.lowest - depth,
+                })
+                .ok_or(FloorRefusal::NoFace),
             Self::Z { z } => Ok(FloorRef::At(z)),
         }
+    }
+}
+
+/// The plane Z of the highest and of the lowest up face of a selection, in
+/// the setup frame (`ResolvedSelection::face_top_z`, `face_bottom_z`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FacePlanes {
+    /// The highest plane Z.
+    pub highest: f64,
+    /// The lowest plane Z.
+    pub lowest: f64,
+}
+
+impl FacePlanes {
+    /// The planes from the face top and the face bottom of a selection, or
+    /// `None` when it holds no up face.
+    #[must_use]
+    pub fn from_top_and_bottom(top: Option<f64>, bottom: Option<f64>) -> Option<Self> {
+        Some(Self {
+            highest: top?,
+            lowest: bottom?,
+        })
     }
 }
 
@@ -236,8 +276,18 @@ impl Floor {
 pub enum FloorRef {
     /// [`Floor::Top`]: this many mm below the resolved Top Z.
     BelowTop(f64),
-    /// Every other reference: the floor Z in the setup frame.
+    /// Every other reference except each face: the floor Z in the setup
+    /// frame.
     At(f64),
+    /// [`Floor::EachFace`] (P3.5): the highest and the deepest floor of the
+    /// face regions, in the setup frame. The Bottom Z of the op is the
+    /// deepest; each region has its own floor ([`region_floors`]).
+    EachFace {
+        /// The floor of the highest face.
+        highest: f64,
+        /// The floor of the lowest face.
+        deepest: f64,
+    },
 }
 
 impl FloorRef {
@@ -253,8 +303,91 @@ impl FloorRef {
         match self {
             Self::BelowTop(depth) => top_z - depth,
             Self::At(z) => z,
+            Self::EachFace { deepest, .. } => deepest,
         }
     }
+
+    /// The highest floor Z for the resolved `top_z`: the floor that meets
+    /// the top first. It equals [`Self::z`] for every reference except
+    /// each face, whose highest face floor is the one to check (L-16).
+    #[must_use]
+    pub fn highest_z(self, top_z: f64) -> f64 {
+        match self {
+            Self::BelowTop(_) | Self::At(_) => self.z(top_z),
+            Self::EachFace { highest, .. } => highest,
+        }
+    }
+
+    /// True for [`FloorRef::EachFace`]: the auto top does not follow the
+    /// faces (ruling L-15).
+    #[must_use]
+    pub const fn is_each_face(self) -> bool {
+        matches!(self, Self::EachFace { .. })
+    }
+}
+
+/// The floor of each closed area of an op under [`Floor::EachFace`], in
+/// the order of `Regions::as_slice` (geometry selection P3.5).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RegionFloors(Vec<f64>);
+
+impl RegionFloors {
+    /// The floor Z of each area, in the setup frame.
+    #[must_use]
+    pub fn as_slice(&self) -> &[f64] {
+        &self.0
+    }
+}
+
+/// THE per-area floor rule (geometry selection P3.5, design 5.1).
+///
+/// Under [`Floor::EachFace`] the floor of area `i` is the plane Z of its
+/// exterior face (`Regions::plane_z`) less the depth. `None` for every
+/// other floor. The prologue calls it with the resolved Top Z of the op,
+/// and `selection_status` calls it with the same top, so the status and
+/// generation give one refusal (the P2.4 rule).
+///
+/// # Errors
+///
+/// A [`SelectionRefusal`] that names the item:
+/// [`RefusalCause::NoFaceForFloor`] when the exterior of an area is a loop,
+/// a circle or the stock ring, and [`RefusalCause::FloorAboveTop`] when the
+/// floor of an area is at or above `top_z` (L-16). The caller adds the op
+/// label.
+pub fn region_floors(
+    resolved: &ResolvedSelection,
+    regions: &Regions,
+    floor: Floor,
+    top_z: f64,
+) -> Result<Option<RegionFloors>, SelectionRefusal> {
+    let Floor::EachFace { depth } = floor else {
+        return Ok(None);
+    };
+    let item_at = |index: usize| {
+        regions
+            .exterior_item(index)
+            .and_then(|at| resolved.items().get(at))
+            .map(|r| ItemRef::new(r.identity().clone()))
+    };
+    let mut floors = Vec::with_capacity(regions.as_slice().len());
+    for index in 0..regions.as_slice().len() {
+        let Some(plane_z) = regions.plane_z(index) else {
+            return Err(SelectionRefusal::new(
+                item_at(index),
+                RefusalCause::NoFaceForFloor,
+            ));
+        };
+        let floor_z = plane_z - depth;
+        // A floor that is not a number refuses too.
+        if floor_z >= top_z || floor_z.is_nan() {
+            return Err(SelectionRefusal::new(
+                item_at(index),
+                RefusalCause::FloorAboveTop { floor_z, top_z },
+            ));
+        }
+        floors.push(floor_z);
+    }
+    Ok(Some(RegionFloors(floors)))
 }
 
 /// Why a floor does not resolve. The session puts the toolpath name in
@@ -265,8 +398,9 @@ pub enum FloorRefusal {
     NotFinite,
     /// [`Floor::ModelTop`] on a toolpath whose model has no mesh (L-4).
     NoModelMesh,
-    /// [`Floor::EachFace`] before P3.5.
-    EachFaceNotYet,
+    /// [`Floor::EachFace`] on a selection with no up face (P3.5). The
+    /// prologue refuses the area by name (`RefusalCause::NoFaceForFloor`).
+    NoFace,
     /// The number is outside [`Floor::domain`] (P3.3): a depth of 0 or
     /// less below the Top Z.
     OutOfDomain {
@@ -296,10 +430,10 @@ impl std::fmt::Display for FloorRefusal {
                 "the floor reads the Model top, but the model of the toolpath has no mesh, so \
                  it has no Z extent. Set the floor from the Top Z, the stock or a Z value"
             ),
-            Self::EachFaceNotYet => write!(
+            Self::NoFace => write!(
                 f,
-                "the floor \"each picked face\" is not yet available (geometry selection \
-                 P3.5). Set the floor from the Top Z, the stock, the model or a Z value"
+                "the floor is \"each picked face\", but the selection holds no up face. Pick \
+                 faces, or set the floor from the Top Z, the stock, the model or a Z value"
             ),
             Self::OutOfDomain { from, name, value } => write!(
                 f,
@@ -331,8 +465,9 @@ const fn reference_help(floor: &Floor) -> &'static str {
             "mm below the model top; a model with no mesh has no top, so generation refuses it"
         }
         Floor::EachFace { .. } => {
-            "each face region of the op selection at its own plane Z. Not yet available: the \
-             door refuses it until geometry selection P3.5"
+            "mm below the plane Z of each picked face: each face region is cut to its own \
+             floor, from the stock top (or the pinned top). Every closed area of the selection \
+             must be a face. Adaptive 2D refuses it until geometry selection P3.6"
         }
         Floor::Z { .. } => "an absolute Z in the setup frame (frame-dependent)",
     }
@@ -353,7 +488,6 @@ pub fn floor_schema_json(default: Floor) -> serde_json::Value {
                 "field": floor.value_name(),
                 "range": floor.domain().to_json(),
                 "frame_dependent": matches!(floor, Floor::Z { .. }),
-                "available": !matches!(floor, Floor::EachFace { .. }),
                 "description": reference_help(floor),
             })
         })
@@ -425,8 +559,8 @@ mod tests {
 
     /// P3.3: the door refusal reads the domain. A Top depth of 0 or less
     /// refuses; a negative depth on another reference passes; a number that
-    /// is not finite and Each Face refuse. The `from` token is the serde
-    /// token.
+    /// is not finite refuses. P3.5: Each Face passes the door. The `from`
+    /// token is the serde token.
     #[test]
     fn the_door_reads_the_domain() {
         assert!(Floor::Top { depth: 6.0 }.door_refusal().is_none());
@@ -440,10 +574,8 @@ mod tests {
             Floor::Z { z: f64::NAN }.door_refusal(),
             Some(FloorRefusal::NotFinite)
         );
-        assert_eq!(
-            Floor::EachFace { depth: 1.0 }.door_refusal(),
-            Some(FloorRefusal::EachFaceNotYet)
-        );
+        assert_eq!(Floor::EachFace { depth: 1.0 }.door_refusal(), None);
+        assert_eq!(Floor::EachFace { depth: -1.0 }.door_refusal(), None);
         for floor in Floor::EACH_REFERENCE {
             let json = serde_json::to_value(floor).unwrap();
             assert_eq!(json["from"], serde_json::json!(floor.from_token()));

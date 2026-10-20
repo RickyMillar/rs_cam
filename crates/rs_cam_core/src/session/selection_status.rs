@@ -50,6 +50,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::compute::catalog::{GeometryRequirement, ItemUse, OperationType};
 use crate::compute::config::{BoundaryConfig, BoundarySource};
+use crate::compute::floor::Floor;
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::geo::{BoundingBox3, P2, P3};
 use crate::geometry::enriched_mesh::FaceGroupId;
@@ -290,6 +291,10 @@ pub struct SelectionReport {
     /// frame (`ResolvedSelection::face_top_z`): the auto top that
     /// [`ProjectSession::toolpath_heights`] reads (geometry selection P3.1).
     pub face_top_z: Option<f64>,
+    /// The lowest plane Z of the up faces of the selection, in the SETUP
+    /// frame (`ResolvedSelection::face_bottom_z`): the deepest floor plane
+    /// under "each picked face" (geometry selection P3.5).
+    pub face_bottom_z: Option<f64>,
 }
 
 /// One item of a model, as the `list_model_items` read gives it (geometry
@@ -573,6 +578,7 @@ impl ProjectSession {
             hole_items,
             selected,
             face_top_z: frames.setup.face_top_z(),
+            face_bottom_z: frames.setup.face_bottom_z(),
             ..SelectionReport::default()
         };
         // P4.4: the resolution states first. An item that the selection
@@ -646,6 +652,22 @@ impl ProjectSession {
         let viewed = match target {
             SelectionTarget::Op => crate::selection::view(&frames.setup, item_use),
             SelectionTarget::Boundary => crate::selection::view_boundary(&frames.setup),
+        };
+        // P3.5: under "each picked face" every closed area needs a face, and
+        // each face floor must be below the top. THE rule
+        // (`compute::floor::region_floors`) that the prologue runs, with the
+        // same top, so the status and generation give one refusal.
+        let viewed = match (viewed, target, tc.operation.floor()) {
+            (Ok((items, notes)), SelectionTarget::Op, Some(floor)) => {
+                match (items.regions(), self.each_face_top_z(tc, ctx)?) {
+                    (Some(regions), Some(top_z)) => {
+                        crate::compute::floor::region_floors(&frames.setup, regions, floor, top_z)
+                            .map(|_| (items, notes))
+                    }
+                    _ => Ok((items, notes)),
+                }
+            }
+            (viewed, _, _) => viewed,
         };
         match viewed {
             Ok((items, notes)) => {
@@ -1195,6 +1217,10 @@ struct StatusKey {
     z_rotation: ZRotation,
     world_stock: [u64; 6],
     emission_stock: [u64; 6],
+    /// P3.5: under the floor "each picked face", the floor and the Top Z
+    /// config: the per-area floor check reads both. Empty for every other
+    /// floor, so a heights edit does not rebuild the report.
+    each_face: Vec<u8>,
 }
 
 impl StatusKey {
@@ -1241,6 +1267,12 @@ impl StatusKey {
             z_rotation: ctx.z_rotation,
             world_stock: box_bits(&ctx.world_stock_bbox),
             emission_stock: box_bits(&ctx.heights_stock_bbox),
+            each_face: match (target, tc.operation.floor()) {
+                (SelectionTarget::Op, Some(floor @ Floor::EachFace { .. })) => {
+                    serde_json::to_vec(&(floor, &tc.heights.top_z)).ok()?
+                }
+                _ => Vec::new(),
+            },
         })
     }
 
@@ -1257,6 +1289,7 @@ impl StatusKey {
             && self.z_rotation == now.z_rotation
             && self.world_stock == now.world_stock
             && self.emission_stock == now.emission_stock
+            && self.each_face == now.each_face
             && self.models.len() == now.models.len()
             && self
                 .models

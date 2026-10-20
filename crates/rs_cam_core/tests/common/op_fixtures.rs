@@ -49,12 +49,12 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::export::fingerprint::ToolpathFingerprint;
 use rs_cam_core::gcode::post::{Decimals, grbl, grblhal, linuxcnc, mach3};
-use rs_cam_core::geo::{P2, P3};
+use rs_cam_core::geo::{P2, P3, V3};
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::ops::face::FaceDirection;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
+use rs_cam_core::selection::{FaceItem, Item, ItemSet, Shape, SourceRef};
 use rs_cam_core::session::{
     Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SetSimulationResolutionArgs,
     SimulationOptions, SimulationResolution, ToolpathConfig,
@@ -161,6 +161,49 @@ pub fn rectangle(x0: f64, y0: f64, x1: f64, y1: f64) -> Polygon2 {
         P2::new(x1, y1),
         P2::new(x0, y1),
     ])
+}
+
+/// The plane Z of the upper face of [`each_face_model`] (mm): inside the
+/// flat board.
+pub const EACH_FACE_UPPER_Z: f64 = -4.0;
+/// The plane Z of the lower face of [`each_face_model`] (mm).
+pub const EACH_FACE_LOWER_Z: f64 = -7.0;
+
+/// Geometry selection P3.5 (design 5.7): two up faces on the flat board.
+/// The upper face is the outline rectangle at [`EACH_FACE_UPPER_Z`] with a
+/// 16 x 12 mm hole at the centre; the lower face fills that hole at
+/// [`EACH_FACE_LOWER_Z`]. Face items with no BREP id.
+pub fn each_face_model() -> LoadedModel {
+    let face = |rings: Polygon2, plane_z: f64| {
+        Item::new(
+            SourceRef::ToolpathModel,
+            None,
+            Shape::Face(FaceItem {
+                rings,
+                plane_z,
+                normal: V3::new(0.0, 0.0, 1.0),
+                brep: None,
+            }),
+        )
+        .expect("a flat face is an item")
+    };
+    let hole = rectangle(-8.0, -6.0, 8.0, 6.0);
+    let upper = Polygon2::with_holes(
+        rectangle(
+            -OUTLINE_HALF_X,
+            -OUTLINE_HALF_Y,
+            OUTLINE_HALF_X,
+            OUTLINE_HALF_Y,
+        )
+        .exterior,
+        vec![hole.exterior.clone()],
+    );
+    let mut model = polygon_model(Vec::new(), "opgolden_each_face");
+    model.items = Arc::new(ItemSet::new(vec![
+        face(upper, EACH_FACE_UPPER_Z),
+        face(hole, EACH_FACE_LOWER_Z),
+    ]));
+    model
 }
 
 pub fn outline_model() -> LoadedModel {
@@ -286,8 +329,10 @@ fn mirror_xy(p: P2) -> P2 {
 }
 
 /// The mirrored copy of a model for [`Frame::Flipped`]. `stock` gives the
-/// height and the Z origin of the mesh mirror.
-fn mirrored_model(mut model: LoadedModel, stock: &StockConfig) -> LoadedModel {
+/// height and the Z origin of the mesh mirror and of a face plane.
+pub fn mirrored_model(mut model: LoadedModel, stock: &StockConfig) -> LoadedModel {
+    // Two reflections (Y and Z) of a vertex: (x, y, z) -> (x, -y, z_sum - z).
+    let z_sum = stock.z + 2.0 * stock.origin_z;
     let mirror_poly = |poly: &Polygon2| {
         let mut m = Polygon2::with_holes(
             poly.exterior.iter().map(|p| mirror_xy(*p)).collect(),
@@ -316,7 +361,14 @@ fn mirrored_model(mut model: LoadedModel, stock: &StockConfig) -> LoadedModel {
                     diameter: *diameter,
                     ring: mirror_poly(ring),
                 },
-                Shape::Face(_) => panic!("the flat fixtures hold no face"),
+                // Geometry selection P3.5: a face mirrors as a mesh vertex
+                // does, and its normal turns over with it.
+                Shape::Face(face) => Shape::Face(FaceItem {
+                    rings: mirror_poly(&face.rings),
+                    plane_z: z_sum - face.plane_z,
+                    normal: V3::new(face.normal.x, -face.normal.y, -face.normal.z),
+                    brep: face.brep,
+                }),
             };
             Item::new(item.source(), item.layer().map(Into::into), shape)
                 .expect("a mirrored item keeps its invariants")
@@ -326,7 +378,6 @@ fn mirrored_model(mut model: LoadedModel, stock: &StockConfig) -> LoadedModel {
     if let Some(mesh) = &model.mesh {
         // Two reflections (Y and Z): the determinant is +1, so the
         // triangle winding keeps its sense.
-        let z_sum = stock.z + 2.0 * stock.origin_z;
         let verts: Vec<P3> = mesh
             .vertices
             .iter()

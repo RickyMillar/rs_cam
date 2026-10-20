@@ -561,7 +561,8 @@ pub enum FloorParam {
         /// mm below the reference; a negative value stands above it.
         depth: f64,
     },
-    /// Each picked face at its own plane Z. Not yet available: refused.
+    /// Each picked face at its own plane Z less `depth` (Pocket, Zigzag,
+    /// Profile). Adaptive 2D refuses it until geometry selection P3.6.
     EachFace {
         /// mm below each face.
         depth: f64,

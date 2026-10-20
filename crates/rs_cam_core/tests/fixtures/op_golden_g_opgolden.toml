@@ -435,6 +435,34 @@ rest_grid_hash = "a7c4bdd066a8f57f"
 rest_region_count = 1
 rest_regions_hash = "0da8d20a13fde4c4"
 
+["pocket/each_face"]
+outcome = "ok"
+move_count = 275
+rapid_count = 93
+linear_count = 182
+arc_count = 0
+cutting_length_mm = 1947.408
+rapid_length_mm = 892.076
+bbox_min = [-16.825, -8.825, -7.0]
+bbox_max = [16.825, 8.825, 10.0]
+moves_hash = "1f3881a53bfd419a"
+span_count = 141
+spans_hash = "0607bec658ac5533"
+
+["pocket/each_face_flipped"]
+outcome = "ok"
+move_count = 263
+rapid_count = 66
+linear_count = 185
+arc_count = 12
+cutting_length_mm = 1144.215
+rapid_length_mm = 503.166
+bbox_min = [13.175, 11.175, 3.0]
+bbox_max = [46.825, 28.825, 15.0]
+moves_hash = "c8583bfa2c3a93b0"
+span_count = 117
+spans_hash = "d5f15172a81d2f61"
+
 ["pocket/fresh"]
 outcome = "ok"
 move_count = 89
@@ -476,6 +504,20 @@ bbox_max = [16.825, 7.175, 10.0]
 moves_hash = "3656a6beebde57b0"
 span_count = 77
 spans_hash = "1fd801da01fa38af"
+
+["profile/each_face"]
+outcome = "ok"
+move_count = 100
+rapid_count = 18
+linear_count = 82
+arc_count = 0
+cutting_length_mm = 871.832
+rapid_length_mm = 153.916
+bbox_min = [-23.175, -15.175, -7.0]
+bbox_max = [23.175, 15.175, 10.0]
+moves_hash = "ff479b0b2fc81978"
+span_count = 37
+spans_hash = "03cd42255916c638"
 
 ["profile/fresh"]
 outcome = "ok"
@@ -1062,6 +1104,20 @@ bbox_max = [11.5827, 11.5827, 13.0]
 moves_hash = "883cefbeb4fcd637"
 span_count = 70
 spans_hash = "62affc15890889e2"
+
+["zigzag/each_face"]
+outcome = "ok"
+move_count = 303
+rapid_count = 129
+linear_count = 174
+arc_count = 0
+cutting_length_mm = 2251.154
+rapid_length_mm = 1191.843
+bbox_min = [-16.825, -8.825, -7.0]
+bbox_max = [16.825, 7.175, 10.0]
+moves_hash = "ffcfaf52ff026f74"
+span_count = 189
+spans_hash = "fc2184eb5ed3951f"
 
 ["zigzag/fresh"]
 outcome = "ok"

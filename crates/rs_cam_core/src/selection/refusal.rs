@@ -184,6 +184,20 @@ pub enum RefusalCause {
     /// a floor. The same face points up in a flipped setup and cuts there.
     /// A machining boundary keeps a down face (`view_boundary`).
     FaceFacesDown,
+    /// The floor of the op is "each picked face" (geometry selection P3.5),
+    /// and the exterior of one of its closed areas is not a face: a loop, a
+    /// circle or the stock ring. That area has no plane Z, so it has no
+    /// floor.
+    NoFaceForFloor,
+    /// The floor of one closed area under "each picked face" is at or above
+    /// the resolved Top Z of the op (geometry selection P3.5, ruling L-16):
+    /// its ladder would be empty.
+    FloorAboveTop {
+        /// The floor Z of the area, in the setup frame.
+        floor_z: f64,
+        /// The resolved Top Z of the op, in the setup frame.
+        top_z: f64,
+    },
     /// A rule or a pick names a model that does not exist. No fallback to
     /// another model.
     MissingSource(SourceRef),
@@ -249,6 +263,14 @@ impl SelectionRefusal {
             RefusalCause::FaceFacesDown => {
                 "Pick it in a setup that faces it, or pick the face above it"
             }
+            RefusalCause::NoFaceForFloor => {
+                "Pick faces only, or set the floor from another reference (the Top Z, \
+                 the stock, the model or a Z value)"
+            }
+            RefusalCause::FloorAboveTop { .. } => {
+                "Set a larger floor depth, set the Top Z above the face, or remove the \
+                 face from the selection"
+            }
             RefusalCause::MissingSource(_) => {
                 "Set an existing model on the toolpath, import the model again, \
                  or remove the rule or the pick that names it"
@@ -290,6 +312,15 @@ impl SelectionRefusal {
                 "the face is not flat and horizontal in the setup frame".to_owned()
             }
             RefusalCause::FaceFacesDown => "this face faces down in this setup".to_owned(),
+            RefusalCause::NoFaceForFloor => {
+                "the floor is \"each picked face\", and this closed area is not a face, so it \
+                 has no floor"
+                    .to_owned()
+            }
+            RefusalCause::FloorAboveTop { floor_z, top_z } => format!(
+                "the floor of this face, Z {floor_z:.3}, is at or above the Top Z {top_z:.3}, \
+                 so it has nothing to cut"
+            ),
             RefusalCause::MissingSource(source) => {
                 let name = match source {
                     SourceRef::ToolpathModel => "the model of the toolpath".to_owned(),

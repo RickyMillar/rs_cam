@@ -53,6 +53,20 @@
 //! a rapid-order barrier, so the rapid-order stage reorders runs inside one
 //! level and never moves a run across a level.
 //!
+//! # A ladder per area (geometry selection P3.5)
+//!
+//! Under the floor "each picked face" the prologue gives each closed area
+//! its own ladder (`Prepared::region_ladders`): the catalogue ladder from
+//! the one Top Z to the floor of that area. [`run_layered`] then steps each
+//! outline down its own ladder. Region-first takes each outline to its own
+//! floor. Level-first walks the union of the ladders, top first: each entry
+//! is a pair (Z, repeat index), so a spring pass stays a distinct entry, and
+//! an outline cuts at an entry only when its own ladder holds the same pair
+//! (the same Z bits, never a float tolerance). [`LevelInfo`] gives the
+//! position and the final Z in the outline's own ladder, so Profile stands
+//! its tabs on the floor of its own area. With one ladder (every other
+//! floor) the runner is the runner before P3.5, bit for bit.
+//!
 //! # The retract rule
 //!
 //! Region-first keeps the rule of the old hand-written ladder (D3 deleted
@@ -366,14 +380,137 @@ impl<G> OutlineLayers<G> {
     }
 }
 
+/// The ladders of the outlines of one run (geometry selection P3.5): one
+/// shared ladder, or one ladder per closed area under the floor "each
+/// picked face".
+struct Ladders {
+    /// Each distinct ladder, top first.
+    ladders: Vec<Vec<f64>>,
+    /// For each outline: the index of its ladder in `ladders`.
+    of_outline: Vec<usize>,
+}
+
+impl Ladders {
+    /// The ladder at `index`; empty for an index that names none.
+    fn ladder(&self, index: usize) -> &[f64] {
+        self.ladders.get(index).map_or(&[], Vec::as_slice)
+    }
+
+    /// The ladders of `outline_count` outlines: the per-area ladders of the
+    /// prologue when it gives them, else `shared` for every outline. Each
+    /// per-area ladder passes the L-16 guard ([`effective_levels`]).
+    fn new(
+        prepared: &Prepared<'_>,
+        shared: Vec<f64>,
+        outline_count: usize,
+    ) -> Result<Self, OperationError> {
+        let Some(per_area) = prepared.region_ladders() else {
+            return Ok(Self {
+                ladders: vec![shared],
+                of_outline: vec![0; outline_count],
+            });
+        };
+        if per_area.len() != outline_count {
+            return Err(OperationError::Other(format!(
+                "registry adapter mismatch: {} has {} area ladders for {outline_count}                  outlines; only an op that steps the closed areas of its selection takes                  the floor \"each picked face\"",
+                prepared.op_type().name(),
+                per_area.len()
+            )));
+        }
+        Ok(Self {
+            ladders: per_area
+                .iter()
+                .map(|ladder| effective_levels(ladder))
+                .collect::<Result<_, _>>()?,
+            of_outline: (0..outline_count).collect(),
+        })
+    }
+}
+
+/// The union of the ladders for level-first order (P3.5): its entries top
+/// first, and where each ladder holds each entry.
+struct UnionLadder {
+    /// The Z of each entry, top first. A spring pass is its own entry.
+    z: Vec<f64>,
+    /// For each ladder: at each entry, the position of that entry in the
+    /// ladder, or `None` when the ladder does not hold it.
+    at: Vec<Vec<Option<usize>>>,
+}
+
+impl UnionLadder {
+    /// The position of union entry `entry` in ladder `ladder`, or `None`
+    /// when that ladder does not hold it.
+    fn position(&self, ladder: usize, entry: usize) -> Option<usize> {
+        self.at
+            .get(ladder)
+            .and_then(|at| at.get(entry))
+            .copied()
+            .flatten()
+    }
+
+    /// The union of `ladders`. One ladder is its own union, in its own
+    /// order, so the runner is the runner before P3.5. Several ladders
+    /// merge by (Z, repeat index): Z top first by `f64::total_cmp`, then the
+    /// repeat index. Two entries are one entry only when the Z bits and the
+    /// repeat index are equal: no float tolerance, so a spring pass never
+    /// merges with its level and never doubles.
+    fn of(ladders: &[Vec<f64>]) -> Self {
+        if let [only] = ladders {
+            return Self {
+                z: only.clone(),
+                at: vec![(0..only.len()).map(Some).collect()],
+            };
+        }
+        let pairs_of = |ladder: &[f64]| -> Vec<(f64, usize)> {
+            ladder
+                .iter()
+                .enumerate()
+                .map(|(i, &z)| {
+                    let repeat = ladder
+                        .iter()
+                        .take(i)
+                        .filter(|earlier| earlier.total_cmp(&z).is_eq())
+                        .count();
+                    (z, repeat)
+                })
+                .collect()
+        };
+        let order = |a: &(f64, usize), b: &(f64, usize)| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1));
+        let pairs: Vec<Vec<(f64, usize)>> = ladders.iter().map(|l| pairs_of(l)).collect();
+        let mut entries: Vec<(f64, usize)> = pairs.iter().flatten().copied().collect();
+        entries.sort_by(order);
+        entries.dedup_by(|a, b| order(a, b).is_eq());
+        let at = pairs
+            .iter()
+            .map(|ladder| {
+                let mut at = vec![None; entries.len()];
+                for (position, pair) in ladder.iter().enumerate() {
+                    if let Ok(entry) = entries.binary_search_by(|e| order(e, pair))
+                        && let Some(slot) = at.get_mut(entry)
+                    {
+                        *slot = Some(position);
+                    }
+                }
+                at
+            })
+            .collect();
+        Self {
+            z: entries.into_iter().map(|(z, _)| z).collect(),
+            at,
+        }
+    }
+}
+
 /// THE runner of a Layered op. See the module doc for what it owns.
 pub(crate) fn run_layered<O: LayeredOp>(
     op: &O,
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
 ) -> Result<GeneratedToolpath, OperationError> {
-    let levels = op.ladder(ctx)?;
-    let outlines = area_outlines_less_obstacles(op, prepared, op.outlines(prepared)?, &levels);
+    let inputs = op.outlines(prepared)?;
+    let ladders = Ladders::new(prepared, op.ladder(ctx)?, inputs.len())?;
+    let (outlines, ladder_of) = area_outlines_less_obstacles(op, prepared, inputs, &ladders);
+    let union = UnionLadder::of(&ladders.ladders);
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = ctx.cancel_fn();
     let tool_radius = ctx.tool_def.radius();
@@ -406,20 +543,14 @@ pub(crate) fn run_layered<O: LayeredOp>(
         // is dropped after its last level. Peak memory does not grow with
         // the outline count.
         RegionOrdering::ByArea => {
-            for outline in outlines.iter() {
-                let layers = prepare_outline(
-                    op,
-                    ctx,
-                    unguarded,
-                    tool_radius,
-                    &cancel_fn,
-                    outline,
-                    &levels,
-                )?;
+            for (outline, &l) in outlines.iter().zip(&ladder_of) {
+                let levels = ladders.ladder(l);
+                let layers =
+                    prepare_outline(op, ctx, unguarded, tool_radius, &cancel_fn, outline, levels)?;
                 let mut emitted = false;
                 for i in 0..levels.len() {
                     check_cancel(&cancel_fn)?;
-                    let Some(piece) = emit_at(op, &layers, &levels, i, &rules, &cancel_fn)? else {
+                    let Some(piece) = emit_at(op, &layers, levels, i, &rules, &cancel_fn)? else {
                         continue;
                     };
                     if i > 0 && emitted {
@@ -434,7 +565,7 @@ pub(crate) fn run_layered<O: LayeredOp>(
         // is prepared before the first level.
         RegionOrdering::Global => {
             let mut layers = Vec::with_capacity(outlines.len());
-            for outline in outlines.iter() {
+            for (outline, &l) in outlines.iter().zip(&ladder_of) {
                 layers.push(prepare_outline(
                     op,
                     ctx,
@@ -442,13 +573,19 @@ pub(crate) fn run_layered<O: LayeredOp>(
                     tool_radius,
                     &cancel_fn,
                     outline,
-                    &levels,
+                    ladders.ladder(l),
                 )?);
             }
-            for i in 0..levels.len() {
-                for outline_layers in &layers {
+            for entry in 0..union.z.len() {
+                for (outline_layers, &l) in layers.iter().zip(&ladder_of) {
+                    // P3.5: the outline cuts at this entry only when its own
+                    // ladder holds it, at its own position.
+                    let Some(i) = union.position(l, entry) else {
+                        continue;
+                    };
                     check_cancel(&cancel_fn)?;
-                    let Some(piece) = emit_at(op, outline_layers, &levels, i, &rules, &cancel_fn)?
+                    let levels = ladders.ladder(l);
+                    let Some(piece) = emit_at(op, outline_layers, levels, i, &rules, &cancel_fn)?
                     else {
                         continue;
                     };
@@ -468,7 +605,9 @@ pub(crate) fn run_layered<O: LayeredOp>(
         Some(link) => link_after_plan(&link, ctx, territory, combined),
         None => combined,
     };
-    Ok(op.annotate(op.spans(linked, &levels), ctx.semantic_ctx))
+    // P3.5: the spans snap to the union of the ladders (one ladder: the
+    // ladder itself).
+    Ok(op.annotate(op.spans(linked, &union.z), ctx.semantic_ctx))
 }
 
 /// K3: the outlines of an area op ([`RestUse::LevelClip`]: Pocket,
@@ -477,32 +616,72 @@ pub(crate) fn run_layered<O: LayeredOp>(
 /// ladder. The op then plans around a clamp, and a row links to the next
 /// row on its own side instead of a lift over the clamp. A contour op and
 /// an input with no outline keep their outlines.
+///
+/// The answer holds, for each outline, the index of its ladder in
+/// `ladders`. P3.5: with one ladder this is ONE call, as before P3.5 (the
+/// K3 golden). With a ladder per area, each run of neighbour outlines on
+/// one ladder is one call at the lowest level of that ladder, and each
+/// clipped piece keeps the ladder of its run. The runs keep the order of
+/// the areas (ruling L-7).
 fn area_outlines_less_obstacles<'p, O: LayeredOp>(
     op: &O,
     prepared: &Prepared<'_>,
     outlines: Cow<'p, [O::Input]>,
-    levels: &[f64],
-) -> Cow<'p, [O::Input]> {
+    ladders: &Ladders,
+) -> (Cow<'p, [O::Input]>, Vec<usize>) {
+    let lowest = |levels: &[f64]| levels.iter().copied().fold(f64::INFINITY, f64::min);
+    let as_is = |outlines: Cow<'p, [O::Input]>| (outlines, ladders.of_outline.clone());
     if op.rest_use() != RestUse::LevelClip {
-        return outlines;
+        return as_is(outlines);
     }
-    let lowest = levels.iter().copied().fold(f64::INFINITY, f64::min);
     let Some(polygons) = outlines
         .iter()
         .map(|input| input.outline().cloned())
         .collect::<Option<Vec<Polygon2>>>()
     else {
-        return outlines;
+        return as_is(outlines);
     };
-    match prepared
-        .territory()
-        .area_outlines(Cow::Borrowed(polygons.as_slice()), lowest)
+    let territory = prepared.territory();
+    if let [only] = ladders.ladders.as_slice() {
+        return match territory.area_outlines(Cow::Borrowed(polygons.as_slice()), lowest(only)) {
+            Cow::Borrowed(_) => as_is(outlines),
+            Cow::Owned(clipped) => {
+                let pieces = O::Input::from_polygons(Cow::Owned(clipped)).into_owned();
+                let count = pieces.len();
+                (Cow::Owned(pieces), vec![0; count])
+            }
+        };
+    }
+    // The runs of neighbour outlines on one ladder: (ladder, polygons,
+    // inputs).
+    let mut runs: Vec<(usize, Vec<Polygon2>, Vec<O::Input>)> = Vec::new();
+    for ((polygon, input), &ladder) in polygons
+        .into_iter()
+        .zip(outlines.iter())
+        .zip(&ladders.of_outline)
     {
-        Cow::Borrowed(_) => outlines,
-        Cow::Owned(clipped) => {
-            Cow::Owned(O::Input::from_polygons(Cow::Owned(clipped)).into_owned())
+        match runs.last_mut() {
+            Some((run_ladder, run_polygons, run_inputs)) if *run_ladder == ladder => {
+                run_polygons.push(polygon);
+                run_inputs.push(input.clone());
+            }
+            Some(_) | None => runs.push((ladder, vec![polygon], vec![input.clone()])),
         }
     }
+    let mut pieces: Vec<O::Input> = Vec::with_capacity(outlines.len());
+    let mut ladder_of = Vec::with_capacity(outlines.len());
+    for (ladder, run_polygons, run_inputs) in runs {
+        let run_pieces = match territory.area_outlines(
+            Cow::Borrowed(run_polygons.as_slice()),
+            lowest(ladders.ladder(ladder)),
+        ) {
+            Cow::Borrowed(_) => run_inputs,
+            Cow::Owned(clipped) => O::Input::from_polygons(Cow::Owned(clipped)).into_owned(),
+        };
+        ladder_of.extend(std::iter::repeat_n(ladder, run_pieces.len()));
+        pieces.extend(run_pieces);
+    }
+    (Cow::Owned(pieces), ladder_of)
 }
 
 /// The runner's per-level rest inputs: the `ContourFilter` rule and its

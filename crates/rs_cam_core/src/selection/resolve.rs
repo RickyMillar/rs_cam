@@ -250,6 +250,20 @@ impl ResolvedSelection {
     /// A down face gives no top (geometry selection P3.4): its material is
     /// above its plane, so its plane is not the top of the material.
     pub fn face_top_z(&self) -> Option<f64> {
+        self.up_face_planes().reduce(f64::max)
+    }
+
+    /// The lowest plane Z of the UP faces in the selection, or `None` when
+    /// the selection holds no up face (geometry selection P3.5). Under the
+    /// floor "each picked face" it is the deepest region plane, so the
+    /// session reads it as the Bottom Z of the op. Call it after
+    /// [`Self::to_setup_frame`], as [`Self::face_top_z`].
+    pub fn face_bottom_z(&self) -> Option<f64> {
+        self.up_face_planes().reduce(f64::min)
+    }
+
+    /// The finite plane Z of each UP face, in item order.
+    fn up_face_planes(&self) -> impl Iterator<Item = f64> + '_ {
         self.items
             .iter()
             .filter_map(|r| match r.item.shape() {
@@ -261,7 +275,6 @@ impl ResolvedSelection {
                 | Shape::Circle { .. } => None,
             })
             .filter(|z| z.is_finite())
-            .reduce(f64::max)
     }
 
     /// THE frame door: the items of a model move into the work plane of

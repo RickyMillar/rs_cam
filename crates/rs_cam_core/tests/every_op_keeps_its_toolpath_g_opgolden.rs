@@ -36,6 +36,10 @@
 //! - W6.3.0 non-default arms of the height-field ops: an active slope band
 //!   and the link stage of Drop Cutter, the iso field of Scallop, the
 //!   outside-in Spiral and the bottom-up Ramp.
+//! - `each_face` (geometry selection P3.5, design 5.7): Pocket, Zigzag and
+//!   Profile under the floor "each picked face" on two picked faces at two
+//!   Z (`op_fixtures::each_face_model`), and the Pocket on a flipped setup.
+//!   Adaptive 2D gets its arm in P3.6.
 //!
 //! # The fingerprint
 //!
@@ -85,6 +89,7 @@ use rs_cam_core::compute::catalog::{OperationConfig, OperationType, RestUse};
 use rs_cam_core::compute::config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, StockSource,
 };
+use rs_cam_core::compute::floor::Floor;
 use rs_cam_core::compute::operation_configs::{
     Adaptive3dEntryStyle, ClearingStrategy, DrillCycleType, PocketPattern, ProjectCurveDirection,
     ProjectCurveProjection, ProjectCurveSide, RegionOrdering, SpiralDirection,
@@ -93,9 +98,10 @@ use rs_cam_core::finish::pencil::PencilDetector;
 use rs_cam_core::finish::unified_finish::ClaimsReference;
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::ops::profile::ProfileSide;
-use rs_cam_core::selection::Selection;
+use rs_cam_core::selection::{MatchKey, Selection, SelectionEdit};
 use rs_cam_core::session::{
-    AddModelArgs, Command, ProjectSession, SetBoundaryConfigArgs, SetToolpathModelArgs,
+    AddModelArgs, Command, EditSelectionArgs, ProjectSession, SelectionTarget,
+    SetBoundaryConfigArgs, SetToolpathModelArgs,
 };
 
 /// The environment switch that rewrites the golden file.
@@ -327,7 +333,8 @@ fn project_curve_from_below(op: &mut OperationConfig) {
 /// wider than each gap of [`split_curve_model`] (1 mm and 2 mm).
 const PROJECT_CURVE_CHAIN_MM: f64 = 3.0;
 
-/// The curve a Project Curve case projects.
+/// The curve a Project Curve case projects, or the faces an `each_face`
+/// case cuts.
 #[derive(Clone, Copy)]
 enum CurveModel {
     /// The fixture curve (`common::op_fixtures::curve_model`).
@@ -336,6 +343,51 @@ enum CurveModel {
     Split,
     /// [`square_curve_model`]: one closed square (the side compensation).
     Square,
+    /// P3.5: `common::op_fixtures::each_face_model` (mirrored on a flipped
+    /// setup), with both faces picked ([`use_faces`]).
+    Faces,
+}
+
+/// P3.5: the floor "each picked face", depth 0: each face is its own
+/// floor.
+fn each_face(op: &mut OperationConfig) {
+    let floor = Floor::EachFace { depth: 0.0 };
+    match op {
+        OperationConfig::Pocket(cfg) => cfg.floor = floor,
+        OperationConfig::Zigzag(cfg) => cfg.floor = floor,
+        OperationConfig::Profile(cfg) => cfg.floor = floor,
+        _ => unreachable!("an each_face arm on an op with no P3.5 floor"),
+    }
+}
+
+/// The P3.5 arms: op, arm, frame. All on fresh stock, on
+/// [`CurveModel::Faces`].
+const P35_CASES: &[(OperationType, &str, Frame)] = &[
+    (OperationType::Pocket, "each_face", Frame::TopUp),
+    (OperationType::Zigzag, "each_face", Frame::TopUp),
+    (OperationType::Profile, "each_face", Frame::TopUp),
+    (OperationType::Pocket, "each_face_flipped", Frame::Flipped),
+];
+
+/// Cut the faces of `each_face_model` with toolpath `index`: bind the
+/// model (mirrored on a flipped setup) and pick both faces.
+fn use_faces(session: &mut ProjectSession, index: usize, frame: Frame) {
+    let model = match frame {
+        Frame::TopUp => common::op_fixtures::each_face_model(),
+        Frame::Flipped => common::op_fixtures::mirrored_model(
+            common::op_fixtures::each_face_model(),
+            &common::op_fixtures::flat_stock(),
+        ),
+    };
+    let picks: Vec<MatchKey> = model.items.iter().map(|item| item.key().clone()).collect();
+    use_curve(session, index, model);
+    let _ = session
+        .apply(Command::EditSelection(EditSelectionArgs {
+            index,
+            target: SelectionTarget::Op,
+            edit: SelectionEdit::Replace(Box::new(Selection::from_picks(picks))),
+        }))
+        .expect("pick both faces");
 }
 
 /// The W6.5.0 arms: op, arm, tweak, frame, curve. All on fresh stock.
@@ -691,6 +743,17 @@ fn cases() -> Vec<Case> {
             curve: *curve,
         });
     }
+    for (op, arm, frame) in P35_CASES {
+        cases.push(Case {
+            op: *op,
+            arm,
+            tweak: each_face,
+            source: Source::Fresh,
+            regions: false,
+            frame: *frame,
+            curve: CurveModel::Faces,
+        });
+    }
     for &op in REGION_OPS {
         cases.push(Case {
             op,
@@ -782,6 +845,7 @@ fn run(case: &Case) -> Generated {
         CurveModel::Fixture => {}
         CurveModel::Split => use_curve(&mut session, index, split_curve_model()),
         CurveModel::Square => use_curve(&mut session, index, square_curve_model()),
+        CurveModel::Faces => use_faces(&mut session, index, case.frame),
     }
     if rest {
         run_prior(&mut session);
@@ -1042,6 +1106,45 @@ fn every_op_keeps_its_toolpath() {
         actual["drop_cutter/slope_band"].moves_hash,
         "drop_cutter/slope_band_hookup: the link stage changes nothing, so the arm proves nothing"
     );
+
+    // P3.5 non-vacuity: each `each_face` arm cuts, and its lowest Z is the
+    // floor of the lower face, so the floor rule acts. The cut of the
+    // flipped arm is the cut of the top-up arm moved by `-origin` (the
+    // flipped frame of `op_fixtures`), so the frame door of the face planes
+    // holds: the XY box and the lowest Z. The highest Z is the retract
+    // plane, which each frame floors at its own stock top, so it is not
+    // compared.
+    for (op, arm, frame) in P35_CASES {
+        let key = format!("{}/{arm}", op.kind_str());
+        let got = &actual[&key];
+        assert_eq!(got.outcome, "ok", "{key}: the arm refused");
+        assert!(got.move_count > 0, "{key}: the arm emits no moves");
+        if *frame == Frame::TopUp {
+            assert!(
+                (got.bbox_min[2] - common::op_fixtures::EACH_FACE_LOWER_Z).abs() < 1e-6,
+                "{key}: the lowest Z {} is not the floor of the lower face",
+                got.bbox_min[2]
+            );
+        }
+    }
+    let stock = common::op_fixtures::flat_stock();
+    let origin = [stock.origin_x, stock.origin_y, stock.origin_z];
+    let (top_up, flipped) = (
+        &actual["pocket/each_face"],
+        &actual["pocket/each_face_flipped"],
+    );
+    for (i, shift) in origin.iter().enumerate() {
+        assert!(
+            (flipped.bbox_min[i] - (top_up.bbox_min[i] - shift)).abs() < 1e-6
+                && (i == 2 || (flipped.bbox_max[i] - (top_up.bbox_max[i] - shift)).abs() < 1e-6),
+            "pocket/each_face_flipped is not the top-up arm moved by -origin on axis {i}: \
+             {:?}..{:?} against {:?}..{:?}",
+            flipped.bbox_min,
+            flipped.bbox_max,
+            top_up.bbox_min,
+            top_up.bbox_max
+        );
+    }
 
     if std::env::var_os(BLESS_ENV).is_some() {
         write_golden(&actual);
