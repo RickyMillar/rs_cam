@@ -19,7 +19,9 @@ use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::ops::adaptive_shared::BlendedMove;
 use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::Toolpath;
-use crate::trace::debug_trace::{HotspotRecord, ToolpathDebugBounds2, ToolpathDebugContext};
+use crate::trace::debug_trace::{
+    DebugSpanKind, HotspotRecord, ToolpathDebugBounds2, ToolpathDebugContext,
+};
 
 use std::time::Instant;
 
@@ -775,7 +777,8 @@ pub(crate) fn adaptive_segments_with_debug(
     // all regions of the polygon. Uses tool_diameter spacing so each line
     // creates a slot the adaptive spiral can expand from.
     if slot_clearing {
-        let slot_scope = debug.map(|ctx| ctx.start_span("slot_clearing", "Slot clearing"));
+        let slot_scope =
+            debug.map(|ctx| ctx.start_span(DebugSpanKind::SlotClearing, "Slot clearing"));
         let (x_min, y_min, x_max, y_max) = polygon_bbox(&polygon.exterior);
         let w = x_max - x_min;
         let h = y_max - y_min;
@@ -856,7 +859,8 @@ pub(crate) fn adaptive_segments_with_debug(
         crate::adaptive::PathStrategy2d::ContourSpiral
     ) && let Some(starter_end) = helical_entry_pos
     {
-        let spiral_scope = debug.map(|ctx| ctx.start_span("contour_spiral", "Contour spiral"));
+        let spiral_scope =
+            debug.map(|ctx| ctx.start_span(DebugSpanKind::ContourSpiral, "Contour spiral"));
         let applied = super::spiral::spiral_passes(
             &mut grid,
             &machinable_mask,
@@ -921,8 +925,8 @@ pub(crate) fn adaptive_segments_with_debug(
         let pass_started = Instant::now();
         let material_before = grid.material_fraction();
         let material_count_before = grid.material_count;
-        let pass_scope =
-            debug.map(|ctx| ctx.start_span("adaptive_pass", format!("Pass {pass_count}")));
+        let pass_scope = debug
+            .map(|ctx| ctx.start_span(DebugSpanKind::AdaptivePass, format!("Pass {pass_count}")));
         if let Some(scope) = pass_scope.as_ref() {
             scope.set_z_level(cut_depth);
             scope.set_counter("material_fraction_before", material_before);
@@ -939,7 +943,7 @@ pub(crate) fn adaptive_segments_with_debug(
         // through to the boundary walk otherwise.
         let entry_scope = pass_ctx
             .as_ref()
-            .map(|ctx| ctx.start_span("entry_search", format!("Entry {pass_count}")));
+            .map(|ctx| ctx.start_span(DebugSpanKind::EntrySearch, format!("Entry {pass_count}")));
         let mut entered_by_hop = false;
         let entry = if pass_count == 1 {
             if let Some(p) = helical_entry_pos {
@@ -1349,9 +1353,12 @@ pub(crate) fn adaptive_segments_with_debug(
             }
         }
         if was_idle && !holds_pass_load {
-            let forced_clear_scope = pass_ctx
-                .as_ref()
-                .map(|ctx| ctx.start_span("forced_clear", format!("Forced clear {pass_count}")));
+            let forced_clear_scope = pass_ctx.as_ref().map(|ctx| {
+                ctx.start_span(
+                    DebugSpanKind::ForcedClear,
+                    format!("Forced clear {pass_count}"),
+                )
+            });
             grid.clear_circle(cx, cy, tool_radius * 2.0);
             segments.push(AdaptiveSegment::Marker(AdaptiveRuntimeEvent::ForcedClear {
                 pass_index: pass_count,
@@ -1436,7 +1443,8 @@ pub(crate) fn adaptive_segments_with_debug(
         }
     }
 
-    let cleanup_scope = debug.map(|ctx| ctx.start_span("boundary_cleanup", "Boundary cleanup"));
+    let cleanup_scope =
+        debug.map(|ctx| ctx.start_span(DebugSpanKind::BoundaryCleanup, "Boundary cleanup"));
     for (contour_idx, boundary) in contours.iter().enumerate() {
         check_cancel(cancel)?;
         let marker_at = segments.len();

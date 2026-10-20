@@ -12,7 +12,7 @@ use crate::ops::waterline::waterline_contours_with_cancel;
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::surface::slope::{SlopeMap, SurfaceHeightmap};
 use crate::tool::MillingCutter;
-use crate::trace::debug_trace::ToolpathDebugContext;
+use crate::trace::debug_trace::{DebugSpanKind, ToolpathDebugContext};
 use std::collections::VecDeque;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -1618,7 +1618,7 @@ pub(super) fn waterline_cleanup(
     let t_waterline = Instant::now();
     let waterline_scope = debug_ctx.map(|ctx| {
         ctx.start_span(
-            "waterline_cleanup",
+            DebugSpanKind::WaterlineCleanup,
             format!("Waterline cleanup Z {:.3}", z_level),
         )
     });
@@ -2406,7 +2406,7 @@ fn clear_one_region(
 
     let region_scope = level_ctx.as_ref().map(|debug_ctx| {
         debug_ctx.start_span(
-            "agent2d_region",
+            DebugSpanKind::Agent2dRegion,
             format!(
                 "region {}/{} @ Z {:.3}",
                 region_idx + 1,
@@ -2918,7 +2918,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
         } else {
             format!("Z {:.3}", z_level)
         };
-        debug_ctx.start_span("z_level", label)
+        debug_ctx.start_span(DebugSpanKind::ZLevel, label)
     });
     if let Some(scope) = level_scope.as_ref() {
         scope.set_z_level(z_level);

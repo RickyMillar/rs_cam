@@ -568,7 +568,9 @@ pub(crate) use curve_engrave::{
     generate_chamfer, generate_inlay, generate_inlay_plug, generate_project_curve, generate_vcarve,
 };
 use dressup_apply::attach_generic_rest_analysis;
-pub use dressup_apply::{DRESSUP_PIPELINE, DressupContext, DressupStage, apply_dressups};
+pub use dressup_apply::{
+    DRESSUP_PIPELINE, DressupContext, DressupStage, DressupStep, apply_dressups,
+};
 pub use drilling::build_drill_op_for_config;
 pub(crate) use drilling::{generate_alignment_pin_drill, generate_drill};
 pub(crate) use findings::OffsetFailures;

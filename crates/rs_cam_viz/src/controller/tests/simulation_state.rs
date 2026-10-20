@@ -364,7 +364,10 @@ fn toolpath_results_persist_debug_trace_metadata() {
     let recorder =
         rs_cam_core::trace::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
     let ctx = recorder.root_context();
-    let span = ctx.start_span("core_generate", "Generate");
+    let span = ctx.start_span(
+        rs_cam_core::trace::debug_trace::DebugSpanKind::CoreGenerate,
+        "Generate",
+    );
     span.finish();
     let trace = Arc::new(recorder.finish());
     let semantic_recorder = rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder::new(
@@ -447,7 +450,10 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
     let recorder =
         rs_cam_core::trace::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
     let ctx = recorder.root_context();
-    let span = ctx.start_span("adaptive_pass", "Pass 1");
+    let span = ctx.start_span(
+        rs_cam_core::trace::debug_trace::DebugSpanKind::AdaptivePass,
+        "Pass 1",
+    );
     span.finish();
     let trace = Arc::new(recorder.finish());
     let semantic_recorder = rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder::new(

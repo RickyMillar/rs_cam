@@ -930,8 +930,9 @@ pub struct DressupConfig {
     /// `Some` when the segment-merge dressup runs.
     pub segment_merge: Option<SegmentMergeParams>,
     /// Feed-rate optimisation. This one keeps the flat bool-plus-value
-    /// shape: its only reader outside `compute/` is a fixture in
-    /// `tool_load/`, which another session owns. See the commit body.
+    /// shape (CUT-13 holdout, F016 not folded): its values have no
+    /// [`DressupFieldDef::owner`], so they stay settable and stored while
+    /// the dressup is off.
     pub feed_optimization: bool,
     pub feed_max_rate: f64,
     pub feed_ramp_rate: f64,
@@ -1048,6 +1049,47 @@ impl From<DressupConfig> for DressupConfigWire {
     }
 }
 
+/// One dressup a toolpath can turn on, named by its enable key.
+///
+/// F016: the enable keys used to be `&str` matches that ended in a wildcard
+/// arm, so a dressup missing from one of them read as "off" and as "owns no
+/// value". Every decision on a dressup is now an exhaustive match on this
+/// enum, and a new dressup is a compile error until each decision names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DressupKey {
+    EntryStyle,
+    Dogbone,
+    LeadInOut,
+    LinkMoves,
+    ArcFitting,
+    SegmentMerge,
+    FeedOptimization,
+    OptimizeRapidOrder,
+}
+
+impl DressupKey {
+    /// Every dressup, in the order the field table lists them.
+    pub const ALL: [Self; 8] = crate::all_variants!(DressupKey:
+        EntryStyle, Dogbone, LeadInOut, LinkMoves, ArcFitting, SegmentMerge, FeedOptimization,
+        OptimizeRapidOrder,
+    );
+
+    /// The wire key that turns the dressup on: a `DressupConfig` field name.
+    #[must_use]
+    pub const fn as_key(self) -> &'static str {
+        match self {
+            Self::EntryStyle => "entry_style",
+            Self::Dogbone => "dogbone",
+            Self::LeadInOut => "lead_in_out",
+            Self::LinkMoves => "link_moves",
+            Self::ArcFitting => "arc_fitting",
+            Self::SegmentMerge => "segment_merge",
+            Self::FeedOptimization => "feed_optimization",
+            Self::OptimizeRapidOrder => "optimize_rapid_order",
+        }
+    }
+}
+
 /// One published dressup field: the wire name and what the field does.
 ///
 /// CMP-17: the MCP `set_dressup_config` description used to be a hand-written
@@ -1059,6 +1101,13 @@ pub struct DressupFieldDef {
     pub name: &'static str,
     /// What the field does, in one line.
     pub description: &'static str,
+    /// The dressup whose `Option` holds this value (CUT-13), or `None` for a
+    /// field that lives on `DressupConfig` itself (an enable key, the entry
+    /// values, the feed-optimisation values). `set_dressup_field` refuses a
+    /// value whose owner is off: the round trip would drop it.
+    /// `the_owner_column_matches_the_round_trip` holds this column against
+    /// the wire form.
+    pub owner: Option<DressupKey>,
 }
 
 impl DressupConfig {
@@ -1073,90 +1122,112 @@ impl DressupConfig {
         DressupFieldDef {
             name: "entry_style",
             description: "how the tool enters the cut: none, ramp or helix",
+            owner: None,
         },
         DressupFieldDef {
             name: "ramp_angle",
             description: "ramp entry angle (degrees)",
+            owner: None,
         },
         DressupFieldDef {
             name: "helix_radius",
             description: "helix entry radius (mm); null = 0.3 x tool diameter (repo rule), capped at the flat bottom",
+            owner: None,
         },
         DressupFieldDef {
             name: "helix_pitch",
             description: "helix entry pitch per turn (mm)",
+            owner: None,
         },
         DressupFieldDef {
             name: "entry_clearance_mm",
             description: "height above the material where a helix or ramp entry starts (mm)",
+            owner: None,
         },
         DressupFieldDef {
             name: "dogbone",
             description: "add dogbone overcuts at inside corners",
+            owner: None,
         },
         DressupFieldDef {
             name: "dogbone_angle",
             description: "corner angle at or below which a dogbone is cut (degrees)",
+            owner: Some(DressupKey::Dogbone),
         },
         DressupFieldDef {
             name: "lead_in_out",
             description: "add tangential lead-in and lead-out arcs",
+            owner: None,
         },
         DressupFieldDef {
             name: "lead_radius",
             description: "lead-in and lead-out arc radius (mm)",
+            owner: Some(DressupKey::LeadInOut),
         },
         DressupFieldDef {
             name: "lead_in_feed_rate",
             description: "feed for the lead-in arc (mm/min); unset inherits the cutting feed",
+            owner: Some(DressupKey::LeadInOut),
         },
         DressupFieldDef {
             name: "lead_out_feed_rate",
             description: "feed for the lead-out arc (mm/min); unset inherits the cutting feed",
+            owner: Some(DressupKey::LeadInOut),
         },
         DressupFieldDef {
             name: "link_moves",
             description: "keep the tool down between near passes instead of retracting",
+            owner: None,
         },
         DressupFieldDef {
             name: "link_max_distance",
             description: "longest gap a link move may span (mm)",
+            owner: Some(DressupKey::LinkMoves),
         },
         DressupFieldDef {
             name: "link_feed_rate",
             description: "feed for a link move (mm/min)",
+            owner: Some(DressupKey::LinkMoves),
         },
         DressupFieldDef {
             name: "arc_fitting",
             description: "fit linear runs into G2 and G3 arcs",
+            owner: None,
         },
         DressupFieldDef {
             name: "arc_tolerance",
             description: "deviation budget for arc fitting (mm)",
+            owner: Some(DressupKey::ArcFitting),
         },
         DressupFieldDef {
             name: "segment_merge",
             description: "merge dense cut runs into longer moves; default on for roughing; a 3D Rough planner applies it before it records each cut",
+            owner: None,
         },
         DressupFieldDef {
             name: "segment_merge_tolerance",
             description: "deviation budget for segment merge (mm)",
+            owner: Some(DressupKey::SegmentMerge),
         },
         DressupFieldDef {
             name: "feed_optimization",
             description: "scale the feed with stock engagement",
+            owner: None,
         },
         DressupFieldDef {
             name: "feed_max_rate",
             description: "upper feed the optimiser may command (mm/min)",
+            owner: None,
         },
         DressupFieldDef {
             name: "feed_ramp_rate",
             description: "how fast the optimiser may change the feed (mm/min per mm)",
+            owner: None,
         },
         DressupFieldDef {
             name: "optimize_rapid_order",
             description: "reorder disconnected fragments to cut rapid travel",
+            owner: None,
         },
     ];
 
@@ -1193,22 +1264,19 @@ impl Default for DressupConfig {
 }
 
 impl DressupConfig {
-    /// The enable key that owns a value key, for the five dressups whose
-    /// parameters CUT-13 moved inside an `Option`.
+    /// The dressup whose `Option` holds a value key, read from the
+    /// [`DressupFieldDef::owner`] column. `None` for an unknown key and for a
+    /// field that lives on `DressupConfig` itself.
     ///
     /// `set_dressup_field` uses this to refuse a value patch whose dressup is
     /// off: with `Option<Params>` that value has nowhere to live, so writing
     /// it would be a set the caller never gets back.
     #[must_use]
-    pub fn owner_of_value_field(key: &str) -> Option<&'static str> {
-        match key {
-            "dogbone_angle" => Some("dogbone"),
-            "lead_radius" | "lead_in_feed_rate" | "lead_out_feed_rate" => Some("lead_in_out"),
-            "link_max_distance" | "link_feed_rate" => Some("link_moves"),
-            "arc_tolerance" => Some("arc_fitting"),
-            "segment_merge_tolerance" => Some("segment_merge"),
-            _ => None,
-        }
+    pub fn owner_of_value_field(key: &str) -> Option<DressupKey> {
+        Self::FIELD_DEFS
+            .iter()
+            .find(|def| def.name == key)
+            .and_then(|def| def.owner)
     }
 
     /// The helix radius this config emits on `cutter`: the operator value,
@@ -1225,18 +1293,18 @@ impl DressupConfig {
         }
     }
 
-    /// Whether the named dressup is on. Only the five keys
-    /// [`Self::owner_of_value_field`] returns are answered; anything else
-    /// reads `false`.
+    /// Whether the dressup is on. An entry style of `None` is off.
     #[must_use]
-    pub fn is_dressup_enabled(&self, key: &str) -> bool {
+    pub fn is_dressup_enabled(&self, key: DressupKey) -> bool {
         match key {
-            "dogbone" => self.dogbone.is_some(),
-            "lead_in_out" => self.lead_in_out.is_some(),
-            "link_moves" => self.link_moves.is_some(),
-            "arc_fitting" => self.arc_fitting.is_some(),
-            "segment_merge" => self.segment_merge.is_some(),
-            _ => false,
+            DressupKey::EntryStyle => self.entry_style != DressupEntryStyle::None,
+            DressupKey::Dogbone => self.dogbone.is_some(),
+            DressupKey::LeadInOut => self.lead_in_out.is_some(),
+            DressupKey::LinkMoves => self.link_moves.is_some(),
+            DressupKey::ArcFitting => self.arc_fitting.is_some(),
+            DressupKey::SegmentMerge => self.segment_merge.is_some(),
+            DressupKey::FeedOptimization => self.feed_optimization,
+            DressupKey::OptimizeRapidOrder => self.optimize_rapid_order,
         }
     }
 
@@ -1432,6 +1500,77 @@ mod tests {
         assert_eq!(back.link_moves, cfg.link_moves);
         assert_eq!(back.arc_fitting, cfg.arc_fitting);
         assert_eq!(back.segment_merge, cfg.segment_merge);
+    }
+
+    /// F016 — the owner column says where each value lives.
+    ///
+    /// Start from a config with every `Option` dressup off. Write a new
+    /// value to one field through the wire form and read it back. A field
+    /// with an owner lives inside that dressup's `Option`, so the round trip
+    /// drops it; a field with no owner lives on the config and keeps it. A
+    /// value field added inside an `Option` without an owner fails here,
+    /// which is the F016 defect: the setter accepted the value and the round
+    /// trip dropped it.
+    #[test]
+    fn the_owner_column_matches_the_round_trip() {
+        let all_off = DressupConfig {
+            entry_style: DressupEntryStyle::None,
+            dogbone: None,
+            lead_in_out: None,
+            link_moves: None,
+            arc_fitting: None,
+            segment_merge: None,
+            feed_optimization: false,
+            optimize_rapid_order: false,
+            ..DressupConfig::default()
+        };
+        let base = serde_json::to_value(&all_off).unwrap();
+        let mut owned = 0;
+        for def in DressupConfig::FIELD_DEFS {
+            let new_value = match base.get(def.name) {
+                Some(serde_json::Value::Bool(b)) => serde_json::json!(!b),
+                Some(serde_json::Value::String(_)) => serde_json::json!("ramp"),
+                _ => serde_json::json!(1234.5),
+            };
+            let mut patched = base.clone();
+            patched[def.name] = new_value.clone();
+            let back: DressupConfig = serde_json::from_value(patched).unwrap();
+            let json = serde_json::to_value(&back).unwrap();
+            let kept = json.get(def.name) == Some(&new_value);
+            match def.owner {
+                Some(owner) => {
+                    owned += 1;
+                    assert!(
+                        !kept,
+                        "'{}' names owner '{}' but the round trip keeps it while the owner is off",
+                        def.name,
+                        owner.as_key()
+                    );
+                    assert!(
+                        DressupConfig::FIELD_DEFS
+                            .iter()
+                            .any(|d| d.name == owner.as_key()),
+                        "the owner '{}' is not a published field",
+                        owner.as_key()
+                    );
+                }
+                None => assert!(
+                    kept,
+                    "'{}' has no owner but the round trip drops it while every dressup is off",
+                    def.name
+                ),
+            }
+        }
+        assert_eq!(owned, 8, "the table names {owned} owned value fields");
+        for key in DressupKey::ALL {
+            assert!(
+                DressupConfig::FIELD_DEFS
+                    .iter()
+                    .any(|d| d.name == key.as_key()),
+                "the enable key '{}' is not a published field",
+                key.as_key()
+            );
+        }
     }
 
     /// A dressup that is off still writes its flat keys, with the module

@@ -11,7 +11,7 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
   and the toolpath rows with the gutter connector; `add_menu_offers` gates the 2D ops on `has_selectable_item`.
 - `sim_*.rs` — the Simulation workspace, with `draw_trace_badge`. The inspector is the verdict line, then
   ONE `TabStrip`: Metrics (default, the charts first), Warnings (count badge), Navigate, Project (IC3).
-  A card flips to a median line on a min-max band; `< >` opens it large.
+  A card flips to a median line on a min-max band; `< >` opens it large. Span help is core `DebugSpanKind::help` (F017).
 - `readiness.rs`, `readiness_panel.rs`, `preflight.rs` — is this safe to cut?
   `shoe_list.rs` — the H2 run sheet; Readiness and the export wizard draw it.
 - `export_wizard.rs`, `pin_wizard.rs` (R4: two steps, the only pin editor), `multitool_planner.rs`, `*_modal.rs`.

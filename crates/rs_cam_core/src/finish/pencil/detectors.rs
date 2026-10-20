@@ -19,7 +19,7 @@ use crate::geo::{P3, V3, polyline_length, resample_polyline};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::MillingCutter;
-use crate::trace::debug_trace::ToolpathDebugContext;
+use crate::trace::debug_trace::{DebugSpanKind, ToolpathDebugContext};
 
 use super::chain_paths::{OffsetFan, paths_from_sampled};
 use super::emission::tip_contact_radius;
@@ -252,7 +252,7 @@ pub(super) fn rest_depth_arm(
         "Rest-depth detector: rest field built (mode 0=nominal 1=tool 2=stock)"
     );
     if let Some(dbg) = debug {
-        let scope = dbg.start_span("rest_field", "rest-depth report");
+        let scope = dbg.start_span(DebugSpanKind::RestField, "rest-depth report");
         scope.set_counter("rest_volume_mm3", report.total_rest_volume_mm3);
         scope.set_counter("rest_pencil_regions", report.pencil_region_count as f64);
         scope.set_counter("rest_clearing_regions", report.clearing_region_count as f64);

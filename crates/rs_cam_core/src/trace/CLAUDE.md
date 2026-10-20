@@ -6,7 +6,7 @@ transform provenance. The agent-facing entry point is `trace::narrate`.
 ## Files
 
 - `mod.rs` — the facade.
-- `debug_trace.rs` — the per-operation debug record.
+- `debug_trace.rs` — the per-operation debug record. F017: an emitter names a `DebugSpanKind` (`as_key`, `help`, `structural`, exhaustive), never a string.
 - `semantic_trace.rs` — the semantic items for operation-level diagnostics.
 - `toolpath_spans.rs` — the semantic ranges of moves inside a `Toolpath`.
 - `produced.rs` — `Produced`, the typed side channel of a generated toolpath (W6.2).

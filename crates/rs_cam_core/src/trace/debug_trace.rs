@@ -61,6 +61,7 @@ impl ToolpathDebugBounds2 {
 pub struct ToolpathDebugSpan {
     pub id: u64,
     pub parent_id: Option<u64>,
+    /// The [`DebugSpanKind::as_key`] of the kind the emitter named.
     pub kind: String,
     pub label: String,
     pub start_us: u64,
@@ -71,6 +72,213 @@ pub struct ToolpathDebugSpan {
     pub move_end: Option<usize>,
     pub exit_reason: Option<String>,
     pub counters: BTreeMap<String, f64>,
+}
+
+/// The kind of one debug span: what part of the generation it times.
+///
+/// F017: an emitter used to pass the kind as a free string, and the viz help
+/// table and the MCP synonym table typed the names again with wildcard
+/// arms. The three lists drifted: help named kinds nothing emitted, and most
+/// emitted kinds had no help. An emitter now names a variant, and
+/// [`Self::as_key`], [`Self::help`] and [`Self::structural`] are exhaustive,
+/// so a new kind is a compile error until each decision names it.
+///
+/// The record keeps the key as a string ([`ToolpathDebugSpan::kind`]), so
+/// the serialized trace (schema version 1) does not change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DebugSpanKind {
+    // The session stages (`session::compute`).
+    CoreGenerate,
+    Dressups,
+    BoundaryClip,
+    ObstacleClip,
+    FinalStats,
+    // 2D adaptive (`adaptive::path`).
+    SlotClearing,
+    ContourSpiral,
+    AdaptivePass,
+    EntrySearch,
+    ForcedClear,
+    BoundaryCleanup,
+    // 3D adaptive (`adaptive3d::path`, `adaptive3d::clearing`).
+    SurfaceHeightmap,
+    BorderClear,
+    ZLevelPlan,
+    RegionDetect,
+    ZLevelClear,
+    ZLevel,
+    Agent2dRegion,
+    WaterlineCleanup,
+    // Pencil (`finish::pencil::detectors`).
+    RestField,
+    // The dressup stages (`compute::execute::dressup_apply`). The three
+    // entry stages share `EntryStyle`; the label tells them apart.
+    RapidOrder,
+    EntryStyle,
+    Dogbones,
+    LeadInOut,
+    LinkMoves,
+    ArcFit,
+    SegmentMerge,
+    AirCutFilter,
+    FeedOptimization,
+}
+
+impl DebugSpanKind {
+    /// Every kind, in declaration order.
+    pub const ALL: [Self; 29] = crate::all_variants!(DebugSpanKind:
+        CoreGenerate, Dressups, BoundaryClip, ObstacleClip, FinalStats,
+        SlotClearing, ContourSpiral, AdaptivePass, EntrySearch, ForcedClear, BoundaryCleanup,
+        SurfaceHeightmap, BorderClear, ZLevelPlan, RegionDetect, ZLevelClear, ZLevel,
+        Agent2dRegion, WaterlineCleanup,
+        RestField,
+        RapidOrder, EntryStyle, Dogbones, LeadInOut, LinkMoves, ArcFit, SegmentMerge,
+        AirCutFilter, FeedOptimization,
+    );
+
+    /// The stable snake_case key the trace records and an agent filters on.
+    #[must_use]
+    pub const fn as_key(self) -> &'static str {
+        match self {
+            Self::CoreGenerate => "core_generate",
+            Self::Dressups => "dressups",
+            Self::BoundaryClip => "boundary_clip",
+            Self::ObstacleClip => "obstacle_clip",
+            Self::FinalStats => "final_stats",
+            Self::SlotClearing => "slot_clearing",
+            Self::ContourSpiral => "contour_spiral",
+            Self::AdaptivePass => "adaptive_pass",
+            Self::EntrySearch => "entry_search",
+            Self::ForcedClear => "forced_clear",
+            Self::BoundaryCleanup => "boundary_cleanup",
+            Self::SurfaceHeightmap => "surface_heightmap",
+            Self::BorderClear => "border_clear",
+            Self::ZLevelPlan => "z_level_plan",
+            Self::RegionDetect => "region_detect",
+            Self::ZLevelClear => "z_level_clear",
+            Self::ZLevel => "z_level",
+            Self::Agent2dRegion => "agent2d_region",
+            Self::WaterlineCleanup => "waterline_cleanup",
+            Self::RestField => "rest_field",
+            Self::RapidOrder => "rapid_order",
+            Self::EntryStyle => "entry_style",
+            Self::Dogbones => "dogbones",
+            Self::LeadInOut => "lead_in_out",
+            Self::LinkMoves => "link_moves",
+            Self::ArcFit => "arc_fit",
+            Self::SegmentMerge => "segment_merge",
+            Self::AirCutFilter => "air_cut_filter",
+            Self::FeedOptimization => "feed_optimization",
+        }
+    }
+
+    /// The kind whose key is `key`, or `None` for a key no emitter writes.
+    #[must_use]
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.as_key() == key)
+    }
+
+    /// One line on what the span times. The simulation debug view shows it
+    /// on hover.
+    #[must_use]
+    pub const fn help(self) -> &'static str {
+        match self {
+            Self::CoreGenerate => "The main toolpath kernel for the selected operation.",
+            Self::Dressups => {
+                "Apply entries, links, leads, clips, and other post-generation modifiers."
+            }
+            Self::BoundaryClip => "Clip the toolpath to the machining boundary.",
+            Self::ObstacleClip => "Keep the tool out of the setup's obstacles.",
+            Self::FinalStats => "Compute final toolpath statistics and summarize the result.",
+            Self::SlotClearing => {
+                "Cut sparse zigzag slots at tool-diameter spacing that the adaptive passes widen."
+            }
+            Self::ContourSpiral => {
+                "Clear the region with a contour spiral out from the starter pocket."
+            }
+            Self::AdaptivePass => {
+                "Constant-engagement stepping: direction search, local material checks, and tool stamping."
+            }
+            Self::EntrySearch => {
+                "Search the remaining-material grid for the next viable entry point."
+            }
+            Self::ForcedClear => {
+                "Clear a circle of material at a stalled position so the next pass can start."
+            }
+            Self::BoundaryCleanup => {
+                "Cut the region boundary contours to remove material the passes left."
+            }
+            Self::SurfaceHeightmap => {
+                "Drop-cutter sampling over a grid to approximate the model surface."
+            }
+            Self::BorderClear => {
+                "Mark the cells outside the stock box as cleared before the levels run."
+            }
+            Self::ZLevelPlan => {
+                "Build Z levels from stepdown, optional shelf detection, and optional fine-stepdown expansion."
+            }
+            Self::RegionDetect => {
+                "Flood-fill connected remaining-material regions on the heightmap."
+            }
+            Self::ZLevelClear => "Clear one Z level, or one region of a Z level.",
+            Self::ZLevel => "Per-level orchestration and remaining-material accounting.",
+            Self::Agent2dRegion => "Plan one region of a Z level with the 2D adaptive planner.",
+            Self::WaterlineCleanup => {
+                "Contour steep walls to clean boundary material missed by the adaptive spiral."
+            }
+            Self::RestField => "Build the rest-depth field and report the rest volume and regions.",
+            Self::RapidOrder => "Reorder the cut fragments to shorten the rapid travel.",
+            Self::EntryStyle => "Replace each plunge with a ramp, a helix or a stock-aware plunge.",
+            Self::Dogbones => "Add dogbone overcuts at inside corners.",
+            Self::LeadInOut => "Add tangential lead-in and lead-out arcs.",
+            Self::LinkMoves => "Keep the tool down between near passes instead of retracting.",
+            Self::ArcFit => "Fit linear segments into XY arcs where possible.",
+            Self::SegmentMerge => "Merge dense runs of short linear cuts into longer moves.",
+            Self::AirCutFilter => {
+                "Turn fed moves through air into rapids where the rapid saves time."
+            }
+            Self::FeedOptimization => {
+                "Estimate cutter engagement and retime feed rates against stock."
+            }
+        }
+    }
+
+    /// The structural span kind this debug kind contributes to, when one
+    /// applies. An MCP `span_kind` filter that names a structural kind
+    /// expands to the debug kinds that map to it here.
+    #[must_use]
+    pub const fn structural(self) -> Option<crate::trace::toolpath_spans::SpanKind> {
+        use crate::trace::toolpath_spans::SpanKind;
+        match self {
+            Self::ZLevelClear | Self::AdaptivePass | Self::ZLevel => Some(SpanKind::DepthPass),
+            Self::EntrySearch => Some(SpanKind::Entry),
+            Self::WaterlineCleanup => Some(SpanKind::WaterlineCleanup),
+            Self::CoreGenerate
+            | Self::Dressups
+            | Self::BoundaryClip
+            | Self::ObstacleClip
+            | Self::FinalStats
+            | Self::SlotClearing
+            | Self::ContourSpiral
+            | Self::ForcedClear
+            | Self::BoundaryCleanup
+            | Self::SurfaceHeightmap
+            | Self::BorderClear
+            | Self::ZLevelPlan
+            | Self::RegionDetect
+            | Self::Agent2dRegion
+            | Self::RestField
+            | Self::RapidOrder
+            | Self::EntryStyle
+            | Self::Dogbones
+            | Self::LeadInOut
+            | Self::LinkMoves
+            | Self::ArcFit
+            | Self::SegmentMerge
+            | Self::AirCutFilter
+            | Self::FeedOptimization => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -278,10 +486,10 @@ impl ToolpathDebugRecorder {
     fn start_span_with_parent(
         &self,
         parent_id: Option<u64>,
-        kind: impl Into<String>,
+        kind: DebugSpanKind,
         label: impl Into<String>,
     ) -> ToolpathDebugScope {
-        let kind = kind.into();
+        let kind = kind.as_key().to_owned();
         let label = label.into();
         let mut state = self.inner.lock().expect("debug recorder poisoned");
         let id = state.next_span_id;
@@ -383,11 +591,7 @@ impl ToolpathDebugRecorder {
 }
 
 impl ToolpathDebugContext {
-    pub fn start_span(
-        &self,
-        kind: impl Into<String>,
-        label: impl Into<String>,
-    ) -> ToolpathDebugScope {
+    pub fn start_span(&self, kind: DebugSpanKind, label: impl Into<String>) -> ToolpathDebugScope {
         self.recorder
             .start_span_with_parent(self.parent_id, kind, label)
     }
@@ -495,11 +699,29 @@ impl Drop for ToolpathDebugScope {
 mod tests {
     use super::*;
 
+    /// F017: every kind has its own key, and the key reads back as the kind.
+    #[test]
+    fn every_debug_span_kind_has_a_distinct_key() {
+        let mut keys: Vec<&str> = DebugSpanKind::ALL.iter().map(|k| k.as_key()).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(
+            keys.len(),
+            DebugSpanKind::ALL.len(),
+            "two kinds share a key"
+        );
+        for kind in DebugSpanKind::ALL {
+            assert_eq!(DebugSpanKind::from_key(kind.as_key()), Some(kind));
+            assert!(!kind.help().is_empty(), "{kind:?} has no help");
+        }
+        assert_eq!(DebugSpanKind::from_key("pre_stamp"), None);
+    }
+
     #[test]
     fn recorder_serializes_spans_and_hotspots() {
         let recorder = ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
         let ctx = recorder.root_context();
-        let span = ctx.start_span("core_generate", "Generate");
+        let span = ctx.start_span(DebugSpanKind::CoreGenerate, "Generate");
         span.set_z_level(-2.5);
         span.set_counter("passes", 3.0);
         span.finish();

@@ -9,7 +9,7 @@ use crate::ops::adaptive_shared::target_engagement_fraction;
 use crate::stock::dexel::ray_subtract_above;
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::surface::slope::SurfaceHeightmap;
-use crate::trace::debug_trace::ToolpathDebugContext;
+use crate::trace::debug_trace::{DebugSpanKind, ToolpathDebugContext};
 
 /// The Z levels a flat shelf in the surface asks for, top-down order not
 /// guaranteed.
@@ -415,7 +415,7 @@ fn clear_planned_level(
             ),
             None => format!("Z {:.3} ({}/{})", z_level, slot.index + 1, slot.total),
         };
-        let scope = dctx.start_span("z_level_clear", title);
+        let scope = dctx.start_span(DebugSpanKind::ZLevelClear, title);
         scope.set_z_level(z_level);
         if let Some(mask) = slot.region {
             scope.set_counter("region_index", (mask.job + 1) as f64);
@@ -676,7 +676,7 @@ pub(super) fn adaptive_3d_segments(
     #[cfg(not(target_arch = "wasm32"))]
     let t_surface = Instant::now();
     let surface_scope =
-        debug_ctx.map(|ctx| ctx.start_span("surface_heightmap", "Surface heightmap"));
+        debug_ctx.map(|ctx| ctx.start_span(DebugSpanKind::SurfaceHeightmap, "Surface heightmap"));
     debug!(
         cols = material_stock.z_grid.cols,
         rows = material_stock.z_grid.rows,
@@ -735,7 +735,8 @@ pub(super) fn adaptive_3d_segments(
     // contour parallel / adaptive) plans passes that stamp them down
     // DPP at a time. The simulator then sees pre-cleared rays at the
     // boundary cells the same way it does for in-mesh cells.
-    let border_scope = debug_ctx.map(|ctx| ctx.start_span("border_clear", "Border clear"));
+    let border_scope =
+        debug_ctx.map(|ctx| ctx.start_span(DebugSpanKind::BorderClear, "Border clear"));
     let border_margin = r * 0.5;
     let world_xy = params.geometry.world_stock_xy_bbox;
     let mut border_cleared = 0u32;
@@ -835,7 +836,8 @@ pub(super) fn adaptive_3d_segments(
     // the mesh-bbox floor through holes in open meshes, and pre-clamp there
     // was no lever to stop the final level diving there (heights audit
     // 2026-06-12, findings 2 + 3).
-    let z_plan_scope = debug_ctx.map(|ctx| ctx.start_span("z_level_plan", "Compute Z levels"));
+    let z_plan_scope =
+        debug_ctx.map(|ctx| ctx.start_span(DebugSpanKind::ZLevelPlan, "Compute Z levels"));
     let surface_bottom = surface_hm.min_z_or_bbox_floor();
     let z_bottom = (surface_bottom + params.depth.stock_to_leave)
         .max(params.depth.z_floor.unwrap_or(f64::NEG_INFINITY));
@@ -941,7 +943,7 @@ pub(super) fn adaptive_3d_segments(
     match params.linking.region_ordering {
         RegionOrdering::ByArea => {
             let region_scope =
-                debug_ctx.map(|ctx| ctx.start_span("region_detect", "Detect regions"));
+                debug_ctx.map(|ctx| ctx.start_span(DebugSpanKind::RegionDetect, "Detect regions"));
             let (regions, bfs_labels) = detect_material_regions_labeled(
                 &material_stock,
                 &surface_hm,

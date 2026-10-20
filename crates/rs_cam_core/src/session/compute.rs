@@ -14,7 +14,7 @@ use crate::geo::BoundingBox3;
 use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
 use crate::tool::MillingCutter;
-use crate::trace::debug_trace::ToolpathDebugRecorder;
+use crate::trace::debug_trace::{DebugSpanKind, ToolpathDebugRecorder};
 use crate::trace::semantic_trace::{ToolpathSemanticKind, ToolpathSemanticRecorder, enrich_traces};
 
 // `SetupEvalContext`, `SimulationResult`, `ToolpathConfig` and `multitool`
@@ -722,7 +722,7 @@ impl JobPhases<'_, '_> {
         self.observer.set_phase(self.context.op_label);
         let core_scope = self
             .debug_root
-            .start_span("core_generate", self.context.op_label);
+            .start_span(DebugSpanKind::CoreGenerate, self.context.op_label);
         let core_ctx = core_scope.context();
 
         let op_scope = self
@@ -829,10 +829,10 @@ impl JobPhases<'_, '_> {
             }),
             _ => None,
         };
-        let dressup_scope = self
-            .observer
-            .records_dressup_items()
-            .then(|| self.debug_root.start_span("dressups", "Apply dressups"));
+        let dressup_scope = self.observer.records_dressup_items().then(|| {
+            self.debug_root
+                .start_span(DebugSpanKind::Dressups, "Apply dressups")
+        });
         let dressup_debug_ctx = dressup_scope.as_ref().map(|scope| scope.context());
         // G-ADAPTPASSLOAD round 3: 2D Adaptive's helix entries stay inside
         // the machinable region (the same region its planner stamps from).
@@ -917,7 +917,7 @@ impl JobPhases<'_, '_> {
             self.observer.set_phase("Clip to boundary");
             let _boundary_scope = self.observer.records_dressup_items().then(|| {
                 self.debug_root
-                    .start_span("boundary_clip", "Clip to boundary")
+                    .start_span(DebugSpanKind::BoundaryClip, "Clip to boundary")
             });
             let resolves_to_a_region_set = matches!(
                 self.inputs.boundary_config.source,
@@ -985,7 +985,7 @@ impl JobPhases<'_, '_> {
         if !self.inputs.obstacles.is_empty() {
             let _obstacle_scope = self.observer.records_dressup_items().then(|| {
                 self.debug_root
-                    .start_span("obstacle_clip", "Keep out of obstacles")
+                    .start_span(DebugSpanKind::ObstacleClip, "Keep out of obstacles")
             });
             annotated = crate::compute::obstacle::clip_annotated_to_obstacles(
                 annotated,
@@ -1146,10 +1146,10 @@ impl JobPhases<'_, '_> {
         }
 
         self.observer.set_phase("Compute stats");
-        let _stats_scope = self
-            .observer
-            .records_dressup_items()
-            .then(|| self.debug_root.start_span("final_stats", "Compute stats"));
+        let _stats_scope = self.observer.records_dressup_items().then(|| {
+            self.debug_root
+                .start_span(DebugSpanKind::FinalStats, "Compute stats")
+        });
 
         // H2.1: ONE join, shared with the GUI compute worker. This
         // used to be a struct literal that read `findings.<field>`

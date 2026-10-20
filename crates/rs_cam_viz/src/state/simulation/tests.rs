@@ -64,7 +64,10 @@ fn gui_with_traces() -> GuiState {
 
     let debug = ToolpathDebugRecorder::new("Adaptive", "Adaptive");
     let debug_ctx = debug.root_context();
-    let pass_span = debug_ctx.start_span("adaptive_pass", "Pass 1");
+    let pass_span = debug_ctx.start_span(
+        rs_cam_core::trace::debug_trace::DebugSpanKind::AdaptivePass,
+        "Pass 1",
+    );
     pass_span.set_move_range(0, 8);
     pass_span.set_xy_bbox(ToolpathDebugBounds2 {
         min_x: 0.0,

@@ -92,6 +92,7 @@ impl ProjectSession {
                 if let Some(owner) = DressupConfig::owner_of_value_field(key)
                     && !tc.dressups.is_dressup_enabled(owner)
                 {
+                    let owner = owner.as_key();
                     return Err(SessionError::InvalidParam(format!(
                         "dressup field '{key}' belongs to '{owner}', which is off; \
                          enable '{owner}' first"

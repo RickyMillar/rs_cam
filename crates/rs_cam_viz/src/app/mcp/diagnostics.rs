@@ -303,7 +303,7 @@ impl RsCamApp {
         };
 
         // span_kind accepts EITHER a generation-debug string (e.g.
-        // "adaptive_pass", "z_level_clear", "preflight") OR a structural
+        // "adaptive_pass", "z_level_clear", "forced_clear") OR a structural
         // SpanKind synonym in snake_case (e.g. "depth_pass", "entry"). The
         // latter expands to the set of debug-trace kinds that participate in
         // that structural span. This unifies the agent vocabulary across
@@ -341,7 +341,7 @@ impl RsCamApp {
         // Each returned span is enriched with `span_kind_hint`: the
         // structural `SpanKind` (snake_case) that this generation-time span
         // contributes to, or null when there's no clean mapping (e.g.
-        // op-internal "preflight", "widen_band").
+        // op-internal "slot_clearing", "forced_clear").
         let visible: Vec<serde_json::Value> = visible_spans
             .iter()
             .map(|span| {
@@ -360,7 +360,9 @@ impl RsCamApp {
         let pass_spans: Vec<_> = trace
             .spans
             .iter()
-            .filter(|s| s.kind == "adaptive_pass")
+            .filter(|s| {
+                s.kind == rs_cam_core::trace::debug_trace::DebugSpanKind::AdaptivePass.as_key()
+            })
             .collect();
         let mut passes_by_exit: std::collections::BTreeMap<String, usize> =
             std::collections::BTreeMap::new();
@@ -704,52 +706,34 @@ pub(crate) fn viz_project_evidence(
 /// (e.g. "adaptive_pass"), the synonym set is just `{input}` so the filter
 /// keeps backward compatibility with the existing string vocabulary.
 ///
-/// Wave D3: the structural half of this used to be a list of string
-/// literals with a catch-all fallback, so a NEW `SpanKind` variant silently
-/// fell through to "treat as a literal debug-trace kind" and matched
-/// nothing, with no compile error and no runtime complaint. It now parses
-/// the input into the enum first and matches that EXHAUSTIVELY — adding a
-/// variant to `SpanKind` breaks this build until someone says what it
-/// expands to. Only genuinely unparseable input (a real debug-trace kind)
-/// takes the literal path.
+/// Wave D3 parsed the input into `SpanKind` first, so a new structural
+/// variant could not fall through silently. F017: the expansion is now
+/// DERIVED from core's `DebugSpanKind::structural` (exhaustive), not typed
+/// here. A structural kind with no debug kind mapped to it expands to the
+/// empty set, so the filter matches nothing rather than matching by string.
+/// `waterline_cleanup` is both a structural key and a debug key; it now
+/// expands to the debug kind (it matched nothing before).
 fn expand_span_kind_synonyms(span_kind: &str) -> Vec<String> {
-    use rs_cam_core::trace::toolpath_spans::SpanKind;
+    use rs_cam_core::trace::debug_trace::DebugSpanKind;
     let Ok(kind) = parse_span_kind_filter(span_kind) else {
         // Not a structural kind at all — a literal debug-trace kind.
         return vec![span_kind.to_owned()];
     };
-    match kind {
-        // Structural SpanKind synonyms expand to the matching debug kinds.
-        SpanKind::DepthPass => vec![
-            "z_level_clear".to_owned(),
-            "adaptive_pass".to_owned(),
-            "z_level".to_owned(),
-        ],
-        SpanKind::Entry => vec!["entry_search".to_owned()],
-        // These structural kinds have no debug-trace generators yet — an
-        // empty set so the filter matches nothing rather than falsely
-        // matching by string.
-        SpanKind::Operation
-        | SpanKind::Region
-        | SpanKind::LeadOut
-        | SpanKind::LinkBridge
-        | SpanKind::DressupArtifact
-        | SpanKind::GeometryRefit
-        | SpanKind::WaterlineCleanup
-        | SpanKind::RapidOrderBarrier => Vec::new(),
-    }
+    DebugSpanKind::ALL
+        .into_iter()
+        .filter(|debug| debug.structural() == Some(kind))
+        .map(|debug| debug.as_key().to_owned())
+        .collect()
 }
 
 /// Map a debug-trace span "kind" string back to the structural `SpanKind`
 /// (snake_case) it most directly contributes to. Op-internal phases
-/// (preflight, widen_band, etc.) have no structural equivalent and return
-/// `None`.
+/// (`slot_clearing`, `forced_clear`, etc.) have no structural equivalent and
+/// return `None`. F017: read from core's `DebugSpanKind::structural`.
 fn map_debug_kind_to_span_kind(debug_kind: &str) -> Option<&'static str> {
-    match debug_kind {
-        "z_level_clear" | "adaptive_pass" | "z_level" => Some("depth_pass"),
-        "entry_search" => Some("entry"),
-        _ => None,
-    }
+    rs_cam_core::trace::debug_trace::DebugSpanKind::from_key(debug_kind)
+        .and_then(|kind| kind.structural())
+        .map(|kind| kind.as_key())
 }
 
 /// Map an MCP `span_kind` string (snake_case) to the `SpanKind` enum.

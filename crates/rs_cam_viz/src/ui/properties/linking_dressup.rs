@@ -279,31 +279,17 @@ pub(super) fn dv_pill(
 // ── Dressup configuration ────────────────────────────────────────────────
 
 /// Count how many dressup features are currently active.
+///
+/// F016: the total and the count read core's `DressupKey`, so a new dressup
+/// is counted without an edit here. The hand count named 7 of 8 and never
+/// counted `segment_merge`.
 pub(super) fn dressup_active_count(cfg: &DressupConfig) -> (usize, usize) {
-    let total = 8;
-    let mut active = 0;
-    if !matches!(cfg.entry_style, DressupEntryStyle::None) {
-        active += 1;
-    }
-    if cfg.lead_in_out.is_some() {
-        active += 1;
-    }
-    if cfg.dogbone.is_some() {
-        active += 1;
-    }
-    if cfg.arc_fitting.is_some() {
-        active += 1;
-    }
-    if cfg.link_moves.is_some() {
-        active += 1;
-    }
-    if cfg.feed_optimization {
-        active += 1;
-    }
-    if cfg.optimize_rapid_order {
-        active += 1;
-    }
-    (active, total)
+    use rs_cam_core::compute::config::DressupKey;
+    let active = DressupKey::ALL
+        .into_iter()
+        .filter(|key| cfg.is_dressup_enabled(*key))
+        .count();
+    (active, DressupKey::ALL.len())
 }
 
 /// Linking tab (W3.2): how moves connect — Entry & Exit and Move

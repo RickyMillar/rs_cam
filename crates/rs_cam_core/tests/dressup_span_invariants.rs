@@ -437,7 +437,7 @@ fn one_way_face_vetoes_rapid_order_but_runs_other_dressups() {
 
 /// A run emits a SUBSEQUENCE of [`DRESSUP_PIPELINE`], in order.
 ///
-/// Every stage used to write its four trace strings (`debug_key`,
+/// Every stage used to write its four trace strings (`debug_kind`,
 /// `debug_label`, `kind`, `semantic_label`) as a literal at its own call
 /// site, and those strings existed nowhere else. Nothing could enumerate
 /// the pipeline, so nothing checked that the order the code runs matches
@@ -510,14 +510,14 @@ fn dressup_stages_run_in_the_order_the_pipeline_lists() {
     for key in &emitted {
         let found = DRESSUP_PIPELINE[cursor..]
             .iter()
-            .position(|stage| stage.debug_key == key);
+            .position(|step| step.stage().debug_kind.as_key() == key);
         let offset = found.unwrap_or_else(|| {
             panic!(
                 "dressup stage {key:?} is not in DRESSUP_PIPELINE at or after \
                  position {cursor}. Emitted order: {emitted:?}. Pipeline: {:?}",
                 DRESSUP_PIPELINE
                     .iter()
-                    .map(|s| s.debug_key)
+                    .map(|s| s.stage().debug_kind.as_key())
                     .collect::<Vec<_>>()
             )
         });
@@ -527,13 +527,16 @@ fn dressup_stages_run_in_the_order_the_pipeline_lists() {
 
 /// Every stage constant names a distinct `debug_label`.
 ///
-/// `debug_key` is deliberately NOT unique — the two rapid-order passes and
-/// the two entry styles share one key each — so the label is what tells two
+/// `debug_kind` is deliberately NOT unique — the two rapid-order passes and
+/// the three entry styles share one key each — so the label is what tells two
 /// rows apart in a trace. Two rows with the same label would be
 /// indistinguishable on screen.
 #[test]
 fn dressup_stage_labels_are_distinct() {
-    let mut labels: Vec<&str> = DRESSUP_PIPELINE.iter().map(|s| s.debug_label).collect();
+    let mut labels: Vec<&str> = DRESSUP_PIPELINE
+        .iter()
+        .map(|s| s.stage().debug_label)
+        .collect();
     labels.sort_unstable();
     let before = labels.len();
     labels.dedup();

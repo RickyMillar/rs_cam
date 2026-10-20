@@ -2,13 +2,55 @@
 //!
 //! [`apply_dressups`] drives entry moves, leads, arc fitting, conditioning and
 //! feed optimisation; the generic rest analysis attaches its findings on the
-//! same pass. Split out of `compute/execute.rs` (P4).
+//! same pass. Split out of `compute/execute.rs` (P4). F128: the run order is
+//! [`DRESSUP_PIPELINE`], one [`DressupStep`] per position and one function
+//! per step.
+//!
+//! # G-WANAKA-DRILL-RAMP: a drill cycle takes no entry dressup
+//!
+//! G-WANAKA-DRILL-RAMP (2026-08-19, severity high): auto-applied
+//! dressups gave both of wanaka200's drill cycles `entry_style = ramp`,
+//! and `apply_entry` duly rewrote every peck descent as a ramp — the
+//! emitted pin-drill motion moved 19 mm laterally on its way down
+//! (`G1 X15.708 Y16.271 Z28.000` then `G1 X2.500 Y2.500 Z27.000` for a
+//! pin at X2.5 Y2.5). A ramped alignment-pin hole is an oval slot,
+//! which destroys the flip registration that is the op's entire
+//! purpose. Nothing flagged it; it was found by reading the G-code.
+//!
+//! The premise `apply_entry` is built on is that a straight plunge is a
+//! bad way to ENTER a cut. For a drill cycle the vertical descent IS
+//! the cut — end-cutting, which is exactly what a drill bit is for — so
+//! there is no ramped form of it to prefer. The dressup is dropped
+//! in the pipeline (`PipelineRun::effective_entry_style`), at the one place
+//! it is applied, rather than corrected in the
+//! config: `DressupConfig::normalize_for_op` already promises this for
+//! `Drill` (`FORCE_NO_ENTRY`) and the ramp reached the machine anyway,
+//! because `ProjectSession::add_toolpath` takes a fully-built
+//! `ToolpathConfig` and normalizes nothing. A guarantee that only holds
+//! when someone remembers to route through the right setter is not a
+//! guarantee.
+//!
+//! **Stripped, not refused.** A refusal would fire on the product's own
+//! defaults — `AlignmentPinDrill` carries `DressupPolicy::ANY_DRESSUP`
+//! and the Roughing role's `Ramp`, so every freshly-added pin drill
+//! would stop generating — and it would buy nothing: the dressup is a
+//! request to REWRITE the emitted geometry, so declining it leaves the
+//! commanded cycle whole and correct. Refusal is for the case where the
+//! engine cannot produce the commanded geometry at all.
+//!
+//! The predicate is the toolpath's own `MoveIntent::Drilling`, the same
+//! one `session::compute` uses to decide a result is a drill cycle.
+//! Only `drill.rs` emits it, and it tags every fed descent of all four
+//! cycles, so no drill-family plunge escapes and no milling op is
+//! caught. A future generator that mixed drilling and milling in one
+//! toolpath would lose entry styling for the whole op — none does, and
+//! `narrate.rs` already names that hypothetical as the thing to watch.
 
 use crate::compute::catalog::OperationTransformCapabilities;
 use crate::compute::config::{DressupConfig, DressupEntryStyle};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::{MillingCutter, ToolDefinition};
-use crate::trace::debug_trace::ToolpathDebugContext;
+use crate::trace::debug_trace::{DebugSpanKind, ToolpathDebugContext};
 use crate::trace::semantic_trace::{
     SemanticKey, ToolpathSemanticContext, ToolpathSemanticKind, ToolpathSemanticScope,
 };
@@ -154,10 +196,10 @@ pub(super) const SHALLOW_SLOPE_DERATE_BASIS: &str =
 /// CMP-20 / CUT-06: each stage used to write these four strings as a literal
 /// at its own call site, and they existed nowhere else. Nothing could
 /// enumerate the pipeline. They are named constants now, and
-/// [`DRESSUP_PIPELINE`] lists them in run order.
+/// [`DressupStep::stage`] gives the one each pipeline position traces under.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DressupStage {
-    pub debug_key: &'static str,
+    pub debug_kind: DebugSpanKind,
     pub debug_label: &'static str,
     pub kind: ToolpathSemanticKind,
     pub semantic_label: &'static str,
@@ -165,100 +207,155 @@ pub struct DressupStage {
 
 impl DressupStage {
     pub const RAPID_ORDER: Self = Self {
-        debug_key: "rapid_order",
+        debug_kind: DebugSpanKind::RapidOrder,
         debug_label: "Optimize rapid order",
         kind: ToolpathSemanticKind::Optimization,
         semantic_label: "Rapid ordering",
     };
     pub const RAMP_ENTRY: Self = Self {
-        debug_key: "entry_style",
+        debug_kind: DebugSpanKind::EntryStyle,
         debug_label: "Ramp entry",
         kind: ToolpathSemanticKind::Entry,
         semantic_label: "Ramp entry",
     };
     pub const HELIX_ENTRY: Self = Self {
-        debug_key: "entry_style",
+        debug_kind: DebugSpanKind::EntryStyle,
         debug_label: "Helix entry",
         kind: ToolpathSemanticKind::Entry,
         semantic_label: "Helix entry",
     };
     pub const PLUNGE_ENTRY: Self = Self {
-        debug_key: "entry_style",
+        debug_kind: DebugSpanKind::EntryStyle,
         debug_label: "Stock-aware plunge entry",
         kind: ToolpathSemanticKind::Entry,
         semantic_label: "Stock-aware plunge entry",
     };
     pub const DOGBONES: Self = Self {
-        debug_key: "dogbones",
+        debug_kind: DebugSpanKind::Dogbones,
         debug_label: "Apply dogbones",
         kind: ToolpathSemanticKind::Dressup,
         semantic_label: "Dogbones",
     };
     pub const LEAD_IN_OUT: Self = Self {
-        debug_key: "lead_in_out",
+        debug_kind: DebugSpanKind::LeadInOut,
         debug_label: "Apply lead in/out",
         kind: ToolpathSemanticKind::Dressup,
         semantic_label: "Lead in/out",
     };
     pub const LINK_MOVES: Self = Self {
-        debug_key: "link_moves",
+        debug_kind: DebugSpanKind::LinkMoves,
         debug_label: "Apply link moves",
         kind: ToolpathSemanticKind::Dressup,
         semantic_label: "Link moves",
     };
     pub const ARC_FIT: Self = Self {
-        debug_key: "arc_fit",
+        debug_kind: DebugSpanKind::ArcFit,
         debug_label: "Fit arcs",
         kind: ToolpathSemanticKind::Optimization,
         semantic_label: "Arc fitting",
     };
     pub const SEGMENT_MERGE: Self = Self {
-        debug_key: "segment_merge",
+        debug_kind: DebugSpanKind::SegmentMerge,
         debug_label: "Merge short segments",
         kind: ToolpathSemanticKind::Optimization,
         semantic_label: "Segment merge",
     };
     pub const AIR_CUT_FILTER: Self = Self {
-        debug_key: "air_cut_filter",
+        debug_kind: DebugSpanKind::AirCutFilter,
         debug_label: "Filter air cuts",
         kind: ToolpathSemanticKind::Optimization,
         semantic_label: "Air-cut filter",
     };
     pub const FEED_OPTIMIZATION: Self = Self {
-        debug_key: "feed_optimization",
+        debug_kind: DebugSpanKind::FeedOptimization,
         debug_label: "Optimize feeds",
         kind: ToolpathSemanticKind::Optimization,
         semantic_label: "Feed optimization",
     };
 }
 
+/// One position of the dressup pipeline.
+///
+/// F128: the run order used to be the statement order of one long
+/// `apply_dressups`. It is now [`DRESSUP_PIPELINE`], and `apply_dressups`
+/// walks that list and matches each step with no wildcard arm. A new step is
+/// a compile error until it has a place in the list (the `all_variants!`
+/// proof), a stage ([`Self::stage`]) and an arm in `apply_dressups`.
+///
+/// The model is honest about the two irregular slots:
+///
+/// - The rapid-order stage has TWO positions, so it has two variants. The
+///   barriered pass runs first, and only when the input has barriers. The
+///   unbarriered pass runs after link moves, and only when the input has no
+///   barriers. At most one of them runs.
+/// - The entry slot is a three-way choice, so it has three variants. Each
+///   runs only for its own entry style; at most one of them runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DressupStep {
+    RapidOrderBarriered,
+    RampEntry,
+    HelixEntry,
+    PlungeEntry,
+    Dogbones,
+    LeadInOut,
+    LinkMoves,
+    ArcFit,
+    SegmentMerge,
+    RapidOrderUnbarriered,
+    AirCutFilter,
+    FeedOptimization,
+}
+
+impl DressupStep {
+    /// The stage this position traces under. Both rapid-order positions
+    /// trace as [`DressupStage::RAPID_ORDER`]: one stage under two gates.
+    #[must_use]
+    pub const fn stage(self) -> DressupStage {
+        match self {
+            Self::RapidOrderBarriered | Self::RapidOrderUnbarriered => DressupStage::RAPID_ORDER,
+            Self::RampEntry => DressupStage::RAMP_ENTRY,
+            Self::HelixEntry => DressupStage::HELIX_ENTRY,
+            Self::PlungeEntry => DressupStage::PLUNGE_ENTRY,
+            Self::Dogbones => DressupStage::DOGBONES,
+            Self::LeadInOut => DressupStage::LEAD_IN_OUT,
+            Self::LinkMoves => DressupStage::LINK_MOVES,
+            Self::ArcFit => DressupStage::ARC_FIT,
+            Self::SegmentMerge => DressupStage::SEGMENT_MERGE,
+            Self::AirCutFilter => DressupStage::AIR_CUT_FILTER,
+            Self::FeedOptimization => DressupStage::FEED_OPTIMIZATION,
+        }
+    }
+}
+
 /// The dressup pipeline, in the order [`apply_dressups`] runs it.
 ///
 /// ORDER IS LOAD-BEARING and this list states it: segment merge runs AFTER
 /// arc fitting (curves are already G2/G3 by then, so the merge only cleans
-/// up residual linears), and the second rapid-order pass runs AFTER link
-/// moves. `RAPID_ORDER` appears twice for that reason — the barriered arm
-/// and the unbarriered fallback are the same stage under two gates, and
-/// exactly one of them fires. `RAMP_ENTRY` stands for the entry slot; a
-/// helix entry runs [`DressupStage::HELIX_ENTRY`] and an op with
-/// `stock_aware_plunge` under entry style None runs
-/// [`DressupStage::PLUNGE_ENTRY`] in the same position.
+/// up residual linears), and the unbarriered rapid-order pass runs AFTER
+/// link moves.
 ///
-/// Every stage is GATED. A run emits a subsequence of this list, never a
+/// `all_variants!` proves that every [`DressupStep`] is in the list. A step
+/// written twice makes a duplicate arm in that proof, which the workspace
+/// lint gate (`unreachable_patterns` under `-D warnings`) refuses. The
+/// `dressup_pipeline_names_each_step_once` test holds the same claim.
+///
+/// Every step is GATED. A run emits a subsequence of this list, never a
 /// different order and never a key that is not here.
 /// `tests/dressup_span_invariants.rs` is the guard.
-pub const DRESSUP_PIPELINE: &[DressupStage] = &[
-    DressupStage::RAPID_ORDER,
-    DressupStage::RAMP_ENTRY,
-    DressupStage::DOGBONES,
-    DressupStage::LEAD_IN_OUT,
-    DressupStage::LINK_MOVES,
-    DressupStage::ARC_FIT,
-    DressupStage::SEGMENT_MERGE,
-    DressupStage::RAPID_ORDER,
-    DressupStage::AIR_CUT_FILTER,
-    DressupStage::FEED_OPTIMIZATION,
-];
+pub const DRESSUP_PIPELINE: [DressupStep; 12] = crate::all_variants!(DressupStep:
+    RapidOrderBarriered,
+    RampEntry,
+    HelixEntry,
+    PlungeEntry,
+    Dogbones,
+    LeadInOut,
+    LinkMoves,
+    ArcFit,
+    SegmentMerge,
+    RapidOrderUnbarriered,
+    AirCutFilter,
+    FeedOptimization,
+);
 
 /// Run one dressup step with optional debug + semantic tracing scopes.
 ///
@@ -283,7 +380,7 @@ fn apply_dressup_traced(
     set_params: impl FnOnce(&ToolpathSemanticScope),
     transform: impl FnOnce(AnnotatedToolpath) -> Transformed,
 ) -> AnnotatedToolpath {
-    let debug_scope = debug_ctx.map(|ctx| ctx.start_span(info.debug_key, info.debug_label));
+    let debug_scope = debug_ctx.map(|ctx| ctx.start_span(info.debug_kind, info.debug_label));
     let debug_span_id = debug_scope.as_ref().map(|s| s.id());
     // Started BEFORE the transform (so its params are recorded even if the
     // transform is the last thing this scope sees) but bound to a move
@@ -328,34 +425,6 @@ fn apply_dressup_traced(
     result
 }
 
-/// Apply the standard dressup pipeline to a toolpath.
-///
-/// Steps: entry style → dogbones → lead in/out → link moves → arc fitting
-/// → rapid order optimization → air-cut filter → feed rate optimization.
-/// Move-order/link transforms are gated by operation capabilities.
-///
-/// TSP barriers are derived from the input [`AnnotatedToolpath`]'s spans
-/// (`RapidOrderBarrier` + `DepthPass` span starts) — see
-/// [`AnnotatedToolpath::rapid_order_barriers`].
-///
-/// `prior_stock` + `cutter` + `link_kinematics` enable the air-cut filter
-/// step (S3: the filter judges air for the whole cutter, so it refuses to
-/// run without one; it times a bridge with the envelope — see
-/// [`crate::dressup::filter_air_cuts`]). `feed_opt_stock` + `cutter`
-/// enable feed optimization. Both `debug_ctx` and `semantic_ctx` are optional
-/// per-step tracing scopes — the GUI passes them through to populate the
-/// sim-tree view; CLI / session callers pass `None` and pay zero overhead.
-///
-/// All dressups in this pipeline are span-aware (Phase 3 sub-tasks
-/// #50–#58); spans on the input are remapped through each step.
-///
-/// `channels` (C1) is the registry of index-carrying channels the CALLER
-/// owns — today the semantic trace's move links. Every step reconciles
-/// against it, so the item ranges cannot drift away from the moves they
-/// name (and cannot end up past the end of the move list, which is a
-/// consumer-panic class). It is orthogonal to `semantic_ctx`, which only
-/// controls whether each step records an item of its own; a caller with no
-/// channels passes [`ReconcileSet::empty`] and says so.
 /// The height below which THIS operation's rapids are its own internal
 /// linking rather than group framing — the per-op value C1 threads into
 /// [`crate::dressup::tsp::optimize_rapid_order`], where it stops
@@ -398,8 +467,8 @@ fn internal_link_ceiling_z(annotated: &AnnotatedToolpath, safe_z: f64) -> Option
 ///
 /// ONE construction site for the predicate two independent decisions in
 /// this pipeline now depend on — the entry-dressup strip
-/// (G-WANAKA-DRILL-RAMP, whose full rationale is at its call site below)
-/// and the C1 internal-link ceiling above. They were written days apart
+/// (G-WANAKA-DRILL-RAMP, see the module doc) and the C1 internal-link
+/// ceiling above. They were written days apart
 /// and would otherwise be two identical `any(...)` scans free to drift;
 /// the same predicate also lives in `session::compute`.
 ///
@@ -465,256 +534,357 @@ pub struct DressupContext<'a> {
     pub entry_containment: Option<&'a [crate::polygon::Polygon2]>,
 }
 
+/// Apply the standard dressup pipeline to a toolpath.
+///
+/// The steps run in [`DRESSUP_PIPELINE`] order; each step is one function
+/// below. Move-order/link transforms are gated by operation capabilities.
+///
+/// TSP barriers are derived from the input [`AnnotatedToolpath`]'s spans
+/// (`RapidOrderBarrier` + `DepthPass` span starts) — see
+/// [`AnnotatedToolpath::rapid_order_barriers`].
+///
+/// `prior_stock` + `cutter` + `link_kinematics` enable the air-cut filter
+/// step (S3: the filter judges air for the whole cutter, so it refuses to
+/// run without one; it times a bridge with the envelope — see
+/// [`crate::dressup::filter_air_cuts`]). `feed_opt_stock` + `cutter`
+/// enable feed optimization. Both `debug_ctx` and `semantic_ctx` are optional
+/// per-step tracing scopes — the GUI passes them through to populate the
+/// sim-tree view; CLI / session callers pass `None` and pay zero overhead.
+///
+/// All dressups in this pipeline are span-aware (Phase 3 sub-tasks
+/// #50–#58); spans on the input are remapped through each step.
+///
+/// `channels` (C1) is the registry of index-carrying channels the CALLER
+/// owns — today the semantic trace's move links. Every step reconciles
+/// against it, so the item ranges cannot drift away from the moves they
+/// name (and cannot end up past the end of the move list, which is a
+/// consumer-panic class). It is orthogonal to `semantic_ctx`, which only
+/// controls whether each step records an item of its own; a caller with no
+/// channels passes [`ReconcileSet::empty`] and says so.
 pub fn apply_dressups(
     annotated: AnnotatedToolpath,
     ctx: DressupContext<'_>,
     channels: &mut ReconcileSet<'_>,
 ) -> AnnotatedToolpath {
-    use crate::dressup::{
-        EntryStyle, LinkMoveParams, apply_dogbones, apply_entry, apply_link_moves,
+    let mut run = PipelineRun {
+        // Capability gate: barriered TSP only fires when the input has
+        // barriers. The count is read from the INPUT, once.
+        barrier_count: annotated.rapid_order_barriers().len(),
+        tool_radius: ctx.tool_diameter / 2.0,
+        entry_style: None,
+        ctx,
     };
-
-    let DressupContext {
-        cfg,
-        nominal_feed_rate,
-        plunge_rate_mm_min,
-        ramp_feed_rate_mm_min,
-        tool_diameter,
-        safe_z,
-        stock_top,
-        prior_stock,
-        link_kinematics,
-        feed_opt_stock,
-        cutter,
-        entry_surface,
-        transform_capabilities,
-        debug_ctx,
-        semantic_ctx,
-        entry_containment,
-    } = ctx;
-
-    // Capability gate: barriered TSP only fires when the input has barriers.
-    let rapid_order_barriers = annotated.rapid_order_barriers();
     let input_valid = annotated.spans_valid;
     let mut current = annotated;
 
-    let tool_radius = tool_diameter / 2.0;
+    for step in DRESSUP_PIPELINE {
+        current = match step {
+            DressupStep::RapidOrderBarriered => run.rapid_order_barriered(current, channels),
+            DressupStep::RampEntry => run.ramp_entry(current, channels),
+            DressupStep::HelixEntry => run.helix_entry(current, channels),
+            DressupStep::PlungeEntry => run.plunge_entry(current, channels),
+            DressupStep::Dogbones => run.dogbones(current, channels),
+            DressupStep::LeadInOut => run.lead_in_out(current, channels),
+            DressupStep::LinkMoves => run.link_moves(current, channels),
+            DressupStep::ArcFit => run.arc_fit(current, channels),
+            DressupStep::SegmentMerge => run.segment_merge(current, channels),
+            DressupStep::RapidOrderUnbarriered => run.rapid_order_unbarriered(current, channels),
+            DressupStep::AirCutFilter => run.air_cut_filter(current, channels),
+            DressupStep::FeedOptimization => run.feed_optimization(current, channels),
+        };
+    }
 
-    if cfg.optimize_rapid_order
-        && !rapid_order_barriers.is_empty()
-        && transform_capabilities.allows_barriered_rapid_reorder()
-    {
-        let barrier_count = rapid_order_barriers.len();
-        let link_ceiling = internal_link_ceiling_z(&current, safe_z);
-        current = apply_dressup_traced(
+    AnnotatedToolpath {
+        toolpath: current.toolpath,
+        spans: current.spans,
+        spans_valid: input_valid && current.spans_valid,
+        produced: current.produced,
+    }
+}
+
+/// The state of one `apply_dressups` run: the context and the facts the
+/// steps share.
+struct PipelineRun<'a> {
+    ctx: DressupContext<'a>,
+    /// The number of rapid-order barriers on the INPUT toolpath.
+    barrier_count: usize,
+    tool_radius: f64,
+    /// The entry style after the drill-cycle strip. The first entry step
+    /// fills it from the toolpath as that step sees it.
+    entry_style: Option<DressupEntryStyle>,
+}
+
+impl PipelineRun<'_> {
+    /// Run `transform` under `stage`, with this run's tracing scopes.
+    fn traced(
+        &self,
+        current: AnnotatedToolpath,
+        channels: &mut ReconcileSet<'_>,
+        stage: DressupStage,
+        set_params: impl FnOnce(&ToolpathSemanticScope),
+        transform: impl FnOnce(AnnotatedToolpath) -> Transformed,
+    ) -> AnnotatedToolpath {
+        apply_dressup_traced(
             current,
-            debug_ctx,
-            semantic_ctx,
+            self.ctx.debug_ctx,
+            self.ctx.semantic_ctx,
             channels,
-            DressupStage::RAPID_ORDER,
+            stage,
+            set_params,
+            transform,
+        )
+    }
+
+    /// The entry style after the G-WANAKA-DRILL-RAMP strip (module doc).
+    /// The first entry step reads it from `current` and logs the strip once.
+    fn effective_entry_style(&mut self, current: &AnnotatedToolpath) -> DressupEntryStyle {
+        if let Some(style) = self.entry_style {
+            return style;
+        }
+        let cfg = self.ctx.cfg;
+        let is_drill_cycle = toolpath_is_drill_cycle(current);
+        if is_drill_cycle && cfg.entry_style != DressupEntryStyle::None {
+            tracing::warn!(
+                entry_style = ?cfg.entry_style,
+                "Entry dressup dropped: a drill cycle's descent is the cut, and \
+                 ramping it would cut an oval slot instead of a round hole"
+            );
+        }
+        let style = if is_drill_cycle {
+            DressupEntryStyle::None
+        } else {
+            cfg.entry_style
+        };
+        self.entry_style = Some(style);
+        style
+    }
+
+    /// The guards every entry move and the lead-in read.
+    fn entry_safety(&self) -> crate::dressup::EntrySafety<'_> {
+        let ctx = &self.ctx;
+        crate::dressup::EntrySafety {
+            stock_top: ctx.stock_top,
+            surface: ctx.entry_surface,
+            fold_lap_cap: ctx.transform_capabilities.ramp_fold_lap_cap,
+            helix_floor_lap: ctx.transform_capabilities.helix_floor_lap,
+            helix_containment: ctx.entry_containment,
+            ramp_feed: ctx.ramp_feed_rate_mm_min,
+            stock_top_measured: false,
+            contact_clearance: ctx.cfg.entry_clearance_mm,
+            contact_top: None,
+            // Operator ruling 2026-09-24: a helix or ramp takes the full material
+            // depth, so it reads the op's own replayed stock for its start.
+            own_stock: ctx.cutter.map(|cutter| crate::dressup::EntryStockReplay {
+                cutter,
+                prior: ctx.prior_stock,
+            }),
+        }
+    }
+
+    /// The entry dressup's plunge feed: half the first linear feed of the
+    /// toolpath as the entry step sees it, else 500 mm/min.
+    fn entry_plunge_rate(current: &AnnotatedToolpath) -> f64 {
+        current
+            .toolpath
+            .moves
+            .iter()
+            .find_map(|m| match m.move_type {
+                crate::toolpath::MoveType::Linear { feed_rate } => Some(feed_rate * 0.5),
+                _ => None,
+            })
+            .unwrap_or(500.0)
+    }
+
+    /// The barriered rapid-order pass: the input has barriers and the op
+    /// allows a barriered reorder.
+    fn rapid_order_barriered(
+        &self,
+        current: AnnotatedToolpath,
+        channels: &mut ReconcileSet<'_>,
+    ) -> AnnotatedToolpath {
+        let ctx = &self.ctx;
+        if !(ctx.cfg.optimize_rapid_order
+            && self.barrier_count > 0
+            && ctx.transform_capabilities.allows_barriered_rapid_reorder())
+        {
+            return current;
+        }
+        let safe_z = ctx.safe_z;
+        let barrier_count = self.barrier_count;
+        let link_ceiling = internal_link_ceiling_z(&current, safe_z);
+        self.traced(
+            current,
+            channels,
+            DressupStep::RapidOrderBarriered.stage(),
             |scope| {
                 scope.set_param(SemanticKey::SafeZ, safe_z);
                 scope.set_param(SemanticKey::BarrierCount, barrier_count);
             },
             |at| crate::dressup::tsp::optimize_rapid_order(at, safe_z, link_ceiling),
-        );
+        )
     }
 
-    let plunge_rate = current
-        .toolpath
-        .moves
-        .iter()
-        .find_map(|m| match m.move_type {
-            crate::toolpath::MoveType::Linear { feed_rate } => Some(feed_rate * 0.5),
-            _ => None,
-        })
-        .unwrap_or(500.0);
-
-    // 1. Entry style
-    //
-    // G-WANAKA-DRILL-RAMP (2026-08-19, severity high): auto-applied
-    // dressups gave both of wanaka200's drill cycles `entry_style = ramp`,
-    // and `apply_entry` duly rewrote every peck descent as a ramp — the
-    // emitted pin-drill motion moved 19 mm laterally on its way down
-    // (`G1 X15.708 Y16.271 Z28.000` then `G1 X2.500 Y2.500 Z27.000` for a
-    // pin at X2.5 Y2.5). A ramped alignment-pin hole is an oval slot,
-    // which destroys the flip registration that is the op's entire
-    // purpose. Nothing flagged it; it was found by reading the G-code.
-    //
-    // The premise `apply_entry` is built on is that a straight plunge is a
-    // bad way to ENTER a cut. For a drill cycle the vertical descent IS
-    // the cut — end-cutting, which is exactly what a drill bit is for — so
-    // there is no ramped form of it to prefer. The dressup is dropped
-    // here, at the one place it is applied, rather than corrected in the
-    // config: `DressupConfig::normalize_for_op` already promises this for
-    // `Drill` (`FORCE_NO_ENTRY`) and the ramp reached the machine anyway,
-    // because `ProjectSession::add_toolpath` takes a fully-built
-    // `ToolpathConfig` and normalizes nothing. A guarantee that only holds
-    // when someone remembers to route through the right setter is not a
-    // guarantee.
-    //
-    // **Stripped, not refused.** A refusal would fire on the product's own
-    // defaults — `AlignmentPinDrill` carries `DressupPolicy::ANY_DRESSUP`
-    // and the Roughing role's `Ramp`, so every freshly-added pin drill
-    // would stop generating — and it would buy nothing: the dressup is a
-    // request to REWRITE the emitted geometry, so declining it leaves the
-    // commanded cycle whole and correct. Refusal is for the case where the
-    // engine cannot produce the commanded geometry at all.
-    //
-    // The predicate is the toolpath's own `MoveIntent::Drilling`, the same
-    // one `session::compute` uses to decide a result is a drill cycle.
-    // Only `drill.rs` emits it, and it tags every fed descent of all four
-    // cycles, so no drill-family plunge escapes and no milling op is
-    // caught. A future generator that mixed drilling and milling in one
-    // toolpath would lose entry styling for the whole op — none does, and
-    // `narrate.rs` already names that hypothetical as the thing to watch.
-    let is_drill_cycle = toolpath_is_drill_cycle(&current);
-    if is_drill_cycle && cfg.entry_style != DressupEntryStyle::None {
-        tracing::warn!(
-            entry_style = ?cfg.entry_style,
-            "Entry dressup dropped: a drill cycle's descent is the cut, and \
-             ramping it would cut an oval slot instead of a round hole"
-        );
-    }
-    let entry_style = if is_drill_cycle {
-        DressupEntryStyle::None
-    } else {
-        cfg.entry_style
-    };
-    let entry_safety = crate::dressup::EntrySafety {
-        stock_top,
-        surface: entry_surface,
-        fold_lap_cap: transform_capabilities.ramp_fold_lap_cap,
-        helix_floor_lap: transform_capabilities.helix_floor_lap,
-        helix_containment: entry_containment,
-        ramp_feed: ramp_feed_rate_mm_min,
-        stock_top_measured: false,
-        contact_clearance: cfg.entry_clearance_mm,
-        contact_top: None,
-        // Operator ruling 2026-09-24: a helix or ramp takes the full material
-        // depth, so it reads the op's own replayed stock for its start.
-        own_stock: cutter.map(|cutter| crate::dressup::EntryStockReplay {
-            cutter,
-            prior: prior_stock,
-        }),
-    };
-    match entry_style {
-        DressupEntryStyle::Ramp => {
-            let ramp_angle = cfg.ramp_angle;
-            current = apply_dressup_traced(
-                current,
-                debug_ctx,
-                semantic_ctx,
-                channels,
-                DressupStage::RAMP_ENTRY,
-                |scope| {
-                    scope.set_param(SemanticKey::Kind, "ramp");
-                    scope.set_param(SemanticKey::MaxAngleDeg, ramp_angle);
-                },
-                |at| {
-                    apply_entry(
-                        at,
-                        EntryStyle::Ramp {
-                            max_angle_deg: ramp_angle,
-                        },
-                        plunge_rate,
-                        entry_safety,
-                        tool_radius,
-                    )
-                },
-            );
+    /// The ramp entry: the effective entry style is Ramp.
+    fn ramp_entry(
+        &mut self,
+        current: AnnotatedToolpath,
+        channels: &mut ReconcileSet<'_>,
+    ) -> AnnotatedToolpath {
+        if self.effective_entry_style(&current) != DressupEntryStyle::Ramp {
+            return current;
         }
-        DressupEntryStyle::Helix => {
-            // G10 Q6 and D2: the radius is the operator value or the rule
-            // 0.3 x D, capped at the flat bottom so the helix leaves no
-            // core. The trace records the radius that is emitted. With no
-            // cutter (a test context) the flat bottom and the nominal D are
-            // unknown, so the request (or 0.3 x the context's D) is emitted.
-            let helix_radius = match cutter {
-                Some(cutter) => cfg.helix_radius_for(cutter).emitted_mm,
-                None => cfg
-                    .helix_radius
-                    .unwrap_or(crate::compute::config::HELIX_RADIUS_OVER_D * tool_diameter),
-            };
-            let helix_pitch = cfg.helix_pitch;
-            current = apply_dressup_traced(
-                current,
-                debug_ctx,
-                semantic_ctx,
-                channels,
-                DressupStage::HELIX_ENTRY,
-                |scope| {
-                    scope.set_param(SemanticKey::Kind, "helix");
-                    scope.set_param(SemanticKey::Radius, helix_radius);
-                    scope.set_param(SemanticKey::Pitch, helix_pitch);
-                },
-                |at| {
-                    apply_entry(
-                        at,
-                        EntryStyle::Helix {
-                            radius: helix_radius,
-                            pitch: helix_pitch,
-                        },
-                        plunge_rate,
-                        entry_safety,
-                        tool_radius,
-                    )
-                },
-            );
-        }
-        // G-ADAPTPASSLOAD round 4: a plunge on an op that asks for it goes
-        // down through air by rapid, as a helix's first half does.
-        DressupEntryStyle::None if transform_capabilities.stock_aware_plunge => {
-            current = apply_dressup_traced(
-                current,
-                debug_ctx,
-                semantic_ctx,
-                channels,
-                DressupStage::PLUNGE_ENTRY,
-                |scope| {
-                    scope.set_param(SemanticKey::Kind, "plunge");
-                },
-                |at| {
-                    apply_entry(
-                        at,
-                        EntryStyle::Plunge,
-                        plunge_rate,
-                        entry_safety,
-                        tool_radius,
-                    )
-                },
-            );
-        }
-        DressupEntryStyle::None => {}
-    }
-
-    // 2. Dogbones
-    if let Some(dogbone) = cfg.dogbone {
-        let angle = dogbone.angle;
-        current = apply_dressup_traced(
+        let ramp_angle = self.ctx.cfg.ramp_angle;
+        let plunge_rate = Self::entry_plunge_rate(&current);
+        let entry_safety = self.entry_safety();
+        let tool_radius = self.tool_radius;
+        self.traced(
             current,
-            debug_ctx,
-            semantic_ctx,
             channels,
-            DressupStage::DOGBONES,
+            DressupStep::RampEntry.stage(),
+            |scope| {
+                scope.set_param(SemanticKey::Kind, "ramp");
+                scope.set_param(SemanticKey::MaxAngleDeg, ramp_angle);
+            },
+            |at| {
+                crate::dressup::apply_entry(
+                    at,
+                    crate::dressup::EntryStyle::Ramp {
+                        max_angle_deg: ramp_angle,
+                    },
+                    plunge_rate,
+                    entry_safety,
+                    tool_radius,
+                )
+            },
+        )
+    }
+
+    /// The helix entry: the effective entry style is Helix.
+    fn helix_entry(
+        &mut self,
+        current: AnnotatedToolpath,
+        channels: &mut ReconcileSet<'_>,
+    ) -> AnnotatedToolpath {
+        if self.effective_entry_style(&current) != DressupEntryStyle::Helix {
+            return current;
+        }
+        let cfg = self.ctx.cfg;
+        // G10 Q6 and D2: the radius is the operator value or the rule
+        // 0.3 x D, capped at the flat bottom so the helix leaves no
+        // core. The trace records the radius that is emitted. With no
+        // cutter (a test context) the flat bottom and the nominal D are
+        // unknown, so the request (or 0.3 x the context's D) is emitted.
+        let helix_radius = match self.ctx.cutter {
+            Some(cutter) => cfg.helix_radius_for(cutter).emitted_mm,
+            None => cfg
+                .helix_radius
+                .unwrap_or(crate::compute::config::HELIX_RADIUS_OVER_D * self.ctx.tool_diameter),
+        };
+        let helix_pitch = cfg.helix_pitch;
+        let plunge_rate = Self::entry_plunge_rate(&current);
+        let entry_safety = self.entry_safety();
+        let tool_radius = self.tool_radius;
+        self.traced(
+            current,
+            channels,
+            DressupStep::HelixEntry.stage(),
+            |scope| {
+                scope.set_param(SemanticKey::Kind, "helix");
+                scope.set_param(SemanticKey::Radius, helix_radius);
+                scope.set_param(SemanticKey::Pitch, helix_pitch);
+            },
+            |at| {
+                crate::dressup::apply_entry(
+                    at,
+                    crate::dressup::EntryStyle::Helix {
+                        radius: helix_radius,
+                        pitch: helix_pitch,
+                    },
+                    plunge_rate,
+                    entry_safety,
+                    tool_radius,
+                )
+            },
+        )
+    }
+
+    /// The stock-aware plunge entry. G-ADAPTPASSLOAD round 4: a plunge on
+    /// an op that asks for it goes down through air by rapid, as a helix's
+    /// first half does. It runs when the effective entry style is None and
+    /// the op sets `stock_aware_plunge`.
+    fn plunge_entry(
+        &mut self,
+        current: AnnotatedToolpath,
+        channels: &mut ReconcileSet<'_>,
+    ) -> AnnotatedToolpath {
+        if !(self.effective_entry_style(&current) == DressupEntryStyle::None
+            && self.ctx.transform_capabilities.stock_aware_plunge)
+        {
+            return current;
+        }
+        let plunge_rate = Self::entry_plunge_rate(&current);
+        let entry_safety = self.entry_safety();
+        let tool_radius = self.tool_radius;
+        self.traced(
+            current,
+            channels,
+            DressupStep::PlungeEntry.stage(),
+            |scope| {
+                scope.set_param(SemanticKey::Kind, "plunge");
+            },
+            |at| {
+                crate::dressup::apply_entry(
+                    at,
+                    crate::dressup::EntryStyle::Plunge,
+                    plunge_rate,
+                    entry_safety,
+                    tool_radius,
+                )
+            },
+        )
+    }
+
+    /// Dogbones: the dressup is on.
+    fn dogbones(
+        &self,
+        current: AnnotatedToolpath,
+        channels: &mut ReconcileSet<'_>,
+    ) -> AnnotatedToolpath {
+        let Some(dogbone) = self.ctx.cfg.dogbone else {
+            return current;
+        };
+        let angle = dogbone.angle;
+        let tool_radius = self.tool_radius;
+        self.traced(
+            current,
+            channels,
+            DressupStep::Dogbones.stage(),
             |scope| {
                 scope.set_param(SemanticKey::AngleDeg, angle);
             },
-            |at| apply_dogbones(at, tool_radius, angle),
-        );
+            |at| crate::dressup::apply_dogbones(at, tool_radius, angle),
+        )
     }
 
-    // 3. Lead in/out
-    if let Some(lead) = cfg.lead_in_out {
+    /// Lead in/out: the dressup is on.
+    fn lead_in_out(
+        &self,
+        current: AnnotatedToolpath,
+        channels: &mut ReconcileSet<'_>,
+    ) -> AnnotatedToolpath {
+        let Some(lead) = self.ctx.cfg.lead_in_out else {
+            return current;
+        };
         let radius = lead.radius;
         let li_feed = lead.in_feed_rate;
         let lo_feed = lead.out_feed_rate;
-        current = apply_dressup_traced(
+        let surface = self.ctx.entry_surface;
+        let safe_z = self.ctx.safe_z;
+        let lead_scope = self.ctx.transform_capabilities.lead_scope();
+        self.traced(
             current,
-            debug_ctx,
-            semantic_ctx,
             channels,
-            DressupStage::LEAD_IN_OUT,
+            DressupStep::LeadInOut.stage(),
             |scope| {
                 scope.set_param(SemanticKey::Radius, radius);
                 if let Some(f) = li_feed {
@@ -730,40 +900,49 @@ pub fn apply_dressups(
                     radius,
                     li_feed,
                     lo_feed,
-                    entry_safety.surface.as_ref(),
+                    surface.as_ref(),
                     // G-ISOCLIPRAPID: the lead-in's pre-position rapid
                     // travels in XY, so it goes to the operation's retract
                     // plane, never to whatever height the move before the
                     // plunge stopped at.
                     Some(safe_z),
                     // P1b: Trace leaves an open path without leads.
-                    transform_capabilities.lead_scope(),
+                    lead_scope,
                 )
             },
-        );
+        )
     }
 
-    // 4. Link moves
-    if let Some(link) = cfg
-        .link_moves
-        .filter(|_| transform_capabilities.allows_link_moves())
-    {
+    /// Link moves: the dressup is on and the op allows link moves.
+    fn link_moves(
+        &self,
+        current: AnnotatedToolpath,
+        channels: &mut ReconcileSet<'_>,
+    ) -> AnnotatedToolpath {
+        let Some(link) = self
+            .ctx
+            .cfg
+            .link_moves
+            .filter(|_| self.ctx.transform_capabilities.allows_link_moves())
+        else {
+            return current;
+        };
         let max_dist = link.max_distance;
         let link_feed = link.feed_rate;
-        current = apply_dressup_traced(
+        let safe_z = self.ctx.safe_z;
+        let tool_radius = self.tool_radius;
+        self.traced(
             current,
-            debug_ctx,
-            semantic_ctx,
             channels,
-            DressupStage::LINK_MOVES,
+            DressupStep::LinkMoves.stage(),
             |scope| {
                 scope.set_param(SemanticKey::MaxLinkDistance, max_dist);
                 scope.set_param(SemanticKey::LinkFeedRate, link_feed);
             },
             |at| {
-                apply_link_moves(
+                crate::dressup::apply_link_moves(
                     at,
-                    &LinkMoveParams {
+                    &crate::dressup::LinkMoveParams {
                         max_link_distance: max_dist,
                         link_feed_rate: link_feed,
                         safe_z_threshold: safe_z * 0.9,
@@ -771,51 +950,60 @@ pub fn apply_dressups(
                     },
                 )
             },
-        );
+        )
     }
 
-    // 5. Arc fitting
-    if let Some(arc) = cfg.arc_fitting {
+    /// Arc fitting: the dressup is on.
+    fn arc_fit(
+        &self,
+        current: AnnotatedToolpath,
+        channels: &mut ReconcileSet<'_>,
+    ) -> AnnotatedToolpath {
+        let Some(arc) = self.ctx.cfg.arc_fitting else {
+            return current;
+        };
         let tolerance = arc.tolerance;
-        current = apply_dressup_traced(
+        let tool_radius = self.tool_radius;
+        let containment = self.ctx.entry_containment;
+        self.traced(
             current,
-            debug_ctx,
-            semantic_ctx,
             channels,
-            DressupStage::ARC_FIT,
+            DressupStep::ArcFit.stage(),
             |scope| {
                 scope.set_param(SemanticKey::Tolerance, tolerance);
             },
-            |at| {
-                crate::dressup::arcfit::fit_arcs_within(
-                    at,
-                    tolerance,
-                    tool_radius,
-                    entry_containment,
-                )
-            },
-        );
+            |at| crate::dressup::arcfit::fit_arcs_within(at, tolerance, tool_radius, containment),
+        )
     }
 
-    // 5b. Segment merge (accel-friendly) — collapse dense same-feed linear cut
-    // runs so a low-acceleration controller can ramp to feed. Runs after
-    // arc-fitting (curves are already G2/G3; this cleans up residual linears).
-    //
-    // G-PLANSIMGAP (2026-09-26): an operation whose planner applies the
-    // merge (the 3D Rough) already cut its path at this tolerance before
-    // it stamped each cut into its own stock. A second merge here would move
-    // cuts the planner stock already holds, and the entries read that
-    // stock. The stage stays in the trace with its tolerance and the kind
-    // "applied_by_planner", and moves nothing.
-    if let Some(merge) = cfg.segment_merge {
+    /// Segment merge (accel-friendly): collapse dense same-feed linear cut
+    /// runs so a low-acceleration controller can ramp to feed. Runs after
+    /// arc fitting (curves are already G2/G3; this cleans up residual
+    /// linears).
+    ///
+    /// G-PLANSIMGAP (2026-09-26): an operation whose planner applies the
+    /// merge (the 3D Rough) already cut its path at this tolerance before
+    /// it stamped each cut into its own stock. A second merge here would
+    /// move cuts the planner stock already holds, and the entries read that
+    /// stock. The stage stays in the trace with its tolerance and the kind
+    /// "applied_by_planner", and moves nothing.
+    fn segment_merge(
+        &self,
+        current: AnnotatedToolpath,
+        channels: &mut ReconcileSet<'_>,
+    ) -> AnnotatedToolpath {
+        let Some(merge) = self.ctx.cfg.segment_merge else {
+            return current;
+        };
         let merge_tol = merge.tolerance;
-        let by_planner = transform_capabilities.planner_applies_segment_merge;
-        current = apply_dressup_traced(
+        let by_planner = self
+            .ctx
+            .transform_capabilities
+            .planner_applies_segment_merge;
+        self.traced(
             current,
-            debug_ctx,
-            semantic_ctx,
             channels,
-            DressupStage::SEGMENT_MERGE,
+            DressupStep::SegmentMerge.stage(),
             |scope| {
                 scope.set_param(SemanticKey::Tolerance, merge_tol);
                 if by_planner {
@@ -829,64 +1017,95 @@ pub fn apply_dressups(
                     crate::dressup::condition::merge_linear_runs(at, merge_tol)
                 }
             },
-        );
+        )
     }
 
-    // 6. Rapid order optimization (unbarriered fallback)
-    if cfg.optimize_rapid_order
-        && rapid_order_barriers.is_empty()
-        && transform_capabilities.allows_unbarriered_rapid_reorder()
-    {
+    /// The unbarriered rapid-order fallback: the input has no barriers and
+    /// the op allows an unbarriered reorder.
+    fn rapid_order_unbarriered(
+        &self,
+        current: AnnotatedToolpath,
+        channels: &mut ReconcileSet<'_>,
+    ) -> AnnotatedToolpath {
+        let ctx = &self.ctx;
+        if !(ctx.cfg.optimize_rapid_order
+            && self.barrier_count == 0
+            && ctx
+                .transform_capabilities
+                .allows_unbarriered_rapid_reorder())
+        {
+            return current;
+        }
+        let safe_z = ctx.safe_z;
         let link_ceiling = internal_link_ceiling_z(&current, safe_z);
-        current = apply_dressup_traced(
+        self.traced(
             current,
-            debug_ctx,
-            semantic_ctx,
             channels,
-            DressupStage::RAPID_ORDER,
+            DressupStep::RapidOrderUnbarriered.stage(),
             |scope| {
                 scope.set_param(SemanticKey::SafeZ, safe_z);
             },
             |at| crate::dressup::tsp::optimize_rapid_order(at, safe_z, link_ceiling),
-        );
+        )
     }
 
-    // 7. Air-cut filter. S3: the filter classifies each sample for the whole
-    // cutter, so it needs the cutter; it times each bridge against the feed
-    // with the machine envelope (operator ruling 2026-10-15). A
-    // `prior_stock` without both cannot be served. Skipping is the
-    // conservative arm (nothing becomes a rapid that was not one), and it is
-    // unreachable from the session, which passes both.
-    if let (Some(stock), Some(cut), Some(link)) = (prior_stock, cutter, link_kinematics) {
+    /// The air-cut filter. S3: the filter classifies each sample for the
+    /// whole cutter, so it needs the cutter; it times each bridge against
+    /// the feed with the machine envelope (operator ruling 2026-10-15). A
+    /// `prior_stock` without both cannot be served. Skipping is the
+    /// conservative arm (nothing becomes a rapid that was not one), and it
+    /// is unreachable from the session, which passes both.
+    fn air_cut_filter(
+        &self,
+        current: AnnotatedToolpath,
+        channels: &mut ReconcileSet<'_>,
+    ) -> AnnotatedToolpath {
+        let ctx = &self.ctx;
+        let (Some(stock), Some(cut), Some(link)) =
+            (ctx.prior_stock, ctx.cutter, ctx.link_kinematics)
+        else {
+            if ctx.prior_stock.is_some() {
+                tracing::warn!(
+                    "air-cut filter skipped: prior stock present but no cutter or no \
+                     machine envelope was supplied to apply_dressups"
+                );
+            }
+            return current;
+        };
         let timing = crate::dressup::AirBridgeTiming {
-            feed_rate_mm_min: nominal_feed_rate,
+            feed_rate_mm_min: ctx.nominal_feed_rate,
             link,
         };
-        current = apply_dressup_traced(
+        let safe_z = ctx.safe_z;
+        let tool_radius = self.tool_radius;
+        self.traced(
             current,
-            debug_ctx,
-            semantic_ctx,
             channels,
-            DressupStage::AIR_CUT_FILTER,
+            DressupStep::AirCutFilter.stage(),
             |scope| {
                 scope.set_param(SemanticKey::ToolRadius, tool_radius);
                 scope.set_param(SemanticKey::SafeZ, safe_z);
             },
             |at| crate::dressup::filter_air_cuts(at, stock, cut, safe_z, 0.1, timing),
-        );
-    } else if prior_stock.is_some() {
-        tracing::warn!(
-            "air-cut filter skipped: prior stock present but no cutter or no \
-             machine envelope was supplied to apply_dressups"
-        );
+        )
     }
 
-    // 8. Feed rate optimization. Rewrites feed rates only — move count/order
-    // and spans pass through unchanged.
-    if cfg.feed_optimization
-        && let (Some(stock), Some(cut)) = (feed_opt_stock, cutter)
-    {
-        let nominal = nominal_feed_rate;
+    /// Feed rate optimization: the dressup is on, with a stock and a
+    /// cutter. It rewrites feed rates only — move count/order and spans
+    /// pass through unchanged.
+    fn feed_optimization(
+        &mut self,
+        current: AnnotatedToolpath,
+        channels: &mut ReconcileSet<'_>,
+    ) -> AnnotatedToolpath {
+        let cfg = self.ctx.cfg;
+        if !cfg.feed_optimization {
+            return current;
+        }
+        let (Some(stock), Some(cut)) = (self.ctx.feed_opt_stock.take(), self.ctx.cutter) else {
+            return current;
+        };
+        let nominal = self.ctx.nominal_feed_rate;
         let max_rate = cfg.feed_max_rate;
         let ramp_rate = cfg.feed_ramp_rate;
         let params = crate::dressup::feedopt::FeedOptParams {
@@ -904,14 +1123,12 @@ pub fn apply_dressups(
             // WP22 (G-FEEDOPTPLUNGE): the operation's own plunge rate. The
             // pass caps a geometric plunge at it, so a vertical descent no
             // longer leaves this pass at the CUTTING feed.
-            plunge_rate_mm_min,
+            plunge_rate_mm_min: self.ctx.plunge_rate_mm_min,
         };
-        current = apply_dressup_traced(
+        self.traced(
             current,
-            debug_ctx,
-            semantic_ctx,
             channels,
-            DressupStage::FEED_OPTIMIZATION,
+            DressupStep::FeedOptimization.stage(),
             |scope| {
                 scope.set_param(SemanticKey::NominalFeedRate, nominal);
                 scope.set_param(SemanticKey::MaxFeedRate, max_rate);
@@ -925,13 +1142,42 @@ pub fn apply_dressups(
                     at, cut, stock, &params,
                 ))
             },
-        );
+        )
+    }
+}
+
+#[cfg(test)]
+mod pipeline_tests {
+    use super::{DRESSUP_PIPELINE, DebugSpanKind, DressupStep};
+
+    /// F128: the pipeline names each step exactly once. `all_variants!`
+    /// proves that every step is present; this test also refuses a step
+    /// that is written twice.
+    #[test]
+    fn dressup_pipeline_names_each_step_once() {
+        for (i, step) in DRESSUP_PIPELINE.iter().enumerate() {
+            let later = DRESSUP_PIPELINE.iter().skip(i + 1);
+            assert!(
+                later.copied().all(|other| other != *step),
+                "{step:?} appears twice in DRESSUP_PIPELINE"
+            );
+        }
     }
 
-    AnnotatedToolpath {
-        toolpath: current.toolpath,
-        spans: current.spans,
-        spans_valid: input_valid && current.spans_valid,
-        produced: current.produced,
+    /// The two rapid-order positions trace under one stage, and the
+    /// barriered position runs before every other step.
+    #[test]
+    fn the_rapid_order_stage_has_two_positions() {
+        let rapid: Vec<usize> = DRESSUP_PIPELINE
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.stage().debug_kind == DebugSpanKind::RapidOrder)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(rapid.len(), 2, "rapid order has {rapid:?} positions");
+        assert_eq!(
+            DRESSUP_PIPELINE.first(),
+            Some(&DressupStep::RapidOrderBarriered)
+        );
     }
 }
