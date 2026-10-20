@@ -2673,3 +2673,34 @@ fn a_suggested_peck_respects_the_schema_floor_b14() {
         "with no stock the peck rises to the floor {pin_floor} mm, got {peck}"
     );
 }
+
+/// F161/F183: `pick_axial_envelope` picks its arm by the registry's
+/// `axial_envelope` class. The three rough arms write a field of one op's
+/// config (`if let`), so each rough class must hold exactly that op. A new
+/// op that takes a rough class fails here until its arm writes its field.
+/// The finish class is generic (it reads `kind_str`), so any op may take it.
+#[test]
+fn each_axial_envelope_class_names_the_op_its_arm_writes() {
+    use crate::compute::catalog::AxialEnvelope;
+    let mut finish = 0usize;
+    for &op in OperationType::ALL {
+        let config = OperationConfig::new_default(op);
+        let writes_its_field = match config.capabilities().axial_envelope {
+            AxialEnvelope::NotApplied => true,
+            AxialEnvelope::Finish3d => {
+                finish += 1;
+                true
+            }
+            AxialEnvelope::Roughing3d => matches!(config, OperationConfig::Adaptive3d(_)),
+            AxialEnvelope::VBitGroove => matches!(config, OperationConfig::VCarve(_)),
+            AxialEnvelope::CurveRough => matches!(config, OperationConfig::ProjectCurve(_)),
+        };
+        assert!(
+            writes_its_field,
+            "{op:?}: its axial-envelope class writes another op's field in \
+             `pick_axial_envelope`; give the class an arm for this op"
+        );
+    }
+    // Non-vacuity: the finish class is populated (eight rows on 2026-10-20).
+    assert!(finish > 0, "no op has the Finish3d class");
+}

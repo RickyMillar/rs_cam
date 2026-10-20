@@ -42,13 +42,9 @@ pub enum CutKinematics {
 impl CutKinematics {
     pub const COUNT: usize = 5;
 
-    pub const ALL: [CutKinematics; Self::COUNT] = [
-        CutKinematics::Linear,
-        CutKinematics::Plunge,
-        CutKinematics::Helix,
-        CutKinematics::Arc,
-        CutKinematics::Rapid,
-    ];
+    pub const ALL: [CutKinematics; Self::COUNT] = crate::all_variants!(CutKinematics:
+        Linear, Plunge, Helix, Arc, Rapid,
+    );
 
     #[inline]
     pub const fn index(self) -> usize {

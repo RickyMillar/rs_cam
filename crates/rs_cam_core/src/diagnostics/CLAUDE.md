@@ -20,7 +20,7 @@ One typed finding model for every upstream source. The entry point is
   measured. `Some(0.0)` means measured clean. Preserve that distinction on a
   new field and in every adapter.
 - A new rule needs an identifier in `ids.rs`. Do not raise a finding with an
-  ad-hoc string.
+  ad-hoc string. Write it as a row of `diag_ids!`: it emits the const and its `ALL` entry (F162).
 - An adapter converts. It does not compute a verdict. The verdict belongs to
   the source layer. Example: the tool-kind finding reads
   `OperationType::tool_refusal`, the generator's own refusal (W2.2).

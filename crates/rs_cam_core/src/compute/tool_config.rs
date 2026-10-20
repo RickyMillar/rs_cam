@@ -4,6 +4,25 @@ pub use crate::tool::size_units::SizeUnits;
 use crate::tool::size_units::{self, MM_PER_INCH};
 pub use crate::tool::{ToolDimension, ToolGeometryError};
 
+/// The array of every variant of a unit enum, with a compile-time proof that
+/// the list is complete (F162). Write `all_variants!(Type: A, B, C)`; the
+/// macro gives `[Type::A, Type::B, Type::C]`. It also holds an exhaustive
+/// `match` over the same names, so a new variant that is not in the list is
+/// a compile error (`E0004`) at the `ALL` site. Name the type, not `Self`:
+/// the proof is a nested item, and `Self` does not reach into it.
+///
+/// Example: `pub const ALL: &[ToolType] = &all_variants!(ToolType: EndMill, ..);`
+#[macro_export]
+macro_rules! all_variants {
+    ($ty:ident: $first:ident $(, $rest:ident)* $(,)?) => {{
+        const _: () = match $ty::$first {
+            $ty::$first => (),
+            $($ty::$rest => (),)*
+        };
+        [$ty::$first $(, $ty::$rest)*]
+    }};
+}
+
 /// Unique identifier for a tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ToolId(pub usize);
@@ -20,13 +39,9 @@ pub enum ToolType {
 }
 
 impl ToolType {
-    pub const ALL: &[ToolType] = &[
-        ToolType::EndMill,
-        ToolType::BallNose,
-        ToolType::BullNose,
-        ToolType::VBit,
-        ToolType::TaperedBallNose,
-    ];
+    pub const ALL: &[ToolType] = &crate::all_variants!(ToolType:
+        EndMill, BallNose, BullNose, VBit, TaperedBallNose,
+    );
 
     pub fn label(&self) -> &'static str {
         match self {
@@ -112,7 +127,7 @@ pub(crate) const CARBIDE_YOUNGS_MODULUS_N_PER_MM2: f64 = 600_000.0;
 pub(crate) const HSS_YOUNGS_MODULUS_N_PER_MM2: f64 = 200_000.0;
 
 impl ToolMaterial {
-    pub const ALL: &[ToolMaterial] = &[ToolMaterial::Carbide, ToolMaterial::Hss];
+    pub const ALL: &[ToolMaterial] = &crate::all_variants!(ToolMaterial: Carbide, Hss);
 
     pub fn label(&self) -> &'static str {
         match self {
@@ -141,11 +156,9 @@ pub enum BitCutDirection {
 }
 
 impl BitCutDirection {
-    pub const ALL: &[BitCutDirection] = &[
-        BitCutDirection::UpCut,
-        BitCutDirection::DownCut,
-        BitCutDirection::Compression,
-    ];
+    pub const ALL: &[BitCutDirection] = &crate::all_variants!(BitCutDirection:
+        UpCut, DownCut, Compression,
+    );
 
     pub fn label(&self) -> &'static str {
         match self {
@@ -771,13 +784,9 @@ pub enum ToolGeometryField {
 }
 
 impl ToolGeometryField {
-    pub const ALL: &[ToolGeometryField] = &[
-        ToolGeometryField::CornerRadiusMm,
-        ToolGeometryField::CornerRadius,
-        ToolGeometryField::IncludedAngle,
-        ToolGeometryField::TaperHalfAngle,
-        ToolGeometryField::ShaftDiameter,
-    ];
+    pub const ALL: &[ToolGeometryField] = &crate::all_variants!(ToolGeometryField:
+        CornerRadiusMm, CornerRadius, IncludedAngle, TaperHalfAngle, ShaftDiameter,
+    );
 
     /// The one tool type that consumes this field.
     pub const fn owner(self) -> ToolType {

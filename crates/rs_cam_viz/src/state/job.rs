@@ -540,43 +540,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn all_constants_are_exhaustive() {
-        // ToolType: 5 variants
-        assert_eq!(
-            ToolType::ALL.len(),
-            5,
-            "ToolType::ALL out of sync with enum"
-        );
-        // PostFormat: 4 variants (Grbl, GrblHal, LinuxCnc, Mach3)
-        assert_eq!(
-            PostFormat::ALL.len(),
-            4,
-            "PostFormat::ALL out of sync with enum"
-        );
-        // ToolMaterial: 2 variants
-        assert_eq!(
-            ToolMaterial::ALL.len(),
-            2,
-            "ToolMaterial::ALL out of sync with enum"
-        );
-        // BitCutDirection: 3 variants
-        assert_eq!(
-            BitCutDirection::ALL.len(),
-            3,
-            "BitCutDirection::ALL out of sync with enum"
-        );
-        // FaceUp: 6 variants
-        assert_eq!(FaceUp::ALL.len(), 6, "FaceUp::ALL out of sync with enum");
-        // ZRotation: 4 variants
-        assert_eq!(
-            ZRotation::ALL.len(),
-            4,
-            "ZRotation::ALL out of sync with enum"
-        );
-        // Corner: 4 variants
-        assert_eq!(Corner::ALL.len(), 4, "Corner::ALL out of sync with enum");
-    }
+    // F194: the count test that stood here (`ALL.len() == 5` and so on) is
+    // gone. Core writes each of these `ALL` lists with `all_variants!`, an
+    // exhaustive `match` over the list, so a new variant that is not in the
+    // list is a compile error in core.
 
     #[test]
     fn all_constants_have_no_duplicates() {

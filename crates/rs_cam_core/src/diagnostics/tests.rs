@@ -49,15 +49,44 @@ fn all_diagnostic_ids_are_unique() {
     }
 }
 
+/// F162: every id is a row of the `diag_ids!` macro, so `ALL` holds it.
+/// A `const NAME: &str` written outside the macro block would miss `ALL`;
+/// this scan counts every such const in `ids.rs` and compares.
+#[test]
+fn every_id_const_in_ids_rs_is_in_all() {
+    let src = include_str!("ids.rs");
+    let consts = src
+        .lines()
+        .map(str::trim_start)
+        .filter(|l| {
+            (l.starts_with("pub const ") || l.starts_with("pub(crate) const "))
+                && l.contains(": &str")
+        })
+        .count();
+    // Non-vacuity: the scan sees the ids (102 on 2026-10-20, and only more later).
+    assert!(consts >= 100, "the scan found {consts} id consts");
+    assert_eq!(
+        consts,
+        ids::ALL.len(),
+        "an id const in ids.rs sits outside the diag_ids! block"
+    );
+    assert!(ids::ALL.contains(&ids::GEOM_CLIPPED_BAND));
+    assert!(ids::ALL.contains(&ids::CONFIG_CLAIMS_REFERENCE));
+}
+
 /// Sanity check: every constant string used as a diagnostic ID must be
-/// referenced *somewhere* in the adapter / orchestrator code. Catches
+/// referenced *somewhere* in the crate source outside `ids.rs`. Catches
 /// orphaned constants (lint policy denies dead_code, but a constant
-/// can still drift out of every emitter).
+/// can still drift out of every emitter). The id list is
+/// `ids::NAMED`, which the `diag_ids!` macro writes, so a new id is
+/// checked with no edit here (F162).
 #[test]
 fn all_diagnostic_ids_reachable_in_adapter_source() {
-    // Read every file under `diagnostics/` and assert each ID appears
-    // at least once outside `ids.rs` itself. A reachable ID need not
-    // be emitted under every scenario — we just need to know it's wired.
+    // Read every file under `src/` and assert each ID appears at least
+    // once outside `ids.rs` and the `tests.rs` files. A reachable ID need
+    // not be emitted under every scenario — we just need to know it's
+    // wired. Some ids are emitted outside `diagnostics/` (for example
+    // `stock/sim_triage.rs`), so the scan reads the whole crate source.
     use std::fs::read_to_string;
     use std::path::Path;
 
@@ -75,8 +104,16 @@ fn all_diagnostic_ids_reachable_in_adapter_source() {
         }
     }
     let mut files = Vec::new();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/diagnostics");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     collect_rs_files(&root, &mut files);
+    // Non-vacuity: the scan read the adapters, and the list holds every id.
+    assert!(
+        files
+            .iter()
+            .any(|p| p.ends_with("diagnostics/adapters/from_generation.rs")),
+        "the source scan did not find the adapters"
+    );
+    assert_eq!(ids::NAMED.len(), ids::ALL.len());
     let merged: String = files
         .iter()
         .filter_map(|p| read_to_string(p).ok())
@@ -87,139 +124,28 @@ fn all_diagnostic_ids_reachable_in_adapter_source() {
     // own constant referenced indirectly — accept either the symbol
     // name (`LOAD_CHIPLOAD_HIGH`) or the literal string
     // (`"load.chipload.high"`).
-    let consts: &[(&str, &str)] = &[
-        ("LOAD_CHIPLOAD_HIGH", ids::LOAD_CHIPLOAD_HIGH),
-        ("LOAD_CHIPLOAD_LOW", ids::LOAD_CHIPLOAD_LOW),
-        ("LOAD_CHIPLOAD_WITHIN", ids::LOAD_CHIPLOAD_WITHIN),
-        ("LOAD_CHIPLOAD_UNMODELED", ids::LOAD_CHIPLOAD_UNMODELED),
-        ("LOAD_POWER_EXCEEDS", ids::LOAD_POWER_EXCEEDS),
-        ("LOAD_POWER_WITHIN", ids::LOAD_POWER_WITHIN),
-        ("LOAD_POWER_UNMODELED", ids::LOAD_POWER_UNMODELED),
-        ("LOAD_DEFLECTION_EXCEEDS", ids::LOAD_DEFLECTION_EXCEEDS),
-        ("LOAD_DEFLECTION_WITHIN", ids::LOAD_DEFLECTION_WITHIN),
-        ("LOAD_DEFLECTION_UNMODELED", ids::LOAD_DEFLECTION_UNMODELED),
-        ("LOAD_DEPTH_WITHIN", ids::LOAD_DEPTH_WITHIN),
-        ("LOAD_DEPTH_EXCEEDS", ids::LOAD_DEPTH_EXCEEDS),
-        ("LOAD_DEPTH_REPORTED", ids::LOAD_DEPTH_REPORTED),
-        ("LOAD_DEPTH_UNMODELED", ids::LOAD_DEPTH_UNMODELED),
-        ("DRILL_CHIP_WELDING", ids::DRILL_CHIP_WELDING),
-        ("DRILL_PECK_ADEQUACY", ids::DRILL_PECK_ADEQUACY),
-        ("DRILL_PLUNGE_FEED", ids::DRILL_PLUNGE_FEED),
-        ("PROJECT_HOLDER_COLLISION", ids::PROJECT_HOLDER_COLLISION),
-        ("PROJECT_RAPID_COLLISION", ids::PROJECT_RAPID_COLLISION),
-        (
-            "PROJECT_OBSTACLE_COLLISION",
-            ids::PROJECT_OBSTACLE_COLLISION,
-        ),
-        ("PROJECT_PLUNGE_STRESS", ids::PROJECT_PLUNGE_STRESS),
-        ("PROJECT_AIR_CUT_HIGH", ids::PROJECT_AIR_CUT_HIGH),
-        ("PROJECT_GENERATED_EMPTY", ids::PROJECT_GENERATED_EMPTY),
-        ("FEEDS_FEED_CLAMPED", ids::FEEDS_FEED_CLAMPED),
-        ("FEEDS_POWER_LIMITED", ids::FEEDS_POWER_LIMITED),
-        ("FEEDS_SHANK_TOO_LARGE", ids::FEEDS_SHANK_TOO_LARGE),
-        ("FEEDS_DOC_EXCEEDS_FLUTE", ids::FEEDS_DOC_EXCEEDS_FLUTE),
-        ("FEEDS_SLOTTING_DETECTED", ids::FEEDS_SLOTTING_DETECTED),
-        ("FEEDS_SCALLOP_INVALID", ids::FEEDS_SCALLOP_INVALID),
-        (
-            "FEEDS_CHIPLOAD_BELOW_FLOOR",
-            ids::FEEDS_CHIPLOAD_BELOW_FLOOR,
-        ),
-        ("FEEDS_LONG_TOOL_DERATE", ids::FEEDS_LONG_TOOL_DERATE),
-        (
-            "FEEDS_AGGRESSIVENESS_ENGAGEMENT",
-            ids::FEEDS_AGGRESSIVENESS_ENGAGEMENT,
-        ),
-        (
-            "FEEDS_RPM_LOWERED_FOR_CEILING",
-            ids::FEEDS_RPM_LOWERED_FOR_CEILING,
-        ),
-        ("FEEDS_FEED_VS_LUT_HIGH", ids::FEEDS_FEED_VS_LUT_HIGH),
-        ("FEEDS_FEED_VS_LUT_LOW", ids::FEEDS_FEED_VS_LUT_LOW),
-        ("FEEDS_STEPOVER_VS_LUT", ids::FEEDS_STEPOVER_VS_LUT),
-        ("FEEDS_DPP_VS_LUT", ids::FEEDS_DPP_VS_LUT),
-        (
-            "FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE",
-            ids::FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE,
-        ),
-        (
-            "GEOM_STEPOVER_EXCEEDS_DIAMETER",
-            ids::GEOM_STEPOVER_EXCEEDS_DIAMETER,
-        ),
-        (
-            "GEOM_DPP_EXCEEDS_CUTTING_LENGTH",
-            ids::GEOM_DPP_EXCEEDS_CUTTING_LENGTH,
-        ),
-        ("GEOM_BOTTOM_ABOVE_TOP_Z", ids::GEOM_BOTTOM_ABOVE_TOP_Z),
-        ("GEOM_FEED_Z_BELOW_TOP_Z", ids::GEOM_FEED_Z_BELOW_TOP_Z),
-        (
-            "GEOM_RETRACT_Z_BELOW_FEED_Z",
-            ids::GEOM_RETRACT_Z_BELOW_FEED_Z,
-        ),
-        (
-            "GEOM_CLEARANCE_Z_BELOW_RETRACT_Z",
-            ids::GEOM_CLEARANCE_Z_BELOW_RETRACT_Z,
-        ),
-        ("GEOM_PLUNGE_EXCEEDS_FEED", ids::GEOM_PLUNGE_EXCEEDS_FEED),
-        ("COMPAT_TOOL_KIND_REFUSED", ids::COMPAT_TOOL_KIND_REFUSED),
-        (
-            "COMPAT_BALL_NOSE_FLAT_CLEARING",
-            ids::COMPAT_BALL_NOSE_FLAT_CLEARING,
-        ),
-        (
-            "COMPAT_PROJECT_CURVE_POINT_PROJECTION",
-            ids::COMPAT_PROJECT_CURVE_POINT_PROJECTION,
-        ),
-        ("TOOL_NAME_SIZE_MISMATCH", ids::TOOL_NAME_SIZE_MISMATCH),
-        (
-            "QUALITY_STEPOVER_OVER_80_PCT",
-            ids::QUALITY_STEPOVER_OVER_80_PCT,
-        ),
-        (
-            "QUALITY_FINISH_STEPOVER_OVER_50_PCT",
-            ids::QUALITY_FINISH_STEPOVER_OVER_50_PCT,
-        ),
-        (
-            "QUALITY_BALL_SCALLOP_HEIGHT",
-            ids::QUALITY_BALL_SCALLOP_HEIGHT,
-        ),
-        (
-            "EFFICIENCY_VERY_FINE_STEPOVER",
-            ids::EFFICIENCY_VERY_FINE_STEPOVER,
-        ),
-        ("STALE_DROP_CUTTER_MIN_Z", ids::STALE_DROP_CUTTER_MIN_Z),
-        ("STALE_TAPERED_BALL_PLUNGE", ids::STALE_TAPERED_BALL_PLUNGE),
-        (
-            "STALE_WOOD_ADAPTIVE_STEPOVER",
-            ids::STALE_WOOD_ADAPTIVE_STEPOVER,
-        ),
-        (
-            "STALE_PROJECT_CURVE_NEGATIVE_DEPTH",
-            ids::STALE_PROJECT_CURVE_NEGATIVE_DEPTH,
-        ),
-        ("PRECOND_DRILL_NO_HOLES", ids::PRECOND_DRILL_NO_HOLES),
-        (
-            "PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES",
-            ids::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES,
-        ),
-        (
-            "PRECOND_PROJECT_CURVE_NO_CURVE",
-            ids::PRECOND_PROJECT_CURVE_NO_CURVE,
-        ),
-        (
-            "PRECOND_PROJECT_CURVE_NO_SURFACE",
-            ids::PRECOND_PROJECT_CURVE_NO_SURFACE,
-        ),
-        ("REF_MODEL_MISSING", ids::REF_MODEL_MISSING),
-    ];
+    //
+    // KNOWN ORPHAN: no emitter raises `PROJECT_KINEMATIC_UTILIZATION`
+    // (dead `pub(crate)` const since 69e71151; W7 found it when this scan
+    // started to read the whole id list). The list holds it so the scan
+    // stays green; the check below fails the day an emitter lands, and
+    // then this entry goes.
+    const KNOWN_ORPHANS: &[&str] = &["PROJECT_KINEMATIC_UTILIZATION"];
     let mut missing = Vec::new();
-    for (symbol, literal) in consts {
-        if !merged.contains(symbol) && !merged.contains(literal) {
+    for (symbol, literal) in ids::NAMED {
+        let reached = merged.contains(symbol) || merged.contains(&format!("\"{literal}\""));
+        let orphan = KNOWN_ORPHANS.contains(symbol);
+        assert!(
+            !(reached && orphan),
+            "{symbol} now has an emitter: remove it from KNOWN_ORPHANS"
+        );
+        if !reached && !orphan {
             missing.push(format!("{symbol} (= {literal:?})"));
         }
     }
     assert!(
         missing.is_empty(),
-        "diagnostic IDs declared in `ids.rs` but never referenced in adapters: {missing:#?}"
+        "diagnostic IDs declared in `ids.rs` but never referenced in the source: {missing:#?}"
     );
 }
 

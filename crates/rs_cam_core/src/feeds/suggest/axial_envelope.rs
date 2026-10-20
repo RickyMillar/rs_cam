@@ -274,58 +274,57 @@ pub(super) fn pick_axial_envelope(
         return (warnings, dpp_mutated);
     };
 
-    match operation {
-        OperationConfig::Adaptive3d(cfg) => {
-            let commanded = cfg.depth_per_pass;
-            let (new_dpp, ws) =
-                apply_axial_envelope(commanded, &env, "adaptive3d", "depth_per_pass");
-            warnings.extend(ws);
-            if (new_dpp - commanded).abs() > 1.0e-6 {
-                cfg.depth_per_pass = new_dpp;
-                dpp_mutated = true;
+    // F161/F183: the registry row's class picks the arm, so a new op with a
+    // class gets that class's pass and no `_ =>` arm hides it. The three
+    // rough classes write a field of one op's config: each holds exactly
+    // that op (pinned by `each_axial_envelope_class_names_the_op_its_arm_writes`).
+    let class = operation.capabilities().axial_envelope;
+    match class {
+        // `axial_envelope_for_operation` returns `None` for this class, so
+        // the function returned above.
+        AxialEnvelope::NotApplied => {}
+        AxialEnvelope::Roughing3d => {
+            if let OperationConfig::Adaptive3d(cfg) = operation {
+                let commanded = cfg.depth_per_pass;
+                let (new_dpp, ws) =
+                    apply_axial_envelope(commanded, &env, "adaptive3d", "depth_per_pass");
+                warnings.extend(ws);
+                if (new_dpp - commanded).abs() > 1.0e-6 {
+                    cfg.depth_per_pass = new_dpp;
+                    dpp_mutated = true;
+                }
             }
         }
-        OperationConfig::VCarve(cfg) => {
-            let commanded = cfg.max_depth;
-            let (new_depth, ws) = apply_axial_envelope(commanded, &env, "vcarve", "max_depth");
-            warnings.extend(ws);
-            if (new_depth - commanded).abs() > 1.0e-6 {
-                cfg.max_depth = new_depth;
-                // VCarve `max_depth` is not the chipload-DPP — re-derivation
-                // only matters for ops where DPP feeds back into the chip
-                // geometry calculator. Leave `dpp_mutated` false here.
+        AxialEnvelope::VBitGroove => {
+            if let OperationConfig::VCarve(cfg) = operation {
+                let commanded = cfg.max_depth;
+                let (new_depth, ws) = apply_axial_envelope(commanded, &env, "vcarve", "max_depth");
+                warnings.extend(ws);
+                if (new_depth - commanded).abs() > 1.0e-6 {
+                    cfg.max_depth = new_depth;
+                    // VCarve `max_depth` is not the chipload-DPP — re-derivation
+                    // only matters for ops where DPP feeds back into the chip
+                    // geometry calculator. Leave `dpp_mutated` false here.
+                }
             }
         }
-        OperationConfig::ProjectCurve(cfg) => {
-            let safe_max = env.safe_max_doc_mm();
-            if cfg.depth > safe_max && safe_max > 0.0 {
-                warnings.push(SuggestWarning::ProjectCurveDepthInfeasible {
-                    commanded_mm: cfg.depth,
-                    max_safe_mm: safe_max,
-                    binding: axial_binding_str(env.binding_constraint),
-                });
+        AxialEnvelope::CurveRough => {
+            if let OperationConfig::ProjectCurve(cfg) = operation {
+                let safe_max = env.safe_max_doc_mm();
+                if cfg.depth > safe_max && safe_max > 0.0 {
+                    warnings.push(SuggestWarning::ProjectCurveDepthInfeasible {
+                        commanded_mm: cfg.depth,
+                        max_safe_mm: safe_max,
+                        binding: axial_binding_str(env.binding_constraint),
+                    });
+                }
             }
         }
-        // Finish-3D family — warning-only per planning §5.1.1.
-        OperationConfig::Scallop(_)
-        | OperationConfig::UnifiedFinish(_)
-        | OperationConfig::DropCutter(_)
-        | OperationConfig::Waterline(_)
-        | OperationConfig::SteepShallow(_)
-        | OperationConfig::SpiralFinish(_)
-        | OperationConfig::RadialFinish(_)
-        | OperationConfig::HorizontalFinish(_) => {
-            let op_kind = match operation {
-                OperationConfig::Scallop(_) => "scallop",
-                OperationConfig::UnifiedFinish(_) => "unified_finish",
-                OperationConfig::DropCutter(_) => "drop_cutter",
-                OperationConfig::Waterline(_) => "waterline",
-                OperationConfig::SteepShallow(_) => "steep_shallow",
-                OperationConfig::SpiralFinish(_) => "spiral_finish",
-                OperationConfig::RadialFinish(_) => "radial_finish",
-                OperationConfig::HorizontalFinish(_) => "horizontal_finish",
-                _ => "finish_3d",
-            };
+        // Finish-3D family — warning-only per planning §5.1.1. The op kind
+        // is the registry's kind token (the eight literals this replaced
+        // spelled the same strings).
+        AxialEnvelope::Finish3d => {
+            let op_kind = operation.op_type().kind_str();
             let binding_str = axial_binding_str(env.binding_constraint);
             // Only emit the advisory when the envelope actually carries a
             // meaningful bound (safe max under 5×D is the sniff test —
@@ -346,11 +345,6 @@ pub(super) fn pick_axial_envelope(
                 });
             }
         }
-        // Unreachable in practice: `axial_envelope_for_operation`
-        // returns `None` for every other variant, so we never get here
-        // with an envelope. Kept as an explicit no-op rather than
-        // `unreachable!` so routing changes fail soft.
-        _ => {}
     }
 
     (warnings, dpp_mutated)

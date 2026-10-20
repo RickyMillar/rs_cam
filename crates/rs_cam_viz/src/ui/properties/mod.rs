@@ -1207,16 +1207,11 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState) {
 /// `VBit` (the project's model of a twist drill). The mixed pin preset
 /// and the pin wizard offer them as dowel sizes.
 pub(crate) fn drill_tool_diameters(session: &rs_cam_core::session::ProjectSession) -> Vec<f64> {
-    use crate::state::toolpath::OperationConfig;
     let mut out: Vec<f64> = session
         .toolpath_configs()
         .iter()
-        .filter(|tc| {
-            matches!(
-                tc.operation,
-                OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
-            )
-        })
+        // F095: the core drill-family predicate names the drilling operations.
+        .filter(|tc| tc.operation.op_type().is_drill_kinematics())
         .filter_map(|tc| session.tools().iter().find(|t| t.id.0 == tc.tool_id))
         .chain(
             session

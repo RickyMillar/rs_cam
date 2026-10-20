@@ -138,12 +138,22 @@ The core library includes three modules for debugging and analysis:
 
 ## Extension path
 
-Adding a new operation typically requires changes in four places:
+To add a new operation:
 
 1. Implement the core algorithm in `rs_cam_core`.
-2. Add GUI state types in `rs_cam_viz/src/state/toolpath.rs`.
-3. Wire worker dispatch in `rs_cam_viz/src/compute/worker.rs`.
-4. Add parameter UI in `rs_cam_viz/src/ui/properties/mod.rs`.
+2. Add a row to `for_each_op!` in `rs_cam_core/src/compute/catalog.rs`. The
+   macro writes `OperationType`, `OperationType::ALL` and the
+   `OperationConfig` dispatch.
+3. Add a config type that derives `OpParams`. Its `#[param]` attributes are
+   the parameter schema: the GUI row and the parameter setter read it.
+4. Add the registry row in `rs_cam_core/src/compute/catalog/registry.rs`.
+   Every capability field is required, and the row's `generate` is the
+   dispatch.
+5. Build. The compiler names each remaining per-variant decision (an
+   exhaustive `match` with no `_` arm), in core and in the GUI.
+
+Do not count operations by hand in code or prose: read
+`OperationType::ALL.len()`.
 
 CLI exposure is optional and can be added later if the operation is useful in batch form.
 

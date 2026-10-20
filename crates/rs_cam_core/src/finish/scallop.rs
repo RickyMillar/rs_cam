@@ -320,7 +320,7 @@ pub enum RingReducer {
 }
 
 impl RingReducer {
-    pub const ALL: [Self; 4] = [Self::Min, Self::P10, Self::Median, Self::Mean];
+    pub const ALL: [Self; 4] = crate::all_variants!(RingReducer: Min, P10, Median, Mean);
 
     #[must_use]
     pub const fn label(self) -> &'static str {
@@ -360,7 +360,7 @@ pub enum RingSampling {
 }
 
 impl RingSampling {
-    pub const ALL: [Self; 2] = [Self::Fixed20, Self::EveryVertex];
+    pub const ALL: [Self; 2] = crate::all_variants!(RingSampling: Fixed20, EveryVertex);
 
     #[must_use]
     pub const fn label(self) -> &'static str {
@@ -394,7 +394,7 @@ pub enum StepoverGeometry {
 }
 
 impl StepoverGeometry {
-    pub const ALL: [Self; 2] = [Self::Shipped, Self::CosineSlope];
+    pub const ALL: [Self; 2] = crate::all_variants!(StepoverGeometry: Shipped, CosineSlope);
 
     #[must_use]
     pub const fn label(self) -> &'static str {
@@ -433,7 +433,7 @@ pub enum CurvaturePolicy {
 }
 
 impl CurvaturePolicy {
-    pub const ALL: [Self; 2] = [Self::Raw, Self::ToolLimited];
+    pub const ALL: [Self; 2] = crate::all_variants!(CurvaturePolicy: Raw, ToolLimited);
 
     #[must_use]
     pub const fn label(self) -> &'static str {
@@ -473,7 +473,7 @@ pub enum PolygonReduce {
 }
 
 impl PolygonReduce {
-    pub const ALL: [Self; 2] = [Self::MinAcross, Self::PerPolygon];
+    pub const ALL: [Self; 2] = crate::all_variants!(PolygonReduce: MinAcross, PerPolygon);
 
     #[must_use]
     pub const fn label(self) -> &'static str {
@@ -503,7 +503,7 @@ pub enum RingSource {
 }
 
 impl RingSource {
-    pub const ALL: [Self; 2] = [Self::OffsetCascade, Self::IsoField];
+    pub const ALL: [Self; 2] = crate::all_variants!(RingSource: OffsetCascade, IsoField);
 
     #[must_use]
     pub const fn label(self) -> &'static str {
@@ -572,11 +572,9 @@ pub enum RingSampleBound {
 }
 
 impl RingSampleBound {
-    pub const ALL: [Self; 3] = [
-        Self::ToleranceScaled,
-        Self::FlatGroundStepover,
-        Self::ToleranceOnly,
-    ];
+    pub const ALL: [Self; 3] = crate::all_variants!(RingSampleBound:
+        ToleranceScaled, FlatGroundStepover, ToleranceOnly,
+    );
 
     #[must_use]
     pub const fn label(self) -> &'static str {

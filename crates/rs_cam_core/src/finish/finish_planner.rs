@@ -105,7 +105,7 @@ pub enum FinishBand {
 
 impl FinishBand {
     /// Every variant, in declaration order.
-    pub const ALL: [Self; 3] = [Self::Shallow, Self::MidSteep, Self::VerySteep];
+    pub const ALL: [Self; 3] = crate::all_variants!(FinishBand: Shallow, MidSteep, VerySteep);
 
     /// Stable band token, used in findings, spans, narration and
     /// diagnostics. Matches the `Debug` spelling, so every label a surface

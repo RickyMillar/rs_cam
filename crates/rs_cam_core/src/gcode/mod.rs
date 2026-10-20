@@ -1404,12 +1404,9 @@ pub enum PostFormat {
 
 impl PostFormat {
     /// All available post-processor formats.
-    pub const ALL: &[PostFormat] = &[
-        PostFormat::Grbl,
-        PostFormat::GrblHal,
-        PostFormat::LinuxCnc,
-        PostFormat::Mach3,
-    ];
+    pub const ALL: &[PostFormat] = &crate::all_variants!(PostFormat:
+        Grbl, GrblHal, LinuxCnc, Mach3,
+    );
 
     /// Human-readable display label for UI.
     pub fn label(self) -> &'static str {

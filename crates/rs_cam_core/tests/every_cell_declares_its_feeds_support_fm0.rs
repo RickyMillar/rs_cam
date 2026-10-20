@@ -188,7 +188,6 @@ fn every_operation_declares_its_formula_source() {
              the registry row together."
         );
     }
-    assert_eq!(OperationType::ALL.len(), 24, "the operation count changed");
 }
 
 /// (b) The resolver runs on every cell, agrees with the arm `calculate`
@@ -196,7 +195,12 @@ fn every_operation_declares_its_formula_source() {
 #[test]
 fn a_cell_with_a_vendor_row_is_vendor_backed() {
     let cells = every_cell();
-    assert_eq!(cells.len(), 24 * 5 * 4, "the matrix is not the full grid");
+    // F194: the grid size comes from the lists the grid walks, not a typed count.
+    assert_eq!(
+        cells.len(),
+        OperationType::ALL.len() * ToolType::ALL.len() * wood_materials().len(),
+        "the matrix is not the full grid"
+    );
 
     let mut vendor_backed = 0usize;
     let mut extrapolated = 0usize;

@@ -181,12 +181,9 @@ pub enum HeightReference {
 }
 
 impl HeightReference {
-    pub const ALL: &[HeightReference] = &[
-        HeightReference::StockTop,
-        HeightReference::StockBottom,
-        HeightReference::ModelTop,
-        HeightReference::ModelBottom,
-    ];
+    pub const ALL: &[HeightReference] = &crate::all_variants!(HeightReference:
+        StockTop, StockBottom, ModelTop, ModelBottom,
+    );
 
     pub fn label(self) -> &'static str {
         match self {

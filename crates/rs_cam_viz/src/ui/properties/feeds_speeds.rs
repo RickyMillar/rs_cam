@@ -99,11 +99,9 @@ pub(super) fn draw_speed_controls(
     project_default_rpm: u32,
 ) {
     // A drill is Z-only: its plunge rate IS its feed rate. A second field
-    // there is a duplicate that writes nothing (the W3.2 rule).
-    let z_only = matches!(
-        entry.operation,
-        OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
-    );
+    // there is a duplicate that writes nothing (the W3.2 rule). F095: the
+    // core drill-family predicate decides it.
+    let z_only = entry.operation.op_type().is_drill_kinematics();
     ui.named_section("Speed", |ui| {
         ui.param_grid("feeds_speed_controls", |ui| {
             let mut feed = entry.operation.feed_rate();

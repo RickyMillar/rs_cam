@@ -376,7 +376,7 @@ impl RsCamApp {
     /// the Toolpaths workspace, return its id so the viewport offers drill
     /// target picking. Otherwise `None`.
     fn active_drill_toolpath(&self) -> Option<crate::state::toolpath::ToolpathId> {
-        use rs_cam_core::compute::catalog::OperationConfig;
+        use rs_cam_core::compute::catalog::ItemUse;
         let state = self.controller.state();
         if state.workspace != Workspace::Toolpaths {
             return None;
@@ -389,11 +389,10 @@ impl RsCamApp {
             .toolpath_configs()
             .iter()
             .find(|tc| tc.id == id)?;
-        matches!(
-            tc.operation,
-            OperationConfig::Drill(_) | OperationConfig::AlignmentPinDrill(_)
-        )
-        .then_some(id)
+        // F095: target picking is for an op that reads hole positions, so
+        // the registry's item use decides it (today the same two drill ops
+        // as `is_drill_kinematics`).
+        matches!(tc.operation.capabilities().item_use, ItemUse::Holes { .. }).then_some(id)
     }
 
     fn handle_simulation_semantic_pick(&mut self, click_pos: egui::Pos2) -> bool {

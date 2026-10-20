@@ -51,7 +51,25 @@ impl StepoverPattern {
             OperationConfig::Scallop(cfg) => Some(Self::Contour {
                 stepover: cfg.scallop_height * 5.0,
             }),
-            _ => None,
+            // F161: these ops draw no stepover diagram. Each is named, so a
+            // new op is a compile error here until it picks a pattern or
+            // `None`.
+            OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => None,
         }
     }
 }

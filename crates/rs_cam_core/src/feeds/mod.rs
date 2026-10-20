@@ -248,13 +248,9 @@ impl CutterKind {
         }
     }
 
-    pub const ALL: &[CutterKind] = &[
-        CutterKind::Flat,
-        CutterKind::Ball,
-        CutterKind::Bull,
-        CutterKind::VBit,
-        CutterKind::TaperedBall,
-    ];
+    pub const ALL: &[CutterKind] = &crate::all_variants!(CutterKind:
+        Flat, Ball, Bull, VBit, TaperedBall,
+    );
 
     /// THE single `cutter shape → vendor-LUT ToolFamily` map.
     ///

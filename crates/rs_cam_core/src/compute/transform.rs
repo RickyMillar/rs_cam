@@ -13,14 +13,7 @@ pub enum FaceUp {
 }
 
 impl FaceUp {
-    pub const ALL: &[FaceUp] = &[
-        FaceUp::Top,
-        FaceUp::Bottom,
-        FaceUp::Front,
-        FaceUp::Back,
-        FaceUp::Left,
-        FaceUp::Right,
-    ];
+    pub const ALL: &[FaceUp] = &crate::all_variants!(FaceUp: Top, Bottom, Front, Back, Left, Right);
 
     pub fn label(&self) -> &'static str {
         match self {
@@ -181,12 +174,7 @@ pub enum ZRotation {
 }
 
 impl ZRotation {
-    pub const ALL: &[ZRotation] = &[
-        ZRotation::Deg0,
-        ZRotation::Deg90,
-        ZRotation::Deg180,
-        ZRotation::Deg270,
-    ];
+    pub const ALL: &[ZRotation] = &crate::all_variants!(ZRotation: Deg0, Deg90, Deg180, Deg270);
 
     pub fn label(&self) -> &'static str {
         match self {

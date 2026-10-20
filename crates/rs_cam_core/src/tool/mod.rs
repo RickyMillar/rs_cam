@@ -350,7 +350,12 @@ pub trait MillingCutter: Send + Sync {
             crate::feeds::ToolGeometryHint::Bull { corner_radius } if corner_radius > 0.0 => {
                 corner_radius
             }
-            _ => self.radius(),
+            // F161: each shape is named, so a new shape is a compile error
+            // here until it states its cusp radius.
+            crate::feeds::ToolGeometryHint::Bull { .. }
+            | crate::feeds::ToolGeometryHint::Flat
+            | crate::feeds::ToolGeometryHint::Ball
+            | crate::feeds::ToolGeometryHint::VBit { .. } => self.radius(),
         }
     }
     /// CUSP radius (mm) — the tip-sphere radius that sets the finest
@@ -397,7 +402,11 @@ pub trait MillingCutter: Send + Sync {
     fn valley_radius_mm(&self) -> f64 {
         match self.geometry_hint() {
             crate::feeds::ToolGeometryHint::TaperedBall { tip_radius, .. } => tip_radius,
-            _ => self.radius(),
+            // F161: each shape is named (see `cusp_radius`).
+            crate::feeds::ToolGeometryHint::Flat
+            | crate::feeds::ToolGeometryHint::Ball
+            | crate::feeds::ToolGeometryHint::Bull { .. }
+            | crate::feeds::ToolGeometryHint::VBit { .. } => self.radius(),
         }
     }
     fn length(&self) -> f64;

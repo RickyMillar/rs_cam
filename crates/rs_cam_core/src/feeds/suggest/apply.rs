@@ -1016,7 +1016,26 @@ pub fn apply_stock_defaults(operation: &mut OperationConfig, ctx: &StockContext)
         OperationConfig::Adaptive(cfg) => {
             cfg.floor = crate::compute::floor::Floor::top(ctx.stock_z * 0.5);
         }
-        _ => {}
+        // F161/F183: these ops take no stock-aware default. Each is named, so
+        // a new op is a compile error here until it states its default.
+        OperationConfig::VCarve(_)
+        | OperationConfig::Inlay(_)
+        | OperationConfig::InlayPlug(_)
+        | OperationConfig::Zigzag(_)
+        | OperationConfig::Trace(_)
+        | OperationConfig::Chamfer(_)
+        | OperationConfig::Adaptive3d(_)
+        | OperationConfig::Waterline(_)
+        | OperationConfig::Pencil(_)
+        | OperationConfig::Scallop(_)
+        | OperationConfig::UnifiedFinish(_)
+        | OperationConfig::SteepShallow(_)
+        | OperationConfig::RampFinish(_)
+        | OperationConfig::SpiralFinish(_)
+        | OperationConfig::RadialFinish(_)
+        | OperationConfig::HorizontalFinish(_)
+        | OperationConfig::ProjectCurve(_)
+        | OperationConfig::AlignmentPinDrill(_) => {}
     }
 }
 

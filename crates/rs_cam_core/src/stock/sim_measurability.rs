@@ -105,15 +105,10 @@ pub enum SimMetric {
 
 impl SimMetric {
     /// Every metric this module reports on, in report order.
-    pub const ALL: [SimMetric; 7] = [
-        SimMetric::RadialEngagement,
-        SimMetric::AirCut,
-        SimMetric::ChipEngagement,
-        SimMetric::AxialEngagement,
-        SimMetric::MaterialRemoval,
-        SimMetric::RapidCollision,
-        SimMetric::HolderCollision,
-    ];
+    pub const ALL: [SimMetric; 7] = crate::all_variants!(SimMetric:
+        RadialEngagement, AirCut, ChipEngagement, AxialEngagement, MaterialRemoval, RapidCollision,
+        HolderCollision,
+    );
 
     /// The three metrics derived from the perpendicular-extent measurement,
     /// and therefore the only ones the two floors can take out.

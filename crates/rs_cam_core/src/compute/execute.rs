@@ -1,5 +1,5 @@
-//! Unified operation execution — one entry point for all 24 toolpath
-//! operations.
+//! Unified operation execution — one entry point for every toolpath
+//! operation (`OperationType::ALL`).
 //!
 //! CMP-11: there is ONE driver, and it is `ProjectSession`. Two functions
 //! in `session/compute.rs` call in — `execute_generation` (the real
@@ -315,10 +315,11 @@ impl From<crate::tool::ToolGeometryError> for OperationError {
 /// `every_generator_polls_a_preset_cancel_flag_past_the_prologue` proves
 /// it: it calls each row's `generate` directly, past the prologue.
 ///
-/// **24 of 24 registered families**, and the denominator is the
-/// correction. This paragraph read "21 of 23" until 2026-08-14: the 21
-/// was the sentry's case count and the 23 was an undercount of
-/// `OperationType::ALL`, which has **24** entries (`for_each_op!`).
+/// **Every registered family** (`OperationType::ALL`, from `for_each_op!`),
+/// and the denominator is the correction. This paragraph read "21 of 23"
+/// until 2026-08-14: the 21 was the sentry's case count and the 23 was an
+/// undercount of `OperationType::ALL`. F194: this text writes no count, so
+/// it cannot go stale when a family is added.
 /// UnifiedFinish was the family that fell through the gap — it has
 /// routed through `unified_finish_toolpath_with_cancel` all along and
 /// was simply never enumerated, so it was neither in the claimed

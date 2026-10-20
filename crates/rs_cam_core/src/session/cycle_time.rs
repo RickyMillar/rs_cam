@@ -144,13 +144,9 @@ pub enum MissingInput {
 
 impl MissingInput {
     /// Every variant, in display order.
-    pub const ALL: [Self; 5] = [
-        MissingInput::NoSimulation,
-        MissingInput::NotInSimulation,
-        MissingInput::NoCutTrace,
-        MissingInput::KinematicsNotApplied,
-        MissingInput::NoMachineKinematics,
-    ];
+    pub const ALL: [Self; 5] = crate::all_variants!(MissingInput:
+        NoSimulation, NotInSimulation, NoCutTrace, KinematicsNotApplied, NoMachineKinematics,
+    );
 
     /// A short phrase for the row label beside the time.
     pub fn short_label(self) -> &'static str {

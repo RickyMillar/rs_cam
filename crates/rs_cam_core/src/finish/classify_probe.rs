@@ -145,13 +145,9 @@ impl ClassificationSampler {
     pub const PRODUCTION: Self = Self::TileRaster;
 
     /// Every sampler, oracle first.
-    pub const ALL: [Self; 5] = [
-        Self::DropCutterProbe,
-        Self::DropCutterProbeScratch,
-        Self::TriangleRaster,
-        Self::VerticalRay,
-        Self::TileRaster,
-    ];
+    pub const ALL: [Self; 5] = crate::all_variants!(ClassificationSampler:
+        DropCutterProbe, DropCutterProbeScratch, TriangleRaster, VerticalRay, TileRaster,
+    );
 
     /// Short label for tables and failure messages.
     #[must_use]

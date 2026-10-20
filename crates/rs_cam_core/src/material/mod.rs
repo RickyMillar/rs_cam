@@ -96,18 +96,10 @@ pub enum WoodSpecies {
 impl WoodSpecies {
     /// Every species, so a gate or a test covers each arm of the density
     /// and Janka tables. A new species must be added here.
-    pub const ALL: [WoodSpecies; 10] = [
-        WoodSpecies::GenericSoftwood,
-        WoodSpecies::RadiataPine,
-        WoodSpecies::LongleafPine,
-        WoodSpecies::GenericHardwood,
-        WoodSpecies::HardMaple,
-        WoodSpecies::Walnut,
-        WoodSpecies::Birch,
-        WoodSpecies::WhiteOak,
-        WoodSpecies::Jarrah,
-        WoodSpecies::Ipe,
-    ];
+    pub const ALL: [WoodSpecies; 10] = crate::all_variants!(WoodSpecies:
+        GenericSoftwood, RadiataPine, LongleafPine, GenericHardwood, HardMaple, Walnut, Birch,
+        WhiteOak, Jarrah, Ipe,
+    );
 
     /// The density this species reads for its force line: an FPL Table
     /// 5-3a SG at 12 % MC (plan B6 §2.3). See [`force_line`].

@@ -31,7 +31,7 @@ pub enum SizeUnits {
 }
 
 impl SizeUnits {
-    pub const ALL: &[SizeUnits] = &[SizeUnits::Metric, SizeUnits::Imperial];
+    pub const ALL: &[SizeUnits] = &crate::all_variants!(SizeUnits: Metric, Imperial);
 
     /// The short label a selector shows.
     pub const fn label(self) -> &'static str {

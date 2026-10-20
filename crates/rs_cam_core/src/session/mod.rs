@@ -810,12 +810,9 @@ pub enum Corner {
 }
 
 impl Corner {
-    pub const ALL: &[Corner] = &[
-        Corner::FrontLeft,
-        Corner::FrontRight,
-        Corner::BackLeft,
-        Corner::BackRight,
-    ];
+    pub const ALL: &[Corner] = &crate::all_variants!(Corner:
+        FrontLeft, FrontRight, BackLeft, BackRight,
+    );
 
     pub fn label(&self) -> &'static str {
         match self {
@@ -1490,14 +1487,9 @@ impl SimulationDropCause {
     pub const COUNT: usize = 6;
 
     /// Every variant, in display order.
-    pub const ALL: [Self; Self::COUNT] = [
-        Self::Operations,
-        Self::Machine,
-        Self::PostSettings,
-        Self::Resolution,
-        Self::Obstacles,
-        Self::StockChanges,
-    ];
+    pub const ALL: [Self; Self::COUNT] = crate::all_variants!(SimulationDropCause:
+        Operations, Machine, PostSettings, Resolution, Obstacles, StockChanges,
+    );
 
     /// A short phrase for a stale label, in ASD-STE100.
     pub fn short_label(self) -> &'static str {

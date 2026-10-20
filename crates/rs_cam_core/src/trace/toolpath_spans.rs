@@ -221,18 +221,10 @@ impl SpanKind {
     /// [`Self::label`] — both matches are exhaustive, so the compiler will
     /// stop you there first, and [`Self::from_key`] is derived from this list
     /// so that the agent-facing vocabulary cannot drift from the enum.
-    pub const ALL: [Self; 10] = [
-        Self::Operation,
-        Self::DepthPass,
-        Self::Region,
-        Self::Entry,
-        Self::LeadOut,
-        Self::LinkBridge,
-        Self::DressupArtifact,
-        Self::GeometryRefit,
-        Self::RapidOrderBarrier,
-        Self::WaterlineCleanup,
-    ];
+    pub const ALL: [Self; 10] = crate::all_variants!(SpanKind:
+        Operation, DepthPass, Region, Entry, LeadOut, LinkBridge, DressupArtifact, GeometryRefit,
+        RapidOrderBarrier, WaterlineCleanup,
+    );
 
     /// The stable snake_case key for this kind — the agent-facing vocabulary
     /// (MCP `span_kind` filters) and the single source that vocabulary is
@@ -408,12 +400,9 @@ impl RegionSpanRole {
     /// compiler stops a new variant here first, and [`Self::from_key`] is
     /// derived from this list so the agent-facing vocabulary cannot drift
     /// from the enum.
-    pub const ALL: [Self; 4] = [
-        Self::Node,
-        Self::GeneratorPass,
-        Self::DrillHole,
-        Self::DrillPeck,
-    ];
+    pub const ALL: [Self; 4] = crate::all_variants!(RegionSpanRole:
+        Node, GeneratorPass, DrillHole, DrillPeck,
+    );
 
     /// The stable snake_case key for this role — what MCP `region_role`
     /// carries, and the single source that vocabulary is derived from.
