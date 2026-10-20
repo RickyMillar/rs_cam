@@ -381,7 +381,7 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
 | P0 design | done: DESIGN.md approved with lead rulings | (this commit) | branch geo-select from master d8407731 |
 | P1 open paths | done (operator look pending) | bba80b4d, 2bf0132c | G-OPGOLDEN unchanged; lead ruling: an open Trace path gets no lead extension past its ends |
 | P2 selection core | done (operator look pending) | P2.5 5d906b48, P2.6 1e2ec0c4, P2.7 89df3283 | 349b3a48, e041d244, 4b6353b9, P2.3b | D5 (Face onto Items) deferred to P4: needs a region-offset adapter and a new is_stock_based rule; selection_dropped reports non-default drops only (lead: a default is no user work). P2.3c open: hole_selection runs per frame (cache in P2.4); viewport pick tests model XY but markers draw in the setup frame (pre-existing defect: fix in P2.6 TogglePick); operator look: a click under "every hole" now excludes that hole | P2.1: bridges byte-equal on 25 drawings; open: hand-built test drawings are not nested (check in P2.2) |
-| P3 depth refs | D9 ruled 2026-10-20 (one floor field with its reference); design next, edits after the tech-debt W4 commit | | G-BOTTOMPIN: a pin can sit below the op depth (-20 vs a 6 mm pocket), so honouring it cuts deeper: operator rules |
+| P3 depth refs | COMPLETE (P3.1-P3.8; D9 one floor field with its reference) | 6026eb37, 86265095, 6d403ac1, 272238d8, 1f814929, 294875be, 5236e6c2, 83df571f | pushed to 0346862f up to P3.6; P3.7-P3.8 local |
 | P4 UI + sources | P4.0 probe, P4.1-P4.9 and P4.D done (P4.8 without the SVG scale default); operator demo seen 2026-10-20 | 1ca93935, 229eb719, c223d7c4, 9bdfac8e, 3373d8d2, 099d946b, 22cb38fa, 8f5723e3, a53e0cf5, 30e9a146, 0458a586 (SVG O-2), a83d7236 (P4.10); P4 COMPLETE; pushed to ca18398c | next: P3 (D9) after the tech-debt W4 |
 | P5 tabs | done (operator look pending) | e76f82c8, P5b | GUI viewport tab editor -> P4. Lead ruling P5b: tab_width = the material bridge (today bridge = width - D: default leaves none); tab_height holds on every level |
 | P6 open paths, holes | blocked on P2 | | |
@@ -616,3 +616,11 @@ The lead approves `P3_DESIGN.md` and takes L-1 to L-17 as it recommends.
   `stepped_block.step`; the hint button; a face at the top skipped with a
   note; Stock bottom 0.5 for a through cut; an absolute Z on a flipped
   setup.
+- P3.8 (83df571f): P3 is COMPLETE. Open, small: the diagram hover has no
+  pointer test; the floor-depth CLI sweep (L-12, a path syntax); stale
+  headers in `bottom_z_pin_note_g_bottompin.rs`,
+  `selection_refusals_name_the_item_p2_4.rs` and
+  `every_op_keeps_its_toolpath_g_opgolden.rs`; the GUI look at the P3.7
+  and P3.8 surfaces (rebuild the release GUI from HEAD first).
+- Next: P6 (open paths and holes) needs a design pass (P6_DESIGN.md),
+  then P7, P8.
