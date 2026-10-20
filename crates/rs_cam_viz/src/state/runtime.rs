@@ -8,9 +8,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use rs_cam_core::feeds::FeedsResult;
+use rs_cam_core::feeds::{FeedsError, FeedsResult};
 use rs_cam_core::maps::reach_map::ReachMap;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+
+use crate::render::upload_cache::{self, Refresh, SlotInputs};
 
 use super::job::PostConfig;
 use super::toolpath::ToolpathId;
@@ -32,6 +34,9 @@ pub struct ToolpathRuntime {
     pub result: Option<ToolpathResult>,
     pub stale_since: Option<std::time::Instant>,
     pub feeds_result: Option<FeedsResult>,
+    /// The key and the by-products of `feeds_result` (F216). Only
+    /// [`FeedsMemo::refresh`] writes the two.
+    pub feeds_memo: FeedsMemo,
     pub debug_trace: Option<Arc<rs_cam_core::trace::debug_trace::ToolpathDebugTrace>>,
     pub semantic_trace: Option<Arc<rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>>,
     pub debug_trace_path: Option<PathBuf>,
@@ -48,10 +53,176 @@ impl ToolpathRuntime {
             result: None,
             stale_since: None,
             feeds_result: None,
+            feeds_memo: FeedsMemo::default(),
             debug_trace: None,
             semantic_trace: None,
             debug_trace_path: None,
         }
+    }
+}
+
+// ── The toolpath panel's feeds memo (F216) ────────────────────────────
+
+/// What the toolpath panel's feeds work reads, read ONCE per frame (F216).
+///
+/// The Geometry tab (the ⚡ pills) and the Feeds tab (the card) both hand
+/// this value to [`FeedsMemo::refresh`]. The key derives from it
+/// ([`SlotInputs::key`] destructures it with no `..`), and the build takes
+/// only it. So a new input is a compile error in `key` until it is keyed:
+/// the W11 shape of `render::upload_cache`.
+pub struct FeedsInputs<'a> {
+    pub operation: &'a rs_cam_core::compute::catalog::OperationConfig,
+    pub tool: &'a rs_cam_core::compute::tool_config::ToolConfig,
+    pub material: &'a rs_cam_core::material::Material,
+    pub machine: &'a rs_cam_core::machine::MachineProfile,
+    pub spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
+    /// The box the funnel's runtime-sanity stepover back-off reads (Q1).
+    pub model_bbox: Option<&'a rs_cam_core::geo::BoundingBox3>,
+}
+
+/// The stored key of [`FeedsMemo`]. Built only by [`SlotInputs::key`].
+///
+/// `OperationConfig` and `MachineProfile` have no `PartialEq`, so the key
+/// holds their `Debug` text (the `Obstacle::effect_digest` idiom). A derived
+/// `Debug` prints every field, so the text can only over-key, never miss an
+/// edit.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeedsKey {
+    operation: String,
+    tool: rs_cam_core::compute::tool_config::ToolConfig,
+    material: rs_cam_core::material::Material,
+    machine: String,
+    spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
+    /// `BoundingBox3` has no `PartialEq`: the two corners.
+    model_bbox: Option<[f64; 6]>,
+}
+
+impl SlotInputs for FeedsInputs<'_> {
+    type Key = FeedsKey;
+
+    fn key(&self) -> FeedsKey {
+        let Self {
+            operation,
+            tool,
+            material,
+            machine,
+            spindle_strategy,
+            model_bbox,
+        } = self;
+        // The vendor LUT is not an input: `embedded_vendor_lut` is one
+        // static value for the life of the process.
+        FeedsKey {
+            operation: format!("{operation:?}"),
+            tool: (*tool).clone(),
+            material: (*material).clone(),
+            machine: format!("{machine:?}"),
+            spindle_strategy: *spindle_strategy,
+            model_bbox: model_bbox.map(|b| [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z]),
+        }
+    }
+}
+
+/// The funnel dry run the ⚡ pills offer (G-PILLCLAMP). The UI owns it
+/// (`ui::properties::pills::pill_previews`); the memo runs it after the
+/// calculator. The signature fixes what the dry run may read.
+pub type PillDryRun = fn(
+    &rs_cam_core::compute::catalog::OperationConfig,
+    &FeedsResult,
+    &rs_cam_core::compute::tool_config::ToolConfig,
+    &rs_cam_core::machine::MachineProfile,
+    &rs_cam_core::material::Material,
+    Option<&rs_cam_core::geo::BoundingBox3>,
+) -> rs_cam_core::feeds::suggest::FieldApplyPreviews;
+
+impl FeedsInputs<'_> {
+    /// The calculator and the funnel dry run. This is the work the memo
+    /// saves.
+    fn build(
+        &self,
+        dry_run: PillDryRun,
+    ) -> Result<(FeedsResult, rs_cam_core::feeds::suggest::FieldApplyPreviews), FeedsError> {
+        let Self {
+            operation,
+            tool,
+            material,
+            machine,
+            spindle_strategy,
+            model_bbox,
+        } = self;
+        let result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
+            operation,
+            tool,
+            material,
+            machine,
+            rs_cam_core::feeds::embedded_vendor_lut(),
+            *spindle_strategy,
+        )?;
+        let previews = dry_run(operation, &result, tool, machine, material, *model_bbox);
+        Ok((result, previews))
+    }
+}
+
+/// The memo of the toolpath panel's feeds work (F216).
+///
+/// The panel ran the calculator and the funnel dry run on every frame.
+/// The memo runs them once per change of [`FeedsInputs`]. It sits beside
+/// `feeds_result` on `ToolpathRuntime` and `ToolpathEntry`; the panel copies
+/// both in and back each frame.
+#[derive(Debug, Clone, Default)]
+pub struct FeedsMemo {
+    key: Option<FeedsKey>,
+    /// The funnel dry run for the stored result. `None` on a refusal.
+    previews: Option<rs_cam_core::feeds::suggest::FieldApplyPreviews>,
+    /// The calculator's refusal. The Feeds tab prints it.
+    refusal: Option<FeedsError>,
+    /// The count of builds: the instrument of the F216 sentry.
+    builds: u64,
+}
+
+impl FeedsMemo {
+    /// The one writer of `result` and of this memo.
+    ///
+    /// When the key of `inputs` matches the stored key, nothing runs.
+    /// Otherwise the calculator and `dry_run` run once, and `result`
+    /// holds the answer (`None` on a refusal).
+    pub fn refresh(
+        &mut self,
+        result: &mut Option<FeedsResult>,
+        inputs: FeedsInputs<'_>,
+        dry_run: PillDryRun,
+    ) {
+        let Refresh::Build(Some(inputs)) = upload_cache::refresh(&mut self.key, Some(inputs))
+        else {
+            return;
+        };
+        self.builds += 1;
+        match inputs.build(dry_run) {
+            Ok((answer, previews)) => {
+                *result = Some(answer);
+                self.previews = Some(previews);
+                self.refusal = None;
+            }
+            Err(error) => {
+                *result = None;
+                self.previews = None;
+                self.refusal = Some(error);
+            }
+        }
+    }
+
+    /// The funnel dry run for the stored result.
+    pub fn previews(&self) -> Option<&rs_cam_core::feeds::suggest::FieldApplyPreviews> {
+        self.previews.as_ref()
+    }
+
+    /// Why the calculator refused, when it did.
+    pub fn refusal(&self) -> Option<&FeedsError> {
+        self.refusal.as_ref()
+    }
+
+    /// How many times the calculator ran for this toolpath.
+    pub fn builds(&self) -> u64 {
+        self.builds
     }
 }
 

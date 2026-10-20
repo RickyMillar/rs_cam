@@ -305,6 +305,7 @@ pub fn toolpath_panel_snapshot(
         stale_since: rt.stale_since,
         auto_regen: rt.auto_regen,
         feeds_result: rt.feeds_result.clone(),
+        feeds_memo: rt.feeds_memo.clone(),
         feeds_provenance: tc.feeds_provenance.clone(),
         planner_origin: tc.planner_origin.clone(),
         debug_options: tc.debug_options,
@@ -1043,6 +1044,7 @@ pub(crate) fn write_entry_runtime_to_gui(
         rt.status = entry.status.clone();
         rt.stale_since = entry.stale_since;
         rt.feeds_result = entry.feeds_result.clone();
+        rt.feeds_memo = entry.feeds_memo.clone();
         // result, debug_trace, semantic_trace, debug_trace_path are not
         // mutated by the panel — skip to avoid unnecessary Arc clones.
     }

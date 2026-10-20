@@ -150,6 +150,10 @@ pub struct ToolpathEntry {
     pub stale_since: Option<std::time::Instant>,
     pub auto_regen: bool,
     pub feeds_result: Option<rs_cam_core::feeds::FeedsResult>,
+    /// The key and the by-products of `feeds_result` (F216). Mirrors
+    /// `ToolpathRuntime::feeds_memo`. Only `FeedsMemo::refresh` writes the
+    /// two.
+    pub feeds_memo: crate::state::runtime::FeedsMemo,
     /// Per-dimension provenance of the stored feeds values (W2.1). Mirrors
     /// `ToolpathConfig::feeds_provenance`; round-trips via
     /// `build_entry_from_session_and_gui` / `ui::properties::project_entry_onto`.
@@ -232,6 +236,7 @@ impl ToolpathEntry {
             stale_since: None,
             auto_regen,
             feeds_result: None,
+            feeds_memo: crate::state::runtime::FeedsMemo::default(),
             feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
             pill_stamped_fields: Vec::new(),
             planner_origin: None,
@@ -281,6 +286,7 @@ impl ToolpathEntry {
         self.result = None;
         self.stale_since = None;
         self.feeds_result = None;
+        self.feeds_memo = crate::state::runtime::FeedsMemo::default();
         self.debug_trace = None;
         self.semantic_trace = None;
         self.debug_trace_path = None;

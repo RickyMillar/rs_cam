@@ -25,6 +25,7 @@
   widget where `ui/components/` has one. A tooltip keys on the registry parameter NAME, never the label.
 - The Selection section writes `EditToolpathSelection` only (L-1), never the draft. The Profile Tabs
   row toggles the tab editor (`OpDrawCtx::selection_ui`); the editor writes `EditTabs`.
+- F216: the pills and the Feeds card read `entry.feeds_memo`. A new feeds input goes in `FeedsInputs`, not a second read.
 - One `OpUiRow` per op carries the editor, the diagram decision and the validation arm; a blank diagram says why.
 - IC1/IC2: a field is one row, its explanation the hover. Derived data is `DataTable` rows, derivation in ONE
   `Details`; only a blocking error wraps (`DANGER`). A finding has one owner, the footer row. Rare dials go in
@@ -36,4 +37,4 @@
 - `--test the_inspector_nests_once_dc5 --test inspector_width_is_tab_independent_up4 --test the_inspector_text_is_bounded_ic1 --test tabular_data_reads_one_table_ic2`
 - `--test the_head_and_shoe_rows_fit_the_rail_h2 --test the_help_key_is_the_param_name_ui04 --test operations_registry_ui05 --test one_start_from_row_g_startfrom`
 - `--test keyed_pin_panel_reads_the_real_strips_g_pinpanel --test pin_editor_and_viewport_p7 --test the_selection_section_writes_edits_only_p4_3`
-- `--test show_me_frames_the_items_p4_4 --test a_2d_op_cuts_a_step_face_p4_d`; `--lib p4_d` (one Pick: `the_selection_section_shows_one_pick_p4_d`)
+- `--test show_me_frames_the_items_p4_4 --test a_2d_op_cuts_a_step_face_p4_d --test the_panel_feeds_run_once_per_input_f216`; `--lib p4_d` (one Pick: `the_selection_section_shows_one_pick_p4_d`)

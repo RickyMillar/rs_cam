@@ -8,9 +8,11 @@
 //! the demo pocket that was 4.2 mm versus 1.2 mm of DOC, both labelled as the
 //! recommendation.
 //!
-//! This struct runs the funnel ONCE per frame (a dry run on a scratch clone,
+//! This struct reads the funnel's dry run (on a scratch clone,
 //! `rs_cam_core::feeds::suggest::preview_field_applies`) and hands each pill
 //! the as-applied value for its field, with the stamp the funnel would record.
+//! F216: `state::runtime::FeedsMemo` holds the dry run and runs it again only
+//! when an input moves; the panel builds this struct from it each frame.
 //! A field the funnel does not write (VCarve `max_depth`: the op reports no
 //! `depth_per_pass`) falls back to the raw calculator value with
 //! `clamped: false`, and the pill's hover says so.
@@ -20,9 +22,9 @@
 //! `feeds_provenance`. `properties/mod.rs` reads `take_clicked()` after the
 //! per-op draw and stamps the recommendation's provenance on the entry.
 
+use std::borrow::Cow;
 use std::cell::Cell;
 
-use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::feeds::suggest::{
     FieldApplyPreview, FieldApplyPreviews, SuggestContext, preview_field_applies,
     round_suggestion_value, round_suggestion_value_down,
@@ -68,10 +70,45 @@ pub(super) fn suggestion_for<'a>(
     }
 }
 
+/// Dry-run the apply funnel for `operation` against `result`: what each ⚡
+/// pill offers. `state::runtime::FeedsMemo` runs it once per input change
+/// (F216); its signature is `state::runtime::PillDryRun`.
+///
+/// Q1: `model_bbox` is the box of the model this toolpath machines,
+/// carried in by `ToolpathPanelSnapshot`. The funnel's runtime-sanity
+/// stepover back-off reads it; this site passed `SuggestContext::default()`
+/// before, so the back-off could not fire and the pill offered a value the
+/// controller and the MCP surfaces would have backed off. `None` when the
+/// toolpath names no model with finite geometry.
+pub(super) fn pill_previews(
+    operation: &rs_cam_core::compute::catalog::OperationConfig,
+    result: &FeedsResult,
+    tool: &rs_cam_core::compute::tool_config::ToolConfig,
+    machine: &rs_cam_core::machine::MachineProfile,
+    material: &rs_cam_core::material::Material,
+    model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+) -> FieldApplyPreviews {
+    preview_field_applies(
+        operation,
+        result,
+        tool,
+        machine,
+        material,
+        operation.feeds_style().1,
+        // The stock is not carried here: this preview reads the
+        // operation the panel already holds, and the wired Suggest
+        // sites leave `SuggestContext::stock` empty too.
+        SuggestContext {
+            model_bbox,
+            ..SuggestContext::default()
+        },
+    )
+}
+
 /// The per-field suggestions for one operation, for one frame.
 pub(super) struct PillSuggestions<'a> {
     result: &'a FeedsResult,
-    previews: FieldApplyPreviews,
+    previews: Cow<'a, FieldApplyPreviews>,
     clicked: Cell<Option<FeedsField>>,
 }
 
@@ -125,41 +162,30 @@ impl<'a> PillSuggestion<'a> {
 }
 
 impl<'a> PillSuggestions<'a> {
-    /// Dry-run the apply funnel for `operation` against `result`.
-    ///
-    /// Q1: `model_bbox` is the box of the model this toolpath machines,
-    /// carried in by `ToolpathPanelSnapshot`. The funnel's
-    /// runtime-sanity stepover back-off reads it; this site passed
-    /// `SuggestContext::default()` before, so the back-off could not
-    /// fire and the pill offered a value the controller and the MCP
-    /// surfaces would have backed off. `None` when the toolpath names no
-    /// model with finite geometry.
+    /// The pills of `result`, from the funnel dry run the panel's
+    /// `FeedsMemo` holds for it (F216). The memo runs [`pill_previews`].
+    pub fn from_previews(result: &'a FeedsResult, previews: &'a FieldApplyPreviews) -> Self {
+        Self {
+            result,
+            previews: Cow::Borrowed(previews),
+            clicked: Cell::new(None),
+        }
+    }
+
+    /// The pills of a fresh [`pill_previews`] dry run (tests).
+    #[cfg(test)]
     pub fn new(
-        operation: &OperationConfig,
+        operation: &rs_cam_core::compute::catalog::OperationConfig,
         result: &'a FeedsResult,
         tool: &rs_cam_core::compute::tool_config::ToolConfig,
         machine: &rs_cam_core::machine::MachineProfile,
         material: &rs_cam_core::material::Material,
         model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
     ) -> Self {
-        let previews = preview_field_applies(
-            operation,
-            result,
-            tool,
-            machine,
-            material,
-            operation.feeds_style().1,
-            // The stock is not carried here: this preview reads the
-            // operation the panel already holds, and the wired Suggest
-            // sites leave `SuggestContext::stock` empty too.
-            SuggestContext {
-                model_bbox,
-                ..SuggestContext::default()
-            },
-        );
+        let previews = pill_previews(operation, result, tool, machine, material, model_bbox);
         Self {
             result,
-            previews,
+            previews: Cow::Owned(previews),
             clicked: Cell::new(None),
         }
     }
@@ -239,7 +265,7 @@ impl<'a> PillSuggestions<'a> {
 mod tests {
     use super::*;
     use crate::ui::components::value_row::near_match;
-    use rs_cam_core::compute::catalog::OperationType;
+    use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
     use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use rs_cam_core::material::{Material, WoodSpecies};
     use rs_cam_core::session::{Command, ProjectSession, SetMachineArgs};

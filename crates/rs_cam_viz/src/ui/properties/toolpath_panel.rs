@@ -625,44 +625,47 @@ pub(super) fn draw_geometry_tab(
     // footer diagnostic row with its Fix button. A banner here printed the
     // same finding a second time, with a three-row paragraph.
 
-    // Compute + cache the LUT feeds result so the Geometry-row ⚡
-    // pills (stepover / depth-per-pass) can render. Feed advice and
-    // the single validated Apply all route live on the Feeds tab.
+    // The LUT feeds result the Geometry-row ⚡ pills (stepover /
+    // depth-per-pass) read. Feed advice and the single validated Apply
+    // all route live on the Feeds tab. F216: the memo runs the
+    // calculator and the funnel dry run only when an input moved, not
+    // on every frame.
     let pill_tool_cfg = tool_configs
         .iter()
         .find(|(id, _)| *id == entry.tool_id)
         .map(|(_, t)| t);
     if let Some(tool_cfg) = pill_tool_cfg {
-        entry.feeds_result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
-            &entry.operation,
-            tool_cfg,
-            material,
-            machine,
-            rs_cam_core::feeds::embedded_vendor_lut(),
-            spindle_strategy,
-        )
-        .ok();
+        entry.feeds_memo.refresh(
+            &mut entry.feeds_result,
+            crate::state::runtime::FeedsInputs {
+                operation: &entry.operation,
+                tool: tool_cfg,
+                material,
+                machine,
+                spindle_strategy,
+                model_bbox,
+            },
+            super::pills::pill_previews,
+        );
     }
-    // G-PILLCLAMP (UX-R03-014): one dry run of the apply funnel per
-    // frame, so every ⚡ pill below offers and writes the value
-    // the canonical Apply all route would write for its field — not
-    // the raw calculator number (4.2 mm vs 1.2 mm of DOC on the demo
-    // pocket).
-    let pills = match (entry.feeds_result.as_ref(), pill_tool_cfg) {
-        (Some(result), Some(tool_cfg)) => Some(PillSuggestions::new(
-            &entry.operation,
-            result,
-            tool_cfg,
-            machine,
-            material,
-            model_bbox,
-        )),
+    // G-PILLCLAMP (UX-R03-014): the dry run of the apply funnel, so
+    // every ⚡ pill below offers and writes the value the canonical
+    // Apply all route would write for its field — not the raw
+    // calculator number (4.2 mm vs 1.2 mm of DOC on the demo pocket).
+    let pills = match (
+        entry.feeds_result.as_ref(),
+        entry.feeds_memo.previews(),
+        pill_tool_cfg,
+    ) {
+        (Some(result), Some(previews), Some(_)) => {
+            Some(PillSuggestions::from_previews(result, previews))
+        }
         _ => None,
     };
 
     // PR-2D Phase 2 — pass the per-field pill suggestions to every
     // per-op draw so each numeric field can render an inline ⚡
-    // Suggest pill. Built above from the cached `entry.feeds_result`
+    // Suggest pill. Built above from the memo of `entry.feeds_result`
     // and the funnel dry run, so this is just a borrow.
     let feeds_for_pills = pills.as_ref();
     // A/M6: read before the mutable borrow of `entry.operation`

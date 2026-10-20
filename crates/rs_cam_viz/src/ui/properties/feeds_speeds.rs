@@ -13,8 +13,8 @@ use crate::ui::components::{
 use crate::ui::feeds::shared::{material_family_label, tool_family_label};
 
 /// Map OperationConfig variant to (OperationFamily, PassRole) for the feeds calculator.
-/// Run the LUT calculator (read-only), cache the result on the entry,
-/// and draw the feeds card. The calculator never writes to the operation
+/// Run the LUT calculator (read-only) through the entry's `FeedsMemo`
+/// (F216), and draw the feeds card. The calculator never writes to the operation
 /// here (Roadmap F.5). The canonical comparison's `Apply all` is the
 /// only path that pushes calculated values into the operation.
 #[allow(clippy::too_many_arguments)]
@@ -32,16 +32,25 @@ pub(super) fn calculate_and_apply_feeds(
     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
     events: &mut Vec<AppEvent>,
 ) {
-    match rs_cam_core::feeds::suggest::feeds_result_for_operation(
-        &entry.operation,
-        tool,
-        material,
-        machine,
-        rs_cam_core::feeds::embedded_vendor_lut(),
-        spindle_strategy,
+    // F216: the same memo the Geometry tab's pills read. The calculator
+    // runs only when an input moved.
+    entry.feeds_memo.refresh(
+        &mut entry.feeds_result,
+        crate::state::runtime::FeedsInputs {
+            operation: &entry.operation,
+            tool,
+            material,
+            machine,
+            spindle_strategy,
+            model_bbox,
+        },
+        super::pills::pill_previews,
+    );
+    match (
+        entry.feeds_result.is_some(),
+        entry.feeds_memo.refusal().map(ToString::to_string),
     ) {
-        Ok(result) => {
-            entry.feeds_result = Some(result);
+        (true, _) => {
             draw_feeds_card(
                 ui,
                 entry,
@@ -55,11 +64,12 @@ pub(super) fn calculate_and_apply_feeds(
                 events,
             );
         }
-        Err(e) => {
-            entry.feeds_result = None;
+        (false, Some(e)) => {
             ui.add_space(8.0);
             ui.colored_label(crate::ui::tokens::DANGER, format!("Feeds unavailable: {e}"));
         }
+        // Not reached: a refresh leaves a result or a refusal.
+        (false, None) => {}
     }
 }
 

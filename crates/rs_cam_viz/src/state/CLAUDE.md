@@ -8,7 +8,7 @@ The view-side state; the core owns the project, so it is not an alternate data m
 - `freshness.rs` — `FreshnessState` per toolpath and `SimFreshness`: both DERIVED, never stored.
 - `stale.rs` — the one place the GUI stamps `stale_since` from a core answer.
 - `toolpath.rs` and `toolpath/` — the toolpath rows, their catalogue entries and configuration support.
-- `simulation.rs`, `job.rs`, `runtime.rs` — simulation state, job lane state, GUI-only runtime overlay state.
+- `simulation.rs`, `job.rs`, `runtime.rs` — sim, job lanes, GUI runtime; `FeedsMemo::refresh` is the one `feeds_result` writer (F216).
 - `simulation/` — `playback_state.rs`, `issue_triage.rs`, `semantic_trace.rs`.
 - `viewport.rs` — `drawing_draws`: every visible drawing draws; the selected op's model draws its states.
 - `selection.rs` — the selection. `overlays.rs` — the dock and catalogue; `ModelVisibility` (the model
@@ -37,4 +37,4 @@ The view-side state; the core owns the project, so it is not an alternate data m
 
 - `cargo test -p rs_cam_viz -q --test <name>`: `freshness_surfaces_g_freshrender`, `connector_reads_edge_state_g_connector`,
   `effects_are_stamped_wp19`, `load_requests_only_25d_regen_g_loadregen`, `panel_drafts_leave_egui_memory_ui09`,
-  `the_tab_editor_writes_one_step_per_act_p4_6`
+  `the_tab_editor_writes_one_step_per_act_p4_6`, `the_panel_feeds_run_once_per_input_f216`
