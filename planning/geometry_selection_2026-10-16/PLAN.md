@@ -595,3 +595,10 @@ The lead approves `P3_DESIGN.md` and takes L-1 to L-17 as it recommends.
   op refuses `FloorAboveTop` only when every face is skipped. Reason: the
   user picked the faces to cut; one face at the stock top must not block
   the others, and the note says why it is not cut.
+- STEP inward shells (fdea1263): the triangles of an inward closed shell
+  are reversed once at import; `outward_sign` is deleted. The 3D ops that
+  read normals or slope change on `stepped_block.step` and `l_bracket.step`
+  only (the old output was computed on inverted triangles); G-OPGOLDEN and
+  the other six STEP fixtures do not move. FOLLOW-UP: `classify_face_surface`
+  signs a plane normal from the plane Z, not the face (the BREP edge concave
+  flag reads it).
