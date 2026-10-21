@@ -382,7 +382,8 @@ const BEFORE_ZIGZAG_OP: (usize, u64) = (312, 13_353_448_158_642_052_239);
 /// offset of each square now goes round each corner on points ON the arc,
 /// not on the chord. The chord cut 0.29 r into the corner. Before:
 /// `(96, 4_273_299_077_702_301_738)`.
-const BEFORE_TRACE: (usize, u64) = (96, 11_387_551_302_651_154_206);
+/// P6.0c: the Trace Left lead now turns away from the part. Before: `(96, 11_387_551_302_651_154_206)`.
+const BEFORE_TRACE: (usize, u64) = (96, 6_617_181_410_166_771_539);
 /// The two Profile pins were re-pinned for geometry selection P5
 /// (2026-10-19): tab placement changed by design. The 16 mm sides are
 /// shorter than a tab needs (6 mm plus two 9 mm corner clearances), so each
@@ -402,8 +403,14 @@ const BEFORE_TRACE: (usize, u64) = (96, 11_387_551_302_651_154_206);
 /// Outside ring now goes round each corner on points ON the arc, not on
 /// the chord (0.29 r into the corner). Before: `(106, 10_647_655_285_267_498_227)`
 /// and `(154, 6_534_920_059_359_883_601)`.
-const BEFORE_PROFILE_TABS: (usize, u64) = (110, 5_137_917_641_995_499_451);
-const BEFORE_PROFILE_TABS_SPRING: (usize, u64) = (150, 13_892_067_383_589_783_972);
+///
+/// Re-pinned for P6.0b (2026-10-21): the segment merge on a finished edge
+/// is capped at 0.010 mm, so the arc points on each corner stay (move
+/// counts 110 -> 124, 150 -> 174). With the cap removed, both pins read
+/// their old values. Before: `(110, 5_137_917_641_995_499_451)` and
+/// `(150, 13_892_067_383_589_783_972)`.
+const BEFORE_PROFILE_TABS: (usize, u64) = (124, 1_011_377_598_541_499_624);
+const BEFORE_PROFILE_TABS_SPRING: (usize, u64) = (174, 4_487_676_720_641_426_579);
 
 /// Tab count of the Profile cases.
 const TABS: usize = 2;

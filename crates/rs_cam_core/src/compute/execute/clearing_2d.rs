@@ -20,7 +20,7 @@ use crate::geo::P2;
 use crate::interrupt::CancelCheck;
 use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
-use crate::toolpath::Toolpath;
+use crate::toolpath::{SidedToolpath, Toolpath};
 use crate::trace::semantic_trace::ToolpathSemanticContext;
 
 use super::OffsetFailures;
@@ -129,7 +129,7 @@ pub(crate) fn generate_profile(
         ctx.tool_def.radius(),
         regions,
     )
-    .map_err(OperationError::Other)?;
+    .map_err(OperationError::InvalidParam)?;
     let pass = ProfilePass {
         cfg,
         regions,
@@ -197,7 +197,7 @@ struct PocketContour<'a> {
 
 impl LayeredOp for PocketContour<'_> {
     type Input = Polygon2;
-    type Geometry = Vec<Vec<P2>>;
+    type Geometry = Vec<crate::toolpath::MaterialRing>;
     /// One report per piece. Each cascade adds its offset failures and,
     /// when a bound stopped it (Checkpoint C, Q3, F-10), the area it
     /// leaves standing. The runner records it once per region, never once
@@ -238,9 +238,9 @@ impl LayeredOp for PocketContour<'_> {
         level: LevelInfo,
         _rest: &LevelRest<'_>,
         _cancel: &dyn CancelCheck,
-    ) -> Result<Toolpath, OperationError> {
+    ) -> Result<SidedToolpath, OperationError> {
         let feeds = &self.feeds;
-        Ok(crate::ops::pocket::pocket_contours_to_toolpath(
+        Ok(crate::ops::pocket::pocket_contours_to_sided_toolpath(
             geometry,
             &crate::ops::pocket::PocketParams {
                 tool_radius: feeds.tool_radius,
@@ -315,19 +315,22 @@ impl LayeredOp for ZigzagRaster {
         level: LevelInfo,
         _rest: &LevelRest<'_>,
         _cancel: &dyn CancelCheck,
-    ) -> Result<Toolpath, OperationError> {
+    ) -> Result<SidedToolpath, OperationError> {
         let feeds = &self.feeds;
-        Ok(crate::ops::zigzag::lines_to_toolpath(
-            geometry,
-            &crate::ops::zigzag::ZigzagParams {
-                tool_radius: feeds.tool_radius,
-                stepover: self.stepover,
-                cut_depth: level.z,
-                feed_rate: feeds.feed_rate,
-                plunge_rate: feeds.plunge_rate,
-                safe_z: feeds.safe_z,
-                angle: self.angle,
-            },
+        // P6.0c: rows are open passes; no closed pass states a side.
+        Ok(SidedToolpath::without_closed_passes(
+            crate::ops::zigzag::lines_to_toolpath(
+                geometry,
+                &crate::ops::zigzag::ZigzagParams {
+                    tool_radius: feeds.tool_radius,
+                    stepover: self.stepover,
+                    cut_depth: level.z,
+                    feed_rate: feeds.feed_rate,
+                    plunge_rate: feeds.plunge_rate,
+                    safe_z: feeds.safe_z,
+                    angle: self.angle,
+                },
+            ),
         ))
     }
 }
@@ -405,7 +408,7 @@ impl LayeredOp for TracePass<'_> {
         level: LevelInfo,
         _rest: &LevelRest<'_>,
         _cancel: &dyn CancelCheck,
-    ) -> Result<Toolpath, OperationError> {
+    ) -> Result<SidedToolpath, OperationError> {
         Ok(crate::ops::trace_path::trace_polygons_at_z(
             geometry,
             level.z,
@@ -550,16 +553,24 @@ impl LayeredOp for ProfilePass<'_> {
         level: LevelInfo,
         _rest: &LevelRest<'_>,
         _cancel: &dyn CancelCheck,
-    ) -> Result<Toolpath, OperationError> {
+    ) -> Result<SidedToolpath, OperationError> {
         let params = crate::ops::profile::ProfileParams {
             cut_depth: level.z,
             ..self.base
         };
-        let mut tp = Toolpath::new();
+        let mut tp = SidedToolpath::new();
         for contour in geometry {
-            let pass = crate::ops::profile::profile_ring_to_toolpath(&contour.ring, &params);
-            let pass = crate::dressup::apply_tabs(pass, &contour.tabs, level.z, level.final_z);
-            tp.moves.extend(pass.moves);
+            let pass = crate::ops::profile::profile_ring_to_toolpath(
+                &contour.ring,
+                &params,
+                params.side.ring_material(),
+            );
+            let tabbed =
+                crate::dressup::apply_tabs(pass.toolpath, &contour.tabs, level.z, level.final_z);
+            tp.append(SidedToolpath {
+                toolpath: tabbed,
+                closed_passes: pass.closed_passes,
+            });
         }
         Ok(tp)
     }
@@ -732,19 +743,22 @@ impl LayeredOp for FacePass<'_> {
         level: LevelInfo,
         _rest: &LevelRest<'_>,
         _cancel: &dyn CancelCheck,
-    ) -> Result<Toolpath, OperationError> {
+    ) -> Result<SidedToolpath, OperationError> {
         let feeds = &self.feeds;
-        Ok(crate::ops::zigzag::lines_to_toolpath(
-            geometry,
-            &crate::ops::zigzag::ZigzagParams {
-                tool_radius: feeds.tool_radius,
-                stepover: self.cfg.stepover,
-                cut_depth: level.z,
-                feed_rate: feeds.feed_rate,
-                plunge_rate: feeds.plunge_rate,
-                safe_z: feeds.safe_z,
-                angle: crate::ops::face::FACE_ANGLE,
-            },
+        // P6.0c: rows are open passes; no closed pass states a side.
+        Ok(SidedToolpath::without_closed_passes(
+            crate::ops::zigzag::lines_to_toolpath(
+                geometry,
+                &crate::ops::zigzag::ZigzagParams {
+                    tool_radius: feeds.tool_radius,
+                    stepover: self.cfg.stepover,
+                    cut_depth: level.z,
+                    feed_rate: feeds.feed_rate,
+                    plunge_rate: feeds.plunge_rate,
+                    safe_z: feeds.safe_z,
+                    angle: crate::ops::face::FACE_ANGLE,
+                },
+            ),
         ))
     }
 }

@@ -89,7 +89,7 @@ use crate::interrupt::{CancelCheck, check_cancel};
 use crate::machine::kinematics::LinkKinematics;
 use crate::polygon::Polygon2;
 use crate::tool::MillingCutter;
-use crate::toolpath::Toolpath;
+use crate::toolpath::{SidedToolpath, Toolpath};
 use crate::trace::semantic_trace::ToolpathSemanticContext;
 
 use super::findings::RecordFindings;
@@ -283,7 +283,9 @@ pub(crate) trait LayeredOp {
     ) -> Result<(Self::Geometry, Self::Report), OperationError>;
 
     /// The cut of `geometry` at one level. An empty toolpath is a level
-    /// with nothing to cut; the runner skips it. A 2.5D op reads neither
+    /// with nothing to cut; the runner skips it. P6.0c: the cut carries the
+    /// stated material side of each closed pass; the runner puts them in
+    /// `Produced::closed_passes` for the lead dressup. A 2.5D op reads neither
     /// `rest` nor `cancel`: the runner polls the cancel before each level.
     /// A kernel that runs long inside one level polls `cancel` itself.
     ///
@@ -296,7 +298,7 @@ pub(crate) trait LayeredOp {
         level: LevelInfo,
         rest: &LevelRest<'_>,
         cancel: &dyn CancelCheck,
-    ) -> Result<Toolpath, OperationError>;
+    ) -> Result<SidedToolpath, OperationError>;
 
     /// The outlines the runner steps, one region each. The default is the
     /// closed areas of the op's selection (`Prepared::regions`, P2.3a).
@@ -411,7 +413,7 @@ impl Ladders {
             });
         };
         if per_area.len() != outline_count {
-            return Err(OperationError::Other(format!(
+            return Err(OperationError::Internal(format!(
                 "registry adapter mismatch: {} has {} area ladders for {outline_count}                  outlines; only an op that steps the closed areas of its selection takes                  the floor \"each picked face\"",
                 prepared.op_type().name(),
                 per_area.len()
@@ -538,6 +540,7 @@ pub(crate) fn run_layered<O: LayeredOp>(
     }
 
     let mut combined = Toolpath::new();
+    let mut closed_passes = Vec::new();
     match op.region_ordering() {
         // Region-first: one outline is prepared at a time, and its geometry
         // is dropped after its last level. Peak memory does not grow with
@@ -556,7 +559,8 @@ pub(crate) fn run_layered<O: LayeredOp>(
                     if i > 0 && emitted {
                         combined.final_retract(safe_z);
                     }
-                    combined.moves.extend(piece.moves);
+                    combined.moves.extend(piece.toolpath.moves);
+                    closed_passes.extend(piece.closed_passes);
                     emitted = true;
                 }
             }
@@ -592,7 +596,8 @@ pub(crate) fn run_layered<O: LayeredOp>(
                     if !combined.moves.is_empty() {
                         combined.final_retract(safe_z);
                     }
-                    combined.moves.extend(piece.moves);
+                    combined.moves.extend(piece.toolpath.moves);
+                    closed_passes.extend(piece.closed_passes);
                 }
             }
         }
@@ -607,7 +612,10 @@ pub(crate) fn run_layered<O: LayeredOp>(
     };
     // P3.5: the spans snap to the union of the ladders (one ladder: the
     // ladder itself).
-    Ok(op.annotate(op.spans(linked, &union.z), ctx.semantic_ctx))
+    let mut generated = op.annotate(op.spans(linked, &union.z), ctx.semantic_ctx);
+    // P6.0c: the stated side of each closed pass, for the lead dressup.
+    generated.produced.closed_passes.extend(closed_passes);
+    Ok(generated)
 }
 
 /// K3: the outlines of an area op ([`RestUse::LevelClip`]: Pocket,
@@ -713,7 +721,7 @@ fn emit_at<O: LayeredOp>(
     i: usize,
     rules: &LevelRules<'_>,
     cancel: &dyn CancelCheck,
-) -> Result<Option<Toolpath>, OperationError> {
+) -> Result<Option<SidedToolpath>, OperationError> {
     let (Some(&z), Some(geometry), Some(&final_z)) =
         (levels.get(i), layers.geometry_at(i), levels.last())
     else {
@@ -733,7 +741,7 @@ fn emit_at<O: LayeredOp>(
         },
         cancel,
     )?;
-    Ok((!piece.moves.is_empty()).then_some(piece))
+    Ok((!piece.toolpath.moves.is_empty()).then_some(piece))
 }
 
 /// The level plan of one outline and the geometry of each distinct region.
@@ -840,10 +848,10 @@ fn prepare_outline<O: LayeredOp>(
 ///
 /// # Errors
 ///
-/// [`OperationError::Other`] when the ladder is empty.
+/// [`OperationError::InvalidParam`] when the ladder is empty.
 pub(super) fn effective_levels(cutting_levels: &[f64]) -> Result<Vec<f64>, OperationError> {
     if cutting_levels.is_empty() {
-        return Err(OperationError::Other(
+        return Err(OperationError::InvalidParam(
             "the Z ladder of this op is empty: its floor is at or above its top, or its depth \
              or depth per pass is zero. Set a floor below the top and a depth per pass above \
              zero"
@@ -909,14 +917,14 @@ mod tests {
             level: LevelInfo,
             _rest: &LevelRest<'_>,
             _cancel: &dyn CancelCheck,
-        ) -> Result<Toolpath, OperationError> {
+        ) -> Result<SidedToolpath, OperationError> {
             self.emitted.borrow_mut().push(level.index);
             if level.index == CANCEL_AT {
                 self.cancel.store(true, Ordering::SeqCst);
             }
             let mut tp = Toolpath::new();
             tp.feed_to(P3::new(0.0, 0.0, level.z), 100.0);
-            Ok(tp)
+            Ok(SidedToolpath::without_closed_passes(tp))
         }
     }
 
@@ -936,7 +944,7 @@ mod tests {
     fn an_empty_ladder_refuses_l16() {
         let refused = effective_levels(&[]);
         assert!(
-            matches!(&refused, Err(OperationError::Other(text)) if text.contains("ladder")),
+            matches!(&refused, Err(OperationError::InvalidParam(text)) if text.contains("ladder")),
             "an empty ladder must refuse, got {refused:?}"
         );
         assert_eq!(effective_levels(&[-1.0, -2.0]).unwrap(), vec![-1.0, -2.0]);

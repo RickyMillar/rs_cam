@@ -9,8 +9,8 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
 
 ## Files
 
-- `mod.rs` — the configuration and the facade. `entry_descent.rs` — the ramp
-  and helix emitters. `entry_audit.rs` — a fed move's burial audit.
+- `mod.rs` — the configuration and the facade. `entry_descent.rs` — the ramp and helix emitters. `entry_audit.rs` — a fed move's burial audit.
+  `lead_side.rs` — the side of a lead arc (P6.0c, SAFETY): away from the `RingMaterial` the op states per closed pass (`Produced::closed_passes`); an arc off the air side keeps the plunge; no side and no probe: no lead.
 - `link.rs` — link against retract. `arcfit.rs` — lines to arcs, within the
   tolerance in 3D (G-TIERBURIAL). `feedopt.rs`, `feed_modulation.rs`,
   `air_cut.rs`, `tsp.rs`. `tabs.rs` — tab placement on straight sides (P5), the lift from the bridge width (P5b) and `apply_tabs`; P4.6: `plan_profile_tabs` is THE placement (`ProfilePass::prepare` and the `tab_layout` query; it reads `ops::profile`) and `resolve_hand_tabs` the one hand-tab resolver. `condition.rs` — segment merge (roughing; off where
@@ -37,4 +37,4 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
 - `cargo test -p rs_cam_core -q --features test-support --test capability_link_moves_safety --test dressup_span_invariants --test tabs_sit_on_straight_sides_p5 --test tabs_bridge_width_and_height_p5b --test the_tab_layout_is_the_cut_layout_p4_6`
 - `... --test constrained_max_modulation_f039 --test entry_moves_stock_aware_g_rampterrain --test finishing_defaults_have_no_ramp_entry_r10 --test adaptive3d_entry_stock_aware`
 - `cargo test -p rs_cam_core -q --test lead_in_out_feed_rates_f040 --test plunge_guard_p3 --test an_entry_ramp_follows_the_arc_g_rampchord` (a ramp laps on the arc)
-- `... --test a_peck_ladder_is_never_split_into_a_rapid_into_stock_g_pecksplit --test fed_chords_ride_the_surface_g_tierburial --test a_finished_edge_keeps_its_corner_p6_0b` (P6.0b; known red: the lead side)
+- `... --test a_peck_ladder_is_never_split_into_a_rapid_into_stock_g_pecksplit --test fed_chords_ride_the_surface_g_tierburial --test a_finished_edge_keeps_its_corner_p6_0b --test a_lead_curls_away_from_the_part_p6_0c`

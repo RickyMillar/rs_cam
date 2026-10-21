@@ -28,7 +28,8 @@
 //! - (e) P1b (lead ruling 2026-10-19): Trace on the line cuts exactly the
 //!   drawn open path. With the default dressups of Trace (lead-in/out on),
 //!   no move goes past the start or the end of an open path. A closed loop
-//!   keeps its leads.
+//!   with a side (Left or Right) keeps its leads; P6.0c gives a loop on the
+//!   line no lead.
 //!
 //! Red proof (2026-10-19): with `trace_polygons_at_z` sent through
 //! `emit_closed_contour_with_intent` for open paths again, (c) fails on
@@ -39,7 +40,10 @@
 //! Red proof (P1b, 2026-10-19): with Trace back on `TRANSFORM_DEPTH_ORDER`
 //! (leads on every pass), (e) fails: the lead-in plunge of the V lands at
 //! X 12.3 Y -10.9, outside the drawn extent. (c) fails too: the line cut
-//! no longer starts at the drawn start.
+//! no longer starts at the drawn start. Since P6.0c that proof no longer
+//! goes red: an open path states no material side and Trace has no
+//! surface probe, so the lead dressup gives it no lead in any scope.
+//! `LeadScope::ClosedPassesOnly` is a second guard now.
 //!
 //! ```text
 //! cargo test -p rs_cam_core -q --test open_paths_are_never_chord_closed_p1
@@ -350,8 +354,13 @@ fn extent(points: &[[f64; 2]]) -> (P2, P2) {
 /// move of an open path lands inside the XY extent of the path it cuts.
 /// A lead arc starts or ends one lead radius past the drawn end, so it
 /// lands outside. The tolerance is the default arc-fit budget: the arc fit
-/// of Trace may move a fed point by that much and no more. A closed square
-/// in the same drawing keeps its lead-in (non-vacuity: the leads are on).
+/// of Trace may move a fed point by that much and no more.
+///
+/// P6.0c (break): the closed square in the same drawing is cut on the line
+/// too, so both of its sides are material, and it keeps its plunge (no
+/// lead). Before P6.0c it took a lead arc into one side. A closed loop with
+/// a side (Trace Left or Right) keeps its lead:
+/// `a_lead_curls_away_from_the_part_p6_0c.rs` holds that arm.
 #[test]
 fn trace_cuts_an_open_path_with_no_lead_past_its_ends_p1b() {
     let op = trace(TraceCompensation::None);
@@ -391,11 +400,15 @@ fn trace_cuts_an_open_path_with_no_lead_past_its_ends_p1b() {
     }
     assert!(open_fed > 0, "non-vacuity: the open paths are cut");
 
-    // The closed square (left of X 0) keeps its lead-in.
+    // P6.0c: the closed square (left of X 0) is on the line too, so it
+    // takes no lead either.
     let square_leads = tp
         .moves
         .iter()
         .filter(|m| m.target.x < 0.0 && m.intent == MoveIntent::LeadIn)
         .count();
-    assert!(square_leads > 0, "a closed Trace loop keeps its lead-in");
+    assert_eq!(
+        square_leads, 0,
+        "a closed Trace loop on the line takes no lead (P6.0c)"
+    );
 }

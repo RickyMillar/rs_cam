@@ -3015,7 +3015,7 @@ mod tests {
     fn two_d_pocket_simulation_reports_engagement() {
         use crate::compute::stock_config::StockConfig;
         use crate::ops::pocket::{
-            PocketParams, pocket_contours_reported_with_cancel, pocket_contours_to_toolpath,
+            PocketParams, pocket_contours_reported_with_cancel, pocket_contours_to_sided_toolpath,
         };
         use crate::polygon::Polygon2;
 
@@ -3070,7 +3070,7 @@ mod tests {
             &crate::interrupt::NeverCancel,
         )
         .expect("never cancelled");
-        let tp = pocket_contours_to_toolpath(
+        let tp = pocket_contours_to_sided_toolpath(
             &rings,
             &PocketParams {
                 tool_radius: 3.175,
@@ -3081,7 +3081,8 @@ mod tests {
                 safe_z: 10.0,
                 climb: true,
             },
-        );
+        )
+        .toolpath;
         assert!(!tp.moves.is_empty(), "pocket toolpath should be non-empty");
 
         let tool_def = ToolDefinition::new(

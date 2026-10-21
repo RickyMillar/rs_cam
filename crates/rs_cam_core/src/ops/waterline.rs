@@ -18,7 +18,7 @@ use crate::machine::kinematics::{LinkKinematics, RetractDescent, retract_saves_t
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::surface::pushcutter::batch_push_cutter_with_cancel;
 use crate::tool::MillingCutter;
-use crate::toolpath::{MoveIntent, Toolpath};
+use crate::toolpath::{MoveIntent, RingMaterial, Toolpath};
 
 /// Parameters for waterline toolpath generation.
 pub struct WaterlineParams {
@@ -484,12 +484,15 @@ pub fn waterline_level(
             if path.len() < 3 {
                 continue;
             }
-            toolpath.emit_closed_contour_with_intent(
+            // P6.0c: a surface op states no material side: the lead
+            // dressup's surface probe lifts each lead sample onto the model.
+            let _ = toolpath.emit_closed_contour_with_intent(
                 &path,
                 params.safe_z,
                 params.feed_rate,
                 params.plunge_rate,
                 MoveIntent::FinishingCut,
+                RingMaterial::NotStated,
             );
             continue;
         }
@@ -539,12 +542,15 @@ pub fn waterline_level(
             }
             if whole_loop {
                 // The whole loop survived — safe to close it.
-                toolpath.emit_closed_contour_with_intent(
+                // P6.0c: a surface op states no material side: the lead
+                // dressup's surface probe lifts each lead sample onto the model.
+                let _ = toolpath.emit_closed_contour_with_intent(
                     &path,
                     params.safe_z,
                     params.feed_rate,
                     params.plunge_rate,
                     MoveIntent::FinishingCut,
+                    RingMaterial::NotStated,
                 );
             } else {
                 // Partial survivor: an open run, not a closed loop —

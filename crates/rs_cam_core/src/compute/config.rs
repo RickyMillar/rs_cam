@@ -2311,15 +2311,19 @@ mod tests {
             kinds(&h, OperationType::Waterline, Some(10.0)),
             vec![d(retract_top), d(feed_top)]
         );
-        // `top > bottom` is strict: an equal bottom is an empty ladder.
+        // `top > bottom` is strict for a ladder that excludes its top: an
+        // equal bottom is an empty ladder.
         let h = ResolvedHeights {
             bottom_z: 10.0,
             ..in_order
         };
         assert_eq!(
-            kinds(&h, OperationType::Waterline, Some(10.0)),
+            kinds(&h, OperationType::Pocket, Some(10.0)),
             vec![d(bottom)]
         );
+        // F033b: a ladder that includes its top (`ladder_includes_top`)
+        // cuts one level at bottom = top, so it is no break.
+        assert!(kinds(&h, OperationType::Waterline, Some(10.0)).is_empty());
         // An `OpDial` op does not read the bottom (F1.19).
         assert!(kinds(&h, OperationType::DropCutter, Some(10.0)).is_empty());
         // R7: Adaptive 3D starts on the stock top, so a pinned top below a

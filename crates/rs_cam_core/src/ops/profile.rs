@@ -5,7 +5,7 @@
 
 use crate::geo::{P2, P3};
 use crate::polygon::Polygon2;
-use crate::toolpath::{MoveIntent, Toolpath};
+use crate::toolpath::{ClosedPassMoves, MoveIntent, RingMaterial, SidedToolpath};
 
 /// Which side of the boundary the tool cuts on.
 #[derive(
@@ -24,6 +24,21 @@ pub enum ProfileSide {
     Outside,
     /// Tool inside the boundary (cutting an internal contour/hole).
     Inside,
+}
+
+impl ProfileSide {
+    /// Where the material is beside the tool-centre ring of this side
+    /// (P6.0c): `Outside` cuts round a part, so the material is inside the
+    /// ring; `Inside` cuts a hole, so the material is outside it. The ring
+    /// is the closed offset of the region, so the statement holds for
+    /// either cut direction (climb or conventional).
+    #[must_use]
+    pub const fn ring_material(self) -> RingMaterial {
+        match self {
+            Self::Outside => RingMaterial::Inside,
+            Self::Inside => RingMaterial::Outside,
+        }
+    }
 }
 
 /// Parameters for profile cutting.
@@ -139,8 +154,15 @@ pub fn profile_contour_reported(
 /// `pub` since the G2 hoist (2026-08-20): this is the Z-dependent half, and
 /// `params.cut_depth` is the only thing a depth-stepped caller varies across
 /// levels. See [`profile_path_reported`] for the other half.
-pub fn profile_path_to_toolpath(contour: &[P2], params: &ProfileParams) -> Toolpath {
-    profile_ring_to_toolpath(&profile_ring(contour, params.climb), params)
+///
+/// `material` (P6.0c): where the material is beside the ring. Profile
+/// states [`ProfileSide::ring_material`]; Chamfer states it per ring.
+pub fn profile_path_to_toolpath(
+    contour: &[P2],
+    params: &ProfileParams,
+    material: RingMaterial,
+) -> SidedToolpath {
+    profile_ring_to_toolpath(&profile_ring(contour, params.climb), params, material)
 }
 
 /// The closed ring a profile pass cuts, in cut order: the contour, reversed
@@ -157,19 +179,26 @@ pub fn profile_ring(contour: &[P2], climb: bool) -> Vec<P2> {
 }
 
 /// One pass along `ring` (already in cut order, see [`profile_ring`]) at
-/// `params.cut_depth`.
-pub fn profile_ring_to_toolpath(ring: &[P2], params: &ProfileParams) -> Toolpath {
-    let mut tp = Toolpath::new();
+/// `params.cut_depth`, with the stated `material` side (P6.0c).
+pub fn profile_ring_to_toolpath(
+    ring: &[P2],
+    params: &ProfileParams,
+    material: RingMaterial,
+) -> SidedToolpath {
+    let mut tp = SidedToolpath::new();
     let points: Vec<P3> = ring
         .iter()
         .map(|p| P3::new(p.x, p.y, params.cut_depth))
         .collect();
-    tp.emit_closed_contour_with_intent(
+    tp.emit_closed_pass(
         &points,
-        params.safe_z,
-        params.feed_rate,
-        params.plunge_rate,
-        MoveIntent::FinishingCut,
+        ClosedPassMoves {
+            safe_z: params.safe_z,
+            feed: params.feed_rate,
+            plunge: params.plunge_rate,
+            body_intent: MoveIntent::FinishingCut,
+        },
+        material,
     );
     tp
 }
@@ -183,7 +212,7 @@ pub fn profile_ring_to_toolpath(ring: &[P2], params: &ProfileParams) -> Toolpath
 )]
 mod tests {
     use super::*;
-    use crate::toolpath::MoveType;
+    use crate::toolpath::{MoveType, Toolpath};
 
     /// One profile level through the kernels the Layered Profile adapter
     /// calls: `profile_path_reported` (`prepare`), then
@@ -191,7 +220,9 @@ mod tests {
     /// no contour and an empty toolpath. D3 deleted the public wrapper.
     fn profile_level(polygon: &Polygon2, params: &ProfileParams) -> Toolpath {
         match profile_path_reported(polygon, params).0 {
-            Some(contour) => profile_path_to_toolpath(&contour, params),
+            Some(contour) => {
+                profile_path_to_toolpath(&contour, params, params.side.ring_material()).toolpath
+            }
             None => Toolpath::new(),
         }
     }

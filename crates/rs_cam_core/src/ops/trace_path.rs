@@ -5,7 +5,7 @@
 
 use crate::geo::{P2, P3};
 use crate::polygon::Polygon2;
-use crate::toolpath::{MoveIntent, Toolpath};
+use crate::toolpath::{ClosedPassMoves, MoveIntent, RingMaterial, SidedToolpath, Toolpath};
 
 /// Cutter compensation direction relative to the travel direction.
 #[derive(
@@ -26,6 +26,36 @@ pub enum TraceCompensation {
     Left,
     /// Offset tool to the right of the travel direction by tool_radius.
     Right,
+}
+
+impl TraceCompensation {
+    /// The signed offset (mm) of the region for a tool of `tool_radius`, in
+    /// the `offset_polygon` sign (negative grows the region), or `None` for
+    /// no compensation. THE sign of each arm: the cut and the material side
+    /// ([`Self::ring_material`]) both read it, so a change of the sign (O-1)
+    /// moves both.
+    #[must_use]
+    pub fn region_offset(self, tool_radius: f64) -> Option<f64> {
+        match self {
+            Self::None => None,
+            Self::Left => Some(-tool_radius),
+            Self::Right => Some(tool_radius),
+        }
+    }
+
+    /// Where the material is beside a compensated ring (P6.0c). A grown
+    /// region puts the tool outside the drawn loop, so the loop is the
+    /// material: inside an exterior ring, outside a hole ring. A shrunk
+    /// region puts the tool inside the loop, so the material is on the
+    /// other side. On the line (`None`), both sides are material.
+    #[must_use]
+    pub fn ring_material(self, hole: bool) -> RingMaterial {
+        match self.region_offset(1.0) {
+            None => RingMaterial::BothSides,
+            Some(d) if (d < 0.0) != hole => RingMaterial::Inside,
+            Some(_) => RingMaterial::Outside,
+        }
+    }
 }
 
 /// Parameters for a trace/follow-path operation.
@@ -65,14 +95,9 @@ pub fn trace_compensated_polygons_reported(
     polygon: &Polygon2,
     params: &TraceParams,
 ) -> (Vec<Polygon2>, usize) {
-    match params.compensation {
-        TraceCompensation::None => (vec![polygon.clone()], 0),
-        TraceCompensation::Left | TraceCompensation::Right => {
-            let distance = if matches!(params.compensation, TraceCompensation::Left) {
-                -params.tool_radius
-            } else {
-                params.tool_radius
-            };
+    match params.compensation.region_offset(params.tool_radius) {
+        None => (vec![polygon.clone()], 0),
+        Some(distance) => {
             let (result, failure) = crate::polygon::offset_polygon_reported(polygon, distance);
             (result, usize::from(failure.is_some()))
         }
@@ -88,17 +113,23 @@ pub fn trace_compensated_polygons_reported(
 /// point to its last, with no chord back to the start. Only compensation
 /// `None` gets open paths: the prologue gives a `Left` or `Right` Trace the
 /// closed polygons only (`ItemUse::Regions`).
+///
+/// P6.0c: each closed ring states its material side
+/// ([`TraceCompensation::ring_material`]); an open path states none, and the
+/// lead dressup gives it no lead.
 #[must_use]
-pub fn trace_polygons_at_z(polygons: &[Polygon2], z: f64, params: &TraceParams) -> Toolpath {
-    let mut tp = Toolpath::new();
+pub fn trace_polygons_at_z(polygons: &[Polygon2], z: f64, params: &TraceParams) -> SidedToolpath {
+    let mut tp = SidedToolpath::new();
     for poly in polygons {
         if poly.closed {
-            trace_ring(&mut tp, &poly.exterior, z, params);
+            let material = params.compensation.ring_material(false);
+            trace_ring(&mut tp, &poly.exterior, z, params, material);
+            let material = params.compensation.ring_material(true);
             for hole in &poly.holes {
-                trace_ring(&mut tp, hole, z, params);
+                trace_ring(&mut tp, hole, z, params, material);
             }
         } else {
-            trace_open_path(&mut tp, &poly.exterior, z, params);
+            trace_open_path(&mut tp.toolpath, &poly.exterior, z, params);
         }
     }
     tp
@@ -110,19 +141,28 @@ pub fn trace_polygons_at_z(polygons: &[Polygon2], z: f64, params: &TraceParams) 
 /// `emit_closed_contour_with_intent` rapid→plunge→feed→close→retract
 /// envelope. A ring below 3 points is no closed shape, and the emitter
 /// skips it. An open path never comes here ([`trace_open_path`]).
-fn trace_ring(tp: &mut Toolpath, ring: &[P2], cut_z: f64, params: &TraceParams) {
+fn trace_ring(
+    tp: &mut SidedToolpath,
+    ring: &[P2],
+    cut_z: f64,
+    params: &TraceParams,
+    material: RingMaterial,
+) {
     if ring.is_empty() {
         return;
     }
 
     let points: Vec<P3> = ring.iter().map(|p| P3::new(p.x, p.y, cut_z)).collect();
 
-    tp.emit_closed_contour_with_intent(
+    tp.emit_closed_pass(
         &points,
-        params.safe_z,
-        params.feed_rate,
-        params.plunge_rate,
-        MoveIntent::FinishingCut,
+        ClosedPassMoves {
+            safe_z: params.safe_z,
+            feed: params.feed_rate,
+            plunge: params.plunge_rate,
+            body_intent: MoveIntent::FinishingCut,
+        },
+        material,
     );
 }
 
@@ -167,7 +207,7 @@ mod tests {
         .all_levels()
         {
             tp.moves
-                .extend(trace_polygons_at_z(&rings, z, params).moves);
+                .extend(trace_polygons_at_z(&rings, z, params).toolpath.moves);
         }
         tp
     }

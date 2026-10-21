@@ -48,6 +48,9 @@
     clippy::indexing_slicing
 )]
 
+mod common;
+
+use common::meshes::FlatFloor;
 use rs_cam_core::dressup::without_provenance;
 use rs_cam_core::{
     dressup::apply_lead_in_out,
@@ -266,13 +269,16 @@ fn f1_sentry_lead_out_is_not_swallowed_by_the_finishing_arc() {
     tp.rapid_to_with_intent(P3::new(pt(18).x, pt(18).y, safe_z), MoveIntent::Retract);
 
     // Step 3 of the dressup chain. `lead_radius == r` and both feed
-    // overrides `None` — the shipped defaults.
+    // overrides `None` — the shipped defaults. A finishing surface pass
+    // runs under its surface probe (P6.0c: a pass with no stated side gets
+    // a lead only there); the floor is below the pass, so it lifts nothing.
+    let floor = FlatFloor::at(z - 10.0);
     let led = without_provenance(apply_lead_in_out(
         AnnotatedToolpath::new(tp),
         r,
         None,
         None,
-        None,
+        Some(&floor.probe()),
         None,
         rs_cam_core::dressup::LeadScope::EveryPass,
     ));
@@ -380,12 +386,14 @@ fn f1_sentry_span_and_intent_agree_on_the_fitted_arcs() {
     let n = tp.moves.len();
     let annotated = AnnotatedToolpath::with_spans(tp, vec![Span::new(0, n, SpanKind::Operation)]);
 
+    // The surface probe of a finishing pass (P6.0c), below the pass.
+    let floor = FlatFloor::at(z - 10.0);
     let led = without_provenance(apply_lead_in_out(
         annotated,
         r,
         None,
         None,
-        None,
+        Some(&floor.probe()),
         None,
         rs_cam_core::dressup::LeadScope::EveryPass,
     ));

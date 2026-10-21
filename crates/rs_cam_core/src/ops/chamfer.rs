@@ -25,7 +25,8 @@
 
 use crate::ops::profile::{ProfileParams, ProfileSide, profile_path_to_toolpath};
 use crate::polygon::Polygon2;
-use crate::toolpath::Toolpath;
+use crate::toolpath::RingMaterial;
+use crate::toolpath::{MaterialRing, SidedToolpath, Toolpath};
 
 /// Parameters for chamfer cutting with a V-bit.
 pub struct ChamferParams {
@@ -76,7 +77,7 @@ pub(crate) fn chamfer_depth(params: &ChamferParams) -> f64 {
 pub(crate) fn chamfer_rings_reported(
     polygon: &Polygon2,
     params: &ChamferParams,
-) -> (Vec<Vec<crate::geo::P2>>, usize) {
+) -> (Vec<MaterialRing>, usize) {
     // The offset sign and the hole classification both read the winding
     // (exterior CCW, holes CW). Importers normalise it; a hand-built outline
     // may not.
@@ -101,10 +102,27 @@ pub(crate) fn chamfer_rings_reported(
         let (pieces, failure) = crate::polygon::offset_polygon_reported(polygon, distance);
         (pieces, usize::from(failure.is_some()))
     };
+    // P6.0c: an exterior ring has the material on the side the module doc
+    // names (inside a part's ring, outside a cavity's ring); a hole ring
+    // has it on the other side.
+    let exterior = params.side.ring_material();
+    let hole = match exterior {
+        RingMaterial::Inside => RingMaterial::Outside,
+        _ => RingMaterial::Inside,
+    };
     let rings = pieces
         .into_iter()
-        .flat_map(|p| std::iter::once(p.exterior).chain(p.holes))
-        .filter(|ring| ring.len() >= 3)
+        .flat_map(|p| {
+            std::iter::once(MaterialRing {
+                points: p.exterior,
+                material: exterior,
+            })
+            .chain(p.holes.into_iter().map(move |points| MaterialRing {
+                points,
+                material: hole,
+            }))
+        })
+        .filter(|ring| ring.points.len() >= 3)
         .collect();
     (rings, failures)
 }
@@ -112,10 +130,10 @@ pub(crate) fn chamfer_rings_reported(
 /// The cut of the tool-centre `rings` at the tip Z `z`: one closed profile
 /// pass per ring, each with its own approach and retract.
 pub(crate) fn chamfer_rings_at_z(
-    rings: &[Vec<crate::geo::P2>],
+    rings: &[MaterialRing],
     z: f64,
     params: &ChamferParams,
-) -> Toolpath {
+) -> SidedToolpath {
     let profile_params = ProfileParams {
         tool_radius: params.tip_offset,
         side: params.side,
@@ -126,10 +144,13 @@ pub(crate) fn chamfer_rings_at_z(
         climb: false,
         compensate_in_controller: false,
     };
-    let mut tp = Toolpath::new();
+    let mut tp = SidedToolpath::new();
     for ring in rings {
-        tp.moves
-            .extend(profile_path_to_toolpath(ring, &profile_params).moves);
+        tp.append(profile_path_to_toolpath(
+            &ring.points,
+            &profile_params,
+            ring.material,
+        ));
     }
     tp
 }
@@ -161,7 +182,7 @@ pub(crate) fn chamfer_rings_at_z(
 /// `top_z - depth`.
 pub fn chamfer_toolpath(polygon: &Polygon2, params: &ChamferParams) -> Toolpath {
     let (rings, _failures) = chamfer_rings_reported(polygon, params);
-    chamfer_rings_at_z(&rings, params.top_z - chamfer_depth(params), params)
+    chamfer_rings_at_z(&rings, params.top_z - chamfer_depth(params), params).toolpath
 }
 
 #[cfg(test)]

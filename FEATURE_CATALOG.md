@@ -86,7 +86,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 - heights system: clearance, retract, feed, top, bottom
 - entry dressups: plunge replacement via ramp or helix. The helix radius is the repo rule 0.3 x D or an operator value, capped at the tool's flat bottom so the helix leaves no core; a helix or ramp entry never runs above the cut feed (G10 Part B)
 - dogbone overcuts
-- lead-in / lead-out arcs
+- lead-in / lead-out arcs. **A lead arc turns away from the material** (P6.0c, 2026-10-21): each 2.5D op states the material side of each closed pass, an arc that would leave the air side of the pass keeps the plunge, and a pass on the line (Trace None) or an open 2.5D pass gets no lead. Sentry: `a_lead_curls_away_from_the_part_p6_0c`
 - link moves / keep-tool-down linking
 - arc fitting to `G2` / `G3`. **Arcs do not cross an intent boundary** (2026-08-04): the fitter's run key carries `Move::intent` and breaks on `Region` span edges, so a fitted arc's label is exact rather than inherited from its first source move. Fitted arcs are tagged `SpanKind::GeometryRefit` and stay **in** tool-load gate populations; only true dressup bridges (dogbones, links, lead-outs) are excluded
 - feed optimization dressup with stock-aware engagement estimation on supported workflows

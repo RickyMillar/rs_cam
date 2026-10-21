@@ -680,3 +680,20 @@ Defects found by the design:
   The lead must go to the side away from the material, from the op's own
   knowledge of the material side per pass. Pinned by
   `trace_left_lead_curls_into_the_part_known_red`.
+  Measured on HEAD (lead r 2, tool r 3): wrong side 1.84 mm (Profile
+  Outside conventional, Trace Left); concave start corner 2.00 mm (Profile
+  Inside, Pocket island ring, Trace Right/None, Chamfer Inside: the lead-in
+  goes back along the previous edge). Fix: each op states `RingMaterial`
+  per closed pass (a required argument of `emit_closed_contour_with_intent`);
+  `dressup/lead_side.rs` turns the arc away from it; a lead point on the
+  material side keeps the plunge. All 11 arms within 0.020 mm.
+  Lead decisions: Trace None (`BothSides`) gets no lead, not a refusal,
+  because Trace has the lead on by default.
+- P6.0d (follow-up of P6.0c, not started):
+  - An open pass with a known side (Trace Left/Right open path) keeps its
+    lead. P6.0c gives every open 2.5D pass no lead (Face, Zigzag, Adaptive
+    2D, open Trace).
+  - A lead that the operator asked for and the dressup drops gives a note.
+  - A closed ring starts in the middle of an edge, not at a concave corner,
+    so the lead has room.
+  - `RingMaterial::NotStated` (Waterline, Steep and Shallow) states a side.

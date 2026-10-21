@@ -15,7 +15,6 @@ use crate::compute::operation_configs::{
 };
 use crate::compute::tool_config::ToolConfig;
 use crate::finish::unified_finish::RelinkTotals;
-use crate::geo::P2;
 use crate::interrupt::CancelCheck;
 use crate::ops::project_curve::ProjectCurveParams;
 use crate::polygon::Polygon2;
@@ -260,7 +259,7 @@ impl ChamferPass {
 
 impl LayeredOp for ChamferPass {
     type Input = Polygon2;
-    type Geometry = Vec<Vec<P2>>;
+    type Geometry = Vec<crate::toolpath::MaterialRing>;
     type Report = OffsetFailures;
 
     /// One level, so the order of the outlines is the order of the cuts in
@@ -284,7 +283,7 @@ impl LayeredOp for ChamferPass {
     /// the bevel never cuts.
     fn reach_band(&self, geometry: &Self::Geometry, _tool_radius: f64) -> ReachBand {
         ReachBand {
-            rings: geometry.clone(),
+            rings: geometry.iter().map(|ring| ring.points.clone()).collect(),
             half_width: self.cone_radius_at_top(),
         }
     }
@@ -320,7 +319,7 @@ impl LayeredOp for ChamferPass {
         level: LevelInfo,
         _rest: &LevelRest<'_>,
         _cancel: &dyn CancelCheck,
-    ) -> Result<Toolpath, OperationError> {
+    ) -> Result<crate::toolpath::SidedToolpath, OperationError> {
         Ok(crate::ops::chamfer::chamfer_rings_at_z(
             geometry,
             level.z,

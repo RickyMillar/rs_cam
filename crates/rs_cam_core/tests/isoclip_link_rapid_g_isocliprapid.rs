@@ -55,6 +55,7 @@
 
 mod common;
 
+use common::meshes::FlatFloor;
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle, LeadParams};
 use rs_cam_core::compute::execute::apply_dressups;
@@ -184,12 +185,16 @@ fn retracted_pass() -> Toolpath {
 }
 
 fn led(tp: Toolpath, retract_z: Option<f64>) -> Toolpath {
+    // A scallop pass runs under its surface probe (P6.0c: a pass with no
+    // stated side gets a lead only there). The floor is below every
+    // level, so it lifts nothing.
+    let floor = FlatFloor::at(FLOOR_Z - 20.0);
     apply_lead_in_out(
         AnnotatedToolpath::new(tp),
         LEAD_RADIUS_MM,
         None,
         None,
-        None,
+        Some(&floor.probe()),
         retract_z,
         rs_cam_core::dressup::LeadScope::EveryPass,
     )
@@ -328,6 +333,8 @@ fn c_no_rapid_crosses_the_rest_stock() {
         feed_optimization: false,
         ..DressupConfig::default()
     };
+    // The scallop's surface probe (P6.0c), below every level.
+    let floor = FlatFloor::at(FLOOR_Z - 20.0);
     let dressed = apply_dressups(
         AnnotatedToolpath::new(two_island_pass()),
         rs_cam_core::compute::execute::DressupContext {
@@ -342,7 +349,7 @@ fn c_no_rapid_crosses_the_rest_stock() {
             link_kinematics: None,
             feed_opt_stock: None,
             cutter: Some(&cutter),
-            entry_surface: None,
+            entry_surface: Some(floor.probe()),
             transform_capabilities: OperationType::Scallop.capabilities().transform,
             debug_ctx: None,
             semantic_ctx: None,

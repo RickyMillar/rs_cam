@@ -10,7 +10,7 @@
 
 use rs_cam_core::interrupt::NeverCancel;
 use rs_cam_core::ops::pocket::{
-    PocketParams, pocket_contours_reported_with_cancel, pocket_contours_to_toolpath,
+    PocketParams, pocket_contours_reported_with_cancel, pocket_contours_to_sided_toolpath,
 };
 use rs_cam_core::ops::profile::{ProfileParams, profile_path_reported, profile_path_to_toolpath};
 use rs_cam_core::ops::zigzag::{ZigzagParams, lines_to_toolpath, zigzag_lines_reported};
@@ -26,14 +26,16 @@ pub fn pocket_level(polygon: &Polygon2, params: &PocketParams) -> Toolpath {
         &NeverCancel,
     )
     .expect("never cancelled");
-    pocket_contours_to_toolpath(&rings, params)
+    pocket_contours_to_sided_toolpath(&rings, params).toolpath
 }
 
 /// One profile level: the side offset, then the stamp. A collapsed offset
 /// gives no contour and an empty toolpath.
 pub fn profile_level(polygon: &Polygon2, params: &ProfileParams) -> Toolpath {
     match profile_path_reported(polygon, params).0 {
-        Some(contour) => profile_path_to_toolpath(&contour, params),
+        Some(contour) => {
+            profile_path_to_toolpath(&contour, params, params.side.ring_material()).toolpath
+        }
         None => Toolpath::new(),
     }
 }

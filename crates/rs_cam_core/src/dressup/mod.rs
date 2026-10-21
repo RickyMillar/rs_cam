@@ -20,6 +20,7 @@ pub mod tsp;
 
 mod air_cut;
 mod entry_descent;
+mod lead_side;
 mod link;
 pub mod tabs;
 
@@ -1132,6 +1133,15 @@ fn lift_arc_points(probe: &EntrySurfaceProbe<'_>, arc_pts: &mut [P3]) -> bool {
 ///
 /// `radius` is the arc radius in mm (typically 1-3mm or ~half the tool radius).
 ///
+/// # The side of the arc (P6.0c, SAFETY)
+///
+/// Each arc turns away from the material that the op states for the pass
+/// (`Produced::closed_passes`), and every arc sample must lie on the air
+/// side of the pass ring, else the pass keeps its plunge or retract. A pass
+/// with material on both sides gets no lead. A pass with no statement gets
+/// a left arc under a surface probe and no lead without one. The module
+/// `lead_side` holds the rule and the measured defect.
+///
 /// Lead-in moves replace the original plunge: the old plunge index maps to
 /// the inserted prefix arc range, all tagged [`SpanKind::Entry`]. Lead-out
 /// moves are emitted *after* the original cut endpoint: the old cut-end move
@@ -1295,14 +1305,26 @@ pub fn apply_lead_in_out(
                 let cut_dir_y = moves[first_cut_idx].target.y - plunge_end.y;
                 let cut_dir_len = (cut_dir_x * cut_dir_x + cut_dir_y * cut_dir_y).sqrt();
 
-                if cut_dir_len > 0.1 {
+                // P6.0c: the side of the arc is the side away from the
+                // material the op states for this pass (`lead_side`).
+                let ring_end = (i..moves.len())
+                    .find(|&k| moves[k].move_type == MoveType::Rapid)
+                    .unwrap_or(moves.len());
+                if cut_dir_len > 0.1
+                    && let Some(lead) = lead_side::pass_lead(
+                        moves,
+                        i,
+                        i..ring_end,
+                        &produced.closed_passes,
+                        surface.is_some(),
+                    )
+                {
                     let ux = cut_dir_x / cut_dir_len;
                     let uy = cut_dir_y / cut_dir_len;
 
                     // Lead-in: approach from the side, quarter-circle arc
                     // Start point is offset perpendicular to cut direction
-                    let perp_x = -uy;
-                    let perp_y = ux;
+                    let (perp_x, perp_y) = lead.turn.normal(ux, uy);
                     let lead_start = P3::new(
                         plunge_end.x + perp_x * radius - ux * radius,
                         plunge_end.y + perp_y * radius - uy * radius,
@@ -1354,10 +1376,19 @@ pub fn apply_lead_in_out(
                         arc_pts.push(P3::new(ax, ay, cut_z));
                     }
                     let mut plunge_target = lead_start;
-                    let lead_ok = match surface {
-                        None => true,
-                        Some(probe) => lift_lead_points(probe, &mut plunge_target, &mut arc_pts),
-                    };
+                    // P6.0c: every sample on the air side of the pass ring,
+                    // else no lead (a concave start corner).
+                    let in_air = lead
+                        .air
+                        .as_ref()
+                        .is_none_or(|air| air.holds(&[lead_start]) && air.holds(&arc_pts));
+                    let lead_ok = in_air
+                        && match surface {
+                            None => true,
+                            Some(probe) => {
+                                lift_lead_points(probe, &mut plunge_target, &mut arc_pts)
+                            }
+                        };
 
                     if lead_ok {
                         let entry_start = result.moves.len();
@@ -1411,9 +1442,10 @@ pub fn apply_lead_in_out(
                         i += 1;
                         continue;
                     }
-                    // Probe lost surface contact along the lead: keep the
-                    // generator's original plunge (fall through to the
-                    // plain copy below).
+                    // Probe lost surface contact along the lead, or a
+                    // sample left the air side: keep the generator's
+                    // original plunge (fall through to the plain copy
+                    // below).
                 }
             }
         }
@@ -1430,11 +1462,24 @@ pub fn apply_lead_in_out(
                 let dir_y = cut_end.y - prev.y;
                 let dir_len = (dir_x * dir_x + dir_y * dir_y).sqrt();
 
-                if dir_len > 0.1 && (prev.z - cut_z).abs() < Z_LEVEL_EPS_MM {
+                // P6.0c: the pass that ends here, back to its last rapid.
+                let ring_start = (0..i)
+                    .rev()
+                    .find(|&k| moves[k].move_type == MoveType::Rapid)
+                    .map_or(0, |k| k + 1);
+                if dir_len > 0.1
+                    && (prev.z - cut_z).abs() < Z_LEVEL_EPS_MM
+                    && let Some(lead) = lead_side::pass_lead(
+                        moves,
+                        i,
+                        ring_start..i + 1,
+                        &produced.closed_passes,
+                        surface.is_some(),
+                    )
+                {
                     let ux = dir_x / dir_len;
                     let uy = dir_y / dir_len;
-                    let perp_x = -uy;
-                    let perp_y = ux;
+                    let (perp_x, perp_y) = lead.turn.normal(ux, uy);
 
                     let cut_feed_rate = match moves[i].move_type {
                         MoveType::Linear { feed_rate } => feed_rate,
@@ -1457,14 +1502,17 @@ pub fn apply_lead_in_out(
                         let ay = cut_end.y + uy * radius * sin_a + perp_y * radius * (1.0 - cos_a);
                         lo_pts.push(P3::new(ax, ay, cut_z));
                     }
-                    let lead_out_ok = match surface {
-                        None => true,
-                        Some(probe) => lift_arc_points(probe, &mut lo_pts),
-                    };
+                    let in_air = lead.air.as_ref().is_none_or(|air| air.holds(&lo_pts));
+                    let lead_out_ok = in_air
+                        && match surface {
+                            None => true,
+                            Some(probe) => lift_arc_points(probe, &mut lo_pts),
+                        };
                     if !lead_out_ok {
-                        // Probe lost surface contact along the lead-out:
-                        // keep the generator's original retract (fall
-                        // through to the plain copy below).
+                        // Probe lost surface contact along the lead-out, or
+                        // a sample left the air side (P6.0c): keep the
+                        // generator's original retract (fall through to the
+                        // plain copy below).
                         let new_idx = result.moves.len();
                         result.moves.push(moves[i].clone());
                         old_to_new.push(Some(new_idx..new_idx + 1));

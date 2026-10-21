@@ -7,7 +7,7 @@
 use crate::geo::{P2, P3};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::polygon::{FlattenPolicy, OffsetRingSet, Polygon2};
-use crate::toolpath::{MoveIntent, Toolpath};
+use crate::toolpath::{ClosedPassMoves, MaterialRing, MoveIntent, RingMaterial, SidedToolpath};
 
 /// Parameters for pocket clearing.
 ///
@@ -157,7 +157,13 @@ pub fn pocket_contours_with_cancel(
     stepover: f64,
     cancel: &dyn CancelCheck,
 ) -> Result<Vec<Vec<P2>>, Cancelled> {
-    Ok(pocket_contours_reported_with_cancel(polygon, tool_radius, stepover, cancel)?.0)
+    Ok(
+        pocket_contours_reported_with_cancel(polygon, tool_radius, stepover, cancel)?
+            .0
+            .into_iter()
+            .map(|ring| ring.points)
+            .collect(),
+    )
 }
 
 /// [`pocket_contours_with_cancel`] with Checkpoint C's offset failure
@@ -175,7 +181,7 @@ pub fn pocket_contours_reported_with_cancel(
     tool_radius: f64,
     stepover: f64,
     cancel: &dyn CancelCheck,
-) -> Result<(Vec<Vec<P2>>, PocketCascadeReport), Cancelled> {
+) -> Result<(Vec<MaterialRing>, PocketCascadeReport), Cancelled> {
     check_cancel(cancel)?;
     // First offset: tool radius compensation (tool edge touches wall)
     let (compensated, compensation_failure) =
@@ -194,21 +200,34 @@ pub fn pocket_contours_reported_with_cancel(
     let ring_cap = geometric_ring_cap(polygon, stepover);
     let started = std::time::Instant::now();
 
-    let mut all_contours: Vec<Vec<P2>> = Vec::new();
+    // P6.0c: each ring states its material side. A ring of an exterior
+    // has the pocket wall outside it; a ring round an island (a hole of
+    // the offset, reversed to CCW below) has the island inside it.
+    let mut all_contours: Vec<MaterialRing> = Vec::new();
+    let wall = |points: Vec<P2>| MaterialRing {
+        points,
+        material: RingMaterial::Outside,
+    };
+    let island = |hole: &Vec<P2>| {
+        let mut points = hole.clone();
+        points.reverse(); // CW→CCW
+        MaterialRing {
+            points,
+            material: RingMaterial::Inside,
+        }
+    };
 
     for comp in &compensated {
         if comp.exterior.len() < 3 {
             continue;
         }
         // Compensated boundary is the outermost cutting contour
-        all_contours.push(comp.exterior.clone());
+        all_contours.push(wall(comp.exterior.clone()));
 
         // Include hole contours (reversed to CCW so direction logic works uniformly)
         for hole in &comp.holes {
             if hole.len() >= 3 {
-                let mut reversed = hole.clone();
-                reversed.reverse(); // CW→CCW
-                all_contours.push(reversed);
+                all_contours.push(island(hole));
             }
         }
 
@@ -304,14 +323,12 @@ pub fn pocket_contours_reported_with_cancel(
                     continue;
                 }
                 any = true;
-                all_contours.push(inner.exterior.clone());
+                all_contours.push(wall(inner.exterior.clone()));
 
                 // Include hole contours from inner offsets
                 for hole in &inner.holes {
                     if hole.len() >= 3 {
-                        let mut reversed = hole.clone();
-                        reversed.reverse(); // CW→CCW
-                        all_contours.push(reversed);
+                        all_contours.push(island(hole));
                     }
                 }
             }
@@ -338,10 +355,17 @@ pub fn pocket_contours_reported_with_cancel(
 /// call is what makes the per-level output identical by construction — the
 /// same `contours` slice through the same emitter, differing only in the
 /// stamp below.
-pub fn pocket_contours_to_toolpath(contours: &[Vec<P2>], params: &PocketParams) -> Toolpath {
-    let mut tp = Toolpath::new();
+///
+/// P6.0c: each pass keeps the stated material side of its ring
+/// ([`MaterialRing::material`]).
+pub fn pocket_contours_to_sided_toolpath(
+    contours: &[MaterialRing],
+    params: &PocketParams,
+) -> SidedToolpath {
+    let mut tp = SidedToolpath::new();
 
-    for contour in contours {
+    for ring in contours {
+        let contour = &ring.points;
         if contour.is_empty() {
             continue;
         }
@@ -357,12 +381,15 @@ pub fn pocket_contours_to_toolpath(contours: &[Vec<P2>], params: &PocketParams) 
             .map(|p| P3::new(p.x, p.y, params.cut_depth))
             .collect();
 
-        tp.emit_closed_contour_with_intent(
+        tp.emit_closed_pass(
             &points,
-            params.safe_z,
-            params.feed_rate,
-            params.plunge_rate,
-            MoveIntent::ClearingCut,
+            ClosedPassMoves {
+                safe_z: params.safe_z,
+                feed: params.feed_rate,
+                plunge: params.plunge_rate,
+                body_intent: MoveIntent::ClearingCut,
+            },
+            ring.material,
         );
     }
 
@@ -379,7 +406,7 @@ pub fn pocket_contours_to_toolpath(contours: &[Vec<P2>], params: &PocketParams) 
 )]
 mod tests {
     use super::*;
-    use crate::toolpath::MoveType;
+    use crate::toolpath::{MoveType, Toolpath};
 
     /// One pocket level through the two kernels the Layered Pocket adapter
     /// calls (`prepare`, then `emit_level`). D3 deleted the public wrapper.
@@ -391,7 +418,7 @@ mod tests {
             &crate::interrupt::NeverCancel,
         )
         .expect("never cancelled");
-        pocket_contours_to_toolpath(&contours, params)
+        pocket_contours_to_sided_toolpath(&contours, params).toolpath
     }
 
     fn default_params() -> PocketParams {

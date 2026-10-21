@@ -320,6 +320,9 @@ fn pocket_kernel_keeps_the_radius_round_an_island() {
     let (rings, _report) = pocket_contours_reported_with_cancel(&outline, R, 2.0, &NeverCancel)
         .expect("never cancelled");
     assert!(!rings.is_empty(), "the pocket has rings");
-    let cut: Vec<(P2, P2)> = rings.iter().flat_map(|r| ring_segments(r)).collect();
+    let cut: Vec<(P2, P2)> = rings
+        .iter()
+        .flat_map(|r| ring_segments(&r.points))
+        .collect();
     assert_clear("pocket round an island (kernel)", &cut, &outline, false);
 }

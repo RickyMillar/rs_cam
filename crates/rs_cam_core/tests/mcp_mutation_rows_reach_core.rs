@@ -60,8 +60,11 @@ use rs_cam_core::session::{
 };
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
-/// The clearance height the heights arm writes.
-const EDITED_CLEARANCE_Z_MM: f64 = 12.5;
+/// The clearance height the heights arm writes. F033: it stays above the
+/// fixture's retract (Auto, 30 mm), so the edit door accepts it; it is not
+/// the Auto clearance (retract + 10 = 40 mm), so the edit moves the stack.
+/// It was 12.5 mm, under the retract, which the edit door refuses.
+const EDITED_CLEARANCE_Z_MM: f64 = 45.0;
 
 /// The stock width the stock arm writes, in millimetres.
 const EDITED_STOCK_X_MM: f64 = 321.0;

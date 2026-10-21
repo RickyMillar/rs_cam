@@ -10,7 +10,8 @@
 )]
 
 use super::*;
-use crate::toolpath::MoveIntent;
+use crate::geo::P2;
+use crate::toolpath::{ClosedPassMoves, MoveIntent, RingMaterial, SidedToolpath};
 
 fn simple_plunge_toolpath() -> Toolpath {
     let mut tp = Toolpath::new();
@@ -24,6 +25,71 @@ fn simple_plunge_toolpath() -> Toolpath {
     // Retract
     tp.rapid_to(P3::new(50.0, 50.0, 10.0));
     tp
+}
+
+/// A closed 40 mm square pass at Z -3, CCW, its plunge at (30, 10) in the
+/// middle of the bottom edge, with
+/// the stated `material` side (P6.0c) in `produced`, as the Layered runner
+/// gives it to the lead dressup.
+fn sided_square_pass(material: RingMaterial, spans: Vec<Span>) -> AnnotatedToolpath {
+    let mut tp = SidedToolpath::new();
+    let ring = [
+        (30.0, 10.0),
+        (50.0, 10.0),
+        (50.0, 50.0),
+        (10.0, 50.0),
+        (10.0, 10.0),
+    ]
+    .map(|(x, y)| P3::new(x, y, -3.0));
+    tp.emit_closed_pass(
+        &ring,
+        ClosedPassMoves {
+            safe_z: 10.0,
+            feed: 1000.0,
+            plunge: 500.0,
+            body_intent: MoveIntent::FinishingCut,
+        },
+        material,
+    );
+    let mut annotated = AnnotatedToolpath::with_spans(tp.toolpath, spans);
+    annotated.produced.closed_passes = tp.closed_passes;
+    annotated
+}
+
+/// The square pass of [`sided_square_pass`] with no span.
+fn square_with_lead_side(material: RingMaterial) -> AnnotatedToolpath {
+    sided_square_pass(material, Vec::new())
+}
+
+/// The lead dressup at radius 2, no probe, every pass.
+fn leads(annotated: AnnotatedToolpath) -> AnnotatedToolpath {
+    without_provenance(apply_lead_in_out(
+        annotated,
+        2.0,
+        None,
+        None,
+        None,
+        None,
+        crate::dressup::LeadScope::EveryPass,
+    ))
+}
+
+/// The XY of every lead move (`LeadIn` or `LeadOut` feed).
+fn lead_points(tp: &Toolpath) -> Vec<P2> {
+    tp.moves
+        .iter()
+        .filter(|m| {
+            m.move_type != MoveType::Rapid
+                && matches!(m.intent, MoveIntent::LeadIn | MoveIntent::LeadOut)
+        })
+        .map(|m| P2::new(m.target.x, m.target.y))
+        .collect()
+}
+
+/// True when `p` lies strictly outside the 40 mm square of
+/// [`sided_square_pass`].
+fn outside_square(p: P2) -> bool {
+    p.x < 10.0 - 1e-9 || p.x > 50.0 + 1e-9 || p.y < 10.0 - 1e-9 || p.y > 50.0 + 1e-9
 }
 
 // --- Ramp entry tests ---
@@ -444,45 +510,27 @@ fn test_tabs_have_sharp_transitions() {
 
 #[test]
 fn test_lead_in_adds_arc_moves() {
-    let tp = simple_plunge_toolpath();
-    let result = without_provenance(apply_lead_in_out(
-        AnnotatedToolpath::new(tp.clone()),
-        2.0,
-        None,
-        None,
-        None,
-        None,
-        crate::dressup::LeadScope::EveryPass,
-    ))
-    .toolpath;
+    let before = square_with_lead_side(RingMaterial::Inside);
+    let n_in = before.toolpath.moves.len();
+    let result = leads(before).toolpath;
 
     // Should have more moves than original (arc segments added)
     assert!(
-        result.moves.len() > tp.moves.len(),
+        result.moves.len() > n_in,
         "Lead-in should add arc moves: {} vs {}",
         result.moves.len(),
-        tp.moves.len()
+        n_in
     );
 }
 
 #[test]
 fn test_lead_in_reaches_cut_point() {
-    let tp = simple_plunge_toolpath();
-    let result = without_provenance(apply_lead_in_out(
-        AnnotatedToolpath::new(tp.clone()),
-        2.0,
-        None,
-        None,
-        None,
-        None,
-        crate::dressup::LeadScope::EveryPass,
-    ))
-    .toolpath;
+    let result = leads(square_with_lead_side(RingMaterial::Inside)).toolpath;
 
-    // The cut moves at x=50, y=10, z=-3 should still be reachable
+    // The first cut point at x=30, y=10, z=-3 should still be reachable
     let has_first_cut = result.moves.iter().any(|m| {
         (m.target.z - (-3.0)).abs() < 0.01
-            && (m.target.x - 10.0).abs() < 3.0
+            && (m.target.x - 30.0).abs() < 3.0
             && (m.target.y - 10.0).abs() < 3.0
     });
     assert!(
@@ -493,21 +541,58 @@ fn test_lead_in_reaches_cut_point() {
 
 #[test]
 fn test_lead_in_preserves_rapids() {
-    let tp = simple_plunge_toolpath();
-    let result = without_provenance(apply_lead_in_out(
-        AnnotatedToolpath::new(tp.clone()),
-        2.0,
-        None,
-        None,
-        None,
-        None,
-        crate::dressup::LeadScope::EveryPass,
-    ))
-    .toolpath;
+    let result = leads(square_with_lead_side(RingMaterial::Inside)).toolpath;
 
     // Should still have a rapid move
     let has_rapid = result.moves.iter().any(|m| m.move_type == MoveType::Rapid);
     assert!(has_rapid, "Lead-in should preserve rapid moves");
+}
+
+/// P6.0c: the material inside the ring (a part) puts every lead sample
+/// outside it; the material outside (a pocket wall) puts every sample
+/// inside it. The square starts in the middle of an edge, so the air
+/// check keeps every lead.
+#[test]
+fn a_lead_turns_away_from_the_stated_material_p6_0c() {
+    let outside = lead_points(&leads(square_with_lead_side(RingMaterial::Inside)).toolpath);
+    assert!(!outside.is_empty(), "the part pass keeps its lead");
+    assert!(
+        outside.iter().all(|p| outside_square(*p) || on_square(*p)),
+        "material inside: every lead sample is outside the ring: {outside:?}"
+    );
+    let inside = lead_points(&leads(square_with_lead_side(RingMaterial::Outside)).toolpath);
+    assert!(!inside.is_empty(), "the pocket pass keeps its lead");
+    assert!(
+        inside.iter().all(|p| !outside_square(*p)),
+        "material outside: every lead sample is inside the ring: {inside:?}"
+    );
+}
+
+/// True when `p` lies on the boundary of the square of [`sided_square_pass`].
+fn on_square(p: P2) -> bool {
+    let on = |v: f64, at: f64| (v - at).abs() < 1e-9;
+    on(p.x, 10.0) || on(p.x, 50.0) || on(p.y, 10.0) || on(p.y, 50.0)
+}
+
+/// P6.0c: a pass on the line (material on both sides) keeps its plunge
+/// and retract.
+#[test]
+fn a_pass_on_the_line_gets_no_lead_p6_0c() {
+    let before = square_with_lead_side(RingMaterial::BothSides);
+    let n_in = before.toolpath.moves.len();
+    let result = leads(before).toolpath;
+    assert_eq!(result.moves.len(), n_in, "no lead move is added");
+    assert!(lead_points(&result).is_empty());
+}
+
+/// P6.0c: with no stated side and no surface probe, the dressup does not
+/// guess a side: the pass keeps its plunge and retract.
+#[test]
+fn a_pass_with_no_stated_side_gets_no_lead_without_a_probe_p6_0c() {
+    let tp = simple_plunge_toolpath();
+    let n_in = tp.moves.len();
+    let result = leads(AnnotatedToolpath::new(tp)).toolpath;
+    assert_eq!(result.moves.len(), n_in, "no lead move is added");
 }
 
 // --- Dogbone tests ---
@@ -1702,13 +1787,15 @@ fn apply_dogbones_preserves_invalid_flag() {
 
 #[test]
 fn apply_lead_in_out_remaps_spans_through_transform() {
-    let tp = simple_plunge_toolpath();
-    let n_in = tp.moves.len();
+    let n_in = square_with_lead_side(RingMaterial::Inside)
+        .toolpath
+        .moves
+        .len();
     let spans = vec![
         Span::new(0, n_in, SpanKind::Operation),
         Span::new(0, 2, SpanKind::DepthPass),
     ];
-    let annotated = AnnotatedToolpath::with_spans(tp, spans);
+    let annotated = sided_square_pass(RingMaterial::Inside, spans);
     let result = without_provenance(apply_lead_in_out(
         annotated,
         2.0,
@@ -1734,10 +1821,12 @@ fn apply_lead_in_out_remaps_spans_through_transform() {
 
 #[test]
 fn apply_lead_in_out_tags_new_moves_with_correct_kind() {
-    let tp = simple_plunge_toolpath();
-    let n_in = tp.moves.len();
+    let n_in = square_with_lead_side(RingMaterial::Inside)
+        .toolpath
+        .moves
+        .len();
     let spans = vec![Span::new(0, n_in, SpanKind::Operation)];
-    let annotated = AnnotatedToolpath::with_spans(tp, spans);
+    let annotated = sided_square_pass(RingMaterial::Inside, spans);
     let result = without_provenance(apply_lead_in_out(
         annotated,
         2.0,
@@ -1769,8 +1858,7 @@ fn apply_lead_in_out_tags_new_moves_with_correct_kind() {
 
 #[test]
 fn apply_lead_in_out_preserves_invalid_flag() {
-    let tp = simple_plunge_toolpath();
-    let mut annotated = AnnotatedToolpath::new(tp);
+    let mut annotated = square_with_lead_side(RingMaterial::Inside);
     annotated.spans_valid = false;
     annotated.spans = vec![Span::new(0, 1, SpanKind::Operation)];
     let result = without_provenance(apply_lead_in_out(

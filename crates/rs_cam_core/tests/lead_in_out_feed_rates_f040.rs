@@ -20,20 +20,36 @@
 use rs_cam_core::dressup::apply_lead_in_out;
 use rs_cam_core::dressup::without_provenance;
 use rs_cam_core::geo::P3;
-use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
+use rs_cam_core::toolpath::{ClosedPassSide, MoveIntent, MoveType, RingMaterial, Toolpath};
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
-/// Build a minimal profile-style toolpath: rapid to start, plunge, two cut
-/// moves at depth, retract. apply_lead_in_out reads this pattern and
-/// inserts lead-in / lead-out arcs.
-fn minimal_profile_toolpath(cut_feed: f64, plunge_feed: f64) -> Toolpath {
+/// Build a minimal profile-style toolpath: rapid to start, plunge, a closed
+/// 20 mm square at depth that starts in the middle of its bottom edge,
+/// retract. apply_lead_in_out reads this pattern and inserts lead-in /
+/// lead-out arcs. P6.0c: the pass states its material side (a part inside
+/// the ring), as a Profile Outside pass does, so the dressup knows the
+/// side of each arc.
+fn minimal_profile_toolpath(cut_feed: f64, plunge_feed: f64) -> AnnotatedToolpath {
+    let start = P3::new(10.0, 0.0, -2.0);
     let mut tp = Toolpath::new();
-    tp.rapid_to(P3::new(0.0, 0.0, 5.0));
-    tp.feed_to(P3::new(0.0, 0.0, -2.0), plunge_feed); // plunge
-    tp.feed_to(P3::new(20.0, 0.0, -2.0), cut_feed); // cut 1
-    tp.feed_to(P3::new(20.0, 20.0, -2.0), cut_feed); // cut 2
-    tp.rapid_to(P3::new(20.0, 20.0, 5.0)); // retract
-    tp
+    tp.rapid_to(P3::new(start.x, start.y, 5.0));
+    tp.feed_to(start, plunge_feed); // plunge
+    for (x, y) in [
+        (20.0, 0.0),
+        (20.0, 20.0),
+        (0.0, 20.0),
+        (0.0, 0.0),
+        (10.0, 0.0),
+    ] {
+        tp.feed_to(P3::new(x, y, -2.0), cut_feed); // cut
+    }
+    tp.rapid_to(P3::new(start.x, start.y, 5.0)); // retract
+    let mut annotated = AnnotatedToolpath::new(tp);
+    annotated.produced.closed_passes = vec![ClosedPassSide {
+        start,
+        material: RingMaterial::Inside,
+    }];
+    annotated
 }
 
 #[test]
@@ -49,8 +65,7 @@ fn lead_in_geometry_is_pre_position_then_pure_z_plunge_then_arc() {
     // 2026-05-27 bench observed.
     let cut_feed = 1500.0;
     let plunge_feed = 300.0;
-    let tp = minimal_profile_toolpath(cut_feed, plunge_feed);
-    let annotated = AnnotatedToolpath::new(tp);
+    let annotated = minimal_profile_toolpath(cut_feed, plunge_feed);
     let result = without_provenance(apply_lead_in_out(
         annotated,
         2.0,
@@ -138,8 +153,7 @@ fn lead_in_geometry_is_pre_position_then_pure_z_plunge_then_arc() {
 fn lead_in_feed_rate_applied_when_set() {
     let cut_feed = 1500.0;
     let li_feed = 500.0;
-    let tp = minimal_profile_toolpath(cut_feed, 300.0);
-    let annotated = AnnotatedToolpath::new(tp);
+    let annotated = minimal_profile_toolpath(cut_feed, 300.0);
     let result = without_provenance(apply_lead_in_out(
         annotated,
         2.0,
@@ -200,8 +214,7 @@ fn lead_in_falls_back_to_pre_f040_feed_when_none() {
     // plunge feed, not the cut feed.
     let cut_feed = 1500.0;
     let plunge_feed = 300.0;
-    let tp = minimal_profile_toolpath(cut_feed, plunge_feed);
-    let annotated = AnnotatedToolpath::new(tp);
+    let annotated = minimal_profile_toolpath(cut_feed, plunge_feed);
     let result = without_provenance(apply_lead_in_out(
         annotated,
         2.0,
@@ -241,8 +254,7 @@ fn lead_in_falls_back_to_pre_f040_feed_when_none() {
 fn lead_out_feed_rate_applied_when_set() {
     let cut_feed = 1500.0;
     let lo_feed = 4500.0;
-    let tp = minimal_profile_toolpath(cut_feed, 300.0);
-    let annotated = AnnotatedToolpath::new(tp);
+    let annotated = minimal_profile_toolpath(cut_feed, 300.0);
     let result = without_provenance(apply_lead_in_out(
         annotated,
         2.0,
@@ -285,8 +297,7 @@ fn modulation_skips_lead_in_lead_out_moves() {
     let cut_feed = 1500.0;
     let li_feed = 500.0;
     let lo_feed = 4500.0;
-    let tp = minimal_profile_toolpath(cut_feed, 300.0);
-    let annotated = AnnotatedToolpath::new(tp);
+    let annotated = minimal_profile_toolpath(cut_feed, 300.0);
     let mut tp = without_provenance(apply_lead_in_out(
         annotated,
         2.0,

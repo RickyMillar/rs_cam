@@ -129,6 +129,127 @@ pub struct Move {
     pub intent: MoveIntent,
 }
 
+/// Where the material is beside one closed pass, relative to the ring the
+/// pass cuts (P6.0c, SAFETY). The op that emits the ring states it, because
+/// only the op knows it: Profile Outside cuts round a part (the material is
+/// inside its ring), a Pocket wall ring has the wall outside it, and a
+/// Pocket island ring has the island inside it.
+///
+/// The lead-in/out dressup (`dressup::apply_lead_in_out`) reads it from
+/// [`crate::trace::produced::Produced::closed_passes`] and puts each lead
+/// arc on the air side. It reads the travel direction from the moves, so a
+/// pass that a later stage reverses keeps a true statement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RingMaterial {
+    /// The material is inside the ring (a part, or an island).
+    Inside,
+    /// The material is outside the ring (a pocket wall, or a hole wall).
+    Outside,
+    /// The tool cuts on the line, and both sides are material (Trace
+    /// compensation None). No lead arc is safe: the pass keeps its plunge.
+    BothSides,
+    /// The op does not state the side. Only a surface op may write this:
+    /// the dressup's surface probe lifts each lead sample onto the model,
+    /// so the side does not decide a gouge there. Without a probe, the
+    /// pass keeps its plunge. Waterline and Steep and Shallow write it.
+    NotStated,
+}
+
+/// The stated material side of one closed pass, keyed by the pass's plunge
+/// target (P6.0c). The key is positional, as
+/// [`crate::trace::produced::Produced::planner_engagement`] is: a dressup
+/// that moves whole passes keeps the plunge target, so the key holds.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClosedPassSide {
+    /// The plunge target: the first point of the ring.
+    pub start: P3,
+    /// Where the material is, relative to the ring.
+    pub material: RingMaterial,
+}
+
+/// One closed ring and the material side its op states (P6.0c). Pocket and
+/// Chamfer carry their rings in this form from `prepare` to the emit,
+/// because the side differs between a wall ring and an island or hole ring.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MaterialRing {
+    pub points: Vec<P2>,
+    pub material: RingMaterial,
+}
+
+/// A toolpath and the stated side of each closed pass in it (P6.0c). Every
+/// 2.5D kernel that emits a closed pass returns this, and the Layered
+/// runner moves [`Self::closed_passes`] into
+/// [`crate::trace::produced::Produced::closed_passes`].
+#[derive(Debug, Clone)]
+pub struct SidedToolpath {
+    pub toolpath: Toolpath,
+    pub closed_passes: Vec<ClosedPassSide>,
+}
+
+impl SidedToolpath {
+    /// An empty toolpath with no pass.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            toolpath: Toolpath::new(),
+            closed_passes: Vec::new(),
+        }
+    }
+
+    /// `toolpath` from an op that emits no closed pass with a stated side
+    /// (a raster, a facing pass, a surface op). The lead dressup gives
+    /// such a pass a lead only under a surface probe.
+    #[must_use]
+    pub fn without_closed_passes(toolpath: Toolpath) -> Self {
+        Self {
+            toolpath,
+            closed_passes: Vec::new(),
+        }
+    }
+
+    /// Emit one closed pass round `points` with the stated `material`
+    /// ([`Toolpath::emit_closed_contour_with_intent`]) and keep its side.
+    pub fn emit_closed_pass(
+        &mut self,
+        points: &[P3],
+        moves: ClosedPassMoves,
+        material: RingMaterial,
+    ) {
+        if let Some(side) = self.toolpath.emit_closed_contour_with_intent(
+            points,
+            moves.safe_z,
+            moves.feed,
+            moves.plunge,
+            moves.body_intent,
+            material,
+        ) {
+            self.closed_passes.push(side);
+        }
+    }
+
+    /// Append `other` after this toolpath.
+    pub fn append(&mut self, other: SidedToolpath) {
+        self.toolpath.moves.extend(other.toolpath.moves);
+        self.closed_passes.extend(other.closed_passes);
+    }
+}
+
+impl Default for SidedToolpath {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The heights, feeds and body intent of one closed pass
+/// ([`SidedToolpath::emit_closed_pass`]).
+#[derive(Debug, Clone, Copy)]
+pub struct ClosedPassMoves {
+    pub safe_z: f64,
+    pub feed: f64,
+    pub plunge: f64,
+    pub body_intent: MoveIntent,
+}
+
 /// A complete toolpath: a sequence of moves.
 #[derive(Debug, Clone, Default)]
 pub struct Toolpath {
@@ -301,6 +422,14 @@ impl Toolpath {
     /// [`Toolpath::emit_path_segment_with_intent`]'s doc for why that lives
     /// in a post-pass ([`crate::dressup::optimize_entry_descents`]) instead
     /// of inside the emitter.
+    ///
+    /// P6.0c: `material` states where the material is beside the ring.
+    /// Every closed pass states it, so the compiler names each op that
+    /// emits one. The return value is the side record of the pass, keyed by
+    /// its plunge target, or `None` when nothing is emitted or the side is
+    /// [`RingMaterial::NotStated`]. A 2.5D caller keeps it through
+    /// [`SidedToolpath::emit_closed_pass`].
+    #[must_use]
     pub fn emit_closed_contour_with_intent(
         &mut self,
         points: &[P3],
@@ -308,9 +437,10 @@ impl Toolpath {
         feed: f64,
         plunge: f64,
         body_intent: MoveIntent,
-    ) {
+        material: RingMaterial,
+    ) -> Option<ClosedPassSide> {
         if points.len() < 3 {
-            return;
+            return None;
         }
         let first = points[0];
         self.rapid_to_with_intent(P3::new(first.x, first.y, safe_z), MoveIntent::Linking);
@@ -321,6 +451,10 @@ impl Toolpath {
         // Close the loop — part of the body, tagged the same as the other body feeds.
         self.feed_to_with_intent(first, feed, body_intent);
         self.rapid_to_with_intent(P3::new(first.x, first.y, safe_z), MoveIntent::Retract);
+        (material != RingMaterial::NotStated).then_some(ClosedPassSide {
+            start: first,
+            material,
+        })
     }
 
     /// Retract to safe_z if currently below it (0.001mm epsilon).
@@ -960,12 +1094,21 @@ mod tests {
             P3::new(0.0, 10.0, -2.0),
         ];
         let mut tp = Toolpath::new();
-        tp.emit_closed_contour_with_intent(
+        let side = tp.emit_closed_contour_with_intent(
             &loop_pts,
             25.0,
             1000.0,
             500.0,
             MoveIntent::FinishingCut,
+            RingMaterial::Inside,
+        );
+        assert_eq!(
+            side,
+            Some(ClosedPassSide {
+                start: loop_pts[0],
+                material: RingMaterial::Inside,
+            }),
+            "the pass keeps its stated side, keyed by its plunge target"
         );
 
         // rapid(above first) + plunge(first) + 3 feeds(remaining) + 1 feed(close back
@@ -1012,18 +1155,28 @@ mod tests {
     #[test]
     fn test_emit_closed_contour_too_few_points_is_noop() {
         let mut tp = Toolpath::new();
-        tp.emit_closed_contour_with_intent(
+        let side = tp.emit_closed_contour_with_intent(
             &[P3::new(0.0, 0.0, -1.0), P3::new(1.0, 0.0, -1.0)],
             10.0,
             1000.0,
             500.0,
             MoveIntent::FinishingCut,
+            RingMaterial::Inside,
         );
         assert!(tp.moves.is_empty(), "fewer than 3 points must emit nothing");
+        assert_eq!(side, None, "no pass, no side");
 
         let mut tp_empty = Toolpath::new();
-        tp_empty.emit_closed_contour_with_intent(&[], 10.0, 1000.0, 500.0, MoveIntent::ClearingCut);
+        let side = tp_empty.emit_closed_contour_with_intent(
+            &[],
+            10.0,
+            1000.0,
+            500.0,
+            MoveIntent::ClearingCut,
+            RingMaterial::Outside,
+        );
         assert!(tp_empty.moves.is_empty());
+        assert_eq!(side, None);
     }
 
     #[test]

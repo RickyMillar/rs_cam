@@ -43,15 +43,16 @@
 //! P6.0 arc joins, whose points lie on the arc, and measured 0.0092 mm (the
 //! flatten itself) in every arm.
 //!
-//! # A second defect, not fixed here (known red)
+//! # A second defect, fixed in P6.0c
 //!
-//! Trace Left with its default dressups cuts 1.8369 mm into the band. Only
-//! the lead-in/out dressup moves it (lead off: 0.0000). The lead arc curls
+//! Trace Left with its default dressups cut 1.8369 mm into the band. Only
+//! the lead-in/out dressup moved it (lead off: 0.0000). The lead arc curled
 //! to the LEFT of travel (`dressup::apply_lead_in_out`). Trace Left offsets
 //! OUTWARD and runs the ring CCW (`trace_with_left_compensation_offsets_
-//! outward`), so the part is on the left, and both lead arcs go into the
-//! part. [`trace_left_lead_curls_into_the_part_known_red`] holds the
-//! measured defect and fails when a lead fix lands.
+//! outward`), so the part is on the left, and both lead arcs went into the
+//! part. P6.0c turns the arc away from the material the op states
+//! (`a_lead_curls_away_from_the_part_p6_0c.rs`), and
+//! [`trace_left_keeps_each_corner_with_its_lead`] holds the bound.
 //!
 //! # Red proof
 //!
@@ -356,7 +357,7 @@ fn pocket_wall_keeps_the_reflex_corner() {
     assert_within_bound("pocket wall L, defaults", &l_outline(), &op, defaults(&op));
 }
 
-/// Trace Left with its default dressups less the lead (the known red
+/// Trace Left with its default dressups less the lead (the lead arm is
 /// below): entry, link, arc fit and rapid order.
 #[test]
 fn trace_left_keeps_each_corner_without_its_lead() {
@@ -447,25 +448,16 @@ fn the_cap_reads_the_finished_edge_row() {
     }
 }
 
-// ── Known red: the lead side ────────────────────────────────────────────
+// ── The lead side (P6.0c) ───────────────────────────────────────────────
 
-/// KNOWN RED (an inverted assertion). The lead-in/out dressup curls each
-/// lead arc to the left of travel. Trace Left runs its outward ring CCW,
-/// so the part is on the left, and the lead goes into the part: 1.8369 mm
-/// into the band on HEAD 6dd89feb (the lead-out ends at (-17.849, -11.163),
-/// 1.163 mm from the edge y = -10). This test fails when a lead fix
-/// lands; then make it a bound arm with the others.
+/// Trace Left with every default dressup, the lead included. On HEAD
+/// 6dd89feb the lead arc curled into the part: 1.8369 mm into the band
+/// (the lead-out ended at (-17.849, -11.163), 1.163 mm from the edge
+/// y = -10). P6.0c turns it away from the part.
 #[test]
-fn trace_left_lead_curls_into_the_part_known_red() {
+fn trace_left_keeps_each_corner_with_its_lead() {
     let op = trace_left();
-    let (worst, near) = intrusion(&part(), &op, defaults(&op));
-    assert!(
-        worst > R / 2.0,
-        "trace left, defaults: the lead now keeps {worst:.4} mm near ({:.3}, {:.3}); the \
-         lead fix landed. Turn this known red into a bound arm.",
-        near.x,
-        near.y,
-    );
+    assert_within_bound("trace left, defaults", &part(), &op, defaults(&op));
 }
 
 // ── Instruments ─────────────────────────────────────────────────────────

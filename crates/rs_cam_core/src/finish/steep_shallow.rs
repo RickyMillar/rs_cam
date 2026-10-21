@@ -29,7 +29,7 @@ use crate::ops::waterline::{AirBridge, bridge_air_stretches, waterline_contours}
 use crate::surface::dropcutter::batch_drop_cutter;
 use crate::surface::slope::{SlopeMap, classify_steep_shallow};
 use crate::tool::MillingCutter;
-use crate::toolpath::Toolpath;
+use crate::toolpath::{RingMaterial, Toolpath};
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 use crate::trace::transform_provenance::ReconcileSet;
 
@@ -333,12 +333,15 @@ fn emit_steep_passes(
                 // Partial survivors are an open run: emit as a plain path
                 // segment with its own rapid/plunge/retract envelope.
                 if whole_contour_kept {
-                    tp.emit_closed_contour_with_intent(
+                    // P6.0c: a surface op states no material side: the lead
+                    // dressup's surface probe lifts each lead sample onto the model.
+                    let _ = tp.emit_closed_contour_with_intent(
                         &path,
                         safe_z,
                         feed_rate,
                         plunge_rate,
                         MoveIntent::FinishingCut,
+                        RingMaterial::NotStated,
                     );
                 } else {
                     tp.emit_path_segment_with_intent(

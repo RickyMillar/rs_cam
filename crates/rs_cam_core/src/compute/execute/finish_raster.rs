@@ -13,7 +13,7 @@ use crate::geo::P2;
 use crate::geometry::region_set::RegionSet;
 use crate::interrupt::CancelCheck;
 use crate::tool::ToolDefinition;
-use crate::toolpath::Toolpath;
+use crate::toolpath::{SidedToolpath, Toolpath};
 use crate::trace::semantic_trace::ToolpathSemanticContext;
 
 use super::height_field::{
@@ -419,7 +419,7 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
         level: LevelInfo,
         rest: &LevelRest<'_>,
         cancel: &dyn CancelCheck,
-    ) -> Result<Toolpath, OperationError> {
+    ) -> Result<SidedToolpath, OperationError> {
         let standing = rest.standing.as_ref();
         let keep = |p: P2| standing.is_none_or(|s| s.keeps(p));
         let filter = crate::ops::waterline::RunFilter {
@@ -444,7 +444,9 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
             tp.moves.extend(piece.toolpath.moves);
         }
         rest.tally(kept, dropped);
-        Ok(tp)
+        // P6.0c: a surface op states no material side (the lead dressup's
+        // surface probe holds the lead).
+        Ok(SidedToolpath::without_closed_passes(tp))
     }
 
     /// G-LINKSTAGE, OFF by default (`hookup_mm` ships at `0.0`), so this

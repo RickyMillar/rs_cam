@@ -339,9 +339,11 @@ fn unclipped_ramp_keeps_its_planned_legs() {
 /// the lead arc approaches horizontally at ring depth — terrain-blind
 /// before the fix. This test measures BOTH sides on one fixture:
 ///
-/// - the probe-less path (the legacy behaviour, kept for 2D prisms)
-///   must show a buried lead sample > 0.5 mm — the permanent proof
-///   that the instrument sees this class (S2-red);
+/// - the lead before the lift (the probed lead with each sample back at
+///   the ring Z: the probe-less output before P6.0c, which now gives a
+///   pass with no stated side no lead without a probe) must show a
+///   buried lead sample > 0.5 mm — the permanent proof that the
+///   instrument sees this class (S2-red);
 /// - the probed path must show no entry-intent burial > 0.2 mm and
 ///   still carry `LeadIn` moves (S2-green).
 #[test]
@@ -375,31 +377,6 @@ fn lead_in_arcs_never_cut_below_surface() {
         rest_stock: None,
     };
 
-    // S2-red: the probe-less path buries a lead sample.
-    let legacy = apply_lead_in_out(
-        AnnotatedToolpath::new(tp.clone()),
-        2.0,
-        None,
-        None,
-        None,
-        // No retract plane offered: this arm measures the LEG geometry, not
-        // the pre-position rapid's height (G-ISOCLIPRAPID).
-        None,
-        rs_cam_core::dressup::LeadScope::EveryPass,
-    )
-    .reconcile(&mut ReconcileSet::empty())
-    .into_inner();
-    let legacy_buried = buried_fed_chords(&legacy.toolpath, &probe, 0.5, 0.5, is_entry_intent);
-    assert!(
-        legacy_buried.iter().any(|r| r.max_burial_mm > 0.5),
-        "the probe-less lead must bury > 0.5 mm on this fixture, or the \
-         instrument cannot see the class (S2-red); worst: {:?}",
-        legacy_buried
-            .iter()
-            .map(|r| r.max_burial_mm)
-            .fold(f64::NEG_INFINITY, f64::max)
-    );
-
     // S2-green: the probed path lifts the lead to the surface.
     let probed = apply_lead_in_out(
         AnnotatedToolpath::new(tp),
@@ -412,6 +389,31 @@ fn lead_in_arcs_never_cut_below_surface() {
     )
     .reconcile(&mut ReconcileSet::empty())
     .into_inner();
+
+    // S2-red: the lead before the lift buries a sample. P6.0c gives an
+    // open pass with no stated side no lead without a probe, so the
+    // probe-less dressup no longer emits it. The lift changes Z only
+    // (`lift_lead_points`), so the probed lead with each entry sample back
+    // at the ring Z IS the probe-less lead of the parent revision.
+    let mut legacy = probed.clone();
+    for m in &mut legacy.toolpath.moves {
+        let entry_feed = matches!(m.intent, MoveIntent::LeadIn | MoveIntent::EntryPlunge)
+            && m.move_type != rs_cam_core::toolpath::MoveType::Rapid;
+        if entry_feed {
+            m.target.z = z0;
+        }
+    }
+    let legacy_buried = buried_fed_chords(&legacy.toolpath, &probe, 0.5, 0.5, is_entry_intent);
+    assert!(
+        legacy_buried.iter().any(|r| r.max_burial_mm > 0.5),
+        "the lead before the lift must bury > 0.5 mm on this fixture, or the \
+         instrument cannot see the class (S2-red); worst: {:?}",
+        legacy_buried
+            .iter()
+            .map(|r| r.max_burial_mm)
+            .fold(f64::NEG_INFINITY, f64::max)
+    );
+
     assert!(
         count_intent(&probed.toolpath, MoveIntent::LeadIn) > 0,
         "the probed fixture must still produce a lead-in (a silent skip \

@@ -19,6 +19,7 @@
 //! | [`extrude_profile`] | `unified_finish_tapered_end_to_end_m21.rs` |
 //! | [`plate_with_hole`] / [`stacked_shelf`] / [`non_manifold_fin`] | `classification_strategy_m3.rs` |
 //! | [`stepped_top`] | `stl_flat_regions_are_face_items_p4_7.rs`, `a_two_face_pick_keeps_both_faces_p2_4.rs`, `selection_refusals_name_the_item_p2_4.rs` |
+//! | [`FlatFloor`] | `lead_out_retract_lifts_from_the_arc_f2.rs`, `arcfit_intent_boundary_f1.rs`, `isoclip_link_rapid_g_isocliprapid.rs`, `transform_provenance_fingerprints.rs` (P6.0c: a surface pass gets its lead under a probe) |
 //! | [`disconnected_hemispheres`] | `disconnected_finish_retract_structure_p0.rs`; reproduces `capability_link_moves_safety.rs`'s local `scallop_island_mesh` (centres `(±15, ±15)`, radius 5.0, divisions 10), which keeps its own copy |
 
 #![allow(dead_code)]
@@ -33,6 +34,45 @@ use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::TriangleMesh;
 #[cfg(feature = "test-support")]
 use rs_cam_core::mesh::make_test_hemisphere;
+
+// ── A flat floor and its entry probe ───────────────────────────────────
+
+/// A flat 100 mm square floor at `z`, its index and a 1 mm flat cutter.
+///
+/// P6.0c: the lead dressup gives a pass that states no material side a lead
+/// only under a surface probe, as a surface op runs in production. A
+/// synthetic surface pass that a lead test feeds the dressup gets its probe
+/// here. With the floor below every sample, the probe lifts nothing, so the
+/// lead keeps the geometry it had without a probe.
+pub struct FlatFloor {
+    pub mesh: TriangleMesh,
+    pub index: rs_cam_core::mesh::SpatialIndex,
+    pub cutter: rs_cam_core::tool::FlatEndmill,
+}
+
+impl FlatFloor {
+    pub fn at(z: f64) -> Self {
+        let mesh = height_field(50.0, 5.0, |_, _| z);
+        let index = rs_cam_core::mesh::SpatialIndex::build_auto(&mesh);
+        Self {
+            mesh,
+            index,
+            cutter: rs_cam_core::tool::FlatEndmill::new(1.0, 25.0),
+        }
+    }
+
+    /// The entry probe over the floor: no leave, no rest stock.
+    pub fn probe(&self) -> rs_cam_core::dressup::EntrySurfaceProbe<'_> {
+        rs_cam_core::dressup::EntrySurfaceProbe {
+            mesh: &self.mesh,
+            index: &self.index,
+            cutter: &self.cutter,
+            stock_to_leave: 0.0,
+            off_mesh: rs_cam_core::dressup::OffMeshEntry::PlungeFallback,
+            rest_stock: None,
+        }
+    }
+}
 
 // ── Height fields ───────────────────────────────────────────────────────
 

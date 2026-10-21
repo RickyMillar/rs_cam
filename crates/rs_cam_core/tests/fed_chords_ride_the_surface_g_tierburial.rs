@@ -43,7 +43,9 @@ use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::surface::dropcutter::{batch_drop_cutter, point_drop_cutter};
 use rs_cam_core::tool::{BallEndmill, MillingCutter};
-use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath, raster_toolpath_from_grid};
+use rs_cam_core::toolpath::{
+    MoveIntent, MoveType, RingMaterial, Toolpath, raster_toolpath_from_grid,
+};
 use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
 use rs_cam_core::trace::transform_provenance::ReconcileSet;
 
@@ -218,12 +220,13 @@ fn a_waterline_chord_does_not_pass_under_the_surface() {
         rs_cam_core::ops::waterline::waterline_contours(&mesh, &index, &cutter, z, params.sampling);
     let mut straight = Toolpath::new();
     for c in contours.iter().filter(|c| c.len() >= 3) {
-        straight.emit_closed_contour_with_intent(
+        let _ = straight.emit_closed_contour_with_intent(
             c,
             params.safe_z,
             params.feed_rate,
             params.plunge_rate,
             MoveIntent::FinishingCut,
+            RingMaterial::NotStated,
         );
     }
     let (straight_worst, _, straight_chord) = worst_burial(&straight, &probe, |_| true);

@@ -137,9 +137,9 @@ linear_count = 6
 arc_count = 5
 cutting_length_mm = 138.203
 rapid_length_mm = 21.928
-bbox_min = [-22.0, -12.1, -1.1]
+bbox_min = [-22.0, -14.1, -1.1]
 bbox_max = [20.1, 12.1, 10.0]
-moves_hash = "6edf6a93092e3176"
+moves_hash = "7fdc7505b95cd13e"
 span_count = 10
 spans_hash = "ece33a8f21fa16f5"
 
@@ -151,9 +151,9 @@ linear_count = 6
 arc_count = 5
 cutting_length_mm = 138.203
 rapid_length_mm = 21.928
-bbox_min = [-22.0, -12.1, -1.1]
+bbox_min = [-22.0, -14.1, -1.1]
 bbox_max = [20.1, 12.1, 10.0]
-moves_hash = "3094b2ad0c3fb906"
+moves_hash = "69e243885421adf6"
 span_count = 10
 spans_hash = "ece33a8f21fa16f5"
 
@@ -969,31 +969,31 @@ spans_hash = "fcd839368f4c741b"
 
 ["trace/fresh"]
 outcome = "ok"
-move_count = 24
-rapid_count = 8
-linear_count = 12
-arc_count = 4
-cutting_length_mm = 280.232
-rapid_length_mm = 45.985
-bbox_min = [-22.0, -14.0, -1.0]
+move_count = 15
+rapid_count = 5
+linear_count = 10
+arc_count = 0
+cutting_length_mm = 269.5
+rapid_length_mm = 29.5
+bbox_min = [-20.0, -12.0, -1.0]
 bbox_max = [20.0, 12.0, 10.0]
-moves_hash = "d30f95da446b1115"
-span_count = 19
-spans_hash = "b514055838bc3920"
+moves_hash = "07e6962b0a515a03"
+span_count = 11
+spans_hash = "61c22b855756efc6"
 
 ["trace/rest"]
 outcome = "ok"
-move_count = 24
-rapid_count = 8
-linear_count = 12
-arc_count = 4
-cutting_length_mm = 280.232
-rapid_length_mm = 45.985
-bbox_min = [-22.0, -14.0, -1.0]
+move_count = 15
+rapid_count = 5
+linear_count = 10
+arc_count = 0
+cutting_length_mm = 269.5
+rapid_length_mm = 29.5
+bbox_min = [-20.0, -12.0, -1.0]
 bbox_max = [20.0, 12.0, 10.0]
-moves_hash = "addcf065fae77e0d"
-span_count = 19
-spans_hash = "b514055838bc3920"
+moves_hash = "07e6962b0a515a03"
+span_count = 11
+spans_hash = "61c22b855756efc6"
 
 ["unified_finish/claims"]
 outcome = "ok"

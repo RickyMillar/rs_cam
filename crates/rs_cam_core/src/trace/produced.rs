@@ -16,6 +16,7 @@ use std::sync::Arc;
 use crate::geo::P3;
 use crate::polygon::Polygon2;
 use crate::surface::rest_field::RestGrid;
+use crate::toolpath::ClosedPassSide;
 
 /// What a kernel produced beside its moves. Each field is empty or `None`
 /// when no kernel produced it. `Arc` keeps a clone of the generated result
@@ -49,6 +50,13 @@ pub struct Produced {
     /// `inspect_spans`. `None` for every other operation and for Global
     /// ordering. Evidence only: no downstream stage reads it.
     pub area_regions: Option<Arc<crate::adaptive3d::AreaRegionMap>>,
+    /// P6.0c (SAFETY): the stated material side of each closed pass, keyed
+    /// by its plunge target. The 2.5D kernels state it at the emit
+    /// ([`crate::toolpath::Toolpath::emit_closed_contour_with_intent`]) and
+    /// the Layered runner puts it here. The lead-in/out dressup reads it to
+    /// put each lead arc on the air side. Empty for every op with no closed
+    /// pass of a stated side.
+    pub closed_passes: Vec<ClosedPassSide>,
 }
 
 impl Produced {
@@ -73,6 +81,8 @@ impl Produced {
     /// - `area_regions` (if present): the grid origin, the region boxes and
     ///   anchors shift in XY; the top Z and the region Z ranges shift by
     ///   `shift.z`. The labels are cell-indexed and do not change.
+    /// - `closed_passes`: each plunge target shifts; the stated side does
+    ///   not (a shift keeps the travel direction).
     #[must_use]
     pub fn translated(&self, shift: P3) -> Self {
         let Self {
@@ -80,6 +90,7 @@ impl Produced {
             rest_grid,
             rest_regions,
             area_regions,
+            closed_passes,
         } = self;
 
         let planner_engagement = planner_engagement
@@ -121,11 +132,24 @@ impl Produced {
             map
         });
 
+        let closed_passes = closed_passes
+            .iter()
+            .map(|pass| ClosedPassSide {
+                start: P3::new(
+                    pass.start.x + shift.x,
+                    pass.start.y + shift.y,
+                    pass.start.z + shift.z,
+                ),
+                material: pass.material,
+            })
+            .collect();
+
         Self {
             planner_engagement,
             rest_grid,
             rest_regions,
             area_regions,
+            closed_passes,
         }
     }
 }
