@@ -197,7 +197,7 @@ fn geometry_feed_factor(geom: ToolGeometryHint, tool: &ToolConfig, _ae_mm: f64, 
 ///
 /// # When it does nothing
 ///
-/// - No calculator operating point in the context — [`resolve_operation_invariants`]
+/// - No calculator operating point in the context — `resolve_operation_invariants` (test-only)
 ///   and direct callers. There is no derivation to reconcile against; see the
 ///   field docs on [`SuggestContext::calculator_operating_point`].
 /// - No pass moved the stepover or the DPP. This is the common case and the

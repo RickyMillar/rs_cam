@@ -10,7 +10,7 @@
 ## Invariants
 
 - The Feeds tab NEVER auto-locks a numeric field; Suggest is an explicit button.
-- The apply writes through the core command path; the write stales the result.
+- The apply writes through the core command path (`Command::ApplyFeeds`, F114); the write stales the result.
 - The recommended column is what `⚡ Apply all` writes; the hover has the raw value.
 - The card is `DataTable` rows (IC2). A change row shows on the face only when
   it differs; level rows, the stages and the basis go in the card's `Details`.

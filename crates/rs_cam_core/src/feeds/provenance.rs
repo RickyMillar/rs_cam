@@ -160,31 +160,37 @@ impl FeedsProvenance {
         operation: &OperationConfig,
         rpm_written: bool,
     ) {
-        self.apply_suggested_subset(result, operation, rpm_written, true, true);
+        self.apply_suggested_subset(
+            result,
+            operation,
+            rpm_written,
+            crate::feeds::suggest::ApplyScope::Both,
+        );
     }
 
-    /// As [`Self::apply_suggested`] but stamps only the chosen subset — the
-    /// SPEED dimensions (feed / plunge / RPM) when `speeds`, the CUT dimensions
-    /// (stepover / DOC) when `geometry`. Backs the W3.1 speed-only / cut-only
-    /// applies so a speed apply never restamps the geometry provenance.
+    /// As [`Self::apply_suggested`] but stamps only the dimensions `scope`
+    /// writes: the SPEED dimensions (feed / plunge / RPM) under `Speeds` and
+    /// `Both`, the CUT dimensions (stepover / DOC) under `CutGeometry` and
+    /// `Both`. Backs the W3.1 speed-only / cut-only applies so a speed apply
+    /// never restamps the geometry provenance. F025: the scope is the enum,
+    /// not two positional bools, so a swap does not compile.
     pub fn apply_suggested_subset(
         &mut self,
         result: &FeedsResult,
         operation: &OperationConfig,
         rpm_written: bool,
-        speeds: bool,
-        geometry: bool,
+        scope: crate::feeds::suggest::ApplyScope,
     ) {
         let p = result.provenance();
         let params = operation.as_params();
-        if speeds {
+        if scope.writes_speeds() {
             self.feed_rate = p.feed_rate;
             self.plunge_rate = p.plunge_rate;
             if rpm_written {
                 self.spindle_rpm = p.spindle_rpm;
             }
         }
-        if geometry {
+        if scope.writes_geometry() {
             if params.stepover().is_some() {
                 self.stepover = p.stepover;
             }

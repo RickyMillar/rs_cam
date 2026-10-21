@@ -12,7 +12,7 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 
 ## Invariants
 
-- A command returns `Effects`. `Effects.stale` is the stale set.
+- A command returns `Effects`. `Effects.stale` is the stale set. F114: `ApplyFeeds` is the one Apply-Suggest row (GUI; MCP through the controller; CLI); `suggest_slots` is the one Suggest context assembly.
 - An edit invalidates the result chain to fixpoint: `invalidate_output_dependents_of_set`; an S2 stock change, from its setup on: `drop_stock_change_dependents`.
 - `dependencies::edges` (rules), `generation_plan` (order; a row that gains a result in the plan stales the snapshots below it, W1.5b): no surface re-derives either. `walk_output_dependents` drops results and touches no simulation; an edit takes `invalidate_output_dependents_of_set`.
 - `drop_simulation(cause)` is the one site that clears the simulation. It

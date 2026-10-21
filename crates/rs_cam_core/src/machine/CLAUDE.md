@@ -13,7 +13,7 @@ principal type is `MachineProfile` in `mod.rs`.
 
 ## Invariants
 
-- The per-axis maximum rate is per axis. A single scalar rate over-estimates a diagonal move.
+- The per-axis maximum rate is per axis. A single scalar rate over-estimates a diagonal move. F002: `cutting_ceiling()` (`CuttingCeilingMmMin`) caps a cut, `travel_rate()` (`TravelRateMmMin`) a rapid; the modulator takes the ceiling type.
 - Machine acceleration decides parallel against spiral. The advisor reads the profile; do not hard-code a strategy preference.
 - H1: the head is a machine part, not a tool part; `MachineHead::bands` is the one band builder.
   Hard parts block, soft parts never; a shelf is a Z floor. The generation step reads the fixed

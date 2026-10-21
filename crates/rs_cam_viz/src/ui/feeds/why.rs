@@ -266,7 +266,7 @@ fn explain_feed(
     }
     if d.feed_clamp < 0.999 {
         out.push_str(&format!(
-            "The feed hit machine.max_feed_mm_min and was clamped ×{:.3}.\n",
+            "The feed hit the machine cutting-feed ceiling and was clamped ×{:.3}.\n",
             d.feed_clamp
         ));
     }

@@ -60,7 +60,7 @@ fn ctx<'a>(k: &'a MachineKinematics, plunge_rate_mm_min: f64) -> ModulationConte
     ModulationContext {
         spindle_rpm: 18_000.0,
         flute_count: 2,
-        max_feed_mm_min: 10_000.0,
+        cutting_ceiling: cutting_ceiling(10_000.0),
         rapid_feed_mm_min: 10_000.0,
         chipload_band: Some(ChiploadBand::new(0.02, 0.08).expect("valid band")),
         kinematics: k,
@@ -368,4 +368,15 @@ fn seed_move_has_no_predecessor_and_is_not_capped() {
         outcome.per_move.get(&0).map(|(_, b)| *b),
         Some(BindingConstraint::PlungeRate)
     );
+}
+
+/// F002: a cutting ceiling of `mm_min`, made the one way, by a machine
+/// profile whose travel rate and explicit cutting cap are both `mm_min`.
+fn cutting_ceiling(mm_min: f64) -> rs_cam_core::machine::CuttingCeilingMmMin {
+    rs_cam_core::machine::MachineProfile {
+        max_feed_mm_min: mm_min,
+        max_cutting_feed_mm_min: Some(mm_min),
+        ..rs_cam_core::machine::MachineProfile::default()
+    }
+    .cutting_ceiling()
 }

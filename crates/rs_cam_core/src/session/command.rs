@@ -47,12 +47,14 @@
 //! WP4 adds the MCP mutation section: most `Command` rows carry an MCP
 //! wire name. This module states no row count. `CommandId::ALL.len()`
 //! is the count, and a count written in prose goes stale the day the
-//! next row lands. This one did, twice. Three MCP mutations stay
+//! next row lands. This one did, twice. Two MCP mutations stay
 //! hand-written holdouts and are NOT rows here
-//! (§15 ruling 4): `apply_feeds`, whose funnel resolves tool, machine,
-//! material and a recommendation from view state; `plan_multitool_
-//! finishing`, whose outcome IS the reply; and `export_gcode`, whose
-//! pre-flight gate reads the view's own simulation slot.
+//! (§15 ruling 4): `plan_multitool_finishing`, whose outcome IS the
+//! reply; and `export_gcode`, whose pre-flight gate reads the view's own
+//! simulation slot. F114 made `apply_feeds` a row (`ApplyFeeds`): it
+//! resolves tool, machine, material and the recommendation from the
+//! session, so the GUI, MCP and the CLI write one value. The MCP tool
+//! still reaches it through the controller funnel, not the Core arm.
 //!
 //! WP14a adds the second and third `Job` rows,
 //! `recommend_clearing_strategy` and `preview_tier_map`. Both are READS:
@@ -539,6 +541,16 @@ macro_rules! for_each_command {
                  gui: Reach::Reached,
                  mcp: Reach::Skip(
                      "the MCP door edits one named parameter through set_toolpath_param",
+                 ),
+                 cli: Reach::Reached,
+             }),
+            // F114: THE Apply-Suggest funnel. The GUI modal, the MCP
+            // `apply_feeds` tool and the CLI `--apply-suggest` all apply it.
+            (Command, ApplyFeeds, "apply_feeds", ApplyFeedsArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "the apply_feeds tool reaches this row through the controller funnel, not the Core arm",
                  ),
                  cli: Reach::Reached,
              }),
@@ -1086,6 +1098,23 @@ pub struct ReplaceToolpathConfigArgs {
     pub index: usize,
     /// The configuration to install, in full.
     pub config: Box<ToolpathConfig>,
+}
+
+/// The arguments of the `apply_feeds` command (F114).
+///
+/// The row resolves the tool, the machine, the stock material, the post
+/// spindle strategy and the Suggest slots from the session, runs
+/// [`crate::feeds::suggest::apply_to_operation`] on a draft of the
+/// toolpath, and installs the draft through `ReplaceToolpathConfig`. A
+/// refused pairing is [`SessionError::FeedsRefused`] and writes nothing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ApplyFeedsArgs {
+    /// The index of the toolpath the command writes.
+    pub index: usize,
+    /// Which half of the recommendation the command writes.
+    pub scope: crate::feeds::suggest::ApplyScope,
+    /// The dragged explore-chart speeds, or `None` for the calculator's.
+    pub explored: Option<crate::feeds::suggest::ExploredSpeeds>,
 }
 
 /// The arguments of the `generate_toolpath` job.
@@ -2709,6 +2738,43 @@ impl ProjectSession {
                         .get(index)
                         .is_some_and(|tc| tc.enabled);
                     session.invalidate_result_chain(index, enabled);
+                }))
+            }
+            Command::ApplyFeeds(args) => {
+                let ApplyFeedsArgs {
+                    index,
+                    scope,
+                    explored,
+                } = args;
+                let Some(mut draft) = self.toolpath_configs.get(index).cloned() else {
+                    return Err(SessionError::ToolpathNotFound(index));
+                };
+                let tool_id = crate::compute::ToolId(draft.tool_id);
+                let Some(tool) = self.get_tool(tool_id) else {
+                    return Err(SessionError::ToolNotFound(tool_id));
+                };
+                let slots = self.suggest_slots(&draft);
+                let input = crate::feeds::suggest::OperationApplyInput {
+                    tool,
+                    machine: &self.machine,
+                    material: &self.stock.material,
+                    spindle_strategy: self.post.spindle_strategy,
+                    lut: crate::feeds::embedded_vendor_lut(),
+                    suggest: slots.context(&draft.dressups),
+                };
+                crate::feeds::suggest::apply_to_operation(
+                    input,
+                    scope,
+                    explored,
+                    &mut draft.operation,
+                    &mut draft.feeds_provenance,
+                )
+                .map_err(SessionError::FeedsRefused)?;
+                // The draft goes in through the replace row, so its
+                // refusals and its signature-gated drop hold here too.
+                self.apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+                    index,
+                    config: Box::new(draft),
                 }))
             }
             Command::ReplaceToolpathConfig(args) => {

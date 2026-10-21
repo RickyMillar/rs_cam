@@ -902,6 +902,9 @@ impl RsCamApp {
                 );
             }
         };
+        // F114: the funnel applies core's `Command::ApplyFeeds`, the row
+        // the GUI and the CLI apply, so the agent writes the same values
+        // (the drill peck included).
         // WP28: the funnel runs `ReplaceToolpathConfig` and stamps its
         // own `Effects::stale`, so the reply names the edited toolpath
         // AND the downstream results the stock chain dropped. The old

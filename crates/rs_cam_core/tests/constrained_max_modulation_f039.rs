@@ -56,7 +56,7 @@ fn ctx_basic<'a>(k: &'a MachineKinematics, b: ChiploadBand) -> ModulationContext
     ModulationContext {
         spindle_rpm: 18_000.0,
         flute_count: 2,
-        max_feed_mm_min: 10_000.0,
+        cutting_ceiling: cutting_ceiling(10_000.0),
         rapid_feed_mm_min: 10_000.0,
         chipload_band: Some(b),
         kinematics: k,
@@ -346,7 +346,7 @@ fn modulation_summary_matches_per_move_binding_distribution() {
         .collect();
     let k = shapeoko();
     let mut ctx = ctx_basic(&k, band(0.02, 0.08));
-    ctx.max_feed_mm_min = 3000.0; // force machine cap to bind sometimes
+    ctx.cutting_ceiling = cutting_ceiling(3000.0); // force machine cap to bind sometimes
     let outcome = adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
     let commanded_feed = 1500.0_f64;
     let summary = outcome
@@ -376,4 +376,15 @@ fn modulation_summary_matches_per_move_binding_distribution() {
         );
     }
     assert_eq!(summary.feed_scale, 1.0);
+}
+
+/// F002: a cutting ceiling of `mm_min`, made the one way, by a machine
+/// profile whose travel rate and explicit cutting cap are both `mm_min`.
+fn cutting_ceiling(mm_min: f64) -> rs_cam_core::machine::CuttingCeilingMmMin {
+    rs_cam_core::machine::MachineProfile {
+        max_feed_mm_min: mm_min,
+        max_cutting_feed_mm_min: Some(mm_min),
+        ..rs_cam_core::machine::MachineProfile::default()
+    }
+    .cutting_ceiling()
 }

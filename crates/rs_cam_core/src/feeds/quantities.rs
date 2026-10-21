@@ -134,9 +134,27 @@ impl AdvancePerToothMm {
         Self::divide(feed.mm_min(), rpm, flutes)
     }
 
+    /// `commanded_feed / (rpm · flutes)` at an RPM that is not a whole
+    /// number (a calculator RPM before the write rounds it). `None` when
+    /// the divisor is not positive.
+    #[must_use]
+    pub fn from_commanded_at(feed: CommandedFeedMmMin, rpm: f64, flutes: u32) -> Option<Self> {
+        let divisor = rpm * f64::from(flutes);
+        (divisor > 0.0).then(|| Self(feed.mm_min() / divisor))
+    }
+
     fn divide(feed_mm_min: f64, rpm: u32, flutes: u32) -> Option<Self> {
         let divisor = f64::from(rpm) * f64::from(flutes);
         (divisor > 0.0).then(|| Self(feed_mm_min / divisor))
+    }
+
+    /// F006: the commanded feed that gives this advance per tooth at
+    /// `rpm` and `flutes`: `advance · rpm · flutes`, in that order. The
+    /// inverse of [`Self::from_commanded_at`], so a surface that turns a
+    /// chipload back into a feed does not write the product by hand.
+    #[must_use]
+    pub fn feed_at(self, rpm: f64, flutes: u32) -> CommandedFeedMmMin {
+        CommandedFeedMmMin::new(self.0 * rpm * f64::from(flutes))
     }
 
     #[must_use]

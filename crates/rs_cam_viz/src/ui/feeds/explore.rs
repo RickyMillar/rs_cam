@@ -912,7 +912,9 @@ fn draw_chart_c_legend(
     }
     let target_cl = explain.recommended.derates.target_chip_load_mm;
     if target_cl > 0.0 && explain.recommended.rpm > 0.0 {
-        let target_feed = target_cl * explain.recommended.rpm * explain.flute_count.max(1) as f64;
+        let target_feed = rs_cam_core::feeds::AdvancePerToothMm::new(target_cl)
+            .feed_at(explain.recommended.rpm, explain.flute_count.max(1))
+            .mm_min();
         if (target_feed - explain.recommended.feed_rate_mm_min).abs() > 1.0 {
             entries.push(LegendEntry::new(
                 LegendSwatch::Circle,

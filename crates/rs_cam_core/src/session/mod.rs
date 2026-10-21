@@ -44,26 +44,27 @@ pub use builder::ProjectSessionBuilder;
 pub use command::{
     AddAlignmentPinArgs, AddModelArgs, AddObstacleArgs, AddSetupArgs, AddStockChangeArgs,
     AddToolArgs, AddToolpathArgs, AdoptModelGeometryArgs, AdoptRestFreshComparisonArgs,
-    AdoptResultArgs, AdoptSimulationArgs, AutoEnableRestAnalysisArgs, BuildModelFacesArgs, Command,
-    CommandId, CommandKind, EditModelDrawingArgs, EditSelectionArgs, Effects, ForgetResultArgs,
-    GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
-    ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs,
-    InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle, LedgerEdit,
-    ListItemsAnswer, ListItemsArgs, MoveStockChangeArgs, MoveToolpathToSetupArgs,
-    PreviewTierMapArgs, Query, QueryAnswer, Reach, RecommendClearingStrategyArgs,
-    RemoveAlignmentPinArgs, RemoveModelArgs, RemoveObstacleArgs, RemoveSetupArgs,
-    RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs, ReorderToolpathArgs,
-    ReplaceObstacleArgs, ReplaceStockChangeArgs, ReplaceToolArgs, ReplaceToolpathConfigArgs,
-    ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs, SelectionStatusArgs,
-    SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs, SetDressupFieldArgs,
-    SetFeedsProvenanceArgs, SetMachineArgs, SetMachineHeadArgs, SetMachineKinematicsArgs,
-    SetPinPartModelsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs, SetSetupDatumArgs,
-    SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs, SetSetupPauseMessageArgs,
-    SetSetupRotationArgs, SetSimulationResolutionArgs, SetStockConfigArgs, SetStockSourceArgs,
-    SetToolParamArgs, SetToolpathDebugOptionsArgs, SetToolpathEnabledArgs, SetToolpathFloorArgs,
-    SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathOperationArgs, SetToolpathParamArgs,
-    SetToolpathShoeArgs, SetToolpathToolArgs, Surfaces, TabLayoutArgs, ToolpathCycleTimeAnswer,
-    ToolpathCycleTimeArgs, UpdateStockFromBboxArgs,
+    AdoptResultArgs, AdoptSimulationArgs, ApplyFeedsArgs, AutoEnableRestAnalysisArgs,
+    BuildModelFacesArgs, Command, CommandId, CommandKind, EditModelDrawingArgs, EditSelectionArgs,
+    Effects, ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer,
+    GetOperationSchemaArgs, ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs,
+    InvalidateStockArgs, InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer,
+    JobHandle, LedgerEdit, ListItemsAnswer, ListItemsArgs, MoveStockChangeArgs,
+    MoveToolpathToSetupArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
+    RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveModelArgs, RemoveObstacleArgs,
+    RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
+    ReorderToolpathArgs, ReplaceObstacleArgs, ReplaceStockChangeArgs, ReplaceToolArgs,
+    ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs,
+    SelectionStatusArgs, SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs,
+    SetDressupFieldArgs, SetFeedsProvenanceArgs, SetMachineArgs, SetMachineHeadArgs,
+    SetMachineKinematicsArgs, SetPinPartModelsArgs, SetPostConfigArgs, SetRestAnalysisConfigArgs,
+    SetSetupDatumArgs, SetSetupFaceArgs, SetSetupModelsArgs, SetSetupNameArgs,
+    SetSetupPauseMessageArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
+    SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathDebugOptionsArgs,
+    SetToolpathEnabledArgs, SetToolpathFloorArgs, SetToolpathHeightsArgs, SetToolpathModelArgs,
+    SetToolpathOperationArgs, SetToolpathParamArgs, SetToolpathShoeArgs, SetToolpathToolArgs,
+    Surfaces, TabLayoutArgs, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
+    UpdateStockFromBboxArgs,
 };
 pub use compute::{
     GenContext, GenObserver, GenerateToolpathHandle, RecommendClearingStrategyHandle,
@@ -310,6 +311,9 @@ pub enum SessionError {
     /// door writes nothing. The export door refuses with the same text
     /// (`ExportRefusal::HeightOrder`).
     HeightOrder(heights::HeightOrderRefusal),
+    /// F114: Suggest refuses the tool × operation pairing of the toolpath
+    /// that `Command::ApplyFeeds` names. The row writes nothing.
+    FeedsRefused(crate::feeds::FeedsError),
 }
 
 impl SessionError {
@@ -422,6 +426,7 @@ impl std::fmt::Display for SessionError {
             ),
             Self::OutOfDomain(refusal) => write!(f, "{refusal}"),
             Self::HeightOrder(refusal) => write!(f, "{refusal}"),
+            Self::FeedsRefused(refusal) => write!(f, "{refusal}"),
         }
     }
 }
@@ -1951,6 +1956,22 @@ impl ProjectSession {
         &self.toolpath_configs
     }
 
+    /// The project slots of a Suggest call for `tc` (F114): the stock from
+    /// the stock bbox and padding, and the bbox of the model `tc` machines.
+    /// Lend the context with [`crate::feeds::suggest::SuggestSlots::context`].
+    /// The Apply funnel (`Command::ApplyFeeds`) and [`Self::cutter_op_profile`]
+    /// both read it, so no door leaves the stock slot empty.
+    #[must_use]
+    pub fn suggest_slots(&self, tc: &ToolpathConfig) -> crate::feeds::suggest::SuggestSlots {
+        crate::feeds::suggest::SuggestSlots {
+            stock: crate::feeds::suggest::StockContext::from_stock_bbox(
+                self.stock_bbox(),
+                self.stock_config().padding,
+            ),
+            model_bbox: self.model_bbox(tc.model_id),
+        }
+    }
+
     /// Build the pre-sim [`CutterOpProfile`] for one toolpath config —
     /// the canonical Suggest-rationale invocation shared by the GUI
     /// feeds modal and the MCP `get_suggest_rationale` surface (Phase 4
@@ -1975,24 +1996,13 @@ impl ProjectSession {
         tc: &'a ToolpathConfig,
     ) -> Option<crate::feeds::profile::CutterOpProfile<'a>> {
         use crate::feeds::profile::{CutterOpProfile, CutterOpProfileInput};
-        use crate::feeds::suggest::{StockContext, SuggestContext};
 
         let tool = self.get_tool(ToolId(tc.tool_id))?;
         let stock = self.stock_config();
-        let stock_ctx = StockContext::from_stock_bbox(self.stock_bbox(), stock.padding);
-        let model_bboxes = self.collect_model_bboxes();
-        let model_bbox = model_bboxes
-            .iter()
-            .find(|(id, _)| *id == tc.model_id)
-            .map(|(_, b)| b);
-        let context = SuggestContext {
-            model_bbox,
-            stock: Some(&stock_ctx),
-            // G6 ramp: the toolpath's entry θ, so MCP and the CLI write and
-            // report the ramp feed the card shows.
-            dressups: Some(&tc.dressups),
-            ..SuggestContext::default()
-        };
+        // F114: the one context assembly. The dressups carry the G6 entry
+        // θ, so MCP and the CLI report the ramp feed the card shows.
+        let slots = self.suggest_slots(tc);
+        let context = slots.context(&tc.dressups);
         // F029: a tool outside its domain has no profile, as a missing tool
         // has none. The tool doors refuse such a tool, so this is a backstop.
         CutterOpProfile::for_combo(CutterOpProfileInput {

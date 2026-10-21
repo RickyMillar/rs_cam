@@ -17,13 +17,16 @@ mod apply;
 mod axial_envelope;
 mod invariants;
 
+#[cfg(test)]
+pub(crate) use apply::resolve_operation_invariants;
 pub use apply::{
-    ApplicableRecommendation, ApplyContext, ApplyScope, FeedsPreview, FieldApplyPreview,
-    FieldApplyPreviews, apply, apply_cut_geometry_to_op, apply_drill_defaults,
-    apply_feeds_result_to_op, apply_speeds_to_op, apply_stock_defaults,
-    feeds_preview_for_operation, operation_feeds_hints, preview_field_applies, preview_field_apply,
-    resolve_operation_invariants,
+    ApplicableRecommendation, ApplyContext, ApplyScope, ExploredSpeeds, FeedsPreview,
+    FieldApplyPreview, FieldApplyPreviews, OperationApplyInput, apply, apply_drill_defaults,
+    apply_stock_defaults, apply_to_operation, feeds_preview_for_operation, operation_feeds_hints,
+    preview_field_applies, preview_field_apply,
 };
+#[cfg(any(test, feature = "test-support"))]
+pub use apply::{apply_cut_geometry_to_op, apply_feeds_result_to_op, apply_speeds_to_op};
 pub(crate) use axial_envelope::axial_envelope_for_operation;
 // The deflection back-off target, re-exported so `feeds::rationale` can
 // format the bound it renders from the constant the loop compares
@@ -52,6 +55,40 @@ impl StockContext {
             stock_bottom_z: bbox.min.z,
             stock_z,
             stock_padding: padding,
+        }
+    }
+}
+
+/// The owned project slots of one toolpath's Suggest call: the stock and
+/// the bbox of the model it machines (F114).
+///
+/// [`SuggestContext`] borrows its slots, so a session method cannot hand
+/// one back over locals. [`crate::session::ProjectSession::suggest_slots`]
+/// gives this owned carrier, and [`Self::context`] lends the context. Every
+/// project door (the Apply funnel, the profile behind the card, MCP and the
+/// CLI) assembles its context here, so the stock slot is set on each one.
+#[derive(Debug, Clone, Copy)]
+pub struct SuggestSlots {
+    /// The stock of the project.
+    pub stock: StockContext,
+    /// The bbox of the model the toolpath machines; `None` when the id
+    /// names no model or the model has no finite geometry.
+    pub model_bbox: Option<crate::geo::BoundingBox3>,
+}
+
+impl SuggestSlots {
+    /// The Suggest context of these slots and the toolpath's dressups (the
+    /// G6 entry θ), with the default policy.
+    #[must_use]
+    pub fn context<'a>(
+        &'a self,
+        dressups: &'a crate::compute::config::DressupConfig,
+    ) -> SuggestContext<'a> {
+        SuggestContext {
+            model_bbox: self.model_bbox.as_ref(),
+            stock: Some(&self.stock),
+            dressups: Some(dressups),
+            ..SuggestContext::default()
         }
     }
 }
@@ -128,13 +165,13 @@ pub struct SuggestContext<'a> {
     /// LUT chipload band for the matched op × tool combination, when
     /// [`FeedsResult::chipload_bounds`] could derive one. Read by the
     /// v2 step 2 chipload-aware feed-up recalibration in
-    /// [`enforce_invariants`](invariants::enforce_invariants). `apply_feeds_result_to_op` lifts this
+    /// [`enforce_invariants`](invariants::enforce_invariants). `apply` lifts this
     /// off `FeedsResult` automatically; direct callers of
     /// `enforce_invariants` (tests synthesizing post-v1.1 operating
     /// points) populate it explicitly. `None` means "no constraint
     /// signal" — the recalibration short-circuits.
     pub chipload_bounds: Option<crate::feeds::ChiploadBounds>,
-    /// Matched LUT row (post-scaling) — populated by `apply_feeds_result_to_op`
+    /// Matched LUT row (post-scaling) — populated by `apply`
     /// from `FeedsResult::matched_lut_row`. Consumed by `pick_axial_envelope`
     /// to derive the vendor ap bound. `None` when the calculator did not
     /// match any vendor row.
@@ -165,7 +202,7 @@ pub struct SuggestContext<'a> {
     ///
     /// `None` means **there is no derivation point to reconcile against**,
     /// and the rescale pass short-circuits. That is the correct answer for
-    /// [`resolve_operation_invariants`], whose whole contract is "run the
+    /// `resolve_operation_invariants` (test-only), whose whole contract is "run the
     /// safety clamps over a value a human or the optimizer chose, and do
     /// not substitute a number of our own" — a hand-typed feed was never
     /// derived from a chip-thinning term, so there is nothing to re-derive.
@@ -911,21 +948,21 @@ pub fn suggest_for_operation(
     )?;
     let mut operation = input.operation.clone();
     let mut provenance = crate::feeds::FeedsProvenance::default();
-    let warnings = apply_feeds_result_to_op(
+    // F042: the one write, `apply`, under `Both`. It writes the drill
+    // defaults too (F114). `feeds_result_for_operation` validated the
+    // pairing above, which is what `validated` requires.
+    let warnings = apply(
+        &ApplicableRecommendation::validated(&feeds_result),
+        ApplyScope::Both,
         &mut operation,
         &mut provenance,
-        &feeds_result,
-        input.tool,
-        input.machine,
-        input.material,
-        input.operation.feeds_style().1,
-        input.context,
-    );
-    apply_drill_defaults(
-        &mut operation,
-        input.tool,
-        input.material,
-        input.context.stock,
+        ApplyContext {
+            tool: input.tool,
+            machine: input.machine,
+            material: input.material,
+            pass_role: input.operation.feeds_style().1,
+            suggest: input.context,
+        },
     );
     Ok(SuggestedParams {
         operation,

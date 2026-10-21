@@ -41,7 +41,10 @@ use std::path::{Path, PathBuf};
 pub(crate) struct ReplayMachine {
     pub label: String,
     pub kinematics: MachineKinematics,
-    pub max_feed_mm_min: f64,
+    /// The cap on commanded (cutting) feeds, mm/min (F002: not the travel
+    /// rate). A `--max-feed` flag overrides it.
+    pub cutting_ceiling_mm_min: f64,
+    /// The rapid rate, mm/min: the profile's travel rate.
     pub rapid_feed_mm_min: f64,
     pub kinematics_declared: bool,
 }
@@ -52,7 +55,7 @@ fn builtin_machine() -> ReplayMachine {
     ReplayMachine {
         label: "shapeoko_xxl_ricky_tuned (built-in preset)".to_owned(),
         kinematics: MachineKinematics::shapeoko_xxl_ricky_tuned(),
-        max_feed_mm_min: 4000.0,
+        cutting_ceiling_mm_min: 4000.0,
         rapid_feed_mm_min: 10_000.0,
         kinematics_declared: true,
     }
@@ -69,8 +72,8 @@ pub(crate) fn machine_from_profile(profile: &MachineProfile) -> ReplayMachine {
     ReplayMachine {
         label: profile.name.clone(),
         kinematics: profile.effective_kinematics(),
-        max_feed_mm_min: profile.cutting_feed_ceiling_mm_min().max(1.0),
-        rapid_feed_mm_min: profile.max_feed_mm_min.max(1.0),
+        cutting_ceiling_mm_min: profile.cutting_ceiling().mm_min().max(1.0),
+        rapid_feed_mm_min: profile.travel_rate().mm_min().max(1.0),
         kinematics_declared: profile.kinematics.is_some(),
     }
 }
@@ -125,7 +128,7 @@ pub fn run_nc_time(
     let resolved = resolve_machine_in(machine_library::library_dir().as_deref(), machine)?;
     let kinematics = resolved.kinematics;
     // A flag overrides the profile; the profile overrides nothing else.
-    let max_feed = max_feed.unwrap_or(resolved.max_feed_mm_min);
+    let max_feed = max_feed.unwrap_or(resolved.cutting_ceiling_mm_min);
     let rapid_feed = rapid_feed.unwrap_or(resolved.rapid_feed_mm_min);
     let junction_str = kinematics
         .max_junction_velocity_mm_min
@@ -430,13 +433,13 @@ mod tests {
         let slow_s = compute_cycle_time(
             &tp,
             &slow_run.kinematics,
-            slow_run.max_feed_mm_min,
+            slow_run.cutting_ceiling_mm_min,
             slow_run.rapid_feed_mm_min,
         );
         let fast_s = compute_cycle_time(
             &tp,
             &fast_run.kinematics,
-            fast_run.max_feed_mm_min,
+            fast_run.cutting_ceiling_mm_min,
             fast_run.rapid_feed_mm_min,
         );
         assert!(
@@ -453,9 +456,9 @@ mod tests {
             slow_run.rapid_feed_mm_min
         );
         assert!(
-            (slow_run.max_feed_mm_min - slow.cutting_feed_ceiling_mm_min()).abs() < 1e-9,
+            (slow_run.cutting_ceiling_mm_min - slow.cutting_feed_ceiling_mm_min()).abs() < 1e-9,
             "the feed cap must be the profile cutting ceiling, got {}",
-            slow_run.max_feed_mm_min
+            slow_run.cutting_ceiling_mm_min
         );
 
         // A name the library does not hold refuses and says what it holds.

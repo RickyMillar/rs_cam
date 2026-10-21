@@ -914,7 +914,8 @@ impl<B: ComputeBackend> AppController<B> {
     /// Every Feeds & Speeds modal write — the comparison card's `⚡ Apply
     /// all`, the project rollup's per-row Apply, `⚡ Apply selected`, `⚡⚡
     /// Apply all toolpaths`, and the nomogram's explore apply — lands here,
-    /// and here calls `feeds::suggest::apply`. Two consequences are the whole
+    /// and here applies `Command::ApplyFeeds`, which calls
+    /// `feeds::suggest::apply` (F114). Two consequences are the whole
     /// point of the wave:
     ///
     /// 1. A tool × operation pairing the engine refuses **cannot be written**,
@@ -943,91 +944,29 @@ impl<B: ComputeBackend> AppController<B> {
         else {
             return Err(format!("toolpath {} not found", toolpath_id.0));
         };
-        let (operation, tool_id, pass_role) = {
-            let Some(tc) = self.state.session.toolpath_configs().get(idx) else {
-                return Err(format!("toolpath {} disappeared", toolpath_id.0));
-            };
-            (
-                tc.operation.clone(),
-                tc.tool_id,
-                tc.operation.feeds_style().1,
-            )
-        };
-        let Some(tool) = self
-            .state
-            .session
-            .tools()
-            .iter()
-            .find(|t| t.id == rs_cam_core::compute::ToolId(tool_id))
-            .cloned()
-        else {
-            return Err(format!("toolpath {} has no tool", toolpath_id.0));
-        };
-        let machine = self.state.session.machine().clone();
-        let material = self.state.session.stock_config().material.clone();
-        let spindle_strategy = self.state.session.post_config().spindle_strategy;
-
-        let preview = rs_cam_core::feeds::suggest::feeds_preview_for_operation(
-            &operation,
-            &tool,
-            &material,
-            &machine,
-            rs_cam_core::feeds::embedded_vendor_lut(),
-            spindle_strategy,
-        );
-        let Some(rec) = preview.applicable() else {
-            return Err(preview
-                .refusal()
-                .map(ToString::to_string)
-                .unwrap_or_else(|| "recommendation is not applicable".to_owned()));
-        };
-        let rec = match explored_speeds {
-            Some((feed_mm_min, rpm)) => rec.with_explored_speeds(feed_mm_min, rpm),
-            None => rec,
-        };
-
-        // The funnel writes a DRAFT clone and applies it through the
-        // command door. `ReplaceToolpathConfig` writes the configuration
-        // unconditionally and gates its drop on
-        // `ToolpathConfig::generation_inputs_signature` — which IS the
-        // N13 rule this arm used to run by hand, in core's own words and
-        // at one site (WP5).
-        let Some(mut draft) = self.state.session.toolpath_configs().get(idx).cloned() else {
-            return Err(format!("toolpath {} disappeared", toolpath_id.0));
-        };
-        // Q1: the bbox of the model this toolpath machines. The apply
-        // funnel's clamp stage reads `SuggestContext::model_bbox`; this
-        // site used to pass `None`. `upstream_leftover_stock_mm` stays
-        // `None`: no lookup here gives it, and v1 does not read it.
-        let model_bbox = self.state.session.model_bbox(draft.model_id);
-        rs_cam_core::feeds::suggest::apply(
-            &rec,
-            scope,
-            &mut draft.operation,
-            &mut draft.feeds_provenance,
-            rs_cam_core::feeds::suggest::ApplyContext {
-                tool: &tool,
-                machine: &machine,
-                material: &material,
-                pass_role,
-                suggest: rs_cam_core::feeds::suggest::SuggestContext {
-                    model_bbox: model_bbox.as_ref(),
-                    // G6 ramp: the entry θ of this toolpath, as the card
-                    // passes it, so the two show one number.
-                    dressups: Some(&draft.dressups),
-                    ..rs_cam_core::feeds::suggest::SuggestContext::default()
-                },
-            },
-        );
-        let command = Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+        // F114: core's one funnel. `Command::ApplyFeeds` resolves the tool,
+        // the machine, the material, the spindle strategy and the Suggest
+        // slots (the stock included) from the session, runs
+        // `feeds::suggest::apply_to_operation` on a draft (the drill
+        // defaults included) and installs the draft through
+        // `ReplaceToolpathConfig`, whose signature gate is the N13 rule.
+        // The MCP `apply_feeds` tool and the CLI apply the same row.
+        let command = Command::ApplyFeeds(rs_cam_core::session::ApplyFeedsArgs {
             index: idx,
-            config: Box::new(draft),
+            scope,
+            explored: explored_speeds.map(|(feed_mm_min, rpm)| {
+                rs_cam_core::feeds::suggest::ExploredSpeeds { feed_mm_min, rpm }
+            }),
         });
         let effects = self
             .state
             .session
             .apply(command)
-            .map_err(|error| format!("toolpath {}: {error}", toolpath_id.0))?;
+            .map_err(|error| match error {
+                // The refusal text alone, as the preview gave it before.
+                rs_cam_core::session::SessionError::FeedsRefused(refusal) => refusal.to_string(),
+                other => format!("toolpath {}: {other}", toolpath_id.0),
+            })?;
         crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
         // WP19 (plan §28): N13 made this funnel drop the core result, so
         // the row clears the session's simulation on the frames the

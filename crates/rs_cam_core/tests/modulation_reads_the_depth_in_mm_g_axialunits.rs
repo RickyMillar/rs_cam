@@ -77,7 +77,7 @@ fn ctx<'a>(k: &'a MachineKinematics, available_kw: f64) -> ModulationContext<'a>
     ModulationContext {
         spindle_rpm: RPM,
         flute_count: FLUTES,
-        max_feed_mm_min: 10_000.0,
+        cutting_ceiling: cutting_ceiling(10_000.0),
         rapid_feed_mm_min: 10_000.0,
         chipload_band: Some(ChiploadBand::new(0.01, 0.30).unwrap()),
         kinematics: k,
@@ -205,4 +205,15 @@ fn the_realistic_fraction_does_not_rebuild_the_old_error_g_axialunits() {
          {what_the_old_code_saw} mm/min. The pre-T-11 expression let the \
          modulator feed as though the cut were 12.5x shallower than it is."
     );
+}
+
+/// F002: a cutting ceiling of `mm_min`, made the one way, by a machine
+/// profile whose travel rate and explicit cutting cap are both `mm_min`.
+fn cutting_ceiling(mm_min: f64) -> rs_cam_core::machine::CuttingCeilingMmMin {
+    rs_cam_core::machine::MachineProfile {
+        max_feed_mm_min: mm_min,
+        max_cutting_feed_mm_min: Some(mm_min),
+        ..rs_cam_core::machine::MachineProfile::default()
+    }
+    .cutting_ceiling()
 }

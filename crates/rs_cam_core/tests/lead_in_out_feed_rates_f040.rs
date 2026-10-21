@@ -333,7 +333,7 @@ fn modulation_skips_lead_in_lead_out_moves() {
     let ctx = ModulationContext {
         spindle_rpm: 18_000.0,
         flute_count: 2,
-        max_feed_mm_min: 5000.0,
+        cutting_ceiling: cutting_ceiling(5000.0),
         rapid_feed_mm_min: 5000.0,
         chipload_band: Some(band),
         kinematics: &kinematics,
@@ -377,4 +377,15 @@ fn modulation_skips_lead_in_lead_out_moves() {
         pre_lead_out_feeds, post_lead_out_feeds,
         "modulator must skip MoveIntent::LeadOut"
     );
+}
+
+/// F002: a cutting ceiling of `mm_min`, made the one way, by a machine
+/// profile whose travel rate and explicit cutting cap are both `mm_min`.
+fn cutting_ceiling(mm_min: f64) -> rs_cam_core::machine::CuttingCeilingMmMin {
+    rs_cam_core::machine::MachineProfile {
+        max_feed_mm_min: mm_min,
+        max_cutting_feed_mm_min: Some(mm_min),
+        ..rs_cam_core::machine::MachineProfile::default()
+    }
+    .cutting_ceiling()
 }

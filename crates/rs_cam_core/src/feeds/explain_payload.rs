@@ -28,6 +28,8 @@ use crate::machine::{MachineProfile, PowerModel};
 pub struct MachineEnvelope {
     pub spindle_min_rpm: f64,
     pub spindle_max_rpm: f64,
+    /// The CUTTING-feed ceiling, mm/min (`MachineProfile::cutting_ceiling`),
+    /// not the profile's travel field of the same name (F002).
     pub max_feed_mm_min: f64,
     /// Rated (or constant) power in kW — used as the headroom ceiling.
     pub max_power_kw: f64,
@@ -47,7 +49,7 @@ impl MachineEnvelope {
             spindle_min_rpm: min_rpm,
             spindle_max_rpm: max_rpm,
             // F4: the explain envelope describes cutting-feed bounds.
-            max_feed_mm_min: machine.cutting_feed_ceiling_mm_min(),
+            max_feed_mm_min: machine.cutting_ceiling().mm_min(),
             max_power_kw,
             aggressiveness: machine.aggressiveness,
         }

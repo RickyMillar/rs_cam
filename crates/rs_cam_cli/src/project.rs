@@ -13,9 +13,8 @@ use tracing::{debug, info, warn};
 use rs_cam_core::compute::config::AwaitingPriorStock;
 use rs_cam_core::session::generation_plan::{self, Scope};
 use rs_cam_core::session::{
-    Command, ProjectSession, ReplaceToolpathConfigArgs, SetMachineKinematicsArgs,
-    SetPostConfigArgs, SetSimulationResolutionArgs, SimulationOptions, SimulationResolution,
-    dependencies,
+    Command, ProjectSession, SessionError, SetMachineKinematicsArgs, SetPostConfigArgs,
+    SetSimulationResolutionArgs, SimulationOptions, SimulationResolution, dependencies,
 };
 use rs_cam_core::stock::simulation_cut::SimulationCutArtifact;
 
@@ -877,9 +876,9 @@ pub fn run_project_command(
 
     // 2b. Optionally apply LUT-suggested feeds/speeds to every
     // enabled toolpath before generation. Replaces feed_rate /
-    // plunge_rate / stepover / depth_per_pass via
-    // `apply_feeds_result_to_op` and writes spindle_rpm from the
-    // suggest result. Mutates the in-memory session only; the
+    // plunge_rate / stepover / depth_per_pass / spindle_rpm (and the
+    // drill peck) through core's `Command::ApplyFeeds`, the row the GUI
+    // and MCP apply (F114). Mutates the in-memory session only; the
     // project TOML on disk stays unchanged.
     if apply_suggest {
         apply_suggested_feeds_to_session(&mut session)?;
@@ -1295,71 +1294,24 @@ pub fn run_project_command(
     Ok(())
 }
 
-/// Iterate every enabled toolpath in the session, run
-/// `feeds::suggest_for_operation`, and replace the operation's
-/// feed_rate / plunge_rate / stepover / depth_per_pass / spindle_rpm
-/// with the suggested values. Mutates the session in place; does NOT
-/// write back to the project file. Prints a before→after table to
-/// stderr so the operator can see what shifted.
+/// Iterate every enabled toolpath in the session and apply core's
+/// `Command::ApplyFeeds` with `ApplyScope::Both` (F114) — the row the GUI
+/// modal and the MCP `apply_feeds` tool apply, so the three surfaces write
+/// the same configuration for the same state. Mutates the session in
+/// place; does NOT write back to the project file. Prints a before→after
+/// table to stderr so the operator can see what shifted.
 fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> {
-    // T16 — route through the canonical `ProjectSession::cutter_op_profile`
-    // (T10) instead of a third hand-rolled `SuggestContext` assembly. The
-    // previous CLI copy hardcoded `SpindleStrategy::default()` where the
-    // GUI Suggest button and the MCP rationale endpoint read
-    // `post_config().spindle_strategy`, so projects with a non-default
-    // strategy got different RPM/feed from `--apply-suggest` than from
-    // the GUI. That was a bug, not deliberate CLI semantics.
-    //
-    // Pass 1 (immutable): collect suggestions per enabled toolpath. The
-    // profile borrows `session`, so the suggested operations are moved
-    // into an owned list before the mutating pass.
-    let mut suggestions: Vec<(
-        usize,
-        rs_cam_core::compute::catalog::OperationConfig,
-        f64,
-        rs_cam_core::feeds::FeedsProvenance,
-    )> = Vec::new();
-    for (idx, tc) in session.toolpath_configs().iter().enumerate() {
-        if !tc.enabled {
-            continue;
-        }
-        let Some(profile) = session.cutter_op_profile(tc) else {
-            warn!(
-                toolpath_id = tc.id.0,
-                tool_id = tc.tool_id,
-                "Tool not found, skipping suggest"
-            );
-            continue;
-        };
-        if let Err(e) = &profile.feasibility {
-            warn!(
-                toolpath_id = tc.id.0,
-                tool_id = tc.tool_id,
-                error = %e,
-                "Suggest refused this toolpath, leaving existing values"
-            );
-            continue;
-        }
-        // Feasibility Ok ⟺ both Some (`CutterOpProfile::for_combo`).
-        let (Some(operation), Some(feeds)) = (profile.suggested_operation, profile.feeds) else {
-            continue;
-        };
-        // W2.1: per-field provenance of the suggested values, derived from the
-        // same FeedsResult the calculator produced.
-        let rpm_written = feeds.rpm.is_finite() && feeds.rpm > 0.0;
-        let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();
-        provenance.apply_suggested(&feeds, &operation, rpm_written);
-        // G6 ramp: the funnel's record says where the ramp feed came from.
-        // Stamp it after the feed and the plunge, as the funnel does.
-        let ramp = profile.warnings.iter().find_map(|w| match w {
-            rs_cam_core::feeds::suggest::SuggestWarning::RampFeed { record, .. } => Some(record),
-            _ => None,
-        });
-        if let Some(record) = ramp {
-            provenance.stamp_ramp(record);
-        }
-        suggestions.push((idx, operation, feeds.rpm, provenance));
-    }
+    // F114: before this the CLI ran `suggest_for_operation` and stamped
+    // the provenance by hand, the GUI and MCP ran `suggest::apply` with
+    // no stock slot and no drill defaults, and a Drill or
+    // AlignmentPinDrill `peck_depth` differed by surface. One row now.
+    let indices: Vec<usize> = session
+        .toolpath_configs()
+        .iter()
+        .enumerate()
+        .filter(|(_, tc)| tc.enabled)
+        .map(|(idx, _)| idx)
+        .collect();
 
     eprintln!("\n=== Applying LUT-suggested feeds/speeds ===");
     eprintln!(
@@ -1367,64 +1319,72 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
         "id", "name", "feed", "plunge", "stepover", "dpp", "rpm"
     );
 
-    // Pass 2 (mutable): apply + print the before→after table.
-    for (idx, suggested_op, suggested_rpm, provenance) in suggestions {
-        // A DRAFT of the whole configuration, applied through
-        // `ReplaceToolpathConfig`. That row writes the configuration and
-        // drops the chain only when `generation_inputs_signature` moved.
-        let Some(mut draft) = session.toolpath_configs().get(idx).cloned() else {
+    for idx in indices {
+        let Some(before) = session.toolpath_configs().get(idx).cloned() else {
+            continue;
+        };
+        let outcome = apply_command(
+            session,
+            Command::ApplyFeeds(rs_cam_core::session::ApplyFeedsArgs {
+                index: idx,
+                scope: rs_cam_core::feeds::suggest::ApplyScope::Both,
+                explored: None,
+            }),
+        );
+        match outcome {
+            Ok(_) => {}
+            Err(SessionError::FeedsRefused(e)) => {
+                warn!(
+                    toolpath_id = before.id.0,
+                    tool_id = before.tool_id,
+                    error = %e,
+                    "Suggest refused this toolpath, leaving existing values"
+                );
+                continue;
+            }
+            Err(SessionError::ToolNotFound(_)) => {
+                warn!(
+                    toolpath_id = before.id.0,
+                    tool_id = before.tool_id,
+                    "Tool not found, skipping suggest"
+                );
+                continue;
+            }
+            Err(e) => return Err(e.into()),
+        }
+        let Some(after) = session.toolpath_configs().get(idx) else {
             continue;
         };
 
-        // Capture before values for the table.
-        let feed_before = draft.operation.feed_rate();
-        let plunge_before = draft.operation.plunge_rate();
-        let stepover_before = draft.operation.stepover();
-        let dpp_before = draft.operation.depth_per_pass();
-        let rpm_before = draft.operation.spindle_rpm();
-
-        // Replace operation with the suggested one (feed/plunge/
-        // stepover/dpp already written by apply_feeds_result_to_op).
-        draft.operation = suggested_op;
-        // Suggest doesn't write spindle_rpm into the operation; the
-        // RPM lives in `feeds_result.rpm`. Apply it explicitly so the
-        // emitted M3 line matches the calculator's recommendation.
-        if suggested_rpm.is_finite() && suggested_rpm > 0.0 {
-            draft
-                .operation
-                .set_spindle_rpm(Some(suggested_rpm.round() as u32));
-        }
-        draft.feeds_provenance = provenance;
-
-        let feed_after = draft.operation.feed_rate();
-        let plunge_after = draft.operation.plunge_rate();
-        let stepover_after = draft.operation.stepover();
-        let dpp_after = draft.operation.depth_per_pass();
-        let rpm_after = draft.operation.spindle_rpm();
-        let id = draft.id;
-        let name = draft.name.clone();
-
-        let _ = apply_command(
-            session,
-            Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
-                index: idx,
-                config: Box::new(draft),
-            }),
-        )?;
-
         eprintln!(
             "{:<3} {:<32} {:>10} {:>10} {:>10} {:>10} {:>8}",
-            id,
-            truncate(&name, 32),
-            format!("{:.0}→{:.0}", feed_before, feed_after),
-            format!("{:.0}→{:.0}", plunge_before, plunge_after),
+            after.id,
+            truncate(&after.name, 32),
+            format!(
+                "{:.0}→{:.0}",
+                before.operation.feed_rate(),
+                after.operation.feed_rate()
+            ),
+            format!(
+                "{:.0}→{:.0}",
+                before.operation.plunge_rate(),
+                after.operation.plunge_rate()
+            ),
             format!(
                 "{}→{}",
-                fmt_opt(stepover_before, 2),
-                fmt_opt(stepover_after, 2)
+                fmt_opt(before.operation.stepover(), 2),
+                fmt_opt(after.operation.stepover(), 2)
             ),
-            format!("{}→{}", fmt_opt(dpp_before, 2), fmt_opt(dpp_after, 2)),
-            format!("{}→{}", fmt_opt_u32(rpm_before), fmt_opt_u32(rpm_after)),
+            format!(
+                "{}→{}",
+                fmt_opt(before.operation.depth_per_pass(), 2),
+                fmt_opt(after.operation.depth_per_pass(), 2)
+            ),
+            format!(
+                "{}→{}",
+                fmt_opt_u32(before.operation.spindle_rpm()),
+                fmt_opt_u32(after.operation.spindle_rpm())
+            ),
         );
     }
     eprintln!();

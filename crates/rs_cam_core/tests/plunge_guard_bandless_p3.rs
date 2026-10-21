@@ -54,7 +54,7 @@ fn bandless_ctx<'a>(k: &'a MachineKinematics, plunge_rate_mm_min: f64) -> Modula
     ModulationContext {
         spindle_rpm: 18_000.0,
         flute_count: 2,
-        max_feed_mm_min: MAX_FEED,
+        cutting_ceiling: cutting_ceiling(MAX_FEED),
         rapid_feed_mm_min: MAX_FEED,
         chipload_band: None,
         kinematics: k,
@@ -165,7 +165,7 @@ fn bandless_lateral_move_above_machine_ceiling_is_clamped() {
     );
     let ctx = {
         let mut c = bandless_ctx(&k, f64::INFINITY);
-        c.max_feed_mm_min = MAX_FEED;
+        c.cutting_ceiling = cutting_ceiling(MAX_FEED);
         c
     };
     let (feed, binding) = modulate_with(&mut tp, &ctx);
@@ -201,4 +201,15 @@ fn banded_arm_on_the_same_fixture_is_unchanged() {
     let (feed, binding) = modulate_with(&mut tp_descent, &banded_ctx(&k, PLUNGE_RATE));
     assert_eq!(feed, PLUNGE_RATE);
     assert_eq!(binding, Some(BindingConstraint::PlungeRate));
+}
+
+/// F002: a cutting ceiling of `mm_min`, made the one way, by a machine
+/// profile whose travel rate and explicit cutting cap are both `mm_min`.
+fn cutting_ceiling(mm_min: f64) -> rs_cam_core::machine::CuttingCeilingMmMin {
+    rs_cam_core::machine::MachineProfile {
+        max_feed_mm_min: mm_min,
+        max_cutting_feed_mm_min: Some(mm_min),
+        ..rs_cam_core::machine::MachineProfile::default()
+    }
+    .cutting_ceiling()
 }

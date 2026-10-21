@@ -43,10 +43,6 @@ const APPLY_ALL_FACE: &str = "⚡ Apply all — changes the cut";
 /// wrapped to two rows in the rail.
 const APPLY_SPEEDS_FACE: &str = "⚡ Speeds only — holds the cut";
 
-fn advance_per_tooth_mm(feed_mm_min: f64, rpm: f64, flutes: u32) -> Option<f64> {
-    (rpm > 0.0 && flutes > 0).then_some(feed_mm_min / (rpm * f64::from(flutes)))
-}
-
 pub(crate) fn read_current_values(
     state: &AppState,
     toolpath_id: rs_cam_core::ToolpathId,
@@ -219,7 +215,13 @@ pub(crate) fn draw_inspector_comparison(
     let plunge = applied.value(FeedsField::PlungeRate, r.plunge_rate_mm_min);
     let doc = applied.value(FeedsField::DepthPerPass, r.axial_depth_mm);
     let woc = applied.value(FeedsField::Stepover, r.radial_width_mm);
-    let advance = advance_per_tooth_mm(feed, rpm, current.flute_count);
+    // F006: the typed advance; core holds the one divisor.
+    let advance = rs_cam_core::feeds::AdvancePerToothMm::from_commanded_at(
+        rs_cam_core::feeds::CommandedFeedMmMin::new(feed),
+        rpm,
+        current.flute_count,
+    )
+    .map(rs_cam_core::feeds::AdvancePerToothMm::mm);
     // G-FEEDSLABEL (UX-R03-005), G-RECOMAPPLIED (2026-09-24): the
     // recommended DOC / WOC are the values `⚡ Apply all` writes, after
     // `enforce_invariants` and the aggressiveness dial. Until 2026-09-24 the

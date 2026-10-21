@@ -1685,8 +1685,12 @@ fn optimized_candidate(
     // also why the advisor can optimize machines that carry no explicit
     // kinematics block, unlike the production post-sim pass.
     let kinematics = context.machine.effective_kinematics();
-    let max_feed = context.machine.max_feed_mm_min.max(1.0);
-    let rapid_feed = max_feed;
+    // F002: the modulator caps a CUT, so it reads the cutting ceiling, as
+    // the post-sim pass does. It read the travel rate here, so a candidate
+    // could be modulated to cut at the rapid rate. Rapids keep the travel
+    // rate, which `recommend_strategy` also times them at.
+    let max_feed = context.machine.cutting_ceiling().at_least(1.0);
+    let rapid_feed = context.machine.travel_rate().mm_min().max(1.0);
 
     let cut_trace =
         simulate_candidate_isolated(context, Arc::clone(annotated), tool_cfg, operation, cancel)?;
@@ -1793,7 +1797,7 @@ fn modulate_annotated_against_trace(
     // work item A.
     band: Option<crate::dressup::feed_modulation::ChiploadBand>,
     kinematics: crate::machine::kinematics::MachineKinematics,
-    max_feed: f64,
+    max_feed: crate::machine::CuttingCeilingMmMin,
     rapid_feed: f64,
     strategy: crate::dressup::feed_modulation::ModulationStrategy,
     feed_scale: f64,
@@ -2066,7 +2070,7 @@ fn modulate_annotated_against_trace(
     let ctx = ModulationContext {
         spindle_rpm: spindle_rpm as f64,
         flute_count,
-        max_feed_mm_min: max_feed,
+        cutting_ceiling: max_feed,
         rapid_feed_mm_min: rapid_feed,
         chipload_band: band,
         kinematics: &kinematics,

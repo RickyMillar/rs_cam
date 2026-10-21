@@ -377,7 +377,7 @@ impl ProjectSession {
         cut_trace: &crate::stock::simulation_cut::SimulationCutTrace,
         band: Option<crate::dressup::feed_modulation::ChiploadBand>,
         kinematics: crate::machine::kinematics::MachineKinematics,
-        max_feed: f64,
+        max_feed: crate::machine::CuttingCeilingMmMin,
         rapid_feed: f64,
         strategy: crate::dressup::feed_modulation::ModulationStrategy,
         feed_scale: f64,
@@ -523,7 +523,8 @@ impl ProjectSession {
 
         // F4: modulation raises/lowers CUTTING feed — its ceiling is
         // the cutting ceiling. Rapids keep the travel rate.
-        let max_feed = self.machine.cutting_feed_ceiling_mm_min().max(1.0);
+        // F002: the typed ceiling; the modulator takes no bare travel rate.
+        let max_feed = self.machine.cutting_ceiling().at_least(1.0);
         let rapid_feed = self.post.rapid_feed_mm_min(&self.machine);
 
         // Toolpath indices to walk: enabled, with a result, with at least
@@ -693,7 +694,12 @@ impl ProjectSession {
                 // re-integrated. Keep the integrator's own value rather than drop
                 // the entry: dropping it is the exact shape of the defect above.
                 let b = self
-                    .reintegrate_toolpath(entry.toolpath_id, &kinematics, max_feed, rapid_feed)
+                    .reintegrate_toolpath(
+                        entry.toolpath_id,
+                        &kinematics,
+                        max_feed.mm_min(),
+                        rapid_feed,
+                    )
                     .unwrap_or(entry.breakdown);
                 per_toolpath_runtime.insert(entry.toolpath_id, b);
             }
@@ -732,7 +738,7 @@ impl ProjectSession {
                         let Some(b) = self.reintegrate_toolpath(
                             tp_summary.toolpath_id,
                             &kinematics,
-                            max_feed,
+                            max_feed.mm_min(),
                             rapid_feed,
                         ) else {
                             continue;

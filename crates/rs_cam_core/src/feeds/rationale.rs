@@ -219,7 +219,7 @@ pub struct SuggestRationale {
 
 impl SuggestRationale {
     /// Materialize a rationale tree from the warning vector returned
-    /// by `apply_feeds_result_to_op` / `suggest_for_operation`.
+    /// by `apply` / `suggest_for_operation`.
     ///
     /// One warning gives one entry, except the aggressiveness record, which
     /// gives one row for the depth per pass and one for the stepover.

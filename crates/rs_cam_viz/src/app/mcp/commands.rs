@@ -2019,6 +2019,9 @@ impl RsCamApp {
             | CommandId::TabLayout
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
+            // F114: the apply_feeds tool reaches this row through the
+            // controller funnel, so no CoreRequest builds it.
+            | CommandId::ApplyFeeds
             | CommandId::GenerateToolpath
             | CommandId::RecommendClearingStrategy
             | CommandId::PreviewTierMap
@@ -3014,6 +3017,9 @@ impl RsCamApp {
             | CommandId::TabLayout
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
+            // F114: the apply_feeds tool reaches this row through the
+            // controller funnel, so no CoreRequest builds it.
+            | CommandId::ApplyFeeds
             | CommandId::GenerateToolpath
             | CommandId::RecommendClearingStrategy
             | CommandId::PreviewTierMap

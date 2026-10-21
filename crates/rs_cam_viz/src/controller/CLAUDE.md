@@ -37,4 +37,4 @@
 - `cargo test -p rs_cam_viz -q --lib` with `g_genplan`, `g_rapidframe`, `g_cachekeys`, `pin_edit_one_door_p5`,
   `d11`, `p4_7`, `p4_8`, `p4_9`, `p4_d`; `--test model_refresh_invalidates_results_g_rescalestale` (P4.8 arms)
 - `cargo test -p rs_cam_viz -q --test apply_contract_a3 --test effects_are_stamped_wp19 --test generate_all_fixpoint_parity`
-- `cargo test -p rs_cam_viz -q --test feeds_apply_drops_result_n13`, `--test a_no_op_feeds_apply_stales_nothing_b19` (B19: stamp only `Effects.stale`)
+- `cargo test -p rs_cam_viz -q --test feeds_apply_drops_result_n13`, `--test a_no_op_feeds_apply_stales_nothing_b19` (B19: stamp only `Effects.stale`), `--test one_apply_feeds_funnel_for_every_surface_f114` (the funnel applies `Command::ApplyFeeds`)

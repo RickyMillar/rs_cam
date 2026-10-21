@@ -177,6 +177,43 @@ impl Default for RigidityProfile {
     }
 }
 
+/// F002: the machine TRAVEL rate, mm/min — what rapids, links and the
+/// kinematics cruise cap can command. Only [`MachineProfile::travel_rate`]
+/// makes one; the field is private.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct TravelRateMmMin(f64);
+
+impl TravelRateMmMin {
+    /// The rate, mm/min.
+    #[must_use]
+    pub const fn mm_min(self) -> f64 {
+        self.0
+    }
+}
+
+/// F002: the ceiling of a CUTTING feed, mm/min:
+/// `max_cutting_feed_mm_min` when set, else
+/// `min(travel, DEFAULT_CUTTING_FEED_CAP_MM_MIN)`, never above the travel
+/// rate. Only [`MachineProfile::cutting_ceiling`] makes one; the field is
+/// private, so a travel rate cannot pose as a cutting cap.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub struct CuttingCeilingMmMin(f64);
+
+impl CuttingCeilingMmMin {
+    /// The ceiling, mm/min.
+    #[must_use]
+    pub const fn mm_min(self) -> f64 {
+        self.0
+    }
+
+    /// The ceiling with a floor of `floor_mm_min` (the `.max(1.0)` guard the
+    /// sim and the advisor take against a zero profile).
+    #[must_use]
+    pub const fn at_least(self, floor_mm_min: f64) -> Self {
+        Self(self.0.max(floor_mm_min))
+    }
+}
+
 /// Complete machine profile for feeds calculation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -191,9 +228,10 @@ pub struct MachineProfile {
     /// / modulation all read this field as the cutting-feed cap, so a
     /// 10 000 mm/min-travel profile could be told to CUT hardwood at
     /// 10 000. Cutting consumers read
-    /// [`Self::cutting_feed_ceiling_mm_min`]. (Field name kept for
-    /// serde compatibility with existing project files and
-    /// machine-library TOMLs.)
+    /// [`Self::cutting_feed_ceiling_mm_min`] or the typed
+    /// [`Self::cutting_ceiling`]; a travel consumer can read the typed
+    /// [`Self::travel_rate`] (F002). (Field name kept: the project files
+    /// and machine-library TOMLs carry it, and the machine panel edits it.)
     pub max_feed_mm_min: f64,
     /// F4 — explicit ceiling for CUTTING feeds (optimizer search
     /// space, suggest recalibration, adaptive feed modulation).
@@ -604,9 +642,26 @@ impl MachineProfile {
     /// `min(travel, DEFAULT_CUTTING_FEED_CAP_MM_MIN)`. Never exceeds
     /// the travel rate — a cut can't outrun the axes.
     pub fn cutting_feed_ceiling_mm_min(&self) -> f64 {
-        self.max_cutting_feed_mm_min
-            .unwrap_or(DEFAULT_CUTTING_FEED_CAP_MM_MIN)
-            .min(self.max_feed_mm_min)
+        self.cutting_ceiling().mm_min()
+    }
+
+    /// F002: the cutting-feed ceiling as its own type. A consumer that caps
+    /// a CUT (the modulator) takes [`CuttingCeilingMmMin`], so the travel
+    /// rate cannot reach it by mistake.
+    #[must_use]
+    pub fn cutting_ceiling(&self) -> CuttingCeilingMmMin {
+        CuttingCeilingMmMin(
+            self.max_cutting_feed_mm_min
+                .unwrap_or(DEFAULT_CUTTING_FEED_CAP_MM_MIN)
+                .min(self.max_feed_mm_min),
+        )
+    }
+
+    /// F002: the travel rate (`max_feed_mm_min`, the $110 class) as its own
+    /// type: the rate of rapids, links and the kinematics cruise cap.
+    #[must_use]
+    pub fn travel_rate(&self) -> TravelRateMmMin {
+        TravelRateMmMin(self.max_feed_mm_min)
     }
 
     /// Acceleration-aware kinematics for estimators that opt into them —

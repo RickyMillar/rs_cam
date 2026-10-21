@@ -62,6 +62,7 @@
 use std::collections::BTreeMap;
 
 use crate::feeds::force::DeflectionCapRefusal;
+use crate::machine::CuttingCeilingMmMin;
 use crate::machine::kinematics::{MachineKinematics, predicted_feeds_for_toolpath};
 use crate::tool_load::power::PowerModelInputs;
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
@@ -286,8 +287,11 @@ pub struct ModulationContext<'a> {
     pub spindle_rpm: f64,
     /// Flute count of the active cutter. Must be ≥ 1.
     pub flute_count: u32,
-    /// Machine's `max_feed_mm_min` hard cap.
-    pub max_feed_mm_min: f64,
+    /// The machine's CUTTING-feed ceiling (F002). It is the
+    /// [`CuttingCeilingMmMin`] type, made only by
+    /// `MachineProfile::cutting_ceiling`, so the travel rate
+    /// (`MachineProfile::max_feed_mm_min`) cannot pose as the cap.
+    pub cutting_ceiling: CuttingCeilingMmMin,
     /// Rapid-move feed (mm/min) the machine emits for `G0`. Used only
     /// to thread the kinematics integrator correctly; rapids
     /// themselves are not modulated.
@@ -346,7 +350,7 @@ pub struct ModulationContext<'a> {
 pub enum ModulationError {
     /// `engagements` length didn't match `toolpath.moves.len()`.
     EngagementLengthMismatch,
-    /// `spindle_rpm`, `flute_count`, `max_feed_mm_min`, or `rapid_feed_mm_min`
+    /// `spindle_rpm`, `flute_count`, `cutting_ceiling`, or `rapid_feed_mm_min`
     /// was non-positive or non-finite.
     InvalidContext,
 }
@@ -610,7 +614,10 @@ fn max_safe_feed_for_move(
     }
 
     // 4. Machine-feed hard cap.
-    limits.push((ctx.max_feed_mm_min, BindingConstraint::MachineMaxFeed));
+    limits.push((
+        ctx.cutting_ceiling.mm_min(),
+        BindingConstraint::MachineMaxFeed,
+    ));
 
     // 5. Kinematic-reach cap.
     if predicted_cap_mm_min.is_finite() && predicted_cap_mm_min > 0.0 {
@@ -622,7 +629,10 @@ fn max_safe_feed_for_move(
         .into_iter()
         .filter(|(v, _)| v.is_finite() && *v > 0.0)
         .min_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-        .unwrap_or((ctx.max_feed_mm_min, BindingConstraint::MachineMaxFeed));
+        .unwrap_or((
+            ctx.cutting_ceiling.mm_min(),
+            BindingConstraint::MachineMaxFeed,
+        ));
 
     // A2 (point mode): a pin arm pins to `v`, which is also the chipload
     // cap, so the two tie. `min_by` keeps the first entry of a tie, which
@@ -662,7 +672,7 @@ fn max_safe_feed_for_move(
     // binding so the diagnostic surface names the load-bearing
     // physical constraint, not the floor we backed off to.
     let floor = band.min_mm_per_tooth * ctx.spindle_rpm * flutes;
-    let effective_floor = floor.min(ctx.max_feed_mm_min);
+    let effective_floor = floor.min(ctx.cutting_ceiling.mm_min());
     if after_scale < effective_floor {
         let new_binding = if limit > effective_floor {
             BindingConstraint::ChiploadMin
@@ -754,10 +764,10 @@ fn band_mid_feed_for_move(
         // is always clamped back).
         let ceiling = band.max_mm_per_tooth * ctx.spindle_rpm * flutes;
         let feed = ceiling
-            .min(ctx.max_feed_mm_min)
+            .min(ctx.cutting_ceiling.mm_min())
             .min(predicted_cap_mm_min)
             .max(0.0);
-        let binding = if (feed - ctx.max_feed_mm_min).abs() < 1e-6 {
+        let binding = if (feed - ctx.cutting_ceiling.mm_min()).abs() < 1e-6 {
             BindingConstraint::MachineMaxFeed
         } else if (feed - ceiling).abs() < 1e-6 {
             BindingConstraint::ChiploadMax
@@ -773,7 +783,8 @@ fn band_mid_feed_for_move(
     let band_ceiling = band.max_mm_per_tooth * ctx.spindle_rpm * flutes;
 
     let cap = ctx
-        .max_feed_mm_min
+        .cutting_ceiling
+        .mm_min()
         .min(band_ceiling)
         .min(predicted_cap_mm_min.max(band_floor));
     if cap < band_floor {
@@ -784,7 +795,7 @@ fn band_mid_feed_for_move(
     // ceiling (or another candidate) at the same clamped value, the feed
     // is genuinely machine-limited and the diagnostic should say so
     // rather than falling through to the first tied arm (ChiploadMax).
-    let binding = if (clamped - ctx.max_feed_mm_min).abs() < 1e-6 {
+    let binding = if (clamped - ctx.cutting_ceiling.mm_min()).abs() < 1e-6 {
         BindingConstraint::MachineMaxFeed
     } else if (clamped - band_ceiling).abs() < 1e-6 {
         BindingConstraint::ChiploadMax
@@ -859,8 +870,8 @@ pub fn adaptive_feed_modulate_with_materials(
     if !ctx.spindle_rpm.is_finite()
         || ctx.spindle_rpm <= 0.0
         || ctx.flute_count == 0
-        || !ctx.max_feed_mm_min.is_finite()
-        || ctx.max_feed_mm_min <= 0.0
+        || !ctx.cutting_ceiling.mm_min().is_finite()
+        || ctx.cutting_ceiling.mm_min() <= 0.0
         || !ctx.rapid_feed_mm_min.is_finite()
         || ctx.rapid_feed_mm_min <= 0.0
     {
@@ -873,10 +884,16 @@ pub fn adaptive_feed_modulate_with_materials(
     // returns the geometric reach, not commanded-clipped reach.
     // Bandless: probe at the machine ceiling — there is no band
     // ceiling to fold in.
-    let band_ceiling_feed = ctx.chipload_band.map_or(ctx.max_feed_mm_min, |band| {
-        band.max_mm_per_tooth * ctx.spindle_rpm * ctx.flute_count.max(1) as f64
-    });
-    let probe_feed = ctx.max_feed_mm_min.min(band_ceiling_feed).max(1e-3);
+    let band_ceiling_feed = ctx
+        .chipload_band
+        .map_or(ctx.cutting_ceiling.mm_min(), |band| {
+            band.max_mm_per_tooth * ctx.spindle_rpm * ctx.flute_count.max(1) as f64
+        });
+    let probe_feed = ctx
+        .cutting_ceiling
+        .mm_min()
+        .min(band_ceiling_feed)
+        .max(1e-3);
     let mut probe = toolpath.clone();
     for m in probe.moves.iter_mut() {
         m.move_type = m.move_type.with_feed_rate(probe_feed);
@@ -884,7 +901,7 @@ pub fn adaptive_feed_modulate_with_materials(
     let predicted = predicted_feeds_for_toolpath(
         &probe,
         ctx.kinematics,
-        ctx.max_feed_mm_min,
+        ctx.cutting_ceiling.mm_min(),
         ctx.rapid_feed_mm_min,
     );
 
@@ -905,7 +922,7 @@ pub fn adaptive_feed_modulate_with_materials(
         let predicted_cap = predicted
             .get(&i)
             .copied()
-            .unwrap_or(ctx.max_feed_mm_min)
+            .unwrap_or(ctx.cutting_ceiling.mm_min())
             .max(1e-3);
 
         // S6: an own-material move reads its own band and caps; a
@@ -945,7 +962,7 @@ pub fn adaptive_feed_modulate_with_materials(
             // a band gate it could never pass. Same binding tag as the
             // banded no-engagement arm, for consistency.
             (_, None) => (
-                commanded.min(ctx.max_feed_mm_min),
+                commanded.min(ctx.cutting_ceiling.mm_min()),
                 BindingConstraint::MachineMaxFeed,
             ),
             (ModulationStrategy::BandMid, Some(band)) => {
@@ -1019,11 +1036,22 @@ mod tests {
         MachineKinematics::shapeoko_xxl_stock()
     }
 
+    /// A cutting ceiling of `mm_min`, made the one way: a profile whose
+    /// travel rate and explicit cutting cap are both `mm_min` (F002).
+    fn ceiling(mm_min: f64) -> CuttingCeilingMmMin {
+        crate::machine::MachineProfile {
+            max_feed_mm_min: mm_min,
+            max_cutting_feed_mm_min: Some(mm_min),
+            ..crate::machine::MachineProfile::default()
+        }
+        .cutting_ceiling()
+    }
+
     fn make_ctx<'a>(k: &'a MachineKinematics, band: ChiploadBand) -> ModulationContext<'a> {
         ModulationContext {
             spindle_rpm: 18_000.0,
             flute_count: 2,
-            max_feed_mm_min: 4000.0,
+            cutting_ceiling: ceiling(4000.0),
             rapid_feed_mm_min: 5000.0,
             chipload_band: Some(band),
             kinematics: k,
@@ -1171,7 +1199,7 @@ mod tests {
             ModulationError::InvalidContext
         );
         let mut ctx = make_ctx(&k, band());
-        ctx.max_feed_mm_min = f64::NAN;
+        ctx.cutting_ceiling = ceiling(f64::NAN);
         assert_eq!(
             adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap_err(),
             ModulationError::InvalidContext
@@ -1391,7 +1419,7 @@ mod tests {
         ctx.strategy = ModulationStrategy::BandMid;
         // band_ceiling = 0.08 * 18000 * 2 = 2880 — tie the machine cap
         // to it exactly.
-        ctx.max_feed_mm_min = 2880.0;
+        ctx.cutting_ceiling = ceiling(2880.0);
         let engagement = PerMoveEngagement {
             radial_woc_fraction: 0.01,
             axial_doc_fraction: 1.0,
@@ -1444,7 +1472,7 @@ mod tests {
         ];
         let k = shapeoko();
         let mut ctx = make_ctx(&k, band());
-        ctx.max_feed_mm_min = 500.0;
+        ctx.cutting_ceiling = ceiling(500.0);
         ctx.strategy = ModulationStrategy::ConstrainedMax;
         adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
         for m in &tp.moves {
@@ -1513,7 +1541,8 @@ mod tests {
         let k = shapeoko();
         let mut ctx = make_ctx(&k, band());
         ctx.strategy = ModulationStrategy::ConstrainedMax;
-        let predicted_pre = predicted_feeds_for_toolpath(&tp, &k, ctx.max_feed_mm_min, 5000.0);
+        let predicted_pre =
+            predicted_feeds_for_toolpath(&tp, &k, ctx.cutting_ceiling.mm_min(), 5000.0);
         adaptive_feed_modulate(&mut tp, &engagements, &ctx).unwrap();
         for (idx, m) in tp.moves.iter().enumerate() {
             if matches!(m.move_type, MoveType::Rapid) {

@@ -54,6 +54,20 @@ pub enum ApplyScope {
     Both,
 }
 
+impl ApplyScope {
+    /// The scope writes feed, plunge and RPM (`Speeds`, `Both`).
+    #[must_use]
+    pub const fn writes_speeds(self) -> bool {
+        matches!(self, Self::Speeds | Self::Both)
+    }
+
+    /// The scope writes stepover and depth per pass (`CutGeometry`, `Both`).
+    #[must_use]
+    pub const fn writes_geometry(self) -> bool {
+        matches!(self, Self::CutGeometry | Self::Both)
+    }
+}
+
 /// Apply the calculator's recommendation to `operation`, writing back only the
 /// requested [`ApplyScope`].
 ///
@@ -233,8 +247,8 @@ fn apply_feeds_subset(
         enforce_invariants(&mut scratch, tool, machine, material, pass_role, enriched)
     };
 
-    let write_speeds = matches!(subset, ApplyScope::Speeds | ApplyScope::Both);
-    let write_geometry = matches!(subset, ApplyScope::CutGeometry | ApplyScope::Both);
+    let write_speeds = subset.writes_speeds();
+    let write_geometry = subset.writes_geometry();
     // G10 (2026-09-25): the plunge is a rule of the feed that ships. Pass 9,
     // pass 10 and an explored feed can move the feed after the calculator,
     // so the funnel runs the rule again at the final feed. It writes the
@@ -357,7 +371,7 @@ fn apply_feeds_subset(
     // (W2.1), gated to the subset we wrote. enforce_invariants may have
     // recalibrated feed/DPP, but the values remain suggest-derived, so the
     // source labels still hold.
-    provenance.apply_suggested_subset(result, operation, rpm_written, write_speeds, write_geometry);
+    provenance.apply_suggested_subset(result, operation, rpm_written, subset);
     // G10: the plunge stamp names the term that binds at the feed that
     // ships, which can differ from the calculator's feed.
     if let Some((_, binding)) = plunge_binding
@@ -371,8 +385,11 @@ fn apply_feeds_subset(
     warnings
 }
 
-/// Apply the full recommendation — both speeds and cut geometry. The canonical
-/// suggest funnel (`suggest_for_operation`, CLI, the GUI "Apply all").
+/// Apply the full recommendation — both speeds and cut geometry — from a raw
+/// [`FeedsResult`]. F042: a test door (`test-support`, F085). It needs no
+/// [`ApplicableRecommendation`], so no production build can call it; every
+/// production write goes through [`apply`]. The three raw-result doors let
+/// an instrument pin a result it sized itself against the three scopes.
 ///
 /// Values are rounded for UI-friendly display before clamping, matching the
 /// historical Suggest-button behaviour.
@@ -387,6 +404,7 @@ fn apply_feeds_subset(
 // funnel needs the operation, the provenance, the result, tool/machine/material,
 // pass_role and context together.
 #[allow(clippy::too_many_arguments)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn apply_feeds_result_to_op(
     operation: &mut OperationConfig,
     provenance: &mut crate::feeds::FeedsProvenance,
@@ -413,11 +431,13 @@ pub fn apply_feeds_result_to_op(
 
 /// Apply only the recommended *speeds* (feed / plunge / RPM), leaving the cut
 /// geometry (stepover / DOC) and its provenance untouched. The "Apply
-/// recommended speeds" action — speed-only by construction (W3.1).
+/// recommended speeds" action — speed-only by construction (W3.1). F042: a
+/// test door (`test-support`); production writes through [`apply`].
 // SAFETY: this door forwards the whole funnel argument list — operation,
 // provenance, result, tool/machine/material, pass_role and context — to
 // `apply_feeds_subset`, so it cannot carry fewer arguments.
 #[allow(clippy::too_many_arguments)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn apply_speeds_to_op(
     operation: &mut OperationConfig,
     provenance: &mut crate::feeds::FeedsProvenance,
@@ -444,11 +464,13 @@ pub fn apply_speeds_to_op(
 
 /// Apply only the recommended *cut geometry* (stepover / DOC), leaving the
 /// speeds and their provenance untouched. The attributed "Apply cut" action
-/// (W3.1) — kept distinct because changing DOC/WOC changes the cut.
+/// (W3.1) — kept distinct because changing DOC/WOC changes the cut. F042: a
+/// test door (`test-support`); production writes through [`apply`].
 // SAFETY: this door forwards the whole funnel argument list — operation,
 // provenance, result, tool/machine/material, pass_role and context — to
 // `apply_feeds_subset`, so it cannot carry fewer arguments.
 #[allow(clippy::too_many_arguments)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn apply_cut_geometry_to_op(
     operation: &mut OperationConfig,
     provenance: &mut crate::feeds::FeedsProvenance,
@@ -724,13 +746,22 @@ impl FeedsPreview {
     /// call the same calculator on the same [`FeedsInput`]. Pinned by
     /// `preview_recommendation_is_bit_identical_to_validated_recipe`.
     pub fn applicable(&self) -> Option<ApplicableRecommendation<'_>> {
-        if self.refusal.is_some() {
-            return None;
+        self.try_applicable().ok()
+    }
+
+    /// As [`Self::applicable`], with the refusal in the `Err` arm.
+    ///
+    /// # Errors
+    ///
+    /// The recorded refusal, when the pairing was refused.
+    pub fn try_applicable(&self) -> Result<ApplicableRecommendation<'_>, FeedsError> {
+        match &self.refusal {
+            Some(refusal) => Err(refusal.clone()),
+            None => Ok(ApplicableRecommendation {
+                result: std::borrow::Cow::Borrowed(&self.explain.recommended),
+                speeds_explored: false,
+            }),
         }
-        Some(ApplicableRecommendation {
-            result: std::borrow::Cow::Borrowed(&self.explain.recommended),
-            speeds_explored: false,
-        })
     }
 }
 
@@ -750,6 +781,20 @@ pub struct ApplicableRecommendation<'a> {
     /// [`SuggestContext::calculator_operating_point`] so the pass-9 rescale
     /// finds no derivation to reconcile and leaves the dialled value alone.
     speeds_explored: bool,
+}
+
+impl<'a> ApplicableRecommendation<'a> {
+    /// F042: a recommendation for a result that
+    /// [`super::feeds_result_for_operation`] returned. That door runs
+    /// [`crate::feeds::validate_tool_for_operation`] before it calculates,
+    /// so the result is validated. Crate-private: only that door's callers
+    /// in `feeds::suggest` mint one this way.
+    pub(super) fn validated(result: &'a FeedsResult) -> Self {
+        Self {
+            result: std::borrow::Cow::Borrowed(result),
+            speeds_explored: false,
+        }
+    }
 }
 
 impl ApplicableRecommendation<'_> {
@@ -809,15 +854,23 @@ pub struct ApplyContext<'a> {
     pub suggest: SuggestContext<'a>,
 }
 
-/// **The single write.** Every apply surface — properties panel, Feeds &
-/// Speeds modal, the modal's project batch, the MCP `apply_feeds` tool, the
-/// CLI — reaches an `OperationConfig` through here, and this always runs
-/// `enforce_invariants`.
+/// **The single write.** Every apply surface — the Feeds & Speeds modal,
+/// the modal's project batch, the MCP `apply_feeds` tool and the CLI
+/// `--apply-suggest` through `Command::ApplyFeeds` ([`apply_to_operation`]),
+/// and the add doors through [`super::suggest_for_operation`] — reaches an
+/// `OperationConfig` through here, and this always runs `enforce_invariants`.
 ///
 /// Because the only `ApplicableRecommendation` in existence came out of a
-/// [`FeedsPreview`] whose validation succeeded, a refused pairing cannot reach
-/// this function at all; and because there is one function, a write cannot
-/// skip the clamps.
+/// [`FeedsPreview`] whose validation succeeded (or out of
+/// [`ApplicableRecommendation::validated`], after the same validation), a
+/// refused pairing cannot reach this function at all; and because there is
+/// one function, a write cannot skip the clamps.
+///
+/// F114: a scope that writes the cut geometry also writes the drill-cycle
+/// defaults ([`apply_drill_defaults`]): the peck depth is cut geometry.
+/// Before F114 only the CLI wrote them, so a Drill or AlignmentPinDrill
+/// `peck_depth` differed by surface. `ctx.suggest.stock` gives the pin
+/// family its hole depth; with `None` the pin peck is not capped.
 pub fn apply(
     rec: &ApplicableRecommendation<'_>,
     scope: ApplyScope,
@@ -825,7 +878,7 @@ pub fn apply(
     provenance: &mut crate::feeds::FeedsProvenance,
     ctx: ApplyContext<'_>,
 ) -> Vec<SuggestWarning> {
-    apply_feeds_subset(
+    let warnings = apply_feeds_subset(
         operation,
         provenance,
         rec.result(),
@@ -836,7 +889,83 @@ pub fn apply(
         ctx.suggest,
         scope,
         rec.speeds_explored,
-    )
+    );
+    if scope.writes_geometry() {
+        apply_drill_defaults(operation, ctx.tool, ctx.material, ctx.suggest.stock);
+    }
+    warnings
+}
+
+/// A feed and an RPM the operator dragged on the explore chart (the
+/// nomogram), for [`ApplicableRecommendation::with_explored_speeds`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExploredSpeeds {
+    /// The dragged feed, mm/min.
+    pub feed_mm_min: f64,
+    /// The dragged spindle speed, rev/min.
+    pub rpm: f64,
+}
+
+/// The project inputs of [`apply_to_operation`]: the tool, the machine,
+/// the stock material, the post spindle strategy and the project slots of
+/// the Suggest context.
+#[derive(Clone, Copy)]
+pub struct OperationApplyInput<'a> {
+    pub tool: &'a ToolConfig,
+    pub machine: &'a MachineProfile,
+    pub material: &'a Material,
+    pub spindle_strategy: crate::feeds::SpindleStrategy,
+    pub lut: &'a VendorLut,
+    /// The project slots: the model bbox, the stock and the dressups.
+    pub suggest: SuggestContext<'a>,
+}
+
+/// F114: THE Apply-Suggest funnel for an existing operation. It builds the
+/// preview, refuses a pairing Suggest refuses, takes the explored speeds
+/// when given, and runs [`apply`] (which writes the drill defaults under a
+/// geometry scope). `Command::ApplyFeeds` calls it on a draft, so the GUI,
+/// MCP and CLI write the same values for the same state.
+///
+/// # Errors
+///
+/// [`FeedsError::ToolOutOfDomain`] for a tool that builds no cutter, and
+/// the refusal of [`crate::feeds::validate_tool_for_operation`]. Nothing is
+/// written then.
+pub fn apply_to_operation(
+    input: OperationApplyInput<'_>,
+    scope: ApplyScope,
+    explored: Option<ExploredSpeeds>,
+    operation: &mut OperationConfig,
+    provenance: &mut crate::feeds::FeedsProvenance,
+) -> Result<Vec<SuggestWarning>, FeedsError> {
+    input.tool.validate().map_err(FeedsError::ToolOutOfDomain)?;
+    let preview = feeds_preview_for_operation(
+        operation,
+        input.tool,
+        input.material,
+        input.machine,
+        input.lut,
+        input.spindle_strategy,
+    );
+    let rec = preview.try_applicable()?;
+    let rec = match explored {
+        Some(speeds) => rec.with_explored_speeds(speeds.feed_mm_min, speeds.rpm),
+        None => rec,
+    };
+    let pass_role = operation.feeds_style().1;
+    Ok(apply(
+        &rec,
+        scope,
+        operation,
+        provenance,
+        ApplyContext {
+            tool: input.tool,
+            machine: input.machine,
+            material: input.material,
+            pass_role,
+            suggest: input.suggest,
+        },
+    ))
 }
 
 /// Run the funnel's **clamp stage** over an operation that has just been
@@ -853,7 +982,8 @@ pub fn apply(
 /// `context.chipload_bounds`; with the default context that pass
 /// short-circuits, which is what an accepted operator choice should get: the
 /// safety clamps, not a substitute number.
-pub fn resolve_operation_invariants(
+#[cfg(test)]
+pub(crate) fn resolve_operation_invariants(
     operation: &mut OperationConfig,
     tool: &ToolConfig,
     machine: &MachineProfile,
