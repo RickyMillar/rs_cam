@@ -650,3 +650,13 @@ Defects found by the design:
 - D-B: `gcode/mod.rs` maps Outside + climb to G42 (looks swapped; no
   effect without controller compensation). Checked in P6.1.
 - D-A is O-1; D-D is O-3.
+- P6.0 (e1dfa30e, SAFETY) done: the offset chokepoint flattens arc joins
+  on the arc (<= 0.010 mm); 11 golden cases re-blessed by name.
+- Lead ruling F033b: for an op whose ladder includes its top
+  (Waterline, Ramp Finish, Steep and Shallow: `LadderMode::ConstantStep`),
+  top = bottom is one level, not an inverted stack; F033 must not refuse
+  it. A `Capabilities` field states it (W2.4: no match on the op type).
+  Reason: before F033 such an op cut one contour; F033 made it refuse.
+- Next: F033b, then P6.0b (the 0.039 mm corner intrusion that the
+  default Profile dressups leave: segment merge / arc fit on a finished
+  edge), then P6.1-P6.8.
