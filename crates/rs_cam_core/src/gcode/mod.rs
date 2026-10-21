@@ -96,6 +96,13 @@ pub enum ExportRefusal {
     /// A1: the effective units are inch, which the emitter does not
     /// convert.
     InchUnits,
+    /// F005 follow-up: a cutting move of these operations has a feed that
+    /// is not finite or not above zero. The emitter would write `F0.0` or
+    /// `FNaN`, which a controller reads as no motion or rejects.
+    BadFeed {
+        /// The operations whose toolpath holds such a move.
+        operations: Vec<String>,
+    },
     /// G1: an operation asks for controller cutter compensation on a post
     /// that has none.
     ControllerCompensation {
@@ -138,9 +145,10 @@ impl ExportRefusal {
     #[must_use]
     pub fn override_needed(&self) -> Option<LoadOverride> {
         match self {
-            Self::InchUnits | Self::ControllerCompensation { .. } | Self::HeightOrder { .. } => {
-                None
-            }
+            Self::InchUnits
+            | Self::BadFeed { .. }
+            | Self::ControllerCompensation { .. }
+            | Self::HeightOrder { .. } => None,
             Self::LoadExceeded { .. } => Some(LoadOverride::AcceptExceeded),
             Self::LoadUnmodeled { .. } | Self::StaleSimulation { .. } => {
                 Some(LoadOverride::AcceptUnmodeled)
@@ -156,6 +164,12 @@ impl ExportRefusal {
             Self::InchUnits => "inch output not yet supported — coordinates are millimeters; \
                  set units back to mm (G21) to export"
                 .to_owned(),
+            Self::BadFeed { operations } => format!(
+                "a cutting move has a feed that is not a finite number above zero in: {}. \
+                 The file would command F0 or FNaN. Set the feed of the operation and \
+                 regenerate",
+                operations.join(", ")
+            ),
             Self::ControllerCompensation { post, operations } => format!(
                 "{post} has no cutter compensation (G41/G42), but {} set compensation to \
                  \"In Control\": {}. The cut would be off by the tool radius. \
@@ -199,9 +213,8 @@ impl ExportRefusal {
                 msg.trim_end().to_owned()
             }
             Self::HeightOrder { rows } => {
-                let mut msg = String::from(
-                    "G-code export refused: the height planes are out of order:\n",
-                );
+                let mut msg =
+                    String::from("G-code export refused: the height planes are out of order:\n");
                 for line in rows {
                     let _ = writeln!(msg, "{line}");
                 }
@@ -215,9 +228,10 @@ impl Display for ExportRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.body())?;
         match self {
-            Self::InchUnits | Self::ControllerCompensation { .. } | Self::HeightOrder { .. } => {
-                Ok(())
-            }
+            Self::InchUnits
+            | Self::BadFeed { .. }
+            | Self::ControllerCompensation { .. }
+            | Self::HeightOrder { .. } => Ok(()),
             Self::LoadExceeded { .. } => write!(
                 f,
                 "\nTo override (a known-dangerous override): {}.",
@@ -1195,6 +1209,7 @@ pub fn emit_checked(
     overlay: &WizardOverlay,
 ) -> Result<CheckedProgram, ExportRefusal> {
     refuse_inch_units(post, overlay)?;
+    refuse_bad_feeds(phases.phases().into_iter())?;
     refuse_controller_compensation(phases.phases().into_iter(), post, overlay)?;
     let load_outcome = enforce_load_policy(report, &policy)?;
     let gcode = match phases {
@@ -1219,6 +1234,32 @@ fn refuse_inch_units(post: &PostDefinition, overlay: &WizardOverlay) -> Result<(
         return Err(ExportRefusal::InchUnits);
     }
     Ok(())
+}
+
+/// F005 follow-up: refuse a phase whose toolpath holds a cutting move with
+/// a feed that is not finite or not above zero. The IR `Feedrate` takes
+/// the toolpath feed unchecked (`from_toolpath`), so this is the one check
+/// before the bytes.
+fn refuse_bad_feeds<'a, 'b: 'a>(
+    phases: impl Iterator<Item = &'a GcodePhase<'b>>,
+) -> Result<(), ExportRefusal> {
+    use crate::toolpath::MoveType;
+    let bad = |feed_rate: f64| !(feed_rate.is_finite() && feed_rate > 0.0);
+    let operations: Vec<String> = phases
+        .filter(|p| {
+            p.toolpath.moves.iter().any(|m| match m.move_type {
+                MoveType::Rapid => false,
+                MoveType::Linear { feed_rate }
+                | MoveType::ArcCW { feed_rate, .. }
+                | MoveType::ArcCCW { feed_rate, .. } => bad(feed_rate),
+            })
+        })
+        .map(|p| p.label.to_owned())
+        .collect();
+    if operations.is_empty() {
+        return Ok(());
+    }
+    Err(ExportRefusal::BadFeed { operations })
 }
 
 /// G1 (SAFETY, 2026-10-08): refuse a phase that asks the controller for
@@ -2998,6 +3039,50 @@ mod tests {
         tp.rapid_to(P3::new(0.0, 0.0, 10.0));
         tp.feed_to(P3::new(10.0, 0.0, 0.0), 1000.0);
         tp
+    }
+
+    /// F005 follow-up: a cutting move whose feed is zero, negative or not
+    /// finite refuses the export and names the operation; a good feed
+    /// exports. The IR takes the toolpath feed unchecked, so this check is
+    /// the only one before the bytes.
+    #[test]
+    fn a_feed_that_is_not_finite_above_zero_refuses_the_export() {
+        let permissive = ToolLoadExportPolicy {
+            accept_unmodeled: true,
+            accept_exceeded: true,
+        };
+        let report = crate::tool_load::ToolLoadReport {
+            per_toolpath: Vec::new(),
+        };
+        fn phase(tp: &Toolpath) -> GcodePhase<'_> {
+            GcodePhase {
+                toolpath: tp,
+                spindle_rpm: 18_000,
+                label: "Op 0",
+                pre_gcode: None,
+                post_gcode: None,
+                tool: None,
+                coolant: CoolantMode::Off,
+                controller_compensation: None,
+                drill: None,
+                feeds: None,
+            }
+        }
+        let overlay = WizardOverlay::default();
+        for bad in [0.0, -5.0, f64::NAN, f64::INFINITY] {
+            let mut tp = Toolpath::new();
+            tp.rapid_to(P3::new(0.0, 0.0, 10.0));
+            tp.feed_to(P3::new(10.0, 0.0, 0.0), bad);
+            let err = checked_one(&[phase(&tp)], post::grbl(), &report, permissive, &overlay)
+                .expect_err("a bad feed must refuse");
+            assert!(
+                matches!(&err, ExportRefusal::BadFeed { operations } if operations == &["Op 0"]),
+                "feed {bad}: {err}"
+            );
+        }
+        let tp = one_phase_fixture();
+        let ok = checked_one(&[phase(&tp)], post::grbl(), &report, permissive, &overlay);
+        assert!(ok.is_ok(), "a finite feed above zero exports: {ok:?}");
     }
 
     #[test]
