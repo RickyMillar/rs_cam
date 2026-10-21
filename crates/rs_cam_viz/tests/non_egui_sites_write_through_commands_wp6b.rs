@@ -82,7 +82,9 @@ const CLI_ADOPTED_ROWS: &[&str] = &[
     "set_stock_config",
     "set_spindle_strategy",
     "set_machine_kinematics",
-    "replace_toolpath_config",
+    // F114 (W10): the CLI `--apply-suggest` site moved from
+    // `replace_toolpath_config` to the one Apply-Suggest row.
+    "apply_feeds",
     "set_toolpath_enabled",
 ];
 

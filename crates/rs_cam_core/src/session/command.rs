@@ -544,7 +544,9 @@ macro_rules! for_each_command {
                  mcp: Reach::Skip(
                      "the MCP door edits one named parameter through set_toolpath_param",
                  ),
-                 cli: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the CLI writes Suggest through apply_feeds (F114) and job keys through the per-parameter setters",
+                 ),
              }),
             // F114: THE Apply-Suggest funnel. The GUI modal, the MCP
             // `apply_feeds` tool and the CLI `--apply-suggest` all apply it.
