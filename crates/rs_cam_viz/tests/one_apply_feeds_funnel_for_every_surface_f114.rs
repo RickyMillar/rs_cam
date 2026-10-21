@@ -117,10 +117,10 @@ fn peck(op: &OperationConfig) -> Option<f64> {
 /// Apply `scope` to every toolpath through the GUI and MCP door.
 fn through_the_controller(scope: ApplyScope) -> ProjectSession {
     let mut controller = AppController::new();
-    controller.state.session = session();
+    controller.state.replace_session(session());
     let ids: Vec<_> = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| tc.id)
@@ -130,7 +130,7 @@ fn through_the_controller(scope: ApplyScope) -> ProjectSession {
             .apply_feeds_recommendation(id, scope)
             .expect("a flat end mill runs every fixture op");
     }
-    controller.state.session
+    controller.state.session().clone()
 }
 
 /// Apply `scope` to every toolpath as the CLI does: the core row.

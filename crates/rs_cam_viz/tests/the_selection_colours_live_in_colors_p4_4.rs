@@ -251,8 +251,8 @@ fn a_report_change_uploads_once_p4_4() {
         .add_toolpath(0, toolpath(OperationType::Pocket))
         .unwrap();
     let mut state = AppState::new();
-    state.session = builder.build();
-    let id = state.session.toolpath_configs()[0].id;
+    state.replace_session(builder.build());
+    let id = state.session().toolpath_configs()[0].id;
     state.selection = UiSelection::Toolpath(id);
 
     // The frame loop's call, frame by frame.
@@ -273,7 +273,6 @@ fn a_report_change_uploads_once_p4_4() {
         );
     }
     let _ = state
-        .session
         .apply(Command::EditSelection(EditSelectionArgs {
             index: 0,
             target: SelectionTarget::Op,

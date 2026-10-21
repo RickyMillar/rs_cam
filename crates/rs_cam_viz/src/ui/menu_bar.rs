@@ -96,13 +96,13 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                         ui.close();
                         events.push(AppEvent::Ui(UiCommand::ExportGcode(NoArgs)));
                     }
-                    if state.session.list_setups().len() > 1 {
+                    if state.session().list_setups().len() > 1 {
                         if ui.button("Combined (M0 pauses)").clicked() {
                             ui.close();
                             events.push(AppEvent::ExportCombinedGcode);
                         }
                         ui.separator();
-                        for setup in state.session.list_setups() {
+                        for setup in state.session().list_setups() {
                             let label = format!("Setup: {}", setup.name);
                             if ui.button(&label).clicked() {
                                 ui.close();
@@ -178,8 +178,8 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 }
                 // A whole-project proposal the operator inspects and then
                 // accepts or rejects.
-                let planner_enabled = state.session.tools().len() >= 2
-                    && state.session.models().iter().any(|m| m.mesh.is_some())
+                let planner_enabled = state.session().tools().len() >= 2
+                    && state.session().models().iter().any(|m| m.mesh.is_some())
                     && !state.is_job_running();
                 if ui
                     .add_enabled(
@@ -221,7 +221,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             ui.menu_button("Simulation", |ui| {
                 // `ui/CLAUDE.md`: every Run Simulation button reads the one
                 // buildable predicate, as the workspace primary does.
-                let can_run = super::readiness::simulation_request_is_buildable(&state.session);
+                let can_run = super::readiness::simulation_request_is_buildable(state.session());
                 if ui
                     .add_enabled(can_run, egui::Button::new("Run Simulation"))
                     .on_disabled_hover_text(

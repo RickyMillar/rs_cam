@@ -105,7 +105,7 @@ fn controller_with_a_disabled_op() -> (AppController<RecordingBackend>, Arc<Mute
             .add_toolpath(0, toolpath(id, enabled))
             .expect("add op");
     }
-    controller.state.session = builder.build();
+    controller.state.replace_session(builder.build());
     (controller, log)
 }
 
@@ -123,7 +123,7 @@ fn generate_all_without_a_chain_submits_only_enabled_ops() {
 
     controller.handle_internal_event(AppEvent::GenerateAll);
 
-    let generates: Vec<ToolpathId> = plan(&controller.state.session, Scope::Project)
+    let generates: Vec<ToolpathId> = plan(controller.state.session(), Scope::Project)
         .into_iter()
         .filter_map(|step| match step {
             Step::Generate { toolpath, .. } => Some(toolpath),
@@ -164,7 +164,7 @@ fn generate_all_with_nothing_enabled_tells_the_operator() {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_toolpath(0, toolpath(0, false)).expect("add op");
-    controller.state.session = builder.build();
+    controller.state.replace_session(builder.build());
 
     controller.handle_internal_event(AppEvent::GenerateAll);
     for event in controller.drain_events() {

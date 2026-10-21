@@ -49,7 +49,7 @@ use rs_cam_viz::compute::{
 };
 use rs_cam_viz::controller::AppController;
 use rs_cam_viz::state::freshness::{FreshnessState, freshness_at};
-use rs_cam_viz::state::runtime::{ComputeStatus, ToolpathRuntime};
+use rs_cam_viz::state::runtime::ToolpathRuntime;
 use rs_cam_viz::state::toolpath::ToolpathResult;
 use rs_cam_viz::ui::AppEvent;
 
@@ -151,12 +151,11 @@ fn build_controller() -> AppController<SilentBackend> {
     let mut builder =
         ProjectSessionBuilder::new().tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
     let _ = builder.add_toolpath(0, toolpath()).expect("add toolpath");
-    controller.state.session = builder.build();
+    controller.state.replace_session(builder.build());
 
-    let revision = controller.state.session.toolpath_revision(0);
+    let revision = controller.state.session().toolpath_revision(0);
     let _ = controller
         .state
-        .session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,
             revision,
@@ -164,20 +163,19 @@ fn build_controller() -> AppController<SilentBackend> {
         }))
         .expect("seed the core result");
 
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
     let mut rt = ToolpathRuntime::new(true);
-    rt.status = ComputeStatus::Done;
-    rt.result = Some(viz_result());
+    rt.run = rs_cam_viz::state::runtime::ToolpathRun::Done(viz_result());
     controller.state.gui.toolpath_rt.insert(id, rt);
     controller
 }
 
 fn id_of(controller: &AppController<SilentBackend>) -> rs_cam_core::ToolpathId {
-    controller.state.session.toolpath_configs()[0].id
+    controller.state.session().toolpath_configs()[0].id
 }
 
 fn op_of(controller: &AppController<SilentBackend>) -> OperationConfig {
-    controller.state.session.toolpath_configs()[0]
+    controller.state.session().toolpath_configs()[0]
         .operation
         .clone()
 }
@@ -282,11 +280,11 @@ fn apply_all_moves_the_cut_on_the_same_fixture() {
 fn the_speeds_apply_leaves_the_toolpath_stale_g_speedsonly() {
     let mut controller = build_controller();
     assert!(
-        controller.state.session.get_result(0).is_some(),
+        controller.state.session().get_result(0).is_some(),
         "fixture: the operation must hold a core result before the apply"
     );
     assert_eq!(
-        freshness_at(&controller.state.session, &controller.state.gui, 0),
+        freshness_at(controller.state.session(), &controller.state.gui, 0),
         Some(FreshnessState::Current),
         "fixture: the operation must read Current before the apply"
     );
@@ -301,12 +299,12 @@ fn the_speeds_apply_leaves_the_toolpath_stale_g_speedsonly() {
         "the apply wrote nothing, so the staleness claim is vacuous"
     );
     assert!(
-        controller.state.session.get_result(0).is_none(),
+        controller.state.session().get_result(0).is_none(),
         "the speeds apply kept the cached core result. Export then emits the \
          feed words of the PRE-APPLY parameter set."
     );
     assert_eq!(
-        freshness_at(&controller.state.session, &controller.state.gui, 0),
+        freshness_at(controller.state.session(), &controller.state.gui, 0),
         Some(FreshnessState::EditedSince),
         "the toolpath still reads Current after a speeds apply, so every \
          surface calls the stale geometry the answer"
@@ -327,7 +325,7 @@ fn the_speeds_apply_refuses_a_refused_pairing() {
     let mut refused = toolpath();
     refused.operation = OperationConfig::new_default(OperationType::Scallop);
     let _ = builder.add_toolpath(0, refused).expect("add toolpath");
-    controller.state.session = builder.build();
+    controller.state.replace_session(builder.build());
 
     let before = op_of(&controller);
     let id = id_of(&controller);

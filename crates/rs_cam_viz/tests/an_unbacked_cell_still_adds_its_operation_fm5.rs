@@ -58,7 +58,9 @@ fn controller_with_end_mill() -> AppController<SilentBackend> {
     // longer does, since the range widened 2026-09-25).
     let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     tool.diameter = 15.875;
-    controller.state.session = ProjectSessionBuilder::new().tool(tool).build();
+    controller
+        .state
+        .replace_session(ProjectSessionBuilder::new().tool(tool).build());
     controller
 }
 
@@ -73,16 +75,16 @@ fn toasts(controller: &AppController<SilentBackend>) -> Vec<(String, Severity)> 
 #[test]
 fn an_unbacked_cell_still_adds_its_operation_fm5() {
     let mut controller = controller_with_end_mill();
-    assert_eq!(controller.state.session.toolpath_count(), 0);
+    assert_eq!(controller.state.session().toolpath_count(), 0);
 
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::AlignmentPinDrill));
 
     assert_eq!(
-        controller.state.session.toolpath_count(),
+        controller.state.session().toolpath_count(),
         1,
         "the operation must exist although Suggest refused a recipe"
     );
-    let added = &controller.state.session.toolpath_configs()[0];
+    let added = &controller.state.session().toolpath_configs()[0];
     assert_eq!(added.operation.op_type(), OperationType::AlignmentPinDrill);
     assert!(
         added.feeds_provenance.spindle_rpm.is_none() && added.feeds_provenance.feed_rate.is_none(),
@@ -114,7 +116,7 @@ fn a_tool_rule_refusal_still_stops_the_add_fm5() {
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Scallop));
 
     assert_eq!(
-        controller.state.session.toolpath_count(),
+        controller.state.session().toolpath_count(),
         0,
         "a flat end mill cannot run Scallop; the add must stop"
     );

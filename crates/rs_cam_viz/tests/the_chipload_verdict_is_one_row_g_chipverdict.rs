@@ -330,8 +330,8 @@ fn state_for_recipe(
         .add_toolpath(0, config)
         .expect("add the chip verdict fixture");
     let mut state = AppState::new();
-    state.session = builder.build();
-    let id = state.session.toolpath_configs()[0].id;
+    state.replace_session(builder.build());
+    let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     state.selection = Selection::Toolpath(id);
     state.gui.pending_toolpath_tab =
@@ -606,24 +606,24 @@ fn power_hover(texts: &[String]) -> String {
 fn door_figure(fixture: Fixture) -> Result<PowerFigure, PowerUnmodeled> {
     use rs_cam_core::feeds::FeedsField;
     let state = state_for(fixture);
-    let tc = &state.session.toolpath_configs()[0];
-    let tool = &state.session.tools()[0];
-    let stock = state.session.stock_config();
+    let tc = &state.session().toolpath_configs()[0];
+    let tool = &state.session().tools()[0];
+    let stock = state.session().stock_config();
     let preview = feeds::suggest::feeds_preview_for_operation(
         &tc.operation,
         tool,
         &stock.material,
-        state.session.machine(),
+        state.session().machine(),
         feeds::embedded_vendor_lut(),
-        state.session.post_config().spindle_strategy,
+        state.session().post_config().spindle_strategy,
     );
     let recommended = preview.recommended();
-    let model_bbox = state.session.model_bbox(tc.model_id);
+    let model_bbox = state.session().model_bbox(tc.model_id);
     let previews = feeds::suggest::preview_field_applies(
         &tc.operation,
         recommended,
         tool,
-        state.session.machine(),
+        state.session().machine(),
         &stock.material,
         tc.operation.feeds_style().1,
         feeds::suggest::SuggestContext {
@@ -649,7 +649,7 @@ fn door_figure(fixture: Fixture) -> Result<PowerFigure, PowerUnmodeled> {
         &applied,
         tool,
         &stock.material,
-        state.session.machine(),
+        state.session().machine(),
         Some(feeds::suggest::CalculatorOperatingPoint {
             radial_width_mm: value(FeedsField::Stepover, recommended.radial_width_mm),
             axial_depth_mm: value(FeedsField::DepthPerPass, recommended.axial_depth_mm),

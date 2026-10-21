@@ -119,7 +119,7 @@ fn an_old_mini_piece_refuses_then_opens_with_one_keying_line() {
     assert_eq!(
         controller
             .state()
-            .session
+            .session()
             .stock_config()
             .alignment_pins
             .len(),

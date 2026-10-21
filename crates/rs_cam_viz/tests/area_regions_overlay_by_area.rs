@@ -32,7 +32,7 @@ use rs_cam_core::session::{
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
-use rs_cam_viz::state::runtime::{ComputeStatus, ToolpathRuntime};
+use rs_cam_viz::state::runtime::ToolpathRuntime;
 use rs_cam_viz::state::selection::Selection;
 use rs_cam_viz::state::toolpath::ToolpathResult;
 use rs_cam_viz::state::{AppState, Workspace};
@@ -46,24 +46,26 @@ fn fresh_state() -> AppState {
     let mut state = AppState::new();
     let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
-    state.session = ProjectSessionBuilder::new()
-        .tool(tool)
-        .model(LoadedModel {
-            id: MODEL,
-            path: PathBuf::from("model.stl"),
-            name: "3D".to_owned(),
-            kind: None,
-            mesh: None,
-            items: Default::default(),
-            enriched_mesh: None,
-            units: None,
-            winding_report: None,
-            load_error: None,
-            import_options: Default::default(),
-            import_report: None,
-            drawing: Default::default(),
-        })
-        .build();
+    state.replace_session(
+        ProjectSessionBuilder::new()
+            .tool(tool)
+            .model(LoadedModel {
+                id: MODEL,
+                path: PathBuf::from("model.stl"),
+                name: "3D".to_owned(),
+                kind: None,
+                mesh: None,
+                items: Default::default(),
+                enriched_mesh: None,
+                units: None,
+                winding_report: None,
+                load_error: None,
+                import_options: Default::default(),
+                import_report: None,
+                drawing: Default::default(),
+            })
+            .build(),
+    );
     state.workspace = Workspace::Toolpaths;
     state
 }
@@ -163,7 +165,6 @@ fn add(
     generated: bool,
 ) -> ToolpathId {
     let index = state
-        .session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(config(operation)),
@@ -171,13 +172,12 @@ fn add(
         .unwrap()
         .created
         .expect("the AddToolpath row reports the new index");
-    let id = state.session.toolpath_configs()[index].id;
+    let id = state.session().toolpath_configs()[index].id;
     let mut rt = ToolpathRuntime::new(true);
     if generated {
-        rt.status = ComputeStatus::Done;
         let mut annotated = AnnotatedToolpath::new(sample_path());
         annotated.produced.area_regions = map.map(Arc::new);
-        rt.result = Some(ToolpathResult {
+        rt.run = rs_cam_viz::state::runtime::ToolpathRun::Done(ToolpathResult {
             annotated: Arc::new(annotated),
             stats: Default::default(),
             debug_trace: None,

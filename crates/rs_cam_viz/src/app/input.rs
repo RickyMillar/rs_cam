@@ -104,7 +104,7 @@ impl RsCamApp {
                     let command = {
                         let s = self.controller.state_mut();
                         s.gui.mark_edited();
-                        let mut post = s.session.post_config().clone();
+                        let mut post = s.session().post_config().clone();
                         option.write(&mut post, value);
                         rs_cam_core::session::Command::SetPostConfig(
                             rs_cam_core::session::SetPostConfigArgs {
@@ -112,9 +112,9 @@ impl RsCamApp {
                             },
                         )
                     };
-                    let applied = self.controller.state_mut().session.apply(command);
+                    let applied = self.controller.apply(command);
                     match applied {
-                        Ok(effects) => self.controller.adopt_post_effects(&effects),
+                        Ok(_) => self.controller.refresh_post_mirror(),
                         Err(error) => {
                             tracing::warn!("the controller option write was refused: {error}");
                         }
@@ -128,19 +128,17 @@ impl RsCamApp {
                 AppEvent::WizardSetPost(format) => {
                     // WP19: the `Ok` arm did not exist here, so BOTH
                     // halves of the answer were dropped — the stale set
-                    // and `simulation_cleared`. `adopt_post_effects` is
-                    // the one door that mirrors both, and the save route
-                    // already takes it. It is a method on the
-                    // controller, so the borrow of the state ends before
-                    // the command runs.
+                    // and `simulation_cleared`. F096: `AppController::apply`
+                    // mirrors both. It is a method on the controller, so
+                    // the borrow of the state ends before the command runs.
                     //
-                    // SHL-01: that door now also rebuilds the post
-                    // mirror, so this arm no longer copies `format` on
-                    // by hand ahead of the write.
+                    // SHL-01: `refresh_post_mirror` rebuilds the post
+                    // mirror, so this arm does not copy `format` by hand
+                    // ahead of the write.
                     let command = {
                         let s = self.controller.state_mut();
                         s.gui.mark_edited();
-                        let mut post = s.session.post_config().clone();
+                        let mut post = s.session().post_config().clone();
                         post.format = format;
                         rs_cam_core::session::Command::SetPostConfig(
                             rs_cam_core::session::SetPostConfigArgs {
@@ -148,9 +146,9 @@ impl RsCamApp {
                             },
                         )
                     };
-                    let applied = self.controller.state_mut().session.apply(command);
+                    let applied = self.controller.apply(command);
                     match applied {
-                        Ok(effects) => self.controller.adopt_post_effects(&effects),
+                        Ok(_) => self.controller.refresh_post_mirror(),
                         Err(error) => {
                             tracing::warn!("the post format write was refused: {error}");
                         }
@@ -158,13 +156,13 @@ impl RsCamApp {
                 }
                 AppEvent::ExportCombinedGcode => {
                     match crate::io::export::export_combined_gcode_from_session(
-                        &self.controller.state().session,
+                        self.controller.state().session(),
                         &self.controller.state().gui,
                         &self.controller.state().simulation,
                     ) {
                         Ok(gcode) => {
                             let default_name =
-                                format!("{}_combined.nc", self.controller.state().session.name())
+                                format!("{}_combined.nc", self.controller.state().session().name())
                                     .replace(' ', "_")
                                     .to_lowercase();
                             let _ = self.open_file_dialog(
@@ -181,14 +179,14 @@ impl RsCamApp {
                     let setup_name = self
                         .controller
                         .state()
-                        .session
+                        .session()
                         .list_setups()
                         .iter()
                         .find(|s| crate::state::job::SetupId(s.id) == setup_id)
                         .map(|s| s.name.clone())
                         .unwrap_or_default();
                     match crate::io::export::export_setup_gcode_from_session(
-                        &self.controller.state().session,
+                        self.controller.state().session(),
                         &self.controller.state().gui,
                         &self.controller.state().simulation,
                         setup_id,
@@ -196,7 +194,7 @@ impl RsCamApp {
                         Ok(gcode) => {
                             let default_name = format!(
                                 "{}_{}.nc",
-                                self.controller.state().session.name(),
+                                self.controller.state().session().name(),
                                 setup_name
                             )
                             .replace(' ', "_")

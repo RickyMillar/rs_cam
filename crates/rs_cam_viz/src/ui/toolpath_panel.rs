@@ -49,7 +49,7 @@ const CONNECTOR_STUB: f32 = tokens::SPACE_5;
 const RING_WIDTH: f32 = 1.5;
 
 /// Minimal snapshot of a `ToolpathConfig` with just the fields the card reads.
-/// Cloning this releases the `state.session` borrow so `state.viewport` can be
+/// Cloning this releases the `state.session()` borrow so `state.viewport` can be
 /// borrowed mutably inside the card body.
 struct CardInfo {
     id: rs_cam_core::ToolpathId,
@@ -246,7 +246,7 @@ pub fn draw(
     // Clone per-setup metadata up front so we can borrow `state.viewport`
     // mutably inside the draw loop without fighting the borrow checker.
     let setups_data: Vec<(SetupId, String, Vec<usize>)> = state
-        .session
+        .session()
         .list_setups()
         .iter()
         .map(|s| (SetupId(s.id), s.name.clone(), s.toolpath_indices.clone()))
@@ -259,17 +259,17 @@ pub fn draw(
     // nearest enabled source per (consumer, kind), which is exactly the one
     // line per row the gutter draws.
     let mut edges: HashMap<ToolpathId, Vec<EdgeRow>> = HashMap::new();
-    for edge in dependencies::primary_edges(&state.session) {
+    for edge in dependencies::primary_edges(state.session()) {
         let row = EdgeRow {
             source: edge.on,
             kind: edge.kind,
-            state: dependencies::state(&edge, &state.session),
+            state: dependencies::state(&edge, state.session()),
         };
         edges.entry(edge.from).or_default().push(row);
     }
-    let focus = plan_focus(ctx.plan.as_ref(), &state.session);
+    let focus = plan_focus(ctx.plan.as_ref(), state.session());
     let names: HashMap<ToolpathId, String> = state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| (tc.id, tc.name.clone()))
@@ -277,7 +277,7 @@ pub fn draw(
     // G-RESTRES (ruling Q8): the Stock rail's hover names the stock the rest
     // operation read — its cell — or why its snapshot is not current. The
     // full record is on MCP and the CLI.
-    let stock_notes = stock_notes(&state.session);
+    let stock_notes = stock_notes(state.session());
     // Where each drawn card landed THIS frame. A local, so it cannot
     // outlive the layout it describes, and a second pass in the SAME frame,
     // because the panel sits in a scroll area and a lagged map is wrong by
@@ -336,7 +336,7 @@ pub fn draw(
                 global_idx += 1;
                 // Snapshot just the fields the card reads, releasing the
                 // session/gui borrow before we re-enter `state` for viewport.
-                let Some(tc_src) = state.session.get_toolpath_config(tp_idx) else {
+                let Some(tc_src) = state.session().get_toolpath_config(tp_idx) else {
                     continue;
                 };
                 let card = CardInfo {
@@ -347,8 +347,8 @@ pub fn draw(
                 };
                 let rt = state.gui.toolpath_rt.get(&card.id);
                 let row_freshness =
-                    freshness(tc_src, rt, state.session.get_result(tp_idx).is_some());
-                let has_result = rt.is_some_and(|r| r.result.is_some());
+                    freshness(tc_src, rt, state.session().get_result(tp_idx).is_some());
+                let has_result = rt.is_some_and(|r| r.run.result().is_some());
                 let flight = in_flight(
                     &row_freshness,
                     focus,
@@ -378,12 +378,12 @@ pub fn draw(
         if let Some(payload) = dropped_payload {
             let dragged_tp_id: ToolpathId = Arc::unwrap_or_clone(payload);
             let source_setup = state
-                .session
+                .session()
                 .setup_of_toolpath_id(dragged_tp_id)
                 .map(|idx| {
                     // SAFETY: setup_of_toolpath_id returns a valid index into list_setups
                     #[allow(clippy::indexing_slicing)]
-                    SetupId(state.session.list_setups()[idx].id)
+                    SetupId(state.session().list_setups()[idx].id)
                 });
 
             // Determine drop index from pointer position
@@ -419,7 +419,7 @@ pub fn draw(
     // list draws its own action in the empty state instead, so the panel
     // offers one way in, not two.
     if !multi_setup
-        && let Some(setup) = state.session.list_setups().first()
+        && let Some(setup) = state.session().list_setups().first()
         && !setup.toolpath_indices.is_empty()
     {
         let sid = SetupId(setup.id);
@@ -540,7 +540,7 @@ fn draw_toolpath_card(
     // Read every session-derived value HERE. The row body borrows
     // `state.viewport` mutably, so it cannot also hold a `&AppState`.
     let tool_summary = state
-        .session
+        .session()
         .tools()
         .iter()
         .find(|t| t.id == ToolId(tc.tool_id))
@@ -1166,12 +1166,12 @@ fn add_menu_items(
 ) {
     ui.label(egui::RichText::new(MENU_2D_HEADER).strong());
     for &op in OperationType::ALL_2D {
-        add_op_menu_item(ui, op, setup_id, &state.session, events);
+        add_op_menu_item(ui, op, setup_id, state.session(), events);
     }
     ui.separator();
     ui.label(egui::RichText::new("3D (from STL)").strong());
     for &op in OperationType::ALL_3D {
-        add_op_menu_item(ui, op, setup_id, &state.session, events);
+        add_op_menu_item(ui, op, setup_id, state.session(), events);
     }
 }
 

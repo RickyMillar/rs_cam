@@ -137,7 +137,6 @@ fn cut_trace_fixture(
             planner_origin: None,
         };
         let index = state
-            .session
             .apply(Command::AddToolpath(AddToolpathArgs {
                 setup_index: 0,
                 config: Box::new(config),
@@ -146,7 +145,7 @@ fn cut_trace_fixture(
             .created
             .expect("the AddToolpath row reports the new toolpath index");
         let id = state
-            .session
+            .session()
             .get_toolpath_config(index)
             .expect("just added")
             .id;
@@ -161,7 +160,7 @@ fn cut_trace_fixture(
         let annotated =
             AnnotatedToolpath::with_spans(rs_cam_core::toolpath::Toolpath::new(), spans);
         let mut rt = crate::state::runtime::ToolpathRuntime::new(false);
-        rt.result = Some(crate::state::toolpath::ToolpathResult {
+        rt.run = crate::state::runtime::ToolpathRun::Done(crate::state::toolpath::ToolpathResult {
             annotated: std::sync::Arc::new(annotated),
             stats: rs_cam_core::compute::toolpath_stats::ToolpathStats::default(),
             debug_trace: None,
@@ -287,11 +286,10 @@ fn an_unmatched_toolpath_id_is_refused_and_names_the_valid_ids() {
     // condition on the real project, where 4/5/6 were simultaneously
     // valid indices and valid ids of DIFFERENT toolpaths.
     let _ = state
-        .session
         .apply(Command::RemoveToolpath(RemoveToolpathArgs { index: 0 }))
         .expect("index 0 exists");
-    let live: Vec<usize> = (0..state.session.toolpath_count())
-        .filter_map(|i| state.session.get_toolpath_config(i).map(|tc| tc.id.0))
+    let live: Vec<usize> = (0..state.session().toolpath_count())
+        .filter_map(|i| state.session().get_toolpath_config(i).map(|tc| tc.id.0))
         .collect();
     let dead = ids[0].0;
     assert!(
@@ -901,7 +899,6 @@ fn mcp_generate_all_leaves_the_saved_debug_options_unchanged_u4() {
     };
     let index = controller
         .state
-        .session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(config),
@@ -929,7 +926,7 @@ fn mcp_generate_all_leaves_the_saved_debug_options_unchanged_u4() {
     }
     let tc = controller
         .state
-        .session
+        .session()
         .get_toolpath_config(index)
         .expect("the toolpath is still there");
     assert!(

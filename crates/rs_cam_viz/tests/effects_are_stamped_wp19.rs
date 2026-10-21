@@ -8,7 +8,8 @@
 //! `simulation_cleared`, which says the session dropped its simulation.
 //! The session and the viewport hold ONE simulation (WP11b, N12 item
 //! 10), so a session that drops it must not leave the viewport showing
-//! one. `controller/io.rs`'s `adopt_post_effects` is the model.
+//! one. F096 (W9b) put both mirrors in ONE door, `AppState::apply`,
+//! and made the session field private, so a viz site cannot skip it.
 //!
 //! A production site that DISCARDS the answer mirrors neither. This
 //! file finds every such site and demands a stated reason.
@@ -82,12 +83,11 @@ struct Justified {
 
 /// The viz sites that discard an answer for a stated reason.
 const JUSTIFIED: &[Justified] = &[
-    Justified {
-        path: "src/controller/events/compute.rs",
-        needle: "Command::ForgetResult(",
-        reason: "`forget_core_result` is a free function holding no `AppState`, \
-                 so the caller owns the runtime row it is already writing",
-    },
+    // F096 (W9b): the `Command::ForgetResult(` row went. The session
+    // field is private, and `forget_core_result` is a controller method
+    // that applies the row through `AppController::apply`, which mirrors
+    // the answer. The method puts back the `stale_since` of the toolpath
+    // it forgets, so a failed run is not queued again.
     // F115 (W9a): the `Command::AdoptSimulation(` site reads its answer
     // now. The modulation runs inside the row, and the drain mirrors
     // `Effects::modulated` and `Effects::stale`
@@ -588,10 +588,10 @@ fn no_production_site_discards_an_effects_answer() {
          `AppController::invalidate_simulation`. A site that discards \
          the answer mirrors neither: the cards stay green and the \
          viewport goes on drawing a simulation the session no longer \
-         holds. Take a door — `apply_controller_command` or \
-         `apply_quietly` in the controller, `apply_panel_command` in a \
-         draw site, `adopt_post_effects` for a post write — or state \
-         the reason in `JUSTIFIED`. I read {} discarded answer(s):\n  {}",
+         holds. Take a door — `AppController::apply` (or \
+         `apply_controller_command`, `apply_quietly`) in the controller \
+         and the MCP surface, `AppState::apply` (or `apply_panel_command`) \
+         in a draw site — or state the reason in `JUSTIFIED`. I read {} discarded answer(s):\n  {}",
         unjustified.len(),
         unjustified.join("\n  ")
     );
@@ -741,10 +741,20 @@ fn one_helper_stamps_stale_on_both_routes_h3() {
          `Effects::stale` through `crate::state::stale::stamp_stale`. A \
          stamp here is a second site by construction."
     );
+    // F096 (W9b): the ONE stamp site is the state door, so
+    // `app/mcp/commands.rs` stamps nothing either. Its core arm applies
+    // through `AppController::apply`, which stamps.
     assert!(
-        commands.contains("stale::stamp_stale"),
-        "H3: `app/mcp/commands.rs` stamps no staleness through the one \
-         helper."
+        !commands.contains("stamp_stale"),
+        "F096: `app/mcp/commands.rs` stamps staleness of its own. The \
+         core arm applies through `AppController::apply`, and \
+         `AppState::apply` stamps `Effects::stale`."
+    );
+    let state_door = strip_comments(&read(&viz_root().join("src/state/mod.rs")));
+    assert!(
+        state_door.contains("stale::stamp_stale(self, &effects.stale)"),
+        "F096: `AppState::apply` no longer stamps `Effects::stale` \
+         through the one helper."
     );
 
     // The doc half. This note is read, not stripped: the false claim

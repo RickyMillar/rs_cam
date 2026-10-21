@@ -44,16 +44,17 @@ impl RsCamApp {
 
     pub(super) fn mcp_narrate_toolpath(&self, index: usize) -> String {
         let state = self.controller.state();
-        let Some(tc) = state.session.get_toolpath_config(index) else {
+        let Some(tc) = state.session().get_toolpath_config(index) else {
             return format!("Error: Toolpath index {index} not found");
         };
         let Some(rt) = state.gui.toolpath_rt.get(&tc.id) else {
             return format!("Error: Toolpath {index} not generated. Run generate_toolpath first.");
         };
-        let Some(result) = rt.result.as_ref() else {
+        let Some(result) = rt.run.result() else {
             return format!("Error: Toolpath {index} not generated. Run generate_toolpath first.");
         };
-        let Some(tool_config) = Self::narration_tool_for(state.session.tools(), tc.tool_id) else {
+        let Some(tool_config) = Self::narration_tool_for(state.session().tools(), tc.tool_id)
+        else {
             return format!(
                 "Error: toolpath {index} references tool id {} but no such tool is configured. Narration refuses rather than describing this toolpath with another tool's geometry.",
                 tc.tool_id,
@@ -119,7 +120,7 @@ impl RsCamApp {
             spindle_rpm: Some(
                 tc.operation
                     .spindle_rpm()
-                    .unwrap_or(state.session.post_config().spindle_speed),
+                    .unwrap_or(state.session().post_config().spindle_speed),
             ),
             flute_count: Some(tool_config.flute_count),
             // B7 divergence 1: the shared expression. Core used op-type
@@ -132,7 +133,7 @@ impl RsCamApp {
                 tc.operation.op_type(),
                 &result.annotated.toolpath.moves,
             ),
-            material: Some(&state.session.stock_config().material),
+            material: Some(&state.session().stock_config().material),
             // Every ToolpathStats-derived channel is filled by
             // `absorb_stats` below — the SAME join core's narration uses, so
             // a new finding cannot reach one narration and miss the other
@@ -146,11 +147,11 @@ impl RsCamApp {
         // narrates the worker copy; the modulation pass writes only the
         // session slot, so that copy carries the planned feeds unless it is
         // the slot's own list.
-        let stored = state.session.get_result(index);
+        let stored = state.session().get_result(index);
         let narrated_is_stored = stored
             .is_some_and(|stored| std::sync::Arc::ptr_eq(stored.annotated(), &result.annotated));
         let stored_stage =
-            stored.map(|stored| state.session.feed_stage_of(index, &stored.provenance));
+            stored.map(|stored| state.session().feed_stage_of(index, &stored.provenance));
         context.feed_stage = Some(match stored_stage {
             Some(stage) if narrated_is_stored => stage,
             _ => rs_cam_core::session::FeedStage::Planned,
@@ -179,7 +180,7 @@ impl RsCamApp {
         // motion under this narration's heading. One result source.
         if let Some(util) =
             state
-                .session
+                .session()
                 .kinematic_utilization_of(index, &result.annotated.toolpath, cut_trace)
             && let Some(sentence) = Self::kinematics_narration_sentence(&util)
         {
@@ -286,7 +287,7 @@ impl RsCamApp {
         max_spans: Option<usize>,
     ) -> String {
         let state = self.controller.state();
-        let Some(tc) = state.session.get_toolpath_config(index) else {
+        let Some(tc) = state.session().get_toolpath_config(index) else {
             return json_str(
                 serde_json::json!({"error": format!("Toolpath index {index} not found")}),
             );
@@ -547,7 +548,7 @@ impl RsCamApp {
         region_id: Option<u32>,
         max_spans: Option<usize>,
     ) -> String {
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         let gui = &self.controller.state().gui;
         let Some(tc) = session.toolpath_configs().get(index) else {
             return text(format!("Toolpath {index} not found."));
@@ -557,7 +558,7 @@ impl RsCamApp {
                 "Toolpath {index} has no runtime entry. Run generate_toolpath first."
             ));
         };
-        let Some(result) = rt.result.as_ref() else {
+        let Some(result) = rt.run.result() else {
             return text(format!(
                 "Toolpath {index} not generated. Run generate_toolpath first."
             ));
@@ -602,7 +603,7 @@ impl RsCamApp {
         let evidence = viz_project_evidence(state);
         values.extend(
             state
-                .session
+                .session()
                 .diagnose_project_with_evidence(&evidence)
                 .into_iter()
                 .filter_map(|diag| serde_json::to_value(diag).ok()),
@@ -610,8 +611,11 @@ impl RsCamApp {
         // The project list above already holds every safety finding, so
         // the per-toolpath half takes the trace-only route. The evidence
         // route would publish each collision finding twice.
-        for index in 0..state.session.toolpath_count() {
-            if let Ok(diags) = state.session.diagnose_toolpath_with_trace(index, sim_trace) {
+        for index in 0..state.session().toolpath_count() {
+            if let Ok(diags) = state
+                .session()
+                .diagnose_toolpath_with_trace(index, sim_trace)
+            {
                 values.extend(
                     diags
                         .into_iter()
@@ -626,7 +630,7 @@ impl RsCamApp {
     fn mcp_runtime_error_diagnostics(&self) -> Vec<serde_json::Value> {
         let state = self.controller.state();
         state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .enumerate()
@@ -636,7 +640,8 @@ impl RsCamApp {
                 // `Disabled` (no error text) and a sequencing block reports
                 // `AwaitingPriorStock` — neither belongs in an error list an
                 // agent has to triage.
-                let error = ComputeStatus::effective(tc.enabled, &rt.status).error_text()?;
+                let raw = rt.run.status();
+                let error = ComputeStatus::effective(tc.enabled, &raw).error_text()?;
                 Some(serde_json::json!({
                     "id": format!("runtime.generate_error.{}", tc.id),
                     "scope": { "kind": "toolpath", "id": tc.id },
@@ -667,7 +672,7 @@ impl RsCamApp {
         // collisions of this toolpath, as `get_project_diagnostics` does.
         let evidence = viz_project_evidence(state);
         match state
-            .session
+            .session()
             .diagnose_toolpath_with_evidence(index, &evidence)
         {
             Ok(diagnostics) => {
@@ -685,7 +690,7 @@ impl RsCamApp {
     pub(super) fn mcp_get_project_diagnostics(&self) -> String {
         let state = self.controller.state();
         let evidence = viz_project_evidence(state);
-        let diagnostics = state.session.diagnose_project_with_evidence(&evidence);
+        let diagnostics = state.session().diagnose_project_with_evidence(&evidence);
         json_str(serde_json::to_value(&diagnostics).unwrap_or(serde_json::Value::Null))
     }
 }

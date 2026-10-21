@@ -135,7 +135,13 @@ pub fn unsaved_project_summary(state: &AppState) -> Option<String> {
 pub struct AppState {
     pub workspace: Workspace,
     /// Unified project session — single source of truth for CAM data.
-    pub session: rs_cam_core::session::ProjectSession,
+    ///
+    /// F096 (W9b): the field is private. Read it with [`Self::session`].
+    /// Change it with [`Self::apply`], the one door that applies a
+    /// `Command` and mirrors its `Effects`. Replace it with
+    /// [`Self::replace_session`]. A surface outside `state/` cannot take
+    /// `&mut` of the session, so it cannot skip the mirror.
+    session: rs_cam_core::session::ProjectSession,
     /// GUI-only runtime overlay (dirty flag, per-toolpath display state, datum config).
     pub gui: GuiState,
     pub selection: Selection,
@@ -214,6 +220,37 @@ pub struct AppState {
     pub panel_side_effects: PanelSideEffects,
 }
 
+/// The session to read beside every other [`AppState`] field to write.
+///
+/// [`AppState::split_mut`] builds it. A draw site that reads the session
+/// and writes a view field in one call takes it, because
+/// [`AppState::session`] borrows the whole state. The session part is a
+/// shared reference, so the split cannot write the session either (F096).
+pub struct StateParts<'a> {
+    pub session: &'a rs_cam_core::session::ProjectSession,
+    pub workspace: &'a mut Workspace,
+    pub gui: &'a mut GuiState,
+    pub selection: &'a mut Selection,
+    pub viewport: &'a mut ViewportState,
+    pub overlays: &'a mut OverlayPanelState,
+    pub simulation: &'a mut SimulationState,
+    pub history: &'a mut UndoHistory,
+    pub panels: &'a mut PanelDrafts,
+    pub show_preflight: &'a mut bool,
+    pub show_shortcuts: &'a mut bool,
+    pub show_export_wizard: &'a mut bool,
+    pub wizard_active_step: &'a mut u8,
+    pub job_run: &'a mut Option<JobRun>,
+    pub feeds_modal: &'a mut Option<FeedsModalState>,
+    pub project_feeds: &'a mut ProjectFeedsState,
+    pub tool_library_modal: &'a mut Option<ToolLibraryModalState>,
+    pub machine_library_open: &'a mut bool,
+    pub preferences: &'a mut Option<crate::ui::preferences::PreferencesState>,
+    pub app_settings: &'a mut rs_cam_core::settings::AppSettings,
+    pub multitool_planner: &'a mut Option<multitool_planner::MultitoolPlannerState>,
+    pub panel_side_effects: &'a mut PanelSideEffects,
+}
+
 /// Work a properties panel owes the frame loop.
 ///
 /// A draw site holds an [`AppState`] and nothing else. The three things
@@ -240,8 +277,10 @@ pub struct PanelSideEffects {
     /// one (WP19).
     ///
     /// `Effects::simulation_cleared` reports the drop. Only the
-    /// controller can run `invalidate_simulation`, so a draw site
-    /// raises this and the frame loop clears the view.
+    /// controller can run `invalidate_simulation`, so
+    /// [`AppState::apply`] raises this and the frame loop clears the
+    /// view. `AppController::apply` clears the view at once and lowers
+    /// the flag (F096).
     pub invalidate_simulation: bool,
 }
 
@@ -382,6 +421,123 @@ impl JobRunKind {
 }
 
 impl AppState {
+    /// The project session, to read.
+    ///
+    /// The only way to change it is [`Self::apply`] (F096).
+    #[must_use]
+    pub fn session(&self) -> &rs_cam_core::session::ProjectSession {
+        &self.session
+    }
+
+    /// Apply one command to the session. THE one write door of the GUI (F096).
+    ///
+    /// The door mirrors both halves of the core answer:
+    ///
+    /// - `Effects::stale` goes to [`stale::stamp_stale`], so every
+    ///   toolpath that core dropped shows stale on its card.
+    /// - `Effects::simulation_cleared` raises
+    ///   `panel_side_effects.invalidate_simulation`. The viewport
+    ///   simulation lives partly on the controller, so the controller
+    ///   clears it: at once in `AppController::apply`, or at the end of
+    ///   the frame in `discharge_panel_side_effects`.
+    ///
+    /// A refusal goes to the log here (F056) and returns to the caller.
+    /// The caller decides what the operator sees. A caller must read the
+    /// answer before it marks the project edited.
+    #[must_use = "a refused command changed nothing; read the answer before you mark the project edited"]
+    pub fn apply(
+        &mut self,
+        command: rs_cam_core::session::Command,
+    ) -> Result<rs_cam_core::session::Effects, rs_cam_core::session::SessionError> {
+        match self.session.apply(command) {
+            Ok(effects) => {
+                stale::stamp_stale(self, &effects.stale);
+                if effects.simulation_cleared {
+                    self.panel_side_effects.invalidate_simulation = true;
+                }
+                Ok(effects)
+            }
+            Err(error) => {
+                tracing::warn!("the session refused a command: {error}");
+                Err(error)
+            }
+        }
+    }
+
+    /// The session to read and every other field to write, as disjoint
+    /// borrows. See [`StateParts`].
+    pub fn split_mut(&mut self) -> StateParts<'_> {
+        let Self {
+            session,
+            workspace,
+            gui,
+            selection,
+            viewport,
+            overlays,
+            simulation,
+            history,
+            panels,
+            show_preflight,
+            show_shortcuts,
+            show_export_wizard,
+            wizard_active_step,
+            job_run,
+            feeds_modal,
+            project_feeds,
+            tool_library_modal,
+            machine_library_open,
+            preferences,
+            app_settings,
+            multitool_planner,
+            panel_side_effects,
+        } = self;
+        StateParts {
+            session,
+            workspace,
+            gui,
+            selection,
+            viewport,
+            overlays,
+            simulation,
+            history,
+            panels,
+            show_preflight,
+            show_shortcuts,
+            show_export_wizard,
+            wizard_active_step,
+            job_run,
+            feeds_modal,
+            project_feeds,
+            tool_library_modal,
+            machine_library_open,
+            preferences,
+            app_settings,
+            multitool_planner,
+            panel_side_effects,
+        }
+    }
+
+    /// Start one core job on the session (`ProjectSession::start`).
+    ///
+    /// A job start records the job in the session and changes no
+    /// project data, so it returns no `Effects`.
+    pub fn start_job(
+        &mut self,
+        job: rs_cam_core::session::Job,
+        cancel: &std::sync::atomic::AtomicBool,
+    ) -> Result<rs_cam_core::session::JobHandle, rs_cam_core::session::SessionError> {
+        self.session.start(job, cancel)
+    }
+
+    /// Put a different project in place of the open one.
+    ///
+    /// The project open and new-project doors call it, and the test
+    /// fixtures call it with a built session. It changes the session
+    /// only: the caller resets the GUI state that the old project owned.
+    pub fn replace_session(&mut self, session: rs_cam_core::session::ProjectSession) {
+        self.session = session;
+    }
+
     pub fn new() -> Self {
         Self {
             workspace: Workspace::Toolpaths,

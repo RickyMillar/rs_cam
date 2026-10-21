@@ -180,7 +180,9 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     tool.stickout = 45.0;
     tool.flute_count = 2;
     tool.name = "End Mill 6mm".to_owned();
-    controller.state.session = ProjectSessionBuilder::new().tool(tool).build();
+    controller
+        .state
+        .replace_session(ProjectSessionBuilder::new().tool(tool).build());
 
     // AS001 stock: origin_z=-12, z=12 → world stock top at Z=0.
     let stock = StockConfig {
@@ -198,7 +200,6 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     };
     let _ = controller
         .state
-        .session
         .apply(Command::SetStockConfig(SetStockConfigArgs {
             stock: Box::new(stock),
         }))
@@ -207,7 +208,6 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     // 2D polygon model (matches the SVG-driven AS001 pocket case).
     let model_id = controller
         .state
-        .session
         .apply(Command::AddModel(AddModelArgs {
             model: Box::new(LoadedModel {
                 id: 0,
@@ -271,7 +271,6 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     };
     let tp_idx = controller
         .state
-        .session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(tp_config),
@@ -281,7 +280,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         .expect("the AddToolpath row reports the new toolpath index");
     let tp_id = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .get(tp_idx)
         .expect("toolpath_configs slot present after add_toolpath")
@@ -394,7 +393,7 @@ fn submit_toolpath_compute_self_referential_boundary_resolves_mcp_waiter() {
     // does not intend to write.
     let (index, stored) = controller
         .state
-        .session
+        .session()
         .find_toolpath_config_by_id(dependent_id)
         .expect("dependent toolpath config must exist");
     let mut config = stored.clone();
@@ -403,7 +402,6 @@ fn submit_toolpath_compute_self_referential_boundary_resolves_mcp_waiter() {
     };
     let _ = controller
         .state
-        .session
         .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
             index,
             config: Box::new(config),
@@ -448,11 +446,11 @@ fn submit_toolpath_compute_self_referential_boundary_resolves_mcp_waiter() {
         .expect("dependent runtime should exist after fail-hard");
     assert!(
         matches!(
-            &rt.status,
+            &rt.run.status(),
             crate::state::toolpath::ComputeStatus::Error(e) if e.contains("own rest regions")
         ),
         "toolpath runtime status should be Error mentioning the self-reference, got {:?}",
-        rt.status
+        rt.run.status()
     );
 
     // The pending_mcp map must no longer hold this toolpath's sender —

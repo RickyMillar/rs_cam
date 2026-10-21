@@ -218,16 +218,15 @@ fn state(operation: OperationConfig, tab: properties::ToolpathTab) -> AppState {
         .model(model());
     builder.add_toolpath(0, toolpath(operation)).unwrap();
     let mut state = AppState::new();
-    state.session = builder.build();
+    state.replace_session(builder.build());
     let _ = state
-        .session
         .apply(Command::EditSelection(EditSelectionArgs {
             index: 0,
             target: SelectionTarget::Op,
             edit: SelectionEdit::AddPick(face_key()),
         }))
         .unwrap();
-    let id = state.session.toolpath_configs()[0].id;
+    let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     state.selection = GuiSelection::Toolpath(id);
     state.gui.pending_toolpath_tab = Some((id, tab));
@@ -363,7 +362,7 @@ fn the_each_face_hint_sets_the_floor_p3_7() {
         .unwrap_or_else(|| panic!("the hint has no button: {all:?}"));
     let _ = draw(&ctx, &mut s, Some(button.rect.center()));
     assert_eq!(
-        s.session.toolpath_configs()[0].operation.floor(),
+        s.session().toolpath_configs()[0].operation.floor(),
         Some(Floor::EachFace { depth: 0.0 }),
         "the button must set the floor to each picked face, depth 0"
     );

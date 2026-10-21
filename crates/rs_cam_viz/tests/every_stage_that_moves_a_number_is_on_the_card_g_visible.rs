@@ -472,8 +472,8 @@ fn state_for(case: &Case) -> AppState {
         .add_toolpath(0, config)
         .expect("add the visible-stage fixture");
     let mut state = AppState::new();
-    state.session = builder.build();
-    let id = state.session.toolpath_configs()[0].id;
+    state.replace_session(builder.build());
+    let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     state.selection = Selection::Toolpath(id);
     state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::FeedsSpeeds));
@@ -512,7 +512,7 @@ fn painted_text(state: &mut AppState) -> Vec<String> {
 /// The records behind the card: the calculator's (cached on the runtime row
 /// by the Feeds tab) and the Suggest run's, with the card's own context.
 fn records(state: &AppState) -> (Vec<FeedsWarning>, Vec<SuggestWarning>) {
-    let id = state.session.toolpath_configs()[0].id;
+    let id = state.session().toolpath_configs()[0].id;
     let feeds = state
         .gui
         .toolpath_rt
@@ -520,9 +520,9 @@ fn records(state: &AppState) -> (Vec<FeedsWarning>, Vec<SuggestWarning>) {
         .and_then(|runtime| runtime.feeds_result.as_ref())
         .map(|result| result.warnings.clone())
         .expect("the Feeds tab must calculate and cache its recipe");
-    let snapshot = properties::toolpath_panel_snapshot(id, &state.session, &state.gui)
+    let snapshot = properties::toolpath_panel_snapshot(id, state.session(), &state.gui)
         .expect("the toolpath resolves for the properties panel");
-    let session = &state.session;
+    let session = state.session();
     let tool = session.tools()[0].clone();
     let suggest = suggest_for_operation(SuggestForOperationInput {
         operation: &snapshot.entry.operation,

@@ -233,7 +233,7 @@ impl RsCamApp {
                 let setup_id = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .list_setups()
                     .get(*setup_index)
                     .map(|s| s.id);
@@ -246,7 +246,7 @@ impl RsCamApp {
                 let tp_id = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .toolpath_configs()
                     .get(p.index)
                     .map(|tc| tc.id);
@@ -259,7 +259,7 @@ impl RsCamApp {
                 // The tool panel is not a workspace of its own, so this
                 // row's table column is `None` and only the selection
                 // moves.
-                let tools = self.controller.state().session.list_tools();
+                let tools = self.controller.state().session().list_tools();
                 let tool_id = tools.get(p.index).map(|t| t.id.0);
                 if let Some(tool_id) = tool_id {
                     self.mcp_highlight(format!("tool_{tool_id}_{}", p.param.token()));
@@ -274,7 +274,7 @@ impl RsCamApp {
                 if self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .models()
                     .iter()
                     .any(|m| m.id == p.model_id) =>
@@ -311,10 +311,10 @@ impl RsCamApp {
     pub(crate) fn run_core_preparation(&mut self, plan: CorePlan) -> CorePlan {
         match plan {
             CorePlan::ApplyPair(preparation, command, before) => {
-                let applied = self.controller.state_mut().session.apply(preparation);
+                let applied = self.controller.apply(preparation);
                 match applied {
-                    Ok(effects) => {
-                        self.controller.adopt_post_effects(&effects);
+                    Ok(_) => {
+                        self.controller.refresh_post_mirror();
                     }
                     Err(error) => {
                         tracing::warn!("the command preparation was refused: {error}");
@@ -340,7 +340,7 @@ impl RsCamApp {
                 before.count = Some(
                     self.controller
                         .state()
-                        .session
+                        .session()
                         .stock_config()
                         .alignment_pins
                         .len(),
@@ -394,7 +394,7 @@ impl RsCamApp {
                 )
             }
             CoreRequest::SetModelImportOptions(p) => {
-                match import::model_import_options_args(&self.controller.state().session, &p) {
+                match import::model_import_options_args(self.controller.state().session(), &p) {
                     Ok(args) => {
                         before.index = Some(args.model_id);
                         CorePlan::Apply(Command::AdoptModelGeometry(args), Box::new(before))
@@ -410,7 +410,7 @@ impl RsCamApp {
                 Box::new(before),
             ),
             CoreRequest::SetSetupFace(p) => {
-                let setups = self.controller.state().session.list_setups();
+                let setups = self.controller.state().session().list_setups();
                 if setups.get(p.setup_index).is_none() {
                     return CorePlan::Answered(CoreReply::refused(
                         &format!("Error: Setup index {} not found", p.setup_index),
@@ -429,7 +429,7 @@ impl RsCamApp {
                 )
             }
             CoreRequest::SetSetupRotation(p) => {
-                let setups = self.controller.state().session.list_setups();
+                let setups = self.controller.state().session().list_setups();
                 if setups.get(p.setup_index).is_none() {
                     return CorePlan::Answered(CoreReply::refused(
                         &format!("Error: Setup index {} not found", p.setup_index),
@@ -451,7 +451,7 @@ impl RsCamApp {
                 )
             }
             CoreRequest::MoveToolpathToSetup(p) => {
-                let session = &self.controller.state().session;
+                let session = self.controller.state().session();
                 if session.toolpath_configs().get(p.toolpath_index).is_none() {
                     return CorePlan::Answered(CoreReply::refused(
                         &format!("Error: Toolpath index {} not found", p.toolpath_index),
@@ -498,7 +498,7 @@ impl RsCamApp {
                 let save = Command::SaveProject(SaveProjectArgs {
                     path: PathBuf::from(p.path),
                 });
-                if *self.controller.state().session.post_config() == session_post {
+                if *self.controller.state().session().post_config() == session_post {
                     return CorePlan::Apply(save, Box::new(before));
                 }
                 CorePlan::ApplyPair(
@@ -571,7 +571,7 @@ impl RsCamApp {
                 let Some(mut heights) = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .get_toolpath_config(p.index)
                     .map(|tc| tc.heights.clone())
                 else {
@@ -630,7 +630,7 @@ impl RsCamApp {
                 before.toolpath_id = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .toolpath_configs()
                     .get(p.index)
                     .map(|tc| tc.id);
@@ -723,7 +723,7 @@ impl RsCamApp {
                 if self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .post_config()
                     .spindle_strategy
                     == parsed
@@ -736,7 +736,7 @@ impl RsCamApp {
                         &before.diagnostics,
                     )));
                 }
-                let mut post = self.controller.state().session.post_config().clone();
+                let mut post = self.controller.state().session().post_config().clone();
                 post.spindle_strategy = parsed;
                 before.display_name = Some(p.strategy.token().to_owned());
                 before.extra = serde_json::json!({ "spindle_strategy": p.strategy.token() });
@@ -818,7 +818,7 @@ impl RsCamApp {
     ) -> CorePlan {
         let op_type = rs_cam_core::compute::catalog::OperationType::from(p.operation_type);
 
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         let tools = session.list_tools();
         let tool_raw_id = match tools.get(p.tool_index) {
             Some(info) => info.id.0,
@@ -964,7 +964,7 @@ impl RsCamApp {
         let taken: Vec<u32> = self
             .controller
             .state()
-            .session
+            .session()
             .tools()
             .iter()
             .map(|t| t.tool_number)
@@ -1031,7 +1031,7 @@ impl RsCamApp {
         let taken: Vec<u32> = self
             .controller
             .state()
-            .session
+            .session()
             .tools()
             .iter()
             .map(|t| t.tool_number)
@@ -1096,7 +1096,7 @@ impl RsCamApp {
                     ));
                 }
             };
-        let mut stock = self.controller.state().session.stock_config().clone();
+        let mut stock = self.controller.state().session().stock_config().clone();
         let report = patch.apply_to(&mut stock);
 
         before.extra = serde_json::json!({
@@ -1126,7 +1126,7 @@ impl RsCamApp {
         let mut kin = self
             .controller
             .state()
-            .session
+            .session()
             .machine()
             .effective_kinematics();
         let had_per_axis = kin.acceleration_xyz_mm_s2.is_some();
@@ -1292,7 +1292,7 @@ impl RsCamApp {
             Some(HeadPresetParam::BareCollet) => MachineHead::bare_collet(),
             Some(HeadPresetParam::DustShoe) => MachineHead::dust_shoe(),
             Some(HeadPresetParam::Unmodelled) => MachineHead::unmodelled(),
-            None => self.controller.state().session.machine().head.clone(),
+            None => self.controller.state().session().machine().head.clone(),
         };
         if let Some(wire) = &spec.parts {
             head.parts = parts(wire);
@@ -1359,7 +1359,7 @@ impl RsCamApp {
             ));
         }
 
-        let prev_max_feed = self.controller.state().session.machine().max_feed_mm_min;
+        let prev_max_feed = self.controller.state().session().machine().max_feed_mm_min;
 
         // B6: the reply lists what the dump STATED; `null` is a field the
         // dump did not carry, and the machine keeps its own value there.
@@ -1413,7 +1413,7 @@ impl RsCamApp {
             Some(BoundarySourceParam::Stock) | None => BoundarySource::Stock,
             Some(BoundarySourceParam::ModelSilhouette) => BoundarySource::ModelSilhouette,
             Some(BoundarySourceParam::Selection) => {
-                let session = &self.controller.state().session;
+                let session = self.controller.state().session();
                 let known: Vec<String> = session
                     .models()
                     .iter()
@@ -1475,7 +1475,7 @@ impl RsCamApp {
                 if self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .find_toolpath_config_by_id(source_id)
                     .is_none()
                 {
@@ -1527,7 +1527,7 @@ impl RsCamApp {
                 if !self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .tools()
                     .iter()
                     .any(|t| t.id == tool_id)
@@ -1683,7 +1683,7 @@ impl RsCamApp {
             CoreRequest::SetToolParam(p) => {
                 let param = p.param.token();
                 let value_str = display_value(&p.value);
-                let tools = self.controller.state().session.list_tools();
+                let tools = self.controller.state().session().list_tools();
                 let tool_name = tools
                     .get(p.index)
                     .map_or_else(|| format!("#{}", p.index), |t| t.name.clone());
@@ -1754,20 +1754,19 @@ impl RsCamApp {
     fn mcp_toolpath_name(&self, index: usize) -> String {
         self.controller
             .state()
-            .session
+            .session()
             .toolpath_configs()
             .get(index)
             .map_or_else(|| format!("#{index}"), |tc| tc.name.clone())
     }
 
-    /// Stamp `stale_since` on the toolpaths the command dropped, and
-    /// report them for the reply's `stale_toolpaths`.
+    /// The toolpaths the command dropped, for the reply's
+    /// `stale_toolpaths`.
     ///
-    /// WP19 (H3): the stamp takes `crate::state::stale::stamp_stale`,
-    /// the one helper. The reply is unchanged — the same indices, in
-    /// the same order.
+    /// F096: `AppController::apply` stamped them already, and it cleared
+    /// the viewport simulation on every row whose `Effects` say so. The
+    /// reply is unchanged — the same indices, in the same order.
     fn core_stale(&mut self, effects: &Effects) -> Vec<usize> {
-        crate::state::stale::stamp_stale(self.controller.state_mut(), &effects.stale);
         effects.stale.iter().copied().collect()
     }
 
@@ -1793,7 +1792,7 @@ impl RsCamApp {
                     let ids: Vec<usize> = self
                         .controller
                         .state()
-                        .session
+                        .session()
                         .tools()
                         .iter()
                         .map(|t| t.id.0)
@@ -1950,7 +1949,7 @@ impl RsCamApp {
                 let pin_count = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .stock_config()
                     .alignment_pins
                     .len();
@@ -1981,7 +1980,7 @@ impl RsCamApp {
                 let pin_count = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .stock_config()
                     .alignment_pins
                     .len();
@@ -1997,7 +1996,7 @@ impl RsCamApp {
                 let pin_count = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .stock_config()
                     .alignment_pins
                     .len();
@@ -2018,7 +2017,7 @@ impl RsCamApp {
             }
             CommandId::AddModel => {
                 let (id, name, kind, bbox) = {
-                    let models = self.controller.state().session.models();
+                    let models = self.controller.state().session().models();
                     let model = models.last();
                     (
                         model.map(|m| m.id).unwrap_or(0),
@@ -2046,7 +2045,7 @@ impl RsCamApp {
                 let import = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .models()
                     .last()
                     .map(model_import_json)
@@ -2080,7 +2079,7 @@ impl RsCamApp {
                 let setup = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .list_setups()
                     .get(index)
                     .map(|s| (s.id, s.name.clone()));
@@ -2192,7 +2191,7 @@ impl RsCamApp {
                 let applied = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .toolpath_configs()
                     .get(index)
                     .map(|tc| {
@@ -2219,7 +2218,7 @@ impl RsCamApp {
                 let applied = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .tools()
                     .get(index)
                     .and_then(|tool| serde_json::to_value(tool).ok())
@@ -2241,7 +2240,7 @@ impl RsCamApp {
                 let index = before.index();
                 let tool_id = before.count.unwrap_or_default();
                 let tool = {
-                    let session = &self.controller.state().session;
+                    let session = self.controller.state().session();
                     session
                         .tools()
                         .iter()
@@ -2271,7 +2270,7 @@ impl RsCamApp {
                 let index = before.index();
                 let model_id = before.count.unwrap_or_default();
                 let model = {
-                    let session = &self.controller.state().session;
+                    let session = self.controller.state().session();
                     session
                         .models()
                         .iter()
@@ -2311,7 +2310,7 @@ impl RsCamApp {
                 let stale = self.core_stale(&effects);
                 let index = before.index();
                 let mut applied = before.extra.clone();
-                let session = &self.controller.state().session;
+                let session = self.controller.state().session();
                 if let (Some(map), Some(tc)) =
                     (applied.as_object_mut(), session.get_toolpath_config(index))
                 {
@@ -2334,7 +2333,7 @@ impl RsCamApp {
                 let tp_info = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .toolpath_configs()
                     .get(index)
                     .map(|tc| (tc.id, tc.operation.default_auto_regen()));
@@ -2398,7 +2397,7 @@ impl RsCamApp {
                 let geometry = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .tools()
                     .get(index)
                     .and_then(|tool| serde_json::to_value(tool).ok())
@@ -2513,7 +2512,7 @@ impl RsCamApp {
                 self.controller.state_mut().gui.mark_edited();
                 let stale = self.core_stale(&effects);
                 let (x, y, z, origin_x, origin_y, origin_z, padding, material_label) = {
-                    let stock = self.controller.state().session.stock_config();
+                    let stock = self.controller.state().session().stock_config();
                     (
                         stock.x,
                         stock.y,
@@ -2645,8 +2644,8 @@ impl RsCamApp {
                 // G10: a dump that names grblHAL moves the post dialect.
                 self.controller.refresh_post_mirror();
                 self.controller.state_mut().gui.mark_edited();
-                let new_max_feed = self.controller.state().session.machine().max_feed_mm_min;
-                let post_format = self.controller.state().session.post_config().format;
+                let new_max_feed = self.controller.state().session().machine().max_feed_mm_min;
+                let post_format = self.controller.state().session().post_config().format;
                 // Built field by field, in the order the reply always
                 // carried them: `serde_json` runs with `preserve_order`
                 // here, so an object built by patching would move
@@ -2726,7 +2725,7 @@ impl RsCamApp {
                 let applied = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .toolpath_configs()
                     .get(index)
                     .and_then(|tc| serde_json::to_value(&tc.dressups).ok())
@@ -2746,7 +2745,7 @@ impl RsCamApp {
                 let applied = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .toolpath_configs()
                     .get(index)
                     .and_then(|tc| serde_json::to_value(&tc.dressups).ok())
@@ -2761,12 +2760,9 @@ impl RsCamApp {
             }
             CommandId::SetSimulationResolution => {
                 self.controller.state_mut().gui.mark_edited();
-                if effects.simulation_cleared {
-                    self.controller.invalidate_simulation();
-                }
                 let stale = self.core_stale(&effects);
                 let report = crate::controller::generate_all::ResolutionReport::of(
-                    &self.controller.state().session,
+                    self.controller.state().session(),
                     true,
                 );
                 CoreReply::succeeded(self.mcp_mutation_result(
@@ -2813,16 +2809,13 @@ impl RsCamApp {
             // `SetToolpathDebugOptions` (U4, 2026-10-01).
             CommandId::EditModelDrawing => {
                 let stale = self.core_stale(&effects);
-                if effects.simulation_cleared {
-                    self.controller.invalidate_simulation();
-                }
                 self.controller.state_mut().gui.mark_edited();
                 self.controller.set_pending_upload();
                 let model_id = before.index();
                 let summary = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .models()
                     .iter()
                     .find(|m| m.id == model_id)
@@ -2837,16 +2830,13 @@ impl RsCamApp {
             }
             CommandId::AdoptModelGeometry => {
                 let stale = self.core_stale(&effects);
-                if effects.simulation_cleared {
-                    self.controller.invalidate_simulation();
-                }
                 self.controller.state_mut().gui.mark_edited();
                 self.controller.set_pending_upload();
                 let model_id = before.index();
                 let summary = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .models()
                     .iter()
                     .find(|m| m.id == model_id)
@@ -2937,7 +2927,7 @@ impl RsCamApp {
             ))
         };
         let state = self.controller.state();
-        let stock = state.session.stock_config();
+        let stock = state.session().stock_config();
         before.count = Some(stock.alignment_pins.len());
         before.display_name = Some(request.tool_name().to_owned());
 
@@ -2958,7 +2948,7 @@ impl RsCamApp {
             }
             PinSetRequest::Pattern(p) => {
                 let setups = state
-                    .session
+                    .session()
                     .list_setups()
                     .iter()
                     .map(|s| (s.face_up, s.z_rotation));
@@ -3080,7 +3070,7 @@ impl RsCamApp {
         let edit = self.controller.finish_pin_edit(effects);
         // R1: one row for each pin size (and each removed operation).
         let pin_drill: Vec<serde_json::Value> = {
-            let session = &self.controller.state().session;
+            let session = self.controller.state().session();
             let locate = |id: crate::state::toolpath::ToolpathId| {
                 session.toolpath_configs().iter().position(|tc| tc.id == id)
             };
@@ -3122,7 +3112,7 @@ impl RsCamApp {
             object.insert("pin_drill".to_owned(), pin_drill.into());
             object.insert(
                 "pin_report".to_owned(),
-                super::project::pin_report_json(&self.controller.state().session),
+                super::project::pin_report_json(self.controller.state().session()),
             );
         }
         CoreReply::succeeded(self.mcp_mutation_result(

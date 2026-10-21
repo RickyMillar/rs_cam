@@ -105,7 +105,7 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
     // The shared fixture seeds a GUI result. Fixture 1 needs the
     // ungenerated state, so it drops that result first.
     for rt in controller.state.gui.toolpath_rt.values_mut() {
-        rt.result = None;
+        rt.run = crate::state::runtime::ToolpathRun::Pending;
     }
     assert!(
         controller
@@ -113,11 +113,11 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
             .gui
             .toolpath_rt
             .values()
-            .all(|rt| rt.result.is_none()),
+            .all(|rt| rt.run.result().is_none()),
         "fixture 1: the sample project must start ungenerated"
     );
     let predicate =
-        crate::ui::readiness::simulation_request_is_buildable(&controller.state.session);
+        crate::ui::readiness::simulation_request_is_buildable(controller.state.session());
     let builder = controller
         .build_simulation_groups(|_, tc| tc.enabled, |_| false)
         .is_some();
@@ -139,11 +139,11 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
             .gui
             .toolpath_rt
             .values()
-            .any(|rt| rt.result.is_some()),
+            .any(|rt| rt.run.result().is_some()),
         "fixture 2: generate_all_for_test must leave a generated result"
     );
     let predicate =
-        crate::ui::readiness::simulation_request_is_buildable(&controller.state.session);
+        crate::ui::readiness::simulation_request_is_buildable(controller.state.session());
     let builder = controller
         .build_simulation_groups(|_, tc| tc.enabled, |_| false)
         .is_some();
@@ -157,17 +157,17 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
     // drops it (`controller/events/simulation.rs`), so neither may admit it.
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
     panel_edit(&mut controller, id, |entry| {
         entry.tool_id = ToolId(999);
     });
     assert_eq!(
-        controller.state.session.toolpath_configs()[0].tool_id,
+        controller.state.session().toolpath_configs()[0].tool_id,
         999,
         "fixture 3 precondition failed: the corrupt tool id did not reach the session"
     );
     let predicate =
-        crate::ui::readiness::simulation_request_is_buildable(&controller.state.session);
+        crate::ui::readiness::simulation_request_is_buildable(controller.state.session());
     let builder = controller
         .build_simulation_groups(|_, tc| tc.enabled, |_| false)
         .is_some();
@@ -185,12 +185,12 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
     // run CAN simulate it and the primary must say so.
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
     panel_edit(&mut controller, id, |entry| {
         entry.stock_source = crate::state::toolpath::StockSource::FromRemainingStock;
     });
     assert_eq!(
-        controller.state.session.toolpath_configs()[0].stock_source,
+        controller.state.session().toolpath_configs()[0].stock_source,
         crate::state::toolpath::StockSource::FromRemainingStock,
         "fixture 4 precondition failed: the stock source did not reach the session"
     );
@@ -198,7 +198,7 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
     // drawing it, so the fixture drops it by hand. The panel never clears
     // it; three other tests in this file clear it the same way.
     for rt in controller.state.gui.toolpath_rt.values_mut() {
-        rt.result = None;
+        rt.run = crate::state::runtime::ToolpathRun::Pending;
     }
     assert!(
         controller
@@ -206,11 +206,11 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
             .gui
             .toolpath_rt
             .values()
-            .all(|rt| rt.result.is_none()),
+            .all(|rt| rt.run.result().is_none()),
         "fixture 4: the phantom prior stock needs an ungenerated op"
     );
     let predicate =
-        crate::ui::readiness::simulation_request_is_buildable(&controller.state.session);
+        crate::ui::readiness::simulation_request_is_buildable(controller.state.session());
     let builder = controller
         .build_simulation_groups(|_, tc| tc.enabled, |_| false)
         .is_some();
@@ -245,7 +245,7 @@ fn the_gui_builder_reads_every_drill_signal_cmp19() {
     use rs_cam_core::toolpath::MoveIntent;
 
     let mut controller = sample_controller();
-    let tc = &controller.state.session.toolpath_configs()[0];
+    let tc = &controller.state.session().toolpath_configs()[0];
     let id = tc.id;
     let op_type = tc.operation.op_type();
     assert!(
@@ -266,8 +266,8 @@ fn the_gui_builder_reads_every_drill_signal_cmp19() {
             .toolpath_rt
             .get_mut(&id)
             .expect("the fixture seeds a runtime for toolpath 0")
-            .result
-            .as_mut()
+            .run
+            .result_mut()
             .expect("the fixture seeds a result")
             .annotated = Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
             tp,
@@ -280,7 +280,7 @@ fn the_gui_builder_reads_every_drill_signal_cmp19() {
                 .gui
                 .toolpath_rt
                 .get(&id)
-                .and_then(|rt| rt.result.as_ref())
+                .and_then(|rt| rt.run.result())
                 .expect("the seed above wrote a result");
             (Arc::clone(&held.annotated), held.drill_op.clone())
         };
@@ -288,10 +288,9 @@ fn the_gui_builder_reads_every_drill_signal_cmp19() {
             Some(drill) => rs_cam_core::ops::drill_op::OpData::DrillOp(drill, annotated),
             None => rs_cam_core::ops::drill_op::OpData::Toolpath(annotated),
         };
-        let revision = controller.state.session.toolpath_revision(0);
+        let revision = controller.state.session().toolpath_revision(0);
         let _ = controller
             .state
-            .session
             .apply(Command::AdoptResult(AdoptResultArgs {
                 index: 0,
                 revision,
@@ -415,7 +414,7 @@ fn toolpath_results_persist_debug_trace_metadata() {
         .toolpath_rt
         .get(&ToolpathId(0))
         .expect("toolpath runtime should exist");
-    let result = rt.result.as_ref().expect("result should be stored");
+    let result = rt.run.result().expect("result should be stored");
     let stored_trace = result
         .debug_trace
         .as_ref()
@@ -493,10 +492,10 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
         .get(&ToolpathId(0))
         .expect("toolpath runtime should exist");
     assert!(matches!(
-        rt.status,
-        crate::state::runtime::ComputeStatus::Pending
+        rt.run,
+        crate::state::runtime::ToolpathRun::Pending
     ));
-    assert!(rt.result.is_none());
+    assert!(rt.run.result().is_none());
     assert_eq!(
         rt.debug_trace
             .as_ref()
@@ -525,9 +524,9 @@ fn the_gui_builder_carries_the_stock_changes_s2() {
 
     let mut controller = sample_controller();
     for rt in controller.state.gui.toolpath_rt.values_mut() {
-        rt.result = None;
+        rt.run = crate::state::runtime::ToolpathRun::Pending;
     }
-    let model_id = ModelId(controller.state.session.models()[0].id);
+    let model_id = ModelId(controller.state.session().models()[0].id);
     let change = |id: usize, enabled: bool| StockChange {
         id: StockChangeId(id),
         name: format!("Change {id}"),
@@ -541,7 +540,6 @@ fn the_gui_builder_carries_the_stock_changes_s2() {
     for (id, enabled) in [(1, true), (2, false), (3, true)] {
         let _ = controller
             .state
-            .session
             .apply(Command::AddStockChange(
                 rs_cam_core::session::AddStockChangeArgs {
                     setup_index: 0,
@@ -552,7 +550,7 @@ fn the_gui_builder_carries_the_stock_changes_s2() {
     }
 
     let predicate =
-        crate::ui::readiness::simulation_request_is_buildable(&controller.state.session);
+        crate::ui::readiness::simulation_request_is_buildable(controller.state.session());
     let (groups, _, _) = controller
         .build_simulation_groups(|_, tc| tc.enabled, |_| false)
         .expect("a setup with a stock change emits a group");
@@ -565,7 +563,7 @@ fn the_gui_builder_carries_the_stock_changes_s2() {
         .map(|c| c.change.id.0)
         .collect();
     assert_eq!(carried, vec![1, 3], "the enabled changes, in list order");
-    let mesh = controller.state.session.models()[0]
+    let mesh = controller.state.session().models()[0]
         .mesh
         .clone()
         .expect("the fixture model is a mesh");
@@ -576,8 +574,8 @@ fn the_gui_builder_carries_the_stock_changes_s2() {
         }
     }
     let core = rs_cam_core::compute::simulate::group_stock_changes(
-        &controller.state.session.list_setups()[0],
-        controller.state.session.models(),
+        &controller.state.session().list_setups()[0],
+        controller.state.session().models(),
     );
     assert_eq!(
         core.iter().map(|c| &c.change).collect::<Vec<_>>(),
@@ -620,7 +618,7 @@ mod stock_material_legend_s5 {
     /// applied it (slot 1), the Simulation workspace and the stock drawn.
     fn controller_with_an_added_material(volumes: bool) -> AppController<ScriptedBackend> {
         let mut controller = sample_controller();
-        let model_id = ModelId(controller.state.session.models()[0].id);
+        let model_id = ModelId(controller.state.session().models()[0].id);
         let change = StockChange {
             id: StockChangeId(1),
             name: "Pour".to_owned(),
@@ -633,7 +631,6 @@ mod stock_material_legend_s5 {
         };
         let _ = controller
             .state
-            .session
             .apply(Command::AddStockChange(
                 rs_cam_core::session::AddStockChangeArgs {
                     setup_index: 0,
@@ -641,7 +638,7 @@ mod stock_material_legend_s5 {
                 },
             ))
             .expect("the flat mesh is a valid Model geometry");
-        let setup_id = controller.state.session.list_setups()[0].id;
+        let setup_id = controller.state.session().list_setups()[0].id;
         let stock_change_volumes = if volumes {
             vec![StockChangeVolume {
                 setup_id,
@@ -657,7 +654,7 @@ mod stock_material_legend_s5 {
         };
         // The submit door stamps the epoch; the adopt reads it (D7).
         controller.state.simulation.submitted_simulation_epoch =
-            Some(controller.state.session.simulation_epoch());
+            Some(controller.state.session().simulation_epoch());
         controller
             .compute
             .drained
@@ -700,17 +697,17 @@ mod stock_material_legend_s5 {
     fn the_legend_lists_each_material_of_the_simulated_stock_s5() {
         let controller = controller_with_an_added_material(true);
         assert!(controller.state.simulation.has_results());
-        let sim = controller.state.session.simulation_result();
+        let sim = controller.state.session().simulation_result();
         assert_eq!(
             sim.map(|s| s.stock_change_volumes.len()),
             Some(1),
             "the session holds the simulation and its volume"
         );
-        assert_eq!(controller.state.session.stock_material_legend().len(), 2);
+        assert_eq!(controller.state.session().stock_material_legend().len(), 2);
         assert!(has_materials_line(&controller), "no Stock materials line");
 
         let entries = legend_rail::category_entries(&controller.state, Categories::StockMaterials);
-        let stock_label = controller.state.session.stock_config().material.label();
+        let stock_label = controller.state.session().stock_config().material.label();
         let palette = MaterialPalette::default();
         assert_eq!(
             entries,
@@ -723,7 +720,7 @@ mod stock_material_legend_s5 {
         assert_eq!(
             controller
                 .state
-                .session
+                .session()
                 .stock_material_palette()
                 .colour(MaterialSlot(1)),
             colour_from_rgb8(DISPLAY)
@@ -755,7 +752,13 @@ mod stock_material_legend_s5 {
         // The change exists, but the simulation added no material with it.
         let controller = controller_with_an_added_material(false);
         assert!(controller.state.simulation.has_results());
-        assert!(controller.state.session.stock_material_legend().is_empty());
+        assert!(
+            controller
+                .state
+                .session()
+                .stock_material_legend()
+                .is_empty()
+        );
         assert!(!has_materials_line(&controller));
     }
 }

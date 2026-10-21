@@ -12,7 +12,11 @@ pub(super) fn draw_model_properties(
 ) {
     use crate::state::job::ModelUnits;
 
-    let Some(model) = state.session.models().iter().find(|m| m.id == id.0) else {
+    // The model is read from the session while the panel drafts are
+    // written, so the two borrow as disjoint parts (F096).
+    let parts = state.split_mut();
+    let panels = parts.panels;
+    let Some(model) = parts.session.models().iter().find(|m| m.id == id.0) else {
         return;
     };
 
@@ -189,7 +193,7 @@ pub(super) fn draw_model_properties(
         let current = model.units.unwrap_or(ModelUnits::Millimeters);
         if let Some(units) = crate::ui::import_modal::units_row(
             ui,
-            &mut state.panels.number_drafts,
+            &mut panels.number_drafts,
             egui::Id::new(("model_units_row", id)),
             current,
         ) {
@@ -197,7 +201,7 @@ pub(super) fn draw_model_properties(
         }
         if let Some(options) = crate::ui::import_modal::join_row(
             ui,
-            &mut state.panels.number_drafts,
+            &mut panels.number_drafts,
             egui::Id::new(("model_join_tolerance", id)),
             model.import_options,
         ) {
@@ -210,7 +214,7 @@ pub(super) fn draw_model_properties(
 
     // P4.9: the open shapes of a drawing and the edit ledger.
     if model.items.has_drawing() || !model.drawing.edits().is_empty() {
-        draw_open_shapes(ui, id, model, &mut state.panels, events);
+        draw_open_shapes(ui, id, model, panels, events);
     }
 
     // Expert-grade internals — mesh counts, BREP topology, polygon listing —

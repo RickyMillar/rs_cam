@@ -375,7 +375,7 @@ impl RsCamApp {
         // Select a specific setup by index via RS_CAM_SETUP
         if let Ok(setup_str) = std::env::var("RS_CAM_SETUP")
             && let Ok(idx) = setup_str.parse::<usize>()
-            && let Some(setup) = controller.state().session.list_setups().get(idx)
+            && let Some(setup) = controller.state().session().list_setups().get(idx)
         {
             let setup_id = crate::state::job::SetupId(setup.id);
             controller.state_mut().selection = crate::state::selection::Selection::Setup(setup_id);
@@ -458,7 +458,7 @@ impl RsCamApp {
         now: f64,
     ) -> Option<rs_cam_core::geo::BoundingBox3> {
         let bbox = crate::interaction::picking::selection_frame_bounds(
-            &self.controller.state().session,
+            self.controller.state().session(),
             id,
             &keys,
         )?;
@@ -482,7 +482,7 @@ impl RsCamApp {
         keys: &[rs_cam_core::selection::MatchKey],
     ) -> Option<rs_cam_core::geo::BoundingBox3> {
         let bbox = crate::interaction::picking::model_items_bounds(
-            &self.controller.state().session,
+            self.controller.state().session(),
             model_id,
             keys,
         )?;
@@ -494,7 +494,7 @@ impl RsCamApp {
         if let Some(bbox) = self
             .controller
             .state()
-            .session
+            .session()
             .models()
             .iter()
             .find_map(rs_cam_core::session::LoadedModel::bbox)
@@ -703,24 +703,20 @@ impl RsCamApp {
             .default_size(120.0);
         bottom_panel.show(ui, |ui| {
             let (state, events) = self.controller.state_and_events_mut();
-            crate::ui::sim_timeline::draw(
-                ui,
-                &mut state.simulation,
-                &state.session,
-                &state.gui,
-                events,
-            );
+            let parts = state.split_mut();
+            crate::ui::sim_timeline::draw(ui, parts.simulation, parts.session, parts.gui, events);
         });
 
         // Left panel: operation list
         side_panel(ui, SidePanelEdge::Left, "sim_op_list", 240.0, |ui| {
             let (state, events) = self.controller.state_and_events_mut();
+            let parts = state.split_mut();
             crate::ui::sim_op_list::draw(
                 ui,
-                &mut state.simulation,
-                &state.session,
-                &state.gui,
-                &mut state.viewport,
+                parts.simulation,
+                parts.session,
+                parts.gui,
+                parts.viewport,
                 events,
             );
         });
@@ -734,11 +730,12 @@ impl RsCamApp {
             |ui| {
                 let (state, events) = self.controller.state_and_events_mut();
                 let trace_before = state.simulation.open_trace;
+                let parts = state.split_mut();
                 crate::ui::sim_diagnostics::draw(
                     ui,
-                    &mut state.simulation,
-                    &state.session,
-                    &state.gui,
+                    parts.simulation,
+                    parts.session,
+                    parts.gui,
                     events,
                 );
                 // A card's `< >` button set the trace on this frame. Open it
@@ -1196,12 +1193,8 @@ impl RsCamApp {
         if self.controller.state().simulation.open_trace.is_some() {
             let (state, events) = self.controller.state_and_events_mut();
             if state.workspace == Workspace::Simulation {
-                crate::ui::sim_trace_modal::draw(
-                    ctx,
-                    &mut state.simulation,
-                    &state.session,
-                    events,
-                );
+                let parts = state.split_mut();
+                crate::ui::sim_trace_modal::draw(ctx, parts.simulation, parts.session, events);
             } else {
                 state.simulation.open_trace = None;
             }
@@ -1555,7 +1548,7 @@ pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploa
         pin_ghost: state.viewport.show_pin_ghost,
         selected_pin: state.panels.selected_pin,
         display_setup: crate::state::pin_view::active_display_setup(
-            &state.session,
+            state.session(),
             &state.selection,
         )
         .map(|(_, id)| id),

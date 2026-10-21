@@ -1483,7 +1483,7 @@ fn aggregate_stats(
 
     for boundary in sim.boundaries() {
         if let Some(rt) = gui.toolpath_rt.get(&boundary.id)
-            && let Some(result) = &rt.result
+            && let Some(result) = rt.run.result()
             && let Some((_, tc)) = session.find_toolpath_config_by_id(boundary.id)
         {
             total_cutting += result.stats.cutting_distance;
@@ -2279,7 +2279,7 @@ fn playhead_span_id(sim: &SimulationState, gui: &GuiState, toolpath_id: Toolpath
     }
     let local = global - boundary.start_move;
     let rt = gui.toolpath_rt.get(&toolpath_id)?;
-    let result = rt.result.as_ref()?;
+    let result = rt.run.result()?;
     if !result.spans_valid() {
         return None;
     }
@@ -2320,7 +2320,7 @@ fn draw_span_section(
         (Some(tp), Some(sid)) => gui
             .toolpath_rt
             .get(&tp)
-            .and_then(|rt| rt.result.as_ref())
+            .and_then(|rt| rt.run.result())
             .and_then(|r| {
                 r.spans()
                     .get(sid as usize)
@@ -2397,7 +2397,7 @@ fn draw_span_body(
     let Some(rt) = gui.toolpath_rt.get(&tp_id) else {
         return;
     };
-    let Some(result) = rt.result.as_ref() else {
+    let Some(result) = rt.run.result() else {
         return;
     };
     let spans = result.spans();

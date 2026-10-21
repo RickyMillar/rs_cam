@@ -21,17 +21,17 @@ pub fn refresh_layout(state: &mut AppState) -> bool {
     let Selection::Toolpath(id) = state.selection else {
         return false;
     };
-    let Some((index, _)) = state.session.find_toolpath_config_by_id(id) else {
+    let Some((index, _)) = state.session().find_toolpath_config_by_id(id) else {
         return false;
     };
-    let revision = state.session.toolpath_revision(index);
+    let revision = state.session().toolpath_revision(index);
     let Some(mode) = state.gui.selection_ui.tab_edit(id) else {
         return false;
     };
     if mode.layout.as_ref().is_some_and(|(r, _)| *r == revision) {
         return false;
     }
-    let answer = read_layout(&state.session, index);
+    let answer = read_layout(state.session(), index);
     if let Some(mode) = state.gui.selection_ui.tab_edit_mut(id) {
         // A new layout numbers its marks again, so a drag of an old mark
         // ends.

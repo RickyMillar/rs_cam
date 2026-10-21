@@ -29,11 +29,11 @@ impl RsCamApp {
         let state = self.controller.state();
         match &state.selection {
             Selection::Toolpath(tp_id) => state
-                .session
+                .session()
                 .find_toolpath_config_by_id(*tp_id)
                 .and_then(|(_, tc)| {
                     let target = rs_cam_core::session::SelectionTarget::for_face_pick(tc);
-                    state.session.selection_status(tc, target).ok()
+                    state.session().selection_status(tc, target).ok()
                 })
                 .map(|report| {
                     report
@@ -68,7 +68,7 @@ impl RsCamApp {
     ) -> Vec<[f32; 3]> {
         let num_verts = mesh.vertices.len() / 3;
         // S5: the plain stock colours show the material of each vertex.
-        let palette = self.controller.state().session.stock_material_palette();
+        let palette = self.controller.state().session().stock_material_palette();
         match self.controller.state().simulation.stock_viz_mode {
             StockVizMode::Solid => solid_sim_colors(mesh, &palette),
             StockVizMode::Deviation => sim_render::deviation_colors_for_mesh(
@@ -119,7 +119,7 @@ impl RsCamApp {
         let Some((face_up, z_rot, true)) = self.active_setup_orientation(move_idx) else {
             return;
         };
-        let stock_cfg = self.controller.state().session.stock_config();
+        let stock_cfg = self.controller.state().session().stock_config();
         let (eff_w, eff_d, _) = face_up.effective_stock(stock_cfg.x, stock_cfg.y, stock_cfg.z);
         for i in (0..mesh.vertices.len()).step_by(3) {
             let p = rs_cam_core::geo::P3::new(
@@ -150,7 +150,7 @@ impl RsCamApp {
                 self.hover_detector.hovered(),
                 crate::state::selection_highlight::highlight_toolpath(state),
             ) {
-                (Some(key), Some(tc)) => hover_vertices(&state.session, tc, key),
+                (Some(key), Some(tc)) => hover_vertices(state.session(), tc, key),
                 _ => Vec::new(),
             }
         };
@@ -190,7 +190,7 @@ impl RsCamApp {
                     .selection_ui
                     .tab_edit(id)
                     .and_then(|mode| {
-                        crate::interaction::picking::tab_scene(&state.session, id, mode)
+                        crate::interaction::picking::tab_scene(state.session(), id, mode)
                     })
                     .map(|scene| tab_vertices(&scene))
                     .unwrap_or_default(),
@@ -330,9 +330,9 @@ struct PassFrame {
 impl PassFrame {
     fn of(state: &crate::state::AppState) -> Self {
         Self {
-            setup: crate::state::pin_view::active_display_setup(&state.session, &state.selection)
+            setup: crate::state::pin_view::active_display_setup(state.session(), &state.selection)
                 .map(|(frame, id)| (id, frame)),
-            stock: state.session.stock_config().clone(),
+            stock: state.session().stock_config().clone(),
         }
     }
 

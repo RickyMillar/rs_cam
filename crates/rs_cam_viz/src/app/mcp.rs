@@ -371,7 +371,7 @@ impl super::RsCamApp {
                     // compile here.
                     CorePlan::Apply(command, before) | CorePlan::ApplyPair(_, command, before) => {
                         let id = command.id();
-                        let outcome = self.controller.state_mut().session.apply(command);
+                        let outcome = self.controller.apply(command);
                         self.describe_core(id, outcome, &before)
                     }
                 };
@@ -445,7 +445,7 @@ impl super::RsCamApp {
                 let tp_name = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .toolpath_configs()
                     .get(index)
                     .map_or_else(|| format!("#{index}"), |tc| tc.name.clone());
@@ -812,7 +812,7 @@ impl super::RsCamApp {
             || param.mist_output.is_some()
             || param.native_drill_cycles.is_some()
         {
-            let mut post = self.controller.state().session.post_config().clone();
+            let mut post = self.controller.state().session().post_config().clone();
             if param.controller_waits_for_spindle.is_some() {
                 post.controller_waits_for_spindle = param.controller_waits_for_spindle;
             }
@@ -827,10 +827,10 @@ impl super::RsCamApp {
                     post: Box::new(post),
                 },
             );
-            let applied = self.controller.state_mut().session.apply(command);
+            let applied = self.controller.apply(command);
             match applied {
-                Ok(effects) => {
-                    self.controller.adopt_post_effects(&effects);
+                Ok(_) => {
+                    self.controller.refresh_post_mirror();
                     self.controller.state_mut().gui.mark_edited();
                 }
                 Err(e) => return text(format!("Export failed: {e}")),
@@ -890,14 +890,14 @@ impl super::RsCamApp {
         // G3: omitted, the post decides (grblHAL: one file per setup).
         let split_setups = param.split_setups.unwrap_or(
             state
-                .session
+                .session()
                 .post_config()
                 .format
                 .definition()
                 .prefer_one_file_per_setup,
         );
         if split_setups {
-            let setups_with_ops = crate::io::export::setups_with_enabled_ops(&state.session);
+            let setups_with_ops = crate::io::export::setups_with_enabled_ops(state.session());
             if setups_with_ops > 1 {
                 let path_buf = Path::new(path);
                 let stem = path_buf
@@ -912,7 +912,7 @@ impl super::RsCamApp {
                 // G3: the one per-setup door the GUI layout takes, header
                 // included.
                 let files = match crate::io::export::export_per_setup_files(
-                    &state.session,
+                    state.session(),
                     &state.gui,
                     &state.simulation,
                     policy,
@@ -969,7 +969,7 @@ impl super::RsCamApp {
         // clearance plane, a Z below the program floor — read to the
         // calling agent exactly like a clean one.
         let exported = match crate::io::export::export_gcode_from_session_reporting(
-            &state.session,
+            state.session(),
             &state.gui,
             &state.simulation,
             policy,
@@ -1001,7 +1001,7 @@ impl super::RsCamApp {
         let tp_id = self
             .controller
             .state()
-            .session
+            .session()
             .toolpath_configs()
             .get(index)
             .map(|tc| tc.id);

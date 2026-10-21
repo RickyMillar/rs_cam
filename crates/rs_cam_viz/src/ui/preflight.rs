@@ -46,9 +46,9 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             // EDITED op's previous geometry, while this modal said
             // "3/4 computed".
             let blocking = crate::io::export::blocking_toolpaths(
-                &state.session,
+                state.session(),
                 &state.gui,
-                0..state.session.toolpath_configs().len(),
+                0..state.session().toolpath_configs().len(),
                 state.gui.stale_export,
             );
             for blocker in &blocking {
@@ -74,8 +74,8 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             // simulation the session no longer holds. A caution, never a
             // block; the export door reports the same lines.
             for caution in crate::io::export::feeds_cautions(
-                &state.session,
-                0..state.session.toolpath_configs().len(),
+                state.session(),
+                0..state.session().toolpath_configs().len(),
             ) {
                 check_card(
                     ui,
@@ -356,14 +356,14 @@ pub(crate) fn simulation_detail(state: &AppState) -> String {
         // "machine settings changed after this run", not "parameters".
         SimFreshness::EditedSince(_) => format!(
             "Stale — {}, run again",
-            freshness.stale_reason(&state.session).unwrap_or_default()
+            freshness.stale_reason(state.session()).unwrap_or_default()
         ),
         // G-STALECARDS: a re-run cannot help; the operation needs a
         // regenerate first.
         SimFreshness::Ungenerated(id) => format!(
             "Stale — regenerate {} first",
             state
-                .session
+                .session()
                 .find_toolpath_config_by_id(id)
                 .map_or("an operation", |(_, tc)| tc.name.as_str())
         ),

@@ -31,7 +31,7 @@ fn a_simulation_after_an_edit_carves_only_what_core_holds() {
     let mut controller = rest_chain_controller(2);
     let ids: Vec<ToolpathId> = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| tc.id)
@@ -42,16 +42,16 @@ fn a_simulation_after_an_edit_carves_only_what_core_holds() {
     pump_until_idle(&mut controller);
     for index in 0..ids.len() {
         assert!(
-            controller.state.session.get_result(index).is_some(),
+            controller.state.session().get_result(index).is_some(),
             "row {index} must be generated before the edit"
         );
     }
 
     // The edit: core drops row 1 and its rest dependent row 2. The GUI copy
     // of both stays for the viewport.
-    let effects = controller
+    // `AppState::apply` stamps the stale set (F096).
+    let _ = controller
         .state
-        .session
         .apply(Command::SetToolpathParam(
             rs_cam_core::session::SetToolpathParamArgs {
                 index: 1,
@@ -60,16 +60,15 @@ fn a_simulation_after_an_edit_carves_only_what_core_holds() {
             },
         ))
         .expect("scallop_height is a scallop parameter");
-    crate::state::stale::stamp_stale(&mut controller.state, &effects.stale);
-    assert!(controller.state.session.get_result(1).is_none());
-    assert!(controller.state.session.get_result(2).is_none());
+    assert!(controller.state.session().get_result(1).is_none());
+    assert!(controller.state.session().get_result(2).is_none());
     assert!(
         controller
             .state
             .gui
             .toolpath_rt
             .get(&ids[1])
-            .is_some_and(|rt| rt.result.is_some()),
+            .is_some_and(|rt| rt.run.result().is_some()),
         "non-vacuity: the GUI copy of the edited row must outlive the core drop"
     );
 

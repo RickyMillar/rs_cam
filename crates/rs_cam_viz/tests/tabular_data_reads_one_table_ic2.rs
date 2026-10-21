@@ -113,8 +113,8 @@ fn fixture() -> AppState {
         .add_toolpath(0, config)
         .expect("add the IC2 fixture");
     let mut state = AppState::new();
-    state.session = builder.build();
-    let id = state.session.toolpath_configs()[0].id;
+    state.replace_session(builder.build());
+    let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     state.selection = Selection::Toolpath(id);
     state
@@ -126,7 +126,7 @@ fn apply_all(state: &mut AppState) {
     use rs_cam_core::feeds::suggest::{
         ApplyContext, ApplyScope, SuggestContext, apply, feeds_preview_for_operation,
     };
-    let session = &state.session;
+    let session = state.session();
     let mut draft = session.toolpath_configs()[0].clone();
     let tool = session.tools()[0].clone();
     let machine = session.machine().clone();
@@ -163,7 +163,6 @@ fn apply_all(state: &mut AppState) {
         },
     );
     let _effects = state
-        .session
         .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
             index: 0,
             config: Box::new(draft),
@@ -183,7 +182,7 @@ fn painted(state: &mut AppState, open: bool) -> Vec<String> {
     if open {
         ctx.memory_mut(|memory| memory.set_everything_is_visible(true));
     }
-    let id = state.session.toolpath_configs()[0].id;
+    let id = state.session().toolpath_configs()[0].id;
     state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::FeedsSpeeds));
     let mut texts = Vec::new();
     for pass in 0..2 {

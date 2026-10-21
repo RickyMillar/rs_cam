@@ -145,9 +145,10 @@ fn state() -> AppState {
     };
     builder.add_toolpath(0, pocket).unwrap();
     let mut state = AppState::new();
-    state.session = builder.build();
-    for config in state.session.toolpath_configs() {
-        state
+    state.replace_session(builder.build());
+    let parts = state.split_mut();
+    for config in parts.session.toolpath_configs() {
+        parts
             .gui
             .toolpath_rt
             .insert(config.id, ToolpathRuntime::new(true));
@@ -158,7 +159,7 @@ fn state() -> AppState {
 
 /// Show toolpath `index` on its Geometry tab.
 fn select(state: &mut AppState, index: usize) {
-    let id = state.session.toolpath_configs()[index].id;
+    let id = state.session().toolpath_configs()[index].id;
     state.selection = UiSelection::Toolpath(id);
     state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::Geometry));
 }
@@ -166,7 +167,6 @@ fn select(state: &mut AppState, index: usize) {
 /// Apply one edit through the command row, as the controller does.
 fn apply(state: &mut AppState, index: usize, target: SelectionTarget, edit: SelectionEdit) {
     let _ = state
-        .session
         .apply(Command::EditSelection(EditSelectionArgs {
             index,
             target,
@@ -179,7 +179,7 @@ fn apply(state: &mut AppState, index: usize, target: SelectionTarget, edit: Sele
 /// toolpath.
 fn stored(state: &AppState) -> Vec<String> {
     state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| format!("{:?} {:?}", tc.operation, tc.boundary))
@@ -343,7 +343,7 @@ fn the_selection_section_writes_edits_only_p4_3() {
 
     // The picks Clear keeps the rules.
     let circle = state
-        .session
+        .session()
         .list_model_items(0, Some("HOLES"), Some(ItemKind::Circle))
         .unwrap()[0]
         .key
@@ -419,9 +419,9 @@ fn a_selection_refusal_has_one_owner_p4_3() {
         SelectionEdit::Replace(Box::new(Selection::empty())),
     );
     let refusal = {
-        let tc = &state.session.toolpath_configs()[0];
+        let tc = &state.session().toolpath_configs()[0];
         state
-            .session
+            .session()
             .selection_status(tc, SelectionTarget::Op)
             .unwrap()
             .refusal

@@ -152,8 +152,8 @@ impl SlotInputs for ToolpathInputs<'_> {
 /// AdvancePerTooth mode.
 fn advance_pass(state: &AppState) -> AdvancePass<'_> {
     AdvancePass {
-        report: state.simulation.cached_load_report(&state.session),
-        session: &state.session,
+        report: state.simulation.cached_load_report(state.session()),
+        session: state.session(),
         trace: state
             .simulation
             .results
@@ -169,7 +169,7 @@ fn inputs<'a>(
     frame: &PassFrame,
     colouring: Colouring<'a>,
 ) -> Vec<ToolpathInputs<'a>> {
-    let session = &state.session;
+    let session = state.session();
     let gui = &state.gui;
     let display_shift = frame.display_shift();
     let selected_tp_id = match state.selection {
@@ -189,7 +189,7 @@ fn inputs<'a>(
             (
                 tc.id,
                 rt.is_none_or(|r| r.visible),
-                rt.is_some_and(|r| r.result.is_some()),
+                rt.is_some_and(|r| r.run.result().is_some()),
             )
         }),
     );
@@ -212,7 +212,7 @@ fn inputs<'a>(
         let Some(result) = gui
             .toolpath_rt
             .get(&tc.id)
-            .and_then(|r| r.result.as_ref())
+            .and_then(|r| r.run.result())
             .filter(|_| draw_set.contains(&tp_id))
         else {
             continue;
@@ -421,7 +421,7 @@ pub(super) fn upload_height_planes(
         resources.height_planes_data = None;
         return;
     };
-    let session = &state.session;
+    let session = state.session();
     let display_shift = frame.display_shift();
     // P3.1: THE heights of the session; a refused height draws no planes.
     resources.height_planes_data = session

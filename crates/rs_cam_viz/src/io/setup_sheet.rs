@@ -372,7 +372,7 @@ tr:nth-child(even) {{ background: #24242e; }}
         let time_str = gui
             .toolpath_rt
             .get(&tc.id)
-            .and_then(|rt| rt.result.as_ref())
+            .and_then(|rt| rt.run.result())
             .map(|result| {
                 let op = readiness::toolpath_cycle_time(
                     session,

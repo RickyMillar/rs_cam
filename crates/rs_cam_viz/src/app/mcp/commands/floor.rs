@@ -169,11 +169,14 @@ mod tests {
 
         // GUI: the inspector edits the draft and writes the whole config.
         let mut state = crate::state::AppState::new();
-        state.session = project();
-        let id = state.session.toolpath_configs()[0].id;
-        let mut entry =
-            crate::ui::properties::build_entry_from_session_and_gui(id, &state.session, &state.gui)
-                .expect("the toolpath has an entry");
+        state.replace_session(project());
+        let id = state.session().toolpath_configs()[0].id;
+        let mut entry = crate::ui::properties::build_entry_from_session_and_gui(
+            id,
+            state.session(),
+            &state.gui,
+        )
+        .expect("the toolpath has an entry");
         match &mut entry.operation {
             OperationConfig::Pocket(c) => c.floor = floor,
             other => panic!("the fixture op is a Pocket, not {}", other.label()),
@@ -183,7 +186,7 @@ mod tests {
 
         // One config.
         let mcp_tc = mcp.get_toolpath_config(0).unwrap();
-        let gui_tc = state.session.get_toolpath_config(0).unwrap();
+        let gui_tc = state.session().get_toolpath_config(0).unwrap();
         assert_eq!(
             serde_json::to_value(&mcp_tc.operation).unwrap(),
             serde_json::to_value(&gui_tc.operation).unwrap(),
@@ -198,7 +201,7 @@ mod tests {
 
         // One `toolpath_heights`.
         let mcp_heights = toolpath_heights_json(&mcp, mcp_tc);
-        let gui_heights = toolpath_heights_json(&state.session, gui_tc);
+        let gui_heights = toolpath_heights_json(state.session(), gui_tc);
         assert_eq!(mcp_heights, gui_heights, "one toolpath_heights");
         assert_eq!(mcp_heights["floor"], file_json, "{mcp_heights}");
         assert_eq!(mcp_heights["floor_z"], serde_json::json!(FLOOR_Z));

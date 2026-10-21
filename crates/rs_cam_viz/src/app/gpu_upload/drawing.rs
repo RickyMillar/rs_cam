@@ -38,7 +38,7 @@ pub(super) fn upload(
         if st.workspace == Workspace::Toolpaths
             && let Selection::Toolpath(id) = st.selection
         {
-            st.session
+            st.session()
                 .toolpath_configs()
                 .iter()
                 .find(|tc| tc.id == id)
@@ -46,7 +46,7 @@ pub(super) fn upload(
                     // Geometry selection P2.3c: the items the
                     // generator resolves, each marked selected
                     // or not (`ProjectSession::hole_selection`).
-                    Some((tc.model_id, st.session.hole_selection(tc)?))
+                    Some((tc.model_id, st.session().hole_selection(tc)?))
                 })
         } else {
             None
@@ -66,11 +66,11 @@ pub(super) fn upload(
                 crate::state::viewport::DrawingDraw::Neutral { .. } => None,
             })
             .and_then(|id| {
-                let tc = state.session.find_toolpath_config_by_id(id)?.1;
+                let tc = state.session().find_toolpath_config_by_id(id)?.1;
                 let setup = state
-                    .session
+                    .session()
                     .setup_of_toolpath_id(id)
-                    .and_then(|index| state.session.list_setups().get(index))
+                    .and_then(|index| state.session().list_setups().get(index))
                     .map(SetupFrame::of);
                 Some((tc.clone(), setup))
             })
@@ -128,7 +128,7 @@ pub(super) fn upload(
             break 'polygon_upload;
         };
         let Some(model) = state
-            .session
+            .session()
             .models()
             .iter()
             .find(|model| model.id == toolpath.model_id)
@@ -141,11 +141,11 @@ pub(super) fn upload(
         let setup_ref = model_setup.as_ref();
         // P4.5: the one plane of the draw and the pick.
         let planar_z =
-            crate::interaction::picking::drawing_plane_z(&state.session, &toolpath, setup_ref)
+            crate::interaction::picking::drawing_plane_z(state.session(), &toolpath, setup_ref)
                 as f32;
         let surface_mesh = match &toolpath.operation {
             rs_cam_core::compute::catalog::OperationConfig::ProjectCurve(cfg) => state
-                .session
+                .session()
                 .models()
                 .iter()
                 .find(|model| {
@@ -378,7 +378,7 @@ pub(super) fn upload(
                 return None;
             };
             state
-                .session
+                .session()
                 .models()
                 .iter()
                 .find(|m| m.id == other.0)?
@@ -541,7 +541,7 @@ pub(super) fn upload(
             .iter()
             .filter_map(|draw| match draw {
                 crate::state::viewport::DrawingDraw::Neutral { model_id } => {
-                    state.session.models().iter().find(|m| m.id == *model_id)
+                    state.session().models().iter().find(|m| m.id == *model_id)
                 }
                 crate::state::viewport::DrawingDraw::Toolpath { .. } => None,
             })

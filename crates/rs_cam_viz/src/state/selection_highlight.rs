@@ -21,7 +21,7 @@ use super::toolpath::ToolpathId;
 pub fn highlight_toolpath(state: &AppState) -> Option<&ToolpathConfig> {
     let id = super::viewport::vector_source_toolpath(state)?;
     state
-        .session
+        .session()
         .find_toolpath_config_by_id(id)
         .map(|(_, tc)| tc)
 }
@@ -42,7 +42,7 @@ pub fn highlight_report(
 ) -> Option<(ToolpathId, SelectionTarget, Arc<SelectionReport>)> {
     let tc = highlight_toolpath(state)?;
     let target = highlight_target(tc);
-    let report = state.session.selection_status(tc, target).ok()?;
+    let report = state.session().selection_status(tc, target).ok()?;
     Some((tc.id, target, report))
 }
 
@@ -55,7 +55,7 @@ pub fn boundary_report(state: &AppState) -> Option<Arc<SelectionReport>> {
         return None;
     }
     state
-        .session
+        .session()
         .selection_status(tc, SelectionTarget::Boundary)
         .ok()
 }
@@ -67,7 +67,7 @@ pub fn highlight_refusal(state: &AppState) -> Option<&'static str> {
         return Some("select a toolpath that reads a drawing");
     };
     let has_drawing = state
-        .session
+        .session()
         .models()
         .iter()
         .find(|m| m.id == tc.model_id)

@@ -254,7 +254,13 @@ pub(crate) fn readiness_badge(state: &AppState) -> Option<(String, Role)> {
         Some((format!("{uncomputed} uncomputed"), Role::Caution))
     } else if stale {
         Some(("sim stale".to_owned(), Role::Caution))
-    } else if !sim.has_results() && state.session.toolpath_configs().iter().any(|tc| tc.enabled) {
+    } else if !sim.has_results()
+        && state
+            .session()
+            .toolpath_configs()
+            .iter()
+            .any(|tc| tc.enabled)
+    {
         // "not simulated" is an ABSTENTION, not a caution: nothing was
         // measured, so there is nothing to review.
         Some(("not simulated".to_owned(), Role::Unknown))

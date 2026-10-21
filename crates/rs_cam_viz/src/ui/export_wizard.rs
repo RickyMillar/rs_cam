@@ -213,7 +213,7 @@ fn step_output_layout(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppE
     ui.add_space(4.0);
 
     let wiz = &state.gui.wizard;
-    let setups_with_ops = crate::io::export::setups_with_enabled_ops(&state.session);
+    let setups_with_ops = crate::io::export::setups_with_enabled_ops(state.session());
     let current = wiz.effective_layout(state.gui.post.format.definition(), setups_with_ops);
     let mut selected = current;
 
@@ -231,7 +231,7 @@ fn step_output_layout(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppE
     }
 
     ui.add_space(4.0);
-    let setup_count = state.session.list_setups().len();
+    let setup_count = state.session().list_setups().len();
     if matches!(selected, OutputLayout::PerSetup) && setup_count <= 1 {
         ui.colored_label(
             crate::ui::tokens::CAUTION,
@@ -274,19 +274,19 @@ pub(crate) fn render_filename_preview(
     state: &AppState,
     layout: OutputLayout,
 ) -> String {
-    let job = if state.session.name().is_empty() {
+    let job = if state.session().name().is_empty() {
         "untitled"
     } else {
-        state.session.name()
+        state.session().name()
     };
     let setup = state
-        .session
+        .session()
         .list_setups()
         .first()
         .map(|s| s.name.as_str())
         .unwrap_or("setup1");
     let toolpath = state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .find(|tc| tc.enabled)
@@ -457,7 +457,7 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
     ui.heading("Tool change & spindle");
     ui.add_space(4.0);
 
-    let session = &state.session;
+    let session = state.session();
     let enabled_tcs: Vec<&rs_cam_core::session::ToolpathConfig> = session
         .toolpath_configs()
         .iter()
@@ -656,7 +656,7 @@ fn draw_grblhal_options(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<Ap
     use crate::state::wizard::{ControllerOption, OutputLayout};
     ui.heading("grblHAL");
     ui.add_space(4.0);
-    let session = &state.session;
+    let session = state.session();
     let post = session.post_config();
     let mut resolved = rs_cam_core::gcode::WizardOverlay::default();
     post.apply_controller_options(session.machine(), &mut resolved);
@@ -768,7 +768,7 @@ fn step_setup_pauses(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEv
     ui.heading("Setup pauses");
     ui.add_space(4.0);
 
-    let setups = state.session.list_setups();
+    let setups = state.session().list_setups();
     if setups.len() <= 1 {
         ui.label(
             egui::RichText::new("Project has one setup — no inter-setup pauses to configure.")
@@ -864,8 +864,11 @@ fn step_preview(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>)
 
     // Re-emit on every frame. The emitter is fast (sub-ms for typical
     // projects); cache only matters if profiling shows a hotspot.
-    let gcode_result =
-        crate::io::export::export_gcode_from_session(&state.session, &state.gui, &state.simulation);
+    let gcode_result = crate::io::export::export_gcode_from_session(
+        state.session(),
+        &state.gui,
+        &state.simulation,
+    );
 
     let gcode = match gcode_result {
         Ok(s) => s,
@@ -878,7 +881,7 @@ fn step_preview(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>)
         }
     };
 
-    let findings = crate::io::export::validate_export(&state.session, &state.gui, &gcode);
+    let findings = crate::io::export::validate_export(state.session(), &state.gui, &gcode);
 
     let line_count = gcode.lines().count();
     let preview: String = gcode
@@ -997,7 +1000,7 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     ui.heading("Save");
     ui.add_space(4.0);
 
-    let session = &state.session;
+    let session = state.session();
     let wiz = &state.gui.wizard;
     let post = state.gui.post.format;
     let post_def = post.definition();
@@ -1031,7 +1034,7 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             tool_set.push(tc.tool_id);
         }
         if let Some(rt) = state.gui.toolpath_rt.get(&tc.id)
-            && let Some(result) = rt.result.as_ref()
+            && let Some(result) = rt.run.result()
         {
             total_moves += result.stats.move_count;
             cutting_dist += result.stats.cutting_distance;
@@ -1055,7 +1058,7 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         ui.label(
             wiz.effective_layout(
                 post_def,
-                crate::io::export::setups_with_enabled_ops(&state.session),
+                crate::io::export::setups_with_enabled_ops(state.session()),
             )
             .label(),
         );

@@ -122,8 +122,8 @@ fn fixture() -> AppState {
         .add_toolpath(0, config)
         .expect("add the F216 fixture");
     let mut state = AppState::new();
-    state.session = builder.build();
-    let id = state.session.toolpath_configs()[0].id;
+    state.replace_session(builder.build());
+    let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     state.selection = Selection::Toolpath(id);
     state.gui.pending_toolpath_tab = Some((id, ToolpathTab::Geometry));
@@ -150,7 +150,7 @@ fn frames(ctx: &egui::Context, state: &mut AppState, n: usize) {
 }
 
 fn runtime(state: &AppState) -> &ToolpathRuntime {
-    let id = state.session.toolpath_configs()[0].id;
+    let id = state.session().toolpath_configs()[0].id;
     state
         .gui
         .toolpath_rt
@@ -166,7 +166,6 @@ fn apply(state: &mut AppState, command: Command) {
     // The panel reads the session again on the next frame; the GUI stamp
     // of the effects is not under test here.
     let _effects = state
-        .session
         .apply(command)
         .unwrap_or_else(|error| panic!("the fixture edit must apply: {error:?}"));
 }
@@ -204,7 +203,7 @@ fn the_panel_runs_the_calculator_once_per_input_f216() {
     );
 
     // The Feeds tab reads the same memo: no second calculator run.
-    let id = state.session.toolpath_configs()[0].id;
+    let id = state.session().toolpath_configs()[0].id;
     state.gui.pending_toolpath_tab = Some((id, ToolpathTab::FeedsSpeeds));
     assert_eq!(
         builds_after(&ctx, &mut state, 100),
@@ -225,7 +224,7 @@ fn the_panel_runs_the_calculator_once_per_input_f216() {
     );
 
     // The operation.
-    let stepover = state.session.toolpath_configs()[0]
+    let stepover = state.session().toolpath_configs()[0]
         .operation
         .stepover()
         .expect("a pocket has a stepover");
@@ -260,7 +259,7 @@ fn the_panel_runs_the_calculator_once_per_input_f216() {
     );
 
     // The material.
-    let mut stock = state.session.stock_config().clone();
+    let mut stock = state.session().stock_config().clone();
     stock.material = Material::Plywood {
         grade: PlywoodGrade::HardwoodFaced,
     };
@@ -277,7 +276,7 @@ fn the_panel_runs_the_calculator_once_per_input_f216() {
     );
 
     // The machine.
-    let mut machine = state.session.machine().clone();
+    let mut machine = state.session().machine().clone();
     machine.aggressiveness = 0.6;
     apply(
         &mut state,
@@ -292,7 +291,7 @@ fn the_panel_runs_the_calculator_once_per_input_f216() {
     );
 
     // The spindle strategy.
-    let mut post = state.session.post_config().clone();
+    let mut post = state.session().post_config().clone();
     post.spindle_strategy = match post.spindle_strategy {
         SpindleStrategy::MatchChart => SpindleStrategy::MaxSpeed,
         SpindleStrategy::MaxSpeed => SpindleStrategy::MatchChart,

@@ -167,8 +167,8 @@ pub(crate) fn draw_modal_body(
 ) {
     draw_spindle_strategy_row(
         ui,
-        state.session.post_config().spindle_strategy,
-        state.session.machine(),
+        state.session().post_config().spindle_strategy,
+        state.session().machine(),
         events,
     );
     ui.separator();
@@ -209,22 +209,22 @@ fn read_power_figure(
     preview: &FeedsPreview,
 ) -> Option<rs_cam_core::feeds::PowerFigure> {
     let tc = state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .find(|tc| tc.id == toolpath_id)?;
     let tool = state
-        .session
+        .session()
         .tools()
         .iter()
         .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
-    let stock = state.session.stock_config();
+    let stock = state.session().stock_config();
     let recommended = preview.recommended();
     rs_cam_core::feeds::power_at_operating_point(
         &tc.operation,
         tool,
         &stock.material,
-        state.session.machine(),
+        state.session().machine(),
         Some(rs_cam_core::feeds::suggest::CalculatorOperatingPoint {
             radial_width_mm: recommended.radial_width_mm,
             axial_depth_mm: recommended.axial_depth_mm,
@@ -249,21 +249,21 @@ fn read_cut_efficiency(
     preview: &FeedsPreview,
 ) -> Option<CutEfficiency> {
     let tc = state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .find(|tc| tc.id == toolpath_id)?;
     let tool = state
-        .session
+        .session()
         .tools()
         .iter()
         .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
-    let stock = state.session.stock_config();
+    let stock = state.session().stock_config();
     rs_cam_core::feeds::efficiency::cut_efficiency(
         &tc.operation,
         tool,
         &stock.material,
-        state.session.machine(),
+        state.session().machine(),
         preview.recommended(),
     )
 }

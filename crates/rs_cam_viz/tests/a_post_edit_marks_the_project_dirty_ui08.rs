@@ -70,7 +70,7 @@ fn a_post_edit_marks_the_project_dirty() {
     draw_inspector(&ctx, &mut state);
 
     assert!(
-        (state.session.post_config().safe_z - edited_safe_z).abs() < 1e-9,
+        (state.session().post_config().safe_z - edited_safe_z).abs() < 1e-9,
         "the panel must write Safe Z through Command::SetPostConfig"
     );
     assert!(

@@ -95,7 +95,7 @@ fn setup_card_context_menu_requests_the_shared_confirmation() {
         "response.context_menu(|ui| {",
         "src/ui/setup_panel.rs",
     );
-    assert!(menu.contains("state.session.list_setups().len() == 1"));
+    assert!(menu.contains("state.session().list_setups().len() == 1"));
     assert!(menu.contains("The last remaining setup cannot be removed."));
     assert!(menu.contains("AppEvent::RequestRemoveSetup(setup_id)"));
     assert!(!menu.contains("AppEvent::RemoveSetup(setup_id)"));

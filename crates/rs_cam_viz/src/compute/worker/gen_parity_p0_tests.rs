@@ -190,8 +190,8 @@ fn fixture(feed_optimization: bool) -> Fixture {
     let tp_index = builder
         .add_toolpath(0, tp_config)
         .expect("the default setup accepts a toolpath");
-    controller.state.session = builder.build();
-    let tp_id = controller.state.session.toolpath_configs()[tp_index].id;
+    controller.state.replace_session(builder.build());
+    let tp_id = controller.state.session().toolpath_configs()[tp_index].id;
     Fixture {
         controller,
         submitted,
@@ -238,9 +238,10 @@ fn generate_through_both_doors(feed_optimization: bool) -> (Toolpath, Toolpath) 
         .clone();
 
     // Arm B: the session door, over the same session and the same config.
-    let session = controller
-        .state
-        .session
+    // `generate_toolpath` takes `&mut`, and the GUI session is written
+    // only through `AppState::apply` (F096), so the arm runs on a clone.
+    let mut core_session = controller.state.session().clone();
+    let session = core_session
         .generate_toolpath(tp_index, &cancel)
         .expect("the session door generates a toolpath")
         .annotated()
@@ -254,7 +255,7 @@ fn generate_through_both_doors(feed_optimization: bool) -> (Toolpath, Toolpath) 
 fn submit_state(controller: &AppController<RecordingBackend>, tp_id: ToolpathId) -> String {
     match controller.state.gui.toolpath_rt.get(&tp_id) {
         None => "no runtime entry".to_owned(),
-        Some(rt) => match &rt.status {
+        Some(rt) => match &rt.run.status() {
             ComputeStatus::Error(message) => format!("Error: {message}"),
             other => other.label().to_owned(),
         },

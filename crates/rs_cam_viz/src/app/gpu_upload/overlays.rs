@@ -29,7 +29,7 @@ fn selected_result(state: &AppState) -> Option<(ToolpathId, &Arc<AnnotatedToolpa
         .gui
         .toolpath_rt
         .get(&tp_id)
-        .and_then(|rt| rt.result.as_ref())
+        .and_then(|rt| rt.run.result())
         .map(|result| (tp_id, &result.annotated))
 }
 
@@ -310,7 +310,7 @@ pub(super) fn upload_reach(
     let inputs = overlay.ready_map().and_then(|map| {
         let model_id = map.model_id?;
         let mesh = state
-            .session
+            .session()
             .models()
             .iter()
             .find(|model| model.id == model_id)

@@ -169,7 +169,8 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
 
     let mut gui = GuiState::new();
     let mut rt = ToolpathRuntime::new(true);
-    rt.result = Some(viz_result(sample_toolpath(COMMANDED_FEED)));
+    rt.run =
+        rs_cam_viz::state::runtime::ToolpathRun::Done(viz_result(sample_toolpath(COMMANDED_FEED)));
     gui.toolpath_rt.insert(tp_id, rt);
 
     // No simulation is run here, so every tool-load criterion reads

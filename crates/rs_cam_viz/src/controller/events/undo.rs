@@ -188,7 +188,7 @@ impl<B: ComputeBackend> AppController<B> {
         tp_id: crate::state::toolpath::ToolpathId,
         shoe: rs_cam_core::machine::head::ShoeSetting,
     ) {
-        let Some((index, _)) = self.state.session.find_toolpath_config_by_id(tp_id) else {
+        let Some((index, _)) = self.state.session().find_toolpath_config_by_id(tp_id) else {
             return;
         };
         let command = Command::SetToolpathShoe(SetToolpathShoeArgs { index, shoe });
@@ -208,12 +208,12 @@ impl<B: ComputeBackend> AppController<B> {
         // P7: a snapshot that differs in the part-model choice and the pins
         // takes the choice row first, so the pins stay a narrow edit.
         if let Some(first) =
-            crate::ui::properties::part_models_first(self.state.session.stock_config(), &stock)
+            crate::ui::properties::part_models_first(self.state.session().stock_config(), &stock)
         {
             let _ = self.apply_quietly(first);
         }
         let command = crate::ui::properties::stock_edit_command(
-            self.state.session.stock_config(),
+            self.state.session().stock_config(),
             stock.clone(),
         )
         .unwrap_or_else(|| {
@@ -289,8 +289,10 @@ impl<B: ComputeBackend> AppController<B> {
         boundary: rs_cam_core::compute::config::BoundaryConfig,
         feeds_provenance: rs_cam_core::feeds::FeedsProvenance,
     ) {
-        if let Some((idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
-            let restored = self.state.session.apply(Command::RestoreToolpathSnapshot(
+        if let Some((idx, _)) = self.state.session().find_toolpath_config_by_id(tp_id) {
+            // `apply_quietly` mirrors the answer, and its door logs a
+            // refusal (F096, F056).
+            let _ = self.apply_quietly(Command::RestoreToolpathSnapshot(
                 RestoreToolpathSnapshotArgs {
                     index: idx,
                     operation: Box::new(operation),
@@ -299,12 +301,6 @@ impl<B: ComputeBackend> AppController<B> {
                     feeds_provenance: Some(Box::new(feeds_provenance)),
                 },
             ));
-            if let Ok(effects) = restored {
-                crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-                if effects.simulation_cleared {
-                    self.invalidate_simulation();
-                }
-            }
         }
         // WP19 (plan §28) replaced the rule this arm used to follow. It
         // used to clear nothing, because a hand parameter edit only staled

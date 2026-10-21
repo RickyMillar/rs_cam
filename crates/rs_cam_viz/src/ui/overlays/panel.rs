@@ -674,7 +674,7 @@ pub fn draw_rest_confirm(ctx: &egui::Context, state: &mut AppState, events: &mut
         return;
     };
     let name = state
-        .session
+        .session()
         .find_toolpath_config_by_id(id)
         .map(|(_, tc)| tc.name.clone())
         .unwrap_or_default();

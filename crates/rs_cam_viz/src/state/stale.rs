@@ -39,13 +39,13 @@ use super::runtime::ToolpathRuntime;
 /// hardcoded to `true` would queue a 3D finishing pass nobody asked
 /// for. Every other row creator reads the catalog; WP19 made this one
 /// read it too.
-pub fn stamp_stale(state: &mut AppState, stale: &BTreeSet<usize>) {
+pub(super) fn stamp_stale(state: &mut AppState, stale: &BTreeSet<usize>) {
     let now = std::time::Instant::now();
     let rows: Vec<(rs_cam_core::ToolpathId, bool)> = stale
         .iter()
         .filter_map(|&index| {
             state
-                .session
+                .session()
                 .get_toolpath_config(index)
                 .map(|tc| (tc.id, tc.operation.default_auto_regen()))
         })

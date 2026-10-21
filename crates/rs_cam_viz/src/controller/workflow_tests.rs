@@ -147,7 +147,7 @@ fn step_controller() -> AppController<ScriptedBackend> {
     let model_id = builder.add_model(step_model());
     // model_id is the raw usize assigned by session
     let _ = model_id;
-    c.state.session = builder.build();
+    c.state.replace_session(builder.build());
     c
 }
 
@@ -157,7 +157,7 @@ fn stl_controller() -> AppController<ScriptedBackend> {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_model(stl_model());
-    c.state.session = builder.build();
+    c.state.replace_session(builder.build());
     c
 }
 
@@ -184,11 +184,11 @@ fn click_face(
     face: FaceGroupId,
 ) {
     let (target, key) = {
-        let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+        let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
         (
             rs_cam_core::session::SelectionTarget::for_face_pick(tc),
             c.state
-                .session
+                .session()
                 .face_pick_key(tc, model_id.0, face)
                 .expect("a flat face has a Face item"),
         )
@@ -202,7 +202,7 @@ fn click_face(
 
 /// The BREP ids of the face picks of toolpath `tp_id`, in pick order.
 fn face_picks(c: &AppController<ScriptedBackend>, tp_id: ToolpathId) -> Vec<u16> {
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+    let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
     tc.operation
         .selection()
         .expect("the op holds a selection")
@@ -253,7 +253,6 @@ fn add_op(controller: &mut AppController<ScriptedBackend>, op_type: OperationTyp
     };
     let _ = controller
         .state
-        .session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(tp_config),
@@ -261,7 +260,7 @@ fn add_op(controller: &mut AppController<ScriptedBackend>, op_type: OperationTyp
         .unwrap();
     let tp_id_raw = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .last()
         .unwrap()
@@ -312,8 +311,11 @@ fn w3_step_import_populates_enriched_mesh() {
 fn w3_face_toggle_adds_and_removes() {
     let mut c = step_controller();
     let tp_id = add_pocket(&mut c);
-    let model_id = ModelId(c.state.session.models()[0].id);
-    let enriched = c.state.session.models()[0].enriched_mesh.as_ref().unwrap();
+    let model_id = ModelId(c.state.session().models()[0].id);
+    let enriched = c.state.session().models()[0]
+        .enriched_mesh
+        .as_ref()
+        .unwrap();
     let face_a = find_horizontal_face(enriched);
 
     // Toggle face ON
@@ -333,7 +335,7 @@ fn w3_face_toggle_adds_and_removes() {
     // Toggle same face OFF: the pick leaves, and no exclude is stored.
     click_face(&mut c, tp_id, model_id, face_a);
 
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+    let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
     assert_eq!(
         tc.operation.selection(),
         Some(&rs_cam_core::selection::Selection::drawing()),
@@ -421,8 +423,11 @@ fn w3_non_horizontal_face_produces_no_polygon() {
 fn w3_multi_face_toggle() {
     let mut c = step_controller();
     let tp_id = add_pocket(&mut c);
-    let model_id = ModelId(c.state.session.models()[0].id);
-    let enriched = c.state.session.models()[0].enriched_mesh.as_ref().unwrap();
+    let model_id = ModelId(c.state.session().models()[0].id);
+    let enriched = c.state.session().models()[0]
+        .enriched_mesh
+        .as_ref()
+        .unwrap();
 
     // Find two distinct horizontal faces
     let horizontal_faces: Vec<FaceGroupId> = enriched
@@ -459,7 +464,7 @@ fn w3_multi_face_toggle() {
 /// Take the inspector undo snapshot of `tp_id`, as the properties panel
 /// does on its first frame of the toolpath.
 fn take_snapshot(c: &mut AppController<ScriptedBackend>, tp_id: ToolpathId) {
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+    let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
     c.state.history.toolpath_snapshot = Some((
         tp_id,
         tc.operation.clone(),
@@ -475,7 +480,11 @@ fn take_snapshot(c: &mut AppController<ScriptedBackend>, tp_id: ToolpathId) {
 fn flush_snapshot(c: &mut AppController<ScriptedBackend>) {
     let (snap_id, old_op, old_dressups, old_boundary, old_provenance) =
         c.state.history.toolpath_snapshot.take().unwrap();
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(snap_id).unwrap();
+    let (_, tc) = c
+        .state
+        .session()
+        .find_toolpath_config_by_id(snap_id)
+        .unwrap();
     let action = crate::state::history::UndoAction::ToolpathParamChange {
         tp_id: snap_id,
         old_op,
@@ -499,11 +508,14 @@ fn flush_snapshot(c: &mut AppController<ScriptedBackend>) {
 fn w4_a_face_pick_undoes_through_the_op_snapshot_p2_6() {
     let mut c = step_controller();
     let tp_id = add_pocket(&mut c);
-    let model_id = ModelId(c.state.session.models()[0].id);
-    let enriched = c.state.session.models()[0].enriched_mesh.as_ref().unwrap();
+    let model_id = ModelId(c.state.session().models()[0].id);
+    let enriched = c.state.session().models()[0]
+        .enriched_mesh
+        .as_ref()
+        .unwrap();
     let face_a = find_horizontal_face(enriched);
     let before = {
-        let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+        let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
         tc.operation.selection().cloned()
     };
 
@@ -515,7 +527,7 @@ fn w4_a_face_pick_undoes_through_the_op_snapshot_p2_6() {
     // The undo restores the selection and stales the toolpath.
     c.state.gui.toolpath_rt.get_mut(&tp_id).unwrap().stale_since = None;
     c.handle_internal_event(AppEvent::Undo);
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+    let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
     assert_eq!(
         tc.operation.selection().cloned(),
         before,
@@ -550,17 +562,20 @@ fn w4_a_boundary_selection_edit_undoes_d11() {
 
     let mut c = step_controller();
     let tp_id = add_pocket(&mut c);
-    let model_id = ModelId(c.state.session.models()[0].id);
-    let enriched = c.state.session.models()[0].enriched_mesh.as_ref().unwrap();
+    let model_id = ModelId(c.state.session().models()[0].id);
+    let enriched = c.state.session().models()[0]
+        .enriched_mesh
+        .as_ref()
+        .unwrap();
     let face_a = find_horizontal_face(enriched);
     let (index, before) = {
-        let (index, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+        let (index, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
         (index, tc.boundary.clone())
     };
     let key = {
-        let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+        let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
         c.state
-            .session
+            .session()
             .face_pick_key(tc, model_id.0, face_a)
             .unwrap()
     };
@@ -578,7 +593,6 @@ fn w4_a_boundary_selection_edit_undoes_d11() {
     take_snapshot(&mut c, tp_id);
     let _ = c
         .state
-        .session
         .apply(Command::SetBoundaryConfig(SetBoundaryConfigArgs {
             index,
             boundary: picked.clone(),
@@ -587,11 +601,11 @@ fn w4_a_boundary_selection_edit_undoes_d11() {
     flush_snapshot(&mut c);
 
     c.handle_internal_event(AppEvent::Undo);
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+    let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
     assert_eq!(tc.boundary, before, "the undo must restore the boundary");
 
     c.handle_internal_event(AppEvent::Redo);
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+    let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
     assert_eq!(
         tc.boundary, picked,
         "the redo must restore the boundary pick"
@@ -605,10 +619,14 @@ fn add_3d_rough(
     boundary: rs_cam_core::compute::config::BoundaryConfig,
 ) -> ToolpathId {
     let tp_id = add_pocket(c);
-    let index = c.state.session.find_toolpath_config_by_id(tp_id).unwrap().0;
+    let index = c
+        .state
+        .session()
+        .find_toolpath_config_by_id(tp_id)
+        .unwrap()
+        .0;
     let _ = c
         .state
-        .session
         .apply(Command::SetToolpathOperation(
             rs_cam_core::session::SetToolpathOperationArgs {
                 index,
@@ -620,7 +638,6 @@ fn add_3d_rough(
         .unwrap();
     let _ = c
         .state
-        .session
         .apply(Command::SetBoundaryConfig(
             rs_cam_core::session::SetBoundaryConfigArgs { index, boundary },
         ))
@@ -630,7 +647,7 @@ fn add_3d_rough(
 
 /// The BREP ids of the face picks in the boundary selection of `tp_id`.
 fn boundary_face_picks(c: &AppController<ScriptedBackend>, tp_id: ToolpathId) -> Vec<u16> {
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+    let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
     tc.selection_of(rs_cam_core::session::SelectionTarget::Boundary)
         .expect("the boundary is a selection")
         .expect("a boundary selection exists")
@@ -658,11 +675,14 @@ fn w4_a_3d_op_face_click_writes_its_boundary_p4_1() {
         offset: 0.0,
     };
     let tp_id = add_3d_rough(&mut c, empty.clone());
-    let model_id = ModelId(c.state.session.models()[0].id);
-    let enriched = c.state.session.models()[0].enriched_mesh.as_ref().unwrap();
+    let model_id = ModelId(c.state.session().models()[0].id);
+    let enriched = c.state.session().models()[0]
+        .enriched_mesh
+        .as_ref()
+        .unwrap();
     let face_a = find_horizontal_face(enriched);
     let op_before = {
-        let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+        let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
         serde_json::to_value(&tc.operation).unwrap()
     };
 
@@ -674,7 +694,7 @@ fn w4_a_3d_op_face_click_writes_its_boundary_p4_1() {
         vec![face_a.0],
         "the click writes one boundary pick"
     );
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+    let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
     assert_eq!(
         serde_json::to_value(&tc.operation).unwrap(),
         op_before,
@@ -693,7 +713,7 @@ fn w4_a_3d_op_face_click_writes_its_boundary_p4_1() {
     flush_snapshot(&mut c);
 
     c.handle_internal_event(AppEvent::Undo);
-    let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+    let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
     assert_eq!(tc.boundary, empty, "one undo removes the pick");
     c.handle_internal_event(AppEvent::Redo);
     assert_eq!(boundary_face_picks(&c, tp_id), vec![face_a.0], "the redo");
@@ -714,11 +734,14 @@ fn w4_a_face_click_on_a_face_op_replaces_the_stock_rule_p4_2() {
 
     let mut c = step_controller();
     let tp_id = add_op(&mut c, OperationType::Face);
-    let model_id = ModelId(c.state.session.models()[0].id);
-    let enriched = c.state.session.models()[0].enriched_mesh.as_ref().unwrap();
+    let model_id = ModelId(c.state.session().models()[0].id);
+    let enriched = c.state.session().models()[0]
+        .enriched_mesh
+        .as_ref()
+        .unwrap();
     let face_a = find_horizontal_face(enriched);
     let op_selection = |c: &AppController<ScriptedBackend>| {
-        let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+        let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
         tc.operation
             .selection()
             .cloned()
@@ -729,14 +752,14 @@ fn w4_a_face_click_on_a_face_op_replaces_the_stock_rule_p4_2() {
         "the Face default is the stock rule"
     );
     let key = {
-        let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+        let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
         assert_eq!(
             rs_cam_core::session::SelectionTarget::for_face_pick(tc),
             rs_cam_core::session::SelectionTarget::Op,
             "a face click on a Face op edits its op selection"
         );
         c.state
-            .session
+            .session()
             .face_pick_key(tc, model_id.0, face_a)
             .expect("a flat face has a Face item")
     };
@@ -775,8 +798,11 @@ fn w4_a_3d_op_face_click_switches_the_boundary_to_selection_p4_d() {
         ..BoundaryConfig::default()
     };
     let tp_id = add_3d_rough(&mut c, stock_boundary.clone());
-    let model_id = ModelId(c.state.session.models()[0].id);
-    let enriched = c.state.session.models()[0].enriched_mesh.as_ref().unwrap();
+    let model_id = ModelId(c.state.session().models()[0].id);
+    let enriched = c.state.session().models()[0]
+        .enriched_mesh
+        .as_ref()
+        .unwrap();
     let face_a = find_horizontal_face(enriched);
     let notes_before = c.notifications().len();
 
@@ -784,7 +810,7 @@ fn w4_a_3d_op_face_click_switches_the_boundary_to_selection_p4_d() {
     click_face(&mut c, tp_id, model_id, face_a);
 
     let boundary = |c: &AppController<ScriptedBackend>| {
-        let (_, tc) = c.state.session.find_toolpath_config_by_id(tp_id).unwrap();
+        let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
         tc.boundary.clone()
     };
     assert!(
@@ -848,7 +874,7 @@ fn a_dxf_draws_on_import_and_its_eye_hides_it_p4_d() {
     let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let model_id = builder.add_model(model);
-    c.state.session = builder.build();
+    c.state.replace_session(builder.build());
     c.state.workspace = crate::state::Workspace::Toolpaths;
 
     assert_eq!(
@@ -1108,7 +1134,7 @@ fn w6_height_ordering_with_various_depths() {
 #[test]
 fn w10_model_removal_clears_face_selection() {
     let mut c = step_controller();
-    let model_id = ModelId(c.state.session.models()[0].id);
+    let model_id = ModelId(c.state.session().models()[0].id);
 
     // Set selection to a face
     c.state.selection = Selection::Face(model_id, FaceGroupId(0));
@@ -1125,7 +1151,7 @@ fn w10_model_removal_clears_face_selection() {
         "Face selection should be cleared when model is removed"
     );
     assert!(
-        c.state.session.models().is_empty(),
+        c.state.session().models().is_empty(),
         "Model should be removed"
     );
 }
@@ -1133,7 +1159,7 @@ fn w10_model_removal_clears_face_selection() {
 #[test]
 fn w10_model_removal_blocked_when_toolpath_references_it() {
     let mut c = step_controller();
-    let model_id = ModelId(c.state.session.models()[0].id);
+    let model_id = ModelId(c.state.session().models()[0].id);
     let _tp_id = add_pocket(&mut c);
 
     c.state.selection = Selection::Face(model_id, FaceGroupId(0));
@@ -1142,7 +1168,7 @@ fn w10_model_removal_blocked_when_toolpath_references_it() {
     c.handle_internal_event(AppEvent::RemoveModel(model_id));
 
     assert_eq!(
-        c.state.session.models().len(),
+        c.state.session().models().len(),
         1,
         "Model should NOT be removed when toolpaths reference it"
     );

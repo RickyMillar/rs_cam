@@ -156,7 +156,7 @@ pub(super) fn seeded_controller() -> AppController<ScriptedLane> {
     builder
         .add_toolpath(0, toolpath(0))
         .expect("the fixture project takes one operation");
-    controller.state.session = builder.build();
+    controller.state.replace_session(builder.build());
     controller.handle_internal_event(AppEvent::AddObstacle(SetupId(0)));
     land_a_result_for(&mut controller, ToolpathId(0));
     controller
@@ -261,7 +261,7 @@ struct EditClass {
 fn edit_stock_height(controller: &mut AppController<ScriptedLane>) {
     // WP6: the GUI route is the stock panel's apply funnel, not the
     // deleted `AppEvent::StockChanged`.
-    let mut stock = controller.state.session.stock_config().clone();
+    let mut stock = controller.state.session().stock_config().clone();
     stock.z += 5.0;
     crate::ui::properties::apply_stock_draft(&mut controller.state, stock);
 }
@@ -271,7 +271,7 @@ fn edit_fixture_geometry(controller: &mut AppController<ScriptedLane>) {
     // obstacle panel's apply funnel.
     let found = controller
         .state
-        .session
+        .session()
         .list_setups()
         .first()
         .and_then(|setup| setup.obstacles.first().cloned());
@@ -304,7 +304,7 @@ fn add_a_keep_out_zone(controller: &mut AppController<ScriptedLane>) {
 fn edit_tool_stickout(controller: &mut AppController<ScriptedLane>) {
     let mut draft = controller
         .state
-        .session
+        .session()
         .tools()
         .first()
         .expect("the fixture project carries one tool")
@@ -316,23 +316,19 @@ fn edit_tool_stickout(controller: &mut AppController<ScriptedLane>) {
 /// H1: the holder is the machine head now. A wider collet nut is the edit
 /// that moves the holder's own geometry.
 fn edit_machine_head(controller: &mut AppController<ScriptedLane>) {
-    let mut head = controller.state.session.machine().head.clone();
+    let mut head = controller.state.session().machine().head.clone();
     if let Some(part) = head.parts.first_mut() {
         part.diameter_mm = part.diameter_mm.map(|d| d + 10.0);
     }
-    let effects = controller
-        .state
-        .session
+    // `AppController::apply` stamps the stale set and clears the view's
+    // simulation (F096).
+    let _ = controller
         .apply(rs_cam_core::session::Command::SetMachineHead(
             rs_cam_core::session::SetMachineHeadArgs {
                 head: Box::new(head),
             },
         ))
         .expect("the head edit applies");
-    crate::state::stale::stamp_stale(&mut controller.state, &effects.stale);
-    if effects.simulation_cleared {
-        controller.invalidate_simulation();
-    }
 }
 
 fn disable_the_operation(controller: &mut AppController<ScriptedLane>) {
@@ -416,10 +412,10 @@ fn a_clear_verdict_is_reported_and_then_withdrawn_g_holderstale() {
             class.input
         );
 
-        let epoch_before = controller.state.session.simulation_epoch();
+        let epoch_before = controller.state.session().simulation_epoch();
         (class.apply)(&mut controller);
         assert!(
-            controller.state.session.simulation_epoch() > epoch_before,
+            controller.state.session().simulation_epoch() > epoch_before,
             "the '{}' edit moves {} and the core does not follow it — this \
              class is NOT COVERED by the project's freshness model",
             class.name,

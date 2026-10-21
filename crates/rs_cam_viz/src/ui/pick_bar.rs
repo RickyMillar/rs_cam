@@ -97,12 +97,12 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, viewport_rect: egui::Rect
         return;
     };
     let target = mode.target;
-    let Some((_, tc)) = state.session.find_toolpath_config_by_id(tp_id) else {
+    let Some((_, tc)) = state.session().find_toolpath_config_by_id(tp_id) else {
         return;
     };
     let item_use = target_item_use(tc, target);
     let held = state
-        .session
+        .session()
         .models()
         .iter()
         .find(|m| m.id == tc.model_id)
@@ -111,7 +111,7 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, viewport_rect: egui::Rect
     // P4.7: the flat faces of an STL are not computed yet (the job fills
     // the cache). A face click then says so; the bar says it first.
     let faces_pending = state
-        .session
+        .session()
         .models()
         .iter()
         .find(|m| m.id == tc.model_id)
@@ -198,7 +198,7 @@ fn draw_tab_bar(
         return;
     };
     let name = state
-        .session
+        .session()
         .find_toolpath_config_by_id(tp_id)
         .map(|(_, tc)| tc.name.clone())
         .unwrap_or_default();

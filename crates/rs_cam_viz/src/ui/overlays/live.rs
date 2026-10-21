@@ -130,7 +130,7 @@ pub fn selected_toolpath(state: &AppState) -> Option<ToolpathId> {
 /// `n` in `#n` for toolpath `id`: its 1-based position in the config list.
 pub fn toolpath_number(state: &AppState, id: ToolpathId) -> Option<usize> {
     state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .position(|tc| tc.id == id)
@@ -183,10 +183,10 @@ fn rest(state: &AppState) -> Live {
     let Some(id) = selected_toolpath(state) else {
         return Live::Idle;
     };
-    let Some((index, _)) = state.session.find_toolpath_config_by_id(id) else {
+    let Some((index, _)) = state.session().find_toolpath_config_by_id(id) else {
         return Live::Idle;
     };
-    match freshness_at(&state.session, &state.gui, index) {
+    match freshness_at(state.session(), &state.gui, index) {
         Some(FreshnessState::Regenerating) => Live::Computing(JobLane::Toolpath),
         Some(FreshnessState::Error(message)) => Live::Failed {
             message,
@@ -209,7 +209,7 @@ fn collision(state: &AppState) -> Live {
     }
     let checks = &sim.checks;
     if checks.collision_report.is_some()
-        && sim.collision_check_is_stale(state.session.simulation_epoch())
+        && sim.collision_check_is_stale(state.session().simulation_epoch())
     {
         return Live::Stale {
             note: COLLISION_STALE_NOTE.to_owned(),

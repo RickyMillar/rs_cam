@@ -110,7 +110,7 @@ fn controller_with_hits_on_second(
     local_hits: &[usize],
 ) -> (AppController<ScriptedBackend>, ToolpathId, ToolpathId) {
     let mut controller = sample_controller();
-    let first = controller.state.session.toolpath_configs()[0].id;
+    let first = controller.state.session().toolpath_configs()[0].id;
     let second = push_toolpath(&mut controller, "Second");
     generate_all_for_test(&mut controller);
     controller.handle_internal_event(AppEvent::RunSimulation);
@@ -135,7 +135,7 @@ fn a_rapid_collision_off_move_zero_reaches_project_diagnostics_g_rapidframe() {
         state.simulation.checks.rapid_collision_move_indices.len(),
         LOCAL_HITS.len()
     );
-    let summary = state.session.diagnostics_with_evidence(&evidence);
+    let summary = state.session().diagnostics_with_evidence(&evidence);
     let row = summary
         .per_toolpath
         .iter()
@@ -145,7 +145,7 @@ fn a_rapid_collision_off_move_zero_reaches_project_diagnostics_g_rapidframe() {
 
     // The defect: the project list (MCP `get_project_diagnostics`) must
     // carry the finding, scoped to the toolpath, with the count.
-    let project = state.session.diagnose_project_with_evidence(&evidence);
+    let project = state.session().diagnose_project_with_evidence(&evidence);
     let finding = project
         .iter()
         .find(|d| is_rapid_finding_for(d, second))
@@ -173,7 +173,7 @@ fn a_rapid_collision_off_move_zero_reaches_project_diagnostics_g_rapidframe() {
     // The per-toolpath list (MCP `get_toolpath_diagnostics`) lists it too.
     let index = index_of(&controller, second);
     let per_toolpath = state
-        .session
+        .session()
         .diagnose_toolpath_with_evidence(index, &evidence)
         .expect("the index is in range");
     let listed: Vec<_> = per_toolpath
@@ -188,7 +188,7 @@ fn a_rapid_collision_off_move_zero_reaches_project_diagnostics_g_rapidframe() {
 
     // The first toolpath has no collision, so its list has no such finding.
     let first_list = state
-        .session
+        .session()
         .diagnose_toolpath_with_evidence(0, &evidence)
         .expect("the index is in range");
     assert!(
@@ -247,7 +247,7 @@ fn every_surface_gives_the_edge_move_to_the_later_toolpath_g_rapidframe() {
 
     // The core verdict names the same toolpath with both hits.
     let evidence = sim.project_evidence();
-    let summary = state.session.diagnostics_with_evidence(&evidence);
+    let summary = state.session().diagnostics_with_evidence(&evidence);
     let count_of = |id: ToolpathId| {
         summary
             .per_toolpath
@@ -260,13 +260,13 @@ fn every_surface_gives_the_edge_move_to_the_later_toolpath_g_rapidframe() {
 
     // The triage line names the toolpath and the local move.
     let name = state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .find(|tc| tc.id == second)
         .map(|tc| tc.name.clone())
         .expect("the second toolpath has a config");
-    let triage = state.session.simulation_triage(&evidence);
+    let triage = state.session().simulation_triage(&evidence);
     let lines: Vec<&str> = triage
         .safety
         .iter()
@@ -414,7 +414,10 @@ fn every_surface_reads_one_project_verdict_f113() {
     let core = {
         let state = &controller.state;
         let evidence = state.simulation.project_evidence();
-        state.session.diagnostics_with_evidence(&evidence).verdict()
+        state
+            .session()
+            .diagnostics_with_evidence(&evidence)
+            .verdict()
     };
     assert_eq!(core, ProjectVerdict::Collisions { count: 1 });
 
@@ -425,7 +428,7 @@ fn every_surface_reads_one_project_verdict_f113() {
         "MCP must publish core's verdict"
     );
 
-    let state = &mut controller.state;
-    let gui = state.simulation.cached_project_verdict(&state.session);
+    let parts = controller.state.split_mut();
+    let gui = parts.simulation.cached_project_verdict(parts.session);
     assert_eq!(gui, Some(core), "the GUI header must read core's verdict");
 }

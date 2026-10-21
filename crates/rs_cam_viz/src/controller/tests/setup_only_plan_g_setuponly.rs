@@ -17,7 +17,6 @@
 use super::*;
 
 use crate::controller::generate_all::PlanStep;
-use crate::state::toolpath::ComputeStatus;
 
 /// Setup 1 = `Rough (Fresh)`, `Rest A`, `Rest B`; setup 2 = `Plain` and
 /// `Rest C`, which machines what setup 2 leaves.
@@ -32,7 +31,6 @@ fn two_setups_each_with_rest() -> (AppController<RestChainBackend>, Vec<Toolpath
     for index in 1..=2 {
         let _ = controller
             .state
-            .session
             .apply(Command::SetStockSource(SetStockSourceArgs {
                 index,
                 source: crate::state::toolpath::StockSource::FromRemainingStock,
@@ -42,7 +40,6 @@ fn two_setups_each_with_rest() -> (AppController<RestChainBackend>, Vec<Toolpath
 
     let second = controller
         .state
-        .session
         .apply(Command::AddSetup(AddSetupArgs {
             name: Some("Back".to_owned()),
             face_up: rs_cam_core::compute::transform::FaceUp::default(),
@@ -53,7 +50,7 @@ fn two_setups_each_with_rest() -> (AppController<RestChainBackend>, Vec<Toolpath
 
     let template = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .first()
         .cloned()
@@ -76,7 +73,6 @@ fn two_setups_each_with_rest() -> (AppController<RestChainBackend>, Vec<Toolpath
         config.stock_source = source;
         let _ = controller
             .state
-            .session
             .apply(Command::AddToolpath(AddToolpathArgs {
                 setup_index: second,
                 config: Box::new(config),
@@ -86,22 +82,20 @@ fn two_setups_each_with_rest() -> (AppController<RestChainBackend>, Vec<Toolpath
 
     let ids: Vec<ToolpathId> = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| tc.id)
         .collect();
     for (index, id) in ids.iter().enumerate() {
         let rt = controller.state.gui.toolpath_rt_or_default(*id);
-        rt.result = None;
-        rt.status = ComputeStatus::Pending;
-        let _ = controller.state.session.apply(Command::ForgetResult(
+        rt.run = crate::state::runtime::ToolpathRun::Pending;
+        let _ = controller.state.apply(Command::ForgetResult(
             rs_cam_core::session::ForgetResultArgs { index },
         ));
     }
     let _ = controller
         .state
-        .session
         .apply(Command::SetSimulationResolution(
             rs_cam_core::session::SetSimulationResolutionArgs {
                 resolution: rs_cam_core::session::SimulationResolution::Auto,
@@ -123,7 +117,7 @@ fn setup_id(controller: &AppController<RestChainBackend>, position: usize) -> Se
     SetupId(
         controller
             .state
-            .session
+            .session()
             .list_setups()
             .get(position)
             .expect("the fixture holds that setup")
@@ -201,8 +195,7 @@ fn a_stale_earlier_setup_is_not_rebuilt_g_setuponly() {
     let back = setup_id(&controller, 1);
 
     // Setup 1's first operation is generated, then edited.
-    let rt = controller.state.gui.toolpath_rt_or_default(rough);
-    rt.status = ComputeStatus::Done;
+    controller.state.gui.toolpath_rt_or_default(rough).run = done_run();
     controller.state.gui.mark_edited();
 
     controller.handle_internal_event(crate::ui::AppEvent::GenerateSetupOnly(back));

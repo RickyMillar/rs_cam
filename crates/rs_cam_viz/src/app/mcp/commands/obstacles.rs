@@ -182,7 +182,7 @@ impl RsCamApp {
     fn obstacle_setup(&self, setup_index: usize) -> Result<Vec<Obstacle>, CoreReply> {
         self.controller
             .state()
-            .session
+            .session()
             .list_setups()
             .get(setup_index)
             .map(|setup| setup.obstacles.clone())
@@ -339,9 +339,6 @@ impl RsCamApp {
         before: &CoreBefore,
     ) -> CoreReply {
         self.controller.state_mut().gui.mark_edited();
-        if effects.simulation_cleared {
-            self.controller.invalidate_simulation();
-        }
         self.controller.set_pending_upload();
         let setup_index = before.index();
         let obstacle_id = before
@@ -356,7 +353,7 @@ impl RsCamApp {
         let setup_id = self
             .controller
             .state()
-            .session
+            .session()
             .list_setups()
             .get(setup_index)
             .map(|setup| crate::state::job::SetupId(setup.id));
@@ -385,7 +382,7 @@ impl RsCamApp {
         let rows: Vec<serde_json::Value> = self
             .controller
             .state()
-            .session
+            .session()
             .list_setups()
             .get(setup_index)
             .map(|setup| setup.obstacles.iter().map(obstacle_json).collect())

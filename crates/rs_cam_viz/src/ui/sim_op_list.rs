@@ -553,7 +553,7 @@ impl OutlineKind {
 
 fn outline_kind_for_toolpath(gui: &GuiState, toolpath_id: ToolpathId) -> Option<OutlineKind> {
     let rt = gui.toolpath_rt.get(&toolpath_id)?;
-    let result = rt.result.as_ref()?;
+    let result = rt.run.result()?;
     if result.spans_valid() {
         if result
             .spans()
@@ -583,7 +583,7 @@ fn draw_structural_outline(
     let Some(rt) = gui.toolpath_rt.get(&boundary.id) else {
         return;
     };
-    let Some(result) = rt.result.as_ref() else {
+    let Some(result) = rt.run.result() else {
         return;
     };
     if !result.spans_valid() {

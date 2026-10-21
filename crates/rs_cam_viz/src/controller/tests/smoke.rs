@@ -61,7 +61,7 @@ fn opening_heights_tab_does_not_pin_heights_or_mark_stale_g_heightstab() {
             "{:?}",
             controller
                 .state
-                .session
+                .session()
                 .find_toolpath_config_by_id(tp_id)
                 .expect("toolpath present")
                 .1
@@ -85,7 +85,7 @@ fn opening_heights_tab_does_not_pin_heights_or_mark_stale_g_heightstab() {
         );
 
         let mut controller = sample_controller();
-        let tp_id = controller.state.session.toolpath_configs()[0].id;
+        let tp_id = controller.state.session().toolpath_configs()[0].id;
         let before = heights_repr(&controller, tp_id);
         assert!(
             before.contains("Auto"),
@@ -167,17 +167,17 @@ fn fixture_projects_load_2d_and_3d_models() {
         .open_job_from_path(&fixture_path("sample_2d_project.toml"))
         .expect("open 2d fixture");
     assert!(controller.load_warnings().is_empty());
-    assert_eq!(controller.state.session.models().len(), 1);
-    assert!(controller.state.session.models()[0].items.has_drawing());
-    assert!(controller.state.session.models()[0].mesh.is_none());
+    assert_eq!(controller.state.session().models().len(), 1);
+    assert!(controller.state.session().models()[0].items.has_drawing());
+    assert!(controller.state.session().models()[0].mesh.is_none());
 
     controller
         .open_job_from_path(&fixture_path("sample_3d_project.toml"))
         .expect("open 3d fixture");
     assert!(controller.load_warnings().is_empty());
-    assert_eq!(controller.state.session.models().len(), 1);
-    assert!(controller.state.session.models()[0].mesh.is_some());
-    assert!(!controller.state.session.models()[0].items.has_drawing());
+    assert_eq!(controller.state.session().models().len(), 1);
+    assert!(controller.state.session().models()[0].mesh.is_some());
+    assert!(!controller.state.session().models()[0].items.has_drawing());
 }
 
 #[test]
@@ -197,10 +197,9 @@ fn controller_save_open_and_export_smoke() {
     // viz store together). Seeding only the viz store used to export
     // through the silent fallback; it now reads as an operation edited
     // since it was generated, and the export refuses by name.
-    let revision = controller.state.session.toolpath_revision(0);
+    let revision = controller.state.session().toolpath_revision(0);
     let _ = controller
         .state
-        .session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,
             revision,
@@ -221,7 +220,7 @@ fn controller_save_open_and_export_smoke() {
         .toolpath_rt
         .get_mut(&ToolpathId(0))
         .unwrap()
-        .result = Some(ToolpathResult {
+        .run = crate::state::runtime::ToolpathRun::Done(ToolpathResult {
         annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
             generated,
         )),
@@ -267,7 +266,6 @@ fn simulation_results_capture_setup_boundaries() {
 
     let setup_idx = controller
         .state
-        .session
         .apply(Command::AddSetup(AddSetupArgs {
             name: Some("Bottom Side".to_owned()),
             face_up: rs_cam_core::compute::transform::FaceUp::default(),
@@ -298,7 +296,6 @@ fn simulation_results_capture_setup_boundaries() {
     };
     controller
         .state
-        .session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: setup_idx,
             config: Box::new(tp2_config),
@@ -306,7 +303,7 @@ fn simulation_results_capture_setup_boundaries() {
         .unwrap()
         .created
         .expect("the AddToolpath row reports the new toolpath index");
-    let tp2_id = controller.state.session.toolpath_configs()[1].id;
+    let tp2_id = controller.state.session().toolpath_configs()[1].id;
 
     controller
         .compute

@@ -122,14 +122,14 @@ impl SlotInputs for ObstacleInputs<'_> {
 fn obstacle_inputs<'a>(state: &'a AppState, frame: &'a PassFrame) -> Option<ObstacleInputs<'a>> {
     let (setup_id, setup_frame) = frame.setup?;
     let setup = state
-        .session
+        .session()
         .list_setups()
         .iter()
         .find(|sd| sd.id == setup_id.0)?;
     let mut models = Vec::new();
     for o in &setup.obstacles {
         for id in o.geometry.model_ids() {
-            let model = state.session.models().iter().find(|m| m.id == id.0);
+            let model = state.session().models().iter().find(|m| m.id == id.0);
             models.push(upload_cache::ObstacleModelKey {
                 model_id: id.0,
                 mesh: model
@@ -179,9 +179,13 @@ pub(super) fn upload_fixture_lines(
     let stock = frame.stock();
     // Only show obstacles and pins from the active setup (each setup has
     // its own local frame, so mixing them is wrong).
-    let active_session_setup = frame
-        .setup_id()
-        .and_then(|sid| state.session.list_setups().iter().find(|sd| sd.id == sid.0));
+    let active_session_setup = frame.setup_id().and_then(|sid| {
+        state
+            .session()
+            .list_setups()
+            .iter()
+            .find(|sd| sd.id == sid.0)
+    });
 
     if let Refresh::Build(inputs) = upload_cache::refresh(
         &mut resources.obstacle_lines_key,

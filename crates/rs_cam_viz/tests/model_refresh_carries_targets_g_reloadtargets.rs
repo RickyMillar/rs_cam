@@ -210,7 +210,7 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, PathBuf, ModelId) {
         .expect("the fixture must import");
     let id = controller
         .state
-        .session
+        .session()
         .models()
         .iter()
         .find(|m| m.path == path)
@@ -223,7 +223,7 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, PathBuf, ModelId) {
 fn record(controller: &AppController<SilentBackend>, id: ModelId) -> &LoadedModel {
     controller
         .state
-        .session
+        .session()
         .models()
         .iter()
         .find(|m| m.id == id.0)

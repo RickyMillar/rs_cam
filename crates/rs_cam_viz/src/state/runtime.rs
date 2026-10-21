@@ -25,13 +25,81 @@ pub use super::toolpath::ToolpathResult;
 
 // ── Per-toolpath runtime state ────────────────────────────────────────
 
+/// Where the last generation of one toolpath stands, with its result.
+///
+/// F031 (W9b): the run record held `status` and `result` as two fields
+/// that had to agree, and a site cleared the result and left `Done`. Then
+/// the status bar counted the op as done, and the prior-stock blocker said
+/// "That operation is generated". One enum makes the pair one value:
+/// only [`Self::Done`] holds a result.
+///
+/// Core [`ComputeStatus`] stays the display taxonomy that every surface
+/// prints; [`Self::status`] derives it. `ComputeStatus::Disabled` is never
+/// derived here, because [`ComputeStatus::effective`] adds it from
+/// `enabled`.
+// SAFETY: `Done` holds the result inline, as the `Option<ToolpathResult>`
+// field it replaces did. One value per toolpath, so the size is not a cost.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone)]
+pub enum ToolpathRun {
+    /// No run, or a cancelled run. No result.
+    Pending,
+    /// A run is in flight. The previous result is gone.
+    Computing,
+    /// The last run landed. A late result that the core refused is held
+    /// here too, so the viewport still draws it (F2.4).
+    Done(ToolpathResult),
+    /// A rest operation that waits for the simulated stock of an earlier
+    /// operation (A/M11). No result.
+    AwaitingPriorStock(rs_cam_core::compute::AwaitingPriorStock),
+    /// The run failed. No result.
+    Failed(String),
+}
+
+impl ToolpathRun {
+    /// The display status. Every surface reads this, never a stored copy.
+    #[must_use]
+    pub fn status(&self) -> ComputeStatus {
+        match self {
+            Self::Pending => ComputeStatus::Pending,
+            Self::Computing => ComputeStatus::Computing,
+            Self::Done(_) => ComputeStatus::Done,
+            Self::AwaitingPriorStock(block) => ComputeStatus::AwaitingPriorStock(block.clone()),
+            Self::Failed(message) => ComputeStatus::Error(message.clone()),
+        }
+    }
+
+    /// The result of the last run, or `None` when no run landed.
+    #[must_use]
+    pub fn result(&self) -> Option<&ToolpathResult> {
+        match self {
+            Self::Done(result) => Some(result),
+            Self::Pending | Self::Computing | Self::AwaitingPriorStock(_) | Self::Failed(_) => None,
+        }
+    }
+
+    /// The result to change in place (the F115 feed re-point).
+    pub fn result_mut(&mut self) -> Option<&mut ToolpathResult> {
+        match self {
+            Self::Done(result) => Some(result),
+            Self::Pending | Self::Computing | Self::AwaitingPriorStock(_) | Self::Failed(_) => None,
+        }
+    }
+
+    /// Whether the last run landed.
+    #[must_use]
+    pub fn is_done(&self) -> bool {
+        matches!(self, Self::Done(_))
+    }
+}
+
 /// GUI-only state for a single toolpath — display, compute status, cached results.
 pub struct ToolpathRuntime {
     pub visible: bool,
     pub locked: bool,
     pub auto_regen: bool,
-    pub status: ComputeStatus,
-    pub result: Option<ToolpathResult>,
+    /// The last run and its result, as one value (F031).
+    pub run: ToolpathRun,
     pub stale_since: Option<std::time::Instant>,
     pub feeds_result: Option<FeedsResult>,
     /// The key and the by-products of `feeds_result` (F216). Only
@@ -49,8 +117,7 @@ impl ToolpathRuntime {
             visible: true,
             locked: false,
             auto_regen,
-            status: ComputeStatus::Pending,
-            result: None,
+            run: ToolpathRun::Pending,
             stale_since: None,
             feeds_result: None,
             feeds_memo: FeedsMemo::default(),

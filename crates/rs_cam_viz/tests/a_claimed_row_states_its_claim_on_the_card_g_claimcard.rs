@@ -193,8 +193,8 @@ fn state_for(tool: ToolConfig, species: WoodSpecies, operation: OperationConfig)
         .add_toolpath(0, config)
         .expect("add the claim card fixture");
     let mut state = AppState::new();
-    state.session = builder.build();
-    let id = state.session.toolpath_configs()[0].id;
+    state.replace_session(builder.build());
+    let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     state.selection = Selection::Toolpath(id);
     state.gui.pending_toolpath_tab =
@@ -204,7 +204,7 @@ fn state_for(tool: ToolConfig, species: WoodSpecies, operation: OperationConfig)
 
 /// The explain payload the Feeds tab reads for the fixture's operation.
 fn explain(state: &AppState) -> FeedsExplain {
-    let session = &state.session;
+    let session = state.session();
     let tc = &session.toolpath_configs()[0];
     let tool = session.tools()[0].clone();
     rs_cam_core::feeds::suggest::feeds_explain_for_operation(

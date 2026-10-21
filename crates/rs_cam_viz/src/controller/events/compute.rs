@@ -5,6 +5,7 @@ use rs_cam_core::session::{
 };
 
 use crate::compute::{ComputeBackend, ComputeError, ComputeMessage, ComputeRequest};
+use crate::state::runtime::ToolpathRun;
 use crate::state::simulation::{SimulationResults, SimulationRunMeta};
 use crate::state::toolpath::{ComputeStatus, StockSource, ToolpathId};
 
@@ -28,7 +29,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// MCP `generate_toolpath` call sat unresolved for ~9 hours while the
     /// GUI correctly showed the toolpath in `Error` state).
     ///
-    /// Sets `rt.status = Error(msg)` (matching what `drain_compute_results`
+    /// Sets `rt.run = Failed(msg)` (matching what `drain_compute_results`
     /// does for a compute `Err`) and resolves any pending MCP waiter for
     /// this toolpath with the same error. If no MCP request is pending
     /// (GUI-initiated generate), `notify_mcp_toolpath_complete` is a no-op,
@@ -36,11 +37,10 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn fail_toolpath_submit(&mut self, tp_id: ToolpathId, msg: impl Into<String>) {
         let msg = msg.into();
         let rt = self.state.gui.toolpath_rt_or_default(tp_id);
-        rt.status = ComputeStatus::Error(msg);
-        rt.result = None;
+        rt.run = ToolpathRun::Failed(msg);
         // Keep the core cache in step with `rt.result` — see
         // `forget_core_result`.
-        Self::forget_core_result(&mut self.state.session, tp_id);
+        self.forget_core_result(tp_id);
         self.toolpath_completion_landed(tp_id);
     }
 
@@ -56,14 +56,13 @@ impl<B: ComputeBackend> AppController<B> {
         block: rs_cam_core::compute::AwaitingPriorStock,
     ) {
         let rt = self.state.gui.toolpath_rt_or_default(tp_id);
-        rt.status = ComputeStatus::AwaitingPriorStock(block);
-        rt.result = None;
+        rt.run = ToolpathRun::AwaitingPriorStock(block);
         // Keep the core cache in step with `rt.result` — see
         // `forget_core_result`. Load-bearing for the A/M11 ladder: a
         // blocked op that still had a stale core result would read as
         // "generated" to `PhantomPriorStockScan` and never be offered the
         // phantom prior-stock snapshot that unblocks it.
-        Self::forget_core_result(&mut self.state.session, tp_id);
+        self.forget_core_result(tp_id);
         self.toolpath_completion_landed(tp_id);
     }
 
@@ -84,7 +83,7 @@ impl<B: ComputeBackend> AppController<B> {
 
         if self
             .state
-            .session
+            .session()
             .find_toolpath_config_by_id(tp_id)
             .is_none()
         {
@@ -104,13 +103,13 @@ impl<B: ComputeBackend> AppController<B> {
         // walk (`carve_order_before`); the snapshot rule reads it too.
         let upstream = self
             .state
-            .session
+            .session()
             .carve_order_before(tp_id)
             .into_iter()
             .rev()
             .find_map(|idx| {
                 self.state
-                    .session
+                    .session()
                     .toolpath_configs()
                     .get(idx)
                     .filter(|tc| tc.enabled)
@@ -138,7 +137,7 @@ impl<B: ComputeBackend> AppController<B> {
             .gui
             .toolpath_rt
             .get(&blocker_id)
-            .is_some_and(|rt| matches!(rt.status, ComputeStatus::Done));
+            .is_some_and(|rt| rt.run.is_done());
 
         let message = if blocker_generated {
             format!(
@@ -168,22 +167,36 @@ impl<B: ComputeBackend> AppController<B> {
     /// Drop the CORE-side cached result for `tp_id`, keeping the two result
     /// caches in step when a generation does not produce one.
     ///
-    /// Free-standing (`&mut ProjectSession`, not `&mut self`) so it can be
-    /// called while `drain_compute_results` still holds a `&mut` borrow of
-    /// `self.state.gui`'s runtime row — the same field-disjoint shape the
-    /// `Ok` arm's `AdoptResult` call already relies on.
-    ///
     /// Silent when there is nothing cached: "this toolpath has no result"
     /// is the state being established, not a condition to report.
     ///
     /// `Command::ForgetResult` is the `Err`-arm twin of the `AdoptResult`
-    /// row the `Ok` arm takes. The function holds no `AppState`, so it
-    /// stamps no `stale_since`; the caller owns the runtime row it is
-    /// already writing.
-    fn forget_core_result(session: &mut rs_cam_core::session::ProjectSession, tp_id: ToolpathId) {
-        if let Some((tp_index, _)) = session.find_toolpath_config_by_id(tp_id) {
-            let command = Command::ForgetResult(ForgetResultArgs { index: tp_index });
-            let _ = session.apply(command);
+    /// row the `Ok` arm takes. F096: it goes through
+    /// `AppController::apply`, which mirrors the answer. The row moves the
+    /// revision of the toolpath it forgets, so the door stamps
+    /// `stale_since` on that row. That toolpath has just failed, stopped
+    /// or waited; a stamp would make `process_auto_regen` submit it
+    /// again. So this method puts the row's previous `stale_since` back.
+    /// Another row in `Effects::stale` (a rest result that the core
+    /// dropped with it) keeps its stamp.
+    ///
+    /// The caller ends its borrow of the runtime row before it calls
+    /// this method.
+    fn forget_core_result(&mut self, tp_id: ToolpathId) {
+        let Some((tp_index, _)) = self.state.session().find_toolpath_config_by_id(tp_id) else {
+            return;
+        };
+        let stale_before = self
+            .state
+            .gui
+            .toolpath_rt
+            .get(&tp_id)
+            .and_then(|rt| rt.stale_since);
+        let command = Command::ForgetResult(ForgetResultArgs { index: tp_index });
+        if self.apply(command).is_ok()
+            && let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id)
+        {
+            rt.stale_since = stale_before;
         }
     }
 
@@ -202,7 +215,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// refusals whose OUTCOME differs from a plain error — a missing tool,
     /// and a rest operation still waiting on simulated stock.
     pub(crate) fn submit_toolpath_compute(&mut self, tp_id: ToolpathId) {
-        let Some((tp_idx, tc)) = self.state.session.find_toolpath_config_by_id(tp_id) else {
+        let Some((tp_idx, tc)) = self.state.session().find_toolpath_config_by_id(tp_id) else {
             self.fail_toolpath_submit(tp_id, "Toolpath config not found".to_owned());
             return;
         };
@@ -214,7 +227,7 @@ impl<B: ComputeBackend> AppController<B> {
 
         if !self
             .state
-            .session
+            .session()
             .tools()
             .iter()
             .any(|t| t.id.0 == tool_id_raw)
@@ -229,9 +242,10 @@ impl<B: ComputeBackend> AppController<B> {
 
         // Run validation
         {
-            let validation =
-                crate::ui::properties::ToolpathValidationContext::from_session(&self.state.session);
-            if let Some((_, tc)) = self.state.session.find_toolpath_config_by_id(tp_id) {
+            let validation = crate::ui::properties::ToolpathValidationContext::from_session(
+                self.state.session(),
+            );
+            if let Some((_, tc)) = self.state.session().find_toolpath_config_by_id(tp_id) {
                 let errs = crate::ui::properties::validate_toolpath_config(tc, &validation);
                 if !errs.is_empty() {
                     self.fail_toolpath_submit(tp_id, errs.join("; "));
@@ -253,7 +267,7 @@ impl<B: ComputeBackend> AppController<B> {
         // Scoped so the session borrow ends before `fail_toolpath_submit`
         // takes `&mut self`.
         let lateral_refusal = {
-            let session = &self.state.session;
+            let session = self.state.session();
             let setup = session
                 .list_setups()
                 .iter()
@@ -280,7 +294,7 @@ impl<B: ComputeBackend> AppController<B> {
         // whole dexel grid onto the request; the handle carries the session's
         // own `Arc`.
         if stock_source == StockSource::FromRemainingStock
-            && self.state.session.snapshot_is_current(tp_id).is_err()
+            && self.state.session().snapshot_is_current(tp_id).is_err()
         {
             // W1: no toast. Blocked is a SEQUENCING state, not an error
             // (A/M11). The row already reads WAIT — `block_toolpath_submit`
@@ -295,7 +309,7 @@ impl<B: ComputeBackend> AppController<B> {
 
         // Update GUI runtime status
         let rt = self.state.gui.toolpath_rt_or_default(tp_id);
-        rt.status = ComputeStatus::Computing;
+        rt.run = ToolpathRun::Computing;
         // "Stale" means "needs a submit" — this submit satisfies it. Leaving
         // the flag set let `process_auto_regen`'s 500ms sweep resubmit the
         // same id while it was still the lane's active job, which the
@@ -303,7 +317,6 @@ impl<B: ComputeBackend> AppController<B> {
         // deterministic "generation cancelled" for any slow op right after
         // load_project (Back Rough, 2×, 2026-07-07).
         rt.stale_since = None;
-        rt.result = None;
         rt.debug_trace = None;
         rt.semantic_trace = None;
         rt.debug_trace_path = None;
@@ -313,7 +326,7 @@ impl<B: ComputeBackend> AppController<B> {
         // is cleared only by the worker thread, so a flag borrowed from the
         // lane can already read `true` here — and `start` polls its flag.
         let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let handle = match self.state.session.start(
+        let handle = match self.state.start_job(
             rs_cam_core::session::Job::GenerateToolpath(
                 rs_cam_core::session::GenerateToolpathArgs { index: tp_idx },
             ),
@@ -418,7 +431,7 @@ impl<B: ComputeBackend> AppController<B> {
         // plan/MCP waiter, but cannot recreate GUI or core state.
         let resolved_tp_index = self
             .state
-            .session
+            .session()
             .find_toolpath_config_by_id(tp_id)
             .map(|(index, _)| index);
 
@@ -464,14 +477,10 @@ impl<B: ComputeBackend> AppController<B> {
         rt.debug_trace_path = result.debug_trace_path.clone();
         match result.result {
             Ok(computed) => {
-                rt.status = ComputeStatus::Done;
                 // W0/D1 handoff: `AdoptResult` now drops the source's
                 // Regions consumers through the core walker, so
-                // the adopt reports a stale set. Collected here and stamped
-                // below, after the runtime-row borrow ends, because
-                // `stamp_stale` takes the whole `AppState`.
-                let mut adopt_stale: std::collections::BTreeSet<usize> =
-                    std::collections::BTreeSet::new();
+                // the adopt reports a stale set. `AppController::apply`
+                // stamps it (F096).
                 // Sync the core-side `session.results` cache so the
                 // single point of truth for "this toolpath has a
                 // fresh result" is `ProjectSession`, not the
@@ -543,18 +552,15 @@ impl<B: ComputeBackend> AppController<B> {
                 // pre-WP3 accept-when-unstamped arm.
                 let revision = match reply_revision {
                     Some(submitted) => submitted,
-                    None => self.state.session.toolpath_revision(tp_index),
+                    None => self.state.session().toolpath_revision(tp_index),
                 };
-                let adopted = self
-                    .state
-                    .session
-                    .apply(rs_cam_core::session::Command::AdoptResult(
-                        rs_cam_core::session::AdoptResultArgs {
-                            index: tp_index,
-                            revision,
-                            result: Box::new(core_result),
-                        },
-                    ));
+                let adopted = self.apply(rs_cam_core::session::Command::AdoptResult(
+                    rs_cam_core::session::AdoptResultArgs {
+                        index: tp_index,
+                        revision,
+                        result: Box::new(core_result),
+                    },
+                ));
                 // On a refusal the core slot stays empty,
                 // which derives `EditedSince`. `rt.result`
                 // below still keeps the geometry, so the
@@ -567,23 +573,18 @@ impl<B: ComputeBackend> AppController<B> {
                 // empty: the source's OUTPUT moved, so the
                 // walker drops its Regions consumers and
                 // names them here.
-                match adopted {
-                    Ok(effects) => adopt_stale = effects.stale,
-                    Err(e) => {
-                        tracing::debug!(toolpath = tp_index, "compute result not adopted: {e}");
-                    }
+                if let Err(e) = adopted {
+                    tracing::debug!(toolpath = tp_index, "compute result not adopted: {e}");
                 }
-                rt.result = Some(computed);
                 // W1: the viz twin of the Regions rule is not called here
                 // (F040 deleted it). It re-derived the rule by hand. The
                 // core walker's answer covers it, so the GUI
                 // auto-regeneration clock reads the one truth.
-                crate::state::stale::stamp_stale(&mut self.state, &adopt_stale);
+                self.state.gui.toolpath_rt_or_default(tp_id).run = ToolpathRun::Done(computed);
             }
             Err(ComputeError::Cancelled) => {
-                rt.status = ComputeStatus::Pending;
-                rt.result = None;
-                Self::forget_core_result(&mut self.state.session, tp_id);
+                rt.run = ToolpathRun::Pending;
+                self.forget_core_result(tp_id);
             }
             Err(ComputeError::OverBudget {
                 need_bytes,
@@ -594,15 +595,13 @@ impl<B: ComputeBackend> AppController<B> {
                 // `get_notifications` also reads. Never a plain "Cancelled".
                 let message =
                     ComputeError::over_budget_message("Generation", need_bytes, limit_bytes);
-                rt.status = ComputeStatus::Error(message.clone());
-                rt.result = None;
-                Self::forget_core_result(&mut self.state.session, tp_id);
+                rt.run = ToolpathRun::Failed(message.clone());
+                self.forget_core_result(tp_id);
                 tracing::warn!("{message}");
                 self.push_notification(message, super::super::Severity::Warning);
             }
             Err(ComputeError::Message(error)) => {
-                rt.status = ComputeStatus::Error(error);
-                rt.result = None;
+                rt.run = ToolpathRun::Failed(error);
                 // G-STICKYEMPTY: clear the CORE cache too, not
                 // just `rt.result`. `Ok` writes both caches
                 // (`AdoptResult`, above); a failure used to
@@ -614,7 +613,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // withholds a pending rest op's phantom
                 // prior-stock snapshot and leaves it unable to
                 // regenerate until the project is reloaded.
-                Self::forget_core_result(&mut self.state.session, tp_id);
+                self.forget_core_result(tp_id);
             }
         }
         self.pending_upload = true;
@@ -636,7 +635,8 @@ impl<B: ComputeBackend> AppController<B> {
         // Every field is named, so a new `Effects` field must state here
         // whether this door mirrors it.
         let Effects {
-            stale,
+            // `AppController::apply` stamped it (F096).
+            stale: _,
             // The store leaves the session's simulation `Some`, so the
             // flag is false.
             simulation_cleared: _,
@@ -646,10 +646,9 @@ impl<B: ComputeBackend> AppController<B> {
             planned: _,
             modulated,
         } = effects;
-        crate::state::stale::stamp_stale(&mut self.state, &stale);
         let stored_trace = self
             .state
-            .session
+            .session()
             .simulation_result()
             .and_then(|stored| stored.cut_trace.as_ref())
             .map(Arc::clone);
@@ -659,7 +658,7 @@ impl<B: ComputeBackend> AppController<B> {
         for index in modulated {
             let Some(id) = self
                 .state
-                .session
+                .session()
                 .get_toolpath_config(index)
                 .map(|tc| tc.id)
             else {
@@ -667,7 +666,7 @@ impl<B: ComputeBackend> AppController<B> {
             };
             let Some(annotated) = self
                 .state
-                .session
+                .session()
                 .get_result(index)
                 .map(|result| Arc::clone(result.annotated()))
             else {
@@ -678,7 +677,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .gui
                 .toolpath_rt
                 .get_mut(&id)
-                .and_then(|rt| rt.result.as_mut())
+                .and_then(|rt| rt.run.result_mut())
             {
                 held.annotated = annotated;
             }
@@ -721,7 +720,7 @@ impl<B: ComputeBackend> AppController<B> {
                 //   freshness read derives `EditedSince`.
                 if let Some(missing) = simulation.core.boundaries.iter().find(|boundary| {
                     self.state
-                        .session
+                        .session()
                         .find_toolpath_config_by_id(boundary.id)
                         .is_none()
                 }) {
@@ -749,7 +748,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // that answers the live epoch may do that. A stale trace
                 // describes motion the operator has left.
                 let answers_live_epoch = self.state.simulation.submitted_simulation_epoch
-                    == Some(self.state.session.simulation_epoch());
+                    == Some(self.state.session().simulation_epoch());
                 // N12 item 10 — one simulation state. The GUI
                 // simulates on its own lane, so the session never
                 // saw this answer and `ProjectSession::start`
@@ -786,7 +785,7 @@ impl<B: ComputeBackend> AppController<B> {
                             if let Some(setup_id) = setup_id {
                                 let setup_name = self
                                     .state
-                                    .session
+                                    .session()
                                     .list_setups()
                                     .iter()
                                     .find(|s| s.id == setup_id.0)
@@ -848,7 +847,7 @@ impl<B: ComputeBackend> AppController<B> {
                 self.state.simulation.playback.display_mesh_preview = false;
                 self.state.simulation.playback.scrub_drag_active = false;
 
-                let stock = self.state.session.stock_config();
+                let stock = self.state.session().stock_config();
                 let stock_bbox = rs_cam_core::geo::BoundingBox3 {
                     min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
                     max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.z),
@@ -925,7 +924,7 @@ impl<B: ComputeBackend> AppController<B> {
                                 feed_scale: 1.0,
                             }),
                         };
-                        match self.state.session.apply(Command::AdoptSimulation(args)) {
+                        match self.apply(Command::AdoptSimulation(args)) {
                             Ok(effects) => self.mirror_adopted_simulation(effects),
                             // The only refusal is `StaleSimulation`. A live
                             // run cannot meet it: the epoch check above and
@@ -1110,7 +1109,7 @@ impl<B: ComputeBackend> AppController<B> {
         if plan.target.is_some() {
             return None;
         }
-        let session = &self.state.session;
+        let session = self.state.session();
         let setups = session.list_setups();
         // The last setup position that the largest simulation step covers.
         let mut last_setup: Option<usize> = None;
@@ -1568,7 +1567,7 @@ impl<B: ComputeBackend> AppController<B> {
         use crate::controller::generate_all::PlanStep;
         use rs_cam_core::session::generation_plan::{Step, plan};
 
-        plan(&self.state.session, scope)
+        plan(self.state.session(), scope)
             .into_iter()
             .filter_map(|step| match step {
                 Step::Simulate { setup, upto } => {
@@ -1610,7 +1609,7 @@ impl<B: ComputeBackend> AppController<B> {
             });
         };
 
-        let scope = generate_all_scope(self.state.session.toolpath_configs());
+        let scope = generate_all_scope(self.state.session().toolpath_configs());
 
         if scope.enabled.is_empty() {
             let _ = response_tx.send(McpResponse {
@@ -1649,7 +1648,7 @@ impl<B: ComputeBackend> AppController<B> {
         // click.
         if fixpoint
             && !scope.rest_op_indices.is_empty()
-            && let Some(refusal) = self.state.session.rest_resolution_refusal()
+            && let Some(refusal) = self.state.session().rest_resolution_refusal()
         {
             refuse(
                 response_tx,
@@ -1660,7 +1659,7 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return;
         }
-        let resolution_report = ResolutionReport::of(&self.state.session, set_by_this_call);
+        let resolution_report = ResolutionReport::of(self.state.session(), set_by_this_call);
 
         // Checked before anything is queued: without the slot no individual
         // toolpath waiter can ever be resolved, so starting the run would
@@ -1833,7 +1832,7 @@ impl<B: ComputeBackend> AppController<B> {
 
         match step {
             PlanStep::Generate(id) => {
-                let Some((index, _)) = self.state.session.find_toolpath_config_by_id(id) else {
+                let Some((index, _)) = self.state.session().find_toolpath_config_by_id(id) else {
                     self.record_step_outcome(StepOutcome::Skipped(format!(
                         "toolpath {} is no longer in the project",
                         id.0
@@ -1849,7 +1848,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // `generate_toolpath` turns the debug trace on for exactly
                 // that run.
                 let target = self.plan.as_ref().and_then(|plan| plan.target);
-                if target != Some(id) && self.state.session.get_result(index).is_some() {
+                if target != Some(id) && self.state.session().get_result(index).is_some() {
                     if let Some(plan) = self.plan.as_mut() {
                         plan.note_already_current();
                     }
@@ -1876,7 +1875,7 @@ impl<B: ComputeBackend> AppController<B> {
                     )));
                     return;
                 }
-                let Some((position, _)) = self.state.session.find_setup_by_id(setup.0) else {
+                let Some((position, _)) = self.state.session().find_setup_by_id(setup.0) else {
                     self.record_step_outcome(StepOutcome::Skipped(
                         "the setup is no longer in the project".to_owned(),
                     ));
@@ -2082,7 +2081,7 @@ impl<B: ComputeBackend> AppController<B> {
         // the one path that reports "toolpath runtime not found".
         let located = self
             .state
-            .session
+            .session()
             .find_toolpath_config_by_id(tp_id)
             .map(|(index, tc)| (index, tc.name.clone()));
         // A submit with no config FAILS rather than blocks, so a blocked row
@@ -2095,12 +2094,12 @@ impl<B: ComputeBackend> AppController<B> {
             .gui
             .toolpath_rt
             .get(&tp_id)
-            .map(|rt| (rt.result.is_some(), rt.status.clone()));
+            .map(|rt| (rt.run.result().is_some(), rt.run.status()));
         let setup = self
             .state
-            .session
+            .session()
             .setup_of_toolpath_id(tp_id)
-            .and_then(|position| self.state.session.list_setups().get(position))
+            .and_then(|position| self.state.session().list_setups().get(position))
             .map(|setup| rs_cam_core::ids::SetupId(setup.id));
 
         let mut stop: Option<String> = None;
@@ -2223,7 +2222,7 @@ impl<B: ComputeBackend> AppController<B> {
             // Check individual toolpath request
             if let Some(sender) = pending.toolpath.remove(&tp_id) {
                 let rt = self.state.gui.toolpath_rt.get(&tp_id);
-                let resp = match rt.and_then(|rt| rt.result.as_ref()) {
+                let resp = match rt.and_then(|rt| rt.run.result()) {
                     Some(result) => json_str(serde_json::json!({
                         "id": tp_id.0,
                         "move_count": result.stats.move_count,
@@ -2231,8 +2230,9 @@ impl<B: ComputeBackend> AppController<B> {
                         "rapid_distance_mm": result.stats.rapid_distance,
                     })),
                     None => {
-                        let status = rt.map(|rt| &rt.status);
+                        let status = rt.map(|rt| rt.run.status());
                         let status_msg = status
+                            .as_ref()
                             .map(|status| match status {
                                 ComputeStatus::Error(e) => format!("Error: {e}"),
                                 // A/M11: blocked is not failed, and the reply
@@ -2257,10 +2257,10 @@ impl<B: ComputeBackend> AppController<B> {
                         // `message`, alone among the six sites. The core
                         // struct serialises, so the three keys arrive here
                         // too and the shape cannot drift again.
-                        let blocked = status.and_then(ComputeStatus::blocked_on);
+                        let blocked = status.as_ref().and_then(ComputeStatus::blocked_on);
                         json_str(serde_json::json!({
                             "error": status_msg,
-                            "status": status.map_or("Pending", ComputeStatus::label),
+                            "status": status.as_ref().map_or("Pending", ComputeStatus::label),
                             "awaiting_prior_stock": blocked,
                         }))
                     }
@@ -2284,7 +2284,7 @@ impl<B: ComputeBackend> AppController<B> {
             // call set it (ruling Q3).
             if let Some(object) = resp.as_object_mut() {
                 let report = crate::controller::generate_all::ResolutionReport::of(
-                    &self.state.session,
+                    self.state.session(),
                     set_by_this_call,
                 );
                 let _ = object.insert(
@@ -2359,7 +2359,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// Sentried by `controller::results_parity_tests`.
     #[cfg(feature = "mcp")]
     pub fn build_mcp_diagnostics(&self) -> serde_json::Value {
-        let session = &self.state.session;
+        let session = self.state.session();
         let gui = &self.state.gui;
 
         // One evidence view and one core diagnostics build, shared by the
@@ -2394,7 +2394,8 @@ impl<B: ComputeBackend> AppController<B> {
                 // op reports `Disabled` and a sequencing block reports
                 // `AwaitingPriorStock` on its own channel, so an agent can
                 // tell "cannot yet" from "cannot ever" without parsing prose.
-                let status = ComputeStatus::effective(tc.enabled, &rt.status);
+                let raw = rt.run.status();
+                let status = ComputeStatus::effective(tc.enabled, &raw);
                 if let Some(error) = status.error_text() {
                     runtime_errors.push(serde_json::json!({
                         "toolpath_index": index,
@@ -2436,7 +2437,7 @@ impl<B: ComputeBackend> AppController<B> {
                     // W5 item (a): the core struct serialises.
                     row["awaiting_prior_stock"] = serde_json::json!(status.blocked_on());
                     row["stale"] = serde_json::json!(rt.stale_since.is_some());
-                    if let Some(ref result) = rt.result {
+                    if let Some(result) = rt.run.result() {
                         row["move_count"] = serde_json::json!(result.stats.move_count);
                         row["cutting_distance_mm"] =
                             serde_json::json!(result.stats.cutting_distance);
@@ -2507,7 +2508,7 @@ impl<B: ComputeBackend> AppController<B> {
         // project diagnostics a second time.
         let triage = self
             .state
-            .session
+            .session()
             .simulation_triage_with_diagnostics(&evidence, &core_diagnostics);
         // SAFETY: resp is a known JSON object we just constructed.
         #[allow(clippy::indexing_slicing)]

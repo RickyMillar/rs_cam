@@ -80,7 +80,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
         .hline(x, y, egui::Stroke::new(1.0, tokens::HAIRLINE));
     ui.add_space(tokens::SPACE_3);
 
-    for setup in state.session.list_setups() {
+    for setup in state.session().list_setups() {
         draw_setup_card(ui, setup, state, events);
         ui.add_space(tokens::SPACE_2);
     }
@@ -96,7 +96,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 /// The Stock row. The value is the EFFECTIVE size for the active setup's
 /// orientation, so it accounts for `face_up` and `z_rotation`.
 fn draw_stock_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
-    let stock = state.session.stock_config();
+    let stock = state.session().stock_config();
     let (eff_w, eff_d, eff_h) = if let Some(setup) = active_setup(state) {
         let (w, d, h) = setup.face_up.effective_stock(stock.x, stock.y, stock.z);
         setup.z_rotation.effective_stock(w, d, h)
@@ -115,7 +115,7 @@ fn draw_stock_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent
 /// The Machine row. It is the only entry point to the Machine Setup panel —
 /// preset, feeds, kinematics and the GRBL `$$` import.
 fn draw_machine_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
-    let name = state.session.machine().name.as_str();
+    let name = state.session().machine().name.as_str();
     let selected = state.selection == Selection::Machine;
     let row = resource_row(ui, "Machine", name, selected, true, None);
     if row.on_hover_text("Machine, feeds and kinematics").clicked() {
@@ -128,7 +128,7 @@ fn draw_machine_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
 /// Selection IS the disclosure state. The row therefore needs no stored
 /// open flag, and opening the list and opening the editor are one click.
 fn draw_models_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
-    let models = state.session.models();
+    let models = state.session().models();
     let open = matches!(
         state.selection,
         Selection::Model(_) | Selection::Face(..) | Selection::Faces(..)
@@ -236,7 +236,7 @@ fn import_model_from_disk(events: &mut Vec<AppEvent>) {
 /// list holds the tools and appears while a tool is selected.
 fn draw_tools_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let open = matches!(state.selection, Selection::Tool(_));
-    let count = state.session.tools().len();
+    let count = state.session().tools().len();
 
     let mut menu = |ui: &mut egui::Ui| {
         if ui
@@ -298,7 +298,7 @@ fn draw_tools_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent
     if row.on_hover_text("The tool library").clicked() {
         if open {
             events.push(AppEvent::Ui(UiCommand::Select(Selection::None)));
-        } else if let Some(first) = state.session.tools().first() {
+        } else if let Some(first) = state.session().tools().first() {
             events.push(AppEvent::Ui(UiCommand::Select(Selection::Tool(first.id))));
         } else {
             events.push(empty_tools_row_event());
@@ -309,7 +309,7 @@ fn draw_tools_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent
         return;
     }
     ui.indent("setup_rail_tools", |ui| {
-        for tool in state.session.tools() {
+        for tool in state.session().tools() {
             let selected = state.selection == Selection::Tool(tool.id);
             let response = ui.selectable_label(selected, tool.summary());
             if response.clicked() {
@@ -428,7 +428,7 @@ fn draw_setup_card(
         .toolpath_indices
         .iter()
         .filter(|&&idx| {
-            crate::state::freshness::freshness_at(&state.session, &state.gui, idx)
+            crate::state::freshness::freshness_at(state.session(), &state.gui, idx)
                 .is_some_and(|f| f.is_current())
         })
         .count();
@@ -492,7 +492,7 @@ fn draw_setup_card(
         events.push(AppEvent::Ui(UiCommand::Select(Selection::Setup(setup_id))));
     }
     response.context_menu(|ui| {
-        if state.session.list_setups().len() == 1 {
+        if state.session().list_setups().len() == 1 {
             ui.label("The last remaining setup cannot be removed.");
         } else if ui.button("Remove Setup…").clicked() {
             events.push(AppEvent::RequestRemoveSetup(setup_id));
@@ -511,7 +511,7 @@ fn setup_detail(setup: &SetupData, state: &AppState, state_line: &str, orient: &
         XYDatum::Manual => "Manual".to_owned(),
     };
     let obstacles = setup.obstacles.len();
-    let pins = state.session.stock_config().alignment_pins.len();
+    let pins = state.session().stock_config().alignment_pins.len();
 
     let mut detail = format!("{state_line}\nOrientation: {orient}\nXY datum: {datum}");
     if obstacles == 0 && pins == 0 {
@@ -525,7 +525,7 @@ fn setup_detail(setup: &SetupData, state: &AppState, state_line: &str, orient: &
     }
     // The fresh-stock note for every setup after the first. A full italic
     // line on every Setup-2+ card forever was warning-as-wallpaper.
-    if state.session.list_setups().first().map(|s| s.id) != Some(setup.id) {
+    if state.session().list_setups().first().map(|s| s.id) != Some(setup.id) {
         detail.push_str(
             "\nThis setup's simulation starts from uncut stock — material removed \
              by prior setups is not reflected.",
@@ -549,12 +549,12 @@ fn state_dot(ui: &mut egui::Ui, role: Role) {
 
 /// Determine the active setup from the current selection.
 fn active_setup(state: &AppState) -> Option<&SetupData> {
-    let setups = state.session.list_setups();
+    let setups = state.session().list_setups();
     let setup_id = match &state.selection {
         Selection::Setup(id) => Some(*id),
         Selection::Obstacle(id, _) => Some(*id),
         Selection::Toolpath(tp_id) => state
-            .session
+            .session()
             .setup_of_toolpath_id(*tp_id)
             .and_then(|idx| setups.get(idx))
             .map(|s| SetupId(s.id)),

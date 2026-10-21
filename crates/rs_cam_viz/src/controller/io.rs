@@ -4,7 +4,7 @@ use std::time::Instant;
 use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::io::ImportOptions;
 use rs_cam_core::session::{
-    AddModelArgs, AdoptModelGeometryArgs, Command, Effects, ProjectLoadWarning, ProjectSession,
+    AddModelArgs, AdoptModelGeometryArgs, Command, ProjectLoadWarning, ProjectSession,
     SetPostConfigArgs, SetStockConfigArgs,
 };
 
@@ -27,25 +27,15 @@ impl<B: ComputeBackend> AppController<B> {
     /// changed size. `Command::SetStockConfig` drops every result, which
     /// is the rule every other stock edit follows (G-FRESHSTATE).
     fn fit_stock_to_bbox(&mut self, bbox: &BoundingBox3) {
-        let mut stock = self.state.session.stock_config().clone();
+        let mut stock = self.state.session().stock_config().clone();
         stock.update_from_bbox(bbox);
         let command = Command::SetStockConfig(SetStockConfigArgs {
             stock: Box::new(stock),
         });
-        match self.state.session.apply(command) {
-            Ok(effects) => {
-                crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-                // WP19: the stock row drops every result and the
-                // session's simulation with them. The viewport holds the
-                // same one simulation, so it follows.
-                if effects.simulation_cleared {
-                    self.invalidate_simulation();
-                }
-            }
-            Err(error) => {
-                tracing::warn!("the automatic stock fit was refused: {error}");
-            }
-        }
+        // WP19: the stock row drops every result and the session's
+        // simulation with them. `AppController::apply` mirrors both, and
+        // the state door logs a refusal (F096, F056).
+        let _refused = self.apply(command).is_err();
     }
 
     /// Replace one model's geometry, through the command door.
@@ -75,11 +65,9 @@ impl<B: ComputeBackend> AppController<B> {
             geometry: Box::new(geometry),
             units,
         });
-        let effects = self.state.session.apply(command)?;
-        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-        if effects.simulation_cleared {
-            self.invalidate_simulation();
-        }
+        // `AppController::apply` mirrors the stale set and the
+        // simulation drop (F096).
+        let _mirrored = self.apply(command)?;
         Ok(())
     }
 
@@ -93,7 +81,7 @@ impl<B: ComputeBackend> AppController<B> {
             ImportOptions::default(),
         )?;
         let bbox = model.bbox();
-        let auto_stock = self.state.session.stock_config().auto_from_model;
+        let auto_stock = self.state.session().stock_config().auto_from_model;
         let mesh_bbox = model.mesh.as_ref().map(|mesh| mesh.bbox);
         if let Some(mesh_bbox) = mesh_bbox
             && auto_stock
@@ -186,7 +174,7 @@ impl<B: ComputeBackend> AppController<B> {
             ImportOptions::default(),
         )?;
         let bbox = model.bbox();
-        let auto_stock = self.state.session.stock_config().auto_from_model;
+        let auto_stock = self.state.session().stock_config().auto_from_model;
         let mesh_bbox = model.mesh.as_ref().map(|mesh| mesh.bbox);
         if let Some(mesh_bbox) = mesh_bbox
             && auto_stock
@@ -212,7 +200,7 @@ impl<B: ComputeBackend> AppController<B> {
     ) -> Result<Option<BoundingBox3>, VizError> {
         let Some(model) = self
             .state
-            .session
+            .session()
             .models()
             .iter()
             .find(|m| m.id == model_id.0)
@@ -228,7 +216,7 @@ impl<B: ComputeBackend> AppController<B> {
         let options = model.import_options;
         let new_model = import::import_model(&path, model_id.0, kind, new_units, options)?;
         let bbox = new_model.bbox();
-        let auto_stock = self.state.session.stock_config().auto_from_model;
+        let auto_stock = self.state.session().stock_config().auto_from_model;
 
         // G-RELOADTARGETS (F4.4): one shared field split, so this door
         // cannot skip `drill_targets` and `layers` again. Pre-fix a
@@ -250,7 +238,7 @@ impl<B: ComputeBackend> AppController<B> {
 
         let mesh_bbox = self
             .state
-            .session
+            .session()
             .models()
             .iter()
             .find(|m| m.id == model_id.0)
@@ -280,7 +268,7 @@ impl<B: ComputeBackend> AppController<B> {
     ) -> Result<(), VizError> {
         let Some(model) = self
             .state
-            .session
+            .session()
             .models()
             .iter()
             .find(|m| m.id == model_id.0)
@@ -324,23 +312,19 @@ impl<B: ComputeBackend> AppController<B> {
     ) -> Result<(), VizError> {
         let ledger = |state: &crate::state::AppState| {
             state
-                .session
+                .session()
                 .models()
                 .iter()
                 .find(|m| m.id == model_id.0)
                 .map(|m| m.drawing.edits().to_vec())
         };
         let before = ledger(&self.state).unwrap_or_default();
-        let effects = self.state.session.apply(Command::EditModelDrawing(
+        let _mirrored = self.apply(Command::EditModelDrawing(
             rs_cam_core::session::EditModelDrawingArgs {
                 model_id: model_id.0,
                 edit,
             },
         ))?;
-        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-        if effects.simulation_cleared {
-            self.invalidate_simulation();
-        }
         let after = ledger(&self.state).unwrap_or_default();
         if record_undo && before != after {
             self.state
@@ -360,7 +344,7 @@ impl<B: ComputeBackend> AppController<B> {
     pub fn reload_model(&mut self, model_id: ModelId) -> Result<(), VizError> {
         let Some(model) = self
             .state
-            .session
+            .session()
             .models()
             .iter()
             .find(|m| m.id == model_id.0)
@@ -418,7 +402,7 @@ impl<B: ComputeBackend> AppController<B> {
     pub fn relink_model(&mut self, model_id: ModelId, new_path: &Path) -> Result<(), VizError> {
         let Some(model) = self
             .state
-            .session
+            .session()
             .models()
             .iter()
             .find(|m| m.id == model_id.0)
@@ -485,23 +469,6 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(())
     }
 
-    /// Mirror the effects of a post-config write into viz state.
-    ///
-    /// Two doors write that block before a save — this controller and
-    /// the MCP `save_project` route — and viz state follows the session
-    /// on both. `Effects::stale` reaches the toolpath cards.
-    /// `Effects::simulation_cleared` reaches the viewport, because the
-    /// session and the viewport hold ONE simulation (WP11b, N12 item
-    /// 10): a session that drops it must not leave the viewport showing
-    /// one.
-    pub(crate) fn adopt_post_effects(&mut self, effects: &Effects) {
-        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-        if effects.simulation_cleared {
-            self.invalidate_simulation();
-        }
-        self.refresh_post_mirror();
-    }
-
     /// Rebuild the viz post mirror from the session block (SHL-01).
     ///
     /// `GuiState::post` is a CLONE of `session.post_config()`; the session
@@ -517,7 +484,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// (`ui/properties/mod.rs`), so no un-synced edit lives in the
     /// mirror across a command.
     pub(crate) fn refresh_post_mirror(&mut self) {
-        self.state.gui.post = self.state.session.post_config().clone();
+        self.state.gui.post = self.state.session().post_config().clone();
     }
 
     /// Write the project to `path`.
@@ -532,12 +499,12 @@ impl<B: ComputeBackend> AppController<B> {
     /// (`ui/properties/mod.rs`).
     pub fn save_job_to_path(&mut self, path: &Path) -> Result<(), VizError> {
         let session_post = self.state.gui.post.clone();
-        if *self.state.session.post_config() != session_post {
+        if *self.state.session().post_config() != session_post {
             let command = Command::SetPostConfig(SetPostConfigArgs {
                 post: Box::new(session_post),
             });
-            match self.state.session.apply(command) {
-                Ok(effects) => self.adopt_post_effects(&effects),
+            match self.apply(command) {
+                Ok(_) => self.refresh_post_mirror(),
                 Err(error) => {
                     return Err(VizError::Other(format!(
                         "Save failed: the post block was refused: {error}"
@@ -547,7 +514,7 @@ impl<B: ComputeBackend> AppController<B> {
         }
 
         self.state
-            .session
+            .session()
             .save(path)
             .map_err(|e| VizError::Other(format!("Save failed: {e}")))?;
         self.state.gui.file_path = Some(path.to_path_buf());
@@ -624,7 +591,7 @@ impl<B: ComputeBackend> AppController<B> {
             tracing::warn!("{message}");
         }
 
-        self.state.session = session;
+        self.state.replace_session(session);
         self.state.gui = gui;
         self.state.selection = Selection::None;
         self.state.panels.pending_setup_removal = None;
@@ -652,7 +619,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// The single-file export text, under the GUI's own overrides.
     pub fn export_gcode(&self) -> Result<String, VizError> {
         crate::io::export::export_gcode_from_session(
-            &self.state.session,
+            self.state.session(),
             &self.state.gui,
             &self.state.simulation,
         )
@@ -662,7 +629,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// the GUI's own overrides. The File menu export takes it.
     pub fn export_gcode_reporting(&self) -> Result<crate::io::export::ExportedGcode, VizError> {
         crate::io::export::export_gcode_from_session_reporting(
-            &self.state.session,
+            self.state.session(),
             &self.state.gui,
             &self.state.simulation,
             self.state.gui.tool_load_overrides.as_policy(),
@@ -675,13 +642,13 @@ impl<B: ComputeBackend> AppController<B> {
 
         let toolpaths: Vec<_> = self
             .state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .filter(|tc| tc.enabled)
             .filter_map(|tc| {
                 let rt = self.state.gui.toolpath_rt.get(&tc.id)?;
-                rt.result.as_ref().map(|result| result.toolpath())
+                rt.run.result().map(|result| result.toolpath())
             })
             .collect();
 
@@ -701,7 +668,7 @@ impl<B: ComputeBackend> AppController<B> {
         // the trace decides whether that number is a machine-model wall clock
         // or a cutting-only figure, and the sheet says which.
         crate::io::setup_sheet::generate_setup_sheet_from_session(
-            &self.state.session,
+            self.state.session(),
             &self.state.gui,
             self.state
                 .simulation

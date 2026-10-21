@@ -65,6 +65,21 @@ use crate::state::job::{SetupId, ToolConfig, ToolId, ToolType};
 
 use crate::state::runtime::ToolpathRuntime;
 
+/// A landed run with an empty toolpath (F031). Only `ToolpathRun::Done`
+/// holds a result, so a test that marks a toolpath generated gives it one.
+fn done_run() -> crate::state::runtime::ToolpathRun {
+    crate::state::runtime::ToolpathRun::Done(ToolpathResult {
+        annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
+            Toolpath::new(),
+        )),
+        stats: Default::default(),
+        debug_trace: None,
+        semantic_trace: None,
+        debug_trace_path: None,
+        drill_op: None,
+    })
+}
+
 use crate::state::selection::Selection;
 
 use crate::state::toolpath::{Adaptive3dConfig, OperationConfig, ToolpathId, ToolpathResult};
@@ -246,10 +261,10 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
         planner_origin: None,
     };
     let _ = builder.add_toolpath(0, tp_config).unwrap();
-    controller.state.session = builder.build();
-    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    controller.state.replace_session(builder.build());
+    let tp_id = controller.state.session().toolpath_configs()[0].id;
     let mut rt = ToolpathRuntime::new(true);
-    rt.result = Some(ToolpathResult {
+    rt.run = crate::state::runtime::ToolpathRun::Done(ToolpathResult {
         annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
             Toolpath::new(),
         )),
@@ -270,7 +285,7 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
 fn index_of<B: ComputeBackend>(controller: &AppController<B>, id: ToolpathId) -> usize {
     controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .position(|tc| tc.id == id)
@@ -282,7 +297,7 @@ fn index_of<B: ComputeBackend>(controller: &AppController<B>, id: ToolpathId) ->
 fn push_toolpath<B: ComputeBackend>(controller: &mut AppController<B>, name: &str) -> ToolpathId {
     let next = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| tc.id.0 + 1)
@@ -313,7 +328,6 @@ fn push_toolpath<B: ComputeBackend>(controller: &mut AppController<B>, name: &st
     };
     let _ = controller
         .state
-        .session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(cfg),
@@ -507,7 +521,6 @@ fn add_derived_rest_dependent(
     };
     controller
         .state
-        .session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(dependent_config),
@@ -515,7 +528,7 @@ fn add_derived_rest_dependent(
         .expect("dependent toolpath should be added to setup 0")
         .created
         .expect("the AddToolpath row reports the new toolpath index");
-    let dependent_id = controller.state.session.toolpath_configs()[1].id;
+    let dependent_id = controller.state.session().toolpath_configs()[1].id;
     controller
         .state
         .gui
@@ -771,15 +784,14 @@ fn rest_chain_controller(depth: usize) -> AppController<RestChainBackend> {
     }
     let ids: Vec<ToolpathId> = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| tc.id)
         .collect();
-    for index in 1..controller.state.session.toolpath_count() {
+    for index in 1..controller.state.session().toolpath_count() {
         let _ = controller
             .state
-            .session
             .apply(Command::SetStockSource(SetStockSourceArgs {
                 index,
                 source: crate::state::toolpath::StockSource::FromRemainingStock,
@@ -790,8 +802,7 @@ fn rest_chain_controller(depth: usize) -> AppController<RestChainBackend> {
     // run really is "from cold".
     for id in &ids {
         let rt = controller.state.gui.toolpath_rt_or_default(*id);
-        rt.result = None;
-        rt.status = crate::state::toolpath::ComputeStatus::Pending;
+        rt.run = crate::state::runtime::ToolpathRun::Pending;
     }
     let _ = ids;
     #[cfg(feature = "mcp")]
@@ -972,10 +983,9 @@ impl ComputeBackend for LaneModelBackend {
 fn freshly_loaded_controller() -> (AppController<LaneModelBackend>, ToolpathId) {
     let mut controller = AppController::with_backend(LaneModelBackend::new());
     sample_project_into(&mut controller);
-    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    let tp_id = controller.state.session().toolpath_configs()[0].id;
     let rt = controller.state.gui.toolpath_rt_or_default(tp_id);
-    rt.result = None;
-    rt.status = crate::state::toolpath::ComputeStatus::Pending;
+    rt.run = crate::state::runtime::ToolpathRun::Pending;
     rt.auto_regen = true;
     // Older than the 500 ms debounce, i.e. the sweep is due.
     rt.stale_since = Some(std::time::Instant::now() - std::time::Duration::from_millis(600));
@@ -1017,7 +1027,7 @@ fn pump_lane_model(
 /// The sample project plus a two-ball ladder with distinct tip radii.
 fn planner_controller() -> AppController<ScriptedBackend> {
     let mut controller = sample_controller();
-    let mut tools = controller.state.session.tools().to_vec();
+    let mut tools = controller.state.session().tools().to_vec();
     for (raw_id, diameter) in [(2usize, 4.0f64), (3, 2.0)] {
         let mut tool = ToolConfig::new_default(ToolId(raw_id), ToolType::BallNose);
         tool.name = format!("Ball {diameter}");
@@ -1026,7 +1036,6 @@ fn planner_controller() -> AppController<ScriptedBackend> {
     }
     let _ = controller
         .state
-        .session
         .apply(Command::ReplaceTools(ReplaceToolsArgs { tools }))
         .expect("the session takes the tool list");
     controller
@@ -1048,7 +1057,7 @@ fn tick_ball_tools(controller: &mut AppController<ScriptedBackend>) {
 fn project_fingerprint(controller: &AppController<ScriptedBackend>) -> Vec<String> {
     controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| {
@@ -1097,17 +1106,16 @@ fn core_result() -> ToolpathComputeResult {
 fn generate_all_for_test<B: ComputeBackend>(controller: &mut AppController<B>) {
     let ids: Vec<(usize, ToolpathId)> = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .enumerate()
         .map(|(idx, tc)| (idx, tc.id))
         .collect();
     for (index, id) in ids {
-        let revision = controller.state.session.toolpath_revision(index);
+        let revision = controller.state.session().toolpath_revision(index);
         let _ = controller
             .state
-            .session
             .apply(Command::AdoptResult(AdoptResultArgs {
                 index,
                 revision,
@@ -1115,10 +1123,9 @@ fn generate_all_for_test<B: ComputeBackend>(controller: &mut AppController<B>) {
             }))
             .expect("index is in range");
         let rt = controller.state.gui.toolpath_rt_or_default(id);
-        rt.status = crate::state::runtime::ComputeStatus::Done;
         rt.stale_since = None;
-        if rt.result.is_none() {
-            rt.result = Some(ToolpathResult {
+        if rt.run.result().is_none() {
+            rt.run = crate::state::runtime::ToolpathRun::Done(ToolpathResult {
                 annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
                     Toolpath::new(),
                 )),
@@ -1134,7 +1141,7 @@ fn generate_all_for_test<B: ComputeBackend>(controller: &mut AppController<B>) {
 }
 
 fn state_of<B: ComputeBackend>(controller: &AppController<B>, index: usize) -> FreshnessState {
-    freshness_at(&controller.state.session, &controller.state.gui, index)
+    freshness_at(controller.state.session(), &controller.state.gui, index)
         .expect("toolpath index exists")
 }
 
@@ -1152,7 +1159,7 @@ fn panel_edit<B: ComputeBackend>(
 ) {
     let mut entry = crate::ui::properties::build_entry_from_session_and_gui(
         id,
-        &controller.state.session,
+        controller.state.session(),
         &controller.state.gui,
     )
     .expect("toolpath exists");
@@ -1188,7 +1195,7 @@ fn panel_edit<B: ComputeBackend>(
 fn controller_ready_for_undo() -> (AppController<ScriptedBackend>, ToolpathId) {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    let tp_id = controller.state.session().toolpath_configs()[0].id;
     controller.state.simulation.last_run =
         Some(crate::state::simulation::SimulationRunMeta { epoch: None });
     controller.state.gui.dirty = false;
@@ -1275,7 +1282,7 @@ fn controller_holding_a_simulation() -> AppController<RestChainBackend> {
     let mut controller = rest_chain_controller(1);
     let ids: Vec<ToolpathId> = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| tc.id)
@@ -1288,7 +1295,7 @@ fn controller_holding_a_simulation() -> AppController<RestChainBackend> {
     );
     controller.drain_compute_results();
     assert!(
-        controller.state.session.simulation_result().is_some(),
+        controller.state.session().simulation_result().is_some(),
         "the control: the session holds a simulation before the edit"
     );
     assert!(
@@ -1314,7 +1321,7 @@ fn assert_post_mirror_matches_session<B: ComputeBackend>(
     let mirrored = controller.state.gui.post.clone();
     assert_eq!(
         &mirrored,
-        controller.state.session.post_config(),
+        controller.state.session().post_config(),
         "SHL-01: after {route} the viz post mirror does not match the session block"
     );
 }
@@ -1329,4 +1336,37 @@ fn drift_the_post_mirror<B: ComputeBackend>(controller: &mut AppController<B>) {
     post.high_feedrate_mode = !post.high_feedrate_mode;
     post.high_feedrate += 111.0;
     post.spindle_strategy = rs_cam_core::feeds::SpindleStrategy::MaxSpeed;
+}
+
+/// F217: the panel write-back sends `ReplaceToolpathConfig` only on a frame
+/// that changed the config. An idle frame applies nothing; an edit lands.
+#[test]
+fn an_unedited_panel_frame_sends_no_command_f217() {
+    let mut controller = sample_controller();
+    let id = controller.state.session().toolpath_configs()[0].id;
+    let revision = controller.state.session().toolpath_revision(0);
+    let mut entry = crate::ui::properties::build_entry_from_session_and_gui(
+        id,
+        controller.state.session(),
+        &controller.state.gui,
+    )
+    .expect("toolpath exists");
+
+    let idle = crate::ui::properties::write_entry_config_to_session(&entry, &mut controller.state);
+    assert!(idle.is_none(), "an unedited entry must send no command");
+    assert_eq!(
+        controller.state.session().toolpath_revision(0),
+        revision,
+        "an idle frame must not move the revision"
+    );
+
+    entry.name = "Renamed".to_owned();
+    let edited =
+        crate::ui::properties::write_entry_config_to_session(&entry, &mut controller.state);
+    assert!(edited.is_some(), "an edited entry must send the command");
+    assert_eq!(
+        controller.state.session().toolpath_configs()[0].name,
+        "Renamed",
+        "the edit must land in the session"
+    );
 }

@@ -213,7 +213,7 @@ fn load_the_project() -> Loaded {
 
     let ids: Vec<(String, ToolpathId)> = controller
         .state()
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| (tc.name.clone(), tc.id))
@@ -320,13 +320,13 @@ fn the_3d_op_is_still_waiting_after_the_sweep_runs() {
 
     let state = loaded.controller.state();
     let index = state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .position(|tc| tc.id == loaded.scallop)
         .expect("the scallop is in the session");
     assert_eq!(
-        freshness_at(&state.session, &state.gui, index),
+        freshness_at(state.session(), &state.gui, index),
         Some(FreshnessState::NoResult),
         "the 3D operation waits for an explicit Generate; it must not have \
          drifted into Regenerating on its own"
@@ -342,8 +342,8 @@ fn the_unregenerated_3d_op_reads_no_result_not_error() {
     let loaded = load_the_project();
     let state = loaded.controller.state();
 
-    for (index, tc) in state.session.toolpath_configs().iter().enumerate() {
-        let freshness = freshness_at(&state.session, &state.gui, index)
+    for (index, tc) in state.session().toolpath_configs().iter().enumerate() {
+        let freshness = freshness_at(state.session(), &state.gui, index)
             .expect("every loaded toolpath has a state");
         assert_eq!(
             freshness,
@@ -409,14 +409,14 @@ fn the_loaded_3d_op_reaches_the_chip_as_pending() {
     let loaded = load_the_project();
     let state = loaded.controller.state();
     let index = state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .position(|tc| tc.id == loaded.scallop)
         .expect("the scallop is in the session");
 
     assert_eq!(
-        freshness_at(&state.session, &state.gui, index),
+        freshness_at(state.session(), &state.gui, index),
         Some(FreshnessState::NoResult),
         "the state the card chip reads for a loaded 3D operation"
     );

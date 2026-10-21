@@ -41,8 +41,8 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::make_test_flat;
 use rs_cam_core::session::{
-    AdoptResultArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
-    ToolpathComputeResult, ToolpathConfig,
+    AdoptResultArgs, Command, LoadedModel, ProjectSessionBuilder, ToolpathComputeResult,
+    ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
@@ -53,7 +53,7 @@ use rs_cam_viz::compute::{
 use rs_cam_viz::controller::AppController;
 use rs_cam_viz::io::export::export_gcode_from_session_with_policy;
 use rs_cam_viz::state::freshness::{FreshnessState, freshness_at};
-use rs_cam_viz::state::runtime::{ComputeStatus, StaleResultPolicy, ToolpathRuntime};
+use rs_cam_viz::state::runtime::{StaleResultPolicy, ToolpathRuntime};
 use rs_cam_viz::state::toolpath::ToolpathResult;
 use rs_cam_viz::ui::AppEvent;
 
@@ -195,18 +195,18 @@ fn build_controller() -> AppController<SilentBackend> {
             ),
         )
         .expect("add the downstream toolpath");
-    controller.state.session = builder.build();
-    let session: &mut ProjectSession = &mut controller.state.session;
-    let lead_revision = session.toolpath_revision(0);
-    let _ = session
+    controller.state.replace_session(builder.build());
+    let state = &mut controller.state;
+    let lead_revision = state.session().toolpath_revision(0);
+    let _ = state
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,
             revision: lead_revision,
             result: Box::new(core_result(sample_toolpath(PREVIOUS_FEED))),
         }))
         .expect("seed the lead core result");
-    let downstream_revision = session.toolpath_revision(1);
-    let _ = session
+    let downstream_revision = state.session().toolpath_revision(1);
+    let _ = state
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 1,
             revision: downstream_revision,
@@ -215,22 +215,21 @@ fn build_controller() -> AppController<SilentBackend> {
         .expect("seed the downstream core result");
 
     for (index, feed) in [(0usize, PREVIOUS_FEED), (1usize, DOWNSTREAM_FEED)] {
-        let id = controller.state.session.toolpath_configs()[index].id;
+        let id = controller.state.session().toolpath_configs()[index].id;
         let mut rt = ToolpathRuntime::new(true);
-        rt.status = ComputeStatus::Done;
-        rt.result = Some(viz_result(sample_toolpath(feed)));
+        rt.run = rs_cam_viz::state::runtime::ToolpathRun::Done(viz_result(sample_toolpath(feed)));
         controller.state.gui.toolpath_rt.insert(id, rt);
     }
     controller
 }
 
 fn id_at(controller: &AppController<SilentBackend>, index: usize) -> rs_cam_core::ToolpathId {
-    controller.state.session.toolpath_configs()[index].id
+    controller.state.session().toolpath_configs()[index].id
 }
 
 fn feed_at(controller: &AppController<SilentBackend>, index: usize) -> Option<f64> {
     Some(
-        controller.state.session.toolpath_configs()[index]
+        controller.state.session().toolpath_configs()[index]
             .operation
             .feed_rate(),
     )
@@ -238,7 +237,7 @@ fn feed_at(controller: &AppController<SilentBackend>, index: usize) -> Option<f6
 
 fn export(controller: &AppController<SilentBackend>) -> Result<String, String> {
     export_gcode_from_session_with_policy(
-        &controller.state.session,
+        controller.state.session(),
         &controller.state.gui,
         &controller.state.simulation,
         policy(),
@@ -272,15 +271,15 @@ fn f_words(gcode: &str) -> Vec<f64> {
 /// about what the Apply changed, so all three must hold FIRST.
 fn assert_fixture_is_generated(controller: &AppController<SilentBackend>) {
     assert!(
-        controller.state.session.get_result(0).is_some(),
+        controller.state.session().get_result(0).is_some(),
         "fixture: the lead operation must hold a core result"
     );
     assert!(
-        controller.state.session.get_result(1).is_some(),
+        controller.state.session().get_result(1).is_some(),
         "fixture: the downstream operation must hold a core result"
     );
     assert_eq!(
-        freshness_at(&controller.state.session, &controller.state.gui, 0),
+        freshness_at(controller.state.session(), &controller.state.gui, 0),
         Some(FreshnessState::Current),
         "fixture: the lead operation must read Current before the Apply"
     );
@@ -311,13 +310,13 @@ fn apply_feeds_all_drops_the_cached_result_n13() {
         "the Apply wrote nothing, so this test proves nothing about it"
     );
     assert!(
-        controller.state.session.get_result(0).is_none(),
+        controller.state.session().get_result(0).is_none(),
         "N13: the feeds Apply funnel left the core result in place. Export \
          then emits the geometry and the feed words of the PRE-APPLY \
          parameter set."
     );
     assert_eq!(
-        freshness_at(&controller.state.session, &controller.state.gui, 0),
+        freshness_at(controller.state.session(), &controller.state.gui, 0),
         Some(FreshnessState::EditedSince),
         "N13: an operation edited by the Apply funnel still reads Current, \
          so every surface calls the stale geometry the answer"
@@ -336,7 +335,7 @@ fn apply_feeds_all_drops_the_downstream_chain_n13() {
     controller.handle_internal_event(AppEvent::ApplyFeedsAll(id_at(&controller, 0)));
 
     assert!(
-        controller.state.session.get_result(1).is_none(),
+        controller.state.session().get_result(1).is_none(),
         "N13: the downstream FromRemainingStock operation kept its result. \
          Its stock came from the operation the Apply just changed."
     );
@@ -391,7 +390,7 @@ fn apply_feeds_project_drops_every_written_result_n13() {
     );
     for index in [0usize, 1usize] {
         assert!(
-            controller.state.session.get_result(index).is_none(),
+            controller.state.session().get_result(index).is_none(),
             "N13: the project rollup left toolpath {index}'s core result in \
              place after writing its operation"
         );
@@ -428,7 +427,7 @@ fn agent_apply_feeds_drops_the_cached_result_n13() {
         "the agent Apply wrote no feed, so this test proves nothing about it"
     );
     assert!(
-        controller.state.session.get_result(0).is_none(),
+        controller.state.session().get_result(0).is_none(),
         "N13: the MCP apply_feeds door left the core result in place. A \
          'speeds only' apply still changes the F word the file carries."
     );

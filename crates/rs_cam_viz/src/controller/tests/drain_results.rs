@@ -15,18 +15,17 @@ use super::*;
 #[test]
 fn drain_refuses_a_completion_whose_revision_moved() {
     let mut controller = sample_controller();
-    let submitted = controller.state.session.toolpath_revision(0);
+    let submitted = controller.state.session().toolpath_revision(0);
 
     // The edit an operator makes while the lane runs.
     let _ = controller
         .state
-        .session
         .apply(Command::InvalidateToolpathInputs(
             InvalidateToolpathInputsArgs { index: 0 },
         ))
         .expect("toolpath 0 exists");
     assert_ne!(
-        controller.state.session.toolpath_revision(0),
+        controller.state.session().toolpath_revision(0),
         submitted,
         "the fixture must move the revision, or the test proves nothing"
     );
@@ -35,13 +34,14 @@ fn drain_refuses_a_completion_whose_revision_moved() {
     controller.drain_compute_results();
 
     assert!(
-        controller.state.session.get_result(0).is_none(),
+        controller.state.session().get_result(0).is_none(),
         "a completion that answers a superseded revision must not reach \
          the core cache"
     );
     assert!(
         controller.state.gui.toolpath_rt[&ToolpathId(0)]
-            .result
+            .run
+            .result()
             .is_some(),
         "the viz copy is kept, so the viewport still draws the geometry"
     );
@@ -57,18 +57,17 @@ fn drain_adopts_a_completion_whose_revision_is_current() {
     // only ever matches the initial value.
     let _ = controller
         .state
-        .session
         .apply(Command::InvalidateToolpathInputs(
             InvalidateToolpathInputsArgs { index: 0 },
         ))
         .expect("toolpath 0 exists");
-    let submitted = controller.state.session.toolpath_revision(0);
+    let submitted = controller.state.session().toolpath_revision(0);
 
     push_toolpath_completion(&mut controller, Some(submitted));
     controller.drain_compute_results();
 
     assert!(
-        controller.state.session.get_result(0).is_some(),
+        controller.state.session().get_result(0).is_some(),
         "a completion that answers the current revision is adopted"
     );
 }
@@ -93,7 +92,7 @@ fn drain_compute_results_skips_session_write_on_error() {
     controller.drain_compute_results();
 
     assert!(
-        controller.state.session.get_result(0).is_none(),
+        controller.state.session().get_result(0).is_none(),
         "session.results must not be written on compute error"
     );
 }
@@ -120,7 +119,6 @@ mod reach_overlay_key_g_cachekeys {
     fn apply_like_mcp(controller: &mut AppController<ScriptedBackend>, command: Command) {
         let _ = controller
             .state
-            .session
             .apply(command)
             .expect("the MCP-style edit applies");
     }

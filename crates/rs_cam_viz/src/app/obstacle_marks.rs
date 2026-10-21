@@ -36,8 +36,8 @@ pub(super) fn push_obstacle_lines(
     if !state.viewport.show_obstacles {
         return;
     }
-    let stock = state.session.stock_config();
-    let models = state.session.models();
+    let stock = state.session().stock_config();
+    let models = state.session().models();
     let shift_p = frame.emission_to_display_shift(stock);
     let shift = [shift_p.x, shift_p.y, shift_p.z];
     let setup_id = SetupId(sd.id);
@@ -118,12 +118,11 @@ mod tests {
     fn state_with(obstacles: Vec<Obstacle>) -> AppState {
         let mut state = AppState::new();
         assert!(
-            !state.session.list_setups().is_empty(),
+            !state.session().list_setups().is_empty(),
             "an empty project holds one setup"
         );
         for obstacle in obstacles {
             let _ = state
-                .session
                 .apply(Command::AddObstacle(AddObstacleArgs {
                     setup_index: 0,
                     obstacle: Box::new(obstacle),
@@ -134,7 +133,7 @@ mod tests {
     }
 
     fn lines(state: &AppState) -> Vec<LineVertex> {
-        let sd = state.session.list_setups()[0].clone();
+        let sd = state.session().list_setups()[0].clone();
         let frame = SetupFrame::of(&sd);
         let mut out = Vec::new();
         push_obstacle_lines(state, &frame, &sd, &mut out);
@@ -154,16 +153,16 @@ mod tests {
         assert!(count(&out, OBSTACLE_CLEARANCE) >= 8, "the clearance ring");
         assert_eq!(count(&out, OBSTACLE_PLANE), 0, "no plane without focus");
 
-        let setup = SetupId(state.session.list_setups()[0].id);
+        let setup = SetupId(state.session().list_setups()[0].id);
         state.selection = Selection::Setup(setup);
         let out = lines(&state);
         let plane: Vec<&LineVertex> = out.iter().filter(|v| v.color == OBSTACLE_PLANE).collect();
         assert_eq!(plane.len(), 8, "the plane rectangle");
-        let sd = &state.session.list_setups()[0];
+        let sd = &state.session().list_setups()[0];
         let shift_z = SetupFrame::of(sd)
-            .emission_to_display_shift(state.session.stock_config())
+            .emission_to_display_shift(state.session().stock_config())
             .z;
-        let plane_z = ObstacleSet::resolve(&sd.obstacles, state.session.models())
+        let plane_z = ObstacleSet::resolve(&sd.obstacles, state.session().models())
             .unwrap()
             .plane_z()
             .unwrap();
@@ -194,10 +193,10 @@ mod tests {
             model_id: ModelId(42),
         };
         assert!(
-            ObstacleSet::resolve(std::slice::from_ref(&broken), state.session.models()).is_err(),
+            ObstacleSet::resolve(std::slice::from_ref(&broken), state.session().models()).is_err(),
             "non-vacuity: the broken record does not resolve"
         );
-        let mut sd = state.session.list_setups()[0].clone();
+        let mut sd = state.session().list_setups()[0].clone();
         sd.obstacles.push(broken);
         let frame = SetupFrame::of(&sd);
         state.selection = Selection::None;

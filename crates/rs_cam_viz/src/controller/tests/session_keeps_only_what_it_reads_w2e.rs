@@ -41,7 +41,7 @@ fn stock_bbox() -> rs_cam_core::geo::BoundingBox3 {
 }
 
 fn lane_artifacts(controller: &AppController<ScriptedBackend>) -> LaneArtifacts {
-    let toolpath = controller.state.session.toolpath_configs()[0].id;
+    let toolpath = controller.state.session().toolpath_configs()[0].id;
     let stock = TriDexelStock::from_bounds(&stock_bbox(), 1.0);
     LaneArtifacts {
         mesh: Arc::new(StockMesh {
@@ -152,7 +152,7 @@ fn the_session_copy_holds_no_mesh_checkpoints_or_deviations_after_adopt_w2e() {
 
     let session = controller
         .state
-        .session
+        .session()
         .simulation_result()
         .expect("the session adopted the run");
     assert!(
@@ -250,7 +250,7 @@ fn a_released_view_reads_released_during_a_run_and_after_a_cancel_w2e() {
     assert!(
         controller
             .state
-            .session
+            .session()
             .simulation_result()
             .is_some_and(|sim| sim.prior_stocks.contains_key(&artifacts.toolpath)),
         "a rest cascade still starts from the released run"
@@ -273,7 +273,7 @@ fn a_reset_is_not_a_release_w2e() {
     controller.handle_internal_event(AppEvent::Ui(UiCommand::ResetSimulation(NoArgs)));
 
     assert!(
-        controller.state.session.simulation_result().is_some(),
+        controller.state.session().simulation_result().is_some(),
         "the control: Reset leaves the core simulation"
     );
     assert_eq!(controller.state.simulation_freshness(), SimFreshness::NoRun);

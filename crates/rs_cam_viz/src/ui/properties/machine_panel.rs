@@ -91,7 +91,7 @@ pub(super) fn draw_machine_library_row(
             .clicked();
     });
     if save_clicked {
-        match rs_cam_core::io::machine_library::save(&trimmed, state.session.machine()) {
+        match rs_cam_core::io::machine_library::save(&trimmed, state.session().machine()) {
             Ok(path) => {
                 state.gui.mark_edited();
                 state.panels.machine_library_status = format!("Saved to {}", path.display());
@@ -124,7 +124,7 @@ pub(super) fn draw_machine_panel(
     // R6: identity is structural — a library machine or edited preset
     // shows as "Custom" instead of silently claiming the first preset
     // whose name happens to overlap.
-    let selected_idx = state.session.machine().matching_preset_index();
+    let selected_idx = state.session().machine().matching_preset_index();
 
     ui.horizontal(|ui| {
         ui.label("Preset:");
@@ -155,16 +155,16 @@ pub(super) fn draw_machine_panel(
     // command instead of one per frame of the drag.
     let mut draft = match state.history.machine_draft.take() {
         Some(draft) => draft,
-        None => state.session.machine().clone(),
+        None => state.session().machine().clone(),
     };
     let mut edit = PanelEdit::default();
     ui.param_grid("machine_specs", |ui| {
-        let (min_rpm, max_rpm) = state.session.machine().rpm_range();
+        let (min_rpm, max_rpm) = state.session().machine().rpm_range();
         ui.label("RPM Range:");
         ui.label(format!("{:.0} - {:.0}", min_rpm, max_rpm));
         ui.end_row();
 
-        let max_power = match state.session.machine().power {
+        let max_power = match state.session().machine().power {
             rs_cam_core::machine::PowerModel::VfdConstantTorque { rated_power_kw, .. } => {
                 rated_power_kw
             }
@@ -206,7 +206,7 @@ pub(super) fn draw_machine_panel(
     // whole-profile row must not be applied for it.
     let mut kinematics_edit = PanelEdit::default();
     draw_machine_kinematics(ui, state, &mut draft, &mut kinematics_edit, events);
-    if kinematics_edit.committed && draft.kinematics != state.session.machine().kinematics {
+    if kinematics_edit.committed && draft.kinematics != state.session().machine().kinematics {
         apply_machine_kinematics(state, draft.kinematics);
     }
     edit.in_flight |= kinematics_edit.in_flight;
@@ -238,7 +238,7 @@ pub(super) fn draw_machine_panel(
 
     // One `SetMachine` for the whole profile. `set_machine` writes the
     // profile alone.
-    if edit.committed && machine_panel_fields_moved(&draft, state.session.machine()) {
+    if edit.committed && machine_panel_fields_moved(&draft, state.session().machine()) {
         apply_machine(state, draft.clone());
     }
     if edit.in_flight {
@@ -257,7 +257,7 @@ pub(super) fn draw_machine_panel(
 /// section reads the stored head, so an MCP edit shows on the next frame.
 fn draw_head_section(ui: &mut egui::Ui, state: &mut AppState) {
     use super::head::{HeadAction, draw_head};
-    let stored = state.session.machine().head.clone();
+    let stored = state.session().machine().head.clone();
     let mut editor =
         state
             .panels
@@ -336,7 +336,7 @@ pub(super) fn draw_machine_kinematics(
 ) {
     crate::ui::components::SectionHeader::new("Kinematics (cycle-time model)").show(ui);
 
-    if state.session.machine().kinematics.is_none() {
+    if state.session().machine().kinematics.is_none() {
         ui.add(
             crate::ui::components::OneLine::new("Not set: these are defaults")
                 .color(crate::ui::tokens::CAUTION)
@@ -351,7 +351,7 @@ pub(super) fn draw_machine_kinematics(
     // previous frame is not re-read from the unchanged session.
     let mut kin = draft
         .kinematics
-        .unwrap_or_else(|| state.session.machine().effective_kinematics());
+        .unwrap_or_else(|| state.session().machine().effective_kinematics());
     let scalar = kin.acceleration_mm_s2.max(1.0);
     let mut axes = kin
         .acceleration_xyz_mm_s2
@@ -481,7 +481,7 @@ pub(super) fn draw_grbl_import(
                 .hint_text("Paste $$ output here ($11=\u{2026}, $120=\u{2026}, \u{2026})"),
         );
 
-        let current_max_feed = state.session.machine().max_feed_mm_min;
+        let current_max_feed = state.session().machine().max_feed_mm_min;
         // The parse is read once and copied out, so the draft's borrow ends
         // before the Apply arm writes the session.
         let preview = state.panels.grbl.parsed().cloned();

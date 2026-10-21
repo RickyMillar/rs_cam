@@ -26,11 +26,11 @@ impl RsCamApp {
         let state = self.controller.state();
         let rt = state.gui.toolpath_rt.get(&toolpath_id);
         let enabled = state
-            .session
+            .session()
             .find_toolpath_config_by_id(toolpath_id)
             .is_none_or(|(_, tc)| tc.enabled);
-        let raw = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
-        let status = ComputeStatus::effective(enabled, raw);
+        let raw = rt.map_or(ComputeStatus::Pending, |r| r.run.status());
+        let status = ComputeStatus::effective(enabled, &raw);
         serde_json::json!({
             "status": status.label(),
             "error": status.error_text(),
@@ -44,7 +44,7 @@ impl RsCamApp {
             // config field records. `null` until the operation has generated,
             // and on any operation that runs no claims pipeline.
             "claims_reference": rt
-                .and_then(|r| r.result.as_ref())
+                .and_then(|r| r.run.result())
                 .and_then(|res| res.stats.claims_reference)
                 .map(|f| serde_json::json!({
                     "setting": f.resolution.setting(),
@@ -61,9 +61,9 @@ impl RsCamApp {
             // W2.5 (D10): the feed stage of the stored result, the one
             // export emits. `null` when the toolpath has no stored result.
             "feeds": state
-                .session
+                .session()
                 .find_toolpath_config_by_id(toolpath_id)
-                .and_then(|(index, _)| state.session.feed_stage(index))
+                .and_then(|(index, _)| state.session().feed_stage(index))
                 .map(|stage| serde_json::json!({
                     "stage": stage.badge(),
                     "simulation_run": stage.simulation_run(),
@@ -177,7 +177,7 @@ impl RsCamApp {
         let tp_id = self
             .controller
             .state()
-            .session
+            .session()
             .toolpath_configs()
             .get(index)
             .map(|tc| tc.id)
@@ -239,7 +239,7 @@ impl RsCamApp {
             // two different frames — on a stock at origin (-20,-25) the footer
             // read `X -20.0..140.1` for a 140 mm blank, i.e. the world bbox
             // and the zero-rooted grid side by side.
-            let stock_bbox = self.controller.state().session.stock_bbox();
+            let stock_bbox = self.controller.state().session().stock_bbox();
             let world_frame = rs_cam_core::geo::BoundingBox3 {
                 min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
                 max: rs_cam_core::geo::P3::new(
@@ -260,7 +260,7 @@ impl RsCamApp {
                 .get(cp_idx)
                 .is_some_and(|cp| cp.stock_local_to_global().is_some());
             // S5: every route draws each added material in its colour.
-            let palette = self.controller.state().session.stock_material_palette();
+            let palette = self.controller.state().session().stock_material_palette();
             let pixels = if let Some(cp) = results
                 .checkpoints
                 .get(cp_idx)
@@ -295,7 +295,7 @@ impl RsCamApp {
                 Err(e) => text(format!("Failed to save PNG: {e}")),
             }
         } else {
-            let session = &self.controller.state().session;
+            let session = self.controller.state().session();
             let toolpaths: Vec<&rs_cam_core::toolpath::Toolpath> =
                 if include_toolpaths.unwrap_or(true) {
                     self.controller
@@ -303,7 +303,7 @@ impl RsCamApp {
                         .gui
                         .toolpath_rt
                         .values()
-                        .filter_map(|rt| rt.result.as_ref())
+                        .filter_map(|rt| rt.run.result())
                         .map(|r| r.toolpath())
                         .collect()
                 } else {
@@ -512,8 +512,8 @@ pub(crate) fn build_cut_trace_response(
     use rs_cam_mcp::response::{BoundedResponse, cap_json_values};
 
     // ── L-5: refuse an id that matches no toolpath ──────────────────────
-    let valid_ids: Vec<usize> = (0..state.session.toolpath_count())
-        .filter_map(|idx| state.session.get_toolpath_config(idx).map(|tc| tc.id.0))
+    let valid_ids: Vec<usize> = (0..state.session().toolpath_count())
+        .filter_map(|idx| state.session().get_toolpath_config(idx).map(|tc| tc.id.0))
         .collect();
     if let Some(raw) = req.toolpath_id
         && !valid_ids.contains(&raw)
@@ -558,9 +558,9 @@ pub(crate) fn build_cut_trace_response(
         if !span_filter_active {
             return None;
         }
-        let tc = state.session.get_toolpath_config(tp_index_for_id)?;
+        let tc = state.session().get_toolpath_config(tp_index_for_id)?;
         let rt = state.gui.toolpath_rt.get(&tc.id)?;
-        let result = rt.result.as_ref()?;
+        let result = rt.run.result()?;
         let spans = result.spans();
         let mut set = std::collections::HashSet::<u32>::new();
         for (i, span) in spans.iter().enumerate() {
@@ -593,9 +593,9 @@ pub(crate) fn build_cut_trace_response(
         Option<std::collections::HashSet<u32>>,
     > = std::collections::HashMap::new();
     if span_filter_active {
-        let n = state.session.toolpath_count();
+        let n = state.session().toolpath_count();
         for idx in 0..n {
-            if let Some(tc) = state.session.get_toolpath_config(idx)
+            if let Some(tc) = state.session().get_toolpath_config(idx)
                 && toolpath_id.is_none_or(|raw_id| tc.id == raw_id)
             {
                 accepted_by_toolpath.insert(tc.id, resolve_accepted(idx));
@@ -869,9 +869,9 @@ fn build_span_cut_summaries(
     let mut total_matching = 0usize;
     // The enclosing `[]`, charged once — mirrors `cap_json_values`.
     budget.charge(2);
-    let n = state.session.toolpath_count();
+    let n = state.session().toolpath_count();
     for idx in 0..n {
-        let Some(tc) = state.session.get_toolpath_config(idx) else {
+        let Some(tc) = state.session().get_toolpath_config(idx) else {
             continue;
         };
         if toolpath_id.is_some_and(|id| tc.id != id) {
@@ -880,7 +880,7 @@ fn build_span_cut_summaries(
         let Some(rt) = state.gui.toolpath_rt.get(&tc.id) else {
             continue;
         };
-        let Some(result) = rt.result.as_ref() else {
+        let Some(result) = rt.run.result() else {
             continue;
         };
         if !result.spans_valid() {
@@ -990,15 +990,15 @@ pub(super) fn build_per_depth_pass_summary(
     };
 
     let mut out = serde_json::Map::<String, serde_json::Value>::new();
-    let n = state.session.toolpath_count();
+    let n = state.session().toolpath_count();
     for idx in 0..n {
-        let Some(tc) = state.session.get_toolpath_config(idx) else {
+        let Some(tc) = state.session().get_toolpath_config(idx) else {
             continue;
         };
         let Some(rt) = state.gui.toolpath_rt.get(&tc.id) else {
             continue;
         };
-        let Some(result) = rt.result.as_ref() else {
+        let Some(result) = rt.run.result() else {
             continue;
         };
         let spans = result.spans();

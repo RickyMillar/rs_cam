@@ -231,8 +231,8 @@ fn fixture(cutter: &Cutter) -> AppState {
         .add_toolpath(0, config)
         .expect("add the corridor fixture");
     let mut state = AppState::new();
-    state.session = builder.build();
-    let toolpath_id = state.session.toolpath_configs()[0].id;
+    state.replace_session(builder.build());
+    let toolpath_id = state.session().toolpath_configs()[0].id;
     state.feeds_modal = Some(FeedsModalState {
         toolpath_id,
         explore: None,
@@ -327,16 +327,16 @@ fn suggested_ray(state: &AppState) -> Ray {
 /// `FeedsExplain` the chart reads.
 fn suggested_mm(cutter: &Cutter) -> f64 {
     let state = fixture(cutter);
-    let tc = &state.session.toolpath_configs()[0];
-    let tool = &state.session.tools()[0];
-    let stock = state.session.stock_config();
+    let tc = &state.session().toolpath_configs()[0];
+    let tool = &state.session().tools()[0];
+    let stock = state.session().stock_config();
     let preview = rs_cam_core::feeds::suggest::feeds_preview_for_operation(
         &tc.operation,
         tool,
         &stock.material,
-        state.session.machine(),
+        state.session().machine(),
         rs_cam_core::feeds::embedded_vendor_lut(),
-        state.session.post_config().spindle_strategy,
+        state.session().post_config().spindle_strategy,
     );
     let r = &preview.explain().recommended;
     r.feed_rate_mm_min / (r.rpm * f64::from(preview.explain().flute_count.max(1)))
@@ -455,22 +455,22 @@ fn the_rubbing_floor_line_is_drawn_g_corridor() {
 /// quantity `Corridor::resolve` compares the ceiling against.
 fn measured(cutter: &Cutter) -> (f64, Option<f64>, f64) {
     let state = fixture(cutter);
-    let tc = &state.session.toolpath_configs()[0];
-    let tool = &state.session.tools()[0];
-    let stock = state.session.stock_config();
+    let tc = &state.session().toolpath_configs()[0];
+    let tool = &state.session().tools()[0];
+    let stock = state.session().stock_config();
     let preview = rs_cam_core::feeds::suggest::feeds_preview_for_operation(
         &tc.operation,
         tool,
         &stock.material,
-        state.session.machine(),
+        state.session().machine(),
         rs_cam_core::feeds::embedded_vendor_lut(),
-        state.session.post_config().spindle_strategy,
+        state.session().post_config().spindle_strategy,
     );
     let efficiency = rs_cam_core::feeds::efficiency::cut_efficiency(
         &tc.operation,
         tool,
         &stock.material,
-        state.session.machine(),
+        state.session().machine(),
         preview.recommended(),
     )
     .expect("generic softwood carries a primary-source Kc, so the efficiency answer exists");

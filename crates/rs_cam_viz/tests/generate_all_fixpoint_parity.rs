@@ -94,7 +94,7 @@ fn controller_with_chain(rest_ops: usize) -> AppController<SilentBackend> {
             .add_toolpath(0, toolpath(i, StockSource::FromRemainingStock))
             .expect("rest op");
     }
-    controller.state.session = builder.build();
+    controller.state.replace_session(builder.build());
     controller
 }
 
@@ -175,7 +175,7 @@ fn gui_generate_all_reads_the_panel_resolution_r1() {
         "the operator is asked for nothing"
     );
     assert_eq!(
-        controller.state.session.simulation_resolution(),
+        controller.state.session().simulation_resolution(),
         rs_cam_core::session::SimulationResolution::Auto,
         "the plan does not write the stored value unless the operator says so"
     );
@@ -189,7 +189,6 @@ fn set_resolution<B: ComputeBackend>(
 ) {
     let _ = controller
         .state
-        .session
         .apply(rs_cam_core::session::Command::SetSimulationResolution(
             rs_cam_core::session::SetSimulationResolutionArgs { resolution },
         ))

@@ -169,26 +169,26 @@ fn drill_controller(face_up: FaceUp, turn: ZRotation) -> AppController<SilentBac
     tc.model_id = model_id;
     let _ = builder.add_toolpath(0, tc).unwrap();
     let mut c = AppController::with_backend(SilentBackend);
-    c.state_mut().session = builder.build();
+    c.state_mut().replace_session(builder.build());
     orient(&mut c, face_up, turn);
     c
 }
 
 fn orient(c: &mut AppController<SilentBackend>, face_up: FaceUp, turn: ZRotation) {
-    let session = &mut c.state_mut().session;
-    let _ = session
+    let state = &mut c.state_mut();
+    let _ = state
         .apply(Command::SetSetupFace(SetSetupFaceArgs {
             setup_index: 0,
             face_up,
         }))
         .unwrap();
-    let _ = session
+    let _ = state
         .apply(Command::SetSetupRotation(SetSetupRotationArgs {
             setup_index: 0,
             z_rotation: turn,
         }))
         .unwrap();
-    let id = session.toolpath_configs()[0].id;
+    let id = state.session().toolpath_configs()[0].id;
     let state = c.state_mut();
     state.workspace = Workspace::Toolpaths;
     state.selection = Selection::Toolpath(id);
@@ -232,21 +232,21 @@ fn click(
     };
     pick(
         &ctx,
-        &state.session,
+        state.session(),
         &state.gui,
         &[],
         state.workspace,
         ToolpathDrawFilter::from_state(state),
         drill,
-        rs_cam_viz::state::pin_view::active_display_setup(&state.session, &state.selection)
+        rs_cam_viz::state::pin_view::active_display_setup(state.session(), &state.selection)
             .as_ref(),
     )
 }
 
 /// The key of a hole the drill selection holds.
 fn is_selected(c: &AppController<SilentBackend>, key: &MatchKey) -> bool {
-    let tc = &c.state().session.toolpath_configs()[0];
-    let holes = c.state().session.hole_selection(tc).unwrap();
+    let tc = &c.state().session().toolpath_configs()[0];
+    let holes = c.state().session().hole_selection(tc).unwrap();
     holes
         .items
         .iter()
@@ -255,13 +255,13 @@ fn is_selected(c: &AppController<SilentBackend>, key: &MatchKey) -> bool {
 
 fn a_click_on_a_drawn_hole_toggles_it(face_up: FaceUp, turn: ZRotation) {
     let mut c = drill_controller(face_up, turn);
-    let stock = c.state().session.stock_config().clone();
-    let frame = SetupFrame::of(&c.state().session.list_setups()[0]);
+    let stock = c.state().session().stock_config().clone();
+    let frame = SetupFrame::of(&c.state().session().list_setups()[0]);
     assert_eq!((frame.face_up, frame.z_rotation), (face_up, turn));
     let camera = camera(&frame, &stock);
-    let tp_id = c.state().session.toolpath_configs()[0].id;
-    let tc = c.state().session.toolpath_configs()[0].clone();
-    let items = c.state().session.hole_selection(&tc).unwrap().items;
+    let tp_id = c.state().session().toolpath_configs()[0].id;
+    let tc = c.state().session().toolpath_configs()[0].clone();
+    let items = c.state().session().hole_selection(&tc).unwrap().items;
     assert_eq!(items.len(), 2, "fixture: two holes");
 
     for item in &items {
@@ -356,7 +356,7 @@ fn a_click_on_a_drawn_face_picks_it_on_a_flipped_setup() {
     tc.model_id = model_id;
     let _ = builder.add_toolpath(0, tc).unwrap();
     let mut c = AppController::with_backend(SilentBackend);
-    c.state_mut().session = builder.build();
+    c.state_mut().replace_session(builder.build());
     orient(&mut c, FaceUp::Bottom, ZRotation::Deg0);
 
     // The model's up and down faces (flat, horizontal).
@@ -376,7 +376,7 @@ fn a_click_on_a_drawn_face_picks_it_on_a_flipped_setup() {
     let model_down = face_with(false);
 
     // Click the centre of the drawn top of the flipped part.
-    let frame = SetupFrame::of(&c.state().session.list_setups()[0]);
+    let frame = SetupFrame::of(&c.state().session().list_setups()[0]);
     let camera = camera(&frame, &stock);
     let centre = P3::new(
         (bbox.min.x + bbox.max.x) / 2.0,
@@ -399,9 +399,9 @@ fn a_click_on_a_drawn_face_picks_it_on_a_flipped_setup() {
     assert_eq!(face_id, model_down, "the click picked the wrong face");
 
     // The face click sends the key of that face as a pick.
-    let tp_id = c.state().session.toolpath_configs()[0].id;
+    let tp_id = c.state().session().toolpath_configs()[0].id;
     let key = {
-        let session = &c.state().session;
+        let session = c.state().session();
         session
             .face_pick_key(&session.toolpath_configs()[0], model_id, face_id)
             .unwrap()
@@ -411,7 +411,7 @@ fn a_click_on_a_drawn_face_picks_it_on_a_flipped_setup() {
         target: rs_cam_core::session::SelectionTarget::Op,
         key,
     });
-    let picks: Vec<u16> = c.state().session.toolpath_configs()[0]
+    let picks: Vec<u16> = c.state().session().toolpath_configs()[0]
         .operation
         .selection()
         .unwrap()
@@ -449,13 +449,13 @@ fn hide(c: &mut AppController<SilentBackend>, model_id: usize) {
 #[test]
 fn a_hidden_model_takes_no_click_p4_d() {
     let mut c = drill_controller(FaceUp::Top, ZRotation::Deg0);
-    let stock = c.state().session.stock_config().clone();
-    let frame = SetupFrame::of(&c.state().session.list_setups()[0]);
+    let stock = c.state().session().stock_config().clone();
+    let frame = SetupFrame::of(&c.state().session().list_setups()[0]);
     let camera = camera(&frame, &stock);
-    let tc = c.state().session.toolpath_configs()[0].clone();
+    let tc = c.state().session().toolpath_configs()[0].clone();
     let item = c
         .state()
-        .session
+        .session()
         .hole_selection(&tc)
         .unwrap()
         .items

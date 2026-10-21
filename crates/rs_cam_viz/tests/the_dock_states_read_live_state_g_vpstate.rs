@@ -54,7 +54,7 @@ use rs_cam_viz::compute::{ComputeLane, LaneSnapshot};
 use rs_cam_viz::render::camera::ProjectionMode;
 use rs_cam_viz::state::job::{ModelKind, ModelUnits};
 use rs_cam_viz::state::overlays::{DockSection, OverlayPanelState};
-use rs_cam_viz::state::runtime::{ComputeStatus, ReachStatus, ToolpathRuntime};
+use rs_cam_viz::state::runtime::{ReachStatus, ToolpathRun, ToolpathRuntime};
 use rs_cam_viz::state::selection::Selection;
 use rs_cam_viz::state::toolpath::ToolpathResult;
 use rs_cam_viz::state::viewport::ToolpathColorMode;
@@ -118,26 +118,28 @@ fn fresh_state() -> AppState {
     let mut state = AppState::new();
     let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
-    state.session = ProjectSessionBuilder::new()
-        .tool(tool)
-        .model(LoadedModel {
-            id: MODEL,
-            path: PathBuf::from("model.svg"),
-            name: "2D".to_owned(),
-            kind: Some(ModelKind::Svg),
-            mesh: None,
-            items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
-                Polygon2::rectangle(-10.0, -10.0, 10.0, 10.0),
-            ])),
-            enriched_mesh: None,
-            units: Some(ModelUnits::Millimeters),
-            winding_report: None,
-            load_error: None,
-            import_options: Default::default(),
-            import_report: None,
-            drawing: Default::default(),
-        })
-        .build();
+    state.replace_session(
+        ProjectSessionBuilder::new()
+            .tool(tool)
+            .model(LoadedModel {
+                id: MODEL,
+                path: PathBuf::from("model.svg"),
+                name: "2D".to_owned(),
+                kind: Some(ModelKind::Svg),
+                mesh: None,
+                items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
+                    Polygon2::rectangle(-10.0, -10.0, 10.0, 10.0),
+                ])),
+                enriched_mesh: None,
+                units: Some(ModelUnits::Millimeters),
+                winding_report: None,
+                load_error: None,
+                import_options: Default::default(),
+                import_report: None,
+                drawing: Default::default(),
+            })
+            .build(),
+    );
     state.workspace = Workspace::Toolpaths;
     state
 }
@@ -211,7 +213,6 @@ fn annotated(with_grid: bool) -> AnnotatedToolpath {
 /// result the toolpath reads `EditedSince`.
 fn add_selected(state: &mut AppState, with_grid: bool, generated: bool) -> ToolpathId {
     let index = state
-        .session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(config("Finish")),
@@ -219,10 +220,9 @@ fn add_selected(state: &mut AppState, with_grid: bool, generated: bool) -> Toolp
         .unwrap()
         .created
         .expect("the AddToolpath row reports the new index");
-    let id = state.session.toolpath_configs()[index].id;
+    let id = state.session().toolpath_configs()[index].id;
     let mut rt = ToolpathRuntime::new(true);
-    rt.status = ComputeStatus::Done;
-    rt.result = Some(ToolpathResult {
+    rt.run = rs_cam_viz::state::runtime::ToolpathRun::Done(ToolpathResult {
         annotated: Arc::new(annotated(with_grid)),
         stats: Default::default(),
         debug_trace: None,
@@ -232,9 +232,8 @@ fn add_selected(state: &mut AppState, with_grid: bool, generated: bool) -> Toolp
     });
     state.gui.toolpath_rt.insert(id, rt);
     if generated {
-        let revision = state.session.toolpath_revision(index);
+        let revision = state.session().toolpath_revision(index);
         let _effects = state
-            .session
             .apply(Command::AdoptResult(AdoptResultArgs {
                 index,
                 revision,
@@ -273,7 +272,7 @@ fn report(collisions: usize) -> CollisionReport {
 fn land_collision_check(state: &mut AppState, collisions: usize) {
     state.simulation.submitted_collision_epoch = None;
     state.simulation.checks.collision_report = Some(report(collisions));
-    state.simulation.checks.checked_at_epoch = Some(state.session.simulation_epoch());
+    state.simulation.checks.checked_at_epoch = Some(state.session().simulation_epoch());
 }
 
 // ── (a) the seven arms ───────────────────────────────────────────────
@@ -302,7 +301,7 @@ fn every_row_state_arm_is_reachable_from_live_state_g_vpstate() {
 
     // Computing from a running job: the submit stamp of the check.
     let mut state = fresh_state();
-    state.simulation.submitted_collision_epoch = Some(state.session.simulation_epoch());
+    state.simulation.submitted_collision_epoch = Some(state.session().simulation_epoch());
     let computing = record(state_of(&state, "collisions"), "check submitted");
     assert!(
         matches!(
@@ -323,13 +322,12 @@ fn every_row_state_arm_is_reachable_from_live_state_g_vpstate() {
     assert_eq!(off, RowState::Off);
 
     // Stale from an epoch bump: any stock edit drops the simulation.
-    let before = state.session.simulation_epoch();
+    let before = state.session().simulation_epoch();
     let _effects = state
-        .session
         .apply(Command::InvalidateStock(InvalidateStockArgs))
         .unwrap();
     assert!(
-        state.session.simulation_epoch() > before,
+        state.session().simulation_epoch() > before,
         "non-vacuity: InvalidateStock no longer moves the simulation epoch"
     );
     let stale = record(state_of(&state, "collisions"), "epoch bumped");
@@ -413,7 +411,7 @@ fn the_rest_row_reads_toolpath_freshness_g_vpstate() {
     let id = add_selected(&mut state, true, true);
     assert_eq!(state_of(&state, "rest_heatmap"), RowState::Off);
 
-    state.gui.toolpath_rt.get_mut(&id).unwrap().status = ComputeStatus::Computing;
+    state.gui.toolpath_rt.get_mut(&id).unwrap().run = ToolpathRun::Computing;
     assert!(matches!(
         state_of(&state, "rest_heatmap"),
         RowState::Computing {
@@ -422,8 +420,8 @@ fn the_rest_row_reads_toolpath_freshness_g_vpstate() {
         }
     ));
 
-    state.gui.toolpath_rt.get_mut(&id).unwrap().status =
-        ComputeStatus::Error("pocket found no region".to_owned());
+    state.gui.toolpath_rt.get_mut(&id).unwrap().run =
+        ToolpathRun::Failed("pocket found no region".to_owned());
     assert!(matches!(
         state_of(&state, "rest_heatmap"),
         RowState::Failed {
@@ -471,7 +469,7 @@ fn a_result_for_an_old_target_does_not_take_over_g_vpstate() {
 
     // The operator moves on while the check runs.
     state.selection = Selection::Toolpath(ToolpathId(2));
-    state.simulation.submitted_collision_epoch = Some(state.session.simulation_epoch());
+    state.simulation.submitted_collision_epoch = Some(state.session().simulation_epoch());
     land_collision_check(&mut state, 3);
     assert_eq!(panel::settle_pending_show(&mut state), ShowSettle::Dropped);
     assert!(
@@ -556,7 +554,7 @@ fn compute_and_compute_and_show_have_distinct_outcomes_g_vpstate() {
         !state.viewport.show_collisions,
         "the row must not go on at the click"
     );
-    state.simulation.submitted_collision_epoch = Some(state.session.simulation_epoch());
+    state.simulation.submitted_collision_epoch = Some(state.session().simulation_epoch());
     assert_eq!(panel::settle_pending_show(&mut state), ShowSettle::Waiting);
     assert!(state.overlays.pending_show.as_ref().unwrap().seen_computing);
     land_collision_check(&mut state, 2);

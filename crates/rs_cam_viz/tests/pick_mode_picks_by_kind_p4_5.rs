@@ -205,21 +205,21 @@ fn controller(
     tc.model_id = model_id;
     let _ = builder.add_toolpath(0, tc).unwrap();
     let mut c = AppController::with_backend(SilentBackend);
-    c.state_mut().session = builder.build();
-    let session = &mut c.state_mut().session;
-    let _ = session
+    c.state_mut().replace_session(builder.build());
+    let state = &mut c.state_mut();
+    let _ = state
         .apply(Command::SetSetupFace(SetSetupFaceArgs {
             setup_index: 0,
             face_up,
         }))
         .unwrap();
-    let _ = session
+    let _ = state
         .apply(Command::SetSetupRotation(SetSetupRotationArgs {
             setup_index: 0,
             z_rotation: turn,
         }))
         .unwrap();
-    let id = session.toolpath_configs()[0].id;
+    let id = state.session().toolpath_configs()[0].id;
     let state = c.state_mut();
     state.workspace = Workspace::Toolpaths;
     state.selection = UiSelection::Toolpath(id);
@@ -228,7 +228,7 @@ fn controller(
 
 /// Turn on the pick mode of the op selection, with every served kind on.
 fn pick_on(c: &mut AppController<SilentBackend>) -> PickMode {
-    let tc = c.state().session.toolpath_configs()[0].clone();
+    let tc = c.state().session().toolpath_configs()[0].clone();
     let mode = PickMode::new(
         tc.id,
         SelectionTarget::Op,
@@ -239,13 +239,13 @@ fn pick_on(c: &mut AppController<SilentBackend>) -> PickMode {
 }
 
 fn held(c: &AppController<SilentBackend>) -> BTreeSet<ItemKind> {
-    held_kinds(&c.state().session.models()[0])
+    held_kinds(&c.state().session().models()[0])
 }
 
 /// A camera that sees the whole displayed stock from above.
 fn camera(c: &AppController<SilentBackend>) -> OrbitCamera {
-    let stock = c.state().session.stock_config().clone();
-    let frame = SetupFrame::of(&c.state().session.list_setups()[0]);
+    let stock = c.state().session().stock_config().clone();
+    let frame = SetupFrame::of(&c.state().session().list_setups()[0]);
     let (w, d, h) = frame.effective_stock(&stock);
     let mut camera = OrbitCamera::new();
     camera.fit_to_bounds([0.0, 0.0, 0.0], [w as f32, d as f32, h as f32]);
@@ -257,17 +257,17 @@ fn camera(c: &AppController<SilentBackend>) -> OrbitCamera {
 /// shares; the Z is the drawing plane of the op.
 fn drawn(c: &AppController<SilentBackend>, camera: &OrbitCamera, p: P2) -> [f32; 2] {
     let state = c.state();
-    let stock = state.session.stock_config();
-    let frame = SetupFrame::of(&state.session.list_setups()[0]);
-    let tc = &state.session.toolpath_configs()[0];
-    let z = drawing_plane_z(&state.session, tc, Some(&frame));
+    let stock = state.session().stock_config();
+    let frame = SetupFrame::of(&state.session().list_setups()[0]);
+    let tc = &state.session().toolpath_configs()[0];
+    let z = drawing_plane_z(state.session(), tc, Some(&frame));
     let q = frame.transform_point(P3::new(p.x, p.y, 0.0), stock);
     screen(camera, P3::new(q.x, q.y, z))
 }
 
 /// Where the raw model point `p` falls on the screen (the old pick frame).
 fn raw(c: &AppController<SilentBackend>, camera: &OrbitCamera, p: P2) -> [f32; 2] {
-    let stock = c.state().session.stock_config();
+    let stock = c.state().session().stock_config();
     screen(camera, P3::new(p.x, p.y, stock.origin_z + stock.z))
 }
 
@@ -290,7 +290,7 @@ fn pick_at(
     at: [f32; 2],
 ) -> Option<MatchKey> {
     let state = c.state();
-    let tc = &state.session.toolpath_configs()[0];
+    let tc = &state.session().toolpath_configs()[0];
     let item_use = tc.operation.capabilities().item_use;
     let kinds = filter.effective_kinds(item_use, &held(c));
     let ctx = PickContext {
@@ -302,7 +302,7 @@ fn pick_at(
         vh: VIEW_H,
         visibility: &state.overlays.model_visibility,
     };
-    match pick_items(&ctx, &state.session, tc.id, filter, &kinds)? {
+    match pick_items(&ctx, state.session(), tc.id, filter, &kinds)? {
         PickHit::Item { key, .. } => Some(key),
         other => panic!("pick mode gave a hit that is not an item: {other:?}"),
     }
@@ -310,9 +310,9 @@ fn pick_at(
 
 /// The state of item `index` in the op selection report.
 fn state_of(c: &AppController<SilentBackend>, index: usize) -> ItemState {
-    let tc = &c.state().session.toolpath_configs()[0];
+    let tc = &c.state().session().toolpath_configs()[0];
     c.state()
-        .session
+        .session()
         .selection_status(tc, SelectionTarget::Op)
         .unwrap()
         .item_states[index]
@@ -326,7 +326,7 @@ fn a_click_picks_each_drawn_kind(face_up: FaceUp, turn: ZRotation) {
     let mut c = controller(OperationConfig::Trace(Default::default()), face_up, turn);
     let mode = pick_on(&mut c);
     let camera = camera(&c);
-    let items: Vec<Item> = c.state().session.models()[0]
+    let items: Vec<Item> = c.state().session().models()[0]
         .items
         .iter()
         .cloned()
@@ -393,7 +393,7 @@ fn a_chip_off_skips_its_kind_p4_5() {
     );
     let mode = pick_on(&mut c);
     let camera = camera(&c);
-    let items: Vec<Item> = c.state().session.models()[0]
+    let items: Vec<Item> = c.state().session().models()[0]
         .items
         .iter()
         .cloned()
@@ -478,7 +478,7 @@ fn a_served_kind_filter_blocks_a_refusing_pick_p4_5() {
     assert_eq!(kinds, vec![ItemKind::Loop, ItemKind::Circle]);
 
     // Shift-click on the TEXT loop: the layer holds a loop and a path.
-    let items: Vec<Item> = c.state().session.models()[0]
+    let items: Vec<Item> = c.state().session().models()[0]
         .items
         .iter()
         .cloned()
@@ -501,7 +501,7 @@ fn a_served_kind_filter_blocks_a_refusing_pick_p4_5() {
         },
     };
     let stored = |c: &AppController<SilentBackend>| {
-        c.state().session.toolpath_configs()[0]
+        c.state().session().toolpath_configs()[0]
             .operation
             .selection()
             .unwrap()
@@ -516,10 +516,10 @@ fn a_served_kind_filter_blocks_a_refusing_pick_p4_5() {
         )]),
         "under the default, the first layer rule replaces the default"
     );
-    let tc = c.state().session.toolpath_configs()[0].clone();
+    let tc = c.state().session().toolpath_configs()[0].clone();
     let report = c
         .state()
-        .session
+        .session()
         .selection_status(&tc, SelectionTarget::Op)
         .unwrap();
     assert!(report.refusal.is_none(), "{:?}", report.refusal);
@@ -625,7 +625,7 @@ fn open_path_at(
         vh: VIEW_H,
         visibility: &state.overlays.model_visibility,
     };
-    pick_open_path(&ctx, &state.session, ModelId(0))
+    pick_open_path(&ctx, state.session(), ModelId(0))
 }
 
 /// Show or hide model 0 through the eye of its row.
@@ -655,7 +655,7 @@ fn a_hidden_model_takes_no_pick_p4_d() {
     );
     let mode = pick_on(&mut c);
     let camera = camera(&c);
-    let items: Vec<Item> = c.state().session.models()[0]
+    let items: Vec<Item> = c.state().session().models()[0]
         .items
         .iter()
         .cloned()

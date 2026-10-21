@@ -12,10 +12,10 @@
 //! debounce clock, and stops being a claim about correctness.
 
 use crate::state::toolpath::ToolpathId;
-use rs_cam_core::compute::config::{AwaitingPriorStock, ComputeStatus};
+use rs_cam_core::compute::config::AwaitingPriorStock;
 use rs_cam_core::session::{ProjectSession, SimulationDropCauses, ToolpathConfig};
 
-use super::runtime::{GuiState, ToolpathRuntime};
+use super::runtime::{GuiState, ToolpathRun, ToolpathRuntime};
 
 /// Where a toolpath stands, as every surface should read it.
 ///
@@ -85,14 +85,14 @@ pub fn freshness(
     if !tc.enabled {
         return FreshnessState::Disabled;
     }
-    match rt.map(|r| &r.status) {
-        Some(ComputeStatus::Computing) => FreshnessState::Regenerating,
-        Some(ComputeStatus::AwaitingPriorStock(blocked)) => {
+    match rt.map(|r| &r.run) {
+        Some(ToolpathRun::Computing) => FreshnessState::Regenerating,
+        Some(ToolpathRun::AwaitingPriorStock(blocked)) => {
             FreshnessState::WaitingOnUpstream(blocked.clone())
         }
-        Some(ComputeStatus::Error(message)) => FreshnessState::Error(message.clone()),
+        Some(ToolpathRun::Failed(message)) => FreshnessState::Error(message.clone()),
         _ if core_has_result => FreshnessState::Current,
-        _ if rt.is_some_and(|r| r.result.is_some()) => FreshnessState::EditedSince,
+        _ if rt.is_some_and(|r| r.run.result().is_some()) => FreshnessState::EditedSince,
         _ => FreshnessState::NoResult,
     }
 }

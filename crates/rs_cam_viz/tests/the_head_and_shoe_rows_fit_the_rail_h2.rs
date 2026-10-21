@@ -97,7 +97,7 @@ fn fixture() -> AppState {
         .model(model);
     builder.add_toolpath(0, config).unwrap();
     let mut state = AppState::new();
-    state.session = builder.build();
+    state.replace_session(builder.build());
     let mut head = MachineHead::dust_shoe();
     if let Some(shoe) = head.shoe.as_mut() {
         shoe.travel_mm = Some(ShoeTravel {
@@ -106,12 +106,11 @@ fn fixture() -> AppState {
         });
     }
     let _ = state
-        .session
         .apply(Command::SetMachineHead(SetMachineHeadArgs {
             head: Box::new(head),
         }))
         .unwrap();
-    let id = state.session.toolpath_configs()[0].id;
+    let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     state
 }
@@ -235,13 +234,12 @@ fn the_dust_shoe_row_in_the_heights_tab_fits_the_rail_h2() {
             || {
                 let mut state = fixture();
                 let _ = state
-                    .session
                     .apply(Command::SetToolpathShoe(SetToolpathShoeArgs {
                         index: 0,
                         shoe,
                     }))
                     .unwrap();
-                let id = state.session.toolpath_configs()[0].id;
+                let id = state.session().toolpath_configs()[0].id;
                 state.selection = Selection::Toolpath(id);
                 state.gui.pending_toolpath_tab = Some((id, ToolpathTab::Heights));
                 state
@@ -258,7 +256,7 @@ fn the_run_sheet_fits_the_rail_h2() {
 
 /// The Head section over a draft with a refusal, so the banner draws too.
 fn draw_head_only(ui: &mut egui::Ui, state: &mut AppState) {
-    let stored = state.session.machine().head.clone();
+    let stored = state.session().machine().head.clone();
     let mut editor = rs_cam_viz::state::panels::HeadEditor {
         draft: stored.clone(),
         refusal: Some(

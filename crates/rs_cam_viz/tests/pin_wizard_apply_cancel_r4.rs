@@ -95,8 +95,8 @@ fn state_with(back: Option<FaceUp>) -> AppState {
         let _ = builder.add_setup("Back".to_owned(), face);
     }
     let mut state = AppState::new();
-    state.session = builder.build();
-    state.panels.pin_wizard = Some(PinWizardState::open(&state.session));
+    state.replace_session(builder.build());
+    state.panels.pin_wizard = Some(PinWizardState::open(state.session()));
     state
 }
 
@@ -209,13 +209,14 @@ fn assert_short(texts: &[(String, egui::Rect)], refusals: &[&str]) {
 fn cancel_changes_nothing() {
     let ctx = ctx();
     let mut state = state();
-    let stock = state.session.stock_config().clone();
-    let tools = state.session.tools().len();
-    let toolpaths = state.session.toolpath_configs().len();
+    let stock = state.session().stock_config().clone();
+    let tools = state.session().tools().len();
+    let toolpaths = state.session().toolpath_configs().len();
 
     // A draft edit inside the wizard: the 3-pin placement.
-    if let Some(w) = state.panels.pin_wizard.as_mut() {
-        w.place(&state.session);
+    let parts = state.split_mut();
+    if let Some(w) = parts.panels.pin_wizard.as_mut() {
+        w.place(parts.session);
         w.add_drills.push(8.0);
         assert_ne!(w.pins, stock.alignment_pins, "non-vacuity: the draft moved");
     }
@@ -231,17 +232,18 @@ fn cancel_changes_nothing() {
             .any(|e| matches!(e, AppEvent::PinWizardApply { .. })),
         "Cancel sends no Apply: {events:?}"
     );
-    assert_eq!(*state.session.stock_config(), stock);
-    assert_eq!(state.session.tools().len(), tools);
-    assert_eq!(state.session.toolpath_configs().len(), toolpaths);
+    assert_eq!(*state.session().stock_config(), stock);
+    assert_eq!(state.session().tools().len(), tools);
+    assert_eq!(state.session().toolpath_configs().len(), toolpaths);
 }
 
 #[test]
 fn two_steps_and_apply_sends_the_draft_once() {
     let ctx = ctx();
     let mut state = state();
-    if let Some(w) = state.panels.pin_wizard.as_mut() {
-        w.place(&state.session);
+    let parts = state.split_mut();
+    if let Some(w) = parts.panels.pin_wizard.as_mut() {
+        w.place(parts.session);
     }
     let draft = state.panels.pin_wizard.as_ref().unwrap().pins.clone();
 
@@ -340,11 +342,12 @@ fn no_flip_shows_the_refusal_and_its_fix() {
 fn a_plan_view_drag_across_the_axis_moves_the_set_along_it() {
     let ctx = ctx();
     let mut state = state();
-    if let Some(w) = state.panels.pin_wizard.as_mut() {
-        w.place(&state.session);
+    let parts = state.split_mut();
+    if let Some(w) = parts.panels.pin_wizard.as_mut() {
+        w.place(parts.session);
         w.step = WizardStep::Place;
     }
-    let stored = state.session.stock_config().alignment_pins.clone();
+    let stored = state.session().stock_config().alignment_pins.clone();
     let before = state.panels.pin_wizard.as_ref().unwrap().pins.clone();
     let texts = settle(&ctx, &mut state);
     // "X0 Y0" sits outside the stock's min corner, right-top aligned.
@@ -364,7 +367,7 @@ fn a_plan_view_drag_across_the_axis_moves_the_set_along_it() {
 
     let after = state.panels.pin_wizard.as_ref().unwrap().pins.clone();
     assert_eq!(
-        state.session.stock_config().alignment_pins,
+        state.session().stock_config().alignment_pins,
         stored,
         "a drag writes the draft only"
     );
@@ -384,7 +387,7 @@ fn a_plan_view_drag_across_the_axis_moves_the_set_along_it() {
         ((dx * 10.0).round() - dx * 10.0).abs() < 1e-6,
         "the step is 0.1 mm: {dx}"
     );
-    let report = state.session.pin_set_report_for(&after);
+    let report = state.session().pin_set_report_for(&after);
     assert!(
         report.flip.seats() && report.flip.keyed(),
         "the set stays keyed"

@@ -114,10 +114,11 @@ fn state_from(configs: Vec<ToolpathConfig>) -> AppState {
             .unwrap_or_else(|error| panic!("add fixture toolpath {index}: {error:?}"));
     }
     let mut state = AppState::new();
-    state.session = builder.build();
-    let id = state.session.toolpath_configs()[0].id;
-    for config in state.session.toolpath_configs() {
-        state
+    state.replace_session(builder.build());
+    let id = state.session().toolpath_configs()[0].id;
+    let parts = state.split_mut();
+    for config in parts.session.toolpath_configs() {
+        parts
             .gui
             .toolpath_rt
             .insert(config.id, ToolpathRuntime::new(true));
@@ -221,14 +222,14 @@ fn a_draw_never_writes_rest_analysis_g_startfrom() {
     let mut state = producer_with_consumer();
     // The producer has a consumer, and its analysis is off. The old panel
     // flipped the flag from inside its draw (D5).
-    let id = state.session.toolpath_configs()[0].id;
+    let id = state.session().toolpath_configs()[0].id;
     assert!(
-        !state.session.toolpath_configs()[0].rest_analysis.enabled,
+        !state.session().toolpath_configs()[0].rest_analysis.enabled,
         "the fixture must start with the producer's rest analysis off"
     );
     let _ = painted(&ctx, &mut state);
     let after = state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .find(|tc| tc.id == id)

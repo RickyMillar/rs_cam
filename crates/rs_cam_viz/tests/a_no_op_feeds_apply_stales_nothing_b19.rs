@@ -45,7 +45,7 @@ use rs_cam_viz::compute::{
     GenerationControl, LaneSnapshot, SimulationRequest, ToolpathSubmitOutcome,
 };
 use rs_cam_viz::controller::AppController;
-use rs_cam_viz::state::runtime::{ComputeStatus, ToolpathRuntime};
+use rs_cam_viz::state::runtime::ToolpathRuntime;
 use rs_cam_viz::state::toolpath::ToolpathResult;
 
 /// A backend that counts the toolpath submissions and returns nothing.
@@ -131,19 +131,18 @@ fn pocket() -> ToolpathConfig {
 /// Seed toolpath 0 as GENERATED at its current revision, in core and in
 /// the view, with no stale stamp.
 fn seed_generated(controller: &mut AppController<CountingBackend>) {
-    let session = &mut controller.state.session;
-    let revision = session.toolpath_revision(0);
-    let _ = session
+    let state = &mut controller.state;
+    let revision = state.session().toolpath_revision(0);
+    let _ = state
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,
             revision,
             result: Box::new(core_result()),
         }))
         .expect("seed the core result");
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
     let mut rt = ToolpathRuntime::new(true);
-    rt.status = ComputeStatus::Done;
-    rt.result = Some(viz_result());
+    rt.run = rs_cam_viz::state::runtime::ToolpathRun::Done(viz_result());
     let _ = controller.state.gui.toolpath_rt.insert(id, rt);
 }
 
@@ -167,7 +166,7 @@ fn build_controller(submits: Arc<AtomicUsize>) -> AppController<CountingBackend>
         drawing: Default::default(),
     });
     let _ = builder.add_toolpath(0, pocket()).expect("add the pocket");
-    controller.state.session = builder.build();
+    controller.state.replace_session(builder.build());
     seed_generated(&mut controller);
     controller
 }
@@ -176,17 +175,17 @@ fn build_controller(submits: Arc<AtomicUsize>) -> AppController<CountingBackend>
 fn a_feeds_apply_that_changes_nothing_stales_nothing_b19() {
     let submits = Arc::new(AtomicUsize::new(0));
     let mut controller = build_controller(Arc::clone(&submits));
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
 
     // Claim 1: the first Apply writes a new feed.
-    let feed_before = controller.state.session.toolpath_configs()[0]
+    let feed_before = controller.state.session().toolpath_configs()[0]
         .operation
         .feed_rate();
     let first = controller
         .apply_feeds_recommendation(id, ApplyScope::Speeds)
         .expect("a Pocket on a flat end mill is a runnable pairing");
     assert_ne!(
-        controller.state.session.toolpath_configs()[0]
+        controller.state.session().toolpath_configs()[0]
             .operation
             .feed_rate(),
         feed_before,
@@ -200,7 +199,7 @@ fn a_feeds_apply_that_changes_nothing_stales_nothing_b19() {
     // Generate again at the applied values, as the operator would.
     seed_generated(&mut controller);
     let config_before =
-        serde_json::to_string(&controller.state.session.toolpath_configs()[0].operation)
+        serde_json::to_string(&controller.state.session().toolpath_configs()[0].operation)
             .expect("serialise the operation");
 
     // Claim 2: the second Apply changes no value and core stales nothing.
@@ -208,7 +207,7 @@ fn a_feeds_apply_that_changes_nothing_stales_nothing_b19() {
         .apply_feeds_recommendation(id, ApplyScope::Speeds)
         .expect("the same pairing applies again");
     assert_eq!(
-        serde_json::to_string(&controller.state.session.toolpath_configs()[0].operation)
+        serde_json::to_string(&controller.state.session().toolpath_configs()[0].operation)
             .expect("serialise the operation"),
         config_before,
         "fixture: the second Apply must change no value"
@@ -219,7 +218,7 @@ fn a_feeds_apply_that_changes_nothing_stales_nothing_b19() {
         second.stale
     );
     assert!(
-        controller.state.session.get_result(0).is_some(),
+        controller.state.session().get_result(0).is_some(),
         "fixture: core keeps the result of an unchanged config"
     );
 

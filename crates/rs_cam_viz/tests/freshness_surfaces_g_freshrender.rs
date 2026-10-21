@@ -81,7 +81,7 @@ const WORKSPACE_BAR_SRC: &str = include_str!("../src/ui/workspace_bar.rs");
 /// produced no longer answers the settings on screen.
 ///
 /// Pre-fix the header matched `ComputeStatus::effective(entry.enabled,
-/// &entry.status)`, whose `Done` arm printed a green "Done" directly above
+/// &entry.run.status())`, whose `Done` arm printed a green "Done" directly above
 /// the fields the operator had just changed.
 #[test]
 fn the_inspector_header_reads_the_freshness_state() {

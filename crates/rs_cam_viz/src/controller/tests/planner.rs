@@ -59,7 +59,7 @@ fn the_dialogs_dials_reach_the_submitted_spec() {
         planner.rim_erosion_mm = 3.0;
     }
 
-    let before_ops = controller.state.session.toolpath_configs().len();
+    let before_ops = controller.state.session().toolpath_configs().len();
     controller.handle_internal_event(crate::ui::AppEvent::PreviewMultitoolPlan);
 
     assert!(
@@ -83,7 +83,7 @@ fn the_dialogs_dials_reach_the_submitted_spec() {
     };
     let spec = handle.spec();
     assert_eq!(
-        controller.state.session.toolpath_configs().len(),
+        controller.state.session().toolpath_configs().len(),
         before_ops,
         "WP14b: the session is NOT lent out — the handle carries the walk's \
          own inputs and the view keeps its project"
@@ -203,7 +203,6 @@ fn active_setup_index_follows_the_selection() {
     let mut controller = sample_controller();
     let second = controller
         .state
-        .session
         .apply(Command::AddSetup(AddSetupArgs {
             name: Some("Back".to_owned()),
             face_up: rs_cam_core::compute::transform::FaceUp::default(),
@@ -217,15 +216,15 @@ fn active_setup_index_follows_the_selection() {
     assert_eq!(controller.state.active_setup_index(), Some(0));
 
     // Selecting the second setup moves the display frame with it.
-    let second_id = controller.state.session.list_setups()[second].id;
+    let second_id = controller.state.session().list_setups()[second].id;
     controller.state.selection = Selection::Setup(crate::state::job::SetupId(second_id));
     assert_eq!(controller.state.active_setup_index(), Some(second));
 
     // A toolpath selection resolves through its owning setup.
-    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    let tp_id = controller.state.session().toolpath_configs()[0].id;
     controller.state.selection = Selection::Toolpath(tp_id);
     assert_eq!(
         controller.state.active_setup_index(),
-        controller.state.session.setup_of_toolpath_id(tp_id)
+        controller.state.session().setup_of_toolpath_id(tp_id)
     );
 }

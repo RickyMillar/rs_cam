@@ -96,25 +96,21 @@ fn draw_toolpath_tree(ui: &mut egui::Ui, state: &mut AppState) {
 
 fn draw_sim_op_list(ui: &mut egui::Ui, state: &mut AppState) {
     let mut events = Vec::new();
+    let parts = state.split_mut();
     sim_op_list::draw(
         ui,
-        &mut state.simulation,
-        &state.session,
-        &state.gui,
-        &mut state.viewport,
+        parts.simulation,
+        parts.session,
+        parts.gui,
+        parts.viewport,
         &mut events,
     );
 }
 
 fn draw_sim_diagnostics(ui: &mut egui::Ui, state: &mut AppState) {
     let mut events = Vec::new();
-    sim_diagnostics::draw(
-        ui,
-        &mut state.simulation,
-        &state.session,
-        &state.gui,
-        &mut events,
-    );
+    let parts = state.split_mut();
+    sim_diagnostics::draw(ui, parts.simulation, parts.session, parts.gui, &mut events);
 }
 
 /// The six workspace side panels of `app.rs`, with the same ids and edges.
@@ -232,8 +228,8 @@ fn fixture_with_a_toolpath() -> AppState {
         .add_toolpath(0, config)
         .expect("add the panel width fixture");
     let mut state = AppState::new();
-    state.session = builder.build();
-    let id = state.session.toolpath_configs()[0].id;
+    state.replace_session(builder.build());
+    let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     state.selection = Selection::Toolpath(id);
     state

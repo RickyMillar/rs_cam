@@ -50,6 +50,7 @@ use rs_cam_viz::io::export::{
 };
 use rs_cam_viz::state::freshness::freshness_at;
 use rs_cam_viz::state::job::SetupId;
+use rs_cam_viz::state::runtime::ToolpathRun;
 use rs_cam_viz::state::runtime::{GuiState, StaleResultPolicy, ToolpathRuntime};
 use rs_cam_viz::state::simulation::SimulationState;
 use rs_cam_viz::state::toolpath::{ComputeStatus, OperationConfig, ToolpathResult};
@@ -171,15 +172,22 @@ fn build_state(second: SecondOp) -> (ProjectSession, GuiState, SimulationState) 
 
     let mut gui = GuiState::new();
     let mut first_rt = ToolpathRuntime::new(true);
-    first_rt.status = ComputeStatus::Done;
-    first_rt.result = Some(viz_result(sample_toolpath()));
+    first_rt.run = rs_cam_viz::state::runtime::ToolpathRun::Done(viz_result(sample_toolpath()));
     gui.toolpath_rt.insert(first_id, first_rt);
 
     let mut second_rt = ToolpathRuntime::new(true);
-    second_rt.result = None;
-    second_rt.status = match second {
-        SecondOp::Ungenerated(status) => status,
-        SecondOp::Disabled => ComputeStatus::Pending,
+    // F031: the run record is one value. An ungenerated status holds no
+    // result, so each one maps to the run arm that holds none.
+    second_rt.run = match second {
+        SecondOp::Ungenerated(ComputeStatus::AwaitingPriorStock(block)) => {
+            ToolpathRun::AwaitingPriorStock(block)
+        }
+        SecondOp::Ungenerated(ComputeStatus::Error(message)) => ToolpathRun::Failed(message),
+        SecondOp::Ungenerated(ComputeStatus::Computing) => ToolpathRun::Computing,
+        SecondOp::Ungenerated(
+            ComputeStatus::Pending | ComputeStatus::Done | ComputeStatus::Disabled,
+        )
+        | SecondOp::Disabled => ToolpathRun::Pending,
     };
     gui.toolpath_rt.insert(second_id, second_rt);
 

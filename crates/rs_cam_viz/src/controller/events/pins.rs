@@ -192,7 +192,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// The session's refusal of the row. A refused row changes nothing,
     /// so the door does not run.
     pub(crate) fn apply_pin_edit(&mut self, command: Command) -> Result<PinEdit, SessionError> {
-        let effects = self.state.session.apply(command)?;
+        let effects = self.apply(command)?;
         Ok(self.finish_pin_edit(&effects))
     }
 
@@ -204,13 +204,11 @@ impl<B: ComputeBackend> AppController<B> {
         let stale_ids: Vec<ToolpathId> = effects
             .stale
             .iter()
-            .filter_map(|&index| self.state.session.toolpath_configs().get(index))
+            .filter_map(|&index| self.state.session().toolpath_configs().get(index))
             .map(|tc| tc.id)
             .collect();
-        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-        if effects.simulation_cleared {
-            self.invalidate_simulation();
-        }
+        // `AppController::apply` stamped `effects.stale` and cleared the
+        // viewport simulation (F096).
         self.pending_upload = true;
         self.state.gui.mark_edited();
 
@@ -219,7 +217,7 @@ impl<B: ComputeBackend> AppController<B> {
 
         let stale: Vec<usize> = self
             .state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .enumerate()
@@ -264,19 +262,22 @@ impl<B: ComputeBackend> AppController<B> {
     /// The operation exists: a `SetToolpathTool` row rebinds it. It does
     /// not exist: the door creates it with that tool.
     pub(crate) fn bind_pin_drill_tool(&mut self, diameter: f64, tool_id: usize) -> PinDrillSync {
-        let outcome = match self.state.session.pin_drill_op_for(diameter) {
+        let outcome = match self.state.session().pin_drill_op_for(diameter) {
             Some(index) => {
                 let toolpath_id = self
                     .state
-                    .session
+                    .session()
                     .toolpath_configs()
                     .get(index)
                     .map(|tc| tc.id);
                 let command = Command::SetToolpathTool(SetToolpathToolArgs { index, tool_id });
                 match (self.apply_quietly(command), toolpath_id) {
                     (Some(_), Some(toolpath_id)) => {
+                        // F031: the rebind dropped the result, so the run
+                        // record reads Pending. It used to clear the
+                        // result and keep `Done`.
                         if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&toolpath_id) {
-                            rt.result = None;
+                            rt.run = crate::state::runtime::ToolpathRun::Pending;
                         }
                         PinDrillSync::Updated { toolpath_id }
                     }
@@ -319,13 +320,13 @@ impl<B: ComputeBackend> AppController<B> {
         add_drills: &[f64],
         use_tools: &[(f64, usize)],
     ) -> Result<PinEdit, SessionError> {
-        let old = self.state.session.stock_config().clone();
+        let old = self.state.session().stock_config().clone();
         let mut added: Vec<(f64, usize)> = Vec::new();
         for &d in add_drills {
-            let tool = self.state.session.pin_drill_tool_template(d);
+            let tool = self.state.session().pin_drill_tool_template(d);
             if let Some(index) = self.apply_created(Command::AddTool(AddToolArgs {
                 tool: Box::new(tool),
-            })) && let Some(t) = self.state.session.tools().get(index)
+            })) && let Some(t) = self.state.session().tools().get(index)
             {
                 added.push((d, t.id.0));
             }
@@ -336,9 +337,9 @@ impl<B: ComputeBackend> AppController<B> {
         for (d, tool_id) in added.into_iter().chain(use_tools.iter().copied()) {
             let bound = self
                 .state
-                .session
+                .session()
                 .pin_drill_op_for(d)
-                .and_then(|i| self.state.session.toolpath_configs().get(i))
+                .and_then(|i| self.state.session().toolpath_configs().get(i))
                 .map(|tc| tc.tool_id);
             // No operation: the synchronisation above refused the size and
             // said why; a bind would refuse and toast a second time.
@@ -346,7 +347,7 @@ impl<B: ComputeBackend> AppController<B> {
                 let _ = self.bind_pin_drill_tool(d, tool_id);
             }
         }
-        let new = self.state.session.stock_config().clone();
+        let new = self.state.session().stock_config().clone();
         if old != new {
             self.state
                 .history
@@ -367,7 +368,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// A `Top` setup gives the pin-drill operation a home; a `Bottom`
     /// setup gives the pins a flip to key.
     pub(crate) fn handle_pin_add_setup(&mut self, face_up: crate::state::job::FaceUp) {
-        let next_id = self.state.session.list_setups().len() + 1;
+        let next_id = self.state.session().list_setups().len() + 1;
         let command = Command::AddSetup(rs_cam_core::session::AddSetupArgs {
             name: Some(format!("Setup {next_id}")),
             face_up,
@@ -383,7 +384,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// as one `SetPinPartModels` row, with one undo step. The row stales
     /// nothing.
     pub(crate) fn set_pin_part_models(&mut self, models: Option<Vec<usize>>) {
-        let old = self.state.session.stock_config().clone();
+        let old = self.state.session().stock_config().clone();
         let command =
             Command::SetPinPartModels(rs_cam_core::session::SetPinPartModelsArgs { models });
         if self.apply_quietly(command).is_none() {
@@ -391,7 +392,7 @@ impl<B: ComputeBackend> AppController<B> {
         }
         self.state.gui.mark_edited();
         self.pending_upload = true;
-        let new = self.state.session.stock_config().clone();
+        let new = self.state.session().stock_config().clone();
         if old != new {
             self.state
                 .history
@@ -407,7 +408,7 @@ impl<B: ComputeBackend> AppController<B> {
         if self.load_pin_warnings.is_empty() {
             return;
         }
-        let session = &self.state.session;
+        let session = self.state.session();
         let live: Vec<String> = session
             .stock_config()
             .pin_findings_for_setups(
@@ -443,13 +444,13 @@ impl<B: ComputeBackend> AppController<B> {
     fn sync_pin_drill_inner(&mut self) -> Vec<PinDrillSizeSync> {
         use rs_cam_core::compute::alignment_pins::same_pin_diameter;
 
-        let pins = self.state.session.stock_config().alignment_pins.clone();
+        let pins = self.state.session().stock_config().alignment_pins.clone();
         let sizes = pin_diameters(&pins);
         let mut out = Vec::new();
 
         // 1. Remove. The indices shift after each removal, so scan again.
         loop {
-            let ops = self.state.session.pin_drill_ops();
+            let ops = self.state.session().pin_drill_ops();
             let extra = ops.iter().enumerate().find_map(|(k, &(index, d))| {
                 let unused = !sizes.iter().any(|s| same_pin_diameter(*s, d));
                 let second = ops
@@ -462,7 +463,7 @@ impl<B: ComputeBackend> AppController<B> {
             };
             let Some(toolpath_id) = self
                 .state
-                .session
+                .session()
                 .toolpath_configs()
                 .get(index)
                 .map(|tc| tc.id)
@@ -483,7 +484,7 @@ impl<B: ComputeBackend> AppController<B> {
         // live pins at generation (W6.5), so a pin move changes nothing
         // here: the `SetAlignmentPins` row already staled it (P4).
         for diameter in sizes {
-            let outcome = match self.state.session.pin_drill_op_for(diameter) {
+            let outcome = match self.state.session().pin_drill_op_for(diameter) {
                 None => self.create_pin_drill(diameter, None),
                 Some(_) => PinDrillSync::Unchanged,
             };
@@ -503,15 +504,16 @@ impl<B: ComputeBackend> AppController<B> {
     fn create_pin_drill(&mut self, diameter: f64, tool: Option<usize>) -> PinDrillSync {
         use crate::state::toolpath::{AlignmentPinDrillConfig, OperationConfig};
 
-        let Some(setup_idx) = pin_drill_setup(&self.state.session) else {
+        let Some(setup_idx) = pin_drill_setup(self.state.session()) else {
             return PinDrillSync::Refused(PIN_DRILL_NEEDS_TOP_SETUP.to_owned());
         };
-        let Some(tool_id) = tool.or_else(|| self.state.session.pin_drill_tool_for(diameter)) else {
+        let Some(tool_id) = tool.or_else(|| self.state.session().pin_drill_tool_for(diameter))
+        else {
             return PinDrillSync::Refused(pin_drill_needs_tool(diameter));
         };
         let sibling: Option<AlignmentPinDrillConfig> = self
             .state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .find_map(|tc| match &tc.operation {
@@ -520,7 +522,7 @@ impl<B: ComputeBackend> AppController<B> {
             });
         let model_id = self
             .state
-            .session
+            .session()
             .models()
             .first()
             .map(|m| m.id)
@@ -532,14 +534,14 @@ impl<B: ComputeBackend> AppController<B> {
         // the add-toolpath path in `events/toolpath.rs`. On a
         // suggest refusal, fall back to defaults rather than
         // skipping the auto-create.
-        let stock_bbox = self.state.session.stock_bbox();
-        let stock_padding = self.state.session.stock_config().padding;
+        let stock_bbox = self.state.session().stock_bbox();
+        let stock_padding = self.state.session().stock_config().padding;
         let stock_ctx =
             rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(stock_bbox, stock_padding);
-        let model_bbox = self.state.session.model_bbox(model_id);
+        let model_bbox = self.state.session().model_bbox(model_id);
         let suggested = self
             .state
-            .session
+            .session()
             .tools()
             .iter()
             .find(|t| t.id.0 == tool_id)
@@ -548,8 +550,8 @@ impl<B: ComputeBackend> AppController<B> {
                     rs_cam_core::feeds::suggest::SuggestParamsInput {
                         op_type: crate::state::toolpath::OperationType::AlignmentPinDrill,
                         tool,
-                        machine: self.state.session.machine(),
-                        material: &self.state.session.stock_config().material,
+                        machine: self.state.session().machine(),
+                        material: &self.state.session().stock_config().material,
                         lut: rs_cam_core::feeds::embedded_vendor_lut(),
                         stock_ctx: &stock_ctx,
                         spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
@@ -627,7 +629,7 @@ impl<B: ComputeBackend> AppController<B> {
         let created = self
             .apply_quietly(command)
             .and_then(|effects| effects.created)
-            .and_then(|index| self.state.session.toolpath_configs().get(index))
+            .and_then(|index| self.state.session().toolpath_configs().get(index))
             .map(|tc| tc.id);
         match created {
             Some(toolpath_id) => PinDrillSync::Created {

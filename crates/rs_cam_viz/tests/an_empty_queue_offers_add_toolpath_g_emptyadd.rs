@@ -60,10 +60,12 @@ fn tool() -> ToolConfig {
 /// One setup, one tool, one 2D model, no toolpath.
 fn empty_state() -> AppState {
     let mut state = AppState::new();
-    state.session = ProjectSessionBuilder::new()
-        .tool(tool())
-        .model(model())
-        .build();
+    state.replace_session(
+        ProjectSessionBuilder::new()
+            .tool(tool())
+            .model(model())
+            .build(),
+    );
     state
 }
 
@@ -95,7 +97,7 @@ fn state_with_a_toolpath() -> AppState {
         .add_toolpath(0, config)
         .expect("add the fixture pocket");
     let mut state = AppState::new();
-    state.session = builder.build();
+    state.replace_session(builder.build());
     state
 }
 

@@ -209,7 +209,7 @@ fn gui_for(session: &ProjectSession) -> GuiState {
     let result = session.get_result(0).expect("generated");
     let mut gui = GuiState::new();
     let mut rt = ToolpathRuntime::new(true);
-    rt.result = Some(ToolpathResult {
+    rt.run = rs_cam_viz::state::runtime::ToolpathRun::Done(ToolpathResult {
         annotated: Arc::clone(result.annotated()),
         stats: result.stats.clone(),
         debug_trace: None,

@@ -37,20 +37,20 @@ impl<B: ComputeBackend> AppController<B> {
         let target_setup_idx = match self.state.selection {
             Selection::Toolpath(tp_id) => self.setup_of_toolpath(tp_id).and_then(|sid| {
                 self.state
-                    .session
+                    .session()
                     .list_setups()
                     .iter()
                     .position(|s| s.id == sid.0)
             }),
             Selection::Setup(setup_id) => self
                 .state
-                .session
+                .session()
                 .list_setups()
                 .iter()
                 .position(|s| s.id == setup_id.0),
             Selection::Obstacle(setup_id, _) => self
                 .state
-                .session
+                .session()
                 .list_setups()
                 .iter()
                 .position(|s| s.id == setup_id.0),
@@ -58,7 +58,7 @@ impl<B: ComputeBackend> AppController<B> {
         }
         .or(Some(0)); // default to first setup
 
-        let Some(tool_id) = self.state.session.tools().first().map(|t| t.id.0) else {
+        let Some(tool_id) = self.state.session().tools().first().map(|t| t.id.0) else {
             tracing::warn!("Cannot add toolpath: no tools defined");
             self.push_notification(
                 "Cannot add toolpath: no tools defined".into(),
@@ -70,8 +70,8 @@ impl<B: ComputeBackend> AppController<B> {
         // a fresh DropCutter starts with `min_z = stock_bottom_z`
         // instead of the hard-coded `-50.0` that clipped any stock
         // not sitting at exactly that depth.
-        let stock_bbox = self.state.session.stock_bbox();
-        let stock_padding = self.state.session.stock_config().padding;
+        let stock_bbox = self.state.session().stock_bbox();
+        let stock_padding = self.state.session().stock_config().padding;
         let stock_ctx =
             rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(stock_bbox, stock_padding);
         // Q1: the model this toolpath will use is the one the config
@@ -80,15 +80,15 @@ impl<B: ComputeBackend> AppController<B> {
         // stepover back-off, and every surface used to pass `None`.
         let model_id = self
             .state
-            .session
+            .session()
             .models()
             .first()
             .map(|m| m.id)
             .unwrap_or(0);
-        let model_bbox = self.state.session.model_bbox(model_id);
+        let model_bbox = self.state.session().model_bbox(model_id);
         let Some(tool) = self
             .state
-            .session
+            .session()
             .tools()
             .iter()
             .find(|t| t.id.0 == tool_id)
@@ -106,8 +106,8 @@ impl<B: ComputeBackend> AppController<B> {
             rs_cam_core::feeds::suggest::SuggestParamsInput {
                 op_type,
                 tool,
-                machine: self.state.session.machine(),
-                material: &self.state.session.stock_config().material,
+                machine: self.state.session().machine(),
+                material: &self.state.session().stock_config().material,
                 lut: rs_cam_core::feeds::embedded_vendor_lut(),
                 stock_ctx: &stock_ctx,
                 spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
@@ -151,7 +151,7 @@ impl<B: ComputeBackend> AppController<B> {
         // Capture is_3d before `operation` moves into the toolpath
         // config below — used by the boundary auto-enable (B.7).
         let op_is_3d = operation.is_3d();
-        if !operation.is_stock_based() && self.state.session.models().is_empty() {
+        if !operation.is_stock_based() && self.state.session().models().is_empty() {
             let msg = format!(
                 "Cannot add {} toolpath: import geometry first",
                 operation.label()
@@ -166,7 +166,7 @@ impl<B: ComputeBackend> AppController<B> {
             name: format!(
                 "{} {}",
                 op_type.label(),
-                self.state.session.toolpath_configs().len() + 1
+                self.state.session().toolpath_configs().len() + 1
             ),
             enabled: true,
             operation,
@@ -185,7 +185,12 @@ impl<B: ComputeBackend> AppController<B> {
             // back to the default (disabled) for 2D / stock-based ops or
             // when no mesh model is available.
             boundary: {
-                let has_mesh = self.state.session.models().iter().any(|m| m.mesh.is_some());
+                let has_mesh = self
+                    .state
+                    .session()
+                    .models()
+                    .iter()
+                    .any(|m| m.mesh.is_some());
                 if op_is_3d && has_mesh {
                     crate::state::toolpath::BoundaryConfig::for_3d_op(tool_diameter_mm)
                 } else {
@@ -210,7 +215,7 @@ impl<B: ComputeBackend> AppController<B> {
         });
         let created = effects.as_ref().and_then(|effects| effects.created);
         if let Some(tp_idx) = created
-            && let Some(tc) = self.state.session.toolpath_configs().get(tp_idx)
+            && let Some(tc) = self.state.session().toolpath_configs().get(tp_idx)
         {
             let tp_id = tc.id;
             // Create GUI runtime entry
@@ -227,7 +232,7 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_duplicate_toolpath(&mut self, tp_id: ToolpathId) {
         let setup_idx = self.setup_of_toolpath(tp_id).and_then(|sid| {
             self.state
-                .session
+                .session()
                 .list_setups()
                 .iter()
                 .position(|s| s.id == sid.0)
@@ -236,7 +241,7 @@ impl<B: ComputeBackend> AppController<B> {
         // Build a new ToolpathConfig by reading fields from the source
         let dup = self
             .state
-            .session
+            .session()
             .find_toolpath_config_by_id(tp_id)
             .map(|(_, src)| {
                 rs_cam_core::session::ToolpathConfig {
@@ -271,7 +276,7 @@ impl<B: ComputeBackend> AppController<B> {
                 self.apply_created(command)
             });
             if let Some(tp_idx) = created
-                && let Some(new_tc) = self.state.session.toolpath_configs().get(tp_idx)
+                && let Some(new_tc) = self.state.session().toolpath_configs().get(tp_idx)
             {
                 let new_id = new_tc.id;
                 self.state.gui.toolpath_rt.insert(
@@ -288,10 +293,10 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub(crate) fn handle_move_toolpath_up(&mut self, tp_id: ToolpathId) {
         // Find the setup and local position of this toolpath
-        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id)
+        if let Some((tp_idx, _)) = self.state.session().find_toolpath_config_by_id(tp_id)
             && let Some(setup) = self
                 .state
-                .session
+                .session()
                 .list_setups()
                 .iter()
                 .find(|s| s.toolpath_indices.contains(&tp_idx))
@@ -311,10 +316,10 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn handle_move_toolpath_down(&mut self, tp_id: ToolpathId) {
-        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id)
+        if let Some((tp_idx, _)) = self.state.session().find_toolpath_config_by_id(tp_id)
             && let Some(setup) = self
                 .state
-                .session
+                .session()
                 .list_setups()
                 .iter()
                 .find(|s| s.toolpath_indices.contains(&tp_idx))
@@ -345,10 +350,10 @@ impl<B: ComputeBackend> AppController<B> {
     /// Both land the op exactly in the gap, because `reorder_toolpath`
     /// inserts before an upward target and after a downward one.
     pub(crate) fn handle_reorder_toolpath(&mut self, tp_id: ToolpathId, target_idx: usize) {
-        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id)
+        if let Some((tp_idx, _)) = self.state.session().find_toolpath_config_by_id(tp_id)
             && let Some(setup) = self
                 .state
-                .session
+                .session()
                 .list_setups()
                 .iter()
                 .find(|s| s.toolpath_indices.contains(&tp_idx))
@@ -363,8 +368,11 @@ impl<B: ComputeBackend> AppController<B> {
                     from_index: tp_idx,
                     to_index: target_global_idx,
                 });
-                let _ = self.apply_quietly(command);
-                self.state.gui.mark_edited();
+                // F056: a refused reorder changed nothing, so it does not
+                // dirty the project. The door logs the refusal.
+                if self.apply_quietly(command).is_some() {
+                    self.state.gui.mark_edited();
+                }
             }
         }
     }
@@ -380,11 +388,11 @@ impl<B: ComputeBackend> AppController<B> {
         setup_id: crate::state::job::SetupId,
         position: Option<usize>,
     ) {
-        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
+        if let Some((tp_idx, _)) = self.state.session().find_toolpath_config_by_id(tp_id) {
             // Resolve the target setup's index from its ID
             let target_idx = self
                 .state
-                .session
+                .session()
                 .list_setups()
                 .iter()
                 .position(|s| s.id == setup_id.0);
@@ -394,10 +402,13 @@ impl<B: ComputeBackend> AppController<B> {
                     target_setup_index: target_setup_idx,
                     target_position: position,
                 });
-                let _ = self.apply_quietly(command);
+                // F056: only an applied move dirties the project. The
+                // door logs a refusal.
+                if self.apply_quietly(command).is_some() {
+                    self.pending_upload = true;
+                    self.state.gui.mark_edited();
+                }
             }
-            self.pending_upload = true;
-            self.state.gui.mark_edited();
         }
     }
 
@@ -414,7 +425,7 @@ impl<B: ComputeBackend> AppController<B> {
     ) {
         let Some((index, old)) = self
             .state
-            .session
+            .session()
             .find_toolpath_config_by_id(tp_id)
             .map(|(index, tc)| (index, tc.shoe))
         else {
@@ -445,7 +456,7 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn handle_remove_toolpath(&mut self, tp_id: ToolpathId) {
-        if let Some((tp_idx, _)) = self.state.session.find_toolpath_config_by_id(tp_id) {
+        if let Some((tp_idx, _)) = self.state.session().find_toolpath_config_by_id(tp_id) {
             let command = Command::RemoveToolpath(RemoveToolpathArgs { index: tp_idx });
             let _ = self.apply_quietly(command);
             self.state.gui.toolpath_rt.remove(&tp_id);
@@ -475,7 +486,7 @@ impl<B: ComputeBackend> AppController<B> {
         use crate::controller::generate_all::generate_all_scope;
         use rs_cam_core::session::generation_plan::Scope;
 
-        let scope = generate_all_scope(self.state.session.toolpath_configs());
+        let scope = generate_all_scope(self.state.session().toolpath_configs());
         if scope.enabled.is_empty() {
             self.push_notification(
                 "No enabled toolpaths to generate".into(),
@@ -508,10 +519,10 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_generate_toolpath_mcp(&mut self, tp_id: ToolpathId) {
         use rs_cam_core::session::generation_plan::{Scope, Step, plan};
 
-        let needs_simulation = plan(&self.state.session, Scope::Ancestors(tp_id))
+        let needs_simulation = plan(self.state.session(), Scope::Ancestors(tp_id))
             .iter()
             .any(|step| matches!(step, Step::Simulate { .. }));
-        if needs_simulation && let Some(refusal) = self.state.session.rest_resolution_refusal() {
+        if needs_simulation && let Some(refusal) = self.state.session().rest_resolution_refusal() {
             self.fail_toolpath_submit(tp_id, format!("generate_toolpath refused: {refusal}"));
             return;
         }
@@ -564,13 +575,13 @@ impl<B: ComputeBackend> AppController<B> {
         // the project machines needs: at that cell the snapshot cannot see
         // what the coarse tool left. `Auto` already takes the finer of the
         // two, so it never asks.
-        let simulates = plan(&self.state.session, scope)
+        let simulates = plan(self.state.session(), scope)
             .iter()
             .any(|step| matches!(step, Step::Simulate { .. }));
         if simulates
             && let SimulationResolution::Fixed(stored_mm) =
-                self.state.session.simulation_resolution()
-            && let Some(required) = self.state.session.rest_resolution_required_mm()
+                self.state.session().simulation_resolution()
+            && let Some(required) = self.state.session().rest_resolution_required_mm()
             && stored_mm > required
         {
             self.pending_plan_confirm =
@@ -603,12 +614,12 @@ impl<B: ComputeBackend> AppController<B> {
     ) -> crate::controller::PlanResolutionConfirm {
         use rs_cam_core::session::generation_plan::{Step, plan};
 
-        let operations: Vec<String> = plan(&self.state.session, scope)
+        let operations: Vec<String> = plan(self.state.session(), scope)
             .into_iter()
             .filter_map(|step| match step {
                 Step::Simulate { upto, .. } => self
                     .state
-                    .session
+                    .session()
                     .find_toolpath_config_by_id(upto)
                     .map(|(_, tc)| tc.name.clone()),
                 Step::Generate { .. } => None,
@@ -682,7 +693,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .gui
                 .toolpath_rt
                 .get(&tp_id)
-                .and_then(|rt| rt.result.as_ref())
+                .and_then(|rt| rt.run.result())
                 .is_some();
             if has_result {
                 self.state.simulation.debug.pending_inspect_toolpath = Some(tp_id);

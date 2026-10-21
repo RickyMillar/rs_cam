@@ -142,7 +142,7 @@ fn the_command_arm_pushes_its_toast_after_the_mutation() {
         .expect("app/mcp.rs holds one McpRequestKind::Core arm");
     let arm = &MCP_SRC[at..MCP_SRC.len().min(at + ARM_SPAN_CHARS)];
     let apply_at = arm
-        .find(".session.apply(command)")
+        .find("self.controller.apply(command)")
         .expect("the Core arm applies the command");
     let push_at = arm
         .find("push_mcp_outcome(")
@@ -256,9 +256,11 @@ impl ComputeBackend for SilentBackend {
 /// did (tool 0, Ø6.35 2-flute flat end mill).
 fn controller_with_tool(tool_type: ToolType) -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    controller.state.session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), tool_type))
-        .build();
+    controller.state.replace_session(
+        ProjectSessionBuilder::new()
+            .tool(ToolConfig::new_default(ToolId(1), tool_type))
+            .build(),
+    );
     controller
 }
 
@@ -269,7 +271,7 @@ fn suggest_for(
     controller: &AppController<SilentBackend>,
     op_type: OperationType,
 ) -> Result<(), String> {
-    let session = &controller.state.session;
+    let session = controller.state.session();
     let tool = &session.tools()[0];
     let stock_ctx = rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(
         session.stock_bbox(),

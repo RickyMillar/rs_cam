@@ -21,38 +21,36 @@ fn missing_model_relink_g_modelrelink() {
     // directory — so Reload looked somewhere nobody had searched and the
     // warning named a directory that did not exist.
     assert_eq!(
-        controller.state.session.models()[0].path,
+        controller.state.session().models()[0].path,
         dir.join("models/missing.stl"),
         "an in-memory model path is absolute, whatever the file said"
     );
-    assert!(controller.state.session.models()[0].mesh.is_none());
+    assert!(controller.state.session().models()[0].mesh.is_none());
     assert!(
-        controller.state.session.models()[0].load_error.is_some(),
+        controller.state.session().models()[0].load_error.is_some(),
         "the loader's reason is kept, and is now rendered"
     );
     assert_eq!(controller.load_warnings().len(), 1);
 
     // Make the toolpath look generated, so the invalidation assertion below
     // is not comparing two empty caches.
-    let revision = controller.state.session.toolpath_revision(0);
+    let revision = controller.state.session().toolpath_revision(0);
     let _ = controller
         .state
-        .session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,
             revision,
             result: Box::new(core_result()),
         }))
         .expect("index 0 exists");
-    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    let tp_id = controller.state.session().toolpath_configs()[0].id;
     let rt = controller.state.gui.toolpath_rt_or_default(tp_id);
-    rt.status = crate::state::toolpath::ComputeStatus::Done;
     rt.stale_since = None;
     // The GUI's drawable copy too, or the assertion below cannot tell
     // `EditedSince` (had geometry, now out of date) from `NoResult` (never
     // generated) — which is the distinction the whole card vocabulary rests
     // on.
-    rt.result = Some(ToolpathResult {
+    rt.run = crate::state::runtime::ToolpathRun::Done(ToolpathResult {
         annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
             Toolpath::new(),
         )),
@@ -72,7 +70,7 @@ fn missing_model_relink_g_modelrelink() {
         located.clone(),
     ));
 
-    let model = &controller.state.session.models()[0];
+    let model = &controller.state.session().models()[0];
     assert!(model.mesh.is_some(), "the geometry loaded");
     assert!(model.load_error.is_none(), "and the complaint is gone");
     assert_eq!(model.path, located, "the model now points at the new file");
@@ -87,7 +85,7 @@ fn missing_model_relink_g_modelrelink() {
     // `invalidate_model` keys on the id, which is why it is the right
     // instrument for a relink.
     assert!(
-        controller.state.session.get_result(0).is_none(),
+        controller.state.session().get_result(0).is_none(),
         "every result built on the old geometry is dropped"
     );
     assert_eq!(
@@ -118,9 +116,9 @@ fn missing_model_relink_g_modelrelink() {
 
     // And it reopens.
     controller.open_job_from_path(&job).expect("reopen");
-    assert!(controller.state.session.models()[0].mesh.is_some());
+    assert!(controller.state.session().models()[0].mesh.is_some());
     assert!(controller.load_warnings().is_empty());
-    assert_eq!(controller.state.session.models()[0].path, located);
+    assert_eq!(controller.state.session().models()[0].path, located);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -139,7 +137,7 @@ fn a_model_outside_the_project_directory_saves_absolute_g_modelrelink() {
         crate::state::job::ModelId(1),
         outside.clone(),
     ));
-    assert!(controller.state.session.models()[0].mesh.is_some());
+    assert!(controller.state.session().models()[0].mesh.is_some());
 
     controller.save_job_to_path(&job).expect("save");
     let written = std::fs::read_to_string(&job).expect("read back");
@@ -160,14 +158,14 @@ fn a_relink_to_another_kind_is_refused_g_modelrelink() {
     let job = dir.join("job.toml");
     let mut controller = sample_controller();
     controller.open_job_from_path(&job).expect("open");
-    let before = controller.state.session.models()[0].path.clone();
+    let before = controller.state.session().models()[0].path.clone();
 
     controller.handle_internal_event(AppEvent::RelinkModel(
         crate::state::job::ModelId(1),
         fixture_path("square.svg"),
     ));
 
-    let model = &controller.state.session.models()[0];
+    let model = &controller.state.session().models()[0];
     assert_eq!(model.kind, Some(crate::state::job::ModelKind::Stl));
     assert_eq!(model.path, before, "the model is untouched");
     assert!(

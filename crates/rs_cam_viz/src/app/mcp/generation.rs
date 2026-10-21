@@ -207,12 +207,12 @@ impl RsCamApp {
     /// `set_toolpath_param`.
     pub(super) fn mcp_get_suggest_rationale(&self, index: usize) -> String {
         let state = self.controller.state();
-        let Some(tc) = state.session.get_toolpath_config(index) else {
+        let Some(tc) = state.session().get_toolpath_config(index) else {
             return json_str(serde_json::json!({
                 "error": format!("Toolpath index {index} not found")
             }));
         };
-        let Some(profile) = state.session.cutter_op_profile(tc) else {
+        let Some(profile) = state.session().cutter_op_profile(tc) else {
             return json_str(serde_json::json!({
                 "error": format!("Tool {} for toolpath {} not found", tc.tool_id, tc.id)
             }));
@@ -263,7 +263,7 @@ impl RsCamApp {
         // §22 ruling 3: a FRESH flag per submit. The lane maps "cancel this
         // job" onto it.
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let started = self.controller.state_mut().session.start(
+        let started = self.controller.state_mut().start_job(
             rs_cam_core::session::Job::RecommendClearingStrategy(
                 rs_cam_core::session::RecommendClearingStrategyArgs { index },
             ),
@@ -300,7 +300,7 @@ impl RsCamApp {
             .and_then(|r| r.cut_trace.as_deref());
         // The session memo, so this answer and the GUI panels read one
         // report (GUI/MCP number parity).
-        let report = state.simulation.cached_load_report(&state.session);
+        let report = state.simulation.cached_load_report(state.session());
 
         // Per-DepthPass MRR/feed/engagement histogram (S2.5). Keyed by
         // toolpath raw id, then a list of one entry per `SpanKind::DepthPass`
@@ -318,7 +318,7 @@ impl RsCamApp {
         // second `list_toolpaths()` round-trip to label each entry.
         let summary_value = serde_json::to_value(report.summary(|id| {
             state
-                .session
+                .session()
                 .toolpath_configs()
                 .iter()
                 .find(|tc| tc.id == id)
@@ -360,7 +360,7 @@ impl RsCamApp {
         // dispatching, so a typo never reaches the GUI path and never
         // produces a toast.
         if let Some(setup_index) = setup_index {
-            let setups = self.controller.state().session.list_setups();
+            let setups = self.controller.state().session().list_setups();
             let Some(setup) = setups.get(setup_index) else {
                 let count = setups.len();
                 return self.mcp_mutation_error(
@@ -376,7 +376,7 @@ impl RsCamApp {
         let ids_before: std::collections::HashSet<rs_cam_core::ToolpathId> = self
             .controller
             .state()
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .map(|tc| tc.id)
@@ -403,13 +403,13 @@ impl RsCamApp {
         let created = self
             .controller
             .state()
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .enumerate()
             .find(|(_, tc)| !ids_before.contains(&tc.id))
             .map(|(index, tc)| {
-                let session = &self.controller.state().session;
+                let session = self.controller.state().session();
                 let tool_name = session
                     .tools()
                     .iter()
@@ -527,7 +527,7 @@ impl RsCamApp {
             Err(e) => return Self::mcp_plan_error(&e),
         };
 
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         let emitted: Vec<serde_json::Value> = outcome
             .toolpath_ids
             .iter()
@@ -601,7 +601,7 @@ impl RsCamApp {
         tool_ids: &[usize],
         dials: &MultitoolDials,
     ) -> Result<rs_cam_core::session::MultitoolPlanSpec, String> {
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
 
         if setup_index >= session.list_setups().len() {
             return Err(format!(
@@ -771,7 +771,7 @@ impl RsCamApp {
         // §22 ruling 3: a FRESH flag per submit. The walk polls it at grid-row
         // granularity, so Cancel is honest for the whole of it.
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let started = self.controller.state_mut().session.start(
+        let started = self.controller.state_mut().start_job(
             rs_cam_core::session::Job::PreviewTierMap(rs_cam_core::session::PreviewTierMapArgs {
                 spec: Box::new(plan_spec),
             }),
@@ -865,7 +865,7 @@ impl RsCamApp {
         let Some(toolpath_id) = self
             .controller
             .state()
-            .session
+            .session()
             .toolpath_configs()
             .get(index)
             .map(|tc| tc.id)
@@ -898,7 +898,7 @@ impl RsCamApp {
         let applied = self
             .controller
             .state()
-            .session
+            .session()
             .toolpath_configs()
             .get(index)
             .map(|tc| {
@@ -936,7 +936,7 @@ impl RsCamApp {
         response_tx: tokio::sync::oneshot::Sender<McpResponse>,
     ) {
         // Find the toolpath ID from the index
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         let Some(tc) = session.toolpath_configs().get(index) else {
             let _ = response_tx.send(McpResponse {
                 result: Ok(json_str(

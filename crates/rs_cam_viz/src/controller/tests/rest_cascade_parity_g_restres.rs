@@ -88,7 +88,7 @@ fn the_gui_plan_publishes_the_expected_rest_numbers() {
         .open_job_from_path(&dir.join("project.toml"))
         .expect("the fixture opens");
     assert_eq!(
-        controller.state.session.simulation_resolution(),
+        controller.state.session().simulation_resolution(),
         rs_cam_core::session::SimulationResolution::Fixed(0.5),
         "the project file carries the stored resolution"
     );
@@ -106,7 +106,7 @@ fn the_gui_plan_publishes_the_expected_rest_numbers() {
         "a stored cell fine enough for the rest asks nothing"
     );
 
-    let diagnostics = controller.state.session.diagnostics();
+    let diagnostics = controller.state.session().diagnostics();
     let mut record = serde_json::Map::new();
     for tp in &diagnostics.per_toolpath {
         let _ = record.insert(
@@ -118,7 +118,7 @@ fn the_gui_plan_publishes_the_expected_rest_numbers() {
         );
     }
     let record = serde_json::json!({
-        "simulation_resolution_mm": controller.state.session.simulation_resolution_mm(),
+        "simulation_resolution_mm": controller.state.session().simulation_resolution_mm(),
         "toolpaths": record,
     });
 

@@ -91,7 +91,7 @@ fn simulation_staleness_tracks_edits() {
     // counter and writes no project data, and the core is right to keep the
     // run through it — see
     // `a_counter_bump_alone_does_not_stale_the_run_g_freshnessdisagree`.
-    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    let tp_id = controller.state.session().toolpath_configs()[0].id;
     panel_edit(&mut controller, tp_id, |entry| {
         entry.operation.set_feed_rate(4321.0);
     });

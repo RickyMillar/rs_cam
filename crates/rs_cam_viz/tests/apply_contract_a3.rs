@@ -114,21 +114,21 @@ fn controller_with_config(config: ToolpathConfig) -> AppController<SilentBackend
     let mut builder =
         ProjectSessionBuilder::new().tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
     let _ = builder.add_toolpath(0, config).expect("add toolpath");
-    controller.state.session = builder.build();
+    controller.state.replace_session(builder.build());
     controller
 }
 
 /// The id the session actually assigned to toolpath slot `idx`.
 fn id_at(controller: &AppController<SilentBackend>, idx: usize) -> rs_cam_core::ToolpathId {
-    controller.state.session.toolpath_configs()[idx].id
+    controller.state.session().toolpath_configs()[idx].id
 }
 
 fn tool_of(controller: &AppController<SilentBackend>) -> ToolConfig {
-    controller.state.session.tools()[0].clone()
+    controller.state.session().tools()[0].clone()
 }
 
 fn op_of(controller: &AppController<SilentBackend>) -> OperationConfig {
-    controller.state.session.toolpath_configs()[0]
+    controller.state.session().toolpath_configs()[0]
         .operation
         .clone()
 }
@@ -139,7 +139,7 @@ fn op_of(controller: &AppController<SilentBackend>) -> OperationConfig {
 fn panel_recipe(
     controller: &AppController<SilentBackend>,
 ) -> Result<rs_cam_core::feeds::FeedsResult, rs_cam_core::feeds::FeedsError> {
-    let session = &controller.state.session;
+    let session = controller.state.session();
     let stock = session.stock_config();
     rs_cam_core::feeds::suggest::feeds_result_for_operation(
         &op_of(controller),
@@ -159,7 +159,7 @@ fn panel_recipe(
 fn modal_preview(
     controller: &AppController<SilentBackend>,
 ) -> rs_cam_core::feeds::suggest::FeedsPreview {
-    let session = &controller.state.session;
+    let session = controller.state.session();
     let stock = session.stock_config();
     rs_cam_core::feeds::suggest::feeds_preview_for_operation(
         &op_of(controller),
@@ -475,8 +475,8 @@ fn modal_apply_all_writes_what_the_panel_writes() {
     let mut panel_op = before.clone();
     let mut panel_prov = rs_cam_core::feeds::FeedsProvenance::default();
     let tool = tool_of(&controller);
-    let session_machine = controller.state.session.machine().clone();
-    let session_material = controller.state.session.stock_config().material.clone();
+    let session_machine = controller.state.session().machine().clone();
+    let session_material = controller.state.session().stock_config().material.clone();
     let pass_role = before.feeds_style().1;
     rs_cam_core::feeds::suggest::apply_speeds_to_op(
         &mut panel_op,
@@ -610,8 +610,8 @@ fn surviving_apply_paths_produce_the_funnelled_doc_exactly() {
     let mut panel_op = op_of(&controller);
     let mut prov = rs_cam_core::feeds::FeedsProvenance::default();
     let tool = tool_of(&controller);
-    let machine = controller.state.session.machine().clone();
-    let material = controller.state.session.stock_config().material.clone();
+    let machine = controller.state.session().machine().clone();
+    let material = controller.state.session().stock_config().material.clone();
     let pass_role = panel_op.feeds_style().1;
     rs_cam_core::feeds::suggest::apply_cut_geometry_to_op(
         &mut panel_op,
@@ -650,8 +650,8 @@ fn panel_cut_geometry_apply_goes_through_the_invariant_funnel() {
     let mut op = op_of(&controller);
     let mut prov = rs_cam_core::feeds::FeedsProvenance::default();
     let tool = tool_of(&controller);
-    let machine = controller.state.session.machine().clone();
-    let material = controller.state.session.stock_config().material.clone();
+    let machine = controller.state.session().machine().clone();
+    let material = controller.state.session().stock_config().material.clone();
     let pass_role = op.feeds_style().1;
 
     rs_cam_core::feeds::suggest::apply_cut_geometry_to_op(
@@ -739,8 +739,8 @@ fn pocket_fixture_recipe_fingerprint_is_unmoved() {
     let mut op = op_of(&controller);
     let mut prov = rs_cam_core::feeds::FeedsProvenance::default();
     let tool = tool_of(&controller);
-    let machine = controller.state.session.machine().clone();
-    let material = controller.state.session.stock_config().material.clone();
+    let machine = controller.state.session().machine().clone();
+    let material = controller.state.session().stock_config().material.clone();
     let pass_role = op.feeds_style().1;
     let ctx = || rs_cam_core::feeds::suggest::SuggestContext::default();
 
@@ -795,24 +795,23 @@ fn project_apply_all_skips_a_refused_toolpath_and_reports_it() {
     let mut controller = controller_with(OperationType::Pocket);
     let _ = controller
         .state
-        .session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(toolpath(1, OperationType::Scallop)),
         }))
         .expect("add second toolpath");
 
-    let before_valid = controller.state.session.toolpath_configs()[0]
+    let before_valid = controller.state.session().toolpath_configs()[0]
         .operation
         .clone();
-    let before_refused = controller.state.session.toolpath_configs()[1]
+    let before_refused = controller.state.session().toolpath_configs()[1]
         .operation
         .clone();
     controller.handle_internal_event(AppEvent::ApplyFeedsProject);
-    let after_valid = controller.state.session.toolpath_configs()[0]
+    let after_valid = controller.state.session().toolpath_configs()[0]
         .operation
         .clone();
-    let after_refused = controller.state.session.toolpath_configs()[1]
+    let after_refused = controller.state.session().toolpath_configs()[1]
         .operation
         .clone();
 
@@ -1040,8 +1039,8 @@ fn per_field_pill_offers_the_funnelled_doc_exactly() {
     let recipe = panel_recipe(&controller).expect("valid pairing");
     let op = op_of(&controller);
     let tool = tool_of(&controller);
-    let machine = controller.state.session.machine().clone();
-    let material = controller.state.session.stock_config().material.clone();
+    let machine = controller.state.session().machine().clone();
+    let material = controller.state.session().stock_config().material.clone();
     let pass_role = op.feeds_style().1;
 
     let mut panel_op = op.clone();

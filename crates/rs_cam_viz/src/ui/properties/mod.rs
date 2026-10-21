@@ -302,8 +302,7 @@ pub fn toolpath_panel_snapshot(
         pre_gcode: tc.pre_gcode.clone().unwrap_or_default(),
         post_gcode: tc.post_gcode.clone().unwrap_or_default(),
         stock_source: tc.stock_source,
-        status: rt.status.clone(),
-        result: rt.result.clone(),
+        run: rt.run.clone(),
         stale_since: rt.stale_since,
         auto_regen: rt.auto_regen,
         feeds_result: rt.feeds_result.clone(),
@@ -668,10 +667,7 @@ pub(crate) fn toolpath_panel_inputs(
         .iter()
         .filter(|tc| tc.id != id)
         .map(|tc| {
-            let cached = gui
-                .toolpath_rt
-                .get(&tc.id)
-                .and_then(|rt| rt.result.as_ref());
+            let cached = gui.toolpath_rt.get(&tc.id).and_then(|rt| rt.run.result());
             let cached_regions = cached.and_then(|r| r.annotated.produced.rest_regions.clone());
             // LH-2: the source's OWN rest-grid footprint travels with
             // its regions, so the pathology share has an honest
@@ -907,14 +903,18 @@ pub fn boundary_summary_line(
 /// report the result as the configuration the session should carry.
 ///
 /// The projection CLONES the stored config and applies the entry's
-/// sixteen fields onto the clone. It never builds a fresh literal.
-/// `ToolpathConfig` carries nineteen fields, and `ToolpathEntry` cannot
-/// supply three of them: `id` (the entry's own id names the row to write,
-/// not a value to write), the retained boundary-inherit flag (no widget
-/// reads or writes it, and the core field survives for project-file
-/// compatibility — G-BOUNDARYINHERIT) and `planner_origin` (the
-/// multi-tool planner owns it, and a duplicate must start hand-owned).
-/// A fresh literal clobbers all three.
+/// fields onto the clone. It never builds a fresh literal.
+/// `ToolpathConfig` carries fields that `ToolpathEntry` cannot supply:
+/// `id` (the entry's own id names the row to write, not a value to
+/// write), the retained boundary-inherit flag (no widget reads or writes
+/// it, and the core field survives for project-file compatibility —
+/// G-BOUNDARYINHERIT), `planner_origin` (the multi-tool planner owns it,
+/// and a duplicate must start hand-owned) and `shoe` (the shoe row writes
+/// it through its own command). A fresh literal clobbers them.
+///
+/// F209: the entry is destructured with no `..`. Each field is written,
+/// or it is ignored with a reason. A new `ToolpathEntry` field does not
+/// compile here until it states which.
 ///
 /// The boundary-inherit flag is named in prose here, not as the
 /// identifier. The G-BOUNDARYINHERIT source sentry scans every line under
@@ -927,49 +927,81 @@ pub(crate) fn project_entry_onto(
     stored: &rs_cam_core::session::ToolpathConfig,
     entry: &ToolpathEntry,
 ) -> Box<rs_cam_core::session::ToolpathConfig> {
+    let ToolpathEntry {
+        // The id names the row to write, not a value to write.
+        id: _,
+        name,
+        enabled,
+        // View state. `write_entry_runtime_to_gui` writes these to the
+        // runtime row; the project file does not carry them.
+        visible: _,
+        locked: _,
+        auto_regen: _,
+        tool_id,
+        model_id,
+        operation,
+        dressups,
+        heights,
+        boundary,
+        rest_analysis,
+        coolant,
+        pre_gcode,
+        post_gcode,
+        stock_source,
+        // Runtime state. The run, the stale stamp, the feeds memo and the
+        // traces live on `ToolpathRuntime`, not in the config.
+        run: _,
+        stale_since: _,
+        feeds_result: _,
+        feeds_memo: _,
+        debug_trace: _,
+        semantic_trace: _,
+        debug_trace_path: _,
+        feeds_provenance,
+        pill_stamped_fields,
+        // The multi-tool planner owns it; the clone keeps the stored copy.
+        planner_origin: _,
+        debug_options,
+    } = entry;
     let mut config = stored.clone();
     // W2.1: stamp Manual on any feeds dimension the user hand-edited in the
     // param widgets this frame (value moved but provenance didn't). It reads
     // the STORED operation and the STORED provenance, which the clone above
     // keeps whole until the field writes below run.
-    let mut new_provenance = entry.feeds_provenance.clone();
-    new_provenance.detect_manual_edits(
-        &stored.operation,
-        &entry.operation,
-        &stored.feeds_provenance,
-    );
+    let mut new_provenance = feeds_provenance.clone();
+    new_provenance.detect_manual_edits(&stored.operation, operation, &stored.feeds_provenance);
     // G-PILLCLAMP: a per-field ⚡ pill wrote these fields this frame and
     // stamped the recommendation's provenance on the entry. When that
     // stamp equals the stored one (same row, value moved) the pass above
     // cannot tell it from a hand edit and relabels it Manual — restore
     // the pill's stamp, because the funnel produced the value.
-    for field in &entry.pill_stamped_fields {
-        if let Some(stamp) = entry.feeds_provenance.get(*field) {
+    for field in pill_stamped_fields {
+        if let Some(stamp) = feeds_provenance.get(*field) {
             new_provenance.set(*field, stamp.clone());
         }
     }
-    config.name = entry.name.clone();
-    config.enabled = entry.enabled;
-    config.tool_id = entry.tool_id.0;
-    config.model_id = entry.model_id.0;
-    config.operation = entry.operation.clone();
-    config.dressups = entry.dressups.clone();
-    config.heights = entry.heights.clone();
-    config.boundary = entry.boundary.clone();
-    config.rest_analysis = entry.rest_analysis.clone();
-    config.coolant = entry.coolant;
-    config.pre_gcode = if entry.pre_gcode.is_empty() {
+    config.name = name.clone();
+    config.enabled = *enabled;
+    config.tool_id = tool_id.0;
+    config.model_id = model_id.0;
+    config.operation = operation.clone();
+    config.dressups = dressups.clone();
+    config.heights = heights.clone();
+    config.boundary = boundary.clone();
+    config.rest_analysis = rest_analysis.clone();
+    config.coolant = *coolant;
+    config.pre_gcode = if pre_gcode.is_empty() {
         None
     } else {
-        Some(entry.pre_gcode.clone())
+        Some(pre_gcode.clone())
     };
-    config.post_gcode = if entry.post_gcode.is_empty() {
+    config.post_gcode = if post_gcode.is_empty() {
         None
     } else {
-        Some(entry.post_gcode.clone())
+        Some(post_gcode.clone())
     };
-    config.stock_source = entry.stock_source;
-    config.debug_options = entry.debug_options;
+    config.stock_source = *stock_source;
+    config.debug_options = *debug_options;
     config.feeds_provenance = new_provenance;
     Box::new(config)
 }
@@ -978,11 +1010,18 @@ pub(crate) fn project_entry_onto(
 /// through the one command door.
 ///
 /// The panel holds no commit event: it rebuilds the entry, draws it, and
-/// calls this on EVERY frame it is open. So this runs every frame, and
-/// `Command::ReplaceToolpathConfig` decides what survives. The command
-/// always writes the configuration — name, coolant, the pre and post
-/// G-code and the debug options land whatever else moved — and drops the
-/// cached result plus everything downstream of it only when
+/// calls this on EVERY frame it is open. F217: it sends
+/// `Command::ReplaceToolpathConfig` only when the projected config differs
+/// from the stored one, so a frame where the operator only looks at the
+/// panel applies nothing. `ToolpathConfig` has no `PartialEq`, so the
+/// compare reads the derived `Debug` text of the two (the `FeedsKey`
+/// idiom of `state/runtime.rs`): a derived `Debug` prints every field, so
+/// the compare can only send too often, never miss an edit. The
+/// generation-input signature is not enough, because the name, the
+/// coolant, the pre and post G-code and the debug options are outside it.
+///
+/// The command always writes the configuration and drops the cached
+/// result plus everything downstream of it only when
 /// `ToolpathConfig::generation_inputs_signature` moved.
 ///
 /// G-FRESHSTATE: before that gate existed the panel wrote every field
@@ -996,35 +1035,35 @@ pub(crate) fn project_entry_onto(
 /// green on screen and the auto-regeneration sweep never queued it. The
 /// stamp now covers every index `Effects::stale` names.
 ///
-/// `None` says the session carries no toolpath with the entry's id, or the
-/// command refused. F033: the order door (`height_order_door`) refuses an
-/// edit that adds a refusing break of the height planes; the Heights tab
-/// gate (`admit_heights_edit`) refuses the same edit before the draft
-/// changes, so the panel does not send it.
+/// `None` says the session carries no toolpath with the entry's id, the
+/// projected config equals the stored one, or the command refused. F033:
+/// the order door (`height_order_door`) refuses an edit that adds a
+/// refusing break of the height planes; the Heights tab gate
+/// (`admit_heights_edit`) refuses the same edit before the draft changes,
+/// so the panel does not send it.
 pub(crate) fn write_entry_config_to_session(
     entry: &ToolpathEntry,
     state: &mut AppState,
 ) -> Option<rs_cam_core::session::Effects> {
     let (index, config) = {
-        let (index, stored) = state.session.find_toolpath_config_by_id(entry.id)?;
-        (index, project_entry_onto(stored, entry))
+        let (index, stored) = state.session().find_toolpath_config_by_id(entry.id)?;
+        let config = project_entry_onto(stored, entry);
+        if format!("{config:?}") == format!("{stored:?}") {
+            return None;
+        }
+        (index, config)
     };
     let command = rs_cam_core::session::Command::ReplaceToolpathConfig(
         rs_cam_core::session::ReplaceToolpathConfigArgs { index, config },
     );
-    let effects = state.session.apply(command).ok()?;
-    // An empty set is the frame the operator only LOOKED at the panel.
-    // Stamping or dirtying there would mark a healthy project edited on
-    // every frame (G-HEIGHTSTAB).
+    // `AppState::apply` stamps `Effects::stale`, raises the simulation
+    // flag and logs a refusal (F096, F056).
+    let effects = state.apply(command).ok()?;
+    // An empty set is a write that moved no generation input (a name or a
+    // coolant edit, for example). Dirtying there would mark a healthy
+    // project edited for a write the signature does not see (G-HEIGHTSTAB).
     if !effects.stale.is_empty() {
-        crate::state::stale::stamp_stale(state, &effects.stale);
         state.gui.mark_edited();
-        // WP19 (plan §28): a parameter edit clears the viewport's
-        // simulation, as every other edit does. The raise stays INSIDE
-        // this guard, so an idle frame raises nothing.
-        if effects.simulation_cleared {
-            state.panel_side_effects.invalidate_simulation = true;
-        }
     }
     Some(effects)
 }
@@ -1044,12 +1083,13 @@ pub(crate) fn write_entry_runtime_to_gui(
         rt.visible = entry.visible;
         rt.locked = entry.locked;
         rt.auto_regen = entry.auto_regen;
-        rt.status = entry.status.clone();
         rt.stale_since = entry.stale_since;
         rt.feeds_result = entry.feeds_result.clone();
         rt.feeds_memo = entry.feeds_memo.clone();
-        // result, debug_trace, semantic_trace, debug_trace_path are not
+        // run, debug_trace, semantic_trace, debug_trace_path are not
         // mutated by the panel — skip to avoid unnecessary Arc clones.
+        // F031: the panel used to copy the status back, which was a copy
+        // of the value it had read in the same frame.
     }
 }
 
@@ -1106,9 +1146,9 @@ mod tests;
 
 /// The `None` arm of [`draw`]'s selection dispatch.
 fn draw_nothing_selected(ui: &mut egui::Ui, state: &mut AppState) {
-    if state.session.models().is_empty()
+    if state.session().models().is_empty()
         && state
-            .session
+            .session()
             .list_setups()
             .iter()
             .all(|s| s.toolpath_indices.is_empty())
@@ -1147,7 +1187,7 @@ fn draw_nothing_selected(ui: &mut egui::Ui, state: &mut AppState) {
 fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState) {
     // Capture snapshot for undo before editing
     if state.history.stock_snapshot.is_none() {
-        state.history.stock_snapshot = Some(state.session.stock_config().clone());
+        state.history.stock_snapshot = Some(state.session().stock_config().clone());
     }
     // WP6: the widgets write a DRAFT, not the session. The draft
     // is re-read from the session on any frame no widget of this
@@ -1155,21 +1195,21 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState) {
     // surface reaches the panel instead of being overwritten.
     let mut draft = match state.history.stock_draft.take() {
         Some(draft) => draft,
-        None => state.session.stock_config().clone(),
+        None => state.session().stock_config().clone(),
     };
     // R12: the caption under the checkbox offers a refit only when a
     // model with geometry exists. It reads the two sources
     // `first_model_bbox` reads; an empty polygon set counts here and
     // yields no bbox there.
     let has_model = state
-        .session
+        .session()
         .models()
         .iter()
         .any(|model| model.mesh.is_some() || model.items.has_drawing());
     // Round 2: the pin block is one status line, at most one warning and
     // the button that opens the pin wizard. It reads the one core report.
-    let pin_report = state.session.pin_set_report_for(&draft.alignment_pins);
-    let pin_drill = pins::PinDrillState::of(&state.session, &draft.alignment_pins);
+    let pin_report = state.session().pin_set_report_for(&draft.alignment_pins);
+    let pin_drill = pins::PinDrillState::of(state.session(), &draft.alignment_pins);
     let pin_summary = pins::summary(&pin_report, &pin_drill, draft.alignment_pins.len());
     if state
         .panels
@@ -1180,7 +1220,8 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState) {
     }
     let out = stock::draw(ui, &mut draft, has_model, &pin_summary);
     if out.open_pin_wizard {
-        state.panels.pin_wizard = Some(crate::ui::pin_wizard::PinWizardState::open(&state.session));
+        state.panels.pin_wizard =
+            Some(crate::ui::pin_wizard::PinWizardState::open(state.session()));
     }
     let edit = out.edit;
     if edit.committed {
@@ -1190,13 +1231,13 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState) {
         // is true exactly once. It used to compare a session the
         // panel had already written in place.
         if let Some(old) = state.history.stock_snapshot.take()
-            && old != *state.session.stock_config()
+            && old != *state.session().stock_config()
         {
             state
                 .history
                 .push(crate::state::history::UndoAction::StockChange {
                     old,
-                    new: state.session.stock_config().clone(),
+                    new: state.session().stock_config().clone(),
                 });
         }
     }
@@ -1236,7 +1277,7 @@ fn draw_post_selection(ui: &mut egui::Ui, state: &mut AppState) {
     if state.history.post_snapshot.is_none() {
         state.history.post_snapshot = Some(state.gui.post.clone());
     }
-    let stock_top = state.session.stock_config().origin_z + state.session.stock_config().z;
+    let stock_top = state.session().stock_config().origin_z + state.session().stock_config().z;
     post::draw(ui, &mut state.gui.post, stock_top);
     // W2.2 [P1-004]: the session is canonical for post config. Push the
     // edited gui.post straight through so `session.post_config()` can't
@@ -1247,7 +1288,7 @@ fn draw_post_selection(ui: &mut egui::Ui, state: &mut AppState) {
     // simulation only for a field that reaches emitted motion,
     // so an unchanged write clears nothing now either.
     let session_post = state.gui.post.clone();
-    if *state.session.post_config() != session_post {
+    if *state.session().post_config() != session_post {
         let command =
             rs_cam_core::session::Command::SetPostConfig(rs_cam_core::session::SetPostConfigArgs {
                 post: Box::new(session_post),
@@ -1268,7 +1309,7 @@ fn draw_post_selection(ui: &mut egui::Ui, state: &mut AppState) {
 fn draw_machine_selection(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
     // Capture snapshot for undo before editing
     if state.history.machine_snapshot.is_none() {
-        state.history.machine_snapshot = Some(state.session.machine().clone());
+        state.history.machine_snapshot = Some(state.session().machine().clone());
     }
     draw_machine_panel(ui, state, events);
 }
@@ -1287,7 +1328,7 @@ fn draw_model_selection(
 fn draw_tool_selection(ui: &mut egui::Ui, state: &mut AppState, id: ToolId) {
     // TOO-003 — draft-commit: edit a clone, commit on Apply (or on
     // navigate-away via flush_tool_draft), discard on Revert.
-    if let Some(committed) = state.session.tools().iter().find(|t| t.id == id).cloned() {
+    if let Some(committed) = state.session().tools().iter().find(|t| t.id == id).cloned() {
         // (Re)initialise the draft when entering a different tool.
         if state.history.tool_draft.as_ref().map(|(d, _)| *d) != Some(id) {
             state.history.tool_draft = Some((id, committed.clone()));
@@ -1300,9 +1341,10 @@ fn draw_tool_selection(ui: &mut egui::Ui, state: &mut AppState, id: ToolId) {
         let mut action = tool::ToolEditAction::None;
         // UI-09: the draft and the panel's own typed state are
         // disjoint fields of `AppState`, so both borrow at once.
-        let panels = &mut state.panels;
-        let head = &state.session.machine().head;
-        if let Some((_, draft)) = state.history.tool_draft.as_mut() {
+        let parts = state.split_mut();
+        let panels = parts.panels;
+        let head = &parts.session.machine().head;
+        if let Some((_, draft)) = parts.history.tool_draft.as_mut() {
             action = tool::draw(ui, draft, modified, panels, head);
         }
         match action {
@@ -1329,9 +1371,9 @@ fn draw_setup_selection(
     events: &mut Vec<AppEvent>,
     setup_id: SetupId,
 ) {
-    let pin_count = state.session.stock_config().alignment_pins.len();
+    let pin_count = state.session().stock_config().alignment_pins.len();
     let all_models: Vec<_> = state
-        .session
+        .session()
         .models()
         .iter()
         .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
@@ -1346,7 +1388,7 @@ fn draw_setup_selection(
     // generated in the OLD frame. The datum and the model scope
     // had no core door at all.
     let stored = state
-        .session
+        .session()
         .find_setup_by_id(setup_id.0)
         .map(|(index, setup)| (index, setup.clone()));
     if let Some((setup_index, stored)) = stored {
@@ -1360,7 +1402,7 @@ fn draw_setup_selection(
             &mut draft,
             pin_count,
             &all_models,
-            state.session.list_setups().len(),
+            state.session().list_setups().len(),
             events,
         );
         if edit.committed {
@@ -1407,7 +1449,7 @@ fn draw_obstacle_list(
     use rs_cam_core::compute::obstacle::{
         ObstacleResolveError, model_geometry_facts, validate_obstacle,
     };
-    let models = model_choices(&state.session);
+    let models = model_choices(state.session());
     // The validation is the cheap half of the resolve: it reads the model
     // facts only, so the list can ask it each frame.
     let errors: Vec<_> = setup
@@ -1415,7 +1457,7 @@ fn draw_obstacle_list(
         .iter()
         .filter(|o| o.enabled)
         .filter_map(|o| {
-            validate_obstacle(o, |id| model_geometry_facts(state.session.models(), id))
+            validate_obstacle(o, |id| model_geometry_facts(state.session().models(), id))
                 .err()
                 .map(|refusal| {
                     let text = ObstacleResolveError {
@@ -1452,16 +1494,16 @@ fn draw_stock_changes_section(
     setup: &rs_cam_core::session::SetupData,
 ) {
     let rows: Vec<_> = state
-        .session
+        .session()
         .stock_change_rows()
         .into_iter()
         .filter(|row| row.setup_id == setup_id.0)
         .collect();
-    let models = model_choices(&state.session);
+    let models = model_choices(state.session());
     let frame =
-        rs_cam_core::session::SetupEvalContext::build_for_setup(&state.session, Some(setup))
+        rs_cam_core::session::SetupEvalContext::build_for_setup(state.session(), Some(setup))
             .heights_stock_bbox;
-    let stock_material = state.session.stock_config().material.clone();
+    let stock_material = state.session().stock_config().material.clone();
     let inputs = stock_changes::StockChangesInputs {
         setup_id,
         rows: &rows,
@@ -1485,7 +1527,7 @@ fn draw_obstacle_selection(
     obstacle_id: ObstacleId,
 ) {
     let stored = state
-        .session
+        .session()
         .find_setup_by_id(setup_id.0)
         .and_then(|(index, setup_data)| {
             setup_data
@@ -1511,9 +1553,9 @@ fn draw_obstacle_selection(
             refusal: None,
         });
     }
-    let models = model_choices(&state.session);
+    let models = model_choices(state.session());
     let frame =
-        rs_cam_core::session::SetupEvalContext::build_for_setup(&state.session, Some(&setup))
+        rs_cam_core::session::SetupEvalContext::build_for_setup(state.session(), Some(&setup))
             .heights_stock_bbox;
     let inputs = obstacles::ObstacleEditorInputs {
         models: &models,
@@ -1552,7 +1594,7 @@ fn draw_face_selection(
     ui.heading("Face Selected");
     ui.separator();
     let model_name = state
-        .session
+        .session()
         .models()
         .iter()
         .find(|m| m.id == model_id.0)
@@ -1562,7 +1604,7 @@ fn draw_face_selection(
     let mut table = DataTable::new("face_selection")
         .row(DataRow::value("Model", model_name))
         .row(DataRow::value("Face", face_id.0.to_string()));
-    if let Some(model) = state.session.models().iter().find(|m| m.id == model_id.0)
+    if let Some(model) = state.session().models().iter().find(|m| m.id == model_id.0)
         && let Some(enriched) = &model.enriched_mesh
         && let Some(group) = enriched.face_group(face_id)
     {
@@ -1589,7 +1631,7 @@ fn draw_faces_selection(
     ui.heading("Faces Selected");
     ui.separator();
     let model_name = state
-        .session
+        .session()
         .models()
         .iter()
         .find(|m| m.id == model_id.0)
@@ -1611,7 +1653,7 @@ fn draw_toolpath_selection(
 ) {
     // Capture snapshot for undo before editing
     if state.history.toolpath_snapshot.is_none()
-        && let Some((_, tc)) = state.session.find_toolpath_config_by_id(id)
+        && let Some((_, tc)) = state.session().find_toolpath_config_by_id(id)
     {
         state.history.toolpath_snapshot = Some((
             id,
@@ -1628,7 +1670,7 @@ fn draw_toolpath_selection(
     // command door reports it stale, and no side effect here
     // needs to know that it was the operation that moved.
     let heights_before = state
-        .session
+        .session()
         .find_toolpath_config_by_id(id)
         .map(|(_, tc)| format!("{:?}", tc.heights));
     // P2.2: boundary source/containment/offset changes (including
@@ -1636,7 +1678,7 @@ fn draw_toolpath_selection(
     // the generated toolpath. The command door stamps them stale;
     // this snapshot drives the rest-analysis hook below.
     let boundary_before = state
-        .session
+        .session()
         .find_toolpath_config_by_id(id)
         .map(|(_, tc)| format!("{:?}", tc.boundary));
 
@@ -1671,7 +1713,7 @@ fn draw_toolpath_selection(
     // still get a panel that rendered.
     let inputs = toolpath_panel_inputs(
         id,
-        &state.session,
+        state.session(),
         &state.gui,
         state
             .simulation
@@ -1686,7 +1728,7 @@ fn draw_toolpath_selection(
     // contexts together. Keeping them in one snapshot makes it
     // impossible for this production call chain to draw an entry while
     // silently omitting either static context.
-    if let Some(mut snapshot) = toolpath_panel_snapshot(id, &state.session, &state.gui) {
+    if let Some(mut snapshot) = toolpath_panel_snapshot(id, state.session(), &state.gui) {
         // The panel takes the whole snapshot. The entry, both
         // static diagnostic contexts and the model bbox travel as
         // one value, so no caller can draw the entry while
@@ -1735,7 +1777,7 @@ fn draw_toolpath_selection(
     // see the comment on the follow-up block.
     let mut auto_enable_rest_source: Option<ToolpathId> = None;
     let mut heights_moved = false;
-    if let Some((_, tc)) = state.session.find_toolpath_config_by_id(id) {
+    if let Some((_, tc)) = state.session().find_toolpath_config_by_id(id) {
         let heights_changed = heights_before
             .as_ref()
             .is_some_and(|b| *b != format!("{:?}", tc.heights));
@@ -1800,14 +1842,11 @@ pub(crate) fn apply_auto_enable(
     let command = rs_cam_core::session::Command::AutoEnableRestAnalysis(
         rs_cam_core::session::AutoEnableRestAnalysisArgs { source_id },
     );
-    if let Ok(effects) = state.session.apply(command)
+    // `AppState::apply` stamps and raises the simulation flag (WP19,
+    // F096). The edited mark stays on `revision`.
+    if let Ok(effects) = state.apply(command)
         && effects.revision.is_some()
     {
-        crate::state::stale::stamp_stale(state, &effects.stale);
         state.gui.mark_edited();
-        // WP19 (plan §28). The gate stays on `revision`.
-        if effects.simulation_cleared {
-            state.panel_side_effects.invalidate_simulation = true;
-        }
     }
 }

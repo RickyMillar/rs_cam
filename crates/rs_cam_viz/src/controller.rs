@@ -338,7 +338,7 @@ impl<B: ComputeBackend> AppController<B> {
             PlanStep::Generate(id) => {
                 let name = self
                     .state
-                    .session
+                    .session()
                     .find_toolpath_config_by_id(id)
                     .map_or_else(|| format!("toolpath {}", id.0), |(_, tc)| tc.name.clone());
                 Activity::Generating(id, name)
@@ -351,7 +351,7 @@ impl<B: ComputeBackend> AppController<B> {
             PlanStep::SimulateAll => {
                 let last = self
                     .state
-                    .session
+                    .session()
                     .list_setups()
                     .last()
                     .map_or(rs_cam_core::ids::SetupId(0), |s| {
@@ -370,7 +370,7 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// The name a setup draws under, or a positional fallback.
     fn setup_label(&self, setup: rs_cam_core::ids::SetupId) -> String {
-        self.state.session.find_setup_by_id(setup.0).map_or_else(
+        self.state.session().find_setup_by_id(setup.0).map_or_else(
             || format!("Setup {}", setup.0),
             |(position, data)| {
                 if data.name.is_empty() {
@@ -484,6 +484,28 @@ impl<B: ComputeBackend> AppController<B> {
         if owed.invalidate_simulation {
             self.invalidate_simulation();
         }
+    }
+
+    /// Apply one command, mirror its answer, and return the answer (F096).
+    ///
+    /// The controller face of [`AppState::apply`]. The state door stamps
+    /// `Effects::stale` and raises the simulation flag. This door then
+    /// clears the viewport simulation at once, so a reply that reads the
+    /// state after the command (an MCP reply, the next event arm) sees
+    /// the cleared view. Every controller and MCP write goes through it.
+    #[must_use = "a refused command changed nothing; read the answer before you mark the project edited"]
+    pub fn apply(
+        &mut self,
+        command: rs_cam_core::session::Command,
+    ) -> Result<rs_cam_core::session::Effects, rs_cam_core::session::SessionError> {
+        let effects = self.state.apply(command)?;
+        if effects.simulation_cleared {
+            // The state door raised the flag. The work runs now, so the
+            // frame loop owes nothing for this command.
+            self.state.panel_side_effects.invalidate_simulation = false;
+            self.invalidate_simulation();
+        }
+        Ok(effects)
     }
 
     pub fn collision_positions(&self) -> &[[f32; 3]] {
@@ -720,9 +742,9 @@ impl<B: ComputeBackend> AppController<B> {
         // rule is latest-wins.
         let spec = self
             .state
-            .session
+            .session()
             .find_toolpath_config_by_id(id)
-            .and_then(|(index, _)| self.state.session.reach_map_spec(index, None));
+            .and_then(|(index, _)| self.state.session().reach_map_spec(index, None));
         let key = spec
             .as_ref()
             .map(rs_cam_core::maps::reach_map_cache::ReachRequestKey::of);

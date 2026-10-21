@@ -154,8 +154,8 @@ fn controller() -> AppController<SilentBackend> {
         .add_toolpath(0, config)
         .expect("add the recommended column fixture");
     let mut controller = AppController::with_backend(SilentBackend);
-    controller.state.session = builder.build();
-    let id = controller.state.session.toolpath_configs()[0].id;
+    controller.state.replace_session(builder.build());
+    let id = controller.state.session().toolpath_configs()[0].id;
     controller
         .state
         .gui
@@ -179,7 +179,7 @@ fn ctx() -> egui::Context {
 /// Every text run the Feeds tab paints, in paint order. The production tab
 /// override is one-shot, so the second frame is the steady state.
 fn painted_text(controller: &mut AppController<SilentBackend>) -> Vec<String> {
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
     controller.state.gui.pending_toolpath_tab =
         Some((id, rs_cam_viz::ui::properties::ToolpathTab::FeedsSpeeds));
     let ctx = ctx();
@@ -248,7 +248,7 @@ fn mm(run: &str) -> f64 {
 
 /// The raw calculator recommendation for the fixture's operation.
 fn calculator(controller: &AppController<SilentBackend>) -> rs_cam_core::feeds::FeedsResult {
-    let session = &controller.state.session;
+    let session = controller.state.session();
     let tc = &session.toolpath_configs()[0];
     let tool = session.tools()[0].clone();
     rs_cam_core::feeds::suggest::feeds_preview_for_operation(
@@ -273,9 +273,9 @@ fn the_recommended_column_is_what_apply_writes_g_recomapplied() {
     let doc = row(&texts, "DOC");
     let woc = row(&texts, "WOC");
 
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
     controller.handle_internal_event(AppEvent::ApplyFeedsAll(id));
-    let op = controller.state.session.toolpath_configs()[0]
+    let op = controller.state.session().toolpath_configs()[0]
         .operation
         .clone();
     let applied_doc = op.depth_per_pass().expect("a pocket carries DOC");
@@ -327,9 +327,9 @@ fn the_recommended_column_is_what_apply_writes_g_recomapplied() {
 #[test]
 fn the_delta_is_level_after_the_apply_g_recomapplied() {
     let mut controller = controller();
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
     controller.handle_internal_event(AppEvent::ApplyFeedsAll(id));
-    let op = controller.state.session.toolpath_configs()[0]
+    let op = controller.state.session().toolpath_configs()[0]
         .operation
         .clone();
     let applied_doc = op.depth_per_pass().expect("a pocket carries DOC");
@@ -393,9 +393,9 @@ fn the_power_row_reads_the_applied_cut_g_recomapplied() {
         .collect();
     let painted = painted_percent(face[0]);
 
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
     controller.handle_internal_event(AppEvent::ApplyFeedsAll(id));
-    let session = &controller.state.session;
+    let session = controller.state.session();
     let op = &session.toolpath_configs()[0].operation;
     let figure = rs_cam_core::feeds::power_at_operating_point(
         op,

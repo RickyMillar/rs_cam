@@ -184,13 +184,20 @@ fn selection_controller() -> AppController<ScriptedBackend> {
         .add_toolpath(0, pocket)
         .expect("the pocket is addable");
     let mut controller = AppController::with_backend(ScriptedBackend::new());
-    controller.state.session = builder.build();
-    for tc in controller.state.session.toolpath_configs() {
+    controller.state.replace_session(builder.build());
+    let ids: Vec<_> = controller
+        .state
+        .session()
+        .toolpath_configs()
+        .iter()
+        .map(|tc| tc.id)
+        .collect();
+    for id in ids {
         controller
             .state
             .gui
             .toolpath_rt
-            .insert(tc.id, ToolpathRuntime::new(true));
+            .insert(id, ToolpathRuntime::new(true));
     }
     controller
 }
@@ -201,7 +208,7 @@ fn stored_selection(
     index: usize,
     target: rs_cam_core::session::SelectionTarget,
 ) -> rs_cam_core::selection::Selection {
-    c.state.session.toolpath_configs()[index]
+    c.state.session().toolpath_configs()[index]
         .selection_of(target)
         .expect("the target is a selection")
         .expect("the toolpath holds the selection")
@@ -217,7 +224,7 @@ fn edit_in_one_step(
     target: rs_cam_core::session::SelectionTarget,
     edit: rs_cam_core::selection::SelectionEdit,
 ) {
-    let tc = c.state.session.toolpath_configs()[index].clone();
+    let tc = c.state.session().toolpath_configs()[index].clone();
     c.state.history.toolpath_snapshot = Some((
         tc.id,
         tc.operation.clone(),
@@ -232,7 +239,11 @@ fn edit_in_one_step(
     });
     let (snap_id, old_op, old_dressups, old_boundary, old_provenance) =
         c.state.history.toolpath_snapshot.take().unwrap();
-    let (_, now) = c.state.session.find_toolpath_config_by_id(snap_id).unwrap();
+    let (_, now) = c
+        .state
+        .session()
+        .find_toolpath_config_by_id(snap_id)
+        .unwrap();
     let action = crate::state::history::UndoAction::ToolpathParamChange {
         tp_id: snap_id,
         old_op,
@@ -418,8 +429,8 @@ mod an_stl_face_click_p4_7 {
         };
         let _ = builder.add_toolpath(0, tc).expect("the pocket is addable");
         let mut controller = AppController::with_backend(ScriptedBackend::new());
-        controller.state.session = builder.build();
-        let id = controller.state.session.toolpath_configs()[0].id;
+        controller.state.replace_session(builder.build());
+        let id = controller.state.session().toolpath_configs()[0].id;
         controller
             .state
             .gui
@@ -433,8 +444,8 @@ mod an_stl_face_click_p4_7 {
     /// The pick-mode hit of the screen point over the model point `p`.
     fn hit_over(controller: &AppController<ScriptedBackend>, mode: &PickMode, p: P3) -> PickHit {
         let state = &controller.state;
-        let stock = state.session.stock_config().clone();
-        let frame = SetupFrame::of(&state.session.list_setups()[0]);
+        let stock = state.session().stock_config().clone();
+        let frame = SetupFrame::of(&state.session().list_setups()[0]);
         let (w, d, h) = frame.effective_stock(&stock);
         let mut camera = OrbitCamera::new();
         camera.fit_to_bounds([0.0, 0.0, 0.0], [w as f32, d as f32, h as f32]);
@@ -447,8 +458,8 @@ mod an_stl_face_click_p4_7 {
                 VIEW_H,
             )
             .expect("the point is in view");
-        let tc = &state.session.toolpath_configs()[0];
-        let held = held_kinds(&state.session.models()[0]);
+        let tc = &state.session().toolpath_configs()[0];
+        let held = held_kinds(&state.session().models()[0]);
         let kinds = mode
             .filter
             .effective_kinds(tc.operation.capabilities().item_use, &held);
@@ -465,18 +476,18 @@ mod an_stl_face_click_p4_7 {
             vh: VIEW_H,
             visibility: &state.overlays.model_visibility,
         };
-        pick_items(&ctx, &state.session, tc.id, &mode.filter, &kinds)
+        pick_items(&ctx, state.session(), tc.id, &mode.filter, &kinds)
             .expect("the ray hits the mesh")
     }
 
     #[test]
     fn an_stl_face_click_adds_one_pick_p4_7() {
         let mut controller = stl_controller();
-        let id = controller.state.session.toolpath_configs()[0].id;
+        let id = controller.state.session().toolpath_configs()[0].id;
         let mode = PickMode::new(
             id,
             SelectionTarget::Op,
-            controller.state.session.toolpath_configs()[0]
+            controller.state.session().toolpath_configs()[0]
                 .operation
                 .capabilities()
                 .item_use,
@@ -494,10 +505,10 @@ mod an_stl_face_click_p4_7 {
             panic!("pick mode on an STL gives a mesh hit");
         };
         assert!((point.z - 5.0).abs() < 1e-6, "the hit is on the Z 5 face");
-        let tc = controller.state.session.toolpath_configs()[0].clone();
+        let tc = controller.state.session().toolpath_configs()[0].clone();
         let cold = controller
             .state
-            .session
+            .session()
             .face_pick_key_at(&tc, model_id.0, point)
             .unwrap_err();
         assert_eq!(
@@ -539,7 +550,7 @@ mod an_stl_face_click_p4_7 {
         // 3. The click names the Z 5 face and adds one pick.
         let key = controller
             .state
-            .session
+            .session()
             .face_pick_key_at(&tc, model_id.0, point)
             .expect("the hit names a face");
         controller.handle_internal_event(crate::ui::AppEvent::TogglePick {
@@ -547,7 +558,7 @@ mod an_stl_face_click_p4_7 {
             target: SelectionTarget::Op,
             key,
         });
-        let tc = controller.state.session.toolpath_configs()[0].clone();
+        let tc = controller.state.session().toolpath_configs()[0].clone();
         let picks = tc
             .operation
             .selection()
@@ -561,7 +572,7 @@ mod an_stl_face_click_p4_7 {
         );
         let report = controller
             .state
-            .session
+            .session()
             .selection_status(&tc, SelectionTarget::Op)
             .unwrap();
         assert_eq!(report.counts.get(&ItemKind::Face), Some(&1));

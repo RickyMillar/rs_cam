@@ -118,7 +118,7 @@ fn parity_controller() -> AppController<InertBackend> {
         planner_origin: None,
     };
     let _ = builder.add_toolpath(0, tp_config).unwrap();
-    controller.state.session = builder.build();
+    controller.state.replace_session(builder.build());
     controller
 }
 
@@ -200,7 +200,7 @@ fn gui_drain_writes_findings_and_spans_into_session_results() {
 
     let result = controller
         .state
-        .session
+        .session()
         .get_result(0)
         .expect("GUI drain must publish the worker result into session.results");
     assert_eq!(
@@ -230,7 +230,7 @@ fn gui_mode_toolpath_diagnostics_see_generation_stats() {
 
     let stats_seen = controller
         .state
-        .session
+        .session()
         .get_result(0)
         .map(|r| r.stats.untouched_material_mm2);
     assert_eq!(stats_seen, Some(Some(UNTOUCHED_MATERIAL_MM2)));
@@ -239,7 +239,7 @@ fn gui_mode_toolpath_diagnostics_see_generation_stats() {
     // simulation, trace supplied externally — the MCP handler's shape).
     let diags = controller
         .state
-        .session
+        .session()
         .diagnose_toolpath_with_trace(0, None)
         .expect("diagnose_toolpath_with_trace must answer in GUI mode");
     // Report-only findings do not all raise a Diagnostic on every fixture;
@@ -332,7 +332,7 @@ fn mcp_get_diagnostics_row_is_a_superset_of_the_core_diagnostic_wire() {
     let evidence = crate::app::mcp::viz_project_evidence(&controller.state);
     let core = controller
         .state
-        .session
+        .session()
         .diagnostics_with_evidence(&evidence);
     let core_row = serde_json::to_value(
         core.per_toolpath
@@ -417,7 +417,7 @@ fn mcp_get_diagnostics_collision_count_comes_from_evidence() {
     let evidence = crate::app::mcp::viz_project_evidence(&controller.state);
     let core = controller
         .state
-        .session
+        .session()
         .diagnostics_with_evidence(&evidence);
     assert_eq!(
         core.collision_count, 1,
@@ -452,7 +452,7 @@ fn mcp_get_diagnostics_carries_every_core_project_key_f181() {
         let evidence = crate::app::mcp::viz_project_evidence(&controller.state);
         let diagnostics = controller
             .state
-            .session
+            .session()
             .diagnostics_with_evidence(&evidence);
         serde_json::to_value(&diagnostics).expect("the core report serialises")
     };

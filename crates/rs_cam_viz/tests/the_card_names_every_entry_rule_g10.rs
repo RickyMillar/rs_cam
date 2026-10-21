@@ -151,8 +151,8 @@ fn state_for(
         .add_toolpath(0, config)
         .expect("add the G10 card fixture");
     let mut state = AppState::new();
-    state.session = builder.build();
-    let id = state.session.toolpath_configs()[0].id;
+    state.replace_session(builder.build());
+    let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     state.selection = Selection::Toolpath(id);
     state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::FeedsSpeeds));
@@ -161,7 +161,7 @@ fn state_for(
 
 /// The explain payload the Feeds tab reads for the fixture's operation.
 fn explain(state: &AppState) -> FeedsExplain {
-    let session = &state.session;
+    let session = state.session();
     let tc = &session.toolpath_configs()[0];
     let tool = session.tools()[0].clone();
     rs_cam_core::feeds::suggest::feeds_explain_for_operation(
@@ -177,10 +177,10 @@ fn explain(state: &AppState) -> FeedsExplain {
 /// The entry notes of the Suggest run the card makes, with the card's own
 /// context (`feeds_speeds.rs`).
 fn entry_notes(state: &AppState) -> Vec<EntryNote> {
-    let id = state.session.toolpath_configs()[0].id;
-    let snapshot = properties::toolpath_panel_snapshot(id, &state.session, &state.gui)
+    let id = state.session().toolpath_configs()[0].id;
+    let snapshot = properties::toolpath_panel_snapshot(id, state.session(), &state.gui)
         .expect("the toolpath resolves for the properties panel");
-    let session = &state.session;
+    let session = state.session();
     let tool = session.tools()[0].clone();
     let suggested = rs_cam_core::feeds::suggest::suggest_for_operation(SuggestForOperationInput {
         operation: &snapshot.entry.operation,
@@ -369,9 +369,9 @@ fn the_mcp_basis_carries_plunge_and_entry_g10() {
         OperationConfig::new_default(OperationType::Pocket),
         helix(1.8, 1.0),
     );
-    let tc = &state.session.toolpath_configs()[0];
+    let tc = &state.session().toolpath_configs()[0];
     let profile = state
-        .session
+        .session()
         .cutter_op_profile(tc)
         .expect("the fixture's tool resolves");
     let feeds = profile.feeds.as_ref().expect("Suggest serves the fixture");

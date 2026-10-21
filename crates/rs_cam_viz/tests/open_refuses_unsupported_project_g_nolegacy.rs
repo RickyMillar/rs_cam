@@ -108,7 +108,7 @@ diameter = 6.0
 fn a_file_that_is_not_a_project_is_refused() {
     let path = write_temp("not_a_project", NOT_A_PROJECT);
     let mut controller = AppController::with_backend(IdleBackend);
-    let before = controller.state().session.name().to_owned();
+    let before = controller.state().session().name().to_owned();
 
     let result = controller.open_job_from_path(&path);
 
@@ -117,7 +117,7 @@ fn a_file_that_is_not_a_project_is_refused() {
         "a file that is not an rs_cam project must refuse to open, got {result:?}"
     );
     assert_eq!(
-        controller.state().session.name(),
+        controller.state().session().name(),
         before,
         "a refused open must leave the project that was already there"
     );
@@ -136,7 +136,7 @@ fn a_pre_v3_project_is_refused() {
         "a project whose format_version is not 3 must refuse to open, got {result:?}"
     );
     assert_ne!(
-        controller.state().session.name(),
+        controller.state().session().name(),
         "A Format 2 Project",
         "a refused open must not adopt the refused file's contents"
     );

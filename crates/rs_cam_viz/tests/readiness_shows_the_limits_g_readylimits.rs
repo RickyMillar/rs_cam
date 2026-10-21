@@ -139,7 +139,7 @@ fn readiness_paints_no_toolpath_verdict_pill_g_readylimits() {
 #[test]
 fn a_deep_cut_reddens_the_depth_row_and_refuses_no_export_g_readylimits() {
     let state = simulated_state(Cut::PastTheRigidityCap);
-    let cap = rigidity_cap_mm(&state.session);
+    let cap = rigidity_cap_mm(state.session());
     let report = load_report(&state);
     let verdict = report
         .per_toolpath

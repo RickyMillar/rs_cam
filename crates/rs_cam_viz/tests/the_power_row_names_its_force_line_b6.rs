@@ -153,8 +153,8 @@ fn state_for(fixture: &Fixture) -> AppState {
         .add_toolpath(0, config)
         .expect("add the force line fixture");
     let mut state = AppState::new();
-    state.session = builder.build();
-    let id = state.session.toolpath_configs()[0].id;
+    state.replace_session(builder.build());
+    let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     state.selection = Selection::Toolpath(id);
     state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::FeedsSpeeds));
@@ -223,24 +223,24 @@ fn face_runs(texts: &[String]) -> Vec<&str> {
 /// `the_chipload_verdict_is_one_row_g_chipverdict::door_figure` builds it.
 fn door_point(fixture: &Fixture) -> ForceAtPoint {
     let state = state_for(fixture);
-    let tc = &state.session.toolpath_configs()[0];
-    let tool = &state.session.tools()[0];
-    let stock = state.session.stock_config();
+    let tc = &state.session().toolpath_configs()[0];
+    let tool = &state.session().tools()[0];
+    let stock = state.session().stock_config();
     let preview = feeds::suggest::feeds_preview_for_operation(
         &tc.operation,
         tool,
         &stock.material,
-        state.session.machine(),
+        state.session().machine(),
         feeds::embedded_vendor_lut(),
-        state.session.post_config().spindle_strategy,
+        state.session().post_config().spindle_strategy,
     );
     let recommended = preview.recommended();
-    let model_bbox = state.session.model_bbox(tc.model_id);
+    let model_bbox = state.session().model_bbox(tc.model_id);
     let previews = feeds::suggest::preview_field_applies(
         &tc.operation,
         recommended,
         tool,
-        state.session.machine(),
+        state.session().machine(),
         &stock.material,
         tc.operation.feeds_style().1,
         feeds::suggest::SuggestContext {

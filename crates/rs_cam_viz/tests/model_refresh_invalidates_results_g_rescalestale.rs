@@ -164,9 +164,11 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, ModelId, PathBuf) {
     write(&bystander, &drawing(40.0));
 
     let mut controller = AppController::with_backend(SilentBackend);
-    controller.state.session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
-        .build();
+    controller.state.replace_session(
+        ProjectSessionBuilder::new()
+            .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
+            .build(),
+    );
     controller.open_import_dialog(
         &under_test,
         rs_cam_core::compute::stock_config::ModelKind::Svg,
@@ -185,28 +187,34 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, ModelId, PathBuf) {
     let id_under_test = model_id_of(&controller, &under_test);
     let id_bystander = model_id_of(&controller, &bystander);
 
-    let session = &mut controller.state.session;
-    let _ = session
+    let state = &mut controller.state;
+    let _ = state
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(toolpath("Under test", id_under_test.0)),
         }))
         .expect("add the dependent toolpath");
-    let _ = session
+    let _ = state
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(toolpath("Bystander", id_bystander.0)),
         }))
         .expect("add the bystander toolpath");
     for index in [0usize, 1usize] {
-        let revision = session.toolpath_revision(index);
-        let _ = session
+        let revision = state.session().toolpath_revision(index);
+        let _ = state
             .apply(Command::AdoptResult(AdoptResultArgs {
                 index,
                 revision,
                 result: Box::new(stub_result()),
             }))
             .expect("cache the seeded result");
+    }
+    // F096: the fixture writes through `AppState::apply`, which stamps the
+    // added rows stale. The fixture is a project at rest, so it clears the
+    // stamps; the tests measure what the refresh door stamps.
+    for rt in controller.state.gui.toolpath_rt.values_mut() {
+        rt.stale_since = None;
     }
 
     (controller, id_under_test, under_test)
@@ -215,7 +223,7 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, ModelId, PathBuf) {
 fn model_id_of(controller: &AppController<SilentBackend>, path: &Path) -> ModelId {
     let id = controller
         .state
-        .session
+        .session()
         .models()
         .iter()
         .find(|m| m.path == path)
@@ -229,7 +237,7 @@ fn model_id_of(controller: &AppController<SilentBackend>, path: &Path) -> ModelI
 /// Read through `and_then`: before the fix the entry may not exist at all,
 /// and "absent" must read as "not stale" rather than panicking.
 fn is_stale(controller: &AppController<SilentBackend>, idx: usize) -> bool {
-    let id = controller.state.session.toolpath_configs()[idx].id;
+    let id = controller.state.session().toolpath_configs()[idx].id;
     controller
         .state
         .gui
@@ -243,7 +251,7 @@ fn is_stale(controller: &AppController<SilentBackend>, idx: usize) -> bool {
 fn width_microns(controller: &AppController<SilentBackend>, id: ModelId) -> i64 {
     let bbox = controller
         .state
-        .session
+        .session()
         .models()
         .iter()
         .find(|m| m.id == id.0)
@@ -263,11 +271,11 @@ fn the_fixture_caches_two_results_and_the_rescale_moves_the_geometry() {
     let (mut controller, id, _path) = seeded(&dir);
 
     assert!(
-        controller.state.session.get_result(0).is_some(),
+        controller.state.session().get_result(0).is_some(),
         "the dependent toolpath must start with a cached result"
     );
     assert!(
-        controller.state.session.get_result(1).is_some(),
+        controller.state.session().get_result(1).is_some(),
         "the bystander toolpath must start with a cached result"
     );
     assert!(
@@ -305,7 +313,7 @@ fn a_rescale_drops_the_dependent_results() {
         .expect("rescale must succeed");
 
     assert!(
-        controller.state.session.get_result(0).is_none(),
+        controller.state.session().get_result(0).is_none(),
         "the rescale replaced the geometry this result was generated \
          against, so the result must be dropped. `rescale_model` calls no \
          `invalidate_model` and runs no stale sweep, so the card stays green \
@@ -317,7 +325,7 @@ fn a_rescale_drops_the_dependent_results() {
          sweep stamps it"
     );
     assert!(
-        controller.state.session.get_result(1).is_some(),
+        controller.state.session().get_result(1).is_some(),
         "the bystander is bound to a DIFFERENT model, so its result must \
          survive — this is `invalidate_model`, not `drop_all_results`"
     );
@@ -343,12 +351,12 @@ fn a_reload_drops_the_dependent_results_control() {
     controller.reload_model(id).expect("reload must succeed");
 
     assert!(
-        controller.state.session.get_result(0).is_none(),
+        controller.state.session().get_result(0).is_none(),
         "reload already drops the dependent result"
     );
     assert!(is_stale(&controller, 0), "and stamps it stale");
     assert!(
-        controller.state.session.get_result(1).is_some(),
+        controller.state.session().get_result(1).is_some(),
         "and leaves the bystander alone"
     );
 
@@ -385,10 +393,10 @@ fn a_step_rescale_changes_nothing_and_drops_nothing() {
     let _ = builder
         .add_toolpath(0, toolpath("On the STEP", model_id))
         .expect("add the dependent toolpath");
-    controller.state.session = builder.build();
-    let session = &mut controller.state.session;
-    let revision = session.toolpath_revision(0);
-    let _ = session
+    controller.state.replace_session(builder.build());
+    let state = &mut controller.state;
+    let revision = state.session().toolpath_revision(0);
+    let _ = state
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,
             revision,
@@ -401,7 +409,7 @@ fn a_step_rescale_changes_nothing_and_drops_nothing() {
         .expect("a STEP rescale must not error");
 
     assert!(
-        controller.state.session.get_result(0).is_some(),
+        controller.state.session().get_result(0).is_some(),
         "the STEP arm returns before the import, so nothing moved and the \
          result must survive"
     );
@@ -429,7 +437,7 @@ fn new_import_options_drop_the_dependent_results_p4_8() {
         .set_model_import_options(id, join(0.5))
         .expect("the options apply");
 
-    let model = &controller.state.session.models()[0];
+    let model = &controller.state.session().models()[0];
     assert_eq!(model.id, id.0);
     assert_eq!(
         model.import_options,
@@ -437,12 +445,12 @@ fn new_import_options_drop_the_dependent_results_p4_8() {
         "the record takes the options"
     );
     assert!(
-        controller.state.session.get_result(0).is_none(),
+        controller.state.session().get_result(0).is_none(),
         "the join can change the items, so the dependent result goes"
     );
     assert!(is_stale(&controller, 0), "and reads stale");
     assert!(
-        controller.state.session.get_result(1).is_some(),
+        controller.state.session().get_result(1).is_some(),
         "the bystander reads another model"
     );
     assert!(!is_stale(&controller, 1));
@@ -457,7 +465,7 @@ fn unchanged_import_options_drop_nothing_p4_8() {
     controller
         .set_model_import_options(id, rs_cam_core::io::ImportOptions::default())
         .expect("a no-op applies");
-    assert!(controller.state.session.get_result(0).is_some());
+    assert!(controller.state.session().get_result(0).is_some());
     assert!(!is_stale(&controller, 0));
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -474,7 +482,7 @@ fn every_refresh_door_keeps_the_import_options_p4_8() {
         .expect("the options apply");
     let options_of = |c: &AppController<SilentBackend>| {
         c.state
-            .session
+            .session()
             .models()
             .iter()
             .find(|m| m.id == id.0)

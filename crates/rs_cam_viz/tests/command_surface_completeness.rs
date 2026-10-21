@@ -526,11 +526,20 @@ const UI_DISPATCH: &[&str] = &["src/controller/events/mod.rs", "src/app/input.rs
 
 /// What a view handler must never contain.
 ///
-/// The pattern is scoped to the SESSION receiver on purpose. A bare
+/// The pattern names the session write doors on purpose. A bare
 /// `_mut(` would match `toolpath_rt.get_mut(`, `feeds_modal.as_mut()` and
 /// `controller.state_mut()`, which are view writes and exactly what a
-/// view command is for.
-const SESSION_WRITES: &[&str] = &["session.apply(", "session.set_", "state.session ="];
+/// view command is for. F096 made the session field private, so the
+/// only writes are the `AppState` doors (`apply`, `replace_session`,
+/// `start_job`) and the controller door (`AppController::apply`).
+const SESSION_WRITES: &[&str] = &[
+    "self.apply(",
+    "state.apply(",
+    "state_mut().apply(",
+    "controller.apply(",
+    "replace_session(",
+    "start_job(",
+];
 
 /// Locate the `UiCommand::<Name>` arms of one dispatch file.
 ///

@@ -209,7 +209,7 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, events: &mut Vec<AppEvent
     let Some(mut wizard) = state.panels.pin_wizard.take() else {
         return;
     };
-    let session = &state.session;
+    let session = state.session();
     let report = session.pin_set_report_for(&wizard.pins);
     let screen = ctx.content_rect();
     let max_width = (screen.width() - SCREEN_MARGIN).max(320.0);

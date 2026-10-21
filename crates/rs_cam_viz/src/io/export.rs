@@ -319,7 +319,7 @@ fn emitted_result_toolpath<'a>(
         return None;
     }
     Some((
-        gui.toolpath_rt.get(&tc.id)?.result.as_ref()?.toolpath(),
+        gui.toolpath_rt.get(&tc.id)?.run.result()?.toolpath(),
         FeedStage::Planned,
     ))
 }

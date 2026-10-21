@@ -87,7 +87,7 @@ fn mesh_seed() -> AppController<SilentBackend> {
         import_report: None,
         drawing: Default::default(),
     });
-    controller.state.session = builder.build();
+    controller.state.replace_session(builder.build());
     controller
 }
 
@@ -106,14 +106,14 @@ fn warnings(controller: &AppController<SilentBackend>) -> Vec<String> {
 #[test]
 fn a_new_3d_op_on_a_mesh_gets_silhouette_plus_one_tool_diameter() {
     let mut controller = mesh_seed();
-    let tool_diameter = controller.state.session.tools()[0].diameter;
+    let tool_diameter = controller.state.session().tools()[0].diameter;
     assert!(tool_diameter > 0.0, "the seed tool has a diameter");
 
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Adaptive3d));
 
     // Non-vacuity: the add must have CREATED the toolpath. A Suggest
     // refusal creates nothing and would pass an assertion on an empty list.
-    let configs = controller.state.session.toolpath_configs();
+    let configs = controller.state.session().toolpath_configs();
     assert_eq!(
         configs.len(),
         1,
@@ -168,7 +168,7 @@ fn a_new_2d_op_keeps_the_disabled_default() {
 
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Face));
 
-    let configs = controller.state.session.toolpath_configs();
+    let configs = controller.state.session().toolpath_configs();
     assert_eq!(
         configs.len(),
         1,

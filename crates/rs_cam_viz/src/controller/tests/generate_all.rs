@@ -20,7 +20,6 @@ fn submit_toolpath_compute_missing_prior_stock_resolves_mcp_waiter() {
     let index = index_of(&controller, tp_id);
     let _ = controller
         .state
-        .session
         .apply(Command::SetStockSource(SetStockSourceArgs {
             index,
             source: crate::state::toolpath::StockSource::FromRemainingStock,
@@ -57,11 +56,11 @@ fn submit_toolpath_compute_missing_prior_stock_resolves_mcp_waiter() {
         .expect("runtime should exist after the block");
     assert!(
         matches!(
-            &rt.status,
+            &rt.run.status(),
             crate::state::toolpath::ComputeStatus::AwaitingPriorStock(_)
         ),
         "A/M11: a missing upstream snapshot is a sequencing state, not an Error —          conflating them is what made 'cannot yet' indistinguishable from          'cannot ever'. Got {:?}",
-        rt.status
+        rt.run.status()
     );
 }
 
@@ -75,27 +74,33 @@ fn blocked_rest_op_names_its_blocking_upstream_operation() {
     let mut controller = sample_controller();
     // Build a two-op setup: index 0 is the blocker, index 1 is the rest op.
     push_toolpath(&mut controller, "Rest Finish");
-    let blocker_id = controller.state.session.toolpath_configs()[0].id;
-    let blocker_name = controller.state.session.toolpath_configs()[0].name.clone();
-    let rest_id = controller.state.session.toolpath_configs()[1].id;
+    let blocker_id = controller.state.session().toolpath_configs()[0].id;
+    let blocker_name = controller.state.session().toolpath_configs()[0]
+        .name
+        .clone();
+    let rest_id = controller.state.session().toolpath_configs()[1].id;
     let rest_index = index_of(&controller, rest_id);
     let _ = controller
         .state
-        .session
         .apply(Command::SetStockSource(SetStockSourceArgs {
             index: rest_index,
             source: crate::state::toolpath::StockSource::FromRemainingStock,
         }))
         .expect("the index comes from the session");
 
-    // Blocker not generated: the wait is at least two rounds.
+    // Blocker not generated: the wait is at least two rounds. F031: the
+    // fixture seeds a result on the blocker, and only `ToolpathRun::Done`
+    // holds one, so the arm clears the run to say "not generated". The
+    // old record held the result beside a `Pending` status.
+    controller.state.gui.toolpath_rt_or_default(blocker_id).run =
+        crate::state::runtime::ToolpathRun::Pending;
     controller.submit_toolpath_compute(rest_id);
     let block = controller
         .state
         .gui
         .toolpath_rt
         .get(&rest_id)
-        .and_then(|rt| rt.status.blocked_on().cloned())
+        .and_then(|rt| rt.run.status().blocked_on().cloned())
         .expect("rest op with no prior stock must record AwaitingPriorStock");
     assert_eq!(block.blocking_toolpath_id, Some(blocker_id));
     assert_eq!(block.blocking_toolpath_index, Some(0));
@@ -117,18 +122,14 @@ fn blocked_rest_op_names_its_blocking_upstream_operation() {
 
     // Blocker generated: exactly one simulation is enough, and the message
     // must say so rather than repeating the vague ladder warning.
-    controller
-        .state
-        .gui
-        .toolpath_rt_or_default(blocker_id)
-        .status = crate::state::toolpath::ComputeStatus::Done;
+    controller.state.gui.toolpath_rt_or_default(blocker_id).run = done_run();
     controller.submit_toolpath_compute(rest_id);
     let block = controller
         .state
         .gui
         .toolpath_rt
         .get(&rest_id)
-        .and_then(|rt| rt.status.blocked_on().cloned())
+        .and_then(|rt| rt.run.status().blocked_on().cloned())
         .expect("still blocked — no simulation has run");
     assert!(
         block.message.contains("ONE simulation"),
@@ -175,28 +176,27 @@ fn diagnostics_separate_blocked_from_failed_and_exclude_disabled() {
     push_toolpath(&mut controller, "Switched Off");
     let ids: Vec<_> = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| tc.id)
         .collect();
 
-    controller.state.gui.toolpath_rt_or_default(ids[1]).status =
-        crate::state::toolpath::ComputeStatus::AwaitingPriorStock(
+    controller.state.gui.toolpath_rt_or_default(ids[1]).run =
+        crate::state::runtime::ToolpathRun::AwaitingPriorStock(
             rs_cam_core::compute::AwaitingPriorStock {
                 blocking_toolpath_id: Some(ids[0]),
                 blocking_toolpath_index: Some(0),
                 message: "waiting on simulated stock after 'Rough' (index 0)".to_owned(),
             },
         );
-    controller.state.gui.toolpath_rt_or_default(ids[2]).status =
-        crate::state::toolpath::ComputeStatus::Error("no 3D mesh".to_owned());
-    controller.state.gui.toolpath_rt_or_default(ids[3]).status =
-        crate::state::toolpath::ComputeStatus::Error("stale text from when it was on".to_owned());
+    controller.state.gui.toolpath_rt_or_default(ids[2]).run =
+        crate::state::runtime::ToolpathRun::Failed("no 3D mesh".to_owned());
+    controller.state.gui.toolpath_rt_or_default(ids[3]).run =
+        crate::state::runtime::ToolpathRun::Failed("stale text from when it was on".to_owned());
     let off_index = index_of(&controller, ids[3]);
     let _ = controller
         .state
-        .session
         .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
             index: off_index,
             enabled: false,
@@ -266,13 +266,13 @@ fn generate_all_drives_a_three_deep_rest_chain_in_one_call() {
     assert_eq!(reply["simulations"], 4, "reply: {reply}");
     assert_eq!(controller.compute.simulations, 4);
 
-    for tc in controller.state.session.toolpath_configs() {
+    for tc in controller.state.session().toolpath_configs() {
         let rt = controller.state.gui.toolpath_rt.get(&tc.id);
         assert!(
-            rt.is_some_and(|rt| matches!(rt.status, crate::state::toolpath::ComputeStatus::Done)),
+            rt.is_some_and(|rt| rt.run.is_done()),
             "'{}' should be Done at the end, got {:?}",
             tc.name,
-            rt.map(|rt| rt.status.label())
+            rt.map(|rt| rt.run.status().label())
         );
     }
 }
@@ -285,7 +285,7 @@ fn generate_all_drives_a_three_deep_rest_chain_in_one_call() {
 fn the_plan_terminates_on_a_genuinely_failing_op() {
     let mut controller = rest_chain_controller(3);
     // Poison the middle link. Everything downstream can then never see stock.
-    let poisoned = controller.state.session.toolpath_configs()[1].id;
+    let poisoned = controller.state.session().toolpath_configs()[1].id;
     controller.compute.poison = Some(poisoned);
 
     let (tx, mut rx) = tokio::sync::oneshot::channel();
@@ -344,7 +344,7 @@ fn a_gui_simulation_reaches_the_session_so_start_sees_the_prior_stock_n12_item10
     let mut controller = rest_chain_controller(1);
     let ids: Vec<ToolpathId> = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| tc.id)
@@ -363,7 +363,7 @@ fn a_gui_simulation_reaches_the_session_so_start_sees_the_prior_stock_n12_item10
             .gui
             .toolpath_rt
             .get(&ids[0])
-            .is_some_and(|rt| rt.result.is_some()),
+            .is_some_and(|rt| rt.run.result().is_some()),
         "the first link must generate, or the simulation below carves \
          nothing and this arm measures nothing"
     );
@@ -382,7 +382,7 @@ fn a_gui_simulation_reaches_the_session_so_start_sees_the_prior_stock_n12_item10
         .expect("the GUI adopts the snapshot into viz state");
     let session_stock = controller
         .state
-        .session
+        .session()
         .simulation_result()
         .and_then(|simulation| simulation.prior_stocks.get(&ids[1]))
         .map(Arc::clone);
@@ -402,8 +402,7 @@ fn a_gui_simulation_reaches_the_session_so_start_sees_the_prior_stock_n12_item10
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let refusal = controller
         .state
-        .session
-        .start(
+        .start_job(
             rs_cam_core::session::Job::GenerateToolpath(
                 rs_cam_core::session::GenerateToolpathArgs { index: 1 },
             ),
@@ -446,7 +445,7 @@ fn a_save_keeps_the_simulation_so_a_rest_op_still_starts_wp17() {
     let mut controller = rest_chain_controller(1);
     let ids: Vec<ToolpathId> = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| tc.id)
@@ -465,7 +464,7 @@ fn a_save_keeps_the_simulation_so_a_rest_op_still_starts_wp17() {
     );
     controller.drain_compute_results();
     assert!(
-        controller.state.session.simulation_result().is_some(),
+        controller.state.session().simulation_result().is_some(),
         "the control: the session holds a simulation BEFORE the save"
     );
 
@@ -475,14 +474,13 @@ fn a_save_keeps_the_simulation_so_a_rest_op_still_starts_wp17() {
         .expect("the save writes the fixture file");
 
     assert!(
-        controller.state.session.simulation_result().is_some(),
+        controller.state.session().simulation_result().is_some(),
         "a save keeps the simulation; the rest operations depend on it"
     );
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let refusal = controller
         .state
-        .session
-        .start(
+        .start_job(
             rs_cam_core::session::Job::GenerateToolpath(
                 rs_cam_core::session::GenerateToolpathArgs { index: 1 },
             ),
@@ -543,7 +541,7 @@ fn generate_all_reads_the_stored_resolution_when_none_arrives() {
 
     let reply = pump_until_resolved(&mut controller, &mut rx);
     assert_eq!(reply["ok"], true, "reply: {reply}");
-    let stored = controller.state.session.simulation_resolution_mm();
+    let stored = controller.state.session().simulation_resolution_mm();
     assert_eq!(
         reply["simulation_resolution"]["mm"],
         serde_json::json!(stored)
@@ -567,7 +565,7 @@ fn a_passed_resolution_sets_the_project_value() {
 
     let reply = pump_until_resolved(&mut controller, &mut rx);
     assert_eq!(
-        controller.state.session.simulation_resolution(),
+        controller.state.session().simulation_resolution(),
         rs_cam_core::session::SimulationResolution::Fixed(0.25)
     );
     assert_eq!(reply["simulation_resolution"]["set_by_this_call"], true);
@@ -581,7 +579,6 @@ fn a_too_coarse_stored_resolution_refuses_without_a_modal() {
     let mut controller = rest_chain_controller(3);
     let _ = controller
         .state
-        .session
         .apply(Command::SetSimulationResolution(
             rs_cam_core::session::SetSimulationResolutionArgs {
                 resolution: rs_cam_core::session::SimulationResolution::Fixed(2.0),
@@ -619,14 +616,13 @@ fn an_mcp_generate_toolpath_never_opens_the_modal_g_mcpmodal() {
     let mut controller = rest_chain_controller(1);
     let _ = controller
         .state
-        .session
         .apply(Command::SetSimulationResolution(
             rs_cam_core::session::SetSimulationResolutionArgs {
                 resolution: rs_cam_core::session::SimulationResolution::Fixed(2.0),
             },
         ))
         .expect("a positive cell");
-    let rest = controller.state.session.toolpath_configs()[1].id;
+    let rest = controller.state.session().toolpath_configs()[1].id;
 
     controller.handle_generate_toolpath_mcp(rest);
 
@@ -637,7 +633,7 @@ fn an_mcp_generate_toolpath_never_opens_the_modal_g_mcpmodal() {
         .gui
         .toolpath_rt
         .get(&rest)
-        .map(|rt| rt.status.clone());
+        .map(|rt| rt.run.status());
     assert!(
         matches!(
             status,
@@ -685,11 +681,10 @@ fn fixpoint_false_keeps_the_old_single_pass_behaviour() {
 #[test]
 fn a_disabled_rest_op_is_not_generated_blocked_or_failed() {
     let mut controller = rest_chain_controller(3);
-    let off = controller.state.session.toolpath_configs()[3].id;
+    let off = controller.state.session().toolpath_configs()[3].id;
     let off_index = index_of(&controller, off);
     let _ = controller
         .state
-        .session
         .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
             index: off_index,
             enabled: false,
@@ -713,11 +708,11 @@ fn a_disabled_rest_op_is_not_generated_blocked_or_failed() {
         .gui
         .toolpath_rt
         .get(&off)
-        .map_or(&crate::state::toolpath::ComputeStatus::Pending, |rt| {
-            &rt.status
+        .map_or(crate::state::toolpath::ComputeStatus::Pending, |rt| {
+            rt.run.status()
         });
     assert_eq!(
-        crate::state::toolpath::ComputeStatus::effective(false, raw).label(),
+        crate::state::toolpath::ComputeStatus::effective(false, &raw).label(),
         "Disabled"
     );
 }
@@ -771,9 +766,9 @@ fn generate_all_does_not_report_its_own_supersede_as_a_failure() {
         .get(&tp_id)
         .expect("runtime exists");
     assert!(
-        matches!(rt.status, crate::state::toolpath::ComputeStatus::Done),
+        rt.run.is_done(),
         "the toolpath really did generate, got {:?}",
-        rt.status.label()
+        rt.run.status().label()
     );
 }
 
@@ -858,7 +853,7 @@ fn a_param_edit_mid_generate_regenerates_without_a_pending_flicker() {
         .gui
         .toolpath_rt
         .get(&tp_id)
-        .map(|rt| rt.status.label());
+        .map(|rt| rt.run.status().label());
     assert_eq!(
         status,
         Some("Computing"),
@@ -876,9 +871,9 @@ fn a_param_edit_mid_generate_regenerates_without_a_pending_flicker() {
         .get(&tp_id)
         .expect("runtime exists");
     assert!(
-        matches!(rt.status, crate::state::toolpath::ComputeStatus::Done),
+        rt.run.is_done(),
         "auto-regen must still deliver a fresh result, got {:?}",
-        rt.status.label()
+        rt.run.status().label()
     );
     assert!(
         rt.stale_since.is_none(),
@@ -937,7 +932,7 @@ fn a_param_edit_mid_generate_manual_arm_keeps_the_edit_g_lateresult() {
         entry.operation.set_feed_rate(1234.0);
     });
     assert!(
-        controller.state.session.get_result(0).is_none(),
+        controller.state.session().get_result(0).is_none(),
         "the edit drops the core result (F2.1); this test is about what \
          happens when the in-flight job then lands"
     );
@@ -959,17 +954,17 @@ fn a_param_edit_mid_generate_manual_arm_keeps_the_edit_g_lateresult() {
     );
     let rt = &controller.state.gui.toolpath_rt[&tp_id];
     assert!(
-        matches!(rt.status, crate::state::toolpath::ComputeStatus::Done),
+        rt.run.is_done(),
         "the generation finished and the status says so, got {:?}",
-        rt.status.label()
+        rt.run.status().label()
     );
     assert!(
-        rt.result.is_some(),
+        rt.run.result().is_some(),
         "STORED, not discarded: the geometry stays drawable so the operator \
          does not lose a long 3D generation and get told nothing"
     );
     assert!(
-        controller.state.session.get_result(0).is_none(),
+        controller.state.session().get_result(0).is_none(),
         "but NOT into the core cache — that is what `Current` is read from, \
          and this result answers the parameter set the operator just left"
     );
@@ -1004,7 +999,7 @@ fn a_manual_generate_with_no_edit_is_accepted_g_lateresult() {
     controller.drain_compute_results();
 
     assert!(
-        controller.state.session.get_result(0).is_some(),
+        controller.state.session().get_result(0).is_some(),
         "an unedited generation must land in the core cache"
     );
     assert_eq!(state_of(&controller, 0), FreshnessState::Current);

@@ -116,7 +116,7 @@ fn gui_with_traces() -> GuiState {
     let mut rt = ToolpathRuntime::new(true);
     rt.semantic_trace = Some(Arc::clone(&semantic_trace));
     rt.debug_trace = Some(Arc::clone(&debug_trace));
-    rt.result = Some(crate::state::toolpath::ToolpathResult {
+    rt.run = crate::state::runtime::ToolpathRun::Done(crate::state::toolpath::ToolpathResult {
         annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
             toolpath,
         )),
@@ -902,7 +902,7 @@ fn a_new_debug_trace_after_a_drop_misses_the_issue_list_g_cachekeys() {
 
     let rt = gui.toolpath_rt.get_mut(&id).expect("fixture toolpath");
     let old = rt.debug_trace.take().expect("fixture debug trace");
-    if let Some(result) = rt.result.as_mut() {
+    if let Some(result) = rt.run.result_mut() {
         result.debug_trace = None;
     }
     let copy = (*old).clone();

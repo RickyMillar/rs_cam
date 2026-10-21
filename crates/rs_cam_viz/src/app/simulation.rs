@@ -242,7 +242,7 @@ impl RsCamApp {
                         .get(i)
                         .is_none_or(|b| b.end_move <= active.start_move)
                 }) {
-                let stock_bbox = self.controller.state().session.stock_bbox();
+                let stock_bbox = self.controller.state().session().stock_bbox();
                 self.controller
                     .state()
                     .simulation
@@ -268,7 +268,7 @@ impl RsCamApp {
             } else {
                 // Before any usable checkpoint — reset to fresh stock in the
                 // group's own frame, at the point that frame starts carving.
-                let res = self.controller.state().session.simulation_resolution_mm();
+                let res = self.controller.state().session().simulation_resolution_mm();
                 let fresh = TriDexelStock::from_bounds(&active.stock_bbox, res);
                 let pb = &mut self.controller.state_mut().simulation.playback;
                 pb.live_stock = Some(fresh);
@@ -481,7 +481,7 @@ impl RsCamApp {
             // is what makes the two routes agree instead of drifting
             // (G-LATERALSCRUB). A global-frame stock is already there.
             if active.frame.is_some() && !mesh_is_final {
-                let stock_min = self.controller.state().session.stock_bbox().min;
+                let stock_min = self.controller.state().session().stock_bbox().min;
                 mesh = rs_cam_core::compute::simulate::transform_stock_mesh_to_global(
                     &mesh,
                     &active.frame,
@@ -588,7 +588,7 @@ impl RsCamApp {
         let setup = self
             .controller
             .state()
-            .session
+            .session()
             .list_setups()
             .iter()
             .find(|s| crate::state::job::SetupId(s.id) == sb.setup_id)?;
@@ -626,10 +626,10 @@ impl RsCamApp {
 
         let found = (|| {
             let state = self.controller.state();
-            let session = &state.session;
+            let session = state.session();
             let gui = &state.gui;
             let rt = gui.toolpath_rt.get(&toolpath_id);
-            let result = rt.and_then(|r| r.result.as_ref())?;
+            let result = rt.and_then(|r| r.run.result())?;
             let tp = result.toolpath();
             let motion = tp.moves.get(local_idx)?;
             let tool_info = session
@@ -730,7 +730,7 @@ impl RsCamApp {
             let geom = ToolGeometry::from_tool_config(&tool);
             let assembly_info = crate::render::sim_render::ToolAssemblyInfo::from_tool_definition(
                 &tool_def,
-                &self.controller.state().session.machine().head,
+                &self.controller.state().session().machine().head,
                 shoe,
             );
             let mut renderer = rs.renderer.write();

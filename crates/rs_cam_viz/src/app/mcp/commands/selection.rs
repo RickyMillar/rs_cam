@@ -258,13 +258,13 @@ pub(crate) fn tab_layout_reply(session: &ProjectSession, index: usize) -> serde_
 impl RsCamApp {
     /// The `tab_layout` read: the core query row (P4.6).
     pub(crate) fn mcp_tab_layout(&self, index: usize) -> String {
-        json_str(tab_layout_reply(&self.controller.state().session, index))
+        json_str(tab_layout_reply(self.controller.state().session(), index))
     }
 
     /// The `selection_status` read: the core query row.
     pub(crate) fn mcp_selection_status(&self, index: usize, target: SelectionTarget) -> String {
         json_str(selection_status_reply(
-            &self.controller.state().session,
+            self.controller.state().session(),
             index,
             target,
         ))
@@ -272,7 +272,7 @@ impl RsCamApp {
 
     /// The `list_model_items` read: the core query row.
     pub(crate) fn mcp_list_model_items(&self, p: &ListModelItemsParam) -> String {
-        json_str(list_model_items_reply(&self.controller.state().session, p))
+        json_str(list_model_items_reply(self.controller.state().session(), p))
     }
 
     /// `edit_toolpath_selection` → `Command::EditSelection`.
@@ -312,7 +312,7 @@ impl RsCamApp {
             .and_then(|t| serde_json::from_value(t.clone()).ok())
             .unwrap_or_default();
         let applied = {
-            let session = &self.controller.state().session;
+            let session = self.controller.state().session();
             session
                 .get_toolpath_config(index)
                 .map_or(serde_json::Value::Null, |tc| {
@@ -1182,7 +1182,7 @@ mod tests {
 
             let id = s.toolpath_configs()[profile].id;
             let mut state = crate::state::AppState::new();
-            state.session = s;
+            state.replace_session(s);
             state.workspace = crate::state::Workspace::Toolpaths;
             state.selection = crate::state::selection::Selection::Toolpath(id);
             state.gui.selection_ui.set_tab_edit(id, true);

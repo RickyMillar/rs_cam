@@ -116,8 +116,8 @@ fn state_for(tool: ToolConfig, select_tool: bool) -> AppState {
         .add_toolpath(0, config)
         .expect("add the tool size fixture");
     let mut state = AppState::new();
-    state.session = builder.build();
-    let id = state.session.toolpath_configs()[0].id;
+    state.replace_session(builder.build());
+    let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     if select_tool {
         state.selection = Selection::Tool(ToolId(1));

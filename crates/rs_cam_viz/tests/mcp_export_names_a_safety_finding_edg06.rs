@@ -49,7 +49,7 @@ use rs_cam_viz::io::export::{
 };
 use rs_cam_viz::state::runtime::{GuiState, StaleResultPolicy, ToolpathRuntime};
 use rs_cam_viz::state::simulation::SimulationState;
-use rs_cam_viz::state::toolpath::{ComputeStatus, OperationConfig, ToolpathResult};
+use rs_cam_viz::state::toolpath::{OperationConfig, ToolpathResult};
 
 const OP_NAME: &str = "Rough Pass";
 
@@ -163,8 +163,7 @@ fn build_state(safe_z: f64) -> (ProjectSession, GuiState, SimulationState) {
 
     let mut gui = GuiState::new();
     let mut rt = ToolpathRuntime::new(true);
-    rt.status = ComputeStatus::Done;
-    rt.result = Some(viz_result(sample_toolpath()));
+    rt.run = rs_cam_viz::state::runtime::ToolpathRun::Done(viz_result(sample_toolpath()));
     gui.toolpath_rt.insert(tp_id, rt);
     gui.post.safe_z = safe_z;
     // No simulation runs here, so every tool-load criterion reads

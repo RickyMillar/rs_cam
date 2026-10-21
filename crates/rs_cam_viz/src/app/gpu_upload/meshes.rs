@@ -106,7 +106,7 @@ pub(super) fn inputs<'a>(
         .setup_id()
         .and_then(|sid| {
             state
-                .session
+                .session()
                 .find_setup_by_id(sid.0)
                 .map(|(_, sd)| sd.obstacles.clone())
         })
@@ -121,7 +121,7 @@ pub(super) fn inputs<'a>(
     let mut plain = Vec::new();
     let mut enriched = Vec::new();
     for model in state
-        .session
+        .session()
         .models()
         .iter()
         .filter(|m| !obstacle_model_ids.contains(&m.id) && model_visibility.is_visible(m.id))

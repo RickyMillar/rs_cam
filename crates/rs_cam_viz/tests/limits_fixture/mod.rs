@@ -253,7 +253,7 @@ pub fn simulated_state(cut: Cut) -> AppState {
     });
 
     let mut state = AppState::new();
-    state.session = session;
+    state.replace_session(session);
     state.simulation = simulation;
     state.workspace = Workspace::Readiness;
     state
@@ -262,7 +262,7 @@ pub fn simulated_state(cut: Cut) -> AppState {
 /// The id of the one toolpath this fixture simulates.
 pub fn only_toolpath(state: &AppState) -> ToolpathId {
     state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .find(|tc| tc.enabled)
@@ -313,12 +313,12 @@ pub fn painted(mut body: impl FnMut(&mut egui::Ui)) -> Vec<String> {
 
 /// Every text run the Simulation Inspector paints.
 pub fn inspector_text(state: &mut AppState) -> Vec<String> {
-    let AppState {
+    let rs_cam_viz::state::StateParts {
         simulation,
         session,
         gui,
         ..
-    } = state;
+    } = state.split_mut();
     painted(|ui| {
         let mut events = Vec::new();
         rs_cam_viz::ui::sim_diagnostics::draw(ui, simulation, session, gui, &mut events);
@@ -328,13 +328,13 @@ pub fn inspector_text(state: &mut AppState) -> Vec<String> {
 /// Every text run the Simulation op list paints — the left rail of the
 /// Simulation workspace, where `toolpath_status_flags` puts its triage chips.
 pub fn op_list_text(state: &mut AppState) -> Vec<String> {
-    let AppState {
+    let rs_cam_viz::state::StateParts {
         simulation,
         session,
         gui,
         viewport,
         ..
-    } = state;
+    } = state.split_mut();
     painted(|ui| {
         let mut events = Vec::new();
         rs_cam_viz::ui::sim_op_list::draw(ui, simulation, session, gui, viewport, &mut events);

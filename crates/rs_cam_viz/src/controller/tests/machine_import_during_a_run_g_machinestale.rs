@@ -111,7 +111,6 @@ fn import_machine_settings_as_mcp_does(controller: &mut AppController<ScriptedBa
     let import = MachineKinematics::from_grbl_settings("$30=24000\n$341=4\n");
     let _effects = controller
         .state
-        .session
         .apply(Command::ImportMachineSettings(ImportMachineSettingsArgs {
             import: Box::new(import),
         }))
@@ -168,7 +167,7 @@ fn a_machine_import_during_a_run_reads_machine_stale_g_machinestale() {
     // 3. The run lands with the stamp from before the import.
     inject_a_run_with_a_trace(&mut controller);
     assert!(
-        controller.state.session.simulation_result().is_none(),
+        controller.state.session().simulation_result().is_none(),
         "the core refuses the run: it used the machine from before the import"
     );
     assert!(
@@ -242,7 +241,7 @@ fn a_machine_import_during_a_run_reads_machine_stale_g_machinestale() {
 
     // 5. The re-run answers the live epoch, and the core holds it.
     inject_a_run_with_a_trace(&mut controller);
-    assert!(controller.state.session.simulation_result().is_some());
+    assert!(controller.state.session().simulation_result().is_some());
     assert_eq!(
         controller.state.simulation_freshness(),
         SimFreshness::Current
@@ -258,7 +257,7 @@ fn a_machine_import_before_the_run_lands_current_g_machinestale() {
     import_machine_settings_as_mcp_does(&mut controller);
     controller.handle_internal_event(AppEvent::RunSimulation);
     inject_a_run_with_a_trace(&mut controller);
-    assert!(controller.state.session.simulation_result().is_some());
+    assert!(controller.state.session().simulation_result().is_some());
     assert_eq!(
         controller.state.simulation_freshness(),
         SimFreshness::Current
@@ -271,7 +270,7 @@ fn a_machine_import_before_the_run_lands_current_g_machinestale() {
 #[test]
 fn a_parameter_edit_during_a_run_names_the_parameters_g_machinestale() {
     let mut controller = controller_after_generate_all();
-    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    let tp_id = controller.state.session().toolpath_configs()[0].id;
     controller.handle_internal_event(AppEvent::RunSimulation);
     panel_edit(&mut controller, tp_id, |entry| {
         entry.operation.set_feed_rate(4321.0);

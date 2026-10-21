@@ -111,23 +111,23 @@ fn state() -> (AppState, MatchKey) {
         .add_toolpath(0, toolpath("Drill", OperationType::Drill))
         .unwrap();
     let mut state = AppState::new();
-    state.session = builder.build();
+    state.replace_session(builder.build());
     let circles = state
-        .session
+        .session()
         .list_model_items(0, Some("HOLES"), Some(ItemKind::Circle))
         .unwrap();
     let mut lost = circles[0].key.clone();
     lost.anchor = [500.0, 400.0];
     let _ = state
-        .session
         .apply(Command::EditSelection(EditSelectionArgs {
             index: 1,
             target: SelectionTarget::Op,
             edit: SelectionEdit::Replace(Box::new(Selection::from_picks(vec![lost.clone()]))),
         }))
         .unwrap();
-    for config in state.session.toolpath_configs() {
-        state
+    let parts = state.split_mut();
+    for config in parts.session.toolpath_configs() {
+        parts
             .gui
             .toolpath_rt
             .insert(config.id, ToolpathRuntime::new(true));
@@ -136,7 +136,7 @@ fn state() -> (AppState, MatchKey) {
 }
 
 fn select(state: &mut AppState, index: usize) {
-    let id = state.session.toolpath_configs()[index].id;
+    let id = state.session().toolpath_configs()[index].id;
     state.selection = UiSelection::Toolpath(id);
     state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::Geometry));
 }
@@ -227,7 +227,7 @@ fn show_me_frames_a_note_and_a_lost_pick_p4_4() {
     );
     let keys = one_frame_request(&click(&ctx, &mut state, &note));
     let paths = state
-        .session
+        .session()
         .list_model_items(0, Some("TEXT"), Some(ItemKind::Path))
         .unwrap();
     assert_eq!(paths.len(), 1, "the fixture holds one open line");
@@ -235,22 +235,22 @@ fn show_me_frames_a_note_and_a_lost_pick_p4_4() {
     assert!(keys[0].matches(&paths[0].key), "{keys:?}");
 
     // Claim 3, note arm: the box of the path ring in the display frame.
-    let pocket = state.session.toolpath_configs()[0].id;
-    let bbox = selection_frame_bounds(&state.session, pocket, &keys).expect("a box");
-    let ring = state.session.models()[0]
+    let pocket = state.session().toolpath_configs()[0].id;
+    let bbox = selection_frame_bounds(state.session(), pocket, &keys).expect("a box");
+    let ring = state.session().models()[0]
         .items
         .iter()
         .find(|i| i.kind() == ItemKind::Path)
         .and_then(|i| i.shape().drawing_ring().cloned())
         .unwrap();
-    let frame = rs_cam_viz::interaction::picking::toolpath_setup_frame(&state.session, pocket);
+    let frame = rs_cam_viz::interaction::picking::toolpath_setup_frame(state.session(), pocket);
     let shown: Vec<_> = ring
         .exterior
         .iter()
         .map(|p| {
             rs_cam_viz::interaction::picking::item_display_xy(
                 frame.as_ref(),
-                state.session.stock_config(),
+                state.session().stock_config(),
                 *p,
             )
         })
@@ -274,14 +274,15 @@ fn show_me_frames_a_note_and_a_lost_pick_p4_4() {
 
     // Claim 3, lost arm: the anchor grown by half the circle diameter, in
     // the display frame.
-    let drill = state.session.toolpath_configs()[1].id;
-    let bbox = selection_frame_bounds(&state.session, drill, &keys).expect("a box for a lost pick");
-    let frame = rs_cam_viz::interaction::picking::toolpath_setup_frame(&state.session, drill);
+    let drill = state.session().toolpath_configs()[1].id;
+    let bbox =
+        selection_frame_bounds(state.session(), drill, &keys).expect("a box for a lost pick");
+    let frame = rs_cam_viz::interaction::picking::toolpath_setup_frame(state.session(), drill);
     let half = (lost.measure / 2.0).max(rs_cam_viz::interaction::picking::POINT_MARK_RADIUS_MM);
     let corner = |dx: f64, dy: f64| {
         rs_cam_viz::interaction::picking::item_display_xy(
             frame.as_ref(),
-            state.session.stock_config(),
+            state.session().stock_config(),
             rs_cam_core::geo::P2::new(lost.anchor[0] + dx, lost.anchor[1] + dy),
         )
     };
@@ -389,10 +390,9 @@ fn at_the_top_state() -> (AppState, Vec<MatchKey>) {
         .model(model);
     builder.add_toolpath(0, pocket).unwrap();
     let mut state = AppState::new();
-    state.session = builder.build();
+    state.replace_session(builder.build());
     for key in &keys {
         let _ = state
-            .session
             .apply(Command::EditSelection(EditSelectionArgs {
                 index: 0,
                 target: SelectionTarget::Op,
@@ -400,8 +400,9 @@ fn at_the_top_state() -> (AppState, Vec<MatchKey>) {
             }))
             .unwrap();
     }
-    for config in state.session.toolpath_configs() {
-        state
+    let parts = state.split_mut();
+    for config in parts.session.toolpath_configs() {
+        parts
             .gui
             .toolpath_rt
             .insert(config.id, ToolpathRuntime::new(true));
@@ -421,9 +422,9 @@ fn at_the_top_state() -> (AppState, Vec<MatchKey>) {
 fn show_me_frames_only_the_face_of_an_at_the_top_note_p3_8() {
     let ctx = ctx();
     let (mut state, _keys) = at_the_top_state();
-    let tc = state.session.toolpath_configs()[0].clone();
+    let tc = state.session().toolpath_configs()[0].clone();
     let report = state
-        .session
+        .session()
         .selection_status(&tc, SelectionTarget::Op)
         .expect("the selection resolves");
     assert!(report.refusal.is_none(), "{:?}", report.refusal);
@@ -435,7 +436,7 @@ fn show_me_frames_only_the_face_of_an_at_the_top_note_p3_8() {
     );
 
     // The keys of each note, as the panel builds them: one face per note.
-    let model = state.session.models().first();
+    let model = state.session().models().first();
     let per_note = rs_cam_viz::state::selection_highlight::note_item_keys(model, &report);
     for (note, frame) in report.notes.iter().zip(&per_note) {
         assert_eq!(frame.len(), 1, "a note frames its one face: {frame:?}");

@@ -9,8 +9,8 @@ use crate::state::job::{ModelId, ToolId};
 
 use super::catalog::OperationConfig;
 use super::support::{
-    BoundaryConfig, ComputeStatus, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource,
-    ToolpathId, ToolpathStats,
+    BoundaryConfig, DressupConfig, HeightsConfig, RestAnalysisConfig, StockSource, ToolpathId,
+    ToolpathStats,
 };
 
 #[derive(Debug, Clone)]
@@ -145,8 +145,9 @@ pub struct ToolpathEntry {
     pub pre_gcode: String,
     pub post_gcode: String,
     pub stock_source: StockSource,
-    pub status: ComputeStatus,
-    pub result: Option<ToolpathResult>,
+    /// The last run and its result, as one value (F031). A copy of
+    /// `ToolpathRuntime::run`; the panel reads it and writes it nowhere.
+    pub run: crate::state::runtime::ToolpathRun,
     pub stale_since: Option<std::time::Instant>,
     pub auto_regen: bool,
     pub feeds_result: Option<rs_cam_core::feeds::FeedsResult>,
@@ -231,8 +232,7 @@ impl ToolpathEntry {
             pre_gcode: init.pre_gcode,
             post_gcode: init.post_gcode,
             stock_source: init.stock_source,
-            status: ComputeStatus::Pending,
-            result: None,
+            run: crate::state::runtime::ToolpathRun::Pending,
             stale_since: None,
             auto_regen,
             feeds_result: None,
@@ -282,8 +282,7 @@ impl ToolpathEntry {
     /// caller. No production path reads it (S29, tech debt 2026-09-16).
     #[cfg(test)]
     pub(crate) fn clear_runtime_state(&mut self) {
-        self.status = ComputeStatus::Pending;
-        self.result = None;
+        self.run = crate::state::runtime::ToolpathRun::Pending;
         self.stale_since = None;
         self.feeds_result = None;
         self.feeds_memo = crate::state::runtime::FeedsMemo::default();
@@ -298,6 +297,7 @@ impl ToolpathEntry {
 mod tests {
     use super::*;
     use crate::state::job::{ModelId, ToolId};
+    use crate::state::runtime::ToolpathRun;
     use crate::state::toolpath::{
         Adaptive3dConfig, OperationConfig, OperationType, StockSource, ToolpathStats,
     };
@@ -326,8 +326,7 @@ mod tests {
         );
         source.enabled = false;
         source.stock_source = StockSource::FromRemainingStock;
-        source.status = ComputeStatus::Done;
-        source.result = Some(ToolpathResult {
+        source.run = ToolpathRun::Done(ToolpathResult {
             annotated: Arc::new(AnnotatedToolpath::new(Toolpath::new())),
             stats: ToolpathStats::default(),
             debug_trace: None,
@@ -344,8 +343,7 @@ mod tests {
             duplicate.operation,
             OperationConfig::Adaptive3d(Adaptive3dConfig { .. })
         ));
-        assert!(matches!(duplicate.status, ComputeStatus::Pending));
-        assert!(duplicate.result.is_none());
+        assert!(matches!(duplicate.run, ToolpathRun::Pending));
     }
 
     #[test]
@@ -361,8 +359,7 @@ mod tests {
         let mut entry = ToolpathEntry::from_init(init);
         assert!(entry.auto_regen);
 
-        entry.status = ComputeStatus::Error("x".to_owned());
-        entry.result = Some(ToolpathResult {
+        entry.run = ToolpathRun::Done(ToolpathResult {
             annotated: Arc::new(AnnotatedToolpath::new(Toolpath::new())),
             stats: ToolpathStats::default(),
             debug_trace: None,
@@ -377,8 +374,7 @@ mod tests {
         entry.debug_trace_path = Some(std::env::temp_dir().join("loaded_trace.json"));
         entry.stale_since = Some(std::time::Instant::now());
         entry.clear_runtime_state();
-        assert!(matches!(entry.status, ComputeStatus::Pending));
-        assert!(entry.result.is_none());
+        assert!(matches!(entry.run, ToolpathRun::Pending));
         assert!(entry.feeds_result.is_none());
         assert!(entry.debug_trace.is_none());
         assert!(entry.debug_trace_path.is_none());

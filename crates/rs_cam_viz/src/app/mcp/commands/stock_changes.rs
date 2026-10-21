@@ -255,7 +255,7 @@ impl RsCamApp {
     fn stock_change_setup(&self, setup_index: usize) -> Result<Vec<StockChange>, CoreReply> {
         self.controller
             .state()
-            .session
+            .session()
             .list_setups()
             .get(setup_index)
             .map(|setup| setup.stock_changes.clone())
@@ -284,7 +284,7 @@ impl RsCamApp {
         let stock_material = self
             .controller
             .state()
-            .session
+            .session()
             .stock_config()
             .material
             .clone();
@@ -450,9 +450,6 @@ impl RsCamApp {
         before: &CoreBefore,
     ) -> CoreReply {
         self.controller.state_mut().gui.mark_edited();
-        if effects.simulation_cleared {
-            self.controller.invalidate_simulation();
-        }
         let setup_index = before.index();
         let change_id = before
             .extra
@@ -476,7 +473,7 @@ impl RsCamApp {
         let rows: Vec<serde_json::Value> = self
             .controller
             .state()
-            .session
+            .session()
             .stock_change_rows()
             .iter()
             .filter(|row| row.setup_index == setup_index)
@@ -683,7 +680,7 @@ mod tests {
         // GUI: the setup panel paints the same label for each row.
         let setup_id = rows[0].setup_id;
         let mut state = crate::state::AppState::new();
-        state.session = session;
+        state.replace_session(session);
         state.selection =
             crate::state::selection::Selection::Setup(crate::state::job::SetupId(setup_id));
         let texts = painted_setup_panel(&mut state);
@@ -743,7 +740,7 @@ mod tests {
         let summary = crate::ui::properties::stock_changes::row_summary(pour);
         assert!(summary.ends_with("(own material)"), "{summary}");
         let mut state = crate::state::AppState::new();
-        state.session = session;
+        state.replace_session(session);
         state.selection =
             crate::state::selection::Selection::Setup(crate::state::job::SetupId(setup_id));
         let texts = painted_setup_panel(&mut state);

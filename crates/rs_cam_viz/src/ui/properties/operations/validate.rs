@@ -465,7 +465,7 @@ pub fn collect_diagnostics(
         // reads — stayed silent about a raised island the core diagnostic
         // pipeline already knew about. `None` before generation is honest:
         // nothing has been measured yet.
-        stats: entry.result.as_ref().map(|result| &result.stats),
+        stats: entry.run.result().map(|result| &result.stats),
     };
     // G-DEPTHSTOCKCORE (F1.18): the depth-beyond-stock caution used to be
     // appended here from a second, GUI-side copy of the rule. Both copies

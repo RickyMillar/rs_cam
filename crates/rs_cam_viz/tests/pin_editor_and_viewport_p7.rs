@@ -138,7 +138,7 @@ fn mini_session(origin: (f64, f64)) -> ProjectSession {
 
 fn stock_state() -> AppState {
     let mut state = AppState::new();
-    state.session = mini_session((0.0, 0.0));
+    state.replace_session(mini_session((0.0, 0.0)));
     state.selection = Selection::Stock;
     state
 }
@@ -155,7 +155,7 @@ fn ctx() -> egui::Context {
 /// The mini state with the wizard open on `step`.
 fn wizard_state(step: WizardStep) -> AppState {
     let mut state = stock_state();
-    let mut wizard = PinWizardState::open(&state.session);
+    let mut wizard = PinWizardState::open(state.session());
     wizard.step = step;
     state.panels.pin_wizard = Some(wizard);
     state
@@ -255,13 +255,13 @@ fn auto_place_keys_the_set_in_one_edit() {
     let ctx = ctx();
     let mut state = wizard_state(WizardStep::Place);
     let texts = settle(&ctx, &mut state);
-    let stored = state.session.stock_config().alignment_pins.clone();
+    let stored = state.session().stock_config().alignment_pins.clone();
     let _ = click(&ctx, &mut state, rect_of(&texts, "Auto-place").center());
     let pins = draft(&state);
     assert_eq!(pins.len(), 3, "{pins:?}");
-    assert!(state.session.pin_set_report_for(&pins).flip.keyed());
+    assert!(state.session().pin_set_report_for(&pins).flip.keyed());
     assert_eq!(
-        state.session.stock_config().alignment_pins,
+        state.session().stock_config().alignment_pins,
         stored,
         "the draft only, before Apply"
     );
@@ -286,10 +286,11 @@ fn auto_place_keys_the_set_in_one_edit() {
 fn a_pattern_drag_keeps_the_preset_and_the_session() {
     let ctx = ctx();
     let mut state = wizard_state(WizardStep::Place);
-    if let Some(w) = state.panels.pin_wizard.as_mut() {
-        w.place(&state.session);
+    let parts = state.split_mut();
+    if let Some(w) = parts.panels.pin_wizard.as_mut() {
+        w.place(parts.session);
     }
-    let stored = state.session.stock_config().alignment_pins.clone();
+    let stored = state.session().stock_config().alignment_pins.clone();
     let texts = settle(&ctx, &mut state);
     let label = rect_of(&texts, "Pair off");
     let before = draft(&state);
@@ -306,7 +307,7 @@ fn a_pattern_drag_keeps_the_preset_and_the_session() {
         let at = start - egui::vec2(3.0 * step as f32, 0.0);
         let _ = frame(&ctx, &mut state, vec![egui::Event::PointerMoved(at)]);
         assert_eq!(
-            state.session.stock_config().alignment_pins,
+            state.session().stock_config().alignment_pins,
             stored,
             "a drag frame wrote the session"
         );
@@ -318,7 +319,7 @@ fn a_pattern_drag_keeps_the_preset_and_the_session() {
     let _ = frame(&ctx, &mut state, Vec::new());
     let after = draft(&state);
     assert_ne!(after, before);
-    let report = state.session.pin_set_report_for(&after);
+    let report = state.session().pin_set_report_for(&after);
     assert!(
         matches!(
             report.preset,
@@ -349,8 +350,8 @@ fn the_ghost_row_is_ready_exactly_while_the_set_does_not_key() {
 
     // The ghost of the two axis pins lands ON the real pins (a half turn
     // swaps them). Its ring must not lie on the pin circle, or it hides.
-    let report = state.session.pin_set_report();
-    let pins = state.session.stock_config().alignment_pins.clone();
+    let report = state.session().pin_set_report();
+    let pins = state.session().stock_config().alignment_pins.clone();
     for (ghost, pin) in report.wrong_seating_images.iter().zip(&pins) {
         let on_a_pin = pins
             .iter()
@@ -369,7 +370,6 @@ fn the_ghost_row_is_ready_exactly_while_the_set_does_not_key() {
         AlignmentPin::new(6.0, 59.0, 6.0),
     ];
     let _ = state
-        .session
         .apply(rs_cam_core::session::Command::SetAlignmentPins(
             rs_cam_core::session::SetAlignmentPinsArgs { pins: keyed },
         ))
@@ -393,19 +393,19 @@ fn a_pick_on_a_flipped_setup_hits_the_drawn_pin() {
     use rs_cam_viz::state::pin_view::{active_display_setup, pin_display_point};
 
     let mut state = AppState::new();
-    state.session = mini_session((-15.0, -20.0));
+    state.replace_session(mini_session((-15.0, -20.0)));
     let back = state
-        .session
+        .session()
         .list_setups()
         .iter()
         .find(|s| s.name == "Back")
         .unwrap()
         .id;
     state.selection = Selection::Setup(rs_cam_viz::state::job::SetupId(back));
-    let (frame, _) = active_display_setup(&state.session, &state.selection).unwrap();
+    let (frame, _) = active_display_setup(state.session(), &state.selection).unwrap();
     assert_eq!(frame.face_up, FaceUp::Bottom);
 
-    let stock = state.session.stock_config().clone();
+    let stock = state.session().stock_config().clone();
     // Pin 2 at (6, 32.5): the Bottom flip maps y to 65 - y = 32.5, so use
     // a pin off the axis to see the flip.
     let pin = AlignmentPin::new(10.0, 12.0, 6.0);

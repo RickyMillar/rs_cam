@@ -136,8 +136,8 @@ mod tests {
         let mut controller = AppController::with_backend(U4SilentBackend);
         controller.open_import_dialog(&path, ModelKind::Dxf);
         controller.confirm_import_dialog().unwrap();
-        let id = controller.state().session.models()[0].id;
-        let first_open = open_shapes(&controller.state().session.models()[0].items)
+        let id = controller.state().session().models()[0].id;
+        let first_open = open_shapes(&controller.state().session().models()[0].items)
             .into_iter()
             .find(|s| s.can_close_with_line)
             .expect("mix.dxf has an open path of 3 or more points");
@@ -153,7 +153,7 @@ mod tests {
         for act in gui_acts {
             controller.edit_drawing_ledger(ModelId(id), act).unwrap();
         }
-        let gui = controller.state().session.models()[0].clone();
+        let gui = controller.state().session().models()[0].clone();
         assert_eq!(gui.drawing.edits().len(), 2);
 
         // MCP: the same import, the same two acts as wire JSON. The path

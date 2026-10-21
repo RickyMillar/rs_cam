@@ -9,22 +9,20 @@ use super::*;
 fn the_post_door_rebuilds_the_whole_mirror_shl01() {
     let mut controller = sample_controller();
 
-    let mut post = controller.state.session.post_config().clone();
+    let mut post = controller.state.session().post_config().clone();
     post.format = rs_cam_core::gcode::PostFormat::GrblHal;
     post.safe_z = 42.0;
     post.spindle_speed = 21_000;
-    let effects = controller
-        .state
-        .session
+    let _ = controller
         .apply(Command::SetPostConfig(SetPostConfigArgs {
             post: Box::new(post),
         }))
         .expect("the session accepts the post block");
 
     drift_the_post_mirror(&mut controller);
-    controller.adopt_post_effects(&effects);
+    controller.refresh_post_mirror();
 
-    assert_post_mirror_matches_session(&controller, "adopt_post_effects");
+    assert_post_mirror_matches_session(&controller, "refresh_post_mirror");
     assert_eq!(
         controller.state.gui.post.format,
         rs_cam_core::gcode::PostFormat::GrblHal,
@@ -45,7 +43,7 @@ fn the_spindle_strategy_event_rebuilds_the_whole_mirror_shl01() {
     let mut controller = sample_controller();
     let strategy = rs_cam_core::feeds::SpindleStrategy::MaxSpeed;
     assert_ne!(
-        controller.state.session.post_config().spindle_strategy,
+        controller.state.session().post_config().spindle_strategy,
         strategy,
         "the fixture must start on the other strategy, or the arm short-circuits"
     );

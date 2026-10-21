@@ -111,7 +111,7 @@ fn seed_generated_result(
         }))
         .expect("seed the core result");
     let mut rt = ToolpathRuntime::new(true);
-    rt.result = Some(ToolpathResult {
+    rt.run = rs_cam_viz::state::runtime::ToolpathRun::Done(ToolpathResult {
         annotated: Arc::new(AnnotatedToolpath::new(path)),
         stats: Default::default(),
         debug_trace: None,
@@ -378,7 +378,7 @@ fn default_wizard_state_does_not_mutate_export() {
         .enumerate()
         .filter(|(_, tc)| tc.enabled)
         .filter_map(|(idx, tc)| {
-            let result = gui.toolpath_rt.get(&tc.id)?.result.as_ref()?;
+            let result = gui.toolpath_rt.get(&tc.id)?.run.result()?;
             let shift = rs_cam_core::gcode::export_datum_shift_for_toolpath(&session, idx);
             Some((
                 idx,

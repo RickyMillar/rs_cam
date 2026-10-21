@@ -76,8 +76,8 @@ pub fn freshness_counts(state: &AppState) -> (usize, usize) {
 
     let mut stale = 0usize;
     let mut pending = 0usize;
-    for index in 0..state.session.toolpath_configs().len() {
-        match crate::state::freshness::freshness_at(&state.session, &state.gui, index) {
+    for index in 0..state.session().toolpath_configs().len() {
+        match crate::state::freshness::freshness_at(state.session(), &state.gui, index) {
             Some(FreshnessState::EditedSince) => stale += 1,
             Some(
                 FreshnessState::NoResult
@@ -94,7 +94,7 @@ pub fn freshness_counts(state: &AppState) -> (usize, usize) {
 /// operation is not [`crate::state::freshness::FreshnessState::Current`].
 pub fn operations_check(state: &AppState) -> (CheckStatus, usize, usize) {
     let enabled = state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .filter(|tc| tc.enabled)
@@ -107,13 +107,13 @@ pub fn operations_check(state: &AppState) -> (CheckStatus, usize, usize) {
     // which is the readiness dashboard contradicting the gate it exists to
     // predict. `is_current()` is true for exactly one state, and it is the
     // state the core cache defines.
-    let computed = (0..state.session.toolpath_configs().len())
+    let computed = (0..state.session().toolpath_configs().len())
         .filter(|index| {
             state
-                .session
+                .session()
                 .get_toolpath_config(*index)
                 .is_some_and(|tc| tc.enabled)
-                && crate::state::freshness::freshness_at(&state.session, &state.gui, *index)
+                && crate::state::freshness::freshness_at(state.session(), &state.gui, *index)
                     .is_some_and(|f| f.is_current())
         })
         .count();
@@ -278,7 +278,7 @@ pub fn holder_clearance_state(state: &AppState) -> HolderClearance {
     if sim.checks.checked_at_epoch.is_none() {
         return HolderClearance::NotChecked;
     }
-    let stale = sim.collision_check_is_stale(state.session.simulation_epoch());
+    let stale = sim.collision_check_is_stale(state.session().simulation_epoch());
     let scope = sim.checks.checked_scope;
     match (stale, sim.checks.holder_collision_count) {
         (true, 0) => HolderClearance::StaleClear,
@@ -328,7 +328,7 @@ fn examined_operation(state: &AppState, scope: HolderCheckScope) -> String {
     let named = scope
         .position
         .and_then(|position| position.checked_sub(1))
-        .and_then(|index| state.session.get_toolpath_config(index))
+        .and_then(|index| state.session().get_toolpath_config(index))
         .map(|tc| tc.name.clone());
     match named {
         Some(name) => name,
@@ -354,7 +354,7 @@ pub fn tool_load_check(report: &ToolLoadReport) -> CheckStatus {
 /// The session memo builds it once per change; see
 /// `ProjectSession::tool_load_report_for`.
 pub fn load_report(state: &AppState) -> std::sync::Arc<ToolLoadReport> {
-    state.simulation.cached_load_report(&state.session)
+    state.simulation.cached_load_report(state.session())
 }
 
 /// The viz-side half of [`CycleTimeBasis`] — the pieces core cannot own.
@@ -563,7 +563,7 @@ pub fn project_cycle_time(
     for tc in session.toolpath_configs() {
         if tc.enabled
             && let Some(rt) = gui.toolpath_rt.get(&tc.id)
-            && let Some(result) = &rt.result
+            && let Some(result) = rt.run.result()
         {
             total.fold(toolpath_cycle_time(
                 session,
@@ -585,7 +585,7 @@ pub fn project_cycle_time(
 /// [`project_cycle_time`] against the live app state.
 pub fn estimate_total_time(state: &AppState) -> CycleTime {
     project_cycle_time(
-        &state.session,
+        state.session(),
         &state.gui,
         state
             .simulation
@@ -621,7 +621,7 @@ pub fn format_cycle_time(seconds: f64) -> String {
 pub fn count_tool_changes(state: &AppState) -> usize {
     let mut count = 0;
     let mut last_tool: Option<usize> = None;
-    for tc in state.session.toolpath_configs() {
+    for tc in state.session().toolpath_configs() {
         if !tc.enabled {
             continue;
         }

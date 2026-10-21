@@ -33,7 +33,7 @@ pub(crate) fn commit_tool_draft(
     draft: crate::state::job::ToolConfig,
 ) {
     let Some(committed) = state
-        .session
+        .session()
         .tools()
         .iter()
         .find(|t| t.id == tool_id)
@@ -83,7 +83,7 @@ pub(crate) fn commit_tool_draft(
 /// sources in the same order.
 fn first_model_bbox(state: &AppState) -> Option<rs_cam_core::geo::BoundingBox3> {
     state
-        .session
+        .session()
         .models()
         .iter()
         .find_map(rs_cam_core::session::LoadedModel::bbox)
@@ -113,7 +113,7 @@ fn first_model_bbox(state: &AppState) -> Option<rs_cam_core::geo::BoundingBox3> 
 ///   moved. The panel raises both flags; the frame loop discharges them.
 pub(crate) fn apply_stock_draft(state: &mut AppState, draft: crate::state::job::StockConfig) {
     let draft = super::stock::reconcile_auto_from_model(
-        state.session.stock_config(),
+        state.session().stock_config(),
         draft,
         first_model_bbox(state).as_ref(),
     );
@@ -125,27 +125,20 @@ pub(crate) fn apply_stock_draft(state: &mut AppState, draft: crate::state::job::
     // A draft that moves the pins AND the part-model choice in one frame
     // (a focused pattern field loses focus to a part-model click) takes
     // two narrow rows, not one `SetStockConfig` that drops every result.
-    if let Some(first) = part_models_first(state.session.stock_config(), &draft)
+    if let Some(first) = part_models_first(state.session().stock_config(), &draft)
         && apply_panel_command(state, first)
     {
         state.gui.mark_edited();
     }
-    let Some(command) = stock_edit_command(state.session.stock_config(), draft) else {
+    let Some(command) = stock_edit_command(state.session().stock_config(), draft) else {
         return;
     };
-    match state.session.apply(command) {
-        Ok(effects) => {
-            crate::state::stale::stamp_stale(state, &effects.stale);
-            state.gui.mark_edited();
-            state.panel_side_effects.upload = true;
-            state.panel_side_effects.pin_drill_sync = true;
-            if effects.simulation_cleared {
-                state.panel_side_effects.invalidate_simulation = true;
-            }
-        }
-        Err(error) => {
-            tracing::warn!("the stock edit was refused: {error}");
-        }
+    // The door stamps the stale set, raises the simulation flag and
+    // logs a refusal (F096, F056).
+    if state.apply(command).is_ok() {
+        state.gui.mark_edited();
+        state.panel_side_effects.upload = true;
+        state.panel_side_effects.pin_drill_sync = true;
     }
 }
 
@@ -228,25 +221,15 @@ pub(crate) fn part_models_first(
 /// the session's simulation reports `Effects::simulation_cleared`, and
 /// the viewport must not go on drawing a simulation the session no
 /// longer holds (WP11b, N12 item 10). A draw site cannot clear the
-/// view itself, so it raises `PanelSideEffects::invalidate_simulation`
-/// and the frame loop discharges it.
+/// view itself. F096: `AppState::apply` raises
+/// `PanelSideEffects::invalidate_simulation`, and the frame loop
+/// discharges it.
 pub(super) fn apply_panel_command(
     state: &mut AppState,
     command: rs_cam_core::session::Command,
 ) -> bool {
-    match state.session.apply(command) {
-        Ok(effects) => {
-            crate::state::stale::stamp_stale(state, &effects.stale);
-            if effects.simulation_cleared {
-                state.panel_side_effects.invalidate_simulation = true;
-            }
-            true
-        }
-        Err(error) => {
-            tracing::warn!("the properties panel edit was refused: {error}");
-            false
-        }
-    }
+    // `AppState::apply` stamps, raises the flag and logs a refusal (F096).
+    state.apply(command).is_ok()
 }
 
 /// Apply the setup panel's draft, one command per field group that moved.
@@ -330,7 +313,7 @@ pub(crate) fn apply_obstacle_draft(
         return Ok(());
     }
     let Some(setup_id) = state
-        .session
+        .session()
         .list_setups()
         .get(setup_index)
         .map(|s| crate::state::job::SetupId(s.id))
@@ -342,12 +325,8 @@ pub(crate) fn apply_obstacle_draft(
         obstacle_id: stored.id,
         obstacle: Box::new(obstacle.clone()),
     });
-    match state.session.apply(command) {
-        Ok(effects) => {
-            crate::state::stale::stamp_stale(state, &effects.stale);
-            if effects.simulation_cleared {
-                state.panel_side_effects.invalidate_simulation = true;
-            }
+    match state.apply(command) {
+        Ok(_) => {
             state
                 .history
                 .push(crate::state::history::UndoAction::ObstacleChange {
@@ -380,19 +359,15 @@ pub(crate) fn apply_head(
     head: rs_cam_core::machine::head::MachineHead,
 ) -> Result<(), String> {
     use rs_cam_core::session::{Command, SetMachineHeadArgs};
-    let stored = state.session.machine().head.clone();
+    let stored = state.session().machine().head.clone();
     if head == stored {
         return Ok(());
     }
     let command = Command::SetMachineHead(SetMachineHeadArgs {
         head: Box::new(head.clone()),
     });
-    match state.session.apply(command) {
-        Ok(effects) => {
-            crate::state::stale::stamp_stale(state, &effects.stale);
-            if effects.simulation_cleared {
-                state.panel_side_effects.invalidate_simulation = true;
-            }
+    match state.apply(command) {
+        Ok(_) => {
             state
                 .history
                 .push(crate::state::history::UndoAction::HeadChange {
@@ -481,7 +456,7 @@ pub(super) fn apply_machine_import(
         import: Box::new(import),
     });
     if apply_panel_command(state, command) {
-        state.gui.post = state.session.post_config().clone();
+        state.gui.post = state.session().post_config().clone();
         state.gui.mark_edited();
     }
 }
@@ -514,7 +489,7 @@ pub(super) fn flush_machine_snapshot(state: &mut AppState) {
                 .history
                 .push(crate::state::history::UndoAction::MachineChange {
                     old,
-                    new: state.session.machine().clone(),
+                    new: state.session().machine().clone(),
                 });
             state.gui.mark_edited();
         } else {
@@ -530,7 +505,7 @@ pub(super) fn flush_toolpath_snapshot(state: &mut AppState) {
     {
         if !matches!(state.selection, crate::state::selection::Selection::Toolpath(id) if id == tp_id)
         {
-            if let Some((_, tc)) = state.session.find_toolpath_config_by_id(tp_id) {
+            if let Some((_, tc)) = state.session().find_toolpath_config_by_id(tp_id) {
                 state
                     .history
                     .push(crate::state::history::UndoAction::ToolpathParamChange {

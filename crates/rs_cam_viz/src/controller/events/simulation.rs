@@ -138,17 +138,12 @@ impl<B: ComputeBackend> AppController<B> {
         &mut self,
         resolution: rs_cam_core::session::SimulationResolution,
     ) -> Result<rs_cam_core::session::Effects, rs_cam_core::session::SessionError> {
-        let changed = self.state.session.simulation_resolution() != resolution;
-        let effects =
-            self.state
-                .session
-                .apply(rs_cam_core::session::Command::SetSimulationResolution(
-                    rs_cam_core::session::SetSimulationResolutionArgs { resolution },
-                ))?;
-        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-        if effects.simulation_cleared {
-            self.invalidate_simulation();
-        }
+        let changed = self.state.session().simulation_resolution() != resolution;
+        // `AppController::apply` mirrors the stale set and the simulation
+        // drop (F096).
+        let effects = self.apply(rs_cam_core::session::Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs { resolution },
+        ))?;
         if changed {
             self.state.gui.mark_edited();
         }
@@ -171,15 +166,15 @@ impl<B: ComputeBackend> AppController<B> {
         // full stock height instead of the commanded DOC. `ProjectSession::
         // stock_bbox()` delegates to `StockConfig::bbox()` which applies
         // the origin correctly.
-        let stock_bbox = build_world_stock_bbox(&self.state.session);
+        let stock_bbox = build_world_stock_bbox(self.state.session());
 
         let mut groups: Vec<SimGroupEntry> = Vec::new();
         // H1: the shoe of every entry, from the one core shoe plan (the
         // seventh shared decision, `entry_head_fit`).
-        let shoe_of = self.state.session.resolved_shoe_lookup();
+        let shoe_of = self.state.session().resolved_shoe_lookup();
         let mut all_tools_flat: Vec<ToolConfig> = Vec::new();
 
-        for (i, setup) in self.state.session.list_setups().iter().enumerate() {
+        for (i, setup) in self.state.session().list_setups().iter().enumerate() {
             let mut toolpaths: Vec<SimToolpathEntry> = Vec::new();
             let mut tools: Vec<ToolConfig> = Vec::new();
             // F.4: mirrors `ProjectSession::run_simulation`'s phantom-
@@ -192,7 +187,7 @@ impl<B: ComputeBackend> AppController<B> {
             // of this particular request's scope.
             let mut phantom_scan = rs_cam_core::compute::simulate::PhantomPriorStockScan::default();
             for &tp_idx in &setup.toolpath_indices {
-                let Some(tc) = self.state.session.toolpath_configs().get(tp_idx) else {
+                let Some(tc) = self.state.session().toolpath_configs().get(tp_idx) else {
                     continue;
                 };
                 // G-RESTSTALE (M-C): the carve reads the CORE result, the
@@ -201,7 +196,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // viewport keeps drawing it), so carving it put a superseded
                 // toolpath into the rest snapshot while core held another.
                 let rt = self.state.gui.toolpath_rt.get(&tc.id);
-                let result = self.state.session.get_result(tp_idx);
+                let result = self.state.session().get_result(tp_idx);
                 // G-STICKYEMPTY / G-RESTLEVELS: "a result exists" is the
                 // answer of BOTH builders. Each carves every enabled result,
                 // an empty one included (with no change), so an empty op gets
@@ -230,7 +225,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // the same moves.
                 let semantic_trace = rt
                     .filter(|rt| {
-                        rt.result.as_ref().is_some_and(|held| {
+                        rt.run.result().is_some_and(|held| {
                             Arc::ptr_eq(&held.annotated, result.annotated())
                                 || rs_cam_core::compute::source_stock::carve_digest(
                                     &held.annotated.toolpath,
@@ -242,7 +237,7 @@ impl<B: ComputeBackend> AppController<B> {
                     .and_then(|rt| rt.semantic_trace.clone());
                 let Some(tool) = self
                     .state
-                    .session
+                    .session()
                     .tools()
                     .iter()
                     .find(|t| t.id.0 == tc.tool_id)
@@ -266,7 +261,7 @@ impl<B: ComputeBackend> AppController<B> {
                 tools.push(tool.clone());
                 toolpaths.push(SimToolpathEntry {
                     head: rs_cam_core::compute::simulate::entry_head_fit(
-                        &self.state.session.machine().head,
+                        &self.state.session().machine().head,
                         shoe_of(tp_idx),
                     ),
                     id: tc.id,
@@ -291,7 +286,7 @@ impl<B: ComputeBackend> AppController<B> {
             // same call core's builder makes.
             let stock_changes = rs_cam_core::compute::simulate::group_stock_changes(
                 setup,
-                self.state.session.models(),
+                self.state.session().models(),
             );
             // F.4: a setup whose every toolpath is still ungenerated
             // builds an empty `toolpaths` vec — but if the FIRST enabled
@@ -309,7 +304,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // `SetupEvalContext` so the viz controller, viz worker, and
                 // core simulate paths can never diverge again.
                 let setup_ctx = rs_cam_core::session::SetupEvalContext::build(
-                    &self.state.session,
+                    self.state.session(),
                     setup.face_up,
                     setup.z_rotation,
                 );
@@ -318,7 +313,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // builder.
                 let obstacles = rs_cam_core::compute::simulate::group_obstacles(
                     setup,
-                    self.state.session.models(),
+                    self.state.session().models(),
                 );
                 groups.push(SimGroupEntry {
                     toolpaths,
@@ -371,16 +366,16 @@ impl<B: ComputeBackend> AppController<B> {
         // run, MCP and the CLI (operator ruling 2026-09-24). `Auto` is
         // worked out over the whole project in core, never from the tools
         // of this request, so a prefix and a full run agree.
-        let request_resolution = self.state.session.simulation_resolution_mm();
+        let request_resolution = self.state.session().simulation_resolution_mm();
 
         let model_mesh = self
             .state
-            .session
+            .session()
             .models()
             .iter()
             .find_map(|m| m.mesh.clone());
 
-        let machine = self.state.session.machine();
+        let machine = self.state.session().machine();
         let max_feed_mm_min = machine.max_feed_mm_min.max(1.0);
         // F-034/F-035 — build core's own context here, so the worker
         // forwards one value instead of re-assembling three loose fields.
@@ -447,7 +442,7 @@ impl<B: ComputeBackend> AppController<B> {
         // clears the simulation bumps the epoch, so a run that lands after
         // one carries a stamp the session refuses.
         self.state.simulation.submitted_simulation_epoch =
-            Some(self.state.session.simulation_epoch());
+            Some(self.state.session().simulation_epoch());
 
         self.compute.submit_simulation(SimulationRequest {
             core,
@@ -524,10 +519,10 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn run_simulation_with_ids(&mut self, ids: &[ToolpathId]) {
-        let target_setup_idx = self.state.session.list_setups().iter().position(|s| {
+        let target_setup_idx = self.state.session().list_setups().iter().position(|s| {
             s.toolpath_indices.iter().any(|&tp_idx| {
                 self.state
-                    .session
+                    .session()
                     .toolpath_configs()
                     .get(tp_idx)
                     .is_some_and(|tc| ids.contains(&tc.id))
@@ -576,13 +571,13 @@ impl<B: ComputeBackend> AppController<B> {
     ) -> Result<rs_cam_core::compute::toolpath_stats::FreshTwinTime, String> {
         let (index, _) = self
             .state
-            .session
+            .session()
             .find_toolpath_config_by_id(tp_id)
             .ok_or_else(|| format!("no toolpath with id {}", tp_id.0))?;
         let cancel = std::sync::atomic::AtomicBool::new(false);
         let args = self
             .state
-            .session
+            .session()
             .compare_rest_with_fresh(index, &cancel)
             .map_err(|e| e.to_string())?;
         let times = args.times;
@@ -617,7 +612,7 @@ impl<B: ComputeBackend> AppController<B> {
         // asked about.
         let population = self
             .state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .filter(|tc| tc.enabled)
@@ -625,23 +620,23 @@ impl<B: ComputeBackend> AppController<B> {
         // Find first toolpath with a result and matching tool/model
         let toolpath_data = self
             .state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .enumerate()
             .find_map(|(index, tc)| {
                 let rt = self.state.gui.toolpath_rt.get(&tc.id)?;
-                let result = rt.result.as_ref()?;
+                let result = rt.run.result()?;
                 let tool = self
                     .state
-                    .session
+                    .session()
                     .tools()
                     .iter()
                     .find(|t| t.id.0 == tc.tool_id)?
                     .clone();
                 let mesh = self
                     .state
-                    .session
+                    .session()
                     .models()
                     .iter()
                     .find(|m| m.id == tc.model_id)
@@ -661,7 +656,7 @@ impl<B: ComputeBackend> AppController<B> {
             // obstacle kernel too. An obstacle that cannot be resolved
             // REFUSES the check and names the obstacle; a check with no
             // obstacles would read as clear.
-            let obstacles = match self.state.session.obstacle_set_for_toolpath(index) {
+            let obstacles = match self.state.session().obstacle_set_for_toolpath(index) {
                 Ok(obstacles) => obstacles,
                 Err(e) => {
                     let text = format!("Collision check refused: {e}");
@@ -670,11 +665,11 @@ impl<B: ComputeBackend> AppController<B> {
                     return;
                 }
             };
-            let join = self.state.session.obstacle_join_for_toolpath(index);
+            let join = self.state.session().obstacle_join_for_toolpath(index);
             // H1: the head and the shoe of this toolpath, and the stock box
             // of its setup, from the doors the core check reads.
-            let head = self.state.session.head_fit_for_toolpath(index);
-            let stock = self.state.session.setup_stock_box_for_toolpath(index);
+            let head = self.state.session().head_fit_for_toolpath(index);
+            let stock = self.state.session().setup_stock_box_for_toolpath(index);
             // G-HOLDERSTALE (F2.12): the core's simulation epoch as it
             // stands at SUBMIT, and only on the branch that really submits.
             // The `else` arm below reaches the lane with nothing, and a stamp
@@ -685,7 +680,7 @@ impl<B: ComputeBackend> AppController<B> {
             // reads reaches `ProjectSession::drop_simulation`, which is the
             // one site that moves it.
             self.state.simulation.submitted_collision_epoch =
-                Some(self.state.session.simulation_epoch());
+                Some(self.state.session().simulation_epoch());
             // G-HOLDERSCOPE (F2.13): and the population it covers, on the same
             // branch and for the same reason.
             //
@@ -845,10 +840,9 @@ mod release_for_new_run_m1 {
             stock_change_volumes: Vec::new(),
             obstacle_collisions: Vec::new(),
         };
-        let epoch = controller.state.session.simulation_epoch();
+        let epoch = controller.state.session().simulation_epoch();
         let _ = controller
             .state
-            .session
             .apply(Command::AdoptSimulation(AdoptSimulationArgs {
                 result: Box::new(core),
                 epoch,
@@ -934,7 +928,7 @@ mod release_for_new_run_m1 {
 
         let core = controller
             .state
-            .session
+            .session()
             .simulation_result()
             .expect("the core simulation stays while the new run works");
         assert!(
@@ -959,7 +953,7 @@ mod release_for_new_run_m1 {
             "nothing came back to show, and the core holds the released run"
         );
         assert!(
-            controller.state.session.simulation_result().is_some(),
+            controller.state.session().simulation_result().is_some(),
             "the core still holds the previous simulation"
         );
         let notice = release_notice(&controller)
@@ -1002,5 +996,82 @@ mod release_for_new_run_m1 {
 
         assert_eq!(controller.state.simulation_freshness(), SimFreshness::NoRun);
         assert_eq!(release_notice(&controller), None);
+    }
+
+    /// A stock edit that drops the session's simulation (F096).
+    fn stock_edit(controller: &AppController<QueueBackend>) -> Command {
+        let mut stock = controller.state.session().stock_config().clone();
+        stock.x += 1.0;
+        Command::SetStockConfig(rs_cam_core::session::SetStockConfigArgs {
+            stock: Box::new(stock),
+        })
+    }
+
+    /// F096: the state door raises the simulation flag, and the frame
+    /// loop clears the view when it discharges the flag.
+    #[test]
+    fn the_state_door_raises_the_simulation_flag_f096() {
+        let mut controller = controller_holding_a_run();
+        let command = stock_edit(&controller);
+        let effects = controller
+            .state
+            .apply(command)
+            .expect("the stock edit applies");
+        assert!(
+            effects.simulation_cleared,
+            "non-vacuity: the stock edit drops the session's simulation"
+        );
+        assert!(
+            controller.state.panel_side_effects.invalidate_simulation,
+            "the state door must raise the flag for the frame loop"
+        );
+        assert!(
+            controller.state.simulation.results.is_some(),
+            "the view clears at the discharge, not before"
+        );
+        controller.discharge_panel_side_effects();
+        assert!(
+            controller.state.simulation.results.is_none(),
+            "the discharge must clear the view simulation"
+        );
+    }
+
+    /// F096: the controller door clears the view at once, and the frame
+    /// loop owes nothing after it. Every controller and MCP write takes
+    /// this door, so an MCP row that drops the session's simulation
+    /// clears the view too.
+    #[test]
+    fn the_controller_door_clears_the_view_at_once_f096() {
+        let mut controller = controller_holding_a_run();
+        let command = stock_edit(&controller);
+        let effects = controller.apply(command).expect("the stock edit applies");
+        assert!(effects.simulation_cleared, "non-vacuity");
+        assert!(
+            controller.state.simulation.results.is_none(),
+            "the controller door must clear the view simulation at once"
+        );
+        assert!(
+            !controller.state.panel_side_effects.invalidate_simulation,
+            "the controller door did the work, so no flag stays raised"
+        );
+        assert_eq!(controller.state.simulation_freshness(), SimFreshness::NoRun);
+    }
+
+    /// F056: a refused command reaches the caller as `Err`, and the door
+    /// raises nothing.
+    #[test]
+    fn a_refused_command_raises_nothing_f056() {
+        let mut controller = controller_holding_a_run();
+        let refused = controller.apply(Command::SetSimulationResolution(
+            rs_cam_core::session::SetSimulationResolutionArgs {
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(-1.0),
+            },
+        ));
+        assert!(refused.is_err(), "a cell that is not positive must refuse");
+        assert!(!controller.state.panel_side_effects.invalidate_simulation);
+        assert!(
+            controller.state.simulation.results.is_some(),
+            "a refusal must leave the view simulation alone"
+        );
     }
 }

@@ -137,8 +137,8 @@ fn fixture() -> AppState {
         .add_toolpath(0, config)
         .expect("add the hover bound fixture");
     let mut state = AppState::new();
-    state.session = builder.build();
-    let toolpath_id = state.session.toolpath_configs()[0].id;
+    state.replace_session(builder.build());
+    let toolpath_id = state.session().toolpath_configs()[0].id;
     state.feeds_modal = Some(FeedsModalState {
         toolpath_id,
         explore: None,

@@ -31,7 +31,7 @@ impl RsCamApp {
         &self,
         index: usize,
     ) -> Result<rs_cam_core::stock::stock_mesh::StockMesh, String> {
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         let Some(spec) = session.reach_map_spec(index, None) else {
             return Err(format!(
                 "Toolpath {index} has no reach map. A reach map answers for a FINISHING \
@@ -64,7 +64,7 @@ impl RsCamApp {
     /// not a hope. It takes `&self` so that stays true by type.
     pub(super) fn mcp_reach_map(&self, spec: &rs_cam_mcp::server::ReachMapParam) -> String {
         let index = spec.index;
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         let Some(request) = session.reach_map_spec(index, spec.tolerance_mm) else {
             return json_str(serde_json::json!({
                 "ok": false,
@@ -174,16 +174,13 @@ impl RsCamApp {
             reach_overlay,
         } = options;
         // Find the toolpath result from GUI runtime
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         let gui = &self.controller.state().gui;
         let Some(tc) = session.toolpath_configs().get(index) else {
             return text(format!("Toolpath {index} not found."));
         };
 
-        let result = gui
-            .toolpath_rt
-            .get(&tc.id)
-            .and_then(|rt| rt.result.as_ref());
+        let result = gui.toolpath_rt.get(&tc.id).and_then(|rt| rt.run.result());
         let Some(result) = result else {
             return text(format!(
                 "Toolpath {index} not generated. Run generate_toolpath first."
@@ -475,12 +472,12 @@ impl RsCamApp {
             let Some(tp_id) = self
                 .controller
                 .state()
-                .session
+                .session()
                 .toolpath_configs()
                 .get(idx)
                 .map(|tc| tc.id)
             else {
-                let count = self.controller.state().session.toolpath_count();
+                let count = self.controller.state().session().toolpath_count();
                 return json_str(serde_json::json!({
                     "error": format!(
                         "Toolpath index {idx} out of range (project has {count} toolpaths)"
@@ -575,7 +572,7 @@ impl RsCamApp {
                 }
                 ModalParam::PinWizard => {
                     let wizard = crate::ui::pin_wizard::PinWizardState::open(
-                        &self.controller.state().session,
+                        self.controller.state().session(),
                     );
                     self.controller.state_mut().panels.pin_wizard = Some(wizard);
                 }
@@ -621,7 +618,7 @@ impl RsCamApp {
                 let known = self
                     .controller
                     .state()
-                    .session
+                    .session()
                     .models()
                     .iter()
                     .any(|m| m.id == model_id);
@@ -671,7 +668,7 @@ impl RsCamApp {
         let state = self.controller.state();
         let selected = match state.selection {
             Selection::Toolpath(id) => state
-                .session
+                .session()
                 .toolpath_configs()
                 .iter()
                 .enumerate()

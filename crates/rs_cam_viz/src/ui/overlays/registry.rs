@@ -316,7 +316,7 @@ fn always_ready(_state: &AppState) -> Precondition {
 }
 
 fn has_model_mesh(state: &AppState) -> bool {
-    state.session.models().iter().any(|m| m.mesh.is_some())
+    state.session().models().iter().any(|m| m.mesh.is_some())
 }
 
 fn selected_toolpath(state: &AppState) -> Option<crate::state::toolpath::ToolpathId> {
@@ -328,7 +328,11 @@ fn selected_toolpath(state: &AppState) -> Option<crate::state::toolpath::Toolpat
 
 /// Does at least one toolpath hold a generated result?
 pub(crate) fn any_generated(state: &AppState) -> bool {
-    state.gui.toolpath_rt.values().any(|rt| rt.result.is_some())
+    state
+        .gui
+        .toolpath_rt
+        .values()
+        .any(|rt| rt.run.result().is_some())
 }
 
 /// `(threshold_mm, ramp_top_mm)` of the selected toolpath's rest grid.
@@ -348,7 +352,7 @@ pub fn rest_grid_info(state: &AppState) -> Option<(f64, f32)> {
         .gui
         .toolpath_rt
         .get(&tp_id)
-        .and_then(|rt| rt.result.as_ref())
+        .and_then(|rt| rt.run.result())
         .and_then(|r| r.annotated.produced.rest_grid.as_ref())
         .map(|grid| (grid.threshold, rest_ramp_top(grid)))
 }
@@ -397,7 +401,7 @@ pub fn selected_area_regions(
         .gui
         .toolpath_rt
         .get(&tp_id)
-        .and_then(|rt| rt.result.as_ref())
+        .and_then(|rt| rt.run.result())
         .and_then(|r| r.annotated.produced.area_regions.as_ref())
 }
 
@@ -422,7 +426,7 @@ fn area_regions_precondition(state: &AppState) -> Precondition {
         return Precondition::no("select a 3D Rough with By Area ordering");
     };
     let ordering = state
-        .session
+        .session()
         .find_toolpath_config_by_id(tp_id)
         .and_then(|(_, tc)| match &tc.operation {
             OperationConfig::Adaptive3d(cfg) => Some(cfg.region_ordering),
@@ -488,7 +492,7 @@ fn reach_map_wanted(state: &AppState) -> bool {
 /// The active setup's session record, for the fixture-family preconditions.
 fn active_setup(state: &AppState) -> Option<&rs_cam_core::session::SetupData> {
     let index = state.active_setup_index()?;
-    state.session.list_setups().get(index)
+    state.session().list_setups().get(index)
 }
 
 fn in_simulation(state: &AppState) -> bool {
@@ -643,7 +647,7 @@ pub const ROWS: &[OverlayRow] = &[
         get: |s| s.viewport.show_alignment_pins,
         set: |s, on| s.viewport.show_alignment_pins = on,
         precondition: |s| {
-            if s.session.stock_config().alignment_pins.is_empty() {
+            if s.session().stock_config().alignment_pins.is_empty() {
                 Precondition::no("no alignment pin on this stock")
             } else {
                 Precondition::Ready
@@ -669,10 +673,10 @@ pub const ROWS: &[OverlayRow] = &[
         // selector, the same call the viewport draws from.
         precondition: |s| {
             let axis = s
-                .session
+                .session()
                 .stock_config()
                 .pin_flip_map(
-                    s.session
+                    s.session()
                         .list_setups()
                         .iter()
                         .map(|sd| (sd.face_up, sd.z_rotation)),
@@ -701,10 +705,10 @@ pub const ROWS: &[OverlayRow] = &[
         // seating to show, so the row is refused with that reason; the
         // flag stays on, and the ghost returns when an edit un-keys the set.
         precondition: |s| {
-            if s.session.stock_config().alignment_pins.is_empty() {
+            if s.session().stock_config().alignment_pins.is_empty() {
                 return Precondition::no("no alignment pin on this stock");
             }
-            if s.session.pin_set_report().flip.keyed() {
+            if s.session().pin_set_report().flip.keyed() {
                 Precondition::no("the pins key: no turn of the part seats it on the dowels")
             } else {
                 Precondition::Ready
@@ -728,7 +732,7 @@ pub const ROWS: &[OverlayRow] = &[
         get: |s| s.viewport.show_polygons,
         set: |s, on| s.viewport.show_polygons = on,
         precondition: |s| {
-            if s.session.models().iter().any(|m| m.items.has_drawing()) {
+            if s.session().models().iter().any(|m| m.items.has_drawing()) {
                 Precondition::Ready
             } else {
                 Precondition::no("this project carries no 2D curves")
@@ -778,7 +782,7 @@ pub const ROWS: &[OverlayRow] = &[
                 return Precondition::no(CURVES_OFF);
             }
             let has_path = crate::state::selection_highlight::highlight_toolpath(s)
-                .and_then(|tc| s.session.models().iter().find(|m| m.id == tc.model_id))
+                .and_then(|tc| s.session().models().iter().find(|m| m.id == tc.model_id))
                 .is_some_and(|m| {
                     m.items
                         .iter()
@@ -1902,17 +1906,17 @@ pub fn any_toolpath_drawn(state: &AppState) -> bool {
 pub fn drawn_toolpaths(state: &AppState) -> Vec<(usize, crate::state::toolpath::ToolpathId)> {
     let drawn = crate::state::viewport::toolpaths_to_draw(
         crate::state::viewport::ToolpathDrawFilter::from_state(state),
-        state.session.toolpath_configs().iter().map(|tc| {
+        state.session().toolpath_configs().iter().map(|tc| {
             let rt = state.gui.toolpath_rt.get(&tc.id);
             (
                 tc.id,
                 rt.is_none_or(|r| r.visible),
-                rt.is_some_and(|r| r.result.is_some()),
+                rt.is_some_and(|r| r.run.result().is_some()),
             )
         }),
     );
     state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .enumerate()

@@ -205,7 +205,7 @@ mod tests {
         controller
             .confirm_import_dialog()
             .expect("the dialog imports");
-        controller.state().session.models()[0].clone()
+        controller.state().session().models()[0].clone()
     }
 
     /// The MCP door: convert the request, apply `AddModel`.
@@ -271,14 +271,14 @@ mod tests {
         let mut controller = AppController::with_backend(U4SilentBackend);
         controller.open_import_dialog(&path, ModelKind::Svg);
         controller.confirm_import_dialog().unwrap();
-        let id = controller.state().session.models()[0].id;
+        let id = controller.state().session().models()[0].id;
         let options = ImportOptions {
             join_tolerance_mm: 0.5,
         };
         controller
             .set_model_import_options(ModelId(id), options)
             .unwrap();
-        let gui = controller.state().session.models()[0].clone();
+        let gui = controller.state().session().models()[0].clone();
         assert_eq!(gui.import_options, options);
 
         // MCP: the same project, the request, the row.

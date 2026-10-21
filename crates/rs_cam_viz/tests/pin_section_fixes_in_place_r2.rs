@@ -151,7 +151,7 @@ fn mini_pins() -> Vec<AlignmentPin> {
 
 fn stock_state(pins: Vec<AlignmentPin>) -> AppState {
     let mut state = AppState::new();
-    state.session = mini_session(pins);
+    state.replace_session(mini_session(pins));
     state.selection = Selection::Stock;
     state
 }
@@ -294,7 +294,7 @@ fn the_pin_block_is_one_line_and_one_button() {
     let wizard = state.panels.pin_wizard.as_ref().expect("the wizard opens");
     assert_eq!(wizard.pins, mini_pins());
     assert_eq!(
-        state.session.stock_config().alignment_pins,
+        state.session().stock_config().alignment_pins,
         mini_pins(),
         "opening the wizard changes nothing"
     );
@@ -329,7 +329,7 @@ fn assert_no_go_elsewhere(texts: &Texts) {
 fn the_mixed_pattern_offers_the_missing_drill_in_place() {
     let ctx = ctx();
     let mut state = stock_state(mini_pins());
-    state.panels.pin_wizard = Some(PinWizardState::open(&state.session));
+    state.panels.pin_wizard = Some(PinWizardState::open(state.session()));
     let _ = wizard_frame(&ctx, &mut state, Vec::new());
     let (texts, _) = wizard_frame(&ctx, &mut state, Vec::new());
     assert_no_go_elsewhere(&texts);
@@ -366,7 +366,7 @@ fn the_mixed_pattern_offers_the_missing_drill_in_place() {
     let wizard = state.panels.pin_wizard.as_ref().unwrap();
     assert_eq!(wizard.add_drills, vec![expected]);
     assert_eq!(
-        state.session.tools().len(),
+        state.session().tools().len(),
         2,
         "the queued drill is not a tool before Apply"
     );
@@ -425,7 +425,7 @@ fn the_pin_block_fits_the_inspector_r5b() {
         for pins in [mini_pins(), Vec::new()] {
             let ctx = ctx();
             let state = stock_state(pins.clone());
-            let session = &state.session;
+            let session = state.session();
             let stock = session.stock_config();
             let report = session.pin_set_report_for(&stock.alignment_pins);
             let drills = properties::pins::PinDrillState::of(session, &stock.alignment_pins);

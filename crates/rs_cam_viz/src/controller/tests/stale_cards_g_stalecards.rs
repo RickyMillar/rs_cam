@@ -86,7 +86,7 @@ fn computing_toolpaths(controller: &AppController) -> Vec<ToolpathId> {
         .gui
         .toolpath_rt
         .iter()
-        .filter(|(_, rt)| matches!(rt.status, crate::state::runtime::ComputeStatus::Computing))
+        .filter(|(_, rt)| matches!(rt.run, crate::state::runtime::ToolpathRun::Computing))
         .map(|(id, _)| *id)
         .collect()
 }
@@ -208,7 +208,7 @@ fn hash_toolpath(toolpath: &Toolpath) -> u64 {
 /// Print both sides of every freshness comparison `sim_trace_is_fresh`
 /// makes, so a failure names the value that moved.
 fn freshness_evidence(controller: &AppController) -> String {
-    let session = &controller.state.session;
+    let session = controller.state.session();
     let mut out = String::new();
     let viz_trace = controller
         .state
@@ -244,7 +244,7 @@ fn freshness_evidence(controller: &AppController) -> String {
             .gui
             .toolpath_rt
             .get(&tc.id)
-            .and_then(|rt| rt.result.as_ref())
+            .and_then(|rt| rt.run.result())
             .map(|result| hash_toolpath(&result.annotated.toolpath));
         let cfg_now = rs_cam_core::compute::simulate::hash_operation_config(&tc.operation);
         out.push_str(&format!(
@@ -270,11 +270,11 @@ fn freshness_evidence(controller: &AppController) -> String {
 /// The cards of `toolpath_id` that read `StaleSimulation`. Asserts that
 /// the set is not empty, so the check is not vacuous.
 fn stale_cards(controller: &mut AppController, toolpath_id: ToolpathId) -> Vec<String> {
-    let AppState {
+    let crate::state::StateParts {
         session,
         simulation,
         ..
-    } = &mut controller.state;
+    } = controller.state.split_mut();
     let set = simulation.cached_cut_metrics(session, toolpath_id);
     assert!(
         !set.cards.is_empty(),
@@ -317,7 +317,7 @@ fn generated_fixture() -> (AppController, ToolpathId, SettleBudget) {
     pump_until_settled(&mut controller, &budget, "generate all");
     let rough = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .find(|tc| tc.stock_source == rs_cam_core::compute::config::StockSource::FromRemainingStock)
@@ -359,7 +359,7 @@ fn a_gui_simulation_always_keeps_the_cut_trace_w4l() {
     assert!(
         controller
             .state
-            .session
+            .session()
             .simulation_result()
             .is_some_and(|sim| sim.cut_trace.is_some()),
         "the core adopts the same run with its trace"
@@ -403,8 +403,8 @@ fn the_cards_and_the_gui_agree_on_a_simulation_that_just_landed_g_stalecards() {
     let runtime = controller.state.gui.toolpath_rt.get(&rough).expect("row");
     assert!(
         !runtime.auto_regen
-            && runtime.result.is_some()
-            && controller.state.session.get_result(index).is_none(),
+            && runtime.run.result().is_some()
+            && controller.state.session().get_result(index).is_none(),
         "precondition: the core dropped the rough and the GUI kept its copy"
     );
 
@@ -432,7 +432,7 @@ fn the_cards_and_the_gui_agree_on_a_simulation_that_just_landed_g_stalecards() {
         // not change, so its cards keep their measured verdicts.
         let face = controller
             .state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .find(|tc| tc.id != rough && tc.enabled)
@@ -447,11 +447,11 @@ fn the_cards_and_the_gui_agree_on_a_simulation_that_just_landed_g_stalecards() {
         // the rough's row is rewritten to StaleSimulation.
         let trace = controller
             .state
-            .session
+            .session()
             .simulation_result()
             .and_then(|sim| sim.cut_trace.clone());
         let report =
-            rs_cam_core::gcode::project_load_report(&controller.state.session, trace.as_deref());
+            rs_cam_core::gcode::project_load_report(controller.state.session(), trace.as_deref());
         let stale_rows: Vec<ToolpathId> = report
             .per_toolpath
             .iter()

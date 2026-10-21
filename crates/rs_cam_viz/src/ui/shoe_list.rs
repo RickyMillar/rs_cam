@@ -48,7 +48,7 @@ fn line_hover(line: &RunLine) -> String {
 
 /// Draw the run sheet of the project.
 pub fn draw_run_sheet(ui: &mut egui::Ui, state: &AppState) {
-    let session = &state.session;
+    let session = state.session();
     let plan = state.gui.shoe_plan.plan(session);
     SectionHeader::new("Run sheet")
         .hover(SECTION_HOVER)

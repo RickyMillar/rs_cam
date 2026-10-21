@@ -18,7 +18,7 @@ use crate::mcp_bridge::{McpOutcome, McpResponse};
 
 impl RsCamApp {
     pub(super) fn mcp_project_summary(&self) -> String {
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         if session.toolpath_count() == 0 && session.models().is_empty() {
             return no_project_error();
         }
@@ -54,7 +54,7 @@ impl RsCamApp {
         // `ToolpathRuntime.stale_since` — viz-only — and the core summary
         // never sees it. (Roadmap E.3)
         let state = self.controller.state();
-        let session = &state.session;
+        let session = state.session();
         let summaries = session.list_toolpaths();
         // W5 item (c): read the edges ONCE, not once per row. `primary_edges`
         // is the row a surface draws as one line: one entry per (consumer,
@@ -68,8 +68,8 @@ impl RsCamApp {
                 // A/M11: `enabled: false` wins over whatever the op last
                 // recorded, so a switched-off toolpath can never present the
                 // rest-stock error it had while it was on.
-                let raw = rt.map_or(&ComputeStatus::Pending, |r| &r.status);
-                let status = ComputeStatus::effective(s.enabled, raw);
+                let raw = rt.map_or(ComputeStatus::Pending, |r| r.run.status());
+                let status = ComputeStatus::effective(s.enabled, &raw);
                 // `ToolpathSummary` carries no stock source, and widening it
                 // would push a viz concern into the core listing. Read the
                 // config instead.
@@ -115,7 +115,7 @@ impl RsCamApp {
     }
 
     pub(super) fn mcp_list_tools(&self) -> String {
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         json_str(serde_json::to_value(session.list_tools()).unwrap_or_default())
     }
 
@@ -219,7 +219,7 @@ impl RsCamApp {
     }
 
     pub(super) fn mcp_list_setups(&self) -> String {
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         // S4: one read for the rows, the one the GUI panel and the CLI
         // print, so the volumes agree on every surface.
         let rows = session.stock_change_rows();
@@ -251,7 +251,7 @@ impl RsCamApp {
     }
 
     pub(super) fn mcp_get_toolpath_params(&self, index: usize) -> String {
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         match session.get_toolpath_config(index) {
             Some(tc) => {
                 let mut op_value =
@@ -315,7 +315,7 @@ impl RsCamApp {
         let query = Query::GetOperationSchema(GetOperationSchemaArgs {
             operation_type: operation_type.to_owned(),
         });
-        match self.controller.state().session.query(query) {
+        match self.controller.state().session().query(query) {
             Ok(QueryAnswer::GetOperationSchema(answer)) => {
                 json_str(serde_json::to_value(answer.schema).unwrap_or_default())
             }
@@ -327,7 +327,7 @@ impl RsCamApp {
     }
 
     pub(super) fn mcp_inspect_model(&self) -> String {
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         let models = session.models();
         if models.is_empty() {
             return json_str(serde_json::json!([]));
@@ -496,7 +496,7 @@ impl RsCamApp {
     }
 
     pub(super) fn mcp_inspect_stock(&self) -> String {
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         let stock = session.stock_config();
 
         let pins: Vec<serde_json::Value> = stock
@@ -559,7 +559,7 @@ impl RsCamApp {
     }
 
     pub(super) fn mcp_inspect_machine(&self) -> String {
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         let machine = session.machine();
 
         let spindle = match &machine.spindle {
@@ -689,7 +689,7 @@ impl RsCamApp {
     }
 
     pub(super) fn mcp_inspect_brep_faces(&self, model_id: usize) -> String {
-        let session = &self.controller.state().session;
+        let session = self.controller.state().session();
         let models = session.models();
         let model = models.iter().find(|m| m.id == model_id);
         let Some(model) = model else {
@@ -838,9 +838,9 @@ impl RsCamApp {
                 // `screenshot_gui`, and before this the viewport still held
                 // the previous project's framing.
                 self.fit_camera_to_first_model();
-                let name = self.controller.state().session.name().to_owned();
-                let tp_count = self.controller.state().session.toolpath_count();
-                let setup_count = self.controller.state().session.setup_count();
+                let name = self.controller.state().session().name().to_owned();
+                let tp_count = self.controller.state().session().toolpath_count();
+                let setup_count = self.controller.state().session().setup_count();
                 let mut msg =
                     format!("Loaded '{name}' -- {setup_count} setups, {tp_count} toolpaths");
                 // Surface load warnings the GUI shows in a modal but the MCP

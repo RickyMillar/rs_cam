@@ -79,7 +79,7 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
     assert!(
         !controller
             .state
-            .session
+            .session()
             .find_toolpath_config_by_id(source_id)
             .expect("source toolpath should exist")
             .1
@@ -117,7 +117,6 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
     };
     let consumer_index = controller
         .state
-        .session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(consumer_config),
@@ -136,7 +135,6 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
     };
     let _ = controller
         .state
-        .session
         .apply(Command::SetBoundaryConfig(SetBoundaryConfigArgs {
             index: consumer_index,
             boundary,
@@ -145,7 +143,7 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
 
     let (_, source_tc) = controller
         .state
-        .session
+        .session()
         .find_toolpath_config_by_id(source_id)
         .expect("source toolpath should still exist");
     assert!(
@@ -182,13 +180,13 @@ fn handle_remove_toolpath_marks_derived_rest_dependents_stale() {
 #[test]
 fn remove_tool_blocked_when_toolpath_references_it() {
     let mut controller = sample_controller();
-    let tool_count_before = controller.state.session.tools().len();
+    let tool_count_before = controller.state.session().tools().len();
     assert_eq!(tool_count_before, 1);
 
     // ToolId(1) is referenced by the sample toolpath — deletion must be blocked.
     controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(ToolId(1)));
     assert_eq!(
-        controller.state.session.tools().len(),
+        controller.state.session().tools().len(),
         tool_count_before,
         "Tool should not be removed while a toolpath references it"
     );

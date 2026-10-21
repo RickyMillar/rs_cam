@@ -47,9 +47,9 @@ impl RsCamApp {
             return None;
         };
         let mode = state.gui.selection_ui.pick_mode(id)?;
-        let (_, tc) = state.session.find_toolpath_config_by_id(id)?;
+        let (_, tc) = state.session().find_toolpath_config_by_id(id)?;
         let held = state
-            .session
+            .session()
             .models()
             .iter()
             .find(|m| m.id == tc.model_id)
@@ -76,7 +76,7 @@ impl RsCamApp {
         let ctx = self.pick_context(pos);
         let hit = crate::interaction::picking::pick_items(
             &ctx,
-            &state.session,
+            state.session(),
             pick.toolpath_id,
             &pick.filter,
             &pick.kinds,
@@ -84,10 +84,12 @@ impl RsCamApp {
         match hit {
             PickHit::Item { key, .. } => Some(Ok(key)),
             PickHit::ModelFace { model_id, face_id } => {
-                let (_, tc) = state.session.find_toolpath_config_by_id(pick.toolpath_id)?;
+                let (_, tc) = state
+                    .session()
+                    .find_toolpath_config_by_id(pick.toolpath_id)?;
                 Some(
                     state
-                        .session
+                        .session()
                         .face_pick_key(tc, model_id.0, face_id)
                         .map_err(|refusal| refusal.to_string()),
                 )
@@ -96,10 +98,12 @@ impl RsCamApp {
             // cache refuses `FacesNotReady`; the faces sweep
             // (`process_model_faces`) is already computing them.
             PickHit::MeshFace { model_id, point } => {
-                let (_, tc) = state.session.find_toolpath_config_by_id(pick.toolpath_id)?;
+                let (_, tc) = state
+                    .session()
+                    .find_toolpath_config_by_id(pick.toolpath_id)?;
                 Some(
                     state
-                        .session
+                        .session()
                         .face_pick_key_at(tc, model_id.0, point)
                         .map_err(|refusal| refusal.to_string()),
                 )
@@ -170,7 +174,7 @@ impl RsCamApp {
     fn tab_under(&self, id: crate::state::toolpath::ToolpathId, pos: egui::Pos2) -> Option<usize> {
         let state = self.controller.state();
         let mode = state.gui.selection_ui.tab_edit(id)?;
-        let scene = crate::interaction::picking::tab_scene(&state.session, id, mode)?;
+        let scene = crate::interaction::picking::tab_scene(state.session(), id, mode)?;
         crate::interaction::picking::pick_tab(&self.pick_context(pos), &scene)
     }
 
@@ -194,7 +198,7 @@ impl RsCamApp {
                 .and_then(|answer| {
                     crate::interaction::picking::pick_tab_loop(
                         &self.pick_context(click_pos),
-                        &state.session,
+                        state.session(),
                         id,
                         &answer.loops,
                     )
@@ -264,7 +268,7 @@ impl RsCamApp {
                     toolpath_setup_frame,
                 };
                 let state = self.controller.state();
-                let session = &state.session;
+                let session = state.session();
                 state
                     .gui
                     .selection_ui
@@ -354,13 +358,13 @@ impl RsCamApp {
             let state = self.controller.state();
             crate::interaction::picking::pick(
                 &ctx,
-                &state.session,
+                state.session(),
                 &state.gui,
                 self.controller.collision_positions(),
                 workspace,
                 crate::state::viewport::ToolpathDrawFilter::from_state(state),
                 drill_pick,
-                crate::state::pin_view::active_display_setup(&state.session, &state.selection)
+                crate::state::pin_view::active_display_setup(state.session(), &state.selection)
                     .as_ref(),
             )
         };
@@ -385,7 +389,7 @@ impl RsCamApp {
             return None;
         };
         let tc = state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .find(|tc| tc.id == id)?;
@@ -414,10 +418,10 @@ impl RsCamApp {
         };
 
         let target = {
-            let state = self.controller.state_mut();
-            state.simulation.pick_semantic_item_with_ray(
-                &state.gui,
-                &state.session,
+            let parts = self.controller.state_mut().split_mut();
+            parts.simulation.pick_semantic_item_with_ray(
+                parts.gui,
+                parts.session,
                 &rs_cam_core::geo::P3::new(
                     ray_origin.x as f64,
                     ray_origin.y as f64,
@@ -526,7 +530,7 @@ impl RsCamApp {
                 // and the controller gives a notice.
                 if let Selection::Toolpath(tp_id) = self.controller.state().selection {
                     let pick = {
-                        let session = &self.controller.state().session;
+                        let session = self.controller.state().session();
                         // P4.3 (L-3): the section whose Pick button is on
                         // takes the click; with none on, today's rule.
                         let pick_target =
@@ -636,8 +640,8 @@ impl RsCamApp {
         }
         if let Some((pick, key)) = &hovered_item {
             let state = self.controller.state();
-            if let Some((_, tc)) = state.session.find_toolpath_config_by_id(pick.toolpath_id) {
-                let tip = crate::ui::pick_bar::hover_text(&state.session, tc, pick.target, key);
+            if let Some((_, tc)) = state.session().find_toolpath_config_by_id(pick.toolpath_id) {
+                let tip = crate::ui::pick_bar::hover_text(state.session(), tc, pick.target, key);
                 egui::Tooltip::always_open(
                     ui.ctx().clone(),
                     response.layer_id,
@@ -676,7 +680,7 @@ impl RsCamApp {
             && self
                 .controller
                 .state()
-                .session
+                .session()
                 .models()
                 .iter()
                 .any(|m| m.enriched_mesh.is_some())
@@ -699,13 +703,13 @@ impl RsCamApp {
             if let Some(crate::interaction::picking::PickHit::ModelFace { face_id, .. }) =
                 crate::interaction::picking::pick(
                     &pick_ctx,
-                    &state.session,
+                    state.session(),
                     &state.gui,
                     self.controller.collision_positions(),
                     state.workspace,
                     crate::state::viewport::ToolpathDrawFilter::from_state(state),
                     None,
-                    crate::state::pin_view::active_display_setup(&state.session, &state.selection)
+                    crate::state::pin_view::active_display_setup(state.session(), &state.selection)
                         .as_ref(),
                 )
             {
@@ -742,13 +746,13 @@ impl RsCamApp {
             if let Some(crate::interaction::picking::PickHit::Toolpath { id, move_index }) =
                 crate::interaction::picking::pick(
                     &pick_ctx,
-                    &state.session,
+                    state.session(),
                     &state.gui,
                     self.controller.collision_positions(),
                     state.workspace,
                     crate::state::viewport::ToolpathDrawFilter::from_state(state),
                     None,
-                    crate::state::pin_view::active_display_setup(&state.session, &state.selection)
+                    crate::state::pin_view::active_display_setup(state.session(), &state.selection)
                         .as_ref(),
                 )
                 && let Some(tip) = span_path_tooltip(state, id, move_index)
@@ -871,7 +875,7 @@ impl RsCamApp {
             // an STL model and left a STEP one untouched (audit §3.1). The
             // flag now reaches both draw loops.
             has_mesh: state
-                .session
+                .session()
                 .models()
                 .iter()
                 .any(|model| model.mesh.is_some())
@@ -898,7 +902,11 @@ impl RsCamApp {
                 || state.viewport.show_pin_ghost
                 || state.viewport.show_datum,
             show_polygons: state.viewport.show_polygons
-                && state.session.models().iter().any(|m| m.items.has_drawing()),
+                && state
+                    .session()
+                    .models()
+                    .iter()
+                    .any(|m| m.items.has_drawing()),
             show_solid_stock: state.viewport.show_stock_solid,
             show_height_planes: state.viewport.show_height_planes
                 && matches!(state.selection, Selection::Toolpath(_)),
@@ -956,13 +964,13 @@ impl RsCamApp {
             // stored. `EditedSince` alone: every other non-current state
             // has no drawable geometry to dim in the first place.
             stale_toolpaths: state
-                .session
+                .session()
                 .toolpath_configs()
                 .iter()
                 .enumerate()
                 .filter(|(index, _)| {
                     matches!(
-                        crate::state::freshness::freshness_at(&state.session, &state.gui, *index),
+                        crate::state::freshness::freshness_at(state.session(), &state.gui, *index),
                         Some(crate::state::freshness::FreshnessState::EditedSince)
                     )
                 })
@@ -1062,7 +1070,7 @@ impl RsCamApp {
                             state
                                 .simulation
                                 .semantic_item_bbox_in_simulation(
-                                    &state.session,
+                                    state.session(),
                                     active.toolpath_id,
                                     &active.item,
                                 )
@@ -1092,7 +1100,7 @@ impl RsCamApp {
         let shape = self
             .controller
             .state()
-            .session
+            .session()
             .models()
             .iter()
             .find(|m| m.id == popover.model_id.0)
@@ -1173,7 +1181,7 @@ impl RsCamApp {
             let ctx = self.pick_context(click_pos);
             crate::interaction::picking::pick_open_path(
                 &ctx,
-                &self.controller.state().session,
+                self.controller.state().session(),
                 model_id,
             )
         };
@@ -1279,12 +1287,12 @@ impl RsCamApp {
         };
         let shift = match state.selection {
             Selection::Toolpath(id) => state
-                .session
+                .session()
                 .setup_of_toolpath_id(id)
-                .and_then(|idx| state.session.list_setups().get(idx))
+                .and_then(|idx| state.session().list_setups().get(idx))
                 .map_or(rs_cam_core::geo::P3::new(0.0, 0.0, 0.0), |sd| {
                     crate::state::job::SetupFrame::of(sd)
-                        .emission_to_display_shift(state.session.stock_config())
+                        .emission_to_display_shift(state.session().stock_config())
                 }),
             _ => return,
         };
@@ -1536,7 +1544,7 @@ fn span_path_tooltip(
 ) -> Option<String> {
     use rs_cam_core::trace::toolpath_spans::{SpanKind, SpanPayload};
     let rt = state.gui.toolpath_rt.get(&toolpath_id)?;
-    let result = rt.result.as_ref()?;
+    let result = rt.run.result()?;
     if !result.spans_valid() {
         return None;
     }

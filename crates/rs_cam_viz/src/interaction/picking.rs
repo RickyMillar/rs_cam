@@ -772,7 +772,7 @@ fn pick_toolpaths(
             (
                 tc.id,
                 rt.is_none_or(|r| r.visible),
-                rt.is_some_and(|r| r.result.is_some()),
+                rt.is_some_and(|r| r.run.result().is_some()),
             )
         }),
     );
@@ -783,7 +783,7 @@ fn pick_toolpaths(
             continue;
         }
         let rt = gui.toolpath_rt.get(&tc.id);
-        let result = rt.and_then(|r| r.result.as_ref());
+        let result = rt.and_then(|r| r.run.result());
         let Some(result) = result else {
             continue;
         };

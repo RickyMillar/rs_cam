@@ -71,9 +71,9 @@ fn cancelled_drain_resolves_pending_mcp_generate_toolpath_waiter() {
         .get(&tp_id)
         .expect("toolpath runtime should exist after cancel");
     assert!(
-        matches!(rt.status, crate::state::toolpath::ComputeStatus::Pending),
+        matches!(rt.run, crate::state::runtime::ToolpathRun::Pending),
         "cancelled toolpath status should revert to Pending (not Done), got {:?}",
-        rt.status
+        rt.run.status()
     );
 
     assert!(
@@ -101,7 +101,7 @@ fn drain_compute_results_repopulates_session_results() {
     // sample_controller pre-seeds rt.result but leaves session.results
     // empty — exactly the post-Apply pre-fix divergence state.
     assert!(
-        controller.state.session.get_result(0).is_none(),
+        controller.state.session().get_result(0).is_none(),
         "fixture should start with empty session.results[0]"
     );
 
@@ -135,7 +135,7 @@ fn drain_compute_results_repopulates_session_results() {
     // The fix: session.results[0] is populated.
     let session_result = controller
         .state
-        .session
+        .session()
         .get_result(0)
         .expect("session.results[0] should be populated after drain");
     // Both caches share the same Arc (no duplicated allocation).

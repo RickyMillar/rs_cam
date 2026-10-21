@@ -18,8 +18,7 @@ use super::{
     boundary_summary_line, operations, rest_grid_footprint_area,
 };
 use crate::state::toolpath::{
-    BoundaryContainment, BoundarySource, ComputeStatus, DressupConfig, OperationConfig,
-    StockSource, UiProcessRole,
+    BoundaryContainment, BoundarySource, DressupConfig, OperationConfig, StockSource, UiProcessRole,
 };
 use crate::ui::AppEvent;
 use crate::ui::components::{DataRow, DataTable, OneLine, Role, UiExt as _};
@@ -103,7 +102,8 @@ pub(super) fn draw_toolpath_panel(
     // DC5 (Pattern C): the state the "requires manual generation" sentence
     // used to carry. Read before the row so the closure holds no extra
     // borrow of `entry`.
-    let manual_generation = !entry.auto_regen && matches!(entry.status, ComputeStatus::Pending);
+    let manual_generation =
+        !entry.auto_regen && matches!(entry.run, crate::state::runtime::ToolpathRun::Pending);
     ui.horizontal(|ui| {
         if ui
             .add_enabled(can_generate, egui::Button::new("Generate"))
@@ -190,7 +190,7 @@ pub(super) fn draw_toolpath_panel(
         // number outweighs a quiet state word beside it. R27 deleted the
         // surface that carried the mark, so the mark moves with the figure.
         // The word is the card's word, so the two surfaces cannot fork.
-        if let Some(result) = &entry.result {
+        if let Some(result) = entry.run.result() {
             let is_stale = matches!(freshness, FreshnessState::EditedSince);
             let moves = result.stats.move_count;
             let text = if is_stale {
@@ -673,7 +673,7 @@ pub(super) fn draw_geometry_tab(
     let feeds_for_pills = pills.as_ref();
     // A/M6: read before the mutable borrow of `entry.operation`
     // below. Both are `Copy`, so nothing is held across it.
-    let resolved_claims_reference = entry.result.as_ref().and_then(|r| r.stats.claims_reference);
+    let resolved_claims_reference = entry.run.result().and_then(|r| r.stats.claims_reference);
     // G-DEPTHSTOCK (UX-R03-007): the same rule the header ribbon
     // prints, read once here and handed to the depth field's row.
     // `Copy`, so nothing is held across the mutable borrow below.
@@ -1161,7 +1161,7 @@ pub(super) fn draw_geometry_tab(
     // rectangle, which overstates a non-rectangular part's footprint
     // and made the warning fire late (`MEASUREMENT_DOMAINS.md` X-4).
     // No grid ⇒ 0.0 ⇒ silence, never a guess.
-    if let Some(result) = &entry.result
+    if let Some(result) = entry.run.result()
         && let Some(regions) = result.annotated.produced.rest_regions.as_ref()
         && let Some(pathology) = rs_cam_core::surface::rest_field::classify_rest_regions(
             regions,

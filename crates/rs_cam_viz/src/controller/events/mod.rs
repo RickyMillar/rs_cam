@@ -34,7 +34,7 @@ fn enabled_toolpath_ids(
     state: &crate::state::AppState,
 ) -> std::collections::BTreeSet<rs_cam_core::ToolpathId> {
     state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .filter(|tc| tc.enabled)
@@ -64,14 +64,8 @@ impl<B: ComputeBackend> AppController<B> {
     /// upload the session never mirrored. `invalidate_simulation` is
     /// idempotent, so the two together cost one pass.
     fn apply_controller_command(&mut self, command: Command, subject: &str) -> bool {
-        match self.state.session.apply(command) {
-            Ok(effects) => {
-                crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-                if effects.simulation_cleared {
-                    self.invalidate_simulation();
-                }
-                true
-            }
+        match self.apply(command) {
+            Ok(_) => true,
             Err(error) => {
                 self.push_notification(
                     format!("Could not write {subject}: {error}"),
@@ -87,8 +81,8 @@ impl<B: ComputeBackend> AppController<B> {
     /// The twin of [`Self::apply_controller_command`] for a site that
     /// SWALLOWED its setter's answer before WP15a. Such a site showed
     /// the operator nothing on a refusal, so this door pushes no
-    /// notification either: the routing moves the write onto
-    /// `ProjectSession::apply` and leaves the messages alone.
+    /// notification either. The door under it ([`AppController::apply`])
+    /// writes the refusal to the log (F056), so a refusal leaves a trace.
     ///
     /// The answer carries the command's own [`Effects`], so a caller
     /// that read the setter's return — the new index in
@@ -99,16 +93,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// (WP19, plan §28). A caller that also calls
     /// `invalidate_simulation` keeps that call.
     fn apply_quietly(&mut self, command: Command) -> Option<Effects> {
-        match self.state.session.apply(command) {
-            Ok(effects) => {
-                crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-                if effects.simulation_cleared {
-                    self.invalidate_simulation();
-                }
-                Some(effects)
-            }
-            Err(_) => None,
-        }
+        self.apply(command).ok()
     }
 
     /// Apply one edit to the selection `target` of `toolpath_id` (geometry
@@ -127,7 +112,7 @@ impl<B: ComputeBackend> AppController<B> {
         target: rs_cam_core::session::SelectionTarget,
         edit: rs_cam_core::selection::SelectionEdit,
     ) {
-        let Some((index, _)) = self.state.session.find_toolpath_config_by_id(toolpath_id) else {
+        let Some((index, _)) = self.state.session().find_toolpath_config_by_id(toolpath_id) else {
             return;
         };
         let command = Command::EditSelection(EditSelectionArgs {
@@ -155,7 +140,7 @@ impl<B: ComputeBackend> AppController<B> {
         let rs_cam_core::session::ClickEdit::BoundaryToSelection { boundary, .. } = click else {
             return;
         };
-        let Some((index, _)) = self.state.session.find_toolpath_config_by_id(toolpath_id) else {
+        let Some((index, _)) = self.state.session().find_toolpath_config_by_id(toolpath_id) else {
             return;
         };
         let command = Command::SetBoundaryConfig(rs_cam_core::session::SetBoundaryConfigArgs {
@@ -191,14 +176,14 @@ impl<B: ComputeBackend> AppController<B> {
     ) {
         use crate::state::history::UndoAction;
         use rs_cam_core::compute::catalog::OperationConfig;
-        let Some((index, tc)) = self.state.session.find_toolpath_config_by_id(toolpath_id) else {
+        let Some((index, tc)) = self.state.session().find_toolpath_config_by_id(toolpath_id) else {
             return;
         };
         let OperationConfig::Profile(cfg) = &tc.operation else {
             return;
         };
         let points =
-            crate::state::tab_edit::read_layout(&self.state.session, index).and_then(|layout| {
+            crate::state::tab_edit::read_layout(self.state.session(), index).and_then(|layout| {
                 rs_cam_core::session::apply_tab_edit(&layout, &cfg.tab_points, edit)
             });
         let points = match points {
@@ -226,7 +211,7 @@ impl<B: ComputeBackend> AppController<B> {
         if !self.apply_controller_command(command, "the tabs") {
             return;
         }
-        let Some((_, tc)) = self.state.session.find_toolpath_config_by_id(toolpath_id) else {
+        let Some((_, tc)) = self.state.session().find_toolpath_config_by_id(toolpath_id) else {
             return;
         };
         let after = (
@@ -311,9 +296,9 @@ impl<B: ComputeBackend> AppController<B> {
     /// revision: a debug trace is an OUTPUT of a generation, never an
     /// input to one, so this drops no cached result.
     fn set_generator_trace_capture_all(&mut self, enabled: bool) {
-        let count = self.state.session.toolpath_count();
+        let count = self.state.session().toolpath_count();
         for index in 0..count {
-            let Some(tc) = self.state.session.get_toolpath_config(index) else {
+            let Some(tc) = self.state.session().get_toolpath_config(index) else {
                 continue;
             };
             let mut debug_options = tc.debug_options;
@@ -434,7 +419,7 @@ impl<B: ComputeBackend> AppController<B> {
                 self.handle_move_toolpath_to_setup(tp_id, setup_id, idx);
             }
             AppEvent::ToggleToolpathEnabled(tp_id) => {
-                if let Some((idx, tc)) = self.state.session.find_toolpath_config_by_id(tp_id) {
+                if let Some((idx, tc)) = self.state.session().find_toolpath_config_by_id(tp_id) {
                     let enabled = !tc.enabled;
                     let command = Command::SetToolpathEnabled(SetToolpathEnabledArgs {
                         index: idx,
@@ -513,9 +498,9 @@ impl<B: ComputeBackend> AppController<B> {
                 // `Selection` with that pick, in one command, with a notice.
                 let edit = self
                     .state
-                    .session
+                    .session()
                     .find_toolpath_config_by_id(toolpath_id)
-                    .map(|(_, tc)| self.state.session.click_edit(tc, target, key));
+                    .map(|(_, tc)| self.state.session().click_edit(tc, target, key));
                 match edit {
                     Some(Ok(rs_cam_core::session::ClickEdit::Selection(edit))) => {
                         self.apply_selection_edit(toolpath_id, target, edit);
@@ -543,11 +528,11 @@ impl<B: ComputeBackend> AppController<B> {
                 // layer gives a notice and no edit.
                 let edit = self
                     .state
-                    .session
+                    .session()
                     .find_toolpath_config_by_id(toolpath_id)
                     .map(|(_, tc)| {
                         self.state
-                            .session
+                            .session()
                             .layer_rule_edit(tc, target, &key, &kinds, circle)
                     });
                 match edit {
@@ -591,11 +576,11 @@ impl<B: ComputeBackend> AppController<B> {
                 // mirror (drives the modal's preview values on next
                 // frame). Invalidates Suggest's cached output via the
                 // existing dirty-tracking hooks.
-                if self.state.session.post_config().spindle_strategy != strategy {
+                if self.state.session().post_config().spindle_strategy != strategy {
                     // `SetPostConfig` replaces the WHOLE block, so a
                     // surface that offers one field reads the current
                     // block, writes that field and sends the result.
-                    let mut post = self.state.session.post_config().clone();
+                    let mut post = self.state.session().post_config().clone();
                     post.spindle_strategy = strategy;
                     let command = Command::SetPostConfig(SetPostConfigArgs {
                         post: Box::new(post),
@@ -890,7 +875,7 @@ impl<B: ComputeBackend> AppController<B> {
         // selected, but a stray automation call could land here.
         if !self
             .state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .any(|tc| tc.id == toolpath_id)
@@ -937,7 +922,7 @@ impl<B: ComputeBackend> AppController<B> {
     ) -> Result<Effects, String> {
         let Some(idx) = self
             .state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .position(|tc| tc.id == toolpath_id)
@@ -958,24 +943,17 @@ impl<B: ComputeBackend> AppController<B> {
                 rs_cam_core::feeds::suggest::ExploredSpeeds { feed_mm_min, rpm }
             }),
         });
-        let effects = self
-            .state
-            .session
-            .apply(command)
-            .map_err(|error| match error {
-                // The refusal text alone, as the preview gave it before.
-                rs_cam_core::session::SessionError::FeedsRefused(refusal) => refusal.to_string(),
-                other => format!("toolpath {}: {other}", toolpath_id.0),
-            })?;
-        crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-        // WP19 (plan §28): N13 made this funnel drop the core result, so
-        // the row clears the session's simulation on the frames the
-        // signature moves. The viewport holds the same one.
-        if effects.simulation_cleared {
-            self.invalidate_simulation();
-        }
+        // `AppController::apply` stamps `Effects::stale` and clears the
+        // viewport simulation when the row dropped the session's one
+        // (WP19, F096). N13 made this funnel drop the core result on the
+        // frames the signature moves.
+        let effects = self.apply(command).map_err(|error| match error {
+            // The refusal text alone, as the preview gave it before.
+            rs_cam_core::session::SessionError::FeedsRefused(refusal) => refusal.to_string(),
+            other => format!("toolpath {}: {other}", toolpath_id.0),
+        })?;
         self.state.gui.mark_edited();
-        // B19: `stamp_stale` above is the only stamp. An Apply that changes
+        // B19: the door's stamp is the only stamp. An Apply that changes
         // no generation input stales nothing, so auto-regen submits nothing.
         Ok(effects)
     }
@@ -1065,7 +1043,7 @@ impl<B: ComputeBackend> AppController<B> {
     ) {
         let Some(idx) = self
             .state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .position(|tc| tc.id == toolpath_id)
@@ -1076,7 +1054,7 @@ impl<B: ComputeBackend> AppController<B> {
         // `Option<f64>`, which `set_toolpath_param`'s JSON value cannot
         // carry cleanly, and the row's signature gate drops the chain the
         // scallop target belongs to.
-        let Some(mut draft) = self.state.session.toolpath_configs().get(idx).cloned() else {
+        let Some(mut draft) = self.state.session().toolpath_configs().get(idx).cloned() else {
             return;
         };
         if let rs_cam_core::compute::catalog::OperationConfig::DropCutter(cfg) =
@@ -1118,7 +1096,7 @@ impl<B: ComputeBackend> AppController<B> {
     fn apply_feeds_project(&mut self) {
         let ids: Vec<crate::state::toolpath::ToolpathId> = self
             .state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .filter(|tc| tc.enabled)
@@ -1148,7 +1126,7 @@ impl<B: ComputeBackend> AppController<B> {
                 Err(why) => {
                     let name = self
                         .state
-                        .session
+                        .session()
                         .toolpath_configs()
                         .iter()
                         .find(|tc| tc.id == id)

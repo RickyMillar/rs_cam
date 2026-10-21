@@ -377,7 +377,7 @@ pub fn active_lines(state: &AppState) -> Vec<RailLine> {
     if registry::area_regions_drawn(state) {
         out.push(RailLine::Categories(Categories::AreaRegions));
     }
-    if stock_draws_materials(state) && !state.session.stock_material_legend().is_empty() {
+    if stock_draws_materials(state) && !state.session().stock_material_legend().is_empty() {
         out.push(RailLine::Categories(Categories::StockMaterials));
     }
     if ready_on(state, "selection_states")
@@ -861,7 +861,7 @@ fn categories_name(state: &AppState, kind: Categories) -> String {
         Categories::StockMaterials => format!(
             "{} \u{00B7} {}",
             kind.name(),
-            state.session.stock_material_legend().len()
+            state.session().stock_material_legend().len()
         ),
     }
 }
@@ -1327,7 +1327,7 @@ pub type LegendEntry = (String, Option<[f32; 3]>);
 pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry> {
     match kind {
         Categories::ToolpathPalette => {
-            let configs = state.session.toolpath_configs();
+            let configs = state.session().toolpath_configs();
             registry::drawn_toolpaths(state)
                 .into_iter()
                 .map(|(index, id)| {
@@ -1401,7 +1401,7 @@ pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry> 
             })
             .unwrap_or_default(),
         Categories::StockMaterials => state
-            .session
+            .session()
             .stock_material_legend()
             .into_iter()
             .map(|swatch| (swatch.label, Some(swatch.colour)))

@@ -36,7 +36,6 @@ fn two_setup_chain() -> (AppController<RestChainBackend>, Vec<ToolpathId>) {
     for index in 1..=2 {
         let _ = controller
             .state
-            .session
             .apply(Command::SetStockSource(SetStockSourceArgs {
                 index,
                 source: crate::state::toolpath::StockSource::FromRemainingStock,
@@ -46,7 +45,6 @@ fn two_setup_chain() -> (AppController<RestChainBackend>, Vec<ToolpathId>) {
 
     let second = controller
         .state
-        .session
         .apply(Command::AddSetup(AddSetupArgs {
             name: Some("Back".to_owned()),
             face_up: rs_cam_core::compute::transform::FaceUp::default(),
@@ -57,7 +55,7 @@ fn two_setup_chain() -> (AppController<RestChainBackend>, Vec<ToolpathId>) {
     let plain = ToolpathId(9);
     let mut config = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .first()
         .cloned()
@@ -67,7 +65,6 @@ fn two_setup_chain() -> (AppController<RestChainBackend>, Vec<ToolpathId>) {
     config.stock_source = crate::state::toolpath::StockSource::Fresh;
     let _ = controller
         .state
-        .session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: second,
             config: Box::new(config),
@@ -76,7 +73,7 @@ fn two_setup_chain() -> (AppController<RestChainBackend>, Vec<ToolpathId>) {
 
     let ids: Vec<ToolpathId> = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| tc.id)
@@ -85,9 +82,8 @@ fn two_setup_chain() -> (AppController<RestChainBackend>, Vec<ToolpathId>) {
     // so the run really is "from cold", core cache included.
     for (index, id) in ids.iter().enumerate() {
         let rt = controller.state.gui.toolpath_rt_or_default(*id);
-        rt.result = None;
-        rt.status = ComputeStatus::Pending;
-        let _ = controller.state.session.apply(Command::ForgetResult(
+        rt.run = crate::state::runtime::ToolpathRun::Pending;
+        let _ = controller.state.apply(Command::ForgetResult(
             rs_cam_core::session::ForgetResultArgs { index },
         ));
     }
@@ -106,7 +102,6 @@ fn set_resolution(
 ) {
     let _ = controller
         .state
-        .session
         .apply(Command::SetSimulationResolution(
             rs_cam_core::session::SetSimulationResolutionArgs { resolution },
         ))
@@ -130,7 +125,7 @@ fn generate_all_walks_one_plan_over_the_rest_chain() {
     controller.handle_internal_event(crate::ui::AppEvent::GenerateAll);
 
     // 1. The step list, in order.
-    let setup_1 = rs_cam_core::ids::SetupId(controller.state.session.list_setups()[0].id);
+    let setup_1 = rs_cam_core::ids::SetupId(controller.state.session().list_setups()[0].id);
     assert_eq!(
         steps(&controller),
         vec![
@@ -197,14 +192,14 @@ fn generate_all_walks_one_plan_over_the_rest_chain() {
 
     // G-RESTRES: every simulation runs at the ONE stored project value,
     // and `Auto` is as fine as the rest needs.
-    let project_mm = controller.state.session.simulation_resolution_mm();
+    let project_mm = controller.state.session().simulation_resolution_mm();
     for resolution in &controller.compute.sim_resolutions {
         assert!(
             resolution.to_bits() == project_mm.to_bits(),
             "every simulation reads the stored value: {resolution} != {project_mm}"
         );
     }
-    if let Some(required) = controller.state.session.rest_resolution_required_mm() {
+    if let Some(required) = controller.state.session().rest_resolution_required_mm() {
         assert!(
             project_mm <= required,
             "auto is fine enough: {project_mm} > {required}"
@@ -228,11 +223,11 @@ fn generate_all_walks_one_plan_over_the_rest_chain() {
     for id in &ids {
         let (index, _) = controller
             .state
-            .session
+            .session()
             .find_toolpath_config_by_id(*id)
             .expect("the fixture keeps every toolpath");
         assert!(
-            controller.state.session.get_result(index).is_some(),
+            controller.state.session().get_result(index).is_some(),
             "toolpath {} holds no core result",
             id.0
         );
@@ -243,7 +238,7 @@ fn generate_all_walks_one_plan_over_the_rest_chain() {
                     .gui
                     .toolpath_rt
                     .get(id)
-                    .map(|rt| &rt.status),
+                    .map(|rt| rt.run.status()),
                 Some(ComputeStatus::Done)
             ),
             "toolpath {} did not reach Done",
@@ -293,7 +288,7 @@ fn a_blocked_submit_pushes_no_toast() {
                 .gui
                 .toolpath_rt
                 .get(&rest_a)
-                .map(|rt| &rt.status),
+                .map(|rt| rt.run.status()),
             Some(ComputeStatus::AwaitingPriorStock(_))
         ),
         "the row is the surface: it must read WAIT"
@@ -350,7 +345,7 @@ fn a_single_generate_on_the_last_rest_op_runs_the_ancestors() {
                     .gui
                     .toolpath_rt
                     .get(&id)
-                    .map(|rt| &rt.status),
+                    .map(|rt| rt.run.status()),
                 Some(ComputeStatus::Done)
             ),
             "toolpath {} did not reach Done",
@@ -473,7 +468,7 @@ fn a_coarse_pinned_resolution_asks_before_it_generates() {
         );
     }
     assert_eq!(
-        controller.state.session.simulation_resolution(),
+        controller.state.session().simulation_resolution(),
         rs_cam_core::session::SimulationResolution::Fixed(confirm.required_mm),
         "the answer SETS the stored project value, and stays pinned"
     );
@@ -494,7 +489,7 @@ fn cancelling_the_resolution_question_starts_no_plan() {
     assert!(controller.pending_plan_confirm().is_none());
     assert!(!controller.awaiting_generate_all());
     assert_eq!(
-        controller.state.session.simulation_resolution(),
+        controller.state.session().simulation_resolution(),
         rs_cam_core::session::SimulationResolution::Fixed(2.0)
     );
 }
@@ -515,7 +510,7 @@ fn a_fine_pinned_resolution_asks_nothing() {
     assert!(controller.awaiting_generate_all());
     pump_until_idle(&mut controller);
     assert_eq!(
-        controller.state.session.simulation_resolution(),
+        controller.state.session().simulation_resolution(),
         rs_cam_core::session::SimulationResolution::Fixed(0.05),
         "a plan that asks nothing writes nothing"
     );

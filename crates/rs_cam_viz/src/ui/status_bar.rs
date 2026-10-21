@@ -27,7 +27,6 @@
 
 use crate::compute::{ComputeLane, LaneSnapshot, LaneState};
 use crate::state::AppState;
-use crate::state::runtime::ComputeStatus;
 use crate::ui::automation;
 use crate::ui::components::text;
 use crate::ui::tokens;
@@ -49,9 +48,9 @@ pub fn draw(
     ui.horizontal(|ui| {
         ui.set_min_height(tokens::ROW_DENSE);
 
-        let model_count = state.session.models().len();
+        let model_count = state.session().models().len();
         let tri_count: usize = state
-            .session
+            .session()
             .models()
             .iter()
             .filter_map(|model| model.mesh.as_ref().map(|mesh| mesh.triangles.len()))
@@ -68,9 +67,9 @@ pub fn draw(
             .gui
             .toolpath_rt
             .values()
-            .filter(|rt| matches!(rt.status, ComputeStatus::Done))
+            .filter(|rt| rt.run.is_done())
             .count();
-        let tp_total = state.session.toolpath_configs().len();
+        let tp_total = state.session().toolpath_configs().len();
         if tp_done > 0 {
             ui.separator();
             indicator(ui, "Toolpaths", format!("{tp_done}/{tp_total}"));

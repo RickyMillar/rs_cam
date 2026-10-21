@@ -393,14 +393,14 @@ pub enum DrawingDraw {
 pub fn drawing_draws(state: &super::AppState) -> Vec<DrawingDraw> {
     let visibility = &state.overlays.model_visibility;
     let source = vector_source_toolpath(state).and_then(|id| {
-        let (_, tc) = state.session.find_toolpath_config_by_id(id)?;
+        let (_, tc) = state.session().find_toolpath_config_by_id(id)?;
         Some((tc.model_id, id))
     });
     let mut draws = Vec::new();
     if let Some((model_id, toolpath)) = source
         && visibility.is_visible(model_id)
         && state
-            .session
+            .session()
             .models()
             .iter()
             .any(|m| m.id == model_id && m.items.has_drawing())
@@ -409,7 +409,7 @@ pub fn drawing_draws(state: &super::AppState) -> Vec<DrawingDraw> {
     }
     draws.extend(
         state
-            .session
+            .session()
             .models()
             .iter()
             .filter(|m| m.items.has_drawing() && visibility.is_visible(m.id))

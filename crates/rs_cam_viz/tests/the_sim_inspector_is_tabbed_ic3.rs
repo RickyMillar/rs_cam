@@ -194,8 +194,8 @@ fn the_warnings_label_carries_the_count_ic3() {
     // The real inspector paints the label with the triage count.
     let mut state = simulated_state(Cut::InsideTheRigidityCap);
     let (safety, actions) = {
-        let session = &state.session;
-        let triage = state.simulation.cached_simulation_triage(session);
+        let parts = state.split_mut();
+        let triage = parts.simulation.cached_simulation_triage(parts.session);
         (triage.safety.len(), triage.actions.len())
     };
     let painted = faces(&inspector_text(&mut state));
@@ -283,12 +283,12 @@ fn fit_at(width: f32) -> Fit {
             )),
             ..Default::default()
         };
-        let AppState {
+        let rs_cam_viz::state::StateParts {
             simulation,
             session,
             gui,
             ..
-        } = &mut state;
+        } = state.split_mut();
         let mut out = ctx.run_ui(input, |ui| {
             side_panel(ui, SidePanelEdge::Right, "sim_diagnostics", width, |ui| {
                 content_right = ui.max_rect().right();

@@ -171,21 +171,21 @@ fn controller(
     tc.model_id = model_id;
     let _ = builder.add_toolpath(0, tc).unwrap();
     let mut c = AppController::with_backend(SilentBackend);
-    c.state_mut().session = builder.build();
-    let session = &mut c.state_mut().session;
-    let _ = session
+    c.state_mut().replace_session(builder.build());
+    let state = &mut c.state_mut();
+    let _ = state
         .apply(Command::SetSetupFace(SetSetupFaceArgs {
             setup_index: 0,
             face_up,
         }))
         .unwrap();
-    let _ = session
+    let _ = state
         .apply(Command::SetSetupRotation(SetSetupRotationArgs {
             setup_index: 0,
             z_rotation: turn,
         }))
         .unwrap();
-    let id = session.toolpath_configs()[0].id;
+    let id = state.session().toolpath_configs()[0].id;
     let state = c.state_mut();
     state.workspace = Workspace::Toolpaths;
     state.selection = UiSelection::Toolpath(id);
@@ -195,11 +195,11 @@ fn controller(
 }
 
 fn id(c: &AppController<SilentBackend>) -> ToolpathId {
-    c.state().session.toolpath_configs()[0].id
+    c.state().session().toolpath_configs()[0].id
 }
 
 fn points(c: &AppController<SilentBackend>) -> Vec<[f64; 2]> {
-    match &c.state().session.toolpath_configs()[0].operation {
+    match &c.state().session().toolpath_configs()[0].operation {
         OperationConfig::Profile(cfg) => cfg.tab_points.clone(),
         other => panic!("not a Profile: {other:?}"),
     }
@@ -220,7 +220,7 @@ fn layout(c: &mut AppController<SilentBackend>) -> TabLayoutAnswer {
 
 /// The panel takes its undo snapshot on its first frame of the toolpath.
 fn take_panel_snapshot(c: &mut AppController<SilentBackend>) {
-    let tc = c.state().session.toolpath_configs()[0].clone();
+    let tc = c.state().session().toolpath_configs()[0].clone();
     c.state_mut().history.toolpath_snapshot = Some((
         tc.id,
         tc.operation,
@@ -336,7 +336,6 @@ fn a_panel_edit_before_a_tab_act_keeps_its_own_step_p4_6() {
     let steps = c.state().history.undo_len();
     let _ = c
         .state_mut()
-        .session
         .apply(Command::SetToolpathParam(
             rs_cam_core::session::SetToolpathParamArgs {
                 index: 0,
@@ -345,7 +344,7 @@ fn a_panel_edit_before_a_tab_act_keeps_its_own_step_p4_6() {
             },
         ))
         .unwrap();
-    let width = |c: &AppController<SilentBackend>| match &c.state().session.toolpath_configs()[0]
+    let width = |c: &AppController<SilentBackend>| match &c.state().session().toolpath_configs()[0]
         .operation
     {
         OperationConfig::Profile(cfg) => cfg.tab_width,
@@ -399,8 +398,8 @@ fn the_last_tab_of_a_loop_is_not_deleted_o4() {
 
 /// A camera that sees the whole displayed stock from above.
 fn camera(c: &AppController<SilentBackend>) -> OrbitCamera {
-    let stock = c.state().session.stock_config().clone();
-    let frame = SetupFrame::of(&c.state().session.list_setups()[0]);
+    let stock = c.state().session().stock_config().clone();
+    let frame = SetupFrame::of(&c.state().session().list_setups()[0]);
     let (w, d, h) = frame.effective_stock(&stock);
     let mut camera = OrbitCamera::new();
     camera.fit_to_bounds([0.0, 0.0, 0.0], [w as f32, d as f32, h as f32]);
@@ -411,10 +410,10 @@ fn camera(c: &AppController<SilentBackend>) -> OrbitCamera {
 /// transform, computed here, on the drawing plane of the op.
 fn drawn(c: &AppController<SilentBackend>, camera: &OrbitCamera, p: P2) -> [f32; 2] {
     let state = c.state();
-    let stock = state.session.stock_config();
-    let frame = SetupFrame::of(&state.session.list_setups()[0]);
-    let tc = &state.session.toolpath_configs()[0];
-    let z = drawing_plane_z(&state.session, tc, Some(&frame));
+    let stock = state.session().stock_config();
+    let frame = SetupFrame::of(&state.session().list_setups()[0]);
+    let tc = &state.session().toolpath_configs()[0];
+    let z = drawing_plane_z(state.session(), tc, Some(&frame));
     let q = frame.transform_point(P3::new(p.x, p.y, 0.0), stock);
     camera
         .project_to_screen(
@@ -451,7 +450,7 @@ fn the_viewport_picks_and_draws_tabs_where_the_loop_is_drawn_p4_6() {
     let scene = {
         let state = c.state();
         tab_scene(
-            &state.session,
+            state.session(),
             id,
             state.gui.selection_ui.tab_edit(id).unwrap(),
         )
@@ -488,7 +487,7 @@ fn the_viewport_picks_and_draws_tabs_where_the_loop_is_drawn_p4_6() {
     let click = drawn(&c, &camera, at);
     let (key, p) = pick_tab_loop(
         &ctx(&camera, &c.state().overlays.model_visibility, click),
-        &c.state().session,
+        c.state().session(),
         id,
         &answer.loops,
     )
@@ -502,7 +501,7 @@ fn the_viewport_picks_and_draws_tabs_where_the_loop_is_drawn_p4_6() {
     // P4.D follow-up: a hidden model draws no loop, so the click adds no
     // tab. Red proof: the `ctx.shows` filter in `pick_tab_loop` removed;
     // the click gave the loop of the hidden model.
-    let model_id = c.state().session.toolpath_configs()[0].model_id;
+    let model_id = c.state().session().toolpath_configs()[0].model_id;
     c.handle_internal_event(AppEvent::Ui(UiCommand::SetModelVisibility(
         SetModelVisibilityArgs {
             model_id,
@@ -511,7 +510,7 @@ fn the_viewport_picks_and_draws_tabs_where_the_loop_is_drawn_p4_6() {
     )));
     let hidden = pick_tab_loop(
         &ctx(&camera, &c.state().overlays.model_visibility, click),
-        &c.state().session,
+        c.state().session(),
         id,
         &answer.loops,
     );

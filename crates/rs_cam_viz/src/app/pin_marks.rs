@@ -25,12 +25,12 @@ const SELECTED_RING_SCALE: f32 = 1.35;
 /// circles, the selected ring, the ghost and the flip axis. Each reads its
 /// own registry flag.
 pub(super) fn push_pin_lines(state: &AppState, frame: &SetupFrame, out: &mut Vec<LineVertex>) {
-    let stock = state.session.stock_config();
+    let stock = state.session().stock_config();
     let pins = &stock.alignment_pins;
     let show_pins = state.viewport.show_alignment_pins && !pins.is_empty();
     let show_ghost = state.viewport.show_pin_ghost && !pins.is_empty();
     if show_pins || show_ghost {
-        let report = state.session.pin_set_report();
+        let report = state.session().pin_set_report();
         let centres = pin_display_points(frame, stock);
         if show_pins {
             for (index, (pin, c)) in pins.iter().zip(&centres).enumerate() {
@@ -64,7 +64,7 @@ pub(super) fn push_pin_lines(state: &AppState, frame: &SetupFrame, out: &mut Vec
         .then(|| {
             stock.pin_flip_map(
                 state
-                    .session
+                    .session()
                     .list_setups()
                     .iter()
                     .map(|sd| (sd.face_up, sd.z_rotation)),
@@ -109,16 +109,16 @@ impl super::RsCamApp {
     /// panel's table and the findings count them.
     pub(super) fn draw_pin_numbers(&self, ui: &egui::Ui, viewport_rect: egui::Rect) {
         let state = self.controller.state();
-        let stock = state.session.stock_config();
+        let stock = state.session().stock_config();
         if !state.viewport.show_alignment_pins || stock.alignment_pins.is_empty() {
             return;
         }
         let Some((frame, _)) =
-            crate::state::pin_view::active_display_setup(&state.session, &state.selection)
+            crate::state::pin_view::active_display_setup(state.session(), &state.selection)
         else {
             return;
         };
-        let report = state.session.pin_set_report();
+        let report = state.session().pin_set_report();
         let width = viewport_rect.width().max(1.0);
         let height = viewport_rect.height().max(1.0);
         let aspect = width / height;

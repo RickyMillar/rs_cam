@@ -52,8 +52,8 @@ impl<B: ComputeBackend> AppController<B> {
     /// frame loop. The emitted chain is NOT generated: the ops land stale and
     /// the operator (or `generate_all`'s fixpoint ladder) generates them.
     ///
-    /// F040: the door applies `Command::PlanMultitoolFinishing` and mirrors
-    /// its [`Effects`] the way `apply_quietly` mirrors every row:
+    /// F040: the door applies `Command::PlanMultitoolFinishing` through
+    /// `AppController::apply`, which mirrors its [`Effects`] (F096):
     /// `Effects::stale` reaches the toolpath cards, and
     /// `Effects::simulation_cleared` clears the viewport simulation. The
     /// stale set comes from the core dependency walk. A removal walks the
@@ -73,28 +73,20 @@ impl<B: ComputeBackend> AppController<B> {
             spec: Box::new(spec.clone()),
         });
         // `apply_quietly` drops the refusal, and this door returns it to
-        // the dialog and to the MCP reply, so it applies the command
-        // itself and mirrors the answer with the same two calls.
-        let effects = self
-            .state
-            .session
-            .apply(command)
-            .map_err(|e| e.to_string())?;
+        // the dialog and to the MCP reply, so it calls `AppController::apply`.
+        let effects = self.apply(command).map_err(|e| e.to_string())?;
         // Every field is named, so a new `Effects` field must state here
-        // whether this door mirrors it.
+        // whether this door mirrors it. `AppController::apply` already
+        // mirrored `stale` and `simulation_cleared` (F096).
         let Effects {
-            stale,
-            simulation_cleared,
+            stale: _,
+            simulation_cleared: _,
             revision: _,
             created: _,
             selection_dropped: _,
             planned,
             modulated: _,
         } = effects;
-        crate::state::stale::stamp_stale(&mut self.state, &stale);
-        if simulation_cleared {
-            self.invalidate_simulation();
-        }
         let Some(outcome) = planned else {
             return Err("the planner reported no outcome".to_owned());
         };
@@ -116,7 +108,7 @@ impl<B: ComputeBackend> AppController<B> {
         for id in &outcome.toolpath_ids {
             let auto_regen = self
                 .state
-                .session
+                .session()
                 .find_toolpath_config_by_id(*id)
                 .is_none_or(|(_, tc)| tc.operation.default_auto_regen());
             self.state
@@ -221,7 +213,7 @@ impl<B: ComputeBackend> AppController<B> {
 
         // §22 ruling 3: a FRESH flag per submit. The veto arms it.
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let started = self.state.session.start(
+        let started = self.state.start_job(
             rs_cam_core::session::Job::PreviewTierMap(rs_cam_core::session::PreviewTierMapArgs {
                 spec: Box::new(spec),
             }),
@@ -270,7 +262,7 @@ impl<B: ComputeBackend> AppController<B> {
                     .iter()
                     .filter_map(|id| {
                         self.state
-                            .session
+                            .session()
                             .find_toolpath_config_by_id(*id)
                             .map(|(_, tc)| tc.name.clone())
                     })
@@ -329,7 +321,7 @@ impl<B: ComputeBackend> AppController<B> {
     fn planner_tool_rows(&self) -> Vec<PlannerToolRow> {
         let mut rows: Vec<PlannerToolRow> = self
             .state
-            .session
+            .session()
             .tools()
             .iter()
             // F029: a tool outside its domain builds no cutter, so it has no
@@ -362,20 +354,20 @@ impl<B: ComputeBackend> AppController<B> {
     fn planner_model(&self) -> Option<(usize, String)> {
         let mesh_model = |id: usize| {
             self.state
-                .session
+                .session()
                 .models()
                 .iter()
                 .find(|m| m.id == id && m.mesh.is_some())
                 .map(|m| (m.id, m.name.clone()))
         };
         if let Selection::Toolpath(tp_id) = self.state.selection
-            && let Some((_, tc)) = self.state.session.find_toolpath_config_by_id(tp_id)
+            && let Some((_, tc)) = self.state.session().find_toolpath_config_by_id(tp_id)
             && let Some(found) = mesh_model(tc.model_id)
         {
             return Some(found);
         }
         self.state
-            .session
+            .session()
             .models()
             .iter()
             .find(|m| m.mesh.is_some())
@@ -388,11 +380,11 @@ impl<B: ComputeBackend> AppController<B> {
         let Selection::Toolpath(id) = self.state.selection else {
             return 0;
         };
-        let Some((index, _)) = self.state.session.find_toolpath_config_by_id(id) else {
+        let Some((index, _)) = self.state.session().find_toolpath_config_by_id(id) else {
             return 0;
         };
         self.state
-            .session
+            .session()
             .list_setups()
             .iter()
             .position(|s| s.toolpath_indices.contains(&index))

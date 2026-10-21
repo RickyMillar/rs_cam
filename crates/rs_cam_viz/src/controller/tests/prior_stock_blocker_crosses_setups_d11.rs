@@ -35,7 +35,7 @@ fn three_setups(
     sample_project_into(&mut controller);
     let template = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .first()
         .cloned()
@@ -59,7 +59,6 @@ fn three_setups(
     ] {
         let setup_index = controller
             .state
-            .session
             .apply(Command::AddSetup(AddSetupArgs {
                 name: Some(setup_name.to_owned()),
                 face_up,
@@ -73,7 +72,6 @@ fn three_setups(
         config.stock_source = source;
         let _ = controller
             .state
-            .session
             .apply(Command::AddToolpath(AddToolpathArgs {
                 setup_index,
                 config: Box::new(config),
@@ -96,7 +94,6 @@ fn three_setups(
         };
         let _ = controller
             .state
-            .session
             .apply(Command::AddStockChange(
                 rs_cam_core::session::AddStockChangeArgs {
                     setup_index: 1,
@@ -110,7 +107,7 @@ fn three_setups(
     let id_of = |name: &str| {
         controller
             .state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .find(|tc| tc.name == name)
@@ -120,9 +117,8 @@ fn three_setups(
     let ids = [template.id, id_of("Middle"), id_of("Front rest")];
     for (index, id) in ids.iter().enumerate() {
         let rt = controller.state.gui.toolpath_rt_or_default(*id);
-        rt.result = None;
-        rt.status = ComputeStatus::Pending;
-        let _ = controller.state.session.apply(Command::ForgetResult(
+        rt.run = crate::state::runtime::ToolpathRun::Pending;
+        let _ = controller.state.apply(Command::ForgetResult(
             rs_cam_core::session::ForgetResultArgs { index },
         ));
     }
@@ -139,7 +135,7 @@ fn block_of(
         .gui
         .toolpath_rt
         .get(&id)
-        .and_then(|rt| rt.status.blocked_on().cloned())
+        .and_then(|rt| rt.run.status().blocked_on().cloned())
         .expect("a rest op with no snapshot records AwaitingPriorStock")
 }
 
@@ -147,7 +143,6 @@ fn set_enabled(controller: &mut AppController<RestChainBackend>, id: ToolpathId,
     let index = index_of(controller, id);
     let _ = controller
         .state
-        .session
         .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
             index,
             enabled,
@@ -221,7 +216,7 @@ fn generate_all_gives_the_setup_3_rest_op_its_snapshot_d11() {
             .gui
             .toolpath_rt
             .get(&rest)
-            .map(|rt| rt.status.clone());
+            .map(|rt| rt.run.status());
         assert!(
             matches!(status, Some(ComputeStatus::Done)),
             "{face_up_3:?}, stock change {stock_change_on_2}: the plan simulates \
@@ -254,7 +249,7 @@ fn a_retry_after_an_upstream_failure_resimulates_before_the_rest_op_d11() {
             .gui
             .toolpath_rt
             .get(&rest)
-            .map(|rt| &rt.status),
+            .map(|rt| rt.run.status()),
         Some(ComputeStatus::Done)
     ));
 
@@ -263,20 +258,19 @@ fn a_retry_after_an_upstream_failure_resimulates_before_the_rest_op_d11() {
     let rest_index = index_of(&controller, rest);
     let mut result = controller
         .state
-        .session
+        .session()
         .get_result(rest_index)
         .cloned()
         .expect("the rest op generated in the first run");
     result.stats.source_stock = controller
         .state
-        .session
+        .session()
         .simulation_result()
         .and_then(|sim| sim.prior_stock_sources.get(&rest).cloned());
     assert!(result.stats.source_stock.is_some());
-    let revision = controller.state.session.toolpath_revision(rest_index);
+    let revision = controller.state.session().toolpath_revision(rest_index);
     let _ = controller
         .state
-        .session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: rest_index,
             revision,
@@ -284,7 +278,7 @@ fn a_retry_after_an_upstream_failure_resimulates_before_the_rest_op_d11() {
         }))
         .expect("the revision is current");
     assert!(
-        controller.state.session.snapshot_is_current(rest).is_ok(),
+        controller.state.session().snapshot_is_current(rest).is_ok(),
         "precondition: the snapshot reads current while 'Middle' holds no result"
     );
 
@@ -296,7 +290,7 @@ fn a_retry_after_an_upstream_failure_resimulates_before_the_rest_op_d11() {
         .gui
         .toolpath_rt
         .get(&rest)
-        .map(|rt| rt.status.clone());
+        .map(|rt| rt.run.status());
     assert!(
         matches!(status, Some(ComputeStatus::Done)),
         "the plan generates 'Middle' before 'Front rest', so it must simulate \

@@ -75,7 +75,7 @@ pub(crate) fn toolpath_name(
     toolpath_id: rs_cam_core::ToolpathId,
 ) -> Option<String> {
     state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .find(|tc| tc.id == toolpath_id)

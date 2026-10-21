@@ -252,7 +252,7 @@ pub fn section_button_text(state: &AppState, section: DockSection, layout: DockL
 pub fn target_text(state: &AppState) -> String {
     let numbered = |id: crate::state::toolpath::ToolpathId| {
         state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .enumerate()

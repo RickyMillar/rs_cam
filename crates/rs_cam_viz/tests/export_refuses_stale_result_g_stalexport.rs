@@ -54,7 +54,7 @@ use rs_cam_viz::io::export::{
 };
 use rs_cam_viz::state::freshness::{FreshnessState, freshness_at};
 use rs_cam_viz::state::job::SetupId;
-use rs_cam_viz::state::runtime::{ComputeStatus, GuiState, StaleResultPolicy, ToolpathRuntime};
+use rs_cam_viz::state::runtime::{GuiState, StaleResultPolicy, ToolpathRuntime};
 use rs_cam_viz::state::simulation::SimulationState;
 use rs_cam_viz::state::toolpath::{OperationConfig, ToolpathResult};
 
@@ -160,8 +160,8 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
 
     let mut gui = GuiState::new();
     let mut rt = ToolpathRuntime::new(true);
-    rt.status = ComputeStatus::Done;
-    rt.result = Some(viz_result(sample_toolpath(PREVIOUS_FEED)));
+    rt.run =
+        rs_cam_viz::state::runtime::ToolpathRun::Done(viz_result(sample_toolpath(PREVIOUS_FEED)));
     gui.toolpath_rt.insert(id, rt);
 
     (session, gui, SimulationState::new())
@@ -330,8 +330,7 @@ fn the_acceptance_does_not_waive_a_missing_result() {
         .apply(Command::ForgetResult(ForgetResultArgs { index: 0 }))
         .expect("toolpath 0 exists");
     if let Some(rt) = gui.toolpath_rt.get_mut(&rs_cam_core::ToolpathId(0)) {
-        rt.result = None;
-        rt.status = ComputeStatus::Pending;
+        rt.run = rs_cam_viz::state::runtime::ToolpathRun::Pending;
     }
     assert_eq!(
         freshness_at(&session, &gui, 0),
@@ -374,8 +373,7 @@ fn the_acceptance_does_not_waive_a_missing_result() {
 fn export_refuses_an_operation_that_is_still_generating() {
     let (session, mut gui, sim) = build_state();
     if let Some(rt) = gui.toolpath_rt.get_mut(&rs_cam_core::ToolpathId(0)) {
-        rt.status = ComputeStatus::Computing;
-        rt.result = None;
+        rt.run = rs_cam_viz::state::runtime::ToolpathRun::Computing;
     }
     assert_eq!(
         freshness_at(&session, &gui, 0),

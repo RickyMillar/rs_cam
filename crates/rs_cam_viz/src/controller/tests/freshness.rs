@@ -19,14 +19,14 @@ use super::*;
 #[test]
 fn the_projection_keeps_the_three_fields_the_entry_cannot_supply_wp5() {
     let mut controller = sample_controller();
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
     let origin = rs_cam_core::session::PlannerOrigin {
         plan_id: 7,
         tier: 1,
         tier_count: 2,
     };
     {
-        let stored = &controller.state.session.toolpath_configs()[0];
+        let stored = &controller.state.session().toolpath_configs()[0];
         assert!(
             stored.boundary_inherit,
             "the fixture must start with boundary_inherit true, or the \
@@ -37,7 +37,6 @@ fn the_projection_keeps_the_three_fields_the_entry_cannot_supply_wp5() {
         config.planner_origin = Some(origin.clone());
         let _ = controller
             .state
-            .session
             .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
                 index: 0,
                 config: Box::new(config),
@@ -47,7 +46,7 @@ fn the_projection_keeps_the_three_fields_the_entry_cannot_supply_wp5() {
 
     let mut entry = crate::ui::properties::build_entry_from_session_and_gui(
         id,
-        &controller.state.session,
+        controller.state.session(),
         &controller.state.gui,
     )
     .expect("toolpath exists");
@@ -59,7 +58,7 @@ fn the_projection_keeps_the_three_fields_the_entry_cannot_supply_wp5() {
 
     let (_, stored) = controller
         .state
-        .session
+        .session()
         .find_toolpath_config_by_id(id)
         .expect("toolpath exists");
     let projected = crate::ui::properties::project_entry_onto(stored, &entry);
@@ -97,7 +96,7 @@ fn the_projection_keeps_the_three_fields_the_entry_cannot_supply_wp5() {
 fn an_open_panel_that_edits_nothing_drops_no_result_wp5() {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
     assert_eq!(
         state_of(&controller, 0),
         FreshnessState::Current,
@@ -112,7 +111,7 @@ fn an_open_panel_that_edits_nothing_drops_no_result_wp5() {
     }
 
     assert!(
-        controller.state.session.get_result(0).is_some(),
+        controller.state.session().get_result(0).is_some(),
         "a frame that moved no generation input must keep the cached \
          result"
     );
@@ -140,7 +139,7 @@ fn an_open_panel_that_edits_nothing_drops_no_result_wp5() {
 fn freshness_state_g_freshness_op_field_edit_is_edited_since() {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
     assert_eq!(state_of(&controller, 0), FreshnessState::Current);
 
     panel_edit(&mut controller, id, |entry| {
@@ -149,11 +148,11 @@ fn freshness_state_g_freshness_op_field_edit_is_edited_since() {
 
     assert_eq!(state_of(&controller, 0), FreshnessState::EditedSince);
     assert!(
-        controller.state.session.get_result(0).is_none(),
+        controller.state.session().get_result(0).is_none(),
         "the core must not keep a result for inputs that moved"
     );
     assert!(
-        controller.state.gui.toolpath_rt[&id].result.is_some(),
+        controller.state.gui.toolpath_rt[&id].run.result().is_some(),
         "the GUI keeps the old geometry so the viewport can draw it"
     );
     assert!(controller.state.gui.dirty);
@@ -205,7 +204,7 @@ fn freshness_state_g_freshness_every_inspector_input_stales() {
     for (label, edit) in rows {
         let mut controller = sample_controller();
         generate_all_for_test(&mut controller);
-        let id = controller.state.session.toolpath_configs()[0].id;
+        let id = controller.state.session().toolpath_configs()[0].id;
         panel_edit(&mut controller, id, edit);
         assert_eq!(
             state_of(&controller, 0),
@@ -213,7 +212,7 @@ fn freshness_state_g_freshness_every_inspector_input_stales() {
             "{label}: an edited input must not read Current"
         );
         assert!(
-            controller.state.session.get_result(0).is_none(),
+            controller.state.session().get_result(0).is_none(),
             "{label}: the core result must be gone"
         );
         assert!(controller.state.gui.dirty, "{label}: the project is dirty");
@@ -227,15 +226,14 @@ fn freshness_state_g_freshness_every_inspector_input_stales() {
 fn freshness_state_g_freshness_tool_and_model_reassignment_stale() {
     for row in ["tool", "model"] {
         let mut controller = sample_controller();
-        let mut tools = controller.state.session.tools().to_vec();
+        let mut tools = controller.state.session().tools().to_vec();
         tools.push(ToolConfig::new_default(ToolId(2), ToolType::EndMill));
         let _ = controller
             .state
-            .session
             .apply(Command::ReplaceTools(ReplaceToolsArgs { tools }))
             .expect("the session takes the tool list");
         generate_all_for_test(&mut controller);
-        let id = controller.state.session.toolpath_configs()[0].id;
+        let id = controller.state.session().toolpath_configs()[0].id;
         panel_edit(&mut controller, id, |entry| {
             if row == "tool" {
                 entry.tool_id = crate::state::job::ToolId(2);
@@ -248,7 +246,7 @@ fn freshness_state_g_freshness_tool_and_model_reassignment_stale() {
             FreshnessState::EditedSince,
             "{row} reassignment"
         );
-        assert!(controller.state.session.get_result(0).is_none());
+        assert!(controller.state.session().get_result(0).is_none());
     }
 }
 
@@ -259,7 +257,7 @@ fn freshness_state_g_freshness_tool_and_model_reassignment_stale() {
 fn name_and_gcode_edits_do_not_stale() {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
 
     panel_edit(&mut controller, id, |entry| {
         entry.name = "Renamed".to_owned();
@@ -268,9 +266,9 @@ fn name_and_gcode_edits_do_not_stale() {
     });
 
     assert_eq!(state_of(&controller, 0), FreshnessState::Current);
-    assert!(controller.state.session.get_result(0).is_some());
+    assert!(controller.state.session().get_result(0).is_some());
     assert_eq!(
-        controller.state.session.toolpath_configs()[0].name,
+        controller.state.session().toolpath_configs()[0].name,
         "Renamed",
         "the edit still reached the session"
     );
@@ -293,7 +291,7 @@ fn freshness_never_generated_is_no_result() {
 fn freshness_disabled_wins() {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
     controller.handle_internal_event(crate::ui::AppEvent::ToggleToolpathEnabled(id));
     assert_eq!(state_of(&controller, 0), FreshnessState::Disabled);
     assert!(
@@ -310,10 +308,9 @@ fn freshness_reorder_keeps_fresh_ops_current() {
     let mut controller = sample_controller();
     let second = push_toolpath(&mut controller, "Second");
     let third = push_toolpath(&mut controller, "Rest");
-    if let Some((idx, _)) = controller.state.session.find_toolpath_config_by_id(third) {
+    if let Some((idx, _)) = controller.state.session().find_toolpath_config_by_id(third) {
         let _ = controller
             .state
-            .session
             .apply(Command::SetStockSource(SetStockSourceArgs {
                 index: idx,
                 source: rs_cam_core::compute::config::StockSource::FromRemainingStock,
@@ -346,7 +343,7 @@ fn freshness_stock_edit_stales_every_toolpath() {
     push_toolpath(&mut controller, "Second");
     generate_all_for_test(&mut controller);
 
-    let mut draft = controller.state.session.stock_config().clone();
+    let mut draft = controller.state.session().stock_config().clone();
     // The fixture's stock carries `auto_from_model`, and the apply funnel
     // re-sizes such a draft around the first model BEFORE it compares. A
     // typed dimension alone would therefore arrive back at the stored
@@ -362,7 +359,7 @@ fn freshness_stock_edit_stales_every_toolpath() {
             FreshnessState::EditedSince,
             "toolpath {index} after a stock edit"
         );
-        assert!(controller.state.session.get_result(index).is_none());
+        assert!(controller.state.session().get_result(index).is_none());
     }
     assert!(controller.state.gui.dirty);
     assert!(
@@ -381,18 +378,15 @@ fn freshness_stock_edit_stales_every_toolpath() {
 fn freshness_machine_kinematics_leaves_toolpaths_current() {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let kinematics = controller.state.session.machine().effective_kinematics();
-    let _ = controller
-        .state
-        .session
-        .apply(Command::SetMachineKinematics(
-            rs_cam_core::session::SetMachineKinematicsArgs {
-                kinematics: Box::new(kinematics),
-            },
-        ));
+    let kinematics = controller.state.session().machine().effective_kinematics();
+    let _ = controller.state.apply(Command::SetMachineKinematics(
+        rs_cam_core::session::SetMachineKinematicsArgs {
+            kinematics: Box::new(kinematics),
+        },
+    ));
     assert_eq!(state_of(&controller, 0), FreshnessState::Current);
-    assert!(controller.state.session.get_result(0).is_some());
-    assert!(controller.state.session.simulation_result().is_none());
+    assert!(controller.state.session().get_result(0).is_some());
+    assert!(controller.state.session().simulation_result().is_none());
 }
 
 /// A setup orientation flip regenerates every toolpath in that setup in a
@@ -408,7 +402,6 @@ fn freshness_setup_orientation_stales_the_setup() {
         if row == "face" {
             let _ = controller
                 .state
-                .session
                 .apply(Command::SetSetupFace(SetSetupFaceArgs {
                     setup_index: 0,
                     face_up: rs_cam_core::compute::transform::FaceUp::Bottom,
@@ -417,7 +410,6 @@ fn freshness_setup_orientation_stales_the_setup() {
         } else {
             let _ = controller
                 .state
-                .session
                 .apply(Command::SetSetupRotation(SetSetupRotationArgs {
                     setup_index: 0,
                     z_rotation: rs_cam_core::compute::transform::ZRotation::Deg90,
@@ -442,9 +434,9 @@ fn freshness_setup_orientation_stales_the_setup() {
 fn freshness_tool_edit_stales_its_users_and_requests_regeneration() {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
 
-    let mut draft = controller.state.session.tools()[0].clone();
+    let mut draft = controller.state.session().tools()[0].clone();
     draft.diameter += 1.0;
     crate::ui::properties::commit_tool_draft(&mut controller.state, ToolId(1), draft);
 
@@ -462,11 +454,10 @@ fn freshness_tool_edit_stales_its_users_and_requests_regeneration() {
 fn toolpath_revision_bumps_on_every_input_drop() {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let before = controller.state.session.toolpath_revision(0);
+    let before = controller.state.session().toolpath_revision(0);
 
     let _ = controller
         .state
-        .session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,
             revision: before,
@@ -474,17 +465,17 @@ fn toolpath_revision_bumps_on_every_input_drop() {
         }))
         .expect("index is in range");
     assert_eq!(
-        controller.state.session.toolpath_revision(0),
+        controller.state.session().toolpath_revision(0),
         before,
         "recording an answer is not a change of inputs"
     );
 
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
     panel_edit(&mut controller, id, |entry| {
         entry.operation.set_feed_rate(999.0);
     });
     assert!(
-        controller.state.session.toolpath_revision(0) > before,
+        controller.state.session().toolpath_revision(0) > before,
         "an input edit must move the revision"
     );
 }
@@ -582,8 +573,8 @@ fn freshness_surfaces_agree_after_one_edit_g_freshrender() {
 
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let id = controller.state.session.toolpath_configs()[0].id;
-    let total = controller.state.session.toolpath_configs().len();
+    let id = controller.state.session().toolpath_configs()[0].id;
+    let total = controller.state.session().toolpath_configs().len();
 
     // Before: everything current, nothing to report.
     assert_eq!(state_of(&controller, 0), FreshnessState::Current);
@@ -639,18 +630,17 @@ fn freshness_chip_reports_stale_ahead_of_pending() {
     let mut controller = sample_controller();
     let second = push_toolpath(&mut controller, "Second");
     generate_all_for_test(&mut controller);
-    let first = controller.state.session.toolpath_configs()[0].id;
+    let first = controller.state.session().toolpath_configs()[0].id;
 
     // Toolpath 1 never generated, toolpath 0 generated then edited.
     let _ = controller
         .state
-        .session
         .apply(Command::InvalidateToolpathInputs(
             InvalidateToolpathInputsArgs { index: 1 },
         ))
         .expect("toolpath 1 exists");
     if let Some(rt) = controller.state.gui.toolpath_rt.get_mut(&second) {
-        rt.result = None;
+        rt.run = crate::state::runtime::ToolpathRun::Pending;
     }
     panel_edit(&mut controller, first, |entry| {
         entry.operation.set_feed_rate(999.0);
@@ -676,7 +666,7 @@ fn freshness_does_not_outrank_a_collision() {
 
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
     panel_edit(&mut controller, id, |entry| {
         entry.operation.set_feed_rate(4321.0);
     });
@@ -706,11 +696,10 @@ fn freshness_counts_exclude_disabled_and_error() {
 
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
 
     let _ = controller
         .state
-        .session
         .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
             index: 0,
             enabled: false,
@@ -721,14 +710,13 @@ fn freshness_counts_exclude_disabled_and_error() {
 
     let _ = controller
         .state
-        .session
         .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
             index: 0,
             enabled: true,
         }))
         .expect("index 0 exists");
     if let Some(rt) = controller.state.gui.toolpath_rt.get_mut(&id) {
-        rt.status = crate::state::runtime::ComputeStatus::Error("nope".to_owned());
+        rt.run = crate::state::runtime::ToolpathRun::Failed("nope".to_owned());
     }
     let (stale, pending) = readiness::freshness_counts(&controller.state);
     assert_eq!(

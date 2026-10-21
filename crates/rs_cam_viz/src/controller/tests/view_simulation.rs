@@ -19,7 +19,7 @@ use super::*;
 fn a_panel_stock_edit_clears_the_view_simulation_wp19() {
     let mut controller = controller_holding_a_simulation();
 
-    let mut draft = controller.state.session.stock_config().clone();
+    let mut draft = controller.state.session().stock_config().clone();
     // The funnel re-fits an `auto_from_model` draft around the model
     // before it compares, so a typed dimension alone would arrive back
     // at the stored record. The operator clears the checkbox to type a
@@ -30,7 +30,7 @@ fn a_panel_stock_edit_clears_the_view_simulation_wp19() {
     crate::ui::properties::apply_stock_draft(&mut controller.state, draft);
 
     assert!(
-        controller.state.session.simulation_result().is_none(),
+        controller.state.session().simulation_result().is_none(),
         "the control: the stock row drops every result, and the \
          session's simulation with them"
     );
@@ -60,7 +60,7 @@ fn a_stamped_row_reads_the_catalog_auto_regen_h3() {
     let mut controller = sample_controller();
     push_toolpath(&mut controller, "Second");
     let (id, expected) = {
-        let tc = &controller.state.session.toolpath_configs()[1];
+        let tc = &controller.state.session().toolpath_configs()[1];
         (tc.id, tc.operation.default_auto_regen())
     };
     assert!(
@@ -72,9 +72,19 @@ fn a_stamped_row_reads_the_catalog_auto_regen_h3() {
     // never drawn, so no runtime row exists. That is the case H3 names.
     controller.state.gui.toolpath_rt.remove(&id);
 
-    let mut stale = std::collections::BTreeSet::new();
-    stale.insert(1_usize);
-    crate::state::stale::stamp_stale(&mut controller.state, &stale);
+    // F096: the stamp runs inside the one door, so the arm applies a
+    // command that stales index 1.
+    let effects = controller
+        .state
+        .apply(Command::SetToolpathParam(
+            rs_cam_core::session::SetToolpathParamArgs {
+                index: 1,
+                param: "scallop_height".to_owned(),
+                value: serde_json::json!(0.02),
+            },
+        ))
+        .expect("scallop_height is a scallop parameter");
+    assert!(effects.stale.contains(&1), "the edit stales index 1");
 
     let rt = controller
         .state
@@ -103,8 +113,8 @@ fn an_undone_stock_change_stales_every_toolpath_wp19() {
     push_toolpath(&mut controller, "Second");
     generate_all_for_test(&mut controller);
     let action = UndoAction::StockChange {
-        old: controller.state.session.stock_config().clone(),
-        new: controller.state.session.stock_config().clone(),
+        old: controller.state.session().stock_config().clone(),
+        new: controller.state.session().stock_config().clone(),
     };
     controller.state.history.push(action);
 
@@ -116,7 +126,7 @@ fn an_undone_stock_change_stales_every_toolpath_wp19() {
             FreshnessState::EditedSince,
             "toolpath {index} after an undone stock change"
         );
-        assert!(controller.state.session.get_result(index).is_none());
+        assert!(controller.state.session().get_result(index).is_none());
     }
 }
 
@@ -138,12 +148,12 @@ fn an_undone_stock_change_stales_every_toolpath_wp19() {
 #[test]
 fn a_toolpath_edit_clears_the_view_simulation_wp19() {
     let mut controller = controller_holding_a_simulation();
-    let id = controller.state.session.toolpath_configs()[0].id;
+    let id = controller.state.session().toolpath_configs()[0].id;
 
     controller.handle_internal_event(AppEvent::ToggleToolpathEnabled(id));
 
     assert!(
-        controller.state.session.simulation_result().is_none(),
+        controller.state.session().simulation_result().is_none(),
         "the control: the toggle drops the session's simulation"
     );
     assert!(

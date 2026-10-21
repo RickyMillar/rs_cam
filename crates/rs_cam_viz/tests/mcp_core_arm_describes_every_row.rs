@@ -188,7 +188,7 @@ fn the_dispatch_holds_one_command_arm() {
     for needle in [
         "self.mcp_before_core(&request)",
         "self.core_command_for(request)",
-        ".session.apply(command)",
+        "self.controller.apply(command)",
         "self.describe_core(id, outcome, &before)",
         "push_mcp_outcome(",
     ] {

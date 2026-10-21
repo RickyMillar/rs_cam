@@ -4,21 +4,21 @@ The view-side state; the core owns the project, so it is not an alternate data m
 
 ## Files
 
-- `mod.rs` — `AppState` and the facade.
+- `mod.rs` — `AppState`. F096: `session` is private. Read `session()`; write only `apply` (stamps `Effects.stale`,
+  raises the sim flag, logs a refusal), `replace_session`, `start_job`; `split_mut` gives disjoint borrows.
 - `freshness.rs` — `FreshnessState` per toolpath and `SimFreshness`: both DERIVED, never stored.
 - `stale.rs` — the one place the GUI stamps `stale_since` from a core answer.
 - `toolpath.rs` and `toolpath/` — the toolpath rows, their catalogue entries and configuration support.
-- `simulation.rs`, `job.rs`, `runtime.rs` — sim, job lanes, GUI runtime; `FeedsMemo::refresh` is the one `feeds_result` writer (F216).
+- `simulation.rs`, `job.rs`, `runtime.rs` — sim, job lanes, GUI runtime; `FeedsMemo::refresh` is the one `feeds_result` writer (F216);
+  `ToolpathRun` is the run and its result as one value (F031), `status()` derives `ComputeStatus`.
 - `simulation/` — `playback_state.rs`, `issue_triage.rs`, `semantic_trace.rs`.
 - `viewport.rs` — `drawing_draws`: every visible drawing draws; the selected op's model draws its states.
-- `selection.rs` — the selection. `overlays.rs` — the dock and catalogue; `ModelVisibility` (the model
-  eye: view state, not saved).
+- `selection.rs` — the selection. `overlays.rs` — the dock and catalogue; `ModelVisibility` (view state).
 - `selection_highlight.rs` — the report the viewport colours, `ReportDetector`, `HoverDetector`, the note keys.
 - `pick.rs` — `SelectionUi` on `GuiState`: one `ViewportMode { Pick, Tabs }` at a time (L-3 by type) and
   the `+ Rule` draft; `PickFilter::effective_kinds` (on, served, held); `held_kinds` holds `Face` for an STL.
 - `tab_edit.rs` — the `tab_layout` read per toolpath revision and `TabMarksDetector`.
-- `history.rs`, `wizard.rs`, `multitool_planner.rs` — undo (`ModelDrawingEdits`: the ledger before and
-  after), the export wizard and the planner.
+- `history.rs`, `wizard.rs`, `multitool_planner.rs` — undo (`ModelDrawingEdits`), the export wizard, the planner.
 - `panels.rs` — panel drafts (`join_all_mm`, `drawing_popover`, `number_drafts`: the value in flight of
   `committed_number`, ui09). `app_settings.rs`; `pin_view.rs` (pin frame, C8);
   `shoe_plan.rs` (the shoe plan memo and run sheet, H2).

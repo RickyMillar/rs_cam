@@ -120,7 +120,7 @@ fn draw_list_panel(
     ui.add_space(6.0);
     ui.separator();
     ui.label(
-        egui::RichText::new(format!("Save '{}' as:", state.session.machine().name))
+        egui::RichText::new(format!("Save '{}' as:", state.session().machine().name))
             .small()
             .color(theme::TEXT_MUTED),
     );

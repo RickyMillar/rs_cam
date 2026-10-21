@@ -14,23 +14,23 @@ impl RsCamApp {
     pub(super) fn handle_wizard_save(&mut self) {
         let state = self.controller.state();
         let layout = state.gui.wizard.effective_layout(
-            state.session.post_config().format.definition(),
-            crate::io::export::setups_with_enabled_ops(&state.session),
+            state.session().post_config().format.definition(),
+            crate::io::export::setups_with_enabled_ops(state.session()),
         );
         let template = state.gui.wizard.filename_template.clone();
         let allow_errors = state.gui.wizard.allow_validator_errors;
-        let job = if state.session.name().is_empty() {
+        let job = if state.session().name().is_empty() {
             "untitled".to_owned()
         } else {
-            slugify(state.session.name())
+            slugify(state.session().name())
         };
         let last_dir = state.gui.wizard.last_save_dir.clone();
-        let post_format = state.session.post_config().format;
+        let post_format = state.session().post_config().format;
 
         match layout {
             OutputLayout::SingleFile => {
                 let exported = match crate::io::export::export_gcode_from_session_reporting(
-                    &state.session,
+                    state.session(),
                     &state.gui,
                     &state.simulation,
                     state.gui.tool_load_overrides.as_policy(),
@@ -118,7 +118,7 @@ impl RsCamApp {
     fn collect_setup_outputs(&mut self) -> Result<Vec<(String, String)>, ()> {
         let state = self.controller.state();
         let files = crate::io::export::export_per_setup_files(
-            &state.session,
+            state.session(),
             &state.gui,
             &state.simulation,
             state.gui.tool_load_overrides.as_policy(),
@@ -159,7 +159,7 @@ impl RsCamApp {
         let toolpaths: Vec<(rs_cam_core::ToolpathId, String)> = self
             .controller
             .state()
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .filter(|tc| tc.enabled)
@@ -169,7 +169,7 @@ impl RsCamApp {
         for (id, name) in toolpaths {
             let state = self.controller.state();
             match crate::io::export::export_single_toolpath_reporting(
-                &state.session,
+                state.session(),
                 &state.gui,
                 &state.simulation,
                 id,
@@ -250,8 +250,8 @@ impl RsCamApp {
         }
         // G8: the controller options this export emits with.
         let state = self.controller.state();
-        let findings = if state.session.post_config().format == post {
-            crate::io::export::validate_export(&state.session, &state.gui, gcode)
+        let findings = if state.session().post_config().format == post {
+            crate::io::export::validate_export(state.session(), &state.gui, gcode)
         } else {
             rs_cam_core::export::gcode_validator::validate(gcode, post)
         };
@@ -333,12 +333,12 @@ impl RsCamApp {
 
                 let tool_changes = {
                     let state = self.controller.state();
-                    let session = &state.session;
+                    let session = state.session();
                     let gui = &state.gui;
                     for tc in session.toolpath_configs() {
                         if tc.enabled
                             && let Some(result) =
-                                gui.toolpath_rt.get(&tc.id).and_then(|r| r.result.as_ref())
+                                gui.toolpath_rt.get(&tc.id).and_then(|r| r.run.result())
                         {
                             total_moves += result.stats.move_count;
                             cutting_dist += result.stats.cutting_distance;
@@ -520,19 +520,19 @@ mod tests {
     fn the_preview_matches_the_saved_filename_for_a_spaced_job_name() {
         // L8 deleted the `SetProjectName` row. The builder names a
         // session the way every other fixture does.
-        let state = crate::state::AppState {
-            session: ProjectSessionBuilder::new()
+        let mut state = crate::state::AppState::default();
+        state.replace_session(
+            ProjectSessionBuilder::new()
                 .name("Job 1".to_owned())
                 .build(),
-            ..crate::state::AppState::default()
-        };
+        );
 
         let preview = crate::ui::export_wizard::render_filename_preview(
             "{job}.nc",
             &state,
             OutputLayout::SingleFile,
         );
-        let saved = render_filename("{job}.nc", &slugify(state.session.name()), None, None);
+        let saved = render_filename("{job}.nc", &slugify(state.session().name()), None, None);
 
         assert_eq!(preview, saved);
         assert_eq!(saved, "Job_1.nc");

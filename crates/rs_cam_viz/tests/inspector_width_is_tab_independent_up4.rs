@@ -304,8 +304,8 @@ fn feeds_fixture() -> AppState {
         .add_toolpath(0, config)
         .expect("add the hardwood profile fixture");
     let mut state = AppState::new();
-    state.session = builder.build();
-    let id = state.session.toolpath_configs()[0].id;
+    state.replace_session(builder.build());
+    let id = state.session().toolpath_configs()[0].id;
     // The controller creates this runtime row when it loads or adds a
     // toolpath. Mirror that normal lifecycle so the production panel's
     // write-back can cache the recipe it calculated on the selected tab.
@@ -444,7 +444,7 @@ fn real_warning_shaped_feeds_tab_stays_inside_its_panel_ur1() {
     // content is painted, so render all disclosures open for this fixture.
     ctx.memory_mut(|memory| memory.set_everything_is_visible(true));
     let mut state = feeds_fixture();
-    let id = state.session.toolpath_configs()[0].id;
+    let id = state.session().toolpath_configs()[0].id;
 
     // The production tab override is one-shot: the first frame consumes it,
     // calculates the recipe, and persists Feeds in egui memory. The next frame
@@ -492,7 +492,7 @@ fn real_warning_shaped_feeds_tab_fits_the_240_point_rail_ur4() {
     let ctx = ctx();
     ctx.memory_mut(|memory| memory.set_everything_is_visible(true));
     let mut state = feeds_fixture();
-    let id = state.session.toolpath_configs()[0].id;
+    let id = state.session().toolpath_configs()[0].id;
 
     let _ = render_feeds_panel_at(&ctx, &mut state, SIMULATION_RAIL_WIDTH);
     let rendered = render_feeds_panel_at(&ctx, &mut state, SIMULATION_RAIL_WIDTH);

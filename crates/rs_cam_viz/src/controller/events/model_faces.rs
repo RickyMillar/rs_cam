@@ -48,7 +48,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// The first model the toolpath `id` needs the faces of now, or `None`.
     fn model_needing_faces(&self, id: crate::state::toolpath::ToolpathId) -> Option<usize> {
         use rs_cam_core::session::SelectionTarget;
-        let session = &self.state.session;
+        let session = self.state.session();
         let (_, tc) = session.find_toolpath_config_by_id(id)?;
         let failed = |m: &usize| self.failed_face_models.contains(m);
         for target in [SelectionTarget::Op, SelectionTarget::Boundary] {
@@ -87,7 +87,7 @@ impl<B: ComputeBackend> AppController<B> {
             return;
         }
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let started = self.state.session.start(
+        let started = self.state.start_job(
             rs_cam_core::session::Job::BuildModelFaces(rs_cam_core::session::BuildModelFacesArgs {
                 model_id,
             }),

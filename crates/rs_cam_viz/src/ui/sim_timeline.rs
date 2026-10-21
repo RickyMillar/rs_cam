@@ -677,7 +677,7 @@ fn span_subband_present(
         .or_else(|| sim.current_boundary().map(|b| b.id))?;
     sim.boundaries().iter().find(|b| b.id == tp_id)?;
     let rt = gui.toolpath_rt.get(&tp_id)?;
-    let result = rt.result.as_ref()?;
+    let result = rt.run.result()?;
     if !result.spans_valid() || result.spans().is_empty() {
         return None;
     }
@@ -711,7 +711,7 @@ fn paint_span_subband(
     let Some(rt) = gui.toolpath_rt.get(&tp_id) else {
         return;
     };
-    let Some(result) = rt.result.as_ref() else {
+    let Some(result) = rt.run.result() else {
         return;
     };
     if !result.spans_valid() {
@@ -1242,7 +1242,7 @@ fn estimate_times(
 
     for boundary in sim.boundaries() {
         if let Some(rt) = gui.toolpath_rt.get(&boundary.id)
-            && let Some(result) = &rt.result
+            && let Some(result) = rt.run.result()
             && let Some((_, tc)) = session.find_toolpath_config_by_id(boundary.id)
         {
             let op = readiness::toolpath_cycle_time(

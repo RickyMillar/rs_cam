@@ -10,25 +10,24 @@ fn remove_tool_succeeds_when_no_toolpath_references_it() {
     // Add a second tool that is not referenced by any toolpath.
     let unreferenced_id = ToolId(99);
     let extra_tool = ToolConfig::new_default(unreferenced_id, ToolType::EndMill);
-    let mut tools = controller.state.session.tools().to_vec();
+    let mut tools = controller.state.session().tools().to_vec();
     tools.push(extra_tool);
     let _ = controller
         .state
-        .session
         .apply(Command::ReplaceTools(ReplaceToolsArgs { tools }))
         .expect("the session takes the tool list");
-    let tool_count_before = controller.state.session.tools().len();
+    let tool_count_before = controller.state.session().tools().len();
 
     controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(unreferenced_id));
     assert_eq!(
-        controller.state.session.tools().len(),
+        controller.state.session().tools().len(),
         tool_count_before - 1,
         "Unreferenced tool should be removed"
     );
     assert!(
         controller
             .state
-            .session
+            .session()
             .tools()
             .iter()
             .all(|t| t.id != unreferenced_id),
@@ -43,16 +42,16 @@ fn remove_tool_succeeds_when_no_toolpath_references_it() {
 #[test]
 fn add_toolpath_blocked_when_no_tools_exist() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
-    // No tools added — controller.state.session.tools() is empty.
-    assert!(controller.state.session.tools().is_empty());
+    // No tools added — controller.state.session().tools() is empty.
+    assert!(controller.state.session().tools().is_empty());
 
-    let tp_count_before = controller.state.session.toolpath_count();
+    let tp_count_before = controller.state.session().toolpath_count();
 
     controller.handle_internal_event(crate::ui::AppEvent::AddToolpath(
         crate::state::toolpath::OperationType::Adaptive3d,
     ));
 
-    let tp_count_after = controller.state.session.toolpath_count();
+    let tp_count_after = controller.state.session().toolpath_count();
     assert_eq!(
         tp_count_before, tp_count_after,
         "No toolpath should be created when no tools exist"
@@ -66,14 +65,14 @@ fn add_toolpath_blocked_when_no_tools_exist() {
 #[test]
 fn add_tool_and_remove_tool_lifecycle() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
-    assert!(controller.state.session.tools().is_empty());
+    assert!(controller.state.session().tools().is_empty());
 
     // Add a tool
     controller.handle_internal_event(crate::ui::AppEvent::AddTool(ToolType::EndMill));
-    assert_eq!(controller.state.session.tools().len(), 1);
-    let tool_id = controller.state.session.tools()[0].id;
+    assert_eq!(controller.state.session().tools().len(), 1);
+    let tool_id = controller.state.session().tools()[0].id;
     assert_eq!(
-        controller.state.session.tools()[0].tool_type,
+        controller.state.session().tools()[0].tool_type,
         ToolType::EndMill
     );
 
@@ -83,7 +82,7 @@ fn add_tool_and_remove_tool_lifecycle() {
     // Remove the tool (no toolpaths reference it)
     controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(tool_id));
     assert!(
-        controller.state.session.tools().is_empty(),
+        controller.state.session().tools().is_empty(),
         "Tool should be removed when no toolpaths reference it"
     );
 }
@@ -92,16 +91,16 @@ fn add_tool_and_remove_tool_lifecycle() {
 fn add_setup_appends_a_second_setup() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
     // Starts with one default setup
-    assert_eq!(controller.state.session.list_setups().len(), 1);
-    let original_setup_id = SetupId(controller.state.session.list_setups()[0].id);
+    assert_eq!(controller.state.session().list_setups().len(), 1);
+    let original_setup_id = SetupId(controller.state.session().list_setups()[0].id);
 
     // Add a second setup
     controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
-    assert_eq!(controller.state.session.list_setups().len(), 2);
-    let new_setup_id = SetupId(controller.state.session.list_setups()[1].id);
+    assert_eq!(controller.state.session().list_setups().len(), 2);
+    let new_setup_id = SetupId(controller.state.session().list_setups()[1].id);
     assert_ne!(original_setup_id, new_setup_id);
     assert_eq!(
-        SetupId(controller.state.session.list_setups()[0].id),
+        SetupId(controller.state.session().list_setups()[0].id),
         original_setup_id,
         "the add appends; it never re-keys the setup that stood first"
     );
@@ -112,13 +111,13 @@ fn remove_setup_selects_previous_then_next_and_cancels_generation() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
     controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
     controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
-    let first = SetupId(controller.state.session.list_setups()[0].id);
-    let second = SetupId(controller.state.session.list_setups()[1].id);
-    let third = SetupId(controller.state.session.list_setups()[2].id);
+    let first = SetupId(controller.state.session().list_setups()[0].id);
+    let second = SetupId(controller.state.session().list_setups()[1].id);
+    let third = SetupId(controller.state.session().list_setups()[2].id);
 
     controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(second));
 
-    assert_eq!(controller.state.session.list_setups().len(), 2);
+    assert_eq!(controller.state.session().list_setups().len(), 2);
     assert_eq!(controller.state.selection, Selection::Setup(first));
     assert_eq!(
         controller.compute.toolpath_lane.state,
@@ -127,22 +126,22 @@ fn remove_setup_selects_previous_then_next_and_cancels_generation() {
 
     controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(first));
 
-    assert_eq!(controller.state.session.list_setups().len(), 1);
+    assert_eq!(controller.state.session().list_setups().len(), 1);
     assert_eq!(controller.state.selection, Selection::Setup(third));
 }
 
 #[test]
 fn remove_final_setup_is_refused_without_cancelling_or_editing() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
-    let only = SetupId(controller.state.session.list_setups()[0].id);
-    let epoch = controller.state.session.simulation_epoch();
+    let only = SetupId(controller.state.session().list_setups()[0].id);
+    let epoch = controller.state.session().simulation_epoch();
     let edits = controller.state.gui.edit_counter;
 
     controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(only));
 
-    assert_eq!(controller.state.session.list_setups().len(), 1);
+    assert_eq!(controller.state.session().list_setups().len(), 1);
     assert_eq!(controller.compute.toolpath_lane.state, LaneState::Idle);
-    assert_eq!(controller.state.session.simulation_epoch(), epoch);
+    assert_eq!(controller.state.session().simulation_epoch(), epoch);
     assert_eq!(controller.state.gui.edit_counter, edits);
 }
 
@@ -150,13 +149,12 @@ fn remove_final_setup_is_refused_without_cancelling_or_editing() {
 fn remove_setup_cleans_runtime_and_ignores_a_queued_late_completion() {
     let mut controller = sample_controller();
     controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
-    let removed_setup = SetupId(controller.state.session.list_setups()[1].id);
-    let retained_id = controller.state.session.toolpath_configs()[0].id;
-    let mut config = controller.state.session.toolpath_configs()[0].clone();
+    let removed_setup = SetupId(controller.state.session().list_setups()[1].id);
+    let retained_id = controller.state.session().toolpath_configs()[0].id;
+    let mut config = controller.state.session().toolpath_configs()[0].clone();
     config.name = "Removed setup operation".to_owned();
     let removed_index = controller
         .state
-        .session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 1,
             config: Box::new(config),
@@ -164,7 +162,7 @@ fn remove_setup_cleans_runtime_and_ignores_a_queued_late_completion() {
         .expect("add toolpath to removed setup")
         .created
         .expect("created toolpath index");
-    let removed_id = controller.state.session.toolpath_configs()[removed_index].id;
+    let removed_id = controller.state.session().toolpath_configs()[removed_index].id;
     controller
         .state
         .gui
@@ -238,12 +236,12 @@ fn remove_setup_cleans_runtime_and_ignores_a_queued_late_completion() {
     assert!(
         controller
             .state
-            .session
+            .session()
             .find_toolpath_config_by_id(removed_id)
             .is_none()
     );
     assert!(!controller.state.gui.toolpath_rt.contains_key(&removed_id));
-    assert!(controller.state.session.get_result(0).is_none());
+    assert!(controller.state.session().get_result(0).is_none());
     assert!(
         controller.plan.is_none(),
         "the deleted target's terminal message must close the cancelled plan"
@@ -317,12 +315,11 @@ fn add_second_setup_with_a_toolpath(
     controller: &mut AppController<ScriptedBackend>,
 ) -> (SetupId, ToolpathId) {
     controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
-    let setup = SetupId(controller.state.session.list_setups()[1].id);
-    let mut config = controller.state.session.toolpath_configs()[0].clone();
+    let setup = SetupId(controller.state.session().list_setups()[1].id);
+    let mut config = controller.state.session().toolpath_configs()[0].clone();
     config.name = "Removed setup operation".to_owned();
     let index = controller
         .state
-        .session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 1,
             config: Box::new(config),
@@ -330,7 +327,7 @@ fn add_second_setup_with_a_toolpath(
         .expect("add toolpath to the second setup")
         .created
         .expect("created toolpath index");
-    let id = controller.state.session.toolpath_configs()[index].id;
+    let id = controller.state.session().toolpath_configs()[index].id;
     (setup, id)
 }
 
@@ -342,7 +339,7 @@ fn remove_setup_discards_a_queued_simulation_that_names_a_removed_toolpath() {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
     let (removed_setup, removed_id) = add_second_setup_with_a_toolpath(&mut controller);
-    let retained_id = controller.state.session.toolpath_configs()[0].id;
+    let retained_id = controller.state.session().toolpath_configs()[0].id;
     controller
         .compute
         .drained
@@ -356,7 +353,7 @@ fn remove_setup_discards_a_queued_simulation_that_names_a_removed_toolpath() {
         "a result whose boundaries name a removed toolpath cannot be installed"
     );
     assert!(controller.state.simulation.last_run.is_none());
-    assert!(controller.state.session.simulation_result().is_none());
+    assert!(controller.state.session().simulation_result().is_none());
 }
 
 /// WP28 with G-LATESIM: the setup deletion moves the epoch, but a queued
@@ -368,7 +365,7 @@ fn remove_setup_stores_a_queued_simulation_of_retained_toolpaths_as_stale() {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
     let (removed_setup, _removed_id) = add_second_setup_with_a_toolpath(&mut controller);
-    let retained_id = controller.state.session.toolpath_configs()[0].id;
+    let retained_id = controller.state.session().toolpath_configs()[0].id;
     controller
         .compute
         .drained
@@ -382,7 +379,7 @@ fn remove_setup_stores_a_queued_simulation_of_retained_toolpaths_as_stale() {
         "STORED, not discarded: every boundary still names a toolpath"
     );
     assert!(
-        controller.state.session.simulation_result().is_none(),
+        controller.state.session().simulation_result().is_none(),
         "the core does not adopt a run the deletion superseded"
     );
     assert!(controller.state.simulation_is_stale());
@@ -404,23 +401,23 @@ fn remove_setup_stores_a_queued_simulation_of_retained_toolpaths_as_stale() {
 #[test]
 fn the_add_door_holds_a_model_bbox_for_the_toolpath_it_writes() {
     let mut controller = sample_controller();
-    let before = controller.state.session.toolpath_count();
+    let before = controller.state.session().toolpath_count();
     controller.handle_add_toolpath(crate::state::toolpath::OperationType::Pocket);
     assert_eq!(
-        controller.state.session.toolpath_count(),
+        controller.state.session().toolpath_count(),
         before + 1,
         "the add door must create the toolpath"
     );
 
-    let added = &controller.state.session.toolpath_configs()[before];
+    let added = &controller.state.session().toolpath_configs()[before];
     let bbox = controller
         .state
-        .session
+        .session()
         .model_bbox(added.model_id)
         .expect("the model the door named must carry a bbox");
     let model = controller
         .state
-        .session
+        .session()
         .models()
         .iter()
         .find(|m| m.id == added.model_id)
@@ -435,7 +432,7 @@ fn the_add_door_holds_a_model_bbox_for_the_toolpath_it_writes() {
 #[test]
 fn add_toolpath_and_remove_toolpath_lifecycle() {
     let mut controller = sample_controller();
-    let tp_count_before = controller.state.session.toolpath_count();
+    let tp_count_before = controller.state.session().toolpath_count();
     assert!(
         tp_count_before >= 1,
         "sample_controller starts with 1 toolpath"
@@ -445,7 +442,7 @@ fn add_toolpath_and_remove_toolpath_lifecycle() {
     controller.handle_internal_event(crate::ui::AppEvent::AddToolpath(
         crate::state::toolpath::OperationType::Pocket,
     ));
-    let tp_count_after = controller.state.session.toolpath_count();
+    let tp_count_after = controller.state.session().toolpath_count();
     assert_eq!(
         tp_count_after,
         tp_count_before + 1,
@@ -460,14 +457,14 @@ fn add_toolpath_and_remove_toolpath_lifecycle() {
     // Remove it
     controller.handle_internal_event(crate::ui::AppEvent::RemoveToolpath(new_tp_id));
     assert_eq!(
-        controller.state.session.toolpath_count(),
+        controller.state.session().toolpath_count(),
         tp_count_before,
         "Toolpath should be removed"
     );
     assert!(
         controller
             .state
-            .session
+            .session()
             .find_toolpath_config_by_id(new_tp_id)
             .is_none(),
         "Removed toolpath should not be findable"
@@ -484,7 +481,7 @@ fn add_toolpath_requires_geometry_for_polygon_operations() {
     ));
 
     assert_eq!(
-        controller.state.session.toolpath_count(),
+        controller.state.session().toolpath_count(),
         0,
         "Polygon-based toolpaths should not be created without an imported model"
     );
@@ -529,17 +526,17 @@ fn reset_simulation_cancels_analysis_lane() {
 #[test]
 fn duplicate_tool_creates_independent_copy() {
     let mut controller = sample_controller();
-    let original_tool = controller.state.session.tools()[0].clone();
+    let original_tool = controller.state.session().tools()[0].clone();
     let original_id = original_tool.id;
 
     controller.handle_internal_event(crate::ui::AppEvent::DuplicateTool(original_id));
     assert_eq!(
-        controller.state.session.tools().len(),
+        controller.state.session().tools().len(),
         2,
         "Should have original + copy"
     );
 
-    let copy = &controller.state.session.tools()[1];
+    let copy = &controller.state.session().tools()[1];
     assert_ne!(copy.id, original_id, "Copy should have a different ID");
     assert!(
         copy.name.contains("(copy)"),
@@ -551,14 +548,14 @@ fn duplicate_tool_creates_independent_copy() {
 
     // Modifying the copy should not affect the original (they are independent)
     // We verify they are separate entries in the tools list
-    assert_eq!(controller.state.session.tools()[0].id, original_id);
-    assert_ne!(controller.state.session.tools()[1].id, original_id);
+    assert_eq!(controller.state.session().tools()[0].id, original_id);
+    assert_ne!(controller.state.session().tools()[1].id, original_id);
 }
 
 #[test]
 fn rename_setup_updates_name() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
-    let setup_id = SetupId(controller.state.session.list_setups()[0].id);
+    let setup_id = SetupId(controller.state.session().list_setups()[0].id);
 
     controller.handle_internal_event(crate::ui::AppEvent::RenameSetup(
         setup_id,
@@ -566,7 +563,7 @@ fn rename_setup_updates_name() {
     ));
 
     assert_eq!(
-        controller.state.session.list_setups()[0].name,
+        controller.state.session().list_setups()[0].name,
         "My Custom Setup",
         "Setup name should be updated"
     );
@@ -582,7 +579,7 @@ fn delete_selected_tool_clears_selection() {
 
     // Add a tool and select it
     controller.handle_internal_event(crate::ui::AppEvent::AddTool(ToolType::BallNose));
-    let tool_id = controller.state.session.tools()[0].id;
+    let tool_id = controller.state.session().tools()[0].id;
     assert_eq!(controller.state.selection, Selection::Tool(tool_id));
 
     // Remove the tool
@@ -629,7 +626,7 @@ mod stock_change_panel_s4 {
     }
 
     fn ids(controller: &AppController<ScriptedBackend>) -> Vec<(usize, bool)> {
-        controller.state.session.list_setups()[0]
+        controller.state.session().list_setups()[0]
             .stock_changes
             .iter()
             .map(|c| (c.id.0, c.enabled))
@@ -655,8 +652,8 @@ mod stock_change_panel_s4 {
     #[test]
     fn every_panel_action_is_one_s2_command_s4() {
         let mut controller = sample_controller();
-        let setup = SetupId(controller.state.session.list_setups()[0].id);
-        let mesh = ModelId(controller.state.session.models()[0].id);
+        let setup = SetupId(controller.state.session().list_setups()[0].id);
+        let mesh = ModelId(controller.state.session().models()[0].id);
 
         // Add, twice. A saved draft closes the editor and dirties the project.
         save(&mut controller, setup, change(0, mesh));
@@ -678,7 +675,7 @@ mod stock_change_panel_s4 {
         ));
         assert_eq!(ids(&controller), vec![(0, false), (1, true)]);
         assert_eq!(
-            controller.state.session.list_setups()[0].stock_changes[0].name,
+            controller.state.session().list_setups()[0].stock_changes[0].name,
             "Change 1",
             "the flip keeps the rest of the record"
         );
@@ -694,7 +691,7 @@ mod stock_change_panel_s4 {
             },
         ));
         assert_eq!(
-            controller.state.session.list_setups()[0].stock_changes[1].name,
+            controller.state.session().list_setups()[0].stock_changes[1].name,
             "Riser"
         );
 
@@ -726,8 +723,8 @@ mod stock_change_panel_s4 {
     #[test]
     fn a_refusal_reaches_the_editor_in_the_core_words_s4() {
         let mut controller = sample_controller();
-        let setup = SetupId(controller.state.session.list_setups()[0].id);
-        let mesh = ModelId(controller.state.session.models()[0].id);
+        let setup = SetupId(controller.state.session().list_setups()[0].id);
+        let mesh = ModelId(controller.state.session().models()[0].id);
 
         // A remove cannot use a fill: the S2 door refuses it by name.
         let mut removal = change(0, mesh);
@@ -801,7 +798,6 @@ mod obstacle_panel_k2 {
     fn add_outline_model(controller: &mut AppController<ScriptedBackend>) -> ModelId {
         let id = controller
             .state
-            .session
             .apply(Command::AddModel(AddModelArgs {
                 model: Box::new(LoadedModel {
                     id: 0,
@@ -828,7 +824,7 @@ mod obstacle_panel_k2 {
     }
 
     fn stored(controller: &AppController<ScriptedBackend>, id: ObstacleId) -> Option<Obstacle> {
-        controller.state.session.list_setups()[0]
+        controller.state.session().list_setups()[0]
             .obstacles
             .iter()
             .find(|o| o.id == id)
@@ -838,8 +834,8 @@ mod obstacle_panel_k2 {
     #[test]
     fn every_obstacle_action_is_one_command_k2() {
         let mut controller = sample_controller();
-        let setup = SetupId(controller.state.session.list_setups()[0].id);
-        let mesh = ModelId(controller.state.session.models()[0].id);
+        let setup = SetupId(controller.state.session().list_setups()[0].id);
+        let mesh = ModelId(controller.state.session().models()[0].id);
         let outline = add_outline_model(&mut controller);
 
         // Add: one default box, selected, editor open on it.
@@ -899,7 +895,7 @@ mod obstacle_panel_k2 {
         controller.state.gui.dirty = false;
         controller.handle_internal_event(AppEvent::RemoveObstacle(setup, id));
         assert!(
-            controller.state.session.list_setups()[0]
+            controller.state.session().list_setups()[0]
                 .obstacles
                 .is_empty()
         );
@@ -911,7 +907,7 @@ mod obstacle_panel_k2 {
     #[test]
     fn a_refusal_reaches_the_obstacle_editor_in_the_core_words_k2() {
         let mut controller = sample_controller();
-        let setup = SetupId(controller.state.session.list_setups()[0].id);
+        let setup = SetupId(controller.state.session().list_setups()[0].id);
         let outline = add_outline_model(&mut controller);
         controller.handle_internal_event(AppEvent::AddObstacle(setup));
         let id = ObstacleId(0);
@@ -948,11 +944,11 @@ mod obstacle_panel_k2 {
     #[test]
     fn an_unchanged_draft_applies_nothing_k2() {
         let mut controller = sample_controller();
-        let setup = SetupId(controller.state.session.list_setups()[0].id);
+        let setup = SetupId(controller.state.session().list_setups()[0].id);
         controller.handle_internal_event(AppEvent::AddObstacle(setup));
         let before = stored(&controller, ObstacleId(0)).expect("added");
         generate_all_for_test(&mut controller);
-        let tp_id = controller.state.session.toolpath_configs()[0].id;
+        let tp_id = controller.state.session().toolpath_configs()[0].id;
         // Drop the add's undo entry, so the history reads only this apply.
         while controller.state.history.undo().is_some() {}
         controller.state.gui.dirty = false;
@@ -1000,18 +996,16 @@ mod machine_head_h2 {
         let mut controller = sample_controller();
         let mut second = ToolConfig::new_default(ToolId(2), ToolType::BallNose);
         second.name = "Second tool".to_owned();
-        let mut tools = controller.state.session.tools().to_vec();
+        let mut tools = controller.state.session().tools().to_vec();
         tools.push(second);
         let _ = controller
             .state
-            .session
             .apply(Command::ReplaceTools(ReplaceToolsArgs { tools }))
             .unwrap();
         let _ = push_toolpath(&mut controller, "Second");
         let _ = push_toolpath(&mut controller, "Third");
         let _ = controller
             .state
-            .session
             .apply(Command::SetToolpathTool(SetToolpathToolArgs {
                 index: 2,
                 tool_id: 2,
@@ -1019,7 +1013,6 @@ mod machine_head_h2 {
             .unwrap();
         let _ = controller
             .state
-            .session
             .apply(Command::SetToolpathShoe(SetToolpathShoeArgs {
                 index: 1,
                 shoe: ShoeSetting::Gap { gap_mm: 10.0 },
@@ -1033,11 +1026,11 @@ mod machine_head_h2 {
     #[test]
     fn a_head_preset_applies_and_undoes_through_set_machine_head_h2() {
         let mut controller = sample_controller();
-        let before = controller.state.session.machine().head.clone();
+        let before = controller.state.session().machine().head.clone();
         let steps = controller.state.history.undo_len();
         crate::ui::properties::apply_head(&mut controller.state, MachineHead::dust_shoe()).unwrap();
         assert_eq!(
-            controller.state.session.machine().head,
+            controller.state.session().machine().head,
             MachineHead::dust_shoe()
         );
         assert_eq!(
@@ -1055,10 +1048,10 @@ mod machine_head_h2 {
         assert_eq!(controller.state.history.undo_len(), steps + 1);
 
         controller.undo();
-        assert_eq!(controller.state.session.machine().head, before);
+        assert_eq!(controller.state.session().machine().head, before);
         controller.redo();
         assert_eq!(
-            controller.state.session.machine().head,
+            controller.state.session().machine().head,
             MachineHead::dust_shoe()
         );
     }
@@ -1066,7 +1059,7 @@ mod machine_head_h2 {
     #[test]
     fn a_refused_head_shows_core_words_and_writes_nothing_h2() {
         let mut controller = sample_controller();
-        let before = controller.state.session.machine().head.clone();
+        let before = controller.state.session().machine().head.clone();
         let steps = controller.state.history.undo_len();
         let mut head = MachineHead::bare_collet();
         head.parts.push(HeadPart {
@@ -1081,15 +1074,16 @@ mod machine_head_h2 {
             error.contains(&refusal),
             "the banner text carries core's words: {error}"
         );
-        assert_eq!(controller.state.session.machine().head, before);
+        assert_eq!(controller.state.session().machine().head, before);
         assert_eq!(controller.state.history.undo_len(), steps);
     }
 
     #[test]
     fn the_shoe_row_is_one_command_and_one_undo_step_per_edit_h2() {
         let mut controller = shoe_controller();
-        let tp_id = controller.state.session.toolpath_configs()[0].id;
-        let shoe = |c: &AppController<ScriptedBackend>| c.state.session.toolpath_configs()[0].shoe;
+        let tp_id = controller.state.session().toolpath_configs()[0].id;
+        let shoe =
+            |c: &AppController<ScriptedBackend>| c.state.session().toolpath_configs()[0].shoe;
         let steps = controller.state.history.undo_len();
         let event =
             |shoe: ShoeSetting, merge: bool| AppEvent::SetToolpathShoe { tp_id, shoe, merge };
@@ -1124,7 +1118,7 @@ mod machine_head_h2 {
     #[cfg(feature = "mcp")]
     fn the_run_sheet_and_the_panel_match_inspect_machine_h2() {
         let controller = shoe_controller();
-        let session = &controller.state.session;
+        let session = controller.state.session();
         let wire = crate::app::mcp::project::shoe_plan_wire(session);
         let wire_rows = wire.as_array().expect("the plan builds");
         assert_eq!(wire_rows.len(), 3, "every toolpath has a result: {wire}");
@@ -1209,18 +1203,18 @@ mod machine_head_h2 {
             .state
             .gui
             .shoe_plan
-            .plan(&controller.state.session);
+            .plan(controller.state.session());
         let again = controller
             .state
             .gui
             .shoe_plan
-            .plan(&controller.state.session);
+            .plan(controller.state.session());
         assert!(
             Arc::ptr_eq(&first, &again),
             "an unchanged project hits the memo"
         );
 
-        let tp_id = controller.state.session.toolpath_configs()[0].id;
+        let tp_id = controller.state.session().toolpath_configs()[0].id;
         controller.handle_internal_event(AppEvent::SetToolpathShoe {
             tp_id,
             shoe: ShoeSetting::Off,
@@ -1230,7 +1224,7 @@ mod machine_head_h2 {
             .state
             .gui
             .shoe_plan
-            .plan(&controller.state.session);
+            .plan(controller.state.session());
         assert!(!Arc::ptr_eq(&first, &after));
         assert_eq!(
             after.row(0).map(|row| row.resolved.label()),

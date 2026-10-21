@@ -25,8 +25,8 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
             "StockChange",
             Box::new(
                 |c: &AppController<ScriptedBackend>| UndoAction::StockChange {
-                    old: c.state.session.stock_config().clone(),
-                    new: c.state.session.stock_config().clone(),
+                    old: c.state.session().stock_config().clone(),
+                    new: c.state.session().stock_config().clone(),
                 },
             ),
         ),
@@ -43,16 +43,16 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
             "ToolChange",
             Box::new(
                 |c: &AppController<ScriptedBackend>| UndoAction::ToolChange {
-                    tool_id: c.state.session.tools()[0].id,
-                    old: c.state.session.tools()[0].clone(),
-                    new: c.state.session.tools()[0].clone(),
+                    tool_id: c.state.session().tools()[0].id,
+                    old: c.state.session().tools()[0].clone(),
+                    new: c.state.session().tools()[0].clone(),
                 },
             ),
         ),
         (
             "ToolpathParamChange",
             Box::new(|c: &AppController<ScriptedBackend>| {
-                let tc = &c.state.session.toolpath_configs()[0];
+                let tc = &c.state.session().toolpath_configs()[0];
                 UndoAction::ToolpathParamChange {
                     tp_id: tc.id,
                     old_op: tc.operation.clone(),
@@ -70,8 +70,8 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
             "MachineChange",
             Box::new(
                 |c: &AppController<ScriptedBackend>| UndoAction::MachineChange {
-                    old: c.state.session.machine().clone(),
-                    new: c.state.session.machine().clone(),
+                    old: c.state.session().machine().clone(),
+                    new: c.state.session().machine().clone(),
                 },
             ),
         ),
@@ -82,7 +82,7 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
             "ObstacleChange",
             Box::new(
                 |c: &AppController<ScriptedBackend>| UndoAction::ObstacleChange {
-                    setup_id: crate::state::job::SetupId(c.state.session.list_setups()[0].id),
+                    setup_id: crate::state::job::SetupId(c.state.session().list_setups()[0].id),
                     obstacle_id: crate::state::job::ObstacleId(0),
                     old: Some(rs_cam_core::session::Obstacle::new_default_box(
                         crate::state::job::ObstacleId(0),
@@ -97,7 +97,7 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
             Box::new(
                 |c: &AppController<ScriptedBackend>| UndoAction::HeadChange {
                     old: Box::new(rs_cam_core::machine::head::MachineHead::dust_shoe()),
-                    new: Box::new(c.state.session.machine().head.clone()),
+                    new: Box::new(c.state.session().machine().head.clone()),
                 },
             ),
         ),
@@ -105,7 +105,7 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
         (
             "ToolpathShoeChange",
             Box::new(|c: &AppController<ScriptedBackend>| {
-                let tc = &c.state.session.toolpath_configs()[0];
+                let tc = &c.state.session().toolpath_configs()[0];
                 UndoAction::ToolpathShoeChange {
                     tp_id: tc.id,
                     old: rs_cam_core::machine::head::ShoeSetting::Raised,
@@ -120,7 +120,7 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
             "ModelDrawingEdits",
             Box::new(
                 |c: &AppController<ScriptedBackend>| UndoAction::ModelDrawingEdits {
-                    model_id: crate::state::job::ModelId(c.state.session.models()[0].id),
+                    model_id: crate::state::job::ModelId(c.state.session().models()[0].id),
                     before: Vec::new(),
                     after: Vec::new(),
                 },
@@ -193,8 +193,8 @@ fn a_tool_undo_stales_the_operations_that_tool_machines_g_undofresh() {
     use crate::state::history::UndoAction;
 
     let (mut controller, tp_id) = controller_ready_for_undo();
-    let tool_id = controller.state.session.tools()[0].id;
-    let original = controller.state.session.tools()[0].clone();
+    let tool_id = controller.state.session().tools()[0].id;
+    let original = controller.state.session().tools()[0].clone();
     let mut widened = original.clone();
     widened.diameter += 3.0;
 
@@ -214,7 +214,7 @@ fn a_tool_undo_stales_the_operations_that_tool_machines_g_undofresh() {
     controller.handle_internal_event(AppEvent::Undo);
 
     assert_eq!(
-        controller.state.session.tools()[0].diameter,
+        controller.state.session().tools()[0].diameter,
         original.diameter,
         "the undo restores the tool"
     );
@@ -225,7 +225,7 @@ fn a_tool_undo_stales_the_operations_that_tool_machines_g_undofresh() {
          result was generated with the OTHER tool's geometry"
     );
     assert!(
-        controller.state.session.get_result(0).is_none(),
+        controller.state.session().get_result(0).is_none(),
         "which means the core result is gone, not merely flagged"
     );
     assert!(
@@ -255,7 +255,7 @@ fn a_tool_undo_stales_the_operations_that_tool_machines_g_undofresh() {
 #[test]
 fn an_undone_param_edit_does_not_resurrect_the_old_result() {
     let (mut controller, tp_id) = controller_ready_for_undo();
-    let before = controller.state.session.toolpath_configs()[0]
+    let before = controller.state.session().toolpath_configs()[0]
         .operation
         .clone();
 
@@ -286,7 +286,7 @@ fn an_undone_param_edit_does_not_resurrect_the_old_result() {
     controller.handle_internal_event(AppEvent::Undo);
 
     assert_eq!(
-        controller.state.session.toolpath_configs()[0]
+        controller.state.session().toolpath_configs()[0]
             .operation
             .feed_rate(),
         before.feed_rate(),
@@ -322,10 +322,13 @@ fn an_undone_param_edit_does_not_resurrect_the_old_result() {
 fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
     let (mut controller, tp_id) = controller_ready_for_undo();
     let rest_id = push_toolpath(&mut controller, "Rest");
-    if let Some((idx, _)) = controller.state.session.find_toolpath_config_by_id(rest_id) {
+    if let Some((idx, _)) = controller
+        .state
+        .session()
+        .find_toolpath_config_by_id(rest_id)
+    {
         let _ = controller
             .state
-            .session
             .apply(Command::SetStockSource(SetStockSourceArgs {
                 index: idx,
                 source: rs_cam_core::compute::config::StockSource::FromRemainingStock,
@@ -333,10 +336,10 @@ fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
             .expect("index is in range");
     }
 
-    let before_op = controller.state.session.toolpath_configs()[0]
+    let before_op = controller.state.session().toolpath_configs()[0]
         .operation
         .clone();
-    let before_provenance = controller.state.session.toolpath_configs()[0]
+    let before_provenance = controller.state.session().toolpath_configs()[0]
         .feeds_provenance
         .clone();
     let after_provenance = rs_cam_core::feeds::FeedsProvenance {
@@ -356,7 +359,6 @@ fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
     });
     let _ = controller
         .state
-        .session
         .apply(Command::SetFeedsProvenance(SetFeedsProvenanceArgs {
             index: 0,
             feeds_provenance: Box::new(after_provenance.clone()),
@@ -380,7 +382,7 @@ fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
     // Regenerate, so the undo has something to invalidate on BOTH rows.
     generate_all_for_test(&mut controller);
     assert!(
-        controller.state.session.get_result(1).is_some()
+        controller.state.session().get_result(1).is_some()
             && controller.state.gui.toolpath_rt[&rest_id]
                 .stale_since
                 .is_none(),
@@ -391,19 +393,19 @@ fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
     controller.handle_internal_event(AppEvent::Undo);
 
     assert_eq!(
-        controller.state.session.toolpath_configs()[0]
+        controller.state.session().toolpath_configs()[0]
             .operation
             .feed_rate(),
         before_op.feed_rate(),
         "the undo restores the operation"
     );
     assert_eq!(
-        controller.state.session.toolpath_configs()[0].feeds_provenance,
+        controller.state.session().toolpath_configs()[0].feeds_provenance,
         before_provenance,
         "and the provenance the edit stamped"
     );
     assert!(
-        controller.state.session.get_result(1).is_none(),
+        controller.state.session().get_result(1).is_none(),
         "the downstream row reads the stock index 0 leaves, so its \
          result goes with the undo"
     );
@@ -418,7 +420,7 @@ fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
     controller.handle_internal_event(AppEvent::Redo);
 
     assert_eq!(
-        controller.state.session.toolpath_configs()[0].feeds_provenance,
+        controller.state.session().toolpath_configs()[0].feeds_provenance,
         after_provenance,
         "redo is the same edit in the other direction, so it carries the \
          provenance too"
@@ -432,7 +434,7 @@ fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
 #[test]
 fn a_machine_undo_leaves_the_toolpaths_current_g_undofresh() {
     let (mut controller, _) = controller_ready_for_undo();
-    let machine = controller.state.session.machine().clone();
+    let machine = controller.state.session().machine().clone();
     controller
         .state
         .history
@@ -483,7 +485,7 @@ fn a_machine_undo_leaves_the_toolpaths_current_g_undofresh() {
 fn an_edit_during_a_simulation_leaves_the_result_stale_g_latesim() {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    let tp_id = controller.state.session().toolpath_configs()[0].id;
 
     // Submit the run. The stamp is taken here, not when the result lands.
     controller.handle_internal_event(AppEvent::RunSimulation);
@@ -519,7 +521,7 @@ fn an_edit_during_a_simulation_leaves_the_result_stale_g_latesim() {
          off"
     );
     assert!(
-        controller.state.session.simulation_result().is_none(),
+        controller.state.session().simulation_result().is_none(),
         "and the CORE refused the adopt: the epoch this run was submitted \
          with has moved, so the session holds no simulation at all"
     );
@@ -572,15 +574,15 @@ fn the_submit_stamp_belongs_to_one_run_g_latesim() {
 /// whose toolpaths all carry a result.
 fn generated_with_fixed_stock() -> AppController<ScriptedBackend> {
     let mut controller = sample_controller();
-    let mut draft = controller.state.session.stock_config().clone();
+    let mut draft = controller.state.session().stock_config().clone();
     draft.auto_from_model = false;
     crate::ui::properties::apply_stock_draft(&mut controller.state, draft);
     generate_all_for_test(&mut controller);
-    let count = controller.state.session.toolpath_configs().len();
+    let count = controller.state.session().toolpath_configs().len();
     assert!(count > 0, "non-vacuity: the fixture has toolpaths");
     for index in 0..count {
         assert!(
-            controller.state.session.get_result(index).is_some(),
+            controller.state.session().get_result(index).is_some(),
             "the fixture generated toolpath {index}"
         );
     }
@@ -588,14 +590,14 @@ fn generated_with_fixed_stock() -> AppController<ScriptedBackend> {
 }
 
 fn all_results_present(controller: &AppController<ScriptedBackend>) -> bool {
-    (0..controller.state.session.toolpath_configs().len())
-        .all(|index| controller.state.session.get_result(index).is_some())
+    (0..controller.state.session().toolpath_configs().len())
+        .all(|index| controller.state.session().get_result(index).is_some())
 }
 
 #[test]
 fn a_panel_pin_edit_and_its_undo_leave_the_other_results_current() {
     let mut controller = generated_with_fixed_stock();
-    let old = controller.state.session.stock_config().clone();
+    let old = controller.state.session().stock_config().clone();
 
     // The panel's draft moves the pins and nothing else.
     let mut draft = old.clone();
@@ -610,7 +612,7 @@ fn a_panel_pin_edit_and_its_undo_leave_the_other_results_current() {
     );
     crate::ui::properties::apply_stock_draft(&mut controller.state, draft.clone());
     assert_eq!(
-        controller.state.session.stock_config().alignment_pins,
+        controller.state.session().stock_config().alignment_pins,
         draft.alignment_pins
     );
     assert!(
@@ -625,11 +627,11 @@ fn a_panel_pin_edit_and_its_undo_leave_the_other_results_current() {
         .history
         .push(crate::state::history::UndoAction::StockChange {
             old: old.clone(),
-            new: controller.state.session.stock_config().clone(),
+            new: controller.state.session().stock_config().clone(),
         });
     controller.undo();
     assert_eq!(
-        controller.state.session.stock_config().alignment_pins,
+        controller.state.session().stock_config().alignment_pins,
         old.alignment_pins
     );
     assert!(
@@ -687,15 +689,14 @@ mod pin_edit_one_door_p5 {
         drill.diameter = 6.0;
         let created = controller
             .state
-            .session
             .apply(Command::AddTool(rs_cam_core::session::AddToolArgs {
                 tool: Box::new(drill),
             }))
             .expect("a tool can be added")
             .created
             .expect("the add reports the index");
-        let drill_id = controller.state.session.tools()[created].id.0;
-        let session = &controller.state.session;
+        let drill_id = controller.state.session().tools()[created].id.0;
+        let session = controller.state.session();
         let mut config = session
             .toolpath_configs()
             .first()
@@ -714,7 +715,6 @@ mod pin_edit_one_door_p5 {
             OperationConfig::Drill(rs_cam_core::compute::operation_configs::DrillConfig::default());
         let _ = controller
             .state
-            .session
             .apply(Command::AddToolpath(
                 rs_cam_core::session::AddToolpathArgs {
                     setup_index,
@@ -727,12 +727,11 @@ mod pin_edit_one_door_p5 {
     /// A controller with a Bottom setup at index 0 and a Top setup at index 1.
     fn flipped_first_controller() -> AppController<ScriptedBackend> {
         let mut controller = sample_controller();
-        let mut draft = controller.state.session.stock_config().clone();
+        let mut draft = controller.state.session().stock_config().clone();
         draft.auto_from_model = false;
         crate::ui::properties::apply_stock_draft(&mut controller.state, draft);
         let _ = controller
             .state
-            .session
             .apply(Command::SetSetupFace(SetSetupFaceArgs {
                 setup_index: 0,
                 face_up: FaceUp::Bottom,
@@ -740,7 +739,6 @@ mod pin_edit_one_door_p5 {
             .expect("setup 0 exists");
         let _ = controller
             .state
-            .session
             .apply(Command::AddSetup(AddSetupArgs {
                 name: Some("Top".to_owned()),
                 face_up: FaceUp::Top,
@@ -755,7 +753,7 @@ mod pin_edit_one_door_p5 {
     fn toolpath_list(
         controller: &AppController<ScriptedBackend>,
     ) -> Vec<(String, Option<usize>, Option<f64>)> {
-        let session = &controller.state.session;
+        let session = controller.state.session();
         session
             .toolpath_configs()
             .iter()
@@ -776,7 +774,7 @@ mod pin_edit_one_door_p5 {
 
     /// The GUI route: the stock panel's draft, then the frame loop's discharge.
     fn gui_add_pin(controller: &mut AppController<ScriptedBackend>, pin: AlignmentPin) {
-        let mut draft = controller.state.session.stock_config().clone();
+        let mut draft = controller.state.session().stock_config().clone();
         draft.alignment_pins.push(pin);
         crate::ui::properties::apply_stock_draft(&mut controller.state, draft);
         controller.discharge_panel_side_effects();
@@ -787,7 +785,6 @@ mod pin_edit_one_door_p5 {
     fn mcp_add_pin(controller: &mut AppController<ScriptedBackend>, pin: &AlignmentPin) -> PinEdit {
         let effects = controller
             .state
-            .session
             .apply(Command::AddAlignmentPin(AddAlignmentPinArgs {
                 x: pin.x,
                 y: pin.y,
@@ -842,7 +839,7 @@ mod pin_edit_one_door_p5 {
         // `Unchanged`; the pin row's stale set (P4) names it.
         let moved = AlignmentPin::new(30.0, 20.0, 6.0);
         // Non-vacuity: the GUI pin drill starts the move with no stale stamp.
-        let first_drill_id = gui.state.session.toolpath_configs()[after.len() - 1].id;
+        let first_drill_id = gui.state.session().toolpath_configs()[after.len() - 1].id;
         gui.state
             .gui
             .toolpath_rt_or_default(first_drill_id)
@@ -852,7 +849,7 @@ mod pin_edit_one_door_p5 {
         assert_eq!(toolpath_list(&mcp), toolpath_list(&gui));
         let drill_index = toolpath_list(&mcp).len() - 1;
         // The GUI route (the stock draft) stales the pin drill too.
-        let gui_drill_id = gui.state.session.toolpath_configs()[drill_index].id;
+        let gui_drill_id = gui.state.session().toolpath_configs()[drill_index].id;
         assert!(
             gui.state
                 .gui
@@ -878,7 +875,7 @@ mod pin_edit_one_door_p5 {
         );
 
         // Clearing the set removes the pin drill on both routes.
-        let mut draft = gui.state.session.stock_config().clone();
+        let mut draft = gui.state.session().stock_config().clone();
         draft.alignment_pins.clear();
         crate::ui::properties::apply_stock_draft(&mut gui.state, draft);
         gui.discharge_panel_side_effects();
@@ -901,20 +898,19 @@ mod pin_edit_one_door_p5 {
         let mut controller = sample_controller();
         let _ = controller
             .state
-            .session
             .apply(Command::SetSetupFace(SetSetupFaceArgs {
                 setup_index: 0,
                 face_up: FaceUp::Bottom,
             }))
             .expect("setup 0 exists");
-        let count = controller.state.session.toolpath_configs().len();
+        let count = controller.state.session().toolpath_configs().len();
         let edit = mcp_add_pin(&mut controller, &AlignmentPin::new(10.0, 20.0, 6.0));
         assert_eq!(
             edit.outcome_of(6.0),
             Some(&PinDrillSync::Refused(PIN_DRILL_NEEDS_TOP_SETUP.to_owned()))
         );
         assert_eq!(
-            controller.state.session.toolpath_configs().len(),
+            controller.state.session().toolpath_configs().len(),
             count,
             "a refusal adds no toolpath"
         );
@@ -964,18 +960,17 @@ mod pin_edit_one_door_p5 {
         add_drill_op(&mut controller, 0);
         let _ = controller
             .state
-            .session
             .apply(Command::SetSetupRotation(SetSetupRotationArgs {
                 setup_index: 0,
                 z_rotation: ZRotation::Deg180,
             }))
             .expect("setup 0 exists");
         assert_eq!(
-            controller.state.session.list_setups()[0].face_up,
+            controller.state.session().list_setups()[0].face_up,
             FaceUp::Top,
             "non-vacuity: the only setup is a Top setup"
         );
-        let count = controller.state.session.toolpath_configs().len();
+        let count = controller.state.session().toolpath_configs().len();
         let edit = mcp_add_pin(&mut controller, &AlignmentPin::new(10.0, 20.0, 6.0));
         assert_eq!(
             edit.outcome_of(6.0),
@@ -986,7 +981,7 @@ mod pin_edit_one_door_p5 {
             "the refusal names why: {PIN_DRILL_NEEDS_TOP_SETUP}"
         );
         assert_eq!(
-            controller.state.session.toolpath_configs().len(),
+            controller.state.session().toolpath_configs().len(),
             count,
             "a refusal adds no toolpath"
         );
@@ -994,7 +989,6 @@ mod pin_edit_one_door_p5 {
         // Control: a Top setup at 0 deg added after it takes the pin drill.
         let _ = controller
             .state
-            .session
             .apply(Command::AddSetup(AddSetupArgs {
                 name: Some("Top 0".to_owned()),
                 face_up: FaceUp::Top,
@@ -1017,24 +1011,24 @@ mod pin_edit_one_door_p5 {
     #[test]
     fn no_drilling_operation_refuses_the_pin_drill_p6() {
         let mut controller = sample_controller();
-        assert_eq!(controller.state.session.pin_drill_tool_for(6.0), None);
+        assert_eq!(controller.state.session().pin_drill_tool_for(6.0), None);
         assert!(
-            !controller.state.session.tools().is_empty(),
+            !controller.state.session().tools().is_empty(),
             "non-vacuity: a tool exists that the old door took"
         );
-        let count = controller.state.session.toolpath_configs().len();
+        let count = controller.state.session().toolpath_configs().len();
         let edit = mcp_add_pin(&mut controller, &AlignmentPin::new(10.0, 20.0, 6.0));
         assert_eq!(
             edit.outcome_of(6.0),
             Some(&PinDrillSync::Refused(pin_drill_needs_tool(6.0)))
         );
-        assert_eq!(controller.state.session.toolpath_configs().len(), count);
+        assert_eq!(controller.state.session().toolpath_configs().len(), count);
     }
 
     /// The pin-drill operations of the project: (diameter, tool diameter),
     /// in toolpath order.
     fn pin_drills(controller: &AppController<ScriptedBackend>) -> Vec<(f64, f64)> {
-        let session = &controller.state.session;
+        let session = controller.state.session();
         session
             .toolpath_configs()
             .iter()
@@ -1084,20 +1078,20 @@ mod pin_edit_one_door_p5 {
 
         // The wizard's "Add a 8.00 mm drill", then Apply: one tool, and the
         // 8 mm operation with it.
-        let tools_before = controller.state.session.tools().len();
+        let tools_before = controller.state.session().tools().len();
         let pins_now = controller
             .state
-            .session
+            .session()
             .stock_config()
             .alignment_pins
             .clone();
         let _ = controller
             .apply_pin_wizard(pins_now, &[8.0], &[])
             .expect("the wizard's pins are taken");
-        assert_eq!(controller.state.session.tools().len(), tools_before + 1);
+        assert_eq!(controller.state.session().tools().len(), tools_before + 1);
         let tool = controller
             .state
-            .session
+            .session()
             .tools()
             .last()
             .expect("the new tool");
@@ -1116,7 +1110,7 @@ mod pin_edit_one_door_p5 {
         assert_eq!(edit.outcome_of(8.0), Some(&PinDrillSync::Unchanged));
         let large_index = controller
             .state
-            .session
+            .session()
             .pin_drill_op_for(8.0)
             .expect("the 8 mm operation stays");
         assert!(
@@ -1147,28 +1141,27 @@ mod pin_edit_one_door_p5 {
         second.diameter = 6.0;
         let index = controller
             .state
-            .session
             .apply(Command::AddTool(rs_cam_core::session::AddToolArgs {
                 tool: Box::new(second),
             }))
             .expect("a tool can be added")
             .created
             .expect("an index");
-        let second_id = controller.state.session.tools()[index].id.0;
-        assert_eq!(controller.state.session.pin_tool_candidates(6.0).len(), 2);
+        let second_id = controller.state.session().tools()[index].id.0;
+        assert_eq!(controller.state.session().pin_tool_candidates(6.0).len(), 2);
         let op = controller
             .state
-            .session
+            .session()
             .pin_drill_op_for(6.0)
             .expect("the op");
         assert_ne!(
-            controller.state.session.toolpath_configs()[op].tool_id,
+            controller.state.session().toolpath_configs()[op].tool_id,
             second_id,
             "non-vacuity: the door chose the first tool"
         );
         let pins = controller
             .state
-            .session
+            .session()
             .stock_config()
             .alignment_pins
             .clone();
@@ -1177,11 +1170,11 @@ mod pin_edit_one_door_p5 {
             .expect("the wizard's pins are taken");
         let op = controller
             .state
-            .session
+            .session()
             .pin_drill_op_for(6.0)
             .expect("the op");
         assert_eq!(
-            controller.state.session.toolpath_configs()[op].tool_id,
+            controller.state.session().toolpath_configs()[op].tool_id,
             second_id
         );
     }
@@ -1205,7 +1198,10 @@ mod pin_edit_one_door_p5 {
                 .all(|s| !matches!(s.outcome, PinDrillSync::Refused(_))),
             "{edit:?}"
         );
-        assert_eq!(controller.state.session.stock_config().alignment_pins, pins);
+        assert_eq!(
+            controller.state.session().stock_config().alignment_pins,
+            pins
+        );
         assert_eq!(pin_drills(&controller), vec![(6.0, 6.0), (8.0, 8.0)]);
         assert_eq!(
             controller.state.history.undo_len(),
@@ -1220,12 +1216,12 @@ mod pin_edit_one_door_p5 {
     fn the_wizard_cancel_changes_nothing_r4() {
         let mut controller = flipped_first_controller();
         let _ = set_pins(&mut controller, vec![AlignmentPin::new(10.0, 20.0, 6.0)]);
-        let stock_before = controller.state.session.stock_config().clone();
-        let tools_before = controller.state.session.tools().len();
+        let stock_before = controller.state.session().stock_config().clone();
+        let tools_before = controller.state.session().tools().len();
         let toolpaths_before = toolpath_list(&controller);
 
-        let mut wizard = crate::ui::pin_wizard::PinWizardState::open(&controller.state.session);
-        let map = controller.state.session.pin_set_report().map;
+        let mut wizard = crate::ui::pin_wizard::PinWizardState::open(controller.state.session());
+        let map = controller.state.session().pin_set_report().map;
         wizard.pins = crate::ui::properties::pins::edit::move_along_axis(&wizard.pins, &map, 3.0);
         wizard.pins.push(AlignmentPin::new(40.0, 20.0, 8.0));
         wizard.add_drills.push(8.0);
@@ -1233,8 +1229,8 @@ mod pin_edit_one_door_p5 {
         // Cancel: the draw drops the wizard; nothing reaches the session.
         controller.state.panels.pin_wizard = None;
 
-        assert_eq!(*controller.state.session.stock_config(), stock_before);
-        assert_eq!(controller.state.session.tools().len(), tools_before);
+        assert_eq!(*controller.state.session().stock_config(), stock_before);
+        assert_eq!(controller.state.session().tools().len(), tools_before);
         assert_eq!(toolpath_list(&controller), toolpaths_before);
     }
 
@@ -1246,18 +1242,18 @@ mod pin_edit_one_door_p5 {
         let mut controller = flipped_first_controller();
         let undo_before = controller.state.history.undo_len();
         assert_eq!(
-            controller.state.session.stock_config().pin_part_models,
+            controller.state.session().stock_config().pin_part_models,
             None
         );
         controller.set_pin_part_models(Some(Vec::new()));
         assert_eq!(
-            controller.state.session.stock_config().pin_part_models,
+            controller.state.session().stock_config().pin_part_models,
             Some(Vec::new())
         );
         assert_eq!(controller.state.history.undo_len(), undo_before + 1);
         controller.set_pin_part_models(None);
         assert_eq!(
-            controller.state.session.stock_config().pin_part_models,
+            controller.state.session().stock_config().pin_part_models,
             None
         );
         assert_eq!(controller.state.history.undo_len(), undo_before + 2);
@@ -1275,7 +1271,7 @@ mod pin_edit_one_door_p5 {
                 .count()
         };
         for x in [40.0, 41.0, 42.0] {
-            let mut draft = controller.state.session.stock_config().clone();
+            let mut draft = controller.state.session().stock_config().clone();
             draft.alignment_pins = vec![
                 AlignmentPin::new(10.0, 20.0, 6.0),
                 AlignmentPin::new(x, 20.0, 7.0),
@@ -1297,7 +1293,7 @@ mod pin_edit_one_door_p5 {
             AlignmentPin::new(30.0, 20.0, 6.0),
         ];
         let _ = set_pins(&mut controller, unkeyed);
-        let session = &controller.state.session;
+        let session = controller.state.session();
         let live: Vec<String> = session
             .stock_config()
             .pin_findings_for_setups(
@@ -1322,7 +1318,7 @@ mod pin_edit_one_door_p5 {
             .push("Model 'x.stl' failed to load".to_owned());
         // One pin on the flip axis and a mirror pair off it: the first
         // pattern of a small grid that keys on the fixture's stock.
-        let map = controller.state.session.pin_set_report().map;
+        let map = controller.state.session().pin_set_report().map;
         let length = crate::ui::properties::pins::edit::axis_length(&map);
         let keyed = [0.1, 0.2]
             .into_iter()
@@ -1342,7 +1338,7 @@ mod pin_edit_one_door_p5 {
             .find(|pins| {
                 controller
                     .state
-                    .session
+                    .session()
                     .pin_set_report_for(pins)
                     .flip
                     .keyed()
@@ -1350,7 +1346,7 @@ mod pin_edit_one_door_p5 {
             .expect("a keyed pattern exists on the fixture");
         let _ = set_pins(&mut controller, keyed);
         assert!(
-            controller.state.session.pin_set_report().flip.keyed(),
+            controller.state.session().pin_set_report().flip.keyed(),
             "non-vacuity: the new set keys"
         );
         let pin_left = controller
@@ -1380,7 +1376,7 @@ mod pin_edit_one_door_p5 {
         controller.show_load_warnings = true;
         let pins = controller
             .state
-            .session
+            .session()
             .stock_config()
             .alignment_pins
             .clone();
@@ -1409,7 +1405,7 @@ mod pin_edit_one_door_p5 {
         );
         let pins = controller
             .state
-            .session
+            .session()
             .stock_config()
             .alignment_pins
             .clone();
@@ -1438,10 +1434,10 @@ fn an_obstacle_add_edit_remove_each_undo_and_redo_k2() {
     use rs_cam_core::session::Obstacle;
 
     let (mut controller, tp_id) = controller_ready_for_undo();
-    let setup = SetupId(controller.state.session.list_setups()[0].id);
+    let setup = SetupId(controller.state.session().list_setups()[0].id);
     let id = ObstacleId(0);
     let stored = |c: &AppController<ScriptedBackend>| -> Option<Obstacle> {
-        c.state.session.list_setups()[0]
+        c.state.session().list_setups()[0]
             .obstacles
             .iter()
             .find(|o| o.id == id)
@@ -1528,7 +1524,7 @@ fn drawing_svg() -> std::path::PathBuf {
 }
 
 fn model(c: &AppController<ScriptedBackend>) -> LoadedModel {
-    c.state().session.models()[0].clone()
+    c.state().session().models()[0].clone()
 }
 
 fn keys(m: &LoadedModel) -> Vec<String> {

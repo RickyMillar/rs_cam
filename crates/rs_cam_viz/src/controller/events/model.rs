@@ -50,9 +50,9 @@ impl<B: ComputeBackend> AppController<B> {
         tp_id: crate::state::toolpath::ToolpathId,
     ) -> Option<SetupId> {
         // Find which setup contains this toolpath by checking toolpath_indices
-        let (tp_index, _) = self.state.session.find_toolpath_config_by_id(tp_id)?;
+        let (tp_index, _) = self.state.session().find_toolpath_config_by_id(tp_id)?;
         self.state
-            .session
+            .session()
             .list_setups()
             .iter()
             .find(|s| s.toolpath_indices.contains(&tp_index))
@@ -66,7 +66,7 @@ impl<B: ComputeBackend> AppController<B> {
         });
         let created = self.apply_created(command);
         // The session assigned the ID — read it back.
-        if let Some(tool) = created.and_then(|idx| self.state.session.tools().get(idx)) {
+        if let Some(tool) = created.and_then(|idx| self.state.session().tools().get(idx)) {
             self.state.selection = Selection::Tool(tool.id);
         }
         self.state.gui.mark_edited();
@@ -80,7 +80,7 @@ impl<B: ComputeBackend> AppController<B> {
             tool: Box::new(tool),
         });
         let created = self.apply_created(command);
-        if let Some(tool) = created.and_then(|idx| self.state.session.tools().get(idx)) {
+        if let Some(tool) = created.and_then(|idx| self.state.session().tools().get(idx)) {
             self.state.selection = Selection::Tool(tool.id);
         }
         self.state.gui.mark_edited();
@@ -196,7 +196,7 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn save_machine_to_library(&mut self, name: &str) {
-        match rs_cam_core::io::machine_library::save(name, self.state.session.machine()) {
+        match rs_cam_core::io::machine_library::save(name, self.state.session().machine()) {
             Ok(path) => self.set_status(format!("Saved machine to {}", path.display())),
             Err(e) => self.report_machine_library_error("Save machine failed", &e),
         }
@@ -228,7 +228,7 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_duplicate_tool(&mut self, tool_id: crate::state::job::ToolId) {
         if let Some(src) = self
             .state
-            .session
+            .session()
             .tools()
             .iter()
             .find(|tool| tool.id == tool_id)
@@ -239,7 +239,7 @@ impl<B: ComputeBackend> AppController<B> {
                 tool: Box::new(duplicate),
             });
             let created = self.apply_created(command);
-            if let Some(tool) = created.and_then(|idx| self.state.session.tools().get(idx)) {
+            if let Some(tool) = created.and_then(|idx| self.state.session().tools().get(idx)) {
                 self.state.selection = Selection::Tool(tool.id);
             }
             self.state.gui.mark_edited();
@@ -249,21 +249,17 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_remove_tool(&mut self, tool_id: crate::state::job::ToolId) {
         let index = self
             .state
-            .session
+            .session()
             .tools()
             .iter()
             .position(|t| t.id == tool_id);
         if let Some(idx) = index {
             let command = Command::RemoveTool(RemoveToolArgs { index: idx });
-            match self.state.session.apply(command) {
-                Ok(effects) => {
-                    crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
+            match self.apply(command) {
+                Ok(_) => {
                     // WP19: the row runs `invalidate_tool`, which drops
-                    // the session's simulation. The viewport holds the
-                    // same one (WP11b, N12 item 10).
-                    if effects.simulation_cleared {
-                        self.invalidate_simulation();
-                    }
+                    // the session's simulation. `AppController::apply`
+                    // clears the viewport one too (F096).
                     if self.state.selection == Selection::Tool(tool_id) {
                         self.state.selection = Selection::None;
                     }
@@ -287,14 +283,14 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     pub(crate) fn handle_add_setup(&mut self) {
-        let next_id = self.state.session.list_setups().len() + 1;
+        let next_id = self.state.session().list_setups().len() + 1;
         let name = format!("Setup {next_id}");
         let command = Command::AddSetup(AddSetupArgs {
             name: Some(name),
             face_up: FaceUp::default(),
         });
         let created = self.apply_created(command);
-        if let Some(setup) = created.and_then(|idx| self.state.session.list_setups().get(idx)) {
+        if let Some(setup) = created.and_then(|idx| self.state.session().list_setups().get(idx)) {
             self.state.selection = Selection::Setup(SetupId(setup.id));
         }
         self.state.gui.mark_edited();
@@ -302,7 +298,7 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Open the shared removal confirmation for a setup that still exists.
     pub(crate) fn request_remove_setup(&mut self, setup_id: SetupId) {
-        let setups = self.state.session.list_setups();
+        let setups = self.state.session().list_setups();
         if setups.len() <= 1 {
             return;
         }
@@ -320,7 +316,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// results for its now-deleted toolpaths.
     pub(crate) fn handle_remove_setup(&mut self, setup_id: SetupId) {
         self.state.panels.pending_setup_removal = None;
-        let setups = self.state.session.list_setups();
+        let setups = self.state.session().list_setups();
         let Some((index, setup)) = setups
             .iter()
             .enumerate()
@@ -342,7 +338,7 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .filter_map(|&tp| {
                 self.state
-                    .session
+                    .session()
                     .toolpath_configs()
                     .get(tp)
                     .map(|config| config.id)
@@ -397,12 +393,12 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_setup_two_sided(&mut self) {
         let has_flipped = self
             .state
-            .session
+            .session()
             .list_setups()
             .iter()
             .any(|s| s.face_up == FaceUp::Bottom);
         if !has_flipped {
-            let next_id = self.state.session.list_setups().len() + 1;
+            let next_id = self.state.session().list_setups().len() + 1;
             let name = format!("Setup {next_id}");
             let command = Command::AddSetup(AddSetupArgs {
                 name: Some(name),
@@ -418,7 +414,7 @@ impl<B: ComputeBackend> AppController<B> {
         // than guessing.
         let (flip_face, flip_turn) = self
             .state
-            .session
+            .session()
             .list_setups()
             .iter()
             .map(|s| (s.face_up, s.z_rotation))
@@ -430,9 +426,9 @@ impl<B: ComputeBackend> AppController<B> {
         // the keep-outs and the fixtures) and the diameter of the tool
         // that drills the pin holes (G-PINPANEL, P6). The two doors cannot
         // disagree.
-        let pin_inputs = KeyedPinInputs::from_session(&self.state.session);
+        let pin_inputs = KeyedPinInputs::from_session(self.state.session());
         let plan = keyed_pin_plan(
-            self.state.session.stock_config(),
+            self.state.session().stock_config(),
             flip_face,
             flip_turn,
             &pin_inputs,
@@ -445,7 +441,13 @@ impl<B: ComputeBackend> AppController<B> {
         // the blank or seats turned is worse than none, because the
         // operator finds out at the flip with the part already cut.
         let mut refusal: Option<String> = None;
-        if self.state.session.stock_config().alignment_pins.is_empty() {
+        if self
+            .state
+            .session()
+            .stock_config()
+            .alignment_pins
+            .is_empty()
+        {
             match plan {
                 Ok(pins) => {
                     let command = Command::SetAlignmentPins(SetAlignmentPinsArgs {
@@ -469,7 +471,7 @@ impl<B: ComputeBackend> AppController<B> {
         // get judged against the flip they have to register.
         for warning in self
             .state
-            .session
+            .session()
             .stock_config()
             .validate_pins_for_flip(flip_face, flip_turn)
             .warnings()
@@ -493,7 +495,7 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_rename_setup(&mut self, setup_id: SetupId, name: String) {
         if let Some(setup_index) = self
             .state
-            .session
+            .session()
             .list_setups()
             .iter()
             .position(|s| s.id == setup_id.0)
@@ -514,7 +516,7 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn set_setup_pause_message(&mut self, setup_id: usize, message: Option<String>) {
         let Some(setup_index) = self
             .state
-            .session
+            .session()
             .list_setups()
             .iter()
             .position(|s| s.id == setup_id)
@@ -539,7 +541,7 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_add_obstacle(&mut self, setup_id: SetupId) {
         let Some((idx, obstacle_id)) =
             self.state
-                .session
+                .session()
                 .find_setup_by_id(setup_id.0)
                 .map(|(idx, s)| {
                     (
@@ -587,7 +589,7 @@ impl<B: ComputeBackend> AppController<B> {
         let Some(stored) = self.stored_obstacle(setup_id, obstacle_id) else {
             return;
         };
-        let Some((idx, _)) = self.state.session.find_setup_by_id(setup_id.0) else {
+        let Some((idx, _)) = self.state.session().find_setup_by_id(setup_id.0) else {
             return;
         };
         let command = Command::RemoveObstacle(RemoveObstacleArgs {
@@ -625,7 +627,7 @@ impl<B: ComputeBackend> AppController<B> {
         if stored.enabled == enabled {
             return;
         }
-        let Some((idx, _)) = self.state.session.find_setup_by_id(setup_id.0) else {
+        let Some((idx, _)) = self.state.session().find_setup_by_id(setup_id.0) else {
             return;
         };
         let mut record = stored.clone();
@@ -671,7 +673,7 @@ impl<B: ComputeBackend> AppController<B> {
         obstacle_id: crate::state::job::ObstacleId,
         target: Option<Obstacle>,
     ) {
-        let Some((setup_index, _)) = self.state.session.find_setup_by_id(setup_id.0) else {
+        let Some((setup_index, _)) = self.state.session().find_setup_by_id(setup_id.0) else {
             return;
         };
         let present = self.stored_obstacle(setup_id, obstacle_id);
@@ -712,7 +714,7 @@ impl<B: ComputeBackend> AppController<B> {
         obstacle_id: crate::state::job::ObstacleId,
     ) -> Option<Obstacle> {
         self.state
-            .session
+            .session()
             .find_setup_by_id(setup_id.0)
             .and_then(|(_, setup)| setup.obstacles.iter().find(|o| o.id == obstacle_id))
             .cloned()
@@ -749,7 +751,7 @@ impl<B: ComputeBackend> AppController<B> {
         use rs_cam_core::session::{
             AddStockChangeArgs, MoveStockChangeArgs, RemoveStockChangeArgs, ReplaceStockChangeArgs,
         };
-        let Some((setup_index, setup)) = self.state.session.find_setup_by_id(setup_id.0) else {
+        let Some((setup_index, setup)) = self.state.session().find_setup_by_id(setup_id.0) else {
             return;
         };
         let (command, from_editor) = match intent {
@@ -813,12 +815,8 @@ impl<B: ComputeBackend> AppController<B> {
                 )
             }
         };
-        match self.state.session.apply(command) {
-            Ok(effects) => {
-                crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
-                if effects.simulation_cleared {
-                    self.invalidate_simulation();
-                }
+        match self.apply(command) {
+            Ok(_) => {
                 if from_editor {
                     self.state.panels.stock_change_editor = None;
                 }
@@ -846,7 +844,7 @@ impl<B: ComputeBackend> AppController<B> {
         // Check if any toolpath still references this model
         let in_use = self
             .state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .any(|tc| tc.model_id == model_id.0);
@@ -861,13 +859,17 @@ impl<B: ComputeBackend> AppController<B> {
             );
         } else if let Some(idx) = self
             .state
-            .session
+            .session()
             .models()
             .iter()
             .position(|m| m.id == model_id.0)
         {
             let command = Command::RemoveModel(RemoveModelArgs { index: idx });
-            let _ = self.apply_quietly(command);
+            // F056: a refused removal keeps the model, the selection and
+            // the clean mark. The door logs the refusal.
+            if self.apply_quietly(command).is_none() {
+                return;
+            }
             let clear_selection = matches!(
                 self.state.selection,
                 Selection::Model(mid) | Selection::Face(mid, _) | Selection::Faces(mid, _)

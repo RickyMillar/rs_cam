@@ -175,10 +175,12 @@ impl ComputeBackend for SilentBackend {
 /// binds `tools().first()` and never looks for a compatible one.
 fn flat_first_seed() -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    controller.state.session = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill))
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::BallNose))
-        .build();
+    controller.state.replace_session(
+        ProjectSessionBuilder::new()
+            .tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill))
+            .tool(ToolConfig::new_default(ToolId(1), ToolType::BallNose))
+            .build(),
+    );
     controller
 }
 
@@ -203,11 +205,11 @@ fn a_refused_add_creates_nothing_and_reports_itself_only_as_a_toast() {
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Scallop));
 
     assert!(
-        controller.state.session.toolpath_configs().is_empty(),
+        controller.state.session().toolpath_configs().is_empty(),
         "the Suggest door refused, so NOTHING may be created: {:?}",
         controller
             .state
-            .session
+            .session()
             .toolpath_configs()
             .iter()
             .map(|tc| tc.name.clone())
@@ -231,7 +233,7 @@ fn the_gui_binds_the_first_tool_even_when_a_compatible_one_is_second() {
     let mut controller = flat_first_seed();
     let kinds: Vec<ToolType> = controller
         .state
-        .session
+        .session()
         .tools()
         .iter()
         .map(|t| t.tool_type)
@@ -245,7 +247,7 @@ fn the_gui_binds_the_first_tool_even_when_a_compatible_one_is_second() {
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Scallop));
 
     assert!(
-        controller.state.session.toolpath_configs().is_empty(),
+        controller.state.session().toolpath_configs().is_empty(),
         "R0.3 §4.3 step 2 (\"first tool that accepts_tool\") is NOT what \
          the code does today; if this now creates a toolpath the binding \
          rule has landed and F4.2's contract test owns this case"
@@ -259,11 +261,11 @@ fn the_gui_binds_the_first_tool_even_when_a_compatible_one_is_second() {
 #[test]
 fn a_permitted_add_creates_one_toolpath_bound_to_the_first_tool() {
     let mut controller = flat_first_seed();
-    let first_tool_id = controller.state.session.tools()[0].id.0;
+    let first_tool_id = controller.state.session().tools()[0].id.0;
 
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Face));
 
-    let configs = controller.state.session.toolpath_configs();
+    let configs = controller.state.session().toolpath_configs();
     assert_eq!(configs.len(), 1, "exactly one toolpath");
     assert_eq!(
         configs[0].tool_id, first_tool_id,
@@ -284,11 +286,11 @@ fn a_permitted_add_creates_one_toolpath_bound_to_the_first_tool() {
 #[test]
 fn an_add_with_no_tools_refuses_with_the_no_tools_text() {
     let mut controller = AppController::with_backend(SilentBackend);
-    assert!(controller.state.session.tools().is_empty());
+    assert!(controller.state.session().tools().is_empty());
 
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Face));
 
-    assert!(controller.state.session.toolpath_configs().is_empty());
+    assert!(controller.state.session().toolpath_configs().is_empty());
     let shown = toasts(&controller);
     assert_eq!(shown.len(), 1, "{shown:?}");
     assert_eq!(shown[0].0, "Cannot add toolpath: no tools defined");

@@ -83,11 +83,10 @@ fn two_operation_job() -> AppController<ScriptedLane> {
 
     let mut second_tool = ToolConfig::new_default(ToolId(2), ToolType::EndMill);
     second_tool.stickout += 20.0;
-    let mut tools = controller.state.session.tools().to_vec();
+    let mut tools = controller.state.session().tools().to_vec();
     tools.push(second_tool);
     let _ = controller
         .state
-        .session
         .apply(Command::ReplaceTools(ReplaceToolsArgs { tools }))
         .expect("the session takes the tool list");
 
@@ -95,7 +94,6 @@ fn two_operation_job() -> AppController<ScriptedLane> {
     second_op.tool_id = 2;
     let _ = controller
         .state
-        .session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(second_op),
@@ -117,8 +115,8 @@ fn motion_of(controller: &AppController<ScriptedLane>, id: ToolpathId) -> Arc<An
         .get(&id)
         .expect("the fixture lands a result for every operation");
     let result = rt
-        .result
-        .as_ref()
+        .run
+        .result()
         .expect("the fixture lands a result for every operation");
     Arc::clone(&result.annotated)
 }
@@ -127,7 +125,7 @@ fn motion_of(controller: &AppController<ScriptedLane>, id: ToolpathId) -> Arc<An
 fn enabled_operations(controller: &AppController<ScriptedLane>) -> usize {
     controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .filter(|tc| tc.enabled)

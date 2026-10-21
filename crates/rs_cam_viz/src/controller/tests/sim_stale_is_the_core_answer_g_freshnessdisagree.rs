@@ -65,7 +65,7 @@ struct EditClass {
 // ── the doors that mirror ──────────────────────────────────────────────────
 
 fn edit_a_toolpath_parameter(controller: &mut AppController<ScriptedBackend>) {
-    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    let tp_id = controller.state.session().toolpath_configs()[0].id;
     panel_edit(controller, tp_id, |entry| {
         entry.operation.set_feed_rate(4321.0);
     });
@@ -78,7 +78,7 @@ fn edit_a_toolpath_parameter(controller: &mut AppController<ScriptedBackend>) {
 fn edit_the_tool(controller: &mut AppController<ScriptedBackend>) {
     let mut draft = controller
         .state
-        .session
+        .session()
         .tools()
         .first()
         .expect("the fixture project carries one tool")
@@ -89,7 +89,7 @@ fn edit_the_tool(controller: &mut AppController<ScriptedBackend>) {
 }
 
 fn edit_the_stock(controller: &mut AppController<ScriptedBackend>) {
-    let mut stock = controller.state.session.stock_config().clone();
+    let mut stock = controller.state.session().stock_config().clone();
     stock.z += 5.0;
     crate::ui::properties::apply_stock_draft(&mut controller.state, stock);
     controller.discharge_panel_side_effects();
@@ -118,7 +118,7 @@ fn reorder_the_operations(controller: &mut AppController<ScriptedBackend>) {
     ));
     let ids: Vec<ToolpathId> = controller
         .state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|tc| tc.id)
@@ -177,7 +177,6 @@ fn mirroring_doors() -> Vec<EditClass> {
 fn set_the_setup_face(controller: &mut AppController<ScriptedBackend>) {
     let _ = controller
         .state
-        .session
         .apply(Command::SetSetupFace(SetSetupFaceArgs {
             setup_index: 0,
             face_up: rs_cam_core::compute::transform::FaceUp::Bottom,
@@ -187,7 +186,6 @@ fn set_the_setup_face(controller: &mut AppController<ScriptedBackend>) {
 fn set_the_setup_rotation(controller: &mut AppController<ScriptedBackend>) {
     let _ = controller
         .state
-        .session
         .apply(Command::SetSetupRotation(SetSetupRotationArgs {
             setup_index: 0,
             z_rotation: rs_cam_core::compute::transform::ZRotation::Deg90,
@@ -195,14 +193,12 @@ fn set_the_setup_rotation(controller: &mut AppController<ScriptedBackend>) {
 }
 
 fn set_the_machine(controller: &mut AppController<ScriptedBackend>) {
-    let machine = controller.state.session.machine().clone();
-    let _ =
-        controller
-            .state
-            .session
-            .apply(Command::SetMachine(rs_cam_core::session::SetMachineArgs {
-                machine: Box::new(machine),
-            }));
+    let machine = controller.state.session().machine().clone();
+    let _ = controller
+        .state
+        .apply(Command::SetMachine(rs_cam_core::session::SetMachineArgs {
+            machine: Box::new(machine),
+        }));
 }
 
 fn unmirrored_doors() -> Vec<EditClass> {
@@ -254,7 +250,7 @@ fn a_mirrored_edit_leaves_no_run_g_freshnessdisagree() {
         (class.apply)(&mut controller);
 
         assert!(
-            controller.state.session.simulation_result().is_none(),
+            controller.state.session().simulation_result().is_none(),
             "the '{}' edit moves {} and the core kept the simulation — the \
              class is NOT COVERED by the core's own invalidation",
             class.name,
@@ -292,7 +288,7 @@ fn an_unmirrored_edit_leaves_edited_since_g_freshnessdisagree() {
         (class.apply)(&mut controller);
 
         assert!(
-            controller.state.session.simulation_result().is_none(),
+            controller.state.session().simulation_result().is_none(),
             "the '{}' edit moves {} and the core kept the simulation",
             class.name,
             class.input
@@ -328,7 +324,7 @@ fn an_unmirrored_edit_leaves_edited_since_g_freshnessdisagree() {
 fn a_late_run_reads_edited_since_and_never_current_g_freshnessdisagree() {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let tp_id = controller.state.session.toolpath_configs()[0].id;
+    let tp_id = controller.state.session().toolpath_configs()[0].id;
 
     controller.handle_internal_event(AppEvent::RunSimulation);
     assert_eq!(
@@ -352,7 +348,7 @@ fn a_late_run_reads_edited_since_and_never_current_g_freshnessdisagree() {
         "STORED, not discarded: a simulation is minutes of work"
     );
     assert!(
-        controller.state.session.simulation_result().is_none(),
+        controller.state.session().simulation_result().is_none(),
         "the core refused the adopt: the epoch the submit stamped has moved"
     );
     let mut operations = rs_cam_core::session::SimulationDropCauses::EMPTY;
@@ -410,7 +406,7 @@ fn a_counter_bump_alone_does_not_stale_the_run_g_freshnessdisagree() {
     controller.state.gui.mark_edited();
 
     assert!(
-        controller.state.session.simulation_result().is_some(),
+        controller.state.session().simulation_result().is_some(),
         "nothing in the project moved, so the core keeps the run"
     );
     assert_eq!(

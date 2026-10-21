@@ -176,9 +176,9 @@ fn fixture() -> AppState {
             .expect("add a fixture toolpath");
     }
     let mut state = AppState::new();
-    state.session = builder.build();
+    state.replace_session(builder.build());
     let ids: Vec<_> = state
-        .session
+        .session()
         .toolpath_configs()
         .iter()
         .map(|c| c.id)
@@ -335,8 +335,8 @@ type Surface = (String, Selection, Option<ToolpathTab>, f32, usize);
 /// width with a line cap, and again in the 240-point rail for the layout
 /// rules only.
 fn surfaces(state: &AppState) -> Vec<Surface> {
-    let configs = state.session.toolpath_configs();
-    let setup = state.session.list_setups()[0].id;
+    let configs = state.session().toolpath_configs();
+    let setup = state.session().list_setups()[0].id;
     let mut out = Vec::new();
     // The caps: the after-state of IC1 (2026-10-13) plus 3 lines. The tabs
     // in order: Geometry, Feeds & Speeds, Linking, Heights, Dressup. Before
