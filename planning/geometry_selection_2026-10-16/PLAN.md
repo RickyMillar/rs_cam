@@ -624,3 +624,29 @@ The lead approves `P3_DESIGN.md` and takes L-1 to L-17 as it recommends.
   and P3.8 surfaces (rebuild the release GUI from HEAD first).
 - Next: P6 (open paths and holes) needs a design pass (P6_DESIGN.md),
   then P7, P8.
+- Tech-debt F033 (a06a3168), owned here: one height-order rule
+  (`compute::config::height_order`); generation, export and every edit door
+  refuse an inverted stack; the badge and the diagnostics agree.
+
+## P6 design and operator rulings (2026-10-21)
+
+`P6_DESIGN.md` is approved; the lead takes L-1 to L-19 as recommended.
+Operator rulings:
+- **O-1: the label wins.** Trace Left puts the tool on the left of the
+  drawn direction, on closed loops and open paths alike (G41, Estlcam).
+  Existing closed Trace Left/Right projects cut on the other side; the
+  commit states the break.
+- **O-2: extend to stock, opt-in.** Off by default; pocket on the left of
+  the drawn direction, a Flip button, a preview; the region ends one tool
+  radius past the stock edge.
+- **O-3: Drill skips circles that are not its size,** with a note; a
+  hand-picked one refuses (S11). A new Bore op helix-mills them.
+
+Defects found by the design:
+- **D-C (SAFETY, first):** Profile Outside offsets go through
+  `Polygon2::from_pline`, which keeps only the chord of each arc join, so
+  the tool centre cuts r(1 - cos 45 deg) = 0.29 r into a 90 deg outside
+  corner (`polygon.rs` FlattenPolicy note). Item P6.0, before P6.1.
+- D-B: `gcode/mod.rs` maps Outside + climb to G42 (looks swapped; no
+  effect without controller compensation). Checked in P6.1.
+- D-A is O-1; D-D is O-3.
