@@ -660,3 +660,13 @@ Defects found by the design:
 - Next: F033b, then P6.0b (the 0.039 mm corner intrusion that the
   default Profile dressups leave: segment merge / arc fit on a finished
   edge), then P6.1-P6.8.
+- Operator demo 2026-10-21 (clean build of 6dd89feb): "logic seems
+  there"; a big picking UX pass follows after P6. DEFECT R-ARC (operator):
+  the toolpath view draws every move as a straight segment from the last
+  target, ArcCW/ArcCCW included (`render/toolpath_render.rs`, the per-move
+  loop). An arc-fitted small circle (two half arcs whose ends sit 0.5 mm
+  apart) draws as a zigzag; the simulation and the G-code follow the arcs.
+  Fix (viz only, after P6.0b): tessellate an arc move with the core arc
+  rule that the simulator uses, in every draw and pick site that reads
+  moves as lines; a sentry that the drawn polyline of an arc move lies on
+  its arc.
