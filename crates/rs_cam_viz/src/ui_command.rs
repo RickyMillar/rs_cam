@@ -185,15 +185,21 @@ pub struct ScreenshotGuiArgs {
 /// would otherwise land on top of these writes (P6).
 #[derive(Debug, Clone, PartialEq)]
 pub struct SetUiViewArgs {
-    /// The workspace to show.
+    /// The workspace to show. The four wire-token fields carry the `mcp`
+    /// gate, as `caps` above does: `rs_cam_mcp` is an optional dependency
+    /// and only the MCP door builds or reads them.
+    #[cfg(feature = "mcp")]
     pub workspace: Option<rs_cam_mcp::server::WorkspaceParam>,
     /// The toolpath to select.
     pub toolpath_index: Option<usize>,
     /// The properties tab to show.
+    #[cfg(feature = "mcp")]
     pub properties_tab: Option<rs_cam_mcp::server::PropertiesTabParam>,
     /// The tree node to select.
+    #[cfg(feature = "mcp")]
     pub select: Option<rs_cam_mcp::server::SelectPanelParam>,
     /// The modal to open.
+    #[cfg(feature = "mcp")]
     pub modal: Option<rs_cam_mcp::server::ModalParam>,
     /// The viewport overlays to switch, by registry id.
     pub overlays: Option<std::collections::BTreeMap<String, bool>>,
