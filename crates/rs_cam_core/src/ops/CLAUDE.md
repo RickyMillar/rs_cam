@@ -8,7 +8,7 @@ module is reached through `compute::execute_operation_annotated`.
 - `mod.rs`, `depth.rs`, `adaptive_shared.rs` — facade, depth stepping, shared
   adaptive helpers. `waterline.rs` — constant-Z contours.
 - `pocket.rs`, `profile.rs` (`profile_ring` = the ONE cut ring; tabs measure on it, P5), `face.rs`, `zigzag.rs` — the 2.5D clearing family (a rest pass is a remaining-stock Pocket,
-  R3). Pocket, Zigzag, Profile, Trace, Face give Z-free geometry + one level; `compute/execute/layered.rs` steps Z (W3). D3: no per-op public wrapper; a test reads `tests/common/kernels.rs` or `op_fixtures::generated_op`. `face::face_levels` = the ONE Face ladder.
+  R3). Pocket, Zigzag, Profile, Trace, Face give Z-free geometry + one level; `compute/execute/layered.rs` steps Z (W3). D3: no per-op public wrapper; a test reads `tests/common/kernels.rs` or `op_fixtures::generated_op`. `face::face_levels` = the ONE Face ladder. P6.0 (D-C): `polygon::offset_polygon` puts each arc join on points ON the arc (`FlattenPolicy::untoleranced`, 0.010 mm); no op takes a chord across a corner (sentry `an_offset_never_cuts_inside_its_corner_p6_0`).
 - `drill.rs`, `drill_op.rs`, `drill_metrics.rs` — the drilling family.
 - `vcarve.rs`, `inlay.rs`, `chamfer.rs`, `trace_path.rs`, `project_curve.rs` — the engraving
   and curve family. Chamfer: Z-free tip rings + one level from the tool angle (W3.5, Layered).

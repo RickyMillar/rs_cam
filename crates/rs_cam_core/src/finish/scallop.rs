@@ -614,8 +614,9 @@ impl RingSampleBound {
 ///
 /// The offset primitive doubles a concave ring's vertex count per pass
 /// (`tests/offset_growth_m5.rs`: added vertices == arc-join segments, 1:1),
-/// because `Polygon2::from_pline` throws away each arc join's bulge and keeps
-/// its two endpoints. Every variant below except [`Self::ArcCascade`] is a
+/// because the flat offset ring has no bulge: each arc join becomes new
+/// vertices (before P6.0 its two endpoints, `Polygon2::from_pline`; since
+/// P6.0 points on the arc). Every variant below except [`Self::ArcCascade`] is a
 /// *brake* on that: something that removes vertices after the fact, at some
 /// price in geometry.
 ///

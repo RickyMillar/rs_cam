@@ -277,15 +277,6 @@ impl Polygon2 {
         pline
     }
 
-    /// Create from a cavalier_contours Polyline (arcs flattened to line segments).
-    ///
-    /// Arc segments (non-zero bulge) are approximated as their chord endpoints.
-    /// For arc-preserving output, use the Polyline directly.
-    pub fn from_pline(pline: &Polyline<f64>) -> Self {
-        let exterior: Vec<P2> = pline.iter_vertexes().map(|v| P2::new(v.x, v.y)).collect();
-        Self::new(exterior)
-    }
-
     /// Perimeter length of the exterior boundary.
     pub fn perimeter(&self) -> f64 {
         ring_perimeter(&self.exterior)
@@ -464,7 +455,9 @@ pub enum OffsetFailure {
     /// preconditions rejected it.
     RejectedInput { reason: OffsetRejection },
     /// `cavalier_contours` (or a transitive dependency of it) panicked and
-    /// the chokepoint's `catch_unwind` contained it.
+    /// the chokepoint's `catch_unwind` contained it. The arm also holds the
+    /// one case where cavalier gives no result and does not panic: it cannot
+    /// flatten an arc join of the offset (`ARC_FLATTEN_FAILURE`, P6.0).
     ///
     /// `assertion` is the panic payload's message, e.g. *"start index should
     /// be less than or equal to end index if polyline is open"*. There is no
@@ -629,7 +622,7 @@ fn offset_one(polygon: &Polygon2, distance: f64) -> (Vec<Polygon2>, Option<Offse
         offset_polygon_inner(polygon, distance)
     })) {
         Ok(Ok(v)) => (v, None),
-        Ok(Err(reason)) => (Vec::new(), Some(OffsetFailure::RejectedInput { reason })),
+        Ok(Err(failure)) => (Vec::new(), Some(failure)),
         Err(payload) => {
             let assertion = crate::util::panic_message::panic_payload_message(payload.as_ref());
             tracing::warn!(
@@ -808,7 +801,7 @@ fn tidy_offset_ring(
 /// shrink [`OffsetRingSet`] is built on) but *not* in the flattened one,
 /// because the merged arc is then replaced by one long chord instead of two
 /// short ones. The domain the cleanup runs in has to match the domain the
-/// result is consumed in, and `offset_polygon`'s consumers get chords.
+/// result is consumed in, and `offset_polygon`'s consumers get flat rings.
 fn cleaned_flat_ring(pline: &Polyline<f64>) -> Vec<P2> {
     let raw: Vec<P2> = pline.iter_vertexes().map(|v| P2::new(v.x, v.y)).collect();
     let mut flat = Polyline::with_capacity(pline.vertex_count(), true);
@@ -835,31 +828,57 @@ fn cleaned_flat_ring(pline: &Polyline<f64>) -> Vec<P2> {
 /// The offset itself, minus the panic containment.
 ///
 /// `Err` is this module's own refusal — the guards that were previously
-/// bare `return Vec::new()`s indistinguishable from a collapse. `Ok(vec![])`
-/// is a genuine collapse and stays that way.
-fn offset_polygon_inner(
-    polygon: &Polygon2,
-    distance: f64,
-) -> Result<Vec<Polygon2>, OffsetRejection> {
+/// bare `return Vec::new()`s indistinguishable from a collapse — or an arc
+/// join that cavalier cannot flatten. `Ok(vec![])` is a genuine collapse and
+/// stays that way.
+///
+/// # The arc joins (P6.0, design D-C)
+///
+/// Cavalier joins two offset edges with an arc. Every ring of the result,
+/// boundary and hole, goes through [`flatten_arcs`] with
+/// [`FlattenPolicy::untoleranced`]: the points sit ON each arc, so a chord
+/// lies inside its arc by at most `FlattenPolicy::UNTOLERANCED_MM`
+/// (0.010 mm). The chord always falls on the input side of the true offset.
+/// Before P6.0 the offset kept only the two end points of each arc, and the
+/// tool centre cut `r (1 - cos(theta / 2))` into the corner: 0.879 mm for
+/// r = 3 at 90 degrees (`an_offset_never_cuts_inside_its_corner_p6_0`). A
+/// ring with no arc keeps its vertices bit for bit.
+fn offset_polygon_inner(polygon: &Polygon2, distance: f64) -> Result<Vec<Polygon2>, OffsetFailure> {
+    let rejected = |reason| OffsetFailure::RejectedInput { reason };
+    let policy = FlattenPolicy::untoleranced();
+    let flat = |pline: &Polyline<f64>| {
+        flatten_arcs(pline, policy)
+            .map(|flat| {
+                flat.iter_vertexes()
+                    .map(|v| P2::new(v.x, v.y))
+                    .collect::<Vec<P2>>()
+            })
+            .ok_or_else(|| OffsetFailure::LibraryFailure {
+                assertion: ARC_FLATTEN_FAILURE.to_owned(),
+            })
+    };
     if polygon.exterior.len() < 3 {
-        return Err(OffsetRejection::ExteriorBelowTriangle);
+        return Err(rejected(OffsetRejection::ExteriorBelowTriangle));
     }
 
     if polygon.holes.is_empty() {
         // Simple case: just offset the exterior
         let pline = dedupe_pline(polygon.exterior_to_pline());
         if pline.vertex_count() < 3 {
-            return Err(OffsetRejection::ExteriorDegenerateAfterDedupe);
+            return Err(rejected(OffsetRejection::ExteriorDegenerateAfterDedupe));
         }
         let results = pline.parallel_offset(distance);
-        Ok(results.iter().map(Polygon2::from_pline).collect())
+        results
+            .iter()
+            .map(|pl| flat(pl).map(Polygon2::new))
+            .collect()
     } else {
         // Polygon with holes: use Shape to handle hole interaction
         use cavalier_contours::shape_algorithms::Shape;
 
         let exterior = dedupe_pline(polygon.exterior_to_pline());
         if exterior.vertex_count() < 3 {
-            return Err(OffsetRejection::ExteriorDegenerateAfterDedupe);
+            return Err(rejected(OffsetRejection::ExteriorDegenerateAfterDedupe));
         }
         let mut plines = vec![exterior];
         for hole in &polygon.holes {
@@ -882,19 +901,14 @@ fn offset_polygon_inner(
         let mut polygons: Vec<Polygon2> = result
             .ccw_plines
             .iter()
-            .map(|ip| Polygon2::from_pline(&ip.polyline))
-            .collect();
+            .map(|ip| flat(&ip.polyline).map(Polygon2::new))
+            .collect::<Result<_, _>>()?;
 
         let holes: Vec<Vec<P2>> = result
             .cw_plines
             .iter()
-            .map(|ip| {
-                ip.polyline
-                    .iter_vertexes()
-                    .map(|v| P2::new(v.x, v.y))
-                    .collect()
-            })
-            .collect();
+            .map(|ip| flat(&ip.polyline))
+            .collect::<Result<_, _>>()?;
 
         for hole in holes {
             let Some(test_pt) = hole.first() else {
@@ -1087,8 +1101,9 @@ fn rdp(chain: &[P2], tol: f64) -> Vec<P2> {
 /// **There is exactly one of these in the workspace, and this is it.** The
 /// defect Checkpoint D closed was not that flattening happens — a toolpath is
 /// polylines in the end — but that it happened *between* every pair of
-/// offsets, unbounded and un-named. [`Polygon2::from_pline`] discards each
-/// arc join's bulge and keeps its two endpoints, so a join of turn angle `θ`
+/// offsets, unbounded and un-named. The old `Polygon2::from_pline` (deleted
+/// in P6.0) discarded each
+/// arc join's bulge and kept its two endpoints, so a join of turn angle `θ`
 /// at offset radius `r` cuts the corner by its sagitta `r·(1 − cos(θ/2))`:
 /// **29% of the offset distance at a 90° join**, and then the two shallower
 /// corners it leaves behind each arc-join on the next pass. Measured 1:1
@@ -1098,6 +1113,10 @@ fn rdp(chain: &[P2], tol: f64) -> Vec<P2> {
 /// A cascade that carries arcs and flattens ONCE, here, reads **0.0 µm** off
 /// the tolerance-free erosion oracle and *shrinks* 1.4%/ring instead of
 /// growing 35%/ring (§6, §7).
+///
+/// P6.0 (design D-C): the single-shot [`offset_polygon`] flattens its arc
+/// joins with this policy too ([`FlattenPolicy::untoleranced`]). Before it,
+/// a Profile Outside cut 0.29 r into each 90° corner of the part.
 ///
 /// # Where the number comes from
 ///
@@ -1141,9 +1160,11 @@ impl FlattenPolicy {
     /// What a consumer with no stated chord tolerance gets — 2.5D clearing
     /// (pocket) has a stepover and a tool radius but no tolerance dial.
     ///
-    /// 10 µm is 14× tighter than the corner cut that same path ships today
-    /// (§8: 141 µm max, −60 µm systematic over-cut on a 12-vertex cross at a
-    /// 0.5 mm stepover), and it is bounded, which the corner cut never was.
+    /// 10 µm is 14× tighter than the corner cut that same path shipped
+    /// before Checkpoint D (§8: 141 µm max, −60 µm systematic over-cut on a
+    /// 12-vertex cross at a 0.5 mm stepover), and it is bounded, which the
+    /// corner cut never was. The single-shot [`offset_polygon`] uses it too
+    /// (P6.0): no point of its result lies more than this inside an arc join.
     pub const UNTOLERANCED_MM: f64 = 0.010;
 
     /// Derive the flatten budget from the operation's chord tolerance.
@@ -1360,6 +1381,28 @@ impl RingGroup {
     }
 }
 
+/// The one flatten rule: replace each arc of `pline` with chords whose end
+/// points sit ON the arc, at `policy`'s deviation budget.
+///
+/// Cavalier's `arcs_to_approx_lines` sets the sub-angle of each chord to
+/// `2 acos(1 - e / r)`, so the sagitta of each chord is at most
+/// `e = policy.max_deviation_mm()`: no point of a chord lies more than `e`
+/// inside its arc. A vertex with no bulge stays bit for bit, and the ring
+/// keeps its start vertex. An arc of radius below `e` becomes its chord,
+/// which also lies within `e` of the arc.
+///
+/// `None` is cavalier's answer when it cannot count the chords of an arc
+/// (a non-finite arc).
+fn flatten_arcs(pline: &Polyline<f64>, policy: FlattenPolicy) -> Option<Polyline<f64>> {
+    pline.arcs_to_approx_lines(policy.max_deviation_mm())
+}
+
+/// The assertion text of [`OffsetFailure::LibraryFailure`] when
+/// [`flatten_arcs`] gives no polyline for a single-shot offset. The offset
+/// then gives nothing: it never falls back to the chord (P6.0).
+const ARC_FLATTEN_FAILURE: &str =
+    "arcs_to_approx_lines could not flatten an arc join of the offset (a non-finite arc)";
+
 /// Tessellate one polyline's arcs at `policy`'s deviation budget, clean the
 /// result losslessly, and then subdivide any run longer than the policy's
 /// sampling bound.
@@ -1368,9 +1411,7 @@ impl RingGroup {
 /// removes cavalier's debris rather than the points the sampling bound just
 /// asked for.
 fn flatten_ring(pline: &Polyline<f64>, policy: FlattenPolicy) -> Vec<P2> {
-    let flat = pline
-        .arcs_to_approx_lines(policy.max_deviation_mm())
-        .unwrap_or_else(|| pline.clone());
+    let flat = flatten_arcs(pline, policy).unwrap_or_else(|| pline.clone());
     let ring = cleaned_flat_ring(&flat);
     match policy.max_segment_mm() {
         Some(max) => subdivide_ring(&ring, max),
@@ -1431,9 +1472,9 @@ fn flatten_for_containment(pline: &Polyline<f64>) -> Polygon2 {
 /// This is the cascade type Checkpoint D adopted. Use it wherever an
 /// operation feeds `offset_polygon`'s own output back into it — today
 /// [`crate::finish::scallop`] and [`crate::ops::pocket`]. A consumer that offsets **once**
-/// should keep calling [`offset_polygon`]: it inherits a single arc-join
-/// chord, which is a different and much smaller defect, and its topology
-/// stays exactly where it is.
+/// should keep calling [`offset_polygon`]: it flattens each arc join once,
+/// with [`FlattenPolicy::untoleranced`] (P6.0), and its topology stays
+/// exactly where it is.
 ///
 /// Groups are stable in order and one-to-one with the polygons
 /// [`Self::to_polygons`] returns, so a caller can carry a per-group decision
@@ -2255,8 +2296,9 @@ mod tests {
         assert_eq!(pline.vertex_count(), 4);
         assert!(pline.is_closed());
 
-        let recovered = Polygon2::from_pline(&pline);
-        assert_eq!(recovered.exterior.len(), 4);
+        let flat = flatten_arcs(&pline, FlattenPolicy::untoleranced()).expect("no arc to count");
+        let recovered = Polygon2::new(flat.iter_vertexes().map(|v| P2::new(v.x, v.y)).collect());
+        assert_eq!(recovered.exterior, original.exterior);
         assert_relative_eq!(recovered.area(), original.area(), epsilon = 1e-10);
     }
 

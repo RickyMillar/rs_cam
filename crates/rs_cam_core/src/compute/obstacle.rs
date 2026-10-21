@@ -405,9 +405,11 @@ pub struct ObstacleSet {
 /// The offset keeps its arcs and flattens them once. A flattened arc is a
 /// chord, and a chord lies inside its arc by up to the flatten deviation.
 /// So the offset distance includes that deviation, and no point of the
-/// result is closer than `distance` to the input. (`offset_polygon` keeps
-/// only the chord endpoints: on a 90 degree corner it cut 29 % of the
-/// distance off the keep-out.)
+/// result is closer than `distance` to the input. (`offset_polygon` puts
+/// its points on the arc too since P6.0, so its chords lie up to the
+/// flatten deviation inside the arc. Before P6.0 it kept only the chord
+/// end points: on a 90 degree corner it cut 29 % of the distance off the
+/// keep-out.)
 fn grow(
     polygons: &[Polygon2],
     distance: f64,

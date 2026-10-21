@@ -378,7 +378,11 @@ fn the_region_ordering_dial_is_written_through_the_command_door() {
 /// The move fingerprints `(count, hash)` of the two-region Zigzag, Trace and
 /// Profile, generated on commit 86692c56 (before W3.2) by this file.
 const BEFORE_ZIGZAG_OP: (usize, u64) = (312, 13_353_448_158_642_052_239);
-const BEFORE_TRACE: (usize, u64) = (96, 4_273_299_077_702_301_738);
+/// Re-pinned for P6.0 (2026-10-21), the corner gouge fix: the outward
+/// offset of each square now goes round each corner on points ON the arc,
+/// not on the chord. The chord cut 0.29 r into the corner. Before:
+/// `(96, 4_273_299_077_702_301_738)`.
+const BEFORE_TRACE: (usize, u64) = (96, 11_387_551_302_651_154_206);
 /// The two Profile pins were re-pinned for geometry selection P5
 /// (2026-10-19): tab placement changed by design. The 16 mm sides are
 /// shorter than a tab needs (6 mm plus two 9 mm corner clearances), so each
@@ -393,8 +397,13 @@ const BEFORE_TRACE: (usize, u64) = (96, 4_273_299_077_702_301_738);
 /// points on the ring (move counts 102 -> 106, 150 -> 154). The
 /// tab top (`TAB_H`) stands above the final level only, so the P5b level
 /// rule adds no lift here.
-const BEFORE_PROFILE_TABS: (usize, u64) = (106, 10_647_655_285_267_498_227);
-const BEFORE_PROFILE_TABS_SPRING: (usize, u64) = (154, 6_534_920_059_359_883_601);
+///
+/// Re-pinned for P6.0 (2026-10-21), the corner gouge fix: the Profile
+/// Outside ring now goes round each corner on points ON the arc, not on
+/// the chord (0.29 r into the corner). Before: `(106, 10_647_655_285_267_498_227)`
+/// and `(154, 6_534_920_059_359_883_601)`.
+const BEFORE_PROFILE_TABS: (usize, u64) = (110, 5_137_917_641_995_499_451);
+const BEFORE_PROFILE_TABS_SPRING: (usize, u64) = (150, 13_892_067_383_589_783_972);
 
 /// Tab count of the Profile cases.
 const TABS: usize = 2;

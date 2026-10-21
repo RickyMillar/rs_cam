@@ -381,14 +381,22 @@ mod tests {
         hole.reverse();
         part.holes.push(hole);
         let params = default_chamfer_params();
-        let radii = cut_radii(&chamfer_toolpath(&part, &params), params.feed_rate);
+        let tp = chamfer_toolpath(&part, &params);
+        let radii = cut_radii(&tp, params.feed_rate);
         let t = params.tip_offset;
         assert!(radii.iter().any(|r| (r - (20.0 + t)).abs() < 1e-6));
         assert!(radii.iter().any(|r| (r - (5.0 - t)).abs() < 1e-6));
-        for r in radii {
+        // P6.0: the outer ring goes round each corner of the part on an
+        // arc of radius t (points ON the arc), so the outer test is the
+        // distance t to the part square, not a Chebyshev radius.
+        for m in tp.moves.iter().filter(|m| {
+            matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - params.feed_rate).abs() < 1e-10)
+        }) {
+            let (x, y) = (m.target.x.abs(), m.target.y.abs());
+            let outer = (x - 20.0).max(0.0).hypot((y - 20.0).max(0.0));
             assert!(
-                (r - (20.0 + t)).abs() < 1e-6 || (r - (5.0 - t)).abs() < 1e-6,
-                "a cut at {r} mm from the centre is on no air side"
+                (outer - t).abs() < 1e-6 || (x.max(y) - (5.0 - t)).abs() < 1e-6,
+                "a cut at ({x}, {y}) is on no air side"
             );
         }
     }

@@ -216,8 +216,9 @@ pub fn pocket_contours_reported_with_cancel(
         //
         // **Checkpoint D (2026-08-03): this cascade carries ARCS.** It used to
         // feed each flattened offset straight back into `offset_polygon`, and
-        // that is the vertex-doubling defect: `Polygon2::from_pline` discards
-        // every arc join's bulge and keeps both of its endpoints, so one
+        // that is the vertex-doubling defect: `Polygon2::from_pline` (deleted
+        // in P6.0) discarded
+        // every arc join's bulge and kept both of its endpoints, so one
         // reflex corner becomes two shallower reflex corners, each of which
         // arc-joins on the next pass. Added vertices == arc-join segments,
         // 1:1, measured on eight fixtures.

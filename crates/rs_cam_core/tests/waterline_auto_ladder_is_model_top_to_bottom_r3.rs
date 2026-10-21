@@ -42,11 +42,15 @@
 
 mod common;
 
+use std::sync::atomic::AtomicBool;
+
 use common::session::{generate, mesh_model, single_op_session_with, stock_over};
 use common::tools::endmill_tool_config;
 
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::config::{HeightContext, HeightMode, HeightsConfig};
+use rs_cam_core::compute::config::{
+    HeightContext, HeightMode, HeightOrderViolation, HeightsConfig,
+};
 use rs_cam_core::compute::operation_configs::WaterlineConfig;
 use rs_cam_core::diagnostics::{Severity, ids};
 use rs_cam_core::geo::P3;
@@ -54,7 +58,7 @@ use rs_cam_core::mesh::{TriangleMesh, make_test_hemisphere};
 use rs_cam_core::ops::waterline::{
     FLAT_FACE_NUDGE_MM, WaterlineLadder, waterline_ladder, waterline_z_levels,
 };
-use rs_cam_core::session::{ProjectSession, ToolpathHeights};
+use rs_cam_core::session::{HeightOrderRefusal, ProjectSession, SessionError, ToolpathHeights};
 
 const EPS: f64 = 1e-9;
 
@@ -281,8 +285,9 @@ const HEMI_RADIUS_MM: f64 = 10.0;
 const STOCK_HALF_MM: f64 = 12.0;
 const STOCK_HEIGHT_MM: f64 = 12.0;
 
-fn waterline_session(heights: HeightsConfig) -> ProjectSession {
-    let mut session = single_op_session_with(
+/// The hemisphere session with the Waterline op, not generated.
+fn waterline_session_unbuilt(heights: HeightsConfig) -> ProjectSession {
+    single_op_session_with(
         stock_over(STOCK_HALF_MM, STOCK_HEIGHT_MM),
         endmill_tool_config(4.0),
         mesh_model(make_test_hemisphere(HEMI_RADIUS_MM, 6), "hemisphere"),
@@ -293,9 +298,24 @@ fn waterline_session(heights: HeightsConfig) -> ProjectSession {
             ..WaterlineConfig::default()
         }),
         |cfg| cfg.heights = heights,
-    );
+    )
+}
+
+fn waterline_session(heights: HeightsConfig) -> ProjectSession {
+    let mut session = waterline_session_unbuilt(heights);
     generate(&mut session, 0);
     session
+}
+
+/// The refusal of generation, or a panic when generation succeeds.
+fn height_order_refusal(heights: HeightsConfig) -> HeightOrderRefusal {
+    let mut session = waterline_session_unbuilt(heights);
+    let cancel = AtomicBool::new(false);
+    match session.generate_toolpath(0, &cancel) {
+        Err(SessionError::HeightOrder(refusal)) => refusal,
+        Err(e) => panic!("expected the height-order refusal, got {e}"),
+        Ok(_) => panic!("expected the height-order refusal, the op generated"),
+    }
 }
 
 #[test]
@@ -361,47 +381,46 @@ fn an_auto_waterline_ladders_the_model_and_records_a_clean_finding() {
     );
 }
 
+/// The as-found Corne pin (top -1.37, bottom Auto = the model bottom 0.0)
+/// is an inverted stack. Since F033 (one height-order rule) generation
+/// refuses it before the ladder runs, with the numbers of the break.
+#[test]
+fn the_inverted_corne_pin_is_refused_at_generation_f033() {
+    let refusal = height_order_refusal(HeightsConfig {
+        top_z: HeightMode::Manual(-1.37),
+        ..HeightsConfig::default()
+    });
+    assert_eq!(
+        refusal.violations,
+        vec![HeightOrderViolation::BottomNotBelowTop {
+            bottom_z: 0.0,
+            top_z: -1.37,
+        }],
+        "{refusal}"
+    );
+}
+
 #[test]
 fn a_top_pinned_below_the_stock_bottom_gives_an_empty_ladder_and_the_finding() {
-    // The as-found Corne pin: top -1.37, bottom Auto (now the model bottom,
-    // 0.0) — an inverted range.
+    // An ordered stack wholly below the stock bottom (Z 0): top -1.37,
+    // bottom -2.37. Every planned level is dropped, nothing is cut, and
+    // the empty ladder is reported. Before F033 this arm used the inverted
+    // Corne pin (top -1.37, bottom Auto 0.0); F033 now refuses that stack
+    // (`the_inverted_corne_pin_is_refused_at_generation_f033`).
     let session = waterline_session(HeightsConfig {
         top_z: HeightMode::Manual(-1.37),
+        bottom_z: HeightMode::Manual(-2.37),
         ..HeightsConfig::default()
     });
     let result = session.get_result(0).expect("generated result");
     let f = result.stats.waterline_ladder.expect("recorded");
-    assert_eq!(f.planned_levels, 0, "{f:?}");
+    assert!(f.planned_levels >= 1, "{f:?}");
+    assert_eq!(f.dropped_below_stock, f.planned_levels, "{f:?}");
     assert_eq!(f.delivered_levels, 0, "{f:?}");
     assert!(f.degenerate());
     assert!(
         result.stats.cutting_distance.abs() < EPS,
-        "nothing is cut below the part"
-    );
-    let diags = session
-        .diagnose_toolpath_with_trace(0, None)
-        .expect("diagnose");
-    assert!(
-        diags
-            .iter()
-            .any(|d| d.id.as_str() == ids::GEOM_WATERLINE_LADDER_EMPTY),
-        "R3: an empty ladder is reported, not passed as legitimate silence"
-    );
-
-    // Both heights pinned at -1.37: ONE level below the part, dropped.
-    let session = waterline_session(HeightsConfig {
-        top_z: HeightMode::Manual(-1.37),
-        bottom_z: HeightMode::Manual(-1.37),
-        ..HeightsConfig::default()
-    });
-    let result = session.get_result(0).expect("generated result");
-    let f = result.stats.waterline_ladder.expect("recorded");
-    assert_eq!(f.planned_levels, 1, "{f:?}");
-    assert_eq!(f.dropped_below_stock, 1, "{f:?}");
-    assert_eq!(f.delivered_levels, 0, "{f:?}");
-    assert!(
-        result.stats.cutting_distance.abs() < EPS,
-        "the -1.37 pin never cuts the bed again"
+        "the pin below the part never cuts the bed"
     );
     let diags = session
         .diagnose_toolpath_with_trace(0, None)
@@ -412,7 +431,28 @@ fn a_top_pinned_below_the_stock_bottom_gives_an_empty_ladder_and_the_finding() {
     ] {
         assert!(
             diags.iter().any(|d| d.id.as_str() == id),
-            "{id} must be raised"
+            "R3: {id} must be raised, not passed as legitimate silence"
         );
     }
+
+    // Both heights pinned at -1.37. The Waterline ladder includes its top
+    // (`LadderMode::ConstantStep`), so this stack is ONE level, not an
+    // empty ladder. F033 refuses it (`height_order`: `bottom_z >= top_z`).
+    // The refusal is too strict for a top-included ladder (Waterline, Ramp
+    // Finish, Steep and Shallow) and waits for an operator ruling. When the
+    // rule lets an equal pair through, this assertion fails: then restore
+    // the arm "one level below the part, dropped, both findings raised".
+    let refusal = height_order_refusal(HeightsConfig {
+        top_z: HeightMode::Manual(-1.37),
+        bottom_z: HeightMode::Manual(-1.37),
+        ..HeightsConfig::default()
+    });
+    assert_eq!(
+        refusal.violations,
+        vec![HeightOrderViolation::BottomNotBelowTop {
+            bottom_z: -1.37,
+            top_z: -1.37,
+        }],
+        "{refusal}"
+    );
 }

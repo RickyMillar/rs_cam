@@ -5,17 +5,17 @@
 
 ["adaptive/each_face"]
 outcome = "ok"
-move_count = 1143
-rapid_count = 144
-linear_count = 776
-arc_count = 223
-cutting_length_mm = 1418.298
-rapid_length_mm = 1532.479
+move_count = 1121
+rapid_count = 138
+linear_count = 774
+arc_count = 209
+cutting_length_mm = 1421.488
+rapid_length_mm = 1471.968
 bbox_min = [-16.825, -8.825, -7.0]
 bbox_max = [16.8203, 8.825, 10.0]
-moves_hash = "ad4ce7fe9310567c"
-span_count = 456
-spans_hash = "f06d5d1b57ccbb2a"
+moves_hash = "fc216a762a3cb2da"
+span_count = 432
+spans_hash = "6f25b6e4e9f4d522"
 
 ["adaptive/fresh"]
 outcome = "ok"
@@ -61,17 +61,17 @@ spans_hash = "0ccd97c613bcc2b8"
 
 ["adaptive3d/by_area_helix_spiral"]
 outcome = "ok"
-move_count = 838
+move_count = 830
 rapid_count = 6
-linear_count = 530
-arc_count = 302
-cutting_length_mm = 2277.527
+linear_count = 527
+arc_count = 297
+cutting_length_mm = 2249.412
 rapid_length_mm = 44.068
 bbox_min = [-14.8029, -14.8029, 0.5]
 bbox_max = [14.9365, 14.5197, 13.0]
-moves_hash = "554d17ab7e5eeb0a"
-span_count = 504
-spans_hash = "f2d42708b05a0874"
+moves_hash = "1ddb1bb85b700873"
+span_count = 496
+spans_hash = "8812195bee4db6ab"
 
 ["adaptive3d/fresh"]
 outcome = "ok"
@@ -89,17 +89,17 @@ spans_hash = "afdac8b3c21199c4"
 
 ["adaptive3d/ramp_agent"]
 outcome = "ok"
-move_count = 244
+move_count = 240
 rapid_count = 9
-linear_count = 235
+linear_count = 231
 arc_count = 0
-cutting_length_mm = 1119.172
-rapid_length_mm = 82.459
+cutting_length_mm = 1095.993
+rapid_length_mm = 70.655
 bbox_min = [-12.8979, -12.8979, 0.5]
 bbox_max = [17.0776, 13.0604, 13.0]
-moves_hash = "46ad54298f88e3b0"
-span_count = 57
-spans_hash = "e2a5d4810501e2f8"
+moves_hash = "c2503ce2fdf71ce9"
+span_count = 54
+spans_hash = "2f4bb09426fcd16f"
 
 ["adaptive3d/rest"]
 outcome = "ok"
@@ -131,31 +131,31 @@ spans_hash = "04b187ab207271ac"
 
 ["chamfer/fresh"]
 outcome = "ok"
-move_count = 16
+move_count = 15
 rapid_count = 4
-linear_count = 10
-arc_count = 2
-cutting_length_mm = 141.032
+linear_count = 6
+arc_count = 5
+cutting_length_mm = 138.203
 rapid_length_mm = 21.928
 bbox_min = [-22.0, -12.1, -1.1]
 bbox_max = [20.1, 12.1, 10.0]
-moves_hash = "cac9a06e46fbab09"
-span_count = 8
-spans_hash = "e44bc6ee7c307f28"
+moves_hash = "6edf6a93092e3176"
+span_count = 10
+spans_hash = "ece33a8f21fa16f5"
 
 ["chamfer/rest"]
 outcome = "ok"
-move_count = 16
+move_count = 15
 rapid_count = 4
-linear_count = 10
-arc_count = 2
-cutting_length_mm = 141.032
+linear_count = 6
+arc_count = 5
+cutting_length_mm = 138.203
 rapid_length_mm = 21.928
 bbox_min = [-22.0, -12.1, -1.1]
 bbox_max = [20.1, 12.1, 10.0]
-moves_hash = "1326784b4e136e99"
-span_count = 8
-spans_hash = "e44bc6ee7c307f28"
+moves_hash = "3094b2ad0c3fb906"
+span_count = 10
+spans_hash = "ece33a8f21fa16f5"
 
 ["drill/fresh"]
 outcome = "ok"
@@ -467,15 +467,15 @@ spans_hash = "0607bec658ac5533"
 outcome = "ok"
 move_count = 263
 rapid_count = 66
-linear_count = 185
-arc_count = 12
-cutting_length_mm = 1144.215
-rapid_length_mm = 503.166
+linear_count = 149
+arc_count = 48
+cutting_length_mm = 1136.619
+rapid_length_mm = 515.163
 bbox_min = [13.175, 11.175, 3.0]
 bbox_max = [46.825, 28.825, 15.0]
-moves_hash = "c8583bfa2c3a93b0"
-span_count = 117
-spans_hash = "d5f15172a81d2f61"
+moves_hash = "0b188f320c78eb71"
+span_count = 153
+spans_hash = "7a75c250f1391159"
 
 ["pocket/fresh"]
 outcome = "ok"
@@ -493,17 +493,17 @@ spans_hash = "c200c141e754e137"
 
 ["pocket/rest"]
 outcome = "ok"
-move_count = 126
+move_count = 128
 rapid_count = 30
-linear_count = 96
-arc_count = 0
-cutting_length_mm = 648.427
-rapid_length_mm = 282.901
+linear_count = 94
+arc_count = 4
+cutting_length_mm = 648.461
+rapid_length_mm = 286.832
 bbox_min = [-4.1519, -8.825, -3.0]
 bbox_max = [16.825, 8.825, 10.0]
-moves_hash = "70c2de817b4fa52f"
-span_count = 45
-spans_hash = "36ce5b825495d55d"
+moves_hash = "173f80260e3bb28f"
+span_count = 49
+spans_hash = "82dd1e44e9049286"
 
 ["pocket/zigzag"]
 outcome = "ok"
@@ -521,31 +521,31 @@ spans_hash = "1fd801da01fa38af"
 
 ["profile/each_face"]
 outcome = "ok"
-move_count = 100
+move_count = 110
 rapid_count = 18
-linear_count = 82
-arc_count = 0
-cutting_length_mm = 871.832
+linear_count = 40
+arc_count = 52
+cutting_length_mm = 863.675
 rapid_length_mm = 153.916
 bbox_min = [-23.175, -15.175, -7.0]
 bbox_max = [23.175, 15.175, 10.0]
-moves_hash = "ff479b0b2fc81978"
-span_count = 37
-spans_hash = "03cd42255916c638"
+moves_hash = "f2ce00afb175aa3c"
+span_count = 89
+spans_hash = "678ae1bbd267a1aa"
 
 ["profile/fresh"]
 outcome = "ok"
-move_count = 45
+move_count = 47
 rapid_count = 9
-linear_count = 36
-arc_count = 0
-cutting_length_mm = 589.431
+linear_count = 20
+arc_count = 18
+cutting_length_mm = 586.093
 rapid_length_mm = 70.5
 bbox_min = [-23.175, -15.175, -6.0]
 bbox_max = [23.175, 15.175, 10.0]
-moves_hash = "d630c1e2713b4c9f"
-span_count = 19
-spans_hash = "a3d2616d429feedd"
+moves_hash = "0cd106214d32e3d3"
+span_count = 37
+spans_hash = "1fb669433ea030fe"
 
 ["profile/inside"]
 outcome = "ok"
@@ -563,17 +563,17 @@ spans_hash = "1ccce14a8994ebbe"
 
 ["profile/rest"]
 outcome = "ok"
-move_count = 45
+move_count = 47
 rapid_count = 9
-linear_count = 36
-arc_count = 0
-cutting_length_mm = 588.525
+linear_count = 20
+arc_count = 18
+cutting_length_mm = 585.427
 rapid_length_mm = 70.5
 bbox_min = [-23.175, -15.175, -6.0]
 bbox_max = [23.175, 15.175, 10.0]
-moves_hash = "8fa7ed7ae985b9b9"
-span_count = 19
-spans_hash = "a3d2616d429feedd"
+moves_hash = "2e8f631bf0641720"
+span_count = 37
+spans_hash = "1fb669433ea030fe"
 
 ["project_curve/fresh"]
 outcome = "ok"
@@ -1153,10 +1153,10 @@ move_count = 102
 rapid_count = 54
 linear_count = 48
 arc_count = 0
-cutting_length_mm = 691.182
-rapid_length_mm = 461.884
+cutting_length_mm = 691.098
+rapid_length_mm = 461.882
 bbox_min = [-4.1519, -8.825, -3.0]
 bbox_max = [16.825, 7.175, 10.0]
-moves_hash = "cc3ecbd6ffbce6c9"
+moves_hash = "22f9f6f42c63757d"
 span_count = 77
 spans_hash = "f4dd8c3ba184e74e"
