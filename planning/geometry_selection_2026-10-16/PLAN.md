@@ -772,3 +772,10 @@ button, the File menu. No prompt after an import and no auto-open. The
 main panels gain no rows or buttons for it. A one-line fix action on a
 note that shows only with the note (P6.7 "Add a Bore for these") is
 allowed. P7_DESIGN.md L-16 already follows this; P8 must.
+
+## Operator ruling 2026-10-22: P8 waits for the operator review
+
+"lets not start p8 at all until everything else has been reviewed by me."
+P8 (recognition and tool advice) does not start, not even its design,
+until the operator has reviewed P0–P7 on screen. P8 then runs in its own
+session.
