@@ -18,6 +18,7 @@ use crate::compute::operation_configs::{
 };
 use crate::feeds::support::MILLING_FORMULA_SOURCE;
 use crate::feeds::{CutterKind, OperationFamily as FeedsOperationFamily, PassRole};
+use crate::selection::HoleFitRule;
 
 use super::capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
@@ -542,8 +543,10 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
         floor_inside_stock: true,
         ladder_includes_top: false,
         lut_route: LutRoute::AsStated,
+        // P6.5 (O-3): a circle that is not of the tool size is not drilled.
         item_use: ItemUse::Holes {
             may_be_empty: false,
+            fit: HoleFitRule::ToolSize,
         },
     },
     generate: crate::compute::execute::generate_drill,
@@ -1231,7 +1234,7 @@ pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
         description: "Drill alignment pin holes through stock",
         family: OperationFamily::TwoPointFiveD,
         // The stock pins, plus extra holes from the drawing items
-        // (`ItemUse::Holes { may_be_empty: true }`): it runs with no model.
+        // (`ItemUse::Holes { may_be_empty: true, .. }`): it runs with no model.
         geometry: GeometryRequirement::Items,
         default_auto_regen: true,
         ui_family: UiOperationFamily::Pocket,
@@ -1278,7 +1281,11 @@ pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
         floor_inside_stock: false,
         ladder_includes_top: false,
         lut_route: LutRoute::AsStated,
-        item_use: ItemUse::Holes { may_be_empty: true },
+        // L-19: the pins have their own diameter; every hole is drilled.
+        item_use: ItemUse::Holes {
+            may_be_empty: true,
+            fit: HoleFitRule::None,
+        },
     },
     generate: crate::compute::execute::generate_alignment_pin_drill,
 };

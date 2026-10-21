@@ -6,10 +6,12 @@
 //! `flat_regions`). A [`Selection`] holds rules and picks; [`resolve`](fn@resolve)
 //! matches it against the items, [`ResolvedSelection::to_setup_frame`]
 //! moves the items into the setup frame, and [`view`](fn@view) gives the items an
-//! op cuts or a [`SelectionRefusal`] (P2.2).
+//! op cuts or a [`SelectionRefusal`] (P2.2). [`fit_holes`] then leaves out a
+//! drill circle that is not of the tool size (P6.5).
 
 pub mod drawing_edit;
 pub mod flat_regions;
+pub mod hole_fit;
 pub mod item;
 pub mod join;
 pub mod key;
@@ -28,8 +30,9 @@ pub use drawing_edit::{
     open_shapes,
 };
 pub use flat_regions::{FLAT_REGION_Z_BAND_MM, flat_region_items};
+pub use hole_fit::{HoleFit, HoleFitRule, fit_holes, hole_fit};
 pub use item::{FaceItem, Item, ItemCounts, ItemError, ItemKind, ItemSet, Shape, SourceRef};
-pub use key::{KEY_MATCH_EPS_MM, MatchKey};
+pub use key::{CAD_ROUNDING_MM, KEY_MATCH_EPS_MM, MatchKey};
 pub use near::{PickLine, items_near, polyline_distance};
 pub use refusal::{
     ItemRef, NoteCause, RefusalCause, SelectionNote, SelectionRefusal, kind_not_cut_reason,

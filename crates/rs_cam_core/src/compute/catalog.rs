@@ -533,7 +533,10 @@ impl OperationType {
             GeometryRequirement::Items => {
                 let may_be_empty = matches!(
                     self.capabilities().item_use,
-                    ItemUse::Holes { may_be_empty: true }
+                    ItemUse::Holes {
+                        may_be_empty: true,
+                        ..
+                    }
                 );
                 OperationConfig::new_default(self)
                     .default_selection()

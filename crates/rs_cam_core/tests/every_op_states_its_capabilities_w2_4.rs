@@ -99,6 +99,7 @@ use rs_cam_core::compute::catalog::{
 };
 use rs_cam_core::compute::execute::LinkCeilingNeed;
 use rs_cam_core::ops::trace_path::TraceCompensation;
+use rs_cam_core::selection::HoleFitRule;
 
 /// One frozen row.
 struct Row {
@@ -657,7 +658,7 @@ fn frozen_p1() -> Vec<(OperationType, ItemUse)> {
     (O::InlayPlug, ItemUse::Regions),
     (O::Zigzag, ItemUse::Regions),
     (O::Trace, ItemUse::Curves),
-    (O::Drill, ItemUse::Holes { may_be_empty: false }),
+    (O::Drill, ItemUse::Holes { may_be_empty: false, fit: HoleFitRule::ToolSize }),
     (O::Chamfer, ItemUse::Regions),
     (O::DropCutter, ItemUse::None),
     (O::Adaptive3d, ItemUse::None),
@@ -671,7 +672,7 @@ fn frozen_p1() -> Vec<(OperationType, ItemUse)> {
     (O::RadialFinish, ItemUse::None),
     (O::HorizontalFinish, ItemUse::None),
     (O::ProjectCurve, ItemUse::Curves),
-    (O::AlignmentPinDrill, ItemUse::Holes { may_be_empty: true }),
+    (O::AlignmentPinDrill, ItemUse::Holes { may_be_empty: true, fit: HoleFitRule::None }),
     ]
 }
 

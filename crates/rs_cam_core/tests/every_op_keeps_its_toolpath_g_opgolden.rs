@@ -347,6 +347,8 @@ enum CurveModel {
     /// P3.5: `common::op_fixtures::each_face_model` (mirrored on a flipped
     /// setup), with both faces picked ([`use_faces`]).
     Faces,
+    /// P6.5: [`hole_model`] (design 6), the hole fit of a Drill.
+    Holes,
 }
 
 /// P3.5: the floor "each picked face", depth 0: each face is its own
@@ -529,6 +531,42 @@ const P63_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[
         CurveModel::Square,
     ),
 ];
+
+/// The P6.5 arm: a Drill with the registry tool (an end mill of 6.35 mm)
+/// over [`hole_model`]. Fresh stock.
+const P65_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[(
+    OperationType::Drill,
+    "fit_mixed",
+    no_tweak,
+    Frame::TopUp,
+    CurveModel::Holes,
+)];
+
+/// Design 6 `hole_model` (geometry selection P6.5): two points, a circle of
+/// the registry tool size (6.35 mm), a larger circle (10 mm) and a smaller
+/// circle (4 mm), on the flat board. The Drill drills the points and the
+/// circle of the tool size, and leaves out the other two with a note.
+fn hole_model() -> rs_cam_core::session::LoadedModel {
+    use common::session::TestHole;
+    let hole = |x: f64, y: f64, diameter: Option<f64>| TestHole {
+        x,
+        y,
+        layer: "holes".to_owned(),
+        diameter,
+    };
+    let mut model = common::session::polygon_model(Vec::new(), "opgolden_hole_fit");
+    model.items = std::sync::Arc::new(common::session::drawing_items(
+        Vec::new(),
+        &[
+            hole(-20.0, -10.0, None),
+            hole(20.0, -10.0, None),
+            hole(0.0, 0.0, Some(6.35)),
+            hole(-15.0, 10.0, Some(10.0)),
+            hole(15.0, 10.0, Some(4.0)),
+        ],
+    ));
+    model
+}
 
 /// Three open curves over the cap, with gaps of 1 mm and 2 mm between
 /// them. Each curve is one chain, so the link stage has two gaps to join.
@@ -798,7 +836,12 @@ fn cases() -> Vec<Case> {
             curve: CurveModel::Fixture,
         });
     }
-    for (op, arm, tweak, frame, curve) in W650_CASES.iter().chain(P62_CASES).chain(P63_CASES) {
+    for (op, arm, tweak, frame, curve) in W650_CASES
+        .iter()
+        .chain(P62_CASES)
+        .chain(P63_CASES)
+        .chain(P65_CASES)
+    {
         cases.push(Case {
             op: *op,
             arm,
@@ -912,6 +955,7 @@ fn run(case: &Case) -> Generated {
         CurveModel::Split => use_curve(&mut session, index, split_curve_model()),
         CurveModel::Square => use_curve(&mut session, index, square_curve_model()),
         CurveModel::Faces => use_faces(&mut session, index, case.frame),
+        CurveModel::Holes => use_curve(&mut session, index, hole_model()),
     }
     if rest {
         run_prior(&mut session);

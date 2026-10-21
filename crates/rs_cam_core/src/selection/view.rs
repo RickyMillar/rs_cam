@@ -13,8 +13,10 @@
 //! - An item that the user named (a pick, or a rule that names its kind)
 //!   and that the op cannot cut refuses with `KindNotCut`.
 //! - With nothing left to cut, the op refuses with `Empty`, which names
-//!   every item left out, of every kind. A Pin Drill (`Holes { may_be_empty: true }`) may be
+//!   every item left out, of every kind. A Pin Drill (`Holes { may_be_empty: true, .. }`) may be
 //!   empty.
+//! - The size of a hole is not checked here: the fit needs the tool, so
+//!   [`super::fit_holes`] runs after `view` (geometry selection P6.5).
 //!
 //! Containment (`detect_containment`) runs here, over the selected loops,
 //! circle rings and (for `Curves`) paths, in selection order. A face keeps
@@ -153,11 +155,20 @@ pub struct Hole {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Holes {
     holes: Vec<Hole>,
+    /// For each hole: the index in `ResolvedSelection::items` of its item
+    /// (geometry selection P6.5: the fit step names the item).
+    items: Vec<usize>,
 }
 
 impl Holes {
     pub fn as_slice(&self) -> &[Hole] {
         &self.holes
+    }
+
+    /// The index in `ResolvedSelection::items` of the item of the hole at
+    /// `index` of [`Self::as_slice`].
+    pub fn item(&self, index: usize) -> Option<usize> {
+        self.items.get(index).copied()
     }
 }
 
@@ -232,6 +243,34 @@ impl OpItems {
             }
             if index < regions.exterior_items.len() {
                 let at = regions.exterior_items.remove(index);
+                if let Some(role) = self.roles.get_mut(at) {
+                    *role = ItemRole::Skipped;
+                }
+            }
+        }
+    }
+
+    /// Remove the holes at `indices` of [`Holes::as_slice`] (in increasing
+    /// order), mark the item of each [`ItemRole::Skipped`] and count it in
+    /// [`Self::skipped_by_kind`] (geometry selection P6.5). THE hole fit step (`selection::fit_holes`) calls it
+    /// for a circle that is not of the tool size. Every other view does not
+    /// change.
+    pub fn skip_holes(&mut self, indices: &[usize]) {
+        let View::Holes(holes) = &mut self.view else {
+            return;
+        };
+        for &index in indices.iter().rev() {
+            if index >= holes.holes.len() {
+                continue;
+            }
+            let hole = holes.holes.remove(index);
+            let kind = match hole.diameter {
+                Some(_) => ItemKind::Circle,
+                None => ItemKind::Point,
+            };
+            *self.skipped_by_kind.entry(kind).or_insert(0) += 1;
+            if index < holes.items.len() {
+                let at = holes.items.remove(index);
                 if let Some(role) = self.roles.get_mut(at) {
                     *role = ItemRole::Skipped;
                 }
@@ -468,33 +507,36 @@ fn view_with(
             mark_cut(&mut roles, &served_at);
             View::Curves(Curves { polygons })
         }
-        ItemUse::Holes { may_be_empty } => {
-            let holes: Vec<Hole> = served
+        // The fit rule needs the tool: `fit_holes` applies it after `view`.
+        ItemUse::Holes { may_be_empty, .. } => {
+            let (holes, items): (Vec<Hole>, Vec<usize>) = served
                 .iter()
-                .filter_map(|item| {
+                .zip(&served_at)
+                .filter_map(|(item, &at)| {
                     let layer = item.layer().map(str::to_owned);
-                    match item.shape() {
-                        Shape::Point(p) => Some(Hole {
+                    let hole = match item.shape() {
+                        Shape::Point(p) => Hole {
                             xy: *p,
                             diameter: None,
                             layer,
-                        }),
+                        },
                         Shape::Circle {
                             centre, diameter, ..
-                        } => Some(Hole {
+                        } => Hole {
                             xy: *centre,
                             diameter: Some(*diameter),
                             layer,
-                        }),
-                        Shape::Loop(_) | Shape::Path(_) | Shape::Face(_) => None,
-                    }
+                        },
+                        Shape::Loop(_) | Shape::Path(_) | Shape::Face(_) => return None,
+                    };
+                    Some((hole, at))
                 })
-                .collect();
+                .unzip();
             if holes.is_empty() && !may_be_empty {
                 return Err(empty(notes));
             }
             mark_cut(&mut roles, &served_at);
-            View::Holes(Holes { holes })
+            View::Holes(Holes { holes, items })
         }
     };
     notes.retain(|n| n.kind == ItemKind::Path);

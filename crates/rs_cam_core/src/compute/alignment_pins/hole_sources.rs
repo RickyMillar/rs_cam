@@ -13,7 +13,8 @@
 //! gives in the stock-local frame (the frame of the pins). It does not read
 //! an operation name.
 
-use super::{AlignmentPin, PIN_CAD_ROUNDING_MM, PIN_MATCH_TOL_MM, same_pin_diameter};
+use super::{AlignmentPin, PIN_MATCH_TOL_MM, same_pin_diameter};
+use crate::selection::CAD_ROUNDING_MM;
 
 /// One hole that an operation drills, in the stock-local frame.
 #[derive(Debug, Clone, PartialEq)]
@@ -106,7 +107,7 @@ fn nearest_pin_mm<'a>(pins: impl IntoIterator<Item = &'a AlignmentPin>, x: f64, 
 ///    in `pin_drill_sizes` drills.
 /// 2. "Disagree": a [`HoleOpKind::Drill`] operation drills a hole whose
 ///    stated diameter is a pin diameter (within
-///    [`PIN_CAD_ROUNDING_MM`]), and no pin of that diameter is within
+///    [`CAD_ROUNDING_MM`]), and no pin of that diameter is within
 ///    [`PIN_MATCH_TOL_MM`] of it. A bare point has no diameter, so it is
 ///    not judged a dowel hole.
 ///
@@ -161,7 +162,7 @@ pub fn hole_source_findings(
             };
             let same_size: Vec<&AlignmentPin> = pins
                 .iter()
-                .filter(|p| (p.diameter - diameter).abs() <= PIN_CAD_ROUNDING_MM)
+                .filter(|p| (p.diameter - diameter).abs() <= CAD_ROUNDING_MM)
                 .collect();
             if same_size.is_empty() {
                 continue;

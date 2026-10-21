@@ -462,7 +462,20 @@ mod tests {
             .list_model_items(0, Some("HOLES"), Some(ItemKind::Circle))
             .expect("the model exists");
         assert_eq!(circles.len(), 2, "the drawing holds two circles");
-        let drill = add_op(&mut s, OperationType::Drill, tool_id);
+        // P6.5 (O-3): a Drill drills a circle of the tool size only, so the
+        // drills get a tool of the picked circle size.
+        let mut drill_tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        drill_tool.diameter = circles[0].key.measure;
+        let drill_tool_index = apply(
+            &mut s,
+            Command::AddTool(AddToolArgs {
+                tool: Box::new(drill_tool),
+            }),
+        )
+        .created
+        .expect("the drill tool is created");
+        let drill_tool_id = s.tools()[drill_tool_index].id.0;
+        let drill = add_op(&mut s, OperationType::Drill, drill_tool_id);
         edit(
             &mut s,
             drill,
@@ -474,7 +487,7 @@ mod tests {
         let _trace = add_op(&mut s, OperationType::Trace, tool_id);
         let _pocket_default = add_op(&mut s, OperationType::Pocket, tool_id);
 
-        let lost = add_op(&mut s, OperationType::Drill, tool_id);
+        let lost = add_op(&mut s, OperationType::Drill, drill_tool_id);
         let mut gone = circles[0].key.clone();
         gone.anchor = [500.0, 500.0];
         edit(

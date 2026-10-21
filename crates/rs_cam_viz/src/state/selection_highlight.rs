@@ -158,6 +158,8 @@ impl HoverDetector {
 /// - A face at the top (`NoteCause::AtTheTop`, P3.7): the one face that the
 ///   note names (`note.first`). Each such note names one face, so "Show me"
 ///   frames that face only, not every skipped face of its layer (P3.8).
+/// - A circle that is not of the tool size (`NoteCause::HoleFit`, P6.5):
+///   the one circle that the note names.
 ///
 /// The keys carry the source of the item.
 pub fn note_item_keys(
@@ -170,7 +172,9 @@ pub fn note_item_keys(
         .notes
         .iter()
         .map(|note| match note.cause {
-            NoteCause::AtTheTop { .. } => vec![note.first.key.clone()],
+            NoteCause::AtTheTop { .. } | NoteCause::HoleFit { .. } => {
+                vec![note.first.key.clone()]
+            }
             NoteCause::KindNotServed => {
                 let own = model.into_iter().flat_map(|m| {
                     m.items

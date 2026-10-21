@@ -113,6 +113,7 @@ fn arm_of(cause: &RefusalCause) -> &'static str {
         RefusalCause::UnknownLayer(_) => "unknown_layer",
         RefusalCause::NoSuchRule { .. } => "no_such_rule",
         RefusalCause::FacesNotReady { .. } => "faces_not_ready",
+        RefusalCause::HoleDoesNotFit { .. } => "hole_does_not_fit",
     }
 }
 
@@ -130,6 +131,7 @@ const ARMS: &[&str] = &[
     "unknown_layer",
     "no_such_rule",
     "faces_not_ready",
+    "hole_does_not_fit",
 ];
 
 fn square(cx: f64) -> Polygon2 {
@@ -270,6 +272,10 @@ fn every_cause_has_an_arm() {
         RefusalCause::FacesNotReady {
             model: rs_cam_core::ids::ModelId(0),
         },
+        RefusalCause::HoleDoesNotFit {
+            fit: rs_cam_core::selection::HoleFit::Larger,
+            tool_diameter: 0.0,
+        },
     ];
     let causes: BTreeSet<&str> = samples.iter().map(arm_of).collect();
     let arms: BTreeSet<&str> = ARMS.iter().copied().collect();
@@ -288,6 +294,56 @@ fn empty() {
     assert_names(
         &r,
         &["open path on layer 'TEXT'", "starts at X -10.000 Y 15.000"],
+    );
+}
+
+/// Geometry selection P6.5 (ruling O-3): a picked circle that is not of the
+/// tool size refuses by item. The circle is two tool diameters across, so
+/// it is `Larger` (a helix could make it), not `LeavesCore`.
+#[test]
+fn hole_does_not_fit() {
+    use rs_cam_core::compute::operation_configs::DrillConfig;
+    use rs_cam_core::selection::HoleFit;
+    let circle = Item::new(
+        SourceRef::ToolpathModel,
+        Some("HOLES".into()),
+        Shape::circle(P2::new(5.0, 5.0), 2.0 * TOOL_DIAMETER),
+    )
+    .unwrap();
+    let mut s = single_op_session_with(
+        stock_under(STOCK_HALF, STOCK_HEIGHT),
+        endmill_tool_config(TOOL_DIAMETER),
+        drawing_model(vec![circle.clone()]),
+        "p2_4 drill",
+        OperationConfig::Drill(DrillConfig {
+            selection: Selection::from_picks(vec![pick_of(&circle)]),
+            ..DrillConfig::default()
+        }),
+        |_| {},
+    );
+    let r = refusal_of(&mut s);
+    assert_eq!(
+        r.cause,
+        RefusalCause::HoleDoesNotFit {
+            fit: HoleFit::Larger,
+            tool_diameter: TOOL_DIAMETER,
+        }
+    );
+    let text = r.to_string();
+    assert!(text.starts_with("Drill: "), "the op is not named: {text}");
+    for name in [
+        "circle on layer 'HOLES'",
+        "centre X 5.000 Y 5.000, diameter 6.000 mm",
+        "is larger than the tool diameter 3.000 mm",
+    ] {
+        assert!(
+            text.contains(name),
+            "the refusal does not name {name:?}: {text}"
+        );
+    }
+    assert!(
+        text.ends_with(&format!("Fix: {}.", r.fix())),
+        "the refusal does not end with its fix: {text}"
     );
 }
 

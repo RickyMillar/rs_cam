@@ -12,9 +12,10 @@
 //! No function here holds state or draws.
 
 use rs_cam_core::compute::alignment_pins::{
-    AlignmentPin, AxisPairPattern, MixedPairPattern, PIN_CAD_ROUNDING_MM, PIN_MATCH_TOL_MM,
-    PinSetupMap, axis_plus_mirror_pair, translate, two_mixed_diameters,
+    AlignmentPin, AxisPairPattern, MixedPairPattern, PIN_MATCH_TOL_MM, PinSetupMap,
+    axis_plus_mirror_pair, translate, two_mixed_diameters,
 };
+use rs_cam_core::selection::CAD_ROUNDING_MM;
 use rs_cam_core::session::PinPreset;
 
 /// The smallest distance of a pair pin from the axis that the preset
@@ -24,7 +25,7 @@ pub const MIN_PAIR_ACROSS_MM: f64 = 2.0 * PIN_MATCH_TOL_MM;
 
 /// The smallest step between the two diameters of the mixed preset. A
 /// difference under the CAD rounding is one size.
-pub const MIN_DIAMETER_STEP_MM: f64 = PIN_CAD_ROUNDING_MM;
+pub const MIN_DIAMETER_STEP_MM: f64 = CAD_ROUNDING_MM;
 
 /// The large dowel size of a new mixed preset when no larger drill is in
 /// the project: the small size plus twice [`PIN_MATCH_TOL_MM`], the hole

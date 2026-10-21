@@ -23,6 +23,20 @@ use super::item::{ItemKind, Shape, SourceRef};
 /// distance (`unique_holes`, G-DRILLTWICE).
 pub const KEY_MATCH_EPS_MM: f64 = 1e-6;
 
+/// The rounding of a drawn length in CAD (mm): two lengths closer than
+/// this are one value. A length is a diameter or a position coordinate;
+/// the meaning is one: the rounding of a CAD export.
+///
+/// A CAD export that writes 6 mm as 5.9999 stays one size, and 1/4 in
+/// (6.35 mm) stays apart from 6 mm. Until geometry selection P6.5 (lead
+/// ruling L-13) it was `PIN_CAD_ROUNDING_MM` in `compute/alignment_pins`.
+/// The users: the hole fit of a Drill (`selection::hole_fit`, a circle of
+/// the tool size) and the pin code (a pin of a dowel size, a hole of a pin
+/// diameter, a tool of the pin size, two equal pin positions in
+/// `add_alignment_pin`, the smallest diameter step of the GUI pin preset).
+/// [`KEY_MATCH_EPS_MM`] is a different meaning: two keys of one item.
+pub const CAD_ROUNDING_MM: f64 = 0.01;
+
 /// The identity of an item across a re-import of an unchanged file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MatchKey {

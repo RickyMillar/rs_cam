@@ -26,6 +26,7 @@
 
 use super::{FeedsHints, OperationTransformCapabilities};
 use crate::compute::execute::LinkCeilingNeed;
+use crate::selection::HoleFitRule;
 
 /// One operation's capabilities. See the module doc.
 ///
@@ -236,8 +237,14 @@ pub enum ItemUse {
     /// (P6.3), Project Curve.
     Curves,
     /// Hole positions. `may_be_empty`: the op may have no hole to cut (Pin
-    /// Drill, whose holes come from the alignment pins).
-    Holes { may_be_empty: bool },
+    /// Drill, whose holes come from the alignment pins). `fit`: which holes
+    /// the op cuts by their size (geometry selection P6.5, lead ruling
+    /// L-19): Drill cuts the points and the circles of the tool size; Pin
+    /// Drill cuts every hole.
+    Holes {
+        may_be_empty: bool,
+        fit: HoleFitRule,
+    },
 }
 
 /// How an operation uses the remaining stock (W3.4, AUDIT.md "Rest is not

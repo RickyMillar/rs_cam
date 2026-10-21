@@ -32,7 +32,9 @@ use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
 /// `selection` is the resolved selection the generator was given
 /// (`ExecutionContext::selection`), in the emission frame. This view runs
 /// the same pure [`crate::selection::view`](fn@crate::selection::view) over it with the same
-/// `ItemUse`, so it names the holes the emitted toolpath drills.
+/// `ItemUse`, then the same hole fit step ([`crate::selection::fit_holes`],
+/// P6.5) with the same tool diameter, so it names the holes the emitted
+/// toolpath drills.
 ///
 /// Hole-source asymmetry (§6.E):
 /// - `OperationConfig::Drill`: the holes of its selection
@@ -61,10 +63,12 @@ pub fn build_drill_op_for_config(
 
     let tool_diameter_mm = tool_def.radius() * 2.0;
     let flute_count = tool_cfg.flute_count;
+    // The prologue's two steps: the view, then the hole fit (P6.5, O-3).
     let holes_of = || {
-        crate::selection::view(selection, op.capabilities().item_use)
-            .ok()
-            .and_then(|(items, _)| items.holes().cloned())
+        let item_use = op.capabilities().item_use;
+        let (mut items, _) = crate::selection::view(selection, item_use).ok()?;
+        crate::selection::fit_holes(selection, &mut items, item_use, tool_def.diameter()).ok()?;
+        items.holes().cloned()
     };
 
     match op {
@@ -131,7 +135,9 @@ pub fn build_drill_op_for_config(
 }
 
 /// The XY of each selected hole, in selection order, with every repeat
-/// dropped ([`unique_holes`]). The holes are in the emission frame
+/// dropped ([`unique_holes`]). `holes` are the FITTED holes (P6.5): the
+/// prologue's fit step left out each circle that is not of the tool size,
+/// so the XY alone is the whole hole (the tool makes its size). The holes are in the emission frame
 /// already: the frame door (`ResolvedSelection::to_setup_frame`) moved
 /// each point and circle centre as it moved the drawing, so a hole lands
 /// where the feature that locates it lands (G-DRILLPICK-FRAME).

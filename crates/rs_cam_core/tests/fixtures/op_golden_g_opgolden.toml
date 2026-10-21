@@ -157,6 +157,20 @@ moves_hash = "69e243885421adf6"
 span_count = 10
 spans_hash = "ece33a8f21fa16f5"
 
+["drill/fit_mixed"]
+outcome = "ok"
+move_count = 51
+rapid_count = 36
+linear_count = 15
+arc_count = 0
+cutting_length_mm = 51.0
+rapid_length_mm = 293.721
+bbox_min = [-20.0, -10.0, -10.0]
+bbox_max = [20.0, 0.0, 10.0]
+moves_hash = "446256abcb012cfd"
+span_count = 34
+spans_hash = "95656b424a077ba9"
+
 ["drill/fresh"]
 outcome = "ok"
 move_count = 32

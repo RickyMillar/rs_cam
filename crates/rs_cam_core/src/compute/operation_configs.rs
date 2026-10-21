@@ -381,7 +381,7 @@ pub struct AlignmentPinDrillConfig {
     /// The diameter of the pins this operation drills, in mm (R1,
     /// 2026-10-12). The pin door keeps one pin-drill operation for each pin
     /// diameter. The operation drills the pins of this diameter (within
-    /// `PIN_CAD_ROUNDING_MM`) and no other pin. The field is required: a
+    /// `CAD_ROUNDING_MM`) and no other pin. The field is required: a
     /// project file without it does not load.
     #[param(
         driver_set = "the pin door keeps one pin-drill operation per pin diameter and writes the \

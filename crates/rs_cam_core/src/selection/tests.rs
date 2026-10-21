@@ -294,6 +294,7 @@ fn a_moved_item_loses_its_pick() {
         &r,
         ItemUse::Holes {
             may_be_empty: false,
+            fit: HoleFitRule::ToolSize,
         },
     )
     .unwrap_err();
@@ -314,6 +315,7 @@ fn two_equal_items_make_a_pick_ambiguous_and_stay_two_items() {
         &r,
         ItemUse::Holes {
             may_be_empty: false,
+            fit: HoleFitRule::ToolSize,
         },
     )
     .unwrap_err();
@@ -602,7 +604,8 @@ fn nothing_left_to_cut_refuses_empty_and_names_the_skipped_items() {
         view(
             &r,
             ItemUse::Holes {
-                may_be_empty: false
+                may_be_empty: false,
+                fit: HoleFitRule::ToolSize,
             }
         )
         .unwrap_err()
@@ -610,7 +613,14 @@ fn nothing_left_to_cut_refuses_empty_and_names_the_skipped_items() {
         RefusalCause::Empty { .. }
     ));
     let r = resolve_on(&Selection::empty(), &m);
-    let (items, _) = view(&r, ItemUse::Holes { may_be_empty: true }).unwrap();
+    let (items, _) = view(
+        &r,
+        ItemUse::Holes {
+            may_be_empty: true,
+            fit: HoleFitRule::None,
+        },
+    )
+    .unwrap();
     assert!(items.holes().unwrap().as_slice().is_empty());
 }
 
@@ -644,6 +654,7 @@ fn the_holes_are_the_points_and_the_circle_centres() {
         &resolve_on(&Selection::drawing(), &mixed()),
         ItemUse::Holes {
             may_be_empty: false,
+            fit: HoleFitRule::ToolSize,
         },
     )
     .unwrap();

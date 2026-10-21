@@ -68,7 +68,8 @@ use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::selection::{
-    Filter, ItemKind, MatchKey, Rule, Selection, SelectionEdit, Shape, SourceRef, view,
+    Filter, HoleFit, ItemKind, MatchKey, NoteCause, Rule, Selection, SelectionEdit, Shape,
+    SourceRef, fit_holes, view,
 };
 use rs_cam_core::session::{
     AdoptModelGeometryArgs, Command, EditSelectionArgs, ItemState, LoadedModel, ProjectSession,
@@ -101,10 +102,19 @@ fn stock() -> StockConfig {
     }
 }
 
+/// The tool diameter of every arm (mm).
+const TOOL_DIAMETER: f64 = 3.0;
+/// The diameter of the `HOLES` circle of the fixture (mm).
+const CIRCLE_DIAMETER: f64 = 4.0;
+
 fn session(op: OperationType) -> ProjectSession {
+    session_with_tool(op, TOOL_DIAMETER)
+}
+
+fn session_with_tool(op: OperationType, tool_diameter: f64) -> ProjectSession {
     single_op_session(
         stock(),
-        endmill_tool_config(3.0),
+        endmill_tool_config(tool_diameter),
         load(),
         op.kind_str(),
         OperationConfig::new_default(op),
@@ -160,11 +170,15 @@ fn rings_in(s: &ProjectSession, r: &SelectionReport, state: ItemState) -> BTreeS
 }
 
 /// The resolved selection that generation hands to the prologue, through
-/// the prologue's call.
+/// the prologue's two calls: the view, then the hole fit step with the tool
+/// diameter (P6.5; it changes a `Holes` view only).
 fn generation_items(s: &ProjectSession, item_use: ItemUse) -> rs_cam_core::selection::OpItems {
     let cancel = AtomicBool::new(false);
     let inputs = s.resolve_generation_inputs(0, &cancel).unwrap();
-    view(inputs.selection(), item_use).unwrap().0
+    let mut items = view(inputs.selection(), item_use).unwrap().0;
+    let tool_diameter = s.tools()[0].diameter;
+    let _ = fit_holes(inputs.selection(), &mut items, item_use, tool_diameter).unwrap();
+    items
 }
 
 /// Claims 2 to 4 and 6 for every item of one report.
@@ -365,7 +379,8 @@ fn a_trace_cuts_every_ring_and_a_drill_every_hole() {
         ItemState::Skipped
     );
 
-    let s = session(OperationType::Drill);
+    // The tool is the circle size, so the Drill drills the circle (P6.5).
+    let s = session_with_tool(OperationType::Drill, CIRCLE_DIAMETER);
     let r = report(&s);
     check_states(&s, &r, "Drill default");
     let item_use = s.toolpath_configs()[0].operation.capabilities().item_use;
@@ -404,6 +419,43 @@ fn a_trace_cuts_every_ring_and_a_drill_every_hole() {
         state_of(&s, &r, "OUTER", ItemKind::Loop),
         ItemState::Skipped
     );
+}
+
+/// Geometry selection P6.5 (ruling O-3): with a 3 mm tool the 4 mm circle
+/// is not of the tool size. The Drill leaves it out under the default rule:
+/// its state is `Skipped`, one `HoleFit` note names it, and generation
+/// drills the point only.
+#[test]
+fn a_drill_skips_a_circle_that_is_not_the_tool_size_p6_5() {
+    let s = session(OperationType::Drill);
+    let r = report(&s);
+    check_states(&s, &r, "Drill with a 3 mm tool");
+    assert!(r.refusal.is_none(), "{:?}", r.refusal);
+    assert_eq!(
+        state_of(&s, &r, "HOLES", ItemKind::Circle),
+        ItemState::Skipped
+    );
+    assert_eq!(state_of(&s, &r, "HOLES", ItemKind::Point), ItemState::Cut);
+    let fits: Vec<_> = r
+        .notes
+        .iter()
+        .filter(|n| matches!(n.cause, NoteCause::HoleFit { .. }))
+        .collect();
+    assert_eq!(fits.len(), 1, "{:?}", r.notes);
+    assert_eq!(
+        fits[0].cause,
+        NoteCause::HoleFit {
+            fit: HoleFit::Larger,
+            tool_diameter: TOOL_DIAMETER,
+        }
+    );
+    assert_eq!(fits[0].first.key.kind, ItemKind::Circle);
+    let item_use = s.toolpath_configs()[0].operation.capabilities().item_use;
+    let holes = generation_items(&s, item_use);
+    let holes = holes.holes().unwrap().as_slice();
+    assert_eq!(holes.len(), 1, "{holes:?}");
+    assert_eq!(holes[0].diameter, None, "the point is the one hole");
+    assert_eq!(r.holes, holes, "the report holes are the drilled holes");
 }
 
 #[test]

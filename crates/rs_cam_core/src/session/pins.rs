@@ -4,11 +4,12 @@
 //! notes of one setup for the export header and the setup sheet (P10).
 
 use crate::compute::alignment_pins::{
-    PIN_CAD_ROUNDING_MM, PIN_MATCH_TOL_MM, PinFinding, PinObstacle, PinObstacleKind, PinSetupNotes,
-    pin_diameters, pin_setup_notes, pin_tool_findings, same_pin_diameter,
+    PIN_MATCH_TOL_MM, PinFinding, PinObstacle, PinObstacleKind, PinSetupNotes, pin_diameters,
+    pin_setup_notes, pin_tool_findings, same_pin_diameter,
 };
 use crate::compute::catalog::OperationConfig;
 use crate::ids::ModelId;
+use crate::selection::CAD_ROUNDING_MM;
 
 use super::ProjectSession;
 
@@ -88,7 +89,7 @@ impl ProjectSession {
 
     /// `true` when `model` is a drawing of pin holes: it has no mesh, it
     /// has at least one entity, and every entity is a circle whose
-    /// diameter is one of `pin_diameters` within [`PIN_CAD_ROUNDING_MM`].
+    /// diameter is one of `pin_diameters` within [`CAD_ROUNDING_MM`].
     ///
     /// Geometry selection P2.3b: the test reads the items. A circle is ONE
     /// item since P2.1, so "every entity is a circle" is: every item is a
@@ -101,7 +102,7 @@ impl ProjectSession {
             && model.items.iter().all(|item| match item.shape() {
                 crate::selection::Shape::Circle { diameter, .. } => pin_diameters
                     .iter()
-                    .any(|d| (d - diameter).abs() <= PIN_CAD_ROUNDING_MM),
+                    .any(|d| (d - diameter).abs() <= CAD_ROUNDING_MM),
                 crate::selection::Shape::Loop(_)
                 | crate::selection::Shape::Path(_)
                 | crate::selection::Shape::Point(_)
@@ -266,7 +267,7 @@ impl ProjectSession {
     ///
     /// The tool of the pin-drill operation of that size, else the tool of
     /// a drilling operation (`Drill` or `AlignmentPinDrill`) whose tool has
-    /// that diameter (within `PIN_CAD_ROUNDING_MM`), else a tool of that
+    /// that diameter (within `CAD_ROUNDING_MM`), else a tool of that
     /// diameter (a `VBit` first), else `None`. The tool
     /// type does not say "drill" (a twist drill is modelled as a `VBit`
     /// with a 118 deg point), so the operation that drills holes is the
@@ -308,7 +309,7 @@ impl ProjectSession {
     }
 
     /// The ids of every tool whose diameter is `diameter` (within
-    /// `PIN_CAD_ROUNDING_MM`), in tool order: the choice the pin section
+    /// `CAD_ROUNDING_MM`), in tool order: the choice the pin section
     /// offers for one pin size (R2). The tool that
     /// [`Self::pin_drill_tool_for`] names is first.
     #[must_use]

@@ -126,11 +126,14 @@ fn drill_spec(id: usize) -> RequestSpec {
         unreachable!("default op kind mismatch");
     };
     cfg.cycle = crate::state::toolpath::DrillCycleType::Peck;
+    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    // P6.5 (O-3): a Drill drills a circle of the tool size only.
+    let hole_diameter = tool.diameter;
     let mut spec = RequestSpec::new(
         id,
         &format!("Drill {id}"),
         OperationConfig::Drill(cfg),
-        ToolConfig::new_default(ToolId(1), ToolType::EndMill),
+        tool,
     );
     spec.polygons = Some(vec![
         Polygon2::rectangle(-10.0, -10.0, -6.0, -6.0),
@@ -144,7 +147,10 @@ fn drill_spec(id: usize) -> RequestSpec {
             rs_cam_core::selection::Item::new(
                 rs_cam_core::selection::SourceRef::ToolpathModel,
                 Some("holes".into()),
-                rs_cam_core::selection::Shape::circle(rs_cam_core::geo::P2::new(x, y), 4.0),
+                rs_cam_core::selection::Shape::circle(
+                    rs_cam_core::geo::P2::new(x, y),
+                    hole_diameter,
+                ),
             )
             .expect("a circle is a valid item")
         })

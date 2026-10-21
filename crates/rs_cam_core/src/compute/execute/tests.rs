@@ -159,9 +159,13 @@ fn drill_holes_come_from_points_and_circles_never_centroids() {
     };
 
     // A point, a circle and a loop: two holes, at the point and the centre.
+    // The circle is of the tool size (P6.5, O-3: a Drill drills no other).
     let generated = run(SelectionInputs::from_items([
         item("pts", Shape::Point(P2::new(21.0, 22.0))),
-        item("holes", Shape::circle(P2::new(37.0, 38.0), 4.0)),
+        item(
+            "holes",
+            Shape::circle(P2::new(37.0, 38.0), tool_cfg.diameter),
+        ),
         item(
             "outline",
             Shape::Loop(Polygon2::rectangle(10.0, 10.0, 60.0, 60.0)),

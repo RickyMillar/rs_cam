@@ -35,6 +35,12 @@
 //! [`OperationError::Selection`], as `selection_status` refuses it. P3.7: a
 //! face whose floor is at or above the top is left out with a note; the op
 //! refuses `FloorAboveTop` only when every face is at the top.
+//!
+//! Geometry selection P6.5 (ruling O-3): after the view the prologue runs
+//! THE hole fit step ([`fit_holes`]) with the tool diameter. A Drill leaves
+//! out a circle that is not of the tool size, with a note, and refuses a
+//! picked one (`HoleDoesNotFit`). [`Prepared::holes`] gives the fitted
+//! holes only, so no adapter reads a hole the tool does not make.
 
 use std::borrow::Cow;
 
@@ -43,7 +49,10 @@ use crate::compute::config::ResolvedHeights;
 use crate::compute::floor::region_floors;
 use crate::compute::toolpath_stats::SelectionNoteFinding;
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::selection::{Curves, Holes, OpItems, Regions, ResolvedSelection, SelectionNote, view};
+use crate::selection::{
+    Curves, Holes, OpItems, Regions, ResolvedSelection, SelectionNote, fit_holes, view,
+};
+use crate::tool::MillingCutter;
 
 use super::territory::Territory;
 use super::{ExecutionContext, OperationError};
@@ -172,8 +181,9 @@ impl<'a> Prepared<'a> {
             .ok_or_else(|| self.mismatch("curves"))
     }
 
-    /// The hole positions of a `Holes` op, in the emission frame. Empty
-    /// only for an op that may be empty (Pin Drill).
+    /// The hole positions of a `Holes` op, in the emission frame, after the
+    /// hole fit step (P6.5: a Drill gets the points and the circles of the
+    /// tool size only). Empty only for an op that may be empty (Pin Drill).
     pub fn holes(&self) -> Result<&Holes, OperationError> {
         self.items()
             .and_then(OpItems::holes)
@@ -315,15 +325,28 @@ fn region_ladders(
 ///
 /// A `Holes` op takes its own `may_be_empty` (P2.3c): a Drill with no hole
 /// refuses `Empty`; a Pin Drill with no extra hole runs on its stock pins.
+/// P6.5: then THE hole fit step ([`fit_holes`]) with the tool diameter; its
+/// notes join `notes`, and its refusal stops the op as a view refusal does.
 fn require_items(
     ctx: &ExecutionContext<'_>,
     op_type: OperationType,
     item_use: ItemUse,
     notes: &mut Vec<SelectionNote>,
 ) -> Result<OpItems, OperationError> {
-    let (items, view_notes) = view(&ctx.selection.resolved, item_use)
-        .map_err(|refusal| OperationError::Selection(Box::new(refusal.for_op(op_type.label()))))?;
+    let selection_error = |refusal: crate::selection::SelectionRefusal| -> OperationError {
+        OperationError::Selection(Box::new(refusal.for_op(op_type.label())))
+    };
+    let (mut items, view_notes) =
+        view(&ctx.selection.resolved, item_use).map_err(selection_error)?;
     notes.extend(view_notes);
+    let fit_notes = fit_holes(
+        &ctx.selection.resolved,
+        &mut items,
+        item_use,
+        ctx.tool_def.diameter(),
+    )
+    .map_err(selection_error)?;
+    notes.extend(fit_notes);
     Ok(items)
 }
 

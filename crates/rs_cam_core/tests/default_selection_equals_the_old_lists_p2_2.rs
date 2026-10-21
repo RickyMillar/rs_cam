@@ -48,7 +48,7 @@ use rs_cam_core::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
 use rs_cam_core::geo::{BoundingBox3, P2, P3};
 use rs_cam_core::io::{infer_kind_from_path, load_model_file};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::selection::{RefusalCause, ResolveScope, Selection, resolve, view};
+use rs_cam_core::selection::{HoleFitRule, RefusalCause, ResolveScope, Selection, resolve, view};
 use rs_cam_core::session::LoadedModel;
 
 use common::op_fixtures::{self as f, CaseSpec, Fixture, Frame, Prior, case_session};
@@ -178,6 +178,7 @@ fn differences(label: &str, model: &LoadedModel, setup: Option<&SetupTransformIn
         &resolved,
         ItemUse::Holes {
             may_be_empty: false,
+            fit: HoleFitRule::ToolSize,
         },
     ) {
         Ok((items, _)) => {

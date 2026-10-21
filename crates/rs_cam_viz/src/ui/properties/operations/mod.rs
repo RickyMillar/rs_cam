@@ -820,6 +820,20 @@ mod tests {
         rs_cam_core::session::ProjectSession,
         rs_cam_core::session::ToolpathConfig,
     ) {
+        // 6 mm: the circle of `session_target_model` (P6.5, O-3: a Drill
+        // drills a circle of the tool size only).
+        drill_session_with_tool(model, selection, 6.0)
+    }
+
+    /// [`drill_session`] with a tool of `tool_diameter` (mm).
+    fn drill_session_with_tool(
+        model: rs_cam_core::session::LoadedModel,
+        selection: rs_cam_core::selection::Selection,
+        tool_diameter: f64,
+    ) -> (
+        rs_cam_core::session::ProjectSession,
+        rs_cam_core::session::ToolpathConfig,
+    ) {
         let mut tc = make_session_toolpath_config(
             "Drill",
             1,
@@ -831,7 +845,7 @@ mod tests {
         );
         tc.id = ToolpathId(3);
         let session = ProjectSessionBuilder::new()
-            .tool(sample_tool(ToolId(1), ToolType::EndMill, 3.0))
+            .tool(sample_tool(ToolId(1), ToolType::EndMill, tool_diameter))
             .model(model)
             .toolpath(tc.clone())
             .build();
@@ -877,6 +891,29 @@ mod tests {
         assert!(
             !errs.iter().any(|e| e.starts_with("Drill:")),
             "a model with a circle must not be blocked: {errs:?}"
+        );
+    }
+
+    /// Geometry selection P6.5 (O-3): with a 3 mm tool the 6 mm circle is
+    /// not of the tool size. The Drill leaves it out, nothing is left, and
+    /// the validator blocks Generate with the generator's sentence, which
+    /// names the circle and the fit.
+    #[test]
+    fn validate_drill_blocks_a_circle_that_is_not_the_tool_size_p6_5() {
+        let (session, _) = drill_session_with_tool(
+            session_target_model(2),
+            rs_cam_core::selection::Selection::drawing(),
+            3.0,
+        );
+        let errs = validate_toolpath(
+            &drill_entry(2),
+            &ToolpathValidationContext::from_session(&session),
+        );
+        assert!(
+            errs.iter().any(|e| e.starts_with("Drill:")
+                && e.contains("nothing is left to cut")
+                && e.contains("is larger than the tool diameter 3.000 mm")),
+            "a circle that is not the tool size blocks Generate: {errs:?}"
         );
     }
 

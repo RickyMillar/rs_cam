@@ -109,7 +109,12 @@ fn mini_pins() -> Vec<AlignmentPin> {
 /// Top setup). `with_pin_drill` adds the pin-drill operation too.
 fn mini(with_pin_drill: bool) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    // A 6 mm drill, as the op name says: P6.5 (O-3) drills a circle of the
+    // tool size only.
+    builder.add_tool(ToolConfig {
+        diameter: DOWEL_D,
+        ..ToolConfig::new_default(ToolId(0), ToolType::EndMill)
+    });
     builder.add_model(dowel_drawing());
     let tool = builder.tools()[0].id.0;
     let model = builder.models()[0].id;

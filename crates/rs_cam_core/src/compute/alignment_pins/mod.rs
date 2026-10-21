@@ -51,6 +51,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
 use crate::geo::P3;
+use crate::selection::CAD_ROUNDING_MM;
 
 /// A physical alignment pin position for part registration between setups.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -70,18 +71,6 @@ impl AlignmentPin {
 /// stock edge, the part footprint, a keep-out zone or a fixture, and the
 /// other pins (P6).
 pub const PIN_WALL_MM: f64 = 2.0;
-
-/// Two pin values (a position coordinate or a diameter) closer than this
-/// are one value: the rounding of a CAD export.
-///
-/// A CAD export that writes 6 mm as 5.9999 stays one dowel size, and a
-/// 1/4 in dowel (6.35 mm) stays apart from a 6 mm dowel. The users:
-/// `add_alignment_pin` (two positions are one pin), the hole sources (a
-/// hole of a pin diameter), the pin-tool finding (a pin of the drill
-/// diameter) and the pin-hole drawing rule of the default part models.
-/// [`PIN_MATCH_TOL_MM`] is a different meaning: the hole slop a dowel
-/// finds its hole within.
-pub const PIN_CAD_ROUNDING_MM: f64 = 0.01;
 
 /// The pin diameter when no tool drills the pin holes and no pin is
 /// stored: the 6 mm dowel of the live projects (the `diameter = 6.0` pins
@@ -603,14 +592,14 @@ pub fn pin_findings_for_setups(
 }
 
 /// `true` when `a` and `b` are one dowel size: they differ by no more than
-/// [`PIN_CAD_ROUNDING_MM`].
+/// [`CAD_ROUNDING_MM`].
 #[must_use]
 pub fn same_pin_diameter(a: f64, b: f64) -> bool {
-    (a - b).abs() <= PIN_CAD_ROUNDING_MM
+    (a - b).abs() <= CAD_ROUNDING_MM
 }
 
 /// The distinct pin diameters of `pins`, in ascending order (R1,
-/// 2026-10-12). Two diameters within [`PIN_CAD_ROUNDING_MM`] are one size;
+/// 2026-10-12). Two diameters within [`CAD_ROUNDING_MM`] are one size;
 /// the size takes the value of its first pin in `pins`.
 ///
 /// The pin door keeps one pin-drill operation for each size in this list.

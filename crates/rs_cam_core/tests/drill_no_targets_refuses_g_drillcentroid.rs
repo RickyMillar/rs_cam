@@ -52,8 +52,9 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::DressupEntryStyle;
 use rs_cam_core::compute::operation_configs::{DrillConfig, DrillCycleType};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
+use rs_cam_core::compute::tool_config::ToolConfig;
 use rs_cam_core::io::load_model_file;
-use rs_cam_core::selection::{ItemKind, Selection};
+use rs_cam_core::selection::{ItemKind, Selection, Shape};
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder};
 
 /// The one circle target the "drawing with a circle" case exposes, in
@@ -158,8 +159,13 @@ fn drill_op(selection: Selection) -> OperationConfig {
 /// `add_*` doors. Entry styling and the rapid reorder are pinned off so the
 /// emitted columns are exactly the holes.
 fn session_with(model: LoadedModel, op: OperationConfig) -> ProjectSession {
+    session_with_tool(model, op, make_endmill_6mm())
+}
+
+/// [`session_with`] with `tool`.
+fn session_with_tool(model: LoadedModel, op: OperationConfig, tool: ToolConfig) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
-    let tool_idx = builder.add_tool(make_endmill_6mm());
+    let tool_idx = builder.add_tool(tool);
     let tool_id = builder.tools()[tool_idx].id.0;
     let model_id = builder.add_model(model);
     let mut tc = toolpath_config("Drill", op, tool_id, model_id);
@@ -236,7 +242,21 @@ fn an_svg_circle_drills_at_its_centre_and_the_outline_does_not() {
         .filter(|i| i.kind() == ItemKind::Circle)
         .count();
     assert_eq!(circles, 1, "the pocket SVG holds exactly its circle");
-    let mut session = session_with(model, drill_op(Selection::drawing()));
+    // P6.5 (O-3): a Drill drills a circle of the tool size only, so the
+    // tool is the size of the circle.
+    let diameter = model
+        .items
+        .iter()
+        .find_map(|i| match i.shape() {
+            Shape::Circle { diameter, .. } => Some(*diameter),
+            Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => None,
+        })
+        .expect("the circle");
+    let tool = ToolConfig {
+        diameter,
+        ..make_endmill_6mm()
+    };
+    let mut session = session_with_tool(model, drill_op(Selection::drawing()), tool);
     let cols = drilled_columns(&mut session, 0);
     assert_eq!(cols.len(), 1, "one hole, got columns {cols:?}");
     let (x, y) = (cols[0].0 as f64 / 1000.0, cols[0].1 as f64 / 1000.0);
