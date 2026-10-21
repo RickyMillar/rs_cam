@@ -414,9 +414,9 @@ fn the_row_declares_its_surfaces() {
         matches!(surfaces.mcp, Reach::Skip(_)),
         "the MCP door edits one named parameter, so it reaches another row"
     );
-    assert_eq!(
-        surfaces.cli,
-        Reach::Reached,
-        "the CLI project door writes a toolpath's configuration through this row (WP6b)"
+    assert!(
+        matches!(surfaces.cli, Reach::Skip(_)),
+        "the CLI writes Suggest through apply_feeds (F114, W10) and job keys \
+         through the per-parameter setters, so it reaches other rows"
     );
 }
