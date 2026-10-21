@@ -19,7 +19,7 @@
 - The toolpath panel takes `ToolpathPanelSnapshot` and `ToolpathPanelInputs`. Add a field there, not a
   parameter. The width does not depend on the tab.
 - A panel door marks the project edited on success; `app.rs` guards on it. A pinned Bottom Z note names
-  the ops that `capabilities().floor_owner` does not mark `HeightsBottom`. An `OpFloor` op has the Floor row (`floor_row`); a reference change and a diagram drag use `FloorReferences` (L-10); the Heights tab has a read-only Floor line, no Bottom row (L-11); the O-2 hint is under the Selection section. The diagram floor runs come from `floor_runs` (`FloorInputs::face_floors`: Z and face count); every run has a hover.
+  the ops that `capabilities().floor_owner` does not mark `HeightsBottom`. An `OpFloor` op has the Floor row (`floor_row`); a reference change and a diagram drag use `FloorReferences` (L-10); the Heights tab has a read-only Floor line, no Bottom row (L-11); the O-2 hint is under the Selection section. The diagram floor runs come from `floor_runs` (`FloorInputs::face_floors`: Z and face count); every run has a hover. F033: every heights write (a row, an Auto button, a diagram drag and its rounding) goes through `admit_heights_edit` (core `ToolpathHeights::edit_refusal`); the badge is `height_order_badge`.
   "Show me" frames `selection_highlight::note_item_keys`: the skipped items of a note's kind and layer, or the one face of an at-the-top note.
 - A draw never writes `rest_analysis.enabled`; `apply_auto_enable` is the door. Do not draw a raw egui
   widget where `ui/components/` has one. A tooltip keys on the registry parameter NAME, never the label.
@@ -32,7 +32,7 @@
   the tab's ONE `advanced` section. A diagram comes before its rows.
 
 ## Sentries (`cargo test -p rs_cam_viz -q`)
-- `--test bottom_z_pin_note_g_bottompin --test height_diagram_drag_prefers_bottom_and_rounds_r5 --test stock_panel_edit_clears_auto_from_model_r12`; floor: `--test every_depth_shows_its_reference_p3_7 --test a_floor_reference_change_keeps_the_cut_p3_7 --test the_heights_diagram_fits_f2`
+- `--test bottom_z_pin_note_g_bottompin --test height_diagram_drag_prefers_bottom_and_rounds_r5 --test stock_panel_edit_clears_auto_from_model_r12`; floor: `--test every_depth_shows_its_reference_p3_7 --test a_floor_reference_change_keeps_the_cut_p3_7 --test the_heights_diagram_fits_f2 --test one_height_order_rule_for_every_surface_f033`
 - `--test boundary_controls_always_visible_g_boundaryinherit --test depth_beyond_stock_cautions_g_depthstock`; `--lib a_setup_map_op_draws_no_boundary_controls_d3`
 - `--test the_inspector_nests_once_dc5 --test inspector_width_is_tab_independent_up4 --test the_inspector_text_is_bounded_ic1 --test tabular_data_reads_one_table_ic2`
 - `--test the_head_and_shoe_rows_fit_the_rail_h2 --test the_help_key_is_the_param_name_ui04 --test operations_registry_ui05 --test one_start_from_row_g_startfrom`

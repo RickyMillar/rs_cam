@@ -31,6 +31,10 @@ impl ProjectSession {
     /// 3. The high-feedrate rapid→feed rewrite, when the post config asks
     ///    for it (`high_feedrate_mode`).
     ///
+    /// F033: before step 1, an emitted toolpath whose height planes break
+    /// the order refuses ([`crate::gcode::ExportRefusal::HeightOrder`],
+    /// [`Self::height_order_refusal`]).
+    ///
     /// Until F067 only the GUI/MCP door ran 2 and 3, so the CLI emitted
     /// `G0` rapids where the GUI emitted `G1` traverses, and no CLI file
     /// was safety-checked. The findings are advisory on every surface: no
@@ -53,6 +57,19 @@ impl ProjectSession {
             policy,
             overlay,
         } = request;
+        // F033 (operator ruling 2): an emitted toolpath whose height planes
+        // break the order refuses the whole export, before any emit. The
+        // rows are the text of `HeightOrderRefusal`, which the edit doors
+        // and generation give too.
+        let height_rows: Vec<String> = emitted
+            .iter()
+            .filter_map(|idx| self.toolpath_configs.get(*idx))
+            .filter_map(|tc| self.height_order_refusal(tc))
+            .map(|refusal| refusal.to_string())
+            .collect();
+        if !height_rows.is_empty() {
+            return Err(crate::gcode::ExportRefusal::HeightOrder { rows: height_rows });
+        }
         let post_config = &self.post;
         let post = post_config.format.definition();
         let crate::gcode::CheckedProgram {

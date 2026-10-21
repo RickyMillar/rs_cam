@@ -238,6 +238,10 @@ diag_ids! {
     pub const GEOM_FEED_Z_BELOW_TOP_Z: &str = "geom.feed_z_below_top_z";
     pub const GEOM_RETRACT_Z_BELOW_FEED_Z: &str = "geom.retract_z_below_feed_z";
     pub const GEOM_CLEARANCE_Z_BELOW_RETRACT_Z: &str = "geom.clearance_z_below_retract_z";
+    /// F033: the retract plane is below the anchored Top Z, so the rapids
+    /// within the operation go through the material. Refuses the edit,
+    /// generation and export.
+    pub const GEOM_RETRACT_Z_BELOW_TOP_Z: &str = "geom.retract_z_below_top_z";
     pub const GEOM_PLUNGE_EXCEEDS_FEED: &str = "geom.plunge_exceeds_feed";
 
     /// A 2.5D operation's own depth dial puts its cut floor below the bottom of

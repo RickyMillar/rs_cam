@@ -84,7 +84,7 @@ pub use diagnostics_types::{
     ProjectVerdict, ToolpathDiagnostic, Verdict, VerdictEvidence, VerdictKind, VerdictSeverity,
 };
 pub use eval_context::SetupEvalContext;
-pub use heights::{ToolpathHeights, TopSource};
+pub use heights::{HeightOrderRefusal, ToolpathHeights, TopSource};
 pub use load_report::LoadReportStamp;
 pub use multitool::{
     MultitoolPlanOutcome, MultitoolPlanSpec, MultitoolPreview, PreviewTierMapHandle, TierStrategy,
@@ -305,6 +305,11 @@ pub enum SessionError {
     /// the stock, the machine, the head or a toolpath shoe. Every door of
     /// that entity and the project loader refuse with it and write nothing.
     OutOfDomain(crate::compute::domain::DomainRefusal),
+    /// F033 (operator ruling 2): an edit adds a refusing break of the
+    /// height-plane order, or generation reads a stack that holds one. The
+    /// door writes nothing. The export door refuses with the same text
+    /// (`ExportRefusal::HeightOrder`).
+    HeightOrder(heights::HeightOrderRefusal),
 }
 
 impl SessionError {
@@ -416,6 +421,7 @@ impl std::fmt::Display for SessionError {
                  give each entry its own id."
             ),
             Self::OutOfDomain(refusal) => write!(f, "{refusal}"),
+            Self::HeightOrder(refusal) => write!(f, "{refusal}"),
         }
     }
 }

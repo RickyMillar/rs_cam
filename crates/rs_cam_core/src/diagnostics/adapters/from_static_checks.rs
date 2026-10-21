@@ -112,6 +112,21 @@ impl ResolvedHeights {
         Self::from_resolved(&answer.resolve(heights), &answer.context)
     }
 
+    /// The five planes as the compute struct, for THE order rule
+    /// ([`crate::compute::config::height_order`]). The pin flags are not
+    /// read by that rule.
+    fn planes(&self) -> crate::compute::config::ResolvedHeights {
+        crate::compute::config::ResolvedHeights {
+            clearance_z: self.clearance_z,
+            retract_z: self.retract_z,
+            feed_z: self.feed_z,
+            top_z: self.top_z,
+            bottom_z: self.bottom_z,
+            top_pinned: false,
+            bottom_pinned: false,
+        }
+    }
+
     fn from_resolved(
         resolved: &crate::compute::config::ResolvedHeights,
         ctx: &HeightContext,
@@ -634,100 +649,59 @@ pub fn depth_beyond_stock(op: &OperationConfig, h: &ResolvedHeights) -> Option<D
     })
 }
 
-/// The Top Z the generator ANCHORS on, for the plane-order check.
-///
-/// R7 (Corne case, 2026-09-18): the as-found 6 mm rough carried a pinned
-/// `top_z = 0.109` (an un-rounded Heights-diagram drag, R5) and a pinned
-/// `bottom_z = 4.0`, and the ribbon said "Bottom Z (4.0) is above Top Z
-/// (0.1). No material will be cut." The numbers were the config's; the
-/// sentence was false. `Adaptive3d` deliberately ignores a pinned top and
-/// anchors on the stock top (`generate_adaptive3d`, `stock_top_z:
-/// ctx.stock_bbox.max.z`), so a pinned bottom on a rough must be compared
-/// against the stock top the rough really starts from. Every other operation
-/// reads its resolved `top_z`.
-fn anchored_top_z(op: &OperationConfig, h: &ResolvedHeights) -> f64 {
-    if op.capabilities().top_on_stock_box {
-        h.stock_top_z.unwrap_or(h.top_z)
+/// F033: the plane-order findings. The verdict is THE core rule
+/// ([`crate::compute::config::height_order`]: the R7 anchor, the bottom only
+/// where it reaches the motion); this adapter converts each violation into a
+/// finding with its own id and the one severity of its kind. The GUI badge
+/// reads the same rule through `ToolpathHeights::height_order`.
+fn height_order_findings(
+    scope: &Scope,
+    op: &OperationConfig,
+    h: &ResolvedHeights,
+) -> Vec<Diagnostic> {
+    use crate::compute::config::HeightOrderViolation as V;
+    crate::compute::config::height_order(op.op_type(), &h.planes(), h.stock_top_z)
+        .into_iter()
+        .map(|violation| {
+            let id = match violation {
+                V::ClearanceBelowRetract { .. } => ids::GEOM_CLEARANCE_Z_BELOW_RETRACT_Z,
+                V::RetractBelowTop { .. } => ids::GEOM_RETRACT_Z_BELOW_TOP_Z,
+                V::RetractBelowFeed { .. } => ids::GEOM_RETRACT_Z_BELOW_FEED_Z,
+                V::FeedBelowTop { .. } => ids::GEOM_FEED_Z_BELOW_TOP_Z,
+                V::BottomNotBelowTop { .. } => ids::GEOM_BOTTOM_ABOVE_TOP_Z,
+            };
+            Diagnostic {
+                id: DiagnosticId::from(id),
+                scope: scope.clone(),
+                category: Category::Geometry,
+                severity: height_order_severity(violation),
+                confidence: Confidence::Static,
+                state: DiagnosticState::Current,
+                source: Source::StaticValidation,
+                message: format!("{violation}."),
+                evidence: None,
+                fix: None,
+                supersedes: vec![],
+                suppressed_diagnostics: vec![],
+            }
+        })
+        .collect()
+}
+
+/// F033: the one severity of a plane-order violation. A violation that
+/// refuses the edit, generation and export is `Critical`; the other kinds
+/// are `Caution`. The GUI badge maps the same split to its colours.
+#[must_use]
+pub fn height_order_severity(violation: crate::compute::config::HeightOrderViolation) -> Severity {
+    if violation.refuses() {
+        Severity::Critical
     } else {
-        h.top_z
+        Severity::Caution
     }
 }
 
 fn heights_checks(scope: &Scope, op: &OperationConfig, h: &ResolvedHeights) -> Vec<Diagnostic> {
-    let mut out = Vec::new();
-    let top_z = anchored_top_z(op, h);
-    if h.bottom_z > top_z {
-        out.push(Diagnostic {
-            id: DiagnosticId::from(ids::GEOM_BOTTOM_ABOVE_TOP_Z),
-            scope: scope.clone(),
-            category: Category::Geometry,
-            severity: Severity::Critical,
-            confidence: Confidence::Static,
-            state: DiagnosticState::Current,
-            source: Source::StaticValidation,
-            message: format!(
-                "Bottom Z ({:.1}) is above Top Z ({:.1}). No material will be cut.",
-                h.bottom_z, top_z
-            ),
-            evidence: None,
-            fix: None,
-            supersedes: vec![],
-            suppressed_diagnostics: vec![],
-        });
-    }
-    if h.feed_z < top_z {
-        out.push(Diagnostic {
-            id: DiagnosticId::from(ids::GEOM_FEED_Z_BELOW_TOP_Z),
-            scope: scope.clone(),
-            category: Category::Geometry,
-            severity: Severity::Caution,
-            confidence: Confidence::Static,
-            state: DiagnosticState::Current,
-            source: Source::StaticValidation,
-            message: format!(
-                "Feed Z ({:.1}) is below Top Z ({:.1}). Tool will plunge into material at feed rate.",
-                h.feed_z, top_z
-            ),
-            evidence: None,
-            fix: None,
-            supersedes: vec![],
-            suppressed_diagnostics: vec![],
-        });
-    }
-    if h.retract_z < h.feed_z {
-        out.push(Diagnostic {
-            id: DiagnosticId::from(ids::GEOM_RETRACT_Z_BELOW_FEED_Z),
-            scope: scope.clone(),
-            category: Category::Geometry,
-            severity: Severity::Caution,
-            confidence: Confidence::Static,
-            state: DiagnosticState::Current,
-            source: Source::StaticValidation,
-            message: "Retract Z is below Feed Z. Retract moves won't clear the approach height."
-                .to_owned(),
-            evidence: None,
-            fix: None,
-            supersedes: vec![],
-            suppressed_diagnostics: vec![],
-        });
-    }
-    if h.clearance_z < h.retract_z {
-        out.push(Diagnostic {
-            id: DiagnosticId::from(ids::GEOM_CLEARANCE_Z_BELOW_RETRACT_Z),
-            scope: scope.clone(),
-            category: Category::Geometry,
-            severity: Severity::Caution,
-            confidence: Confidence::Static,
-            state: DiagnosticState::Current,
-            source: Source::StaticValidation,
-            message: "Clearance Z is below Retract Z. Rapid moves between operations may collide."
-                .to_owned(),
-            evidence: None,
-            fix: None,
-            supersedes: vec![],
-            suppressed_diagnostics: vec![],
-        });
-    }
+    let mut out = height_order_findings(scope, op, h);
     if let Some(found) = depth_beyond_stock(op, h) {
         out.push(Diagnostic {
             id: DiagnosticId::from(ids::GEOM_DEPTH_BEYOND_STOCK),

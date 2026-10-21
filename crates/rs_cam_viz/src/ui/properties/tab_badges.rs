@@ -34,16 +34,8 @@ pub(super) fn compute_tab_badges(
 
     // Heights: badge if any height warning exists. A warning outranks the
     // pin mark below.
-    let heights_warning = toolpath_heights.and_then(|answer| {
-        let h = answer.resolve(&entry.heights);
-        if h.bottom_z > h.top_z || h.clearance_z < h.retract_z {
-            Some(crate::ui::tokens::DANGER) // red
-        } else if h.feed_z < h.top_z || h.retract_z < h.feed_z {
-            Some(crate::ui::tokens::CAUTION) // yellow
-        } else {
-            None
-        }
-    });
+    let heights_warning = toolpath_heights
+        .and_then(|answer| height_order_badge(answer, &entry.heights, &entry.operation));
     // R5 (2026-09-18): a pinned height is a fact the tab states before it
     // opens. A diagram drag pinned Top at −1.37 and nothing on the tab strip
     // said so (`planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §4.2).
@@ -106,6 +98,31 @@ pub(super) fn compute_tab_badges(
         feeds_badge,
         heights_badge,
         dressup_badge,
+    }
+}
+
+/// F033: the Heights tab badge colour of the plane order, or `None`.
+///
+/// THE core rule (`ToolpathHeights::height_order`, the R7 anchor) and the
+/// one severity of each kind (`height_order_severity`, which the
+/// diagnostics adapter also reads): `Critical` is DANGER, `Caution` is
+/// CAUTION. The badge keeps no comparison of its own.
+pub fn height_order_badge(
+    answer: &rs_cam_core::session::ToolpathHeights,
+    heights: &rs_cam_core::compute::config::HeightsConfig,
+    op: &rs_cam_core::compute::catalog::OperationConfig,
+) -> Option<egui::Color32> {
+    use rs_cam_core::diagnostics::Severity;
+    use rs_cam_core::diagnostics::adapters::from_static_checks::height_order_severity;
+    let worst = answer
+        .height_order(heights, op.op_type())
+        .into_iter()
+        .map(height_order_severity)
+        .max()?;
+    match worst {
+        Severity::Blocking | Severity::Critical => Some(crate::ui::tokens::DANGER),
+        Severity::Caution => Some(crate::ui::tokens::CAUTION),
+        Severity::Info | Severity::Hint => None,
     }
 }
 

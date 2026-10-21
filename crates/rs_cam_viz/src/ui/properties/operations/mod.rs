@@ -30,8 +30,8 @@ pub(super) use surface_3d::{
 // keeps its module path through these re-exports, so `ui/properties/mod.rs`
 // and the sibling operation editors import exactly what they imported before.
 pub use height_diagram::{
-    DiagramFloor, FaceFloor, FloorInputs, FloorRun, draw_height_diagram, floor_runs, pick_line,
-    round_pin,
+    DiagramFloor, FaceFloor, FloorInputs, FloorRun, admit_heights_edit, draw_height_diagram,
+    floor_runs, last_heights_refusal, pick_line, round_pin,
 };
 pub(super) use shape_diagrams::{
     StepoverPattern, draw_dogbone_diagram, draw_inlay_diagram, draw_lead_in_out_diagram,
@@ -263,10 +263,10 @@ fn find_nearest_reference(z: f64, ctx: &HeightContext) -> HeightReference {
 /// enumerations together so they cannot drift.
 ///
 /// The panel ANNOTATES rather than disables. A disabled row cannot be set
-/// back to Auto, and a legacy project can carry a pin that puts the resolved
-/// bottom above the top — which the Heights badge and the core
-/// `geom.bottom_above_top_z` check both report. The operator must keep the
-/// one control that clears it.
+/// back to Auto, and a legacy project can carry a stale pin. The operator
+/// must keep the one control that clears it. F033: the order rule
+/// (`compute::config::height_order`) does not check the bottom of an op that
+/// does not read it, so an unused pin raises no badge and refuses nothing.
 pub fn bottom_z_pin_note(op_type: OperationType) -> Option<&'static str> {
     use crate::state::toolpath::OperationType as Op;
 
@@ -378,6 +378,11 @@ pub(super) fn draw_heights_params(
         None => BOTTOM_Z_TOOLTIP.to_owned(),
     };
 
+    // F033: the rows edit a draft. The one order gate
+    // (`admit_heights_edit`) writes it after the grid, so a value that would
+    // invert the stack is refused before it reaches the config.
+    let mut draft = heights.clone();
+
     // UI-02: 4 columns, so `param_grid` does not fit. IC1: the narrow column
     // gap keeps the four columns inside the 280-point panel.
     egui::Grid::new("heights_p")
@@ -390,7 +395,7 @@ pub(super) fn draw_heights_params(
                 ui,
                 "Clearance:",
                 "Highest safe height. Rapid moves between separate operations travel at this Z.",
-                &mut heights.clearance_z,
+                &mut draft.clearance_z,
                 HeightReference::StockTop,
                 auto.clearance_z,
                 ctx,
@@ -400,7 +405,7 @@ pub(super) fn draw_heights_params(
                 ui,
                 "Retract:",
                 "Rapid travel height within an operation. Tool retracts here between cutting passes.",
-                &mut heights.retract_z,
+                &mut draft.retract_z,
                 HeightReference::StockTop,
                 auto.retract_z,
                 ctx,
@@ -410,7 +415,7 @@ pub(super) fn draw_heights_params(
                 ui,
                 "Feed:",
                 "Approach height. Tool switches from rapid to feed rate here before plunging into material.",
-                &mut heights.feed_z,
+                &mut draft.feed_z,
                 HeightReference::StockTop,
                 auto.feed_z,
                 ctx,
@@ -420,7 +425,7 @@ pub(super) fn draw_heights_params(
                 ui,
                 "Top:",
                 top_tooltip(top_source),
-                &mut heights.top_z,
+                &mut draft.top_z,
                 HeightReference::StockTop,
                 auto.top_z,
                 ctx,
@@ -433,7 +438,7 @@ pub(super) fn draw_heights_params(
                     ui,
                     "Bottom:",
                     &bottom_tooltip,
-                    &mut heights.bottom_z,
+                    &mut draft.bottom_z,
                     HeightReference::StockTop,
                     auto.bottom_z,
                     ctx,
@@ -441,6 +446,12 @@ pub(super) fn draw_heights_params(
                 );
             }
         });
+
+    let _ = admit_heights_edit(ui, heights, draft, answer, op_type);
+    // F033: the last refused edit, in DANGER, under the rows.
+    if let Some(refusal) = last_heights_refusal(ui) {
+        ui.add(crate::ui::components::OneLine::new(refusal).color(crate::ui::tokens::DANGER));
+    }
 
     // F1.19 / G-BOTTOMPIN: the note is drawn, not hidden behind a hover. The
     // row above stays editable, so an operator can still read a stored pin

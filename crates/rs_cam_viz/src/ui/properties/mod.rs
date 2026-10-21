@@ -22,9 +22,9 @@ mod toolpath_panel;
 
 pub use operations::{
     DepthBeyondStock, DiagramFloor, FaceFloor, FloorInputs, FloorRun, ThroughCut,
-    ToolpathValidationContext, bottom_z_pin_note, collect_diagnostics, depth_beyond_stock,
-    draw_height_diagram, floor_runs, profile_through_cut, profile_through_cut_line,
-    validate_toolpath, validate_toolpath_config,
+    ToolpathValidationContext, admit_heights_edit, bottom_z_pin_note, collect_diagnostics,
+    depth_beyond_stock, draw_height_diagram, floor_runs, profile_through_cut,
+    profile_through_cut_line, validate_toolpath, validate_toolpath_config,
 };
 #[cfg(test)]
 pub(crate) use panel_apply::apply_head;
@@ -32,6 +32,7 @@ pub(crate) use panel_apply::{
     apply_obstacle_draft, apply_stock_draft, commit_tool_draft, part_models_first,
     stock_edit_command,
 };
+pub use tab_badges::height_order_badge;
 
 // The children of this module. Every name below is a private re-export: it
 // keeps the item's path at `ui::properties::<name>`, which is what a
@@ -995,10 +996,11 @@ pub(crate) fn project_entry_onto(
 /// green on screen and the auto-regeneration sweep never queued it. The
 /// stamp now covers every index `Effects::stale` names.
 ///
-/// `None` says the session carries no toolpath with the entry's id, which
-/// is the only way the command can refuse here: the index comes from a
-/// lookup in this function and nothing mutates the session between the
-/// two.
+/// `None` says the session carries no toolpath with the entry's id, or the
+/// command refused. F033: the order door (`height_order_door`) refuses an
+/// edit that adds a refusing break of the height planes; the Heights tab
+/// gate (`admit_heights_edit`) refuses the same edit before the draft
+/// changes, so the panel does not send it.
 pub(crate) fn write_entry_config_to_session(
     entry: &ToolpathEntry,
     state: &mut AppState,

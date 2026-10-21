@@ -272,7 +272,7 @@ impl HeightMode {
 }
 
 /// Five-level height system controlling vertical tool motion.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HeightsConfig {
     pub clearance_z: HeightMode,
     pub retract_z: HeightMode,
@@ -405,11 +405,206 @@ pub struct ResolvedHeights {
     pub bottom_pinned: bool,
 }
 
-impl ResolvedHeights {
-    /// The depth range: distance from top_z to bottom_z (positive value).
-    pub fn depth(&self) -> f64 {
-        (self.top_z - self.bottom_z).abs()
+// F033: `ResolvedHeights::depth()` returned `(top - bottom).abs()`, so an
+// inverted stack read as a positive depth. It had no caller and is deleted.
+// A depth is `top_z - bottom_z`; [`height_order`] keeps it positive, and a
+// reader that needs the span computes it.
+
+/// One break of the height-plane order (F033, operator ruling 2).
+///
+/// The order is clearance >= retract >= feed >= top > bottom, with the
+/// anchors of [`height_order`]. Each kind has ONE severity
+/// ([`Self::refuses`]). The GUI badge, the diagnostics, the edit doors,
+/// generation and the export door read this one value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HeightOrderViolation {
+    /// Clearance Z is below Retract Z.
+    ClearanceBelowRetract { clearance_z: f64, retract_z: f64 },
+    /// Retract Z is below the anchored Top Z: the rapids within the
+    /// operation go through the material.
+    RetractBelowTop { retract_z: f64, top_z: f64 },
+    /// Retract Z is below Feed Z.
+    RetractBelowFeed { retract_z: f64, feed_z: f64 },
+    /// Feed Z is below the anchored Top Z.
+    FeedBelowTop { feed_z: f64, top_z: f64 },
+    /// The bottom is at or above the anchored Top Z: the ladder is empty
+    /// or inverted.
+    BottomNotBelowTop { bottom_z: f64, top_z: f64 },
+}
+
+impl HeightOrderViolation {
+    /// Every kind, for a test that walks them. `all_variants!` cannot
+    /// build a variant with fields, so the list holds one example each.
+    pub const EXAMPLES: [Self; 5] = [
+        Self::ClearanceBelowRetract {
+            clearance_z: 0.0,
+            retract_z: 1.0,
+        },
+        Self::RetractBelowTop {
+            retract_z: 0.0,
+            top_z: 1.0,
+        },
+        Self::RetractBelowFeed {
+            retract_z: 0.0,
+            feed_z: 1.0,
+        },
+        Self::FeedBelowTop {
+            feed_z: 0.0,
+            top_z: 1.0,
+        },
+        Self::BottomNotBelowTop {
+            bottom_z: 1.0,
+            top_z: 0.0,
+        },
+    ];
+
+    /// True when this violation refuses the edit, generation and export.
+    /// THE severity split: change it here and every surface follows.
+    ///
+    /// Operator ruling 2 refuses an inverted stack. The retract, the top and
+    /// the bottom reach the emitted motion, so a break between them refuses.
+    /// A clearance below the retract refuses too: the ruling names the
+    /// whole stack, and the GUI badge rated it DANGER before F033. The
+    /// generators do not read `feed_z` (nor `clearance_z`; both reach only
+    /// the debug trace), and the auto Feed Z is `retract - 2`, so a Retract
+    /// pinned near the top puts the auto feed under the top with no error on
+    /// the feed row. A feed-plane break is therefore a caution only.
+    #[must_use]
+    pub const fn refuses(self) -> bool {
+        match self {
+            Self::ClearanceBelowRetract { .. }
+            | Self::RetractBelowTop { .. }
+            | Self::BottomNotBelowTop { .. } => true,
+            Self::RetractBelowFeed { .. } | Self::FeedBelowTop { .. } => false,
+        }
     }
+
+    /// True when `self` and `other` are the same kind (the Z values may
+    /// differ). An edit door compares kinds.
+    #[must_use]
+    pub fn same_kind(self, other: Self) -> bool {
+        std::mem::discriminant(&self) == std::mem::discriminant(&other)
+    }
+}
+
+impl std::fmt::Display for HeightOrderViolation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::ClearanceBelowRetract {
+                clearance_z,
+                retract_z,
+            } => write!(
+                f,
+                "Clearance Z ({clearance_z:.2}) is below Retract Z ({retract_z:.2}). \
+                 Raise the Clearance Z or lower the Retract Z"
+            ),
+            Self::RetractBelowTop { retract_z, top_z } => write!(
+                f,
+                "Retract Z ({retract_z:.2}) is below Top Z ({top_z:.2}). Rapid moves would \
+                 go through the material. Raise the Retract Z or lower the Top Z"
+            ),
+            Self::RetractBelowFeed { retract_z, feed_z } => write!(
+                f,
+                "Retract Z ({retract_z:.2}) is below Feed Z ({feed_z:.2}). Retract moves \
+                 do not clear the approach height"
+            ),
+            Self::FeedBelowTop { feed_z, top_z } => write!(
+                f,
+                "Feed Z ({feed_z:.2}) is below Top Z ({top_z:.2}). The approach height is \
+                 inside the material"
+            ),
+            Self::BottomNotBelowTop { bottom_z, top_z } => write!(
+                f,
+                "Bottom Z ({bottom_z:.2}) is not below Top Z ({top_z:.2}). No material is \
+                 cut. Lower the Bottom Z or raise the Top Z"
+            ),
+        }
+    }
+}
+
+/// THE height-plane order rule (F033, operator ruling 2): the violations of
+/// `h` for an operation of type `op`.
+///
+/// Anchors:
+/// - The Top Z is the top the generator starts from. An op that starts on
+///   the stock box (`Capabilities::top_on_stock_box`, Adaptive 3D) ignores
+///   a pinned top, so its top is `stock_top_z` (R7, Corne case
+///   2026-09-18). With no `stock_top_z` the anchor is `h.top_z`.
+/// - The bottom counts only where it reaches the motion
+///   (`FloorOwner::HeightsBottom` and `FloorOwner::OpFloor`). On an
+///   `OpDial` op a pinned bottom reaches no emitted move (F1.19), so it is
+///   not checked.
+///
+/// The GUI badge, the diagnostics adapter, the edit doors, generation and
+/// the export door call this function or [`crate::session::ToolpathHeights::height_order`],
+/// which calls it. No surface keeps a second comparison.
+#[must_use]
+pub fn height_order(
+    op: crate::compute::catalog::OperationType,
+    h: &ResolvedHeights,
+    stock_top_z: Option<f64>,
+) -> Vec<HeightOrderViolation> {
+    use crate::compute::catalog::FloorOwner;
+    let caps = op.capabilities();
+    let top_z = match stock_top_z {
+        Some(stock_top) if caps.top_on_stock_box => stock_top,
+        Some(_) | None => h.top_z,
+    };
+    let mut out = Vec::new();
+    if h.clearance_z < h.retract_z {
+        out.push(HeightOrderViolation::ClearanceBelowRetract {
+            clearance_z: h.clearance_z,
+            retract_z: h.retract_z,
+        });
+    }
+    if h.retract_z < top_z {
+        out.push(HeightOrderViolation::RetractBelowTop {
+            retract_z: h.retract_z,
+            top_z,
+        });
+    }
+    if h.retract_z < h.feed_z {
+        out.push(HeightOrderViolation::RetractBelowFeed {
+            retract_z: h.retract_z,
+            feed_z: h.feed_z,
+        });
+    }
+    if h.feed_z < top_z {
+        out.push(HeightOrderViolation::FeedBelowTop {
+            feed_z: h.feed_z,
+            top_z,
+        });
+    }
+    let bottom_reaches_motion = match caps.floor_owner {
+        FloorOwner::HeightsBottom | FloorOwner::OpFloor => true,
+        FloorOwner::OpDial => false,
+    };
+    if bottom_reaches_motion && h.bottom_z >= top_z {
+        out.push(HeightOrderViolation::BottomNotBelowTop {
+            bottom_z: h.bottom_z,
+            top_z,
+        });
+    }
+    out
+}
+
+/// The refusing violations of `after` whose kind `before` does not hold.
+///
+/// An edit door refuses an edit that ADDS a refusing break. A stack that is
+/// already broken (a stock change moved the top under a pinned retract)
+/// still takes an edit that does not add a break, so the operator can fix
+/// it one plane at a time. Generation and export refuse every refusing
+/// break.
+#[must_use]
+pub fn added_refusals(
+    before: &[HeightOrderViolation],
+    after: &[HeightOrderViolation],
+) -> Vec<HeightOrderViolation> {
+    after
+        .iter()
+        .copied()
+        .filter(|v| v.refuses() && !before.iter().any(|b| b.same_kind(*v)))
+        .collect()
 }
 
 /// Tool containment mode for machining boundary (re-export from core).
@@ -2039,5 +2234,96 @@ mod tests {
         assert!(!cfg.normalize_for_op(OperationType::Pocket));
         assert_eq!(cfg.entry_style, DressupEntryStyle::Ramp);
         assert!(cfg.lead_in_out.is_some() && cfg.link_moves.is_some());
+    }
+
+    /// F033: THE order rule. Each kind fires on its own plane pair, the
+    /// top is anchored on the stock top for a `top_on_stock_box` op (R7),
+    /// and the bottom counts only where it reaches the motion.
+    #[test]
+    fn height_order_names_each_kind_with_its_anchor_f033() {
+        use crate::compute::catalog::OperationType;
+        let in_order = ResolvedHeights {
+            clearance_z: 30.0,
+            retract_z: 20.0,
+            feed_z: 18.0,
+            top_z: 10.0,
+            bottom_z: 0.0,
+            top_pinned: false,
+            bottom_pinned: false,
+        };
+        assert!(height_order(OperationType::Waterline, &in_order, Some(10.0)).is_empty());
+
+        let kinds = |h: &ResolvedHeights, op: OperationType, stock: Option<f64>| {
+            height_order(op, h, stock)
+                .into_iter()
+                .map(|v| std::mem::discriminant(&v))
+                .collect::<Vec<_>>()
+        };
+        let d = |v: HeightOrderViolation| std::mem::discriminant(&v);
+        let [clear, retract_top, retract_feed, feed_top, bottom] = HeightOrderViolation::EXAMPLES;
+
+        let h = ResolvedHeights {
+            clearance_z: 15.0,
+            ..in_order
+        };
+        assert_eq!(
+            kinds(&h, OperationType::Waterline, Some(10.0)),
+            vec![d(clear)]
+        );
+        let h = ResolvedHeights {
+            retract_z: 17.0,
+            ..in_order
+        };
+        assert_eq!(
+            kinds(&h, OperationType::Waterline, Some(10.0)),
+            vec![d(retract_feed)]
+        );
+        let h = ResolvedHeights {
+            feed_z: 9.0,
+            ..in_order
+        };
+        assert_eq!(
+            kinds(&h, OperationType::Waterline, Some(10.0)),
+            vec![d(feed_top)]
+        );
+        let h = ResolvedHeights {
+            retract_z: 9.0,
+            feed_z: 8.0,
+            ..in_order
+        };
+        assert_eq!(
+            kinds(&h, OperationType::Waterline, Some(10.0)),
+            vec![d(retract_top), d(feed_top)]
+        );
+        // `top > bottom` is strict: an equal bottom is an empty ladder.
+        let h = ResolvedHeights {
+            bottom_z: 10.0,
+            ..in_order
+        };
+        assert_eq!(
+            kinds(&h, OperationType::Waterline, Some(10.0)),
+            vec![d(bottom)]
+        );
+        // An `OpDial` op does not read the bottom (F1.19).
+        assert!(kinds(&h, OperationType::DropCutter, Some(10.0)).is_empty());
+        // R7: Adaptive 3D starts on the stock top, so a pinned top below a
+        // pinned bottom is not a break when the bottom is under the stock top.
+        let h = ResolvedHeights {
+            top_z: 0.1,
+            bottom_z: 4.0,
+            ..in_order
+        };
+        assert!(kinds(&h, OperationType::Adaptive3d, Some(10.0)).is_empty());
+        assert_eq!(
+            kinds(&h, OperationType::Waterline, Some(10.0)),
+            vec![d(bottom)]
+        );
+
+        // One severity per kind.
+        assert!(clear.refuses() && retract_top.refuses() && bottom.refuses());
+        assert!(!retract_feed.refuses() && !feed_top.refuses());
+        // An edit door refuses only an ADDED refusing kind.
+        assert_eq!(added_refusals(&[], &[clear, feed_top]), vec![clear]);
+        assert!(added_refusals(&[clear], &[clear]).is_empty());
     }
 }

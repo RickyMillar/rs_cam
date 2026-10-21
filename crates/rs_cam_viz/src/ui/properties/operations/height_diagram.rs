@@ -205,6 +205,59 @@ pub fn round_pin(v: f64) -> f64 {
     if rounded == 0.0 { 0.0 } else { rounded }
 }
 
+/// F033: where the last refused heights edit is kept, so the Heights tab
+/// can name it under its rows.
+fn refusal_id() -> egui::Id {
+    egui::Id::new("f033_heights_order_refusal")
+}
+
+/// How long the Heights tab shows a refused edit (seconds).
+const REFUSAL_SHOW_S: f64 = 4.0;
+
+/// F033 (operator ruling 2): write `draft` into `heights` unless THE core
+/// order rule refuses the edit (`ToolpathHeights::edit_refusal`: the draft
+/// adds a refusing break). The Heights rows, the Auto buttons and the
+/// diagram drag all write through this one gate, so a value that would
+/// invert the stack never reaches the config. A refused drag stops at the
+/// last accepted value. The refusal text is kept for the Heights tab
+/// ([`last_heights_refusal`]). Returns `true` when the draft was written.
+pub fn admit_heights_edit(
+    ui: &egui::Ui,
+    heights: &mut HeightsConfig,
+    draft: HeightsConfig,
+    answer: &rs_cam_core::session::ToolpathHeights,
+    op_type: OperationType,
+) -> bool {
+    if draft == *heights {
+        return false;
+    }
+    match answer.edit_refusal(op_type, heights, &draft) {
+        None => {
+            *heights = draft;
+            ui.data_mut(|d| d.remove::<(String, f64)>(refusal_id()));
+            true
+        }
+        Some(violations) => {
+            let text = violations
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("; ");
+            let now = ui.input(|i| i.time);
+            ui.data_mut(|d| d.insert_temp(refusal_id(), (format!("Refused: {text}."), now)));
+            false
+        }
+    }
+}
+
+/// F033: the text of the last refused heights edit, while it is recent.
+#[must_use]
+pub fn last_heights_refusal(ui: &egui::Ui) -> Option<String> {
+    let (text, at) = ui.data(|d| d.get_temp::<(String, f64)>(refusal_id()))?;
+    let now = ui.input(|i| i.time);
+    (now - at <= REFUSAL_SHOW_S).then_some(text)
+}
+
 /// The stored mode behind a `DiagramLine::index`.
 fn height_field(heights: &mut HeightsConfig, idx: usize) -> &mut HeightMode {
     match idx {
@@ -762,7 +815,13 @@ pub fn draw_height_diagram(
                 }
             }
             (BOTTOM_LINE_INDEX, FloorOwner::OpFloor, None) => {}
-            _ => *height_field(heights, idx) = HeightMode::Manual(current_z + dz),
+            // F033: the drag writes through the one order gate, so it stops
+            // at the last value that keeps the stack in order.
+            _ => {
+                let mut draft = heights.clone();
+                *height_field(&mut draft, idx) = HeightMode::Manual(current_z + dz);
+                let _ = admit_heights_edit(ui, heights, draft, answer, op_type);
+            }
         }
     }
 
@@ -781,9 +840,12 @@ pub fn draw_height_diagram(
             }
             (Some(BOTTOM_LINE_INDEX), FloorOwner::OpFloor, None) | (None, _, _) => {}
             (Some(idx), _, _) => {
-                let field = height_field(heights, idx);
+                let mut draft = heights.clone();
+                let field = height_field(&mut draft, idx);
                 if let HeightMode::Manual(v) = *field {
                     *field = HeightMode::Manual(round_pin(v));
+                    // F033: a rounding that crosses a plane is refused too.
+                    let _ = admit_heights_edit(ui, heights, draft, answer, op_type);
                 }
             }
         }

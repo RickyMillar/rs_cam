@@ -123,6 +123,13 @@ pub enum ExportRefusal {
         /// One line per refusing row.
         rows: Vec<String>,
     },
+    /// F033 (operator ruling 2): an emitted toolpath's height planes break
+    /// the order (`compute::config::height_order`). No override: fix the
+    /// heights.
+    HeightOrder {
+        /// One line per refusing toolpath: `session::HeightOrderRefusal`.
+        rows: Vec<String>,
+    },
 }
 
 impl ExportRefusal {
@@ -131,7 +138,9 @@ impl ExportRefusal {
     #[must_use]
     pub fn override_needed(&self) -> Option<LoadOverride> {
         match self {
-            Self::InchUnits | Self::ControllerCompensation { .. } => None,
+            Self::InchUnits | Self::ControllerCompensation { .. } | Self::HeightOrder { .. } => {
+                None
+            }
             Self::LoadExceeded { .. } => Some(LoadOverride::AcceptExceeded),
             Self::LoadUnmodeled { .. } | Self::StaleSimulation { .. } => {
                 Some(LoadOverride::AcceptUnmodeled)
@@ -189,6 +198,15 @@ impl ExportRefusal {
                 }
                 msg.trim_end().to_owned()
             }
+            Self::HeightOrder { rows } => {
+                let mut msg = String::from(
+                    "G-code export refused: the height planes are out of order:\n",
+                );
+                for line in rows {
+                    let _ = writeln!(msg, "{line}");
+                }
+                msg.trim_end().to_owned()
+            }
         }
     }
 }
@@ -197,7 +215,9 @@ impl Display for ExportRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.body())?;
         match self {
-            Self::InchUnits | Self::ControllerCompensation { .. } => Ok(()),
+            Self::InchUnits | Self::ControllerCompensation { .. } | Self::HeightOrder { .. } => {
+                Ok(())
+            }
             Self::LoadExceeded { .. } => write!(
                 f,
                 "\nTo override (a known-dangerous override): {}.",

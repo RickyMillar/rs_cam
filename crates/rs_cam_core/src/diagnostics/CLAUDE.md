@@ -23,7 +23,7 @@ One typed finding model for every upstream source. The entry point is
   ad-hoc string. Write it as a row of `diag_ids!`: it emits the const and its `ALL` entry (F162).
 - An adapter converts. It does not compute a verdict. The verdict belongs to
   the source layer. Example: the tool-kind finding reads
-  `OperationType::tool_refusal`, the generator's own refusal (W2.2).
+  `OperationType::tool_refusal`, the generator's own refusal (W2.2). F033: the plane-order findings convert `compute::config::height_order`; `height_order_severity` is the one severity (the GUI badge reads it).
 
 ## Sentries
 

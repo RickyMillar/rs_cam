@@ -54,9 +54,10 @@
 use std::sync::Arc;
 
 use crate::compute::BoundarySource;
-use crate::compute::catalog::FloorOwner;
+use crate::compute::catalog::{FloorOwner, OperationType};
 use crate::compute::config::{
-    HeightContext, HeightMode, HeightReference, HeightsConfig, ResolvedHeights,
+    HeightContext, HeightMode, HeightOrderViolation, HeightReference, HeightsConfig,
+    ResolvedHeights, added_refusals, height_order,
 };
 use crate::compute::floor::{Floor, FloorRef, FloorReferences, FloorRefusal};
 use crate::mesh::TriangleMesh;
@@ -85,6 +86,36 @@ impl TopSource {
             Self::AutoFaces => "auto: faces",
             Self::Pinned => "pinned",
         }
+    }
+}
+
+/// F033 (operator ruling 2): a toolpath whose height planes break the
+/// order. The edit doors (`SetToolpathHeights`, `ReplaceToolpathConfig`),
+/// generation and the export door refuse with it; its text is the same on
+/// every surface.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeightOrderRefusal {
+    /// The name of the toolpath.
+    pub toolpath: String,
+    /// The refusing breaks, in the order of
+    /// [`crate::compute::config::height_order`].
+    pub violations: Vec<HeightOrderViolation>,
+}
+
+impl std::fmt::Display for HeightOrderRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Toolpath '{}': the height planes are out of order: ",
+            self.toolpath
+        )?;
+        for (i, violation) in self.violations.iter().enumerate() {
+            if i > 0 {
+                f.write_str("; ")?;
+            }
+            write!(f, "{violation}")?;
+        }
+        f.write_str(".")
     }
 }
 
@@ -194,6 +225,40 @@ impl ToolpathHeights {
         ))
     }
 
+    /// F033: THE height-plane order of `heights` on this toolpath
+    /// ([`crate::compute::config::height_order`]), anchored on the stock top
+    /// of the context. The GUI badge, the Heights tab gate, the edit doors,
+    /// generation and the export door read it.
+    #[must_use]
+    pub fn height_order(
+        &self,
+        heights: &HeightsConfig,
+        op: OperationType,
+    ) -> Vec<HeightOrderViolation> {
+        height_order(op, &self.resolve(heights), Some(self.context.stock_top_z))
+    }
+
+    /// F033: the refusal of an edit of the heights of this toolpath from
+    /// `before` to `after`, or `None`. The edit refuses when `after` adds a
+    /// refusing break of the order ([`door_refusals`]: [`added_refusals`]
+    /// less the floor break of an `OpFloor` op). The Heights tab and
+    /// the height diagram call it before they write; the session doors call
+    /// the same comparison.
+    #[must_use]
+    pub fn edit_refusal(
+        &self,
+        op: OperationType,
+        before: &HeightsConfig,
+        after: &HeightsConfig,
+    ) -> Option<Vec<HeightOrderViolation>> {
+        let added = door_refusals(
+            op,
+            &self.height_order(before, op),
+            &self.height_order(after, op),
+        );
+        (!added.is_empty()).then_some(added)
+    }
+
     /// Heights from a bare context, with no session and no face: for a test
     /// of the rule or of a panel. Production code reads
     /// [`ProjectSession::toolpath_heights`]; the P3.1 sentry
@@ -211,6 +276,26 @@ impl ToolpathHeights {
             floor: context.floor.map(Ok),
         }
     }
+}
+
+/// F033: the refusing breaks that an edit adds, for the edit doors (the
+/// session door and the Heights tab gate). On an `OpFloor` op (Pocket,
+/// Profile, Zigzag, Adaptive 2D) the bottom IS the floor, and the floor rule
+/// owns a floor at or above the top (L-16): the Floor line names it and
+/// generation refuses it (`floor_refusal`). So the edit doors leave that
+/// break to the floor rule, and the GUI Floor row and MCP
+/// `set_toolpath_floor` take one floor value alike. Generation and export
+/// still refuse it.
+fn door_refusals(
+    op: OperationType,
+    before: &[HeightOrderViolation],
+    after: &[HeightOrderViolation],
+) -> Vec<HeightOrderViolation> {
+    let floor_owned = matches!(op.capabilities().floor_owner, FloorOwner::OpFloor);
+    added_refusals(before, after)
+        .into_iter()
+        .filter(|v| !(floor_owned && matches!(v, HeightOrderViolation::BottomNotBelowTop { .. })))
+        .collect()
 }
 
 /// THE rule: resolve `cfg` on `ctx`, then an auto top follows the face top.
@@ -383,6 +468,68 @@ impl ProjectSession {
         })
     }
 
+    /// F033: the edit door of the height-plane order. `candidate` is the
+    /// config that an edit of toolpath `index` writes. The door refuses when
+    /// the candidate ADDS a refusing break of the order
+    /// ([`added_refusals`], less the floor break of an `OpFloor` op, which
+    /// the floor rule owns); a break that the stored config already holds
+    /// does not block an edit. `SetToolpathHeights` (MCP
+    /// `set_toolpath_heights`) and `ReplaceToolpathConfig` (the GUI panel,
+    /// the CLI feeds apply) call it before they write.
+    ///
+    /// A candidate whose heights do not resolve (a selection that refuses,
+    /// a model id that names no model) passes: generation refuses it with
+    /// that reason.
+    ///
+    /// # Errors
+    /// [`SessionError::HeightOrder`]. Nothing is written then.
+    pub(crate) fn height_order_door(
+        &self,
+        index: usize,
+        candidate: &ToolpathConfig,
+    ) -> Result<(), SessionError> {
+        let Ok(after) = self.toolpath_heights(candidate) else {
+            return Ok(());
+        };
+        let op = candidate.operation.op_type();
+        let after = after.height_order(&candidate.heights, op);
+        let before = self
+            .toolpath_configs
+            .get(index)
+            .and_then(|tc| {
+                self.toolpath_heights(tc)
+                    .ok()
+                    .map(|answer| answer.height_order(&tc.heights, tc.operation.op_type()))
+            })
+            .unwrap_or_default();
+        let added = door_refusals(op, &before, &after);
+        if added.is_empty() {
+            Ok(())
+        } else {
+            Err(SessionError::HeightOrder(HeightOrderRefusal {
+                toolpath: candidate.name.clone(),
+                violations: added,
+            }))
+        }
+    }
+
+    /// F033: the refusal of the height-plane order of `tc`, or `None`: every
+    /// refusing break of [`ToolpathHeights::height_order`]. The export door
+    /// reads it for each toolpath it emits.
+    #[must_use]
+    pub fn height_order_refusal(&self, tc: &ToolpathConfig) -> Option<HeightOrderRefusal> {
+        let answer = self.toolpath_heights(tc).ok()?;
+        let violations: Vec<HeightOrderViolation> = answer
+            .height_order(&tc.heights, tc.operation.op_type())
+            .into_iter()
+            .filter(|v| v.refuses())
+            .collect();
+        (!violations.is_empty()).then(|| HeightOrderRefusal {
+            toolpath: tc.name.clone(),
+            violations,
+        })
+    }
+
     /// [`Self::heights_in_setup`] for generation: the L-4 refusal is an
     /// error here.
     ///
@@ -419,6 +566,23 @@ impl ProjectSession {
                 "Toolpath '{}': {refusal}",
                 tc.name
             )));
+        }
+        // F033: a refusing break of the height-plane order refuses
+        // generation. Under each face the prologue owns a floor at the top,
+        // by item (P3.5, P3.7), so the bottom break is left to it.
+        let violations: Vec<HeightOrderViolation> = answer
+            .height_order(&tc.heights, tc.operation.op_type())
+            .into_iter()
+            .filter(|v| {
+                v.refuses()
+                    && !(each_face && matches!(v, HeightOrderViolation::BottomNotBelowTop { .. }))
+            })
+            .collect();
+        if !violations.is_empty() {
+            return Err(SessionError::HeightOrder(HeightOrderRefusal {
+                toolpath: tc.name.clone(),
+                violations,
+            }));
         }
         Ok(answer.heights)
     }

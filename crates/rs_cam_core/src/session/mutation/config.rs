@@ -181,6 +181,16 @@ impl ProjectSession {
         index: usize,
         heights: HeightsConfig,
     ) -> Result<Effects, SessionError> {
+        // F033: an edit that adds a refusing break of the height-plane
+        // order refuses before the write (MCP `set_toolpath_heights`).
+        if let Some(stored) = self.toolpath_configs.get(index) {
+            let mut candidate = stored.clone();
+            candidate.heights = heights.clone();
+            // P3.2 first: a pinned Bottom Z on an `OpFloor` op names its
+            // own fix.
+            candidate.floor_conflict()?;
+            self.height_order_door(index, &candidate)?;
+        }
         self.try_with_effects(Some(index), move |session| {
             let tc = session
                 .toolpath_configs
