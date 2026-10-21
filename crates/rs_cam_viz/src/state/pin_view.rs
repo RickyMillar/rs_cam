@@ -71,7 +71,7 @@ pub fn pin_display_points(frame: &SetupFrame, stock: &StockConfig) -> Vec<P3> {
     stock
         .alignment_pins
         .iter()
-        .map(|p| pin_display_point(frame, stock, p.x, p.y))
+        .map(|p| pin_display_point(frame, stock, p.at.x(), p.at.y()))
         .collect()
 }
 

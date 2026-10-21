@@ -97,7 +97,7 @@ fn flipped() -> SetupTransformInfo {
     }
 }
 
-fn resolve_on(sel: &Selection, m: &LoadedModel) -> ResolvedSelection {
+fn resolve_on(sel: &Selection, m: &LoadedModel) -> ResolvedSelection<ModelFrame> {
     resolve_in(sel, m, None)
 }
 
@@ -105,7 +105,7 @@ fn resolve_in(
     sel: &Selection,
     m: &LoadedModel,
     setup: Option<&SetupTransformInfo>,
-) -> ResolvedSelection {
+) -> ResolvedSelection<ModelFrame> {
     let bbox = stock_bbox();
     resolve(
         sel,
@@ -141,7 +141,7 @@ fn pick_key(item: &Item) -> MatchKey {
     }
 }
 
-fn kinds(r: &ResolvedSelection) -> Vec<ItemKind> {
+fn kinds<F: SelectionFrame>(r: &ResolvedSelection<F>) -> Vec<ItemKind> {
     r.items().iter().map(|i| i.item().kind()).collect()
 }
 
@@ -228,7 +228,7 @@ fn a_face_filter_reads_the_facing_and_the_z_in_the_setup_frame() {
             ..Filter::default()
         })
     };
-    let breps = |r: &ResolvedSelection| -> Vec<Option<u16>> {
+    let breps = |r: &ResolvedSelection<ModelFrame>| -> Vec<Option<u16>> {
         r.items().iter().map(|i| i.identity().brep).collect()
     };
     let up = face_rule(Facing::Up, None);
@@ -390,7 +390,7 @@ fn the_stock_selection_is_the_stock_rectangle_and_does_not_move() {
     let m = mixed();
     let r = resolve_on(&Selection::stock(), &m);
     assert_eq!(kinds(&r), [ItemKind::Loop]);
-    let r = r.to_setup_frame(&flipped()).unwrap();
+    let r = r.to_setup_frame(Some(&flipped())).unwrap();
     let (items, _) = view(&r, ItemUse::Regions).unwrap();
     let ring = &items.regions().unwrap().as_slice()[0];
     let b = ring.bbox();
@@ -719,13 +719,13 @@ fn the_frame_door_turns_a_face_down_on_a_flipped_setup() {
         ..flipped()
     };
     // An identity setup changes nothing.
-    let same = r.clone().to_setup_frame(&identity_info).unwrap();
+    let same = r.clone().to_setup_frame(Some(&identity_info)).unwrap();
     let Shape::Face(f) = same.items()[0].item().shape() else {
         panic!()
     };
     assert_eq!((f.plane_z, f.normal.z), (10.0, 1.0));
     // A `Bottom` flip: the top face (Z 10 of 10) is at Z 0 and faces down.
-    let moved = r.to_setup_frame(&flipped()).unwrap();
+    let moved = r.to_setup_frame(Some(&flipped())).unwrap();
     let Shape::Face(f) = moved.items()[0].item().shape() else {
         panic!()
     };

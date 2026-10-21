@@ -62,9 +62,9 @@ use crate::ids::{ModelId, ToolpathId};
 use crate::selection::hole_fit::DrillSize;
 use crate::selection::{
     FLAT_REGION_Z_BAND_MM, FacesByFacing, Hole, HoleFit, HoleFitRule, ItemError, ItemKind, ItemRef,
-    ItemRole, ItemSet, MatchKey, MeshFaces, RefusalCause, ResolveScope, ResolvedSelection,
-    Selection, SelectionEdit, SelectionNote, SelectionRefusal, Shape, SourceRef, fit_holes,
-    hole_fit,
+    ItemRole, ItemSet, MatchKey, MeshFaces, ModelFrame, RefusalCause, ResolveScope,
+    ResolvedSelection, Selection, SelectionEdit, SelectionNote, SelectionRefusal, SetupFrame,
+    Shape, SourceRef, fit_holes, hole_fit,
 };
 use crate::session::{LoadedModel, ProjectSession, SessionError, ToolpathConfig};
 
@@ -341,12 +341,13 @@ pub struct Near {
     pub radius_mm: f64,
 }
 
-/// The two frames of one resolved selection.
+/// The two frames of one resolved selection. The frame is in the type
+/// (F013): only `setup` has `face_top_z`.
 pub(crate) struct SelectionFrames {
     /// As the drawing holds the items (the drill picker reads it).
-    pub(crate) model: ResolvedSelection,
+    pub(crate) model: ResolvedSelection<ModelFrame>,
     /// After THE frame door: what the prologue receives.
-    pub(crate) setup: ResolvedSelection,
+    pub(crate) setup: ResolvedSelection<SetupFrame>,
 }
 
 impl ProjectSession {
@@ -400,10 +401,9 @@ impl ProjectSession {
                 mesh_faces: &mesh_faces,
             },
         );
-        let setup = match ctx.local_to_global.as_ref() {
-            Some(info) => resolved.clone().to_setup_frame(info)?,
-            None => resolved.clone(),
-        };
+        let setup = resolved
+            .clone()
+            .to_setup_frame(ctx.local_to_global.as_ref())?;
         Ok(SelectionFrames {
             model: resolved,
             setup,
@@ -497,7 +497,7 @@ impl ProjectSession {
     pub(crate) fn resolve_toolpath_selection(
         &self,
         tc: &ToolpathConfig,
-    ) -> Result<ResolvedSelection, SessionError> {
+    ) -> Result<ResolvedSelection<ModelFrame>, SessionError> {
         let setup = self.find_setup_for_toolpath_id(tc.id);
         let ctx = SetupEvalContext::build_for_setup(self, setup);
         Ok(self

@@ -26,7 +26,7 @@ use super::{AlignmentPin, PIN_GEOM_EPS_MM, PIN_MATCH_TOL_MM, PinSetupMap};
 #[must_use]
 pub fn translate(pins: &[AlignmentPin], dx: f64, dy: f64) -> Vec<AlignmentPin> {
     pins.iter()
-        .map(|p| AlignmentPin::new(p.x + dx, p.y + dy, p.diameter))
+        .map(|p| AlignmentPin::new(p.at.x() + dx, p.at.y() + dy, p.diameter))
         .collect()
 }
 
@@ -34,7 +34,7 @@ pub fn translate(pins: &[AlignmentPin], dx: f64, dy: f64) -> Vec<AlignmentPin> {
 #[must_use]
 pub fn set_diameter(pins: &[AlignmentPin], diameter: f64) -> Vec<AlignmentPin> {
     pins.iter()
-        .map(|p| AlignmentPin::new(p.x, p.y, diameter))
+        .map(|p| AlignmentPin::new(p.at.x(), p.at.y(), diameter))
         .collect()
 }
 
@@ -149,7 +149,7 @@ pub fn fit_axis_plus_mirror_pair(
     }
     let coords: Vec<(f64, f64)> = [p0, p1, p2]
         .iter()
-        .map(|p| frame.coords(p.x, p.y))
+        .map(|p| frame.coords(p.at.x(), p.at.y()))
         .collect();
     let on_axis: Vec<usize> = (0..3)
         .filter(|&i| coords.get(i).is_some_and(|c| c.1.abs() <= PIN_MATCH_TOL_MM))
@@ -232,8 +232,8 @@ pub fn fit_two_mixed_diameters(
     } else {
         (b, a)
     };
-    let small_at = frame.coords(small.x, small.y);
-    let large_at = frame.coords(large.x, large.y);
+    let small_at = frame.coords(small.at.x(), small.at.y());
+    let large_at = frame.coords(large.at.x(), large.at.y());
     if small_at.1.abs() > PIN_MATCH_TOL_MM || large_at.1.abs() > PIN_MATCH_TOL_MM {
         return None;
     }
@@ -250,7 +250,7 @@ pub fn fit_two_mixed_diameters(
 mod tests {
     use super::*;
     use crate::compute::alignment_pins::{pattern_is_keyed, validate_pins_for_flip};
-    use crate::compute::transform::{FaceUp, ZRotation};
+    use crate::compute::transform::{FaceUp, StockRelXy, ZRotation};
 
     const W: f64 = 65.0;
     const D: f64 = 65.0;
@@ -376,7 +376,10 @@ mod tests {
                     assert_eq!(fitted.diameter, p.diameter);
                     let rebuilt = axis_plus_mirror_pair(&map, fitted).unwrap();
                     for (a, b) in rebuilt.iter().zip(&pins) {
-                        assert!(close(a.x, b.x) && close(a.y, b.y), "{a:?} {b:?}");
+                        assert!(
+                            close(a.at.x(), b.at.x()) && close(a.at.y(), b.at.y()),
+                            "{a:?} {b:?}"
+                        );
                     }
                 }
             }
@@ -396,7 +399,7 @@ mod tests {
         let mut pins = axis_plus_mirror_pair(&map, mini_pattern())
             .unwrap()
             .to_vec();
-        pins[2].x += 3.0;
+        pins[2].at = StockRelXy::new(pins[2].at.x() + 3.0, pins[2].at.y());
         assert_eq!(fit_axis_plus_mirror_pair(&pins, &map), None);
         // Mixed diameters.
         let mut pins = axis_plus_mirror_pair(&map, mini_pattern())

@@ -244,6 +244,92 @@ impl ZRotation {
     }
 }
 
+// ── Frame-typed points ────────────────────────────────────────────────
+
+mod point_frame_sealed {
+    pub trait Sealed {}
+}
+
+/// The coordinate frame of a [`Pt`]. The trait is sealed: [`World`],
+/// [`StockRel`] and [`SetupLocal`] are the only frames (F001).
+pub trait PointFrame: point_frame_sealed::Sealed + Copy + std::fmt::Debug {}
+
+/// The world frame: the frame of the models and of `StockConfig::origin_*`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct World;
+
+/// The stock-relative frame: the world frame moved so that the stock
+/// minimum corner is the origin. No setup map applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StockRel;
+
+/// The setup-local frame: the stock-relative frame after the face-up map
+/// and the Z rotation of one setup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SetupLocal;
+
+impl point_frame_sealed::Sealed for World {}
+impl point_frame_sealed::Sealed for StockRel {}
+impl point_frame_sealed::Sealed for SetupLocal {}
+impl PointFrame for World {}
+impl PointFrame for StockRel {}
+impl PointFrame for SetupLocal {}
+
+/// A point in the frame `F`. The frame doors of [`SetupTransformInfo`] take
+/// and give this type, so a point in the wrong frame does not compile at
+/// the session/compute boundary (F001). The kernels keep bare [`P3`]:
+/// [`Self::new`] and [`Self::into_inner`] are the conversions, and a caller
+/// uses them only where it knows the frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Pt<F: PointFrame> {
+    p: P3,
+    frame: std::marker::PhantomData<F>,
+}
+
+impl<F: PointFrame> Pt<F> {
+    /// The point `p`, which the caller states is in the frame `F`.
+    #[must_use]
+    pub const fn new(p: P3) -> Self {
+        Self {
+            p,
+            frame: std::marker::PhantomData,
+        }
+    }
+
+    /// The bare point, for a kernel.
+    #[must_use]
+    pub const fn into_inner(self) -> P3 {
+        self.p
+    }
+}
+
+/// A point of the stock XY plane in the stock-relative frame: the stock
+/// minimum corner is the origin, and no setup map applies (F001). The field
+/// is private, so a world or setup-local pair cannot become one by a
+/// struct literal.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StockRelXy {
+    x: f64,
+    y: f64,
+}
+
+impl StockRelXy {
+    #[must_use]
+    pub const fn new(x: f64, y: f64) -> Self {
+        Self { x, y }
+    }
+
+    #[must_use]
+    pub const fn x(self) -> f64 {
+        self.x
+    }
+
+    #[must_use]
+    pub const fn y(self) -> f64 {
+        self.y
+    }
+}
+
 // ── SetupTransformInfo ────────────────────────────────────────────────
 
 use crate::dexel_stock::StockCutDirection;
@@ -261,19 +347,29 @@ pub struct SetupTransformInfo {
     pub stock_x: f64,
     pub stock_y: f64,
     pub stock_z: f64,
-    /// Stock origin in world coordinates. Forward transforms (world → local)
-    /// subtract this before applying face/rotation. Inverse transforms
-    /// (`local_to_global`) operate in stock-relative coordinates and do not
-    /// re-add origin; callers that need true world coordinates should add it
-    /// themselves.
+    /// Stock origin in world coordinates. [`Self::world_to_local`]
+    /// subtracts it before the face and rotation maps.
+    /// [`Self::local_to_stock_rel`] stops in stock-relative coordinates and
+    /// does not add it again; [`Self::local_to_world`] adds it again and is
+    /// the exact inverse of [`Self::world_to_local`].
     pub stock_origin_x: f64,
     pub stock_origin_y: f64,
     pub stock_origin_z: f64,
 }
 
 impl SetupTransformInfo {
-    /// Transform a point from setup-local coordinates to global stock coordinates.
-    pub fn local_to_global(&self, p: P3) -> P3 {
+    /// Transform a point from setup-local coordinates to stock-relative
+    /// coordinates (the stock minimum corner is the origin).
+    ///
+    /// This is not the inverse of [`Self::world_to_local`]: it does not add
+    /// the stock origin. [`Self::local_to_world`] is that inverse.
+    pub fn local_to_stock_rel(&self, p: Pt<SetupLocal>) -> Pt<StockRel> {
+        Pt::new(self.local_to_stock_rel_p3(p.into_inner()))
+    }
+
+    /// The bare body of [`Self::local_to_stock_rel`], for the kernels of
+    /// this file.
+    fn local_to_stock_rel_p3(&self, p: P3) -> P3 {
         let (eff_w, eff_d, _) =
             self.face_up
                 .effective_stock(self.stock_x, self.stock_y, self.stock_z);
@@ -282,23 +378,57 @@ impl SetupTransformInfo {
             .inverse_transform_point(unrotated, self.stock_x, self.stock_y, self.stock_z)
     }
 
-    /// Transform a point from world coordinates to setup-local coordinates.
-    ///
-    /// Chain: 1) translate by `-stock_origin`, 2) face-up flip,
-    /// 3) Z-rotation.
-    pub fn world_to_local(&self, p: P3) -> P3 {
-        let rel = P3::new(
+    /// Transform a point from setup-local coordinates to world coordinates:
+    /// [`Self::local_to_stock_rel`], then add the stock origin. It is the
+    /// exact inverse of [`Self::world_to_local`].
+    pub fn local_to_world(&self, p: Pt<SetupLocal>) -> Pt<World> {
+        self.stock_rel_to_world(self.local_to_stock_rel(p))
+    }
+
+    /// Add the stock origin: a stock-relative point in the world frame.
+    pub fn stock_rel_to_world(&self, p: Pt<StockRel>) -> Pt<World> {
+        let rel = p.into_inner();
+        Pt::new(P3::new(
+            rel.x + self.stock_origin_x,
+            rel.y + self.stock_origin_y,
+            rel.z + self.stock_origin_z,
+        ))
+    }
+
+    /// Subtract the stock origin: a world point in the stock-relative frame.
+    pub fn world_to_stock_rel(&self, p: Pt<World>) -> Pt<StockRel> {
+        let p = p.into_inner();
+        Pt::new(P3::new(
             p.x - self.stock_origin_x,
             p.y - self.stock_origin_y,
             p.z - self.stock_origin_z,
-        );
-        let flipped = self
-            .face_up
-            .transform_point(rel, self.stock_x, self.stock_y, self.stock_z);
+        ))
+    }
+
+    /// The face-up map, then the Z rotation: a stock-relative point in the
+    /// setup-local frame. [`Self::local_to_stock_rel`] is its inverse.
+    pub fn stock_rel_to_local(&self, p: Pt<StockRel>) -> Pt<SetupLocal> {
+        let flipped =
+            self.face_up
+                .transform_point(p.into_inner(), self.stock_x, self.stock_y, self.stock_z);
         let (eff_w, eff_d, _) =
             self.face_up
                 .effective_stock(self.stock_x, self.stock_y, self.stock_z);
-        self.z_rotation.transform_point(flipped, eff_w, eff_d)
+        Pt::new(self.z_rotation.transform_point(flipped, eff_w, eff_d))
+    }
+
+    /// Transform a point from world coordinates to setup-local coordinates.
+    ///
+    /// Chain: 1) translate by `-stock_origin`, 2) face-up flip,
+    /// 3) Z-rotation. [`Self::local_to_world`] is its exact inverse.
+    pub fn world_to_local(&self, p: Pt<World>) -> Pt<SetupLocal> {
+        self.stock_rel_to_local(self.world_to_stock_rel(p))
+    }
+
+    /// The bare body of [`Self::world_to_local`], for the kernels of this
+    /// file.
+    fn world_to_local_p3(&self, p: P3) -> P3 {
+        self.world_to_local(Pt::new(p)).into_inner()
     }
 
     /// Transform a triangle mesh from world coordinates to setup-local coordinates.
@@ -306,7 +436,7 @@ impl SetupTransformInfo {
         let new_verts: Vec<P3> = mesh
             .vertices
             .iter()
-            .map(|v| self.world_to_local(*v))
+            .map(|v| self.world_to_local_p3(*v))
             .collect();
         TriangleMesh::from_raw(new_verts, mesh.triangles.clone())
     }
@@ -358,7 +488,7 @@ impl SetupTransformInfo {
                 .transform_point(P3::new(p.x, p.y, 0.0), eff_w, eff_d);
             P2::new(rotated.x, rotated.y)
         } else {
-            let local = self.world_to_local(P3::new(p.x, p.y, 0.0));
+            let local = self.world_to_local_p3(P3::new(p.x, p.y, 0.0));
             P2::new(local.x, local.y)
         }
     }
@@ -368,8 +498,7 @@ impl SetupTransformInfo {
     /// selection P4.6: a tab mark and a stored hand tab are drawing points).
     ///
     /// On `Top` and `Bottom` the XY of [`Self::world_to_local`] does not
-    /// read Z, so the inverse is [`Self::local_to_global`] plus the stock
-    /// origin. On a lateral face the forward map is the in-plane Z
+    /// read Z, so the inverse is the XY of [`Self::local_to_world`]. On a lateral face the forward map is the in-plane Z
     /// rotation only, so the inverse is its inverse.
     pub fn local_to_drawing(&self, q: P2) -> P2 {
         let (eff_w, eff_d, _) =
@@ -381,8 +510,10 @@ impl SetupTransformInfo {
                 .inverse_transform_point(P3::new(q.x, q.y, 0.0), eff_w, eff_d);
             P2::new(p.x, p.y)
         } else {
-            let p = self.local_to_global(P3::new(q.x, q.y, 0.0));
-            P2::new(p.x + self.stock_origin_x, p.y + self.stock_origin_y)
+            let p = self
+                .local_to_world(Pt::new(P3::new(q.x, q.y, 0.0)))
+                .into_inner();
+            P2::new(p.x, p.y)
         }
     }
 
@@ -426,7 +557,7 @@ impl SetupTransformInfo {
     /// point order, because for them the order is the machining direction.
     pub fn apply_to_polygons(&self, polygons: &[Polygon2]) -> Vec<Polygon2> {
         self.map_polygons(polygons, |p| {
-            let p3 = self.world_to_local(P3::new(p.x, p.y, 0.0));
+            let p3 = self.world_to_local_p3(P3::new(p.x, p.y, 0.0));
             P2::new(p3.x, p3.y)
         })
     }
@@ -576,10 +707,11 @@ impl SetupTransformInfo {
         matches!(self.face_up, FaceUp::Bottom)
     }
 
-    /// Transform a toolpath from setup-local to global stock frame.
-    /// Used for playback data (which needs global-frame toolpaths).
+    /// Transform a toolpath from setup-local to the stock-relative frame
+    /// ([`Self::local_to_stock_rel`]). Used for playback data (which needs
+    /// global-frame toolpaths).
     pub fn transform_toolpath(&self, toolpath: &Toolpath) -> Toolpath {
-        let xform = |p: P3| -> P3 { self.local_to_global(p) };
+        let xform = |p: P3| -> P3 { self.local_to_stock_rel_p3(p) };
 
         // Direction transform for arc offsets (linear part only).
         let o_g = xform(P3::new(0.0, 0.0, 0.0));
@@ -680,6 +812,62 @@ mod tests {
                     assert!(
                         (back.x - p.x).abs() < 1e-9 && (back.y - p.y).abs() < 1e-9,
                         "{face_up:?} {z_rotation:?}: {p:?} came back as {back:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// F001: `local_to_world` is the exact inverse of `world_to_local` on
+    /// every face and every Z rotation, with a stock origin that is not
+    /// zero, in both directions. `local_to_stock_rel` differs from it by
+    /// the stock origin and nothing else.
+    #[test]
+    fn local_to_world_inverts_world_to_local_f001() {
+        let points = [
+            P3::new(0.0, 0.0, 0.0),
+            P3::new(12.5, -7.25, 3.0),
+            P3::new(-30.0, 41.0, -9.5),
+            P3::new(105.0, 87.0, 18.0),
+        ];
+        for &face_up in FaceUp::ALL {
+            for &z_rotation in ZRotation::ALL {
+                let info = SetupTransformInfo {
+                    face_up,
+                    z_rotation,
+                    stock_x: 120.0,
+                    stock_y: 80.0,
+                    stock_z: 18.0,
+                    stock_origin_x: -15.0,
+                    stock_origin_y: 7.0,
+                    stock_origin_z: -18.0,
+                };
+                let close = |a: P3, b: P3| (a - b).norm() < 1e-9;
+                for p in points {
+                    let back = info
+                        .local_to_world(info.world_to_local(Pt::new(p)))
+                        .into_inner();
+                    assert!(
+                        close(back, p),
+                        "{face_up:?} {z_rotation:?}: world {p:?} came back as {back:?}"
+                    );
+                    let back = info
+                        .world_to_local(info.local_to_world(Pt::new(p)))
+                        .into_inner();
+                    assert!(
+                        close(back, p),
+                        "{face_up:?} {z_rotation:?}: local {p:?} came back as {back:?}"
+                    );
+                    let rel = info.local_to_stock_rel(Pt::new(p)).into_inner();
+                    let world = info.local_to_world(Pt::new(p)).into_inner();
+                    let origin = P3::new(
+                        info.stock_origin_x,
+                        info.stock_origin_y,
+                        info.stock_origin_z,
+                    );
+                    assert!(
+                        close(P3::from(world - origin), rel),
+                        "{face_up:?} {z_rotation:?}: {p:?} stock-rel {rel:?} world {world:?}"
                     );
                 }
             }

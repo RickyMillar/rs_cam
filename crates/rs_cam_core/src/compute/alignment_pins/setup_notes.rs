@@ -81,8 +81,8 @@ pub fn pin_setup_notes(
         pin_lines.push(format!(
             "Dowel {}: X {:.2} Y {:.2}, {:.2} mm",
             i + 1,
-            p.x,
-            p.y,
+            p.at.x(),
+            p.at.y(),
             p.diameter
         ));
     }
@@ -162,10 +162,10 @@ fn orientation_cue(pins: &[AlignmentPin], map: &PinSetupMap, stock_w: f64, stock
     let partner: Vec<usize> = pins
         .iter()
         .map(|p| {
-            let (mx, my) = map.map_xy(p.x, p.y);
+            let (mx, my) = map.map_xy(p.at.x(), p.at.y());
             pins.iter()
                 .enumerate()
-                .map(|(j, q)| (j, (q.x - mx).hypot(q.y - my)))
+                .map(|(j, q)| (j, (q.at.x() - mx).hypot(q.at.y() - my)))
                 .min_by(|a, b| a.1.total_cmp(&b.1))
                 .map_or(0, |(j, _)| j)
         })
@@ -191,14 +191,20 @@ fn orientation_cue(pins: &[AlignmentPin], map: &PinSetupMap, stock_w: f64, stock
             clauses.push(format!(
                 "Dowel {} (the axis pin) is {} and keeps its hole",
                 i + 1,
-                side_of_centre(p.x, p.y, stock_w, stock_d)
+                side_of_centre(p.at.x(), p.at.y(), stock_w, stock_d)
             ));
         }
         many => {
             let numbers: Vec<usize> = many.iter().map(|(i, _)| i + 1).collect();
             let sides: Vec<String> = many
                 .iter()
-                .map(|(i, p)| format!("{} {}", i + 1, side_of_centre(p.x, p.y, stock_w, stock_d)))
+                .map(|(i, p)| {
+                    format!(
+                        "{} {}",
+                        i + 1,
+                        side_of_centre(p.at.x(), p.at.y(), stock_w, stock_d)
+                    )
+                })
                 .collect();
             clauses.push(format!(
                 "Dowels {} are on the axis ({}) and keep their holes",
@@ -274,7 +280,7 @@ mod tests {
         // pattern turned a quarter keys about that axis.
         let pins: Vec<AlignmentPin> = three_pin()
             .into_iter()
-            .map(|p| AlignmentPin::new(p.y, p.x, p.diameter))
+            .map(|p| AlignmentPin::new(p.at.y(), p.at.x(), p.diameter))
             .collect();
         let notes = pin_setup_notes(&pins, FaceUp::Bottom, ZRotation::Deg180, 65.0, 65.0, false)
             .expect("notes");

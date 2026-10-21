@@ -89,7 +89,7 @@ fn the_mini_pins_seat_do_not_key_and_the_ghost_lands_on_them() {
     assert_eq!(report.wrong_seating_images.len(), 2);
     for (ghost, other) in report.wrong_seating_images.iter().zip(pins.iter().rev()) {
         assert!(
-            (ghost.0 - other.x).hypot(ghost.1 - other.y) < 1e-6,
+            (ghost.0 - other.at.x()).hypot(ghost.1 - other.at.y()) < 1e-6,
             "ghost {ghost:?} is not on pin {other:?}"
         );
     }

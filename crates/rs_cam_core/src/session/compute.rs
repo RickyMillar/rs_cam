@@ -59,7 +59,7 @@ pub struct ResolvedGenInputs {
     /// the items of the models and moved into the emission frame. The
     /// prologue runs `selection::view` over it
     /// (`ExecutionContext::selection`).
-    selection: crate::selection::ResolvedSelection,
+    selection: crate::selection::ResolvedSelection<crate::selection::SetupFrame>,
     keep_out_footprints: Vec<crate::polygon::Polygon2>,
     /// K1: the setup's obstacles, in the emission frame. Every op reads
     /// them; the boundary does not gate them.
@@ -116,7 +116,7 @@ impl ResolvedGenInputs {
     /// in the emission frame (geometry selection P4.4). A sentry reads it to
     /// prove that the `selection_status` item states name the items that
     /// generation cuts.
-    pub fn selection(&self) -> &crate::selection::ResolvedSelection {
+    pub fn selection(&self) -> &crate::selection::ResolvedSelection<crate::selection::SetupFrame> {
         &self.selection
     }
 

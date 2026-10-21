@@ -108,25 +108,30 @@ fn the_live_stock_places_the_pins_in_its_15mm_strips() {
     )
     .unwrap_or_else(|e| panic!("the real strips are 15 mm; got the refusal {e}"));
     assert!(
-        (pins[0].x - 372.5).abs() < 1e-9,
+        (pins[0].at.x() - 372.5).abs() < 1e-9,
         "axis pin at x {}",
-        pins[0].x
+        pins[0].at.x()
     );
     assert!(
-        (pins[0].y - STOCK_D_MM * 0.5).abs() < 1e-9,
+        (pins[0].at.y() - STOCK_D_MM * 0.5).abs() < 1e-9,
         "axis pin at y {}",
-        pins[0].y
+        pins[0].at.y()
     );
     for pin in &pins[1..] {
-        assert!((pin.x - 8.5).abs() < 1e-6, "pair pin at x {}", pin.x);
+        assert!(
+            (pin.at.x() - 8.5).abs() < 1e-6,
+            "pair pin at x {}",
+            pin.at.x()
+        );
     }
     assert!(
-        (pins[1].y - 11.0).abs() < 1e-6,
+        (pins[1].at.y() - 11.0).abs() < 1e-6,
         "pair pin at y {}",
-        pins[1].y
+        pins[1].at.y()
     );
     assert!(
-        (pins[1].y + pins[2].y - STOCK_D_MM).abs() < 1e-9 && pins[1].y < pins[2].y,
+        (pins[1].at.y() + pins[2].at.y() - STOCK_D_MM).abs() < 1e-9
+            && pins[1].at.y() < pins[2].at.y(),
         "not a mirror pair: {pins:?}"
     );
     for pin in &pins {

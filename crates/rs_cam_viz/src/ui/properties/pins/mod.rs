@@ -323,12 +323,13 @@ mod tests {
         )
         .unwrap();
         assert!(
-            (pins[0].y - s.y * 0.5).abs() < 1e-9,
+            (pins[0].at.y() - s.y * 0.5).abs() < 1e-9,
             "the axis pin is off the mirror line at y={}",
-            pins[0].y
+            pins[0].at.y()
         );
         assert!(
-            (pins[1].y + pins[2].y - s.y).abs() < 1e-9 && (pins[1].x - pins[2].x).abs() < 1e-9,
+            (pins[1].at.y() + pins[2].at.y() - s.y).abs() < 1e-9
+                && (pins[1].at.x() - pins[2].at.x()).abs() < 1e-9,
             "pins 2 and 3 are not a mirror pair: {pins:?}"
         );
         let mut placed = s;

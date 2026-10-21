@@ -49,21 +49,56 @@ pub use walls::{NamedWall, PinObstacle, PinObstacleKind, PinWalls, pin_wall_find
 
 use serde::{Deserialize, Serialize};
 
-use crate::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
+pub use crate::compute::transform::StockRelXy;
+use crate::compute::transform::{FaceUp, Pt, SetupTransformInfo, ZRotation};
 use crate::geo::P3;
 use crate::selection::CAD_ROUNDING_MM;
 
 /// A physical alignment pin position for part registration between setups.
+///
+/// The position is stock-relative ([`StockRelXy`]): the stock minimum corner
+/// is the origin, and no setup map applies (F001). The project file keeps
+/// the flat `{ x, y, diameter }` table ([`PinRecord`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "PinRecord", into = "PinRecord")]
 pub struct AlignmentPin {
-    pub x: f64,
-    pub y: f64,
+    pub at: StockRelXy,
     pub diameter: f64,
 }
 
 impl AlignmentPin {
-    pub fn new(x: f64, y: f64, diameter: f64) -> Self {
-        Self { x, y, diameter }
+    /// A pin at the stock-relative point `(x, y)`.
+    #[must_use]
+    pub const fn new(x: f64, y: f64, diameter: f64) -> Self {
+        Self {
+            at: StockRelXy::new(x, y),
+            diameter,
+        }
+    }
+}
+
+/// The project-file shape of an [`AlignmentPin`]: the flat table that the
+/// file format holds.
+#[derive(Clone, Serialize, Deserialize)]
+struct PinRecord {
+    x: f64,
+    y: f64,
+    diameter: f64,
+}
+
+impl From<PinRecord> for AlignmentPin {
+    fn from(r: PinRecord) -> Self {
+        Self::new(r.x, r.y, r.diameter)
+    }
+}
+
+impl From<AlignmentPin> for PinRecord {
+    fn from(pin: AlignmentPin) -> Self {
+        Self {
+            x: pin.at.x(),
+            y: pin.at.y(),
+            diameter: pin.diameter,
+        }
     }
 }
 
@@ -108,9 +143,8 @@ pub enum PinFlipKind {
 /// The in-plane map of one setup: where the hole drilled at a stock-local
 /// XY point lands on the board after the setup turns the part.
 ///
-/// The map is the setup transform ([`SetupTransformInfo::world_to_local`],
-/// `FaceUp` then `ZRotation`) with a zero stock origin, because pins are
-/// stock-local. This type holds no second copy of that map. Examples:
+/// The map is the setup transform ([`SetupTransformInfo::stock_rel_to_local`],
+/// `FaceUp` then `ZRotation`), because pins are stock-local. This type holds no second copy of that map. Examples:
 ///
 /// - `Bottom` at 0 deg: `(x, y) -> (x, D - y)`;
 /// - `Bottom` at 180 deg: `(x, y) -> (W - x, y)`;
@@ -174,7 +208,10 @@ impl PinSetupMap {
     /// meaningful when [`Self::kind`] is [`PinFlipKind::InPlane`].
     #[must_use]
     pub fn map_xy(&self, x: f64, y: f64) -> (f64, f64) {
-        let p = self.transform.world_to_local(P3::new(x, y, 0.0));
+        let p = self
+            .transform
+            .stock_rel_to_local(Pt::new(P3::new(x, y, 0.0)))
+            .into_inner();
         (p.x, p.y)
     }
 
@@ -498,7 +535,7 @@ pub fn seat_miss_per_pin_mm(
             holes
                 .iter()
                 .filter(|(_, hole_d)| dowel.diameter <= hole_d + PIN_GEOM_EPS_MM)
-                .map(|((hx, hy), _)| (hx - dowel.x).hypot(hy - dowel.y))
+                .map(|((hx, hy), _)| (hx - dowel.at.x()).hypot(hy - dowel.at.y()))
                 .fold(f64::INFINITY, f64::min)
         })
         .collect()
@@ -523,12 +560,15 @@ pub fn validate_pins_for_flip(
         .enumerate()
         .filter(|(_, p)| {
             let r = p.diameter * 0.5;
-            p.x - r < 0.0 || p.x + r > stock_w || p.y - r < 0.0 || p.y + r > stock_d
+            p.at.x() - r < 0.0
+                || p.at.x() + r > stock_w
+                || p.at.y() - r < 0.0
+                || p.at.y() + r > stock_d
         })
         .map(|(i, _)| i)
         .collect();
     let seat_mismatch_mm = (map.kind() == PinFlipKind::InPlane)
-        .then(|| reseat_mismatch_mm(pins, |p| map.map_xy(p.x, p.y)));
+        .then(|| reseat_mismatch_mm(pins, |p| map.map_xy(p.at.x(), p.at.y())));
 
     PinFlipReport {
         face_up,
@@ -624,7 +664,7 @@ pub fn pin_diameters(pins: &[AlignmentPin]) -> Vec<f64> {
 pub fn pin_holes_of_diameter(pins: &[AlignmentPin], diameter: f64) -> Vec<[f64; 2]> {
     pins.iter()
         .filter(|p| same_pin_diameter(p.diameter, diameter))
-        .map(|p| [p.x, p.y])
+        .map(|p| [p.at.x(), p.at.y()])
         .collect()
 }
 

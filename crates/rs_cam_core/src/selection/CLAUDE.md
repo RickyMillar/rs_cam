@@ -9,7 +9,7 @@ The items of every source and the selection of an op. Plan: `planning/geometry_s
   `SelectionEdit` (`add_rules`: THE replace-under-default rule); `near.rs` — THE pick rule (`polyline_distance`).
 - `join.rs` — THE join (`CLOSE_TOL_MM`); `drawing_edit.rs` — the ledger; `flat_regions.rs` — STL flat regions as faces
   (`FLAT_REGION_Z_BAND_MM`, L-7; Z order, then lowest triangle).
-- `resolve.rs` — `resolve` (pure; reports, never refuses), `face_top_z`, `to_setup_frame` (THE frame door); `view.rs` — `view`, `view_boundary`, `OpItems`, `Regions` (`is_stock`, `exterior_item`), `Curves`, `Holes`; `refusal.rs` — `RefusalCause`; `hole_fit.rs` — `hole_fit`, `fit_holes` (P6.5).
+- `resolve.rs` — `resolve` (pure; reports, never refuses), `face_top_z`, `to_setup_frame` (THE frame door; F013: `ResolvedSelection<ModelFrame | SetupFrame>`, `to_setup_frame(Option<&SetupTransformInfo>)` gives `<SetupFrame>`, `face_top_z`/`face_bottom_z` exist only on `<SetupFrame>`); `view.rs` — `view`, `view_boundary`, `OpItems`, `Regions` (`is_stock`, `exterior_item`), `Curves`, `Holes`; `refusal.rs` — `RefusalCause`; `hole_fit.rs` — `hole_fit`, `fit_holes` (P6.5).
 
 ## Invariants
 - `Item::new` is the only item constructor; it checks the shape and computes the key. A circle is ONE item. Items keep import order. Two items with equal keys stay two; a pick on them is ambiguous.

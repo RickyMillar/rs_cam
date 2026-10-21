@@ -2974,7 +2974,7 @@ impl RsCamApp {
         };
         if let Some(bad) = pins
             .iter()
-            .position(|p| !(p.x.is_finite() && p.y.is_finite() && p.diameter > 0.0))
+            .position(|p| !(p.at.x().is_finite() && p.at.y().is_finite() && p.diameter > 0.0))
         {
             return refuse(
                 format!("pin {bad} needs a finite x and y and a diameter greater than zero."),

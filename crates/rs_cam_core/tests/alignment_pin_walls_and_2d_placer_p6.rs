@@ -184,11 +184,11 @@ fn assert_walls(pins: &[AlignmentPin], w: f64, d: f64, obstacles: &[PinObstacle]
             walls.min_mm() >= PIN_WALL_MM - 1e-9,
             "pin {} at ({:.3}, {:.3}): {walls:?}",
             i + 1,
-            pin.x,
-            pin.y
+            pin.at.x(),
+            pin.at.y()
         );
         for other in pins.iter().skip(i + 1) {
-            let gap = (pin.x - other.x).hypot(pin.y - other.y) - PIN_D;
+            let gap = (pin.at.x() - other.at.x()).hypot(pin.at.y() - other.at.y()) - PIN_D;
             assert!(gap >= PIN_WALL_MM - 1e-9, "{pin:?} {other:?}: {gap}");
         }
     }
@@ -238,7 +238,7 @@ fn the_mini_rim_holds_a_keyed_three_pin_pattern() {
         pins.iter().all(|p| (p.diameter - PIN_D).abs() < 1e-12),
         "{pins:?}"
     );
-    assert!((pins[0].y - D * 0.5).abs() < 1e-9, "{pins:?}");
+    assert!((pins[0].at.y() - D * 0.5).abs() < 1e-9, "{pins:?}");
     assert_walls(&pins, W, D, &obstacles);
     let report = validate_pins_for_flip(&pins, FaceUp::Bottom, ZRotation::Deg0, W, D);
     assert!(report.seats(), "{report:?}");
@@ -259,9 +259,12 @@ fn bottom_180_placement_seats_and_keys() {
         .stock_config()
         .plan_keyed_pins(FaceUp::Bottom, ZRotation::Deg180, &obstacles, PIN_D)
         .unwrap();
-    assert!((pins[0].x - W * 0.5).abs() < 1e-9, "{pins:?}");
-    assert!((pins[1].x + pins[2].x - W).abs() < 1e-9, "{pins:?}");
-    assert!((pins[1].y - pins[2].y).abs() < 1e-9, "{pins:?}");
+    assert!((pins[0].at.x() - W * 0.5).abs() < 1e-9, "{pins:?}");
+    assert!(
+        (pins[1].at.x() + pins[2].at.x() - W).abs() < 1e-9,
+        "{pins:?}"
+    );
+    assert!((pins[1].at.y() - pins[2].at.y()).abs() < 1e-9, "{pins:?}");
     assert_walls(&pins, W, D, &obstacles);
     let report = validate_pins_for_flip(&pins, FaceUp::Bottom, ZRotation::Deg180, W, D);
     assert!(report.seats() && report.keyed(), "{report:?}");
@@ -277,7 +280,7 @@ fn bottom_180_placement_seats_and_keys() {
     let pins = stock
         .plan_keyed_pins(FaceUp::Bottom, ZRotation::Deg180, &part, PIN_D)
         .unwrap();
-    assert!((pins[0].x - 70.0).abs() < 1e-9, "{pins:?}");
+    assert!((pins[0].at.x() - 70.0).abs() < 1e-9, "{pins:?}");
     assert_walls(&pins, 140.0, 150.0, &part);
     let report = validate_pins_for_flip(&pins, FaceUp::Bottom, ZRotation::Deg180, 140.0, 150.0);
     assert!(report.seats() && report.keyed(), "{report:?}");

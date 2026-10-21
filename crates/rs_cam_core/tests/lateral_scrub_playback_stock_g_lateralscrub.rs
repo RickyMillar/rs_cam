@@ -30,7 +30,7 @@
 //!
 //! Volume is also what lets the two routes be compared at all: the local stock
 //! and the playback stock live in different frames, and every mapping between
-//! them (`SetupTransformInfo::local_to_global`) is a rigid axis permutation
+//! them (`SetupTransformInfo::local_to_stock_rel`) is a rigid axis permutation
 //! plus a translation, which preserves volume exactly.
 //!
 //! # The fixture

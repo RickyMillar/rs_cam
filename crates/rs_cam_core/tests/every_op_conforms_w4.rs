@@ -1405,7 +1405,11 @@ fn strip_session(op: OperationType, frame: Frame) -> (ProjectSession, usize, [[f
             for x in [world[0][0], world[1][0]] {
                 for y in [world[0][1], world[1][1]] {
                     for z in [world[0][2], world[1][2]] {
-                        let p = info.world_to_local(P3::new(x, y, z));
+                        let p = info
+                            .world_to_local(rs_cam_core::compute::transform::Pt::new(P3::new(
+                                x, y, z,
+                            )))
+                            .into_inner();
                         for (axis, v) in [p.x, p.y, p.z].into_iter().enumerate() {
                             lo[axis] = lo[axis].min(v);
                             hi[axis] = hi[axis].max(v);

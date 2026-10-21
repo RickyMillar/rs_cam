@@ -88,7 +88,7 @@ pub struct HoleSourceFinding {
 /// The distance from `(x, y)` to the nearest pin, in mm, over `pins`.
 fn nearest_pin_mm<'a>(pins: impl IntoIterator<Item = &'a AlignmentPin>, x: f64, y: f64) -> f64 {
     pins.into_iter()
-        .map(|p| (p.x - x).hypot(p.y - y))
+        .map(|p| (p.at.x() - x).hypot(p.at.y() - y))
         .fold(f64::INFINITY, f64::min)
 }
 

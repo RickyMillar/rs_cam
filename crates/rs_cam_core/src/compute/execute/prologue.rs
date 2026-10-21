@@ -51,7 +51,7 @@ use crate::compute::floor::region_floors;
 use crate::compute::toolpath_stats::SelectionNoteFinding;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::selection::{
-    Curves, Holes, OpItems, Regions, ResolvedSelection, SelectionNote, fit_holes, view,
+    Curves, Holes, OpItems, Regions, ResolvedSelection, SelectionNote, SetupFrame, fit_holes, view,
 };
 use crate::tool::MillingCutter;
 
@@ -77,7 +77,7 @@ pub struct MeshInput<'a> {
 /// empty selection: a caller that resolves no model gives the op nothing
 /// to cut, and an op that needs items then refuses with `Empty`.
 pub(crate) struct SelectionInputs<'a> {
-    resolved: Cow<'a, ResolvedSelection>,
+    resolved: Cow<'a, ResolvedSelection<SetupFrame>>,
 }
 
 impl Default for SelectionInputs<'_> {
@@ -90,7 +90,7 @@ impl Default for SelectionInputs<'_> {
 
 impl<'a> SelectionInputs<'a> {
     /// The selection the session resolved, in the emission frame.
-    pub(crate) fn resolved(resolved: &'a ResolvedSelection) -> Self {
+    pub(crate) fn resolved(resolved: &'a ResolvedSelection<SetupFrame>) -> Self {
         Self {
             resolved: Cow::Borrowed(resolved),
         }

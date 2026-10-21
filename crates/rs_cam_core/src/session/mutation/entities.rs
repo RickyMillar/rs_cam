@@ -582,11 +582,9 @@ impl ProjectSession {
     #[instrument(skip(self))]
     pub(crate) fn add_alignment_pin(&mut self, x: f64, y: f64, diameter: f64) -> Option<Effects> {
         use crate::selection::CAD_ROUNDING_MM;
-        let exists = self
-            .stock
-            .alignment_pins
-            .iter()
-            .any(|p| (p.x - x).abs() < CAD_ROUNDING_MM && (p.y - y).abs() < CAD_ROUNDING_MM);
+        let exists = self.stock.alignment_pins.iter().any(|p| {
+            (p.at.x() - x).abs() < CAD_ROUNDING_MM && (p.at.y() - y).abs() < CAD_ROUNDING_MM
+        });
         if exists {
             return None;
         }

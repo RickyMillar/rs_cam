@@ -377,10 +377,15 @@ pub fn pin_walls(
     obstacles: &[PinObstacle],
 ) -> PinWalls {
     let r = 0.5 * pin.diameter;
-    let p = (pin.x, pin.y);
-    let stock_edge_mm = [pin.x, stock_w - pin.x, pin.y, stock_d - pin.y]
-        .into_iter()
-        .fold(f64::INFINITY, f64::min)
+    let p = (pin.at.x(), pin.at.y());
+    let stock_edge_mm = [
+        pin.at.x(),
+        stock_w - pin.at.x(),
+        pin.at.y(),
+        stock_d - pin.at.y(),
+    ]
+    .into_iter()
+    .fold(f64::INFINITY, f64::min)
         - r;
     let nearest = |wanted: &dyn Fn(PinObstacleKind) -> bool| {
         obstacles

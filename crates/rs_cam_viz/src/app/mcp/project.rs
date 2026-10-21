@@ -504,8 +504,8 @@ impl RsCamApp {
             .iter()
             .map(|pin| {
                 serde_json::json!({
-                    "x": pin.x,
-                    "y": pin.y,
+                    "x": pin.at.x(),
+                    "y": pin.at.y(),
                     "diameter": pin.diameter,
                 })
             })
@@ -966,7 +966,7 @@ pub(crate) fn pin_report_json(session: &rs_cam_core::session::ProjectSession) ->
             .stock_config()
             .alignment_pins
             .iter()
-            .map(|p| serde_json::json!({ "x": p.x, "y": p.y, "diameter": p.diameter }))
+            .map(|p| serde_json::json!({ "x": p.at.x(), "y": p.at.y(), "diameter": p.diameter }))
             .collect::<Vec<_>>(),
         "judged_setup": judged.map(|(index, s)| serde_json::json!({
             "index": index,

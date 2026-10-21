@@ -145,10 +145,7 @@ fn differences(label: &str, model: &LoadedModel, setup: Option<&SetupTransformIn
             mesh_faces: &[],
         },
     );
-    let resolved = match setup {
-        Some(info) => resolved.to_setup_frame(info).unwrap(),
-        None => resolved,
-    };
+    let resolved = resolved.to_setup_frame(setup).unwrap();
 
     let mut polys = |use_: ItemUse, old: &[Polygon2], name: &str| match view(&resolved, use_) {
         Ok((items, _)) => {

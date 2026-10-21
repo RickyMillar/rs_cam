@@ -127,7 +127,7 @@ impl super::RsCamApp {
         for (index, pin) in stock.alignment_pins.iter().enumerate() {
             // The label sits beside the circle, one radius out along +X and
             // +Y of the display frame, so it never covers the circle.
-            let c = pin_display_point(&frame, stock, pin.x, pin.y);
+            let c = pin_display_point(&frame, stock, pin.at.x(), pin.at.y());
             let r = pin.diameter * 0.5;
             let anchor = [(c.x + r) as f32, (c.y + r) as f32, c.z as f32];
             let Some(p) = self.camera.project_to_screen(anchor, aspect, width, height) else {

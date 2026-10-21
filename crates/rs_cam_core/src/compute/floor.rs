@@ -53,6 +53,7 @@ use super::catalog::{ItemUse, ParamRange};
 use super::config::HeightContext;
 use crate::selection::{
     ItemRef, NoteCause, OpItems, RefusalCause, ResolvedSelection, SelectionNote, SelectionRefusal,
+    SetupFrame,
 };
 
 /// The floor of a Pocket, Profile, Zigzag or Adaptive 2D: one value that
@@ -476,7 +477,7 @@ impl RegionFloors {
 /// floor of EVERY area is at or above `top_z` (L-16; it names the first
 /// face). The caller adds the op label.
 pub fn region_floors(
-    resolved: &ResolvedSelection,
+    resolved: &ResolvedSelection<SetupFrame>,
     items: &mut OpItems,
     floor: Floor,
     top_z: f64,

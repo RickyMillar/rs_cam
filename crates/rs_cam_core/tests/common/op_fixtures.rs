@@ -524,7 +524,7 @@ pub fn case_session(spec: CaseSpec<'_>) -> (ProjectSession, usize) {
                 .iter()
                 // A pin is stock-local, so its mirror is about the stock's
                 // own mid-line, `y = D / 2`.
-                .map(|p| AlignmentPin::new(p.x, stock.y - p.y, p.diameter))
+                .map(|p| AlignmentPin::new(p.at.x(), stock.y - p.at.y(), p.diameter))
                 .collect(),
             ..stock
         }

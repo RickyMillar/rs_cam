@@ -786,8 +786,8 @@ mod pin_edit_one_door_p5 {
         let effects = controller
             .state
             .apply(Command::AddAlignmentPin(AddAlignmentPinArgs {
-                x: pin.x,
-                y: pin.y,
+                x: pin.at.x(),
+                y: pin.at.y(),
                 diameter: pin.diameter,
             }))
             .expect("an add is never refused");
@@ -1409,7 +1409,7 @@ mod pin_edit_one_door_p5 {
             .stock_config()
             .alignment_pins
             .clone();
-        let xys: Vec<[f64; 2]> = pins.iter().map(|p| [p.x, p.y]).collect();
+        let xys: Vec<[f64; 2]> = pins.iter().map(|p| [p.at.x(), p.at.y()]).collect();
         assert_eq!(
             xys,
             vec![[32.5, 6.8], [47.5, 58.2], [17.5, 58.2]],

@@ -166,7 +166,7 @@ pub fn along_on_axis(map: &PinSetupMap, pin: &AlignmentPin) -> Option<f64> {
     let [a, b] = map.axis_segment()?;
     let len = (b.0 - a.0).hypot(b.1 - a.1);
     let u = ((b.0 - a.0) / len, (b.1 - a.1) / len);
-    let d = (pin.x - a.0, pin.y - a.1);
+    let d = (pin.at.x() - a.0, pin.at.y() - a.1);
     let along = d.0 * u.0 + d.1 * u.1;
     let across = -d.0 * u.1 + d.1 * u.0;
     (across.abs() <= PIN_MATCH_TOL_MM).then_some(along)

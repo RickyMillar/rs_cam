@@ -170,7 +170,7 @@ impl ProjectSession {
         let map = PinSetupMap::new(face_up, z_rotation, w, d);
 
         let seat_miss_mm = if map.kind() == PinFlipKind::InPlane {
-            seat_miss_per_pin_mm(pins, |p| map.map_xy(p.x, p.y))
+            seat_miss_per_pin_mm(pins, |p| map.map_xy(p.at.x(), p.at.y()))
         } else {
             Vec::new()
         };

@@ -45,16 +45,8 @@ use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder};
 
 /// Stock-relative; the stock origin is (0, 0), so also world.
-const LEFT: AlignmentPin = AlignmentPin {
-    x: 10.0,
-    y: 50.0,
-    diameter: 6.0,
-};
-const RIGHT: AlignmentPin = AlignmentPin {
-    x: 90.0,
-    y: 50.0,
-    diameter: 6.0,
-};
+const LEFT: AlignmentPin = AlignmentPin::new(10.0, 50.0, 6.0);
+const RIGHT: AlignmentPin = AlignmentPin::new(90.0, 50.0, 6.0);
 const CENTRE: [f64; 2] = [50.0, 50.0];
 
 /// The stock less 30 mm on each side: both pins are outside it.
@@ -97,7 +89,11 @@ fn session() -> ProjectSession {
     let tool_id = builder.tools()[tool_idx].id.0;
     let model_id = builder.add_model(polygon_model_with_points(
         vec![plate_polygon()],
-        &[[LEFT.x, LEFT.y], [RIGHT.x, RIGHT.y], CENTRE],
+        &[
+            [LEFT.at.x(), LEFT.at.y()],
+            [RIGHT.at.x(), RIGHT.at.y()],
+            CENTRE,
+        ],
         "plate",
     ));
     let mut session = builder.build();
@@ -165,10 +161,10 @@ fn the_boundary_drops_a_drill_hole_at_a_pin_position() {
     assert!(drilled.contains(&um(CENTRE[0], CENTRE[1])), "{drilled:?}");
     for pin in [LEFT, RIGHT] {
         assert!(
-            !drilled.contains(&um(pin.x, pin.y)),
+            !drilled.contains(&um(pin.at.x(), pin.at.y())),
             "control: the boundary must drop the pick at ({}, {}): {drilled:?}",
-            pin.x,
-            pin.y
+            pin.at.x(),
+            pin.at.y()
         );
     }
 }
@@ -183,10 +179,10 @@ fn the_pin_drill_keeps_every_hole_outside_the_boundary() {
     let drilled = drilled_xy(&mut s, 1);
     for pin in [LEFT, RIGHT] {
         assert!(
-            drilled.contains(&um(pin.x, pin.y)),
+            drilled.contains(&um(pin.at.x(), pin.at.y())),
             "the pin hole at ({}, {}) must survive the boundary: {drilled:?}",
-            pin.x,
-            pin.y
+            pin.at.x(),
+            pin.at.y()
         );
     }
 }

@@ -96,7 +96,9 @@ impl SetupFrame {
         p: rs_cam_core::geo::P3,
         stock: &StockConfig,
     ) -> rs_cam_core::geo::P3 {
-        self.transform_info(stock).world_to_local(p)
+        self.transform_info(stock)
+            .world_to_local(rs_cam_core::compute::transform::Pt::new(p))
+            .into_inner()
     }
 
     /// Effective stock dimensions in this setup's local frame.
@@ -126,34 +128,18 @@ impl SetupFrame {
     }
 
     /// Inverse transform: from this setup's local frame back to world coords.
-    /// Undoes ZRotation, then FaceUp, then translates back to world coords.
-    ///
-    /// **Not** a delegate to
-    /// [`rs_cam_core::compute::transform::SetupTransformInfo::local_to_global`],
-    /// which is a different function despite the matching name: it stops in
-    /// *stock-relative* coordinates and deliberately does not re-add the stock
-    /// origin (its own doc says so, and `transform_toolpath` depends on that).
-    /// This one closes the round trip with `transform_point` in world
-    /// coordinates, so the two agree only when the origin is zero.
+    /// It delegates to
+    /// [`rs_cam_core::compute::transform::SetupTransformInfo::local_to_world`],
+    /// the exact inverse of the `world_to_local` that [`Self::transform_point`]
+    /// reads.
     pub fn inverse_transform_point(
         &self,
         p: rs_cam_core::geo::P3,
         stock: &StockConfig,
     ) -> rs_cam_core::geo::P3 {
-        use rs_cam_core::geo::P3;
-        // 1. Undo ZRotation
-        let (eff_w, eff_d, _) = self.face_up.effective_stock(stock.x, stock.y, stock.z);
-        let unrotated = self.z_rotation.inverse_transform_point(p, eff_w, eff_d);
-        // 2. Undo FaceUp flip → stock-relative coords
-        let rel = self
-            .face_up
-            .inverse_transform_point(unrotated, stock.x, stock.y, stock.z);
-        // 3. Translate stock-relative → world
-        P3::new(
-            rel.x + stock.origin_x,
-            rel.y + stock.origin_y,
-            rel.z + stock.origin_z,
-        )
+        self.transform_info(stock)
+            .local_to_world(rs_cam_core::compute::transform::Pt::new(p))
+            .into_inner()
     }
 
     /// Whether this setup requires geometry transforms (non-identity orientation).

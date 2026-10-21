@@ -38,7 +38,7 @@ use crate::polygon::{Polygon2, detect_containment, detect_containment_tagged};
 use super::hole_fit::HoleFitRule;
 use super::item::{Item, ItemKind, Shape, SourceRef};
 use super::refusal::{ItemRef, NoteCause, RefusalCause, SelectionNote, SelectionRefusal};
-use super::resolve::ResolvedSelection;
+use super::resolve::{ResolvedSelection, SelectionFrame, SetupFrame};
 use super::rule::Facing;
 
 impl ItemKind {
@@ -336,8 +336,12 @@ impl OpItems {
 ///
 /// This is the view of an OP selection. A machining boundary reads
 /// [`view_boundary`].
-pub fn view(
-    resolved: &ResolvedSelection,
+///
+/// The frame `F` is the frame of the items it gives. Generation views the
+/// setup frame; the status report views the model frame too, for the
+/// holes of the drill picker (F013).
+pub fn view<F: SelectionFrame>(
+    resolved: &ResolvedSelection<F>,
     item_use: ItemUse,
 ) -> Result<(OpItems, Vec<SelectionNote>), SelectionRefusal> {
     view_with(resolved, item_use, DownFaces::Refuse)
@@ -350,7 +354,7 @@ pub fn view(
 /// a Z, so the facing does not matter. The boundary generation and the
 /// boundary report both read it, so the two give one answer.
 pub fn view_boundary(
-    resolved: &ResolvedSelection,
+    resolved: &ResolvedSelection<SetupFrame>,
 ) -> Result<(OpItems, Vec<SelectionNote>), SelectionRefusal> {
     view_with(
         resolved,
@@ -369,8 +373,8 @@ enum DownFaces {
     Keep,
 }
 
-fn view_with(
-    resolved: &ResolvedSelection,
+fn view_with<F: SelectionFrame>(
+    resolved: &ResolvedSelection<F>,
     item_use: ItemUse,
     down_faces: DownFaces,
 ) -> Result<(OpItems, Vec<SelectionNote>), SelectionRefusal> {

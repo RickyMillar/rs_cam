@@ -32,7 +32,7 @@ use crate::compute::catalog::ItemUse;
 
 use super::key::CAD_ROUNDING_MM;
 use super::refusal::{ItemRef, NoteCause, RefusalCause, SelectionNote, SelectionRefusal};
-use super::resolve::ResolvedSelection;
+use super::resolve::{ResolvedSelection, SelectionFrame};
 use super::view::OpItems;
 
 /// Which holes an op of [`ItemUse::Holes`] cuts, by their size (design
@@ -163,8 +163,11 @@ pub fn hole_fit(diameter: Option<f64>, size: &DrillSize) -> HoleFit {
 /// The refusals, in selection order: a circle the user named that does not
 /// fit (`HoleDoesNotFit`); then, with no hole left, `Empty` (unless the op
 /// may be empty).
-pub fn fit_holes(
-    resolved: &ResolvedSelection,
+///
+/// The fit reads only the diameters, which the frame door keeps, so it
+/// runs on either frame `F` (F013).
+pub fn fit_holes<F: SelectionFrame>(
+    resolved: &ResolvedSelection<F>,
     items: &mut OpItems,
     item_use: ItemUse,
     size: DrillSize,

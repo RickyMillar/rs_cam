@@ -3,7 +3,7 @@
 //!
 //! `run_simulation` builds its global (checkpoint / playback / screenshot)
 //! stock ZERO-ROOTED, from `(0,0,0)..(stock_dx, stock_dy, stock_dz)`,
-//! because `SetupTransformInfo::local_to_global` deliberately returns
+//! because `SetupTransformInfo::local_to_stock_rel` deliberately returns
 //! stock-relative coordinates and never re-adds the origin. Non-identity
 //! setup groups were mapped into that frame correctly. **Identity setup
 //! groups were stamped in verbatim, still in WORLD frame**, with no

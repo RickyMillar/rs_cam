@@ -117,7 +117,7 @@ fn pin_at(frame: &PlanFrame, pins: &[AlignmentPin], pos: egui::Pos2) -> Option<u
     pins.iter()
         .enumerate()
         .map(|(i, p)| {
-            let centre = frame.to_screen(p.x, p.y);
+            let centre = frame.to_screen(p.at.x(), p.at.y());
             // SAFETY: a pin diameter in mm is far inside the f32 range.
             #[allow(clippy::cast_possible_truncation)]
             let radius = 0.5 * p.diameter as f32 * frame.scale;
@@ -343,7 +343,7 @@ fn paint(
     // The pins at true scale, with the number, the diameter and the
     // thinnest wall of each.
     for (i, pin) in pins.iter().enumerate() {
-        let centre = frame.to_screen(pin.x, pin.y);
+        let centre = frame.to_screen(pin.at.x(), pin.at.y());
         // SAFETY: a pin diameter in mm is far inside the f32 range.
         #[allow(clippy::cast_possible_truncation)]
         let radius = 0.5 * pin.diameter as f32 * frame.scale;

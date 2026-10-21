@@ -371,17 +371,20 @@ fn a_plan_view_drag_across_the_axis_moves_the_set_along_it() {
         stored,
         "a drag writes the draft only"
     );
-    let dx = after[0].x - before[0].x;
+    let dx = after[0].at.x() - before[0].at.x();
     assert!(
         dx > 0.0,
         "the set moved along the axis: {before:?} -> {after:?}"
     );
     for (a, b) in before.iter().zip(&after) {
         assert!(
-            (b.y - a.y).abs() < 1e-9,
+            (b.at.y() - a.at.y()).abs() < 1e-9,
             "a pin moved across the axis: {a:?} -> {b:?}"
         );
-        assert!((b.x - a.x - dx).abs() < 1e-9, "the set moved as one");
+        assert!(
+            (b.at.x() - a.at.x() - dx).abs() < 1e-9,
+            "the set moved as one"
+        );
     }
     assert!(
         ((dx * 10.0).round() - dx * 10.0).abs() < 1e-6,

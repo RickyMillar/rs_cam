@@ -355,7 +355,7 @@ fn the_ghost_row_is_ready_exactly_while_the_set_does_not_key() {
     for (ghost, pin) in report.wrong_seating_images.iter().zip(&pins) {
         let on_a_pin = pins
             .iter()
-            .any(|p| (p.x - ghost.0).hypot(p.y - ghost.1) < 1e-6);
+            .any(|p| (p.at.x() - ghost.0).hypot(p.at.y() - ghost.1) < 1e-6);
         assert!(on_a_pin, "the mini ghost lands on a real pin: {ghost:?}");
         let ring = rs_cam_viz::state::pin_view::ghost_ring_radius(pin.diameter);
         assert!(
@@ -411,8 +411,8 @@ fn a_pick_on_a_flipped_setup_hits_the_drawn_pin() {
     let pin = AlignmentPin::new(10.0, 12.0, 6.0);
     let mut stock_with_pin = stock.clone();
     stock_with_pin.alignment_pins = vec![pin.clone()];
-    let drawn = pin_display_point(&frame, &stock_with_pin, pin.x, pin.y);
-    let raw = (pin.x, pin.y, stock.z);
+    let drawn = pin_display_point(&frame, &stock_with_pin, pin.at.x(), pin.at.y());
+    let raw = (pin.at.x(), pin.at.y(), stock.z);
     assert!(
         (drawn.y - raw.1).abs() > 1.0,
         "the flipped setup must move the pin: drawn {drawn:?}, raw {raw:?}"

@@ -184,9 +184,12 @@ impl ProjectSession {
                     for x in [x0, x1] {
                         for y in [y0, y1] {
                             for z in [obstacle.bottom_z, obstacle.top_z] {
-                                let p = info.local_to_global(crate::geo::P3::new(x, y, z));
-                                let (wx, wy) =
-                                    (p.x + info.stock_origin_x, p.y + info.stock_origin_y);
+                                let p = info
+                                    .local_to_world(crate::compute::transform::Pt::new(
+                                        crate::geo::P3::new(x, y, z),
+                                    ))
+                                    .into_inner();
+                                let (wx, wy) = (p.x, p.y);
                                 lo = (lo.0.min(wx), lo.1.min(wy));
                                 hi = (hi.0.max(wx), hi.1.max(wy));
                             }
@@ -477,7 +480,7 @@ impl ProjectSession {
                     || setup_hole_ops.iter().any(|op| {
                         op.holes
                             .iter()
-                            .any(|h| (p.x - h.x).hypot(p.y - h.y) <= PIN_MATCH_TOL_MM)
+                            .any(|h| (p.at.x() - h.x).hypot(p.at.y() - h.y) <= PIN_MATCH_TOL_MM)
                     })
             })
     }

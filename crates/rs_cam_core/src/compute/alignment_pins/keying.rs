@@ -86,14 +86,17 @@ struct Fit {
 }
 
 fn evaluate(pins: &[AlignmentPin], motion: &Motion) -> Fit {
-    let images: Vec<(f64, f64)> = pins.iter().map(|p| motion.apply(p.x, p.y)).collect();
+    let images: Vec<(f64, f64)> = pins
+        .iter()
+        .map(|p| motion.apply(p.at.x(), p.at.y()))
+        .collect();
     let mut miss_mm: f64 = 0.0;
     let mut matches = Vec::with_capacity(pins.len());
     let mut blocked = false;
     for dowel in pins {
         let mut nearest = (usize::MAX, f64::INFINITY);
         for (j, &(hx, hy)) in images.iter().enumerate() {
-            let d = (hx - dowel.x).hypot(hy - dowel.y);
+            let d = (hx - dowel.at.x()).hypot(hy - dowel.at.y());
             if d < nearest.1 {
                 nearest = (j, d);
             }
@@ -110,7 +113,7 @@ fn evaluate(pins: &[AlignmentPin], motion: &Motion) -> Fit {
     let displacement_mm = pins
         .iter()
         .zip(&images)
-        .map(|(p, &(ix, iy))| (ix - p.x).hypot(iy - p.y))
+        .map(|(p, &(ix, iy))| (ix - p.at.x()).hypot(iy - p.at.y()))
         .fold(0.0_f64, f64::max);
     Fit {
         miss_mm,
@@ -132,8 +135,8 @@ fn best_fit(pins: &[AlignmentPin], matches: &[usize]) -> Option<Motion> {
     for (i, &j) in matches.iter().enumerate() {
         let hole = pins.get(j)?;
         let dowel = pins.get(i)?;
-        src = (src.0 + hole.x, src.1 + hole.y);
-        dst = (dst.0 + dowel.x, dst.1 + dowel.y);
+        src = (src.0 + hole.at.x(), src.1 + hole.at.y());
+        dst = (dst.0 + dowel.at.x(), dst.1 + dowel.at.y());
     }
     src = (src.0 / n, src.1 / n);
     dst = (dst.0 / n, dst.1 / n);
@@ -142,8 +145,8 @@ fn best_fit(pins: &[AlignmentPin], matches: &[usize]) -> Option<Motion> {
     for (i, &j) in matches.iter().enumerate() {
         let hole = pins.get(j)?;
         let dowel = pins.get(i)?;
-        let a = (hole.x - src.0, hole.y - src.1);
-        let b = (dowel.x - dst.0, dowel.y - dst.1);
+        let a = (hole.at.x() - src.0, hole.at.y() - src.1);
+        let b = (dowel.at.x() - dst.0, dowel.at.y() - dst.1);
         dot += a.0 * b.0 + a.1 * b.1;
         cross += a.0 * b.1 - a.1 * b.0;
     }
@@ -203,10 +206,10 @@ pub fn closest_wrong_seating_images(
     }
     let n = pins.len() as f64;
     let centre = (
-        pins.iter().map(|p| p.x).sum::<f64>() / n,
-        pins.iter().map(|p| p.y).sum::<f64>() / n,
+        pins.iter().map(|p| p.at.x()).sum::<f64>() / n,
+        pins.iter().map(|p| p.at.y()).sum::<f64>() / n,
     );
-    let radius = |p: &AlignmentPin| (p.x - centre.0).hypot(p.y - centre.1);
+    let radius = |p: &AlignmentPin| (p.at.x() - centre.0).hypot(p.at.y() - centre.1);
     let (far_index, far) = pins
         .iter()
         .enumerate()
@@ -219,18 +222,20 @@ pub fn closest_wrong_seating_images(
                 turn_deg: 180.0,
                 miss_mm: 0.0,
             },
-            pins.iter().map(|p| half_turn.apply(p.x, p.y)).collect(),
+            pins.iter()
+                .map(|p| half_turn.apply(p.at.x(), p.at.y()))
+                .collect(),
         ));
     }
     let gate = 2.0 * keying_bar_mm(pins);
-    let far_angle = (far.y - centre.1).atan2(far.x - centre.0);
+    let far_angle = (far.at.y() - centre.1).atan2(far.at.x() - centre.0);
 
     let mut best: Option<(WrongSeating, Motion)> = None;
     for (k, target) in pins.iter().enumerate() {
         if k == far_index || (radius(target) - far_radius).abs() > gate {
             continue;
         }
-        let turn = (target.y - centre.1).atan2(target.x - centre.0) - far_angle;
+        let turn = (target.at.y() - centre.1).atan2(target.at.x() - centre.0) - far_angle;
         // The chord `f` moves along under the turn.
         let chord = 2.0 * far_radius * (0.5 * turn).sin().abs();
         if chord < PIN_MATCH_TOL_MM {
@@ -265,7 +270,10 @@ pub fn closest_wrong_seating_images(
         }
     }
     best.map(|(seating, motion)| {
-        let images = pins.iter().map(|p| motion.apply(p.x, p.y)).collect();
+        let images = pins
+            .iter()
+            .map(|p| motion.apply(p.at.x(), p.at.y()))
+            .collect();
         (seating, images)
     })
 }

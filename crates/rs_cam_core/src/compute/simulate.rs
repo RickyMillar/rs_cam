@@ -11,7 +11,7 @@ use crate::compute::stock_carry::{
     CarrySource, SimGroupStart, StockCarry, carry_stock_into_group, group_is_lateral,
 };
 use crate::compute::tool_config::ToolConfig;
-use crate::compute::transform::{FaceUp, SetupTransformInfo};
+use crate::compute::transform::{FaceUp, Pt, SetupTransformInfo};
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::geo::{BoundingBox3, P3};
 use crate::ids::ToolpathId;
@@ -1128,7 +1128,7 @@ fn rederive_phantom_prior_stocks(
 /// playback stock is built from `(0,0,0)..(stock_dx, stock_dy, stock_dz)`,
 /// so everything stamped into it must be stock-relative:
 ///
-/// - Non-identity groups already are — `SetupTransformInfo::local_to_global`
+/// - Non-identity groups already are — `SetupTransformInfo::local_to_stock_rel`
 ///   deliberately does not re-add the stock origin (see its
 ///   `stock_origin_x` doc).
 /// - Identity groups have no transform at all and emit in WORLD
@@ -1148,7 +1148,7 @@ pub(crate) fn group_point_to_global(
     stock_min: P3,
 ) -> P3 {
     match transform {
-        Some(info) => info.local_to_global(p),
+        Some(info) => info.local_to_stock_rel(Pt::new(p)).into_inner(),
         None => P3::new(p.x - stock_min.x, p.y - stock_min.y, p.z - stock_min.z),
     }
 }
@@ -1156,10 +1156,11 @@ pub(crate) fn group_point_to_global(
 /// The inverse of [`group_point_to_global`]: map a point from the
 /// ZERO-ROOTED stock-relative global frame into one setup group's frame.
 ///
-/// The non-identity arm applies the face-up map and then the Z rotation to
-/// the zero-rooted point. It does not read `SetupTransformInfo::stock_origin_*`,
-/// because [`SetupTransformInfo::local_to_global`] does not re-add the
-/// origin either. The S0 stock carry reads it (`compute/stock_carry.rs`).
+/// The non-identity arm is [`SetupTransformInfo::stock_rel_to_local`]: the
+/// face-up map and then the Z rotation of the zero-rooted point. It does not
+/// read `SetupTransformInfo::stock_origin_*`, because
+/// [`SetupTransformInfo::local_to_stock_rel`] does not add the origin
+/// again either. The S0 stock carry reads it (`compute/stock_carry.rs`).
 #[inline]
 pub(crate) fn global_point_to_group(
     g: P3,
@@ -1167,15 +1168,7 @@ pub(crate) fn global_point_to_group(
     stock_min: P3,
 ) -> P3 {
     match transform {
-        Some(info) => {
-            let flipped = info
-                .face_up
-                .transform_point(g, info.stock_x, info.stock_y, info.stock_z);
-            let (eff_w, eff_d, _) =
-                info.face_up
-                    .effective_stock(info.stock_x, info.stock_y, info.stock_z);
-            info.z_rotation.transform_point(flipped, eff_w, eff_d)
-        }
+        Some(info) => info.stock_rel_to_local(Pt::new(g)).into_inner(),
         None => P3::new(g.x + stock_min.x, g.y + stock_min.y, g.z + stock_min.z),
     }
 }
@@ -1264,7 +1257,9 @@ pub fn transform_stock_mesh_to_global(
     let mut out = StockMesh::empty();
     match transform {
         Some(info) => out.append_transformed(mesh, |x, y, z| {
-            let p = info.local_to_global(P3::new(f64::from(x), f64::from(y), f64::from(z)));
+            let p = info
+                .local_to_stock_rel(Pt::new(P3::new(f64::from(x), f64::from(y), f64::from(z))))
+                .into_inner();
             (p.x as f32, p.y as f32, p.z as f32)
         }),
         None => {
@@ -1942,7 +1937,7 @@ where
     let sample_step_mm = crate::budget::estimate::trace_sample_step_mm(request.resolution);
 
     // Parallel global stock for checkpoint/playback support.
-    // Use zero-origin bbox (stock dims only) because local_to_global
+    // Use zero-origin bbox (stock dims only) because local_to_stock_rel
     // returns stock-relative coordinates (0→stock_x, 0→stock_y, 0→stock_z),
     // NOT world coordinates with origin offsets.
     let global_bbox = BoundingBox3 {
@@ -2554,7 +2549,7 @@ fn collect_column_deviations(
         // (doc above).
         let (g, q) = match local_to_global {
             Some(info) => {
-                let g = info.local_to_global(p);
+                let g = info.local_to_stock_rel(Pt::new(p)).into_inner();
                 (g, g)
             }
             None => (

@@ -39,8 +39,8 @@ pub use refusal::{
     kind_noun,
 };
 pub use resolve::{
-    ExcludedItem, LostPick, MatchedBy, MeshFaces, ResolveScope, ResolvedItem, ResolvedSelection,
-    face_in_setup_frame, resolve,
+    ExcludedItem, LostPick, MatchedBy, MeshFaces, ModelFrame, ResolveScope, ResolvedItem,
+    ResolvedSelection, SelectionFrame, SetupFrame, face_in_setup_frame, resolve,
 };
 pub use rule::{
     DiameterRange, FaceFilter, FacesByFacing, Facing, Filter, KindFilter, Rule, Selection,

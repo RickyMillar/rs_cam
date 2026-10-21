@@ -107,22 +107,22 @@ fn margin_comes_from_the_model_bbox_not_padding() {
     for p in &pins {
         let r = p.diameter * 0.5;
         assert!(
-            p.x - r >= 2.0 - 1e-9,
+            p.at.x() - r >= 2.0 - 1e-9,
             "pin at {} breaks the stock wall",
-            p.x
+            p.at.x()
         );
         assert!(
-            p.x + r <= W - 2.0 + 1e-9,
+            p.at.x() + r <= W - 2.0 + 1e-9,
             "pin at {} breaks the stock wall",
-            p.x
+            p.at.x()
         );
     }
     // No pin is anywhere near the old padding/2 output of 2.5/137.5.
     for p in &pins {
         assert!(
-            p.x > 5.0 && p.x < W - 5.0,
+            p.at.x() > 5.0 && p.at.x() < W - 5.0,
             "pin still in the padding ring: {}",
-            p.x
+            p.at.x()
         );
     }
 }
@@ -271,16 +271,17 @@ fn placed_pins_seat_under_the_flip_and_key_it() {
     let pins = place_keyed_pins(&request(Some((20.0, W - 20.0)), PIN_D)).unwrap();
 
     assert!(
-        (pins[0].y - D * 0.5).abs() < 1e-9,
+        (pins[0].at.y() - D * 0.5).abs() < 1e-9,
         "the axis pin is off the mirror line: {:?}",
         pins[0]
     );
     assert!(
-        (pins[1].x - pins[2].x).abs() < 1e-9 && (pins[1].y + pins[2].y - D).abs() < 1e-9,
+        (pins[1].at.x() - pins[2].at.x()).abs() < 1e-9
+            && (pins[1].at.y() + pins[2].at.y() - D).abs() < 1e-9,
         "pins 2 and 3 are not a mirror pair: {pins:?}"
     );
     assert!(
-        pins[1].y < pins[2].y,
+        pins[1].at.y() < pins[2].at.y(),
         "the pair is not in Y order: {pins:?}"
     );
 
@@ -431,9 +432,9 @@ fn refuses_when_no_pattern_that_fits_keys() {
 fn each_pin_sits_at_the_centre_of_its_strip() {
     // 40 mm on -X, 20 mm on +X.
     let pins = place_keyed_pins(&request(Some((40.0, W - 20.0)), PIN_D)).unwrap();
-    assert!((pins[0].x - (W - 10.0)).abs() < 1e-9, "{pins:?}");
-    assert!((pins[1].x - 20.0).abs() < 1e-9, "{pins:?}");
-    assert!((pins[2].x - 20.0).abs() < 1e-9, "{pins:?}");
+    assert!((pins[0].at.x() - (W - 10.0)).abs() < 1e-9, "{pins:?}");
+    assert!((pins[1].at.x() - 20.0).abs() < 1e-9, "{pins:?}");
+    assert!((pins[2].at.x() - 20.0).abs() < 1e-9, "{pins:?}");
     let report = validate_pins_for_flip(&pins, FaceUp::Bottom, ZRotation::Deg0, W, D);
     assert!(report.seats(), "{report:?}");
     assert!(report.keyed(), "{report:?}");
@@ -472,7 +473,7 @@ fn plan_keyed_pins_converts_the_model_bbox_into_the_pin_frame() {
     let direct = place_keyed_pins(&request(Some((20.0, W - 20.0)), PIN_D)).unwrap();
     for (p, q) in pins.iter().zip(&direct) {
         assert!(
-            (p.x - q.x).abs() < 1e-9 && (p.y - q.y).abs() < 1e-9,
+            (p.at.x() - q.at.x()).abs() < 1e-9 && (p.at.y() - q.at.y()).abs() < 1e-9,
             "{pins:?}"
         );
     }

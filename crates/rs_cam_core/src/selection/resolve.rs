@@ -7,12 +7,17 @@
 //!
 //! [`ResolvedSelection::to_setup_frame`] is the one frame door for the
 //! items: rings, points, circle centres, and the plane Z and normal of a
-//! face.
+//! face. The frame is a type parameter (F013): [`resolve`] gives a
+//! `ResolvedSelection<ModelFrame>`, the door gives a
+//! `ResolvedSelection<SetupFrame>`, and only the setup frame has
+//! [`ResolvedSelection::face_top_z`]. A missing or a second door call does
+//! not compile.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::marker::PhantomData;
 use std::sync::Arc;
 
-use crate::compute::transform::SetupTransformInfo;
+use crate::compute::transform::{Pt, SetupTransformInfo};
 use crate::geo::{BoundingBox3, P3, V3};
 use crate::polygon::Polygon2;
 use crate::session::LoadedModel;
@@ -154,9 +159,35 @@ pub struct ExcludedItem {
     pub key: MatchKey,
 }
 
-/// The report of [`resolve`].
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// The frame of the items of a [`ResolvedSelection`]. The trait is sealed:
+/// [`ModelFrame`] and [`SetupFrame`] are the only frames.
+pub trait SelectionFrame: sealed::Sealed + Copy + std::fmt::Debug {}
+
+/// The frame of the model: the items as the drawing or the mesh holds
+/// them (the world frame). [`resolve`] gives this frame. The face filter
+/// of [`resolve`] reads the setup frame ([`face_in_setup_frame`]), but the
+/// items stay in the model frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModelFrame;
+
+/// The frame of the setup: the items after
+/// [`ResolvedSelection::to_setup_frame`], in the emission frame of the
+/// setup. The prologue, `view` and the auto top read this frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SetupFrame;
+
+impl sealed::Sealed for ModelFrame {}
+impl sealed::Sealed for SetupFrame {}
+impl SelectionFrame for ModelFrame {}
+impl SelectionFrame for SetupFrame {}
+
+/// The report of [`resolve`], with the items in the frame `F`.
 #[derive(Debug, Clone)]
-pub struct ResolvedSelection {
+pub struct ResolvedSelection<F: SelectionFrame> {
     /// The matched items: by source (in the order the selection first
     /// names it), then in import order. An item that two rules or a rule
     /// and a pick match is here once. Two items with equal keys stay two
@@ -170,9 +201,10 @@ pub struct ResolvedSelection {
     unmatched_layers: Vec<String>,
     /// The mesh models whose flat regions are not computed yet (P4.7).
     faces_not_ready: Vec<ModelId>,
+    frame: PhantomData<F>,
 }
 
-impl ResolvedSelection {
+impl ResolvedSelection<SetupFrame> {
     /// The default rule over a hand-built polygon list: the items of
     /// [`ItemSet::from_polygons`], each matched by the default rule, with
     /// nothing lost or missing. No model is needed. [`super::view`] nests
@@ -188,7 +220,9 @@ impl ResolvedSelection {
 
     /// The default rule over hand-built items (points and circles too),
     /// each matched by the default rule, with nothing lost or missing. The
-    /// caller: `SelectionInputs::from_items` (tests with no session).
+    /// caller: `SelectionInputs::from_items` (tests with no session). The
+    /// items are in the emission frame already, so the frame is the setup
+    /// frame.
     pub(crate) fn from_items(items: impl IntoIterator<Item = Item>) -> Self {
         let items = items
             .into_iter()
@@ -207,9 +241,50 @@ impl ResolvedSelection {
             missing_sources: Vec::new(),
             unmatched_layers: Vec::new(),
             faces_not_ready: Vec::new(),
+            frame: PhantomData,
         }
     }
 
+    /// The highest plane Z of the UP faces in the selection, or `None`
+    /// when the selection holds no up face (DESIGN 7.2). The session reads
+    /// it as the auto top of an op with picked faces.
+    ///
+    /// Only the setup frame has it: the plane Z and the normal are then in
+    /// the SETUP frame, so a face pick on a flipped setup gives the top of
+    /// the face as that setup sees it (F013).
+    ///
+    /// A down face gives no top (geometry selection P3.4): its material is
+    /// above its plane, so its plane is not the top of the material.
+    pub fn face_top_z(&self) -> Option<f64> {
+        self.up_face_planes().reduce(f64::max)
+    }
+
+    /// The lowest plane Z of the UP faces in the selection, or `None` when
+    /// the selection holds no up face (geometry selection P3.5). Under the
+    /// floor "each picked face" it is the deepest region plane, so the
+    /// session reads it as the Bottom Z of the op. Only the setup frame has
+    /// it, as [`Self::face_top_z`].
+    pub fn face_bottom_z(&self) -> Option<f64> {
+        self.up_face_planes().reduce(f64::min)
+    }
+
+    /// The finite plane Z of each UP face, in item order.
+    fn up_face_planes(&self) -> impl Iterator<Item = f64> + '_ {
+        self.items
+            .iter()
+            .filter_map(|r| match r.item.shape() {
+                Shape::Face(face) if Facing::Up.admits(face.normal.z) => Some(face.plane_z),
+                Shape::Face(_)
+                | Shape::Loop(_)
+                | Shape::Path(_)
+                | Shape::Point(_)
+                | Shape::Circle { .. } => None,
+            })
+            .filter(|z| z.is_finite())
+    }
+}
+
+impl<F: SelectionFrame> ResolvedSelection<F> {
     pub fn items(&self) -> &[ResolvedItem] {
         &self.items
     }
@@ -239,44 +314,22 @@ impl ResolvedSelection {
         &self.faces_not_ready
     }
 
-    /// The highest plane Z of the UP faces in the selection, or `None`
-    /// when the selection holds no up face (DESIGN 7.2). The session reads
-    /// it as the auto top of an op with picked faces.
-    ///
-    /// Call it after [`Self::to_setup_frame`]: the plane Z and the normal
-    /// are then in the SETUP frame, so a face pick on a flipped setup gives
-    /// the top of the face as that setup sees it.
-    ///
-    /// A down face gives no top (geometry selection P3.4): its material is
-    /// above its plane, so its plane is not the top of the material.
-    pub fn face_top_z(&self) -> Option<f64> {
-        self.up_face_planes().reduce(f64::max)
+    /// The same report with the frame label `G`. Only the frame door
+    /// changes the label.
+    fn relabel<G: SelectionFrame>(self) -> ResolvedSelection<G> {
+        ResolvedSelection {
+            items: self.items,
+            lost: self.lost,
+            excluded: self.excluded,
+            missing_sources: self.missing_sources,
+            unmatched_layers: self.unmatched_layers,
+            faces_not_ready: self.faces_not_ready,
+            frame: PhantomData,
+        }
     }
+}
 
-    /// The lowest plane Z of the UP faces in the selection, or `None` when
-    /// the selection holds no up face (geometry selection P3.5). Under the
-    /// floor "each picked face" it is the deepest region plane, so the
-    /// session reads it as the Bottom Z of the op. Call it after
-    /// [`Self::to_setup_frame`], as [`Self::face_top_z`].
-    pub fn face_bottom_z(&self) -> Option<f64> {
-        self.up_face_planes().reduce(f64::min)
-    }
-
-    /// The finite plane Z of each UP face, in item order.
-    fn up_face_planes(&self) -> impl Iterator<Item = f64> + '_ {
-        self.items
-            .iter()
-            .filter_map(|r| match r.item.shape() {
-                Shape::Face(face) if Facing::Up.admits(face.normal.z) => Some(face.plane_z),
-                Shape::Face(_)
-                | Shape::Loop(_)
-                | Shape::Path(_)
-                | Shape::Point(_)
-                | Shape::Circle { .. } => None,
-            })
-            .filter(|z| z.is_finite())
-    }
-
+impl ResolvedSelection<ModelFrame> {
     /// THE frame door: the items of a model move into the work plane of
     /// the setup. Rings, points and circle centres take
     /// [`SetupTransformInfo::apply_to_drawing_polygons`] and
@@ -284,13 +337,18 @@ impl ResolvedSelection {
     /// every boundary selection takes this door, P2.5); the plane Z and the
     /// normal of a face take [`face_in_setup_frame`].
     ///
-    /// An identity setup (`needs_transform` false) changes nothing: the
-    /// world IS the emission frame. A stock item does not move: the stock
-    /// source is in the emission frame already.
-    pub fn to_setup_frame(self, info: &SetupTransformInfo) -> Result<Self, ItemError> {
-        if !info.needs_transform() {
-            return Ok(self);
-        }
+    /// `None` (an identity setup) or an identity transform
+    /// (`needs_transform` false) changes no item: the world IS the emission
+    /// frame. The call is still the one conversion to the setup frame. A
+    /// stock item does not move: the stock source is in the emission frame
+    /// already.
+    pub fn to_setup_frame(
+        self,
+        info: Option<&SetupTransformInfo>,
+    ) -> Result<ResolvedSelection<SetupFrame>, ItemError> {
+        let Some(info) = info.filter(|i| i.needs_transform()) else {
+            return Ok(self.relabel());
+        };
         let items = self
             .items
             .into_iter()
@@ -307,7 +365,7 @@ impl ResolvedSelection {
                 })
             })
             .collect::<Result<Vec<_>, ItemError>>()?;
-        Ok(Self { items, ..self })
+        Ok(ResolvedSelection { items, ..self }.relabel())
     }
 }
 
@@ -368,8 +426,11 @@ pub fn face_in_setup_frame(face: &FaceItem, info: Option<&SetupTransformInfo>) -
         .map_or(P3::new(0.0, 0.0, face.plane_z), |p| {
             P3::new(p.x, p.y, face.plane_z)
         });
-    let base = info.world_to_local(anchor);
-    let tip = info.world_to_local(anchor + face.normal);
+    // The model frame is the world frame.
+    let base = info.world_to_local(Pt::new(anchor)).into_inner();
+    let tip = info
+        .world_to_local(Pt::new(anchor + face.normal))
+        .into_inner();
     let normal = (tip - base).normalize();
     (base.z, normal)
 }
@@ -462,7 +523,7 @@ fn slot_pos<'a>(
 ///   it is lost (P4.7).
 /// - A rule layer that names no item of its source goes into
 ///   `unmatched_layers`.
-pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection {
+pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection<ModelFrame> {
     let names_stock = sel
         .rules()
         .iter()
@@ -613,5 +674,6 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection {
         missing_sources,
         unmatched_layers,
         faces_not_ready,
+        frame: PhantomData,
     }
 }

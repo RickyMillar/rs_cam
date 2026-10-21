@@ -44,16 +44,8 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
-const SMALL: AlignmentPin = AlignmentPin {
-    x: 10.0,
-    y: 50.0,
-    diameter: 6.0,
-};
-const LARGE: AlignmentPin = AlignmentPin {
-    x: 90.0,
-    y: 50.0,
-    diameter: 8.0,
-};
+const SMALL: AlignmentPin = AlignmentPin::new(10.0, 50.0, 6.0);
+const LARGE: AlignmentPin = AlignmentPin::new(90.0, 50.0, 8.0);
 
 fn drill(id: usize, diameter: f64) -> ToolConfig {
     let mut t = ToolConfig::new_default(ToolId(id), ToolType::VBit);
@@ -137,7 +129,10 @@ fn drilled_xy(session: &mut ProjectSession, index: usize) -> Vec<(i64, i64)> {
 }
 
 fn um(p: &AlignmentPin) -> (i64, i64) {
-    ((p.x * 1000.0).round() as i64, (p.y * 1000.0).round() as i64)
+    (
+        (p.at.x() * 1000.0).round() as i64,
+        (p.at.y() * 1000.0).round() as i64,
+    )
 }
 
 #[test]
@@ -235,8 +230,8 @@ fn drilled_twice_is_judged_per_size() {
         name: "Dowel drawing".to_owned(),
         kind: HoleOpKind::Drill,
         holes: vec![DrilledHole {
-            x: LARGE.x,
-            y: LARGE.y,
+            x: LARGE.at.x(),
+            y: LARGE.at.y(),
             diameter: Some(LARGE.diameter),
         }],
     };

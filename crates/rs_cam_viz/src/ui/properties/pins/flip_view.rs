@@ -182,7 +182,7 @@ pub fn show(
     // The dowels in the board stay where the holes were drilled.
     for pin in pins {
         painter.circle_stroke(
-            frame.to_screen(pin.x, pin.y),
+            frame.to_screen(pin.at.x(), pin.at.y()),
             scale_r(pin.diameter) + 1.5,
             egui::Stroke::new(1.0, tokens::TEXT_MUTED),
         );
@@ -229,7 +229,7 @@ pub fn show(
     // The holes in the part move with it.
     for (i, pin) in pins.iter().enumerate() {
         painter.circle_filled(
-            place(pin.x, pin.y),
+            place(pin.at.x(), pin.at.y()),
             scale_r(pin.diameter),
             pin_status_colour(report.pin_status(i)),
         );

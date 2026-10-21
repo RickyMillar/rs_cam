@@ -14,7 +14,7 @@
 use crate::compute::catalog::{OperationConfig, RestUse};
 use crate::compute::tool_config::ToolConfig;
 use crate::geo::BoundingBox3;
-use crate::selection::{Holes, KEY_MATCH_EPS_MM, ResolvedSelection};
+use crate::selection::{Holes, KEY_MATCH_EPS_MM, ResolvedSelection, SetupFrame};
 use crate::tool::{MillingCutter, ToolDefinition};
 
 use super::shared::generated_with_drill_spans;
@@ -51,7 +51,7 @@ use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
 #[allow(clippy::too_many_arguments)] // SAFETY: each argument is one generator input this view must mirror
 pub fn build_drill_op_for_config(
     op: &OperationConfig,
-    selection: &ResolvedSelection,
+    selection: &ResolvedSelection<SetupFrame>,
     alignment_pins: &[crate::compute::alignment_pins::AlignmentPin],
     tool_def: &ToolDefinition,
     tool_cfg: &ToolConfig,

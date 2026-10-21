@@ -378,7 +378,9 @@ pub fn place_keyed_pins(req: &PinPlacementRequest) -> Result<[AlignmentPin; 3], 
                 continue;
             };
             let [axis, low, high] = &pins;
-            let side = |u: &AlignmentPin, v: &AlignmentPin| (u.x - v.x).hypot(u.y - v.y);
+            let side = |u: &AlignmentPin, v: &AlignmentPin| {
+                (u.at.x() - v.at.x()).hypot(u.at.y() - v.at.y())
+            };
             let to_pair = side(axis, low).min(side(axis, high));
             if to_pair < d + wall - PIN_GEOM_EPS_MM {
                 continue;
