@@ -235,10 +235,17 @@ pub fn palette_depth_shade(base: [f32; 3], t: f32, pass_index: Option<u32>) -> [
     ]
 }
 
+/// The fraction of the palette colour that a rapid shows.
+pub const PALETTE_RAPID_FACTOR: f32 = 0.35;
+
 /// A rapid of a palette toolpath: the palette colour at 35 %.
 #[must_use]
 pub fn palette_rapid(base: [f32; 3]) -> [f32; 3] {
-    [base[0] * 0.35, base[1] * 0.35, base[2] * 0.35]
+    [
+        base[0] * PALETTE_RAPID_FACTOR,
+        base[1] * PALETTE_RAPID_FACTOR,
+        base[2] * PALETTE_RAPID_FACTOR,
+    ]
 }
 
 /// A dressup move of a palette toolpath: halfway to mid grey.

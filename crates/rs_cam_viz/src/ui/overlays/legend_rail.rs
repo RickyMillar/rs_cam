@@ -1249,39 +1249,31 @@ fn scale_caveats(state: &AppState, legend: Legend, caveats: &mut Caveats) {
 
 // ── the categorical legends ────────────────────────────────────────────────
 
-/// Mirrors of colours that `render/toolpath_render.rs` and
-/// `app/gpu_upload.rs` keep as literals inside their builders, with no
-/// public colour source. The legend needs a swatch, and those files are
-/// outside the dock's scope. The sentry
-/// `the_dock_states_read_live_state_g_vpstate` asserts that each render file
-/// still holds the literal these mirror, so a change on either side fails a
-/// test. The correct fix is to lift each literal into `render/colors.rs`.
+/// The legend swatches of the move colours. Each one reads its source in
+/// `render/colors.rs`, so the swatch and the drawn line cannot drift (W14b).
+/// Only the collision density ramp is still a copy of a literal in
+/// `app/gpu_upload/`; the sentry `the_dock_states_read_live_state_g_vpstate`
+/// pins it.
 pub mod mirrored {
+    use crate::render::colors;
+
     /// The entry-span colour of Palette move colour.
-    pub const SPAN_ENTRY_RGB: [f32; 3] = [0.20, 0.95, 0.95];
+    pub const SPAN_ENTRY_RGB: [f32; 3] = colors::SPAN_ENTRY.array();
     /// The lead-out-span colour of Palette move colour.
-    pub const SPAN_LEAD_OUT_RGB: [f32; 3] = [0.95, 0.30, 0.85];
+    pub const SPAN_LEAD_OUT_RGB: [f32; 3] = colors::SPAN_LEAD_OUT.array();
     /// The link-bridge-span colour of Palette move colour.
-    pub const SPAN_LINK_BRIDGE_RGB: [f32; 3] = [0.45, 0.45, 0.55];
+    pub const SPAN_LINK_BRIDGE_RGB: [f32; 3] = colors::SPAN_LINK_BRIDGE.array();
     /// A rapid is the toolpath colour times this factor.
-    pub const RAPID_FACTOR: f32 = 0.35;
+    pub const RAPID_FACTOR: f32 = colors::PALETTE_RAPID_FACTOR;
 
     /// A dressup span is the toolpath colour halfway to mid grey.
     pub fn dressup_rgb(base: [f32; 3]) -> [f32; 3] {
-        [
-            0.5 * (base[0] + 0.5),
-            0.5 * (base[1] + 0.5),
-            0.5 * (base[2] + 0.5),
-        ]
+        colors::palette_dressup(base)
     }
 
     /// A rapid in Palette move colour.
     pub fn rapid_rgb(base: [f32; 3]) -> [f32; 3] {
-        [
-            base[0] * RAPID_FACTOR,
-            base[1] * RAPID_FACTOR,
-            base[2] * RAPID_FACTOR,
-        ]
+        colors::palette_rapid(base)
     }
 
     /// The collision marker colour at local density `t` in `0..=1`:

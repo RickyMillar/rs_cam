@@ -722,30 +722,24 @@ fn the_rest_legend_top_is_the_mesh_top_g_vpstate() {
     }
 }
 
-/// The mirrored colours are the render literals.
+/// The mirrored colours read `render/colors.rs`, and the collision ramp
+/// is the literal of the upload pass.
 #[test]
 fn the_mirrored_colours_match_the_render_literals_g_vpstate() {
-    let render = source("src/render/toolpath_render.rs");
-    for colour in [
-        mirrored::SPAN_ENTRY_RGB,
-        mirrored::SPAN_LEAD_OUT_RGB,
-        mirrored::SPAN_LINK_BRIDGE_RGB,
+    let legend = source("src/ui/overlays/legend_rail.rs");
+    for needle in [
+        "colors::SPAN_ENTRY.array()",
+        "colors::SPAN_LEAD_OUT.array()",
+        "colors::SPAN_LINK_BRIDGE.array()",
+        "colors::PALETTE_RAPID_FACTOR",
+        "colors::palette_dressup(base)",
+        "colors::palette_rapid(base)",
     ] {
-        let literal = format!(
-            "brighten([{:.2}, {:.2}, {:.2}])",
-            colour[0], colour[1], colour[2]
-        );
         assert!(
-            render.contains(&literal),
-            "toolpath_render.rs no longer holds {literal}; update legend_rail::mirrored"
+            legend.contains(needle),
+            "legend_rail::mirrored no longer reads {needle} from render/colors.rs"
         );
     }
-    let rapid = format!("base[0] * {:.2}", mirrored::RAPID_FACTOR);
-    assert!(render.contains(&rapid), "the rapid factor moved: {rapid}");
-    assert!(
-        render.contains("0.5 * (base[0] + 0.5)"),
-        "the dressup tint moved"
-    );
 
     let upload = upload_source();
     assert!(
