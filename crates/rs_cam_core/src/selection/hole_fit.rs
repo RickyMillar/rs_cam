@@ -4,6 +4,9 @@
 //! A circle states the size of its hole (S11). A Drill makes a hole of the
 //! tool size only, so a circle of another size is not a hole the Drill can
 //! make. [`hole_fit`](fn@hole_fit) is the one rule that compares the two diameters.
+//! The op states how far apart two diameters can be and still be one size
+//! ([`DrillSize::tolerance`], the Drill parameter `size_tolerance`, operator
+//! ruling 2026-10-22).
 //! [`fit_holes`] applies it to the holes of an op after [`view`]: the fit
 //! needs the tool, and `view` does not have it.
 //!
@@ -43,20 +46,51 @@ pub enum HoleFitRule {
     ToolSize,
 }
 
+/// The size a tool drills: its diameter `D` and the tolerance `t` of the
+/// op. A circle whose diameter is within `t` of `D` (either side) is a hole
+/// of the tool size. The default `t` is [`CAD_ROUNDING_MM`]: the CAD
+/// rounding only (P6.5).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DrillSize {
+    /// The tool diameter `D` (mm).
+    pub diameter: f64,
+    /// The size tolerance `t` (mm), at least [`CAD_ROUNDING_MM`].
+    pub tolerance: f64,
+}
+
+impl DrillSize {
+    /// The tool size of a tool of `diameter` with the default tolerance
+    /// ([`CAD_ROUNDING_MM`]).
+    pub fn strict(diameter: f64) -> Self {
+        Self {
+            diameter,
+            tolerance: CAD_ROUNDING_MM,
+        }
+    }
+
+    /// True when the tolerance is larger than the default. The texts then
+    /// name it. The op domain holds `t >= CAD_ROUNDING_MM`.
+    pub fn has_wide_tolerance(&self) -> bool {
+        self.tolerance > CAD_ROUNDING_MM
+    }
+}
+
 /// How one hole compares with the tool (design 4.2). `d` is the circle
-/// diameter, `D` the tool diameter and `e` [`CAD_ROUNDING_MM`].
+/// diameter, `D` the tool diameter and `t` the tolerance of the
+/// [`DrillSize`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HoleFit {
     /// A point: it states no size.
     NoSize,
-    /// `|d - D| <= e`: the tool makes this hole.
+    /// `|d - D| <= t` and `d <= 2 D`: the tool makes this hole.
     ToolSize,
-    /// `D + e < d <= 2 D`: one helix of the tool round the centre makes the
+    /// `D + t < d <= 2 D`: one helix of the tool round the centre makes the
     /// hole.
     Larger,
-    /// `d > 2 D`: one helix of the tool round the centre leaves a core.
+    /// `d > 2 D`: one helix of the tool round the centre leaves a core. No
+    /// tolerance makes such a circle a fit.
     LeavesCore,
-    /// `d < D - e`: the tool is larger than the hole.
+    /// `d < D - t`: the tool is larger than the hole.
     Smaller,
 }
 
@@ -72,27 +106,34 @@ impl HoleFit {
 }
 
 /// THE hole fit: how a hole of `diameter` (`None` for a point) compares with
-/// a tool of `tool_diameter` (design 4.2). Two diameters closer than
-/// [`CAD_ROUNDING_MM`] are one size. The `2 D` bound is geometry: one
-/// helix of radius `r` sweeps the ring `r - D/2 .. r + D/2`, and it reaches
-/// the centre only when `r <= D/2`, so when `d <= 2 D`.
-pub fn hole_fit(diameter: Option<f64>, tool_diameter: f64) -> HoleFit {
+/// a tool of `size` (design 4.2). Two diameters closer than
+/// `size.tolerance` are one size. The `2 D` bound is geometry: one helix of
+/// radius `r` sweeps the ring `r - D/2 .. r + D/2`, and it reaches the
+/// centre only when `r <= D/2`, so when `d <= 2 D`.
+///
+/// The `2 D` test comes first. Thus the tolerance has an upper bound that
+/// the tool gives: no tolerance turns a circle that leaves a core into a
+/// fit. On the small side a tolerance of `D` or more admits every circle
+/// smaller than the tool; the op domain does not refuse it, because the
+/// domain does not know the tool.
+pub fn hole_fit(diameter: Option<f64>, size: &DrillSize) -> HoleFit {
     let Some(d) = diameter else {
         return HoleFit::NoSize;
     };
-    if (d - tool_diameter).abs() <= CAD_ROUNDING_MM {
-        HoleFit::ToolSize
-    } else if d < tool_diameter {
-        HoleFit::Smaller
-    } else if d > 2.0 * tool_diameter {
+    let tool = size.diameter;
+    if d > 2.0 * tool {
         HoleFit::LeavesCore
+    } else if (d - tool).abs() <= size.tolerance {
+        HoleFit::ToolSize
+    } else if d < tool {
+        HoleFit::Smaller
     } else {
         HoleFit::Larger
     }
 }
 
 /// The fit step: apply [`hole_fit`](fn@hole_fit) to the holes of `items` (the view of
-/// `resolved` for `item_use`) with a tool of `tool_diameter`. It returns the
+/// `resolved` for `item_use`) with a tool of `size`. It returns the
 /// notes for the circles it left out. Every other view, and the rule
 /// [`HoleFitRule::None`], does not change.
 ///
@@ -103,7 +144,7 @@ pub fn fit_holes(
     resolved: &ResolvedSelection,
     items: &mut OpItems,
     item_use: ItemUse,
-    tool_diameter: f64,
+    size: DrillSize,
 ) -> Result<Vec<SelectionNote>, SelectionRefusal> {
     let ItemUse::Holes { may_be_empty, fit } = item_use else {
         return Ok(Vec::new());
@@ -118,7 +159,7 @@ pub fn fit_holes(
     let mut skipped = Vec::new();
     let mut notes = Vec::new();
     for (index, hole) in holes.as_slice().iter().enumerate() {
-        let fit = hole_fit(hole.diameter, tool_diameter);
+        let fit = hole_fit(hole.diameter, &size);
         if fit.is_tool_size() {
             continue;
         }
@@ -129,7 +170,7 @@ pub fn fit_holes(
         if r.by().is_explicit() {
             return Err(SelectionRefusal::new(
                 Some(first),
-                RefusalCause::HoleDoesNotFit { fit, tool_diameter },
+                RefusalCause::HoleDoesNotFit { fit, size },
             ));
         }
         skipped.push(index);
@@ -139,7 +180,7 @@ pub fn fit_holes(
             count: 1,
             first,
             item_use,
-            cause: NoteCause::HoleFit { fit, tool_diameter },
+            cause: NoteCause::HoleFit { fit, size },
         });
     }
     items.skip_holes(&skipped);
@@ -164,16 +205,39 @@ mod tests {
     fn each_band_has_its_fit_p6_5() {
         let tool = 6.35;
         let e = CAD_ROUNDING_MM;
-        assert_eq!(hole_fit(None, tool), HoleFit::NoSize);
-        assert_eq!(hole_fit(Some(tool), tool), HoleFit::ToolSize);
-        assert_eq!(hole_fit(Some(tool + 0.999 * e), tool), HoleFit::ToolSize);
-        assert_eq!(hole_fit(Some(tool - 0.999 * e), tool), HoleFit::ToolSize);
-        assert_eq!(hole_fit(Some(tool + 1.001 * e), tool), HoleFit::Larger);
-        assert_eq!(hole_fit(Some(tool - 1.001 * e), tool), HoleFit::Smaller);
+        let s = DrillSize::strict(tool);
+        assert_eq!(hole_fit(None, &s), HoleFit::NoSize);
+        assert_eq!(hole_fit(Some(tool), &s), HoleFit::ToolSize);
+        assert_eq!(hole_fit(Some(tool + 0.999 * e), &s), HoleFit::ToolSize);
+        assert_eq!(hole_fit(Some(tool - 0.999 * e), &s), HoleFit::ToolSize);
+        assert_eq!(hole_fit(Some(tool + 1.001 * e), &s), HoleFit::Larger);
+        assert_eq!(hole_fit(Some(tool - 1.001 * e), &s), HoleFit::Smaller);
         // 1/4 in and 6 mm are two sizes, both ways.
-        assert_eq!(hole_fit(Some(6.0), 6.35), HoleFit::Smaller);
-        assert_eq!(hole_fit(Some(6.35), 6.0), HoleFit::Larger);
-        assert_eq!(hole_fit(Some(2.0 * tool), tool), HoleFit::Larger);
-        assert_eq!(hole_fit(Some(2.0 * tool + 0.1), tool), HoleFit::LeavesCore);
+        assert_eq!(hole_fit(Some(6.0), &s), HoleFit::Smaller);
+        assert_eq!(
+            hole_fit(Some(6.35), &DrillSize::strict(6.0)),
+            HoleFit::Larger
+        );
+        assert_eq!(hole_fit(Some(2.0 * tool), &s), HoleFit::Larger);
+        assert_eq!(hole_fit(Some(2.0 * tool + 0.1), &s), HoleFit::LeavesCore);
+    }
+
+    /// A wide tolerance widens the tool size on both sides, and it never
+    /// makes a circle that leaves a core a fit (the `2 D` test is first).
+    #[test]
+    fn a_wide_tolerance_stops_at_the_core_bound() {
+        let wide = DrillSize {
+            diameter: 6.0,
+            tolerance: 0.2,
+        };
+        assert_eq!(hole_fit(Some(5.859), &wide), HoleFit::ToolSize);
+        assert_eq!(hole_fit(Some(6.25), &wide), HoleFit::Larger);
+        assert_eq!(hole_fit(Some(5.75), &wide), HoleFit::Smaller);
+        let huge = DrillSize {
+            diameter: 6.0,
+            tolerance: 100.0,
+        };
+        assert_eq!(hole_fit(Some(12.0), &huge), HoleFit::ToolSize);
+        assert_eq!(hole_fit(Some(12.1), &huge), HoleFit::LeavesCore);
     }
 }

@@ -6,6 +6,8 @@ use super::floor::Floor;
 use super::tool_config::ToolId;
 use crate::finish::finish_planner::FinishPlannerParams;
 use crate::selection::Selection;
+use crate::selection::hole_fit::DrillSize;
+use crate::selection::key::CAD_ROUNDING_MM;
 
 // Re-export operation parameter enums from core (single source of truth).
 pub use crate::finish::ramp_finish::CutDirection;
@@ -347,6 +349,24 @@ pub struct DrillConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
+    /// The size tolerance (mm, operator ruling 2026-10-22): the Drill
+    /// drills a circle whose diameter is within this value of the tool
+    /// diameter, on either side (`selection::hole_fit`). The default is
+    /// `CAD_ROUNDING_MM`, the P6.5 rule. A file with no key loads the
+    /// default.
+    ///
+    /// The domain is `>= CAD_ROUNDING_MM`: a smaller value refuses the
+    /// CAD rounding itself, so one size drawn twice would be two sizes.
+    /// The upper bound comes from the tool, so the domain does not state
+    /// it: `hole_fit` tests the `2 D` bound first, and no tolerance makes
+    /// a circle that leaves a core a fit.
+    #[serde(default = "default_size_tolerance")]
+    #[param(
+        help = "A circle whose diameter is within this value of the tool diameter is drilled. \
+                A circle outside it is left out (or refused when picked).",
+        min = CAD_ROUNDING_MM,
+    )]
+    pub size_tolerance: f64,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
     /// file with no `selection` key loads the default of this op:
     /// every drawing item of the toolpath model that the op can cut. The
@@ -371,7 +391,28 @@ impl Default for DrillConfig {
             feed_rate: 300.0,
             retract_z: 2.0,
             spindle_rpm: None,
+            size_tolerance: default_size_tolerance(),
             selection: Selection::drawing(),
+        }
+    }
+}
+
+/// The default size tolerance of a Drill: the CAD rounding (P6.5).
+fn default_size_tolerance() -> f64 {
+    CAD_ROUNDING_MM
+}
+
+impl super::catalog::OperationConfig {
+    /// The size a tool of `tool_diameter` drills in this op (the hole fit,
+    /// P6.5): a Drill reads its `size_tolerance`; every other op has the
+    /// default tolerance. An op with no fit rule does not read it.
+    pub fn drill_size(&self, tool_diameter: f64) -> DrillSize {
+        match self {
+            super::catalog::OperationConfig::Drill(cfg) => DrillSize {
+                diameter: tool_diameter,
+                tolerance: cfg.size_tolerance,
+            },
+            _ => DrillSize::strict(tool_diameter),
         }
     }
 }

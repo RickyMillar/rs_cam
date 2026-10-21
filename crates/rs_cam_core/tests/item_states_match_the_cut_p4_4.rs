@@ -171,13 +171,15 @@ fn rings_in(s: &ProjectSession, r: &SelectionReport, state: ItemState) -> BTreeS
 
 /// The resolved selection that generation hands to the prologue, through
 /// the prologue's two calls: the view, then the hole fit step with the tool
-/// diameter (P6.5; it changes a `Holes` view only).
+/// diameter and the size tolerance of the op (P6.5; it changes a `Holes`
+/// view only).
 fn generation_items(s: &ProjectSession, item_use: ItemUse) -> rs_cam_core::selection::OpItems {
     let cancel = AtomicBool::new(false);
     let inputs = s.resolve_generation_inputs(0, &cancel).unwrap();
     let mut items = view(inputs.selection(), item_use).unwrap().0;
     let tool_diameter = s.tools()[0].diameter;
-    let _ = fit_holes(inputs.selection(), &mut items, item_use, tool_diameter).unwrap();
+    let size = s.toolpath_configs()[0].operation.drill_size(tool_diameter);
+    let _ = fit_holes(inputs.selection(), &mut items, item_use, size).unwrap();
     items
 }
 
@@ -446,7 +448,7 @@ fn a_drill_skips_a_circle_that_is_not_the_tool_size_p6_5() {
         fits[0].cause,
         NoteCause::HoleFit {
             fit: HoleFit::Larger,
-            tool_diameter: TOOL_DIAMETER,
+            size: rs_cam_core::selection::hole_fit::DrillSize::strict(TOOL_DIAMETER),
         }
     );
     assert_eq!(fits[0].first.key.kind, ItemKind::Circle);

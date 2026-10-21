@@ -59,6 +59,7 @@ use crate::compute::transform::{FaceUp, ZRotation};
 use crate::geo::{BoundingBox3, P2, P3};
 use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::{ModelId, ToolpathId};
+use crate::selection::hole_fit::DrillSize;
 use crate::selection::{
     FLAT_REGION_Z_BAND_MM, FacesByFacing, Hole, HoleFit, HoleFitRule, ItemError, ItemKind, ItemRef,
     ItemRole, ItemSet, MatchKey, MeshFaces, RefusalCause, ResolveScope, ResolvedSelection,
@@ -593,17 +594,18 @@ impl ProjectSession {
             SelectionTarget::Op => self.hole_items(tc, &selected),
             SelectionTarget::Boundary => Vec::new(),
         };
-        // P6.5: the tool diameter of the hole fit step, as the prologue
-        // reads it. `None` for an op with no fit rule and for a toolpath
-        // with no valid tool (generation refuses that tool itself).
-        let fit_diameter = match target {
-            SelectionTarget::Op => self.hole_fit_diameter(tc),
+        // P6.5: the tool diameter and the size tolerance of the hole fit
+        // step, as the prologue reads them. `None` for an op with no fit
+        // rule and for a toolpath with no valid tool (generation refuses
+        // that tool itself).
+        let fit_size = match target {
+            SelectionTarget::Op => self.hole_fit_size(tc),
             SelectionTarget::Boundary => None,
         };
-        let hole_fits = fit_diameter.map_or_else(Vec::new, |d| {
+        let hole_fits = fit_size.map_or_else(Vec::new, |size| {
             hole_items
                 .iter()
-                .map(|h| (h.key.clone(), hole_fit(h.diameter, d)))
+                .map(|h| (h.key.clone(), hole_fit(h.diameter, &size)))
                 .collect()
         });
         let mut report = SelectionReport {
@@ -727,10 +729,10 @@ impl ProjectSession {
             (viewed, _, _) => viewed,
         };
         // P6.5: THE hole fit step of the prologue, with the same tool
-        // diameter, so a skipped circle is `Skipped` here and not cut there.
-        let viewed = match (viewed, fit_diameter) {
-            (Ok((mut items, mut notes)), Some(d)) => {
-                fit_holes(&frames.setup, &mut items, item_use, d).map(|fit_notes| {
+        // diameter and size tolerance, so a skipped circle is `Skipped` here and not cut there.
+        let viewed = match (viewed, fit_size) {
+            (Ok((mut items, mut notes)), Some(size)) => {
+                fit_holes(&frames.setup, &mut items, item_use, size).map(|fit_notes| {
                     notes.extend(fit_notes);
                     (items, notes)
                 })
@@ -753,8 +755,8 @@ impl ProjectSession {
                 {
                     // The frame door keeps each diameter, so the fit of the
                     // model half is the fit of the setup half.
-                    if let Some(d) = fit_diameter {
-                        let _ = fit_holes(&frames.model, &mut model_items, item_use, d);
+                    if let Some(size) = fit_size {
+                        let _ = fit_holes(&frames.model, &mut model_items, item_use, size);
                     }
                     report.holes = model_items
                         .holes()
@@ -770,11 +772,12 @@ impl ProjectSession {
         Ok(report)
     }
 
-    /// P6.5: the tool diameter that the hole fit step of `tc` reads, as the
-    /// prologue reads it (`ToolDefinition::diameter` of the built cutter).
-    /// `None` when the op has no fit rule (`HoleFitRule::None`, every op
+    /// P6.5: the tool diameter and the size tolerance that the hole fit
+    /// step of `tc` reads, as the prologue reads them
+    /// (`ToolDefinition::diameter` of the built cutter,
+    /// `OperationConfig::drill_size`). `None` when the op has no fit rule (`HoleFitRule::None`, every op
     /// that reads no hole), or when the toolpath has no valid tool.
-    fn hole_fit_diameter(&self, tc: &ToolpathConfig) -> Option<f64> {
+    fn hole_fit_size(&self, tc: &ToolpathConfig) -> Option<DrillSize> {
         match tc.operation.capabilities().item_use {
             ItemUse::Holes {
                 fit: HoleFitRule::ToolSize,
@@ -791,7 +794,10 @@ impl ProjectSession {
         let tool = self.find_tool_by_raw_id(tc.tool_id)?;
         crate::compute::cutter::build_cutter(tool)
             .ok()
-            .map(|cutter| crate::tool::MillingCutter::diameter(&cutter))
+            .map(|cutter| {
+                tc.operation
+                    .drill_size(crate::tool::MillingCutter::diameter(&cutter))
+            })
     }
 
     /// Every point and circle of the toolpath model of a drill op, in the
@@ -1323,9 +1329,11 @@ struct StatusKey {
     /// floor, so a heights edit does not rebuild the report.
     each_face: Vec<u8>,
     /// P6.5: the bits of the tool diameter that the hole fit step reads
-    /// (`ProjectSession::hole_fit_diameter`). `None` for every op with no
+    /// (`ProjectSession::hole_fit_size`), and the bits of the size
+    /// tolerance of the op (operator ruling 2026-10-22), so a tolerance
+    /// edit builds the report again. `None` for every op with no
     /// fit rule, so a tool edit does not rebuild their reports.
-    tool_diameter: Option<u64>,
+    drill_size: Option<[u64; 2]>,
 }
 
 impl StatusKey {
@@ -1378,8 +1386,10 @@ impl StatusKey {
                 }
                 _ => Vec::new(),
             },
-            tool_diameter: match target {
-                SelectionTarget::Op => session.hole_fit_diameter(tc).map(f64::to_bits),
+            drill_size: match target {
+                SelectionTarget::Op => session
+                    .hole_fit_size(tc)
+                    .map(|size| [size.diameter.to_bits(), size.tolerance.to_bits()]),
                 SelectionTarget::Boundary => None,
             },
         })
@@ -1399,7 +1409,7 @@ impl StatusKey {
             && self.world_stock == now.world_stock
             && self.emission_stock == now.emission_stock
             && self.each_face == now.each_face
-            && self.tool_diameter == now.tool_diameter
+            && self.drill_size == now.drill_size
             && self.models.len() == now.models.len()
             && self
                 .models

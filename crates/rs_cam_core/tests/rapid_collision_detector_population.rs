@@ -27,7 +27,10 @@
 //! * control — all five heights `Auto` (the shipped resolution);
 //! * forced — `retract_z = Manual(-3.0)`, which parks every link/retract
 //!   rapid 3 mm BELOW the stock top (stock top is world Z = 0 here, the
-//!   `origin_z = -12` frame the 2D fixtures use).
+//!   `origin_z = -12` frame the 2D fixtures use), and `top_z =
+//!   Manual(-4.0)`. F033 refuses a Retract Z below the Top Z, so the
+//!   forced arm pins its Top Z below the retract plane. The order is legal,
+//!   and the rapids still travel through the material above the pinned top.
 //!
 //! The control must read exactly `0` and the forced arm must read a
 //! substantial positive count. Both assertions carry weight: without the
@@ -91,6 +94,23 @@ const STOCK_TOP_Z: f64 = 0.0;
 /// How far below the stock top the forced arm parks its retract plane.
 const FORCED_RETRACT_BELOW_TOP_MM: f64 = 3.0;
 
+/// How far below the stock top the forced arm pins its Top Z (F033). A
+/// Retract Z below the Top Z refuses generation (`RetractBelowTop`), so
+/// the forced arm pins the Top Z 1 mm below its retract plane. The order
+/// is legal, and the retract plane is still 3 mm inside the material: the
+/// pocket cuts from the pinned top down and leaves the layer above it.
+const FORCED_TOP_BELOW_TOP_MM: f64 = 4.0;
+
+/// The heights of the forced arm: Retract Z 3 mm and Top Z 4 mm below the
+/// stock top; every other height `Auto`.
+fn forced_heights() -> HeightsConfig {
+    HeightsConfig {
+        retract_z: HeightMode::Manual(STOCK_TOP_Z - FORCED_RETRACT_BELOW_TOP_MM),
+        top_z: HeightMode::Manual(STOCK_TOP_Z - FORCED_TOP_BELOW_TOP_MM),
+        ..HeightsConfig::default()
+    }
+}
+
 /// The `demo_pocket.svg` shape: a 70×50 rectangle with a Ø20 island.
 fn rect_with_island() -> Polygon2 {
     let exterior = vec![
@@ -109,10 +129,10 @@ fn rect_with_island() -> Polygon2 {
     Polygon2::with_holes(exterior, vec![hole])
 }
 
-/// The pair's shared session. `retract_z` is the ONLY thing either arm
+/// The pair's shared session. The heights are the ONLY thing either arm
 /// changes — same stock, same tool, same geometry, same operation params,
 /// same dressups, same simulation options.
-fn build_session(retract_z: HeightMode) -> ProjectSession {
+fn build_session(heights: HeightsConfig) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
 
     builder = builder.stock(StockConfig {
@@ -172,10 +192,7 @@ fn build_session(retract_z: HeightMode) -> ProjectSession {
         }),
         // Shipped roughing dressups, identical on both arms.
         dressups: DressupConfig::for_op(OperationType::Pocket),
-        heights: HeightsConfig {
-            retract_z,
-            ..HeightsConfig::default()
-        },
+        heights,
         tool_id,
         model_id,
         pre_gcode: None,
@@ -195,8 +212,8 @@ fn build_session(retract_z: HeightMode) -> ProjectSession {
 
 /// Generate + simulate one arm and return
 /// `(diagnostics count, raw detector count, move count)`.
-fn measure(retract_z: HeightMode) -> (u32, usize, usize) {
-    let mut session = build_session(retract_z);
+fn measure(heights: HeightsConfig) -> (u32, usize, usize) {
+    let mut session = build_session(heights);
     let cancel = AtomicBool::new(false);
     session
         .generate_toolpath(0, &cancel)
@@ -250,7 +267,7 @@ fn measure(retract_z: HeightMode) -> (u32, usize, usize) {
 /// goes non-zero, the forced arm below stops being evidence of anything.
 #[test]
 fn auto_heights_control_reads_zero_collisions() {
-    let (published, raw, moves) = measure(HeightMode::Auto);
+    let (published, raw, moves) = measure(HeightsConfig::default());
     eprintln!("control (retract Auto): {moves} moves, {published} collisions");
     assert_eq!(
         published, 0,
@@ -272,10 +289,8 @@ fn auto_heights_control_reads_zero_collisions() {
 /// any legitimate change to pocket link/retract emission.
 #[test]
 fn forced_dive_reads_a_substantial_collision_population() {
-    let (published, raw, moves) = measure(HeightMode::Manual(
-        STOCK_TOP_Z - FORCED_RETRACT_BELOW_TOP_MM,
-    ));
-    eprintln!("forced (retract -3.0): {moves} moves, {published} collisions");
+    let (published, raw, moves) = measure(forced_heights());
+    eprintln!("forced (retract -3.0, top -4.0): {moves} moves, {published} collisions");
     assert!(
         published >= 10,
         "a retract plane 3 mm inside the stock must produce a substantial \
@@ -293,15 +308,13 @@ fn forced_dive_reads_a_substantial_collision_population() {
     );
 }
 
-/// The pair, as one statement: the ONLY difference is the retract height,
+/// The pair, as one statement: the ONLY difference is the heights,
 /// and it separates the two readings. This is what discharges "is the
 /// detector blind?" — a question a single arm cannot answer.
 #[test]
-fn the_pair_separates_and_only_the_retract_height_differs() {
-    let (control, _, control_moves) = measure(HeightMode::Auto);
-    let (forced, _, forced_moves) = measure(HeightMode::Manual(
-        STOCK_TOP_Z - FORCED_RETRACT_BELOW_TOP_MM,
-    ));
+fn the_pair_separates_and_only_the_heights_differ() {
+    let (control, _, control_moves) = measure(HeightsConfig::default());
+    let (forced, _, forced_moves) = measure(forced_heights());
     eprintln!(
         "pair: control {control} collisions / {control_moves} moves, \
          forced {forced} collisions / {forced_moves} moves"

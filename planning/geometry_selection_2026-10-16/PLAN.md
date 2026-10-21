@@ -384,9 +384,9 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
 | P3 depth refs | COMPLETE (P3.1-P3.8; D9 one floor field with its reference) | 6026eb37, 86265095, 6d403ac1, 272238d8, 1f814929, 294875be, 5236e6c2, 83df571f | pushed to 0346862f up to P3.6; P3.7-P3.8 local |
 | P4 UI + sources | P4.0 probe, P4.1-P4.9 and P4.D done (P4.8 without the SVG scale default); operator demo seen 2026-10-20 | 1ca93935, 229eb719, c223d7c4, 9bdfac8e, 3373d8d2, 099d946b, 22cb38fa, 8f5723e3, a53e0cf5, 30e9a146, 0458a586 (SVG O-2), a83d7236 (P4.10); P4 COMPLETE; pushed to ca18398c | next: P3 (D9) after the tech-debt W4 |
 | P5 tabs | done (operator look pending) | e76f82c8, P5b | GUI viewport tab editor -> P4. Lead ruling P5b: tab_width = the material bridge (today bridge = width - D: default leaves none); tab_height holds on every level |
-| P6 open paths, holes | blocked on P2 | | |
-| P7 templates | blocked on P4 | | |
-| P8 recognition | blocked on P4 | | |
+| P6 open paths, holes | P6.0-P6.3, P6.5, P6.5b done; R-ARC done; next P6.6 Bore, P6.4 extend, P6.7 GUI, P6.8 parity | e1dfa30e, b0a13361, 5d4e2a6c, 5410a90a, f8cdfd70, 65c949d9, 0b4348e6, f27d2634 | not pushed; follow-ups P6.0d, P6.2b |
+| P7 templates | not started (P4 done) | | |
+| P8 recognition | not started (P4 done) | | |
 
 ## Lead review notes on P4.2 and P4.3 (2026-10-20)
 
@@ -718,3 +718,8 @@ Defects found by the design:
     ids, `trace/narrate.rs`).
   - An open offset pass gets no lead: a tangent lead starts behind the
     path end. P6.0d needs a lead shape that stays inside the end normals.
+- P6.3 done (0b4348e6). P6.5 done (f27d2634).
+- Operator ruling 2026-10-22 (P6.5b): a Drill `size_tolerance` (mm,
+  default `CAD_ROUNDING_MM`). The wanaka100 Holes Drill (12 circles of
+  5.859 mm, a 6.0 mm tool) refused under P6.5; the repo fixtures set 0.2.
+  The 27 older planning TOMLs keep the strict default (evidence).

@@ -539,6 +539,7 @@ dwell_time = 0.5
 retract_amount = 0.5
 feed_rate = 300.0
 retract_z = 2.0
+size_tolerance = 0.2
 
 [setups.toolpaths.dressups]
 entry_style = "none"

@@ -174,6 +174,15 @@ pub(in crate::ui::properties) fn draw_drill_params(
             Some(&mut cfg.dwell_time),
             Some(&mut cfg.retract_amount),
         );
+        // The hole fit (operator ruling 2026-10-22): a circle within this
+        // value of the tool diameter is drilled. Pin Drill has no row.
+        dv(
+            ui,
+            p(OperationType::Drill, "size_tolerance", "Size Tolerance:"),
+            &mut cfg.size_tolerance,
+            " mm",
+            0.01,
+        );
     });
     draw_hole_legend(ui, holes, true);
 }

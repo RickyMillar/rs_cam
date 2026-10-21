@@ -12,7 +12,7 @@ use crate::compute::catalog::ItemUse;
 use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::ModelId;
 
-use super::hole_fit::{HoleFit, HoleFitRule};
+use super::hole_fit::{DrillSize, HoleFit, HoleFitRule};
 use super::item::{ItemKind, SourceRef};
 use super::key::MatchKey;
 
@@ -72,16 +72,25 @@ fn use_phrase(use_: ItemUse) -> &'static str {
 }
 
 /// How a hole that is not of the tool size compares with the tool, as a
-/// phrase after "its diameter" (geometry selection P6.5).
-fn hole_fit_phrase(fit: HoleFit, tool_diameter: f64) -> String {
+/// phrase after "its diameter" (geometry selection P6.5). A size tolerance
+/// wider than the default ([`DrillSize::has_wide_tolerance`]) is named in
+/// the phrase of a larger and a smaller circle (operator ruling
+/// 2026-10-22).
+fn hole_fit_phrase(fit: HoleFit, size: &DrillSize) -> String {
+    let d = size.diameter;
+    let beyond = if size.has_wide_tolerance() {
+        format!(" by more than the size tolerance {:.3} mm", size.tolerance)
+    } else {
+        String::new()
+    };
     match fit {
-        HoleFit::Larger => format!("is larger than the tool diameter {tool_diameter:.3} mm"),
+        HoleFit::Larger => format!("is larger than the tool diameter {d:.3} mm{beyond}"),
         HoleFit::LeavesCore => {
-            format!("is more than two times the tool diameter {tool_diameter:.3} mm")
+            format!("is more than two times the tool diameter {d:.3} mm")
         }
-        HoleFit::Smaller => format!("is smaller than the tool diameter {tool_diameter:.3} mm"),
+        HoleFit::Smaller => format!("is smaller than the tool diameter {d:.3} mm{beyond}"),
         HoleFit::NoSize | HoleFit::ToolSize => {
-            format!("is the tool diameter {tool_diameter:.3} mm")
+            format!("is the tool diameter {d:.3} mm")
         }
     }
 }
@@ -174,8 +183,8 @@ pub enum NoteCause {
         /// How the circle compares with the tool (never a fit of the tool
         /// size).
         fit: HoleFit,
-        /// The tool diameter (mm).
-        tool_diameter: f64,
+        /// The tool diameter and the size tolerance of the op.
+        size: DrillSize,
     },
 }
 
@@ -186,14 +195,14 @@ impl fmt::Display for SelectionNote {
     /// is at the top (...). The face: face (...)."
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let verb = if self.count == 1 { "is" } else { "are" };
-        if let NoteCause::HoleFit { fit, tool_diameter } = self.cause {
+        if let NoteCause::HoleFit { fit, size } = self.cause {
             return write!(
                 f,
                 "{} {}{} {verb} not cut: its diameter {}, and the op {}. The {}: {}. {}",
                 self.count,
                 kind_noun(self.kind, self.count),
                 layer_phrase(self.layer.as_deref()),
-                hole_fit_phrase(fit, tool_diameter),
+                hole_fit_phrase(fit, &size),
                 use_phrase(self.item_use),
                 kind_noun(self.kind, 1),
                 self.first,
@@ -297,8 +306,8 @@ pub enum RefusalCause {
     HoleDoesNotFit {
         /// How the circle compares with the tool.
         fit: HoleFit,
-        /// The tool diameter (mm).
-        tool_diameter: f64,
+        /// The tool diameter and the size tolerance of the op.
+        size: DrillSize,
     },
     /// A rule or a pick names a model that does not exist. No fallback to
     /// another model.
@@ -431,9 +440,9 @@ impl SelectionRefusal {
                 "the floor of this face, Z {floor_z:.3}, is at or above the Top Z {top_z:.3}, \
                  so it has nothing to cut"
             ),
-            RefusalCause::HoleDoesNotFit { fit, tool_diameter } => format!(
+            RefusalCause::HoleDoesNotFit { fit, size } => format!(
                 "the diameter of this circle {}, and the op drills holes of the tool size only",
-                hole_fit_phrase(*fit, *tool_diameter)
+                hole_fit_phrase(*fit, size)
             ),
             RefusalCause::MissingSource(source) => {
                 let name = match source {

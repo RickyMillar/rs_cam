@@ -33,8 +33,8 @@ use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
 /// (`ExecutionContext::selection`), in the emission frame. This view runs
 /// the same pure [`crate::selection::view`](fn@crate::selection::view) over it with the same
 /// `ItemUse`, then the same hole fit step ([`crate::selection::fit_holes`],
-/// P6.5) with the same tool diameter, so it names the holes the emitted
-/// toolpath drills.
+/// P6.5) with the same tool diameter and size tolerance, so it names the
+/// holes the emitted toolpath drills.
 ///
 /// Hole-source asymmetry (§6.E):
 /// - `OperationConfig::Drill`: the holes of its selection
@@ -67,7 +67,13 @@ pub fn build_drill_op_for_config(
     let holes_of = || {
         let item_use = op.capabilities().item_use;
         let (mut items, _) = crate::selection::view(selection, item_use).ok()?;
-        crate::selection::fit_holes(selection, &mut items, item_use, tool_def.diameter()).ok()?;
+        crate::selection::fit_holes(
+            selection,
+            &mut items,
+            item_use,
+            op.drill_size(tool_def.diameter()),
+        )
+        .ok()?;
         items.holes().cloned()
     };
 

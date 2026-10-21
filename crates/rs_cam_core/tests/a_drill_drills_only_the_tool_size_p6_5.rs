@@ -21,10 +21,24 @@
 //! 4. Freshness (the memo): a tool diameter edit builds the status of the
 //!    Drill again, and the states follow the new tool.
 //! 5. Pin Drill keeps every hole (`HoleFitRule::None`, lead ruling L-19).
+//! 6. The Drill `size_tolerance` (operator ruling 2026-10-22) widens the
+//!    tool size on both sides: with a 6.0 mm tool and a tolerance of 0.2 mm
+//!    the Drill drills a 5.859 mm circle and still leaves out a 6.25 mm
+//!    circle, and the note names the tolerance. At the default
+//!    (`CAD_ROUNDING_MM`) the 5.859 mm circle is left out, as in P6.5. The
+//!    domain refuses a tolerance below `CAD_ROUNDING_MM` at the door, and a
+//!    tolerance edit builds the Drill status again.
+//! 7. The wanaka100 Holes Drill (12 DXF circles of 5.859 mm, a 6.0 mm tool,
+//!    `size_tolerance = 0.2` in the pinned project) fits all 12 circles.
 //!
 //! Red proof (run, red, reverted): the prologue without the fit step
 //! (`require_items` without `fit_holes`). Claim 1 went red: the toolpath
 //! drilled the larger and the smaller circle.
+//!
+//! Red proof of claims 6 and 7 (run, red, reverted): `hole_fit` with
+//! `CAD_ROUNDING_MM` in place of `size.tolerance`. Three tests went red:
+//! the 0.2 mm arm drilled only the point, the tolerance edit left the
+//! 5.859 mm circle `Skipped`, and the wanaka circles did not fit.
 //!
 //! ```text
 //! cargo test -p rs_cam_core -q --test a_drill_drills_only_the_tool_size_p6_5
@@ -49,13 +63,14 @@ use common::session::{
 use common::tools::endmill_tool_config;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig};
+use rs_cam_core::selection::hole_fit::DrillSize;
 use rs_cam_core::selection::{
     CAD_ROUNDING_MM, HoleFit, ItemKind, MatchKey, NoteCause, RefusalCause, Selection,
     SelectionEdit, SourceRef,
 };
 use rs_cam_core::session::{
     Command, EditSelectionArgs, ItemState, LoadedModel, ProjectSession, SelectionReport,
-    SelectionTarget, SessionError, SetToolParamArgs,
+    SelectionTarget, SessionError, SetToolParamArgs, SetToolpathParamArgs,
 };
 use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 
@@ -171,6 +186,11 @@ fn pick_at(s: &ProjectSession, xy: [f64; 2]) -> MatchKey {
     }
 }
 
+/// The tool diameter of the first tool of `s`.
+fn tool_d(s: &ProjectSession) -> f64 {
+    s.tools()[0].diameter
+}
+
 /// The `HoleFit` notes of the last generation, as (circle XY, fit).
 fn fit_notes(s: &ProjectSession) -> Vec<([i64; 2], HoleFit, usize)> {
     let stats = &s.get_result(0).expect("the result").stats;
@@ -181,8 +201,8 @@ fn fit_notes(s: &ProjectSession) -> Vec<([i64; 2], HoleFit, usize)> {
             f.notes
                 .iter()
                 .filter_map(|n| match n.cause {
-                    NoteCause::HoleFit { fit, tool_diameter } => {
-                        assert_eq!(tool_diameter, TOOL_D, "the note names the tool");
+                    NoteCause::HoleFit { fit, size } => {
+                        assert_eq!(size.diameter, tool_d(s), "the note names the tool");
                         assert_eq!(n.kind, ItemKind::Circle);
                         Some((key(n.first.key.anchor), fit, n.count))
                     }
@@ -293,7 +313,7 @@ fn a_pick_of_the_larger_circle_refuses_by_item() {
         refusal.cause,
         RefusalCause::HoleDoesNotFit {
             fit: HoleFit::Larger,
-            tool_diameter: TOOL_D,
+            size: DrillSize::strict(TOOL_D),
         }
     );
     assert_eq!(refusal.item.as_ref().unwrap().key.anchor, LARGER_AT);
@@ -389,4 +409,180 @@ fn a_pin_drill_keeps_every_hole() {
     assert_eq!(drilled(&tp), want, "Pin Drill drills every hole");
     assert!(fit_notes(&s).is_empty());
     assert!(report(&s).hole_fits.is_empty(), "Pin Drill has no fit rule");
+}
+
+/// Claim 6: the wanaka hole and the tool of the wanaka Holes Drill.
+const WANAKA_TOOL_D: f64 = 6.0;
+const WANAKA_HOLE_D: f64 = 5.859;
+/// 6.25 - 6.0 = 0.25 > 0.2: outside the tolerance.
+const WIDE_HOLE_D: f64 = 6.25;
+const WANAKA_AT: [f64; 2] = [-15.0, 0.0];
+const WIDE_AT: [f64; 2] = [15.0, 0.0];
+
+/// A 6.0 mm tool, a point, a 5.859 mm circle and a 6.25 mm circle, with a
+/// Drill of `tolerance` (`None`: the default).
+fn tolerance_session(tolerance: Option<f64>) -> ProjectSession {
+    let mut cfg = DrillConfig {
+        selection: Selection::drawing(),
+        ..DrillConfig::default()
+    };
+    if let Some(t) = tolerance {
+        cfg.size_tolerance = t;
+    }
+    single_op_session_with(
+        stock_under(STOCK_HALF, STOCK_HEIGHT),
+        endmill_tool_config(WANAKA_TOOL_D),
+        model_of(&[
+            hole(POINT_A, None),
+            hole(WANAKA_AT, Some(WANAKA_HOLE_D)),
+            hole(WIDE_AT, Some(WIDE_HOLE_D)),
+        ]),
+        "p6_5 tolerance",
+        OperationConfig::Drill(cfg),
+        |_| {},
+    )
+}
+
+/// The selection-note text of the last generation.
+fn note_text(s: &ProjectSession) -> String {
+    s.get_result(0)
+        .unwrap()
+        .stats
+        .selection_note
+        .as_ref()
+        .unwrap()
+        .message()
+}
+
+/// Claim 6: a tolerance of 0.2 mm drills the 5.859 mm circle and leaves
+/// out the 6.25 mm circle; the note names the tolerance.
+#[test]
+fn a_size_tolerance_drills_the_near_circle_only() {
+    let mut s = tolerance_session(Some(0.2));
+    let tp = generate(&mut s).expect("the drill generates");
+    let want: BTreeSet<[i64; 2]> = [POINT_A, WANAKA_AT].into_iter().map(key).collect();
+    assert_eq!(
+        drilled(&tp),
+        want,
+        "the 5.859 mm circle is within 0.2 mm of the 6.0 mm tool"
+    );
+    assert_eq!(
+        fit_notes(&s),
+        vec![(key(WIDE_AT), HoleFit::Larger, 1)],
+        "the 6.25 mm circle is 0.25 mm from the tool: left out"
+    );
+    let text = note_text(&s);
+    assert!(
+        text.contains(
+            "is larger than the tool diameter 6.000 mm by more than the size tolerance 0.200 mm"
+        ),
+        "the note names the tolerance: {text}"
+    );
+    let r = report(&s);
+    assert_eq!(state_at(&s, &r, WANAKA_AT), ItemState::Cut);
+    assert_eq!(state_at(&s, &r, WIDE_AT), ItemState::Skipped);
+}
+
+/// Claim 6: at the default tolerance the 5.859 mm circle is left out (the
+/// P6.5 rule), and the note does not name a tolerance.
+#[test]
+fn the_default_tolerance_keeps_the_p6_5_rule() {
+    assert_eq!(DrillConfig::default().size_tolerance, CAD_ROUNDING_MM);
+    let mut s = tolerance_session(None);
+    let tp = generate(&mut s).expect("the drill generates");
+    let want: BTreeSet<[i64; 2]> = [key(POINT_A)].into_iter().collect();
+    assert_eq!(drilled(&tp), want, "only the point is drilled");
+    let mut notes = fit_notes(&s);
+    notes.sort_by_key(|n| n.0);
+    assert_eq!(
+        notes,
+        vec![
+            (key(WANAKA_AT), HoleFit::Smaller, 1),
+            (key(WIDE_AT), HoleFit::Larger, 1),
+        ]
+    );
+    let text = note_text(&s);
+    assert!(
+        !text.contains("size tolerance"),
+        "the default tolerance is not named: {text}"
+    );
+}
+
+/// Claim 6: the domain refuses a tolerance below `CAD_ROUNDING_MM` at the
+/// setter door, and the config keeps its value.
+#[test]
+fn a_tolerance_below_the_rounding_is_refused_at_the_door() {
+    let mut s = tolerance_session(None);
+    let err = s
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 0,
+            param: "size_tolerance".to_owned(),
+            value: serde_json::json!(CAD_ROUNDING_MM / 2.0),
+        }))
+        .expect_err("a tolerance below the CAD rounding refuses");
+    assert!(
+        err.to_string().contains("size_tolerance"),
+        "the refusal names the parameter: {err}"
+    );
+    let OperationConfig::Drill(cfg) = &s.toolpath_configs()[0].operation else {
+        panic!("not a drill");
+    };
+    assert_eq!(cfg.size_tolerance, CAD_ROUNDING_MM, "the value is kept");
+}
+
+/// Claim 6: a tolerance edit builds the Drill status again, and the states
+/// follow the new tolerance.
+#[test]
+fn a_tolerance_edit_stales_the_drill_item_states() {
+    let mut s = tolerance_session(None);
+    let before = report(&s);
+    assert_eq!(state_at(&s, &before, WANAKA_AT), ItemState::Skipped);
+    let builds = s.selection_status_builds();
+    let _ = report(&s);
+    assert_eq!(s.selection_status_builds(), builds, "no edit, no build");
+    let _ = s
+        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
+            index: 0,
+            param: "size_tolerance".to_owned(),
+            value: serde_json::json!(0.2),
+        }))
+        .expect("the tolerance edit applies");
+    let after = report(&s);
+    assert_eq!(
+        s.selection_status_builds(),
+        builds + 1,
+        "a tolerance edit builds the Drill status again"
+    );
+    assert_eq!(state_at(&s, &after, WANAKA_AT), ItemState::Cut);
+    assert_eq!(state_at(&s, &after, WIDE_AT), ItemState::Skipped);
+}
+
+/// Claim 7: the pinned wanaka project loads through the project door, and
+/// its Holes Drill fits all 12 circles of `holes.dxf`.
+#[test]
+fn the_wanaka_holes_drill_fits_all_twelve_circles() {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("wanaka_2026-08-16_f530995a.toml");
+    let s = ProjectSession::load(common::require_fixture(&path)).expect("the project loads");
+    let tc = s
+        .toolpath_configs()
+        .iter()
+        .find(|tc| tc.name == "Holes")
+        .expect("the Holes toolpath")
+        .clone();
+    let OperationConfig::Drill(cfg) = &tc.operation else {
+        panic!("Holes is not a Drill");
+    };
+    assert_eq!(cfg.size_tolerance, 0.2, "the project sets the tolerance");
+    let r = s.selection_status(&tc, SelectionTarget::Op).unwrap();
+    assert!(r.refusal.is_none(), "{:?}", r.refusal);
+    let circles: Vec<HoleFit> = r.hole_fits.iter().map(|(_, f)| *f).collect();
+    assert_eq!(circles.len(), 12, "the drawing holds 12 circles");
+    assert!(
+        circles.iter().all(|f| *f == HoleFit::ToolSize),
+        "every circle fits: {circles:?}"
+    );
+    assert_eq!(r.holes.len(), 12, "the Drill drills all 12 circles");
 }

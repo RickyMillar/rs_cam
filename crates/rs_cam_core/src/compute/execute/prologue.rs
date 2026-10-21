@@ -37,7 +37,8 @@
 //! refuses `FloorAboveTop` only when every face is at the top.
 //!
 //! Geometry selection P6.5 (ruling O-3): after the view the prologue runs
-//! THE hole fit step ([`fit_holes`]) with the tool diameter. A Drill leaves
+//! THE hole fit step ([`fit_holes`]) with the tool diameter and the size
+//! tolerance of the op (the Drill `size_tolerance`). A Drill leaves
 //! out a circle that is not of the tool size, with a note, and refuses a
 //! picked one (`HoleDoesNotFit`). [`Prepared::holes`] gives the fitted
 //! holes only, so no adapter reads a hole the tool does not make.
@@ -252,11 +253,11 @@ pub(super) fn check_inputs<'a>(
     let mut notes = Vec::new();
     let mut geometry = match op_type.geometry_requirement() {
         GeometryRequirement::Items => {
-            CheckedGeometry::Items(require_items(ctx, op_type, item_use, &mut notes)?)
+            CheckedGeometry::Items(require_items(ctx, op, item_use, &mut notes)?)
         }
         GeometryRequirement::Mesh => CheckedGeometry::Mesh(require_mesh(ctx, name)?),
         GeometryRequirement::ItemsAndMesh => CheckedGeometry::ItemsAndMesh {
-            items: require_items(ctx, op_type, item_use, &mut notes)?,
+            items: require_items(ctx, op, item_use, &mut notes)?,
             mesh: require_mesh(ctx, name)?,
         },
     };
@@ -325,14 +326,16 @@ fn region_ladders(
 ///
 /// A `Holes` op takes its own `may_be_empty` (P2.3c): a Drill with no hole
 /// refuses `Empty`; a Pin Drill with no extra hole runs on its stock pins.
-/// P6.5: then THE hole fit step ([`fit_holes`]) with the tool diameter; its
+/// P6.5: then THE hole fit step ([`fit_holes`]) with the tool diameter and
+/// the size tolerance of the op ([`OperationConfig::drill_size`]); its
 /// notes join `notes`, and its refusal stops the op as a view refusal does.
 fn require_items(
     ctx: &ExecutionContext<'_>,
-    op_type: OperationType,
+    op: &OperationConfig,
     item_use: ItemUse,
     notes: &mut Vec<SelectionNote>,
 ) -> Result<OpItems, OperationError> {
+    let op_type = op.op_type();
     let selection_error = |refusal: crate::selection::SelectionRefusal| -> OperationError {
         OperationError::Selection(Box::new(refusal.for_op(op_type.label())))
     };
@@ -343,7 +346,7 @@ fn require_items(
         &ctx.selection.resolved,
         &mut items,
         item_use,
-        ctx.tool_def.diameter(),
+        op.drill_size(ctx.tool_def.diameter()),
     )
     .map_err(selection_error)?;
     notes.extend(fit_notes);

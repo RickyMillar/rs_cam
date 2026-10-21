@@ -175,7 +175,7 @@ fn build_pocket_session() -> ProjectSession {
 /// (4 mm) above the floor. That residue exceeds the live rapid check's
 /// high-channel slack, tau = 2.207 cells = 2.2 mm at 1 mm, so the 0.5 mm
 /// rapid floor over the cleared level is flagged. Measured: at 1.0 mm three
-/// flags, moves 114 / 268 / 423, Z-only rapids to -3.5 / -7.5 / -11.5 at
+/// flags, moves 119 / 279 / 440, Z-only rapids to -3.5 / -7.5 / -11.5 at
 /// (59.97, 18.60); at 0.5, 0.25 and 0.1 mm none. The stock under the tool
 /// there reads -4 / -8 / -12 at 0.5 mm and finer (0.05 mm too), so the
 /// rapids stop 0.5 mm over cleared material. The 1.0 mm limit is pinned by
@@ -246,7 +246,9 @@ fn one_mm_cells_flag_only_the_known_coverage_union_residue() {
         .collect();
     assert_eq!(
         coarse,
-        vec![114, 268, 423],
+        // P6.0b (b0a13361) caps the merge on a finished edge, so the pocket
+        // has more moves; the residue is the same three rapids at one XY.
+        vec![119, 279, 440],
         "the 1.0 mm residue set moved; if conservative_top now resolves \
          union-cleared cells, re-pin this test"
     );
