@@ -25,7 +25,7 @@
 //! unloads and reloads models. A stale spatial index does not fail loudly; it
 //! silently mis-answers every downstream query.
 //!
-//! Each entry therefore holds a [`Weak<TriangleMesh>`] rather than a raw
+//! Each entry therefore holds a [`Weak<TriangleMesh>`](std::sync::Weak) rather than a raw
 //! pointer, and that closes the hole exactly:
 //!
 //! 1. A live `Weak` keeps the `Arc` *allocation* from being freed even after
@@ -92,7 +92,7 @@
 //!
 //! # The instrument
 //!
-//! [`stats`] returns cumulative build/hit counts per derivation, and every
+//! `stats` returns cumulative build/hit counts per derivation, and every
 //! *build* logs one `tracing::debug!` line under target `rs_cam_core::maps::geom_cache`.
 //! An 8-operation `generate_all` over one model should print exactly one
 //! `geom cache build kind=index` line; a regression that reintroduces

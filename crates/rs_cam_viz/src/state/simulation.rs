@@ -1212,7 +1212,7 @@ pub struct SimulationState {
     /// on ARRIVAL, which folded any edit made while the simulation ran into
     /// the record of when it was run — so a result answering a discarded
     /// configuration was recorded as current evidence and
-    /// [`SimulationState::is_stale`] said `false`. Same defect shape as
+    /// `SimulationState::is_stale` said `false`. Same defect shape as
     /// F2.4's late toolpath result, on the surface an operator reads
     /// collision counts and engagement off.
     ///

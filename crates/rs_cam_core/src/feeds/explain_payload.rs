@@ -78,7 +78,7 @@ pub struct FeedsExplain {
     pub shank_diameter_mm: f64,
     /// Tool geometry hint. Echoed so the modal can show the
     /// engaged-diameter-at-DOC annotation for tapered-ball / V-bit tools
-    /// via [`ToolGeometryHint::engaged_diameter_at_doc`].
+    /// via [`ToolGeometryHint::engaged_diameter_at_doc`](crate::feeds::ToolGeometryHint::engaged_diameter_at_doc).
     pub tool_geometry: super::ToolGeometryHint,
     /// Tool flute count. Used by the feed-RPM nomogram
     /// (`feed = chipload × rpm × flutes`).

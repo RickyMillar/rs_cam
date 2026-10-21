@@ -132,7 +132,7 @@ impl ResolvedGenInputs {
     /// K3: the obstacles are not in it. The territory resolver
     /// (`compute::execute::territory`) subtracts them, for every op.
     fn boundary_centre(&self) -> Option<Vec<crate::polygon::Polygon2>> {
-        use crate::geometry::boundary::{ToolContainment, effective_boundary};
+        use crate::geometry::boundary::{ToolContainment, effective_boundary_reported};
         if !self.boundary_config.enabled {
             return None;
         }
@@ -151,7 +151,7 @@ impl ResolvedGenInputs {
         }
         let set: Vec<crate::polygon::Polygon2> = sources
             .into_iter()
-            .flat_map(|region| effective_boundary(region, containment, tool_radius))
+            .flat_map(|region| effective_boundary_reported(region, containment, tool_radius).0)
             .collect();
         (!set.is_empty()).then_some(set)
     }

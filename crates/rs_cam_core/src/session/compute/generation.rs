@@ -26,7 +26,7 @@ impl ProjectSession {
     /// per-strategy candidates) without re-deriving frame-sensitive values.
     ///
     /// [`start_generate_toolpath`](Self::start_generate_toolpath) puts this
-    /// on a [`GenerateToolpathHandle`], and [`execute_job`] then owns the
+    /// on a [`GenerateToolpathHandle`](crate::session::compute::GenerateToolpathHandle), and [`execute_job`](crate::session::compute::execute_job) then owns the
     /// per-generation recorders + dressup/persist tail; the extraction keeps
     /// that pipeline byte-identical (the recorders simply move after the
     /// resolution, which never depended on them).
@@ -803,7 +803,7 @@ impl ProjectSession {
 
     /// Apply boundary clipping to a toolpath, subtracting keep-out footprints.
     ///
-    /// Takes/returns an [`AnnotatedToolpath`]. Spans are precisely remapped
+    /// Takes/returns an [`AnnotatedToolpath`](crate::trace::toolpath_spans::AnnotatedToolpath). Spans are precisely remapped
     /// through the clip via the provenance map returned from
     /// [`crate::geometry::boundary::clip_toolpath_to_boundary_with_provenance`]; the
     /// clipper never drops input moves, only inserts retract/rapid pairs

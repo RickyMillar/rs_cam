@@ -92,7 +92,7 @@ impl MeshGpuData {
             let normal = if len > 1e-8 {
                 [n[0] / len, n[1] / len, n[2] / len]
             } else {
-                [0.0, 0.0, 1.0]
+                UP_NORMAL
             };
             vertices.push(MeshVertex {
                 position: [v.x as f32, v.y as f32, v.z as f32],
@@ -180,7 +180,7 @@ pub fn colored_mesh_gpu_data(
         let normal = if len > 1e-8 {
             [n[0] / len, n[1] / len, n[2] / len]
         } else {
-            [0.0, 0.0, 1.0]
+            UP_NORMAL
         };
         vertices.push(ColoredMeshVertex {
             position: [v.x as f32, v.y as f32, v.z as f32],
@@ -218,23 +218,12 @@ pub fn colored_mesh_gpu_data(
     })
 }
 
+/// The normal of a degenerate vertex or triangle: straight up.
+const UP_NORMAL: [f32; 3] = [0.0, 0.0, 1.0];
+
 /// Deterministic pastel color for a face group ID.
-#[allow(clippy::indexing_slicing)] // modulo indexing into constant-length palette
 fn face_group_color(id: FaceGroupId) -> [f32; 3] {
-    // Simple hash-to-color: spread face IDs across hue space
-    const PALETTE: &[[f32; 3]] = &[
-        [0.75, 0.85, 0.90], // light blue
-        [0.85, 0.75, 0.90], // light purple
-        [0.75, 0.90, 0.80], // light green
-        [0.90, 0.85, 0.75], // light orange
-        [0.90, 0.78, 0.80], // light pink
-        [0.80, 0.90, 0.88], // light teal
-        [0.88, 0.82, 0.75], // light tan
-        [0.78, 0.82, 0.92], // periwinkle
-        [0.88, 0.90, 0.75], // light yellow-green
-        [0.82, 0.75, 0.85], // light mauve
-    ];
-    PALETTE[id.0 as usize % PALETTE.len()]
+    super::colors::face_group_color(id.0 as usize).array()
 }
 
 /// Build GPU data for an enriched mesh with per-face-group coloring.
@@ -266,8 +255,8 @@ pub fn enriched_mesh_gpu_data(
     transform: &VertexTransform<'_>,
 ) -> Option<EnrichedMeshGpuData> {
     let mesh = enriched.as_mesh();
-    let highlight_color: [f32; 3] = [0.3, 0.5, 1.0]; // bright blue
-    let hover_color: [f32; 3] = [0.4, 0.7, 0.85]; // soft cyan
+    let highlight_color: [f32; 3] = super::colors::FACE_SELECTED.array();
+    let hover_color: [f32; 3] = super::colors::FACE_HOVER.array();
 
     // V13: the selection test runs once per triangle, so a linear scan of the
     // selected-face list is O(triangles × selected) — on a STEP part with a

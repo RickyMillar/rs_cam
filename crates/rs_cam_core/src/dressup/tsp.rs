@@ -195,7 +195,7 @@ fn total_rapid_distance(order: &[usize], segments: &[Segment]) -> f64 {
 /// Hands back the permutation under the C1 provenance contract, so every
 /// index-carrying channel beside the spans can follow the moves.
 ///
-/// The provenance is [`MoveProvenance::Permutation`], not `Remap` — the
+/// The provenance is [`MoveProvenance::Permutation`](crate::trace::transform_provenance::MoveProvenance::Permutation), not `Remap` — the
 /// difference is not bookkeeping. A reorder can interleave foreign moves
 /// into a claim's new bounding range, and a channel that only knew the
 /// bounding remap would widen the claim to cover strangers instead of

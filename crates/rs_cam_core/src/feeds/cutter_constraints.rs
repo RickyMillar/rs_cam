@@ -109,7 +109,7 @@ pub struct CutterAxialConstraints {
     /// canonical [`crate::tool::ToolDefinition::tip_deflection_mm`]).
     pub max_doc_deflection_mm: f64,
     /// Maximum axial DOC the matched LUT row permits at this geometry.
-    /// `min(ap_max_factor × diameter, ap_max_mm)` — see [`combine_ap_bound`].
+    /// `min(ap_max_factor × diameter, ap_max_mm)` — see `combine_ap_bound`.
     /// `None` when no LUT row was supplied or the row carries no axial
     /// bound at all.
     pub max_doc_vendor_mm: Option<f64>,

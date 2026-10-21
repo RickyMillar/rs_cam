@@ -16,7 +16,7 @@
 //!    (§2.6). The diagram palette and the data scales exist so a drawing
 //!    never has to borrow `OK` or `DANGER`.
 //! 3. **Colour is never the only channel** (§2.6). Every verdict also carries
-//!    a glyph, which is why [`glyph_ok`] and its siblings live beside the
+//!    a glyph, which is why [`GLYPH_OK`] and its siblings live beside the
 //!    colours rather than in a component.
 //!
 //! `ui/theme.rs` keeps its original public names and re-exports from here, so

@@ -3,9 +3,9 @@
 //! Independent of the milling-side `chipload` / `power` / `deflection`
 //! gates: those slot `Unmodeled(NotApplicableForOp)` for drill ops. This
 //! module evaluates the substrate that drilling *does* produce — a
-//! per-peck [`DrillSample`] stream and a per-toolpath
+//! per-peck [`DrillSample`](crate::ops::drill_metrics::DrillSample) stream and a per-toolpath
 //! [`DrillToolpathSummary`] — and yields three verdicts surfaced on
-//! [`ToolpathLoadVerdict::drill_gates`].
+//! [`ToolpathLoadVerdict::drill_gates`](crate::tool_load::verdict::ToolpathLoadVerdict::drill_gates).
 //!
 //! See `planning/DEXEL_Z_ONLY_INVESTIGATION.md` §6.E / Step 3 PR2.
 
@@ -83,7 +83,7 @@ pub enum DrillGateSeverity {
 }
 
 /// Per-toolpath drill-gate trio. Carried as
-/// `Option<DrillGatesVerdict>` on [`ToolpathLoadVerdict`]; `None` for
+/// `Option<DrillGatesVerdict>` on [`ToolpathLoadVerdict`](crate::tool_load::verdict::ToolpathLoadVerdict); `None` for
 /// non-drill toolpaths.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DrillGatesVerdict {

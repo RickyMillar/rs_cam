@@ -352,7 +352,7 @@ pub fn feed_ladder_diameter_mm(
 /// (2026-09-23) set the tapered-ball and the depth-cap rule; B4 moves the
 /// V-bit band de-rate here too.
 ///
-/// - Tapered ball: [`MillingCutter::lookup_diameter_at`], the engaged
+/// - Tapered ball: [`MillingCutter::lookup_diameter_at`](crate::tool::MillingCutter::lookup_diameter_at), the engaged
 ///   diameter at the depth. That is the ball chord below the tangency
 ///   height and the cone diameter above it, capped at the shank. It is
 ///   the same diameter at which the chipload gate applies the depth

@@ -43,7 +43,7 @@ pub struct ToolpathStats {
     ///
     /// * `None` — **not measured**. The operation runs no ring cascade
     ///   (any 2.5D family, drop-cutter, waterline, drill …), or the result
-    ///   came from a path that carries no [`GenerationFindings`]. Do NOT
+    ///   came from a path that carries no [`GenerationFindings`](crate::compute::execute::GenerationFindings). Do NOT
     ///   read this as "nothing left uncut"; it supports no ratio at all.
     /// * `Some(0.0)` — **measured zero**: a cascade ran and collapsed, so
     ///   no core was left truncated.

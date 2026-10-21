@@ -315,7 +315,7 @@ impl RestGrid {
 /// [`region_polygons_from_mask`] dilates), sampled along the ridge's cells,
 /// converted to mm. It is the same "how wide is the rest material here"
 /// metric the pencil/clearing routing decision uses, and lets
-/// [`crate::finish::pencil::rest_depth_arm`] size its offset-pass count to the local
+/// `crate::finish::pencil::detectors::rest_depth_arm` size its offset-pass count to the local
 /// valley width instead of a fixed count everywhere. `0.0` where a ridge cell
 /// sits just outside the mask — the ridge's hysteresis LO floor (`0.5 ×
 /// min_valley_depth`) is below the mask's own threshold, so a ridge can dip

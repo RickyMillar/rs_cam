@@ -684,7 +684,7 @@ pub struct RestEntryRamp {
 ///
 /// One hole is left open deliberately: the ramp is reached only where the
 /// split gate fires or a plan exists, and a plunge whose preceding rapid is
-/// ALREADY within [`MIN_SPLIT_MM`] of the stock ceiling keeps its descent when
+/// ALREADY within `MIN_SPLIT_MM` of the stock ceiling keeps its descent when
 /// no plan is produced. Nothing shipped emits that shape — every generator
 /// rapids to `safe_z` first — and the post-simulation `project.entry_load`
 /// finding reports it if one ever does.
@@ -1150,8 +1150,8 @@ fn lift_arc_points(probe: &EntrySurfaceProbe<'_>, arc_pts: &mut [P3]) -> bool {
 /// `lead_out_feed_rate` — same fallback semantics; typically faster than
 /// cutting feed for chip-clear on exit.
 ///
-/// Lead-in moves are tagged [`MoveIntent::LeadIn`] and lead-out moves
-/// [`MoveIntent::LeadOut`] so the F-039 modulator (and future analyses)
+/// Lead-in moves are tagged [`MoveIntent::LeadIn`](crate::toolpath::MoveIntent::LeadIn) and lead-out moves
+/// [`MoveIntent::LeadOut`](crate::toolpath::MoveIntent::LeadOut) so the F-039 modulator (and future analyses)
 /// can treat them as user-tuned rather than modulating them.
 ///
 /// `surface` (G-RAMPTERRAIN S2): with a probe, the lead plunge target

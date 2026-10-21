@@ -1,8 +1,8 @@
 //! The CLI's door into the core command registry.
 //!
-//! `run`, `job` and `smoke` all write operation parameters. Each one
-//! called `ProjectSession::set_toolpath_param` directly before WP1, so
-//! the three sites could drift apart. Each one now builds a
+//! The subcommands write project state. Before WP1, `run`, `job` and
+//! `smoke` each called `ProjectSession::set_toolpath_param` directly, so
+//! the sites could drift apart. A CLI site now builds a
 //! [`rs_cam_core::session::Command`] and takes this door.
 //!
 //! `rs_cam_cli` declares no `[lib]`, so an integration test cannot reach
@@ -12,9 +12,9 @@ use rs_cam_core::session::{Command, Effects, ProjectSession, SessionError};
 
 /// Apply one command to the session, and report what it changed.
 ///
-/// The function is thin on purpose. It exists so the three CLI call
-/// sites share one entry point into [`ProjectSession::apply`], and so
-/// the bin can prove that entry point is the one they take.
+/// The function is thin on purpose. It exists so the CLI call sites
+/// share one entry point into [`ProjectSession::apply`], and so the bin
+/// can prove that entry point is the one they take.
 ///
 /// # Why the CLI discards the answer
 ///
@@ -26,7 +26,7 @@ use rs_cam_core::session::{Command, Effects, ProjectSession, SessionError};
 /// consumer. It draws no viewport either, so `simulation_cleared` has
 /// nothing to reach. The view surfaces mirror both halves; see
 /// `crates/rs_cam_viz/tests/effects_are_stamped_wp19.rs`, which names
-/// this doc as the one reason for all fifteen CLI sites.
+/// this doc as the one reason for every CLI site.
 pub fn apply_command(
     session: &mut ProjectSession,
     command: Command,

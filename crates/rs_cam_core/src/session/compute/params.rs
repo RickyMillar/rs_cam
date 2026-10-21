@@ -659,7 +659,7 @@ impl ProjectSession {
     /// the one that minimises wall-clock at the load limit on this machine
     /// (`planning/STRATEGY_ADVISOR_2026-06-17.md`).
     ///
-    /// For each candidate [`ClearingStrategy`] it (1) runs Suggest to
+    /// For each candidate [`ClearingStrategy`](crate::compute::operation_configs::ClearingStrategy) it (1) runs Suggest to
     /// back the params off to the deflection / power limits, (2) plans the
     /// clearing toolpath off a *single shared* [`resolve_generation_inputs`]
     /// resolution (only the strategy varies — geometry / heights / stock
@@ -673,7 +673,7 @@ impl ProjectSession {
     /// `Adaptive3d` op or no candidate plans a usable path. The candidate set
     /// is intentionally the two endpoints of the speed/load trade-off
     /// (conventional vs constant-engagement); it extends by adding to
-    /// [`ADVISOR_CANDIDATE_STRATEGIES`].
+    /// [`ADVISOR_CANDIDATE_STRATEGIES`](super::ADVISOR_CANDIDATE_STRATEGIES).
     ///
     /// [`resolve_generation_inputs`]: Self::resolve_generation_inputs
     pub fn recommend_clearing_strategy(

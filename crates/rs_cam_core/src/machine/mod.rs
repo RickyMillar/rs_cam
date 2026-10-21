@@ -106,7 +106,7 @@ impl RigidityProfile {
     ///
     /// `None` for an operation with no axial cap:
     ///
-    /// - [`OperationFamily::Drill`]: a drill cycle is Z-only, so there
+    /// - [`OperationFamily::Drill`](crate::feeds::OperationFamily::Drill): a drill cycle is Z-only, so there
     ///   is no radial engagement and no axial rule of thumb to judge it
     ///   by. A drill operation also carries no `depth_per_pass`, so the
     ///   Suggest clamp never reaches this arm.

@@ -1470,12 +1470,12 @@ pub struct SetToolParamArgs {
 /// The arguments of the `replace_tool` command.
 ///
 /// The GUI tool panel edits a DRAFT clone of the tool and commits the
-/// whole draft on Apply, so the payload is a whole [`ToolConfig`] and not
+/// whole draft on Apply, so the payload is a whole [`ToolConfig`](crate::compute::tool_config::ToolConfig) and not
 /// one named parameter. `tool_id` is the project-assigned id, NOT the
 /// tool's position in the tools list; the two agree until a tool is
 /// removed.
 ///
-/// The configuration is boxed. A [`ToolConfig`] carries the whole cutter
+/// The configuration is boxed. A [`ToolConfig`](crate::compute::tool_config::ToolConfig) carries the whole cutter
 /// description, which is large beside the other rows' arguments.
 #[derive(Debug, Clone)]
 pub struct ReplaceToolArgs {

@@ -974,7 +974,7 @@ impl ProjectSession {
     /// The edit that a viewport shift-click on `key` sends to the selection
     /// `target` of `tc` (geometry selection P4.5): the layer of the item as
     /// a rule, for the kinds `kinds` (the chips that are on) and, for the
-    /// circles, the diameter range `circle` ([`Rule::layer_rules`]).
+    /// circles, the diameter range `circle` ([`Rule::layer_rules`](crate::selection::rule::Rule::layer_rules)).
     ///
     /// Under the default selection, the first layer rule replaces the
     /// default ([`SelectionEdit::add_rules`], the rule of the P4.3

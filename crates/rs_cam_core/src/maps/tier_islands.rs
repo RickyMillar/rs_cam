@@ -494,7 +494,7 @@ impl TierCapReport {
 /// `machining_area_mm2 ÷ owned_area_mm2` exceeds
 /// [`BAND_RATIO_ADVISORY_BOUND`]. **An advisory is a reading, never a
 /// refusal**: the band is doing what it is for, and both levers named in
-/// [`Self::fmt`] are operator dials, not repairs.
+/// `Self::fmt` are operator dials, not repairs.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TierBandAdvisory {
     /// Ladder index of the tier this reads.

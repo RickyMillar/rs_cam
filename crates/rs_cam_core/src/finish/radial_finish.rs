@@ -66,7 +66,7 @@ fn radial_finish_toolpath(
     })
 }
 
-/// Cancellable variant of [`radial_finish_toolpath`]. Polls `cancel` once
+/// Cancellable variant of `radial_finish_toolpath`. Polls `cancel` once
 /// per spoke (each spoke samples `point_spacing`-spaced drop-cutter queries
 /// out to the mesh's max radius, which is the expensive part).
 ///

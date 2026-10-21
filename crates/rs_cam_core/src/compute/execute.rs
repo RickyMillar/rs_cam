@@ -69,7 +69,7 @@ pub type GeneratedToolpath = AnnotatedToolpath;
 /// 28 mm block of standing material shipped for weeks, and why the GUI's
 /// diagnostics list has nothing to say about it (design doc §13/§14c/§14h).
 ///
-/// Carried on [`ExecutionContext::findings`] as a [`Cell`] so adapters can
+/// Carried on [`ExecutionContext::findings`] as a [`Cell`](std::cell::Cell) so adapters can
 /// record without any signature change, and returned alongside the toolpath
 /// by [`execute_operation_annotated`]. Deliberately NOT part of
 /// `AnnotatedToolpath`: a diagnostic finding must not have to survive the
@@ -341,7 +341,7 @@ pub struct ExecutionContext<'a> {
     /// the op, in the emission frame. C3 pattern: only the prologue
     /// (`execute/prologue.rs`) reads it; an adapter reads its items through
     /// `Prepared::regions`, `Prepared::curves` or `Prepared::holes`.
-    pub selection: SelectionInputs<'a>,
+    pub(crate) selection: SelectionInputs<'a>,
     /// The live stock alignment pins, stock-relative (X0Y0 at the stock
     /// min corner). The Alignment Pin Drill reads the pins of its own
     /// diameter (`alignment_pins::pin_holes_of_diameter`, R1); every other
@@ -579,7 +579,8 @@ pub(crate) use finish_3d::{
     generate_spiral_finish, generate_steep_shallow, generate_unified_finish,
 };
 pub(crate) use finish_raster::{generate_drop_cutter, generate_scallop, generate_waterline};
-pub use prologue::{MeshInput, Prepared, SelectionInputs};
+pub use prologue::{MeshInput, Prepared};
+pub(crate) use prologue::SelectionInputs;
 pub(crate) use rough_3d::generate_adaptive3d;
 pub use shared::{LinkCeilingNeed, link_ceiling_for};
 pub use territory::{SurfaceMask, Territory, TerritoryInputs, XyTerritory};

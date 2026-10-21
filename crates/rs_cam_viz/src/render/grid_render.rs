@@ -13,7 +13,7 @@ impl GridGpuData {
     pub fn new(device: &wgpu::Device, limits: &GpuLimits, extent: f32, spacing: f32) -> Self {
         use super::colors;
         let mut vertices = Vec::new();
-        let grid_color = colors::GRID_BASE;
+        let grid_color = colors::GRID_BASE.array();
         // Clamp spacing to prevent vertex explosion with tiny values
         let spacing = spacing.max(0.1);
         let half = extent / 2.0;
@@ -47,29 +47,29 @@ impl GridGpuData {
         let axis_len = extent * 0.6;
         vertices.push(LineVertex {
             position: [0.0, 0.0, 0.0],
-            color: colors::AXIS_X,
+            color: colors::AXIS_X.array(),
         });
         vertices.push(LineVertex {
             position: [axis_len, 0.0, 0.0],
-            color: colors::AXIS_X,
+            color: colors::AXIS_X.array(),
         });
         // Y axis (green)
         vertices.push(LineVertex {
             position: [0.0, 0.0, 0.0],
-            color: colors::AXIS_Y,
+            color: colors::AXIS_Y.array(),
         });
         vertices.push(LineVertex {
             position: [0.0, axis_len, 0.0],
-            color: colors::AXIS_Y,
+            color: colors::AXIS_Y.array(),
         });
         // Z axis (blue)
         vertices.push(LineVertex {
             position: [0.0, 0.0, 0.0],
-            color: colors::AXIS_Z,
+            color: colors::AXIS_Z.array(),
         });
         vertices.push(LineVertex {
             position: [0.0, 0.0, axis_len * 0.5],
-            color: colors::AXIS_Z,
+            color: colors::AXIS_Z.array(),
         });
 
         let vertex_count = vertices.len() as u32;
@@ -124,29 +124,29 @@ impl OriginAxesGpuData {
             // X axis (red)
             LineVertex {
                 position: [ox, oy, oz],
-                color: [0.9, 0.2, 0.2],
+                color: super::colors::AXIS_X.array(),
             },
             LineVertex {
                 position: [ox + length, oy, oz],
-                color: [0.9, 0.2, 0.2],
+                color: super::colors::AXIS_X.array(),
             },
             // Y axis (green)
             LineVertex {
                 position: [ox, oy, oz],
-                color: [0.2, 0.9, 0.2],
+                color: super::colors::AXIS_Y.array(),
             },
             LineVertex {
                 position: [ox, oy + length, oz],
-                color: [0.2, 0.9, 0.2],
+                color: super::colors::AXIS_Y.array(),
             },
             // Z axis (blue)
             LineVertex {
                 position: [ox, oy, oz],
-                color: [0.3, 0.4, 0.95],
+                color: super::colors::AXIS_Z.array(),
             },
             LineVertex {
                 position: [ox, oy, oz + length],
-                color: [0.3, 0.4, 0.95],
+                color: super::colors::AXIS_Z.array(),
             },
         ];
 

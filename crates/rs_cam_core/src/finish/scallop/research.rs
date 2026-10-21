@@ -117,7 +117,7 @@ pub fn scallop_toolpath_iso_field_with_cancel(
     Ok((tp, annotations, report))
 }
 
-/// [`scallop_toolpath_structured_annotated_with_resolution`] with the ring
+/// [`scallop_toolpath_structured_annotated_with_resolution`](super::scallop_toolpath_structured_annotated_with_resolution) with the ring
 /// budget selected by the caller.
 ///
 /// **Research seam, not a production entry point** (PR-8c). Passing

@@ -198,41 +198,20 @@ impl ToolpathGpuData {
         let mut move_cut_counts = Vec::new();
         let mut move_rapid_counts = Vec::new();
 
-        let brighten = |mut c: [f32; 3]| -> [f32; 3] {
-            if selected {
-                c[0] = (c[0] * 1.3).min(1.0);
-                c[1] = (c[1] * 1.3).min(1.0);
-                c[2] = (c[2] * 1.3).min(1.0);
-            }
-            c
-        };
+        let brighten = |c: [f32; 3]| -> [f32; 3] { super::colors::brighten_selected(c, selected) };
 
         // Per-pass lightness shift on top of the palette+Z blend so passes
         // visually stratify without losing the palette identity.
         let z_color = |z: f64, pass_index: Option<u32>| -> [f32; 3] {
             let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
-            let depth_factor = 0.7 + t * 0.3; // darker at bottom, brighter at top
-            let pass_shift = match pass_index {
-                Some(p) => 1.0 + ((p as f32 % 4.0) - 1.5) * 0.06, // ±~9% spread across 4 passes
-                None => 1.0,
-            };
-            let f = depth_factor * pass_shift;
-            brighten([
-                (base[0] * f).min(1.0),
-                (base[1] * f).min(1.0),
-                (base[2] * f).min(1.0),
-            ])
+            brighten(super::colors::palette_depth_shade(base, t, pass_index))
         };
 
-        let rapid_color = brighten([base[0] * 0.35, base[1] * 0.35, base[2] * 0.35]);
-        let entry_color = brighten([0.20, 0.95, 0.95]);
-        let leadout_color = brighten([0.95, 0.30, 0.85]);
-        let linkbridge_color = brighten([0.45, 0.45, 0.55]);
-        let dressup_color = brighten([
-            0.5 * (base[0] + 0.5),
-            0.5 * (base[1] + 0.5),
-            0.5 * (base[2] + 0.5),
-        ]);
+        let rapid_color = brighten(super::colors::palette_rapid(base));
+        let entry_color = brighten(super::colors::SPAN_ENTRY.array());
+        let leadout_color = brighten(super::colors::SPAN_LEAD_OUT.array());
+        let linkbridge_color = brighten(super::colors::SPAN_LINK_BRIDGE.array());
+        let dressup_color = brighten(super::colors::palette_dressup(base));
 
         if stride > 1 {
             tracing::warn!(
@@ -468,7 +447,7 @@ impl ToolpathGpuData {
 
         let nominal = nominal_feed.max(1.0);
 
-        let rapid_color: [f32; 3] = [0.15, 0.15, 0.2];
+        let rapid_color: [f32; 3] = super::colors::RAPID_DIM.array();
         let mut cut_verts = Vec::new();
         let mut rapid_verts = Vec::new();
         let mut move_cut_counts = Vec::new();
@@ -625,7 +604,7 @@ impl ToolpathGpuData {
             advance_per_tooth_segment_color(band, move_advance.get(&move_idx).copied())
         };
 
-        let rapid_color: [f32; 3] = [0.15, 0.15, 0.2];
+        let rapid_color: [f32; 3] = super::colors::RAPID_DIM.array();
         let mut cut_verts = Vec::new();
         let mut rapid_verts = Vec::new();
         let mut move_cut_counts = Vec::new();
@@ -756,27 +735,23 @@ pub(crate) fn advance_per_tooth_segment_color(
     band: Option<&VendorChiploadBand>,
     observed: Option<AdvancePerToothMm>,
 ) -> [f32; 3] {
+    use super::colors;
     let Some(band) = band else {
-        return [0.40, 0.40, 0.40];
+        return colors::CHIPLOAD_NO_BAND.array();
     };
     let Some(observed) = observed else {
-        return [0.25, 0.25, 0.30];
+        return colors::CHIPLOAD_NO_READING.array();
     };
     match band.classify(observed) {
         // Under-engaged — rubbing risk.
-        ChiploadBandClass::BelowBand => [0.20, 0.40, 0.90],
+        ChiploadBandClass::BelowBand => colors::CHIPLOAD_BELOW_BAND.array(),
         // Just above the floor: blend blue → green.
         ChiploadBandClass::JustAboveFloor => {
-            let t = band.floor_blend_fraction(observed) as f32;
-            [
-                0.20 + (0.00 - 0.20) * t,
-                0.40 + (0.85 - 0.40) * t,
-                0.90 + (0.30 - 0.90) * t,
-            ]
+            colors::chipload_floor_blend(band.floor_blend_fraction(observed) as f32)
         }
-        ChiploadBandClass::Within => [0.20, 0.85, 0.30],
-        ChiploadBandClass::NearCeiling => [1.00, 0.60, 0.10],
-        ChiploadBandClass::AboveBand => [0.95, 0.20, 0.20],
+        ChiploadBandClass::Within => colors::CHIPLOAD_WITHIN.array(),
+        ChiploadBandClass::NearCeiling => colors::CHIPLOAD_NEAR_CEILING.array(),
+        ChiploadBandClass::AboveBand => colors::CHIPLOAD_ABOVE_BAND.array(),
     }
 }
 
@@ -817,26 +792,8 @@ pub enum EntryStyle {
 /// and the shipped rest legend already made the opposite choice.
 pub(crate) fn engagement_color(feed: f64, nominal: f64) -> [f32; 3] {
     let ratio = (feed / nominal).clamp(0.0, 1.5) as f32;
-    if ratio >= 1.0 {
-        // At or above nominal: green (light engagement / air cut)
-        [0.2, 0.8, 0.3]
-    } else if ratio >= 0.5 {
-        // 50-100% of nominal: green → yellow
-        let t = (ratio - 0.5) * 2.0; // 0..1
-        [
-            0.2 + (1.0 - t) * 0.7,
-            0.8 - (1.0 - t) * 0.1,
-            0.3 - (1.0 - t) * 0.2,
-        ]
-    } else {
-        // Below 50%: yellow → red (heavy engagement)
-        let t = ratio * 2.0; // 0..1
-        [0.9 - (1.0 - t) * 0.1, 0.7 * t, 0.1 * t]
-    }
+    super::colors::engagement_ramp(ratio)
 }
-
-/// Bright cyan color for entry preview lines.
-const ENTRY_PREVIEW_COLOR: [f32; 3] = [0.2, 0.9, 0.9];
 
 /// Generate schematic entry path preview vertices for a toolpath.
 ///
@@ -848,7 +805,7 @@ const ENTRY_PREVIEW_COLOR: [f32; 3] = [0.2, 0.9, 0.9];
 /// Returns empty if entry_style is None or there are no cutting moves.
 #[allow(clippy::indexing_slicing)] // first_cut_idx validated by position() and bounds > 0
 pub fn entry_preview_vertices(tp: &Toolpath, config: &EntryPreviewConfig) -> Vec<LineVertex> {
-    let color = ENTRY_PREVIEW_COLOR;
+    let color = super::colors::ENTRY_PREVIEW.array();
 
     // Find the first non-Rapid move position (the first plunge/cut point)
     let Some(first_cut_idx) = tp
@@ -999,14 +956,6 @@ pub fn entry_preview_vertices(tp: &Toolpath, config: &EntryPreviewConfig) -> Vec
     verts
 }
 
-/// Generate entry point marker vertices for a toolpath.
-/// Returns line vertices forming a small arrowhead at the first cutting move position,
-/// pointing in the direction of the first cut.
-/// `palette_color`: the toolpath's palette color.
-#[allow(clippy::indexing_slicing)] // first_cut_idx validated by position() and bounds > 0
-/// Pale white-ish color for the tool-profile ghost overlay.
-const TOOL_PROFILE_COLOR: [f32; 3] = [0.85, 0.85, 1.0];
-
 /// Generate a "tool profile preview" overlay: circle outlines of the cutter
 /// silhouette stacked along the cutter's length, drawn at a sampled subset
 /// of cutting-move endpoints so the user can see the swept footprint before
@@ -1064,7 +1013,7 @@ pub fn tool_profile_preview_vertices(
                         (pos.y + r * a0.sin()) as f32,
                         (pos.z + h) as f32,
                     ],
-                    color: TOOL_PROFILE_COLOR,
+                    color: super::colors::TOOL_PROFILE.array(),
                 });
                 verts.push(LineVertex {
                     position: [
@@ -1072,7 +1021,7 @@ pub fn tool_profile_preview_vertices(
                         (pos.y + r * a1.sin()) as f32,
                         (pos.z + h) as f32,
                     ],
-                    color: TOOL_PROFILE_COLOR,
+                    color: super::colors::TOOL_PROFILE.array(),
                 });
             }
         }

@@ -311,7 +311,7 @@ pub enum DensitySource {
 
 impl DensitySource {
     /// The FPL row names, for the hover text and the MCP field. A mean
-    /// reads "mean of <row>; <row>; <row>"; row names carry commas.
+    /// reads `"mean of <row>; <row>; <row>"`; row names carry commas.
     #[must_use]
     pub fn row_names(&self) -> String {
         match self {

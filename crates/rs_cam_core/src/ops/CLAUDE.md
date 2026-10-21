@@ -1,7 +1,7 @@
 # `ops/` — the 2.5D and drilling operations
 
 One module per operation, plus the depth-stepping helper they share. Each
-module is reached through `compute::execute_operation_annotated`.
+module is reached through `compute::execute::execute_operation_annotated` (`pub(crate)`).
 
 ## Files
 

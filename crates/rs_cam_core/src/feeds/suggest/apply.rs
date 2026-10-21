@@ -720,7 +720,7 @@ impl FeedsPreview {
     ///
     /// The recommendation handed back is `explain().recommended`, which is
     /// `calculate(input)` — bit-identical to what
-    /// [`feeds_result_for_operation`] returns for the same input, since both
+    /// [`feeds_result_for_operation`](super::feeds_result_for_operation) returns for the same input, since both
     /// call the same calculator on the same [`FeedsInput`]. Pinned by
     /// `preview_recommendation_is_bit_identical_to_validated_recipe`.
     pub fn applicable(&self) -> Option<ApplicableRecommendation<'_>> {
@@ -865,10 +865,10 @@ pub fn resolve_operation_invariants(
 }
 
 /// Build a [`FeedsPreview`] for an operation in a project context — the
-/// preview counterpart of [`feeds_result_for_operation`] and the entry point
+/// preview counterpart of [`feeds_result_for_operation`](super::feeds_result_for_operation) and the entry point
 /// every apply surface should use.
 ///
-/// Prefer this over [`feeds_explain_for_operation`] anywhere an Apply button
+/// Prefer this over [`feeds_explain_for_operation`](super::feeds_explain_for_operation) anywhere an Apply button
 /// might live: the explain payload alone cannot tell a UI that the pairing was
 /// refused, which is precisely how the modal came to offer eleven writes on
 /// operations the engine had declined to run.
@@ -1043,7 +1043,7 @@ pub fn apply_stock_defaults(operation: &mut OperationConfig, ctx: &StockContext)
 /// Returns `(axial_depth_hint, radial_width_hint, scallop_hint)`.
 ///
 /// Thin tuple adapter over the registry-layer
-/// [`Capabilities::feeds_hints`] accessor (Phase 1, architectural
+/// [`Capabilities::feeds_hints`](crate::compute::catalog::Capabilities::feeds_hints) accessor (Phase 1, architectural
 /// refactor T3) — the per-op decision table lives there as an exhaustive
 /// match; the old `_ => (None, None, None)` wildcard is gone.
 pub fn operation_feeds_hints(

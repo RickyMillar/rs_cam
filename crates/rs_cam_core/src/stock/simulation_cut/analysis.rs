@@ -275,7 +275,7 @@ impl SimulationCutTrace {
     /// Look up the per-toolpath drill summary by id. `None` when this
     /// toolpath isn't a drill op (no entry in [`Self::drill_summaries`]).
     /// Pairs with the per-toolpath
-    /// [`SimulationToolpathCutSummary::metrics_not_applicable`] flag —
+    /// [`SimulationToolpathCutSummary::metrics_not_applicable`](crate::stock::simulation_cut::SimulationToolpathCutSummary::metrics_not_applicable) flag —
     /// when that flag is set, this lookup is the right place to read
     /// drill-native metrics in lieu of engagement-axis ones.
     pub fn drill_summary_for(&self, toolpath_id: ToolpathId) -> Option<&DrillToolpathSummary> {

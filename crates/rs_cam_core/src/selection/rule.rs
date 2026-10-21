@@ -2,8 +2,8 @@
 //! D2/D13).
 //!
 //! A [`Selection`] says WHICH items an op cuts. It does not say how: the
-//! op's `ItemUse` decides that in [`super::view`]. A selection is pure
-//! data; [`super::resolve`] matches it against the items of the models.
+//! op's `ItemUse` decides that in [`super::view`](fn@super::view). A selection is pure
+//! data; [`super::resolve`](fn@super::resolve) matches it against the items of the models.
 //!
 //! `Selection` has NO `impl Default`. Each op states its own default
 //! ([`Selection::drawing`], [`Selection::empty`] or [`Selection::stock`]),

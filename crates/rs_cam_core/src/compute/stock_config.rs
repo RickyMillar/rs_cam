@@ -262,7 +262,7 @@ impl StockConfig {
 
     /// The flip the pins of this stock register: the map of the first
     /// setup in `setups` whose flip is in plane (see
-    /// [`pin_flip_map`](crate::compute::alignment_pins::pin_flip_map)).
+    /// [`crate::compute::alignment_pins::pin_flip_map`]).
     /// Its [`PinSetupMap::axis_segment`] is the flip axis.
     #[must_use]
     pub fn pin_flip_map(

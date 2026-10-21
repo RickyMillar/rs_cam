@@ -25,8 +25,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// F-036b — accel plus the MODULATED feed). The result was a ratio whose
 /// numerator and denominator came from two different time models: where
 /// modulation raised the feed, `cutting_runtime_s` exceeded
-/// `total_runtime_s` and [`AirCutRatios::air_cut_pct_of_cutting_time`]
-/// read BELOW [`AirCutRatios::air_cut_pct_of_total_runtime`] — the
+/// `total_runtime_s` and [`AirCutRatios::air_cut_pct_of_cutting_time`](crate::stock::simulation_cut::AirCutRatios::air_cut_pct_of_cutting_time)
+/// read BELOW [`AirCutRatios::air_cut_pct_of_total_runtime`](crate::stock::simulation_cut::AirCutRatios::air_cut_pct_of_total_runtime) — the
 /// opposite of the documented order. Measured factor 1.76× on a wanaka
 /// rough (`planning/ab_instrument_flags_2026-09-08.md` Flag 1).
 ///

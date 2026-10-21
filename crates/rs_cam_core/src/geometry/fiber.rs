@@ -1,12 +1,12 @@
 //! Fiber and Interval types for push-cutter and waterline algorithms.
 //!
-//! A Fiber is a line segment in XY at a constant Z height, parameterized by t ∈ [0,1].
+//! A Fiber is a line segment in XY at a constant Z height, parameterized by t ∈ `[0, 1]`.
 //! Push-cutter produces intervals on fibers where the cutter cannot go (would gouge).
 //! The complement of these intervals gives the valid toolpath.
 
 use crate::geo::P3;
 
-/// A single interval on a fiber, parameterized by t ∈ [0,1].
+/// A single interval on a fiber, parameterized by t ∈ `[0, 1]`.
 #[derive(Debug, Clone, Copy)]
 pub struct Interval {
     /// Lower bound (t parameter)

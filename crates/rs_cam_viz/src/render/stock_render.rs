@@ -14,7 +14,7 @@ impl StockGpuData {
     pub fn from_bbox(device: &wgpu::Device, bbox: &BoundingBox3) -> Self {
         use wgpu::util::DeviceExt;
 
-        let color = super::colors::STOCK_OUTLINE;
+        let color = super::colors::STOCK_OUTLINE.array();
         let mn = [bbox.min.x as f32, bbox.min.y as f32, bbox.min.z as f32];
         let mx = [bbox.max.x as f32, bbox.max.y as f32, bbox.max.z as f32];
 
@@ -148,7 +148,7 @@ impl SolidStockGpuData {
 
         let mn = [bbox.min.x as f32, bbox.min.y as f32, bbox.min.z as f32];
         let mx = [bbox.max.x as f32, bbox.max.y as f32, bbox.max.z as f32];
-        let color = super::colors::STOCK_SOLID_FACE;
+        let color = super::colors::STOCK_SOLID_FACE.array();
 
         // 8 unique positions, but we need per-face normals so 24 vertices (4 per face)
         let vertices = [

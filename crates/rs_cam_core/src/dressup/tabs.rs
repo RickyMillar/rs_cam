@@ -53,11 +53,11 @@ pub struct Tab {
 ///
 /// # Move intent (CUT-08)
 ///
-/// Every rewritten segment keeps the [`MoveIntent`] of the move it replaces,
+/// Every rewritten segment keeps the [`MoveIntent`](crate::toolpath::MoveIntent) of the move it replaces,
 /// so a tabbed profile stays visible to each intent-keyed reader — the
 /// spacing instrument (`metrology/spacing.rs`) skips a move that is not
 /// `FinishingCut`. The two fed descents back to `cut_depth` after a tab are
-/// [`MoveIntent::EntryPlunge`]: they enter material vertically, which is what
+/// [`MoveIntent::EntryPlunge`](crate::toolpath::MoveIntent::EntryPlunge): they enter material vertically, which is what
 /// that tag means everywhere else in the crate.
 ///
 /// The fed lift onto a tab keeps the cut intent. It removes material, and a

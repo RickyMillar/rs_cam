@@ -14,8 +14,7 @@
   `edit_import_dialog`, `confirm_import_dialog`); `set_model_import_options` is the fourth refresh door.
   `edit_drawing_ledger`: one `EditModelDrawing` and one `ModelDrawingEdits` undo step per act (the undo
   writes `LedgerEdit::Replace`).
-- `tests/` — the suites, one child module per theme; `tests/mod.rs` holds the shared fixtures. The named
-  `*_g_*.rs` sentries sit beside it.
+- `tests/` — the suites, one child module per theme; `tests/mod.rs` holds the shared fixtures. The named `*_g_*.rs` sentries, `results_parity_tests.rs` (G-RESULTS) and `workflow_tests.rs` (end to end) sit beside it.
 
 ## Invariants
 

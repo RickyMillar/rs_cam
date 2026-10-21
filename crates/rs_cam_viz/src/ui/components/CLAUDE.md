@@ -13,7 +13,7 @@ One renderer per repeated UI element; `DESIGN_SPEC.md` gives the sections.
 - `freshness.rs` — the staleness cue. `histogram.rs`, `sparkline.rs` — charts.
 - `provenance.rs`, `precedence.rs` — `ProvKind`, `ProvenanceBadge`,
   `PrecedenceField`. `suggest.rs`, `compare.rs` — Suggest and the deltas.
-- `tab_strip.rs` — `TabStrip` (IC3); `button.rs`, `motion.rs`, `text.rs`, etc.
+- `tab_strip.rs` — `TabStrip` (IC3); `focus_ring.rs` — the keyboard focus ring; `format.rs` — shared text formatting; `button.rs`, `motion.rs`, `text.rs`, etc.
 
 ## The rule: tabular data uses DataTable; derivation goes in Details
 

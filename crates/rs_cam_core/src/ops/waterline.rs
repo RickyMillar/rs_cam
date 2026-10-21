@@ -75,7 +75,7 @@ pub fn waterline_contours(
 /// Inclusive-bounds epsilon for waterline's Z ladder.
 ///
 /// Eight orders of magnitude tighter than
-/// [`crate::finish::finish_setup::Z_LADDER_DEFAULT_EPSILON`], which is what
+/// [`crate::ops::depth::Z_LADDER_DEFAULT_EPSILON`], which is what
 /// `steep_shallow` uses. That is not an oversight on either side: this value
 /// reproduces the generator's original `while z >= final_z - 1e-10` loop
 /// exactly, and waterline's callers pass ladder bounds taken straight from a

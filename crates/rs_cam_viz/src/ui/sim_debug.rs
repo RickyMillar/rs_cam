@@ -87,7 +87,7 @@ pub fn semantic_kind_label(
 /// neither block is a judgement at all — both are just structure the
 /// generator emitted.
 ///
-/// They now walk [`SPAN_SCALE`], the six-step cool ramp that exists for a
+/// They now walk [`SPAN_SCALE`](crate::ui::tokens::SPAN_SCALE), the six-step cool ramp that exists for a
 /// category, in declaration order, so no two neighbouring kinds share a step.
 #[allow(clippy::indexing_slicing)]
 // SAFETY: every index below is a literal in `0..6` and `SPAN_SCALE` has six

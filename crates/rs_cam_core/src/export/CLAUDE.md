@@ -1,7 +1,7 @@
 # `export/` — output that is not G-code
 
 The preview, the fingerprint diff and the G-code validator. The entry point
-is `export::mod`, which re-exports the four surfaces.
+is `export::mod`, which declares each surface as a module and re-exports nothing.
 
 ## Files
 

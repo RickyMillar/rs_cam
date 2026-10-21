@@ -148,7 +148,7 @@ pub struct DrillOp {
     pub material: Material,
 }
 
-/// Dual-representation payload of a [`ToolpathComputeResult`].
+/// Dual-representation payload of a [`ToolpathComputeResult`](crate::session::ToolpathComputeResult).
 ///
 /// Invariant: the `Arc<AnnotatedToolpath>` in either variant was produced
 /// atomically with the rest of this value from a single

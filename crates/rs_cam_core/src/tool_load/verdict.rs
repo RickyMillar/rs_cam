@@ -2043,7 +2043,7 @@ impl DeflectionVerdict {
 /// Both decided arms carry the cap they were judged against, so a
 /// consumer reads the bound off the verdict and never rebuilds it.
 ///
-/// `bound` is a [`RigidityDepthCap`], which holds the profile's factor
+/// `bound` is a [`RigidityDepthCap`](crate::machine::RigidityDepthCap), which holds the profile's factor
 /// and the tool diameter rather than their product. That is the same
 /// pair [`BoundSource::RigidityRuleOfThumb`] carries, so the row's
 /// bound and the row's provenance are one value seen twice and cannot

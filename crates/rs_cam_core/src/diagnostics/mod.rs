@@ -30,7 +30,7 @@
 //! The PR-2 landing (this commit) is plumbing only — the existing
 //! consumers still read their original surfaces. PR-3 cuts the GUI
 //! params panel and the MCP `get_toolpath_diagnostics` endpoint over
-//! to [`crate::diagnostics::diagnose_toolpath`] and friends; PR-4
+//! to [`ProjectSession::diagnose_toolpath`](crate::session::ProjectSession::diagnose_toolpath) and friends; PR-4
 //! wires sim-evidence freshness through [`DiagnosticState`].
 //!
 //! # Schema design
@@ -243,7 +243,7 @@ pub enum Source {
 
 /// One unified diagnostic. Construct via adapters in
 /// [`crate::diagnostics::adapters`]; consumers read the assembled
-/// list out of [`diagnose_toolpath`] (PR-3).
+/// list out of [`ProjectSession::diagnose_toolpath`](crate::session::ProjectSession::diagnose_toolpath) (PR-3).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Diagnostic {
     /// Stable rule key (e.g. `"load.chipload.low"`). See [`ids`] for

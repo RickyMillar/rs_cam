@@ -1,7 +1,7 @@
 //! The "Drills" rows of the pin wizard (R1, R2; round 2): one row for each
 //! pin size of the wizard's draft. A row names the drill of the size and
 //! fixes a missing drill IN PLACE: a tool chooser of the tools of the
-//! size, "Add a <d> mm drill" and "Add a Top setup". No row sends the
+//! size, "Add a `<d>` mm drill" and "Add a Top setup". No row sends the
 //! operator to another screen.
 //!
 //! A drill add and a tool choice wait in the wizard's queue ([`DrillQueue`])

@@ -423,7 +423,7 @@ pub enum ClaimsReference {
 /// Fieldless on purpose: the three facts a reader needs (what was asked for,
 /// what was used, whether a machined prior was in scope) are exactly one of
 /// six combinations, so the variant IS the record. This mirrors
-/// [`crate::finish::finish_setup::CellSource`], which carries the same kind of
+/// [`crate::measurement::CellSource`], which carries the same kind of
 /// "which rule produced this number" provenance for the finish grid.
 ///
 /// [`Self::resolve`] is the ONE place the mapping lives, so a new
@@ -680,7 +680,7 @@ pub struct ClaimsConfig<'a> {
     pub territory_clip: bool,
     /// XY gap (mm) the crease node's emitter may bridge with a stay-down
     /// SURFACE FEED instead of retracting (Step 3.5 →
-    /// [`crate::finish::pencil::emit_paths`] → `PencilParams::hookup_distance`).
+    /// `crate::finish::pencil::emission::emit_paths` → `PencilParams::hookup_distance`).
     ///
     /// A dial rather than a constant because `emit_paths` links with NO
     /// territory boundary: `build_surface_link` only checks that the
@@ -1121,7 +1121,7 @@ pub struct UnifiedFinishReport {
     /// Honest-raster derates (Track B, 2026-09-01): one entry per Shallow
     /// region whose raster stepover was tightened by `cos(theta_max)`.
     /// Empty = no Shallow region carried slope above
-    /// [`SHALLOW_DERATE_MIN_SLOPE_DEG`], so every region used the
+    /// [`SHALLOW_DERATE_MIN_SLOPE_DEG`](region_routing::SHALLOW_DERATE_MIN_SLOPE_DEG), so every region used the
     /// configured `raster_stepover` unchanged. Folded into
     /// `ToolpathStats::derived_stepovers` by the op adapter.
     pub shallow_slope_derates: Vec<ShallowSlopeDerate>,

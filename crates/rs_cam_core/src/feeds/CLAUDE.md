@@ -1,6 +1,6 @@
 # `feeds/` — feeds and speeds
 
-The calculator for RPM, feed, plunge rate, DOC and WOC. The validated entry point is `feeds::suggest`.
+The calculator for RPM, feed, plunge rate, DOC and WOC. The validated entry point is `feeds::suggest`. This file is the one map of the feeds flow (F144 deleted `INTEGRATION.md`).
 
 ## Files
 - `mod.rs`, `tests.rs` — the calculator and its unit tests. `suggest.rs` + `suggest/` — the Suggest model and read doors; children `apply.rs` (write-back

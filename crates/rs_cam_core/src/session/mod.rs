@@ -1582,7 +1582,7 @@ impl SimulationDropCauses {
 /// polygons ([`LoadedModel`]), the annotated toolpath of each cached
 /// result ([`ToolpathComputeResult`]), and the simulation's display mesh,
 /// checkpoints, cut trace and prior stocks
-/// ([`SimulationResult`](crate::compute::simulate::SimulationResult)).
+/// ([`crate::compute::simulate::SimulationResult`]).
 /// The copied weight is the simulation's two deviation vectors, which
 /// scale with the dexel column population.
 ///
@@ -2148,7 +2148,7 @@ impl ProjectSession {
 
     // ── Geometry transforms for setup-local frame ────────────────
 
-    /// Build a [`SetupTransformInfo`] for this session's stock and the given
+    /// Build a [`SetupTransformInfo`](crate::compute::transform::SetupTransformInfo) for this session's stock and the given
     /// orientation. Callers that want to apply the transform themselves should
     /// use the methods on `SetupTransformInfo`.
     pub fn setup_transform_info(

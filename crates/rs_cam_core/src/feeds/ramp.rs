@@ -526,7 +526,7 @@ impl RampFeed {
     ///   at ramp 3.00°)";
     /// - G10 Q2: "Ramp feed 2400 mm/min: the cut feed (plunge limit 22897
     ///   mm/min = plunge 1200 / tan 3.00°)";
-    /// - no entry feed: "Ramp feed: the plunge rate, 703 mm/min: <reason>".
+    /// - no entry feed: "Ramp feed: the plunge rate, 703 mm/min: `<reason>`".
     #[must_use]
     pub fn card_text(&self) -> (String, String) {
         match self {

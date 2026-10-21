@@ -219,7 +219,16 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
             });
 
             ui.menu_button("Simulation", |ui| {
-                if ui.button("Run Simulation").clicked() {
+                // `ui/CLAUDE.md`: every Run Simulation button reads the one
+                // buildable predicate, as the workspace primary does.
+                let can_run = super::readiness::simulation_request_is_buildable(&state.session);
+                if ui
+                    .add_enabled(can_run, egui::Button::new("Run Simulation"))
+                    .on_disabled_hover_text(
+                        "Generate at least one enabled toolpath before simulation.",
+                    )
+                    .clicked()
+                {
                     ui.close();
                     events.push(AppEvent::RunSimulation);
                 }

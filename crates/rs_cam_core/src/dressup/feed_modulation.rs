@@ -35,7 +35,7 @@
 //! - It does not read or write G-code. The toolpath IR carries per-
 //!   move `feed_rate`; G-code emission of `F<rate>` on every feed
 //!   change is F-036a. F-039 layered an *optional* per-move comment
-//!   onto that path; see [`PostDefinition`] / `emit_modulation_comments`.
+//!   onto that path; see [`PostDefinition`](crate::gcode::post::PostDefinition) / `emit_modulation_comments`.
 //! - It does not call the simulator. Engagement summaries are an
 //!   input.
 //! - It does not modulate `MoveType::Rapid`, retract moves

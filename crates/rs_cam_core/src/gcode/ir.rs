@@ -44,7 +44,7 @@ pub enum Statement {
 
     /// Verbatim text spliced into output, including any trailing newlines.
     /// Used for: modal-state `writeln!` lines (M5, M3, M6, M7/M8/M9, G40,
-    /// G41/G42, G0 Z<safe>) and user-supplied pre/post g-code snippets.
+    /// G41/G42, `G0 Z<safe>`) and user-supplied pre/post g-code snippets.
     Raw(String),
 
     /// Rapid traverse via `post.rapid`.

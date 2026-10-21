@@ -416,7 +416,7 @@ impl ProjectSession {
         Ok(out)
     }
 
-    /// Build a [`ModelRefContext`] for a single toolpath (F-023).
+    /// Build a [`ModelRefContext`](crate::diagnostics::adapters::from_model_refs::ModelRefContext) for a single toolpath (F-023).
     /// Captures whether the toolpath's `model_id` resolves against the
     /// project's loaded models so the unified diagnostic stream emits
     /// the same "Selected model missing" signal the GUI banner has
@@ -432,7 +432,7 @@ impl ProjectSession {
         }
     }
 
-    /// Build a [`PreconditionContext`] for a single toolpath. Captures
+    /// Build a [`PreconditionContext`](crate::diagnostics::adapters::from_preconditions::PreconditionContext) for a single toolpath. Captures
     /// the target model's geometry kind (so the project-curve
     /// preconditions can verify a curve / mesh source is in scope), the
     /// holes of a drill op's selection, the refusal of the selection of
@@ -594,7 +594,7 @@ impl ProjectSession {
     }
 
     /// Project-wide diagnostics derived from the
-    /// [`ProjectDiagnostics`] snapshot using the session's cached
+    /// [`ProjectDiagnostics`](crate::session::diagnostics_types::ProjectDiagnostics) snapshot using the session's cached
     /// simulation. Consumers with sim evidence outside the session
     /// (the GUI) should call [`Self::diagnose_project_with_evidence`].
     pub fn diagnose_project(&self) -> Vec<crate::diagnostics::Diagnostic> {

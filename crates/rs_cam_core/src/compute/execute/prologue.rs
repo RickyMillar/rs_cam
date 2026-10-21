@@ -66,7 +66,7 @@ pub struct MeshInput<'a> {
 /// (`resolve_generation_inputs`) and lends it here. The default is an
 /// empty selection: a caller that resolves no model gives the op nothing
 /// to cut, and an op that needs items then refuses with `Empty`.
-pub struct SelectionInputs<'a> {
+pub(crate) struct SelectionInputs<'a> {
     resolved: Cow<'a, ResolvedSelection>,
 }
 

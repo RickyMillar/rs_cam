@@ -12,7 +12,7 @@
 //! ## Why conditioning exists (R1 — the steep_shallow ghost)
 //!
 //! A naive threshold classification (`angle >= threshold_deg`, exactly what
-//! [`crate::finish::steep_shallow::classify_steep_shallow`] does today) shreds into
+//! [`crate::surface::slope::classify_steep_shallow`] does today) shreds into
 //! dozens to hundreds of tiny islands wherever the surface slope oscillates
 //! around the threshold — sampling noise, a slightly wavy surface, or (as
 //! the unit tests below demonstrate) a genuinely striped slope pattern. The

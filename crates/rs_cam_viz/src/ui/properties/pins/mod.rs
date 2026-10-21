@@ -228,7 +228,7 @@ impl KeyedPinInputs {
     /// drilling operation, else [`NOMINAL_DOWEL_MM`]. Since R1 each pin
     /// size has its own drill, so the pins set the size and the drill
     /// follows. A size with no drill shows in the wizard with "Add a
-    /// <d> mm drill".
+    /// `<d>` mm drill".
     #[must_use]
     pub fn plan_pin_diameter(&self, stock: &StockConfig) -> f64 {
         rs_cam_core::compute::alignment_pins::pin_diameters(&stock.alignment_pins)

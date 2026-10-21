@@ -5,7 +5,7 @@
 //! layers below it already exist and are not re-implemented here:
 //! [`crate::maps::tier_map`] walks the *n*-tool residual, [`crate::maps::tier_map_cache`]
 //! memoises the walk, and [`crate::maps::tier_islands`] conditions the labels into
-//! per-tier [`RegionSet`]s. This module is the seam between those and the
+//! per-tier [`RegionSet`](crate::geometry::region_set::RegionSet)s. This module is the seam between those and the
 //! session's op chain.
 //!
 //! # Why an op CHAIN and not one op

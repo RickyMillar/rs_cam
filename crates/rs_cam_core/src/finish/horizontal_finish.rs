@@ -104,7 +104,7 @@ fn horizontal_finish_toolpath(
     })
 }
 
-/// Cancellable variant of [`horizontal_finish_toolpath`]. Polls `cancel`
+/// Cancellable variant of `horizontal_finish_toolpath`. Polls `cancel`
 /// once per flat Z-region and again once per raster row within each region
 /// (the per-row per-point drop-cutter sampling is the expensive step on a
 /// fine-stepover mesh).

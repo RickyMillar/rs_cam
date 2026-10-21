@@ -35,8 +35,8 @@ pub enum PickHit {
     StockFace { face_normal: [f32; 3] },
     /// Hit a toolpath. `move_index` is the closest sampled move on that
     /// toolpath; consumers needing the cut-context (span path, hovered move
-    /// position) can use it to look up the corresponding [`Move`] and
-    /// [`Span`] data.
+    /// position) can use it to look up the corresponding [`Move`](rs_cam_core::toolpath::Move) and
+    /// [`Span`](rs_cam_core::trace::toolpath_spans::Span) data.
     Toolpath { id: ToolpathId, move_index: usize },
     /// Hit a BREP face on an enriched mesh model.
     ModelFace {

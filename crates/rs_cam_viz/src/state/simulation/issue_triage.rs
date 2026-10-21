@@ -115,7 +115,7 @@ impl SimulationState {
         cache.builds += 1;
     }
 
-    /// Build the core [`ProjectEvidence`] borrow view from viz state.
+    /// Build the core [`ProjectEvidence`](rs_cam_core::session::ProjectEvidence) borrow view from viz state.
     ///
     /// One builder, so the GUI panel, the MCP handlers and anything else on
     /// the viz side hand core the same evidence. It lives here rather than in

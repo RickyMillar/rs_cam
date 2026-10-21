@@ -657,7 +657,7 @@ pub struct RelinkParams<'a> {
     /// When `Some`, a candidate link is additionally costed against the
     /// retract it would replace with the F-034 integrator and only kept
     /// when it is actually faster — the same decision
-    /// [`crate::finish::pencil::emit_paths`] makes. `None` keeps any gouge-safe
+    /// `crate::finish::pencil::emission::emit_paths` makes. `None` keeps any gouge-safe
     /// link within `hookup_distance`.
     pub link_kinematics: Option<&'a crate::machine::kinematics::LinkKinematics>,
     /// Visit fragments nearest-first (from the previous fragment's exit)
@@ -824,7 +824,7 @@ pub struct RelinkReport {
 /// This transform moves indices — it deletes the input's junction rapids,
 /// emits link feeds in their place, and (under
 /// [`RelinkParams::reorder`]) permutes whole fragments. It therefore hands
-/// back a [`Transformed`] carrying a [`MoveProvenance`] rather than the
+/// back a [`Transformed`] carrying a [`MoveProvenance`](crate::trace::transform_provenance::MoveProvenance) rather than the
 /// hand-rolled `old -> new` vector it used to expose, so every
 /// index-carrying channel the call site owns is brought along by the type
 /// system instead of by convention. `reorder` picks the provenance FLAVOUR:

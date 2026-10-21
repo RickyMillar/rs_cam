@@ -316,7 +316,8 @@ impl ProjectSession {
     /// Propagate an invalidation along the dependency edges, and touch no
     /// simulation.
     ///
-    /// The pure half of [`Self::invalidate_output_dependents_of_set`].
+    /// The half of [`Self::invalidate_output_dependents_of_set`] that touches
+    /// no simulation. It still drops the results of the dirty set.
     /// `Command::AdoptResult` calls THIS door: an adopt that cleared the
     /// simulation would destroy the `prior_stocks` snapshot the next
     /// operation in a Generate All ladder reads, and would report

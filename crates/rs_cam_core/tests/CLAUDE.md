@@ -47,7 +47,8 @@ part says what the file protects. Search by claim words, not by code.
 - A source-scanning test needs a non-vacuity anchor: assert the needle is
   present before you assert its property, and do not match comments.
   `common/source_scan.rs` (included by `#[path]`) strips comments and
-  finds the items a running test reaches.
+  finds the items a running test reaches. `common/folder_maps.rs` holds the
+  F140 folder-map rules (`folder_maps_name_real_files_f140`, a viz twin).
 - A scan of viz source lives in `rs_cam_viz/tests`, so the viz gate runs
   it. Do not re-check a `pub(crate)` rule by a scan: the compiler holds it.
 - Inject the guarded defect once and confirm the test goes red before you

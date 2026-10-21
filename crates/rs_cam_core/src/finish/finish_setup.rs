@@ -12,7 +12,7 @@
 //! C3 (2026-08-02) closed the follow-up and found only one of them was ever
 //! real:
 //!
-//! * `waterline::waterline_z_levels` WAS a private copy of [`z_ladder`]'s
+//! * `waterline::waterline_z_levels` WAS a private copy of [`z_ladder`](crate::ops::depth::z_ladder)'s
 //!   `snap_to_bottom = false` arm. It is now an adapter naming its own
 //!   epsilon (`waterline::WATERLINE_LADDER_EPSILON`, 1e-10) and delegating
 //!   here; `tests/waterline_shared_finish_setup_c3.rs` pins the two together.

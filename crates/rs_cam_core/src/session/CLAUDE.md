@@ -5,16 +5,16 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 ## Files
 
 - `mod.rs` — `ProjectSession` and the facade. `command.rs` — the registry and the `Effects` door. `dependencies.rs`, `generation_plan.rs` — edges, order.
-- `mutation.rs`, `mutation/` (CRUD, S2 `stock_change.rs`); `compute.rs`, `compute/` (generation, simulation, export, diagnostics); `builder.rs`, `project_file.rs`, `save.rs`;
+- `mutation.rs`, `mutation/` (CRUD, S2 `stock_change.rs`); `compute.rs`, `compute/` (generation, simulation, export, diagnostics, `params.rs` the parameter setters); `builder.rs`, `project_file.rs`, `save.rs`;
   `stock_change_report.rs` (S4 rows); `diagnostics_types.rs` (keep the `mod.rs` re-export).
-- `eval_context.rs`, `cycle_time.rs`, `reach.rs`, `multitool.rs`, `pins.rs` (P6 pin inputs, P10 setup notes), `pin_report.rs` (P7, the one pin report); `shoe.rs` (H1, the one shoe plan); `rest_stock.rs` — the
+- `eval_context.rs`, `cycle_time.rs`, `reach.rs`, `multitool.rs`, `pins.rs` (P6 pin inputs, P10 setup notes), `pin_report.rs` (P7, the one pin report); `shoe.rs` (H1, the one shoe plan); `rest_fresh.rs` (the fresh twin of a rest op, on request); `rest_stock.rs` — the
   stored resolution; `load_report.rs` — the memo; `result_provenance.rs` — the feed stage (W2.5); `heights.rs` (THE heights, the floor door); `selection_status.rs` (P2.4: THE resolution, the `SelectionStatus` memo); `tab_layout.rs` (P4.6: the `TabLayout` query, no kernel; `apply_tab_edit`: L-5 conversion, O-4 refusal).
 
 ## Invariants
 
 - A command returns `Effects`. `Effects.stale` is the stale set.
 - An edit invalidates the result chain to fixpoint: `invalidate_output_dependents_of_set`; an S2 stock change, from its setup on: `drop_stock_change_dependents`.
-- `dependencies::edges` (rules), `generation_plan` (order; a row that gains a result in the plan stales the snapshots below it, W1.5b): no surface re-derives either. `walk_output_dependents` is pure.
+- `dependencies::edges` (rules), `generation_plan` (order; a row that gains a result in the plan stales the snapshots below it, W1.5b): no surface re-derives either. `walk_output_dependents` drops results and touches no simulation; an edit takes `invalidate_output_dependents_of_set`.
 - `drop_simulation(cause)` is the one site that clears the simulation. It
   bumps `simulation_epoch` and records the cause. `AdoptResult` refuses a
   stale revision, `AdoptSimulation` a stale epoch. `store_simulation` is the one

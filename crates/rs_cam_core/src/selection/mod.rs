@@ -3,9 +3,9 @@
 //! An item is a loop, an open path, a point, a circle or a flat face. The
 //! import doors fill `LoadedModel::items`; the stock source runs per setup
 //! (P2.1); the flat regions of a mesh are faces too (P4.7,
-//! `flat_regions`). A [`Selection`] holds rules and picks; [`resolve`]
+//! `flat_regions`). A [`Selection`] holds rules and picks; [`resolve`](fn@resolve)
 //! matches it against the items, [`ResolvedSelection::to_setup_frame`]
-//! moves the items into the setup frame, and [`view`] gives the items an
+//! moves the items into the setup frame, and [`view`](fn@view) gives the items an
 //! op cuts or a [`SelectionRefusal`] (P2.2).
 
 pub mod drawing_edit;

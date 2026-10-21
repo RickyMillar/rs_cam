@@ -117,24 +117,7 @@ impl ColorFingerprint {
 pub fn deviation_colors(deviations: &[f32]) -> Vec<[f32; 3]> {
     deviations
         .iter()
-        .map(|&d| {
-            if d > 0.1 {
-                // Material remaining — blue, intensity by amount
-                let t = ((d - 0.1) / 1.0).min(1.0); // 0..1 over 0.1..1.1 mm
-                [0.0, 0.3 * (1.0 - t), 0.5 + 0.5 * t] // darker blue as more remaining
-            } else if d < -0.5 {
-                // Major overcut — red
-                let t = ((-d - 0.5) / 1.0).min(1.0);
-                [0.6 + 0.4 * t, 0.0, 0.0]
-            } else if d < -0.1 {
-                // Slight overcut — yellow, blending toward red
-                let t = ((-d - 0.1) / 0.4).min(1.0); // 0..1 over -0.1..-0.5
-                [0.8 + 0.2 * t, 0.8 * (1.0 - t), 0.0]
-            } else {
-                // On target — green
-                [0.1, 0.75, 0.1]
-            }
-        })
+        .map(|&d| super::colors::deviation_color(d))
         .collect()
 }
 
@@ -172,7 +155,7 @@ impl SimMeshGpuData {
                 .map(|i| [hm.colors[i * 3], hm.colors[i * 3 + 1], hm.colors[i * 3 + 2]])
                 .collect()
         } else {
-            vec![[0.65, 0.45, 0.25]; num_verts]
+            vec![super::colors::SIM_STOCK_WOOD; num_verts]
         };
         Self::from_heightmap_mesh_colored(device, limits, hm, &colors)
     }
@@ -425,7 +408,10 @@ impl SimMeshGpuData {
                     hm.vertices[i * 3 + 2],
                 ],
                 normal: [0.0, 0.0, 1.0],
-                color: colors.get(i).copied().unwrap_or([0.65, 0.45, 0.25]),
+                color: colors
+                    .get(i)
+                    .copied()
+                    .unwrap_or(super::colors::SIM_STOCK_WOOD),
             });
         }
 
@@ -674,8 +660,8 @@ impl ToolModelGpuData {
     ) -> Self {
         use wgpu::util::DeviceExt;
 
-        let shank_color = super::colors::TOOL_SHANK;
-        let holder_color = super::colors::TOOL_HOLDER;
+        let shank_color = super::colors::TOOL_SHANK.array();
+        let holder_color = super::colors::TOOL_HOLDER.array();
         let segments: usize = 24;
         let mut verts = Vec::new();
 
@@ -747,7 +733,7 @@ impl ToolModelGpuData {
         let shelf_r = shelf_draw_radius(&info.head);
         for part in &info.head {
             let color = if part.soft {
-                super::colors::TOOL_HEAD_SOFT
+                super::colors::TOOL_HEAD_SOFT.array()
             } else {
                 holder_color
             };

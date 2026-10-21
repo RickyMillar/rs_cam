@@ -1,7 +1,7 @@
 # `metrology/` — the finishing programme's rulers
 
 The shared instruments that measure a finished surface. The entry point is
-`metrology::mod`, which re-exports each ruler. No product path reads one, so
+`metrology::mod`, which declares each ruler as a `pub mod`. No product path reads one, so
 `lib.rs` gates the module behind `test-support` (F085); a reader needs that
 feature and a `required-features` row in `Cargo.toml`.
 

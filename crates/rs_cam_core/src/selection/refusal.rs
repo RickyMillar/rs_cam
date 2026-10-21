@@ -1,7 +1,7 @@
 //! The selection refusal and the selection note (DESIGN 5.1, lead ruling
 //! D2/D13).
 //!
-//! [`super::view`] turns a resolved selection into a refusal or into the
+//! [`super::view`](fn@super::view) turns a resolved selection into a refusal or into the
 //! items of the op. A refusal names the item, the cause and the fix. A note
 //! counts the items that the default rule matched and that the op cannot
 //! cut: the op cuts the rest, and the note says what it left out.

@@ -510,7 +510,7 @@ pub const TWIST_DRILL_POINT_DEG: f64 = 118.0;
 
 impl ProjectSession {
     /// A drill of `diameter` for the holes of one pin size (R2): the tool
-    /// that the pin section's "Add a <d> mm drill" adds.
+    /// that the pin section's "Add a `<d>` mm drill" adds.
     ///
     /// - The type and the settings come from the tool of a pin-drill or
     ///   drill operation (the project's own drill), else a `VBit` with

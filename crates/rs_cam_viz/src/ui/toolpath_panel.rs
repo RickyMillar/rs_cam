@@ -1379,7 +1379,7 @@ pub fn worst_edge(rows: &[EdgeRow]) -> Option<EdgeRow> {
 /// A `None` source is a source that is not DRAWN: a collapsed setup, a
 /// filtered list, or a row the session no longer holds. It draws a short
 /// rail above the row instead, on the same x, and the caller puts the up
-/// glyph at [`Self::stub`].
+/// glyph at [`ConnectorPath::stub`].
 #[must_use]
 pub fn connector_path(source: Option<RowGeometry>, target: RowGeometry) -> ConnectorPath {
     let tip = arrow_tip(target);

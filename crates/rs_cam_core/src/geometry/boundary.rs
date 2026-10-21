@@ -21,19 +21,12 @@ pub enum ToolContainment {
     Outside,
 }
 
-/// Compute the effective boundary polygon after applying containment offset.
-///
-/// - `Center`: returns boundary unchanged
-/// - `Inside`: shrinks boundary by `tool_radius` so the full cutter stays within
-/// - `Outside`: expands boundary by `tool_radius` so the cutter center can reach the edge
-///
-/// May return multiple polygons if the offset splits the shape, or empty if it collapses.
-///
-/// **An empty result is not self-explanatory and its two causes are not
-/// equally safe** — see [`effective_boundary_reported`], which is what every
-/// production call site uses.
+/// [`effective_boundary_reported`] without its failure channel. Test only:
+/// a production caller takes the reported form (F138), because an empty
+/// result has two causes that are not equally safe.
+#[cfg(test)]
 #[must_use]
-pub fn effective_boundary(
+fn effective_boundary(
     boundary: &Polygon2,
     containment: ToolContainment,
     tool_radius: f64,
@@ -41,8 +34,15 @@ pub fn effective_boundary(
     effective_boundary_reported(boundary, containment, tool_radius).0
 }
 
-/// [`effective_boundary`] with the offset failure channel attached
-/// (Checkpoint C, Q2 — the fix for F-1).
+/// The effective boundary polygons after the containment offset, with the
+/// offset failure channel attached (Checkpoint C, Q2 — the fix for F-1).
+///
+/// - `Center`: returns boundary unchanged
+/// - `Inside`: shrinks boundary by `tool_radius` so the full cutter stays within
+/// - `Outside`: expands boundary by `tool_radius` so the cutter center can reach the edge
+///
+/// May return multiple polygons if the offset splits the shape, or empty if it collapses.
+/// Every production call site uses this form.
 ///
 /// # Why this layer, specifically, cannot use the plain name
 ///
@@ -165,12 +165,12 @@ pub fn clip_toolpath_to_boundary(tp: &Toolpath, boundary: &Polygon2, safe_z: f64
     clip_toolpath_to_boundary_with_provenance(tp, boundary, safe_z).0
 }
 
-/// Clip an [`AnnotatedToolpath`] to the union of a boundary SET, under the
+/// Clip an [`AnnotatedToolpath`](crate::trace::toolpath_spans::AnnotatedToolpath) to the union of a boundary SET, under the
 /// C1 provenance contract.
 ///
 /// The single implementation of "clip, then bring the indices along": it
 /// remaps the spans through the clip's mapping and hands that same mapping
-/// to every registered channel via [`Transformed::reconcile`]. Three call
+/// to every registered channel via [`Transformed::reconcile`](crate::trace::transform_provenance::Transformed::reconcile). Three call
 /// sites (`ProjectSession::apply_boundary_clip`, `..._multi`, and the viz
 /// worker's inline single-polygon clip) each carried their own copy of the
 /// remap-then-poke-the-trace sequence; a fourth would have forgotten it.

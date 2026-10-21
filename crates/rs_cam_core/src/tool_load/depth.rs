@@ -36,13 +36,13 @@
 //!
 //! ## The bound, and why it does not gate
 //!
-//! The cap is [`RigidityProfile::depth_cap_mm`]: the profile's own
+//! The cap is [`RigidityProfile::depth_cap_mm`](crate::machine::RigidityProfile::depth_cap_mm): the profile's own
 //! factor for the operation family, times the diameter that
 //! `feeds::geometry::depth_cap_diameter_mm` gives at the measured peak
 //! (the engaged cone diameter on a tapered ball, the nominal diameter on
 //! every other shape). It is a
 //! RULE OF THUMB with no published source, so it carries
-//! [`BoundSource::RigidityRuleOfThumb`], whose `gates_export()` is
+//! [`BoundSource::RigidityRuleOfThumb`](crate::tool_load::verdict::BoundSource::RigidityRuleOfThumb), whose `gates_export()` is
 //! false. An exceedance is reported; the export goes ahead. The day the
 //! machine is measured, the variant is replaced by a measured one and
 //! the row gates with no change to any renderer (`PLAN.md` §11).

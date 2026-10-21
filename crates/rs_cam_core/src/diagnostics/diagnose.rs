@@ -7,7 +7,7 @@
 //!   borrowed inputs (config, tool, optional sim/load/feeds
 //!   evidence) and produce a deduped [`Vec<Diagnostic>`]. Useful for
 //!   unit tests and for callers that don't have a `ProjectSession`.
-//! - [`ProjectSession::diagnose_toolpath`] / `diagnose_project` —
+//! - [`ProjectSession::diagnose_toolpath`](crate::session::ProjectSession::diagnose_toolpath) / `diagnose_project` —
 //!   session helpers that extract the inputs and call the pure
 //!   function. Used by MCP and the GUI consumer cutover.
 

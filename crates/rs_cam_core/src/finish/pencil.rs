@@ -173,7 +173,7 @@ pub struct PencilParams {
     /// `ToolDefinition` implements `MillingCutter`, so it drops directly.
     pub reference_cutter: Option<crate::tool::ToolDefinition>,
     /// P1 quantitative linker (unified-finishing-pass W4a): the machine
-    /// envelope [`emit_paths`] costs a surface-link candidate against a
+    /// envelope `emission::emit_paths` costs a surface-link candidate against a
     /// retract-link candidate with, using the F-034 cycle-time
     /// integrator ([`crate::machine::kinematics::surface_link_time`] /
     /// [`crate::machine::kinematics::retract_link_time`]). `hookup_distance`
@@ -198,7 +198,7 @@ pub struct PencilParams {
     /// fragment's entry outright — and on this pass an entry is 7.2 s
     /// against 0.16 s of cutting, so that is the whole prize. A link that
     /// LIFTS still lands from above, so the fragment still pays
-    /// [`emission::emit_entry_descent`], and the lift itself has to be travelled.
+    /// `emission::emit_entry_descent`, and the lift itself has to be travelled.
     ///
     /// With one cap governing both, widening it to reach more at-depth
     /// candidates drags in long candidates that cross finished terrain,
@@ -299,7 +299,7 @@ pub struct PencilPath {
 impl PencilPath {
     /// The lifted, ordered points of this pass. `Z == f64::NAN` marks a
     /// point the tool cannot contact here — off the mesh
-    /// ([`chain_paths::lift_to_surface`]) or, for an offset pass, truncated because the
+    /// (`chain_paths::lift_to_surface`) or, for an offset pass, truncated because the
     /// local reach does not support it at this offset (see
     /// [`paths_from_sampled`]'s `OffsetFan::reach` doc). Non-`NaN` points
     /// are real cutting contact.

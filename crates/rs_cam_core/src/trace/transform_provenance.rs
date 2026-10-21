@@ -7,7 +7,7 @@
 //! moves move indices around. Several channels store move indices next to the
 //! toolpath: `AnnotatedToolpath::spans`, and the semantic trace's per-item
 //! move links. Before this module, each transform built a
-//! [`MoveRemap`](crate::trace::toolpath_spans::MoveRemap) *privately*, applied it to
+//! [`crate::trace::toolpath_spans::MoveRemap`] *privately*, applied it to
 //! the spans, and dropped it. The semantic trace was only kept honest because
 //! f375045's `SemanticLinkCarrier` smuggled its links through the span vector
 //! as fake spans. That is a convention: the next channel, or the next

@@ -2,7 +2,7 @@
 //!
 //! W2.1 (IA cleanup, Tier 2). Before this module the feeds UI recomputed a
 //! *fresh* LUT lookup every frame to colour its pills, and reused the single
-//! [`ChiploadSource`](super::ChiploadSource) — which describes only the
+//! [`super::ChiploadSource`] — which describes only the
 //! *chipload's* origin — to label all of feed / plunge / RPM / DOC / WOC. The
 //! result: a vendor RPM with a formula-fallback chipload rendered amber
 //! ("formula fallback") on every field, and a hand-edited value still showed
@@ -12,7 +12,7 @@
 //! stored value was produced* — stamped at write time, persisted with the
 //! operation, and read back instead of recomputed. [`ChiploadSource`] keeps its
 //! narrow role as the chipload's own origin inside
-//! [`FeedsResult`](super::FeedsResult); it is no longer the universal label.
+//! [`super::FeedsResult`]; it is no longer the universal label.
 
 use serde::{Deserialize, Serialize};
 

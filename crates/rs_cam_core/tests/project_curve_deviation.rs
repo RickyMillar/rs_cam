@@ -35,7 +35,7 @@ use rs_cam_core::compute::config::{
 use rs_cam_core::compute::execute::apply_dressups;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::geometry::boundary::{
-    ToolContainment, clip_toolpath_to_boundary, effective_boundary,
+    ToolContainment, clip_toolpath_to_boundary, effective_boundary_reported,
 };
 use rs_cam_core::io::dxf_input::load_dxf;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
@@ -696,7 +696,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     // Stage-by-stage check with boundary clipping (the final stage in the
     // session compute pipeline).
     let stock_poly = rs_cam_core::polygon::Polygon2::rectangle(-5.0, -5.0, 115.0, 115.0);
-    let boundaries = effective_boundary(&stock_poly, ToolContainment::Inside, 0.5);
+    let (boundaries, _) = effective_boundary_reported(&stock_poly, ToolContainment::Inside, 0.5);
     if let Some(boundary) = boundaries.first() {
         let clipped = clip_toolpath_to_boundary(&all_moves, boundary, 10.0);
         let post_clip_lat = count_lateral_cuts_at_depth(&clipped, 9.5, 1.0);

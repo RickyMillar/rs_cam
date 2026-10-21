@@ -20,7 +20,7 @@
 //! path but the machine decelerates into every loop. Which wins is set by
 //! **acceleration**, so the decision is *measured*, not looked up: run the
 //! real accel-aware integrator
-//! ([`compute_cycle_time`](crate::machine::kinematics::compute_cycle_time))
+//! ([`crate::machine::kinematics::compute_cycle_time`])
 //! over each candidate's actual toolpath at the machine's
 //! [`effective_kinematics`](crate::machine::MachineProfile::effective_kinematics)
 //! and compare. On a rigid VMC the spiral's shorter path wins; on a belt

@@ -21,7 +21,7 @@
 //! for a rounded rectangle, or open polylines, splines and partial ellipses.
 //! The importer joins every OPEN piece (LINE, partial ARC, partial ELLIPSE,
 //! SPLINE, open LWPOLYLINE and POLYLINE) end to end where two ends meet
-//! within the join tolerance (default [`CLOSE_TOL_MM`]). A piece may join
+//! within the join tolerance (default [`CLOSE_TOL_MM`](crate::selection::join::CLOSE_TOL_MM)). A piece may join
 //! reversed. A chain that comes back to its start is a closed polygon;
 //! other chains are open paths. A chain holds the pieces of one layer only
 //! (DESIGN D14). P4.8 moved the join to [`crate::selection::join`], so the

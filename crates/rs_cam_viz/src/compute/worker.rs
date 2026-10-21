@@ -144,7 +144,7 @@ impl ArtifactPolicy {
     /// The policy of `[diagnostics]`. The folder is the file's value, else
     /// the per-user cache folder (`rs_cam_core::settings::paths`).
     ///
-    /// In a unit-test build the default folder is [`test_artifact_dir`],
+    /// In a unit-test build the default folder is `test_artifact_dir`,
     /// not the user cache. Every controller job reads its folder here, so
     /// no test with default settings can write into the operator's cache
     /// folder. A file value still wins.

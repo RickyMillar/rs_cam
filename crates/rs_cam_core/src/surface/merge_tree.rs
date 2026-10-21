@@ -27,7 +27,7 @@
 //!   a wall.
 //! - The grid border is a wall, not an outlet. A valley that runs off the
 //!   edge of the board is a pocket. This is the difference from
-//!   [`super::flow_accum::priority_flood_epsilon`], which drains every cell
+//!   `super::flow_accum::priority_flood_epsilon`, which drains every cell
 //!   next to the border.
 //! - A component that is still open when all cells are in is a root. Its
 //!   saddle is `top_z`. A root is always a pocket, also when it is weak,

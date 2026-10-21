@@ -37,7 +37,7 @@
 //! Verbatim [`crate::maps::geom_cache`] discipline, for the same reasons argued at
 //! length there:
 //!
-//! * **Mesh identity** is a [`Weak<TriangleMesh>`] upgraded and compared with
+//! * **Mesh identity** is a [`Weak<TriangleMesh>`](std::sync::Weak) upgraded and compared with
 //!   [`Arc::ptr_eq`], never a bare pointer — a bare pointer has an ABA hazard
 //!   (drop a mesh, allocate another at the same address, and the memo answers
 //!   with the previous mesh's map), and a live `Weak` makes address reuse
@@ -77,9 +77,9 @@
 //!
 //! # The instrument
 //!
-//! [`stats`] counts builds and hits. The bar T3 is written against is not
+//! `stats` counts builds and hits. The bar T3 is written against is not
 //! "the second call is faster" but "the second call does **no** drop-cutter
-//! work", which is read off [`crate::maps::tier_map::drop_call_count`] — see
+//! work", which is read off `crate::maps::tier_map::drop_call_count` — see
 //! `tests/tier_map_cache_t3.rs`.
 
 use std::sync::{Arc, Mutex, OnceLock};
@@ -239,7 +239,7 @@ pub fn cached_tier_map(
 
 /// The cached map for this (mesh identity, ladder, params), or `None`.
 /// **Never builds one**, never inspects a cancel token, and never counts as a
-/// hit or a miss in [`stats`].
+/// hit or a miss in `stats`.
 ///
 /// For a caller whose contract forbids the walk — `plan_multitool_finishing`
 /// is cheap by design — but that can say something useful when the operator

@@ -228,7 +228,7 @@ pub struct RingStepoverDecision {
     pub samples: usize,
 }
 
-/// [`ring_stepover`] with every compensation it stacks made selectable.
+/// `ring_stepover` (test only) with every compensation it stacks made selectable.
 ///
 /// **Research seam (M4), `pub` so a harness can probe the decision without
 /// re-implementing it.** [`ScallopStepoverPolicy::SHIPPED`] reproduces the

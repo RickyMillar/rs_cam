@@ -30,8 +30,10 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
   type is `ToolType`'s own serde token (`end_mill`, `ball_nose`,
   `bull_nose`, `v_bit`, `tapered_ball_nose`) on every surface; do not
   add a CLI-only spelling.
-- A machine profile comes from `io::machine_library`, the library the
-  GUI and MCP share. Do not hardcode a preset in a subcommand.
+- A named machine profile comes from `io::machine_library`, the library
+  the GUI and MCP share. Do not add a hardcoded preset to a subcommand.
+  The one exception is `nc-time` with no `--machine`: it keeps the
+  built-in `shapeoko_xxl_ricky_tuned` preset (CLI-06, `nc_replay.rs`).
 - C2: a job `[[operation]]` reads the W5 schema. `type` is the registry
   token, every other key that is not in `OperationDef::JOB_KEYS` is a
   schema parameter, and `[operation.dressups]` holds `DressupConfig::FIELD_DEFS`

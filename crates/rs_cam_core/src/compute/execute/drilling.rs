@@ -25,13 +25,13 @@ use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
 ///
 /// Returns `None` for non-drill ops, and for a drill op whose selection
 /// refuses (the generator refused it too). The caller pairs this with the
-/// `AnnotatedToolpath` produced by [`execute_operation_annotated`] to
+/// `AnnotatedToolpath` produced by [`execute_operation_annotated`](super::execute_operation_annotated) to
 /// form a [`crate::ops::drill_op::OpData::DrillOp`] — the dual-representation
 /// invariant.
 ///
 /// `selection` is the resolved selection the generator was given
 /// (`ExecutionContext::selection`), in the emission frame. This view runs
-/// the same pure [`crate::selection::view`] over it with the same
+/// the same pure [`crate::selection::view`](fn@crate::selection::view) over it with the same
 /// `ItemUse`, so it names the holes the emitted toolpath drills.
 ///
 /// Hole-source asymmetry (§6.E):

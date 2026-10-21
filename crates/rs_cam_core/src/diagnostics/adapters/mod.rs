@@ -3,7 +3,7 @@
 //!
 //! Each submodule handles one source. Adapters are pure functions —
 //! they take borrowed inputs and return a `Vec<Diagnostic>`. The
-//! orchestrator at [`super::diagnose_toolpath`] (PR-3 onwards)
+//! orchestrator at [`ProjectSession::diagnose_toolpath`](crate::session::ProjectSession::diagnose_toolpath) (PR-3 onwards)
 //! composes them and runs the supersession reducer.
 //!
 //! Design rules adapters follow:

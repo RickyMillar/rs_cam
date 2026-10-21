@@ -357,7 +357,7 @@ pub struct BlockingToolpath {
 /// disagree about why an operation blocks.
 ///
 /// Keyed on [`FreshnessState`] since G-STALEXPORT. It used to take the
-/// raw [`ComputeStatus`], which could not tell an operation that was
+/// raw [`ComputeStatus`](rs_cam_core::compute::config::ComputeStatus), which could not tell an operation that was
 /// never generated from one whose result belongs to a previous parameter
 /// set — both read `Done`/absent — and so had no sentence for the second.
 pub fn blocking_toolpath_message(name: &str, freshness: &FreshnessState) -> String {

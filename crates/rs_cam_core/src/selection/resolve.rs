@@ -1,7 +1,7 @@
 //! The resolver: a [`Selection`] against the items of the models (DESIGN
 //! 4.1).
 //!
-//! [`resolve`] is pure. It reports; it never refuses. [`super::view`] is
+//! [`resolve`] is pure. It reports; it never refuses. [`super::view`](fn@super::view) is
 //! the one function that turns the report into a refusal, so generation
 //! and a status query give the same answer.
 //!
@@ -233,7 +233,7 @@ impl ResolvedSelection {
 
     /// The mesh models whose flat regions are not computed yet, so the
     /// face rules and the picks on them matched nothing (geometry
-    /// selection P4.7). [`super::view`] refuses `FacesNotReady`; the
+    /// selection P4.7). [`super::view`](fn@super::view) refuses `FacesNotReady`; the
     /// `selection_status` report says "computing faces" instead.
     pub fn faces_not_ready(&self) -> &[ModelId] {
         &self.faces_not_ready
@@ -355,7 +355,7 @@ fn shape_in_setup_frame(shape: &Shape, info: &SetupTransformInfo) -> Shape {
 ///
 /// A lateral setup turns a horizontal model face vertical: its normal then
 /// has no Z part, so a face filter admits it neither up nor down, and its
-/// plane Z is a depth along the side, not a floor. [`super::view`]
+/// plane Z is a depth along the side, not a floor. [`super::view`](fn@super::view)
 /// refuses such a face (`FaceNotFlat`, P2.4).
 pub fn face_in_setup_frame(face: &FaceItem, info: Option<&SetupTransformInfo>) -> (f64, V3) {
     let Some(info) = info.filter(|i| i.needs_transform()) else {

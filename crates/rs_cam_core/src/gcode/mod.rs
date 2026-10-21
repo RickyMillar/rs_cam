@@ -740,7 +740,7 @@ pub fn arrange_phases_by_setup<'a>(
 
 /// Check whether the cached sim trace's provenance still matches the
 /// project's current state. PR-4: this is the staleness signal that
-/// drives [`UnmodeledReason::StaleSimulation`] emissions out of the
+/// drives [`UnmodeledReason::StaleSimulation`](crate::tool_load::verdict::UnmodeledReason::StaleSimulation) emissions out of the
 /// load gates — when current toolpaths or tools differ from the
 /// trace's recorded hashes, the gates can no longer be honoured
 /// against the current configs.

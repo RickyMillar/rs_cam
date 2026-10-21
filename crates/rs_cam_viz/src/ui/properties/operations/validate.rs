@@ -277,7 +277,7 @@ fn diagnostics_heights(
 ///   pinned bottom reaches no emitted motion on any operation this rule
 ///   answers for, so cautioning on it described a cut the machine does not
 ///   make. The Heights tab says that beside the field instead
-///   ([`bottom_z_pin_note`]).
+///   ([`bottom_z_pin_note`](crate::ui::properties::operations::bottom_z_pin_note)).
 /// - `None` covers three states and none of them is "clean on a measured
 ///   value": the rule does not answer for this operation, the caller supplied
 ///   no stock span, or the floor is at or above the stock bottom.

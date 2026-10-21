@@ -128,7 +128,7 @@ pub struct SuggestContext<'a> {
     /// LUT chipload band for the matched op × tool combination, when
     /// [`FeedsResult::chipload_bounds`] could derive one. Read by the
     /// v2 step 2 chipload-aware feed-up recalibration in
-    /// [`enforce_invariants`]. `apply_feeds_result_to_op` lifts this
+    /// [`enforce_invariants`](invariants::enforce_invariants). `apply_feeds_result_to_op` lifts this
     /// off `FeedsResult` automatically; direct callers of
     /// `enforce_invariants` (tests synthesizing post-v1.1 operating
     /// points) populate it explicitly. `None` means "no constraint
@@ -149,7 +149,7 @@ pub struct SuggestContext<'a> {
     /// **Sentinel contract (C2, 2026-07-30) — DOCUMENTED AND TESTED, not
     /// converted.** `0.0` means *not populated* (no calculator result fed
     /// this context), and the single consumer,
-    /// [`recompute_chipload_bounds_for_dpp`], treats a non-positive diameter
+    /// [`recompute_chipload_bounds_for_dpp`](axial_envelope::recompute_chipload_bounds_for_dpp), treats a non-positive diameter
     /// exactly as it treats a drill op: `doc_ratio = 0.0`, which
     /// `doc_derating_scale` maps to a scale of 1.0, i.e. the raw LUT band
     /// passes through underated. It is left as `f64` because a cutter
@@ -161,7 +161,7 @@ pub struct SuggestContext<'a> {
     /// The operating point [`crate::feeds::calculate`] derived its feed at
     /// (G-SUGGEST-NOCLAMP, 2026-08-19). Populated by `apply_feeds_subset`
     /// from the `FeedsResult` it is applying; read only by
-    /// [`rescale_feed_to_final_geometry`].
+    /// [`rescale_feed_to_final_geometry`](adaptive_entry::rescale_feed_to_final_geometry).
     ///
     /// `None` means **there is no derivation point to reconcile against**,
     /// and the rescale pass short-circuits. That is the correct answer for
@@ -304,10 +304,10 @@ pub enum SuggestWarning {
     /// v1.2 combined-Suggest: the closed-form move-count predictor (see
     /// [`crate::feeds::predict::predict_move_count`]) projected that the
     /// just-written stepover would emit more than
-    /// [`STEPOVER_BACKOFF_TARGET_MOVES`] motion samples on the operation's
+    /// [`STEPOVER_BACKOFF_TARGET_MOVES`](invariants::STEPOVER_BACKOFF_TARGET_MOVES) motion samples on the operation's
     /// model envelope. `enforce_invariants` iteratively raised the
     /// stepover by 50% per iteration (max 5 iterations, ceiling
-    /// `tool.diameter × `[`STEPOVER_BACKOFF_DIAMETER_FRACTION`]) until the
+    /// `tool.diameter × `[`STEPOVER_BACKOFF_DIAMETER_FRACTION`](invariants::STEPOVER_BACKOFF_DIAMETER_FRACTION)) until the
     /// predicted move count cleared the threshold or the loop hit the
     /// ceiling. The Wanaka 3D Finish 6 motivating case (2 mm tip
     /// tapered-ball on a 140 × 150 mm stock with a `scallop_height`
@@ -315,7 +315,7 @@ pub enum SuggestWarning {
     /// settles to a usable stepover via this back-off.
     ///
     /// `predicted_moves_at_raised` may still exceed
-    /// [`STEPOVER_BACKOFF_TARGET_MOVES`] if the loop bailed on the
+    /// [`STEPOVER_BACKOFF_TARGET_MOVES`](invariants::STEPOVER_BACKOFF_TARGET_MOVES) if the loop bailed on the
     /// diameter-fraction ceiling — that's the "unmet gate" signal until
     /// the v2 surface adds a structured unmet-condition channel.
     /// Scallop-height-targeted ops that get raised past the scallop
@@ -1008,7 +1008,7 @@ pub fn feeds_result_for_operation(
 }
 
 /// Same inputs as [`feeds_result_for_operation`] but returns the full
-/// [`FeedsExplain`] payload — recommended values plus matched LUT row,
+/// [`FeedsExplain`](crate::feeds::explain_payload::FeedsExplain) payload — recommended values plus matched LUT row,
 /// sibling rows, and machine envelope. Used by the redesigned Feeds &
 /// Speeds modal.
 pub fn feeds_explain_for_operation(

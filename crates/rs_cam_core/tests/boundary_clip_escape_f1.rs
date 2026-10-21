@@ -65,8 +65,7 @@ use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, Boundary
 use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::geometry::boundary::{
-    ToolContainment, clip_annotated_to_boundary_set, effective_boundary,
-    effective_boundary_reported,
+    ToolContainment, clip_annotated_to_boundary_set, effective_boundary_reported,
 };
 use rs_cam_core::polygon::{OffsetFailure, Polygon2};
 use rs_cam_core::session::ProjectSession;
@@ -161,9 +160,14 @@ fn the_pre_fix_shape_emits_an_unclipped_path_on_a_failed_containment() {
         "a contained failure is mapped to an empty result — that is the \
          whole premise of F-1"
     );
-    // And the old name still produces the same empty vec, so the pre-fix
-    // call really did see this.
-    assert!(effective_boundary(&boundary, ToolContainment::Inside, tool_radius).is_empty());
+    // And the polygons alone (what the pre-fix name returned, now
+    // crate-private, F138) are the same empty vec, so the pre-fix call
+    // really did see this.
+    assert!(
+        effective_boundary_reported(&boundary, ToolContainment::Inside, tool_radius)
+            .0
+            .is_empty()
+    );
 
     let (annotated, move_count) = path_with_an_out_of_bounds_cut();
     let recorder =

@@ -64,6 +64,13 @@ manual_let_else = "deny"
 [workspace.lints.rust]
 unsafe_code = "deny"
 
+# F142: a doc link that names nothing (or two things) fails `cargo doc`.
+# A link to a `pub(crate)` item is intended: the crate docs are internal
+# navigation, so `private_intra_doc_links` stays off.
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "allow"
+
 # Keep day-to-day debug/test artifacts small. Full debug info makes this
 # workspace's GUI/test binaries hundreds of MB each, and incremental caches
 # routinely grow into multi-GB directories.

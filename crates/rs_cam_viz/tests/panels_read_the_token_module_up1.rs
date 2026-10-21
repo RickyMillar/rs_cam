@@ -603,3 +603,107 @@ fn the_raw_grid_allowance_is_not_vacuous_ui02() {
          was renamed and this arm now guards nothing."
     );
 }
+
+// ── Arm 5 (F173): the render pipelines hold no literal colour ───────────
+//
+// Red proof (run once, red, reverted): `const PROBE_F173: [f32; 3] =
+// [0.1, 0.2, 0.3];` added to `render/grid_render.rs` made the arm name it.
+
+/// The fewest pipeline files the render scan must read.
+const MIN_RENDER_FILES: usize = 10;
+
+/// The fewest reads of `colors::` the pipelines must hold, so the scan is
+/// known to read the files that draw.
+const MIN_RENDER_COLOUR_READS: usize = 20;
+
+/// A word on a line (any case) that marks a float triple as geometry, not a
+/// colour.
+const GEOMETRY_WORDS: [&str; 5] = ["position", "normal", "shift", "light_dir", "origin"];
+
+/// The float triples `[a, b, c]` of one line whose numbers are not all
+/// zero. A zero triple is a position, not a colour. The same reader as
+/// `the_selection_colours_live_in_colors_p4_4`.
+fn colour_triples(line: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut rest = line;
+    while let Some(open) = rest.find('[') {
+        let after = &rest[open + 1..];
+        let Some(close) = after.find(']') else { break };
+        let inner = &after[..close];
+        let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
+        let numbers: Vec<f64> = parts
+            .iter()
+            .filter_map(|p| p.trim_end_matches("_f32").parse::<f64>().ok())
+            .collect();
+        if parts.len() == 3
+            && numbers.len() == 3
+            && parts.iter().all(|p| p.contains('.'))
+            && numbers.iter().any(|v| *v != 0.0)
+        {
+            found.push(format!("[{inner}]"));
+        }
+        rest = &after[close + 1..];
+    }
+    found
+}
+
+/// The production lines of a render file: comments removed, and nothing
+/// from the first `#[cfg(test)]` on (a test may pin a value literally).
+fn production_lines(text: &str) -> Vec<(usize, String)> {
+    text.lines()
+        .enumerate()
+        .take_while(|(_, l)| !l.trim_start().starts_with("#[cfg(test)]"))
+        .map(|(n, l)| (n + 1, strip_comment(l).to_owned()))
+        .collect()
+}
+
+fn render_pipeline_files() -> Vec<PathBuf> {
+    let dir = src_root().join("render");
+    let mut files = Vec::new();
+    collect_rs(&dir, &mut files);
+    files.retain(|p| !p.ends_with("colors.rs"));
+    files.sort();
+    files
+}
+
+#[test]
+fn render_pipelines_hold_no_colour_literal_f173() {
+    assert!(
+        colour_triples("let c = [0.2_f32, 0.95, 0.4];").len() == 1
+            && colour_triples("let p = [0.0, 0.0, 0.0];").is_empty()
+            && colour_triples("let v = [1, 2, 3];").is_empty(),
+        "the triple reader does not find a colour triple"
+    );
+    let files = render_pipeline_files();
+    assert!(
+        files.len() >= MIN_RENDER_FILES,
+        "the render scan read {} files, fewer than {MIN_RENDER_FILES}",
+        files.len()
+    );
+    let mut reads = 0usize;
+    let mut offenders = Vec::new();
+    for path in &files {
+        let text = std::fs::read_to_string(path).unwrap();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        for (n, line) in production_lines(&text) {
+            reads += line.matches("colors::").count();
+            let lower = line.to_lowercase();
+            if GEOMETRY_WORDS.iter().any(|w| lower.contains(w)) {
+                continue;
+            }
+            for lit in colour_triples(&line) {
+                offenders.push(format!("render/{name}:{n}: {lit}"));
+            }
+        }
+    }
+    assert!(
+        reads >= MIN_RENDER_COLOUR_READS,
+        "only {reads} reads of `colors::` in the render pipelines: the scan \
+         reads the wrong files"
+    );
+    assert!(
+        offenders.is_empty(),
+        "a render pipeline writes a literal colour; name it in \
+         render/colors.rs (render/CLAUDE.md, F173): {offenders:#?}"
+    );
+}

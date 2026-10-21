@@ -127,7 +127,7 @@
 //!
 //! # The instrument
 //!
-//! [`stats`] counts builds and hits. The bar is not "the second call is faster"
+//! `stats` counts builds and hits. The bar is not "the second call is faster"
 //! but "the second call does **no** surface-build work", which is read off
 //! [`crate::finish::finish_setup::surface_build_count`] — a counter inside the builder
 //! itself, so a cache that reported a hit while something else rebuilt would

@@ -13,7 +13,7 @@ Every 3D finishing strategy and the unified planner. The entry point is
   detectors, chaining, emission. `crest_lines.rs`, `crease_paths.rs`, `classify_probe.rs`.
 - `steep_shallow.rs`, `horizontal_finish.rs`, `ramp_finish.rs`, `radial_finish.rs`, `spiral_finish*.rs`
   — single-strategy finishes. `surface_link.rs` — `relink_fragments`, `shape_under_ceiling`.
-- Research (`--features research,test-support`, `-- --ignored`): `conformal_spiral*`, `direction_field.rs`, `spiral_finish_compact.rs`.
+- Research (`--features research,test-support`, `-- --ignored`): `conformal_spiral*.rs`, `direction_field.rs`, `spiral_finish_compact.rs`.
 
 ## Invariants
 
@@ -27,7 +27,7 @@ Every 3D finishing strategy and the unified planner. The entry point is
   waterline bands (`refine_band_chords`), a link with a tolerance.
 - W6.4: a composed op (Unified Finish, Steep and Shallow) states its barriers only through
   `order_constraints`; its rest rule (`composed::ComposedRest`) and link stage come from the runner. A product rest field comes only from `rest_detector::detect_rest`; a caller keeps its
-  own tier list. Every finishing link under a ceiling takes `surface_link::shape_under_ceiling` (B16);
+  own tier list. Every finishing link under a ceiling takes `surface_link::shape_under_ceiling` (B16), except pencil: its lift is `pencil/emission.rs` `plan_link_lift` (G-LINKLOAD) and its link is not chord-refined (G-TIERBURIAL open);
   its last leg is `push_link_landing`: into standing stock it is an `EntryPlunge` at the plunge feed (B20).
 
 ## Sentries

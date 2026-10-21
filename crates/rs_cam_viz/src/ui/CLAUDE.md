@@ -1,6 +1,6 @@
 # `ui/` — the egui surfaces
 
-Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`.
+Every panel, modal and workspace. `../app.rs` calls the `draw` of each surface once per frame.
 
 ## Files
 
@@ -26,7 +26,7 @@ Every panel, modal and workspace. `ui::mod` runs once per frame from `../app.rs`
 - The selected toolpath is the default viewport draw set (WP27). Visibility still bites; an eye control
   must stay usable when a hidden selection would draw nothing.
 - The Simulation workspace has ONE visible full-run primary. No surface adds a second run route.
-- Every Run Simulation affordance uses `simulation_request_is_buildable`.
+- Every Run Simulation button is enabled by `simulation_request_is_buildable`; the `AppEvent::RunSimulation` handler refuses through the builder.
 - Declutter removes a control; it does not hide a duplicate route. An empty queue keeps its "Add toolpath" (g_emptyadd).
 - A dependency between operations is ONE line in the card gutter, read from
   `dependencies::primary_edges`. No surface draws a second badge for it.
