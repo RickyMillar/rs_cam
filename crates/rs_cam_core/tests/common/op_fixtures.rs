@@ -300,6 +300,7 @@ pub fn flat_model_for(op: OperationType) -> LoadedModel {
         }
         | ItemUse::None
         | ItemUse::Regions
+        | ItemUse::RegionsExtendOpen { .. }
         | ItemUse::Curves => outline_model(),
     }
 }

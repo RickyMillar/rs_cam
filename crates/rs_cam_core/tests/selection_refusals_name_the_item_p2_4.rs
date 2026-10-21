@@ -114,6 +114,7 @@ fn arm_of(cause: &RefusalCause) -> &'static str {
         RefusalCause::NoSuchRule { .. } => "no_such_rule",
         RefusalCause::FacesNotReady { .. } => "faces_not_ready",
         RefusalCause::HoleDoesNotFit { .. } => "hole_does_not_fit",
+        RefusalCause::CannotExtend { .. } => "cannot_extend",
     }
 }
 
@@ -132,6 +133,7 @@ const ARMS: &[&str] = &[
     "no_such_rule",
     "faces_not_ready",
     "hole_does_not_fit",
+    "cannot_extend",
 ];
 
 fn square(cx: f64) -> Polygon2 {
@@ -277,6 +279,9 @@ fn every_cause_has_an_arm() {
             size: rs_cam_core::selection::hole_fit::DrillSize::strict(0.0),
             rule: rs_cam_core::selection::HoleFitRule::ToolSize,
         },
+        RefusalCause::CannotExtend {
+            why: rs_cam_core::selection::CannotExtend::NoArea,
+        },
     ];
     let causes: BTreeSet<&str> = samples.iter().map(arm_of).collect();
     let arms: BTreeSet<&str> = ARMS.iter().copied().collect();
@@ -296,6 +301,138 @@ fn empty() {
         &r,
         &["open path on layer 'TEXT'", "starts at X -10.000 Y 15.000"],
     );
+}
+
+/// An open path on layer `EXT` through the points `pts`.
+fn open_item(pts: &[[f64; 2]]) -> Item {
+    Item::new(
+        SourceRef::ToolpathModel,
+        Some("EXT".into()),
+        Shape::Path(Polygon2::open_path(
+            pts.iter().map(|&[x, y]| P2::new(x, y)).collect(),
+        )),
+    )
+    .unwrap()
+}
+
+/// Geometry selection P6.4 (ruling O-2): a Pocket with Extend to stock
+/// refuses each open path that cannot extend, by its name, under the
+/// default rule too (L-10). One row per reachable `why` of `P6_DESIGN.md`
+/// 3.4. The stock is X and Y -42 to 42 (`stock_under`: 2 mm past
+/// `STOCK_HALF`); the Pocket grows it by the tool radius (O-2 (B)), so its
+/// edge for the extension is at 43.5. `NoStock`
+/// is internal: the session always resolves a stock box.
+#[test]
+fn cannot_extend() {
+    use rs_cam_core::compute::operation_configs::OpenPaths;
+    use rs_cam_core::selection::CannotExtend;
+    let edge = STOCK_HALF + 2.0 + TOOL_DIAMETER / 2.0;
+    // (row, open paths, items, the path the refusal names, words)
+    let crossing_loop = Item::new(
+        SourceRef::ToolpathModel,
+        Some("ISLAND".into()),
+        Shape::Loop(Polygon2::new(vec![
+            P2::new(-4.0, 11.0),
+            P2::new(4.0, 11.0),
+            P2::new(4.0, 19.0),
+            P2::new(-4.0, 19.0),
+        ])),
+    )
+    .unwrap();
+    let crossing_key = crossing_loop.key().clone();
+    let rows: Vec<(&str, OpenPaths, Vec<Item>, CannotExtend, &str)> = vec![
+        (
+            "end_outside_stock",
+            OpenPaths::ExtendLeft,
+            vec![open_item(&[[-10.0, 15.0], [50.0, 15.0]])],
+            CannotExtend::EndOutsideStock,
+            "starts at X -10.000 Y 15.000",
+        ),
+        (
+            "crosses_stock_edge",
+            OpenPaths::ExtendLeft,
+            vec![open_item(&[[-10.0, 15.0], [0.0, 50.0], [10.0, 15.0]])],
+            CannotExtend::CrossesStockEdge,
+            "starts at X -10.000 Y 15.000",
+        ),
+        (
+            "self_crossing",
+            OpenPaths::ExtendLeft,
+            vec![open_item(&[
+                [-10.0, 0.0],
+                [10.0, 10.0],
+                [10.0, 0.0],
+                [-10.0, 10.0],
+            ])],
+            CannotExtend::SelfCrossing,
+            "starts at X -10.000 Y 0.000",
+        ),
+        (
+            "rays_cross",
+            OpenPaths::ExtendLeft,
+            vec![open_item(&[
+                [-5.0, 0.0],
+                [-15.0, 0.0],
+                [-15.0, 10.0],
+                [15.0, 10.0],
+                [15.0, 0.0],
+                [5.0, 0.0],
+            ])],
+            CannotExtend::RaysCross,
+            "starts at X -5.000 Y 0.000",
+        ),
+        (
+            "no_area",
+            OpenPaths::ExtendRight,
+            vec![open_item(&[[-20.0, -edge], [20.0, -edge]])],
+            CannotExtend::NoArea,
+            "starts at X -20.000",
+        ),
+        (
+            "crosses_item",
+            OpenPaths::ExtendLeft,
+            vec![open_item(&[[-10.0, 15.0], [10.0, 15.0]]), crossing_loop],
+            CannotExtend::CrossesItem {
+                other: Box::new(rs_cam_core::selection::ItemRef::new(crossing_key)),
+            },
+            "closed loop on layer 'ISLAND'",
+        ),
+    ];
+    for (row, open_paths, items, why, words) in rows {
+        let mut s = single_op_session_with(
+            stock_under(STOCK_HALF, STOCK_HEIGHT),
+            endmill_tool_config(TOOL_DIAMETER),
+            drawing_model(items),
+            "p2_4 pocket",
+            OperationConfig::Pocket(PocketConfig {
+                open_paths,
+                ..PocketConfig::default()
+            }),
+            |_| {},
+        );
+        let r = refusal_of(&mut s);
+        let RefusalCause::CannotExtend { why: got } = &r.cause else {
+            panic!("{row}: not a CannotExtend refusal: {r}");
+        };
+        let mut got = got.clone();
+        // The item ref of a crossing loop names it by its drawing key; the
+        // source in the refusal is the bound model.
+        if let (CannotExtend::CrossesItem { other: g }, CannotExtend::CrossesItem { other: w }) =
+            (&mut got, &why)
+        {
+            assert_eq!(g.key.anchor, w.key.anchor, "{row}: the loop is named");
+            g.key = w.key.clone();
+        }
+        assert_eq!(got, why, "{row}: {r}");
+        assert_names(
+            &r,
+            &[
+                "open path on layer 'EXT'",
+                words,
+                "cannot extend to the stock",
+            ],
+        );
+    }
 }
 
 /// Geometry selection P6.5 (ruling O-3): a picked circle that is not of the

@@ -752,3 +752,66 @@ fn the_frame_door_turns_a_face_down_on_a_flipped_setup() {
     assert_eq!(moved.items()[2].identity().anchor, [20.0, 30.0]);
     assert_eq!(moved.items()[2].item().key().anchor, [20.0, 50.0]);
 }
+
+/// Lead follow-up of the P7 study (code reading, 2026-10-22), checked here:
+/// a ring inside a Profile region gets the role `Island`, whose doc says
+/// "the op cuts round it". A Profile with side Outside or Inside cuts ONE
+/// contour per region: the offset of its exterior
+/// (`ops::profile::profile_contour_reported` keeps `exterior` of the first
+/// result; `dressup::tabs::plan_profile_tabs` calls it once per region). The
+/// inner ring is neither cut nor cut round.
+///
+/// KNOWN RED (an inverted assertion): the last assertion pins the wrong
+/// role. No existing role states "in the selection, not cut, not cut
+/// round" (`Skipped` is "the op cannot cut its kind"). The fix needs an op
+/// fact (does this `Regions` op cut round the holes of a region: Pocket,
+/// Zigzag, Adaptive 2D yes; Profile Outside and Inside no) and a role for
+/// it. When the fix lands, this assertion fails: change it to the new role.
+#[test]
+fn a_profile_cuts_its_outer_ring_only_and_its_inner_ring_is_called_an_island_known_red() {
+    use crate::compute::catalog::OperationConfig;
+    use crate::compute::operation_configs::ProfileConfig;
+    use crate::ops::profile::{ProfileSide, profile_contour};
+    use crate::selection::view::ItemRole;
+
+    let outer = item("PART", Shape::Loop(square(0.0, 0.0, 40.0)));
+    let inner = item("PART", Shape::Loop(square(15.0, 15.0, 10.0)));
+    let inner_ring = square(15.0, 15.0, 10.0);
+    let resolved = ResolvedSelection::from_items(vec![outer, inner]);
+    let tool_radius = 3.0;
+    for side in [ProfileSide::Outside, ProfileSide::Inside] {
+        let item_use = OperationConfig::Profile(ProfileConfig {
+            side,
+            ..ProfileConfig::default()
+        })
+        .capabilities()
+        .item_use;
+        assert_eq!(item_use, ItemUse::Regions, "{side:?}");
+        let (items, _) = view(&resolved, item_use).unwrap();
+        let regions = items.regions().unwrap().as_slice();
+        assert_eq!(regions.len(), 1, "{side:?}: one region");
+        assert_eq!(
+            regions[0].holes.len(),
+            1,
+            "{side:?}: the inner ring is its hole"
+        );
+        // The truth: the one contour stays far from the inner ring (the
+        // inner ring is 12 mm inside the outer ring; the Inside contour is
+        // 3 mm inside it), so the Profile does not cut round the inner ring.
+        let contour = profile_contour(&regions[0], tool_radius, side).unwrap();
+        let nearest = contour
+            .iter()
+            .map(|p| inner_ring.distance_to_boundary(p))
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            nearest > 2.0 * tool_radius,
+            "{side:?}: the contour comes within {nearest:.3} mm of the inner ring"
+        );
+        // KNOWN RED: the role says "the op cuts round it".
+        assert_eq!(
+            items.roles(),
+            &[ItemRole::Cut, ItemRole::Island],
+            "{side:?}: the role of the inner ring changed; update this known red"
+        );
+    }
+}

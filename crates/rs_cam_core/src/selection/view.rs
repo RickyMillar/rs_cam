@@ -35,6 +35,7 @@ use crate::geo::P2;
 use crate::geometry::enriched_mesh::HORIZONTAL_FACE_MIN_NORMAL_Z;
 use crate::polygon::{Polygon2, detect_containment, detect_containment_tagged};
 
+use super::extend::{CannotExtend, PathSide, extend_to_stock, rings_touch};
 use super::hole_fit::HoleFitRule;
 use super::item::{Item, ItemKind, Shape, SourceRef};
 use super::refusal::{ItemRef, NoteCause, RefusalCause, SelectionNote, SelectionRefusal};
@@ -48,6 +49,13 @@ impl ItemKind {
         match (self, use_) {
             (ItemKind::Loop | ItemKind::Circle | ItemKind::Face, ItemUse::Regions) => true,
             (ItemKind::Path | ItemKind::Point, ItemUse::Regions) => false,
+            // P6.4: an open path closes by the stock edge, so it serves the
+            // extend use; a point has no area.
+            (
+                ItemKind::Loop | ItemKind::Circle | ItemKind::Face | ItemKind::Path,
+                ItemUse::RegionsExtendOpen { .. },
+            ) => true,
+            (ItemKind::Point, ItemUse::RegionsExtendOpen { .. }) => false,
             // P4.D: a face's rings are closed lines, so a Trace or a
             // Project Curve can follow the outline of a picked face.
             (
@@ -434,7 +442,10 @@ fn view_with<F: SelectionFrame>(
             // P3.4 (L-9): a down face has its material above its plane. It
             // gives no closed area to an op; a boundary keeps its outline.
             if let Shape::Face(face) = shape
-                && matches!(item_use, ItemUse::Regions)
+                && matches!(
+                    item_use,
+                    ItemUse::Regions | ItemUse::RegionsExtendOpen { .. }
+                )
                 && down_faces == DownFaces::Refuse
                 && Facing::Down.admits(face.normal.z)
             {
@@ -488,6 +499,39 @@ fn view_with<F: SelectionFrame>(
                 plane_z,
                 islands,
             } = regions_of(&served);
+            if polygons.is_empty() {
+                return Err(empty(notes));
+            }
+            for (pos, at) in served_at.iter().enumerate() {
+                if let Some(role) = roles.get_mut(*at) {
+                    *role = if islands.contains(&pos) {
+                        ItemRole::Island
+                    } else {
+                        ItemRole::Cut
+                    };
+                }
+            }
+            View::Regions(Regions {
+                curves: Curves { polygons },
+                stock,
+                exterior_items: exteriors
+                    .into_iter()
+                    .filter_map(|pos| served_at.get(pos).copied())
+                    .collect(),
+                plane_z,
+            })
+        }
+        // P6.4 (O-2): each open path closes by the stock edge on `side`;
+        // the closed ring stands in for the path in the nesting, so the
+        // path is the exterior of its area (role `Cut`).
+        ItemUse::RegionsExtendOpen { side } => {
+            let RegionParts {
+                polygons,
+                stock,
+                exteriors,
+                plane_z,
+                islands,
+            } = extended_regions(resolved, &served, &served_at, side)?;
             if polygons.is_empty() {
                 return Err(empty(notes));
             }
@@ -622,6 +666,162 @@ fn regions_of(served: &[&Item]) -> RegionParts {
         parts.plane_z.push(Some(face.plane_z));
     }
     parts
+}
+
+/// The closed areas of an extend reader (geometry selection P6.4,
+/// `P6_DESIGN.md` 3.3): each served open path closed by the stock edge on
+/// `side` ([`extend_to_stock`]), then nested with the served loops and
+/// circle rings.
+///
+/// - The stock is the stock rectangle of the setup frame
+///   ([`ResolvedSelection::extend_frame`]); a setup that mirrors the drawing
+///   gives the other side. With no stock a path refuses `NoStock`.
+/// - A path that cannot extend refuses by its name, under the default rule
+///   too (lead ruling L-10).
+/// - A loop or circle ring that crosses or touches an extended area refuses
+///   `CrossesItem`: it does not nest, so it can be no island.
+/// - Each extended area nests with the rings inside it (a ring inside it is
+///   its island), so two extended areas that overlap stay two areas: the
+///   overlap is cut twice (L-10). The rings inside no extended area nest
+///   as [`regions_of`] nests them.
+fn extended_regions<F: SelectionFrame>(
+    resolved: &ResolvedSelection<F>,
+    served: &[&Item],
+    served_at: &[usize],
+    side: PathSide,
+) -> Result<RegionParts, SelectionRefusal> {
+    let refusal = |pos: usize, why: CannotExtend| {
+        let item = served_at
+            .get(pos)
+            .and_then(|at| resolved.items().get(*at))
+            .map(|r| ItemRef::new(r.identity().clone()));
+        SelectionRefusal::new(item, RefusalCause::CannotExtend { why })
+    };
+    let (stock, mirrored) = resolved.extend_frame();
+    let side = if mirrored { side.flipped() } else { side };
+    // The stand-in loop of each served path, by its position in `served`.
+    let mut stand_ins: Vec<(usize, Item)> = Vec::new();
+    for (pos, item) in served.iter().enumerate() {
+        let Shape::Path(path) = item.shape() else {
+            continue;
+        };
+        let Some(stock) = stock else {
+            return Err(refusal(pos, CannotExtend::NoStock));
+        };
+        let ring =
+            extend_to_stock(&path.exterior, &stock, side).map_err(|why| refusal(pos, why))?;
+        // The ring is closed, finite and of three or more points, so the
+        // item check passes; a ring it refuses has no area to cut.
+        let Ok(loop_item) = item.with_shape(Shape::Loop(ring)) else {
+            return Err(refusal(pos, CannotExtend::NoArea));
+        };
+        stand_ins.push((pos, loop_item));
+    }
+    if stand_ins.is_empty() {
+        return Ok(regions_of(served));
+    }
+    let extended: BTreeSet<usize> = stand_ins.iter().map(|(pos, _)| *pos).collect();
+    let ring_of = |item: &Item| -> Option<Vec<P2>> {
+        match item.shape() {
+            Shape::Loop(p) => Some(p.exterior.clone()),
+            Shape::Circle { ring, .. } => Some(ring.exterior.clone()),
+            Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => None,
+        }
+    };
+    // The served loops and circle rings, by position.
+    let rings: Vec<(usize, Vec<P2>)> = served
+        .iter()
+        .enumerate()
+        .filter(|(pos, _)| !extended.contains(pos))
+        .filter_map(|(pos, item)| Some((pos, ring_of(item)?)))
+        .collect();
+
+    let mut parts = RegionParts {
+        polygons: Vec::new(),
+        stock: Vec::new(),
+        exteriors: Vec::new(),
+        plane_z: Vec::new(),
+        islands: BTreeSet::new(),
+    };
+    let mut exterior_set: BTreeSet<usize> = BTreeSet::new();
+    let mut inside_any: BTreeSet<usize> = BTreeSet::new();
+    let mut push = |parts: &mut RegionParts, subset: &[(usize, &Item)]| {
+        let items: Vec<&Item> = subset.iter().map(|(_, item)| *item).collect();
+        let nested = nest_closed_rings_at(&items);
+        for (polygon, at) in nested.regions {
+            let Some(&(pos, item)) = subset.get(at) else {
+                continue;
+            };
+            parts.polygons.push(polygon);
+            parts
+                .stock
+                .push(item.source() == SourceRef::Stock && !extended.contains(&pos));
+            parts.exteriors.push(pos);
+            parts.plane_z.push(None);
+            exterior_set.insert(pos);
+        }
+        parts.islands.extend(
+            nested
+                .holes
+                .into_iter()
+                .filter_map(|at| subset.get(at).map(|(pos, _)| *pos)),
+        );
+    };
+    for (pos, stand_in) in &stand_ins {
+        let Shape::Loop(area) = stand_in.shape() else {
+            continue;
+        };
+        let mut subset: Vec<(usize, &Item)> = vec![(*pos, stand_in)];
+        for (ring_pos, ring) in &rings {
+            if rings_touch(&area.exterior, ring) {
+                let other = served_at
+                    .get(*ring_pos)
+                    .and_then(|at| resolved.items().get(*at))
+                    .map(|r| ItemRef::new(r.identity().clone()));
+                let Some(other) = other else {
+                    continue;
+                };
+                return Err(refusal(
+                    *pos,
+                    CannotExtend::CrossesItem {
+                        other: Box::new(other),
+                    },
+                ));
+            }
+            // No touch: the whole ring is on one side of the area edge.
+            let inside = ring.first().is_some_and(|p| area.contains_point(p));
+            if inside && let Some(item) = served.get(*ring_pos) {
+                subset.push((*ring_pos, *item));
+                inside_any.insert(*ring_pos);
+            }
+        }
+        push(&mut parts, &subset);
+    }
+    let outside: Vec<(usize, &Item)> = rings
+        .iter()
+        .filter(|(pos, _)| !inside_any.contains(pos))
+        .filter_map(|(pos, _)| Some((*pos, *served.get(*pos)?)))
+        .collect();
+    if !outside.is_empty() {
+        push(&mut parts, &outside);
+    }
+    // A ring that is the exterior of one area is cut, even when another
+    // area holds it as an island.
+    parts.islands.retain(|pos| !exterior_set.contains(pos));
+    for (pos, face) in served
+        .iter()
+        .enumerate()
+        .filter_map(|(pos, i)| match i.shape() {
+            Shape::Face(face) => Some((pos, face)),
+            Shape::Loop(_) | Shape::Circle { .. } | Shape::Path(_) | Shape::Point(_) => None,
+        })
+    {
+        parts.polygons.push(face.rings.clone());
+        parts.stock.push(false);
+        parts.exteriors.push(pos);
+        parts.plane_z.push(Some(face.plane_z));
+    }
+    Ok(parts)
 }
 
 /// The loops and circle rings of `items`, in this order, nested by

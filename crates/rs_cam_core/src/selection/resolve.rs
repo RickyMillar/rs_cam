@@ -24,6 +24,7 @@ use crate::session::LoadedModel;
 
 use crate::ids::ModelId;
 
+use super::extend::StockXy;
 use super::item::{FaceItem, Item, ItemError, ItemSet, Shape, SourceRef};
 use super::key::MatchKey;
 use super::rule::{Facing, Selection};
@@ -165,7 +166,13 @@ mod sealed {
 
 /// The frame of the items of a [`ResolvedSelection`]. The trait is sealed:
 /// [`ModelFrame`] and [`SetupFrame`] are the only frames.
-pub trait SelectionFrame: sealed::Sealed + Copy + std::fmt::Debug {}
+pub trait SelectionFrame: sealed::Sealed + Copy + std::fmt::Debug {
+    /// True for [`SetupFrame`]: the stock rectangle
+    /// ([`ResolvedSelection::stock_xy`]) is in the setup frame, so only a
+    /// view in the setup frame reads it (geometry selection P6.4).
+    #[doc(hidden)]
+    const SETUP: bool;
+}
 
 /// The frame of the model: the items as the drawing or the mesh holds
 /// them (the world frame). [`resolve`] gives this frame. The face filter
@@ -182,8 +189,12 @@ pub struct SetupFrame;
 
 impl sealed::Sealed for ModelFrame {}
 impl sealed::Sealed for SetupFrame {}
-impl SelectionFrame for ModelFrame {}
-impl SelectionFrame for SetupFrame {}
+impl SelectionFrame for ModelFrame {
+    const SETUP: bool = false;
+}
+impl SelectionFrame for SetupFrame {
+    const SETUP: bool = true;
+}
 
 /// The report of [`resolve`], with the items in the frame `F`.
 #[derive(Debug, Clone)]
@@ -201,6 +212,16 @@ pub struct ResolvedSelection<F: SelectionFrame> {
     unmatched_layers: Vec<String>,
     /// The mesh models whose flat regions are not computed yet (P4.7).
     faces_not_ready: Vec<ModelId>,
+    /// Geometry selection P6.4 (lead ruling L-9): the stock rectangle in
+    /// the SETUP frame (`ResolveScope::stock_bbox` is in the emission
+    /// frame, and the frame door does not move the stock). Only the setup
+    /// frame reads it ([`ResolvedSelection::stock_xy`]).
+    stock_xy: Option<StockXy>,
+    /// Geometry selection P6.4: true when the frame door mirrored the
+    /// drawing (a `Bottom` setup, `SetupTransformInfo::is_z_flipped`, the
+    /// rule of Trace). The side of an open path is in the drawing frame,
+    /// so the setup frame gives the other side.
+    mirrored: bool,
     frame: PhantomData<F>,
 }
 
@@ -241,8 +262,44 @@ impl ResolvedSelection<SetupFrame> {
             missing_sources: Vec::new(),
             unmatched_layers: Vec::new(),
             faces_not_ready: Vec::new(),
+            stock_xy: None,
+            mirrored: false,
             frame: PhantomData,
         }
+    }
+
+    /// Test only: the same selection with the stock rectangle `stock`
+    /// (geometry selection P6.4), as `resolve` fills it from the stock box.
+    #[cfg(test)]
+    pub(crate) fn with_stock_xy(mut self, stock: StockXy) -> Self {
+        self.stock_xy = Some(stock);
+        self
+    }
+
+    /// The stock rectangle in the SETUP frame, as [`resolve`] read it from
+    /// `ResolveScope::stock_bbox` (geometry selection P6.4, lead ruling
+    /// L-9). `None` for a hand-built selection. Only the setup frame has
+    /// it: the stock box is in the emission frame of the setup.
+    pub fn stock_xy(&self) -> Option<StockXy> {
+        self.stock_xy
+    }
+
+    /// The same selection with the stock rectangle `by` larger on each side
+    /// (geometry selection P6.4, operator ruling O-2 (B)). The prologue and
+    /// the `selection_status` report call it with the tool radius before
+    /// `view`, so an open path extends one tool radius past the stock edge
+    /// and the tool centre reaches the edge.
+    #[must_use]
+    pub fn with_stock_grown(mut self, by: f64) -> Self {
+        self.stock_xy = self.stock_xy.map(|s| s.grown(by));
+        self
+    }
+
+    /// True when the frame door mirrored the drawing (geometry selection
+    /// P6.4): the side of an open path is then the other side in this
+    /// frame.
+    pub fn mirrored(&self) -> bool {
+        self.mirrored
     }
 
     /// The highest plane Z of the UP faces in the selection, or `None`
@@ -314,6 +371,17 @@ impl<F: SelectionFrame> ResolvedSelection<F> {
         &self.faces_not_ready
     }
 
+    /// The stock rectangle and the mirror flag for the extension of an
+    /// open path (geometry selection P6.4): the stock only in the setup
+    /// frame, where it is true, else `None`.
+    pub(crate) fn extend_frame(&self) -> (Option<StockXy>, bool) {
+        if F::SETUP {
+            (self.stock_xy, self.mirrored)
+        } else {
+            (None, false)
+        }
+    }
+
     /// The same report with the frame label `G`. Only the frame door
     /// changes the label.
     fn relabel<G: SelectionFrame>(self) -> ResolvedSelection<G> {
@@ -324,6 +392,8 @@ impl<F: SelectionFrame> ResolvedSelection<F> {
             missing_sources: self.missing_sources,
             unmatched_layers: self.unmatched_layers,
             faces_not_ready: self.faces_not_ready,
+            stock_xy: self.stock_xy,
+            mirrored: self.mirrored,
             frame: PhantomData,
         }
     }
@@ -365,7 +435,12 @@ impl ResolvedSelection<ModelFrame> {
                 })
             })
             .collect::<Result<Vec<_>, ItemError>>()?;
-        Ok(ResolvedSelection { items, ..self }.relabel())
+        Ok(ResolvedSelection {
+            items,
+            mirrored: info.is_z_flipped(),
+            ..self
+        }
+        .relabel())
     }
 }
 
@@ -674,6 +749,13 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection<M
         missing_sources,
         unmatched_layers,
         faces_not_ready,
+        stock_xy: StockXy::new(
+            scope.stock_bbox.min.x,
+            scope.stock_bbox.min.y,
+            scope.stock_bbox.max.x,
+            scope.stock_bbox.max.y,
+        ),
+        mirrored: false,
         frame: PhantomData,
     }
 }

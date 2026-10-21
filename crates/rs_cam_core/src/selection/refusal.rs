@@ -12,6 +12,7 @@ use crate::compute::catalog::ItemUse;
 use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::ModelId;
 
+use super::extend::{CannotExtend, PathSide};
 use super::hole_fit::{DrillSize, HoleFit, HoleFitRule};
 use super::item::{ItemKind, SourceRef};
 use super::key::MatchKey;
@@ -59,6 +60,18 @@ fn use_phrase(use_: ItemUse) -> &'static str {
     match use_ {
         ItemUse::None => "reads no drawing item",
         ItemUse::Regions => "cuts closed areas only (closed loops, circles, faces)",
+        ItemUse::RegionsExtendOpen {
+            side: PathSide::Left,
+        } => {
+            "cuts closed areas (closed loops, circles, faces), and each open path extended \
+             to the stock on its left side"
+        }
+        ItemUse::RegionsExtendOpen {
+            side: PathSide::Right,
+        } => {
+            "cuts closed areas (closed loops, circles, faces), and each open path extended \
+             to the stock on its right side"
+        }
         ItemUse::Curves => "follows lines only (closed loops, circles, open paths, face outlines)",
         ItemUse::Holes {
             fit: HoleFitRule::None,
@@ -135,7 +148,9 @@ fn hole_fit_fix(rule: HoleFitRule, fit: HoleFit) -> &'static str {
 fn fit_rule(item_use: ItemUse) -> HoleFitRule {
     match item_use {
         ItemUse::Holes { fit, .. } => fit,
-        ItemUse::None | ItemUse::Regions | ItemUse::Curves => HoleFitRule::None,
+        ItemUse::None | ItemUse::Regions | ItemUse::RegionsExtendOpen { .. } | ItemUse::Curves => {
+            HoleFitRule::None
+        }
     }
 }
 
@@ -275,18 +290,26 @@ impl fmt::Display for SelectionNote {
 /// The match has no wildcard, so a new kind or a new use states its answer.
 fn note_fix(kind: ItemKind, item_use: ItemUse) -> Option<&'static str> {
     match (kind, item_use) {
-        (ItemKind::Path, ItemUse::Regions) => {
-            Some("Use Trace or Project Curve for an open path, or close it in the drawing.")
-        }
+        (ItemKind::Path, ItemUse::Regions) => Some(
+            "Use Trace or Project Curve for an open path (or Profile with side On, or Pocket \
+             with Extend to stock), or close it in the drawing.",
+        ),
         (ItemKind::Path, ItemUse::Holes { .. }) => {
             Some("To cut the open path, add a Trace or Project Curve operation.")
         }
-        // An op that follows lines cuts an open path, and an op that reads
-        // no item skips nothing: neither gives a path note.
-        (ItemKind::Path, ItemUse::Curves | ItemUse::None) => None,
+        // An op that follows lines cuts an open path, an op that extends
+        // an open path to the stock cuts it (P6.4), and an op that reads no
+        // item skips nothing: none gives a path note.
+        (ItemKind::Path, ItemUse::Curves | ItemUse::RegionsExtendOpen { .. } | ItemUse::None) => {
+            None
+        }
         (
             ItemKind::Loop | ItemKind::Point | ItemKind::Circle | ItemKind::Face,
-            ItemUse::Regions | ItemUse::Curves | ItemUse::Holes { .. } | ItemUse::None,
+            ItemUse::Regions
+            | ItemUse::RegionsExtendOpen { .. }
+            | ItemUse::Curves
+            | ItemUse::Holes { .. }
+            | ItemUse::None,
         ) => None,
     }
 }
@@ -343,6 +366,11 @@ pub enum RefusalCause {
         /// The fit rule of the op: it gives the text and the fix.
         rule: HoleFitRule,
     },
+    /// Geometry selection P6.4 (operator ruling O-2): the op extends each
+    /// open path to the stock (Pocket with Extend to stock), and this path
+    /// cannot extend (`P6_DESIGN.md` 3.4). Under the default rule it
+    /// refuses too: the op serves the kind (lead ruling L-10).
+    CannotExtend { why: CannotExtend },
     /// A rule or a pick names a model that does not exist. No fallback to
     /// another model.
     MissingSource(SourceRef),
@@ -387,7 +415,7 @@ impl SelectionRefusal {
 
     /// The fix: one text per cause.
     pub fn fix(&self) -> &'static str {
-        match self.cause {
+        match &self.cause {
             RefusalCause::Empty { .. } => {
                 "Add items that the operation can cut to its selection, or use \
                  an operation that cuts the items of the drawing"
@@ -416,7 +444,8 @@ impl SelectionRefusal {
                 "Set a larger floor depth, set the Top Z above the face, or remove the \
                  face from the selection"
             }
-            RefusalCause::HoleDoesNotFit { fit, rule, .. } => match (rule, fit) {
+            RefusalCause::CannotExtend { why } => why.fix(),
+            RefusalCause::HoleDoesNotFit { fit, rule, .. } => match (*rule, *fit) {
                 (HoleFitRule::LargerThanTool, HoleFit::ToolSize) => {
                     "Drill it with a Drill op, or remove the circle from the selection"
                 }
@@ -494,6 +523,9 @@ impl SelectionRefusal {
                     fit: *rule,
                 })
             ),
+            RefusalCause::CannotExtend { why } => {
+                format!("the open path cannot extend to the stock: {}", why.phrase())
+            }
             RefusalCause::MissingSource(source) => {
                 let name = match source {
                     SourceRef::ToolpathModel => "the model of the toolpath".to_owned(),

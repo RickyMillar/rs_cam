@@ -39,6 +39,9 @@
 //! - P6.5: for a Drill (`HoleFitRule::ToolSize`) the tool diameter, by
 //!   value, because the hole fit step reads it. A tool edit then builds
 //!   the report of the Drill again, and of no other op.
+//! - P6.4: for a Pocket with Extend to stock (`ItemUse::RegionsExtendOpen`)
+//!   the tool radius, by value, because the stock grows by it before
+//!   `view`. A tool edit then builds the report again.
 //!
 //! The key does not hold the `holes` flag of a boundary: the report does
 //! not read it (the holes of the union are a generation step after `view`).
@@ -315,6 +318,13 @@ pub struct SelectionReport {
     /// frame (`ResolvedSelection::face_bottom_z`): the deepest floor plane
     /// under "each picked face" (geometry selection P3.5).
     pub face_bottom_z: Option<f64>,
+    /// Geometry selection P6.4 (ruling O-2): the outer ring of each closed
+    /// area that an open path gives when the op extends it to the stock
+    /// (Pocket with Extend to stock), in the MODEL frame (the frame of the
+    /// drawing, as `holes`), in the order of the areas. The path itself is
+    /// `Cut` in `item_states`. Empty for every other op and when the
+    /// selection refuses. The GUI preview (P6.7) draws it.
+    pub extended: Vec<Vec<P2>>,
 }
 
 /// One item of a model, as the `list_model_items` read gives it (geometry
@@ -584,6 +594,15 @@ impl ProjectSession {
             SelectionTarget::Boundary => (BOUNDARY_LABEL, BOUNDARY_ITEM_USE, true),
         };
         let frames = self.resolve_selection_frames(tc, target, ctx, FaceAccess::Peek)?;
+        // P6.4 (O-2 (B)): the stock grown by the tool radius, as the
+        // prologue grows it, so the report extends as generation does.
+        let frames = match (target, self.extend_radius(tc)) {
+            (SelectionTarget::Op, Some(radius)) => SelectionFrames {
+                setup: frames.setup.with_stock_grown(radius),
+                model: frames.model,
+            },
+            (SelectionTarget::Op | SelectionTarget::Boundary, _) => frames,
+        };
         let selected: Vec<MatchKey> = frames
             .model
             .items()
@@ -749,6 +768,7 @@ impl ProjectSession {
                 report.islands = items
                     .regions()
                     .map_or(0, |r| r.as_slice().iter().map(|p| p.holes.len()).sum());
+                report.extended = extended_areas(&frames.setup, &items, ctx);
                 if items.holes().is_some()
                     && let Ok((mut model_items, _)) =
                         crate::selection::view(&frames.model, item_use)
@@ -789,6 +809,7 @@ impl ProjectSession {
             }
             | ItemUse::None
             | ItemUse::Regions
+            | ItemUse::RegionsExtendOpen { .. }
             | ItemUse::Curves => return None,
         }
         let tool = self.find_tool_by_raw_id(tc.tool_id)?;
@@ -800,13 +821,36 @@ impl ProjectSession {
             })
     }
 
+    /// P6.4 (ruling O-2 (B)): the tool radius by which the prologue grows
+    /// the stock of an op that extends its open paths to the stock
+    /// (`ItemUse::RegionsExtendOpen`), as the prologue reads it
+    /// (`ToolDefinition::diameter` of the built cutter, halved). `None` for
+    /// every other op, and for a toolpath with no valid tool: the report
+    /// then extends to the stock edge itself, and generation refuses the
+    /// tool.
+    fn extend_radius(&self, tc: &ToolpathConfig) -> Option<f64> {
+        match tc.operation.capabilities().item_use {
+            ItemUse::RegionsExtendOpen { .. } => {}
+            ItemUse::None | ItemUse::Regions | ItemUse::Curves | ItemUse::Holes { .. } => {
+                return None;
+            }
+        }
+        let tool = self.find_tool_by_raw_id(tc.tool_id)?;
+        crate::compute::cutter::build_cutter(tool)
+            .ok()
+            .map(|cutter| crate::tool::MillingCutter::diameter(&cutter) / 2.0)
+    }
+
     /// Every point and circle of the toolpath model of a drill op, in the
     /// MODEL frame, each marked when `selected` holds it. Empty for every
     /// other op.
     fn hole_items(&self, tc: &ToolpathConfig, selected: &[MatchKey]) -> Vec<HoleItem> {
         match tc.operation.capabilities().item_use {
             ItemUse::Holes { .. } => {}
-            ItemUse::None | ItemUse::Regions | ItemUse::Curves => return Vec::new(),
+            ItemUse::None
+            | ItemUse::Regions
+            | ItemUse::RegionsExtendOpen { .. }
+            | ItemUse::Curves => return Vec::new(),
         }
         let Ok(model) = self.toolpath_model(tc) else {
             return Vec::new();
@@ -846,7 +890,10 @@ impl ProjectSession {
     pub fn hole_selection(&self, tc: &ToolpathConfig) -> Option<HoleSelection> {
         match tc.operation.capabilities().item_use {
             ItemUse::Holes { .. } => {}
-            ItemUse::None | ItemUse::Regions | ItemUse::Curves => return None,
+            ItemUse::None
+            | ItemUse::Regions
+            | ItemUse::RegionsExtendOpen { .. }
+            | ItemUse::Curves => return None,
         }
         Some(match self.selection_status(tc, SelectionTarget::Op) {
             Ok(report) => HoleSelection {
@@ -1297,6 +1344,44 @@ impl ToolpathConfig {
     }
 }
 
+/// P6.4: the outer ring of each closed area of `items` whose exterior item
+/// is an open path (an area that the extend reader closed by the stock
+/// edge), mapped from the SETUP frame back to the drawing frame
+/// (`SetupTransformInfo::local_to_drawing`, the exact inverse of the frame
+/// door). Empty for a view with no such area.
+fn extended_areas(
+    setup: &ResolvedSelection<SetupFrame>,
+    items: &crate::selection::OpItems,
+    ctx: &SetupEvalContext,
+) -> Vec<Vec<P2>> {
+    let Some(regions) = items.regions() else {
+        return Vec::new();
+    };
+    let info = ctx
+        .local_to_global
+        .as_ref()
+        .filter(|info| info.needs_transform());
+    regions
+        .as_slice()
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| {
+            regions
+                .exterior_item(*index)
+                .and_then(|at| setup.items().get(at))
+                .is_some_and(|r| r.item().kind() == ItemKind::Path)
+        })
+        .map(|(_, polygon)| match info {
+            Some(info) => polygon
+                .exterior
+                .iter()
+                .map(|p| info.local_to_drawing(*p))
+                .collect(),
+            None => polygon.exterior.clone(),
+        })
+        .collect()
+}
+
 /// The bit patterns of a box, for an exact compare.
 fn box_bits(b: &BoundingBox3) -> [u64; 6] {
     [
@@ -1334,6 +1419,10 @@ struct StatusKey {
     /// edit builds the report again. `None` for every op with no
     /// fit rule, so a tool edit does not rebuild their reports.
     drill_size: Option<[u64; 2]>,
+    /// P6.4: the bits of the tool radius by which an extend reader grows
+    /// the stock (`ProjectSession::extend_radius`), so a tool edit builds
+    /// the report again. `None` for every other op.
+    extend_radius: Option<u64>,
 }
 
 impl StatusKey {
@@ -1392,6 +1481,10 @@ impl StatusKey {
                     .map(|size| [size.diameter.to_bits(), size.tolerance.to_bits()]),
                 SelectionTarget::Boundary => None,
             },
+            extend_radius: match target {
+                SelectionTarget::Op => session.extend_radius(tc).map(f64::to_bits),
+                SelectionTarget::Boundary => None,
+            },
         })
     }
 
@@ -1410,6 +1503,7 @@ impl StatusKey {
             && self.emission_stock == now.emission_stock
             && self.each_face == now.each_face
             && self.drill_size == now.drill_size
+            && self.extend_radius == now.extend_radius
             && self.models.len() == now.models.len()
             && self
                 .models

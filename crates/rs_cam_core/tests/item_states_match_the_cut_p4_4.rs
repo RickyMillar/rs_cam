@@ -22,6 +22,11 @@
 //!    its stock default gives the stock item as `Cut` in `foreign`.
 //! 7. A re-import (a new item set) builds the report again with the same
 //!    states.
+//! 8. Geometry selection P6.4: a Pocket with Extend to stock gives the open
+//!    path the state `Cut` (it is the exterior of its extended area), a
+//!    loop inside the area `Island`, and `extended` the outer ring of that
+//!    area. The reference grows the stock by the tool radius, as the
+//!    prologue does.
 //!
 //! The reference is the selection of `resolve_generation_inputs` (the
 //! input of the prologue) through `selection::view`, the call the
@@ -176,10 +181,22 @@ fn rings_in(s: &ProjectSession, r: &SelectionReport, state: ItemState) -> BTreeS
 fn generation_items(s: &ProjectSession, item_use: ItemUse) -> rs_cam_core::selection::OpItems {
     let cancel = AtomicBool::new(false);
     let inputs = s.resolve_generation_inputs(0, &cancel).unwrap();
-    let mut items = view(inputs.selection(), item_use).unwrap().0;
     let tool_diameter = s.tools()[0].diameter;
+    // P6.4: the prologue grows the stock by the tool radius for an extend
+    // reader (O-2 (B)).
+    let grown = inputs
+        .selection()
+        .clone()
+        .with_stock_grown(tool_diameter / 2.0);
+    let resolved = match item_use {
+        ItemUse::RegionsExtendOpen { .. } => &grown,
+        ItemUse::None | ItemUse::Regions | ItemUse::Curves | ItemUse::Holes { .. } => {
+            inputs.selection()
+        }
+    };
+    let mut items = view(resolved, item_use).unwrap().0;
     let size = s.toolpath_configs()[0].operation.drill_size(tool_diameter);
-    let _ = fit_holes(inputs.selection(), &mut items, item_use, size).unwrap();
+    let _ = fit_holes(resolved, &mut items, item_use, size).unwrap();
     items
 }
 
@@ -297,6 +314,76 @@ fn a_pocket_cuts_its_cut_rings_round_its_islands() {
         ItemState::Skipped
     );
     assert!(r.foreign.is_empty());
+}
+
+/// Claim 8 (P6.4): a Pocket with Extend to stock, right side, over the
+/// layers `TEXT` (the open path) and `SPARE` (a square below the path and
+/// its end ray, so inside the right area).
+#[test]
+fn an_extended_open_path_is_cut_and_a_loop_in_its_area_is_an_island_p6_4() {
+    use rs_cam_core::compute::operation_configs::{OpenPaths, PocketConfig};
+    use rs_cam_core::selection::PathSide;
+    let rule = Rule {
+        source: SourceRef::ToolpathModel,
+        filter: Filter {
+            layers: vec!["TEXT".into(), "SPARE".into()],
+            ..Filter::default()
+        },
+    };
+    let s = single_op_session(
+        stock(),
+        endmill_tool_config(TOOL_DIAMETER),
+        load(),
+        "pocket",
+        OperationConfig::Pocket(PocketConfig {
+            open_paths: OpenPaths::ExtendRight,
+            selection: Selection::from_rules(vec![rule]),
+            ..PocketConfig::default()
+        }),
+    );
+    let r = report(&s);
+    assert!(r.refusal.is_none(), "{:?}", r.refusal);
+    check_states(&s, &r, "Pocket extend right");
+    assert_eq!(state_of(&s, &r, "TEXT", ItemKind::Path), ItemState::Cut);
+    assert_eq!(state_of(&s, &r, "SPARE", ItemKind::Loop), ItemState::Island);
+    assert_eq!(
+        state_of(&s, &r, "KEEP", ItemKind::Loop),
+        ItemState::NotSelected
+    );
+
+    let item_use = ItemUse::RegionsExtendOpen {
+        side: PathSide::Right,
+    };
+    assert_eq!(
+        s.toolpath_configs()[0].operation.capabilities().item_use,
+        item_use
+    );
+    let items = generation_items(&s, item_use);
+    let regions = items.regions().unwrap();
+    assert_eq!(regions.as_slice().len(), 1, "one extended area");
+    let text = model(&s)
+        .items
+        .iter()
+        .position(|i| i.layer() == Some("TEXT"))
+        .unwrap();
+    let area = &regions.as_slice()[0];
+    let holes: BTreeSet<RingBox> = area.holes.iter().map(|h| ring_box(h)).collect();
+    assert_eq!(
+        rings_in(&s, &r, ItemState::Island),
+        holes,
+        "the Island ring is the hole of the extended area"
+    );
+    assert_eq!(r.extended.len(), 1);
+    assert_eq!(
+        ring_box(&r.extended[0]),
+        ring_box(&area.exterior),
+        "the report gives the extended area that generation cuts"
+    );
+    // The area reaches one tool radius past the stock edge (O-2 (B)):
+    // X -1.5 on the west, Y -1.5 on the south.
+    let [x0, y0, _, _] = ring_box(&area.exterior);
+    assert_eq!([x0, y0], [-1500, -1500]);
+    assert_eq!(r.item_states[text], ItemState::Cut);
 }
 
 #[test]

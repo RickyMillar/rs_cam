@@ -516,6 +516,7 @@ fn flat_cases() -> Vec<FlatCase> {
                     region_ordering:
                         rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
                     selection: rs_cam_core::selection::Selection::drawing(),
+                    open_paths: rs_cam_core::compute::operation_configs::OpenPaths::Skip,
                 })
             },
             ToolType::EndMill,

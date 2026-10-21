@@ -173,9 +173,11 @@ fn profile_lines<'p>(
     match item_use {
         ItemUse::Regions => Ok(prepared.regions()?.as_slice()),
         ItemUse::Curves => Ok(prepared.curves()?.as_slice()),
-        ItemUse::None | ItemUse::Holes { .. } => Err(OperationError::Internal(format!(
-            "Profile states item use {item_use:?}; it reads Regions or Curves"
-        ))),
+        ItemUse::None | ItemUse::RegionsExtendOpen { .. } | ItemUse::Holes { .. } => {
+            Err(OperationError::Internal(format!(
+                "Profile states item use {item_use:?}; it reads Regions or Curves"
+            )))
+        }
     }
 }
 

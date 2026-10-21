@@ -232,6 +232,12 @@ pub enum ItemUse {
     /// prologue leaves the open paths out and names them in a finding;
     /// it refuses when no closed polygon is left.
     Regions,
+    /// Geometry selection P6.4 (operator ruling O-2): closed areas as
+    /// `Regions`, and each open path closed by its tangent extension to the
+    /// stock edge, one tool radius past it. The area on `side` of the drawn
+    /// direction is cut. Pocket with `OpenPaths::ExtendLeft` or
+    /// `ExtendRight`.
+    RegionsExtendOpen { side: crate::selection::PathSide },
     /// Lines to follow, closed and open: the op cuts on the line or to one
     /// side of it. Trace (every compensation, P6.2), Profile with side `On`
     /// (P6.3), Project Curve.

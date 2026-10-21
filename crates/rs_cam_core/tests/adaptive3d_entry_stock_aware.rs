@@ -636,6 +636,7 @@ fn pocket_toolpath(style: Style) -> Toolpath {
             spindle_rpm: Some(18_000),
             region_ordering: rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
             selection: rs_cam_core::selection::Selection::drawing(),
+            open_paths: rs_cam_core::compute::operation_configs::OpenPaths::Skip,
         }),
         dressups,
         heights: HeightsConfig::default(),

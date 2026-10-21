@@ -1589,7 +1589,10 @@ fn check9_an_op_holds_a_selection_exactly_when_it_cuts_items() {
         let cfg = OperationConfig::new_default(op);
         let cuts_items = match cfg.capabilities().item_use {
             ItemUse::None => false,
-            ItemUse::Regions | ItemUse::Curves | ItemUse::Holes { .. } => true,
+            ItemUse::Regions
+            | ItemUse::RegionsExtendOpen { .. }
+            | ItemUse::Curves
+            | ItemUse::Holes { .. } => true,
         };
         let held = cfg.selection();
         let default = cfg.default_selection();

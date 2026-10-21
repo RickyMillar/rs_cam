@@ -533,6 +533,20 @@ moves_hash = "a393c2d0d57c5ede"
 span_count = 153
 spans_hash = "f548b662dd607126"
 
+["pocket/extend_open"]
+outcome = "ok"
+move_count = 119
+rapid_count = 30
+linear_count = 75
+arc_count = 14
+cutting_length_mm = 1633.85
+rapid_length_mm = 338.266
+bbox_min = [-30.0, -20.0, -3.0]
+bbox_max = [30.0, 20.0, 10.0]
+moves_hash = "1a6179cfa5e8c1b0"
+span_count = 59
+spans_hash = "2c8bb169001cd02c"
+
 ["pocket/fresh"]
 outcome = "ok"
 move_count = 89

@@ -649,6 +649,52 @@ impl Default for ChamferConfig {
     }
 }
 
+/// What a Pocket does with an open path of its selection (geometry
+/// selection P6.4, operator ruling O-2). The default is `Skip`: the open
+/// path is left out with a note, as before P6.4.
+///
+/// `ExtendLeft` and `ExtendRight` close each open path by its tangent
+/// extension to the stock edge, one tool radius past it (O-2 (B): the tool
+/// centre reaches the stock edge), and cut the area on that side of the
+/// drawn direction (`selection::extend_to_stock`). The side is in the
+/// drawing frame. The GUI "Flip" changes one into the other. A unit enum,
+/// so the parameter schema (W5) publishes it as a choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ParamEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenPaths {
+    /// Leave the open paths out, with a note.
+    #[default]
+    Skip,
+    /// Extend each open path to the stock and cut the area on its left.
+    ExtendLeft,
+    /// Extend each open path to the stock and cut the area on its right.
+    ExtendRight,
+}
+
+impl OpenPaths {
+    /// The side the op cuts, or `None` for `Skip`.
+    pub fn side(self) -> Option<crate::selection::PathSide> {
+        match self {
+            OpenPaths::Skip => None,
+            OpenPaths::ExtendLeft => Some(crate::selection::PathSide::Left),
+            OpenPaths::ExtendRight => Some(crate::selection::PathSide::Right),
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            OpenPaths::Skip => "Skip",
+            OpenPaths::ExtendLeft => "Extend to stock, left",
+            OpenPaths::ExtendRight => "Extend to stock, right",
+        }
+    }
+}
+
+/// The help text of the Pocket `open_paths` parameter.
+const HELP_OPEN_PATHS: &str = "What the Pocket does with an open path: skip it (with a note), \
+     or extend each end along its tangent to one tool radius past the stock edge and cut the \
+     area on the left or the right of the drawn direction.";
+
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct PocketConfig {
     #[param(help = HELP_STEPOVER, range = 0.05..=50.0)]
@@ -692,6 +738,14 @@ pub struct PocketConfig {
     )]
     #[param(driver_set = DRIVER_SET_SELECTION)]
     pub selection: Selection,
+    /// Geometry selection P6.4 (ruling O-2): what the op does with an open
+    /// path of its selection. Default `Skip`; a file with no key loads it.
+    /// The file always writes the key: the parameter schema (W5) reads the
+    /// default from the written config, and W4 check 6 holds that a
+    /// required param names a written field.
+    #[serde(default)]
+    #[param(help = HELP_OPEN_PATHS)]
+    pub open_paths: OpenPaths,
 }
 
 impl Default for PocketConfig {
@@ -710,6 +764,7 @@ impl Default for PocketConfig {
             spindle_rpm: None,
             region_ordering: default_layered_region_ordering(),
             selection: Selection::drawing(),
+            open_paths: OpenPaths::Skip,
         }
     }
 }

@@ -2037,12 +2037,15 @@ mod tests {
                 // G-INLAYSPLIT) and VCarve the same day (W1.4b,
                 // G-VCARVELEAD): each run starts on the design outline at
                 // zero depth, and a lead there cuts outside the design.
+                // Bore joined 2026-10-22 (P6.6): it cuts its own helix
+                // entry, and a lead or a link has no room in the hole.
                 OperationType::ProjectCurve
                 | OperationType::DropCutter
                 | OperationType::UnifiedFinish
                 | OperationType::Inlay
                 | OperationType::InlayPlug
-                | OperationType::VCarve => {
+                | OperationType::VCarve
+                | OperationType::Bore => {
                     assert!(policy.strip_all_reason.is_some(), "{op:?}: strip-all");
                     assert_eq!(policy.entry, EntryStylePolicy::AnyEntry);
                 }

@@ -91,8 +91,9 @@ use rs_cam_core::compute::config::{
 };
 use rs_cam_core::compute::floor::Floor;
 use rs_cam_core::compute::operation_configs::{
-    Adaptive3dEntryStyle, ClearingStrategy, DrillCycleType, PocketPattern, ProjectCurveDirection,
-    ProjectCurveProjection, ProjectCurveSide, RegionOrdering, SpiralDirection,
+    Adaptive3dEntryStyle, ClearingStrategy, DrillCycleType, OpenPaths, PocketPattern,
+    ProjectCurveDirection, ProjectCurveProjection, ProjectCurveSide, RegionOrdering,
+    SpiralDirection,
 };
 use rs_cam_core::finish::pencil::PencilDetector;
 use rs_cam_core::finish::unified_finish::ClaimsReference;
@@ -350,6 +351,9 @@ enum CurveModel {
     /// P6.5: `common::op_fixtures::hole_model` (design 6), the hole fit of
     /// a Drill.
     Holes,
+    /// P6.4: [`open_l_model`], one open L on the flat board (Pocket with
+    /// Extend to stock).
+    OpenL,
 }
 
 /// P3.5: the floor "each picked face", depth 0: each face is its own
@@ -566,6 +570,42 @@ const P66_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[(
     Frame::TopUp,
     CurveModel::Fixture,
 )];
+
+/// P6.4 (ruling O-2): a Pocket that extends each open path to the stock
+/// and cuts the area on its left.
+fn pocket_extend_left(op: &mut OperationConfig) {
+    let OperationConfig::Pocket(cfg) = op else {
+        unreachable!("pocket arm on another op")
+    };
+    cfg.open_paths = OpenPaths::ExtendLeft;
+}
+
+/// The P6.4 arm: a Pocket with Extend to stock (left) on the open L of
+/// [`open_l_model`]. Fresh stock.
+const P64_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[(
+    OperationType::Pocket,
+    "extend_open",
+    pocket_extend_left,
+    Frame::TopUp,
+    CurveModel::OpenL,
+)];
+
+/// One open L on the flat board (X -30 to 30, Y -20 to 20): north from
+/// (-10, -5) to (-10, 8), then east to (15, 8). Its start ray goes south
+/// and its end ray goes east, so the area on its left is the north-west
+/// part of the board.
+fn open_l_model() -> rs_cam_core::session::LoadedModel {
+    use rs_cam_core::geo::P2;
+    use rs_cam_core::polygon::Polygon2;
+    common::session::polygon_model(
+        vec![Polygon2::open_path(vec![
+            P2::new(-10.0, -5.0),
+            P2::new(-10.0, 8.0),
+            P2::new(15.0, 8.0),
+        ])],
+        "opgolden_open_l",
+    )
+}
 
 /// Three open curves over the cap, with gaps of 1 mm and 2 mm between
 /// them. Each curve is one chain, so the link stage has two gaps to join.
@@ -843,6 +883,7 @@ fn cases() -> Vec<Case> {
         .chain(P63_CASES)
         .chain(P65_CASES)
         .chain(P66_CASES)
+        .chain(P64_CASES)
     {
         cases.push(Case {
             op: *op,
@@ -958,6 +999,7 @@ fn run(case: &Case) -> Generated {
         CurveModel::Square => use_curve(&mut session, index, square_curve_model()),
         CurveModel::Faces => use_faces(&mut session, index, case.frame),
         CurveModel::Holes => use_curve(&mut session, index, common::op_fixtures::hole_model()),
+        CurveModel::OpenL => use_curve(&mut session, index, open_l_model()),
     }
     if rest {
         run_prior(&mut session);
@@ -1202,8 +1244,9 @@ fn every_op_keeps_its_toolpath() {
             got.outcome
         );
     }
-    // P6.3 non-vacuity: each side On arm cuts (it is no refusal).
-    for (op, arm, ..) in P63_CASES {
+    // P6.3 non-vacuity: each side On arm cuts (it is no refusal). P6.4:
+    // the extend arm cuts too.
+    for (op, arm, ..) in P63_CASES.iter().chain(P64_CASES) {
         let key = format!("{}/{arm}", op.kind_str());
         let got = &actual[&key];
         assert!(

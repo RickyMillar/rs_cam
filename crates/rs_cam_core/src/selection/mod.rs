@@ -7,9 +7,12 @@
 //! matches it against the items, [`ResolvedSelection::to_setup_frame`]
 //! moves the items into the setup frame, and [`view`](fn@view) gives the items an
 //! op cuts or a [`SelectionRefusal`] (P2.2). [`fit_holes`] then leaves out a
-//! drill circle that is not of the tool size (P6.5).
+//! drill circle that is not of the tool size (P6.5). A Pocket with Extend to
+//! stock closes each open path by the stock edge in `view` (P6.4,
+//! [`extend_to_stock`]).
 
 pub mod drawing_edit;
+pub mod extend;
 pub mod flat_regions;
 pub mod hole_fit;
 pub mod item;
@@ -29,6 +32,7 @@ pub use drawing_edit::{
     DrawingEdit, DrawingLedger, EditEffect, EditLost, EditOutcome, OpenShape, apply_drawing_edits,
     open_shapes,
 };
+pub use extend::{CannotExtend, ExtendedEnds, PathSide, StockXy, extend_ends, extend_to_stock};
 pub use flat_regions::{FLAT_REGION_Z_BAND_MM, flat_region_items};
 pub use hole_fit::{HoleFit, HoleFitRule, fit_holes, hole_fit};
 pub use item::{FaceItem, Item, ItemCounts, ItemError, ItemKind, ItemSet, Shape, SourceRef};

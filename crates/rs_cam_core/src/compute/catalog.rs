@@ -913,6 +913,15 @@ impl OperationConfig {
                 },
                 ..row
             },
+            // P6.4 (ruling O-2): Extend to stock closes each open path by
+            // the stock edge; Skip keeps the row's closed areas.
+            OperationConfig::Pocket(c) => Capabilities {
+                item_use: c
+                    .open_paths
+                    .side()
+                    .map_or(row.item_use, |side| ItemUse::RegionsExtendOpen { side }),
+                ..row
+            },
             OperationConfig::Adaptive(c) => Capabilities {
                 planner_uniform_engagement: matches!(
                     c.path_strategy,
@@ -930,7 +939,6 @@ impl OperationConfig {
             | OperationConfig::RadialFinish(_)
             | OperationConfig::HorizontalFinish(_)
             | OperationConfig::Face(_)
-            | OperationConfig::Pocket(_)
             | OperationConfig::Inlay(_)
             | OperationConfig::InlayPlug(_)
             | OperationConfig::Zigzag(_)

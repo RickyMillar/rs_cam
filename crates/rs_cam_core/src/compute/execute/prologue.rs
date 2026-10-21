@@ -42,6 +42,14 @@
 //! out a circle that is not of the tool size, with a note, and refuses a
 //! picked one (`HoleDoesNotFit`). [`Prepared::holes`] gives the fitted
 //! holes only, so no adapter reads a hole the tool does not make.
+//!
+//! Geometry selection P6.4 (ruling O-2 (B)): for an op that extends its open
+//! paths to the stock (`ItemUse::RegionsExtendOpen`, Pocket with Extend to
+//! stock) the prologue grows the stock rectangle of the selection by the
+//! tool radius ([`ResolvedSelection::with_stock_grown`]) before [`view`],
+//! so the area ends one tool radius past the stock edge and the tool centre
+//! reaches the edge. The `selection_status` report grows it by the same
+//! radius.
 
 use std::borrow::Cow;
 
@@ -339,11 +347,27 @@ fn require_items(
     let selection_error = |refusal: crate::selection::SelectionRefusal| -> OperationError {
         OperationError::Selection(Box::new(refusal.for_op(op_type.label())))
     };
-    let (mut items, view_notes) =
-        view(&ctx.selection.resolved, item_use).map_err(selection_error)?;
+    // P6.4 (O-2 (B)): the extend reader views the stock grown by the tool
+    // radius. Every other reader views the selection as resolved.
+    let grown;
+    let resolved: &ResolvedSelection<SetupFrame> = match item_use {
+        ItemUse::RegionsExtendOpen { .. } => {
+            grown = ctx
+                .selection
+                .resolved
+                .as_ref()
+                .clone()
+                .with_stock_grown(ctx.tool_def.diameter() / 2.0);
+            &grown
+        }
+        ItemUse::None | ItemUse::Regions | ItemUse::Curves | ItemUse::Holes { .. } => {
+            &ctx.selection.resolved
+        }
+    };
+    let (mut items, view_notes) = view(resolved, item_use).map_err(selection_error)?;
     notes.extend(view_notes);
     let fit_notes = fit_holes(
-        &ctx.selection.resolved,
+        resolved,
         &mut items,
         item_use,
         op.drill_size(ctx.tool_def.diameter()),
