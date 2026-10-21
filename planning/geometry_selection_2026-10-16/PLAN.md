@@ -739,3 +739,15 @@ All four P7_DESIGN.md recommendations taken:
   inside a Profile region gets the role "Island" ("the op cuts round
   it", `selection/view.rs:189`), but Profile cuts the outer ring only.
   Check it with a test before P7.4.
+
+## Operator ruling 2026-10-22: "auto magic" is a wizard
+
+"can we make sure that any 'auto magic' is a wizard and doesn't clutter
+the UI". Every feature that proposes ops, selections or tools (P7
+templates and job types, P8 recognition filters and tool advice, any
+later one) opens as a wizard: its own draft, one apply event, ordinary
+ops after (R9). Entry points: the setup `+` menu row, the empty-state
+button, the File menu. No prompt after an import and no auto-open. The
+main panels gain no rows or buttons for it. A one-line fix action on a
+note that shows only with the note (P6.7 "Add a Bore for these") is
+allowed. P7_DESIGN.md L-16 already follows this; P8 must.
