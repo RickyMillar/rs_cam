@@ -384,7 +384,7 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
 | P3 depth refs | COMPLETE (P3.1-P3.8; D9 one floor field with its reference) | 6026eb37, 86265095, 6d403ac1, 272238d8, 1f814929, 294875be, 5236e6c2, 83df571f | pushed to 0346862f up to P3.6; P3.7-P3.8 local |
 | P4 UI + sources | P4.0 probe, P4.1-P4.9 and P4.D done (P4.8 without the SVG scale default); operator demo seen 2026-10-20 | 1ca93935, 229eb719, c223d7c4, 9bdfac8e, 3373d8d2, 099d946b, 22cb38fa, 8f5723e3, a53e0cf5, 30e9a146, 0458a586 (SVG O-2), a83d7236 (P4.10); P4 COMPLETE; pushed to ca18398c | next: P3 (D9) after the tech-debt W4 |
 | P5 tabs | done (operator look pending) | e76f82c8, P5b | GUI viewport tab editor -> P4. Lead ruling P5b: tab_width = the material bridge (today bridge = width - D: default leaves none); tab_height holds on every level |
-| P6 open paths, holes | P6.0-P6.3, P6.5, P6.5b done; R-ARC done; next P6.6 Bore, P6.4 extend, P6.7 GUI, P6.8 parity | e1dfa30e, b0a13361, 5d4e2a6c, 5410a90a, f8cdfd70, 65c949d9, 0b4348e6, f27d2634 | not pushed; follow-ups P6.0d, P6.2b |
+| P6 open paths, holes | P6.0-P6.6 done (P6.5b, R-ARC done); next P6.7 GUI, P6.8 parity | e1dfa30e, b0a13361, 5d4e2a6c, 5410a90a, f8cdfd70, 65c949d9, 0b4348e6, f27d2634, b2f1b9cc, 13abac43, 070d32bc | push by the tech-debt session after its full gate; follow-ups P6.0d, P6.2b, P6.4 list |
 | P7 templates | not started (P4 done) | | |
 | P8 recognition | not started (P4 done) | | |
 
@@ -723,6 +723,27 @@ Defects found by the design:
   default `CAD_ROUNDING_MM`). The wanaka100 Holes Drill (12 circles of
   5.859 mm, a 6.0 mm tool) refused under P6.5; the repo fixtures set 0.2.
   The 27 older planning TOMLs keep the strict default (evidence).
+
+- P6.6 Bore done (13abac43). P6.4 done (070d32bc): `PocketConfig.open_paths:
+  OpenPaths { Skip, ExtendLeft, ExtendRight }` (the design's
+  `ExtendToStock { side }` cannot derive `ParamEnum`); the prologue grows
+  the stock by the tool radius (O-2 (B)); `SelectionReport.extended` feeds
+  the P6.7 preview. Every saved Pocket now writes `open_paths = "skip"`.
+  P6.4 follow-ups:
+  - (B) is measured on fresh stock only. On a rest pass the `LevelClip`
+    clip to the standing material can cut the area back to the stock box,
+    which gives (A). Add a rest arm to the P6.4 sentry.
+  - `CrossesItem` also refuses a loop that touches only the stock-edge
+    part of the area; that is stricter than the nesting needs.
+  - Two extended paths are not checked against each other (L-10: an
+    overlap is cut twice).
+  - L-3 (extend on Trace and Profile On) is not done; `extend_ends` is
+    ready for it.
+  - The Profile "Island" defect is confirmed (see the P7 study note
+    below). The fix needs an op fact ("this Regions op cuts round the
+    holes") and a new role; it changes `Capabilities` and the frozen W2.4
+    table. A lib test in `selection/tests.rs` (`..._known_red`) pins the
+    present role and fails when the fix lands. Do it before P7.4.
 
 ## P7 operator rulings (2026-10-22)
 
