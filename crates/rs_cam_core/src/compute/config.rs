@@ -1086,8 +1086,10 @@ impl Default for ArcFitParams {
 /// arc-fitting.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct SegmentMergeParams {
-    /// Deviation budget (mm). Sits between the generation tolerance and
-    /// stock-to-leave (roughing leaves >= 0.5 mm). Default 0.3.
+    /// Deviation budget (mm). Default 0.3. On an op with a finished edge
+    /// the pipeline runs the merge at most at
+    /// [`crate::polygon::FlattenPolicy::UNTOLERANCED_MM`] (P6.0b,
+    /// `OperationTransformCapabilities::segment_merge_tolerance`).
     pub tolerance: f64,
 }
 
@@ -1528,10 +1530,12 @@ impl DressupConfig {
             UiProcessRole::Roughing => Self {
                 entry_style: DressupEntryStyle::Ramp,
                 arc_fitting: Some(ArcFitParams::default()),
-                // Phase 1: roughing leaves >= 0.5 mm stock, so a 0.3 mm merge
-                // deviation never touches the finish surface — pure win for
-                // controller tracking. Finish/SemiFinish stay off (surface
-                // fidelity).
+                // Phase 1: the merge helps a controller track the feed.
+                // P6.0b: the premise "roughing leaves >= 0.5 mm stock" is
+                // false for Pocket, Profile and Zigzag, which cut the
+                // finished wall. The pipeline caps the merge on an op with
+                // a finished edge (`OperationTransformCapabilities::
+                // segment_merge_tolerance`). Finish/SemiFinish stay off.
                 segment_merge: Some(SegmentMergeParams::default()),
                 link_moves: Some(LinkDressupParams::default()),
                 optimize_rapid_order: true,

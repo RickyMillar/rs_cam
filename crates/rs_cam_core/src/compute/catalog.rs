@@ -188,6 +188,15 @@ pub struct OperationTransformCapabilities {
     /// its start or its end. A closed loop keeps its leads. `new` leaves it
     /// `false`.
     pub leads_on_closed_passes_only: bool,
+    /// P6.0b (geometry selection, SAFETY): the op's cut can be a finished
+    /// edge (a wall, a groove or a surface). The dressup segment merge then
+    /// runs at most at [`crate::polygon::FlattenPolicy::UNTOLERANCED_MM`]
+    /// ([`Self::segment_merge_tolerance`]). The merge does not know the
+    /// material side, and a merged chord at a corner moves toward the
+    /// material: at 0.3 mm a Profile cut 0.228 mm into its corner band.
+    /// `new` sets it to `true`; only an op with no finished edge clears
+    /// it ([`Self::without_finished_edge`]).
+    pub finished_edge: bool,
 }
 
 impl OperationTransformCapabilities {
@@ -208,6 +217,30 @@ impl OperationTransformCapabilities {
             helix_floor_lap: false,
             stock_aware_plunge: false,
             leads_on_closed_passes_only: false,
+            finished_edge: true,
+        }
+    }
+
+    /// The op has no finished edge for the segment merge to move (P6.0b):
+    /// the merge runs at the operator's tolerance.
+    pub const fn without_finished_edge(self) -> Self {
+        Self {
+            finished_edge: false,
+            ..self
+        }
+    }
+
+    /// The tolerance (mm) the dressup segment merge runs at for this op,
+    /// from the `requested` tolerance (P6.0b). An op with a finished edge
+    /// gets at most [`crate::polygon::FlattenPolicy::UNTOLERANCED_MM`]: a
+    /// merged chord then moves the cut no more than the offset flatten
+    /// does. Other ops get `requested`.
+    #[must_use]
+    pub fn segment_merge_tolerance(self, requested: f64) -> f64 {
+        if self.finished_edge {
+            requested.min(crate::polygon::FlattenPolicy::UNTOLERANCED_MM)
+        } else {
+            requested
         }
     }
 

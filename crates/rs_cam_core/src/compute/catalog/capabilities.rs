@@ -513,9 +513,13 @@ pub const TRANSFORM_XY_INDEPENDENT: OperationTransformCapabilities =
 
 /// Face: its one-way rows and depth barriers encode the machining
 /// sequence. It vetoes every rapid-order permutation and keeps the other
-/// dressups; it is not continuous and takes no straight link.
+/// dressups; it is not continuous and takes no straight link. It cuts the
+/// stock top and has no wall, so the segment merge keeps the operator's
+/// tolerance (P6.0b).
 pub const TRANSFORM_FACE: OperationTransformCapabilities =
-    OperationTransformCapabilities::new(false, false, false, false).without_rapid_reorder();
+    OperationTransformCapabilities::new(false, false, false, false)
+        .without_rapid_reorder()
+        .without_finished_edge();
 
 /// V-bit ops (VCarve, Inlay, Inlay Plug): link moves gouged even WITH the
 /// swept-corridor check (2026-08-03: Inlay 8.21 mm, VCarve 5.78 mm, all
@@ -570,11 +574,14 @@ pub const TRANSFORM_ADAPTIVE_2D: OperationTransformCapabilities =
 /// (448 entry samples over twice the median bite, peak 6.08 mm); with the
 /// order kept, 0 samples, peak 1.61 mm. The planner also applies the
 /// segment merge before it stamps each cut (G-PLANSIMGAP: a merge after it
-/// left up to 2.34 mm of material the planner held as cut).
+/// left up to 2.34 mm of material the planner held as cut). It is a rough
+/// that leaves `stock_to_leave_axial` over the surface, so it states no
+/// finished edge (P6.0b); the dressup merge skips it anyway.
 pub const TRANSFORM_ADAPTIVE_3D: OperationTransformCapabilities =
     OperationTransformCapabilities::new(false, true, false, false)
         .without_rapid_reorder()
-        .with_planner_segment_merge();
+        .with_planner_segment_merge()
+        .without_finished_edge();
 
 /// Ops stitched from independent nodes. `generate_unified_finish` emits a
 /// `RapidOrderBarrier` at every node start (and per Z inside waterline

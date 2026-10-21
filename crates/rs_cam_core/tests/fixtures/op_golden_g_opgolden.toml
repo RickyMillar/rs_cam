@@ -465,17 +465,17 @@ spans_hash = "0607bec658ac5533"
 
 ["pocket/each_face_flipped"]
 outcome = "ok"
-move_count = 263
+move_count = 275
 rapid_count = 66
-linear_count = 149
+linear_count = 161
 arc_count = 48
-cutting_length_mm = 1136.619
+cutting_length_mm = 1143.23
 rapid_length_mm = 515.163
 bbox_min = [13.175, 11.175, 3.0]
 bbox_max = [46.825, 28.825, 15.0]
-moves_hash = "0b188f320c78eb71"
+moves_hash = "a393c2d0d57c5ede"
 span_count = 153
-spans_hash = "7a75c250f1391159"
+spans_hash = "f548b662dd607126"
 
 ["pocket/fresh"]
 outcome = "ok"
@@ -521,31 +521,31 @@ spans_hash = "1fd801da01fa38af"
 
 ["profile/each_face"]
 outcome = "ok"
-move_count = 110
+move_count = 116
 rapid_count = 18
-linear_count = 40
+linear_count = 46
 arc_count = 52
-cutting_length_mm = 863.675
+cutting_length_mm = 863.684
 rapid_length_mm = 153.916
 bbox_min = [-23.175, -15.175, -7.0]
 bbox_max = [23.175, 15.175, 10.0]
-moves_hash = "f2ce00afb175aa3c"
+moves_hash = "a9d09d04f181c704"
 span_count = 89
-spans_hash = "678ae1bbd267a1aa"
+spans_hash = "671afaf103605269"
 
 ["profile/fresh"]
 outcome = "ok"
-move_count = 47
+move_count = 50
 rapid_count = 9
-linear_count = 20
+linear_count = 23
 arc_count = 18
-cutting_length_mm = 586.093
+cutting_length_mm = 586.097
 rapid_length_mm = 70.5
 bbox_min = [-23.175, -15.175, -6.0]
 bbox_max = [23.175, 15.175, 10.0]
-moves_hash = "0cd106214d32e3d3"
+moves_hash = "e3459b87a7064f1b"
 span_count = 37
-spans_hash = "1fb669433ea030fe"
+spans_hash = "8e0f6f1a2d886c07"
 
 ["profile/inside"]
 outcome = "ok"
@@ -563,17 +563,17 @@ spans_hash = "1ccce14a8994ebbe"
 
 ["profile/rest"]
 outcome = "ok"
-move_count = 47
+move_count = 50
 rapid_count = 9
-linear_count = 20
+linear_count = 23
 arc_count = 18
-cutting_length_mm = 585.427
+cutting_length_mm = 585.431
 rapid_length_mm = 70.5
 bbox_min = [-23.175, -15.175, -6.0]
 bbox_max = [23.175, 15.175, 10.0]
-moves_hash = "2e8f631bf0641720"
+moves_hash = "0536313511a3024c"
 span_count = 37
-spans_hash = "1fb669433ea030fe"
+spans_hash = "8e0f6f1a2d886c07"
 
 ["project_curve/fresh"]
 outcome = "ok"

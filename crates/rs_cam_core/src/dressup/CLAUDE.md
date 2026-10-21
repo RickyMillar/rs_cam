@@ -14,14 +14,14 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
 - `link.rs` — link against retract. `arcfit.rs` — lines to arcs, within the
   tolerance in 3D (G-TIERBURIAL). `feedopt.rs`, `feed_modulation.rs`,
   `air_cut.rs`, `tsp.rs`. `tabs.rs` — tab placement on straight sides (P5), the lift from the bridge width (P5b) and `apply_tabs`; P4.6: `plan_profile_tabs` is THE placement (`ProfilePass::prepare` and the `tab_layout` query; it reads `ops::profile`) and `resolve_hand_tabs` the one hand-tab resolver. `condition.rs` — segment merge (roughing; off where
-  `planner_applies_segment_merge`: 3D Rough, 2D Adaptive; G-PLANSIMGAP).
+  `planner_applies_segment_merge`: 3D Rough, 2D Adaptive; G-PLANSIMGAP; P6.0b: on a `finished_edge` op at most `FlattenPolicy::UNTOLERANCED_MM`).
 
 ## Invariants
 
 - G-RETRACTDIAL is closed (CUT-03): the retract COUNT is the lever. `filter_air_cuts` bridges an
   air run only when `machine::kinematics::retract_saves_time` says the retract is faster (10-15).
-- Every linking arm calls the shared `relink_fragments` kernel in
-  `finish/surface_link.rs`. Do not add a second linking implementation.
+- Every linking arm calls the shared `relink_fragments` kernel in `finish/surface_link.rs`. Do not add a second linking implementation.
+- `ModulationContext::cutting_ceiling` is `CuttingCeilingMmMin`, made only by `MachineProfile::cutting_ceiling` (F002).
 - A helix or ramp starts `entry_clearance_mm` over the material and takes
   the full depth at `ramp_feed_rate`; air is straight (rulings 09-24/25). A
   `helix_floor_lap` helix (2D Adaptive) ends on a flat lap and shrinks to
@@ -37,4 +37,4 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
 - `cargo test -p rs_cam_core -q --features test-support --test capability_link_moves_safety --test dressup_span_invariants --test tabs_sit_on_straight_sides_p5 --test tabs_bridge_width_and_height_p5b --test the_tab_layout_is_the_cut_layout_p4_6`
 - `... --test constrained_max_modulation_f039 --test entry_moves_stock_aware_g_rampterrain --test finishing_defaults_have_no_ramp_entry_r10 --test adaptive3d_entry_stock_aware`
 - `cargo test -p rs_cam_core -q --test lead_in_out_feed_rates_f040 --test plunge_guard_p3 --test an_entry_ramp_follows_the_arc_g_rampchord` (a ramp laps on the arc)
-- `... --test a_peck_ladder_is_never_split_into_a_rapid_into_stock_g_pecksplit --test fed_chords_ride_the_surface_g_tierburial`
+- `... --test a_peck_ladder_is_never_split_into_a_rapid_into_stock_g_pecksplit --test fed_chords_ride_the_surface_g_tierburial --test a_finished_edge_keeps_its_corner_p6_0b` (P6.0b; known red: the lead side)

@@ -987,6 +987,11 @@ impl PipelineRun<'_> {
     /// move cuts the planner stock already holds, and the entries read that
     /// stock. The stage stays in the trace with its tolerance and the kind
     /// "applied_by_planner", and moves nothing.
+    ///
+    /// P6.0b (SAFETY): on an op with a finished edge the merge runs at
+    /// most at `FlattenPolicy::UNTOLERANCED_MM`
+    /// (`OperationTransformCapabilities::segment_merge_tolerance`). The
+    /// trace then holds that tolerance and the kind "finished_edge_cap".
     fn segment_merge(
         &self,
         current: AnnotatedToolpath,
@@ -995,11 +1000,15 @@ impl PipelineRun<'_> {
         let Some(merge) = self.ctx.cfg.segment_merge else {
             return current;
         };
-        let merge_tol = merge.tolerance;
-        let by_planner = self
-            .ctx
-            .transform_capabilities
-            .planner_applies_segment_merge;
+        let capabilities = self.ctx.transform_capabilities;
+        let by_planner = capabilities.planner_applies_segment_merge;
+        // A planner merge is the planner's own; the cap is this stage's.
+        let merge_tol = if by_planner {
+            merge.tolerance
+        } else {
+            capabilities.segment_merge_tolerance(merge.tolerance)
+        };
+        let capped = merge_tol < merge.tolerance;
         self.traced(
             current,
             channels,
@@ -1008,6 +1017,8 @@ impl PipelineRun<'_> {
                 scope.set_param(SemanticKey::Tolerance, merge_tol);
                 if by_planner {
                     scope.set_param(SemanticKey::Kind, "applied_by_planner");
+                } else if capped {
+                    scope.set_param(SemanticKey::Kind, "finished_edge_cap");
                 }
             },
             |at| {
