@@ -723,3 +723,19 @@ Defects found by the design:
   default `CAD_ROUNDING_MM`). The wanaka100 Holes Drill (12 circles of
   5.859 mm, a 6.0 mm tool) refused under P6.5; the repo fixtures set 0.2.
   The 27 older planning TOMLs keep the strict default (evidence).
+
+## P7 operator rulings (2026-10-22)
+
+All four P7_DESIGN.md recommendations taken:
+- O-1: feeds at apply come from Suggest for the bound tool, with the
+  provenance in the draft; a saved template may mark an op "keep my feeds".
+- O-2: no default through-cut depth below the stock bottom; the draft asks
+  for it and Apply refuses until it is set.
+- O-3: inlay is two job types ("Inlay pocket", "Inlay plug"), each in its
+  own project (R2 stands).
+- O-4: a rule layer that the drawing does not hold is named in the draft;
+  Apply refuses until it is mapped or the op is off (S21).
+- Lead follow-up from the P7 study (code reading, not run): a hole ring
+  inside a Profile region gets the role "Island" ("the op cuts round
+  it", `selection/view.rs:189`), but Profile cuts the outer ring only.
+  Check it with a test before P7.4.
