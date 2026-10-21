@@ -23,7 +23,7 @@
 use std::borrow::Cow;
 
 use super::ir::{Program, Statement};
-use super::post::{PostDefinition, Units, WcsCode};
+use super::post::{PostDefinition, SafeZ, Units, WcsCode};
 
 /// Per-export tool-change handling override. `None` on the overlay
 /// means "use the post's `tool_change` template as-is".
@@ -164,9 +164,9 @@ impl WizardOverlay {
             let hi = hi.floor().max(0.0) as u32;
             let lo = lo.ceil().max(0.0) as u32;
             let max = p.limits.max_rpm.map_or(hi, |m| m.get().min(hi));
-            p.limits.max_rpm = Some(super::post::Rpm(max));
+            p.limits.max_rpm = Some(super::post::Rpm::new(max));
             let min = p.limits.min_rpm.map_or(lo, |m| m.get().max(lo));
-            p.limits.min_rpm = Some(super::post::Rpm(min.min(max)));
+            p.limits.min_rpm = Some(super::post::Rpm::new(min.min(max)));
         }
         if let Some(w) = self.wcs_override {
             p.wcs = Some(w);
@@ -271,8 +271,11 @@ fn clamp_dry_run_z(s: &mut Statement, safe_z: f64) {
         | Statement::ArcCcw { z, .. } => {
             *z = safe_z;
         }
-        Statement::Rapid { z, .. } | Statement::SafeZRetract { z } => {
+        Statement::Rapid { z, .. } => {
             *z = z.max(safe_z);
+        }
+        Statement::SafeZRetract { z } => {
+            *z = z.max(SafeZ::from_toolpath(safe_z));
         }
         // A native drill cycle cuts by itself. The builder never writes
         // one in a dry run (`emit_*_with_overlay` turns the option off),
@@ -299,6 +302,7 @@ fn clamp_dry_run_z(s: &mut Statement, safe_z: f64) {
 mod tests {
     use super::*;
     use crate::gcode::post;
+    use crate::gcode::post::{Feedrate, Rpm};
 
     #[test]
     fn default_overlay_is_empty() {
@@ -351,7 +355,7 @@ mod tests {
         let o = WizardOverlay::default();
         let prog = Program {
             statements: vec![Statement::Preamble {
-                spindle_rpm: 18_000,
+                spindle_rpm: Rpm::new(18_000),
             }],
             ..Default::default()
         };
@@ -368,7 +372,7 @@ mod tests {
         let prog = Program {
             statements: vec![
                 Statement::Preamble {
-                    spindle_rpm: 18_000,
+                    spindle_rpm: Rpm::new(18_000),
                 },
                 Statement::Postamble,
             ],
@@ -394,7 +398,7 @@ mod tests {
         let prog = Program {
             statements: vec![
                 Statement::Preamble {
-                    spindle_rpm: 18_000,
+                    spindle_rpm: Rpm::new(18_000),
                 },
                 Statement::Rapid {
                     x: 0.0,
@@ -405,7 +409,7 @@ mod tests {
                     x: 1.0,
                     y: 0.0,
                     z: -2.0,
-                    feed: 600.0,
+                    feed: Feedrate::from_toolpath(600.0),
                 },
                 Statement::LinearModal {
                     x: 2.0,
@@ -418,7 +422,7 @@ mod tests {
                     z: -2.5,
                     i: 1.0,
                     j: 0.0,
-                    feed: 600.0,
+                    feed: Feedrate::from_toolpath(600.0),
                 },
                 Statement::ArcCcw {
                     x: 4.0,
@@ -426,9 +430,11 @@ mod tests {
                     z: -2.5,
                     i: -1.0,
                     j: 0.0,
-                    feed: 600.0,
+                    feed: Feedrate::from_toolpath(600.0),
                 },
-                Statement::SafeZRetract { z: 10.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(10.0),
+                },
                 Statement::Postamble,
             ],
             ..Default::default()
@@ -461,7 +467,7 @@ mod tests {
         }
         // SafeZRetract above the floor is left alone (max-clamp no-op).
         match stmts[6] {
-            Statement::SafeZRetract { z } => assert!((z - 10.0).abs() < 1e-9),
+            Statement::SafeZRetract { z } => assert!((z.get() - 10.0).abs() < 1e-9),
             ref other => panic!("expected SafeZRetract, got {other:?}"),
         }
     }
@@ -487,11 +493,13 @@ mod tests {
                     x: 0.0,
                     y: 0.0,
                     z: -3.0,
-                    feed: 200.0,
+                    feed: Feedrate::from_toolpath(200.0),
                 },
                 // retract + re-entry rapid just above the peck bottom —
                 // in dry-run this is solid stock.
-                Statement::SafeZRetract { z: 2.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(2.0),
+                },
                 Statement::Rapid {
                     x: 0.0,
                     y: 0.0,
@@ -501,24 +509,26 @@ mod tests {
                     x: 0.0,
                     y: 0.0,
                     z: -6.0,
-                    feed: 200.0,
+                    feed: Feedrate::from_toolpath(200.0),
                 },
             ],
             ..Default::default()
         };
         let cow = o.apply_to_program(&prog);
         for (idx, s) in cow.statements.iter().enumerate() {
-            match *s {
-                Statement::Rapid { z, .. } | Statement::SafeZRetract { z } => {
-                    assert!(
-                        z >= 6.0 - 1e-9,
-                        "stmt {idx}: rapid/retract Z must be >= dry-run floor, got {z}"
-                    );
-                }
-                Statement::Linear { z, .. } => {
-                    assert!((z - 6.0).abs() < 1e-9, "stmt {idx}: cut pinned to floor");
-                }
-                _ => {}
+            let rapid_z = match *s {
+                Statement::Rapid { z, .. } => Some(z),
+                Statement::SafeZRetract { z } => Some(z.get()),
+                _ => None,
+            };
+            if let Some(z) = rapid_z {
+                assert!(
+                    z >= 6.0 - 1e-9,
+                    "stmt {idx}: rapid/retract Z must be >= dry-run floor, got {z}"
+                );
+            }
+            if let Statement::Linear { z, .. } = *s {
+                assert!((z - 6.0).abs() < 1e-9, "stmt {idx}: cut pinned to floor");
             }
         }
     }
@@ -535,23 +545,27 @@ mod tests {
         let prog = Program {
             statements: vec![
                 Statement::Preamble {
-                    spindle_rpm: 18_000,
+                    spindle_rpm: Rpm::new(18_000),
                 },
                 Statement::Linear {
                     x: 1.0,
                     y: 0.0,
                     z: -1.0,
-                    feed: 600.0,
+                    feed: Feedrate::from_toolpath(600.0),
                 },
                 Statement::ToolChange {
                     tool_number: 2,
                     label: "Ball".to_owned(),
                 },
-                Statement::SpindleSet { rpm: 10_610 },
+                Statement::SpindleSet {
+                    rpm: Rpm::new(10_610),
+                },
                 Statement::ProgramPause {
                     message: "Setup change: Bottom".to_owned(),
                 },
-                Statement::SpindleSet { rpm: 18_000 },
+                Statement::SpindleSet {
+                    rpm: Rpm::new(18_000),
+                },
                 Statement::Postamble,
             ],
             ..Default::default()
@@ -575,22 +589,28 @@ mod tests {
             cow.statements[positions[0] - 1],
             Statement::Preamble { .. }
         ));
-        assert!(matches!(
+        assert_eq!(
             cow.statements[positions[1] - 1],
-            Statement::SpindleSet { rpm: 10_610 }
-        ));
-        assert!(matches!(
+            Statement::SpindleSet {
+                rpm: Rpm::new(10_610)
+            }
+        );
+        assert_eq!(
             cow.statements[positions[2] - 1],
-            Statement::SpindleSet { rpm: 18_000 }
-        ));
+            Statement::SpindleSet {
+                rpm: Rpm::new(18_000)
+            }
+        );
         // A mid-program SpindleSet NOT preceded by a change/pause gets
         // no dwell: rerun with such a program.
         let prog2 = Program {
             statements: vec![
                 Statement::Preamble {
-                    spindle_rpm: 18_000,
+                    spindle_rpm: Rpm::new(18_000),
                 },
-                Statement::SpindleSet { rpm: 24_000 },
+                Statement::SpindleSet {
+                    rpm: Rpm::new(24_000),
+                },
                 Statement::Postamble,
             ],
             ..Default::default()
@@ -615,7 +635,7 @@ mod tests {
                 x: 0.0,
                 y: 0.0,
                 z: -1.0,
-                feed: 600.0,
+                feed: Feedrate::from_toolpath(600.0),
             }],
             ..Default::default()
         };
@@ -634,13 +654,13 @@ mod tests {
         let prog = Program {
             statements: vec![
                 Statement::Preamble {
-                    spindle_rpm: 18_000,
+                    spindle_rpm: Rpm::new(18_000),
                 },
                 Statement::Linear {
                     x: 0.0,
                     y: 0.0,
                     z: -1.0,
-                    feed: 600.0,
+                    feed: Feedrate::from_toolpath(600.0),
                 },
             ],
             ..Default::default()
@@ -704,13 +724,15 @@ mod tests {
         let prog = Program {
             statements: vec![
                 Statement::Preamble {
-                    spindle_rpm: 18_000,
+                    spindle_rpm: Rpm::new(18_000),
                 },
                 Statement::ToolChange {
                     tool_number: 2,
                     label: "Ball".to_owned(),
                 },
-                Statement::SpindleSet { rpm: 10_610 },
+                Statement::SpindleSet {
+                    rpm: Rpm::new(10_610),
+                },
                 Statement::Postamble,
             ],
             ..Default::default()
@@ -735,7 +757,7 @@ mod tests {
         assert!(
             cow.statements
                 .iter()
-                .any(|s| matches!(s, Statement::SpindleSet { rpm: 10_610 })),
+                .any(|s| matches!(s, Statement::SpindleSet { rpm } if *rpm == Rpm::new(10_610))),
             "SpindleSet must survive suppression"
         );
 
@@ -744,7 +766,7 @@ mod tests {
         let single = Program {
             statements: vec![
                 Statement::Preamble {
-                    spindle_rpm: 18_000,
+                    spindle_rpm: Rpm::new(18_000),
                 },
                 Statement::Postamble,
             ],
@@ -823,13 +845,13 @@ mod tests {
             ..Default::default()
         };
         let p = o.applied_post(post::grblhal());
-        assert_eq!(p.limits.max_rpm, Some(super::super::post::Rpm(18_000)));
-        assert_eq!(p.limits.min_rpm, Some(super::super::post::Rpm(6_000)));
+        assert_eq!(p.limits.max_rpm, Some(super::super::post::Rpm::new(18_000)));
+        assert_eq!(p.limits.min_rpm, Some(super::super::post::Rpm::new(6_000)));
 
         let prog = Program {
             statements: vec![
                 Statement::Preamble {
-                    spindle_rpm: 18_000,
+                    spindle_rpm: Rpm::new(18_000),
                 },
                 Statement::Postamble,
             ],

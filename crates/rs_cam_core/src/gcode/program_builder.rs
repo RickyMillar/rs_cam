@@ -14,6 +14,7 @@
 
 use super::ir::{Program, Statement};
 use super::modal::ModalState;
+use super::post::{Feedrate, Rpm, SafeZ};
 use super::{ControllerCompensation, CoolantMode, GcodePhase, GcodeSetupPhase, PhaseTool};
 use crate::toolpath::{MoveIntent, MoveType, Toolpath};
 
@@ -38,7 +39,9 @@ fn push_rapid(
 ) {
     match *prev_pos {
         None => {
-            program.push(Statement::SafeZRetract { z });
+            program.push(Statement::SafeZRetract {
+                z: SafeZ::from_toolpath(z),
+            });
             program.push(Statement::Rapid { x, y, z });
         }
         Some((px, py, pz)) => {
@@ -47,7 +50,9 @@ fn push_rapid(
             if xy_changed && z_changed {
                 if z > pz {
                     // Rising: lift first, then traverse at the new height.
-                    program.push(Statement::SafeZRetract { z });
+                    program.push(Statement::SafeZRetract {
+                        z: SafeZ::from_toolpath(z),
+                    });
                     program.push(Statement::Rapid { x, y, z });
                 } else {
                     // Falling: traverse at the current height, then plunge.
@@ -72,9 +77,11 @@ fn push_feeds_comment(program: &mut Program, phase: &GcodePhase<'_>) {
 /// Build a `Program` for a single toolpath.
 pub fn build_single(toolpath: &Toolpath, spindle_rpm: u32) -> Program {
     let mut program = Program::new();
-    program.push(Statement::Preamble { spindle_rpm });
+    program.push(Statement::Preamble {
+        spindle_rpm: Rpm::new(spindle_rpm),
+    });
 
-    let mut last_feed: Option<f64> = None;
+    let mut last_feed: Option<Feedrate> = None;
     let mut prev_pos: Option<(f64, f64, f64)> = None;
     for m in &toolpath.moves {
         match m.move_type {
@@ -89,14 +96,15 @@ pub fn build_single(toolpath: &Toolpath, spindle_rpm: u32) -> Program {
                 last_feed = None;
             }
             MoveType::Linear { feed_rate } => {
-                if last_feed != Some(feed_rate) {
+                let feed = Feedrate::from_toolpath(feed_rate);
+                if last_feed != Some(feed) {
                     program.push(Statement::Linear {
                         x: m.target.x,
                         y: m.target.y,
                         z: m.target.z,
-                        feed: feed_rate,
+                        feed,
                     });
-                    last_feed = Some(feed_rate);
+                    last_feed = Some(feed);
                 } else {
                     program.push(Statement::LinearModal {
                         x: m.target.x,
@@ -112,9 +120,9 @@ pub fn build_single(toolpath: &Toolpath, spindle_rpm: u32) -> Program {
                     z: m.target.z,
                     i,
                     j,
-                    feed: feed_rate,
+                    feed: Feedrate::from_toolpath(feed_rate),
                 });
-                last_feed = Some(feed_rate);
+                last_feed = Some(Feedrate::from_toolpath(feed_rate));
             }
             MoveType::ArcCCW { i, j, feed_rate } => {
                 program.push(Statement::ArcCcw {
@@ -123,9 +131,9 @@ pub fn build_single(toolpath: &Toolpath, spindle_rpm: u32) -> Program {
                     z: m.target.z,
                     i,
                     j,
-                    feed: feed_rate,
+                    feed: Feedrate::from_toolpath(feed_rate),
                 });
-                last_feed = Some(feed_rate);
+                last_feed = Some(Feedrate::from_toolpath(feed_rate));
             }
         }
         // Track the move's target so the next rapid can be sequenced
@@ -163,7 +171,7 @@ pub fn build_phased_with(phases: &[GcodePhase<'_>], options: BuildOptions) -> Pr
     let Some(first_phase) = phases.first() else {
         return program;
     };
-    let first_rpm = first_phase.spindle_rpm;
+    let first_rpm = Rpm::new(first_phase.spindle_rpm);
     program.push(Statement::Preamble {
         spindle_rpm: first_rpm,
     });
@@ -197,11 +205,10 @@ pub fn build_phased_with(phases: &[GcodePhase<'_>], options: BuildOptions) -> Pr
         }
 
         // Spindle speed change (only if we didn't already emit it in the tool change block).
-        if phase.spindle_rpm != state.current_rpm {
-            program.push(Statement::SpindleSet {
-                rpm: phase.spindle_rpm,
-            });
-            state.current_rpm = phase.spindle_rpm;
+        let rpm = Rpm::new(phase.spindle_rpm);
+        if rpm != state.current_rpm {
+            program.push(Statement::SpindleSet { rpm });
+            state.current_rpm = rpm;
         }
 
         // Coolant mode change. Skipped only when the tool-change block
@@ -247,7 +254,7 @@ pub fn build_multi_setup_with(
         .flat_map(|setup| setup.phases.iter())
         .map(|phase| phase.spindle_rpm)
         .next()
-        .unwrap_or(18_000);
+        .map_or(Rpm::new(18_000), Rpm::new);
     program.push(Statement::Preamble {
         spindle_rpm: first_rpm,
     });
@@ -281,7 +288,7 @@ pub fn build_multi_setup_with(
             let outgoing_max_z =
                 max_commanded_z(program.statements.get(setup_start..).unwrap_or(&[]));
             program.push(Statement::SafeZRetract {
-                z: outgoing_max_z.map_or(safe_z, |z| z.max(safe_z)),
+                z: SafeZ::from_toolpath(outgoing_max_z.map_or(safe_z, |z| z.max(safe_z))),
             });
             let pause_text = setup.pause_message.map_or_else(
                 || format!("Setup change: {}", setup.setup_label),
@@ -298,7 +305,7 @@ pub fn build_multi_setup_with(
             let next_rpm = setup
                 .phases
                 .first()
-                .map(|phase| phase.spindle_rpm)
+                .map(|phase| Rpm::new(phase.spindle_rpm))
                 .unwrap_or(state.current_rpm);
             program.push(Statement::SpindleSet { rpm: next_rpm });
             state.current_rpm = next_rpm;
@@ -334,11 +341,10 @@ pub fn build_multi_setup_with(
                 tool_change_fired = true;
             }
 
-            if phase.spindle_rpm != state.current_rpm {
-                program.push(Statement::SpindleSet {
-                    rpm: phase.spindle_rpm,
-                });
-                state.current_rpm = phase.spindle_rpm;
+            let rpm = Rpm::new(phase.spindle_rpm);
+            if rpm != state.current_rpm {
+                program.push(Statement::SpindleSet { rpm });
+                state.current_rpm = rpm;
             }
 
             // A3 fix — see build_phased: skip only when a tool change
@@ -386,10 +392,9 @@ fn push_tool_change(
         label: tool.label.to_owned(),
     });
     // SpindleSet doubles as the resume spin-up after a pause-style change.
-    program.push(Statement::SpindleSet {
-        rpm: phase.spindle_rpm,
-    });
-    state.current_rpm = phase.spindle_rpm;
+    let rpm = Rpm::new(phase.spindle_rpm);
+    program.push(Statement::SpindleSet { rpm });
+    state.current_rpm = rpm;
     state.current_tool = Some(tool.id);
     if phase.coolant.is_active() {
         program.push(Statement::Raw(phase.coolant.start_gcode().to_owned()));
@@ -446,7 +451,9 @@ fn push_retract_to_program_max_z(program: &mut Program) {
     if last_z == Some(max_z) {
         return; // already at the program's highest height
     }
-    program.push(Statement::SafeZRetract { z: max_z });
+    program.push(Statement::SafeZRetract {
+        z: SafeZ::from_toolpath(max_z),
+    });
 }
 
 /// The Z a motion statement commands, or `None` for a non-motion statement.
@@ -456,8 +463,8 @@ fn commanded_z(statement: &Statement) -> Option<f64> {
         | Statement::Linear { z, .. }
         | Statement::LinearModal { z, .. }
         | Statement::ArcCw { z, .. }
-        | Statement::ArcCcw { z, .. }
-        | Statement::SafeZRetract { z } => Some(z),
+        | Statement::ArcCcw { z, .. } => Some(z),
+        Statement::SafeZRetract { z } => Some(z.get()),
         _ => None,
     }
 }
@@ -597,14 +604,15 @@ fn push_phase_moves(
             }
             MoveType::Linear { feed_rate } => {
                 push_comp_start_if_needed(program, comp, &mut comp_started, tool_num_for_comp);
-                if state.last_feed != Some(feed_rate) {
+                let feed = Feedrate::from_toolpath(feed_rate);
+                if state.last_feed != Some(feed) {
                     program.push(Statement::Linear {
                         x: m.target.x,
                         y: m.target.y,
                         z: m.target.z,
-                        feed: feed_rate,
+                        feed,
                     });
-                    state.last_feed = Some(feed_rate);
+                    state.last_feed = Some(feed);
                 } else {
                     program.push(Statement::LinearModal {
                         x: m.target.x,
@@ -629,9 +637,9 @@ fn push_phase_moves(
                     z: m.target.z,
                     i,
                     j,
-                    feed: feed_rate,
+                    feed: Feedrate::from_toolpath(feed_rate),
                 });
-                state.last_feed = Some(feed_rate);
+                state.last_feed = Some(Feedrate::from_toolpath(feed_rate));
             }
             MoveType::ArcCCW { i, j, feed_rate } => {
                 push_comp_start_if_needed(program, comp, &mut comp_started, tool_num_for_comp);
@@ -641,9 +649,9 @@ fn push_phase_moves(
                     z: m.target.z,
                     i,
                     j,
-                    feed: feed_rate,
+                    feed: Feedrate::from_toolpath(feed_rate),
                 });
-                state.last_feed = Some(feed_rate);
+                state.last_feed = Some(Feedrate::from_toolpath(feed_rate));
             }
         }
         // Track every move's target for safe rapid sequencing (no-op
@@ -817,7 +825,7 @@ fn push_native_drill_cycles(
             y: hole.y,
             z: hole.bottom,
             r: hole.r,
-            feed: hole.feed,
+            feed: Feedrate::from_toolpath(hole.feed),
             first: index == 0,
         });
     }
@@ -1076,7 +1084,9 @@ mod tests {
         assert_eq!(
             moves,
             vec![
-                Statement::SafeZRetract { z: 10.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(10.0)
+                },
                 Statement::Rapid {
                     x: 5.0,
                     y: 6.0,
@@ -1105,14 +1115,18 @@ mod tests {
             moves,
             vec![
                 // first rapid (program start)
-                Statement::SafeZRetract { z: 5.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(5.0)
+                },
                 Statement::Rapid {
                     x: 0.0,
                     y: 0.0,
                     z: 5.0
                 },
                 // rising diagonal: lift, then traverse
-                Statement::SafeZRetract { z: 5.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(5.0)
+                },
                 Statement::Rapid {
                     x: 30.0,
                     y: 40.0,
@@ -1135,7 +1149,9 @@ mod tests {
         assert_eq!(
             moves,
             vec![
-                Statement::SafeZRetract { z: 10.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(10.0)
+                },
                 Statement::Rapid {
                     x: 0.0,
                     y: 0.0,
@@ -1153,7 +1169,9 @@ mod tests {
                     z: 2.0
                 },
                 // C2: final retract back to the program's max height
-                Statement::SafeZRetract { z: 10.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(10.0)
+                },
             ]
         );
     }
@@ -1172,7 +1190,9 @@ mod tests {
         assert_eq!(
             moves,
             vec![
-                Statement::SafeZRetract { z: 10.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(10.0)
+                },
                 Statement::Rapid {
                     x: 0.0,
                     y: 0.0,
@@ -1223,7 +1243,9 @@ mod tests {
         assert_eq!(
             moves,
             vec![
-                Statement::SafeZRetract { z: 5.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(5.0)
+                },
                 Statement::Rapid {
                     x: 0.0,
                     y: 0.0,
@@ -1251,7 +1273,9 @@ mod tests {
         assert_eq!(
             moves,
             vec![
-                Statement::SafeZRetract { z: 5.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(5.0)
+                },
                 Statement::Rapid {
                     x: 0.0,
                     y: 0.0,
@@ -1259,9 +1283,13 @@ mod tests {
                 },
                 // G2: lift from Z-1 to the program's highest Z before the
                 // change block.
-                Statement::SafeZRetract { z: 5.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(5.0)
+                },
                 // post-tool-change: program-start sequencing again
-                Statement::SafeZRetract { z: 5.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(5.0)
+                },
                 Statement::Rapid {
                     x: 20.0,
                     y: 30.0,
@@ -1300,16 +1328,22 @@ mod tests {
         assert_eq!(
             moves,
             vec![
-                Statement::SafeZRetract { z: 5.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(5.0)
+                },
                 Statement::Rapid {
                     x: 0.0,
                     y: 0.0,
                     z: 5.0
                 },
                 // inter-setup retract to safe-Z (pre-existing behaviour)
-                Statement::SafeZRetract { z: 15.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(15.0)
+                },
                 // post-pause: program-start sequencing
-                Statement::SafeZRetract { z: 5.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(5.0)
+                },
                 Statement::Rapid {
                     x: 10.0,
                     y: 0.0,
@@ -1317,7 +1351,9 @@ mod tests {
                 },
                 // C2: final retract to the program's max height (the
                 // inter-setup safe-Z was the highest Z commanded)
-                Statement::SafeZRetract { z: 15.0 },
+                Statement::SafeZRetract {
+                    z: SafeZ::from_toolpath(15.0)
+                },
             ]
         );
     }
@@ -1345,7 +1381,8 @@ mod tests {
         };
         let m9 = idx_of(|s| matches!(s, Statement::Raw(t) if t == "M9\n"));
         let tc = idx_of(|s| matches!(s, Statement::ToolChange { tool_number: 2, .. }));
-        let spin = idx_of(|s| matches!(s, Statement::SpindleSet { rpm: 24_000 }));
+        let spin =
+            idx_of(|s| matches!(s, Statement::SpindleSet { rpm } if *rpm == Rpm::new(24_000)));
         assert!(m9 < tc && tc < spin, "M9 → ToolChange → SpindleSet order");
     }
 
@@ -1374,8 +1411,9 @@ mod tests {
             match retract {
                 Some(Statement::SafeZRetract { z }) => {
                     assert!(
-                        *z >= 25.0 - 1e-9,
-                        "final retract must be >= program max Z (25.0), got {z}"
+                        z.get() >= 25.0 - 1e-9,
+                        "final retract must be >= program max Z (25.0), got {}",
+                        z.get()
                     );
                 }
                 other => panic!("expected final SafeZRetract before Postamble, got {other:?}"),
@@ -1433,7 +1471,7 @@ mod tests {
             }
             _ => None,
         });
-        assert_eq!(next_feed, Some(600.0));
+        assert_eq!(next_feed, Some(Feedrate::from_toolpath(600.0)));
     }
 
     /// Snippets containing dangerous modal words (G91, units, WCS) get
@@ -1696,7 +1734,7 @@ mod tests {
             .iter()
             .rev()
             .find_map(|s| match *s {
-                Statement::SafeZRetract { z } => Some(z),
+                Statement::SafeZRetract { z } => Some(z.get()),
                 _ => None,
             });
         assert_eq!(retract_z, Some(36.5), "{:?}", prog.statements);

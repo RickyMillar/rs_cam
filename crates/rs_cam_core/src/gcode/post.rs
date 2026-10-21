@@ -17,36 +17,143 @@ use std::sync::OnceLock;
 
 /// Spindle speed in revolutions per minute. Newtype to prevent mixing
 /// with feedrate or other scalars at function boundaries.
+///
+/// Every `u32` is a valid speed. `S0` is "spindle off" (see the G5 rule in
+/// `emitter::clamp_rpm`), so the constructor does not refuse zero.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct Rpm(pub u32);
+pub struct Rpm(u32);
 
 impl Rpm {
-    pub fn get(self) -> u32 {
+    #[must_use]
+    pub const fn new(rpm: u32) -> Self {
+        Self(rpm)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u32 {
         self.0
     }
 }
 
+/// A value that is not in the domain of a G-code quantity: `Feedrate`
+/// needs a finite value above zero, `SafeZ` needs a finite value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct QuantityOutOfDomain {
+    /// The quantity name, for example `"feedrate"`.
+    pub quantity: &'static str,
+    /// The value the constructor refused.
+    pub value: f64,
+}
+
+impl std::fmt::Display for QuantityOutOfDomain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {} is out of its domain", self.quantity, self.value)
+    }
+}
+
+impl std::error::Error for QuantityOutOfDomain {}
+
 /// Tool feedrate in mm/min. Newtype guards against unit mixing
 /// (see plan: "formatting bugs from unit mixing have killed real machines").
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Feedrate(pub f64);
+///
+/// [`Feedrate::new`] is the checked door: a feed is finite and above zero
+/// (`F0` moves nothing). A post TOML value goes through it. The program
+/// builder uses `Feedrate::from_toolpath`: the toolpath owns the value,
+/// and the builder passes it through unchanged, so the G-code bytes do
+/// not change.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct Feedrate(f64);
 
 impl Feedrate {
-    pub fn get(self) -> f64 {
+    /// A feedrate in mm/min. `None` when the value is not finite or not
+    /// above zero.
+    #[must_use]
+    pub fn new(mm_min: f64) -> Option<Self> {
+        (mm_min.is_finite() && mm_min > 0.0).then_some(Self(mm_min))
+    }
+
+    /// The feed of a toolpath move, unchanged. The builder converts once
+    /// here, at the door from `MoveType` to `Statement`.
+    #[must_use]
+    pub(crate) const fn from_toolpath(mm_min: f64) -> Self {
+        Self(mm_min)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> f64 {
         self.0
+    }
+}
+
+impl TryFrom<f64> for Feedrate {
+    type Error = QuantityOutOfDomain;
+
+    fn try_from(mm_min: f64) -> Result<Self, Self::Error> {
+        Self::new(mm_min).ok_or(QuantityOutOfDomain {
+            quantity: "feedrate",
+            value: mm_min,
+        })
+    }
+}
+
+impl From<Feedrate> for f64 {
+    fn from(feed: Feedrate) -> Self {
+        feed.0
     }
 }
 
 /// Safe-Z retract height in mm (in the active WCS).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct SafeZ(pub f64);
+///
+/// [`SafeZ::new`] is the checked door: a height is finite. Zero and
+/// negative heights are valid, because a local Z frame can put the
+/// retract plane below zero. The program builder uses
+/// `SafeZ::from_toolpath` for a toolpath Z or the export safe Z, and
+/// passes the value through unchanged.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "f64", into = "f64")]
+pub struct SafeZ(f64);
 
 impl SafeZ {
-    pub fn get(self) -> f64 {
+    /// A retract height in mm. `None` when the value is not finite.
+    #[must_use]
+    pub fn new(z: f64) -> Option<Self> {
+        z.is_finite().then_some(Self(z))
+    }
+
+    /// A toolpath or export Z, unchanged. The builder converts once here.
+    #[must_use]
+    pub(crate) const fn from_toolpath(z: f64) -> Self {
+        Self(z)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> f64 {
         self.0
+    }
+
+    /// The higher of the two heights (`f64::max`).
+    #[must_use]
+    pub fn max(self, other: Self) -> Self {
+        Self(self.0.max(other.0))
+    }
+}
+
+impl TryFrom<f64> for SafeZ {
+    type Error = QuantityOutOfDomain;
+
+    fn try_from(z: f64) -> Result<Self, Self::Error> {
+        Self::new(z).ok_or(QuantityOutOfDomain {
+            quantity: "safe Z",
+            value: z,
+        })
+    }
+}
+
+impl From<SafeZ> for f64 {
+    fn from(z: SafeZ) -> Self {
+        z.0
     }
 }
 
@@ -776,5 +883,59 @@ mod tests {
         assert!(!grblhal().supports_cutter_comp);
         assert!(linuxcnc().supports_cutter_comp);
         assert!(mach3().supports_cutter_comp);
+    }
+
+    /// F005: the checked doors refuse a value outside the quantity domain.
+    /// A feed is finite and above zero. A retract height is finite; zero
+    /// and negative heights are valid in a local Z frame.
+    #[test]
+    fn checked_quantity_doors_refuse_out_of_domain_values_f005() {
+        assert_eq!(Feedrate::new(600.0).map(Feedrate::get), Some(600.0));
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(Feedrate::new(bad).is_none(), "feedrate {bad} must refuse");
+        }
+        for good in [-12.5, 0.0, 10.0] {
+            assert_eq!(SafeZ::new(good).map(SafeZ::get), Some(good));
+        }
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(SafeZ::new(bad).is_none(), "safe Z {bad} must refuse");
+        }
+        assert_eq!(Rpm::new(0).get(), 0, "S0 is spindle off and stays valid");
+        assert_eq!(
+            SafeZ::from_toolpath(2.0).max(SafeZ::from_toolpath(5.0)),
+            SafeZ::from_toolpath(5.0)
+        );
+    }
+
+    /// F005: a post TOML limit goes through the checked door. A zero or
+    /// NaN `max_feed` refuses at load; a valid one loads unchanged.
+    #[test]
+    fn a_post_max_feed_outside_its_domain_refuses_at_load_f005() {
+        let post_with = |max_feed: &str| {
+            r#"
+                name = "Capped"
+                preamble = "M3 S{spindle_rpm}\n"
+                postamble = "M30\n"
+                program_pause = "M0\n"
+                tool_change = "M5\nM6 T{tool_number}\n"
+                [decimals]
+                xyz = 3
+                feed = 0
+                ijk = 3
+                [comment]
+                format = "({text})"
+                [limits]
+                max_feed = MAX_FEED
+            "#
+            .replace("MAX_FEED", max_feed)
+        };
+        let loaded = PostDefinition::from_toml(&post_with("800.0")).expect("valid post");
+        assert_eq!(loaded.limits.max_feed.map(Feedrate::get), Some(800.0));
+        for bad in ["0.0", "-5.0", "nan", "inf"] {
+            assert!(
+                PostDefinition::from_toml(&post_with(bad)).is_err(),
+                "max_feed = {bad} must refuse"
+            );
+        }
     }
 }

@@ -11,7 +11,7 @@ Z-first, and in a setup with an obstacle the toolpath starts at the plane (`a_sn
 - `program_builder.rs` — builds a `Program` from `Toolpath` inputs.
 - `modal.rs` — the modal state the builder tracks.
 - `emitter.rs` — renders a `Program` to bytes with a `PostDefinition`.
-- `post.rs` — the data-driven post-processor definition.
+- `post.rs` — the post definition and the `Rpm`/`Feedrate`/`SafeZ` that `Statement` holds (F005: a builder uses `from_toolpath`, a TOML the checked `new`).
 - `wizard_overlay.rs` — the per-export overrides the wizard supplies.
 
 ## Invariants

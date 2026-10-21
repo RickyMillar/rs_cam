@@ -17,15 +17,21 @@
 //!   `M6 T<n>`, coolant `M7`/`M8`/`M9`, controller comp `G40`/`G41 D<n>`,
 //!   and user-supplied `pre_gcode`/`post_gcode` snippets. Newlines are
 //!   preserved exactly so the emitter can splice them in unchanged.
+//!
+//! F005: a spindle speed is an [`Rpm`], a feed is a [`Feedrate`] and a
+//! retract height is a [`SafeZ`]. A unit mix at a `Statement` is a
+//! compile error.
+
+use super::post::{Feedrate, Rpm, SafeZ};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
     /// Multi-line preamble block (post-specific).
-    Preamble { spindle_rpm: u32 },
+    Preamble { spindle_rpm: Rpm },
     /// Set spindle speed clockwise: `M3 S<rpm>\n`. Distinct from
     /// `Raw("M3 S<n>\n")` so the emitter can apply `PostLimits.max_rpm`
     /// clamping at this single chokepoint.
-    SpindleSet { rpm: u32 },
+    SpindleSet { rpm: Rpm },
     /// Multi-line postamble block.
     Postamble,
     /// Multi-line program pause (M5 + comment + M0, post-specific).
@@ -50,7 +56,12 @@ pub enum Statement {
     /// Rapid traverse via `post.rapid`.
     Rapid { x: f64, y: f64, z: f64 },
     /// Linear feed with explicit F (first occurrence at this rate).
-    Linear { x: f64, y: f64, z: f64, feed: f64 },
+    Linear {
+        x: f64,
+        y: f64,
+        z: f64,
+        feed: Feedrate,
+    },
     /// Linear feed with elided F (modal — same rate as previous Linear).
     LinearModal { x: f64, y: f64, z: f64 },
     /// Clockwise arc (XY plane, IJK relative center).
@@ -60,7 +71,7 @@ pub enum Statement {
         z: f64,
         i: f64,
         j: f64,
-        feed: f64,
+        feed: Feedrate,
     },
     /// Counter-clockwise arc (XY plane, IJK relative center).
     ArcCcw {
@@ -69,12 +80,12 @@ pub enum Statement {
         z: f64,
         i: f64,
         j: f64,
-        feed: f64,
+        feed: Feedrate,
     },
     /// Rapid Z-retract to safe height. Formatted with the post's
     /// `decimal_places` (the only Z-only modal-state line that depends
     /// on per-post precision; everything else is post-agnostic Raw).
-    SafeZRetract { z: f64 },
+    SafeZRetract { z: SafeZ },
     /// G7: a dwell, `G4 P<seconds>`. The G82 dwell at a hole bottom in an
     /// expanded drill cycle.
     Dwell { seconds: f64 },
@@ -89,7 +100,7 @@ pub enum Statement {
         y: f64,
         z: f64,
         r: f64,
-        feed: f64,
+        feed: Feedrate,
         first: bool,
     },
     /// G7: `G80`, the end of a native canned drill cycle.

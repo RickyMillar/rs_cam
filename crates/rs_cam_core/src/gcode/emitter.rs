@@ -15,7 +15,7 @@
 use std::fmt::Write;
 
 use super::ir::{CannedDrillKind, Program, Statement};
-use super::post::PostDefinition;
+use super::post::{Feedrate, PostDefinition, Rpm};
 use super::wizard_overlay::WizardOverlay;
 
 /// Render a `Program` to g-code text using the given `PostDefinition`.
@@ -35,7 +35,7 @@ pub fn emit_program(program: &Program, post: &PostDefinition) -> String {
     for statement in &program.statements {
         if let Statement::Preamble { spindle_rpm } = *statement {
             let rpm = clamp_rpm(&mut output, post, spindle_rpm);
-            output.push_str(&post.render_preamble_with_tool(rpm, first_tool));
+            output.push_str(&post.render_preamble_with_tool(rpm.get(), first_tool));
             continue;
         }
         emit_statement(&mut output, statement, post, &mut pos);
@@ -60,46 +60,48 @@ pub fn emit_program_with_overlay(
 /// Clamp `requested` to `max` if `max` is set and `requested > max`.
 /// On clamp, append a comment line documenting the substitution so
 /// operators can spot the post-modified value before running the file.
-fn clamp_rpm(output: &mut String, post: &PostDefinition, requested: u32) -> u32 {
+fn clamp_rpm(output: &mut String, post: &PostDefinition, requested: Rpm) -> Rpm {
+    let requested_s = requested.get();
     if let Some(max) = post.limits.max_rpm
-        && requested > max.get()
+        && requested_s > max.get()
     {
         let line = post.render_comment(&format!(
-            "WARNING: requested S{requested} clamped to S{} ({} max_rpm)",
+            "WARNING: requested S{requested_s} clamped to S{} ({} max_rpm)",
             max.get(),
             post.name
         ));
         output.push_str(&line);
-        return max.get();
+        return max;
     }
     // G5: a running spindle below the controller minimum (`$31`). S0 is
     // "off" and stays.
     if let Some(min) = post.limits.min_rpm
-        && requested > 0
-        && requested < min.get()
+        && requested_s > 0
+        && requested_s < min.get()
     {
         let line = post.render_comment(&format!(
-            "WARNING: requested S{requested} raised to S{} ({} min_rpm)",
+            "WARNING: requested S{requested_s} raised to S{} ({} min_rpm)",
             min.get(),
             post.name
         ));
         output.push_str(&line);
-        return min.get();
+        return min;
     }
     requested
 }
 
-fn clamp_feed(output: &mut String, post: &PostDefinition, requested: f64) -> f64 {
+fn clamp_feed(output: &mut String, post: &PostDefinition, requested: Feedrate) -> Feedrate {
+    let requested_f = requested.get();
     if let Some(max) = post.limits.max_feed
-        && requested > max.get()
+        && requested_f > max.get()
     {
         let line = post.render_comment(&format!(
-            "WARNING: requested F{requested:.1} clamped to F{:.1} ({} max_feed)",
+            "WARNING: requested F{requested_f:.1} clamped to F{:.1} ({} max_feed)",
             max.get(),
             post.name
         ));
         output.push_str(&line);
-        return max.get();
+        return max;
     }
     requested
 }
@@ -230,10 +232,10 @@ fn emit_statement(
     match *statement {
         Statement::Preamble { spindle_rpm } => {
             let rpm = clamp_rpm(output, post, spindle_rpm);
-            output.push_str(&post.render_preamble(rpm));
+            output.push_str(&post.render_preamble(rpm.get()));
         }
         Statement::SpindleSet { rpm } => {
-            let rpm = clamp_rpm(output, post, rpm);
+            let rpm = clamp_rpm(output, post, rpm).get();
             let _ = writeln!(output, "M3 S{rpm}");
         }
         Statement::Postamble => output.push_str(&post.render_postamble()),
@@ -262,7 +264,7 @@ fn emit_statement(
             *pos = Some((x, y));
         }
         Statement::Linear { x, y, z, feed } => {
-            let feed = clamp_feed(output, post, feed);
+            let feed = clamp_feed(output, post, feed).get();
             let _ = writeln!(
                 output,
                 "G1 X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} F{feed:.feed_dp$}"
@@ -296,6 +298,7 @@ fn emit_statement(
             *pos = Some((x, y));
         }
         Statement::SafeZRetract { z } => {
+            let z = z.get();
             let _ = writeln!(output, "G0 Z{z:.xyz$}");
         }
         Statement::Dwell { seconds } => {
@@ -328,7 +331,7 @@ fn emit_statement(
                 format!(" {rest}")
             };
             if first {
-                let feed = clamp_feed(output, post, feed);
+                let feed = clamp_feed(output, post, feed).get();
                 let _ = writeln!(
                     output,
                     "G98 {code} X{x:.xyz$} Y{y:.xyz$} Z{z:.xyz$} R{r:.xyz$}{rest} F{feed:.feed_dp$}"
@@ -421,13 +424,13 @@ fn emit_arc(
     z: f64,
     i: f64,
     j: f64,
-    feed: f64,
+    feed: Feedrate,
     pos: Option<(f64, f64)>,
 ) {
     let xyz = post.decimals.xyz;
     let feed_dp = post.decimals.feed;
     let ijk = post.decimals.ijk;
-    let feed = clamp_feed(output, post, feed);
+    let feed = clamp_feed(output, post, feed).get();
 
     let chord = |output: &mut String| {
         let _ = writeln!(
@@ -488,7 +491,7 @@ fn emit_arc(
 mod tests {
     use super::*;
     use crate::gcode::post;
-    use crate::gcode::post::{Units, WcsCode};
+    use crate::gcode::post::{Feedrate, Units, WcsCode};
     use crate::gcode::program_builder;
     use crate::geo::P3;
     use crate::toolpath::Toolpath;
@@ -782,7 +785,7 @@ M3 S{spindle_rpm}
                 z: -1.0,
                 i: -r,
                 j: 0.0,
-                feed: 400.0,
+                feed: Feedrate::from_toolpath(400.0),
             },
         );
         let gcode = emit_program(&prog, post::grbl());
@@ -810,7 +813,7 @@ M3 S{spindle_rpm}
                 z: -2.0,
                 i: -10.0,
                 j: 0.0,
-                feed: 600.0,
+                feed: Feedrate::from_toolpath(600.0),
             },
         );
         let gcode = emit_program(&prog, post::grbl());
@@ -838,7 +841,7 @@ M3 S{spindle_rpm}
                 z: -1.0,
                 i: -10.0,
                 j: 0.0,
-                feed: 600.0,
+                feed: Feedrate::from_toolpath(600.0),
             },
         );
         let gcode = emit_program(&prog, post::grbl());

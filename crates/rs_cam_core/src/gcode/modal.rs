@@ -18,11 +18,12 @@
 //! pause where the operator may have jogged).
 
 use super::CoolantMode;
+use super::post::{Feedrate, Rpm};
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct ModalState {
-    pub last_feed: Option<f64>,
-    pub current_rpm: u32,
+    pub last_feed: Option<Feedrate>,
+    pub current_rpm: Rpm,
     /// Identity of the loaded tool: the tool *config id*
     /// (`PhaseTool::id`), not the display T-number.
     pub current_tool: Option<usize>,
@@ -33,7 +34,7 @@ pub(super) struct ModalState {
 }
 
 impl ModalState {
-    pub fn new(rpm: u32, tool: Option<usize>, coolant: CoolantMode) -> Self {
+    pub fn new(rpm: Rpm, tool: Option<usize>, coolant: CoolantMode) -> Self {
         Self {
             last_feed: None,
             current_rpm: rpm,
