@@ -2297,7 +2297,7 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     #[cfg(feature = "mcp")]
-    fn notify_mcp_simulation_error(&mut self, error: &str) {
+    pub(super) fn notify_mcp_simulation_error(&mut self, error: &str) {
         use crate::mcp_bridge::McpResponse;
         use rs_cam_mcp::server::json_str;
 

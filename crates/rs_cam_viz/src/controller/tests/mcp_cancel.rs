@@ -141,3 +141,31 @@ fn drain_compute_results_repopulates_session_results() {
     // Both caches share the same Arc (no duplicated allocation).
     assert!(Arc::ptr_eq(session_result.annotated(), &annotated));
 }
+
+/// An MCP `run_simulation` on a project with nothing to simulate must get
+/// an error reply. `run_simulation_all` refuses before submit and toasts;
+/// before this test the waiting oneshot was never resolved, so the MCP
+/// call hung until the client timed out (W14b finding).
+#[cfg(feature = "mcp")]
+#[test]
+fn a_refused_simulation_run_resolves_the_pending_mcp_waiter() {
+    let mut controller = sample_controller();
+    controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    controller
+        .pending_mcp
+        .as_mut()
+        .expect("pending_mcp was just set")
+        .simulation = Some(tx);
+
+    controller.handle_internal_event(AppEvent::RunSimulation);
+
+    let response = rx
+        .try_recv()
+        .expect("a refused run must resolve the pending MCP simulation oneshot");
+    let payload = response.result.expect("the refusal is an Ok error payload");
+    assert!(
+        payload.contains("No computed toolpaths to simulate"),
+        "the reply names the refusal: {payload}"
+    );
+}

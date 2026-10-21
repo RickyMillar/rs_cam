@@ -474,7 +474,16 @@ impl<B: ComputeBackend> AppController<B> {
 
             // --- Simulation events ---
             AppEvent::RunSimulation => {
-                let _submitted = self.run_simulation_with_all();
+                // A refusal before submit (nothing buildable) has toasted;
+                // an MCP `run_simulation` waiting on this run gets the same
+                // error, or it waits until the client times out.
+                let submitted = self.run_simulation_with_all();
+                #[cfg(feature = "mcp")]
+                if !submitted {
+                    self.notify_mcp_simulation_error("No computed toolpaths to simulate");
+                }
+                #[cfg(not(feature = "mcp"))]
+                let _ = submitted;
             }
             AppEvent::RunSimulationWith(ids) => self.run_simulation_with_ids(&ids),
 
