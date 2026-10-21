@@ -129,6 +129,48 @@ moves_hash = "d6c18a3443571930"
 span_count = 14
 spans_hash = "04b187ab207271ac"
 
+["bore/finish_pass"]
+outcome = "ok"
+move_count = 66
+rapid_count = 6
+linear_count = 9
+arc_count = 51
+cutting_length_mm = 102.566
+rapid_length_mm = 55.36
+bbox_min = [-16.825, -6.5303, -3.0]
+bbox_max = [4.825, 11.015, 10.0]
+moves_hash = "e90d59d16c533dea"
+span_count = 61
+spans_hash = "a75b2ba33ce2d8cf"
+
+["bore/fresh"]
+outcome = "ok"
+move_count = 37
+rapid_count = 6
+linear_count = 8
+arc_count = 23
+cutting_length_mm = 67.442
+rapid_length_mm = 66.566
+bbox_min = [-16.7973, -6.632, -3.0]
+bbox_max = [4.825, 10.6242, 10.0]
+moves_hash = "bc53e1446c26b6dc"
+span_count = 33
+spans_hash = "ffc8f845b682142a"
+
+["bore/rest"]
+outcome = "ok"
+move_count = 24
+rapid_count = 6
+linear_count = 3
+arc_count = 15
+cutting_length_mm = 28.487
+rapid_length_mm = 70.476
+bbox_min = [-16.7973, -6.632, -3.0]
+bbox_max = [4.825, 10.6242, 10.0]
+moves_hash = "2d88c537b7623c32"
+span_count = 23
+spans_hash = "0928614b20546f58"
+
 ["chamfer/fresh"]
 outcome = "ok"
 move_count = 15

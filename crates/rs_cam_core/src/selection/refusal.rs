@@ -68,6 +68,10 @@ fn use_phrase(use_: ItemUse) -> &'static str {
             fit: HoleFitRule::ToolSize,
             ..
         } => "drills points and circles of the tool size only",
+        ItemUse::Holes {
+            fit: HoleFitRule::LargerThanTool,
+            ..
+        } => "mills only circles larger than the tool (up to two tool diameters)",
     }
 }
 
@@ -95,16 +99,43 @@ fn hole_fit_phrase(fit: HoleFit, size: &DrillSize) -> String {
     }
 }
 
-/// The fix for a circle that is not of the tool size (geometry selection
-/// P6.5, ruling O-3). The design names "Add a Bore" here; the Bore op does
-/// not exist yet (P6.6), so the text names only what exists now.
-fn hole_fit_fix(fit: HoleFit) -> &'static str {
-    match fit {
-        HoleFit::Larger | HoleFit::LeavesCore => {
-            "To cut it, use a Pocket on the circle, or a tool of the circle size."
+/// The fix for a circle that an op of `rule` does not cut (geometry
+/// selection P6.5, ruling O-3; P6.6 names the Bore op). The match names
+/// every rule and every fit.
+fn hole_fit_fix(rule: HoleFitRule, fit: HoleFit) -> &'static str {
+    match (rule, fit) {
+        (HoleFitRule::ToolSize, HoleFit::Larger) => {
+            "To cut it, add a Bore op for it, or use a tool of the circle size."
         }
-        HoleFit::Smaller => "To cut it, use a tool of the circle size.",
-        HoleFit::NoSize | HoleFit::ToolSize => "",
+        (HoleFitRule::ToolSize | HoleFitRule::LargerThanTool, HoleFit::LeavesCore) => {
+            "To cut it, use a Pocket on the circle or a larger tool."
+        }
+        (HoleFitRule::ToolSize, HoleFit::Smaller) => "To cut it, use a tool of the circle size.",
+        (HoleFitRule::LargerThanTool, HoleFit::Smaller) => {
+            "To cut it, use a smaller tool, or a Drill with a tool of the circle size."
+        }
+        (HoleFitRule::LargerThanTool, HoleFit::ToolSize) => "To cut it, drill it with a Drill op.",
+        // An op of the rule cuts these fits, so no note or refusal names
+        // them.
+        (HoleFitRule::ToolSize, HoleFit::NoSize | HoleFit::ToolSize)
+        | (HoleFitRule::LargerThanTool, HoleFit::NoSize | HoleFit::Larger)
+        | (
+            HoleFitRule::None,
+            HoleFit::NoSize
+            | HoleFit::ToolSize
+            | HoleFit::Larger
+            | HoleFit::LeavesCore
+            | HoleFit::Smaller,
+        ) => "",
+    }
+}
+
+/// The rule of a hole op, from its item use. A use that is not `Holes`
+/// has no fit rule ([`HoleFitRule::None`]).
+fn fit_rule(item_use: ItemUse) -> HoleFitRule {
+    match item_use {
+        ItemUse::Holes { fit, .. } => fit,
+        ItemUse::None | ItemUse::Regions | ItemUse::Curves => HoleFitRule::None,
     }
 }
 
@@ -206,7 +237,7 @@ impl fmt::Display for SelectionNote {
                 use_phrase(self.item_use),
                 kind_noun(self.kind, 1),
                 self.first,
-                hole_fit_fix(fit)
+                hole_fit_fix(fit_rule(self.item_use), fit)
             );
         }
         if let NoteCause::AtTheTop { floor_z, top_z } = self.cause {
@@ -300,14 +331,17 @@ pub enum RefusalCause {
         top_z: f64,
     },
     /// Geometry selection P6.5 (operator ruling O-3): the user named a
-    /// circle that is not of the tool size, and the op drills holes of the
-    /// tool size only. Under the default rule the op leaves such a circle
-    /// out with a note ([`NoteCause::HoleFit`]).
+    /// circle that the op does not cut by its size: a Drill drills holes of
+    /// the tool size only, a Bore (P6.6) mills circles larger than the tool
+    /// up to two tool diameters. Under the default rule the op leaves such
+    /// a circle out with a note ([`NoteCause::HoleFit`]).
     HoleDoesNotFit {
         /// How the circle compares with the tool.
         fit: HoleFit,
         /// The tool diameter and the size tolerance of the op.
         size: DrillSize,
+        /// The fit rule of the op: it gives the text and the fix.
+        rule: HoleFitRule,
     },
     /// A rule or a pick names a model that does not exist. No fallback to
     /// another model.
@@ -382,14 +416,26 @@ impl SelectionRefusal {
                 "Set a larger floor depth, set the Top Z above the face, or remove the \
                  face from the selection"
             }
-            RefusalCause::HoleDoesNotFit {
-                fit: HoleFit::Smaller,
-                ..
-            } => "Use a tool of the circle size, or remove the circle from the selection",
-            RefusalCause::HoleDoesNotFit { .. } => {
-                "Use a Pocket on the circle, use a tool of the circle size, or remove the \
-                 circle from the selection"
-            }
+            RefusalCause::HoleDoesNotFit { fit, rule, .. } => match (rule, fit) {
+                (HoleFitRule::LargerThanTool, HoleFit::ToolSize) => {
+                    "Drill it with a Drill op, or remove the circle from the selection"
+                }
+                (HoleFitRule::LargerThanTool, HoleFit::Smaller) => {
+                    "Use a smaller tool, use a Drill with a tool of the circle size, or remove \
+                     the circle from the selection"
+                }
+                (_, HoleFit::LeavesCore) => {
+                    "Use a Pocket on the circle or a larger tool, or remove the circle from the \
+                     selection"
+                }
+                (_, HoleFit::Smaller) => {
+                    "Use a tool of the circle size, or remove the circle from the selection"
+                }
+                (_, HoleFit::NoSize | HoleFit::ToolSize | HoleFit::Larger) => {
+                    "Add a Bore op for it, use a tool of the circle size, or remove the circle \
+                     from the selection"
+                }
+            },
             RefusalCause::MissingSource(_) => {
                 "Set an existing model on the toolpath, import the model again, \
                  or remove the rule or the pick that names it"
@@ -440,9 +486,13 @@ impl SelectionRefusal {
                 "the floor of this face, Z {floor_z:.3}, is at or above the Top Z {top_z:.3}, \
                  so it has nothing to cut"
             ),
-            RefusalCause::HoleDoesNotFit { fit, size } => format!(
-                "the diameter of this circle {}, and the op drills holes of the tool size only",
-                hole_fit_phrase(*fit, size)
+            RefusalCause::HoleDoesNotFit { fit, size, rule } => format!(
+                "the diameter of this circle {}, and the op {}",
+                hole_fit_phrase(*fit, size),
+                use_phrase(ItemUse::Holes {
+                    may_be_empty: false,
+                    fit: *rule,
+                })
             ),
             RefusalCause::MissingSource(source) => {
                 let name = match source {

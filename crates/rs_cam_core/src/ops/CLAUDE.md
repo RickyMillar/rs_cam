@@ -9,14 +9,14 @@ module is reached through `compute::execute::execute_operation_annotated` (`pub(
   adaptive helpers. `waterline.rs` — constant-Z contours.
 - `pocket.rs`, `profile.rs` (`profile_ring` = the ONE cut ring; tabs measure on it, P5; P6.3: side `On` reads `Curves` and cuts on the line, `on_line_contours`: every closed ring, and an open path in its drawn direction through `profile_path_open_to_toolpath`, no chord, no climb reversal, no tab (one `TabNote::OpenPath`), no lead (`TRANSFORM_PROFILE`); sentry `profile_on_cuts_on_the_line_p6_3`), `face.rs`, `zigzag.rs` — the 2.5D clearing family (a rest pass is a remaining-stock Pocket,
   R3). Pocket, Zigzag, Profile, Trace, Face give Z-free geometry + one level; `compute/execute/layered.rs` steps Z (W3). D3: no per-op public wrapper; a test reads `tests/common/kernels.rs` or `op_fixtures::generated_op`. `face::face_levels` = the ONE Face ladder. P6.0 (D-C): `polygon::offset_polygon` puts each arc join on points ON the arc (`FlattenPolicy::untoleranced`, 0.010 mm); no op takes a chord across a corner (sentry `an_offset_never_cuts_inside_its_corner_p6_0`).
-- `drill.rs`, `drill_op.rs`, `drill_metrics.rs` — the drilling family.
+- `drill.rs`, `drill_op.rs`, `drill_metrics.rs` — the drilling family. `bore.rs` (P6.6) — the Bore helix (a milling op, L-11): the tool centre on `r = (d - D) / 2`, `ceil(depth / pitch)` whole turns, CCW for climb, one floor turn; `finish_allowance > 0` adds a turn and a helix up at `r`; cut intents, never `EntryHelix` (L-15). Lib `ops::bore`; sentry `a_bore_cuts_the_stated_size_p6_6`.
 - `vcarve.rs`, `inlay.rs`, `chamfer.rs`, `trace_path.rs`, `project_curve.rs` — the engraving
   and curve family. Chamfer: Z-free tip rings + one level from the tool angle (W3.5, Layered).
 
 ## Invariants
 
 - A pinned Bottom Z is honoured only by `Adaptive3d`, `UnifiedFinish` and `Waterline`; Pocket, Profile,
-  Zigzag, Adaptive 2D refuse it (P3.2). Read `capabilities().floor_owner` before you assume.
+  Zigzag, Adaptive 2D and Bore (P6.6) refuse it (P3.2). Read `capabilities().floor_owner` before you assume.
 - An explicit-depth operation diagnoses a cut below the stock bottom. Another
   depth semantic abstains; it does not pass.
 - Drill removal uses the supplied `StockCutDirection`, never the order of a hole's Z

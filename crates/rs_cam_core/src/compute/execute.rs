@@ -545,6 +545,7 @@ macro_rules! config_guard {
 // macro has textual scope: a module declared above the definition cannot see
 // it, and every family child calls `config_guard!`.
 
+mod bore;
 mod clearing_2d;
 mod composed;
 mod curve;
@@ -563,6 +564,7 @@ pub(crate) mod standing_material;
 mod territory;
 mod volumetric;
 
+pub(crate) use bore::generate_bore;
 pub(crate) use clearing_2d::{
     generate_adaptive, generate_face, generate_pocket, generate_profile, generate_trace,
     generate_zigzag,
@@ -582,8 +584,8 @@ pub(crate) use finish_3d::{
     generate_spiral_finish, generate_steep_shallow, generate_unified_finish,
 };
 pub(crate) use finish_raster::{generate_drop_cutter, generate_scallop, generate_waterline};
-pub use prologue::{MeshInput, Prepared};
 pub(crate) use prologue::SelectionInputs;
+pub use prologue::{MeshInput, Prepared};
 pub(crate) use rough_3d::generate_adaptive3d;
 pub use shared::{LinkCeilingNeed, link_ceiling_for};
 pub use territory::{SurfaceMask, Territory, TerritoryInputs, XyTerritory};

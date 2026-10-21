@@ -7,7 +7,8 @@ use crate::feeds::CutterKind;
 
 #[test]
 fn operation_catalog_is_exhaustive_and_consistent() {
-    assert_eq!(OperationType::ALL.len(), 24);
+    // 25 since geometry selection P6.6 added Bore.
+    assert_eq!(OperationType::ALL.len(), 25);
     for &op_type in OperationType::ALL {
         let config = OperationConfig::new_default(op_type);
         assert_eq!(config.op_type(), op_type);
@@ -226,6 +227,13 @@ fn tool_constraints_are_an_explicit_per_op_decision() {
                     schema.required_tool_type,
                     ["ball_nose", "tapered_ball_nose"]
                 );
+                assert!(!tc.supports_v_bit);
+            }
+            // Geometry selection P6.6: a Bore needs a flat floor and a
+            // straight wall.
+            OperationType::Bore => {
+                assert_eq!(tc.required_kinds, [CutterKind::Flat, CutterKind::Bull]);
+                assert_eq!(schema.required_tool_type, ["end_mill", "bull_nose"]);
                 assert!(!tc.supports_v_bit);
             }
             _ => {
@@ -542,6 +550,7 @@ fn operation_type_serde_repr_pinned() {
         ("zigzag", OperationType::Zigzag),
         ("trace", OperationType::Trace),
         ("drill", OperationType::Drill),
+        ("bore", OperationType::Bore),
         ("chamfer", OperationType::Chamfer),
         ("drop_cutter", OperationType::DropCutter),
         ("adaptive3d", OperationType::Adaptive3d),

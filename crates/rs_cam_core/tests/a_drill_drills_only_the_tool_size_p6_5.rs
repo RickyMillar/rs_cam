@@ -257,7 +257,7 @@ fn the_default_rule_drills_the_points_and_the_tool_size_circle() {
     assert!(
         text.contains("is larger than the tool diameter 6.350 mm")
             && text.contains("is smaller than the tool diameter 6.350 mm")
-            && text.contains("use a Pocket on the circle, or a tool of the circle size"),
+            && text.contains("add a Bore op for it, or use a tool of the circle size"),
         "the note text names the fit and the fix: {text}"
     );
 
@@ -314,6 +314,7 @@ fn a_pick_of_the_larger_circle_refuses_by_item() {
         RefusalCause::HoleDoesNotFit {
             fit: HoleFit::Larger,
             size: DrillSize::strict(TOOL_D),
+            rule: rs_cam_core::selection::HoleFitRule::ToolSize,
         }
     );
     assert_eq!(refusal.item.as_ref().unwrap().key.anchor, LARGER_AT);

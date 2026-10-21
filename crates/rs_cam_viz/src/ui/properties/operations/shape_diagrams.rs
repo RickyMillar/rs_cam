@@ -55,6 +55,7 @@ impl StepoverPattern {
             // new op is a compile error here until it picks a pattern or
             // `None`.
             OperationConfig::Profile(_)
+            | OperationConfig::Bore(_)
             | OperationConfig::Adaptive(_)
             | OperationConfig::Inlay(_)
             | OperationConfig::InlayPlug(_)

@@ -33,8 +33,8 @@ fn floor_reason(refusal: FloorRefusal) -> &'static str {
     }
 }
 
-/// The floor row of Pocket, Profile, Zigzag and Adaptive 2D (geometry
-/// selection P3.7, design 8.1). Two grid rows:
+/// The floor row of Pocket, Profile, Zigzag, Adaptive 2D and Bore (geometry
+/// selection P3.7, design 8.1; P6.6). Two grid rows:
 ///
 /// 1. "Floor from:" and the reference combo (`Floor::EACH_REFERENCE`). A
 ///    change of reference re-expresses the value, so the resolved floor Z
@@ -47,7 +47,7 @@ fn floor_reason(refusal: FloorRefusal) -> &'static str {
 ///    hover is `Floor::reference_help`: the schema text of the `floor`
 ///    parameter (a driver-set field has no registry `help`).
 /// 3. The resolved floor Z; under "each picked face", the floor of each face.
-fn floor_row(
+pub(super) fn floor_row(
     ui: &mut egui::Ui,
     op: OperationType,
     floor: &mut Floor,

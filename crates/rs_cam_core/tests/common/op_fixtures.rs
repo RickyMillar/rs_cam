@@ -10,7 +10,8 @@
 //! # The fixtures
 //!
 //! - Stock, Items: a flat board below world Z0, a rectangle outline with
-//!   two drill targets, and one alignment pin on the stock.
+//!   two drill targets, and one alignment pin on the stock. A Bore gets
+//!   [`hole_model`] instead ([`flat_model_for`], lead ruling L-16).
 //! - Mesh, ItemsAndMesh: a spherical cap on a flat ground (flats, a slope,
 //!   and a concave crease at the foot of the cap). `ItemsAndMesh` adds a
 //!   curve model that the op projects onto the mesh.
@@ -42,7 +43,7 @@ use std::sync::atomic::AtomicBool;
 
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::alignment_pins::AlignmentPin;
-use rs_cam_core::compute::catalog::{GeometryRequirement, OperationConfig, OperationType};
+use rs_cam_core::compute::catalog::{GeometryRequirement, ItemUse, OperationConfig, OperationType};
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle, HeightMode, StockSource};
 use rs_cam_core::compute::operation_configs::{AlignmentPinDrillConfig, FaceConfig, PocketConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -54,7 +55,7 @@ use rs_cam_core::ids::ModelId;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::ops::face::FaceDirection;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::selection::{FaceItem, Item, ItemSet, Shape, SourceRef};
+use rs_cam_core::selection::{FaceItem, HoleFitRule, Item, ItemSet, Shape, SourceRef};
 use rs_cam_core::session::{
     Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SetSimulationResolutionArgs,
     SimulationOptions, SimulationResolution, ToolpathConfig,
@@ -232,6 +233,75 @@ pub fn outline_model() -> LoadedModel {
         .collect();
     model.items = Arc::new(ItemSet::new(items));
     model
+}
+
+/// Design 6 `hole_model` (geometry selection P6.5): two points, a circle of
+/// the registry end-mill size (6.35 mm), a larger circle (10 mm) and a
+/// smaller circle (4 mm), on the flat board, all on layer `holes`. A Drill
+/// drills the points and the circle of the tool size; a Bore (P6.6) bores
+/// the larger circles. G-OPGOLDEN `drill/fit_mixed` was blessed on it.
+///
+/// P6.6 adds two larger circles of [`BORE_EXTRA_D`] (a Drill leaves them
+/// out, so `drill/fit_mixed` does not move): [`BORE_UNDER_PRIOR_AT`] lies
+/// inside the prior pocket of the rest arm with its column reach (the
+/// hole radius plus a cell), so a rest Bore starts it at the pocket floor;
+/// [`BORE_ON_STRIP_AT`] lies under the W4 obstacle strip (X 2 to 6), so
+/// the Bore meets it.
+pub fn hole_model() -> LoadedModel {
+    use super::session::{TestHole, drawing_items};
+    let hole = |x: f64, y: f64, diameter: Option<f64>| TestHole {
+        x,
+        y,
+        layer: "holes".to_owned(),
+        diameter,
+    };
+    let mut model = polygon_model(Vec::new(), "opgolden_hole_fit");
+    model.items = Arc::new(drawing_items(
+        Vec::new(),
+        &[
+            hole(-20.0, -10.0, None),
+            hole(20.0, -10.0, None),
+            hole(0.0, 0.0, Some(6.35)),
+            hole(-15.0, 10.0, Some(10.0)),
+            hole(15.0, 10.0, Some(4.0)),
+            hole(
+                BORE_UNDER_PRIOR_AT[0],
+                BORE_UNDER_PRIOR_AT[1],
+                Some(BORE_EXTRA_D),
+            ),
+            hole(BORE_ON_STRIP_AT[0], BORE_ON_STRIP_AT[1], Some(BORE_EXTRA_D)),
+        ],
+    ));
+    model
+}
+
+/// The diameter (mm) of the two P6.6 circles of [`hole_model`]: larger than
+/// the registry end mill (6.35 mm), less than two of it.
+pub const BORE_EXTRA_D: f64 = 8.0;
+/// The P6.6 circle inside the prior pocket of the rest arm (X -20 to 0,
+/// Y -12 to 12): its reach 4 + 0.5 mm ends 5.5 mm inside the pocket edge.
+pub const BORE_UNDER_PRIOR_AT: [f64; 2] = [-10.0, 0.0];
+/// The P6.6 circle under the W4 obstacle strip (X 2 to 6), clear of the
+/// tool-size circle at the origin.
+pub const BORE_ON_STRIP_AT: [f64; 2] = [4.0, -6.0];
+
+/// The flat-fixture drawing of `op` (lead ruling L-16): [`hole_model`] for
+/// an op that cuts circles larger than the tool (Bore: the outline fixture
+/// has no circle), else [`outline_model`].
+pub fn flat_model_for(op: OperationType) -> LoadedModel {
+    match op.capabilities().item_use {
+        ItemUse::Holes {
+            fit: HoleFitRule::LargerThanTool,
+            ..
+        } => hole_model(),
+        ItemUse::Holes {
+            fit: HoleFitRule::None | HoleFitRule::ToolSize,
+            ..
+        }
+        | ItemUse::None
+        | ItemUse::Regions
+        | ItemUse::Curves => outline_model(),
+    }
 }
 
 pub fn mesh_stock() -> StockConfig {
@@ -496,7 +566,7 @@ pub fn case_session(spec: CaseSpec<'_>) -> (ProjectSession, usize) {
         let tiny = polygon_model(vec![rectangle(-h, -h, h, h)], "w4_tiny_outline");
         (builder.add_model(place(tiny)), None)
     } else {
-        (builder.add_model(place(outline_model())), None)
+        (builder.add_model(place(flat_model_for(op_type))), None)
     };
 
     if spec.prior == Prior::RestPrior {

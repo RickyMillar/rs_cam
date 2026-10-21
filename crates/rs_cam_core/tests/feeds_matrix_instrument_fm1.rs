@@ -25,7 +25,7 @@
 //! `committed -> now`. Every column is compared as the text the CSV
 //! prints (4 decimals on a number), with no extra tolerance.
 //!
-//! - `the_feeds_matrix_is_the_committed_csv_fm1`: the 960 pre-simulation
+//! - `the_feeds_matrix_is_the_committed_csv_fm1`: the 1000 pre-simulation
 //!   cells, `matrix_2026-09-23.csv`. The walk takes under a second. It runs
 //!   in every run of this binary.
 //! - `the_sim_subset_is_the_committed_csv_fm1`: the simulation subset,
@@ -1610,7 +1610,8 @@ fn rows_by_id() -> HashMap<&'static str, &'static VendorObservation> {
         .collect()
 }
 
-/// The 960 pre-simulation cells equal `matrix_2026-09-23.csv`.
+/// The 1000 pre-simulation cells (40 per operation; P6.6 added the Bore
+/// cells) equal `matrix_2026-09-23.csv`.
 #[test]
 fn the_feeds_matrix_is_the_committed_csv_fm1() {
     let machine = MachineProfile::default();

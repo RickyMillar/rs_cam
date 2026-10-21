@@ -417,6 +417,93 @@ impl super::catalog::OperationConfig {
     }
 }
 
+/// The Bore op (geometry selection P6.6, design 4.4, lead ruling L-11): a
+/// helix mills each selected circle to its drawn size. The tool centre
+/// runs on the radius `r = (d - D) / 2`, so the tool edge cuts the wall at
+/// `d / 2`. The op cuts a circle larger than the tool and at most two tool
+/// diameters (`HoleFitRule::LargerThanTool`, L-12): a larger circle leaves
+/// a core.
+#[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
+pub struct BoreConfig {
+    /// The floor and its reference (geometry selection P3.2, ruling D9).
+    /// `Floor::StockBottom` gives a through hole. The file has no default
+    /// for it: a file states it.
+    #[param(driver_set = DRIVER_SET_FLOOR)]
+    pub floor: Floor,
+    /// The helix pitch (mm per turn). The op divides the depth into whole
+    /// turns, so the pitch it cuts is this value or less. The default is
+    /// the dressup helix pitch (`DRESSUP_HELIX_PITCH_MM`, a repo rule with
+    /// no source); the range is the existing range of the 3D Rough helix
+    /// pitch (`Adaptive3dConfig::helix_pitch`).
+    #[param(
+        help = "Depth of one helix turn (mm). The op cuts whole turns, so each turn is this \
+                value or less.",
+        range = 0.1..=10.0,
+    )]
+    pub pitch: f64,
+    /// True: the helix turns counter-clockwise, so the wall is on the
+    /// right of the travel (a climb cut with a clockwise spindle). False:
+    /// clockwise (a conventional cut).
+    pub climb: bool,
+    /// The radial finish allowance (mm). `0` cuts the hole in one helix.
+    /// A value `a > 0` cuts the helix at `r - a`, then one turn at `r` on
+    /// the floor and a helix up the wall. The upper bound comes from each
+    /// hole (`a < r`), so the generator refuses it, not the domain.
+    #[param(
+        help = "Radial stock the rough helix leaves on the wall (mm). Above 0, a finish turn on \
+                the floor and a helix up the wall cut it. 0 = one helix.",
+        min = 0.0
+    )]
+    pub finish_allowance: f64,
+    #[param(gt = 0.0)]
+    pub feed_rate: f64,
+    /// The feed of the helix when `ramp_feed_rate` is empty (as a Pocket
+    /// helix entry).
+    #[param(gt = 0.0)]
+    pub plunge_rate: f64,
+    /// The feed (mm/min) of the helix down through the material. `None`
+    /// uses the plunge rate. The op holds it at or below `feed_rate`
+    /// (`OperationConfig::entry_feed_rate`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(
+        help = "Feed (mm/min) of the helix down through the material. Empty uses the plunge rate.",
+        gt = 0.0
+    )]
+    pub ramp_feed_rate: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(gt = 0.0)]
+    pub spindle_rpm: Option<u32>,
+    /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
+    /// file with no `selection` key loads the default of this op: every
+    /// drawing item of the toolpath model that the op can cut. The op cuts
+    /// the circles larger than the tool (P6.6); a point states no size, so
+    /// a Bore does not cut it.
+    #[serde(
+        default = "Selection::drawing",
+        skip_serializing_if = "Selection::is_drawing"
+    )]
+    #[param(driver_set = DRIVER_SET_SELECTION)]
+    pub selection: Selection,
+}
+
+impl Default for BoreConfig {
+    /// The floor depth, the feed and the plunge rate are the Pocket
+    /// defaults (the 2.5D clearing family, L-14).
+    fn default() -> Self {
+        Self {
+            floor: Floor::top(3.0),
+            pitch: super::config::DRESSUP_HELIX_PITCH_MM,
+            climb: true,
+            finish_allowance: 0.0,
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
+            ramp_feed_rate: None,
+            spindle_rpm: None,
+            selection: Selection::drawing(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct AlignmentPinDrillConfig {
     /// The diameter of the pins this operation drills, in mm (R1,
@@ -3175,6 +3262,17 @@ impl_operation_params!(DrillConfig {
     depth_per_pass: none,
     total_depth: none,
     depth_semantics: Explicit(depth)
+});
+
+// Geometry selection P6.6: the helix feed is the ramp feed, else the
+// plunge rate (as a Pocket helix entry).
+impl_operation_params!(BoreConfig {
+    plunge_rate: plunge_rate,
+    ramp_feed_rate: ramp_feed_rate,
+    stepover: none,
+    depth_per_pass: none,
+    total_depth: floor,
+    depth_semantics: Floor(floor)
 });
 
 impl_operation_params!(AlignmentPinDrillConfig {

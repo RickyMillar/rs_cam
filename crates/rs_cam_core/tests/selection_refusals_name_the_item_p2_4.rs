@@ -275,6 +275,7 @@ fn every_cause_has_an_arm() {
         RefusalCause::HoleDoesNotFit {
             fit: rs_cam_core::selection::HoleFit::Larger,
             size: rs_cam_core::selection::hole_fit::DrillSize::strict(0.0),
+            rule: rs_cam_core::selection::HoleFitRule::ToolSize,
         },
     ];
     let causes: BTreeSet<&str> = samples.iter().map(arm_of).collect();
@@ -327,6 +328,7 @@ fn hole_does_not_fit() {
         RefusalCause::HoleDoesNotFit {
             fit: HoleFit::Larger,
             size: rs_cam_core::selection::hole_fit::DrillSize::strict(TOOL_DIAMETER),
+            rule: rs_cam_core::selection::HoleFitRule::ToolSize,
         }
     );
     let text = r.to_string();

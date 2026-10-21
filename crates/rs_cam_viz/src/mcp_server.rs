@@ -1253,7 +1253,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "add_toolpath",
-        description = "Add a new toolpath with default parameters to a setup. Returns the new toolpath index. Supported operation types: face, pocket, profile, adaptive, v_carve, inlay, inlay_plug, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, unified_finish, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill."
+        description = "Add a new toolpath with default parameters to a setup. Returns the new toolpath index. Supported operation types: face, pocket, profile, adaptive, v_carve, inlay, inlay_plug, zigzag, trace, drill, bore, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, unified_finish, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill."
     )]
     async fn add_toolpath(&self, Parameters(param): Parameters<AddToolpathParam>) -> String {
         Self::format_result(

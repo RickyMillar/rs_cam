@@ -780,7 +780,7 @@ impl ProjectSession {
     fn hole_fit_size(&self, tc: &ToolpathConfig) -> Option<DrillSize> {
         match tc.operation.capabilities().item_use {
             ItemUse::Holes {
-                fit: HoleFitRule::ToolSize,
+                fit: HoleFitRule::ToolSize | HoleFitRule::LargerThanTool,
                 ..
             } => {}
             ItemUse::Holes {

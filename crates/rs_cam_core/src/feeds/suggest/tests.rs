@@ -2556,6 +2556,7 @@ fn operation_feeds_hints_is_an_explicit_per_op_decision() {
             OperationConfig::Zigzag(_) => (None, None, None),
             OperationConfig::Trace(_) => (None, None, None),
             OperationConfig::Drill(_) => (None, None, None),
+            OperationConfig::Bore(_) => (None, None, None),
             OperationConfig::Chamfer(_) => (None, None, None),
             OperationConfig::Adaptive3d(_) => (None, None, None),
             OperationConfig::Pencil(_) => (None, None, None),

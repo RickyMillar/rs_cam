@@ -1,9 +1,11 @@
-//! The hole fit: is a hole of the tool size (geometry selection P6.5,
-//! operator ruling O-3, design 4.2).
+//! The hole fit: how a hole compares with the tool (geometry selection
+//! P6.5, operator ruling O-3, design 4.2).
 //!
 //! A circle states the size of its hole (S11). A Drill makes a hole of the
 //! tool size only, so a circle of another size is not a hole the Drill can
-//! make. [`hole_fit`](fn@hole_fit) is the one rule that compares the two diameters.
+//! make. A Bore (P6.6) mills a circle larger than the tool, up to two tool
+//! diameters, with a helix ([`HoleFitRule::LargerThanTool`]).
+//! [`hole_fit`](fn@hole_fit) is the one rule that compares the two diameters.
 //! The op states how far apart two diameters can be and still be one size
 //! ([`DrillSize::tolerance`], the Drill parameter `size_tolerance`, operator
 //! ruling 2026-10-22).
@@ -44,6 +46,38 @@ pub enum HoleFitRule {
     /// The points, and the circles of the tool size ([`HoleFit::NoSize`],
     /// [`HoleFit::ToolSize`]). Drill.
     ToolSize,
+    /// The circles larger than the tool, up to two tool diameters
+    /// ([`HoleFit::Larger`]): one helix of the tool makes the hole. Bore
+    /// (geometry selection P6.6, lead rulings L-12 and L-19). A point
+    /// states no size, so a Bore op does not serve it
+    /// (`ItemKind::serves`).
+    LargerThanTool,
+}
+
+impl HoleFitRule {
+    /// True when an op of this rule cuts a hole of `fit`. The match names
+    /// every fit, so a new fit states its answer for each rule.
+    pub fn keeps(self, fit: HoleFit) -> bool {
+        match (self, fit) {
+            (
+                HoleFitRule::None,
+                HoleFit::NoSize
+                | HoleFit::ToolSize
+                | HoleFit::Larger
+                | HoleFit::LeavesCore
+                | HoleFit::Smaller,
+            ) => true,
+            (HoleFitRule::ToolSize, HoleFit::NoSize | HoleFit::ToolSize) => true,
+            (HoleFitRule::ToolSize, HoleFit::Larger | HoleFit::LeavesCore | HoleFit::Smaller) => {
+                false
+            }
+            (HoleFitRule::LargerThanTool, HoleFit::Larger) => true,
+            (
+                HoleFitRule::LargerThanTool,
+                HoleFit::NoSize | HoleFit::ToolSize | HoleFit::LeavesCore | HoleFit::Smaller,
+            ) => false,
+        }
+    }
 }
 
 /// The size a tool drills: its diameter `D` and the tolerance `t` of the
@@ -94,17 +128,6 @@ pub enum HoleFit {
     Smaller,
 }
 
-impl HoleFit {
-    /// True when the tool makes the hole: a point, or a circle of the tool
-    /// size.
-    pub fn is_tool_size(self) -> bool {
-        match self {
-            HoleFit::NoSize | HoleFit::ToolSize => true,
-            HoleFit::Larger | HoleFit::LeavesCore | HoleFit::Smaller => false,
-        }
-    }
-}
-
 /// THE hole fit: how a hole of `diameter` (`None` for a point) compares with
 /// a tool of `size` (design 4.2). Two diameters closer than
 /// `size.tolerance` are one size. The `2 D` bound is geometry: one helix of
@@ -149,9 +172,10 @@ pub fn fit_holes(
     let ItemUse::Holes { may_be_empty, fit } = item_use else {
         return Ok(Vec::new());
     };
-    match fit {
+    let rule = fit;
+    match rule {
         HoleFitRule::None => return Ok(Vec::new()),
-        HoleFitRule::ToolSize => {}
+        HoleFitRule::ToolSize | HoleFitRule::LargerThanTool => {}
     }
     let Some(holes) = items.holes() else {
         return Ok(Vec::new());
@@ -160,7 +184,7 @@ pub fn fit_holes(
     let mut notes = Vec::new();
     for (index, hole) in holes.as_slice().iter().enumerate() {
         let fit = hole_fit(hole.diameter, &size);
-        if fit.is_tool_size() {
+        if rule.keeps(fit) {
             continue;
         }
         let Some(r) = holes.item(index).and_then(|at| resolved.items().get(at)) else {
@@ -170,7 +194,7 @@ pub fn fit_holes(
         if r.by().is_explicit() {
             return Err(SelectionRefusal::new(
                 Some(first),
-                RefusalCause::HoleDoesNotFit { fit, size },
+                RefusalCause::HoleDoesNotFit { fit, size, rule },
             ));
         }
         skipped.push(index);
@@ -220,6 +244,28 @@ mod tests {
         );
         assert_eq!(hole_fit(Some(2.0 * tool), &s), HoleFit::Larger);
         assert_eq!(hole_fit(Some(2.0 * tool + 0.1), &s), HoleFit::LeavesCore);
+    }
+
+    /// P6.6: a Bore keeps the larger circles only; a Drill keeps the
+    /// points and the circles of the tool size; a Pin Drill keeps all.
+    #[test]
+    fn each_rule_keeps_its_fits_p6_6() {
+        let all = [
+            HoleFit::NoSize,
+            HoleFit::ToolSize,
+            HoleFit::Larger,
+            HoleFit::LeavesCore,
+            HoleFit::Smaller,
+        ];
+        let kept = |rule: HoleFitRule| -> Vec<HoleFit> {
+            all.iter().copied().filter(|&f| rule.keeps(f)).collect()
+        };
+        assert_eq!(kept(HoleFitRule::None), all.to_vec());
+        assert_eq!(
+            kept(HoleFitRule::ToolSize),
+            vec![HoleFit::NoSize, HoleFit::ToolSize]
+        );
+        assert_eq!(kept(HoleFitRule::LargerThanTool), vec![HoleFit::Larger]);
     }
 
     /// A wide tolerance widens the tool size on both sides, and it never

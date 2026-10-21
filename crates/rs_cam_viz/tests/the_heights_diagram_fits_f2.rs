@@ -482,7 +482,7 @@ fn the_layout_still_measures_its_text_f2() {
 /// # P3.7: the three owners
 ///
 /// `HeightsBottom` draws "BZ" and its value in `DANGER`; `OpFloor` (Pocket,
-/// Profile, Zigzag, Adaptive 2D) draws its floor "FL" in `DANGER`: the floor
+/// Profile, Zigzag, Adaptive 2D, Bore) draws its floor "FL" in `DANGER`: the floor
 /// field is its cut limit; `OpDial` draws "BZ (not used)" in `UNKNOWN`.
 #[test]
 fn the_bottom_line_agrees_with_the_panel_r33() {
@@ -561,8 +561,8 @@ fn the_bottom_line_agrees_with_the_panel_r33() {
     // both. If a future edit made every operation answer the same way, the
     // assertions above would pass without testing anything.
     assert_eq!(
-        floors, 4,
-        "Pocket, Profile, Zigzag and Adaptive 2D own a floor (P3.7)"
+        floors, 5,
+        "Pocket, Profile, Zigzag, Adaptive 2D (P3.7) and Bore (P6.6) own a floor"
     );
     assert!(
         honoured >= 1 && inert >= 1,

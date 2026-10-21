@@ -35,6 +35,7 @@ use crate::geo::P2;
 use crate::geometry::enriched_mesh::HORIZONTAL_FACE_MIN_NORMAL_Z;
 use crate::polygon::{Polygon2, detect_containment, detect_containment_tagged};
 
+use super::hole_fit::HoleFitRule;
 use super::item::{Item, ItemKind, Shape, SourceRef};
 use super::refusal::{ItemRef, NoteCause, RefusalCause, SelectionNote, SelectionRefusal};
 use super::resolve::ResolvedSelection;
@@ -54,7 +55,13 @@ impl ItemKind {
                 ItemUse::Curves,
             ) => true,
             (ItemKind::Point, ItemUse::Curves) => false,
-            (ItemKind::Point | ItemKind::Circle, ItemUse::Holes { .. }) => true,
+            // P6.6: a point states no size, so a Bore (a circle larger than
+            // the tool) does not serve it.
+            (ItemKind::Point, ItemUse::Holes { fit, .. }) => match fit {
+                HoleFitRule::None | HoleFitRule::ToolSize => true,
+                HoleFitRule::LargerThanTool => false,
+            },
+            (ItemKind::Circle, ItemUse::Holes { .. }) => true,
             (ItemKind::Loop | ItemKind::Path | ItemKind::Face, ItemUse::Holes { .. }) => false,
             (
                 ItemKind::Loop

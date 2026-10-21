@@ -1,5 +1,5 @@
 //! The 2.5D and drilling operations, with the depth-stepping helper they
-//! share.
+//! share. `bore` mills a circle to its size with a helix (P6.6).
 //!
 //! `adaptive_shared` is operation-layer engagement math that `adaptive` and
 //! `adaptive3d` share; both engines stay in their own folders.
@@ -7,6 +7,7 @@
 //! `trace`, which is a different thing.
 
 pub mod adaptive_shared;
+pub mod bore;
 pub mod chamfer;
 pub mod depth;
 pub mod drill;

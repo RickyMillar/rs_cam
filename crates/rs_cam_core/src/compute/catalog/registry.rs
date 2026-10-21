@@ -10,11 +10,11 @@
 
 use crate::compute::execute::LinkCeilingNeed;
 use crate::compute::operation_configs::{
-    Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, DrillConfig,
-    DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig, InlayPlugConfig,
-    PencilConfig, PocketConfig, ProfileConfig, ProjectCurveConfig, RadialFinishConfig,
-    RampFinishConfig, ScallopConfig, SpiralFinishConfig, SteepShallowConfig, TraceConfig,
-    UnifiedFinishConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
+    Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, BoreConfig, ChamferConfig,
+    DrillConfig, DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig,
+    InlayPlugConfig, PencilConfig, PocketConfig, ProfileConfig, ProjectCurveConfig,
+    RadialFinishConfig, RampFinishConfig, ScallopConfig, SpiralFinishConfig, SteepShallowConfig,
+    TraceConfig, UnifiedFinishConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
 };
 use crate::feeds::support::MILLING_FORMULA_SOURCE;
 use crate::feeds::{CutterKind, OperationFamily as FeedsOperationFamily, PassRole};
@@ -550,6 +550,77 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
         },
     },
     generate: crate::compute::execute::generate_drill,
+};
+
+/// Geometry selection P6.6 (lead ruling L-11): a milling op, not a drill
+/// cycle. The simulation sweeps its moves and the export writes them as
+/// moves, so `policy` is `MILLING`. Each hole is independent, as for a
+/// Drill (`TRANSFORM_XY_INDEPENDENT`). The helix is the entry and the cut,
+/// so the dressups that add an entry, a lead or a link are stripped: a lead
+/// arc or a link at the floor has only `(d - D) / 2` of room and cuts into
+/// the wall. The wall is a finished edge, so the segment merge stays at the
+/// untoleranced bound (P6.0b).
+pub(super) static REG_BORE: OpRegistryEntry = OpRegistryEntry {
+    op_type: OperationType::Bore,
+    spec: OperationSpec {
+        label: "Bore",
+        description: "Mill a circle to its drawn size with a helix (a circle larger than the \
+                      tool, up to two tool diameters)",
+        family: OperationFamily::TwoPointFiveD,
+        geometry: GeometryRequirement::Items,
+        default_auto_regen: true,
+        ui_family: UiOperationFamily::Pocket,
+        ui_process_role: UiProcessRole::Roughing,
+        // L-14: the 2.5D clearing family (the Pocket rows).
+        feeds_family: FeedsOperationFamily::Pocket,
+        feeds_pass_role: PassRole::Roughing,
+        feeds_formula_source: Some(MILLING_FORMULA_SOURCE),
+    },
+    params: BoreConfig::PARAMS,
+    // A flat or bull-nose end mill: a ball or a V-bit leaves no flat floor
+    // and no straight wall (design 4.4).
+    tool_constraints: ToolConstraintsDef {
+        required_kinds: &[CutterKind::Flat, CutterKind::Bull],
+        supports_v_bit: false,
+    },
+    dressup_policy: DressupPolicy::strip_all(
+        "Bore cuts its own helix entry. A lead, a link or a second entry has no room \
+         between the tool and the wall of the hole.",
+    ),
+    policy: OpPolicy::MILLING,
+    capabilities: Capabilities {
+        transform: TRANSFORM_XY_INDEPENDENT,
+        air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
+        floor_owner: FloorOwner::OpFloor,
+        entry_probe: EntryProbeRule::Prism,
+        link_ceiling: LinkCeilingNeed::NoLink,
+        feeds_hints: FeedsHints::NONE,
+        move_count: MoveCountModel::FeatureDriven,
+        doc_basis: DocBasis::DepthPerPass,
+        air_cut_hint: AirCutHint::NoHint,
+        relink_dial: None,
+        axial_envelope: AxialEnvelope::NotApplied,
+        // D8: each hole starts at the remaining stock top over the hole
+        // (the hole radius, not the tool radius).
+        rest_use: RestUse::StockColumn,
+        territory_xy: TerritoryXy::ClipAfter,
+        plans_bands: false,
+        ramp_descent: false,
+        adaptive_woc: false,
+        flat_floor_clearing: true,
+        clearing_strategy_dial: None,
+        planner_uniform_engagement: false,
+        top_on_stock_box: false,
+        floor_inside_stock: true,
+        ladder_includes_top: false,
+        lut_route: LutRoute::AsStated,
+        // L-12, L-19: circles larger than the tool, up to `2 D`.
+        item_use: ItemUse::Holes {
+            may_be_empty: false,
+            fit: HoleFitRule::LargerThanTool,
+        },
+    },
+    generate: crate::compute::execute::generate_bore,
 };
 
 pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {

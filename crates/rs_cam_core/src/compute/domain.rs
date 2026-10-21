@@ -203,6 +203,7 @@ pub fn ordered_pair(operation: &OperationConfig) -> Option<(&'static str, f64, &
         | OperationConfig::InlayPlug(_)
         | OperationConfig::Trace(_)
         | OperationConfig::Drill(_)
+        | OperationConfig::Bore(_)
         | OperationConfig::Chamfer(_)
         | OperationConfig::Adaptive3d(_)
         | OperationConfig::Waterline(_)

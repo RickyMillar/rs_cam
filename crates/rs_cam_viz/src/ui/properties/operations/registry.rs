@@ -34,12 +34,12 @@ use rs_cam_core::compute::toolpath_stats::ClaimsReferenceFinding;
 use super::validate::{DepthBeyondStock, ThroughCut};
 use super::{
     StepoverPattern, draw_adaptive_params, draw_adaptive3d_params, draw_alignment_pin_drill_params,
-    draw_chamfer_params, draw_drill_params, draw_dropcutter_params, draw_face_params,
-    draw_horizontal_finish_params, draw_inlay_diagram, draw_inlay_params, draw_inlay_plug_params,
-    draw_outline_diagram, draw_pencil_diagram, draw_pencil_params, draw_pocket_params,
-    draw_point_set_diagram, draw_profile_params, draw_project_curve_params, draw_radial_diagram,
-    draw_radial_finish_params, draw_ramp_finish_diagram, draw_ramp_finish_params,
-    draw_scallop_params, draw_spiral_diagram, draw_spiral_finish_params,
+    draw_bore_params, draw_chamfer_params, draw_drill_params, draw_dropcutter_params,
+    draw_face_params, draw_horizontal_finish_params, draw_inlay_diagram, draw_inlay_params,
+    draw_inlay_plug_params, draw_outline_diagram, draw_pencil_diagram, draw_pencil_params,
+    draw_pocket_params, draw_point_set_diagram, draw_profile_params, draw_project_curve_params,
+    draw_radial_diagram, draw_radial_finish_params, draw_ramp_finish_diagram,
+    draw_ramp_finish_params, draw_scallop_params, draw_spiral_diagram, draw_spiral_finish_params,
     draw_steep_shallow_diagram, draw_steep_shallow_params, draw_stepover_diagram,
     draw_trace_params, draw_unified_finish_params, draw_vcarve_params, draw_waterline_params,
     draw_zigzag_params,
@@ -82,7 +82,8 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
     /// modes (L-3). Only the Profile editor writes it.
     pub selection_ui: &'a mut crate::state::pick::SelectionUi,
     /// Geometry selection P3.7: the floor references and the face floors
-    /// of an op that holds a floor (Pocket, Profile, Zigzag, Adaptive 2D).
+    /// of an op that holds a floor (Pocket, Profile, Zigzag, Adaptive 2D,
+    /// Bore).
     /// `None` for every other op, and when the heights do not resolve.
     pub floor: Option<&'a super::FloorInputs>,
 }
@@ -148,6 +149,7 @@ pub fn row(op: OperationType) -> &'static OpUiRow {
         OperationType::Zigzag => &ROW_ZIGZAG,
         OperationType::Trace => &ROW_TRACE,
         OperationType::Drill => &ROW_DRILL,
+        OperationType::Bore => &ROW_BORE,
         OperationType::Chamfer => &ROW_CHAMFER,
         OperationType::DropCutter => &ROW_DROP_CUTTER,
         OperationType::Adaptive3d => &ROW_ADAPTIVE3D,
@@ -305,6 +307,13 @@ editor!(ed_drill, Drill, |ui, cfg, cx| draw_drill_params(
     cx.holes,
     cx.pills,
     cx.depth_caution
+));
+editor!(ed_bore, Bore, |ui, cfg, cx| draw_bore_params(
+    ui,
+    cfg,
+    cx.holes,
+    cx.depth_caution,
+    cx.floor
 ));
 editor!(ed_chamfer, Chamfer, |ui, cfg, cx| draw_chamfer_params(
     ui,
@@ -547,6 +556,14 @@ const ROW_DRILL: OpUiRow = OpUiRow {
     diagram: OpDiagram::Draw(dia_drill),
     validate: Some(val_drill),
 };
+const ROW_BORE: OpUiRow = OpUiRow {
+    op: OperationType::Bore,
+    draw: ed_bore,
+    diagram: OpDiagram::None(
+        "A Bore cuts one helix in each circle; the viewport shows the circles and the helix.",
+    ),
+    validate: None,
+};
 const ROW_CHAMFER: OpUiRow = OpUiRow {
     op: OperationType::Chamfer,
     draw: ed_chamfer,
@@ -651,6 +668,7 @@ pub static OP_UI_ROWS: &[&OpUiRow] = &[
     &ROW_ZIGZAG,
     &ROW_TRACE,
     &ROW_DRILL,
+    &ROW_BORE,
     &ROW_CHAMFER,
     &ROW_DROP_CUTTER,
     &ROW_ADAPTIVE3D,

@@ -281,8 +281,8 @@ fn the_floor_owners_are_named() {
     );
     assert_eq!(
         named(FloorOwner::OpFloor),
-        ["Adaptive", "Pocket", "Profile", "Zigzag"],
-        "ruling D9 names four ops"
+        ["Adaptive", "Bore", "Pocket", "Profile", "Zigzag"],
+        "ruling D9 names four ops; geometry selection P6.6 adds Bore"
     );
     for &op_type in OperationType::ALL {
         let has_floor = OperationConfig::new_default(op_type).floor().is_some();

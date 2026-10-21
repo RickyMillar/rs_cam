@@ -69,7 +69,7 @@ pub fn classify(op_type: OperationType, model_bbox: Option<&BoundingBox3>) -> Ge
     match op_type {
         // Feature-driven: input geometry IS the path, no terrain
         // classification applies.
-        VCarve | ProjectCurve | Drill | AlignmentPinDrill | Trace | Inlay | InlayPlug => {
+        VCarve | ProjectCurve | Drill | Bore | AlignmentPinDrill | Trace | Inlay | InlayPlug => {
             GeometryClass::FeatureDriven
         }
         // 2D / pocket-like: planar engagement, strategy auto-pick moot.

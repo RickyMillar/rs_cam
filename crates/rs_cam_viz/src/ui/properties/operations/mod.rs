@@ -1,3 +1,4 @@
+mod bore;
 mod boundary_2d;
 mod drill;
 mod engrave;
@@ -10,6 +11,7 @@ mod surface_3d;
 mod validate;
 
 // Re-export all draw_*_params functions so callers don't need to change imports.
+pub(super) use bore::draw_bore_params;
 pub(super) use boundary_2d::{
     draw_adaptive_params, draw_face_params, draw_inlay_params, draw_inlay_plug_params,
     draw_pocket_params, draw_profile_params, draw_vcarve_params, draw_zigzag_params,
@@ -295,6 +297,7 @@ pub fn bottom_z_pin_note(op_type: OperationType) -> Option<&'static str> {
         Op::Zigzag => Some(FLOOR),
         Op::Trace => Some(DEPTH),
         Op::Drill => Some(DEPTH),
+        Op::Bore => Some(FLOOR),
         Op::VCarve => Some(MAX_DEPTH),
         Op::Inlay => Some(POCKET_DEPTH),
         Op::InlayPlug => Some(PLUG_DEPTH),

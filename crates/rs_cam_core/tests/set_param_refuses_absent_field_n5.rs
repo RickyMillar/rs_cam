@@ -84,13 +84,15 @@ use serde_json::json;
 const SESSION_COMPUTE_SRC: &str = include_str!("../src/session/compute/params.rs");
 
 /// Operations that publish no `stepover`. D2 deleted the Pencil alias of
-/// `offset_stepover`, so Pencil joined this set (12).
-const EXPECTED_STEPOVER_REJECTS: usize = 12;
+/// `offset_stepover`, so Pencil joined this set (12). P6.6 added Bore,
+/// which publishes neither (13).
+const EXPECTED_STEPOVER_REJECTS: usize = 13;
 
 /// Operations that publish no `depth_per_pass`. C1 deleted the Waterline
 /// alias of `z_step` and D2 the RampFinish alias of `max_stepdown`, so
-/// both joined this set (16).
-const EXPECTED_DEPTH_PER_PASS_REJECTS: usize = 16;
+/// both joined this set (16). P6.6 added Bore: its helix pitch is its
+/// step (17).
+const EXPECTED_DEPTH_PER_PASS_REJECTS: usize = 17;
 
 // ── the two populations, from the registry ───────────────────────
 

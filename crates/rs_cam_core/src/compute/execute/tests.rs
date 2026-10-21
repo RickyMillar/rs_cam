@@ -240,17 +240,28 @@ fn drill_points(holes: &[[f64; 2]]) -> SelectionInputs<'static> {
 /// family has an item it cuts (a Drill drills the point; a region or curve
 /// op skips the point with no note).
 fn rectangle_and_a_point(polygons: &[Polygon2]) -> SelectionInputs<'static> {
-    let point = crate::selection::Item::new(
-        crate::selection::SourceRef::ToolpathModel,
-        None,
-        crate::selection::Shape::Point(crate::geo::P2::new(30.0, 30.0)),
-    )
-    .unwrap();
+    let item = |shape| {
+        crate::selection::Item::new(crate::selection::SourceRef::ToolpathModel, None, shape)
+            .unwrap()
+    };
+    let point = item(crate::selection::Shape::Point(crate::geo::P2::new(
+        30.0, 30.0,
+    )));
+    // P6.6: two circles, so a Bore has a circle larger than each admitted
+    // default tool (end mill 6.35 mm: the 10 mm circle; bull nose 12.7 mm:
+    // the 20 mm circle). A Bore skips the other circle with a note.
+    let circles = [(70.0, 10.0), (70.0, 20.0)].map(|(x, d)| {
+        item(crate::selection::Shape::circle(
+            crate::geo::P2::new(x, 70.0 + d),
+            d,
+        ))
+    });
     SelectionInputs::from_items(
         crate::selection::ItemSet::from_polygons(polygons.to_vec())
             .iter()
             .cloned()
-            .chain(std::iter::once(point)),
+            .chain(std::iter::once(point))
+            .chain(circles),
     )
 }
 
@@ -1118,10 +1129,30 @@ fn every_generator_polls_a_preset_cancel_flag_past_the_prologue() {
         let cutting_levels = op.cutting_levels(&heights);
         let cancel = AtomicBool::new(true);
         let findings = std::cell::RefCell::new(GenerationFindings::default());
+        // A milling hole op (Bore, P6.6) cuts circles larger than the
+        // tool: it gets one circle of 1.5 tool diameters.
+        let selection = match op.capabilities().item_use {
+            crate::compute::catalog::ItemUse::Holes { .. } => {
+                crate::compute::execute::SelectionInputs::from_items([crate::selection::Item::new(
+                    crate::selection::SourceRef::ToolpathModel,
+                    None,
+                    crate::selection::Shape::circle(
+                        crate::geo::P2::new(50.0, 50.0),
+                        1.5 * crate::tool::MillingCutter::diameter(&tool_def),
+                    ),
+                )
+                .unwrap()])
+            }
+            crate::compute::catalog::ItemUse::None
+            | crate::compute::catalog::ItemUse::Regions
+            | crate::compute::catalog::ItemUse::Curves => {
+                crate::compute::execute::SelectionInputs::from_polygons(polygons.as_slice())
+            }
+        };
         let ctx = ExecutionContext {
             mesh: Some(&mesh),
             index: Some(&index),
-            selection: crate::compute::execute::SelectionInputs::from_polygons(polygons.as_slice()),
+            selection,
             ..ExecutionContext::new(
                 &findings,
                 &tool_def,

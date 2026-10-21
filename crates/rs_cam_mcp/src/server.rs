@@ -108,6 +108,7 @@ pub enum OperationTypeParam {
     Zigzag,
     Trace,
     Drill,
+    Bore,
     Chamfer,
     DropCutter,
     #[serde(rename = "adaptive3d")]
@@ -139,6 +140,7 @@ impl From<OperationTypeParam> for OperationType {
             W::Zigzag => Self::Zigzag,
             W::Trace => Self::Trace,
             W::Drill => Self::Drill,
+            W::Bore => Self::Bore,
             W::Chamfer => Self::Chamfer,
             W::DropCutter => Self::DropCutter,
             W::Adaptive3d => Self::Adaptive3d,
@@ -171,6 +173,7 @@ impl From<OperationType> for OperationTypeParam {
             C::Zigzag => Self::Zigzag,
             C::Trace => Self::Trace,
             C::Drill => Self::Drill,
+            C::Bore => Self::Bore,
             C::Chamfer => Self::Chamfer,
             C::DropCutter => Self::DropCutter,
             C::Adaptive3d => Self::Adaptive3d,

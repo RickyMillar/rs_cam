@@ -347,7 +347,8 @@ enum CurveModel {
     /// P3.5: `common::op_fixtures::each_face_model` (mirrored on a flipped
     /// setup), with both faces picked ([`use_faces`]).
     Faces,
-    /// P6.5: [`hole_model`] (design 6), the hole fit of a Drill.
+    /// P6.5: `common::op_fixtures::hole_model` (design 6), the hole fit of
+    /// a Drill.
     Holes,
 }
 
@@ -533,7 +534,7 @@ const P63_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[
 ];
 
 /// The P6.5 arm: a Drill with the registry tool (an end mill of 6.35 mm)
-/// over [`hole_model`]. Fresh stock.
+/// over `common::op_fixtures::hole_model`. Fresh stock.
 const P65_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[(
     OperationType::Drill,
     "fit_mixed",
@@ -542,31 +543,29 @@ const P65_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[(
     CurveModel::Holes,
 )];
 
-/// Design 6 `hole_model` (geometry selection P6.5): two points, a circle of
-/// the registry tool size (6.35 mm), a larger circle (10 mm) and a smaller
-/// circle (4 mm), on the flat board. The Drill drills the points and the
-/// circle of the tool size, and leaves out the other two with a note.
-fn hole_model() -> rs_cam_core::session::LoadedModel {
-    use common::session::TestHole;
-    let hole = |x: f64, y: f64, diameter: Option<f64>| TestHole {
-        x,
-        y,
-        layer: "holes".to_owned(),
-        diameter,
+/// P6.6: a Bore with a finish allowance (a rough helix at `r - a`, then a
+/// floor turn and a helix up the wall at `r`).
+fn bore_finish_pass(op: &mut OperationConfig) {
+    let OperationConfig::Bore(cfg) = op else {
+        unreachable!("bore arm on another op")
     };
-    let mut model = common::session::polygon_model(Vec::new(), "opgolden_hole_fit");
-    model.items = std::sync::Arc::new(common::session::drawing_items(
-        Vec::new(),
-        &[
-            hole(-20.0, -10.0, None),
-            hole(20.0, -10.0, None),
-            hole(0.0, 0.0, Some(6.35)),
-            hole(-15.0, 10.0, Some(10.0)),
-            hole(15.0, 10.0, Some(4.0)),
-        ],
-    ));
-    model
+    cfg.finish_allowance = BORE_FINISH_ALLOWANCE_MM;
 }
+
+/// The finish allowance (mm) of the `bore/finish_pass` arm: below the
+/// tool-centre radius (10 - 6.35) / 2 = 1.825 mm of the 10 mm circle.
+const BORE_FINISH_ALLOWANCE_MM: f64 = 0.5;
+
+/// The P6.6 arms beyond `bore/fresh` and `bore/rest`: op, arm, tweak,
+/// frame, curve. Fresh stock, on `common::op_fixtures::hole_model` (the
+/// Bore fixture of `case_session`, L-16).
+const P66_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[(
+    OperationType::Bore,
+    "finish_pass",
+    bore_finish_pass,
+    Frame::TopUp,
+    CurveModel::Fixture,
+)];
 
 /// Three open curves over the cap, with gaps of 1 mm and 2 mm between
 /// them. Each curve is one chain, so the link stage has two gaps to join.
@@ -637,7 +636,8 @@ const REGION_OPS: &[OperationType] = &[
 /// (`Prepared::territory` in `compute/execute/`): Pocket, Zigzag, Profile,
 /// Trace, Face and 2D Adaptive (`clearing_2d.rs`, the Layered rest rules
 /// of W3.4), Chamfer (`curve_engrave.rs`, the Layered level skip of W3.5),
-/// Drill (`drilling.rs`, the stock column of D8), Adaptive3d,
+/// Drill (`drilling.rs`, the stock column of D8), Bore (`bore.rs`, the
+/// stock column over the circle, P6.6), Adaptive3d,
 /// Pencil and Unified Finish (`finish_3d.rs`), the raster link stage of
 /// Drop Cutter and Scallop, the contour filter of Waterline
 /// (`finish_raster.rs`, W6.1), Project Curve (`curve_engrave.rs`), and the
@@ -652,6 +652,7 @@ const REST_READERS: &[OperationType] = &[
     OperationType::Face,
     OperationType::Chamfer,
     OperationType::Drill,
+    OperationType::Bore,
     OperationType::Adaptive,
     OperationType::Adaptive3d,
     OperationType::Pencil,
@@ -841,6 +842,7 @@ fn cases() -> Vec<Case> {
         .chain(P62_CASES)
         .chain(P63_CASES)
         .chain(P65_CASES)
+        .chain(P66_CASES)
     {
         cases.push(Case {
             op: *op,
@@ -955,7 +957,7 @@ fn run(case: &Case) -> Generated {
         CurveModel::Split => use_curve(&mut session, index, split_curve_model()),
         CurveModel::Square => use_curve(&mut session, index, square_curve_model()),
         CurveModel::Faces => use_faces(&mut session, index, case.frame),
-        CurveModel::Holes => use_curve(&mut session, index, hole_model()),
+        CurveModel::Holes => use_curve(&mut session, index, common::op_fixtures::hole_model()),
     }
     if rest {
         run_prior(&mut session);
@@ -1210,6 +1212,19 @@ fn every_op_keeps_its_toolpath() {
             got.outcome
         );
     }
+    // P6.6 non-vacuity: the Bore arms cut, and the finish allowance acts.
+    for key in ["bore/fresh", "bore/finish_pass", "bore/rest"] {
+        let got = &actual[key];
+        assert!(
+            got.move_count > 0,
+            "{key}: the arm emits no moves ({})",
+            got.outcome
+        );
+    }
+    assert_ne!(
+        actual["bore/finish_pass"].moves_hash, actual["bore/fresh"].moves_hash,
+        "bore/finish_pass: the finish allowance changes nothing"
+    );
     assert_ne!(
         actual["trace/left_open"].moves_hash, actual["trace/right_open"].moves_hash,
         "trace/left_open: the side switch changes nothing on the open curves"

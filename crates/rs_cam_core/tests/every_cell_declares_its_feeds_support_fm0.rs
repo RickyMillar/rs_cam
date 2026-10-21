@@ -167,6 +167,7 @@ fn every_operation_declares_its_formula_source() {
             | OperationType::InlayPlug
             | OperationType::Zigzag
             | OperationType::Trace
+            | OperationType::Bore
             | OperationType::Chamfer
             | OperationType::DropCutter
             | OperationType::Adaptive3d

@@ -4,11 +4,11 @@ use crate::feeds::{OperationFamily as FeedsOperationFamily, PassRole};
 
 use super::config::{ResolvedHeights, StockSource};
 use super::operation_configs::{
-    Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig, DrillConfig,
-    DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig, InlayPlugConfig,
-    PencilConfig, PocketConfig, ProfileConfig, ProjectCurveConfig, RadialFinishConfig,
-    RampFinishConfig, ScallopConfig, SpiralFinishConfig, SteepShallowConfig, TraceConfig,
-    UnifiedFinishConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
+    Adaptive3dConfig, AdaptiveConfig, AlignmentPinDrillConfig, BoreConfig, ChamferConfig,
+    DrillConfig, DropCutterConfig, FaceConfig, HorizontalFinishConfig, InlayConfig,
+    InlayPlugConfig, PencilConfig, PocketConfig, ProfileConfig, ProjectCurveConfig,
+    RadialFinishConfig, RampFinishConfig, ScallopConfig, SpiralFinishConfig, SteepShallowConfig,
+    TraceConfig, UnifiedFinishConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
 };
 
 mod capabilities;
@@ -30,9 +30,9 @@ pub use schema::{
 };
 
 use registry::{
-    REG_ADAPTIVE, REG_ADAPTIVE3D, REG_ALIGNMENT_PIN_DRILL, REG_CHAMFER, REG_DRILL, REG_DROP_CUTTER,
-    REG_FACE, REG_HORIZONTAL_FINISH, REG_INLAY, REG_INLAY_PLUG, REG_PENCIL, REG_POCKET,
-    REG_PROFILE, REG_PROJECT_CURVE, REG_RADIAL_FINISH, REG_RAMP_FINISH, REG_SCALLOP,
+    REG_ADAPTIVE, REG_ADAPTIVE3D, REG_ALIGNMENT_PIN_DRILL, REG_BORE, REG_CHAMFER, REG_DRILL,
+    REG_DROP_CUTTER, REG_FACE, REG_HORIZONTAL_FINISH, REG_INLAY, REG_INLAY_PLUG, REG_PENCIL,
+    REG_POCKET, REG_PROFILE, REG_PROJECT_CURVE, REG_RADIAL_FINISH, REG_RAMP_FINISH, REG_SCALLOP,
     REG_SPIRAL_FINISH, REG_STEEP_SHALLOW, REG_TRACE, REG_UNIFIED_FINISH, REG_VCARVE, REG_WATERLINE,
     REG_ZIGZAG,
 };
@@ -353,6 +353,7 @@ macro_rules! for_each_op {
             (Zigzag,             ZigzagConfig,              Menu2d,      "zigzag"),
             (Trace,              TraceConfig,               Menu2d,      "trace"),
             (Drill,              DrillConfig,               Menu2d,      "drill"),
+            (Bore,               BoreConfig,                Menu2d,      "bore"),
             (Chamfer,            ChamferConfig,             Menu2d,      "chamfer"),
             (DropCutter,         DropCutterConfig,          Menu3d,      "drop_cutter"),
             (Adaptive3d,         Adaptive3dConfig,          Menu3d,      "adaptive3d"),
@@ -485,6 +486,7 @@ impl OperationType {
         OperationType::Zigzag,
         OperationType::Trace,
         OperationType::Drill,
+        OperationType::Bore,
         OperationType::Chamfer,
     ];
 
@@ -565,6 +567,7 @@ impl OperationType {
             OperationType::Zigzag => &REG_ZIGZAG,
             OperationType::Trace => &REG_TRACE,
             OperationType::Drill => &REG_DRILL,
+            OperationType::Bore => &REG_BORE,
             OperationType::Chamfer => &REG_CHAMFER,
             OperationType::DropCutter => &REG_DROP_CUTTER,
             OperationType::Adaptive3d => &REG_ADAPTIVE3D,
@@ -803,6 +806,7 @@ pub enum OperationConfig {
     Zigzag(ZigzagConfig),
     Trace(TraceConfig),
     Drill(DrillConfig),
+    Bore(BoreConfig),
     Chamfer(ChamferConfig),
     DropCutter(DropCutterConfig),
     Adaptive3d(Adaptive3dConfig),
@@ -931,6 +935,7 @@ impl OperationConfig {
             | OperationConfig::InlayPlug(_)
             | OperationConfig::Zigzag(_)
             | OperationConfig::Drill(_)
+            | OperationConfig::Bore(_)
             | OperationConfig::Chamfer(_)
             | OperationConfig::ProjectCurve(_)
             | OperationConfig::AlignmentPinDrill(_) => row,
@@ -985,6 +990,7 @@ impl OperationConfig {
             | OperationConfig::Zigzag(_)
             | OperationConfig::Trace(_)
             | OperationConfig::Drill(_)
+            | OperationConfig::Bore(_)
             | OperationConfig::Chamfer(_)
             | OperationConfig::Adaptive3d(_)
             | OperationConfig::Waterline(_)
@@ -1019,6 +1025,7 @@ impl OperationConfig {
             | OperationConfig::Zigzag(_)
             | OperationConfig::Trace(_)
             | OperationConfig::Drill(_)
+            | OperationConfig::Bore(_)
             | OperationConfig::Chamfer(_)
             | OperationConfig::DropCutter(_)
             | OperationConfig::Adaptive3d(_)
@@ -1029,11 +1036,12 @@ impl OperationConfig {
     }
 
     /// The floor of the op (geometry selection P3.2, ruling D9): `Some` for
-    /// Pocket, Profile, Zigzag and Adaptive 2D, the `FloorOwner::OpFloor`
-    /// ops. The match names every variant.
+    /// Pocket, Profile, Zigzag, Adaptive 2D and Bore (P6.6), the
+    /// `FloorOwner::OpFloor` ops. The match names every variant.
     pub fn floor(&self) -> Option<crate::compute::floor::Floor> {
         match self {
             OperationConfig::Pocket(c) => Some(c.floor),
+            OperationConfig::Bore(c) => Some(c.floor),
             OperationConfig::Profile(c) => Some(c.floor),
             OperationConfig::Adaptive(c) => Some(c.floor),
             OperationConfig::Zigzag(c) => Some(c.floor),
@@ -1067,6 +1075,7 @@ impl OperationConfig {
     pub fn set_floor(&mut self, floor: crate::compute::floor::Floor) -> bool {
         let slot = match self {
             OperationConfig::Pocket(c) => &mut c.floor,
+            OperationConfig::Bore(c) => &mut c.floor,
             OperationConfig::Profile(c) => &mut c.floor,
             OperationConfig::Adaptive(c) => &mut c.floor,
             OperationConfig::Zigzag(c) => &mut c.floor,
@@ -1110,6 +1119,7 @@ impl OperationConfig {
             OperationConfig::Zigzag(c) => Some(&c.selection),
             OperationConfig::Trace(c) => Some(&c.selection),
             OperationConfig::Drill(c) => Some(&c.selection),
+            OperationConfig::Bore(c) => Some(&c.selection),
             OperationConfig::Chamfer(c) => Some(&c.selection),
             OperationConfig::ProjectCurve(c) => Some(&c.selection),
             OperationConfig::AlignmentPinDrill(c) => Some(&c.selection),
@@ -1142,6 +1152,7 @@ impl OperationConfig {
             OperationConfig::Zigzag(c) => Some(&mut c.selection),
             OperationConfig::Trace(c) => Some(&mut c.selection),
             OperationConfig::Drill(c) => Some(&mut c.selection),
+            OperationConfig::Bore(c) => Some(&mut c.selection),
             OperationConfig::Chamfer(c) => Some(&mut c.selection),
             OperationConfig::ProjectCurve(c) => Some(&mut c.selection),
             OperationConfig::AlignmentPinDrill(c) => Some(&mut c.selection),
@@ -1176,6 +1187,7 @@ impl OperationConfig {
             | OperationConfig::Zigzag(_)
             | OperationConfig::Trace(_)
             | OperationConfig::Drill(_)
+            | OperationConfig::Bore(_)
             | OperationConfig::Chamfer(_)
             | OperationConfig::ProjectCurve(_) => Some(Selection::drawing()),
             // Decision D6: the stock pins are the holes of a Pin Drill. A
@@ -1547,10 +1559,12 @@ impl OperationConfig {
             Self::Face(cfg) => crate::ops::face::face_levels(top_z, cfg.depth, cfg.depth_per_pass),
             // No standard depth stepping. The 3D ops drive their own Z
             // ladder from the surface; VCarve, Chamfer and Inlay derive Z
-            // from the cutter geometry; the two drilling ops are Z-only.
+            // from the cutter geometry; the two drilling ops are Z-only;
+            // the Bore helix sets its own Z step (its pitch, P6.6).
             Self::VCarve(_)
             | Self::Inlay(_)
             | Self::Drill(_)
+            | Self::Bore(_)
             | Self::Chamfer(_)
             | Self::DropCutter(_)
             | Self::Adaptive3d(_)
