@@ -145,9 +145,8 @@ struct Row {
 
 fn sim_options(resolution: f64) -> SimulationOptions {
     SimulationOptions {
-        resolution,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(resolution),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         // A feed-modulation pass between the toolpath and the numbers
         // would make this a measurement of two things.

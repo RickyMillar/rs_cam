@@ -171,7 +171,17 @@ impl ProjectSession {
     /// and the CLI read one number for one project state.
     #[must_use]
     pub fn simulation_resolution_mm(&self) -> f64 {
-        match self.simulation_resolution {
+        self.resolution_mm(self.simulation_resolution)
+    }
+
+    /// The cell size, in mm, that `resolution` gives for this project.
+    ///
+    /// The ONE rule (F020). [`Self::simulation_resolution_mm`] calls it with
+    /// the stored value. `run_simulation` calls it with
+    /// `SimulationOptions::resolution`.
+    #[must_use]
+    pub(crate) fn resolution_mm(&self, resolution: SimulationResolution) -> f64 {
+        match resolution {
             SimulationResolution::Fixed(mm) => mm,
             SimulationResolution::Auto => {
                 let tool_rule = self.auto_tool_rule_mm();

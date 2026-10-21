@@ -466,9 +466,8 @@ fn flag_off_byte_identical_to_pre_f035() {
             .generate_toolpath(0, &cancel)
             .expect("generate pocket toolpath");
         let opts = SimulationOptions {
-            resolution: 1.0,
+            resolution: rs_cam_core::session::SimulationResolution::Fixed(1.0),
             skip_ids: Vec::new(),
-            auto_resolution: false,
             use_predicted_feed_in_gates: false,
             adaptive_feed_modulation: false,
             modulation_strategy:
@@ -530,9 +529,8 @@ fn flag_on_extends_existing_f024_test_invariants() {
         .generate_toolpath(0, &cancel)
         .expect("generate pocket toolpath");
     let opts = SimulationOptions {
-        resolution: 1.0,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(1.0),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         // The bridge: flag ON.
         use_predicted_feed_in_gates: true,
         adaptive_feed_modulation: false,

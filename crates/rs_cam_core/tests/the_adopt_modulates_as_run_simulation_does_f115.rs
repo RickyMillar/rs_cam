@@ -133,7 +133,7 @@ fn generated_pocket() -> ProjectSession {
 
 fn simulate(session: &mut ProjectSession, modulate: bool) {
     let opts = SimulationOptions {
-        resolution: 1.0,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(1.0),
         adaptive_feed_modulation: modulate,
         modulation_strategy: MODULATION.strategy,
         modulation_feed_scale: MODULATION.feed_scale,

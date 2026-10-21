@@ -171,9 +171,8 @@ fn as004_face_peak_axial_within_commanded_doc() {
         .expect("generate face toolpath");
 
     let opts = SimulationOptions {
-        resolution: 0.5,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy:
@@ -230,9 +229,8 @@ fn as004_face_deflection_within_safe_band() {
         .expect("generate face toolpath");
 
     let opts = SimulationOptions {
-        resolution: 0.5,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy:
@@ -287,9 +285,8 @@ fn as004_face_no_rapid_collisions() {
         .expect("generate face toolpath");
 
     let opts = SimulationOptions {
-        resolution: 0.5,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy:
@@ -454,9 +451,8 @@ fn as001_pocket_actually_removes_stock_material_post_f028() {
         .expect("generate pocket toolpath");
 
     let opts = SimulationOptions {
-        resolution: 1.0,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(1.0),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy:

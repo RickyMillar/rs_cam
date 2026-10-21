@@ -118,7 +118,7 @@ fn chain(rest_count: usize) -> ProjectSession {
 fn simulate_at(session: &mut ProjectSession, cell_mm: f64) {
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
-        resolution: cell_mm,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(cell_mm),
         adaptive_feed_modulation: false,
         ..SimulationOptions::default()
     };

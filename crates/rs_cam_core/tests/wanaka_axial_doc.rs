@@ -454,9 +454,8 @@ fn wanaka_back_rough_axial_doc() {
         .expect("gen back rough");
 
     let opts = rs_cam_core::session::SimulationOptions {
-        resolution: 0.5,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
         skip_ids: vec![],
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy:

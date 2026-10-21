@@ -1428,7 +1428,7 @@ fn tier_trial_350() {
         ))
         .expect("set the board cell");
     let sim_opts = SimulationOptions {
-        resolution: BOARD_CELL_MM,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(BOARD_CELL_MM),
         ..SimulationOptions::default()
     };
     let cancel = AtomicBool::new(false);

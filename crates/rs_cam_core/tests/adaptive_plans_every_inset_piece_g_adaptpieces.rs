@@ -158,8 +158,7 @@ fn simulate(session: &mut ProjectSession) -> Arc<TriDexelStock> {
     let _ = session
         .run_simulation(
             &SimulationOptions {
-                resolution: CELL_MM,
-                auto_resolution: false,
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(CELL_MM),
                 adaptive_feed_modulation: false,
                 ..SimulationOptions::default()
             },

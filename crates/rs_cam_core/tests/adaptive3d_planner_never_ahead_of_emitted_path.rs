@@ -295,7 +295,7 @@ fn the_rough_rapids_into_no_stock() {
     let cancel = AtomicBool::new(false);
     for cell_mm in [0.25, 0.125] {
         let opts = SimulationOptions {
-            resolution: cell_mm,
+            resolution: rs_cam_core::session::SimulationResolution::Fixed(cell_mm),
             adaptive_feed_modulation: false,
             ..Default::default()
         };

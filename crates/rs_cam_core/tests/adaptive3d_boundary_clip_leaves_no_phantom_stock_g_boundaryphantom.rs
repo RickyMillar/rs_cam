@@ -162,7 +162,7 @@ fn session(arm: Arm) -> ProjectSession {
 fn rapid_collisions(s: &mut ProjectSession, cell_mm: f64) -> usize {
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
-        resolution: cell_mm,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(cell_mm),
         adaptive_feed_modulation: false,
         ..Default::default()
     };

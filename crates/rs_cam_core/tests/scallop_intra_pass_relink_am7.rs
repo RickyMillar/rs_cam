@@ -225,8 +225,7 @@ fn positions_lost(before: &[Move], after: &[Move]) -> Vec<Move> {
 fn collisions_at(session: &mut ProjectSession, resolution: f64) -> usize {
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
-        resolution,
-        auto_resolution: false,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(resolution),
         ..SimulationOptions::default()
     };
     session

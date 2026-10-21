@@ -94,8 +94,7 @@ fn narrate_toolpath_on_an_idle_lane_is_timed() {
     session
         .run_simulation(
             &SimulationOptions {
-                resolution: SIM_RESOLUTION_MM,
-                auto_resolution: false,
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(SIM_RESOLUTION_MM),
                 ..SimulationOptions::default()
             },
             &cancel,

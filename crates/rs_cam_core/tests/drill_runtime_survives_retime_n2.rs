@@ -304,9 +304,8 @@ fn build_session() -> ProjectSession {
 
 fn opts(adaptive_feed_modulation: bool) -> SimulationOptions {
     SimulationOptions {
-        resolution: 1.0,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(1.0),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation,
         modulation_strategy:

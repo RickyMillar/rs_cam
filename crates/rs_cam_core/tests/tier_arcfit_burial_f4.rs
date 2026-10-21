@@ -385,7 +385,7 @@ fn gouge_tail(session: &mut ProjectSession, index: usize) -> (f64, f64, f64, usi
         .map(|(_, tc)| tc.id)
         .collect();
     let opts = SimulationOptions {
-        resolution: SIM_CELL_MM,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(SIM_CELL_MM),
         skip_ids: skip,
         ..Default::default()
     };

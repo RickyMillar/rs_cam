@@ -784,9 +784,8 @@ fn run_single_case_inner(
     // measurement pass, so the two dexel grids are the same grid. Hoisted
     // above the measured-case materialisation for exactly that reason.
     let sim_opts = SimulationOptions {
-        resolution,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(resolution),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         // F-035: predicted-feed plumbing off — smoke baseline must
         // continue exercising commanded-feed gates so the regression
         // diff stays meaningful.

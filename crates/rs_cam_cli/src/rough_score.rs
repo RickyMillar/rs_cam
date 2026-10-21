@@ -603,9 +603,8 @@ mod tests {
         let _ = gui
             .run_simulation(
                 &SimulationOptions {
-                    resolution: RESOLUTION_MM,
+                    resolution: rs_cam_core::session::SimulationResolution::Fixed(RESOLUTION_MM),
                     skip_ids: Vec::new(),
-                    auto_resolution: false,
                     use_predicted_feed_in_gates: false,
                     adaptive_feed_modulation: true,
                     modulation_strategy:

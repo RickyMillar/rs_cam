@@ -223,9 +223,8 @@ fn as013_terrain_model_edge_axial_within_commanded_dpp_f027() {
         // Coarser than the default 0.5 mm to keep runtime reasonable; the
         // F-027 bug shows up at the millimetre scale and isn't sensitive
         // to sub-mm grid resolution.
-        resolution: 1.0,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(1.0),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy:
@@ -374,9 +373,8 @@ fn as013_terrain_model_edge_band_outlier_count_bounded_f027() {
     let stock_max_y = session.stock_bbox().max.y;
 
     let opts = SimulationOptions {
-        resolution: 1.0,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(1.0),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy:

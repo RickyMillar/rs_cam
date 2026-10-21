@@ -122,9 +122,8 @@ fn drill_session_produces_drill_summary_with_pecks() {
     assert_eq!(drill_op.holes.len(), 2, "two holes from config");
 
     let opts = SimulationOptions {
-        resolution: 1.0,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(1.0),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy:
@@ -236,9 +235,8 @@ fn drill_session_oversize_peck_trips_peck_adequacy_gate() {
         .generate_toolpath(0, &cancel)
         .expect("generate drill toolpath");
     let opts = SimulationOptions {
-        resolution: 1.0,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(1.0),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy:

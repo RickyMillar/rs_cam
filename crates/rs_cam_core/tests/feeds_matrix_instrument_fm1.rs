@@ -1000,8 +1000,7 @@ fn run_sim_cell(cell: &SimCell, machine: &MachineProfile) -> Result<Vec<String>,
     session
         .run_simulation(
             &SimulationOptions {
-                resolution: 1.0,
-                auto_resolution: false,
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(1.0),
                 ..SimulationOptions::default()
             },
             &cancel,

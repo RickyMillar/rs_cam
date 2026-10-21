@@ -725,7 +725,7 @@ fn run_single_op_arm(
         ))
         .expect("a positive cell");
     let opts = SimulationOptions {
-        resolution: sim_mm,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(sim_mm),
         ..Default::default()
     };
     session
@@ -810,7 +810,7 @@ fn run_cascade_arm(
         ))
         .expect("a positive cell");
     let opts = SimulationOptions {
-        resolution: sim_mm,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(sim_mm),
         ..Default::default()
     };
 
@@ -1659,7 +1659,7 @@ fn run_probe_arm(label: &str, op: OperationConfig, sim_mm: f64) -> ProbeArm {
     session
         .run_simulation(
             &SimulationOptions {
-                resolution: sim_mm,
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(sim_mm),
                 ..Default::default()
             },
             &cancel,

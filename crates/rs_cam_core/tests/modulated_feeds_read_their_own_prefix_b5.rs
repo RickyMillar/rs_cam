@@ -128,7 +128,7 @@ fn chain() -> ProjectSession {
 
 fn simulate(session: &mut ProjectSession, skip_ids: Vec<ToolpathId>) {
     let opts = SimulationOptions {
-        resolution: session.simulation_resolution_mm(),
+        resolution: session.simulation_resolution(),
         skip_ids,
         adaptive_feed_modulation: true,
         ..SimulationOptions::default()

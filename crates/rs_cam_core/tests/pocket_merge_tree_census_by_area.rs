@@ -78,7 +78,7 @@ fn walk_to(session: &mut ProjectSession, rough_index: usize) {
         match step {
             Step::Simulate { .. } => {
                 let opts = SimulationOptions {
-                    resolution: SIM_CELL_MM,
+                    resolution: rs_cam_core::session::SimulationResolution::Fixed(SIM_CELL_MM),
                     adaptive_feed_modulation: false,
                     ..SimulationOptions::default()
                 };

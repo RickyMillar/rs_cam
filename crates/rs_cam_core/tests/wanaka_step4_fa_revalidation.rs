@@ -57,9 +57,8 @@ fn wanaka_step4_back_rough_engagement_in_plausible_range() {
 
     let tp_id = session.list_toolpaths()[1].id;
     let opts = SimulationOptions {
-        resolution: 0.5,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
         skip_ids: vec![],
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy:

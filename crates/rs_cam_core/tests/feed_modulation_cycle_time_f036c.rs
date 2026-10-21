@@ -122,9 +122,8 @@ fn run_back_rough(modulate: bool) -> f64 {
 
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
-        resolution: 0.5,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
         skip_ids: SKIP_IDS.to_vec(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: modulate,
         modulation_strategy:

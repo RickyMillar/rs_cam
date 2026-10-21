@@ -67,12 +67,10 @@ fn wanaka_project_path() -> PathBuf {
 fn built_chain() -> ProjectSession {
     let mut s = ProjectSession::load(&wanaka_project_path()).expect("load wanaka");
     let cancel = AtomicBool::new(false);
-    let cell_mm = SimulationOptions::default().resolution;
+    let cell = SimulationOptions::default().resolution;
     let _ = s
         .apply(rs_cam_core::session::Command::SetSimulationResolution(
-            rs_cam_core::session::SetSimulationResolutionArgs {
-                resolution: rs_cam_core::session::SimulationResolution::Fixed(cell_mm),
-            },
+            rs_cam_core::session::SetSimulationResolutionArgs { resolution: cell },
         ))
         .expect("a positive cell");
     let n = s.toolpath_count();
@@ -115,7 +113,7 @@ fn rough6_rapid_collisions(s: &mut ProjectSession, cell_mm: f64) -> usize {
         .filter_map(|i| s.get_toolpath_config(i).map(|tc| tc.id))
         .collect();
     let opts = SimulationOptions {
-        resolution: cell_mm,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(cell_mm),
         skip_ids: later,
         adaptive_feed_modulation: false,
         ..Default::default()

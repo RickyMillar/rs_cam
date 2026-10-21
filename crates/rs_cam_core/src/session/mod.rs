@@ -1442,14 +1442,12 @@ fn is_zero_f64(v: &f64) -> bool {
 
 /// Options for running simulation.
 pub struct SimulationOptions {
-    /// Resolution in mm for tri-dexel stock.
-    pub resolution: f64,
+    /// The cell size of the tri-dexel stock. `ProjectSession::resolution_mm`
+    /// resolves it with the rule the stored project value uses (F020).
+    /// Pass `session.simulation_resolution()` to simulate at the project cell.
+    pub resolution: SimulationResolution,
     /// Toolpath IDs to skip.
     pub skip_ids: Vec<ToolpathId>,
-    /// When `true`, override `resolution` with an auto-computed value based
-    /// on the smallest tool radius and the stock footprint (matching the GUI's
-    /// auto-resolution logic).
-    pub auto_resolution: bool,
     /// F-035: when `true` **and** the active `MachineProfile` carries
     /// `kinematics`, the simulator builds a per-move `PredictedFeedMap`
     /// (peak achievable feed under accel/jerk limits) and the
@@ -1553,9 +1551,10 @@ pub struct SimulationOptions {
 impl Default for SimulationOptions {
     fn default() -> Self {
         Self {
-            resolution: 0.5,
+            // F020: not `SimulationResolution::default()` (`Auto`). `Fixed(0.5)`
+            // keeps the cell of every `default()` caller.
+            resolution: SimulationResolution::Fixed(0.5),
             skip_ids: Vec::new(),
-            auto_resolution: false,
             use_predicted_feed_in_gates: false,
             // Checkpoint J-3, 2026-08-13 (operator, BINDING): was `false`.
             adaptive_feed_modulation: true,

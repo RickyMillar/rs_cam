@@ -227,8 +227,7 @@ fn live_project_pc6_has_no_phantom_cuts() {
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let _ = common::session::generate_all_in_plan_order(&mut session, &cancel);
     let sim_opts = rs_cam_core::session::SimulationOptions {
-        resolution: 0.5,
-        auto_resolution: true,
+        resolution: rs_cam_core::session::SimulationResolution::Auto,
         skip_ids: Vec::new(),
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,

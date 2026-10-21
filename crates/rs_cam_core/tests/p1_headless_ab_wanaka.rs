@@ -68,12 +68,10 @@ fn p1_headless_ab_full_chain_intent_decomposition() {
     // and the P0 baseline was measured there. The project stores 0.1 mm, and
     // since G-RESTRES a rest op refuses a snapshot at another cell, so the
     // ladder unlocked nothing. Store the harness's cell as the project's.
-    let cell_mm = SimulationOptions::default().resolution;
+    let cell = SimulationOptions::default().resolution;
     let _ = s
         .apply(rs_cam_core::session::Command::SetSimulationResolution(
-            rs_cam_core::session::SetSimulationResolutionArgs {
-                resolution: rs_cam_core::session::SimulationResolution::Fixed(cell_mm),
-            },
+            rs_cam_core::session::SetSimulationResolutionArgs { resolution: cell },
         ))
         .expect("a positive cell");
 

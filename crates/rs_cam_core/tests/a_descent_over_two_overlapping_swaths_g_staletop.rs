@@ -72,9 +72,8 @@ const EXACT_STEP_MM: f64 = 0.025;
 /// project's stored resolution, with feed modulation on.
 fn probe_sim_options(session: &ProjectSession) -> SimulationOptions {
     SimulationOptions {
-        resolution: session.simulation_resolution_mm(),
+        resolution: session.simulation_resolution(),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: true,
         modulation_strategy:

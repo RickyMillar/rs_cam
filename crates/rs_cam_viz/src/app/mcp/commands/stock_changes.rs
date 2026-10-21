@@ -652,7 +652,7 @@ mod tests {
         let mut session = rs_cam_core::session::ProjectSession::load(&parity_fixture())
             .expect("the fixture loads");
         let opts = rs_cam_core::session::SimulationOptions {
-            resolution: session.simulation_resolution_mm(),
+            resolution: session.simulation_resolution(),
             ..rs_cam_core::session::SimulationOptions::default()
         };
         let _ = session

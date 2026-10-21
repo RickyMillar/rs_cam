@@ -82,7 +82,7 @@ impl Run {
             .expect("the fill edit applies");
 
         let opts = SimulationOptions {
-            resolution: session.simulation_resolution_mm(),
+            resolution: session.simulation_resolution(),
             ..SimulationOptions::default()
         };
         assert!(opts.adaptive_feed_modulation, "the default modulates");

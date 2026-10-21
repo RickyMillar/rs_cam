@@ -197,9 +197,8 @@ pub fn adaptive_session_with(
         .generate_toolpath(0, &cancel)
         .expect("adaptive generation");
     let opts = SimulationOptions {
-        resolution: SIM_RESOLUTION_MM,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(SIM_RESOLUTION_MM),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy:

@@ -414,7 +414,7 @@ pub fn generate_all_in_plan_order(
         match step {
             Step::Simulate { upto, .. } => {
                 let options = SimulationOptions {
-                    resolution: session.simulation_resolution_mm(),
+                    resolution: session.simulation_resolution(),
                     ..SimulationOptions::default()
                 };
                 if let Err(error) = session.run_simulation(&options, cancel) {

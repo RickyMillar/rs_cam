@@ -399,9 +399,8 @@ pub(crate) fn run_generation_plan(
     let _watch = guard.watch();
     let cancel: &AtomicBool = guard.flag();
     let sim_opts = SimulationOptions {
-        resolution: resolution.mm,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(resolution.mm),
         skip_ids: combined_skip.clone(),
-        auto_resolution: false,
         // F-035: predicted-feed plumbing off by default for CLI runs;
         // protects the smoke baseline from spurious verdict drift.
         use_predicted_feed_in_gates: false,

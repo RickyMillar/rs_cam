@@ -80,7 +80,7 @@ fn unified_tier_coverage_probe() {
         ))
         .unwrap();
     let opts = SimulationOptions {
-        resolution: CELL_MM,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(CELL_MM),
         ..SimulationOptions::default()
     };
     let cancel = AtomicBool::new(false);

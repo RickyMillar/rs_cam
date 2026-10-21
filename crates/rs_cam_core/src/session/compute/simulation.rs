@@ -20,10 +20,7 @@ use crate::ids::ToolpathId;
 use crate::mesh::TriangleMesh;
 use crate::session::{ProjectSession, SessionError, SimulationOptions};
 
-use super::{
-    FeedContext, SimRequestContext, auto_resolution_for_groups, build_sim_request,
-    modulate_annotated_against_trace,
-};
+use super::{FeedContext, SimRequestContext, build_sim_request, modulate_annotated_against_trace};
 
 /// Translate a triangle mesh by (dx, dy, dz) and rebuild bbox/faces.
 fn translate_mesh(mesh: &TriangleMesh, dx: f64, dy: f64, dz: f64) -> TriangleMesh {
@@ -263,14 +260,10 @@ impl ProjectSession {
         // Build simulation groups from setups
         let groups = self.simulation_groups(opts)?;
 
-        // Compute effective resolution: auto-resolution matches the GUI's
-        // heuristic (5 cells across the smallest tool radius, clamped to
-        // [0.02, 0.5] mm, further capped so the grid stays under ~8M cells).
-        let resolution = if opts.auto_resolution {
-            auto_resolution_for_groups(&groups, &stock_bbox)
-        } else {
-            opts.resolution
-        };
+        // F020: the ONE resolution rule, `ProjectSession::resolution_mm`,
+        // gives the cell. `Auto` takes the tool rule and the rest rule over
+        // the whole project, as the stored value does.
+        let resolution = self.resolution_mm(opts.resolution);
 
         // Deviation comparison happens in the simulation's stock-relative
         // global frame (0..stock_size); `SimulationRequest::model_mesh`'s

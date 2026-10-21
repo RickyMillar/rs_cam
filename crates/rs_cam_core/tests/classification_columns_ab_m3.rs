@@ -353,7 +353,7 @@ fn run_branch(
     let region_nodes = mix.iter().map(|r| r.2).sum();
 
     let opts = SimulationOptions {
-        resolution: sim_mm,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(sim_mm),
         ..Default::default()
     };
     session

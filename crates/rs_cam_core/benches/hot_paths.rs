@@ -879,9 +879,8 @@ fn bench_sim_e2e_small(c: &mut Criterion) {
         // `adaptive_feed_modulation` defaults to TRUE; pin every dial so the
         // measured work does not move with a default change.
         let opts = SimulationOptions {
-            resolution,
+            resolution: rs_cam_core::session::SimulationResolution::Fixed(resolution),
             skip_ids: Vec::new(),
-            auto_resolution: false,
             use_predicted_feed_in_gates: false,
             adaptive_feed_modulation: false,
             modulation_strategy:

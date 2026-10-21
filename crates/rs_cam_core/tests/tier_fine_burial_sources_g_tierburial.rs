@@ -466,7 +466,7 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
             .and_then(|v| v.parse().ok())
             .unwrap_or(0.1);
         let opts = SimulationOptions {
-            resolution: cell,
+            resolution: rs_cam_core::session::SimulationResolution::Fixed(cell),
             skip_ids: skip,
             ..Default::default()
         };

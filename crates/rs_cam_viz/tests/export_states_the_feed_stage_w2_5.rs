@@ -189,9 +189,8 @@ fn pocket_session() -> ProjectSession {
 
 fn simulate(session: &mut ProjectSession, modulate: bool) {
     let opts = SimulationOptions {
-        resolution: 1.0,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(1.0),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: modulate,
         modulation_strategy:

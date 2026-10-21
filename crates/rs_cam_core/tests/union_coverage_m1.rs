@@ -75,7 +75,7 @@ fn run_arm(label: &str, project: &Path) -> UnionCoverageReport {
     let mut session = ProjectSession::load(project).expect("load project");
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
-        resolution: RESOLUTION_MM,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(RESOLUTION_MM),
         adaptive_feed_modulation: false,
         ..SimulationOptions::default()
     };

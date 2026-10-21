@@ -46,7 +46,7 @@ fn the_project_command_prints_the_core_line_for_each_stock_change_s4() {
     // The core read, in process: the rows every surface prints.
     let mut session = ProjectSession::load(&project()).expect("the fixture loads");
     let opts = SimulationOptions {
-        resolution: session.simulation_resolution_mm(),
+        resolution: session.simulation_resolution(),
         ..SimulationOptions::default()
     };
     let _ = session

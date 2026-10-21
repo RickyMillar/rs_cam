@@ -241,8 +241,7 @@ fn run_cascade(tool: ToolConfig, sim_resolution: f64, rest_claims: RestArm) -> C
     session
         .run_simulation(
             &SimulationOptions {
-                resolution: sim_resolution,
-                auto_resolution: false,
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(sim_resolution),
                 adaptive_feed_modulation: false,
                 ..SimulationOptions::default()
             },
@@ -579,8 +578,7 @@ fn the_footgun_produces_a_caution_diagnostic_naming_the_consequence() {
     session
         .run_simulation(
             &SimulationOptions {
-                resolution: 0.2,
-                auto_resolution: false,
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(0.2),
                 adaptive_feed_modulation: false,
                 ..SimulationOptions::default()
             },
@@ -649,8 +647,7 @@ fn the_derived_resolution_is_reported_as_info() {
     session
         .run_simulation(
             &SimulationOptions {
-                resolution: 0.2,
-                auto_resolution: false,
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(0.2),
                 adaptive_feed_modulation: false,
                 ..SimulationOptions::default()
             },

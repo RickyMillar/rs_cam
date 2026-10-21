@@ -126,7 +126,7 @@ fn three_setups() -> ProjectSession {
 fn simulate(session: &mut ProjectSession) {
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
-        resolution: session.simulation_resolution_mm(),
+        resolution: session.simulation_resolution(),
         adaptive_feed_modulation: false,
         ..SimulationOptions::default()
     };

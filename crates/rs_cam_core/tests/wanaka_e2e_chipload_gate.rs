@@ -93,9 +93,8 @@ fn wanaka_back_rough_chipload_still_exceeds_after_auto_fix_o4() {
         .expect("generate Back Rough");
 
     let opts = SimulationOptions {
-        resolution: 0.5,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy:

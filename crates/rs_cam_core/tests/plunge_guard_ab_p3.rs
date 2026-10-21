@@ -185,9 +185,8 @@ fn wanaka_front_rough_plunge_guard_ab() {
         .generate_toolpath(index, &cancel)
         .expect("generate the front rough");
     let opts = SimulationOptions {
-        resolution: 0.5,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
         skip_ids,
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: true,
         modulation_strategy: ModulationStrategy::ConstrainedMax,

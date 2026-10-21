@@ -128,8 +128,7 @@ fn simulate(session: &mut ProjectSession) {
     session
         .run_simulation(
             &SimulationOptions {
-                resolution: SIM_CELL_MM,
-                auto_resolution: false,
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(SIM_CELL_MM),
                 adaptive_feed_modulation: false,
                 ..SimulationOptions::default()
             },

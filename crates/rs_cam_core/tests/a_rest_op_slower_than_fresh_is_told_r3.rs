@@ -107,7 +107,7 @@ fn rest_arm(op: OperationType) -> (ProjectSession, usize, f64) {
     let _ = session
         .run_simulation(
             &SimulationOptions {
-                resolution: SIM_CELL_MM,
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(SIM_CELL_MM),
                 ..SimulationOptions::default()
             },
             &cancel,

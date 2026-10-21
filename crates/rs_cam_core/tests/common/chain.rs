@@ -124,7 +124,7 @@ pub fn run_fixpoint_ladder(label: &str, s: &mut ProjectSession) {
 pub fn run_measurement_sim(s: &mut ProjectSession) {
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
-        resolution: 0.25,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(0.25),
         ..Default::default()
     };
     s.run_simulation(&opts, &cancel)

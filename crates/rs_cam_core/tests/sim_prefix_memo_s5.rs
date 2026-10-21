@@ -993,9 +993,8 @@ fn a_session_ladder_hits_the_memo_on_its_second_round() {
 
     let cancel = AtomicBool::new(false);
     let opts = SimulationOptions {
-        resolution: 0.5,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
         adaptive_feed_modulation: false,
-        auto_resolution: false,
         ..SimulationOptions::default()
     };
     let mut cache = SimPrefixCache::new();

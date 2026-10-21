@@ -380,9 +380,8 @@ fn checkpoint_zero_removes_nothing_outside_the_pocket_outline() {
     session
         .run_simulation(
             &SimulationOptions {
-                resolution: 0.5,
+                resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
                 skip_ids: Vec::new(),
-                auto_resolution: false,
                 use_predicted_feed_in_gates: false,
                 adaptive_feed_modulation: false,
                 modulation_strategy:

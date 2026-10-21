@@ -183,9 +183,8 @@ fn run_as013_simulation() -> ProjectSession {
         .expect("generate adaptive3d toolpath");
 
     let opts = SimulationOptions {
-        resolution: 0.5,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(0.5),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy:

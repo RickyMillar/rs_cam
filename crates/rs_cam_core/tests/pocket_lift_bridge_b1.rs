@@ -192,9 +192,8 @@ fn rapid_collisions_at(resolution: f64) -> Vec<rs_cam_core::stock::collision::Ra
         .expect("generate pocket toolpath");
 
     let opts = SimulationOptions {
-        resolution,
+        resolution: rs_cam_core::session::SimulationResolution::Fixed(resolution),
         skip_ids: Vec::new(),
-        auto_resolution: false,
         use_predicted_feed_in_gates: false,
         adaptive_feed_modulation: false,
         modulation_strategy:
