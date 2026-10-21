@@ -61,10 +61,6 @@ pub enum OperationError {
     /// the prologue guarantees is absent, and so on. The text names the
     /// defect.
     Internal(String),
-    /// An operation failure that is not yet sorted into
-    /// [`Self::InvalidParam`] or [`Self::Internal`]. F063: the sites in
-    /// `layered.rs` and `clearing_2d.rs` still use it.
-    Other(String),
 }
 
 // ── Generated toolpath helpers ───────────────────────────────────────
@@ -247,7 +243,7 @@ impl std::fmt::Display for OperationError {
                 crate::budget::format_bytes(*limit_bytes)
             ),
             Self::Selection(refusal) => write!(f, "{refusal}"),
-            Self::InvalidParam(s) | Self::Internal(s) | Self::Other(s) => write!(f, "{s}"),
+            Self::InvalidParam(s) | Self::Internal(s) => write!(f, "{s}"),
         }
     }
 }
@@ -274,12 +270,6 @@ impl From<crate::budget::StopReason> for OperationError {
 impl From<crate::interrupt::Cancelled> for OperationError {
     fn from(_: crate::interrupt::Cancelled) -> Self {
         Self::Cancelled
-    }
-}
-
-impl From<String> for OperationError {
-    fn from(s: String) -> Self {
-        Self::Other(s)
     }
 }
 

@@ -813,7 +813,7 @@ pub struct HandTab {
 /// # Errors
 ///
 /// The text that names a point farther than [`hand_tab_reach`] from every
-/// exterior. Generation (`OperationError::Other`) and the `tab_layout`
+/// exterior. Generation (`OperationError::InvalidParam`) and the `tab_layout`
 /// query give this text, so the two refuse alike.
 pub fn resolve_hand_tabs(
     tab_points: &[[f64; 2]],

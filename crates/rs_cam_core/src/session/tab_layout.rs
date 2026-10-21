@@ -105,9 +105,7 @@ impl ProjectSession {
         let tool_radius = crate::tool::MillingCutter::radius(&super::session_cutter(tool)?);
         let frame = ctx.local_to_global.as_ref();
         let hand = resolve_hand_tabs(&cfg.tab_points, frame, tool_radius, regions.as_slice())
-            .map_err(|text| {
-                SessionError::OperationFailed(OperationError::Other(text).to_string())
-            })?;
+            .map_err(|text| SessionError::Operation(OperationError::InvalidParam(text)))?;
         let profile = ProfileParams {
             tool_radius,
             side: cfg.side,

@@ -859,7 +859,7 @@ fn check2b_a_rest_op_removes_no_more_material_than_a_fresh_op() {
 ///   variant, or `SessionError::Operation` with a named
 ///   `OperationError` (missing geometry, invalid tool, invalid parameter),
 ///   or a selection refusal (`SessionError::Selection`). Free text
-///   (`OperationError::Other`, `OperationFailed`) and a wiring defect
+///   (`OperationFailed`) and a wiring defect
 ///   (`OperationError::Internal`) are unnamed errors. F054: the test
 ///   matches the variant, not the message.
 /// - A panic is always a defect.
