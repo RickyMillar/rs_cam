@@ -507,7 +507,7 @@ pub enum McpRequestKind {
         index: usize,
     },
     GetOperationSchema {
-        operation_type: String,
+        operation_type: rs_cam_core::compute::catalog::OperationType,
     },
     /// PR-3: unified diagnostic list for a single toolpath. Returns
     /// the deduped [`rs_cam_core::diagnostics::Diagnostic`] vector
@@ -570,7 +570,8 @@ pub enum McpRequestKind {
     /// to retrieve detail spans.
     InspectSpans {
         index: usize,
-        /// `SpanKind` filter (snake_case e.g. "depth_pass").
+        /// `SpanKind` filter: the `SpanKind::as_key` token of a
+        /// `SpanKindParam` the wire parsed (F166).
         kind: Option<String>,
         /// Restrict to spans contained within the span at this id (vec index).
         parent_id: Option<u32>,
@@ -604,7 +605,7 @@ pub enum McpRequestKind {
     /// `AppEvent::AddToolpath` the Add menu emits, so the GUI's own
     /// tool/model binding and its add-time refusal path run.
     AddToolpathViaGui {
-        operation_type: String,
+        operation_type: rs_cam_core::compute::catalog::OperationType,
         setup_index: Option<usize>,
     },
     /// Phase O — plan a multi-tool island finishing chain. Emits k enabled
@@ -630,7 +631,7 @@ pub enum McpRequestKind {
     /// pairing is one `validate_tool_for_operation` declines.
     ApplyFeeds {
         index: usize,
-        scope: String,
+        scope: rs_cam_mcp::server::ApplyScopeParam,
     },
 
     // ── Compute (async — response sent when compute finishes) ────────
@@ -1115,22 +1116,21 @@ pub struct McpResponse {
     pub result: Result<String, String>,
 }
 
-/// What a synchronous MCP mutation handler did, read from its reply
-/// (G-MCPTOAST, UX-R03-003).
+/// What a synchronous MCP mutation handler did (G-MCPTOAST, UX-R03-003).
 ///
 /// The GUI toast for an MCP request used to be pushed BEFORE the handler
 /// ran, in the past tense, and nothing corrected it when the handler
 /// refused: a Scallop on a flat end mill was refused by the Suggest door
 /// and the screen still read "MCP: Added toolpath". The dispatch now
-/// classifies the handler's reply with this type and pushes the toast from
-/// it, through `AppController::push_mcp_outcome`.
+/// pushes the toast from this outcome, through
+/// `AppController::push_mcp_outcome`.
 ///
-/// Two reply shapes carry a refusal. Mutation handlers answer with
-/// `mutation_error_json` (`"ok": false` plus a `summary`); the import and
-/// library handlers answer with a bare top-level `"error"` string. Anything
-/// else is a success. A reply that is not JSON at all is also a success —
-/// the plain-text handlers (load / save) classify from their `Result`
-/// through [`McpOutcome::from_result`] instead, never from the text.
+/// F207: the handler STATES the outcome. A core-route arm returns a
+/// `CoreReply` whose `outcome` field is not optional, and the plain-text
+/// handlers (load / save) classify from their `Result` through
+/// [`McpOutcome::from_result`]. No code reads an outcome back out of the
+/// reply text: a text classifier read a reply that is not JSON as a
+/// success, so a refusal in plain text showed a success toast.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpOutcome {
     Succeeded,
@@ -1139,25 +1139,6 @@ pub enum McpOutcome {
 }
 
 impl McpOutcome {
-    /// Classify a JSON reply from a mutation, import or library handler.
-    pub fn from_json_response(response: &str) -> Self {
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(response) else {
-            return Self::Succeeded;
-        };
-        if value.get("ok").and_then(serde_json::Value::as_bool) == Some(false) {
-            let summary = value
-                .get("summary")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("request refused")
-                .to_owned();
-            return Self::Refused(summary);
-        }
-        if let Some(error) = value.get("error").and_then(serde_json::Value::as_str) {
-            return Self::Refused(error.to_owned());
-        }
-        Self::Succeeded
-    }
-
     /// Classify from a handler's own `Result`, for handlers whose reply is
     /// plain text rather than JSON.
     pub fn from_result<T, E: std::fmt::Display>(result: &Result<T, E>) -> Self {
@@ -1180,9 +1161,66 @@ impl McpOutcome {
     }
 }
 
+/// An MCP reply and the outcome it states (F207).
+///
+/// The core route of `app/mcp/commands.rs` answers with this type (its
+/// name there is `CoreReply`).
+///
+/// F207: the reply STATES its outcome. The toast reads `outcome`, never the
+/// reply text, so a refusal in a reply of any shape cannot read as a
+/// success. Build one with [`Self::refused`], [`Self::refused_with`] or
+/// [`Self::succeeded`]; each states the outcome from the same text it puts
+/// in the reply.
+#[derive(Debug)]
+pub struct McpReply {
+    /// The wire reply.
+    pub reply: String,
+    /// What the request did, for the toast.
+    pub outcome: McpOutcome,
+}
+
+impl McpReply {
+    /// The standard refusal reply (`mutation_error_json`), and its
+    /// outcome with the same summary.
+    pub fn refused(summary: &str, field: Option<&str>) -> Self {
+        Self {
+            reply: mutation_error_json(summary, field),
+            outcome: McpOutcome::Refused(summary.to_owned()),
+        }
+    }
+
+    /// A refusal whose reply has its own shape, and the refusal text the
+    /// toast shows.
+    pub fn refused_with(reply: String, refusal: impl Into<String>) -> Self {
+        Self {
+            reply,
+            outcome: McpOutcome::Refused(refusal.into()),
+        }
+    }
+
+    /// The refusal document `{"ok": false, "error": ..}` of the rows that
+    /// refuse before they reach a command, and its outcome.
+    pub fn error_document(error: impl Into<String>) -> Self {
+        let error = error.into();
+        Self {
+            reply: rs_cam_mcp::server::json_str(serde_json::json!({ "ok": false, "error": error })),
+            outcome: McpOutcome::Refused(error),
+        }
+    }
+
+    /// A success reply.
+    pub fn succeeded(reply: String) -> Self {
+        Self {
+            reply,
+            outcome: McpOutcome::Succeeded,
+        }
+    }
+}
+
 /// The refusal reply every synchronous MCP mutation handler returns. One
-/// construction site, so [`McpOutcome::from_json_response`] and the
-/// handlers cannot drift apart on the shape.
+/// construction site, so every refusal reply has one shape. The core route
+/// builds it through `CoreReply::refused`, which states the outcome from
+/// the same summary (F207).
 pub fn mutation_error_json(summary: &str, field: Option<&str>) -> String {
     let field_value = field
         .map(|f| serde_json::Value::String(f.to_owned()))

@@ -19,7 +19,6 @@ use rs_cam_mcp::server::{
 
 use super::{CoreBefore, CorePlan, CoreReply};
 use crate::app::RsCamApp;
-use crate::mcp_bridge::mutation_error_json;
 
 /// One obstacle as the MCP read tools print it. Every value is in the
 /// setup frame.
@@ -174,13 +173,13 @@ fn patch_geometry(
 }
 
 fn refuse((message, field): WireRefusal) -> CorePlan {
-    CorePlan::Answered(mutation_error_json(&message, Some(field)))
+    CorePlan::Answered(CoreReply::refused(&message, Some(field)))
 }
 
 impl RsCamApp {
     /// The obstacles of the setup at `setup_index`, or the refusal reply
     /// that names the index.
-    fn obstacle_setup(&self, setup_index: usize) -> Result<Vec<Obstacle>, String> {
+    fn obstacle_setup(&self, setup_index: usize) -> Result<Vec<Obstacle>, CoreReply> {
         self.controller
             .state()
             .session
@@ -188,7 +187,7 @@ impl RsCamApp {
             .get(setup_index)
             .map(|setup| setup.obstacles.clone())
             .ok_or_else(|| {
-                mutation_error_json(
+                CoreReply::refused(
                     &format!("Error: Setup index {setup_index} not found"),
                     Some("setup_index"),
                 )
@@ -253,7 +252,7 @@ impl RsCamApp {
         };
         let obstacle_id = ObstacleId(p.obstacle_id);
         let Some(stored) = obstacles.iter().find(|o| o.id == obstacle_id) else {
-            return CorePlan::Answered(mutation_error_json(
+            return CorePlan::Answered(CoreReply::refused(
                 &format!(
                     "Error: setup {} carries no obstacle with id {}",
                     p.setup_index, p.obstacle_id
@@ -391,7 +390,7 @@ impl RsCamApp {
             .get(setup_index)
             .map(|setup| setup.obstacles.iter().map(obstacle_json).collect())
             .unwrap_or_default();
-        CoreReply::quiet(self.mcp_mutation_result(
+        CoreReply::succeeded(self.mcp_mutation_result(
             format!("{verb} obstacle {obstacle_id} in setup {setup_index}"),
             serde_json::json!({
                 "setup_index": setup_index,

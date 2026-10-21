@@ -15,8 +15,8 @@ use std::path::Path;
 
 use crate::controller::Severity;
 use crate::mcp_bridge::{
-    GuiBanner, McpOutcome, McpRequest, McpRequestKind, McpResponse, MutationResult,
-    MutationWarning, ProgressUpdate, mutation_error_json,
+    GuiBanner, McpRequest, McpRequestKind, McpResponse, MutationResult, MutationWarning,
+    ProgressUpdate, mutation_error_json,
 };
 use crate::state::Workspace;
 use crate::state::selection::Selection;
@@ -28,7 +28,7 @@ use crate::ui_command::{
     UiQueryAnswer,
 };
 
-use commands::CorePlan;
+use commands::{CorePlan, CoreReply};
 pub(crate) use diagnostics::viz_project_evidence;
 #[cfg(test)]
 pub(crate) use simulation::inspect_collisions_json;
@@ -87,28 +87,20 @@ pub(crate) struct MultitoolDials {
     pub max_regions_per_tier: Option<usize>,
     pub coarse_skips_fine_islands: Option<bool>,
     pub monotone_cell_decomposition: Option<bool>,
-    /// Per-tier strategy strings, LADDER order (coarse → fine). `None` =
-    /// all unified (the historical planner).
-    pub tier_strategies: Option<Vec<String>>,
+    /// Per-tier strategies, LADDER order (coarse → fine). `None` = all
+    /// unified (the historical planner).
+    pub tier_strategies: Option<Vec<rs_cam_mcp::server::TierStrategyParam>>,
 }
 
-pub(crate) fn parse_tier_strategies(
-    raw: &Option<Vec<String>>,
-) -> Result<Vec<rs_cam_core::session::TierStrategy>, String> {
-    use rs_cam_core::session::TierStrategy;
-    let Some(raw) = raw else {
-        return Ok(Vec::new());
-    };
-    raw.iter()
-        .map(|s| match s.as_str() {
-            "unified_finish" | "unified" => Ok(TierStrategy::UnifiedFinish),
-            "scallop" => Ok(TierStrategy::Scallop),
-            "iso_scallop" | "iso" => Ok(TierStrategy::IsoScallop),
-            other => Err(format!(
-                "unknown tier strategy '{other}' — expected unified_finish | scallop | \
-                 iso_scallop"
-            )),
-        })
+/// The core tier strategies of the wire list (F166: the wire takes the
+/// enum, so no token is parsed here and no alias is accepted).
+pub(crate) fn tier_strategies(
+    wire: Option<&[rs_cam_mcp::server::TierStrategyParam]>,
+) -> Vec<rs_cam_core::session::TierStrategy> {
+    wire.unwrap_or_default()
+        .iter()
+        .copied()
+        .map(rs_cam_core::session::TierStrategy::from)
         .collect()
 }
 
@@ -257,7 +249,7 @@ impl super::RsCamApp {
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::GetOperationSchema { operation_type } => {
-                let resp = self.mcp_get_operation_schema(&operation_type);
+                let resp = self.mcp_get_operation_schema(operation_type.kind_str());
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::GetGenerationDebugTrace {
@@ -365,8 +357,13 @@ impl super::RsCamApp {
                 // asks for a pair. The preparation runs here, not in the
                 // conversion, which reads.
                 let plan = self.core_command_for(request);
-                let (resp, stated) = match self.run_core_preparation(plan) {
-                    CorePlan::Answered(reply) => (reply, None),
+                // F207: every arm STATES its outcome; the toast never
+                // reads the reply text.
+                let CoreReply {
+                    reply: resp,
+                    outcome,
+                } = match self.run_core_preparation(plan) {
+                    CorePlan::Answered(reply) => reply,
                     // `run_core_preparation` reduces every pair to its
                     // own command, so the second pattern binds nothing
                     // the first does not. It names the variant rather
@@ -375,12 +372,10 @@ impl super::RsCamApp {
                     CorePlan::Apply(command, before) | CorePlan::ApplyPair(_, command, before) => {
                         let id = command.id();
                         let outcome = self.controller.state_mut().session.apply(command);
-                        let described = self.describe_core(id, outcome, &before);
-                        (described.reply, described.outcome)
+                        self.describe_core(id, outcome, &before)
                     }
                 };
                 if let Some(toast) = toast {
-                    let outcome = stated.unwrap_or_else(|| McpOutcome::from_json_response(&resp));
                     self.controller.push_mcp_outcome(toast, &outcome);
                 }
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
@@ -428,7 +423,7 @@ impl super::RsCamApp {
                     .push(AppEvent::Ui(UiCommand::SwitchWorkspace(
                         Workspace::Toolpaths,
                     )));
-                let resp = self.mcp_add_toolpath_via_gui(&operation_type, setup_index);
+                let resp = self.mcp_add_toolpath_via_gui(operation_type, setup_index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::PlanMultitoolFinishing { spec } => {
@@ -440,7 +435,7 @@ impl super::RsCamApp {
                 self.mcp_preview_tier_map(&spec, response_tx);
             }
             McpRequestKind::ApplyFeeds { index, scope } => {
-                let resp = self.mcp_apply_feeds(index, &scope);
+                let resp = self.mcp_apply_feeds(index, scope);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
 
@@ -606,11 +601,11 @@ impl super::RsCamApp {
                 }) => {
                     let resp = self.mcp_set_ui_view(
                         ctx,
-                        workspace.as_deref(),
+                        workspace,
                         toolpath_index,
-                        properties_tab.as_deref(),
-                        select.as_deref(),
-                        modal.as_deref(),
+                        properties_tab,
+                        select,
+                        modal,
                         overlays.as_ref(),
                         frame_items,
                         model_visibility.as_ref(),
@@ -730,8 +725,8 @@ impl super::RsCamApp {
     }
 
     /// The refusal reply. The shape lives in
-    /// [`crate::mcp_bridge::mutation_error_json`] so the toast classifier
-    /// (`McpOutcome::from_json_response`) reads the same document.
+    /// [`crate::mcp_bridge::mutation_error_json`]. A core-route row states
+    /// its outcome through `CoreReply::refused` instead (F207).
     fn mcp_mutation_error(&self, summary: impl Into<String>, field: Option<&str>) -> String {
         mutation_error_json(&summary.into(), field)
     }
@@ -1068,19 +1063,19 @@ impl super::RsCamApp {
     }
 }
 
-/// Parse the agent-facing workspace key used by the MCP `set_ui_view`
-/// tool into the GUI [`Workspace`] enum.
-fn parse_workspace(s: &str) -> Option<Workspace> {
-    match s {
-        "setup" => Some(Workspace::Setup),
-        "toolpaths" => Some(Workspace::Toolpaths),
-        "simulation" | "sim" => Some(Workspace::Simulation),
-        "readiness" => Some(Workspace::Readiness),
-        _ => None,
+/// The GUI [`Workspace`] of the `set_ui_view` wire enum (F166: the wire
+/// takes the enum, so no token is parsed and no alias is accepted).
+fn workspace_of(p: rs_cam_mcp::server::WorkspaceParam) -> Workspace {
+    use rs_cam_mcp::server::WorkspaceParam;
+    match p {
+        WorkspaceParam::Setup => Workspace::Setup,
+        WorkspaceParam::Toolpaths => Workspace::Toolpaths,
+        WorkspaceParam::Simulation => Workspace::Simulation,
+        WorkspaceParam::Readiness => Workspace::Readiness,
     }
 }
 
-/// Inverse of [`parse_workspace`] for the `set_ui_view` JSON echo.
+/// The wire token of a [`Workspace`], for the `set_ui_view` JSON echo.
 fn workspace_key(w: Workspace) -> &'static str {
     match w {
         Workspace::Setup => "setup",

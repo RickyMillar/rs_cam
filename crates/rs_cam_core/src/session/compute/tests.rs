@@ -683,49 +683,87 @@ fn suggest_output_matches_feed_vs_lut_high_diagnostic_recommendation() {
 #[test]
 fn set_tool_param_diameter() {
     let mut s = make_session();
-    let _ = s.set_tool_param(0, "diameter", &json!(6.0)).unwrap();
+    let _ = s
+        .set_tool_param(
+            0,
+            crate::compute::tool_config::ToolParamKey::Diameter,
+            &json!(6.0),
+        )
+        .unwrap();
     assert!((s.tools()[0].diameter - 6.0).abs() < 1e-9);
 }
 
 #[test]
 fn set_tool_param_flute_count() {
     let mut s = make_session();
-    let _ = s.set_tool_param(0, "flute_count", &json!(4)).unwrap();
+    let _ = s
+        .set_tool_param(
+            0,
+            crate::compute::tool_config::ToolParamKey::FluteCount,
+            &json!(4),
+        )
+        .unwrap();
     assert_eq!(s.tools()[0].flute_count, 4);
 }
 
 #[test]
 fn set_tool_param_stickout() {
     let mut s = make_session();
-    let _ = s.set_tool_param(0, "stickout", &json!(25.0)).unwrap();
+    let _ = s
+        .set_tool_param(
+            0,
+            crate::compute::tool_config::ToolParamKey::Stickout,
+            &json!(25.0),
+        )
+        .unwrap();
     assert!((s.tools()[0].stickout - 25.0).abs() < 1e-9);
 }
 
 #[test]
 fn set_tool_param_corner_radius() {
     let mut s = make_session();
-    let _ = s.set_tool_param(0, "corner_radius", &json!(0.5)).unwrap();
+    let _ = s
+        .set_tool_param(
+            0,
+            crate::compute::tool_config::ToolParamKey::CornerRadius,
+            &json!(0.5),
+        )
+        .unwrap();
     assert!((s.tools()[0].corner_radius - 0.5).abs() < 1e-9);
 }
 
 #[test]
 fn set_tool_param_cutting_length() {
     let mut s = make_session();
-    let _ = s.set_tool_param(0, "cutting_length", &json!(20.0)).unwrap();
+    let _ = s
+        .set_tool_param(
+            0,
+            crate::compute::tool_config::ToolParamKey::CuttingLength,
+            &json!(20.0),
+        )
+        .unwrap();
     assert!((s.tools()[0].cutting_length - 20.0).abs() < 1e-9);
 }
 
 #[test]
 fn set_tool_param_invalid_index() {
     let mut s = make_session();
-    let result = s.set_tool_param(99, "diameter", &json!(6.0));
+    let result = s.set_tool_param(
+        99,
+        crate::compute::tool_config::ToolParamKey::Diameter,
+        &json!(6.0),
+    );
     assert!(matches!(result, Err(SessionError::InvalidParam(_))));
 }
 
 #[test]
 fn set_tool_param_wrong_type() {
     let mut s = make_session();
-    let result = s.set_tool_param(0, "diameter", &json!("not a number"));
+    let result = s.set_tool_param(
+        0,
+        crate::compute::tool_config::ToolParamKey::Diameter,
+        &json!("not a number"),
+    );
     assert!(matches!(result, Err(SessionError::InvalidParam(_))));
 }
 
@@ -748,7 +786,13 @@ fn set_tool_param_invalidates_toolpath_results() {
         },
     );
 
-    let _ = s.set_tool_param(0, "diameter", &json!(8.0)).unwrap();
+    let _ = s
+        .set_tool_param(
+            0,
+            crate::compute::tool_config::ToolParamKey::Diameter,
+            &json!(8.0),
+        )
+        .unwrap();
     assert!(!s.results.contains_key(&0));
 }
 

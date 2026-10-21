@@ -9,6 +9,12 @@ run the server; the live server, GUI dispatch and session ownership are in
   a client discovers the legal values from the schema. Mark such an enum
   `#[schemars(inline)]` — the published tool schema carries no `$defs`,
   so a `$ref` does not resolve for a client.
+- A wire enum that mirrors a core enum converts with an exhaustive
+  `match` in BOTH directions (`server.rs`, F166), so a variant that core
+  gains does not compile until the wire carries it. A wire patch of a
+  core struct converts by a full destructure with no `..` on both sides
+  (`SetStockConfigParam` → `StockConfigPatch`, F118). Free text stays a
+  `String`: names, paths, layers, the `material` name, overlay ids.
 - Breaking a wire shape is allowed (operator ruling 2026-09-16, no
   legacy support). State the break in the commit; do not add an alias.
   A `build_info().features` token records a shipped CAPABILITY, not a key

@@ -282,14 +282,14 @@ fn only_the_collector_removes_an_entry_and_only_when_expired() {
 /// needs to assert that the operator was told the truth.
 #[test]
 fn an_mcp_refusal_is_readable_off_the_stack_as_one_warning() {
-    use rs_cam_viz::mcp_bridge::{McpOutcome, mutation_error_json};
+    use rs_cam_viz::mcp_bridge::{McpOutcome, McpReply};
 
     let mut controller = AppController::with_backend(SilentBackend);
-    let reply = mutation_error_json(
+    // F207: the refusal reply states its outcome.
+    let McpReply { outcome, .. } = McpReply::refused(
         "Cannot add toolpath: Scallop Finish needs a ball nose or tapered ball nose tool; this tool is a flat end mill",
         None,
     );
-    let outcome = McpOutcome::from_json_response(&reply);
     assert!(matches!(outcome, McpOutcome::Refused(_)), "{outcome:?}");
 
     controller.push_mcp_outcome("MCP: Added toolpath 'x'".to_owned(), &outcome);

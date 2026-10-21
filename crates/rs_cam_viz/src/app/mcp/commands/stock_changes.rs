@@ -27,7 +27,6 @@ use rs_cam_mcp::server::{
 
 use super::{CoreBefore, CorePlan, CoreReply};
 use crate::app::RsCamApp;
-use crate::mcp_bridge::mutation_error_json;
 
 /// One stock-change row as the MCP read tools print it.
 ///
@@ -247,13 +246,13 @@ fn material_of(
 }
 
 fn refuse((message, field): WireRefusal) -> CorePlan {
-    CorePlan::Answered(mutation_error_json(&message, Some(field)))
+    CorePlan::Answered(CoreReply::refused(&message, Some(field)))
 }
 
 impl RsCamApp {
     /// The stock changes of the setup at `setup_index`, or the refusal
     /// reply that names the index.
-    fn stock_change_setup(&self, setup_index: usize) -> Result<Vec<StockChange>, String> {
+    fn stock_change_setup(&self, setup_index: usize) -> Result<Vec<StockChange>, CoreReply> {
         self.controller
             .state()
             .session
@@ -261,7 +260,7 @@ impl RsCamApp {
             .get(setup_index)
             .map(|setup| setup.stock_changes.clone())
             .ok_or_else(|| {
-                mutation_error_json(
+                CoreReply::refused(
                     &format!("Error: Setup index {setup_index} not found"),
                     Some("setup_index"),
                 )
@@ -335,7 +334,7 @@ impl RsCamApp {
         };
         let change_id = StockChangeId(p.change_id);
         let Some(stored) = stock_changes.iter().find(|c| c.id == change_id) else {
-            return CorePlan::Answered(mutation_error_json(
+            return CorePlan::Answered(CoreReply::refused(
                 &format!(
                     "Error: setup {} carries no stock change with id {}",
                     p.setup_index, p.change_id
@@ -483,7 +482,7 @@ impl RsCamApp {
             .filter(|row| row.setup_index == setup_index)
             .map(stock_change_json)
             .collect();
-        CoreReply::quiet(self.mcp_mutation_result(
+        CoreReply::succeeded(self.mcp_mutation_result(
             format!("{verb} stock change {change_id} in setup {setup_index}"),
             serde_json::json!({
                 "setup_index": setup_index,

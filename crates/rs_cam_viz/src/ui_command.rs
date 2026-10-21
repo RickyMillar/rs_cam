@@ -186,15 +186,15 @@ pub struct ScreenshotGuiArgs {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SetUiViewArgs {
     /// The workspace to show.
-    pub workspace: Option<String>,
+    pub workspace: Option<rs_cam_mcp::server::WorkspaceParam>,
     /// The toolpath to select.
     pub toolpath_index: Option<usize>,
     /// The properties tab to show.
-    pub properties_tab: Option<String>,
+    pub properties_tab: Option<rs_cam_mcp::server::PropertiesTabParam>,
     /// The tree node to select.
-    pub select: Option<String>,
+    pub select: Option<rs_cam_mcp::server::SelectPanelParam>,
     /// The modal to open.
-    pub modal: Option<String>,
+    pub modal: Option<rs_cam_mcp::server::ModalParam>,
     /// The viewport overlays to switch, by registry id.
     pub overlays: Option<std::collections::BTreeMap<String, bool>>,
     /// P4.4 ("Show me"): the items of the selected toolpath to frame and

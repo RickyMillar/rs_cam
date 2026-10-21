@@ -114,6 +114,127 @@ impl Default for StockConfig {
     }
 }
 
+/// A partial edit of a [`StockConfig`] (F118): each `Some` field replaces
+/// the stored value, and each `None` field keeps it.
+///
+/// The MCP `set_stock_config` tool and the CLI job stock top build this
+/// patch. [`Self::apply_to`] merges it onto the current stock, and the
+/// surface then sends the whole result as `Command::SetStockConfig`, so
+/// the one domain check ([`StockConfig::validate`]) runs at the door.
+///
+/// [`Self::apply_to`] destructures [`StockConfig`] with no `..`. A new
+/// stock field is therefore a compile error here until someone decides
+/// whether the patch carries it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct StockConfigPatch {
+    /// The X edge length, mm.
+    pub x: Option<f64>,
+    /// The Y edge length, mm.
+    pub y: Option<f64>,
+    /// The Z edge length (the thickness), mm.
+    pub z: Option<f64>,
+    /// The X of the min corner, mm.
+    pub origin_x: Option<f64>,
+    /// The Y of the min corner, mm.
+    pub origin_y: Option<f64>,
+    /// The Z of the min corner (the stock bottom), mm.
+    pub origin_z: Option<f64>,
+    /// The margin `update_from_bbox` adds on each side of the model, mm.
+    pub padding: Option<f64>,
+    /// The stock material.
+    pub material: Option<crate::material::Material>,
+    /// Auto-fit the stock to the model bounding box. `None` follows the
+    /// rule in [`Self::apply_to`].
+    pub auto_from_model: Option<bool>,
+}
+
+/// What [`StockConfigPatch::apply_to`] changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StockPatchReport {
+    /// The geometry fields the patch wrote (`x` .. `origin_z`), in field
+    /// order. A material or padding edit is not geometry.
+    pub geometry_set: Vec<&'static str>,
+    /// `auto_from_model` before the patch.
+    pub auto_from_model_was: bool,
+    /// `auto_from_model` after the patch.
+    pub auto_from_model: bool,
+}
+
+impl StockConfigPatch {
+    /// Merge this patch onto `stock`.
+    ///
+    /// The auto-fit rule (gap 2, 2026-08-19 run log): an explicit
+    /// dimension or origin is a statement about the physical stock on the
+    /// bed, so a patch that sets one and does not state `auto_from_model`
+    /// clears the flag. `padding` is an input of the auto-fit rule, not a
+    /// statement about the stock, so it does not clear the flag. An
+    /// explicit `auto_from_model` always wins.
+    ///
+    /// The merge writes no domain check. The door of `SetStockConfig`
+    /// refuses a value outside its domain.
+    pub fn apply_to(&self, stock: &mut StockConfig) -> StockPatchReport {
+        let Self {
+            x: patch_x,
+            y: patch_y,
+            z: patch_z,
+            origin_x: patch_origin_x,
+            origin_y: patch_origin_y,
+            origin_z: patch_origin_z,
+            padding: patch_padding,
+            material: patch_material,
+            auto_from_model: patch_auto,
+        } = self;
+        let StockConfig {
+            x,
+            y,
+            z,
+            origin_x,
+            origin_y,
+            origin_z,
+            auto_from_model,
+            padding,
+            material,
+            // The pins have their own rows (`set_alignment_pins`,
+            // `add_alignment_pin`, `remove_alignment_pin`).
+            alignment_pins: _,
+            // The pin part models have their own row (`SetPinPartModels`).
+            pin_part_models: _,
+        } = stock;
+
+        let mut geometry_set = Vec::new();
+        for (name, value, target) in [
+            ("x", *patch_x, x),
+            ("y", *patch_y, y),
+            ("z", *patch_z, z),
+            ("origin_x", *patch_origin_x, origin_x),
+            ("origin_y", *patch_origin_y, origin_y),
+            ("origin_z", *patch_origin_z, origin_z),
+        ] {
+            if let Some(v) = value {
+                *target = v;
+                geometry_set.push(name);
+            }
+        }
+        if let Some(v) = patch_padding {
+            *padding = *v;
+        }
+        if let Some(m) = patch_material {
+            *material = m.clone();
+        }
+        let auto_from_model_was = *auto_from_model;
+        *auto_from_model = match patch_auto {
+            Some(explicit) => *explicit,
+            None if !geometry_set.is_empty() => false,
+            None => auto_from_model_was,
+        };
+        StockPatchReport {
+            geometry_set,
+            auto_from_model_was,
+            auto_from_model: *auto_from_model,
+        }
+    }
+}
+
 impl StockConfig {
     /// F210 (W6b): check every numeric field against
     /// [`crate::compute::stock_domain::StockDimension::domain`].
@@ -337,5 +458,40 @@ mod tests {
         assert!((stock.y - 50.0).abs() < 1e-9); // 40 + 2*5
         assert!((stock.z - 15.0).abs() < 1e-9); // 10 + 5
         assert!((stock.origin_z - 0.0).abs() < 1e-9);
+    }
+
+    /// F118: a patch writes only its `Some` fields, `padding` included,
+    /// and a geometry write clears auto-fit unless the patch states it.
+    #[test]
+    fn a_stock_patch_writes_only_its_fields() {
+        let mut stock = StockConfig::default();
+        let before = stock.clone();
+        let report = StockConfigPatch {
+            padding: Some(2.0),
+            ..StockConfigPatch::default()
+        }
+        .apply_to(&mut stock);
+        assert!((stock.padding - 2.0).abs() < 1e-12);
+        assert!(report.geometry_set.is_empty());
+        assert_eq!(stock.auto_from_model, before.auto_from_model);
+        assert_eq!(stock.x.to_bits(), before.x.to_bits());
+
+        let report = StockConfigPatch {
+            x: Some(80.0),
+            origin_z: Some(-10.0),
+            ..StockConfigPatch::default()
+        }
+        .apply_to(&mut stock);
+        assert_eq!(report.geometry_set, vec!["x", "origin_z"]);
+        assert!(report.auto_from_model_was);
+        assert!(!stock.auto_from_model);
+
+        let _ = StockConfigPatch {
+            z: Some(12.0),
+            auto_from_model: Some(true),
+            ..StockConfigPatch::default()
+        }
+        .apply_to(&mut stock);
+        assert!(stock.auto_from_model, "an explicit flag wins");
     }
 }

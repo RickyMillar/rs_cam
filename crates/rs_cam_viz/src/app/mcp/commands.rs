@@ -51,12 +51,11 @@ use rs_cam_core::session::{
 };
 
 use rs_cam_mcp::server::{
-    BuiltTool, build_tool_config, coerce_json_container_string, json_str, parse_operation_type,
-    resolve_material, text,
+    BuiltTool, build_tool_config, coerce_json_container_string, json_str, text,
 };
 
 use crate::app::RsCamApp;
-use crate::mcp_bridge::{CoreRequest, McpOutcome, mutation_error_json};
+use crate::mcp_bridge::{CoreRequest, McpOutcome};
 use crate::state::selection::Selection;
 use crate::ui::AppEvent;
 use crate::ui_command::UiCommand;
@@ -172,29 +171,13 @@ pub(crate) enum CorePlan {
     /// the write is a command the dispatch applies.
     ApplyPair(Command, Command, Box<CoreBefore>),
     /// The surface answered without a mutation: a refusal, or a value the
-    /// session already carries.
-    Answered(String),
+    /// session already carries. The reply states its own outcome.
+    Answered(CoreReply),
 }
 
-/// The describe step's answer.
-pub(crate) struct CoreReply {
-    /// The wire reply.
-    pub reply: String,
-    /// How the toast classifies the outcome, when the reply cannot say.
-    /// A JSON reply classifies itself; a plain-text reply cannot, so its
-    /// row states the answer.
-    pub outcome: Option<McpOutcome>,
-}
-
-impl CoreReply {
-    /// A reply that leaves the outcome to the reply document.
-    fn quiet(reply: String) -> Self {
-        Self {
-            reply,
-            outcome: None,
-        }
-    }
-}
+/// The describe step's answer, and the answer of a plan that applies
+/// nothing: a reply that states its outcome (F207).
+pub(crate) type CoreReply = crate::mcp_bridge::McpReply;
 
 impl RsCamApp {
     /// Put the operator's screen on the object the command is about.
@@ -279,7 +262,7 @@ impl RsCamApp {
                 let tools = self.controller.state().session.list_tools();
                 let tool_id = tools.get(p.index).map(|t| t.id.0);
                 if let Some(tool_id) = tool_id {
-                    self.mcp_highlight(format!("tool_{tool_id}_{}", p.param));
+                    self.mcp_highlight(format!("tool_{tool_id}_{}", p.param.token()));
                     self.controller.state_mut().selection = Selection::Tool(ToolId(tool_id));
                 }
             }
@@ -429,30 +412,14 @@ impl RsCamApp {
             CoreRequest::SetSetupFace(p) => {
                 let setups = self.controller.state().session.list_setups();
                 if setups.get(p.setup_index).is_none() {
-                    return CorePlan::Answered(mutation_error_json(
+                    return CorePlan::Answered(CoreReply::refused(
                         &format!("Error: Setup index {} not found", p.setup_index),
                         None,
                     ));
                 }
-                let face = match p.face_up.to_lowercase().as_str() {
-                    "top" => FaceUp::Top,
-                    "bottom" => FaceUp::Bottom,
-                    "front" => FaceUp::Front,
-                    "back" => FaceUp::Back,
-                    "left" => FaceUp::Left,
-                    "right" => FaceUp::Right,
-                    _ => {
-                        return CorePlan::Answered(mutation_error_json(
-                            &format!(
-                                "Error: Unknown face '{}'. Use: top, bottom, front, back, left, right",
-                                p.face_up
-                            ),
-                            Some("face_up"),
-                        ));
-                    }
-                };
+                let face = FaceUp::from(p.face_up);
                 before.index = Some(p.setup_index);
-                before.extra = serde_json::json!({ "face_up": p.face_up.to_lowercase() });
+                before.extra = serde_json::json!({ "face_up": p.face_up.token() });
                 CorePlan::Apply(
                     Command::SetSetupFace(SetSetupFaceArgs {
                         setup_index: p.setup_index,
@@ -464,7 +431,7 @@ impl RsCamApp {
             CoreRequest::SetSetupRotation(p) => {
                 let setups = self.controller.state().session.list_setups();
                 if setups.get(p.setup_index).is_none() {
-                    return CorePlan::Answered(mutation_error_json(
+                    return CorePlan::Answered(CoreReply::refused(
                         &format!("Error: Setup index {} not found", p.setup_index),
                         None,
                     ));
@@ -486,13 +453,13 @@ impl RsCamApp {
             CoreRequest::MoveToolpathToSetup(p) => {
                 let session = &self.controller.state().session;
                 if session.toolpath_configs().get(p.toolpath_index).is_none() {
-                    return CorePlan::Answered(mutation_error_json(
+                    return CorePlan::Answered(CoreReply::refused(
                         &format!("Error: Toolpath index {} not found", p.toolpath_index),
                         None,
                     ));
                 }
                 if session.list_setups().get(p.target_setup_index).is_none() {
-                    return CorePlan::Answered(mutation_error_json(
+                    return CorePlan::Answered(CoreReply::refused(
                         &format!("Error: Setup index {} not found", p.target_setup_index),
                         None,
                     ));
@@ -563,13 +530,16 @@ impl RsCamApp {
             }
             CoreRequest::SetToolParam(p) => {
                 let value = coerce_json_container_string(p.value);
+                // F118: the wire key is a `ToolParamKeyParam`; the row
+                // carries its core token.
+                let param = p.param.token();
                 before.index = Some(p.index);
-                before.field = Some(p.param.clone());
-                before.display_name = Some(p.param.clone());
+                before.field = Some(param.to_owned());
+                before.display_name = Some(param.to_owned());
                 CorePlan::Apply(
                     Command::SetToolParam(SetToolParamArgs {
                         index: p.index,
-                        param: p.param,
+                        param: param.to_owned(),
                         value,
                     }),
                     Box::new(before),
@@ -605,7 +575,7 @@ impl RsCamApp {
                     .get_toolpath_config(p.index)
                     .map(|tc| tc.heights.clone())
                 else {
-                    return CorePlan::Answered(mutation_error_json(
+                    return CorePlan::Answered(CoreReply::refused(
                         &format!("Error: toolpath index {} not found", p.index),
                         None,
                     ));
@@ -705,16 +675,14 @@ impl RsCamApp {
                 let shoe = match (p.mode, p.gap_mm) {
                     (ShoeModeParam::Gap, Some(gap_mm)) => ShoeSetting::Gap { gap_mm },
                     (ShoeModeParam::Gap, None) => {
-                        return CorePlan::Answered(json_str(serde_json::json!({
-                            "ok": false,
-                            "error": "mode `gap` needs `gap_mm`",
-                        })));
+                        return CorePlan::Answered(CoreReply::error_document(
+                            "mode `gap` needs `gap_mm`",
+                        ));
                     }
                     (_, Some(_)) => {
-                        return CorePlan::Answered(json_str(serde_json::json!({
-                            "ok": false,
-                            "error": "`gap_mm` is only for mode `gap`",
-                        })));
+                        return CorePlan::Answered(CoreReply::error_document(
+                            "`gap_mm` is only for mode `gap`",
+                        ));
                     }
                     (ShoeModeParam::Auto, None) => ShoeSetting::Auto,
                     (ShoeModeParam::Raised, None) => ShoeSetting::Raised,
@@ -735,13 +703,10 @@ impl RsCamApp {
                 let profile = match rs_cam_core::io::machine_library::load(&p.name) {
                     Ok(profile) => profile,
                     Err(e) => {
-                        return CorePlan::Answered(json_str(serde_json::json!({
-                            "ok": false,
-                            "error": format!(
-                                "could not load machine '{}' from the library: {e}",
-                                p.name
-                            ),
-                        })));
+                        return CorePlan::Answered(CoreReply::error_document(format!(
+                            "could not load machine '{}' from the library: {e}",
+                            p.name
+                        )));
                     }
                 };
                 before.display_name = Some(profile.name.clone());
@@ -754,22 +719,7 @@ impl RsCamApp {
                 )
             }
             CoreRequest::SetSpindleStrategy(p) => {
-                let parsed = match p.strategy.as_str() {
-                    "match_chart" | "MatchChart" | "matchchart" => {
-                        rs_cam_core::feeds::SpindleStrategy::MatchChart
-                    }
-                    "max_speed" | "MaxSpeed" | "maxspeed" => {
-                        rs_cam_core::feeds::SpindleStrategy::MaxSpeed
-                    }
-                    other => {
-                        return CorePlan::Answered(mutation_error_json(
-                            &format!(
-                                "Error: unknown spindle_strategy '{other}'. Expected 'match_chart' or 'max_speed'."
-                            ),
-                            Some("spindle_strategy"),
-                        ));
-                    }
-                };
+                let parsed = rs_cam_core::feeds::SpindleStrategy::from(p.strategy);
                 if self
                     .controller
                     .state()
@@ -778,18 +728,18 @@ impl RsCamApp {
                     .spindle_strategy
                     == parsed
                 {
-                    let strategy = &p.strategy;
-                    return CorePlan::Answered(self.mcp_mutation_result(
+                    let strategy = p.strategy.token();
+                    return CorePlan::Answered(CoreReply::succeeded(self.mcp_mutation_result(
                         format!("Spindle policy already set to '{strategy}'; no change."),
                         serde_json::json!({ "spindle_strategy": strategy, "changed": false }),
                         Vec::new(),
                         &before.diagnostics,
-                    ));
+                    )));
                 }
                 let mut post = self.controller.state().session.post_config().clone();
                 post.spindle_strategy = parsed;
-                before.display_name = Some(p.strategy.clone());
-                before.extra = serde_json::json!({ "spindle_strategy": p.strategy });
+                before.display_name = Some(p.strategy.token().to_owned());
+                before.extra = serde_json::json!({ "spindle_strategy": p.strategy.token() });
                 CorePlan::Apply(
                     Command::SetPostConfig(SetPostConfigArgs {
                         post: Box::new(post),
@@ -803,7 +753,7 @@ impl RsCamApp {
                 let dressups: DressupConfig = match serde_json::from_value(p.dressup) {
                     Ok(dc) => dc,
                     Err(e) => {
-                        return CorePlan::Answered(mutation_error_json(
+                        return CorePlan::Answered(CoreReply::refused(
                             &format!("Error: Invalid dressup config: {e}"),
                             None,
                         ));
@@ -866,17 +816,14 @@ impl RsCamApp {
         p: rs_cam_mcp::server::AddToolpathParam,
         mut before: CoreBefore,
     ) -> CorePlan {
-        let op_type = match parse_operation_type(&p.operation_type) {
-            Ok(ot) => ot,
-            Err(e) => return CorePlan::Answered(mutation_error_json(&format!("Error: {e}"), None)),
-        };
+        let op_type = rs_cam_core::compute::catalog::OperationType::from(p.operation_type);
 
         let session = &self.controller.state().session;
         let tools = session.list_tools();
         let tool_raw_id = match tools.get(p.tool_index) {
             Some(info) => info.id.0,
             None => {
-                return CorePlan::Answered(mutation_error_json(
+                return CorePlan::Answered(CoreReply::refused(
                     &format!("Error: Tool index {} not found", p.tool_index),
                     None,
                 ));
@@ -897,7 +844,7 @@ impl RsCamApp {
         // New toolpaths get recommended feeds written in once; after that,
         // fields are always user-owned.
         let Some(tool) = session.tools().iter().find(|t| t.id.0 == tool_raw_id) else {
-            return CorePlan::Answered(mutation_error_json(
+            return CorePlan::Answered(CoreReply::refused(
                 &format!("Error: Tool index {} not found", p.tool_index),
                 None,
             ));
@@ -942,7 +889,7 @@ impl RsCamApp {
                     )
                 }
                 Err(e) => {
-                    return CorePlan::Answered(mutation_error_json(
+                    return CorePlan::Answered(CoreReply::refused(
                         &format!("Cannot add toolpath: {e}"),
                         None,
                     ));
@@ -1011,7 +958,7 @@ impl RsCamApp {
             defaulted,
         } = match build_tool_config(spec) {
             Ok(built) => built,
-            Err(e) => return CorePlan::Answered(mutation_error_json(&format!("Error: {e}"), None)),
+            Err(e) => return CorePlan::Answered(CoreReply::refused(&format!("Error: {e}"), None)),
         };
 
         let taken: Vec<u32> = self
@@ -1033,7 +980,8 @@ impl RsCamApp {
 
         before.display_name = Some(spec.name.clone());
         before.extra = serde_json::json!({
-            "tool_type": spec.tool_type.clone(),
+            "tool_type": rs_cam_core::compute::tool_config::ToolType::from(spec.tool_type)
+                .serde_token(),
             "diameter": spec.diameter,
             "tool_number": tool_number,
             "tool_number_conflict": conflict,
@@ -1059,10 +1007,10 @@ impl RsCamApp {
         use rs_cam_core::io::tool_library;
         let cat = match tool_library::load_library(&p.catalog) {
             Ok(c) => c,
-            Err(e) => return CorePlan::Answered(mutation_error_json(&format!("Error: {e}"), None)),
+            Err(e) => return CorePlan::Answered(CoreReply::refused(&format!("Error: {e}"), None)),
         };
         let Some(mut tool) = cat.tools.get(p.index).cloned() else {
-            return CorePlan::Answered(mutation_error_json(
+            return CorePlan::Answered(CoreReply::refused(
                 &format!(
                     "Error: catalog '{}' has no tool at index {} (has {} tools)",
                     p.catalog,
@@ -1123,99 +1071,38 @@ impl RsCamApp {
 impl RsCamApp {
     /// Build the `set_stock_config` command from an all-optional patch.
     ///
-    /// **Gap 2 (2026-08-19 run log): setting a dimension explicitly
-    /// clears `auto_from_model`.** An explicit dimension is an assertion
-    /// about the physical stock on the bed, and auto-fit is a *sizing*
-    /// convenience that has no business overwriting one. The reply
-    /// reports the flag either way.
+    /// F118: the wire struct converts to the core
+    /// [`rs_cam_core::compute::stock_config::StockConfigPatch`], and the
+    /// patch merges onto the current stock. The patch owns the auto-fit
+    /// rule (gap 2, 2026-08-19 run log: an explicit dimension clears
+    /// `auto_from_model`), so the CLI job and this tool give the same
+    /// stock. The core door checks the domain of the result
+    /// (`StockConfig::validate`); this surface adds no second check.
     ///
-    /// Everything that can fail resolves BEFORE anything is written: a
-    /// half-applied stock config is worse than a refusal.
+    /// The material resolves BEFORE anything is written: a half-applied
+    /// stock config is worse than a refusal.
     fn core_set_stock_config(
         &mut self,
         spec: &rs_cam_mcp::server::SetStockConfigParam,
         mut before: CoreBefore,
     ) -> CorePlan {
-        let material = match spec.material.as_deref() {
-            Some(name) => match resolve_material(name) {
-                Ok(m) => Some(m),
+        let patch =
+            match rs_cam_core::compute::stock_config::StockConfigPatch::try_from(spec.clone()) {
+                Ok(patch) => patch,
                 Err(e) => {
-                    return CorePlan::Answered(mutation_error_json(
+                    return CorePlan::Answered(CoreReply::refused(
                         &format!("Error: {e}"),
                         Some("material"),
                     ));
                 }
-            },
-            None => None,
-        };
-        for (label, value) in [("x", spec.x), ("y", spec.y), ("z", spec.z)] {
-            if let Some(v) = value
-                && (!v.is_finite() || v <= 0.0)
-            {
-                return CorePlan::Answered(mutation_error_json(
-                    &format!("Error: stock {label} must be a positive number of mm (got {v})."),
-                    Some(label),
-                ));
-            }
-        }
-        for (label, value) in [
-            ("origin_x", spec.origin_x),
-            ("origin_y", spec.origin_y),
-            ("origin_z", spec.origin_z),
-        ] {
-            if let Some(v) = value
-                && !v.is_finite()
-            {
-                return CorePlan::Answered(mutation_error_json(
-                    &format!("Error: stock {label} must be a finite number of mm (got {v})."),
-                    Some(label),
-                ));
-            }
-        }
-
+            };
         let mut stock = self.controller.state().session.stock_config().clone();
-        let auto_before = stock.auto_from_model;
-
-        let mut geometry_set: Vec<&'static str> = Vec::new();
-        if let Some(v) = spec.x {
-            stock.x = v;
-            geometry_set.push("x");
-        }
-        if let Some(v) = spec.y {
-            stock.y = v;
-            geometry_set.push("y");
-        }
-        if let Some(v) = spec.z {
-            stock.z = v;
-            geometry_set.push("z");
-        }
-        if let Some(v) = spec.origin_x {
-            stock.origin_x = v;
-            geometry_set.push("origin_x");
-        }
-        if let Some(v) = spec.origin_y {
-            stock.origin_y = v;
-            geometry_set.push("origin_y");
-        }
-        if let Some(v) = spec.origin_z {
-            stock.origin_z = v;
-            geometry_set.push("origin_z");
-        }
-        if let Some(m) = material {
-            stock.material = m;
-        }
-
-        let auto_after = match spec.auto_from_model {
-            Some(explicit) => explicit,
-            None if !geometry_set.is_empty() => false,
-            None => auto_before,
-        };
-        stock.auto_from_model = auto_after;
+        let report = patch.apply_to(&mut stock);
 
         before.extra = serde_json::json!({
-            "auto_from_model": auto_after,
-            "auto_from_model_was": auto_before,
-            "fields_set": geometry_set,
+            "auto_from_model": report.auto_from_model,
+            "auto_from_model_was": report.auto_from_model_was,
+            "fields_set": report.geometry_set,
         });
         CorePlan::Apply(
             Command::SetStockConfig(SetStockConfigArgs {
@@ -1263,10 +1150,9 @@ impl RsCamApp {
             if let Some(v) = value
                 && (!v.is_finite() || v <= 0.0)
             {
-                return CorePlan::Answered(json_str(serde_json::json!({
-                    "ok": false,
-                    "error": format!("{label} must be a positive, finite number (got {v})."),
-                })));
+                return CorePlan::Answered(CoreReply::error_document(format!(
+                    "{label} must be a positive, finite number (got {v})."
+                )));
             }
         }
 
@@ -1285,13 +1171,12 @@ impl RsCamApp {
             (None, None, None) => {}
             (ax, ay, az) => {
                 let Some(existing) = kin.acceleration_xyz_mm_s2 else {
-                    return CorePlan::Answered(json_str(serde_json::json!({
-                        "ok": false,
-                        "error": "A partial per-axis acceleration set was given, but this machine \
+                    return CorePlan::Answered(CoreReply::error_document(
+                        "A partial per-axis acceleration set was given, but this machine \
                                   has no per-axis limits yet to patch. Pass all three of \
                                   acceleration_x_mm_s2 / _y_ / _z_, or set the isotropic \
                                   acceleration_mm_s2 instead. Nothing was written.",
-                    })));
+                    ));
                 };
                 let [mut ex, mut ey, mut ez] = existing;
                 if let Some(v) = ax {
@@ -1321,12 +1206,11 @@ impl RsCamApp {
             (None, None, None) => {}
             (rx, ry, rz) => {
                 let Some(existing) = kin.max_rate_xyz_mm_min else {
-                    return CorePlan::Answered(json_str(serde_json::json!({
-                        "ok": false,
-                        "error": "A partial per-axis max-rate set was given, but this machine has \
+                    return CorePlan::Answered(CoreReply::error_document(
+                        "A partial per-axis max-rate set was given, but this machine has \
                                   no per-axis rates yet to patch. Pass all three of \
                                   max_rate_x_mm_min / _y_ / _z_. Nothing was written.",
-                    })));
+                    ));
                 };
                 let [mut ex, mut ey, mut ez] = existing;
                 if let Some(v) = rx {
@@ -1390,9 +1274,7 @@ impl RsCamApp {
     ) -> CorePlan {
         use rs_cam_core::machine::head::{HeadPart, MachineHead, PartKind, ShoeTravel};
         use rs_cam_mcp::server::{HeadPartKindParam, HeadPresetParam};
-        let refuse = |error: String| {
-            CorePlan::Answered(json_str(serde_json::json!({ "ok": false, "error": error })))
-        };
+        let refuse = |error: String| CorePlan::Answered(CoreReply::error_document(error));
         let parts = |wire: &[rs_cam_mcp::server::HeadPartParam]| -> Vec<HeadPart> {
             wire.iter()
                 .map(|p| HeadPart {
@@ -1471,11 +1353,10 @@ impl RsCamApp {
         use rs_cam_core::machine::kinematics::MachineKinematics;
         let imp = MachineKinematics::from_grbl_settings(&p.dump);
         if !imp.is_recognized() {
-            return CorePlan::Answered(json_str(serde_json::json!({
-                "ok": false,
-                "error": "No GRBL settings recognised in the dump (expected $N=value lines, \
-                          e.g. $11=…, $120=…).",
-            })));
+            return CorePlan::Answered(CoreReply::error_document(
+                "No GRBL settings recognised in the dump (expected $N=value lines, \
+                 e.g. $11=…, $120=…).",
+            ));
         }
 
         let prev_max_feed = self.controller.state().session.machine().max_feed_mm_min;
@@ -1527,10 +1408,11 @@ impl RsCamApp {
         p: &rs_cam_mcp::server::SetBoundaryConfigParam,
         mut before: CoreBefore,
     ) -> CorePlan {
-        let boundary_source = match p.source.as_deref() {
-            Some("stock") | None => BoundarySource::Stock,
-            Some("model_silhouette") => BoundarySource::ModelSilhouette,
-            Some("selection") => {
+        use rs_cam_mcp::server::BoundarySourceParam;
+        let boundary_source = match p.source {
+            Some(BoundarySourceParam::Stock) | None => BoundarySource::Stock,
+            Some(BoundarySourceParam::ModelSilhouette) => BoundarySource::ModelSilhouette,
+            Some(BoundarySourceParam::Selection) => {
                 let session = &self.controller.state().session;
                 let known: Vec<String> = session
                     .models()
@@ -1538,7 +1420,7 @@ impl RsCamApp {
                     .map(|m| format!("{} ('{}')", m.id, m.name))
                     .collect();
                 let Some(raw) = p.selection.clone() else {
-                    return CorePlan::Answered(mutation_error_json(
+                    return CorePlan::Answered(CoreReply::refused(
                         &format!(
                             "Error: 'selection' requires selection — the rules and picks \
                              whose closed regions bound the toolpath, for example \
@@ -1564,7 +1446,7 @@ impl RsCamApp {
                     | rs_cam_core::selection::SourceRef::Stock => None,
                 });
                 if let Some(model_id) = missing {
-                    return CorePlan::Answered(mutation_error_json(
+                    return CorePlan::Answered(CoreReply::refused(
                         &format!(
                             "Error: the selection reads model id {model_id}, which does not \
                              match any model in this project. Project models: [{}].",
@@ -1578,9 +1460,9 @@ impl RsCamApp {
                     holes: p.holes.unwrap_or(false),
                 }
             }
-            Some("derived_rest_regions") => {
+            Some(BoundarySourceParam::DerivedRestRegions) => {
                 let Some(raw_id) = p.source_toolpath_id else {
-                    return CorePlan::Answered(mutation_error_json(
+                    return CorePlan::Answered(CoreReply::refused(
                         "Error: 'derived_rest_regions' requires source_toolpath_id — the id \
                          of the toolpath whose REST ANALYSIS supplies the boundary \
                          regions (see get_toolpath_params's 'id' field). Any \
@@ -1597,7 +1479,7 @@ impl RsCamApp {
                     .find_toolpath_config_by_id(source_id)
                     .is_none()
                 {
-                    return CorePlan::Answered(mutation_error_json(
+                    return CorePlan::Answered(CoreReply::refused(
                         &format!(
                             "Error: source_toolpath_id {raw_id} does not match any \
                              toolpath in this project."
@@ -1609,30 +1491,11 @@ impl RsCamApp {
                     source_toolpath_id: source_id,
                 }
             }
-            Some(other) => {
-                return CorePlan::Answered(mutation_error_json(
-                    &format!(
-                        "Error: Unknown boundary source '{other}'. Use 'stock', \
-                         'model_silhouette', 'selection', or 'derived_rest_regions'."
-                    ),
-                    Some("source"),
-                ));
-            }
         };
 
-        let boundary_containment = match p.containment.as_deref() {
-            Some("center") | None => BoundaryContainment::Center,
-            Some("inside") => BoundaryContainment::Inside,
-            Some("outside") => BoundaryContainment::Outside,
-            Some(other) => {
-                return CorePlan::Answered(mutation_error_json(
-                    &format!(
-                        "Error: Unknown containment '{other}'. Use 'center', 'inside', or 'outside'."
-                    ),
-                    Some("containment"),
-                ));
-            }
-        };
+        let boundary_containment = p
+            .containment
+            .map_or(BoundaryContainment::Center, BoundaryContainment::from);
 
         let boundary = BoundaryConfig {
             enabled: p.enabled,
@@ -1669,7 +1532,7 @@ impl RsCamApp {
                     .iter()
                     .any(|t| t.id == tool_id)
                 {
-                    return CorePlan::Answered(mutation_error_json(
+                    return CorePlan::Answered(CoreReply::refused(
                         &format!(
                             "Error: reference_tool_id {raw_id} does not match any tool in \
                              this project."
@@ -1776,7 +1639,7 @@ impl RsCamApp {
             )),
             CoreRequest::SetSetupFace(p) => {
                 let setup_index = p.setup_index;
-                let face_up = &p.face_up;
+                let face_up = p.face_up.token();
                 Some(format!("MCP: Set setup {setup_index} face to '{face_up}'"))
             }
             CoreRequest::SetSetupRotation(p) => {
@@ -1818,7 +1681,7 @@ impl RsCamApp {
                 Some(format!("MCP: Set {param} = {value_str} on '{tp_name}'"))
             }
             CoreRequest::SetToolParam(p) => {
-                let param = &p.param;
+                let param = p.param.token();
                 let value_str = display_value(&p.value);
                 let tools = self.controller.state().session.list_tools();
                 let tool_name = tools
@@ -1838,8 +1701,10 @@ impl RsCamApp {
             }
             CoreRequest::AddToolpath(p) => {
                 // The request's own words: its `name` when it gave one,
-                // and its `operation_type` string when it did not.
-                let display_name = p.name.as_deref().unwrap_or(&p.operation_type);
+                // and its `operation_type` token when it did not.
+                let display_name = p.name.as_deref().unwrap_or(
+                    rs_cam_core::compute::catalog::OperationType::from(p.operation_type).kind_str(),
+                );
                 Some(format!("MCP: Added toolpath '{display_name}'"))
             }
             CoreRequest::RemoveToolpath(p) => {
@@ -1923,26 +1788,23 @@ impl RsCamApp {
             // index where an id was wanted needs the list, not just the
             // refusal. Only for the tool arm: a bad toolpath index is a
             // different mistake and the tool list would be noise.
-            CommandId::SetToolpathTool => {
-                let reply = match error {
-                    SessionError::ToolNotFound(_) => {
-                        let ids: Vec<usize> = self
-                            .controller
-                            .state()
-                            .session
-                            .tools()
-                            .iter()
-                            .map(|t| t.id.0)
-                            .collect();
-                        mutation_error_json(
-                            &format!("Error: {error}. Tool ids in this project: {ids:?}"),
-                            Some("tool_id"),
-                        )
-                    }
-                    _ => mutation_error_json(&format!("Error: {error}"), Some("index")),
-                };
-                CoreReply::quiet(reply)
-            }
+            CommandId::SetToolpathTool => match error {
+                SessionError::ToolNotFound(_) => {
+                    let ids: Vec<usize> = self
+                        .controller
+                        .state()
+                        .session
+                        .tools()
+                        .iter()
+                        .map(|t| t.id.0)
+                        .collect();
+                    CoreReply::refused(
+                        &format!("Error: {error}. Tool ids in this project: {ids:?}"),
+                        Some("tool_id"),
+                    )
+                }
+                _ => CoreReply::refused(&format!("Error: {error}"), Some("index")),
+            },
             // The core setter's own refusal already lists the model ids
             // that exist, so nothing is appended here.
             CommandId::SetToolpathModel => {
@@ -1950,10 +1812,10 @@ impl RsCamApp {
                     SessionError::ModelNotFound { .. } => "model_id",
                     _ => "index",
                 };
-                CoreReply::quiet(mutation_error_json(
+                CoreReply::refused(
                     &format!("Error: {error}"),
                     Some(refused_field),
-                ))
+                )
             }
             // A save answers in plain text, so its refusal does too. The
             // sentence carried "Save failed" twice until WP20, because
@@ -1965,7 +1827,7 @@ impl RsCamApp {
             // outcome.
             CommandId::SaveProject => CoreReply {
                 reply: text(format!("Save failed: {error}")),
-                outcome: Some(McpOutcome::Refused(format!("Save failed: {error}"))),
+                outcome: McpOutcome::Refused(format!("Save failed: {error}")),
             },
             CommandId::AddModel
             | CommandId::AdoptModelGeometry
@@ -2049,7 +1911,7 @@ impl RsCamApp {
             | CommandId::UpdateStockFromBbox
             | CommandId::ReplaceTools
             | CommandId::SetFeedsProvenance => {
-                CoreReply::quiet(mutation_error_json(&format!("Error: {error}"), field))
+                CoreReply::refused(&format!("Error: {error}"), field)
             }
         }
     }
@@ -2212,7 +2074,7 @@ impl RsCamApp {
                         });
                     }
                 }
-                CoreReply::quiet(json_str(resp))
+                CoreReply::succeeded(json_str(resp))
             }
             CommandId::AddSetup => {
                 let index = effects.created.unwrap_or_default();
@@ -2224,10 +2086,10 @@ impl RsCamApp {
                     .get(index)
                     .map(|s| (s.id, s.name.clone()));
                 let Some((setup_id, name)) = setup else {
-                    return CoreReply::quiet(mutation_error_json(
+                    return CoreReply::refused(
                         "Error: Failed to add setup",
                         None,
-                    ));
+                    );
                 };
                 // The GUI's own add door selects the new setup; the MCP
                 // route takes the same step.
@@ -2244,14 +2106,14 @@ impl RsCamApp {
                     Vec::new(),
                     &before.diagnostics,
                 );
-                CoreReply::quiet(reply)
+                CoreReply::succeeded(reply)
             }
             // GUI-only row: no MCP tool constructs it. Keep the exhaustive
             // command-reply match honest if that surface changes later.
-            CommandId::RemoveSetup => CoreReply::quiet(mutation_error_json(
+            CommandId::RemoveSetup => CoreReply::refused(
                 "Error: remove_setup is available from the GUI only",
                 None,
-            )),
+            ),
             CommandId::SetSetupFace => {
                 self.controller.state_mut().gui.mark_edited();
                 self.controller.set_pending_upload();
@@ -2267,7 +2129,7 @@ impl RsCamApp {
                     stale,
                     &before.diagnostics,
                 );
-                CoreReply::quiet(reply)
+                CoreReply::succeeded(reply)
             }
             CommandId::SetSetupRotation => {
                 self.controller.state_mut().gui.mark_edited();
@@ -2287,7 +2149,7 @@ impl RsCamApp {
                     stale,
                     &before.diagnostics,
                 );
-                CoreReply::quiet(reply)
+                CoreReply::succeeded(reply)
             }
             CommandId::MoveToolpathToSetup => {
                 // §15 ruling 5: the move runs BEFORE the reply now, so
@@ -2312,7 +2174,7 @@ impl RsCamApp {
                     stale,
                     &before.diagnostics,
                 );
-                CoreReply::quiet(reply)
+                CoreReply::succeeded(reply)
             }
             CommandId::SaveProject => {
                 let path = before.display_name();
@@ -2320,7 +2182,7 @@ impl RsCamApp {
                 self.controller.state_mut().gui.dirty = false;
                 CoreReply {
                     reply: text(format!("Project saved to {path}")),
-                    outcome: Some(McpOutcome::Succeeded),
+                    outcome: McpOutcome::Succeeded,
                 }
             }
             CommandId::SetToolpathParam => {
@@ -2348,7 +2210,7 @@ impl RsCamApp {
                     stale,
                     &before.diagnostics,
                 );
-                CoreReply::quiet(reply)
+                CoreReply::succeeded(reply)
             }
             CommandId::SetToolParam => {
                 self.controller.state_mut().gui.mark_edited();
@@ -2372,7 +2234,7 @@ impl RsCamApp {
                     stale,
                     &before.diagnostics,
                 );
-                CoreReply::quiet(reply)
+                CoreReply::succeeded(reply)
             }
             CommandId::SetToolpathTool => {
                 self.controller.state_mut().gui.mark_edited();
@@ -2402,7 +2264,7 @@ impl RsCamApp {
                     stale,
                     &before.diagnostics,
                 );
-                CoreReply::quiet(reply)
+                CoreReply::succeeded(reply)
             }
             CommandId::SetToolpathModel => {
                 self.controller.state_mut().gui.mark_edited();
@@ -2432,13 +2294,13 @@ impl RsCamApp {
                     stale,
                     &before.diagnostics,
                 );
-                CoreReply::quiet(reply)
+                CoreReply::succeeded(reply)
             }
             CommandId::SetToolpathHeights => {
                 self.controller.state_mut().gui.mark_edited();
                 let stale = self.core_stale(&effects);
                 let index = before.index();
-                CoreReply::quiet(self.mcp_mutation_result(
+                CoreReply::succeeded(self.mcp_mutation_result(
                     format!("Set toolpath {index} heights. Regenerate to apply."),
                     before.extra.clone(),
                     stale,
@@ -2459,7 +2321,7 @@ impl RsCamApp {
                         floor::toolpath_heights_json(session, tc),
                     );
                 }
-                CoreReply::quiet(self.mcp_mutation_result(
+                CoreReply::succeeded(self.mcp_mutation_result(
                     format!("Set toolpath {index} floor. Regenerate to apply."),
                     applied,
                     stale,
@@ -2507,7 +2369,7 @@ impl RsCamApp {
                     vec![index],
                     &before.diagnostics,
                 );
-                CoreReply::quiet(reply)
+                CoreReply::succeeded(reply)
             }
             CommandId::RemoveToolpath => {
                 // The reply keeps its empty stale list. A removal shifts
@@ -2529,7 +2391,7 @@ impl RsCamApp {
                     Vec::new(),
                     &before.diagnostics,
                 );
-                CoreReply::quiet(reply)
+                CoreReply::succeeded(reply)
             }
             CommandId::AddTool => {
                 let index = effects.created.unwrap_or_default();
@@ -2586,7 +2448,7 @@ impl RsCamApp {
                     Vec::new(),
                     &before.diagnostics,
                 );
-                CoreReply::quiet(reply)
+                CoreReply::succeeded(reply)
             }
             CommandId::AddToolFromLibrary => {
                 let index = effects.created.unwrap_or_default();
@@ -2636,12 +2498,12 @@ impl RsCamApp {
                     Vec::new(),
                     &before.diagnostics,
                 );
-                CoreReply::quiet(reply)
+                CoreReply::succeeded(reply)
             }
             CommandId::RemoveTool => {
                 self.controller.state_mut().gui.mark_edited();
                 let index = before.index();
-                CoreReply::quiet(self.mcp_mutation_result(
+                CoreReply::succeeded(self.mcp_mutation_result(
                     format!("Removed tool {index}"),
                     serde_json::json!({ "index": index }),
                     Vec::new(),
@@ -2651,7 +2513,7 @@ impl RsCamApp {
             CommandId::SetStockConfig => {
                 self.controller.state_mut().gui.mark_edited();
                 let stale = self.core_stale(&effects);
-                let (x, y, z, origin_x, origin_y, origin_z, material_label) = {
+                let (x, y, z, origin_x, origin_y, origin_z, padding, material_label) = {
                     let stock = self.controller.state().session.stock_config();
                     (
                         stock.x,
@@ -2660,6 +2522,7 @@ impl RsCamApp {
                         stock.origin_x,
                         stock.origin_y,
                         stock.origin_z,
+                        stock.padding,
                         stock.material.label(),
                     )
                 };
@@ -2697,7 +2560,7 @@ impl RsCamApp {
                      {origin_z:.2}), material {material_label}, \
                      auto_from_model {auto_after}. Regenerate toolpaths and simulation to apply."
                 );
-                CoreReply::quiet(self.mcp_mutation_result(
+                CoreReply::succeeded(self.mcp_mutation_result(
                     summary,
                     serde_json::json!({
                         "x": x,
@@ -2705,6 +2568,7 @@ impl RsCamApp {
                         "z": z,
                         "origin": { "x": origin_x, "y": origin_y, "z": origin_z },
                         "stock_top_z": origin_z + z,
+                        "padding": padding,
                         "material": material_label,
                         "auto_from_model": auto_after,
                         "auto_from_model_was": auto_before,
@@ -2720,7 +2584,7 @@ impl RsCamApp {
                 let stale = self.core_stale(&effects);
                 let index = before.index();
                 let source = before.extra_str("stock_source");
-                CoreReply::quiet(self.mcp_mutation_result(
+                CoreReply::succeeded(self.mcp_mutation_result(
                     format!(
                         "Stock source set to '{source}' on toolpath {index}. Regenerate to apply."
                     ),
@@ -2736,7 +2600,7 @@ impl RsCamApp {
                 // `mark_edited`, is kept here.
                 self.controller.state_mut().gui.mark_edited();
                 let profile_name = before.display_name();
-                CoreReply::quiet(json_str(serde_json::json!({
+                CoreReply::succeeded(json_str(serde_json::json!({
                     "ok": true,
                     "imported": before.extra("imported"),
                     "profile_name": profile_name,
@@ -2746,7 +2610,7 @@ impl RsCamApp {
             CommandId::SetMachineHead => {
                 self.controller.state_mut().gui.mark_edited();
                 let stale = self.core_stale(&effects);
-                CoreReply::quiet(json_str(serde_json::json!({
+                CoreReply::succeeded(json_str(serde_json::json!({
                     "ok": true,
                     "head": before.extra.clone(),
                     "stale_toolpaths": stale,
@@ -2757,7 +2621,7 @@ impl RsCamApp {
             }
             CommandId::SetToolpathShoe => {
                 self.controller.state_mut().gui.mark_edited();
-                CoreReply::quiet(json_str(serde_json::json!({
+                CoreReply::succeeded(json_str(serde_json::json!({
                     "ok": true,
                     "index": before.index(),
                     "shoe": before.extra.clone(),
@@ -2767,7 +2631,7 @@ impl RsCamApp {
             }
             CommandId::SetMachineKinematics => {
                 self.controller.state_mut().gui.mark_edited();
-                CoreReply::quiet(json_str(serde_json::json!({
+                CoreReply::succeeded(json_str(serde_json::json!({
                     "ok": true,
                     "applied": before.extra.clone(),
                     "note": "Kinematics applied inline; any machine-library link is cleared. \
@@ -2800,7 +2664,7 @@ impl RsCamApp {
                     "controller": before.extra("controller"),
                     "post_format": post_format.to_token(),
                 });
-                CoreReply::quiet(json_str(serde_json::json!({
+                CoreReply::succeeded(json_str(serde_json::json!({
                     "ok": true,
                     "applied": applied,
                     "note": "kinematics applied; machine-library link cleared. Verify with inspect_machine.",
@@ -2819,7 +2683,7 @@ impl RsCamApp {
                 // stale from this change. An operator or an agent runs
                 // get_toolpath_params or re-suggests to see the new
                 // recommendations.
-                CoreReply::quiet(self.mcp_mutation_result(
+                CoreReply::succeeded(self.mcp_mutation_result(
                     format!(
                         "Spindle policy set to '{strategy}'. Run Suggest (per toolpath or \
                          project-wide) to see new recommended feeds/RPMs."
@@ -2844,7 +2708,7 @@ impl RsCamApp {
                 // fires whenever the boundary points at an already-enabled
                 // source too (harmless — just an extra "needs regen" nudge).
                 self.core_stale_rest_source(index, &mut stale);
-                CoreReply::quiet(self.mcp_mutation_result(
+                CoreReply::succeeded(self.mcp_mutation_result(
                     format!("Boundary set on toolpath {index}. Regenerate to apply."),
                     before.extra.clone(),
                     stale,
@@ -2855,7 +2719,7 @@ impl RsCamApp {
                 self.controller.state_mut().gui.mark_edited();
                 let stale = self.core_stale(&effects);
                 let index = before.index();
-                CoreReply::quiet(self.mcp_mutation_result(
+                CoreReply::succeeded(self.mcp_mutation_result(
                     format!("Rest analysis set on toolpath {index}. Regenerate to apply."),
                     before.extra.clone(),
                     stale,
@@ -2874,7 +2738,7 @@ impl RsCamApp {
                     .get(index)
                     .and_then(|tc| serde_json::to_value(&tc.dressups).ok())
                     .unwrap_or(serde_json::Value::Null);
-                CoreReply::quiet(self.mcp_mutation_result(
+                CoreReply::succeeded(self.mcp_mutation_result(
                     format!("Dressup config set on toolpath {index}. Regenerate to apply."),
                     applied,
                     stale,
@@ -2895,7 +2759,7 @@ impl RsCamApp {
                     .and_then(|tc| serde_json::to_value(&tc.dressups).ok())
                     .and_then(|dressups| dressups.get(&key).cloned())
                     .unwrap_or(serde_json::Value::Null);
-                CoreReply::quiet(self.mcp_mutation_result(
+                CoreReply::succeeded(self.mcp_mutation_result(
                     format!("Dressup field '{key}' set on toolpath {index}. Regenerate to apply."),
                     applied,
                     stale,
@@ -2912,7 +2776,7 @@ impl RsCamApp {
                     &self.controller.state().session,
                     true,
                 );
-                CoreReply::quiet(self.mcp_mutation_result(
+                CoreReply::succeeded(self.mcp_mutation_result(
                     format!(
                         "Simulation resolution set to {:.3} mm ({})",
                         report.mm, report.mode
@@ -2935,7 +2799,7 @@ impl RsCamApp {
                     .get("enabled")
                     .and_then(serde_json::Value::as_bool)
                     .unwrap_or_default();
-                CoreReply::quiet(self.mcp_mutation_result(
+                CoreReply::succeeded(self.mcp_mutation_result(
                     format!(
                         "Toolpath {index} {}",
                         if enabled { "enabled" } else { "disabled" }
@@ -2971,7 +2835,7 @@ impl RsCamApp {
                     .find(|m| m.id == model_id)
                     .map(drawing_ledger_json)
                     .unwrap_or_default();
-                CoreReply::quiet(self.mcp_mutation_result(
+                CoreReply::succeeded(self.mcp_mutation_result(
                     format!("Model {model_id} replayed its drawing edits"),
                     summary,
                     stale,
@@ -2995,7 +2859,7 @@ impl RsCamApp {
                     .find(|m| m.id == model_id)
                     .map(model_import_json)
                     .unwrap_or_default();
-                CoreReply::quiet(self.mcp_mutation_result(
+                CoreReply::succeeded(self.mcp_mutation_result(
                     format!("Model {model_id} read again with its import options"),
                     summary,
                     stale,
@@ -3041,13 +2905,13 @@ impl RsCamApp {
             | CommandId::InvalidateToolpathInputs
             | CommandId::UpdateStockFromBbox
             | CommandId::ReplaceTools
-            | CommandId::SetFeedsProvenance => CoreReply::quiet(mutation_error_json(
+            | CommandId::SetFeedsProvenance => CoreReply::refused(
                 &format!(
                     "Error: '{}' is not a wire mutation; no MCP tool dispatches it.",
                     id.wire_name()
                 ),
                 None,
-            )),
+            ),
         }
     }
 
@@ -3115,7 +2979,7 @@ impl RsCamApp {
         use rs_cam_mcp::server::AlignmentPatternPreset;
 
         let refuse = |message: String, field: &str| {
-            CorePlan::Answered(mutation_error_json(
+            CorePlan::Answered(CoreReply::refused(
                 &format!("Error: {message}"),
                 Some(field),
             ))
@@ -3309,7 +3173,7 @@ impl RsCamApp {
                 super::project::pin_report_json(&self.controller.state().session),
             );
         }
-        CoreReply::quiet(self.mcp_mutation_result(
+        CoreReply::succeeded(self.mcp_mutation_result(
             summary,
             applied,
             edit.stale,

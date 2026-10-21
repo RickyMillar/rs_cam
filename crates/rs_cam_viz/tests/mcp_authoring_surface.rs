@@ -107,19 +107,11 @@ fn param_setters_declare_a_typed_value_that_admits_arrays() {
 #[test]
 fn set_tool_param_description_lists_every_parameter_it_accepts() {
     let facts = tool_facts("set_tool_param");
-    // The complete accepted set in `ProjectSession::set_tool_param`.
-    for param in [
-        "diameter",
-        "flute_count",
-        "stickout",
-        "corner_radius",
-        "cutting_length",
-        "included_angle",
-        "taper_half_angle",
-        "shaft_diameter",
-        "shank_diameter",
-        "size_units",
-    ] {
+    // The complete accepted set: every `ToolParamKey` (F118).
+    for param in rs_cam_core::compute::tool_config::ToolParamKey::ALL
+        .iter()
+        .map(|k| k.token())
+    {
         assert!(
             facts.description.contains(param),
             "set_tool_param's description omits the accepted param `{param}` — an agent \
@@ -210,9 +202,9 @@ fn add_tool_takes_per_type_geometry_and_a_tool_number() {
     );
 }
 
-/// Gap 7 — both of these operations are valid (`parse_operation_type`
-/// accepts them and its own error message lists them), but the tool
-/// description omitted them, so an agent reading only the description
+/// Gap 7 — both of these operations are valid (the wire enum
+/// `OperationTypeParam` accepts them), but the tool description omitted
+/// them, so an agent reading only the description
 /// concludes the newest finishing operation is unreachable over MCP.
 #[test]
 fn add_toolpath_description_lists_every_operation_it_accepts() {

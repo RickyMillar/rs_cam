@@ -1490,7 +1490,9 @@ pub struct SaveProjectArgs {
 pub struct SetToolParamArgs {
     /// The index of the tool to write.
     pub index: usize,
-    /// The name of the tool parameter.
+    /// The name of the tool parameter: the token of one
+    /// [`ToolParamKey`](crate::compute::tool_config::ToolParamKey). The
+    /// row parses it; an unknown token refuses with every legal token.
     pub param: String,
     /// The value to write.
     pub value: serde_json::Value,
@@ -1609,9 +1611,10 @@ pub struct RemoveToolArgs {
 /// The arguments of the `set_stock_config` command.
 ///
 /// The command replaces the WHOLE stock block, so a surface that offers
-/// per-field edits reads the current stock, writes its own fields and
-/// sends the result. Any stock edit stales EVERY toolpath
-/// (G-FRESHSTATE).
+/// per-field edits reads the current stock, merges a
+/// [`StockConfigPatch`](crate::compute::stock_config::StockConfigPatch)
+/// onto it (F118: the MCP tool and the CLI job do this) and sends the
+/// result. Any stock edit stales EVERY toolpath (G-FRESHSTATE).
 #[derive(Debug, Clone)]
 pub struct SetStockConfigArgs {
     /// The new stock configuration.
@@ -2615,7 +2618,18 @@ impl ProjectSession {
                 self.try_with_effects(None, move |session| session.save(&args.path))
             }
             Command::SetToolParam(args) => {
-                self.set_tool_param(args.index, &args.param, &args.value)
+                // F118: the key is a `ToolParamKey`. The text form stays
+                // on the row, so the CLI `--tool-set` key reaches the same
+                // parse; an unknown key refuses with every legal token.
+                let param = crate::compute::tool_config::ToolParamKey::parse(&args.param)
+                    .ok_or_else(|| {
+                        SessionError::InvalidParam(format!(
+                            "unknown tool parameter '{}'. Valid: {}",
+                            args.param,
+                            crate::compute::tool_config::ToolParamKey::tokens_joined()
+                        ))
+                    })?;
+                self.set_tool_param(args.index, param, &args.value)
             }
             Command::ReplaceTool(args) => self.replace_tool(args.tool_id, *args.config),
             Command::SetToolpathTool(args) => self.set_toolpath_tool(args.index, args.tool_id),

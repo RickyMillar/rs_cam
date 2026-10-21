@@ -503,8 +503,10 @@ impl EmbeddedCamServer {
         >,
     ) -> String {
         Self::format_result(
-            self.send_request(McpRequestKind::GetOperationSchema { operation_type })
-                .await,
+            self.send_request(McpRequestKind::GetOperationSchema {
+                operation_type: operation_type.into(),
+            })
+            .await,
         )
     }
 
@@ -589,7 +591,7 @@ impl EmbeddedCamServer {
                     toolpath_id,
                     max_hotspots,
                     max_issues,
-                    span_kind,
+                    span_kind: span_kind.map(|k| k.token().to_owned()),
                     span_id,
                     pass_index,
                     include_drill_samples: include_drill_samples.unwrap_or(false),
@@ -758,7 +760,7 @@ impl EmbeddedCamServer {
         Self::format_result(
             self.send_request(McpRequestKind::InspectSpans {
                 index,
-                kind,
+                kind: kind.map(|k| k.token().to_owned()),
                 parent_id,
                 pass_index,
                 region_id,
@@ -1153,7 +1155,7 @@ impl EmbeddedCamServer {
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::AddToolpathViaGui {
-                operation_type,
+                operation_type: operation_type.into(),
                 setup_index,
             })
             .await,
@@ -1212,7 +1214,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_tool_param",
-        description = "Set one tool parameter. The COMPLETE accepted `param` set — anything else is refused — is: diameter, flute_count (whole number), stickout, corner_radius (bull-nose corner, mm), cutting_length, included_angle (V-bit full included angle, degrees), taper_half_angle (tapered ball nose cone HALF angle, degrees), shaft_diameter, shank_diameter, size_units (the display unit, 'metric' or 'imperial'; it changes no stored length and invalidates nothing). Tool NAME, tool_type and tool_number are not settable here. Invalidates all toolpaths using this tool — regenerate to apply."
+        description = "Set one tool parameter. The COMPLETE accepted `param` set (an enum in the schema; anything else is refused) is: diameter, cutting_length, helix_deg (degrees), corner_radius_mm (end-mill corner, mm), corner_radius (bull-nose corner, mm), included_angle (V-bit full included angle, degrees), taper_half_angle (tapered ball nose cone HALF angle, degrees), shaft_diameter, shank_diameter, stickout, flute_count (whole number), tool_material ('carbide' or 'hss'), cut_direction ('up_cut', 'down_cut' or 'compression'), size_units (the display unit, 'metric' or 'imperial'; it changes no stored length and invalidates nothing). Lengths are mm. Tool NAME, tool_type and tool_number are not settable here. A value outside the tool's domain is refused and nothing is written. Invalidates all toolpaths using this tool — regenerate to apply."
     )]
     async fn set_tool_param(&self, Parameters(param): Parameters<SetToolParamInput>) -> String {
         Self::format_result(
@@ -1309,7 +1311,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_stock_config",
-        description = "Set stock geometry and material. Every field is optional — omit one to leave it unchanged. Dimensions x/y/z (mm); origin_x/origin_y/origin_z (mm, the stock spans origin..origin+size, so origin_z is the stock BOTTOM and a 2D job normally wants origin_z = -z to put the top at Z=0); material by name (\"White Oak\", \"Baltic Birch Plywood\", \"MDF\", \"Acrylic\", \"Aluminum 6061-T6\" — every feed, chipload band and power estimate depends on it, and an unknown or ambiguous name is refused with candidates rather than guessed). SETTING ANY DIMENSION OR ORIGIN CLEARS `auto_from_model`, and the reply says so under `auto_from_model`: otherwise the next import_model silently re-derives the stock from that model's bounding box and overwrites what you just set. Pass auto_from_model explicitly to override that. Invalidates simulation — re-run to update."
+        description = "Set stock geometry and material. Every field is optional — omit one to leave it unchanged. Dimensions x/y/z (mm); origin_x/origin_y/origin_z (mm, the stock spans origin..origin+size, so origin_z is the stock BOTTOM and a 2D job normally wants origin_z = -z to put the top at Z=0); material by name (\"White Oak\", \"Baltic Birch Plywood\", \"MDF\", \"Acrylic\", \"Aluminum 6061-T6\" — every feed, chipload band and power estimate depends on it, and an unknown or ambiguous name is refused with candidates rather than guessed). padding (mm, >= 0): the margin auto-fit adds on each side of the model; it does not clear auto_from_model. SETTING ANY DIMENSION OR ORIGIN CLEARS `auto_from_model`, and the reply says so under `auto_from_model`: otherwise the next import_model silently re-derives the stock from that model's bounding box and overwrites what you just set. Pass auto_from_model explicitly to override that. Invalidates simulation — re-run to update."
     )]
     async fn set_stock_config(&self, Parameters(param): Parameters<SetStockConfigParam>) -> String {
         Self::format_result(
@@ -1478,7 +1480,7 @@ impl EmbeddedCamServer {
         Self::format_result(
             self.send_request(McpRequestKind::ApplyFeeds {
                 index,
-                scope: scope.unwrap_or_else(|| "speeds".to_owned()),
+                scope: scope.unwrap_or_default(),
             })
             .await,
         )

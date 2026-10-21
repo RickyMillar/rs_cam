@@ -7,14 +7,14 @@
 
 use std::path::Path;
 
-use rs_cam_mcp::server::{json_str, parse_operation_type};
+use rs_cam_mcp::server::json_str;
 
 use crate::app::RsCamApp;
 use crate::mcp_bridge::{McpResponse, ProgressUpdate, mutation_error_json};
 use crate::state::selection::Selection;
 
 use super::simulation::build_per_depth_pass_summary;
-use super::{MultitoolDials, parse_tier_strategies};
+use super::{MultitoolDials, tier_strategies};
 
 /// The mean chip of the cut Suggest ships, through
 /// `feeds::operating_point::force_at_operating_point` (the door the Feeds
@@ -351,16 +351,9 @@ impl RsCamApp {
     /// same `AppController::notifications` accessor.
     pub(super) fn mcp_add_toolpath_via_gui(
         &mut self,
-        operation_type: &str,
+        op_type: rs_cam_core::compute::catalog::OperationType,
         setup_index: Option<usize>,
     ) -> String {
-        let op_type = match parse_operation_type(operation_type) {
-            Ok(ot) => ot,
-            Err(e) => {
-                return self.mcp_mutation_error(format!("Error: {e}"), Some("operation_type"));
-            }
-        };
-
         // The GUI reads the target setup from the CURRENT SELECTION, so
         // honour `setup_index` the way a click does: select the setup,
         // then raise the event. Refuse an out-of-range index BEFORE
@@ -702,7 +695,7 @@ impl RsCamApp {
             monotone_cell_decomposition: dials
                 .monotone_cell_decomposition
                 .unwrap_or(plan_defaults.monotone_cell_decomposition),
-            tier_strategies: parse_tier_strategies(&dials.tier_strategies)?,
+            tier_strategies: tier_strategies(dials.tier_strategies.as_deref()),
         })
     }
 
@@ -859,24 +852,16 @@ impl RsCamApp {
     /// own refusal text. It must never read as a successful no-op: an agent
     /// that cannot distinguish "applied" from "declined" will re-simulate and
     /// conclude the recommendation did nothing.
-    pub(super) fn mcp_apply_feeds(&mut self, index: usize, scope: &str) -> String {
+    pub(super) fn mcp_apply_feeds(
+        &mut self,
+        index: usize,
+        scope: rs_cam_mcp::server::ApplyScopeParam,
+    ) -> String {
         use rs_cam_core::feeds::suggest::ApplyScope;
         let before = self.mcp_diagnostic_snapshot();
-        let parsed = match scope {
-            "speeds" | "Speeds" => ApplyScope::Speeds,
-            "cut_geometry" | "CutGeometry" | "cut" => ApplyScope::CutGeometry,
-            "both" | "Both" => ApplyScope::Both,
-            other => {
-                return self.mcp_mutation_error(
-                    format!(
-                        "Error: unknown scope '{other}'. Expected 'speeds' (feed/plunge/RPM, \
-                         does not change the cut), 'cut_geometry' (stepover/DOC, CHANGES THE \
-                         CUT) or 'both'."
-                    ),
-                    Some("scope"),
-                );
-            }
-        };
+        // F166: the wire takes the enum, so no token is parsed here.
+        let parsed = ApplyScope::from(scope);
+        let scope = scope.token();
         let Some(toolpath_id) = self
             .controller
             .state()

@@ -518,10 +518,10 @@ impl ProjectSession {
 
     /// Set a parameter on a tool definition.
     ///
-    /// Supported parameters: `diameter`, `flute_count`, `stickout`, `corner_radius`,
-    /// `cutting_length`, `included_angle`, `taper_half_angle`, `shaft_diameter`,
-    /// `shank_diameter`, and `size_units`
-    /// (`"metric"` or `"imperial"`).
+    /// `param` names one [`crate::compute::tool_config::ToolParamKey`]
+    /// field. [`crate::compute::tool_config::ToolParamKey::write`] checks
+    /// the JSON type of `value`, and [`Self::write_checked_tool`] checks
+    /// the domain of the result (F029).
     ///
     /// Invalidates cached results for all toolpaths that reference this tool.
     /// `size_units` is the exception: it changes how the size is SHOWN, no
@@ -535,7 +535,7 @@ impl ProjectSession {
     pub(crate) fn set_tool_param(
         &mut self,
         index: usize,
-        param: &str,
+        param: crate::compute::tool_config::ToolParamKey,
         value: &serde_json::Value,
     ) -> Result<Effects, SessionError> {
         self.try_with_effects(None, move |session| {
@@ -549,7 +549,7 @@ impl ProjectSession {
     fn set_tool_param_impl(
         &mut self,
         index: usize,
-        param: &str,
+        param: crate::compute::tool_config::ToolParamKey,
         value: &serde_json::Value,
     ) -> Result<(), SessionError> {
         // F029: edit a draft, check it, then write it back. A value outside
@@ -558,81 +558,16 @@ impl ProjectSession {
             SessionError::InvalidParam(format!("tool index {index} out of bounds"))
         })?;
         let mut draft = stored.clone();
-        let tool = &mut draft;
+        param
+            .write(&mut draft, value)
+            .map_err(SessionError::InvalidParam)?;
 
-        match param {
-            "diameter" => {
-                tool.diameter = value.as_f64().ok_or_else(|| {
-                    SessionError::InvalidParam("diameter must be a number".to_owned())
-                })?;
-            }
-            "flute_count" => {
-                let v = value.as_u64().ok_or_else(|| {
-                    SessionError::InvalidParam("flute_count must be an integer".to_owned())
-                })?;
-                tool.flute_count = v as u32;
-            }
-            "stickout" => {
-                tool.stickout = value.as_f64().ok_or_else(|| {
-                    SessionError::InvalidParam("stickout must be a number".to_owned())
-                })?;
-            }
-            "corner_radius" => {
-                tool.corner_radius = value.as_f64().ok_or_else(|| {
-                    SessionError::InvalidParam("corner_radius must be a number".to_owned())
-                })?;
-            }
-            "cutting_length" => {
-                tool.cutting_length = value.as_f64().ok_or_else(|| {
-                    SessionError::InvalidParam("cutting_length must be a number".to_owned())
-                })?;
-            }
-            "included_angle" => {
-                tool.included_angle = value.as_f64().ok_or_else(|| {
-                    SessionError::InvalidParam("included_angle must be a number".to_owned())
-                })?;
-            }
-            "taper_half_angle" => {
-                tool.taper_half_angle = value.as_f64().ok_or_else(|| {
-                    SessionError::InvalidParam("taper_half_angle must be a number".to_owned())
-                })?;
-            }
-            "shaft_diameter" => {
-                tool.shaft_diameter = value.as_f64().ok_or_else(|| {
-                    SessionError::InvalidParam("shaft_diameter must be a number".to_owned())
-                })?;
-            }
-            "shank_diameter" => {
-                tool.shank_diameter = value.as_f64().ok_or_else(|| {
-                    SessionError::InvalidParam("shank_diameter must be a number".to_owned())
-                })?;
-            }
-            "size_units" => {
-                let units = value
-                    .as_str()
-                    .and_then(crate::compute::tool_config::SizeUnits::parse_lenient)
-                    .ok_or_else(|| {
-                        SessionError::InvalidParam(format!(
-                            "size_units must be \"metric\" or \"imperial\" (got {value})"
-                        ))
-                    })?;
-                tool.size_units = Some(units);
-                // Display only: no stored length changed, so no result is
-                // dropped.
-                self.write_checked_tool(index, draft)?;
-                return Ok(());
-            }
-            _ => {
-                return Err(SessionError::InvalidParam(format!(
-                    "unknown tool parameter '{param}'"
-                )));
-            }
-        }
-
-        // Invalidate cached results for all toolpaths that use this tool
         let tool_raw_id = draft.id.0;
         self.write_checked_tool(index, draft)?;
-        self.drop_tool_results(tool_raw_id);
+        if param.changes_the_cut() {
+            // Invalidate cached results for all toolpaths that use this tool.
+            self.drop_tool_results(tool_raw_id);
+        }
 
         Ok(())
     }

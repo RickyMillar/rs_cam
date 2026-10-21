@@ -678,9 +678,9 @@ fn invalid_parent_id_returns_error() {
     assert!(res.is_err());
 }
 
-/// `set_ui_view` documents these workspace keys — every key must
-/// parse, every `Workspace` variant must round-trip through
-/// `workspace_key` → `parse_workspace`, and unknown keys stay `None`.
+/// `set_ui_view` takes the workspace as a wire enum (F166). Every
+/// `Workspace` echo key parses as that enum and maps back to the same
+/// variant, and no alias parses.
 #[test]
 fn workspace_keys_round_trip() {
     // `Workspace::ALL`, not a hand-written list beside it: the list this
@@ -688,12 +688,17 @@ fn workspace_keys_round_trip() {
     // exactly that kind of copy that left Readiness out of the Workspace
     // menu (G-WSMENU).
     for ws in Workspace::ALL {
-        assert_eq!(parse_workspace(workspace_key(ws)), Some(ws));
+        let wire: rs_cam_mcp::server::WorkspaceParam =
+            serde_json::from_value(serde_json::json!(workspace_key(ws))).unwrap();
+        assert_eq!(workspace_of(wire), ws);
     }
-    // "sim" alias accepted on input (matches the RS_CAM_SCREENSHOT
-    // env-var vocabulary).
-    assert_eq!(parse_workspace("sim"), Some(Workspace::Simulation));
-    assert_eq!(parse_workspace("not_a_workspace"), None);
+    // The "sim" alias is gone (no-legacy ruling 2026-09-16).
+    for token in ["sim", "not_a_workspace"] {
+        assert!(
+            serde_json::from_value::<rs_cam_mcp::server::WorkspaceParam>(serde_json::json!(token))
+                .is_err()
+        );
+    }
 }
 
 // ── By Area regions on inspect_spans ─────────────────────────────────

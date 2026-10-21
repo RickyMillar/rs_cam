@@ -1143,9 +1143,14 @@ fn execute_op_via_session(
 
     // \u{2500}\u{2500} Stock: a set top only; the session sizes the rest \u{2500}\u{2500}
     if let Some(top) = op.stock_top_z {
+        // F118: the same patch the MCP `set_stock_config` tool merges.
         let mut stock = session.stock_config().clone();
-        stock.auto_from_model = false;
-        stock.z = (top - stock.origin_z).max(0.0);
+        let _ = rs_cam_core::compute::stock_config::StockConfigPatch {
+            z: Some((top - stock.origin_z).max(0.0)),
+            auto_from_model: Some(false),
+            ..Default::default()
+        }
+        .apply_to(&mut stock);
         let _ = crate::command::apply_command(
             &mut session,
             Command::SetStockConfig(SetStockConfigArgs {

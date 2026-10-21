@@ -420,7 +420,14 @@
           ]
         },
         "tool_type": {
-          "description": "Tool type (e.g. \"end_mill\", \"ball_nose\", \"bull_nose\", \"v_bit\", \"tapered_ball_nose\")",
+          "description": "The cutter type.",
+          "enum": [
+            "end_mill",
+            "ball_nose",
+            "bull_nose",
+            "v_bit",
+            "tapered_ball_nose"
+          ],
           "type": "string"
         }
       },
@@ -476,7 +483,33 @@
           ]
         },
         "operation_type": {
-          "description": "Operation type (e.g. \"pocket\", \"adaptive3d\", \"drop_cutter\", \"profile\")",
+          "description": "The operation kind.",
+          "enum": [
+            "face",
+            "pocket",
+            "profile",
+            "adaptive",
+            "v_carve",
+            "inlay",
+            "inlay_plug",
+            "zigzag",
+            "trace",
+            "drill",
+            "chamfer",
+            "drop_cutter",
+            "adaptive3d",
+            "waterline",
+            "pencil",
+            "scallop",
+            "unified_finish",
+            "steep_shallow",
+            "ramp_finish",
+            "spiral_finish",
+            "radial_finish",
+            "horizontal_finish",
+            "project_curve",
+            "alignment_pin_drill"
+          ],
           "type": "string"
         },
         "setup_index": {
@@ -509,7 +542,33 @@
       "description": "F3.1 — add a toolpath through the GUI's own add path.",
       "properties": {
         "operation_type": {
-          "description": "Operation type, same vocabulary `add_toolpath` accepts (e.g.\n\"pocket\", \"scallop\", \"adaptive3d\").",
+          "description": "The operation kind, the same vocabulary `add_toolpath` accepts.",
+          "enum": [
+            "face",
+            "pocket",
+            "profile",
+            "adaptive",
+            "v_carve",
+            "inlay",
+            "inlay_plug",
+            "zigzag",
+            "trace",
+            "drill",
+            "chamfer",
+            "drop_cutter",
+            "adaptive3d",
+            "waterline",
+            "pencil",
+            "scallop",
+            "unified_finish",
+            "steep_shallow",
+            "ramp_finish",
+            "spiral_finish",
+            "radial_finish",
+            "horizontal_finish",
+            "project_curve",
+            "alignment_pin_drill"
+          ],
           "type": "string"
         },
         "setup_index": {
@@ -542,12 +601,32 @@
           "type": "integer"
         },
         "scope": {
-          "default": null,
-          "description": "Which dimensions to write. **Say what you mean** — the scope is the\nwhole safety vocabulary of this tool:\n\n- `\"speeds\"` — feed / plunge / RPM. \"How fast\". Does NOT change the\n  cut, so the geometry you simulated stays the geometry you cut.\n- `\"cut_geometry\"` — stepover / DOC. **CHANGES THE CUT**: the removed\n  material, the engagement, the runtime and every gate verdict move\n  with it. Re-simulate afterwards.\n- `\"both\"` — both halves in one transaction. Also changes the cut.\n\nDefaults to `\"speeds\"`, the conservative choice: an omitted scope must\nnot silently rewrite geometry. Mirrors\n`rs_cam_core::feeds::suggest::ApplyScope`; there is deliberately no\nper-field scope.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "anyOf": [
+            {
+              "description": "Which dimensions `apply_feeds` writes: a mirror of core [`ApplyScope`].",
+              "oneOf": [
+                {
+                  "const": "speeds",
+                  "description": "Feed, plunge and RPM. The cut does not change.",
+                  "type": "string"
+                },
+                {
+                  "const": "cut_geometry",
+                  "description": "Stepover and depth of cut. THE CUT CHANGES.",
+                  "type": "string"
+                },
+                {
+                  "const": "both",
+                  "description": "Both halves in one transaction. The cut changes.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Which dimensions to write. **Say what you mean** — the scope is the\nwhole safety vocabulary of this tool:\n\n- `\"speeds\"` — feed / plunge / RPM. \"How fast\". Does NOT change the\n  cut, so the geometry you simulated stays the geometry you cut.\n- `\"cut_geometry\"` — stepover / DOC. **CHANGES THE CUT**: the removed\n  material, the engagement, the runtime and every gate verdict move\n  with it. Re-simulate afterwards.\n- `\"both\"` — both halves in one transaction. Also changes the cut.\n\nDefaults to `\"speeds\"`, the conservative choice: an omitted scope must\nnot silently rewrite geometry. Mirrors\n`rs_cam_core::feeds::suggest::ApplyScope`; there is deliberately no\nper-field scope."
         }
       },
       "required": [
@@ -3137,7 +3216,20 @@
           ]
         },
         "span_kind": {
-          "description": "Optional: only include samples/issues/hotspots whose `span_path` contains\na span of this kind. Accepted values match `SpanKind`:\n\"operation\", \"depth_pass\", \"region\", \"entry\", \"lead_out\", \"link_bridge\",\n\"dressup_artifact\", \"geometry_refit\", \"rapid_order_barrier\".",
+          "description": "Optional: only include samples/issues/hotspots whose `span_path` contains\na span of this kind.",
+          "enum": [
+            "operation",
+            "depth_pass",
+            "region",
+            "entry",
+            "lead_out",
+            "link_bridge",
+            "dressup_artifact",
+            "geometry_refit",
+            "rapid_order_barrier",
+            "waterline_cleanup",
+            null
+          ],
           "type": [
             "string",
             "null"
@@ -3247,7 +3339,33 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "operation_type": {
-          "description": "Operation type (e.g. \"pocket\", \"adaptive3d\", \"drill\")",
+          "description": "The operation kind.",
+          "enum": [
+            "face",
+            "pocket",
+            "profile",
+            "adaptive",
+            "v_carve",
+            "inlay",
+            "inlay_plug",
+            "zigzag",
+            "trace",
+            "drill",
+            "chamfer",
+            "drop_cutter",
+            "adaptive3d",
+            "waterline",
+            "pencil",
+            "scallop",
+            "unified_finish",
+            "steep_shallow",
+            "ramp_finish",
+            "spiral_finish",
+            "radial_finish",
+            "horizontal_finish",
+            "project_curve",
+            "alignment_pin_drill"
+          ],
           "type": "string"
         }
       },
@@ -3508,7 +3626,20 @@
           "type": "integer"
         },
         "kind": {
-          "description": "Optional `SpanKind` filter (snake_case). Accepted values:\n\"operation\", \"depth_pass\", \"region\", \"entry\", \"lead_out\",\n\"link_bridge\", \"dressup_artifact\", \"geometry_refit\",\n\"rapid_order_barrier\".",
+          "description": "Optional span kind filter.",
+          "enum": [
+            "operation",
+            "depth_pass",
+            "region",
+            "entry",
+            "lead_out",
+            "link_bridge",
+            "dressup_artifact",
+            "geometry_refit",
+            "rapid_order_barrier",
+            "waterline_cleanup",
+            null
+          ],
           "type": [
             "string",
             "null"
@@ -4034,10 +4165,26 @@
           "type": "integer"
         },
         "tier_strategies": {
-          "default": null,
           "description": "Per-tier operation choice, LADDER order (coarse → fine):\n\"unified_finish\" | \"scallop\" | \"iso_scallop\". Unset or shorter than\nthe ladder = unified_finish for the unnamed tiers (the historical\nplanner). The tier's TERRITORY is identical whichever strategy cuts\nit — regions come from the tier map; this only picks the operation.\nEvidence for the scallop/iso options:\nplanning/metrology_2026-09-02/FINDINGS.md §M7–M8.",
           "items": {
-            "type": "string"
+            "description": "The finishing operation of one tier of the multi-tool plan: a mirror of\ncore [`TierStrategy`].",
+            "oneOf": [
+              {
+                "const": "unified_finish",
+                "description": "The band mix (raster, scallop, waterline per slope band).",
+                "type": "string"
+              },
+              {
+                "const": "scallop",
+                "description": "The offset-cascade scallop.",
+                "type": "string"
+              },
+              {
+                "const": "iso_scallop",
+                "description": "The iso-field scallop.",
+                "type": "string"
+              }
+            ]
           },
           "type": [
             "array",
@@ -4162,10 +4309,26 @@
           ]
         },
         "tier_strategies": {
-          "default": null,
           "description": "Accepted for dial parity with `plan_multitool_finishing` and\nIGNORED: a tier's strategy picks its OPERATION, not its territory,\nso the island preview is identical whichever strategies you pass.",
           "items": {
-            "type": "string"
+            "description": "The finishing operation of one tier of the multi-tool plan: a mirror of\ncore [`TierStrategy`].",
+            "oneOf": [
+              {
+                "const": "unified_finish",
+                "description": "The band mix (raster, scallop, waterline per slope band).",
+                "type": "string"
+              },
+              {
+                "const": "scallop",
+                "description": "The offset-cascade scallop.",
+                "type": "string"
+              },
+              {
+                "const": "iso_scallop",
+                "description": "The iso-field scallop.",
+                "type": "string"
+              }
+            ]
           },
           "type": [
             "array",
@@ -4645,11 +4808,32 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "containment": {
-          "description": "Containment mode: \"center\", \"inside\", or \"outside\"",
-          "type": [
-            "string",
-            "null"
-          ]
+          "anyOf": [
+            {
+              "description": "How the tool sits against a boundary: a mirror of core\n[`BoundaryContainment`].",
+              "oneOf": [
+                {
+                  "const": "center",
+                  "description": "The tool centre stays on or inside the boundary.",
+                  "type": "string"
+                },
+                {
+                  "const": "inside",
+                  "description": "The whole tool stays inside the boundary.",
+                  "type": "string"
+                },
+                {
+                  "const": "outside",
+                  "description": "The tool edge may pass the boundary by one radius.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The containment mode. Omit for `center`."
         },
         "enabled": {
           "description": "Enable or disable boundary",
@@ -5077,11 +5261,37 @@
           ]
         },
         "source": {
-          "description": "Boundary source: \"stock\", \"model_silhouette\", \"selection\" or\n\"derived_rest_regions\"",
-          "type": [
-            "string",
-            "null"
-          ]
+          "anyOf": [
+            {
+              "description": "The source of a machining boundary. `derived_rest_regions` needs\n`source_toolpath_id` beside it.",
+              "oneOf": [
+                {
+                  "const": "stock",
+                  "description": "The stock bounding rectangle.",
+                  "type": "string"
+                },
+                {
+                  "const": "model_silhouette",
+                  "description": "The 2D silhouette of the model along the tool axis.",
+                  "type": "string"
+                },
+                {
+                  "const": "selection",
+                  "description": "The closed regions of the toolpath selection.",
+                  "type": "string"
+                },
+                {
+                  "const": "derived_rest_regions",
+                  "description": "The regions a prior rest toolpath left (`source_toolpath_id`).",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The boundary source. Omit for `stock`."
         },
         "source_toolpath_id": {
           "description": "Required when `source` is \"derived_rest_regions\": the stable id\n(from `get_toolpath_params`'s `id` field, not an index) of the\ntoolpath whose pencil rest-depth result supplies the boundary.",
@@ -5618,7 +5828,15 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "face_up": {
-          "description": "Face orientation: \"top\", \"bottom\", \"front\", \"back\", \"left\", \"right\"",
+          "description": "The stock face that points up.",
+          "enum": [
+            "top",
+            "bottom",
+            "front",
+            "back",
+            "left",
+            "right"
+          ],
           "type": "string"
         },
         "setup_index": {
@@ -5692,8 +5910,19 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "strategy": {
-          "description": "Project-level spindle policy. Either \"match_chart\" (default —\nuse vendor LUT row's chart-published RPM verbatim) or\n\"max_speed\" (push RPM up the constant-chipload line toward\nthe spindle ceiling, scaling feed proportionally). Affects\nevery Suggest call across the project. See\n`rs_cam_core::feeds::SpindleStrategy`.",
-          "type": "string"
+          "description": "The project-level spindle policy. It affects every Suggest call\nacross the project. See `rs_cam_core::feeds::SpindleStrategy`.",
+          "oneOf": [
+            {
+              "const": "match_chart",
+              "description": "Use the chart RPM of the vendor row as written.",
+              "type": "string"
+            },
+            {
+              "const": "max_speed",
+              "description": "Push RPM up the constant-chipload line to the spindle ceiling,\nand scale the feed with it.",
+              "type": "string"
+            }
+          ]
         }
       },
       "required": [
@@ -5740,6 +5969,14 @@
         },
         "origin_z": {
           "description": "Stock origin Z in mm — the BOTTOM of the stock, so the stock top\nsits at `origin_z + z`. 2D operations cut at negative Z relative\nto the model plane, so a 2D job normally wants\n`origin_z = -z` (top at Z = 0). This decides the Z frame the\nwhole job cuts in. Omit to leave unchanged.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "padding": {
+          "description": "The margin in mm that auto-fit adds on each side of the model\nbounding box (`>= 0`). It does not clear `auto_from_model`. Omit to\nleave unchanged.",
           "format": "double",
           "type": [
             "number",
@@ -5822,11 +6059,82 @@
           "type": "integer"
         },
         "param": {
-          "description": "Parameter name. The COMPLETE accepted set (anything else is\nrefused): \"diameter\", \"flute_count\", \"stickout\", \"corner_radius\"\n(bull-nose corner), \"cutting_length\", \"included_angle\" (V-bit,\ndegrees), \"taper_half_angle\" (tapered ball nose, degrees),\n\"shaft_diameter\", \"shank_diameter\", \"size_units\" (display unit: \"metric\" or\n\"imperial\"; changes no length and invalidates nothing).",
-          "type": "string"
+          "description": "The tool field to write. Tool name, `tool_type` and `tool_number`\nare not settable here.",
+          "oneOf": [
+            {
+              "const": "diameter",
+              "description": "Cutting diameter, mm. For `tapered_ball_nose` the BALL TIP diameter.",
+              "type": "string"
+            },
+            {
+              "const": "cutting_length",
+              "description": "Usable cutting-edge length, mm.",
+              "type": "string"
+            },
+            {
+              "const": "helix_deg",
+              "description": "Flute helix angle, degrees.",
+              "type": "string"
+            },
+            {
+              "const": "corner_radius_mm",
+              "description": "Corner radius of an end mill, mm (0 = a sharp corner).",
+              "type": "string"
+            },
+            {
+              "const": "corner_radius",
+              "description": "Corner radius of a bull nose, mm.",
+              "type": "string"
+            },
+            {
+              "const": "included_angle",
+              "description": "Full included angle of a V-bit, degrees.",
+              "type": "string"
+            },
+            {
+              "const": "taper_half_angle",
+              "description": "Cone HALF angle of a tapered ball nose, degrees.",
+              "type": "string"
+            },
+            {
+              "const": "shaft_diameter",
+              "description": "Cone-base / shaft diameter of a tapered ball nose, mm.",
+              "type": "string"
+            },
+            {
+              "const": "shank_diameter",
+              "description": "Shank diameter, mm.",
+              "type": "string"
+            },
+            {
+              "const": "stickout",
+              "description": "Stickout from the holder, mm.",
+              "type": "string"
+            },
+            {
+              "const": "flute_count",
+              "description": "Flute count, a whole number.",
+              "type": "string"
+            },
+            {
+              "const": "tool_material",
+              "description": "Tool material: \"carbide\" or \"hss\".",
+              "type": "string"
+            },
+            {
+              "const": "cut_direction",
+              "description": "Cut direction: \"up_cut\", \"down_cut\" or \"compression\".",
+              "type": "string"
+            },
+            {
+              "const": "size_units",
+              "description": "The display unit: \"metric\" or \"imperial\". It changes no stored\nlength and invalidates nothing.",
+              "type": "string"
+            }
+          ]
         },
         "value": {
-          "description": "New value (numeric — `flute_count` must be a whole number;\n`size_units` takes the string \"metric\" or \"imperial\").",
+          "description": "New value: a number for a length or an angle, a whole number for\n`flute_count`, and a string token for `tool_material`,\n`cut_direction` and `size_units`.",
           "type": [
             "number",
             "string",
@@ -6337,11 +6645,31 @@
           ]
         },
         "modal": {
-          "description": "Modal to open: \"feeds_modal\", \"export_wizard\", \"tool_library\",\n\"pin_wizard\", or \"none\" to close all modals (the\nload-warning modal and the pin wizard too).",
-          "type": [
-            "string",
-            "null"
-          ]
+          "anyOf": [
+            {
+              "description": "The modal `set_ui_view` opens. `none` closes every modal. It\nserialises to the same token, for the reply echo.",
+              "oneOf": [
+                {
+                  "enum": [
+                    "feeds_modal",
+                    "export_wizard",
+                    "tool_library",
+                    "pin_wizard"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "const": "none",
+                  "description": "Close every modal (the load-warning modal and the pin wizard too).",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The modal to open, or `none` to close all modals."
         },
         "model_visibility": {
           "additionalProperties": false,
@@ -6367,18 +6695,42 @@
           ]
         },
         "properties_tab": {
-          "description": "Toolpath properties tab to activate: \"geometry\", \"feeds\",\n\"linking\", \"heights\", or \"dressup\". Takes effect the next time the\nproperties panel renders a selected toolpath.",
+          "description": "The toolpath properties tab to activate. Takes effect the next\ntime the properties panel renders a selected toolpath.",
+          "enum": [
+            "geometry",
+            "feeds",
+            "linking",
+            "heights",
+            "dressup",
+            null
+          ],
           "type": [
             "string",
             "null"
           ]
         },
         "select": {
-          "description": "Non-toolpath properties panel to select: \"machine\" (machine setup +\nkinematics + GRBL $$ import) or \"stock\". Switches to the Setup\nworkspace so the panel is visible on the right.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "anyOf": [
+            {
+              "description": "The non-toolpath properties panel `set_ui_view` selects.",
+              "oneOf": [
+                {
+                  "const": "machine",
+                  "description": "Machine setup, kinematics and the GRBL `$$` import.",
+                  "type": "string"
+                },
+                {
+                  "const": "stock",
+                  "description": "The stock panel.",
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The non-toolpath properties panel to select. Switches to the Setup\nworkspace so the panel is visible on the right."
         },
         "toolpath_index": {
           "description": "Toolpath index (0-based) to select. Selecting a toolpath makes its\nproperties panel visible in the Toolpaths workspace.",
@@ -6390,7 +6742,14 @@
           ]
         },
         "workspace": {
-          "description": "Workspace to switch to: \"setup\", \"toolpaths\", \"simulation\",\nor \"readiness\".",
+          "description": "The workspace to switch to.",
+          "enum": [
+            "setup",
+            "toolpaths",
+            "simulation",
+            "readiness",
+            null
+          ],
           "type": [
             "string",
             "null"

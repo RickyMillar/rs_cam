@@ -328,7 +328,7 @@ impl RsCamApp {
                     })
                 })
         };
-        CoreReply::quiet(self.mcp_mutation_result(
+        CoreReply::succeeded(self.mcp_mutation_result(
             format!("Selection of toolpath {index} edited. Regenerate to apply."),
             applied,
             stale,

@@ -2797,7 +2797,11 @@ mod tests {
         let mut session = session_with_toolpath();
 
         let _ = session
-            .set_tool_param(0, "diameter", &serde_json::json!(10.0))
+            .set_tool_param(
+                0,
+                crate::compute::tool_config::ToolParamKey::Diameter,
+                &serde_json::json!(10.0),
+            )
             .unwrap();
 
         let updated = session.tools[0].diameter;

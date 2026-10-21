@@ -23,7 +23,9 @@
 //! - The outcome-to-toast contract, driven with the REAL payload shapes the
 //!   handlers emit (`mutation_error_json`, `MutationResult`, a bare
 //!   `{"error": …}`, and the controller's own `open_job_from_path` error)
-//!   against a real `AppController`.
+//!   against a real `AppController`. F207: each payload comes with the
+//!   outcome its handler STATES (`McpReply`); no test classifies a reply
+//!   text.
 
 #![cfg(feature = "mcp")]
 #![allow(
@@ -36,6 +38,7 @@
 /// The dispatch and the describe step, read as text.
 const MCP_SRC: &str = include_str!("../src/app/mcp.rs");
 const COMMANDS_SRC: &str = include_str!("../src/app/mcp/commands.rs");
+const BRIDGE_SRC: &str = include_str!("../src/mcp_bridge.rs");
 
 /// The toasts the command rows push, as literals.
 ///
@@ -50,7 +53,7 @@ const COMMANDS_SRC: &str = include_str!("../src/app/mcp/commands.rs");
 /// text is read off the REQUEST, so a request the CONVERSION refuses
 /// still reports its refusal. Nothing in `commands.rs` pushes a toast of
 /// its own. The one `Core` arm pushes it through `push_mcp_outcome`,
-/// after `apply`, classified against the reply.
+/// after `apply`, from the outcome the reply states (F207).
 const REQUEST_TOASTS: &[&str] = &[
     "\"MCP: Adding setup\"",
     "\"MCP: Set setup {setup_index} face to '{face_up}'\"",
@@ -225,7 +228,7 @@ use rs_cam_viz::compute::{
     GenerationControl, LaneSnapshot, SimulationRequest, ToolpathSubmitOutcome,
 };
 use rs_cam_viz::controller::{AppController, Severity};
-use rs_cam_viz::mcp_bridge::{McpOutcome, MutationResult, mutation_error_json};
+use rs_cam_viz::mcp_bridge::{McpOutcome, McpReply, MutationResult, mutation_error_json};
 
 /// A compute backend that accepts every submission and returns nothing.
 /// Nothing here waits on a lane.
@@ -307,10 +310,12 @@ fn a_refused_add_toolpath_shows_the_refusal_and_never_added() {
         "unexpected refusal text: {refusal}"
     );
 
-    // The handler's reply, byte-for-byte the shape `mcp_add_toolpath` returns.
-    let reply = mutation_error_json(&format!("Cannot add toolpath: {refusal}"), None);
-    let outcome = McpOutcome::from_json_response(&reply);
-    assert!(matches!(outcome, McpOutcome::Refused(_)), "{outcome:?}");
+    // The handler's reply, built by the door the core route refuses with.
+    // F207: it STATES its outcome from the same summary it writes.
+    let summary = format!("Cannot add toolpath: {refusal}");
+    let McpReply { reply, outcome } = McpReply::refused(&summary, None);
+    assert_eq!(reply, mutation_error_json(&summary, None));
+    assert_eq!(outcome, McpOutcome::Refused(summary));
 
     controller.push_mcp_outcome(
         "MCP: Added toolpath 'Detail finish (flat tool attempt)'".to_owned(),
@@ -357,7 +362,7 @@ fn a_successful_add_toolpath_shows_added_at_info() {
         diagnostic_delta: Vec::new(),
     })
     .unwrap();
-    let outcome = McpOutcome::from_json_response(&reply);
+    let McpReply { outcome, .. } = McpReply::succeeded(reply);
     assert_eq!(outcome, McpOutcome::Succeeded);
 
     controller.push_mcp_outcome("MCP: Added toolpath 'Detail finish'".to_owned(), &outcome);
@@ -396,27 +401,54 @@ fn a_failed_load_project_never_says_loaded() {
 }
 
 /// The import and library handlers refuse with a bare `{"error": …}`
-/// document rather than `mutation_error_json`; that shape is a refusal too,
-/// and its text reaches the toast.
+/// document rather than `mutation_error_json`. F207: the handler states
+/// the refusal beside the document, and the toast shows that text.
 #[test]
-fn a_bare_error_reply_is_a_refusal() {
-    let reply = serde_json::json!({
-        "error": "Unsupported file format '.obj'. Use .stl, .dxf, .svg, .step, or .stp"
-    })
-    .to_string();
-    let outcome = McpOutcome::from_json_response(&reply);
-    let (message, severity) = outcome.notification("MCP: Importing 'part.obj'".to_owned());
+fn a_bare_error_reply_states_its_refusal() {
+    let error = "Unsupported file format '.obj'. Use .stl, .dxf, .svg, .step, or .stp";
+    let stated = McpReply::refused_with(serde_json::json!({ "error": error }).to_string(), error);
+    let (message, severity) = stated
+        .outcome
+        .notification("MCP: Importing 'part.obj'".to_owned());
     assert_eq!(severity, Severity::Warning);
-    assert!(
-        message.contains("Unsupported file format '.obj'"),
-        "{message}"
-    );
+    assert!(message.contains(error), "{message}");
     assert!(!message.contains("Importing"), "{message}");
+
+    let stated = McpReply::error_document(error);
+    assert_eq!(stated.outcome, McpOutcome::Refused(error.to_owned()));
+    assert!(stated.reply.contains("\"ok\":false"), "{}", stated.reply);
+}
+
+/// F207: no code reads an outcome back out of the reply text. The text
+/// classifier read a reply that is not JSON as a success, so a refusal in
+/// plain text showed a success toast. The dispatch now takes the outcome
+/// the reply states.
+#[test]
+fn the_dispatch_reads_the_stated_outcome_never_the_reply_text() {
+    let at = MCP_SRC
+        .find("McpRequestKind::Core(request) => {")
+        .expect("app/mcp.rs holds one McpRequestKind::Core arm");
+    let arm = &MCP_SRC[at..MCP_SRC.len().min(at + ARM_SPAN_CHARS)];
+    // Non-vacuity: the arm destructures the stated reply.
+    assert!(
+        arm.contains("let CoreReply {"),
+        "the Core arm destructures the CoreReply it gets"
+    );
+    for src in [MCP_SRC, COMMANDS_SRC, BRIDGE_SRC] {
+        assert!(
+            !src.contains("from_json_response"),
+            "a text classifier of the reply is back"
+        );
+    }
+    assert!(
+        BRIDGE_SRC.contains("pub outcome: McpOutcome,"),
+        "the stated outcome is not optional"
+    );
 }
 
 /// A success reply that carries advisory warnings (`ok: true`, non-empty
 /// `warnings`) is still a success: the gate advisories belong to the reply,
-/// not to the toast. Only `ok: false` or `error` refuses.
+/// not to the toast. The success door states it and keeps the bytes.
 #[test]
 fn advisory_warnings_on_a_success_reply_do_not_refuse() {
     let reply = serde_json::to_string(&MutationResult {
@@ -434,8 +466,7 @@ fn advisory_warnings_on_a_success_reply_do_not_refuse() {
         diagnostic_delta: Vec::new(),
     })
     .unwrap();
-    assert_eq!(
-        McpOutcome::from_json_response(&reply),
-        McpOutcome::Succeeded
-    );
+    let stated = McpReply::succeeded(reply.clone());
+    assert_eq!(stated.outcome, McpOutcome::Succeeded);
+    assert_eq!(stated.reply, reply);
 }

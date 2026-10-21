@@ -169,6 +169,142 @@ impl BitCutDirection {
     }
 }
 
+/// One field of a [`ToolConfig`] that `set_tool_param` writes (F118).
+///
+/// The token of each variant is the [`ToolConfig`] field name. The MCP
+/// wire and the CLI `--tool-set` key name a field by this token. The
+/// fields that no variant names have their own doors: the identity
+/// (`id`, `name`, `tool_number`, `vendor`, `product_id`) and the type
+/// (`tool_type`) change through `ReplaceTool` or `add_tool`. The sentry
+/// `every_stock_and_tool_field_is_reachable_f118` holds that list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolParamKey {
+    Diameter,
+    CuttingLength,
+    HelixDeg,
+    CornerRadiusMm,
+    CornerRadius,
+    IncludedAngle,
+    TaperHalfAngle,
+    ShaftDiameter,
+    ShankDiameter,
+    Stickout,
+    FluteCount,
+    ToolMaterial,
+    CutDirection,
+    SizeUnits,
+}
+
+impl ToolParamKey {
+    pub const ALL: &[ToolParamKey] = &crate::all_variants!(ToolParamKey:
+        Diameter, CuttingLength, HelixDeg, CornerRadiusMm, CornerRadius,
+        IncludedAngle, TaperHalfAngle, ShaftDiameter, ShankDiameter, Stickout,
+        FluteCount, ToolMaterial, CutDirection, SizeUnits,
+    );
+
+    /// The snake_case token: the serde form and the [`ToolConfig`] field
+    /// name. The test `tool_param_key_tokens_are_the_serde_form` holds the
+    /// two equal.
+    pub const fn token(self) -> &'static str {
+        match self {
+            Self::Diameter => "diameter",
+            Self::CuttingLength => "cutting_length",
+            Self::HelixDeg => "helix_deg",
+            Self::CornerRadiusMm => "corner_radius_mm",
+            Self::CornerRadius => "corner_radius",
+            Self::IncludedAngle => "included_angle",
+            Self::TaperHalfAngle => "taper_half_angle",
+            Self::ShaftDiameter => "shaft_diameter",
+            Self::ShankDiameter => "shank_diameter",
+            Self::Stickout => "stickout",
+            Self::FluteCount => "flute_count",
+            Self::ToolMaterial => "tool_material",
+            Self::CutDirection => "cut_direction",
+            Self::SizeUnits => "size_units",
+        }
+    }
+
+    /// The key whose token is `token`, exactly. `None` for any other text.
+    pub fn parse(token: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|k| k.token() == token)
+    }
+
+    /// Every token, comma-separated, for a refusal that lists them.
+    pub fn tokens_joined() -> String {
+        Self::ALL
+            .iter()
+            .map(|k| k.token())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// Whether a write of this key changes what the tool cuts. `false`
+    /// only for `size_units`: it changes how the size is SHOWN and no
+    /// stored length, so it drops no result.
+    pub const fn changes_the_cut(self) -> bool {
+        !matches!(self, Self::SizeUnits)
+    }
+
+    /// Write `value` into the field of `tool` that this key names.
+    ///
+    /// The write checks only the JSON type of `value`. The caller runs
+    /// [`ToolConfig::validate`] on the result (F029), so a value outside
+    /// its domain refuses there.
+    ///
+    /// # Errors
+    ///
+    /// A message that names the key and the type it needs.
+    pub fn write(self, tool: &mut ToolConfig, value: &serde_json::Value) -> Result<(), String> {
+        let number = |field: &mut f64| -> Result<(), String> {
+            *field = value
+                .as_f64()
+                .ok_or_else(|| format!("{} must be a number (got {value})", self.token()))?;
+            Ok(())
+        };
+        match self {
+            Self::Diameter => number(&mut tool.diameter),
+            Self::CuttingLength => number(&mut tool.cutting_length),
+            Self::HelixDeg => number(&mut tool.helix_deg),
+            Self::CornerRadiusMm => number(&mut tool.corner_radius_mm),
+            Self::CornerRadius => number(&mut tool.corner_radius),
+            Self::IncludedAngle => number(&mut tool.included_angle),
+            Self::TaperHalfAngle => number(&mut tool.taper_half_angle),
+            Self::ShaftDiameter => number(&mut tool.shaft_diameter),
+            Self::ShankDiameter => number(&mut tool.shank_diameter),
+            Self::Stickout => number(&mut tool.stickout),
+            Self::FluteCount => {
+                tool.flute_count = value
+                    .as_u64()
+                    .and_then(|v| u32::try_from(v).ok())
+                    .ok_or_else(|| format!("flute_count must be a whole number (got {value})"))?;
+                Ok(())
+            }
+            Self::ToolMaterial => {
+                tool.tool_material = serde_json::from_value(value.clone()).map_err(|e| {
+                    format!("tool_material must be \"carbide\" or \"hss\" (got {value}: {e})")
+                })?;
+                Ok(())
+            }
+            Self::CutDirection => {
+                tool.cut_direction = serde_json::from_value(value.clone()).map_err(|e| {
+                    format!(
+                        "cut_direction must be \"up_cut\", \"down_cut\" or \"compression\" \
+                         (got {value}: {e})"
+                    )
+                })?;
+                Ok(())
+            }
+            Self::SizeUnits => {
+                tool.size_units = Some(serde_json::from_value(value.clone()).map_err(|e| {
+                    format!("size_units must be \"metric\" or \"imperial\" (got {value}: {e})")
+                })?);
+                Ok(())
+            }
+        }
+    }
+}
+
 /// Complete tool configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolConfig {
@@ -2041,5 +2177,56 @@ product_id = ""
         assert_eq!(json["size_units"], "imperial");
         let back: ToolConfig = serde_json::from_value(json).unwrap();
         assert_eq!(back.size_units, Some(SizeUnits::Imperial));
+    }
+
+    /// F118: the token of each key is its serde form, and `parse` reads
+    /// only that token.
+    #[test]
+    fn tool_param_key_tokens_are_the_serde_form() {
+        for key in ToolParamKey::ALL {
+            assert_eq!(
+                serde_json::to_value(key).unwrap(),
+                serde_json::Value::String(key.token().to_owned()),
+                "{key:?}"
+            );
+            assert_eq!(ToolParamKey::parse(key.token()), Some(*key));
+            assert_eq!(ToolParamKey::parse(&key.token().to_ascii_uppercase()), None);
+        }
+        assert_eq!(ToolParamKey::parse("not_a_field"), None);
+    }
+
+    /// F118: the four fields the old string table could not set are
+    /// written, and a value of the wrong JSON type refuses.
+    #[test]
+    fn tool_param_key_writes_the_fields_the_old_table_missed() {
+        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        ToolParamKey::HelixDeg
+            .write(&mut tool, &serde_json::json!(40.0))
+            .unwrap();
+        ToolParamKey::CornerRadiusMm
+            .write(&mut tool, &serde_json::json!(0.5))
+            .unwrap();
+        ToolParamKey::ToolMaterial
+            .write(&mut tool, &serde_json::json!("hss"))
+            .unwrap();
+        ToolParamKey::CutDirection
+            .write(&mut tool, &serde_json::json!("down_cut"))
+            .unwrap();
+        assert!((tool.helix_deg - 40.0).abs() < 1e-12);
+        assert!((tool.corner_radius_mm - 0.5).abs() < 1e-12);
+        assert_eq!(tool.tool_material, ToolMaterial::Hss);
+        assert_eq!(tool.cut_direction, BitCutDirection::DownCut);
+        assert!(
+            ToolParamKey::ToolMaterial
+                .write(&mut tool, &serde_json::json!("steel"))
+                .is_err()
+        );
+        assert!(
+            ToolParamKey::FluteCount
+                .write(&mut tool, &serde_json::json!(2.5))
+                .is_err()
+        );
+        assert!(!ToolParamKey::SizeUnits.changes_the_cut());
+        assert!(ToolParamKey::HelixDeg.changes_the_cut());
     }
 }

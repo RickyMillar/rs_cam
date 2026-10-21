@@ -12,10 +12,502 @@ use rmcp::schemars;
 use serde::Deserialize;
 
 use rs_cam_core::compute::catalog::OperationType;
-use rs_cam_core::compute::config::StockSource;
-use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::compute::transform::ZRotation;
+use rs_cam_core::compute::config::{BoundaryContainment, StockSource};
+use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolParamKey, ToolType};
+use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+use rs_cam_core::feeds::suggest::ApplyScope;
+use rs_cam_core::feeds::SpindleStrategy;
 use rs_cam_core::material::Material;
+use rs_cam_core::session::TierStrategy;
+use rs_cam_core::trace::toolpath_spans::SpanKind;
+
+// ── Wire token enums (F166) ───────────────────────────────────────────
+//
+// A value with a fixed set of legal tokens is an enum on the wire, so a
+// client reads the legal values from the published schema. Each enum is
+// `#[schemars(inline)]`: the published tool schema carries no `$defs`. The
+// token of each variant is `rename_all = "snake_case"` of its name. A
+// mirror of a core enum converts with an exhaustive `match` in each
+// direction, so a variant that core gains does not compile here until the
+// wire carries it. No enum accepts a second spelling (no-legacy ruling,
+// 2026-09-16).
+
+/// The stock face that points up in a setup: a mirror of core [`FaceUp`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum FaceUpParam {
+    #[default]
+    Top,
+    Bottom,
+    Front,
+    Back,
+    Left,
+    Right,
+}
+
+impl From<FaceUpParam> for FaceUp {
+    fn from(p: FaceUpParam) -> Self {
+        match p {
+            FaceUpParam::Top => Self::Top,
+            FaceUpParam::Bottom => Self::Bottom,
+            FaceUpParam::Front => Self::Front,
+            FaceUpParam::Back => Self::Back,
+            FaceUpParam::Left => Self::Left,
+            FaceUpParam::Right => Self::Right,
+        }
+    }
+}
+
+impl From<FaceUp> for FaceUpParam {
+    fn from(f: FaceUp) -> Self {
+        match f {
+            FaceUp::Top => Self::Top,
+            FaceUp::Bottom => Self::Bottom,
+            FaceUp::Front => Self::Front,
+            FaceUp::Back => Self::Back,
+            FaceUp::Left => Self::Left,
+            FaceUp::Right => Self::Right,
+        }
+    }
+}
+
+impl FaceUpParam {
+    /// The wire token.
+    pub const fn token(self) -> &'static str {
+        match self {
+            Self::Top => "top",
+            Self::Bottom => "bottom",
+            Self::Front => "front",
+            Self::Back => "back",
+            Self::Left => "left",
+            Self::Right => "right",
+        }
+    }
+}
+
+/// An operation kind: a mirror of core [`OperationType`]. The token of
+/// each variant is [`OperationType::kind_str`]; the test
+/// `operation_type_param_tokens_are_the_kind_tokens` holds the two equal.
+///
+/// `for_each_op!` (core `compute/catalog.rs`) is a crate-local macro, so
+/// this mirror cannot be generated from it. The two exhaustive `From`
+/// matches below take its place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum OperationTypeParam {
+    Face,
+    #[default]
+    Pocket,
+    Profile,
+    Adaptive,
+    VCarve,
+    Inlay,
+    InlayPlug,
+    Zigzag,
+    Trace,
+    Drill,
+    Chamfer,
+    DropCutter,
+    #[serde(rename = "adaptive3d")]
+    Adaptive3d,
+    Waterline,
+    Pencil,
+    Scallop,
+    UnifiedFinish,
+    SteepShallow,
+    RampFinish,
+    SpiralFinish,
+    RadialFinish,
+    HorizontalFinish,
+    ProjectCurve,
+    AlignmentPinDrill,
+}
+
+impl From<OperationTypeParam> for OperationType {
+    fn from(p: OperationTypeParam) -> Self {
+        use OperationTypeParam as W;
+        match p {
+            W::Face => Self::Face,
+            W::Pocket => Self::Pocket,
+            W::Profile => Self::Profile,
+            W::Adaptive => Self::Adaptive,
+            W::VCarve => Self::VCarve,
+            W::Inlay => Self::Inlay,
+            W::InlayPlug => Self::InlayPlug,
+            W::Zigzag => Self::Zigzag,
+            W::Trace => Self::Trace,
+            W::Drill => Self::Drill,
+            W::Chamfer => Self::Chamfer,
+            W::DropCutter => Self::DropCutter,
+            W::Adaptive3d => Self::Adaptive3d,
+            W::Waterline => Self::Waterline,
+            W::Pencil => Self::Pencil,
+            W::Scallop => Self::Scallop,
+            W::UnifiedFinish => Self::UnifiedFinish,
+            W::SteepShallow => Self::SteepShallow,
+            W::RampFinish => Self::RampFinish,
+            W::SpiralFinish => Self::SpiralFinish,
+            W::RadialFinish => Self::RadialFinish,
+            W::HorizontalFinish => Self::HorizontalFinish,
+            W::ProjectCurve => Self::ProjectCurve,
+            W::AlignmentPinDrill => Self::AlignmentPinDrill,
+        }
+    }
+}
+
+impl From<OperationType> for OperationTypeParam {
+    fn from(op: OperationType) -> Self {
+        use OperationType as C;
+        match op {
+            C::Face => Self::Face,
+            C::Pocket => Self::Pocket,
+            C::Profile => Self::Profile,
+            C::Adaptive => Self::Adaptive,
+            C::VCarve => Self::VCarve,
+            C::Inlay => Self::Inlay,
+            C::InlayPlug => Self::InlayPlug,
+            C::Zigzag => Self::Zigzag,
+            C::Trace => Self::Trace,
+            C::Drill => Self::Drill,
+            C::Chamfer => Self::Chamfer,
+            C::DropCutter => Self::DropCutter,
+            C::Adaptive3d => Self::Adaptive3d,
+            C::Waterline => Self::Waterline,
+            C::Pencil => Self::Pencil,
+            C::Scallop => Self::Scallop,
+            C::UnifiedFinish => Self::UnifiedFinish,
+            C::SteepShallow => Self::SteepShallow,
+            C::RampFinish => Self::RampFinish,
+            C::SpiralFinish => Self::SpiralFinish,
+            C::RadialFinish => Self::RadialFinish,
+            C::HorizontalFinish => Self::HorizontalFinish,
+            C::ProjectCurve => Self::ProjectCurve,
+            C::AlignmentPinDrill => Self::AlignmentPinDrill,
+        }
+    }
+}
+
+/// A cutter type: a mirror of core [`ToolType`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum ToolTypeParam {
+    #[default]
+    EndMill,
+    BallNose,
+    BullNose,
+    VBit,
+    TaperedBallNose,
+}
+
+impl From<ToolTypeParam> for ToolType {
+    fn from(p: ToolTypeParam) -> Self {
+        match p {
+            ToolTypeParam::EndMill => Self::EndMill,
+            ToolTypeParam::BallNose => Self::BallNose,
+            ToolTypeParam::BullNose => Self::BullNose,
+            ToolTypeParam::VBit => Self::VBit,
+            ToolTypeParam::TaperedBallNose => Self::TaperedBallNose,
+        }
+    }
+}
+
+impl From<ToolType> for ToolTypeParam {
+    fn from(t: ToolType) -> Self {
+        match t {
+            ToolType::EndMill => Self::EndMill,
+            ToolType::BallNose => Self::BallNose,
+            ToolType::BullNose => Self::BullNose,
+            ToolType::VBit => Self::VBit,
+            ToolType::TaperedBallNose => Self::TaperedBallNose,
+        }
+    }
+}
+
+/// A structural span kind: a mirror of core [`SpanKind`]. The token of
+/// each variant is [`SpanKind::as_key`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum SpanKindParam {
+    Operation,
+    DepthPass,
+    Region,
+    Entry,
+    LeadOut,
+    LinkBridge,
+    DressupArtifact,
+    GeometryRefit,
+    RapidOrderBarrier,
+    WaterlineCleanup,
+}
+
+impl From<SpanKindParam> for SpanKind {
+    fn from(p: SpanKindParam) -> Self {
+        use SpanKindParam as W;
+        match p {
+            W::Operation => Self::Operation,
+            W::DepthPass => Self::DepthPass,
+            W::Region => Self::Region,
+            W::Entry => Self::Entry,
+            W::LeadOut => Self::LeadOut,
+            W::LinkBridge => Self::LinkBridge,
+            W::DressupArtifact => Self::DressupArtifact,
+            W::GeometryRefit => Self::GeometryRefit,
+            W::RapidOrderBarrier => Self::RapidOrderBarrier,
+            W::WaterlineCleanup => Self::WaterlineCleanup,
+        }
+    }
+}
+
+impl From<SpanKind> for SpanKindParam {
+    fn from(k: SpanKind) -> Self {
+        use SpanKind as C;
+        match k {
+            C::Operation => Self::Operation,
+            C::DepthPass => Self::DepthPass,
+            C::Region => Self::Region,
+            C::Entry => Self::Entry,
+            C::LeadOut => Self::LeadOut,
+            C::LinkBridge => Self::LinkBridge,
+            C::DressupArtifact => Self::DressupArtifact,
+            C::GeometryRefit => Self::GeometryRefit,
+            C::RapidOrderBarrier => Self::RapidOrderBarrier,
+            C::WaterlineCleanup => Self::WaterlineCleanup,
+        }
+    }
+}
+
+impl SpanKindParam {
+    /// The wire token: core [`SpanKind::as_key`].
+    pub fn token(self) -> &'static str {
+        SpanKind::from(self).as_key()
+    }
+}
+
+/// The source of a machining boundary. `derived_rest_regions` needs
+/// `source_toolpath_id` beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum BoundarySourceParam {
+    /// The stock bounding rectangle.
+    Stock,
+    /// The 2D silhouette of the model along the tool axis.
+    ModelSilhouette,
+    /// The closed regions of the toolpath selection.
+    Selection,
+    /// The regions a prior rest toolpath left (`source_toolpath_id`).
+    DerivedRestRegions,
+}
+
+/// How the tool sits against a boundary: a mirror of core
+/// [`BoundaryContainment`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum BoundaryContainmentParam {
+    /// The tool centre stays on or inside the boundary.
+    #[default]
+    Center,
+    /// The whole tool stays inside the boundary.
+    Inside,
+    /// The tool edge may pass the boundary by one radius.
+    Outside,
+}
+
+impl From<BoundaryContainmentParam> for BoundaryContainment {
+    fn from(p: BoundaryContainmentParam) -> Self {
+        match p {
+            BoundaryContainmentParam::Center => Self::Center,
+            BoundaryContainmentParam::Inside => Self::Inside,
+            BoundaryContainmentParam::Outside => Self::Outside,
+        }
+    }
+}
+
+impl From<BoundaryContainment> for BoundaryContainmentParam {
+    fn from(c: BoundaryContainment) -> Self {
+        match c {
+            BoundaryContainment::Center => Self::Center,
+            BoundaryContainment::Inside => Self::Inside,
+            BoundaryContainment::Outside => Self::Outside,
+        }
+    }
+}
+
+/// The project spindle policy: a mirror of core [`SpindleStrategy`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum SpindleStrategyParam {
+    /// Use the chart RPM of the vendor row as written.
+    #[default]
+    MatchChart,
+    /// Push RPM up the constant-chipload line to the spindle ceiling,
+    /// and scale the feed with it.
+    MaxSpeed,
+}
+
+impl From<SpindleStrategyParam> for SpindleStrategy {
+    fn from(p: SpindleStrategyParam) -> Self {
+        match p {
+            SpindleStrategyParam::MatchChart => Self::MatchChart,
+            SpindleStrategyParam::MaxSpeed => Self::MaxSpeed,
+        }
+    }
+}
+
+impl From<SpindleStrategy> for SpindleStrategyParam {
+    fn from(s: SpindleStrategy) -> Self {
+        match s {
+            SpindleStrategy::MatchChart => Self::MatchChart,
+            SpindleStrategy::MaxSpeed => Self::MaxSpeed,
+        }
+    }
+}
+
+impl SpindleStrategyParam {
+    /// The wire token.
+    pub const fn token(self) -> &'static str {
+        match self {
+            Self::MatchChart => "match_chart",
+            Self::MaxSpeed => "max_speed",
+        }
+    }
+}
+
+/// Which dimensions `apply_feeds` writes: a mirror of core [`ApplyScope`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum ApplyScopeParam {
+    /// Feed, plunge and RPM. The cut does not change.
+    #[default]
+    Speeds,
+    /// Stepover and depth of cut. THE CUT CHANGES.
+    CutGeometry,
+    /// Both halves in one transaction. The cut changes.
+    Both,
+}
+
+impl From<ApplyScopeParam> for ApplyScope {
+    fn from(p: ApplyScopeParam) -> Self {
+        match p {
+            ApplyScopeParam::Speeds => Self::Speeds,
+            ApplyScopeParam::CutGeometry => Self::CutGeometry,
+            ApplyScopeParam::Both => Self::Both,
+        }
+    }
+}
+
+impl From<ApplyScope> for ApplyScopeParam {
+    fn from(s: ApplyScope) -> Self {
+        match s {
+            ApplyScope::Speeds => Self::Speeds,
+            ApplyScope::CutGeometry => Self::CutGeometry,
+            ApplyScope::Both => Self::Both,
+        }
+    }
+}
+
+impl ApplyScopeParam {
+    /// The wire token.
+    pub const fn token(self) -> &'static str {
+        match self {
+            Self::Speeds => "speeds",
+            Self::CutGeometry => "cut_geometry",
+            Self::Both => "both",
+        }
+    }
+}
+
+/// The finishing operation of one tier of the multi-tool plan: a mirror of
+/// core [`TierStrategy`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum TierStrategyParam {
+    /// The band mix (raster, scallop, waterline per slope band).
+    #[default]
+    UnifiedFinish,
+    /// The offset-cascade scallop.
+    Scallop,
+    /// The iso-field scallop.
+    IsoScallop,
+}
+
+impl From<TierStrategyParam> for TierStrategy {
+    fn from(p: TierStrategyParam) -> Self {
+        match p {
+            TierStrategyParam::UnifiedFinish => Self::UnifiedFinish,
+            TierStrategyParam::Scallop => Self::Scallop,
+            TierStrategyParam::IsoScallop => Self::IsoScallop,
+        }
+    }
+}
+
+impl From<TierStrategy> for TierStrategyParam {
+    fn from(s: TierStrategy) -> Self {
+        match s {
+            TierStrategy::UnifiedFinish => Self::UnifiedFinish,
+            TierStrategy::Scallop => Self::Scallop,
+            TierStrategy::IsoScallop => Self::IsoScallop,
+        }
+    }
+}
+
+/// The GUI workspace `set_ui_view` switches to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum WorkspaceParam {
+    Setup,
+    Toolpaths,
+    Simulation,
+    Readiness,
+}
+
+/// The toolpath properties tab `set_ui_view` shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum PropertiesTabParam {
+    Geometry,
+    Feeds,
+    Linking,
+    Heights,
+    Dressup,
+}
+
+/// The non-toolpath properties panel `set_ui_view` selects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum SelectPanelParam {
+    /// Machine setup, kinematics and the GRBL `$$` import.
+    Machine,
+    /// The stock panel.
+    Stock,
+}
+
+/// The modal `set_ui_view` opens. `none` closes every modal. It
+/// serialises to the same token, for the reply echo.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum ModalParam {
+    FeedsModal,
+    ExportWizard,
+    ToolLibrary,
+    PinWizard,
+    /// Close every modal (the load-warning modal and the pin wizard too).
+    None,
+}
 
 // ── Parameter structs ─────────────────────────────────────────────────
 
@@ -29,8 +521,8 @@ pub struct AddSetupParam {
 pub struct SetSetupFaceParam {
     /// Setup index (0-based)
     pub setup_index: usize,
-    /// Face orientation: "top", "bottom", "front", "back", "left", "right"
-    pub face_up: String,
+    /// The stock face that points up.
+    pub face_up: FaceUpParam,
 }
 
 /// The four legal in-plane stock rotations, as a wire enum (CLI-09).
@@ -249,8 +741,8 @@ pub struct GenerateAllParam {
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct OperationSchemaParam {
-    /// Operation type (e.g. "pocket", "adaptive3d", "drill")
-    pub operation_type: String,
+    /// The operation kind.
+    pub operation_type: OperationTypeParam,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -409,24 +901,19 @@ pub struct ScreenshotGuiParam {
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetUiViewParam {
-    /// Workspace to switch to: "setup", "toolpaths", "simulation",
-    /// or "readiness".
-    pub workspace: Option<String>,
+    /// The workspace to switch to.
+    pub workspace: Option<WorkspaceParam>,
     /// Toolpath index (0-based) to select. Selecting a toolpath makes its
     /// properties panel visible in the Toolpaths workspace.
     pub toolpath_index: Option<usize>,
-    /// Toolpath properties tab to activate: "geometry", "feeds",
-    /// "linking", "heights", or "dressup". Takes effect the next time the
-    /// properties panel renders a selected toolpath.
-    pub properties_tab: Option<String>,
-    /// Non-toolpath properties panel to select: "machine" (machine setup +
-    /// kinematics + GRBL $$ import) or "stock". Switches to the Setup
+    /// The toolpath properties tab to activate. Takes effect the next
+    /// time the properties panel renders a selected toolpath.
+    pub properties_tab: Option<PropertiesTabParam>,
+    /// The non-toolpath properties panel to select. Switches to the Setup
     /// workspace so the panel is visible on the right.
-    pub select: Option<String>,
-    /// Modal to open: "feeds_modal", "export_wizard", "tool_library",
-    /// "pin_wizard", or "none" to close all modals (the
-    /// load-warning modal and the pin wizard too).
-    pub modal: Option<String>,
+    pub select: Option<SelectPanelParam>,
+    /// The modal to open, or `none` to close all modals.
+    pub modal: Option<ModalParam>,
     /// Viewport overlays to switch on or off, as `{"<id>": true|false}`.
     ///
     /// The ids are the rows of the GUI's viewport catalogue (All viewport options) — the same list the
@@ -625,9 +1112,8 @@ pub struct SetToolpathFloorParam {
 /// F3.1 — add a toolpath through the GUI's own add path.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct AddToolpathViaGuiParam {
-    /// Operation type, same vocabulary `add_toolpath` accepts (e.g.
-    /// "pocket", "scallop", "adaptive3d").
-    pub operation_type: String,
+    /// The operation kind, the same vocabulary `add_toolpath` accepts.
+    pub operation_type: OperationTypeParam,
     /// Setup index (0-based) to add into. The GUI takes the target setup
     /// from the CURRENT SELECTION, so passing this selects that setup
     /// first, exactly as clicking the setup would. Omit to add into
@@ -672,19 +1158,105 @@ pub struct SetToolpathModelParam {
     pub model_id: usize,
 }
 
+/// The tool field `set_tool_param` writes (F118): a mirror of core
+/// [`ToolParamKey`], which cannot derive `schemars::JsonSchema`. The two
+/// `From` matches are exhaustive in both directions, so a key that core
+/// gains does not compile here until the wire carries it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(inline)]
+pub enum ToolParamKeyParam {
+    /// Cutting diameter, mm. For `tapered_ball_nose` the BALL TIP diameter.
+    #[default]
+    Diameter,
+    /// Usable cutting-edge length, mm.
+    CuttingLength,
+    /// Flute helix angle, degrees.
+    HelixDeg,
+    /// Corner radius of an end mill, mm (0 = a sharp corner).
+    CornerRadiusMm,
+    /// Corner radius of a bull nose, mm.
+    CornerRadius,
+    /// Full included angle of a V-bit, degrees.
+    IncludedAngle,
+    /// Cone HALF angle of a tapered ball nose, degrees.
+    TaperHalfAngle,
+    /// Cone-base / shaft diameter of a tapered ball nose, mm.
+    ShaftDiameter,
+    /// Shank diameter, mm.
+    ShankDiameter,
+    /// Stickout from the holder, mm.
+    Stickout,
+    /// Flute count, a whole number.
+    FluteCount,
+    /// Tool material: "carbide" or "hss".
+    ToolMaterial,
+    /// Cut direction: "up_cut", "down_cut" or "compression".
+    CutDirection,
+    /// The display unit: "metric" or "imperial". It changes no stored
+    /// length and invalidates nothing.
+    SizeUnits,
+}
+
+impl From<ToolParamKeyParam> for ToolParamKey {
+    fn from(p: ToolParamKeyParam) -> Self {
+        match p {
+            ToolParamKeyParam::Diameter => Self::Diameter,
+            ToolParamKeyParam::CuttingLength => Self::CuttingLength,
+            ToolParamKeyParam::HelixDeg => Self::HelixDeg,
+            ToolParamKeyParam::CornerRadiusMm => Self::CornerRadiusMm,
+            ToolParamKeyParam::CornerRadius => Self::CornerRadius,
+            ToolParamKeyParam::IncludedAngle => Self::IncludedAngle,
+            ToolParamKeyParam::TaperHalfAngle => Self::TaperHalfAngle,
+            ToolParamKeyParam::ShaftDiameter => Self::ShaftDiameter,
+            ToolParamKeyParam::ShankDiameter => Self::ShankDiameter,
+            ToolParamKeyParam::Stickout => Self::Stickout,
+            ToolParamKeyParam::FluteCount => Self::FluteCount,
+            ToolParamKeyParam::ToolMaterial => Self::ToolMaterial,
+            ToolParamKeyParam::CutDirection => Self::CutDirection,
+            ToolParamKeyParam::SizeUnits => Self::SizeUnits,
+        }
+    }
+}
+
+impl ToolParamKeyParam {
+    /// The wire token: the core [`ToolParamKey::token`].
+    pub fn token(self) -> &'static str {
+        ToolParamKey::from(self).token()
+    }
+}
+
+impl From<ToolParamKey> for ToolParamKeyParam {
+    fn from(k: ToolParamKey) -> Self {
+        match k {
+            ToolParamKey::Diameter => Self::Diameter,
+            ToolParamKey::CuttingLength => Self::CuttingLength,
+            ToolParamKey::HelixDeg => Self::HelixDeg,
+            ToolParamKey::CornerRadiusMm => Self::CornerRadiusMm,
+            ToolParamKey::CornerRadius => Self::CornerRadius,
+            ToolParamKey::IncludedAngle => Self::IncludedAngle,
+            ToolParamKey::TaperHalfAngle => Self::TaperHalfAngle,
+            ToolParamKey::ShaftDiameter => Self::ShaftDiameter,
+            ToolParamKey::ShankDiameter => Self::ShankDiameter,
+            ToolParamKey::Stickout => Self::Stickout,
+            ToolParamKey::FluteCount => Self::FluteCount,
+            ToolParamKey::ToolMaterial => Self::ToolMaterial,
+            ToolParamKey::CutDirection => Self::CutDirection,
+            ToolParamKey::SizeUnits => Self::SizeUnits,
+        }
+    }
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetToolParamInput {
     /// Tool index (0-based)
     pub index: usize,
-    /// Parameter name. The COMPLETE accepted set (anything else is
-    /// refused): "diameter", "flute_count", "stickout", "corner_radius"
-    /// (bull-nose corner), "cutting_length", "included_angle" (V-bit,
-    /// degrees), "taper_half_angle" (tapered ball nose, degrees),
-    /// "shaft_diameter", "shank_diameter", "size_units" (display unit: "metric" or
-    /// "imperial"; changes no length and invalidates nothing).
-    pub param: String,
-    /// New value (numeric — `flute_count` must be a whole number;
-    /// `size_units` takes the string "metric" or "imperial").
+    /// The tool field to write. Tool name, `tool_type` and `tool_number`
+    /// are not settable here.
+    pub param: ToolParamKeyParam,
+    /// New value: a number for a length or an angle, a whole number for
+    /// `flute_count`, and a string token for `tool_material`,
+    /// `cut_direction` and `size_units`.
     #[schemars(schema_with = "any_json_value_schema")]
     pub value: serde_json::Value,
 }
@@ -739,10 +1311,8 @@ pub struct CutTraceParam {
     /// that did not fit is never rendered as an empty array or a zero.
     pub max_response_bytes: Option<usize>,
     /// Optional: only include samples/issues/hotspots whose `span_path` contains
-    /// a span of this kind. Accepted values match `SpanKind`:
-    /// "operation", "depth_pass", "region", "entry", "lead_out", "link_bridge",
-    /// "dressup_artifact", "geometry_refit", "rapid_order_barrier".
-    pub span_kind: Option<String>,
+    /// a span of this kind.
+    pub span_kind: Option<SpanKindParam>,
     /// Optional: only include samples/issues/hotspots whose `span_path` contains
     /// this exact span id. SpanIds come from `inspect_spans`.
     pub span_id: Option<u32>,
@@ -760,11 +1330,8 @@ pub struct CutTraceParam {
 pub struct InspectSpansParam {
     /// Toolpath index (0-based). Must have been generated first.
     pub index: usize,
-    /// Optional `SpanKind` filter (snake_case). Accepted values:
-    /// "operation", "depth_pass", "region", "entry", "lead_out",
-    /// "link_bridge", "dressup_artifact", "geometry_refit",
-    /// "rapid_order_barrier".
-    pub kind: Option<String>,
+    /// Optional span kind filter.
+    pub kind: Option<SpanKindParam>,
     /// Optional parent span id (vec index). Restricts results to spans whose
     /// move range is contained within the parent's range. Pair with `kind` to
     /// drill from "Operation 0" → its DepthPasses → a single DepthPass's Regions.
@@ -806,8 +1373,8 @@ pub struct GenDebugTraceParam {
 pub struct AddToolpathParam {
     /// Setup index (0-based) to add the toolpath into
     pub setup_index: usize,
-    /// Operation type (e.g. "pocket", "adaptive3d", "drop_cutter", "profile")
-    pub operation_type: String,
+    /// The operation kind.
+    pub operation_type: OperationTypeParam,
     /// Tool index (0-based) from list_tools
     pub tool_index: usize,
     /// Model ID (project-assigned `id` field — use the `id` value
@@ -828,8 +1395,8 @@ pub struct RemoveToolpathParam {
 pub struct AddToolParam {
     /// Display name for the tool
     pub name: String,
-    /// Tool type (e.g. "end_mill", "ball_nose", "bull_nose", "v_bit", "tapered_ball_nose")
-    pub tool_type: String,
+    /// The cutter type.
+    pub tool_type: ToolTypeParam,
     /// Tool diameter in mm. For `tapered_ball_nose` this is the BALL TIP
     /// diameter (2 x tip radius) — the cone base is `shaft_diameter`.
     pub diameter: f64,
@@ -952,6 +1519,43 @@ pub struct SetStockConfigParam {
     /// what you just set. Passing `false` alone turns auto-fit off
     /// without changing any number.
     pub auto_from_model: Option<bool>,
+    /// The margin in mm that auto-fit adds on each side of the model
+    /// bounding box (`>= 0`). It does not clear `auto_from_model`. Omit to
+    /// leave unchanged.
+    pub padding: Option<f64>,
+}
+
+impl TryFrom<SetStockConfigParam> for rs_cam_core::compute::stock_config::StockConfigPatch {
+    /// The material refusal of [`resolve_material`].
+    type Error = String;
+
+    /// F118: the wire names every patch field, and the patch names every
+    /// wire field. Both sides are written out with no `..`, so a field
+    /// that one side gains is a compile error here.
+    fn try_from(p: SetStockConfigParam) -> Result<Self, String> {
+        let SetStockConfigParam {
+            x,
+            y,
+            z,
+            origin_x,
+            origin_y,
+            origin_z,
+            material,
+            auto_from_model,
+            padding,
+        } = p;
+        Ok(Self {
+            x,
+            y,
+            z,
+            origin_x,
+            origin_y,
+            origin_z,
+            padding,
+            material: material.as_deref().map(resolve_material).transpose()?,
+            auto_from_model,
+        })
+    }
 }
 
 /// `set_machine_kinematics` — typed write path for the accel /
@@ -991,11 +1595,10 @@ pub struct SetBoundaryConfigParam {
     pub index: usize,
     /// Enable or disable boundary
     pub enabled: bool,
-    /// Boundary source: "stock", "model_silhouette", "selection" or
-    /// "derived_rest_regions"
-    pub source: Option<String>,
-    /// Containment mode: "center", "inside", or "outside"
-    pub containment: Option<String>,
+    /// The boundary source. Omit for `stock`.
+    pub source: Option<BoundarySourceParam>,
+    /// The containment mode. Omit for `center`.
+    pub containment: Option<BoundaryContainmentParam>,
     /// Additional offset in mm (positive = expand, negative = shrink)
     pub offset: Option<f64>,
     /// Required when `source` is "derived_rest_regions": the stable id
@@ -1600,7 +2203,7 @@ pub struct PlanMultitoolFinishingParam {
     /// Evidence for the scallop/iso options:
     /// planning/metrology_2026-09-02/FINDINGS.md §M7–M8.
     #[serde(default)]
-    pub tier_strategies: Option<Vec<String>>,
+    pub tier_strategies: Option<Vec<TierStrategyParam>>,
 }
 
 /// Phase U — the look-before-emit twin of [`PlanMultitoolFinishingParam`].
@@ -1664,7 +2267,7 @@ pub struct PreviewTierMapParam {
     /// IGNORED: a tier's strategy picks its OPERATION, not its territory,
     /// so the island preview is identical whichever strategies you pass.
     #[serde(default)]
-    pub tier_strategies: Option<Vec<String>>,
+    pub tier_strategies: Option<Vec<TierStrategyParam>>,
     /// Absolute path ending in `.svg` to write the island preview to.
     /// Unset = numbers only. The parent directory must already exist —
     /// the call refuses rather than creating one. Polygons only, so a
@@ -1854,13 +2457,9 @@ pub struct SetStockSourceParam {
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct SetSpindleStrategyParam {
-    /// Project-level spindle policy. Either "match_chart" (default —
-    /// use vendor LUT row's chart-published RPM verbatim) or
-    /// "max_speed" (push RPM up the constant-chipload line toward
-    /// the spindle ceiling, scaling feed proportionally). Affects
-    /// every Suggest call across the project. See
-    /// `rs_cam_core::feeds::SpindleStrategy`.
-    pub strategy: String,
+    /// The project-level spindle policy. It affects every Suggest call
+    /// across the project. See `rs_cam_core::feeds::SpindleStrategy`.
+    pub strategy: SpindleStrategyParam,
 }
 
 /// `apply_feeds` — the agent-facing entry to the one application funnel
@@ -1884,7 +2483,7 @@ pub struct ApplyFeedsParam {
     /// `rs_cam_core::feeds::suggest::ApplyScope`; there is deliberately no
     /// per-field scope.
     #[serde(default)]
-    pub scope: Option<String>,
+    pub scope: Option<ApplyScopeParam>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -2300,30 +2899,6 @@ pub struct SimJumpToToolpathBoundaryParam {
     pub index: usize,
 }
 
-/// Parse a string into an `OperationType` (snake_case).
-pub fn parse_operation_type(s: &str) -> Result<OperationType, String> {
-    serde_json::from_value(serde_json::Value::String(s.to_owned()))
-        .map_err(|e| format!("Unknown operation type '{s}' ({e}). Valid types: face, pocket, profile, adaptive, v_carve, inlay, inlay_plug, zigzag, trace, drill, chamfer, drop_cutter, adaptive3d, waterline, pencil, scallop, unified_finish, steep_shallow, ramp_finish, spiral_finish, radial_finish, horizontal_finish, project_curve, alignment_pin_drill"))
-}
-
-/// Parse a string into a `ToolType`.
-///
-/// Vocabulary is the unified core [`ToolType::parse_lenient`] (T8) —
-/// the canonical snake_case token of each type, case folded — so the
-/// MCP surface can't drift from the project-file parsers. L9 deleted
-/// the historical loader aliases, so this surface accepts canonical
-/// names only. Unknown input stays an explicit `Err` here (deliberate
-/// Q4 carve-out: this feeds live mutations like `add_tool`, where an
-/// error beats silently creating an end mill the caller didn't ask
-/// for).
-pub fn parse_tool_type(s: &str) -> Result<ToolType, String> {
-    ToolType::parse_lenient(s).ok_or_else(|| {
-        format!(
-            "Unknown tool type '{s}'. Valid types: end_mill, ball_nose, bull_nose, v_bit, tapered_ball_nose"
-        )
-    })
-}
-
 // ── Wire-value plumbing ───────────────────────────────────────────────
 
 /// JSON-Schema for a tool argument that accepts *any* JSON value.
@@ -2484,7 +3059,7 @@ pub struct BuiltTool {
 /// `ToolDimension` table that the session doors and the GUI also read).
 /// This builder adds only rule 1, the required fields.
 pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
-    let tool_type = parse_tool_type(&spec.tool_type)?;
+    let tool_type = ToolType::from(spec.tool_type);
 
     let mut config = ToolConfig::new_default(ToolId(0), tool_type);
     config.name = spec.name.clone();
@@ -2777,6 +3352,15 @@ pub fn build_info() -> serde_json::Value {
             // `source`) and the loops it cuts; the write stays
             // `set_toolpath_param tab_points`.
             "tab_layout",
+            // F118 (2026-10-21): `set_stock_config` takes `padding` and its
+            // reply carries `padding`; `set_tool_param` writes every tool
+            // field that has no door of its own (`helix_deg`,
+            // `corner_radius_mm`, `tool_material`, `cut_direction` too).
+            "stock_padding",
+            "tool_param_every_field",
+            // F166 (2026-10-21): every wire value with a fixed set of
+            // tokens is an enum in the tool schema, with no alias spelling.
+            "wire_token_enums",
         ],
     })
 }
@@ -3244,40 +3828,46 @@ mod tests {
         assert_eq!(full.svg_path.as_deref(), Some("/tmp/tiers.svg"));
     }
 
-    /// Parity freeze (architectural refactor §7.2): the MCP parse
-    /// helpers accept every canonical snake_case name — the same reprs
-    /// pinned in core's `operation_type_serde_repr_pinned` /
-    /// `tool_type_serde_repr_pinned`. A core serde rename that misses
-    /// this surface fails here.
+    /// Parity freeze (architectural refactor §7.2, F166): the wire enums
+    /// take every canonical snake_case name — the reprs pinned in core's
+    /// `operation_type_serde_repr_pinned` / `tool_type_serde_repr_pinned`
+    /// — and convert to the same core variant. A core serde rename that
+    /// misses this surface fails here.
     #[test]
-    fn mcp_parse_helpers_accept_all_canonical_names() {
+    fn operation_type_param_tokens_are_the_kind_tokens() {
         for &op_type in OperationType::ALL {
-            let parsed = parse_operation_type(op_type.kind_str())
-                .expect("canonical op name must parse on the MCP surface");
-            assert_eq!(parsed, op_type);
+            let wire: OperationTypeParam =
+                serde_json::from_value(serde_json::json!(op_type.kind_str()))
+                    .expect("canonical op name must parse on the MCP surface");
+            assert_eq!(OperationType::from(wire), op_type);
+            assert_eq!(OperationTypeParam::from(op_type), wire);
         }
         for &tool_type in ToolType::ALL {
-            let repr = serde_json::to_value(tool_type).expect("serialize tool type");
-            let repr = repr.as_str().expect("tool type serializes to a string");
-            let parsed =
-                parse_tool_type(repr).expect("canonical tool name must parse on the MCP surface");
-            assert_eq!(parsed, tool_type);
+            let wire: ToolTypeParam =
+                serde_json::from_value(serde_json::json!(tool_type.serde_token()))
+                    .expect("canonical tool name must parse on the MCP surface");
+            assert_eq!(ToolType::from(wire), tool_type);
         }
-        // Unknown names stay loud errors that list the valid vocabulary.
-        let err = parse_operation_type("definitely_not_an_op").unwrap_err();
-        assert!(
-            err.contains("alignment_pin_drill"),
-            "error must list valid types: {err}"
-        );
-        let err = parse_tool_type("definitely_not_a_tool").unwrap_err();
-        assert!(
-            err.contains("tapered_ball_nose"),
-            "error must list valid types: {err}"
-        );
-        // L9: the historical loader aliases are gone. This surface
-        // takes canonical names only, and it says so.
-        assert!(parse_tool_type("ball").is_err());
-        assert!(parse_tool_type("flat").is_err());
+        for key in ToolParamKey::ALL {
+            let wire: ToolParamKeyParam = serde_json::from_value(serde_json::json!(key.token()))
+                .expect("every tool parameter key parses on the MCP surface");
+            assert_eq!(ToolParamKey::from(wire), *key);
+        }
+        for kind in SpanKind::ALL {
+            let wire: SpanKindParam = serde_json::from_value(serde_json::json!(kind.as_key()))
+                .expect("every span kind parses on the MCP surface");
+            assert_eq!(SpanKind::from(wire), kind);
+        }
+        // No second spelling: an unknown name, a case variant and the
+        // historical aliases are refused.
+        for token in ["definitely_not_an_op", "POCKET", "adaptive_3d"] {
+            assert!(
+                serde_json::from_value::<OperationTypeParam>(serde_json::json!(token)).is_err()
+            );
+        }
+        for token in ["ball", "flat", "END_MILL"] {
+            assert!(serde_json::from_value::<ToolTypeParam>(serde_json::json!(token)).is_err());
+        }
     }
 
     /// GUI-capture surface (2026-06-11): `ScreenshotGuiParam` must accept
@@ -3315,10 +3905,18 @@ mod tests {
             "modal": "feeds_modal",
         }))
         .unwrap();
-        assert_eq!(p.workspace.as_deref(), Some("toolpaths"));
+        assert_eq!(p.workspace, Some(WorkspaceParam::Toolpaths));
         assert_eq!(p.toolpath_index, Some(2));
-        assert_eq!(p.properties_tab.as_deref(), Some("heights"));
-        assert_eq!(p.modal.as_deref(), Some("feeds_modal"));
+        assert_eq!(p.properties_tab, Some(PropertiesTabParam::Heights));
+        assert_eq!(p.modal, Some(ModalParam::FeedsModal));
+        // F166: no second spelling.
+        for (key, token) in [("workspace", "sim"), ("properties_tab", "feeds_speeds")] {
+            assert!(
+                serde_json::from_value::<SetUiViewParam>(serde_json::json!({ key: token }))
+                    .is_err(),
+                "{key}: {token}"
+            );
+        }
     }
 
     /// The `overlays` map deserializes as `{id: bool}`, and its absence is
@@ -3418,7 +4016,8 @@ mod tests {
     fn add_tool_spec(tool_type: &str, diameter: f64) -> AddToolParam {
         AddToolParam {
             name: "T".to_owned(),
-            tool_type: tool_type.to_owned(),
+            tool_type: serde_json::from_value(serde_json::json!(tool_type))
+                .expect("a canonical tool type token"),
             diameter,
             ..AddToolParam::default()
         }
@@ -3468,7 +4067,10 @@ mod tests {
         assert!(build_tool_config(&spec).is_ok());
 
         assert!(build_tool_config(&add_tool_spec("end_mill", 0.0)).is_err());
-        assert!(build_tool_config(&add_tool_spec("not_a_tool", 6.0)).is_err());
+        assert!(
+            serde_json::from_value::<ToolTypeParam>(serde_json::json!("not_a_tool")).is_err(),
+            "an unknown tool type is refused by the wire schema"
+        );
     }
 
     /// A flat end mill used to be stored — and REPORTED, via

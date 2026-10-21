@@ -18,7 +18,7 @@ use crate::ui::properties::ToolpathTab;
 use crate::ui_command::{NoArgs, UiCommand};
 
 use super::simulation::sim_mesh_in_world_frame;
-use super::{ScreenshotToolpathOptions, parse_workspace, workspace_key};
+use super::{ScreenshotToolpathOptions, workspace_key, workspace_of};
 
 impl RsCamApp {
     /// The model surface as a render background, shaded by the reach map
@@ -444,11 +444,11 @@ impl RsCamApp {
     pub(super) fn mcp_set_ui_view(
         &mut self,
         ctx: &egui::Context,
-        workspace: Option<&str>,
+        workspace: Option<rs_cam_mcp::server::WorkspaceParam>,
         toolpath_index: Option<usize>,
-        properties_tab: Option<&str>,
-        select: Option<&str>,
-        modal: Option<&str>,
+        properties_tab: Option<rs_cam_mcp::server::PropertiesTabParam>,
+        select: Option<rs_cam_mcp::server::SelectPanelParam>,
+        modal: Option<rs_cam_mcp::server::ModalParam>,
         overlays: Option<&std::collections::BTreeMap<String, bool>>,
         frame_items: Option<Vec<rs_cam_core::selection::MatchKey>>,
         model_visibility: Option<&std::collections::BTreeMap<usize, bool>>,
@@ -465,13 +465,7 @@ impl RsCamApp {
         // order.
         let mut workspace_applied: Option<&'static str> = None;
         if let Some(ws) = workspace {
-            let Some(target) = parse_workspace(ws) else {
-                return json_str(serde_json::json!({
-                    "error": format!(
-                        "Unknown workspace '{ws}'. Valid: setup, toolpaths, simulation, readiness"
-                    )
-                }));
-            };
+            let target = workspace_of(ws);
             crate::ui::overlays::registry::switch_workspace(self.controller.state_mut(), target);
             workspace_applied = Some(workspace_key(target));
         }
@@ -518,19 +512,15 @@ impl RsCamApp {
         //    toolpath (so it only shows once a toolpath is selected).
         let mut tab_applied: Option<&str> = None;
         if let Some(tab) = properties_tab {
-            // UI-06: `ToolpathTab::parse` is the ONE key table, and the
-            // refusal names `ToolpathTab::ALL`. A second list used to sit
-            // here; a new tab needed both edited and nothing failed when
-            // only one was.
-            let Some(parsed) = ToolpathTab::parse(tab) else {
-                let valid = ToolpathTab::ALL
-                    .iter()
-                    .map(|t| t.key())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                return json_str(serde_json::json!({
-                    "error": format!("Unknown properties_tab '{tab}'. Valid: {valid}")
-                }));
+            // F166: the wire takes the enum; this match is exhaustive, so
+            // a new wire tab does not compile until it names its panel tab.
+            use rs_cam_mcp::server::PropertiesTabParam;
+            let parsed = match tab {
+                PropertiesTabParam::Geometry => ToolpathTab::Geometry,
+                PropertiesTabParam::Feeds => ToolpathTab::FeedsSpeeds,
+                PropertiesTabParam::Linking => ToolpathTab::Linking,
+                PropertiesTabParam::Heights => ToolpathTab::Heights,
+                PropertiesTabParam::Dressup => ToolpathTab::Dressup,
             };
             // Scope the override to its target toolpath (the one selected
             // above, or the pre-existing selection) so an intervening
@@ -542,9 +532,7 @@ impl RsCamApp {
                 }));
             };
             self.controller.state_mut().gui.pending_toolpath_tab = Some((target_id, parsed));
-            // The reply echoes what the caller wrote, not the canonical
-            // key, so `feeds_speeds` still reads back as `feeds_speeds`.
-            tab_applied = Some(tab);
+            tab_applied = Some(parsed.key());
         }
 
         // 3b. Non-toolpath properties selection (machine / stock). These
@@ -552,14 +540,10 @@ impl RsCamApp {
         //     switch there if the caller didn't pick a workspace.
         let mut select_applied: Option<&str> = None;
         if let Some(sel) = select {
-            let target = match sel {
-                "machine" => Selection::Machine,
-                "stock" => Selection::Stock,
-                other => {
-                    return json_str(serde_json::json!({
-                        "error": format!("Unknown select '{other}'. Valid: machine, stock")
-                    }));
-                }
+            use rs_cam_mcp::server::SelectPanelParam;
+            let (target, key) = match sel {
+                SelectPanelParam::Machine => (Selection::Machine, "machine"),
+                SelectPanelParam::Stock => (Selection::Stock, "stock"),
             };
             if workspace.is_none() {
                 crate::ui::overlays::registry::switch_workspace(
@@ -569,13 +553,14 @@ impl RsCamApp {
                 workspace_applied = Some(workspace_key(Workspace::Setup));
             }
             self.controller.state_mut().selection = target;
-            select_applied = Some(sel);
+            select_applied = Some(key);
         }
 
         // 4. Modal.
         if let Some(m) = modal {
+            use rs_cam_mcp::server::ModalParam;
             match m {
-                "none" => {
+                ModalParam::None => {
                     let events = self.controller.events_mut();
                     events.push(AppEvent::Ui(UiCommand::CloseFeedsModal(NoArgs)));
                     events.push(AppEvent::Ui(UiCommand::CloseExportWizard(NoArgs)));
@@ -588,42 +573,32 @@ impl RsCamApp {
                     state.show_shortcuts = false;
                     state.panels.pin_wizard = None;
                 }
-                "pin_wizard" => {
+                ModalParam::PinWizard => {
                     let wizard = crate::ui::pin_wizard::PinWizardState::open(
                         &self.controller.state().session,
                     );
                     self.controller.state_mut().panels.pin_wizard = Some(wizard);
                 }
-                "feeds_modal" => {
+                ModalParam::FeedsModal => {
                     let Selection::Toolpath(tp_id) = self.controller.state().selection else {
                         return json_str(serde_json::json!({
-                            "error": format!(
-                                "'{m}' needs a toolpath — pass toolpath_index in this call \
-                                 or select a toolpath first"
-                            )
+                            "error": "'feeds_modal' needs a toolpath — pass toolpath_index in \
+                                      this call or select a toolpath first"
                         }));
                     };
                     self.controller
                         .events_mut()
                         .push(AppEvent::OpenFeedsModal(tp_id));
                 }
-                "export_wizard" => {
+                ModalParam::ExportWizard => {
                     self.controller
                         .events_mut()
                         .push(AppEvent::Ui(UiCommand::OpenExportWizard(NoArgs)));
                 }
-                "tool_library" => {
+                ModalParam::ToolLibrary => {
                     self.controller
                         .events_mut()
                         .push(AppEvent::Ui(UiCommand::OpenToolLibrary(NoArgs)));
-                }
-                other => {
-                    return json_str(serde_json::json!({
-                        "error": format!(
-                            "Unknown modal '{other}'. Valid: feeds_modal, pin_wizard, \
-                             export_wizard, tool_library, none"
-                        )
-                    }));
                 }
             }
         }

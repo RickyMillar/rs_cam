@@ -14,7 +14,7 @@ use rs_cam_core::io::ImportOptions;
 use rs_cam_core::session::{AdoptModelGeometryArgs, LoadedModel, ProjectSession};
 use rs_cam_mcp::server::{ImportModelParam, SetModelImportOptionsParam, json_str};
 
-use crate::mcp_bridge::mutation_error_json;
+use super::CoreReply;
 
 /// The import facts of one model: its id, its units, its import options,
 /// its join report (`null` for a mesh or a STEP model) and its bbox. The
@@ -51,7 +51,9 @@ pub(crate) fn model_import_json(model: &LoadedModel) -> serde_json::Value {
 /// The model an `import_model` request imports, with the file extension,
 /// or the reply that refuses it. The units and the join tolerance are the
 /// request's, else the defaults the GUI import dialog starts from.
-pub(crate) fn import_request_model(p: &ImportModelParam) -> Result<(LoadedModel, String), String> {
+pub(crate) fn import_request_model(
+    p: &ImportModelParam,
+) -> Result<(LoadedModel, String), CoreReply> {
     let file_path = Path::new(&p.path);
     let ext = file_path
         .extension()
@@ -61,9 +63,12 @@ pub(crate) fn import_request_model(p: &ImportModelParam) -> Result<(LoadedModel,
     // C10: one extension table, in `rs_cam_core::io`. This arm used to
     // carry its own copy.
     let Some(kind) = rs_cam_core::io::infer_kind_from_path(file_path) else {
-        return Err(json_str(serde_json::json!({
-            "error": format!("Unsupported file format '.{ext}'. Use .stl, .dxf, .svg, .step, or .stp")
-        })));
+        let error =
+            format!("Unsupported file format '.{ext}'. Use .stl, .dxf, .svg, .step, or .stp");
+        return Err(CoreReply::refused_with(
+            json_str(serde_json::json!({ "error": error })),
+            error,
+        ));
     };
     let units = p
         .units
@@ -75,7 +80,10 @@ pub(crate) fn import_request_model(p: &ImportModelParam) -> Result<(LoadedModel,
         });
     crate::io::import::import_model(file_path, 0, kind, units, options)
         .map(|model| (model, ext))
-        .map_err(|e| json_str(serde_json::json!({"error": format!("{e}")})))
+        .map_err(|e| {
+            let error = format!("{e}");
+            CoreReply::refused_with(json_str(serde_json::json!({ "error": error })), error)
+        })
 }
 
 /// The `AdoptModelGeometry` payload of a `set_model_import_options`
@@ -85,10 +93,10 @@ pub(crate) fn import_request_model(p: &ImportModelParam) -> Result<(LoadedModel,
 pub(crate) fn model_import_options_args(
     session: &ProjectSession,
     p: &SetModelImportOptionsParam,
-) -> Result<AdoptModelGeometryArgs, String> {
+) -> Result<AdoptModelGeometryArgs, CoreReply> {
     let Some(model) = session.models().iter().find(|m| m.id == p.model_id) else {
         let ids: Vec<usize> = session.models().iter().map(|m| m.id).collect();
-        return Err(mutation_error_json(
+        return Err(CoreReply::refused(
             &format!(
                 "Error: Model id {} not found; project model ids: {ids:?}",
                 p.model_id
@@ -100,7 +108,7 @@ pub(crate) fn model_import_options_args(
         .kind
         .filter(|k| matches!(k, ModelKind::Svg | ModelKind::Dxf))
     else {
-        return Err(mutation_error_json(
+        return Err(CoreReply::refused(
             &format!(
                 "Error: Model {} is not a drawing (DXF or SVG); only a drawing has import options",
                 p.model_id
@@ -118,7 +126,7 @@ pub(crate) fn model_import_options_args(
             .unwrap_or(model.import_options.join_tolerance_mm),
     };
     let fresh = crate::io::import::import_model(&model.path, model.id, kind, units, options)
-        .map_err(|e| mutation_error_json(&format!("Error: {e}"), Some("join_tolerance_mm")))?;
+        .map_err(|e| CoreReply::refused(&format!("Error: {e}"), Some("join_tolerance_mm")))?;
     Ok(AdoptModelGeometryArgs {
         model_id: model.id,
         geometry: Box::new(fresh),
@@ -307,6 +315,6 @@ mod tests {
                 ..Default::default()
             },
         );
-        assert!(unknown.is_err_and(|e| e.contains("not found")));
+        assert!(unknown.is_err_and(|e| e.reply.contains("not found")));
     }
 }
