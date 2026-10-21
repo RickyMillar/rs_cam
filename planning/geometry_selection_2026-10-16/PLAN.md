@@ -670,3 +670,13 @@ Defects found by the design:
   rule that the simulator uses, in every draw and pick site that reads
   moves as lines; a sentry that the drawn polyline of an arc move lies on
   its arc.
+- P6.0b (b0a13361, SAFETY) done: the segment merge is capped at 0.010 mm
+  on every finished-edge op (`OperationTransformCapabilities::finished_edge`);
+  G-OPGOLDEN (4 cases) and perf_golden_sim_metrics (Profile; P6.0 had
+  left it unblessed) re-blessed by name.
+- P6.0c (SAFETY, next): the lead-in/out curls left of travel always
+  (`apply_lead_in_out`); on a closed Trace Left the part is on the left,
+  so the lead cuts 1.84 mm in. Profile with climb = false is suspect.
+  The lead must go to the side away from the material, from the op's own
+  knowledge of the material side per pass. Pinned by
+  `trace_left_lead_curls_into_the_part_known_red`.
