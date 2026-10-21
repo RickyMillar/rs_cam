@@ -132,10 +132,12 @@ fn finish_dressups() -> DressupConfig {
 
 /// The non-default heights the finish operation carries. P3.2: the finish
 /// is a Pocket, which refuses a pinned Bottom Z (its floor is its `floor`
-/// field), so the second pinned row is the Top Z.
+/// field), so the second pinned row is the Top Z. F033 (a06a3168) refuses
+/// a Clearance Z below the Retract Z at `SetToolpathHeights`. The auto
+/// Retract Z of this session is 30, so the pinned Clearance Z is above it.
 fn finish_heights() -> HeightsConfig {
     HeightsConfig {
-        clearance_z: HeightMode::Manual(18.0),
+        clearance_z: HeightMode::Manual(48.0),
         top_z: HeightMode::Manual(-4.2),
         ..HeightsConfig::default()
     }
@@ -329,7 +331,7 @@ fn every_editable_toolpath_field_survives_a_save_and_a_load() {
     // Heights.
     assert!(matches!(
         finish.heights.clearance_z,
-        HeightMode::Manual(v) if (v - 18.0).abs() < 1e-9
+        HeightMode::Manual(v) if (v - 48.0).abs() < 1e-9
     ));
     assert!(matches!(
         finish.heights.top_z,

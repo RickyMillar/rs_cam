@@ -618,7 +618,12 @@ fn only_a_top_included_ladder_takes_top_equal_to_bottom_f033b() {
             );
         }
     }
-    assert_eq!(included, 1, "non-vacuity: Waterline reaches the check");
+    // Waterline and Unified Finish (its VerySteep band ladders from the
+    // top) are the two top-included ops whose bottom reaches the motion.
+    assert_eq!(
+        included, 2,
+        "non-vacuity: Waterline and Unified Finish reach the check"
+    );
     for op in [
         OperationType::Pocket,
         OperationType::Profile,

@@ -29,7 +29,7 @@
 use std::time::Instant;
 
 use rs_cam_core::geo::P2;
-use rs_cam_core::polygon::{Polygon2, offset_polygon};
+use rs_cam_core::polygon::{FlattenPolicy, Polygon2, offset_polygon};
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -745,10 +745,13 @@ pub const PLINE_POS_EQUAL_EPS: f64 = 1e-5;
 
 /// One offset call, classified.
 ///
-/// The classes are measured on the flattened output — i.e. on exactly the
-/// vertices `Polygon2::from_pline` keeps — except `arc_*`, which can only be
-/// seen BEFORE flattening and is the reason this instrument talks to
-/// cavalier directly instead of going through `offset_polygon`.
+/// The classes are measured on the flattened output, i.e. on exactly the
+/// vertices `offset_polygon` keeps. Since P6.0 (e1dfa30e) that is each
+/// output pline after `arcs_to_approx_lines` at
+/// `FlattenPolicy::UNTOLERANCED_MM`: an arc join gives points on the arc,
+/// not its chord. The `arc_*` classes can only be seen BEFORE the flatten,
+/// and they are the reason this instrument talks to cavalier directly
+/// instead of going through `offset_polygon`.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RingAttribution {
     pub in_verts: usize,
@@ -757,9 +760,8 @@ pub struct RingAttribution {
     /// Output segments cavalier emitted as ARCS (bulge != 0). Each one is a
     /// join it inserted where the offset opened a gap.
     pub arc_segments: usize,
-    /// Vertices that touch at least one arc segment. These are the points
-    /// `from_pline` turns into a chord and hands back as if they had always
-    /// been corners.
+    /// Vertices of the raw output that touch at least one arc segment. The
+    /// flatten adds points between them on the arc.
     pub arc_vertices: usize,
     /// Consecutive output vertices within `PLINE_POS_EQUAL_EPS`.
     pub duplicates: usize,
@@ -868,22 +870,32 @@ fn attribute_offset_one(poly: &Polygon2, distance: f64) -> RingAttribution {
         out_plines: outputs.len(),
         ..Default::default()
     };
-    for pl in &outputs {
-        let verts: Vec<(f64, f64, f64)> = pl.iter_vertexes().map(|v| (v.x, v.y, v.bulge)).collect();
+    for raw in &outputs {
+        // The arc classes read the raw pline: an arc is one bulged segment.
+        let raw_verts: Vec<f64> = raw.iter_vertexes().map(|v| v.bulge).collect();
+        let raw_n = raw_verts.len();
+        if raw_n >= 2 {
+            let mut touches_arc = vec![false; raw_n];
+            for (i, bulge) in raw_verts.iter().enumerate() {
+                if bulge.abs() > 1e-12 {
+                    a.arc_segments += 1;
+                    touches_arc[i] = true;
+                    touches_arc[(i + 1) % raw_n] = true;
+                }
+            }
+            a.arc_vertices += touches_arc.iter().filter(|t| **t).count();
+        }
+        // Every other class reads the pline that `offset_polygon` keeps: the
+        // arcs flattened by the production rule (P6.0, e1dfa30e).
+        let pl = raw
+            .arcs_to_approx_lines(FlattenPolicy::UNTOLERANCED_MM)
+            .unwrap_or_else(|| raw.clone());
+        let verts: Vec<(f64, f64)> = pl.iter_vertexes().map(|v| (v.x, v.y)).collect();
         let n = verts.len();
         a.out_verts += n;
         if n < 2 {
             continue;
         }
-        let mut touches_arc = vec![false; n];
-        for (i, v) in verts.iter().enumerate() {
-            if v.2.abs() > 1e-12 {
-                a.arc_segments += 1;
-                touches_arc[i] = true;
-                touches_arc[(i + 1) % n] = true;
-            }
-        }
-        a.arc_vertices += touches_arc.iter().filter(|t| **t).count();
         for i in 0..n {
             let prev = verts[(i + n - 1) % n];
             let cur = verts[i];

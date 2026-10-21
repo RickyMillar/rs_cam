@@ -76,7 +76,9 @@
 //! (a fifth table, [`frozen_f033b`]): the op's depth ladder includes its
 //! top level (`LadderMode::ConstantStep`). `height_order` then refuses
 //! only a bottom above the top. Waterline, Steep and Shallow and Ramp
-//! Finish state `true`. The column is new; no earlier answer moved.
+//! Finish state `true`. The column is new; no earlier answer moved. Unified
+//! Finish states `true` too: its VerySteep band ladders from the Top Z with
+//! `waterline_z_levels` (`ConstantStep`).
 //!
 //! P6.0b (geometry selection, SAFETY) added the tenth transform bit,
 //! `finished_edge`: the op's cut can be a finished edge, so the dressup
@@ -835,7 +837,7 @@ fn frozen_f033b() -> Vec<(OperationType, bool)> {
     (O::Waterline, true),
     (O::Pencil, false),
     (O::Scallop, false),
-    (O::UnifiedFinish, false),
+    (O::UnifiedFinish, true),
     (O::SteepShallow, true),
     (O::RampFinish, true),
     (O::SpiralFinish, false),

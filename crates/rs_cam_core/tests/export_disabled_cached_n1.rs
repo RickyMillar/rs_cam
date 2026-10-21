@@ -143,13 +143,17 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
         "enabled pre-gcode is present"
     );
     assert!(gcode.contains("S22222"), "enabled spindle RPM is present");
-    assert!(gcode.contains("X31.000"), "enabled trace motion is present");
+    // P6.0c (5d4e2a6c): a Trace None pass gets no lead, so the old pin
+    // X31.000 (the lead start 2 mm before the corner) is gone. X35.000 is
+    // the far corner of the enabled square, a cutting move only.
+    assert!(gcode.contains("X35.000"), "enabled trace motion is present");
     assert!(!gcode.contains(DISABLED_LABEL));
     assert!(!gcode.contains("N1 Disabled Tool"));
     assert!(!gcode.contains(DISABLED_MARKER));
     assert!(!gcode.contains("N1_DISABLED_POST"));
     assert!(!gcode.contains("S11111"));
-    assert!(!gcode.contains("X21.000"));
+    // X25.000 is the far corner of the disabled square (P6.0c, 5d4e2a6c).
+    assert!(!gcode.contains("X25.000"));
 
     let _ = session
         .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
@@ -198,7 +202,7 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     );
     assert!(gcode.contains("S11111"), "disabled spindle RPM is restored");
     assert!(
-        gcode.contains("X21.000"),
+        gcode.contains("X25.000"),
         "disabled trace motion is restored"
     );
 }

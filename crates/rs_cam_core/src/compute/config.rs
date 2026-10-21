@@ -538,8 +538,8 @@ impl std::fmt::Display for HeightOrderViolation {
 ///   not checked.
 /// - A bottom at the top refuses, because the first level of a 2.5D ladder
 ///   is one pass below the top. An op whose ladder includes its top
-///   (`Capabilities::ladder_includes_top`, F033b: Waterline) cuts one level
-///   there, so only a bottom above the top refuses.
+///   (`Capabilities::ladder_includes_top`, F033b: Waterline, Unified Finish)
+///   cuts one level there, so only a bottom above the top refuses.
 ///
 /// The GUI badge, the diagnostics adapter, the edit doors, generation and
 /// the export door call this function or [`crate::session::ToolpathHeights::height_order`],

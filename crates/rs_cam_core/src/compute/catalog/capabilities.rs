@@ -126,7 +126,8 @@ pub struct Capabilities<P = EntryProbe> {
     /// [`LadderMode::ConstantStep`](crate::ops::depth::LadderMode::ConstantStep),
     /// so a Bottom Z equal to the Top Z is one level, not an inverted
     /// stack. `compute::config::height_order` then refuses only a bottom
-    /// above the top. Waterline, Steep and Shallow, Ramp Finish.
+    /// above the top. Waterline, Steep and Shallow, Ramp Finish, Unified
+    /// Finish (its VerySteep band).
     ///
     /// The ladder mode is chosen at each generator call site, so this row
     /// field is the static statement of it. An op with

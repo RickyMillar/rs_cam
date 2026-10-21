@@ -45,6 +45,13 @@
 //! Set `ADAPTIVE3D_BYTE_PARITY_BLESS=1` to rewrite the fixture. Do that only
 //! when a change is MEANT to move the motion, and say so in the commit body.
 //! A refactor row re-blesses nothing.
+//!
+//! Bless log:
+//! - P6.0 (e1dfa30e): `offset_polygon` flattens each arc join of an offset
+//!   on the arc, not as its chord. The `agent_search` (boundary inset) and
+//!   `contour_spiral` rings gain points on their arc joins: moves 370 to
+//!   378 and 944 to 995. `contour_parallel` and `adaptive` do not move.
+//!   A toggle proof (the chord flatten restored) gives the old dumps.
 
 #![allow(
     clippy::unwrap_used,

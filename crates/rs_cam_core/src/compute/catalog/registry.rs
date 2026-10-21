@@ -986,7 +986,10 @@ pub(super) static REG_UNIFIED_FINISH: OpRegistryEntry = OpRegistryEntry {
         planner_uniform_engagement: false,
         top_on_stock_box: false,
         floor_inside_stock: true,
-        ladder_includes_top: false,
+        // F033b: the VerySteep band ladders from the Top Z with
+        // `waterline_z_levels` (`LadderMode::ConstantStep`), so top = bottom
+        // is one level. The MidSteep and Shallow bands read neither height.
+        ladder_includes_top: true,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::None,
     },
