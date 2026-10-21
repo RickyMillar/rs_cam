@@ -120,6 +120,20 @@ pub struct Capabilities<P = EntryProbe> {
     /// measures its depth below the mesh, and Pin Drill goes into the
     /// spoilboard on purpose: both state `false`.
     pub floor_inside_stock: bool,
+    /// The op's depth ladder includes its top level (F033b). The op walks
+    /// down from the Top Z with
+    /// [`LadderMode::ConstantStep`](crate::ops::depth::LadderMode::ConstantStep),
+    /// so a Bottom Z equal to the Top Z is one level, not an inverted
+    /// stack. `compute::config::height_order` then refuses only a bottom
+    /// above the top. Waterline, Steep and Shallow, Ramp Finish.
+    ///
+    /// The ladder mode is chosen at each generator call site, so this row
+    /// field is the static statement of it. An op with
+    /// [`LadderMode::EvenRedistributed`](crate::ops::depth::LadderMode::EvenRedistributed)
+    /// (Pocket, Profile, Zigzag) or with no level ladder states `false`:
+    /// its first level is one pass below the top, so top = bottom cuts
+    /// nothing.
+    pub ladder_includes_top: bool,
     /// How the feeds lookup routes the op's (family, role) query to the
     /// vendor table rows (D2). Read by
     /// `feeds::vendor_normalize::lut_query_for` and `feeds::explain`.
@@ -195,6 +209,7 @@ impl<P> Capabilities<P> {
             planner_uniform_engagement: self.planner_uniform_engagement,
             top_on_stock_box: self.top_on_stock_box,
             floor_inside_stock: self.floor_inside_stock,
+            ladder_includes_top: self.ladder_includes_top,
             lut_route: self.lut_route,
             item_use: self.item_use,
         }

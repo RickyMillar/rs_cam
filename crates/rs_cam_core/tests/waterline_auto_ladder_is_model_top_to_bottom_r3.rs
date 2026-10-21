@@ -47,18 +47,22 @@ use std::sync::atomic::AtomicBool;
 use common::session::{generate, mesh_model, single_op_session_with, stock_over};
 use common::tools::endmill_tool_config;
 
-use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::catalog::{FloorOwner, OperationConfig, OperationType};
 use rs_cam_core::compute::config::{
-    HeightContext, HeightMode, HeightOrderViolation, HeightsConfig,
+    HeightContext, HeightMode, HeightOrderViolation, HeightsConfig, ResolvedHeights, height_order,
 };
 use rs_cam_core::compute::operation_configs::WaterlineConfig;
 use rs_cam_core::diagnostics::{Severity, ids};
+use rs_cam_core::gcode::ToolLoadExportPolicy;
 use rs_cam_core::geo::P3;
 use rs_cam_core::mesh::{TriangleMesh, make_test_hemisphere};
 use rs_cam_core::ops::waterline::{
     FLAT_FACE_NUDGE_MM, WaterlineLadder, waterline_ladder, waterline_z_levels,
 };
-use rs_cam_core::session::{HeightOrderRefusal, ProjectSession, SessionError, ToolpathHeights};
+use rs_cam_core::session::{
+    Command, HeightOrderRefusal, ProjectSession, ReplaceToolpathConfigArgs, SessionError,
+    SetToolpathHeightsArgs, ToolpathHeights,
+};
 
 const EPS: f64 = 1e-9;
 
@@ -437,22 +441,193 @@ fn a_top_pinned_below_the_stock_bottom_gives_an_empty_ladder_and_the_finding() {
 
     // Both heights pinned at -1.37. The Waterline ladder includes its top
     // (`LadderMode::ConstantStep`), so this stack is ONE level, not an
-    // empty ladder. F033 refuses it (`height_order`: `bottom_z >= top_z`).
-    // The refusal is too strict for a top-included ladder (Waterline, Ramp
-    // Finish, Steep and Shallow) and waits for an operator ruling. When the
-    // rule lets an equal pair through, this assertion fails: then restore
-    // the arm "one level below the part, dropped, both findings raised".
-    let refusal = height_order_refusal(HeightsConfig {
+    // inverted stack (F033b: `Capabilities::ladder_includes_top`). The
+    // level is below the part: it is dropped, and both findings are raised.
+    let session = waterline_session(HeightsConfig {
         top_z: HeightMode::Manual(-1.37),
         bottom_z: HeightMode::Manual(-1.37),
+        ..HeightsConfig::default()
+    });
+    let result = session.get_result(0).expect("generated result");
+    let f = result.stats.waterline_ladder.expect("recorded");
+    assert_eq!(f.planned_levels, 1, "top = bottom is one level: {f:?}");
+    assert_eq!(f.dropped_below_stock, 1, "{f:?}");
+    assert_eq!(f.delivered_levels, 0, "{f:?}");
+    assert!(f.degenerate());
+    assert!(
+        result.stats.cutting_distance.abs() < EPS,
+        "the one level below the part never cuts the bed"
+    );
+    let diags = session
+        .diagnose_toolpath_with_trace(0, None)
+        .expect("diagnose");
+    for id in [
+        ids::GEOM_WATERLINE_LEVELS_BELOW_STOCK,
+        ids::GEOM_WATERLINE_LADDER_EMPTY,
+    ] {
+        assert!(
+            diags.iter().any(|d| d.id.as_str() == id),
+            "R3: {id} must be raised for the one dropped level"
+        );
+    }
+}
+
+/// F033b (lead ruling): the Waterline ladder includes its top, so a Top Z
+/// equal to the Bottom Z inside the part is one level. Every door takes
+/// it, generation cuts one contour, and the export door emits it. A bottom
+/// above the top still refuses.
+#[test]
+fn a_top_equal_to_the_bottom_cuts_one_contour_f033b() {
+    const Z_MM: f64 = 5.0;
+    let one_level = HeightsConfig {
+        top_z: HeightMode::Manual(Z_MM),
+        bottom_z: HeightMode::Manual(Z_MM),
+        ..HeightsConfig::default()
+    };
+
+    // The rule: no violation for top = bottom on Waterline.
+    let unbuilt = waterline_session_unbuilt(HeightsConfig::default());
+    let tc = &unbuilt.toolpath_configs()[0];
+    let answer = unbuilt.toolpath_heights(tc).expect("the heights resolve");
+    assert_eq!(
+        answer.height_order(&one_level, OperationType::Waterline),
+        Vec::new(),
+        "top = bottom is one level on a top-included ladder"
+    );
+
+    // The MCP door (`SetToolpathHeights`) and the GUI and CLI door
+    // (`ReplaceToolpathConfig`) take the edit.
+    let mut session = waterline_session_unbuilt(HeightsConfig::default());
+    let _ = session
+        .apply(Command::SetToolpathHeights(SetToolpathHeightsArgs {
+            index: 0,
+            heights: one_level.clone(),
+        }))
+        .expect("the MCP door takes top = bottom on Waterline");
+    assert_eq!(session.toolpath_configs()[0].heights, one_level);
+    let mut other = waterline_session_unbuilt(HeightsConfig::default());
+    let mut candidate = other.toolpath_configs()[0].clone();
+    candidate.heights = one_level;
+    let _ = other
+        .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+            index: 0,
+            config: Box::new(candidate),
+        }))
+        .expect("the GUI and CLI door takes top = bottom on Waterline");
+
+    // Generation cuts one contour at the level.
+    generate(&mut session, 0);
+    let result = session.get_result(0).expect("generated result");
+    let f = result.stats.waterline_ladder.expect("recorded");
+    assert_eq!(f.planned_levels, 1, "{f:?}");
+    assert_eq!(f.delivered_levels, 1, "{f:?}");
+    assert!(
+        result.stats.cutting_distance > 0.0,
+        "the one level crosses the hemisphere"
+    );
+    let cut_z: Vec<f64> = result
+        .annotated()
+        .toolpath
+        .moves
+        .iter()
+        .filter(|m| m.move_type.is_cutting())
+        .map(|m| m.target.z)
+        .collect();
+    assert!(!cut_z.is_empty());
+    assert!(
+        cut_z.iter().all(|z| (z - Z_MM).abs() < 1e-6),
+        "every cutting move is on the one level"
+    );
+
+    // The export door emits it.
+    let accept_all = ToolLoadExportPolicy {
+        accept_unmodeled: true,
+        accept_exceeded: true,
+    };
+    assert!(
+        session
+            .height_order_refusal(&session.toolpath_configs()[0])
+            .is_none()
+    );
+    let _ = session
+        .export_gcode_checked(None, accept_all)
+        .expect("the export door emits top = bottom on Waterline");
+
+    // A bottom above the top still refuses on Waterline.
+    let refusal = height_order_refusal(HeightsConfig {
+        top_z: HeightMode::Manual(Z_MM),
+        bottom_z: HeightMode::Manual(Z_MM + 0.5),
         ..HeightsConfig::default()
     });
     assert_eq!(
         refusal.violations,
         vec![HeightOrderViolation::BottomNotBelowTop {
-            bottom_z: -1.37,
-            top_z: -1.37,
+            bottom_z: Z_MM + 0.5,
+            top_z: Z_MM,
         }],
         "{refusal}"
     );
+}
+
+/// F033b: the 2.5D ladder (Pocket, Profile, Zigzag) starts one pass below
+/// its top, so top = bottom still refuses there. Waterline, Steep and
+/// Shallow and Ramp Finish include the top. The rule reads the row, not
+/// the op type.
+#[test]
+fn only_a_top_included_ladder_takes_top_equal_to_bottom_f033b() {
+    let h = |top_z: f64, bottom_z: f64| ResolvedHeights {
+        clearance_z: 30.0,
+        retract_z: 20.0,
+        feed_z: 15.0,
+        top_z,
+        bottom_z,
+        top_pinned: true,
+        bottom_pinned: true,
+    };
+    let equal = h(5.0, 5.0);
+    let above = h(5.0, 6.0);
+    let mut included = 0;
+    for &op in OperationType::ALL {
+        let caps = op.capabilities();
+        let reaches = !matches!(caps.floor_owner, FloorOwner::OpDial);
+        let at_equal = height_order(op, &equal, None);
+        let at_above = height_order(op, &above, None);
+        if !reaches {
+            assert!(at_equal.is_empty() && at_above.is_empty(), "{op:?}");
+            continue;
+        }
+        assert_eq!(
+            at_above,
+            vec![HeightOrderViolation::BottomNotBelowTop {
+                bottom_z: 6.0,
+                top_z: 5.0
+            }],
+            "{op:?}: a bottom above the top refuses"
+        );
+        if caps.ladder_includes_top {
+            included += 1;
+            assert!(at_equal.is_empty(), "{op:?}: {at_equal:?}");
+        } else {
+            assert_eq!(
+                at_equal,
+                vec![HeightOrderViolation::BottomNotBelowTop {
+                    bottom_z: 5.0,
+                    top_z: 5.0
+                }],
+                "{op:?}: top = bottom refuses on a top-excluded ladder"
+            );
+        }
+    }
+    assert_eq!(included, 1, "non-vacuity: Waterline reaches the check");
+    for op in [
+        OperationType::Pocket,
+        OperationType::Profile,
+        OperationType::Zigzag,
+    ] {
+        assert!(!op.capabilities().ladder_includes_top, "{op:?}");
+        assert!(!height_order(op, &equal, None).is_empty(), "{op:?}");
+    }
+    // The row states the ladder the generator walks: a Waterline ladder
+    // with top = bottom is one level.
+    assert_eq!(waterline_z_levels(5.0, 5.0, 1.0), vec![5.0]);
 }

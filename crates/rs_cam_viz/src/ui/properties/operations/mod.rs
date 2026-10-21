@@ -31,7 +31,7 @@ pub(super) use surface_3d::{
 // and the sibling operation editors import exactly what they imported before.
 pub use height_diagram::{
     DiagramFloor, FaceFloor, FloorInputs, FloorRun, admit_heights_edit, draw_height_diagram,
-    floor_runs, last_heights_refusal, pick_line, round_pin,
+    floor_runs, pick_line, round_pin,
 };
 pub(super) use shape_diagrams::{
     StepoverPattern, draw_dogbone_diagram, draw_inlay_diagram, draw_lead_in_out_diagram,
@@ -350,6 +350,7 @@ pub(super) fn draw_heights_params(
     answer: &rs_cam_core::session::ToolpathHeights,
     op_type: OperationType,
     floor: Option<&rs_cam_core::compute::floor::Floor>,
+    refusal: &mut crate::state::panels::HeightsRefusal,
 ) {
     let ctx = &answer.context;
     // What an `Auto` row shows is the value the CORE resolver produces for
@@ -447,10 +448,11 @@ pub(super) fn draw_heights_params(
             }
         });
 
-    let _ = admit_heights_edit(ui, heights, draft, answer, op_type);
+    let _ = admit_heights_edit(ui, heights, draft, answer, op_type, refusal);
     // F033: the last refused edit, in DANGER, under the rows.
-    if let Some(refusal) = last_heights_refusal(ui) {
-        ui.add(crate::ui::components::OneLine::new(refusal).color(crate::ui::tokens::DANGER));
+    let now = ui.input(|i| i.time);
+    if let Some(text) = refusal.text(now) {
+        ui.add(crate::ui::components::OneLine::new(text).color(crate::ui::tokens::DANGER));
     }
 
     // F1.19 / G-BOTTOMPIN: the note is drawn, not hidden behind a hover. The

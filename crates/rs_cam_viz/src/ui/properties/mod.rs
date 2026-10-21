@@ -1694,17 +1694,20 @@ fn draw_toolpath_selection(
         // Taken out and put back, as `show_reach_map`: the section edits
         // the view state while `inputs` holds its read of the session.
         let mut selection_ui = std::mem::take(&mut state.gui.selection_ui);
+        let mut heights_refusal = std::mem::take(&mut state.panels.heights_refusal);
         draw_toolpath_panel(
             ui,
             &mut snapshot,
             &inputs,
             &mut show_reach_map,
             &mut selection_ui,
+            &mut heights_refusal,
             events,
         );
 
         state.viewport.show_reach_map = show_reach_map;
         state.gui.selection_ui = selection_ui;
+        state.panels.heights_refusal = heights_refusal;
 
         // ORDER IS LOAD-BEARING. The runtime write-back runs
         // FIRST, because it copies `entry.stale_since` — the

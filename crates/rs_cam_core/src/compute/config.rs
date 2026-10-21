@@ -413,7 +413,8 @@ pub struct ResolvedHeights {
 /// One break of the height-plane order (F033, operator ruling 2).
 ///
 /// The order is clearance >= retract >= feed >= top > bottom, with the
-/// anchors of [`height_order`]. Each kind has ONE severity
+/// anchors of [`height_order`]. An op whose ladder includes its top
+/// (F033b) takes top >= bottom. Each kind has ONE severity
 /// ([`Self::refuses`]). The GUI badge, the diagnostics, the edit doors,
 /// generation and the export door read this one value.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -428,7 +429,8 @@ pub enum HeightOrderViolation {
     /// Feed Z is below the anchored Top Z.
     FeedBelowTop { feed_z: f64, top_z: f64 },
     /// The bottom is at or above the anchored Top Z: the ladder is empty
-    /// or inverted.
+    /// or inverted. On an op whose ladder includes its top (F033b), only a
+    /// bottom above the top.
     BottomNotBelowTop { bottom_z: f64, top_z: f64 },
 }
 
@@ -534,6 +536,10 @@ impl std::fmt::Display for HeightOrderViolation {
 ///   (`FloorOwner::HeightsBottom` and `FloorOwner::OpFloor`). On an
 ///   `OpDial` op a pinned bottom reaches no emitted move (F1.19), so it is
 ///   not checked.
+/// - A bottom at the top refuses, because the first level of a 2.5D ladder
+///   is one pass below the top. An op whose ladder includes its top
+///   (`Capabilities::ladder_includes_top`, F033b: Waterline) cuts one level
+///   there, so only a bottom above the top refuses.
 ///
 /// The GUI badge, the diagnostics adapter, the edit doors, generation and
 /// the export door call this function or [`crate::session::ToolpathHeights::height_order`],
@@ -579,7 +585,13 @@ pub fn height_order(
         FloorOwner::HeightsBottom | FloorOwner::OpFloor => true,
         FloorOwner::OpDial => false,
     };
-    if bottom_reaches_motion && h.bottom_z >= top_z {
+    // F033b: a ladder that includes its top cuts one level at top = bottom.
+    let inverted = if caps.ladder_includes_top {
+        h.bottom_z > top_z
+    } else {
+        h.bottom_z >= top_z
+    };
+    if bottom_reaches_motion && inverted {
         out.push(HeightOrderViolation::BottomNotBelowTop {
             bottom_z: h.bottom_z,
             top_z,

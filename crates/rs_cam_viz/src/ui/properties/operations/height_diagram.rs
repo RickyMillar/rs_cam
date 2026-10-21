@@ -5,6 +5,7 @@
 //! re-exports `draw_height_diagram`.
 
 use super::bottom_z_pin_note;
+use crate::state::panels::HeightsRefusal;
 use crate::state::toolpath::{HeightContext, HeightMode, HeightsConfig, OperationType};
 use rs_cam_core::compute::catalog::FloorOwner;
 use rs_cam_core::compute::floor::{Floor, FloorReferences};
@@ -205,28 +206,21 @@ pub fn round_pin(v: f64) -> f64 {
     if rounded == 0.0 { 0.0 } else { rounded }
 }
 
-/// F033: where the last refused heights edit is kept, so the Heights tab
-/// can name it under its rows.
-fn refusal_id() -> egui::Id {
-    egui::Id::new("f033_heights_order_refusal")
-}
-
-/// How long the Heights tab shows a refused edit (seconds).
-const REFUSAL_SHOW_S: f64 = 4.0;
-
 /// F033 (operator ruling 2): write `draft` into `heights` unless THE core
 /// order rule refuses the edit (`ToolpathHeights::edit_refusal`: the draft
 /// adds a refusing break). The Heights rows, the Auto buttons and the
 /// diagram drag all write through this one gate, so a value that would
 /// invert the stack never reaches the config. A refused drag stops at the
-/// last accepted value. The refusal text is kept for the Heights tab
-/// ([`last_heights_refusal`]). Returns `true` when the draft was written.
+/// last accepted value. The refusal text is kept in `refusal` (GUI state,
+/// `state.panels.heights_refusal`, UI-09) for the Heights tab. Returns
+/// `true` when the draft was written.
 pub fn admit_heights_edit(
     ui: &egui::Ui,
     heights: &mut HeightsConfig,
     draft: HeightsConfig,
     answer: &rs_cam_core::session::ToolpathHeights,
     op_type: OperationType,
+    refusal: &mut HeightsRefusal,
 ) -> bool {
     if draft == *heights {
         return false;
@@ -234,7 +228,7 @@ pub fn admit_heights_edit(
     match answer.edit_refusal(op_type, heights, &draft) {
         None => {
             *heights = draft;
-            ui.data_mut(|d| d.remove::<(String, f64)>(refusal_id()));
+            refusal.clear();
             true
         }
         Some(violations) => {
@@ -244,18 +238,10 @@ pub fn admit_heights_edit(
                 .collect::<Vec<_>>()
                 .join("; ");
             let now = ui.input(|i| i.time);
-            ui.data_mut(|d| d.insert_temp(refusal_id(), (format!("Refused: {text}."), now)));
+            refusal.refuse(format!("Refused: {text}."), now);
             false
         }
     }
-}
-
-/// F033: the text of the last refused heights edit, while it is recent.
-#[must_use]
-pub fn last_heights_refusal(ui: &egui::Ui) -> Option<String> {
-    let (text, at) = ui.data(|d| d.get_temp::<(String, f64)>(refusal_id()))?;
-    let now = ui.input(|i| i.time);
-    (now - at <= REFUSAL_SHOW_S).then_some(text)
 }
 
 /// The stored mode behind a `DiagramLine::index`.
@@ -414,6 +400,7 @@ pub fn draw_height_diagram(
     answer: &rs_cam_core::session::ToolpathHeights,
     op_type: OperationType,
     mut floor: Option<DiagramFloor<'_>>,
+    refusal: &mut HeightsRefusal,
 ) {
     use crate::ui::tokens;
 
@@ -820,7 +807,7 @@ pub fn draw_height_diagram(
             _ => {
                 let mut draft = heights.clone();
                 *height_field(&mut draft, idx) = HeightMode::Manual(current_z + dz);
-                let _ = admit_heights_edit(ui, heights, draft, answer, op_type);
+                let _ = admit_heights_edit(ui, heights, draft, answer, op_type, refusal);
             }
         }
     }
@@ -845,7 +832,7 @@ pub fn draw_height_diagram(
                 if let HeightMode::Manual(v) = *field {
                     *field = HeightMode::Manual(round_pin(v));
                     // F033: a rounding that crosses a plane is refused too.
-                    let _ = admit_heights_edit(ui, heights, draft, answer, op_type);
+                    let _ = admit_heights_edit(ui, heights, draft, answer, op_type, refusal);
                 }
             }
         }

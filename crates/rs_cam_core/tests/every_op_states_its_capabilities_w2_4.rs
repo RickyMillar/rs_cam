@@ -66,6 +66,12 @@
 //! moved. [`every_field_has_a_frozen_column`] destructures `Capabilities`
 //! with no `..`, so the next new field does not compile here until it has
 //! a column.
+//!
+//! F033b (lead ruling, 2026-10-21) added the `ladder_includes_top` column
+//! (a fifth table, [`frozen_f033b`]): the op's depth ladder includes its
+//! top level (`LadderMode::ConstantStep`). `height_order` then refuses
+//! only a bottom above the top. Waterline, Steep and Shallow and Ramp
+//! Finish state `true`. The column is new; no earlier answer moved.
 
 #![allow(
     clippy::unwrap_used,
@@ -765,7 +771,62 @@ fn every_row_states_its_geometry_p2_3a() {
     assert_eq!(got, want, "the geometry column moved");
 }
 
-/// P1: every `Capabilities` field has a frozen column in one of the four
+/// F033b: the `ladder_includes_top` column, frozen per op kind.
+#[rustfmt::skip]
+fn frozen_f033b() -> Vec<(OperationType, bool)> {
+    use OperationType as O;
+    vec![
+    (O::Face, false),
+    (O::Pocket, false),
+    (O::Profile, false),
+    (O::Adaptive, false),
+    (O::VCarve, false),
+    (O::Inlay, false),
+    (O::InlayPlug, false),
+    (O::Zigzag, false),
+    (O::Trace, false),
+    (O::Drill, false),
+    (O::Chamfer, false),
+    (O::DropCutter, false),
+    (O::Adaptive3d, false),
+    (O::Waterline, true),
+    (O::Pencil, false),
+    (O::Scallop, false),
+    (O::UnifiedFinish, false),
+    (O::SteepShallow, true),
+    (O::RampFinish, true),
+    (O::SpiralFinish, false),
+    (O::RadialFinish, false),
+    (O::HorizontalFinish, false),
+    (O::ProjectCurve, false),
+    (O::AlignmentPinDrill, false),
+    ]
+}
+
+/// F033b: the row of each op kind and its default config give the frozen
+/// `ladder_includes_top`. No config overrides it.
+#[test]
+fn every_op_keeps_its_ladder_top_f033b() {
+    let table = frozen_f033b();
+    let ops: Vec<OperationType> = table.iter().map(|r| r.0).collect();
+    assert_eq!(ops, OperationType::ALL.to_vec());
+    for (op, includes_top) in table {
+        assert_eq!(
+            op.capabilities().ladder_includes_top,
+            includes_top,
+            "{op:?} (kind)"
+        );
+        assert_eq!(
+            OperationConfig::new_default(op)
+                .capabilities()
+                .ladder_includes_top,
+            includes_top,
+            "{op:?} (config)"
+        );
+    }
+}
+
+/// P1: every `Capabilities` field has a frozen column in one of the five
 /// tables, or a named test of its own. The destructure has no `..`, so a
 /// new field does not compile here until this list (and a table) states it.
 #[test]
@@ -794,5 +855,6 @@ fn every_field_has_a_frozen_column() {
         floor_inside_stock: _,         // frozen_c2()
         lut_route: _,                  // frozen_d2()
         item_use: _,                   // frozen_p1()
+        ladder_includes_top: _,        // frozen_f033b()
     } = OperationType::Pocket.capabilities();
 }

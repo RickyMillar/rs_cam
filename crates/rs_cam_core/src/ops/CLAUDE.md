@@ -23,7 +23,7 @@ module is reached through `compute::execute::execute_operation_annotated` (`pub(
   pair. The R-plane is per hole (`DrillHole::retract_z`, D8); emitter and metrics read it.
 - The drill metrics live in `drill_metrics.rs` and reach the report as
   `drill_summaries`; the gates that read them live in `tool_load/`.
-- `depth.rs` holds the crate's ONE Z-ladder, `z_ladder` (`floor_ladder`, P3.2, is its 2.5D top-to-floor form), with two named arms
+- Each generator picks its `LadderMode` at the call site; the registry field `ladder_includes_top` states it per op, so change both together. `depth.rs` holds the crate's ONE Z-ladder, `z_ladder` (`floor_ladder`, P3.2, is its 2.5D top-to-floor form), with two named arms
   (CUT-14): `EvenRedistributed` for 2.5D (equal passes,
   `total / ceil(total / per_pass)`, top excluded) and `ConstantStep` for
   finishing (constant step from the top, top included). Build no third.

@@ -195,6 +195,54 @@ pub struct PanelDrafts {
     /// panel's scale, join tolerance and "Join all within"), by widget id,
     /// while the field is dragged or has focus (ui09).
     pub number_drafts: NumberDrafts,
+    /// The last refused heights edit of the selected toolpath (F033). The
+    /// Heights tab names it under its rows.
+    pub heights_refusal: HeightsRefusal,
+}
+
+/// The last refused heights edit (F033), which the Heights tab names under
+/// its rows for [`HeightsRefusal::SHOW_S`] seconds.
+///
+/// The order gate (`ui::properties::admit_heights_edit`) writes it, and an
+/// accepted edit clears it. Before UI-09 it was held in egui memory under
+/// one global id. The slot holds the toolpath it belongs to, so the tab of
+/// another toolpath does not show it.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct HeightsRefusal {
+    toolpath: Option<rs_cam_core::ToolpathId>,
+    /// The text and the egui time (seconds) of the refusal.
+    line: Option<(String, f64)>,
+}
+
+impl HeightsRefusal {
+    /// How long the Heights tab shows a refused edit (seconds).
+    pub const SHOW_S: f64 = 4.0;
+
+    /// Give the slot to toolpath `id`. A refusal of another toolpath is
+    /// dropped.
+    pub fn scope(&mut self, id: rs_cam_core::ToolpathId) {
+        if self.toolpath != Some(id) {
+            self.toolpath = Some(id);
+            self.line = None;
+        }
+    }
+
+    /// Keep `text` as the refusal at egui time `now` (seconds).
+    pub fn refuse(&mut self, text: String, now: f64) {
+        self.line = Some((text, now));
+    }
+
+    /// Drop the refusal: an edit was accepted.
+    pub fn clear(&mut self) {
+        self.line = None;
+    }
+
+    /// The refusal text at egui time `now`, while it is recent.
+    #[must_use]
+    pub fn text(&self, now: f64) -> Option<&str> {
+        let (text, at) = self.line.as_ref()?;
+        (now - at <= Self::SHOW_S).then_some(text.as_str())
+    }
 }
 
 /// The values in flight of the committed number fields, by widget id.

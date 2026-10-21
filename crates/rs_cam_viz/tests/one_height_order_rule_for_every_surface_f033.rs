@@ -65,6 +65,7 @@ use rs_cam_core::session::{
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::state::job::{ModelKind, ModelUnits};
+use rs_cam_viz::state::panels::HeightsRefusal;
 use rs_cam_viz::state::toolpath::{HeightContext, OperationType};
 use rs_cam_viz::ui::properties::{admit_heights_edit, draw_height_diagram, height_order_badge};
 use rs_cam_viz::ui::tokens;
@@ -362,6 +363,7 @@ fn the_heights_tab_refuses_an_edit_that_inverts_the_stack_f033() {
     let answer = s.toolpath_heights(&tc).expect("the heights resolve");
     let ctx = context();
     let mut heights = tc.heights;
+    let mut refusal = HeightsRefusal::default();
     let mut written = None;
     let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
         written = Some(admit_heights_edit(
@@ -370,11 +372,15 @@ fn the_heights_tab_refuses_an_edit_that_inverts_the_stack_f033() {
             inverted(),
             &answer,
             OperationType::Pocket,
+            &mut refusal,
         ));
     });
     out.textures_delta.clear();
     assert_eq!(written, Some(false), "the gate refuses the edit");
     assert_eq!(heights, HeightsConfig::default(), "nothing is written");
+    // UI-09: the refusal text is GUI state, not egui memory.
+    let shown = refusal.text(0.0).expect("the gate keeps the refusal");
+    assert!(shown.contains("Retract Z"), "{shown}");
 
     // Non-vacuity: an edit in order is written.
     let fine = HeightsConfig {
@@ -388,11 +394,13 @@ fn the_heights_tab_refuses_an_edit_that_inverts_the_stack_f033() {
             fine.clone(),
             &answer,
             OperationType::Pocket,
+            &mut refusal,
         ));
     });
     out.textures_delta.clear();
     assert_eq!(written, Some(true));
     assert_eq!(heights, fine);
+    assert_eq!(refusal.text(0.0), None, "an accepted edit clears it");
 }
 
 /// A waterline: retract 20 (the safe Z), top 9.8 (the stock top).
@@ -421,7 +429,14 @@ fn frame(
     let mut out = ctx.run_ui(input, |ui| {
         ui.set_max_width(280.0);
         let answer = ToolpathHeights::from_context(heights, hctx);
-        draw_height_diagram(ui, heights, &answer, OperationType::Waterline, None);
+        draw_height_diagram(
+            ui,
+            heights,
+            &answer,
+            OperationType::Waterline,
+            None,
+            &mut HeightsRefusal::default(),
+        );
     });
     let shapes = std::mem::take(&mut out.shapes);
     out.textures_delta.clear();
@@ -522,4 +537,103 @@ fn a_floor_above_the_top_is_left_to_the_floor_rule_f033() {
             "the floor rule names the floor: {other}"
         ),
     }
+}
+
+// ── arm 6: a top-included ladder takes top = bottom (F033b) ─────────────
+
+/// F033b (lead ruling): the Waterline ladder includes its top
+/// (`Capabilities::ladder_includes_top`), so top = bottom is one level.
+/// The Heights tab gate writes it, and refuses a bottom above the top.
+/// A Pocket ladder starts one pass below its top, so a Pocket floor at
+/// the top still refuses at generation.
+#[test]
+fn a_top_included_ladder_takes_top_equal_to_bottom_f033b() {
+    const Z_MM: f64 = 5.0;
+    let one_level = HeightsConfig {
+        top_z: HeightMode::Manual(Z_MM),
+        bottom_z: HeightMode::Manual(Z_MM),
+        ..HeightsConfig::default()
+    };
+    let answer = ToolpathHeights::from_context(&HeightsConfig::default(), waterline_ctx());
+    assert_eq!(
+        answer.height_order(&one_level, OperationType::Waterline),
+        Vec::new(),
+        "THE rule: top = bottom is one Waterline level"
+    );
+
+    // The Heights tab gate writes it.
+    let ctx = context();
+    let mut heights = HeightsConfig::default();
+    let mut refusal = HeightsRefusal::default();
+    let mut written = None;
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        written = Some(admit_heights_edit(
+            ui,
+            &mut heights,
+            one_level.clone(),
+            &answer,
+            OperationType::Waterline,
+            &mut refusal,
+        ));
+    });
+    out.textures_delta.clear();
+    assert_eq!(written, Some(true), "the gate takes top = bottom");
+    assert_eq!(heights, one_level);
+
+    // A bottom above the top still refuses at the gate.
+    let above = HeightsConfig {
+        bottom_z: HeightMode::Manual(Z_MM + 0.5),
+        ..one_level
+    };
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        written = Some(admit_heights_edit(
+            ui,
+            &mut heights,
+            above.clone(),
+            &answer,
+            OperationType::Waterline,
+            &mut refusal,
+        ));
+    });
+    out.textures_delta.clear();
+    assert_eq!(
+        written,
+        Some(false),
+        "the gate refuses a bottom above the top"
+    );
+    assert_eq!(heights, one_level, "nothing is written");
+
+    // Pocket: a floor at the top is top = bottom on a top-excluded ladder.
+    let mut s = session();
+    let idx = add(&mut s, HeightsConfig::default());
+    let top_z = s
+        .toolpath_heights(&s.toolpath_configs()[idx])
+        .expect("the heights resolve")
+        .heights
+        .top_z;
+    let mut candidate = s.toolpath_configs()[idx].clone();
+    if let OperationConfig::Pocket(cfg) = &mut candidate.operation {
+        cfg.floor = rs_cam_core::compute::floor::Floor::Z { z: top_z };
+    }
+    let _ = s
+        .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
+            index: idx,
+            config: Box::new(candidate),
+        }))
+        .expect("the floor route takes the floor (arm 5)");
+    let refusal = s
+        .height_order_refusal(&s.toolpath_configs()[idx])
+        .expect("the order rule refuses top = bottom on Pocket");
+    assert_eq!(
+        refusal.violations,
+        vec![HeightOrderViolation::BottomNotBelowTop {
+            bottom_z: top_z,
+            top_z,
+        }],
+        "{refusal}"
+    );
+    assert!(
+        s.generate_toolpath(idx, &AtomicBool::new(false)).is_err(),
+        "generation refuses a Pocket floor at the top"
+    );
 }

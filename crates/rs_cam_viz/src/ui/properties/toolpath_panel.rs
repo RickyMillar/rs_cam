@@ -42,6 +42,9 @@ pub(super) fn draw_toolpath_panel(
     // P4.3: the pick mode and the `+ Rule` draft of the Selection
     // sections, threaded in as `show_reach_map` is.
     selection_ui: &mut crate::state::pick::SelectionUi,
+    // F033 / UI-09: the last refused heights edit (`state.panels`), threaded
+    // in as `selection_ui` is.
+    heights_refusal: &mut crate::state::panels::HeightsRefusal,
     events: &mut Vec<AppEvent>,
 ) {
     // Disjoint borrows of the snapshot's fields. The body edits the entry
@@ -340,7 +343,7 @@ pub(super) fn draw_toolpath_panel(
         ToolpathTab::Linking => draw_linking_params(ui, entry, tool_for_diags, toolpath_heights),
 
         ToolpathTab::Heights => {
-            draw_heights_tab(ui, entry, inputs, events);
+            draw_heights_tab(ui, entry, inputs, heights_refusal, events);
         }
 
         ToolpathTab::Dressup => draw_dressup_tab(ui, entry),
@@ -1277,8 +1280,10 @@ fn draw_heights_tab(
     ui: &mut egui::Ui,
     entry: &mut crate::state::toolpath::ToolpathEntry,
     inputs: &super::ToolpathPanelInputs,
+    heights_refusal: &mut crate::state::panels::HeightsRefusal,
     events: &mut Vec<AppEvent>,
 ) {
+    heights_refusal.scope(entry.id);
     let answer = match inputs.toolpath_heights.as_ref() {
         Some(Ok(answer)) => Some(answer),
         Some(Err(error)) => {
@@ -1310,7 +1315,14 @@ fn draw_heights_tab(
             .as_mut()
             .zip(floor_inputs.as_ref())
             .map(|(floor, inputs)| super::DiagramFloor { floor, inputs });
-        draw_height_diagram(ui, &mut entry.heights, answer, op_type, diagram_floor);
+        draw_height_diagram(
+            ui,
+            &mut entry.heights,
+            answer,
+            op_type,
+            diagram_floor,
+            heights_refusal,
+        );
         if let Some(floor) = floor
             && entry.operation.floor() != Some(floor)
         {
@@ -1323,6 +1335,7 @@ fn draw_heights_tab(
             answer,
             op_type,
             entry.operation.floor().as_ref(),
+            heights_refusal,
         );
     }
     // H2: the dust shoe sits with the safety heights. It moves no

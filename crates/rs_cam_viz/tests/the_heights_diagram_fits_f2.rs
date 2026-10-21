@@ -52,6 +52,7 @@
     clippy::indexing_slicing
 )]
 
+use rs_cam_viz::state::panels::HeightsRefusal;
 use rs_cam_viz::state::toolpath::{HeightContext, HeightsConfig, OperationType};
 use rs_cam_viz::ui::properties::{bottom_z_pin_note, draw_height_diagram};
 use rs_cam_viz::ui::tokens;
@@ -147,7 +148,14 @@ fn draw_in(ctx: &egui::Context, height_ctx: &HeightContext, op_type: OperationTy
         let inner = ui.scope(|ui| {
             ui.set_max_width(PANEL_WIDTH);
             let answer = rs_cam_core::session::ToolpathHeights::from_context(&heights, *height_ctx);
-            draw_height_diagram(ui, &mut heights, &answer, op_type, None);
+            draw_height_diagram(
+                ui,
+                &mut heights,
+                &answer,
+                op_type,
+                None,
+                &mut HeightsRefusal::default(),
+            );
         });
         requested_width = inner.response.rect.width();
     });

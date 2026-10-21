@@ -48,6 +48,7 @@
 use std::path::{Path, PathBuf};
 
 use rs_cam_core::session::ToolpathHeights;
+use rs_cam_viz::state::panels::HeightsRefusal;
 use rs_cam_viz::state::toolpath::{HeightContext, HeightMode, HeightsConfig, OperationType};
 use rs_cam_viz::ui::properties::draw_height_diagram;
 use rs_cam_viz::ui::properties::operations::{pick_line, round_pin};
@@ -174,7 +175,14 @@ fn frame(
     let mut out = ctx.run_ui(input, |ui| {
         ui.set_max_width(PANEL_WIDTH);
         let answer = ToolpathHeights::from_context(heights, *hctx);
-        draw_height_diagram(ui, heights, &answer, OperationType::Waterline, None);
+        draw_height_diagram(
+            ui,
+            heights,
+            &answer,
+            OperationType::Waterline,
+            None,
+            &mut HeightsRefusal::default(),
+        );
     });
     let shapes = std::mem::take(&mut out.shapes);
     out.textures_delta.clear();
