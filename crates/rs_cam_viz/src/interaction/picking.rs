@@ -753,8 +753,6 @@ fn pick_drill_targets(
     best.map(|key| PickHit::Item { toolpath_id, key })
 }
 
-// SAFETY: j bounded by 0..moves.len() via step_by loop
-#[allow(clippy::indexing_slicing)]
 fn pick_toolpaths(
     ctx: &PickContext<'_>,
     session: &ProjectSession,
@@ -790,27 +788,84 @@ fn pick_toolpaths(
             continue;
         };
 
-        let moves = &result.toolpath().moves;
-        let step = (moves.len() / 200).max(1);
-        for j in (0..moves.len()).step_by(step) {
-            let m = &moves[j];
-            let world = [m.target.x as f32, m.target.y as f32, m.target.z as f32];
-            if let Some(screen) = ctx
-                .camera
-                .project_to_screen(world, ctx.aspect, ctx.vw, ctx.vh)
-            {
-                let dx = screen[0] - ctx.screen_x;
-                let dy = screen[1] - ctx.screen_y;
-                let dist = (dx * dx + dy * dy).sqrt();
-                if dist < best_dist {
-                    best_dist = dist;
-                    best = Some((tp_id, j));
-                }
-            }
+        let cursor = [ctx.screen_x, ctx.screen_y];
+        let project = |p: [f32; 3]| ctx.camera.project_to_screen(p, ctx.aspect, ctx.vw, ctx.vh);
+        if let Some((j, dist)) =
+            nearest_drawn_move(&result.toolpath().moves, cursor, best_dist, project)
+        {
+            best_dist = dist;
+            best = Some((tp_id, j));
         }
     }
 
     best.map(|(id, move_index)| PickHit::Toolpath { id, move_index })
+}
+
+/// The move of one toolpath nearest to `cursor` on screen, as
+/// `(move index, distance in px)`, when the distance is less than
+/// `threshold`. `project` takes a point of `moves` to the screen.
+///
+/// The pick tests about 200 moves of a toolpath (every Nth move). It walks
+/// each tested move as the viewport draws it
+/// ([`move_draw_points_into`](crate::render::toolpath_render::move_draw_points_into)),
+/// and measures to the nearest drawn segment on screen. Thus a click on an
+/// arc picks the arc move, not only a click near its chord ends (R-ARC).
+/// A rapid tests its target point only.
+pub fn nearest_drawn_move(
+    moves: &[rs_cam_core::toolpath::Move],
+    cursor: [f32; 2],
+    threshold: f32,
+    project: impl Fn([f32; 3]) -> Option<[f32; 2]>,
+) -> Option<(usize, f32)> {
+    use crate::render::toolpath_render::{arc_draw_deviation_mm, move_draw_points_into};
+
+    let deviation = arc_draw_deviation_mm();
+    let screen = |p: P3| project([p.x as f32, p.y as f32, p.z as f32]);
+    let mut best: Option<(usize, f32)> = None;
+    let mut best_dist = threshold;
+    let mut points = Vec::new();
+    let step = (moves.len() / 200).max(1);
+    for j in (0..moves.len()).step_by(step) {
+        let Some(m) = moves.get(j) else { break };
+        // A rapid picks at its target only, as before R-ARC: a long rapid
+        // must not take a click from a cut line near its middle.
+        let prev = j.checked_sub(1).and_then(|k| moves.get(k));
+        match prev.filter(|_| m.move_type.is_cutting()) {
+            Some(prev) => move_draw_points_into(&mut points, prev.target, m, deviation),
+            None => {
+                points.clear();
+                points.push(m.target);
+            }
+        }
+        let projected: Vec<Option<[f32; 2]>> = points.iter().map(|&p| screen(p)).collect();
+        let mut dist = f32::INFINITY;
+        for p in projected.iter().flatten() {
+            dist = dist.min(screen_distance(cursor, *p, *p));
+        }
+        for w in projected.windows(2) {
+            if let [Some(a), Some(b)] = w {
+                dist = dist.min(screen_distance(cursor, *a, *b));
+            }
+        }
+        if dist < best_dist {
+            best_dist = dist;
+            best = Some((j, dist));
+        }
+    }
+    best
+}
+
+/// The screen distance from `p` to the segment `a`..`b`.
+fn screen_distance(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> f32 {
+    let (abx, aby) = (b[0] - a[0], b[1] - a[1]);
+    let len2 = abx * abx + aby * aby;
+    let t = if len2 > 0.0 {
+        (((p[0] - a[0]) * abx + (p[1] - a[1]) * aby) / len2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let (dx, dy) = (p[0] - (a[0] + t * abx), p[1] - (a[1] + t * aby));
+    (dx * dx + dy * dy).sqrt()
 }
 
 /// Determine which face of an AABB was hit based on the intersection point.

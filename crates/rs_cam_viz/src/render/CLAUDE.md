@@ -26,12 +26,13 @@ Every viewport pipeline. The entry point is `render::mod`, called from `app/view
   not re-uploaded each frame. `refresh` is the compare-then-rebuild guard; it
   takes a `SlotInputs` value, not a key (F132). Do not hand-roll a second one.
 - Check a buffer against the device limit before you create it.
+- A move draws and picks through `toolpath_render::move_draw_points_into`: an arc walks core `linearize_arc_into` (R-ARC).
 
 ## Sentries
 
 - `cargo test -p rs_cam_viz -q --test render_pipelines_headless_g_pipesmoke`
 - `cargo test -p rs_cam_viz -q --test reach_overlay_p5`
-- `cargo test -p rs_cam_viz -q --test viewport_draws_selected_only_wp27`
+- `cargo test -p rs_cam_viz -q --test viewport_draws_selected_only_wp27 --test an_arc_move_draws_on_its_arc_r_arc`
 - `cargo test -p rs_cam_viz -q --test the_selection_colours_live_in_colors_p4_4 --test panels_read_the_token_module_up1` (arm 5: no literal colour)
 
 ## Do not

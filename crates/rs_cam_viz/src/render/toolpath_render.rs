@@ -1,8 +1,11 @@
 use super::LineVertex;
 use super::gpu_safety::{self, GpuLimits};
 use egui_wgpu::wgpu;
+use rs_cam_core::compute::config::ArcFitParams;
 use rs_cam_core::feeds::{AdvancePerToothMm, ChiploadBandClass, VendorChiploadBand};
-use rs_cam_core::toolpath::{MoveType, Toolpath};
+use rs_cam_core::geo::P3;
+use rs_cam_core::geometry::arc_util::linearize_arc_into;
+use rs_cam_core::toolpath::{Move, MoveType, Toolpath};
 use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, SpanClass};
 use std::collections::HashMap;
 
@@ -132,17 +135,8 @@ impl ToolpathGpuData {
         (self.move_cut_counts[n - 1], self.move_rapid_counts[n - 1])
     }
 
-    /// Build GPU data from an [`AnnotatedToolpath`], coloring cutting moves by
-    /// [`AnnotatedToolpath::classify_span_path`] and palette + Z-depth blend.
-    ///
-    /// Coloring:
-    /// - `Entry` spans → bright cyan tint (overrides palette)
-    /// - `LeadOut` spans → magenta tint
-    /// - `LinkBridge` spans → emitted as a centre-gapped pair of sub-segments
-    ///   (visual stipple) in dim grey
-    /// - `DressupArtifact` spans → desaturated muted variant of the palette
-    /// - Otherwise: palette + Z-depth blend, with `DepthPass` `pass_index`
-    ///   producing a small per-pass lightness shift
+    /// Build GPU data from an [`AnnotatedToolpath`], coloured by
+    /// [`ToolpathLines::normal`]. The colour rules are on that function.
     ///
     /// `index`: toolpath index for deterministic palette color.
     /// `selected`: if true, brighten the toolpath by +30%.
@@ -150,7 +144,6 @@ impl ToolpathGpuData {
     /// Very large toolpaths are downsampled to fit within GPU buffer limits.
     /// The toolpath data itself is unchanged — only the visual representation
     /// is simplified.
-    #[allow(clippy::indexing_slicing)] // loop index i bounded by tp.moves.len()
     pub fn from_toolpath(
         device: &wgpu::Device,
         limits: &GpuLimits,
@@ -159,218 +152,14 @@ impl ToolpathGpuData {
         selected: bool,
         span_filter: &crate::state::viewport::SpanKindFilter,
     ) -> Self {
-        use wgpu::util::DeviceExt;
-
-        let tp = &annotated.toolpath;
-
-        // Use actual device limit with 6% headroom instead of hardcoded value.
-        let max_buffer_bytes: usize = (limits.max_buffer_size as f64 * 0.94) as usize;
-        let vertex_size: usize = std::mem::size_of::<LineVertex>(); // 24 bytes
-        let max_verts: usize = max_buffer_bytes / vertex_size;
-
-        // Estimate total vertices (2 per move for line-list).
-        let total_moves = tp.moves.len().saturating_sub(1);
-        // Downsample stride: show every Nth move if too many vertices.
-        let stride = if total_moves * 2 > max_verts {
-            (total_moves * 2 / max_verts) + 1
-        } else {
-            1
-        };
-
-        let base = palette_color(index);
-
-        // Find Z range for depth blending
-        let mut z_min = f64::INFINITY;
-        let mut z_max = f64::NEG_INFINITY;
-        for m in &tp.moves {
-            match m.move_type {
-                MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
-                    z_min = z_min.min(m.target.z);
-                    z_max = z_max.max(m.target.z);
-                }
-                _ => {}
-            }
-        }
-        let z_range = (z_max - z_min).max(1e-6);
-
-        let mut cut_verts = Vec::new();
-        let mut rapid_verts = Vec::new();
-        let mut move_cut_counts = Vec::new();
-        let mut move_rapid_counts = Vec::new();
-
-        let brighten = |c: [f32; 3]| -> [f32; 3] { super::colors::brighten_selected(c, selected) };
-
-        // Per-pass lightness shift on top of the palette+Z blend so passes
-        // visually stratify without losing the palette identity.
-        let z_color = |z: f64, pass_index: Option<u32>| -> [f32; 3] {
-            let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
-            brighten(super::colors::palette_depth_shade(base, t, pass_index))
-        };
-
-        let rapid_color = brighten(super::colors::palette_rapid(base));
-        let entry_color = brighten(super::colors::SPAN_ENTRY.array());
-        let leadout_color = brighten(super::colors::SPAN_LEAD_OUT.array());
-        let linkbridge_color = brighten(super::colors::SPAN_LINK_BRIDGE.array());
-        let dressup_color = brighten(super::colors::palette_dressup(base));
-
-        if stride > 1 {
-            tracing::warn!(
-                moves = total_moves,
-                stride,
-                "Toolpath too large for GPU buffer — downsampling for display"
-            );
-        }
-
-        // Precompute per-move span paths so coloring is O(1) per move.
-        let span_paths = annotated.span_paths_by_move();
-
-        // Classify a move's span path into a coloring decision. The rules
-        // (forward walk; Entry/LeadOut/LinkBridge win outright; Dressup is
-        // remembered but does not short-circuit; DepthPass contributes
-        // `pass_index`; GeometryRefit and Region are transparent) are
-        // unchanged — they simply live in core now, so the PNG exporter can
-        // apply the same ones instead of its own reversed walk (X-1).
-        let classify = |move_idx: usize| -> SpanClass {
-            match span_paths.get(move_idx) {
-                Some(path) => annotated.classify_span_path(path),
-                None => SpanClass::Cut { pass_index: None },
-            }
-        };
-
-        for i in 1..tp.moves.len() {
-            // When downsampling, skip intermediate moves but always keep
-            // rapid moves (they define retract/approach structure) and
-            // the first/last moves.
-            let keep = stride == 1
-                || i % stride == 0
-                || i == 1
-                || i == tp.moves.len() - 1
-                || tp.moves[i].move_type == MoveType::Rapid;
-
-            if keep {
-                let from = tp.moves[i - 1].target;
-                let to = tp.moves[i].target;
-                let p0 = [from.x as f32, from.y as f32, from.z as f32];
-                let p1 = [to.x as f32, to.y as f32, to.z as f32];
-
-                match tp.moves[i].move_type {
-                    MoveType::Rapid => {
-                        rapid_verts.push(LineVertex {
-                            position: p0,
-                            color: rapid_color,
-                        });
-                        rapid_verts.push(LineVertex {
-                            position: p1,
-                            color: rapid_color,
-                        });
-                    }
-                    _ => match classify(i) {
-                        SpanClass::Entry if span_filter.show_entry => {
-                            push_segment(&mut cut_verts, p0, p1, entry_color);
-                        }
-                        SpanClass::LeadOut if span_filter.show_lead_out => {
-                            push_segment(&mut cut_verts, p0, p1, leadout_color);
-                        }
-                        SpanClass::LinkBridge if span_filter.show_link_bridge => {
-                            push_dashed_segment(&mut cut_verts, p0, p1, linkbridge_color);
-                        }
-                        SpanClass::Dressup if span_filter.show_dressup => {
-                            push_segment(&mut cut_verts, p0, p1, dressup_color);
-                        }
-                        SpanClass::Cut { pass_index } => {
-                            let c0 = z_color(from.z, pass_index);
-                            let c1 = z_color(to.z, pass_index);
-                            cut_verts.push(LineVertex {
-                                position: p0,
-                                color: c0,
-                            });
-                            cut_verts.push(LineVertex {
-                                position: p1,
-                                color: c1,
-                            });
-                        }
-                        // Filter hid this segment — emit nothing but still
-                        // bump move_*_counts so scrubbing indices stay aligned.
-                        _ => {}
-                    },
-                }
-            }
-
-            move_cut_counts.push(cut_verts.len() as u32);
-            move_rapid_counts.push(rapid_verts.len() as u32);
-        }
-
-        // Ensure non-empty buffers
-        if cut_verts.is_empty() {
-            cut_verts.push(LineVertex {
-                position: [0.0; 3],
-                color: [0.0; 3],
-            });
-        }
-        if rapid_verts.is_empty() {
-            rapid_verts.push(LineVertex {
-                position: [0.0; 3],
-                color: [0.0; 3],
-            });
-        }
-
-        let cut_vertex_count = cut_verts.len() as u32;
-        let rapid_vertex_count = rapid_verts.len() as u32;
-
-        // Use guarded buffer creation; fall back to placeholder on overflow
-        // (shouldn't happen due to stride logic above, but defense-in-depth).
-        let cut_vertex_buffer = gpu_safety::try_create_buffer(
-            device,
-            limits,
-            "toolpath_cut",
-            bytemuck::cast_slice(&cut_verts),
-            wgpu::BufferUsages::VERTEX,
-        )
-        .unwrap_or_else(|| {
-            let placeholder = [LineVertex {
-                position: [0.0; 3],
-                color: [0.0; 3],
-            }];
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("toolpath_cut_placeholder"),
-                contents: bytemuck::cast_slice(&placeholder),
-                usage: wgpu::BufferUsages::VERTEX,
-            })
-        });
-
-        let rapid_vertex_buffer = gpu_safety::try_create_buffer(
-            device,
-            limits,
-            "toolpath_rapid",
-            bytemuck::cast_slice(&rapid_verts),
-            wgpu::BufferUsages::VERTEX,
-        )
-        .unwrap_or_else(|| {
-            let placeholder = [LineVertex {
-                position: [0.0; 3],
-                color: [0.0; 3],
-            }];
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("toolpath_rapid_placeholder"),
-                contents: bytemuck::cast_slice(&placeholder),
-                usage: wgpu::BufferUsages::VERTEX,
-            })
-        });
-
-        Self {
-            toolpath_id: None,
-            upload_key: None,
-            cut_vertex_buffer,
-            cut_vertex_count,
-            rapid_vertex_buffer,
-            rapid_vertex_count,
-            move_cut_counts,
-            move_rapid_counts,
-            entry_preview_buffer: None,
-            entry_preview_count: 0,
-            tool_profile_preview_buffer: None,
-            tool_profile_preview_count: 0,
-        }
+        let lines = ToolpathLines::normal(
+            annotated,
+            index,
+            selected,
+            span_filter,
+            max_line_vertices(limits),
+        );
+        Self::upload(device, limits, lines, "toolpath_cut", "toolpath_rapid")
     }
 
     /// Attach entry path preview geometry for a selected toolpath.
@@ -426,142 +215,20 @@ impl ToolpathGpuData {
     /// Build GPU data colored by feed rate engagement.
     /// Green = nominal feed (light cut), yellow = reduced feed (moderate), red = heavily loaded.
     /// `nominal_feed` is the base feed rate for the operation.
-    #[allow(clippy::indexing_slicing)]
     pub fn from_toolpath_engagement(
         device: &wgpu::Device,
         limits: &GpuLimits,
         tp: &Toolpath,
         nominal_feed: f64,
     ) -> Self {
-        use wgpu::util::DeviceExt;
-
-        let max_buffer_bytes: usize = (limits.max_buffer_size as f64 * 0.94) as usize;
-        let vertex_size: usize = std::mem::size_of::<LineVertex>();
-        let max_verts: usize = max_buffer_bytes / vertex_size;
-        let total_moves = tp.moves.len().saturating_sub(1);
-        let stride = if total_moves * 2 > max_verts {
-            (total_moves * 2 / max_verts) + 1
-        } else {
-            1
-        };
-
-        let nominal = nominal_feed.max(1.0);
-
-        let rapid_color: [f32; 3] = super::colors::RAPID_DIM.array();
-        let mut cut_verts = Vec::new();
-        let mut rapid_verts = Vec::new();
-        let mut move_cut_counts = Vec::new();
-        let mut move_rapid_counts = Vec::new();
-
-        for i in 1..tp.moves.len() {
-            let keep = stride == 1
-                || i % stride == 0
-                || i == 1
-                || i == tp.moves.len() - 1
-                || tp.moves[i].move_type == MoveType::Rapid;
-
-            if keep {
-                let from = tp.moves[i - 1].target;
-                let to = tp.moves[i].target;
-                let p0 = [from.x as f32, from.y as f32, from.z as f32];
-                let p1 = [to.x as f32, to.y as f32, to.z as f32];
-
-                match tp.moves[i].move_type {
-                    MoveType::Rapid => {
-                        rapid_verts.push(LineVertex {
-                            position: p0,
-                            color: rapid_color,
-                        });
-                        rapid_verts.push(LineVertex {
-                            position: p1,
-                            color: rapid_color,
-                        });
-                    }
-                    _ => {
-                        let feed = tp.moves[i].move_type.feed_rate().unwrap_or(nominal);
-                        let c = engagement_color(feed, nominal);
-                        cut_verts.push(LineVertex {
-                            position: p0,
-                            color: c,
-                        });
-                        cut_verts.push(LineVertex {
-                            position: p1,
-                            color: c,
-                        });
-                    }
-                }
-            }
-
-            move_cut_counts.push(cut_verts.len() as u32);
-            move_rapid_counts.push(rapid_verts.len() as u32);
-        }
-
-        if cut_verts.is_empty() {
-            cut_verts.push(LineVertex {
-                position: [0.0; 3],
-                color: [0.0; 3],
-            });
-        }
-        if rapid_verts.is_empty() {
-            rapid_verts.push(LineVertex {
-                position: [0.0; 3],
-                color: [0.0; 3],
-            });
-        }
-
-        let cut_vertex_count = cut_verts.len() as u32;
-        let rapid_vertex_count = rapid_verts.len() as u32;
-
-        let cut_vertex_buffer = gpu_safety::try_create_buffer(
+        let lines = ToolpathLines::engagement(tp, nominal_feed, max_line_vertices(limits));
+        Self::upload(
             device,
             limits,
+            lines,
             "tp_engagement_cut",
-            bytemuck::cast_slice(&cut_verts),
-            wgpu::BufferUsages::VERTEX,
-        )
-        .unwrap_or_else(|| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("tp_engagement_cut_placeholder"),
-                contents: bytemuck::cast_slice(&[LineVertex {
-                    position: [0.0; 3],
-                    color: [0.0; 3],
-                }]),
-                usage: wgpu::BufferUsages::VERTEX,
-            })
-        });
-
-        let rapid_vertex_buffer = gpu_safety::try_create_buffer(
-            device,
-            limits,
             "tp_engagement_rapid",
-            bytemuck::cast_slice(&rapid_verts),
-            wgpu::BufferUsages::VERTEX,
         )
-        .unwrap_or_else(|| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("tp_engagement_rapid_placeholder"),
-                contents: bytemuck::cast_slice(&[LineVertex {
-                    position: [0.0; 3],
-                    color: [0.0; 3],
-                }]),
-                usage: wgpu::BufferUsages::VERTEX,
-            })
-        });
-
-        Self {
-            toolpath_id: None,
-            upload_key: None,
-            cut_vertex_buffer,
-            cut_vertex_count,
-            rapid_vertex_buffer,
-            rapid_vertex_count,
-            move_cut_counts,
-            move_rapid_counts,
-            entry_preview_buffer: None,
-            entry_preview_count: 0,
-            tool_profile_preview_buffer: None,
-            tool_profile_preview_count: 0,
-        }
     }
 
     /// Build GPU data coloured by per-segment **achieved advance per
@@ -580,7 +247,6 @@ impl ToolpathGpuData {
     /// Until 2026-08-08 this took an arc-mean chip thickness and compared
     /// it to the same band — F-HEATMAP. The two arguments are now
     /// distinct types precisely so that pairing cannot be rebuilt.
-    #[allow(clippy::indexing_slicing)]
     pub fn from_toolpath_advance_per_tooth(
         device: &wgpu::Device,
         limits: &GpuLimits,
@@ -588,129 +254,69 @@ impl ToolpathGpuData {
         band: Option<&VendorChiploadBand>,
         move_advance: &HashMap<usize, AdvancePerToothMm>,
     ) -> Self {
-        use wgpu::util::DeviceExt;
-
-        let max_buffer_bytes: usize = (limits.max_buffer_size as f64 * 0.94) as usize;
-        let vertex_size: usize = std::mem::size_of::<LineVertex>();
-        let max_verts: usize = max_buffer_bytes / vertex_size;
-        let total_moves = tp.moves.len().saturating_sub(1);
-        let stride = if total_moves * 2 > max_verts {
-            (total_moves * 2 / max_verts) + 1
-        } else {
-            1
-        };
-
-        let advance_color = |move_idx: usize| -> [f32; 3] {
-            advance_per_tooth_segment_color(band, move_advance.get(&move_idx).copied())
-        };
-
-        let rapid_color: [f32; 3] = super::colors::RAPID_DIM.array();
-        let mut cut_verts = Vec::new();
-        let mut rapid_verts = Vec::new();
-        let mut move_cut_counts = Vec::new();
-        let mut move_rapid_counts = Vec::new();
-
-        for i in 1..tp.moves.len() {
-            let keep = stride == 1
-                || i % stride == 0
-                || i == 1
-                || i == tp.moves.len() - 1
-                || tp.moves[i].move_type == MoveType::Rapid;
-
-            if keep {
-                let from = tp.moves[i - 1].target;
-                let to = tp.moves[i].target;
-                let p0 = [from.x as f32, from.y as f32, from.z as f32];
-                let p1 = [to.x as f32, to.y as f32, to.z as f32];
-
-                match tp.moves[i].move_type {
-                    MoveType::Rapid => {
-                        rapid_verts.push(LineVertex {
-                            position: p0,
-                            color: rapid_color,
-                        });
-                        rapid_verts.push(LineVertex {
-                            position: p1,
-                            color: rapid_color,
-                        });
-                    }
-                    _ => {
-                        let c = advance_color(i);
-                        cut_verts.push(LineVertex {
-                            position: p0,
-                            color: c,
-                        });
-                        cut_verts.push(LineVertex {
-                            position: p1,
-                            color: c,
-                        });
-                    }
-                }
-            }
-
-            move_cut_counts.push(cut_verts.len() as u32);
-            move_rapid_counts.push(rapid_verts.len() as u32);
-        }
-
-        if cut_verts.is_empty() {
-            cut_verts.push(LineVertex {
-                position: [0.0; 3],
-                color: [0.0; 3],
-            });
-        }
-        if rapid_verts.is_empty() {
-            rapid_verts.push(LineVertex {
-                position: [0.0; 3],
-                color: [0.0; 3],
-            });
-        }
-
-        let cut_vertex_count = cut_verts.len() as u32;
-        let rapid_vertex_count = rapid_verts.len() as u32;
-
-        let cut_vertex_buffer = gpu_safety::try_create_buffer(
+        let lines =
+            ToolpathLines::advance_per_tooth(tp, band, move_advance, max_line_vertices(limits));
+        Self::upload(
             device,
             limits,
+            lines,
             "tp_chipload_cut",
-            bytemuck::cast_slice(&cut_verts),
-            wgpu::BufferUsages::VERTEX,
-        )
-        .unwrap_or_else(|| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("tp_chipload_cut_placeholder"),
-                contents: bytemuck::cast_slice(&[LineVertex {
-                    position: [0.0; 3],
-                    color: [0.0; 3],
-                }]),
-                usage: wgpu::BufferUsages::VERTEX,
-            })
-        });
-
-        let rapid_vertex_buffer = gpu_safety::try_create_buffer(
-            device,
-            limits,
             "tp_chipload_rapid",
-            bytemuck::cast_slice(&rapid_verts),
-            wgpu::BufferUsages::VERTEX,
         )
-        .unwrap_or_else(|| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("tp_chipload_rapid_placeholder"),
-                contents: bytemuck::cast_slice(&[LineVertex {
+    }
+
+    /// Upload the two line lists. An empty list uploads as one zero vertex,
+    /// and a list over the device limit uploads as a placeholder (the
+    /// stride in [`ToolpathLines`] makes that a defence in depth only).
+    fn upload(
+        device: &wgpu::Device,
+        limits: &GpuLimits,
+        lines: ToolpathLines,
+        cut_label: &str,
+        rapid_label: &str,
+    ) -> Self {
+        let ToolpathLines {
+            mut cut,
+            mut rapid,
+            move_cut_counts,
+            move_rapid_counts,
+        } = lines;
+        for verts in [&mut cut, &mut rapid] {
+            if verts.is_empty() {
+                verts.push(LineVertex {
                     position: [0.0; 3],
                     color: [0.0; 3],
-                }]),
-                usage: wgpu::BufferUsages::VERTEX,
+                });
+            }
+        }
+        let buffer = |label: &str, verts: &[LineVertex]| {
+            use wgpu::util::DeviceExt;
+            gpu_safety::try_create_buffer(
+                device,
+                limits,
+                label,
+                bytemuck::cast_slice(verts),
+                wgpu::BufferUsages::VERTEX,
+            )
+            .unwrap_or_else(|| {
+                device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(&format!("{label}_placeholder")),
+                    contents: bytemuck::cast_slice(&[LineVertex {
+                        position: [0.0; 3],
+                        color: [0.0; 3],
+                    }]),
+                    usage: wgpu::BufferUsages::VERTEX,
+                })
             })
-        });
+        };
 
         Self {
             toolpath_id: None,
             upload_key: None,
-            cut_vertex_buffer,
-            cut_vertex_count,
-            rapid_vertex_buffer,
-            rapid_vertex_count,
+            cut_vertex_buffer: buffer(cut_label, &cut),
+            cut_vertex_count: cut.len() as u32,
+            rapid_vertex_buffer: buffer(rapid_label, &rapid),
+            rapid_vertex_count: rapid.len() as u32,
             move_cut_counts,
             move_rapid_counts,
             entry_preview_buffer: None,
@@ -718,6 +324,281 @@ impl ToolpathGpuData {
             tool_profile_preview_buffer: None,
             tool_profile_preview_count: 0,
         }
+    }
+}
+
+/// The most line vertices one buffer holds: the device limit with 6 %
+/// headroom.
+pub fn max_line_vertices(limits: &GpuLimits) -> usize {
+    let max_buffer_bytes = (limits.max_buffer_size as f64 * 0.94) as usize;
+    max_buffer_bytes / std::mem::size_of::<LineVertex>()
+}
+
+/// The largest distance (mm) between a drawn arc and the true arc: the
+/// arc-fit dressup's default budget ([`ArcFitParams`]). The fitter puts an
+/// arc in place of a polyline within this budget, so a drawn arc is not
+/// coarser than the fit (R-ARC).
+pub fn arc_draw_deviation_mm() -> f64 {
+    ArcFitParams::default().tolerance
+}
+
+/// The arc length (mm) of one step on an arc of radius `radius` that keeps
+/// its chord within `deviation_mm` of the arc.
+///
+/// A chord over the angle `a` is `radius * (1 - cos(a / 2))` from the arc,
+/// so `a = 2 * acos(1 - deviation / radius)`. A deviation of the diameter
+/// or more allows any step; core then draws its minimum of two chords.
+fn arc_step_mm(radius: f64, deviation_mm: f64) -> f64 {
+    let cos_half = (1.0 - deviation_mm / radius.max(f64::MIN_POSITIVE)).clamp(-1.0, 1.0);
+    (radius * 2.0 * cos_half.acos()).max(1e-6)
+}
+
+/// The drawn points of `m` from `from`, both ends included, into `buffer`
+/// (cleared first). This is the one rule for every viewport surface that
+/// draws or picks a move (R-ARC).
+///
+/// - A rapid or a line gives its two ends.
+/// - An arc gives the points of core
+///   [`linearize_arc_into`](rs_cam_core::geometry::arc_util::linearize_arc_into),
+///   the arc walk of the simulator. Each chord is within `deviation_mm` of
+///   the arc, and an arc gives at least two chords.
+pub fn move_draw_points_into(buffer: &mut Vec<P3>, from: P3, m: &Move, deviation_mm: f64) {
+    match m.move_type {
+        MoveType::ArcCW { i, j, .. } | MoveType::ArcCCW { i, j, .. } => {
+            let clockwise = matches!(m.move_type, MoveType::ArcCW { .. });
+            let step = arc_step_mm((i * i + j * j).sqrt(), deviation_mm);
+            linearize_arc_into(buffer, from, m.target, i, j, clockwise, step);
+        }
+        MoveType::Rapid | MoveType::Linear { .. } => {
+            buffer.clear();
+            buffer.push(from);
+            buffer.push(m.target);
+        }
+    }
+}
+
+fn f32_point(p: P3) -> [f32; 3] {
+    [p.x as f32, p.y as f32, p.z as f32]
+}
+
+/// The line lists of one toolpath before the upload: what the two GPU
+/// buffers of [`ToolpathGpuData`] hold.
+#[derive(Default)]
+pub struct ToolpathLines {
+    /// Cutting move vertices (line list, 2 per segment).
+    pub cut: Vec<LineVertex>,
+    /// Rapid move vertices (line list, 2 per segment).
+    pub rapid: Vec<LineVertex>,
+    /// For move `i` (from 1): the cut vertex count up to and with move `i`.
+    pub move_cut_counts: Vec<u32>,
+    /// For move `i` (from 1): the rapid vertex count up to and with move `i`.
+    pub move_rapid_counts: Vec<u32>,
+}
+
+impl ToolpathLines {
+    /// The walk that every colouring shares. Each drawn move is the
+    /// polyline of [`move_draw_points_into`], so an arc draws on its arc,
+    /// not as one chord (R-ARC). `cut_move(out, i, points)` pushes the cut
+    /// segments of move `i`.
+    ///
+    /// When the drawn vertex count is over `max_verts`, the walk keeps
+    /// every Nth move. It always keeps the rapids (they show the retract and
+    /// approach structure) and the first and last moves. The count includes
+    /// the arc chords, so the stride bounds the real buffer.
+    #[allow(clippy::indexing_slicing)] // i in 1..moves.len(); a window has 2 points
+    fn walk(
+        tp: &Toolpath,
+        max_verts: usize,
+        rapid_color: [f32; 3],
+        mut cut_move: impl FnMut(&mut Vec<LineVertex>, usize, &[P3]),
+    ) -> Self {
+        let deviation = arc_draw_deviation_mm();
+        let mut points = Vec::new();
+
+        let mut total_verts = 0usize;
+        for i in 1..tp.moves.len() {
+            move_draw_points_into(&mut points, tp.moves[i - 1].target, &tp.moves[i], deviation);
+            total_verts += 2 * points.len().saturating_sub(1);
+        }
+        let stride = if total_verts > max_verts {
+            total_verts / max_verts.max(1) + 1
+        } else {
+            1
+        };
+        if stride > 1 {
+            tracing::warn!(
+                moves = tp.moves.len(),
+                vertices = total_verts,
+                stride,
+                "Toolpath too large for GPU buffer — downsampling for display"
+            );
+        }
+
+        let mut out = Self::default();
+        let last = tp.moves.len().saturating_sub(1);
+        for i in 1..tp.moves.len() {
+            let is_rapid = tp.moves[i].move_type == MoveType::Rapid;
+            let keep = stride == 1 || i % stride == 0 || i == 1 || i == last || is_rapid;
+            if keep {
+                move_draw_points_into(&mut points, tp.moves[i - 1].target, &tp.moves[i], deviation);
+                if is_rapid {
+                    for w in points.windows(2) {
+                        push_segment(
+                            &mut out.rapid,
+                            f32_point(w[0]),
+                            f32_point(w[1]),
+                            rapid_color,
+                        );
+                    }
+                } else {
+                    cut_move(&mut out.cut, i, &points);
+                }
+            }
+            // A move that the stride or the span filter hides still bumps
+            // the counts, so the scrub indices stay aligned.
+            out.move_cut_counts.push(out.cut.len() as u32);
+            out.move_rapid_counts.push(out.rapid.len() as u32);
+        }
+        out
+    }
+
+    /// The lines of the normal colouring, coloured by
+    /// [`AnnotatedToolpath::classify_span_path`] and palette + Z-depth blend.
+    /// The GPU upload of [`ToolpathGpuData::from_toolpath`] reads this.
+    ///
+    /// - `Entry` spans → bright cyan tint (overrides palette)
+    /// - `LeadOut` spans → magenta tint
+    /// - `LinkBridge` spans → each segment as a centre-gapped pair of
+    ///   sub-segments (visual stipple) in dim grey
+    /// - `DressupArtifact` spans → desaturated muted variant of the palette
+    /// - Otherwise: palette + Z-depth blend, with `DepthPass` `pass_index`
+    ///   producing a small per-pass lightness shift
+    pub fn normal(
+        annotated: &AnnotatedToolpath,
+        index: usize,
+        selected: bool,
+        span_filter: &crate::state::viewport::SpanKindFilter,
+        max_verts: usize,
+    ) -> Self {
+        let tp = &annotated.toolpath;
+        let base = palette_color(index);
+
+        // Find Z range for depth blending
+        let mut z_min = f64::INFINITY;
+        let mut z_max = f64::NEG_INFINITY;
+        for m in &tp.moves {
+            if m.move_type.is_cutting() {
+                z_min = z_min.min(m.target.z);
+                z_max = z_max.max(m.target.z);
+            }
+        }
+        let z_range = (z_max - z_min).max(1e-6);
+
+        let brighten = |c: [f32; 3]| -> [f32; 3] { super::colors::brighten_selected(c, selected) };
+
+        // Per-pass lightness shift on top of the palette+Z blend so passes
+        // visually stratify without losing the palette identity.
+        let z_color = |z: f64, pass_index: Option<u32>| -> [f32; 3] {
+            let t = ((z - z_min) / z_range).clamp(0.0, 1.0) as f32;
+            brighten(super::colors::palette_depth_shade(base, t, pass_index))
+        };
+
+        let rapid_color = brighten(super::colors::palette_rapid(base));
+        let entry_color = brighten(super::colors::SPAN_ENTRY.array());
+        let leadout_color = brighten(super::colors::SPAN_LEAD_OUT.array());
+        let linkbridge_color = brighten(super::colors::SPAN_LINK_BRIDGE.array());
+        let dressup_color = brighten(super::colors::palette_dressup(base));
+
+        // Precompute per-move span paths so coloring is O(1) per move.
+        let span_paths = annotated.span_paths_by_move();
+
+        // Classify a move's span path into a coloring decision. The rules
+        // (forward walk; Entry/LeadOut/LinkBridge win outright; Dressup is
+        // remembered but does not short-circuit; DepthPass contributes
+        // `pass_index`; GeometryRefit and Region are transparent) live in
+        // core, so the PNG exporter applies the same ones (X-1).
+        let classify = |move_idx: usize| -> SpanClass {
+            match span_paths.get(move_idx) {
+                Some(path) => annotated.classify_span_path(path),
+                None => SpanClass::Cut { pass_index: None },
+            }
+        };
+
+        Self::walk(tp, max_verts, rapid_color, |out, i, points| {
+            let class = classify(i);
+            for w in points.windows(2) {
+                let [from, to] = match w {
+                    [a, b] => [*a, *b],
+                    _ => continue,
+                };
+                let (p0, p1) = (f32_point(from), f32_point(to));
+                match class {
+                    SpanClass::Entry if span_filter.show_entry => {
+                        push_segment(out, p0, p1, entry_color);
+                    }
+                    SpanClass::LeadOut if span_filter.show_lead_out => {
+                        push_segment(out, p0, p1, leadout_color);
+                    }
+                    SpanClass::LinkBridge if span_filter.show_link_bridge => {
+                        push_dashed_segment(out, p0, p1, linkbridge_color);
+                    }
+                    SpanClass::Dressup if span_filter.show_dressup => {
+                        push_segment(out, p0, p1, dressup_color);
+                    }
+                    SpanClass::Cut { pass_index } => {
+                        out.push(LineVertex {
+                            position: p0,
+                            color: z_color(from.z, pass_index),
+                        });
+                        out.push(LineVertex {
+                            position: p1,
+                            color: z_color(to.z, pass_index),
+                        });
+                    }
+                    // The filter hides this segment.
+                    _ => {}
+                }
+            }
+        })
+    }
+
+    /// The lines of the engagement colouring: each cut move in the colour
+    /// of its feed against `nominal_feed` ([`engagement_color`]).
+    pub fn engagement(tp: &Toolpath, nominal_feed: f64, max_verts: usize) -> Self {
+        let nominal = nominal_feed.max(1.0);
+        let rapid_color: [f32; 3] = super::colors::RAPID_DIM.array();
+        Self::walk(tp, max_verts, rapid_color, |out, i, points| {
+            let feed = tp
+                .moves
+                .get(i)
+                .and_then(|m| m.move_type.feed_rate())
+                .unwrap_or(nominal);
+            let color = engagement_color(feed, nominal);
+            for w in points.windows(2) {
+                if let [a, b] = w {
+                    push_segment(out, f32_point(*a), f32_point(*b), color);
+                }
+            }
+        })
+    }
+
+    /// The lines of the advance-per-tooth colouring: each cut move in the
+    /// colour of [`advance_per_tooth_segment_color`].
+    pub fn advance_per_tooth(
+        tp: &Toolpath,
+        band: Option<&VendorChiploadBand>,
+        move_advance: &HashMap<usize, AdvancePerToothMm>,
+        max_verts: usize,
+    ) -> Self {
+        let rapid_color: [f32; 3] = super::colors::RAPID_DIM.array();
+        Self::walk(tp, max_verts, rapid_color, |out, i, points| {
+            let color = advance_per_tooth_segment_color(band, move_advance.get(&i).copied());
+            for w in points.windows(2) {
+                if let [a, b] = w {
+                    push_segment(out, f32_point(*a), f32_point(*b), color);
+                }
+            }
+        })
     }
 }
 

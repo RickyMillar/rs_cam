@@ -700,3 +700,9 @@ Defects found by the design:
   - The air check reads one pass ring only. A lead near a second wall (a
     narrow gap between an island and the outer wall) is not checked.
 - P6.0c done (5d4e2a6c).
+- R-ARC done: the toolpath view draws and picks an arc move along the
+  core arc walk (`linearize_arc_into`), within the arc-fit tolerance.
+  Follow-up (found by R-ARC, older than it): `pick_toolpaths` reads moves
+  in the emission frame, but the draw shifts them into the display frame
+  (`translate_annotated`); with a non-zero stock origin the pick and the
+  draw disagree.
