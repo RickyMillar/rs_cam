@@ -148,10 +148,16 @@ pub struct RetiredKeyFound {
 }
 
 /// Errors that can occur during session operations.
-#[derive(Debug)]
+///
+/// F054: a typed error from a lower layer stays typed here. A caller
+/// matches the variant, not the message text. `thiserror` derives
+/// `std::error::Error` (with `source()`) and the `#[from]` conversions;
+/// the `Display` text is the hand-written impl below, because no variant
+/// carries an `#[error]` attribute.
+#[derive(Debug, thiserror::Error)]
 pub enum SessionError {
     /// I/O error (file not found, permission denied, etc.).
-    Io(std::io::Error),
+    Io(#[from] std::io::Error),
     /// TOML parsing error.
     TomlParse(String),
     /// TOML serialization error.
@@ -169,16 +175,48 @@ pub enum SessionError {
     SetupNotFound(usize),
     /// Tool still referenced by toolpaths — cannot remove.
     ToolInUse(ToolId),
-    /// Geometry missing for the requested operation.
+    /// Geometry missing for the requested operation: a model that holds
+    /// no mesh, or no geometry of the kind the request reads. F055: a model
+    /// id that names no model is [`Self::ModelNotFound`], and a collision
+    /// check with nothing to check is `Ok(None)`, not this variant.
     MissingGeometry(String),
-    /// Operation execution failure.
+    /// F055: a model id names no model in the project. `known` holds the
+    /// ids that the project holds, in project order, for the refusal text.
+    ModelNotFound {
+        /// The id that names no model.
+        id: crate::ids::ModelId,
+        /// The model ids of the project.
+        known: Vec<crate::ids::ModelId>,
+    },
+    /// F055: a model index is past the end of the model list (the index
+    /// twin of [`Self::ModelNotFound`], as [`Self::ToolpathNotFound`] is of
+    /// [`Self::ToolpathIdNotFound`]).
+    ModelIndexNotFound(usize),
+    /// F054: the operation refused or failed with a typed
+    /// [`OperationError`](crate::compute::execute::OperationError). The
+    /// cancel flag is [`OperationError::Cancelled`](crate::compute::execute::OperationError::Cancelled)
+    /// inside this variant. `From<OperationError>` gives
+    /// [`Self::Selection`] for a selection refusal, so the selection stays
+    /// one variant on every path.
+    Operation(#[source] crate::compute::execute::OperationError),
+    /// A session-level refusal of a generation or a query that has no
+    /// typed error below it (a rest precondition, a boundary source, a
+    /// tier map). The text is the full sentence.
     OperationFailed(String),
+    /// F054: an obstacle edit breaks a rule of the obstacle
+    /// ([`ObstacleRefusal`](crate::compute::obstacle::ObstacleRefusal)).
+    /// The door writes nothing.
+    ObstacleRefused(#[source] crate::compute::obstacle::ObstacleRefusal),
+    /// F054: an enabled obstacle of the setup does not resolve
+    /// ([`ObstacleResolveError`](crate::compute::obstacle::ObstacleResolveError)).
+    Obstacle(#[from] crate::compute::obstacle::ObstacleResolveError),
     /// Simulation error.
-    Simulation(SimulationError),
+    Simulation(#[from] SimulationError),
     /// Collision check error.
-    CollisionCheck(CollisionCheckError),
-    /// Export error.
-    Export(String),
+    CollisionCheck(#[from] CollisionCheckError),
+    /// F054: a checked G-code export refused
+    /// ([`ExportRefusal`](crate::gcode::ExportRefusal)).
+    Export(#[from] crate::gcode::ExportRefusal),
     /// Invalid parameter name or value.
     InvalidParam(String),
     /// Parsed TOML doesn't look like an rs_cam project.
@@ -259,7 +297,7 @@ pub enum SessionError {
     /// S2: a stock change breaks a named rule
     /// ([`crate::compute::stock_change::StockChangeRefusal`]). The session
     /// writes nothing.
-    StockChangeRefused(crate::compute::stock_change::StockChangeRefusal),
+    StockChangeRefused(#[source] crate::compute::stock_change::StockChangeRefusal),
     /// The project file holds retired keys. Each entry names one key in
     /// the file and what replaced it, or that it is removed. C2: the list
     /// holds EVERY retired key in the file, not only the first. The table
@@ -271,7 +309,7 @@ pub enum SessionError {
     /// The selection of the op refuses (geometry selection P2.4): the
     /// item, the cause and the fix, with the op label. Generation and the
     /// `selection_status` query give the same value.
-    Selection(crate::selection::SelectionRefusal),
+    Selection(#[source] crate::selection::SelectionRefusal),
     /// F029: a tool dimension is outside its domain
     /// ([`ToolConfig::validate`]). Every tool door refuses with it and writes
     /// nothing; a reader that builds a cutter from a stored tool refuses with
@@ -279,6 +317,7 @@ pub enum SessionError {
     ToolOutOfDomain {
         /// The tool's name.
         tool: String,
+        #[source]
         error: crate::tool::ToolGeometryError,
     },
     /// F015 (operator ruling 1): a setup's `xy_datum` or `z_datum` token
@@ -305,7 +344,7 @@ pub enum SessionError {
     /// entity: an operation config (`compute::domain::validate_operation`),
     /// the stock, the machine, the head or a toolpath shoe. Every door of
     /// that entity and the project loader refuse with it and write nothing.
-    OutOfDomain(crate::compute::domain::DomainRefusal),
+    OutOfDomain(#[source] crate::compute::domain::DomainRefusal),
     /// F033 (operator ruling 2): an edit adds a refusing break of the
     /// height-plane order, or generation reads a stack that holds one. The
     /// door writes nothing. The export door refuses with the same text
@@ -313,7 +352,7 @@ pub enum SessionError {
     HeightOrder(heights::HeightOrderRefusal),
     /// F114: Suggest refuses the tool × operation pairing of the toolpath
     /// that `Command::ApplyFeeds` names. The row writes nothing.
-    FeedsRefused(crate::feeds::FeedsError),
+    FeedsRefused(#[source] crate::feeds::FeedsError),
 }
 
 impl SessionError {
@@ -358,10 +397,28 @@ impl std::fmt::Display for SessionError {
             Self::SetupNotFound(id) => write!(f, "Setup {id} not found"),
             Self::ToolInUse(id) => write!(f, "Tool {} is still referenced by toolpaths", id.0),
             Self::MissingGeometry(msg) => write!(f, "Missing geometry: {msg}"),
+            Self::ModelNotFound { id, known } => {
+                let known: Vec<String> = known.iter().map(|m| m.0.to_string()).collect();
+                write!(
+                    f,
+                    "Model id {} not found; project model ids: [{}]",
+                    id.0,
+                    known.join(", ")
+                )
+            }
+            Self::ModelIndexNotFound(index) => write!(f, "Model index {index} not found"),
+            // The prefix is the text that `OperationFailed(e.to_string())`
+            // gave before F054, so no surface text changes.
+            Self::Operation(e) => write!(f, "Operation failed: {e}"),
             Self::OperationFailed(msg) => write!(f, "Operation failed: {msg}"),
+            Self::Obstacle(e) => write!(f, "Operation failed: {e}"),
+            // The prefix is the text of `InvalidParam`, which the obstacle
+            // doors gave before F054.
+            Self::ObstacleRefused(refusal) => write!(f, "Invalid parameter: {refusal}"),
             Self::Simulation(e) => write!(f, "Simulation error: {e}"),
             Self::CollisionCheck(e) => write!(f, "Collision check error: {e}"),
-            Self::Export(msg) => write!(f, "Export error: {msg}"),
+            // No prefix: the refusal text starts "G-code export refused".
+            Self::Export(refusal) => write!(f, "{refusal}"),
             Self::InvalidParam(msg) => write!(f, "Invalid parameter: {msg}"),
             Self::NotACamProject(detail) => write!(f, "Not an rs_cam project: {detail}"),
             Self::UnsupportedFormatVersion { found } => write!(
@@ -431,23 +488,18 @@ impl std::fmt::Display for SessionError {
     }
 }
 
-impl std::error::Error for SessionError {}
-
-impl From<std::io::Error> for SessionError {
-    fn from(e: std::io::Error) -> Self {
-        Self::Io(e)
-    }
-}
-
-impl From<SimulationError> for SessionError {
-    fn from(e: SimulationError) -> Self {
-        Self::Simulation(e)
-    }
-}
-
-impl From<CollisionCheckError> for SessionError {
-    fn from(e: CollisionCheckError) -> Self {
-        Self::CollisionCheck(e)
+/// F054: an operation error keeps its type. A selection refusal is
+/// [`SessionError::Selection`] on every path (P2.4: generation and the
+/// `selection_status` query give the same value); every other error is
+/// [`SessionError::Operation`].
+impl From<crate::compute::execute::OperationError> for SessionError {
+    fn from(e: crate::compute::execute::OperationError) -> Self {
+        match e {
+            crate::compute::execute::OperationError::Selection(refusal) => {
+                Self::Selection(*refusal)
+            }
+            other => Self::Operation(other),
+        }
     }
 }
 

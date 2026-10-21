@@ -520,9 +520,12 @@ impl<'a> GenObserver<'a> {
 /// string the GUI lane shows, and whether the dressups record one item
 /// each. A caller with no such surface passes [`GenObserver::none()`].
 ///
-/// An `Err` carries no cancel variant: a generator that stops on the flag
-/// reports [`SessionError::OperationFailed`] like any other refusal. A
-/// caller that owns the flag reads the flag, not the message.
+/// F054: a generator that stops on the flag reports
+/// [`SessionError::Operation`] with
+/// [`OperationError::Cancelled`](crate::compute::execute::OperationError::Cancelled).
+/// A caller matches that variant, never the message. A stop that comes
+/// after the last flag read can still return `Ok` or another error, so a
+/// caller that owns the flag also reads the flag (G-REGEN-RACE).
 pub fn execute_job(
     handle: &GenerateToolpathHandle,
     observer: &GenObserver<'_>,
@@ -751,14 +754,11 @@ impl JobPhases<'_, '_> {
                 Ok((annotated, findings))
             }
             // P2.4: a selection refusal stays typed, so generation and the
-            // `selection_status` query give the same value.
-            Err(crate::compute::execute::OperationError::Selection(refusal)) => {
-                drop(core_scope);
-                Err(SessionError::Selection(refusal))
-            }
+            // `selection_status` query give the same value. F054: every
+            // other error stays typed too (`From<OperationError>`).
             Err(e) => {
                 drop(core_scope);
-                Err(SessionError::OperationFailed(e.to_string()))
+                Err(SessionError::from(e))
             }
         }
     }
@@ -897,9 +897,9 @@ impl JobPhases<'_, '_> {
     ///
     /// # Errors
     ///
-    /// [`SessionError::OperationFailed`] when the clip refuses, or when
-    /// the boundary resolves to a region set the submit step did not
-    /// capture.
+    /// [`SessionError::Operation`] when the clip refuses, or when the
+    /// boundary resolves to a region set the submit step did not capture
+    /// (`OperationError::Internal`).
     fn clip_and_split_entries(
         &self,
         annotated: crate::compute::execute::GeneratedToolpath,
@@ -937,11 +937,11 @@ impl JobPhases<'_, '_> {
                 // clipping against an empty set, because an
                 // un-confined fine tier runs over the whole board.
                 let regions = self.context.post_clip_regions.as_ref().ok_or_else(|| {
-                    SessionError::OperationFailed(
+                    SessionError::Operation(crate::compute::execute::OperationError::Internal(
                         "the boundary resolves to a region set and the submit step \
                          captured none"
                             .to_owned(),
-                    )
+                    ))
                 })?;
                 ProjectSession::apply_boundary_clip_multi(
                     annotated,
@@ -954,8 +954,7 @@ impl JobPhases<'_, '_> {
                     self.semantic_root,
                     channels,
                     findings,
-                )
-                .map_err(|e| SessionError::OperationFailed(e.to_string()))?
+                )?
             } else {
                 ProjectSession::apply_boundary_clip(
                     annotated,
@@ -969,8 +968,7 @@ impl JobPhases<'_, '_> {
                     self.semantic_root,
                     channels,
                     findings,
-                )
-                .map_err(|e| SessionError::OperationFailed(e.to_string()))?
+                )?
             };
         }
 
@@ -2337,8 +2335,8 @@ impl ProjectSession {
         // `compute/execute/prologue.rs`): a pre-set flag reports the
         // dispatch's cancel text before any precondition below refuses.
         if cancel.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err(SessionError::OperationFailed(
-                crate::compute::execute::OperationError::Cancelled.to_string(),
+            return Err(SessionError::Operation(
+                crate::compute::execute::OperationError::Cancelled,
             ));
         }
 
@@ -2571,8 +2569,10 @@ impl ProjectSession {
             cancel,
         )?
         else {
-            return Err(SessionError::OperationFailed(
-                "the generate_toolpath job answered another row's handle".to_owned(),
+            return Err(SessionError::Operation(
+                crate::compute::execute::OperationError::Internal(
+                    "the generate_toolpath job answered another row's handle".to_owned(),
+                ),
             ));
         };
         // The core door reports to nothing and records no per-dressup

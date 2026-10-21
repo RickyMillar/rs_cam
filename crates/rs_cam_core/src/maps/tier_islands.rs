@@ -13,7 +13,8 @@
 //! 0.05, R2.0 → R1.0 ladder, [`crate::maps::tier_map::ResidualTreatment::SlopeCompensated`]):
 //! the fine tier's territory is **22.0% of the board / 8,815 mm²**, and it
 //! arrives as roughly **566 raw islands**. Handed to
-//! [`crate::geometry::region_mask::region_polygons_from_mask`] as-is, 502 of those are
+//! the plain extraction (F199 deleted it; only
+//! [`crate::geometry::region_mask::region_polygons_from_mask_reported`] remains) as-is, 502 of those are
 //! silently dropped by [`crate::geometry::region_mask::MAX_REST_REGIONS`] and the caller
 //! reads a 64-long list as the whole answer. A per-island generation pass on
 //! even the surviving 64 is the fragmentation half of the T4 loss (19 k
@@ -101,7 +102,7 @@ use crate::finish::finish_planner::{and_masks_in_place, label_components, morpho
 use crate::geo::P2;
 use crate::geometry::grid_field::distance_transform_2d;
 use crate::geometry::grid2::Grid2;
-use crate::geometry::region_mask::region_polygons_from_mask_reported;
+use crate::geometry::region_mask::{RegionExtraction, region_polygons_from_mask_reported};
 use crate::geometry::region_set::RegionSet;
 use crate::maps::tier_map::{NO_TIER, TierMap};
 use crate::polygon::Polygon2;
@@ -1002,7 +1003,12 @@ pub fn extract_tier_islands(
             let Ok(grid) = Grid2::from_vec(nx, ny, island) else {
                 continue;
             };
-            let base = region_polygons_from_mask_reported(
+            // F199: one connected component per call, so the cap cannot
+            // fire (module doc, "The 64-region cap does not apply here").
+            let RegionExtraction {
+                polygons: base_polys,
+                cap: _,
+            } = region_polygons_from_mask_reported(
                 &grid,
                 map.grid.origin_x,
                 map.grid.origin_y,
@@ -1010,7 +1016,6 @@ pub fn extract_tier_islands(
                 0.0,
                 None,
             );
-            let base_polys = base.polygons;
             // Overlap is grown PER ISLAND from the same mask, not by
             // re-extracting a dilated union — that is what keeps the island
             // count fixed and makes containment geometric rather than
@@ -1019,7 +1024,11 @@ pub fn extract_tier_islands(
             // 1: a seed boundary that leaves the part is a pathological input
             // in its own right).
             if params.overlap_mm > 0.0 {
-                let grown = region_polygons_from_mask_reported(
+                // F199: one component, so the cap cannot fire (as above).
+                let RegionExtraction {
+                    polygons: grown,
+                    cap: _,
+                } = region_polygons_from_mask_reported(
                     &grid,
                     map.grid.origin_x,
                     map.grid.origin_y,
@@ -1027,7 +1036,7 @@ pub fn extract_tier_islands(
                     params.overlap_mm,
                     Some(&covered),
                 );
-                machining.extend(grown.polygons);
+                machining.extend(grown);
             } else {
                 machining.extend(base_polys.clone());
             }

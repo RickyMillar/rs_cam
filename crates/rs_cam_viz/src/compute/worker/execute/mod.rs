@@ -248,19 +248,29 @@ pub(super) fn run_compute_with_phase_tracker(
 
 /// Turn a core refusal into the lane's error.
 ///
-/// `SessionError` carries no cancel variant, so the FLAG is the evidence
-/// that a generation stopped rather than failed. A caller that reads the
-/// message instead would report "Operation was cancelled" as a failure and
-/// the drain would mark the toolpath `Error` — which is what G-REGEN-RACE
-/// exists to prevent.
+/// F054: the cancel and the budget stop are variants
+/// (`SessionError::Operation(OperationError::Cancelled)` and
+/// `OperationError::OverBudget`), and this function matches them, never
+/// the message. The flag stays a second piece of evidence: a stop that
+/// comes after the generator's last flag read can return another error,
+/// and G-REGEN-RACE needs `Cancelled` for that job too, not `Error`.
 fn map_session_error(
     error: &rs_cam_core::session::SessionError,
     cancel: &AtomicBool,
 ) -> ComputeError {
-    if cancel.load(std::sync::atomic::Ordering::SeqCst) {
-        ComputeError::Cancelled
-    } else {
-        ComputeError::Message(error.to_string())
+    use rs_cam_core::compute::OperationError;
+    use rs_cam_core::session::SessionError;
+    match error {
+        SessionError::Operation(OperationError::Cancelled) => ComputeError::Cancelled,
+        SessionError::Operation(OperationError::OverBudget {
+            need_bytes,
+            limit_bytes,
+        }) => ComputeError::OverBudget {
+            need_bytes: *need_bytes,
+            limit_bytes: *limit_bytes,
+        },
+        _ if cancel.load(std::sync::atomic::Ordering::SeqCst) => ComputeError::Cancelled,
+        _ => ComputeError::Message(error.to_string()),
     }
 }
 

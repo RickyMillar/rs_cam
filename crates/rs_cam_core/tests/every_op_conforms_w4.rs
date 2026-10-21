@@ -343,7 +343,7 @@ fn check1_a_preset_cancel_reaches_the_session_door_before_a_tool_refusal() {
         });
         let cancel = AtomicBool::new(true);
         match session.generate_toolpath(index, &cancel) {
-            Err(SessionError::OperationFailed(text)) if text == cancelled => {}
+            Err(SessionError::Operation(OperationError::Cancelled)) => {}
             Ok(_) => panic!("{key}/cancel: a pre-set cancel was ignored"),
             Err(other) => panic!(
                 "{key}/cancel: expected the cancel ({cancelled:?}) ahead of every refusal, \
@@ -362,7 +362,7 @@ fn check1_a_preset_cancel_reaches_the_session_door_before_a_tool_refusal() {
             ..spec(key, op)
         });
         match session.generate_toolpath(index, &cancel) {
-            Err(SessionError::OperationFailed(text)) if text == cancelled => {}
+            Err(SessionError::Operation(OperationError::Cancelled)) => {}
             other => panic!(
                 "{key}/cancel_rest: expected the cancel ({cancelled:?}) ahead of the \
                  snapshot refusal, got {:?}",
@@ -856,10 +856,12 @@ fn check2b_a_rest_op_removes_no_more_material_than_a_fresh_op() {
 ///   every other empty result.
 /// - `GeneratedEmpty`: legal only when none of those exemptions holds.
 /// - Any other refusal must be a NAMED one: a typed `SessionError`
-///   variant, or `OperationFailed` with the text of a typed
-///   `OperationError` (missing geometry, invalid tool), or a selection
-///   refusal (`SessionError::Selection`). Free text
-///   (`OperationError::Other`) is an unnamed error.
+///   variant, or `SessionError::Operation` with a named
+///   `OperationError` (missing geometry, invalid tool, invalid parameter),
+///   or a selection refusal (`SessionError::Selection`). Free text
+///   (`OperationError::Other`, `OperationFailed`) and a wiring defect
+///   (`OperationError::Internal`) are unnamed errors. F054: the test
+///   matches the variant, not the message.
 /// - A panic is always a defect.
 fn classify(op: OperationType, rest: bool, outcome: &Outcome) -> Result<&'static str, String> {
     let policy = op.registry_entry().policy;
@@ -891,18 +893,16 @@ fn classify(op: OperationType, rest: bool, outcome: &Outcome) -> Result<&'static
                 Ok("refused-empty")
             }
         }
+        // A selection refusal is `SessionError::Selection` (geometry
+        // selection P2.4), a typed refusal: the last refusal arm.
+        Outcome::Refused(SessionError::Operation(error)) => match error {
+            OperationError::MissingGeometry(_)
+            | OperationError::InvalidTool(_)
+            | OperationError::InvalidParam(_) => Ok("named-refusal"),
+            other => Err(format!("an unnamed error: {other}")),
+        },
         Outcome::Refused(SessionError::OperationFailed(text)) => {
-            let named = [
-                OperationError::MissingGeometry(String::new()).to_string(),
-                OperationError::InvalidTool(String::new()).to_string(),
-            ];
-            // A selection refusal is `SessionError::Selection` (geometry
-            // selection P2.4), a typed refusal: the arm below.
-            if named.iter().any(|prefix| text.starts_with(prefix.as_str())) {
-                Ok("named-refusal")
-            } else {
-                Err(format!("an unnamed error: {text}"))
-            }
+            Err(format!("an unnamed error: {text}"))
         }
         Outcome::Refused(_) => Ok("named-refusal"),
         Outcome::Panicked(p) => Err(format!("panicked: {p}")),

@@ -106,7 +106,7 @@ impl<'a> HeightQuery<'a> {
 }
 
 fn query_mismatch(op: OperationType, what: &str) -> OperationError {
-    OperationError::Other(format!(
+    OperationError::Internal(format!(
         "height-field mismatch: {} plans on {what}, but its query gives another field",
         op.name()
     ))
@@ -303,7 +303,7 @@ pub(crate) fn run_height_field<O: HeightFieldOp>(
         && hookup_mm > 0.0
     {
         let geometry = link_geometry.ok_or_else(|| {
-            OperationError::Other(format!(
+            OperationError::Internal(format!(
                 "height-field defect: {} links after its plan but returns no link geometry",
                 op.op_type().name()
             ))

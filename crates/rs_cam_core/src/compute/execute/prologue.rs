@@ -210,7 +210,7 @@ impl<'a> Prepared<'a> {
     }
 
     fn mismatch(&self, what: &str) -> OperationError {
-        OperationError::Other(format!(
+        OperationError::Internal(format!(
             "registry adapter mismatch: {} reads {what}, but its row's geometry is {:?}",
             self.op_type.name(),
             self.op_type.geometry_requirement()
@@ -288,8 +288,9 @@ fn region_ladders(
     let Some(floor) = op.floor() else {
         return Ok(None);
     };
-    let floors = region_floors(&ctx.selection.resolved, items, floor, ctx.heights.top_z)
-        .map_err(|refusal| OperationError::Selection(refusal.for_op(op.op_type().label())))?;
+    let floors = region_floors(&ctx.selection.resolved, items, floor, ctx.heights.top_z).map_err(
+        |refusal| OperationError::Selection(Box::new(refusal.for_op(op.op_type().label()))),
+    )?;
     Ok(floors.map(|floors| {
         let ladders = floors
             .as_slice()
@@ -321,7 +322,7 @@ fn require_items(
     notes: &mut Vec<SelectionNote>,
 ) -> Result<OpItems, OperationError> {
     let (items, view_notes) = view(&ctx.selection.resolved, item_use)
-        .map_err(|refusal| OperationError::Selection(refusal.for_op(op_type.label())))?;
+        .map_err(|refusal| OperationError::Selection(Box::new(refusal.for_op(op_type.label()))))?;
     notes.extend(view_notes);
     Ok(items)
 }
@@ -337,6 +338,6 @@ fn require_mesh<'a>(
         .ok_or_else(|| OperationError::MissingGeometry(format!("{op_name} requires a 3D mesh")))?;
     let index = ctx
         .index
-        .ok_or_else(|| OperationError::Other(format!("{op_name} requires a spatial index")))?;
+        .ok_or_else(|| OperationError::Internal(format!("{op_name} requires a spatial index")))?;
     Ok(MeshInput { mesh, index })
 }

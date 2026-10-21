@@ -83,7 +83,9 @@ use crate::finish::finish_setup::FinishSurface;
 use crate::geo::P2;
 use crate::geometry::grid_field::distance_transform_2d;
 use crate::geometry::grid2::Grid2;
-use crate::geometry::region_mask::{region_polygons_from_mask, region_polygons_from_mask_clamped};
+use crate::geometry::region_mask::{
+    RegionCapReport, RegionExtraction, region_polygons_from_mask_reported,
+};
 use crate::measurement::{CellSource, MeasurementDomain, MeasurementProvenance, MeasurementStage};
 use crate::polygon::Polygon2;
 use crate::surface::rest_field::RestCenterline;
@@ -329,6 +331,12 @@ pub struct DecomposeStats {
     /// surface's own source, so the classification/generation distinction
     /// (§14q, X-6) survives into the report.
     pub provenance: crate::measurement::MeasurementProvenance,
+    /// F199: what the [`crate::geometry::region_mask::MAX_REST_REGIONS`]
+    /// cap did to the band extraction (step 6). `None` = no band was
+    /// truncated (or no band had a region). `Some` = the band that lost
+    /// the most regions; the cap keeps the largest regions of each band
+    /// and drops the rest, so that territory gets no band pass.
+    pub region_cap: Option<RegionCapReport>,
 }
 
 /// Output of [`decompose`].
@@ -518,6 +526,7 @@ pub fn decompose(
 
     // ── Step 6: polygon extraction per band ─────────────────────────────
     let mut regions = Vec::new();
+    let mut region_cap: Option<RegionCapReport> = None;
     for band in BAND_ORDER {
         let mask = band_mask_grid(&labels, rows, cols, band);
         // D-16.1 (F2, 2026-08-06): the `overlap_mm` dilation may grow a band
@@ -534,7 +543,10 @@ pub fn decompose(
         // The clamp is COVERAGE, never the band's own mask: clamping to the
         // band would collapse every region to its undilated footprint and
         // reintroduce the inter-band seam `overlap_mm` exists to close.
-        let polys = region_polygons_from_mask_clamped(
+        let RegionExtraction {
+            polygons: polys,
+            cap,
+        } = region_polygons_from_mask_reported(
             &mask,
             origin_x,
             origin_y,
@@ -542,6 +554,13 @@ pub fn decompose(
             params.overlap_mm.max(0.0),
             Some(covered),
         );
+        // F199: a truncation goes into the report (`DecomposeStats::region_cap`),
+        // the worst band kept.
+        if cap.truncated()
+            && region_cap.is_none_or(|worst: RegionCapReport| cap.dropped() > worst.dropped())
+        {
+            region_cap = Some(cap);
+        }
         regions.extend(
             polys
                 .into_iter()
@@ -564,6 +583,7 @@ pub fn decompose(
         claimed_creases,
         claimed_cells,
         provenance: decompose_provenance(cell, CellSource::Explicit, params),
+        region_cap,
     };
     // M1 §4.3: the diagnostic line that carries region counts also carries
     // what those regions' areas MEAN, so a log a reader finds later cannot be
@@ -954,12 +974,19 @@ fn apply_crease_corridor(
 
     let claim_half_width = centerline.half_width_mm.max(params.pencil_claim_floor);
 
-    let polys = region_polygons_from_mask(
+    // F199: the claim reads only the first polygon, which is the largest.
+    // The cap keeps the largest regions, so a truncation cannot change the
+    // corridor; the report is not needed here.
+    let RegionExtraction {
+        polygons: polys,
+        cap: _,
+    } = region_polygons_from_mask_reported(
         &scratch,
         slope_map.origin_x,
         slope_map.origin_y,
         cell,
         claim_half_width,
+        None,
     );
     let Some(corridor) = polys.into_iter().next() else {
         warn!(
@@ -999,7 +1026,7 @@ fn apply_crease_corridor(
 // ── Step 6: polygon extraction ──────────────────────────────────────────
 
 /// A `cols x rows` boolean mask (`nx = cols`, `ny = rows`, matching
-/// [`region_polygons_from_mask`]'s row-major convention) of cells labelled
+/// [`region_polygons_from_mask_reported`]'s row-major convention) of cells labelled
 /// `band`.
 fn band_mask_grid(
     labels: &[Option<FinishBand>],
@@ -1228,7 +1255,7 @@ mod tests {
     use super::*;
     use crate::geo::P3;
 
-    /// Marching squares (inside `region_polygons_from_mask`) drops loops
+    /// Marching squares (inside `region_polygons_from_mask_reported`) drops loops
     /// that touch the grid boundary, so every mask fixture needs a >=2-cell
     /// false margin ring on every edge to produce closed polygons.
     fn margin_covered(rows: usize, cols: usize) -> Vec<bool> {
@@ -1744,7 +1771,7 @@ mod tests {
     /// exists so the scallop rings of one band and the raster of the next
     /// meet without a seam, which needs each polygon to reach a little way
     /// into its neighbour's territory. F2's coverage clamp
-    /// (`region_mask::region_polygons_from_mask_clamped`) restricts the
+    /// (`region_mask::region_polygons_from_mask_reported`) restricts the
     /// dilation to the COVERED surface and nothing else; a clamp to the
     /// band's own mask would have killed this and reintroduced the seam.
     #[test]

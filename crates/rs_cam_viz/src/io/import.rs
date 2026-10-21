@@ -1,7 +1,7 @@
 //! Thin viz-layer wrappers around `rs_cam_core::io::load_model_file`.
 //!
-//! Core owns the actual import logic; viz just maps `SessionError` into
-//! `VizError` for the controller/GUI layer.
+//! Core owns the actual import logic; a core refusal reaches the
+//! controller/GUI layer as `VizError::Session`, with its own text.
 
 use std::path::Path;
 
@@ -10,10 +10,6 @@ use rs_cam_core::io::{ImportOptions, load_model_file};
 
 use crate::error::VizError;
 use crate::state::job::LoadedModel;
-
-fn core_err_to_viz(err: &rs_cam_core::session::SessionError) -> VizError {
-    VizError::Other(err.to_string())
-}
 
 /// Import a model file at the given units, with the given import options
 /// (P4.8).
@@ -28,5 +24,5 @@ pub fn import_model(
     units: ModelUnits,
     options: ImportOptions,
 ) -> Result<LoadedModel, VizError> {
-    load_model_file(path, id, kind, units, options).map_err(|e| core_err_to_viz(&e))
+    Ok(load_model_file(path, id, kind, units, options)?)
 }

@@ -13,8 +13,8 @@
 //!
 //! (a) the true PRE-CAP count and the truncation flag come back from the
 //!     extractor, not just out of a log line;
-//! (b) the cap's behaviour is unchanged — the same largest-64-by-area, in
-//!     the same order, as the plain `Vec<Polygon2>` name returns;
+//! (b) the cap keeps the largest 64 by area, largest first (F199 deleted
+//!     the plain `Vec<Polygon2>` name this once compared against);
 //! (c) a healthy set reports `truncated() == false` — a measurement, not a
 //!     silence;
 //! (d) the report reaches an operator surface: `ToolpathStats::region_cap`
@@ -36,8 +36,7 @@ use rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_genera
 use rs_cam_core::diagnostics::{DiagnosticId, Scope, ids};
 use rs_cam_core::geometry::grid2::Grid2;
 use rs_cam_core::geometry::region_mask::{
-    MAX_REST_REGIONS, RegionCapReport, region_polygons_from_mask,
-    region_polygons_from_mask_reported,
+    MAX_REST_REGIONS, RegionCapReport, region_polygons_from_mask_reported,
 };
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::polygon::Polygon2;
@@ -78,15 +77,15 @@ fn island_storm(small_blocks: usize) -> Grid2<bool> {
 }
 
 /// (a) + (b): the storm's true island count survives as a number, and the
-/// polygons the reported call returns are byte-for-byte the ones the plain
-/// call already returned.
+/// call keeps the largest `MAX_REST_REGIONS` regions, largest area first.
+/// F199 deleted the plain call that (b) once compared against, so (b) now
+/// checks the cap policy itself.
 #[test]
-fn a_storm_reports_its_true_pre_cap_count_and_keeps_the_same_regions() {
+fn a_storm_reports_its_true_pre_cap_count_and_keeps_the_largest_regions() {
     // 100 small blocks + 1 giant = 101 islands, comfortably past the cap.
     let mask = island_storm(100);
     let cell = 1.0;
 
-    let plain = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 0.0);
     let reported = region_polygons_from_mask_reported(&mask, 0.0, 0.0, cell, 0.0, None);
 
     assert_eq!(
@@ -102,14 +101,13 @@ fn a_storm_reports_its_true_pre_cap_count_and_keeps_the_same_regions() {
     );
     assert_eq!(reported.cap.dropped(), 101 - MAX_REST_REGIONS);
 
-    // (b) unchanged behaviour: same count, same order, same areas — the cap
-    // policy (largest by area first) is not what F3 touches.
-    assert_eq!(plain.len(), MAX_REST_REGIONS);
-    assert_eq!(plain.len(), reported.polygons.len());
-    for (i, (a, b)) in plain.iter().zip(reported.polygons.iter()).enumerate() {
+    // (b) the cap policy: the largest by area first, MAX_REST_REGIONS kept.
+    assert_eq!(reported.polygons.len(), MAX_REST_REGIONS);
+    for (i, pair) in reported.polygons.windows(2).enumerate() {
         assert!(
-            (a.area() - b.area()).abs() < 1e-9,
-            "region {i} differs between the plain and reported calls"
+            pair[0].area() >= pair[1].area(),
+            "region {i} is smaller than region {}: the order is not largest first",
+            i + 1
         );
     }
     let max_area = reported

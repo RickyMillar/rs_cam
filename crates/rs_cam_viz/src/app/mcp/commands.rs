@@ -1947,7 +1947,7 @@ impl RsCamApp {
             // that exist, so nothing is appended here.
             CommandId::SetToolpathModel => {
                 let refused_field = match error {
-                    SessionError::MissingGeometry(_) => "model_id",
+                    SessionError::ModelNotFound { .. } => "model_id",
                     _ => "index",
                 };
                 CoreReply::quiet(mutation_error_json(

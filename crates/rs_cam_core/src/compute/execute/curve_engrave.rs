@@ -92,7 +92,7 @@ pub(crate) fn generate_inlay_plug(
     let polys = prepared.regions()?.as_slice();
     let ha = vbit_half_angle(ctx.tool_cfg);
     if cfg.start_depth() <= 0.0 {
-        return Err(OperationError::Other(format!(
+        return Err(OperationError::InvalidParam(format!(
             "InlayPlug: glue_gap {} mm must be smaller than pocket_depth {} mm",
             cfg.glue_gap, cfg.pocket_depth
         )));

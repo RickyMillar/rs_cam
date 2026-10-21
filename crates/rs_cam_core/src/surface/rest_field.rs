@@ -31,7 +31,7 @@
 //! mask itself is a space-filling hairball unrelated to any actual valley
 //! crease. The ridge extraction instead finds the local-maximum crease of the
 //! continuous field directly — the mask is still used (untouched) for
-//! [`region_polygons_from_mask`] / the P2 selective-finishing boundary
+//! [`crate::geometry::region_mask::region_polygons_from_mask_reported`] / the P2 selective-finishing boundary
 //! source, and for measuring each ridge polyline's local half-width.
 //!
 //! Not to be confused with a 2D rest pass, which is a Pocket from remaining
@@ -312,7 +312,7 @@ impl RestGrid {
 ///
 /// `half_width_mm` is the median chamfer-distance-transform value of the
 /// THRESHOLD mask (`rest > min_valley_depth`, the same mask
-/// [`region_polygons_from_mask`] dilates), sampled along the ridge's cells,
+/// [`crate::geometry::region_mask::region_polygons_from_mask_reported`] dilates), sampled along the ridge's cells,
 /// converted to mm. It is the same "how wide is the rest material here"
 /// metric the pencil/clearing routing decision uses, and lets
 /// `crate::finish::pencil::detectors::rest_depth_arm` size its offset-pass count to the local
@@ -1262,11 +1262,6 @@ pub(crate) fn detect_rest_valleys(
     }
 }
 
-/// Mask → closed-polygon extraction now lives in [`crate::geometry::region_mask`]
-/// (shared with the P2 finish planner); re-exported here so existing
-/// `rest_field::region_polygons_from_mask` callers/imports keep compiling.
-pub use crate::geometry::region_mask::region_polygons_from_mask;
-
 /// Diagnosis of a rest-region set that's pathological in one of two opposite
 /// ways: a threshold-below-cusp sliver storm (way too many tiny islands), or
 /// a threshold so coarse the "rest" region is most of the part (selective
@@ -1304,7 +1299,7 @@ pub enum RestRegionPathology {
 ///
 /// `TooManyIslands` fires once `regions.len()` exceeds `MAX_REST_REGIONS / 2`
 /// (33+) — approaching the hard cap is already pathological, well before
-/// `region_polygons_from_mask` actually has to truncate anything.
+/// `region_polygons_from_mask_reported` actually has to truncate anything.
 /// `SingleGiantRegion` fires when there is exactly one outer region and its
 /// area is at least half of `part_footprint_area_mm2`.
 ///

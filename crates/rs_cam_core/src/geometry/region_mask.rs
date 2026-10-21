@@ -1,7 +1,7 @@
 //! Mask → closed-polygon extraction, shared by rest analysis and the P2
 //! unified-finish planner.
 //!
-//! [`region_polygons_from_mask`] is the one mask→polygon extractor with
+//! [`region_polygons_from_mask_reported`] is the one mask→polygon extractor with
 //! dilation (whole-grid EDT) + containment grouping used across the
 //! rest-depth pencil pipeline (`crate::surface::rest_field`) and, going forward, the
 //! finish planner's steep/shallow region decomposition — see
@@ -20,7 +20,7 @@ use crate::polygon::{Polygon2, detect_containment, shoelace_area};
 /// each becoming its own per-island generation pass. 64 is far above any
 /// intentional region set (a genuine rest-region job is a handful to a few
 /// dozen islands); the 2026-07-06 incident that motivated this cap produced
-/// hundreds. [`region_polygons_from_mask`] keeps the largest `MAX_REST_REGIONS`
+/// hundreds. [`region_polygons_from_mask_reported`] keeps the largest `MAX_REST_REGIONS`
 /// by area and warns when the raw count exceeds it — see
 /// [`crate::surface::rest_field::classify_rest_regions`] for the operator-facing
 /// diagnosis surfaced separately in the GUI.
@@ -43,6 +43,12 @@ pub const MAX_REST_REGIONS: usize = 64;
 ///
 /// Nothing here changes what is kept: the largest [`MAX_REST_REGIONS`] by
 /// area, in the same deterministic order.
+///
+/// F199: `#[must_use]`. A caller states what it does with a truncation:
+/// it records the report into a findings sink (`ctx.record`, which raises
+/// `GEOM_REGION_CAP_TRUNCATED`), returns it in its own report, or names
+/// in a comment why a truncation cannot change its answer.
+#[must_use = "a caller states what it does when the region cap drops regions"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RegionCapReport {
     /// Grouped region count BEFORE truncation — the true number of islands
@@ -71,13 +77,14 @@ impl RegionCapReport {
 
 /// An extraction plus what the [`MAX_REST_REGIONS`] cap did to it (F3).
 ///
-/// Returned only by [`region_polygons_from_mask_reported`]; the two older
-/// names keep their `Vec<Polygon2>` signature and simply drop
-/// [`Self::cap`], so every existing caller is untouched.
+/// Returned by [`region_polygons_from_mask_reported`], the one extraction
+/// (F199: the two forms that returned only the polygons are deleted, so no
+/// caller can read a 64-long list as the whole answer). Destructure it and
+/// name [`Self::cap`].
+#[must_use = "a caller states what it does when the region cap drops regions"]
 #[derive(Debug, Clone)]
 pub struct RegionExtraction {
-    /// The kept regions — identical to what
-    /// [`region_polygons_from_mask_clamped`] returns for the same inputs.
+    /// The kept regions, largest area first.
     pub polygons: Vec<Polygon2>,
     /// What the cap did. See [`RegionCapReport`].
     pub cap: RegionCapReport,
@@ -104,24 +111,10 @@ pub struct RegionExtraction {
 /// distinguishable from a sliver by area alone, so the cap plus warning is
 /// the guard, not a per-region size filter.
 ///
-/// **This return value cannot tell you whether the cap fired.** A 64-long
-/// list is the same shape whether the mask had 64 islands or 312. Call
-/// [`region_polygons_from_mask_reported`] when that distinction matters —
-/// it is the identical extraction with the pre-cap count returned (F3).
-pub fn region_polygons_from_mask(
-    mask: &Grid2<bool>,
-    origin_x: f64,
-    origin_y: f64,
-    cell_mm: f64,
-    dilate_mm: f64,
-) -> Vec<Polygon2> {
-    region_polygons_from_mask_clamped(mask, origin_x, origin_y, cell_mm, dilate_mm, None)
-}
-
-/// [`region_polygons_from_mask`] with an optional **coverage clamp** applied
-/// to the dilated mask before marching squares.
+/// `clamp` is an optional **coverage clamp**, applied to the dilated mask
+/// before marching squares.
 ///
-/// `clamp` is a same-shaped mask of cells the result may occupy — in the
+/// The clamp is a same-shaped mask of cells the result may occupy — in the
 /// finish planner, the surface COVERAGE mask, i.e. "a vertical ray here hit
 /// the model". Dilation may still grow the region freely INSIDE that set,
 /// which is what `overlap_mm` exists for; it simply cannot grow the region
@@ -144,28 +137,13 @@ pub fn region_polygons_from_mask(
 /// and an overcut. This removes the input rather than only rejecting its
 /// output.
 ///
-/// `None` reproduces [`region_polygons_from_mask`] exactly — the rest-depth
-/// pencil pipeline passes it, because its masks are already derived from a
-/// rest field that has no meaning off the part.
-pub fn region_polygons_from_mask_clamped(
-    mask: &Grid2<bool>,
-    origin_x: f64,
-    origin_y: f64,
-    cell_mm: f64,
-    dilate_mm: f64,
-    clamp: Option<&[bool]>,
-) -> Vec<Polygon2> {
-    region_polygons_from_mask_reported(mask, origin_x, origin_y, cell_mm, dilate_mm, clamp).polygons
-}
-
-/// [`region_polygons_from_mask_clamped`] plus the [`RegionCapReport`] (F3).
+/// `None` applies no clamp. The rest-depth pencil pipeline passes it,
+/// because its masks are already derived from a rest field that has no
+/// meaning off the part.
 ///
-/// Byte-for-byte the same extraction — same dilation, same clamp, same
-/// deterministic largest-area-first ordering, same `tracing::warn!` — with
-/// the pre-cap region count returned instead of only logged. Use this
-/// wherever a consumer needs to distinguish *"64 islands"* from *"the
-/// largest 64 of 312 islands"*; the two older names remain the plain
-/// `Vec<Polygon2>` API.
+/// The return value carries the [`RegionCapReport`] (F3): the pre-cap
+/// region count, so a consumer can tell *"64 islands"* from *"the largest
+/// 64 of 312 islands"*. The `tracing::warn!` still fires on a truncation.
 pub fn region_polygons_from_mask_reported(
     mask: &Grid2<bool>,
     origin_x: f64,
@@ -218,7 +196,7 @@ pub fn region_polygons_from_mask_reported(
             warn!(
                 clamp_len = allow.len(),
                 grid_len = dilated.len(),
-                "region_polygons_from_mask: coverage clamp has a different cell count from \
+                "region_polygons_from_mask_reported: coverage clamp has a different cell count from \
                  the band mask; ignoring it. The two grids must come from the same \
                  classification pass."
             );
@@ -314,7 +292,7 @@ pub fn region_polygons_from_mask_reported(
 mod tests {
     use super::*;
 
-    // ── region_polygons_from_mask ──────────────────────────────────────
+    // ── region_polygons_from_mask_reported ──────────────────────────────────────
 
     /// Build a `size`×`size` all-false mask with a `w`×`h` true block whose
     /// top-left corner sits at `(r0, c0)`.
@@ -355,7 +333,7 @@ mod tests {
     #[test]
     fn region_polygons_empty_mask_yields_empty_vec() {
         let mask = Grid2::new_fill(20, 20, false);
-        let polys = region_polygons_from_mask(&mask, 0.0, 0.0, 1.0, 0.0);
+        let polys = region_polygons_from_mask_reported(&mask, 0.0, 0.0, 1.0, 0.0, None).polygons;
         assert!(polys.is_empty(), "an all-false mask has no regions");
     }
 
@@ -363,7 +341,7 @@ mod tests {
     fn region_polygons_no_dilation_matches_block_extent() {
         let cell = 1.0;
         let mask = mask_with_block(20, 8, 8, 3, 3); // rows 8..11, cols 8..11
-        let polys = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 0.0);
+        let polys = region_polygons_from_mask_reported(&mask, 0.0, 0.0, cell, 0.0, None).polygons;
         assert_eq!(polys.len(), 1, "one isolated block -> one polygon");
         assert_closed_ccw_polys(&polys);
         let (minx, miny, maxx, maxy) = poly_bbox(&polys[0]);
@@ -379,8 +357,8 @@ mod tests {
     fn region_polygons_dilation_grows_the_bbox() {
         let cell = 1.0;
         let mask = mask_with_block(30, 10, 10, 3, 3);
-        let base = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 0.0);
-        let dilated = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 2.0);
+        let base = region_polygons_from_mask_reported(&mask, 0.0, 0.0, cell, 0.0, None).polygons;
+        let dilated = region_polygons_from_mask_reported(&mask, 0.0, 0.0, cell, 2.0, None).polygons;
         assert_eq!(base.len(), 1);
         assert_eq!(
             dilated.len(),
@@ -425,10 +403,10 @@ mod tests {
                 mask.set(r, c, true);
             }
         }
-        let apart = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 0.0);
+        let apart = region_polygons_from_mask_reported(&mask, 0.0, 0.0, cell, 0.0, None).polygons;
         assert_eq!(apart.len(), 2, "no dilation: two separate regions");
 
-        let merged = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 2.0);
+        let merged = region_polygons_from_mask_reported(&mask, 0.0, 0.0, cell, 2.0, None).polygons;
         assert_eq!(
             merged.len(),
             1,
@@ -480,7 +458,7 @@ mod tests {
             }
         }
 
-        let polys = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 0.0);
+        let polys = region_polygons_from_mask_reported(&mask, 0.0, 0.0, cell, 0.0, None).polygons;
         assert_eq!(
             polys.len(),
             MAX_REST_REGIONS,
@@ -499,7 +477,7 @@ mod tests {
     /// (including the >64-island storm) is
     /// `tests/region_cap_honesty_f3.rs`.
     #[test]
-    fn reported_extraction_matches_the_plain_one_and_carries_the_count() {
+    fn reported_extraction_keeps_every_region_and_carries_the_count() {
         let cell = 1.0;
         let mut mask = Grid2::new_fill(30, 30, false);
         for (r0, c0) in [(4usize, 4usize), (4, 20), (20, 4)] {
@@ -509,12 +487,11 @@ mod tests {
                 }
             }
         }
-        let plain = region_polygons_from_mask(&mask, 0.0, 0.0, cell, 0.0);
         let reported = region_polygons_from_mask_reported(&mask, 0.0, 0.0, cell, 0.0, None);
 
-        assert_eq!(plain.len(), reported.polygons.len());
-        for (a, b) in plain.iter().zip(reported.polygons.iter()) {
-            assert!((a.area() - b.area()).abs() < 1e-9, "same regions, in order");
+        assert_eq!(reported.polygons.len(), 3);
+        for pair in reported.polygons.windows(2) {
+            assert!(pair[0].area() >= pair[1].area(), "largest area first");
         }
         assert_eq!(reported.cap.total_before_cap, 3);
         assert_eq!(reported.cap.kept, 3);

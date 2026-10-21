@@ -13,7 +13,7 @@
 - `io.rs` — project open, save and import. A DXF or SVG opens the import dialog (`open_import_dialog`,
   `edit_import_dialog`, `confirm_import_dialog`); `set_model_import_options` is the fourth refresh door.
   `edit_drawing_ledger`: one `EditModelDrawing` and one `ModelDrawingEdits` undo step per act (the undo
-  writes `LedgerEdit::Replace`).
+  writes `LedgerEdit::Replace`). F110: only `open_job_from_path` builds `VizError::ProjectLoad`; every other core refusal is `VizError::Session`.
 - `tests/` — the suites, one child module per theme; `tests/mod.rs` holds the shared fixtures. The named `*_g_*.rs` sentries, `results_parity_tests.rs` (G-RESULTS) and `workflow_tests.rs` (end to end) sit beside it.
 
 ## Invariants

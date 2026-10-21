@@ -74,9 +74,7 @@ impl ProjectSession {
     pub(crate) fn remove_model(&mut self, index: usize) -> Result<Effects, SessionError> {
         self.try_with_effects(None, move |session| {
             if index >= session.models.len() {
-                return Err(SessionError::MissingGeometry(format!(
-                    "Model index {index} not found"
-                )));
+                return Err(SessionError::ModelIndexNotFound(index));
             }
             // P2.6: the same rule as a re-import. Every toolpath that reads
             // the model (its own model, a rule, a pick, a surface or a
@@ -429,7 +427,7 @@ impl ProjectSession {
         validate_obstacle(obstacle, |id| {
             crate::compute::obstacle::model_geometry_facts(&self.models, id)
         })
-        .map_err(|e| SessionError::InvalidParam(e.to_string()))
+        .map_err(SessionError::ObstacleRefused)
     }
 
     /// Add an obstacle to the end of a setup's list (K1). The door of the
@@ -448,9 +446,8 @@ impl ProjectSession {
                 .get_mut(setup_index)
                 .ok_or(SessionError::SetupNotFound(setup_index))?;
             if setup.obstacles.iter().any(|o| o.id == obstacle.id) {
-                return Err(SessionError::InvalidParam(
-                    crate::compute::obstacle::ObstacleRefusal::DuplicateId { id: obstacle.id }
-                        .to_string(),
+                return Err(SessionError::ObstacleRefused(
+                    crate::compute::obstacle::ObstacleRefusal::DuplicateId { id: obstacle.id },
                 ));
             }
             let moved = obstacle.enabled;

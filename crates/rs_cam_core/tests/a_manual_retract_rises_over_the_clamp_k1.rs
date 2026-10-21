@@ -183,6 +183,7 @@ fn the_join_between_the_traces_is_clear_k1() {
         let hits: Vec<_> = session
             .collision_check(index, &no_cancel)
             .expect("the check runs")
+            .expect("the check applies: the clamp is an enabled obstacle")
             .collision_report
             .collisions;
         assert!(hits.is_empty(), "TP{index}: {hits:?}");

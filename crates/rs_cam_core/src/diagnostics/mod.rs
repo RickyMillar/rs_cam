@@ -105,22 +105,9 @@ impl From<String> for DiagnosticId {
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum Scope {
     Project,
-    Setup {
-        id: usize,
-    },
-    Toolpath {
-        id: ToolpathId,
-    },
-    Tool {
-        id: usize,
-    },
-    /// Sub-toolpath: specific move range. `start` and `end` are
-    /// toolpath-local move indices.
-    MoveRange {
-        toolpath_id: ToolpathId,
-        start: usize,
-        end: usize,
-    },
+    Setup { id: usize },
+    Toolpath { id: ToolpathId },
+    Tool { id: usize },
 }
 
 /// Consequence ladder. Bigger consequence → higher rank. Compare with

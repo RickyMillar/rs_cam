@@ -683,11 +683,14 @@ impl ProjectSession {
     ) -> Result<Effects, SessionError> {
         self.try_with_effects(Some(index), move |session| {
             if !session.models.iter().any(|m| m.id == model_id) {
-                let known: Vec<String> = session.models.iter().map(|m| m.id.to_string()).collect();
-                return Err(SessionError::MissingGeometry(format!(
-                    "Model id {model_id} not found; project model ids: [{}]",
-                    known.join(", ")
-                )));
+                return Err(SessionError::ModelNotFound {
+                    id: crate::ids::ModelId(model_id),
+                    known: session
+                        .models
+                        .iter()
+                        .map(|m| crate::ids::ModelId(m.id))
+                        .collect(),
+                });
             }
             let tc = session
                 .toolpath_configs

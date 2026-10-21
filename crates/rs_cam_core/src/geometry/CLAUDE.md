@@ -8,8 +8,8 @@ principal type is `RegionSet`; the boundary entry points are
 
 - `mod.rs` — the facade.
 - `boundary.rs` — the machining boundary and `ToolContainment`.
-- `region_set.rs`, `region_mask.rs` — the disjoint machining-region set and
-  the mask to closed-polygon extraction.
+- `region_set.rs`, `region_mask.rs` — the region set and the mask to polygon
+  extraction (F199: the one `region_polygons_from_mask_reported`; name its `cap`).
 - `grid2.rs`, `grid_field.rs` — the generic row-major grid and its math.
 - `marching_squares.rs`, `contour_extract.rs` — contour extraction.
 - `monotone_cells.rs` — the boustrophedon decomposition of a finish region.

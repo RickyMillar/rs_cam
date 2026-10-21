@@ -507,7 +507,7 @@ impl HeightFieldOp for RadialPass {
                 continue;
             };
             if !range.accepts(value) {
-                return Err(OperationError::Other(format!(
+                return Err(OperationError::InvalidParam(format!(
                     "Radial Finish '{name}' = {value} is outside the accepted range ({}). \
                      The generator divides by this dial, so a value outside the range \
                      emits nothing or runs without end. Set a value inside the range.",
@@ -575,7 +575,7 @@ impl HeightFieldOp for HorizontalPass {
     /// write the config past the setter's domain check, so the generator
     /// refuses here, as `RadialPass::refuse` does.
     fn refuse(&self) -> Result<(), OperationError> {
-        self.params.refuse().map_err(OperationError::Other)
+        self.params.refuse().map_err(OperationError::InvalidParam)
     }
 
     fn span_rule(&self) -> SpanRule {

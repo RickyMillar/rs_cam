@@ -930,13 +930,14 @@ pub fn run_project_command(
             // config is somehow absent, the position doubles as the id.
             .unwrap_or(rs_cam_core::ToolpathId(idx));
         match session.collision_check(idx, &cancel) {
-            Ok(check) => {
+            Ok(Some(check)) => {
                 if !check.collision_report.is_clear() {
                     collision_reports.insert(tp_id, check.collision_report);
                 }
             }
-            Err(rs_cam_core::session::SessionError::MissingGeometry(_)) => {
-                // 2D ops don't have meshes for collision checking — that's expected
+            Ok(None) => {
+                // F055: nothing to check (a 2D op with no mesh, no enabled
+                // obstacle and no head band on the stock). That is expected.
             }
             Err(e) => {
                 warn!(index = idx, error = %e, "Collision check failed");

@@ -8,7 +8,7 @@
 //!
 //! # Phase 1 scope
 //!
-//! Five rules are implemented now, each tied to a confirmed or
+//! Three rules of Phase 1 remain, each tied to a confirmed or
 //! spec-identified bug from `planning/gcode_gap_report.md`:
 //!
 //! - [`FindingKind::UnsupportedM6`] — Grbl 1.1 doesn't implement M6.
@@ -16,15 +16,14 @@
 //! - [`FindingKind::MissingG91_1`] — LinuxCNC defaults to absolute IJK
 //!   for arcs; without `G91.1` in the preamble, `G2/G3 I.. J..` blocks
 //!   may be interpreted as absolute centers (latent crash risk).
-//! - [`FindingKind::WrongProgramEndCode`] — LinuxCNC uses `M30` (with
-//!   modal reset), not `M2` (without). Modal state pinned across
-//!   restarts on some controllers when `M2` is used.
-//! - [`FindingKind::MissingProgramBrackets`] — LinuxCNC requires `%`
-//!   tape brackets at first and last line for many streamers.
 //! - [`FindingKind::MissingWcs`] — every program should explicitly
 //!   select a work coordinate system (G54-G59) before the first
 //!   cutting move; relying on the controller's last-used WCS is a
 //!   subtle wrong-origin trap.
+//!
+//! A6 (2026-06-11) retired the program-end-code rule (`M2` and `M30` are
+//! both valid RS274 program ends) and the `%` tape-bracket rule (no
+//! shipped post needs them). F087 deleted their finding kinds.
 //!
 //! # Out of scope for Phase 1
 //!
@@ -56,15 +55,6 @@ pub enum FindingKind {
     UnsupportedM6,
     /// `G91.1` (incremental IJK) absent on a post that requires it.
     MissingG91_1,
-    /// Program end M-code doesn't match the post's required code.
-    /// Retired 2026-06-11 (A6): both `M2` and `M30` are valid RS274
-    /// program ends on every shipped post; the rule no longer fires.
-    /// Variant kept for downstream matches / serialized findings.
-    WrongProgramEndCode,
-    /// Program tape brackets (`%`) missing on a post that requires them.
-    /// No shipped post requires them since 2026-06-11 (A6): modern
-    /// LinuxCNC GUIs/streamers don't need `%` wrapping.
-    MissingProgramBrackets,
     /// No `G54`-`G59` block before the first cutting move.
     MissingWcs,
 
@@ -117,11 +107,6 @@ struct PostInvariants {
     /// Whether `G91.1` (incremental IJK) must appear in the preamble.
     /// LinuxCNC requires this; Grbl and Mach3 default to incremental.
     requires_g91_1: bool,
-    /// Whether the program must be wrapped in `%` tape brackets.
-    /// A6 (2026-06-11): no shipped post requires them — modern LinuxCNC
-    /// GUIs and streamers accept bare programs. The rule machinery is
-    /// kept for future custom posts.
-    requires_percent_brackets: bool,
     /// Whether a WCS code (G54-G59) must appear before the first
     /// cutting move. All shipped posts: yes.
     requires_wcs: bool,
@@ -167,7 +152,6 @@ fn invariants_for(post: PostFormat) -> PostInvariants {
         PostFormat::Grbl => PostInvariants {
             supports_m6,
             requires_g91_1: false,
-            requires_percent_brackets: false,
             requires_wcs: true,
             line_limit: Some(LineLimit::GrblStripped(79)),
             ascii_only: true,
@@ -178,7 +162,6 @@ fn invariants_for(post: PostFormat) -> PostInvariants {
         PostFormat::LinuxCnc => PostInvariants {
             supports_m6,
             requires_g91_1: true,
-            requires_percent_brackets: false,
             requires_wcs: true,
             line_limit: None,
             ascii_only: false,
@@ -189,7 +172,6 @@ fn invariants_for(post: PostFormat) -> PostInvariants {
         PostFormat::Mach3 => PostInvariants {
             supports_m6,
             requires_g91_1: false,
-            requires_percent_brackets: false,
             requires_wcs: true,
             line_limit: None,
             ascii_only: false,
@@ -204,7 +186,6 @@ fn invariants_for(post: PostFormat) -> PostInvariants {
         PostFormat::GrblHal => PostInvariants {
             supports_m6,
             requires_g91_1: false,
-            requires_percent_brackets: false,
             requires_wcs: true,
             line_limit: Some(LineLimit::WholeLine(256)),
             ascii_only: true,
@@ -254,10 +235,9 @@ pub fn validate_with(gcode: &str, post: PostFormat, options: &ValidatorOptions) 
 
     rule_unsupported_m6(&inv, &lines, post, &mut findings);
     rule_missing_g91_1(&inv, &lines, post, &mut findings);
-    // A6 (2026-06-11): the wrong-program-end-code rule was removed —
-    // M2 and M30 are both valid RS274 program ends on every shipped
-    // post (LinuxCNC's own post emits M2 by convention).
-    rule_missing_program_brackets(&inv, &lines, post, &mut findings);
+    // A6 (2026-06-11): the wrong-program-end-code rule and the `%`
+    // tape-bracket rule were removed — M2 and M30 are both valid RS274
+    // program ends on every shipped post, and no shipped post needs `%`.
     rule_missing_wcs(&inv, &lines, post, &mut findings);
     rule_line_length(&inv, &lines, post, &mut findings);
     rule_ascii_and_realtime_bytes(&inv, &lines, post, &mut findings);
@@ -403,47 +383,6 @@ fn rule_missing_g91_1(
                 "{} requires G91.1 (incremental IJK arc-center mode) before the first cutting move. \
                  Without it, G2/G3 I.. J.. blocks may be interpreted as absolute IJK and the toolpath will deviate \
                  from the intended arc — latent machine-crash risk.",
-                post.label()
-            ),
-        });
-    }
-}
-
-fn rule_missing_program_brackets(
-    inv: &PostInvariants,
-    lines: &[&str],
-    post: PostFormat,
-    findings: &mut Vec<Finding>,
-) {
-    if !inv.requires_percent_brackets {
-        return;
-    }
-    let first_non_blank = lines.iter().position(|l| !l.trim().is_empty());
-    let last_non_blank = lines.iter().rposition(|l| !l.trim().is_empty());
-
-    let leading_ok = first_non_blank.is_some_and(|i| lines.get(i).is_some_and(|l| l.trim() == "%"));
-    let trailing_ok = last_non_blank.is_some_and(|i| lines.get(i).is_some_and(|l| l.trim() == "%"));
-
-    if !leading_ok {
-        findings.push(Finding {
-            severity: Severity::Error,
-            kind: FindingKind::MissingProgramBrackets,
-            line: 1,
-            message: format!(
-                "{} requires a `%` on the first line of the program (tape begin). \
-                 Some streamers refuse the program without it.",
-                post.label()
-            ),
-        });
-    }
-    if !trailing_ok {
-        findings.push(Finding {
-            severity: Severity::Error,
-            kind: FindingKind::MissingProgramBrackets,
-            line: lines.len(),
-            message: format!(
-                "{} requires a `%` on the last line of the program (tape end). \
-                 Without it the controller may continue parsing into garbage memory.",
                 post.label()
             ),
         });
@@ -1067,33 +1006,20 @@ mod tests {
     }
 
     #[test]
-    fn m2_and_m30_both_accepted_as_program_end() {
-        // A6: the wrong-end-code rule was retired — both M2 and M30 are
-        // valid RS274 program ends; neither raises a finding anywhere.
+    fn m2_and_m30_and_bare_programs_raise_no_finding() {
+        // A6: the wrong-end-code rule and the `%` tape-bracket rule were
+        // retired (F087 deleted their kinds). A bare program that ends in
+        // M2 or M30 raises no finding on any shipped post.
         let with_m2 = "G90 G91.1\nG54\nG1 X10 F600\nM2\n";
         let with_m30 = "G90 G91.1\nG54\nG1 X10 F600\nM30\n";
         for &post in PostFormat::ALL {
             for prog in [with_m2, with_m30] {
-                assert_eq!(
-                    count_kind(&validate(prog, post), FindingKind::WrongProgramEndCode),
-                    0,
-                    "{post:?} must accept both M2 and M30"
+                let findings = validate(prog, post);
+                assert!(
+                    findings.is_empty(),
+                    "{post:?} must accept a bare program that ends in M2 or M30: {findings:?}"
                 );
             }
-        }
-    }
-
-    #[test]
-    fn percent_brackets_not_required_on_any_shipped_post() {
-        // A6: LinuxCNC no longer requires % tape brackets (modern GUIs /
-        // streamers accept bare programs); no shipped post requires them.
-        let bare = "G90 G91.1\nG54\nG1 X10 F600\nM30\n";
-        for &post in PostFormat::ALL {
-            assert_eq!(
-                count_kind(&validate(bare, post), FindingKind::MissingProgramBrackets),
-                0,
-                "{post:?} must not require %-brackets"
-            );
         }
     }
 

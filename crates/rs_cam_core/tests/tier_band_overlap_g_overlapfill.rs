@@ -687,7 +687,8 @@ fn rivmap100_tiered_finish_step0() {
     );
     let session_check = session
         .collision_check(fine_index, &cancel)
-        .expect("the session check runs");
+        .expect("the session check runs")
+        .expect("the check applies: the fine tier reads a mesh");
     eprintln!(
         "  session collision_check (1 mm samples): {} strikes",
         session_check.collision_report.collisions.len()

@@ -75,11 +75,7 @@ impl<B: ComputeBackend> AppController<B> {
             geometry: Box::new(geometry),
             units,
         });
-        let effects = self
-            .state
-            .session
-            .apply(command)
-            .map_err(|error| VizError::Other(error.to_string()))?;
+        let effects = self.state.session.apply(command)?;
         crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
         if effects.simulation_cleared {
             self.invalidate_simulation();
@@ -335,16 +331,12 @@ impl<B: ComputeBackend> AppController<B> {
                 .map(|m| m.drawing.edits().to_vec())
         };
         let before = ledger(&self.state).unwrap_or_default();
-        let effects = self
-            .state
-            .session
-            .apply(Command::EditModelDrawing(
-                rs_cam_core::session::EditModelDrawingArgs {
-                    model_id: model_id.0,
-                    edit,
-                },
-            ))
-            .map_err(|error| VizError::Other(error.to_string()))?;
+        let effects = self.state.session.apply(Command::EditModelDrawing(
+            rs_cam_core::session::EditModelDrawingArgs {
+                model_id: model_id.0,
+                edit,
+            },
+        ))?;
         crate::state::stale::stamp_stale(&mut self.state, &effects.stale);
         if effects.simulation_cleared {
             self.invalidate_simulation();
@@ -574,7 +566,8 @@ impl<B: ComputeBackend> AppController<B> {
     /// `format_version = 3` and core reads it; a file core refuses now
     /// fails to open, and the operator reads the reason.
     pub fn open_job_from_path(&mut self, path: &Path) -> Result<(), VizError> {
-        let (session, load_warnings) = ProjectSession::load_with_warnings(path)?;
+        let (session, load_warnings) =
+            ProjectSession::load_with_warnings(path).map_err(VizError::project_load)?;
         // Populate GUI state from session.
         let mut gui = GuiState::new();
         gui.file_path = Some(path.to_path_buf());

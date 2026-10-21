@@ -482,10 +482,7 @@ impl SimulationTriage {
                 continue;
             }
             let toolpath_id = match d.scope {
-                Scope::Toolpath { id }
-                | Scope::MoveRange {
-                    toolpath_id: id, ..
-                } => Some(id),
+                Scope::Toolpath { id } => Some(id),
                 _ => None,
             };
             found.push(Finding {

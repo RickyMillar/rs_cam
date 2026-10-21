@@ -1505,12 +1505,13 @@ fn spawn_toolpath_lane(
                 let mut outcome = execute::run_compute_with_phase(&request, &phase_tracker);
                 drop(watch);
                 // A cancelled generation reports `Cancelled` whatever the
-                // generator said. `execute_job` returns a plain
-                // `OperationFailed` when the flag stops it — core carries no
-                // cancel variant — so the flag is the evidence, not the
-                // message. Widened from the pre-WP11b `&& is_ok()`: the two
-                // agree, because the old path already mapped
-                // `OperationError::Cancelled` to `ComputeError::Cancelled`.
+                // generator said. `execute_job` returns
+                // `SessionError::Operation(OperationError::Cancelled)` when
+                // the flag stops it (F054), and `map_session_error` matches
+                // that variant. A stop after the generator's last flag read
+                // can still return `Ok` or another error, so the flag is
+                // the evidence here, not the job's answer. Widened from the
+                // pre-WP11b `&& is_ok()`.
                 //
                 // The LANE flag comes first. Only an operator cancel or a
                 // resubmit sets it (the guard sets the job flag), and

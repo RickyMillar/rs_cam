@@ -107,7 +107,7 @@ impl ProjectSession {
                 setup.map(|s| s.obstacles.as_slice()).unwrap_or_default(),
                 &self.models,
             )
-            .map_err(|e| SessionError::OperationFailed(e.to_string()))?,
+            .map_err(SessionError::Obstacle)?,
         );
         // The grown footprints also leave the machining boundary, when one
         // is on, as the keep-outs always did.
@@ -403,8 +403,7 @@ impl ProjectSession {
                     &emission_stock_bbox,
                     mesh.as_ref(),
                     &keep_out_footprints,
-                )
-                .map_err(|e| SessionError::OperationFailed(e.to_string()))?
+                )?
             }
         } else {
             // K3: with the boundary off, the territory resolver gives the
@@ -423,7 +422,7 @@ impl ProjectSession {
                         .to_assembly(&crate::machine::head::HeadFit::fixed(&self.machine.head)),
                     Some(&emission_stock_bbox),
                 )
-                .map_err(|e| SessionError::OperationFailed(e.to_string()))?,
+                .map_err(SessionError::Obstacle)?,
         );
 
         Ok(ResolvedGenInputs {
@@ -759,7 +758,7 @@ impl ProjectSession {
             BoundarySource::Selection { .. }
             | BoundarySource::DerivedRestRegions { .. }
             | BoundarySource::PlannedTierRegions { .. } => {
-                return Err(crate::compute::execute::OperationError::Other(format!(
+                return Err(crate::compute::execute::OperationError::Internal(format!(
                     "internal error: the '{}' boundary resolves to a region set, but it \
                      reached the single-polygon boundary path. Refusing rather than \
                      clipping to the stock rectangle.",

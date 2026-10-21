@@ -483,11 +483,14 @@ impl ProjectSession {
     ) -> Result<Effects, SessionError> {
         self.try_with_effects(None, move |session| {
             let Some(model) = session.models.iter_mut().find(|m| m.id == model_id) else {
-                let known: Vec<String> = session.models.iter().map(|m| m.id.to_string()).collect();
-                return Err(SessionError::MissingGeometry(format!(
-                    "Model id {model_id} not found; project model ids: [{}]",
-                    known.join(", ")
-                )));
+                return Err(SessionError::ModelNotFound {
+                    id: crate::ids::ModelId(model_id),
+                    known: session
+                        .models
+                        .iter()
+                        .map(|m| crate::ids::ModelId(m.id))
+                        .collect(),
+                });
             };
             // P4.9: the units first. The ledger replay inside the adopt
             // converts the stored file-unit edits at the record's scale.
@@ -531,11 +534,14 @@ impl ProjectSession {
         use crate::session::LedgerEdit;
         self.try_with_effects(None, move |session| {
             let Some(model) = session.models.iter_mut().find(|m| m.id == model_id) else {
-                let known: Vec<String> = session.models.iter().map(|m| m.id.to_string()).collect();
-                return Err(SessionError::MissingGeometry(format!(
-                    "Model id {model_id} not found; project model ids: [{}]",
-                    known.join(", ")
-                )));
+                return Err(SessionError::ModelNotFound {
+                    id: crate::ids::ModelId(model_id),
+                    known: session
+                        .models
+                        .iter()
+                        .map(|m| crate::ids::ModelId(m.id))
+                        .collect(),
+                });
             };
             let door = model.door_items();
             if !door.has_drawing() {

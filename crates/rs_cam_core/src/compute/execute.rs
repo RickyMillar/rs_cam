@@ -49,8 +49,21 @@ pub enum OperationError {
     /// The op's selection refuses (geometry selection P2.3a, DESIGN 5.1):
     /// nothing to cut, a lost pick, a kind the op cannot cut, and so on.
     /// The prologue sets the op label with `SelectionRefusal::for_op`.
-    Selection(crate::selection::SelectionRefusal),
-    /// Other operation failure.
+    /// Boxed (F054): the refusal is 120 bytes, and `SessionError::Operation`
+    /// holds an `OperationError`, so an unboxed one makes every
+    /// `Result<_, SessionError>` break `clippy::result_large_err`.
+    Selection(Box<crate::selection::SelectionRefusal>),
+    /// F063: a parameter value of the op that the operator can fix (the
+    /// op refuses it before any cut). The text is the full sentence.
+    InvalidParam(String),
+    /// F063: a wiring defect in rs_cam, not an operator refusal: the
+    /// registry handed an adapter the wrong config, a required input that
+    /// the prologue guarantees is absent, and so on. The text names the
+    /// defect.
+    Internal(String),
+    /// An operation failure that is not yet sorted into
+    /// [`Self::InvalidParam`] or [`Self::Internal`]. F063: the sites in
+    /// `layered.rs` and `clearing_2d.rs` still use it.
     Other(String),
 }
 
@@ -234,7 +247,7 @@ impl std::fmt::Display for OperationError {
                 crate::budget::format_bytes(*limit_bytes)
             ),
             Self::Selection(refusal) => write!(f, "{refusal}"),
-            Self::Other(s) => write!(f, "{s}"),
+            Self::InvalidParam(s) | Self::Internal(s) | Self::Other(s) => write!(f, "{s}"),
         }
     }
 }
@@ -526,7 +539,7 @@ macro_rules! config_guard {
         match $op {
             OperationConfig::$variant(cfg) => cfg,
             _ => {
-                return Err(OperationError::Other(format!(
+                return Err(OperationError::Internal(format!(
                     "registry adapter mismatch: {} received a non-{} config",
                     $fn_name,
                     stringify!($variant)

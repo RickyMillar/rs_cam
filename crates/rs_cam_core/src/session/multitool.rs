@@ -1246,7 +1246,7 @@ impl ProjectSession {
         // tier 0's waterline band ever touches. Complement of `owned`, not
         // of `machining`: the fine tiers cut `owned + overlap`, so the
         // overlap band is machined by BOTH sides and the seam still blends.
-        // Holes ride the polygons natively (`region_polygons_from_mask`
+        // Holes ride the polygons natively (`region_polygons_from_mask_reported`
         // groups loops by even-odd depth), which is what makes "a board
         // with nine island-shaped holes" one honest region set.
         if recipe.tier == 0 {
@@ -1292,13 +1292,31 @@ impl ProjectSession {
                             "'{op_name}': complement mask shape mismatch — {e}"
                         ))
                     })?;
-            return Ok(crate::geometry::region_mask::region_polygons_from_mask(
-                &grid,
-                map.grid.origin_x,
-                map.grid.origin_y,
-                map.grid.cell_mm,
-                0.0,
-            ));
+            // F199: a boundary door has no findings sink. A truncation keeps
+            // the largest MAX_REST_REGIONS complement regions; the coarse
+            // tier then does not cut the dropped ones, so the warning names
+            // the op. Returning the report to the three callers is the
+            // follow-up (they would carry it to `ctx.record`).
+            let crate::geometry::region_mask::RegionExtraction { polygons, cap } =
+                crate::geometry::region_mask::region_polygons_from_mask_reported(
+                    &grid,
+                    map.grid.origin_x,
+                    map.grid.origin_y,
+                    map.grid.cell_mm,
+                    0.0,
+                    None,
+                );
+            if cap.truncated() {
+                tracing::warn!(
+                    op = op_name,
+                    total = cap.total_before_cap,
+                    kept = cap.kept,
+                    dropped = cap.dropped(),
+                    "planned-tier complement boundary truncated by the region cap; \
+                     the coarse tier does not cut the dropped regions"
+                );
+            }
+            return Ok(polygons);
         }
         let resolved = self.resolve_tier_plan(
             op_name,

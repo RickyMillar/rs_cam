@@ -488,12 +488,17 @@ fn triage_from_parts(
 
 impl ProjectSession {
     /// Run a collision check for a specific toolpath by index.
+    ///
+    /// F055: `Ok(None)` means the check is NOT APPLICABLE: the toolpath
+    /// has no mesh, no enabled obstacle and no head band that reads the
+    /// stock, so nothing can be hit (the 2D case). `Ok(Some(_))` is a
+    /// measured check. An `Err` is a check that failed.
     #[instrument(skip(self))]
     pub fn collision_check(
         &self,
         index: usize,
         cancel: &AtomicBool,
-    ) -> Result<CollisionCheckResult, SessionError> {
+    ) -> Result<Option<CollisionCheckResult>, SessionError> {
         self.collision_check_with_index(index, None, cancel)
     }
 
@@ -505,7 +510,7 @@ impl ProjectSession {
         index: usize,
         prebuilt_index: Option<&crate::mesh::SpatialIndex>,
         cancel: &AtomicBool,
-    ) -> Result<CollisionCheckResult, SessionError> {
+    ) -> Result<Option<CollisionCheckResult>, SessionError> {
         let tc = self
             .toolpath_configs
             .get(index)
@@ -531,9 +536,7 @@ impl ProjectSession {
                 || band.segment == crate::stock::collision::AssemblySegment::Shoe
         });
         if model.is_none() && obstacles.is_empty() && !head_reads_stock {
-            return Err(SessionError::MissingGeometry(
-                "Collision check requires a 3D mesh or an enabled obstacle".to_owned(),
-            ));
+            return Ok(None);
         }
 
         let tool = self
@@ -552,7 +555,7 @@ impl ProjectSession {
             index: prebuilt_index,
         };
         let check_result = run_collision_check(&request, cancel)?;
-        Ok(check_result)
+        Ok(Some(check_result))
     }
 
     /// K1: the obstacles of a toolpath's setup, resolved into the
@@ -562,7 +565,7 @@ impl ProjectSession {
     /// obstacle.
     ///
     /// # Errors
-    /// [`SessionError::OperationFailed`] when an enabled obstacle cannot be
+    /// [`SessionError::Obstacle`] when an enabled obstacle cannot be
     /// resolved (a missing model). The text names the obstacle.
     pub fn obstacle_set_for_toolpath(
         &self,
@@ -605,14 +608,14 @@ impl ProjectSession {
     /// K1: the obstacles of `setup`, resolved into its frame.
     ///
     /// # Errors
-    /// [`SessionError::OperationFailed`] when an enabled obstacle cannot be
+    /// [`SessionError::Obstacle`] when an enabled obstacle cannot be
     /// resolved.
     pub fn obstacle_set_for_setup(
         &self,
         setup: &crate::session::SetupData,
     ) -> Result<crate::compute::obstacle::ObstacleSet, SessionError> {
         crate::compute::obstacle::ObstacleSet::resolve(&setup.obstacles, &self.models)
-            .map_err(|e| SessionError::OperationFailed(e.to_string()))
+            .map_err(SessionError::Obstacle)
     }
 
     /// Narrate one generated toolpath in prose for agent-oriented debugging.
@@ -790,7 +793,7 @@ impl ProjectSession {
                         // K1: an obstacle hit is counted from the
                         // simulation (`SimulationResult::obstacle_collisions`),
                         // so this sweep counts the workpiece hits alone.
-                        Ok(r) => HolderCollisionCheck::Measured(
+                        Ok(Some(r)) => HolderCollisionCheck::Measured(
                             r.collision_report
                                 .collisions
                                 .iter()
@@ -801,9 +804,7 @@ impl ProjectSession {
                         ),
                         // The 2D case the CLI calls expected: no mesh AND
                         // no enabled fixture, so nothing to check against.
-                        Err(SessionError::MissingGeometry(_)) => {
-                            HolderCollisionCheck::NotApplicable
-                        }
+                        Ok(None) => HolderCollisionCheck::NotApplicable,
                         Err(e) => {
                             tracing::warn!(
                                 index = idx,

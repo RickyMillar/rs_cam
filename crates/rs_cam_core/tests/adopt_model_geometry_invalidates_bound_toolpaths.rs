@@ -300,7 +300,7 @@ fn an_absent_model_id_is_refused_and_nothing_moves() {
         units: None,
     }));
     assert!(
-        matches!(outcome, Err(SessionError::MissingGeometry(_))),
+        matches!(outcome, Err(SessionError::ModelNotFound { .. })),
         "an id that names no model is a refusal, not a silent no-op"
     );
     assert_eq!(session.models().len(), 2, "the refusal added no model");
