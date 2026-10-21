@@ -217,8 +217,8 @@ impl<P> Capabilities<P> {
 }
 
 /// How an operation cuts the drawing items it gets (P1; geometry selection
-/// `DESIGN.md` 4.2). It is a config answer: Trace with compensation `Left`
-/// or `Right` cannot follow an open path, with `None` it can.
+/// `DESIGN.md` 4.2). It is a config answer, so a config field can change
+/// it. P6.2: Trace follows closed and open paths with every compensation.
 ///
 /// The prologue (`compute/execute/prologue.rs`) matches on it with no
 /// wildcard, so a new use states what it gets.
@@ -231,8 +231,8 @@ pub enum ItemUse {
     /// prologue leaves the open paths out and names them in a finding;
     /// it refuses when no closed polygon is left.
     Regions,
-    /// Lines to follow, closed and open: the op cuts on the line. Trace
-    /// with compensation `None`, Project Curve.
+    /// Lines to follow, closed and open: the op cuts on the line or to one
+    /// side of it. Trace (every compensation, P6.2), Project Curve.
     Curves,
     /// Hole positions. `may_be_empty`: the op may have no hole to cut (Pin
     /// Drill, whose holes come from the alignment pins).
@@ -543,7 +543,9 @@ pub const TRANSFORM_DEPTH_ORDER: OperationTransformCapabilities =
 
 /// Trace: the depth order of [`TRANSFORM_DEPTH_ORDER`], and leads only on
 /// closed loops. An open path is cut exactly on the drawn line, from its
-/// first point to its last (P1b, lead ruling 2026-10-19).
+/// first point to its last (P1b, lead ruling 2026-10-19). P6.2: an open
+/// pass offset to one side takes no lead either. A lead arc starts one lead
+/// radius back along the travel, past the end normal of the drawn path.
 pub const TRANSFORM_TRACE: OperationTransformCapabilities =
     TRANSFORM_DEPTH_ORDER.with_leads_on_closed_passes_only();
 

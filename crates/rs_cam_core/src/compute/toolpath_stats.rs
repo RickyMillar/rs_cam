@@ -1130,6 +1130,39 @@ impl TabPlacementFinding {
     }
 }
 
+/// P6.2: an open path whose offset to one side
+/// (`polygon::offset_open_path_reported`) is not one piece. A bend tighter
+/// than the tool radius on the cut side removes the offset there, so the
+/// tool cannot follow the inside of the bend, and the material in the bend
+/// stays (the safe direction). Zero pieces: no part of the path has room
+/// for the tool on that side, and nothing is cut beside it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OpenOffsetSplit {
+    /// The drawn start of the path (setup frame).
+    pub start: [f64; 2],
+    /// The drawn length of the path (mm).
+    pub length_mm: f64,
+    /// The open pieces that are cut. Never 1 on a recorded split.
+    pub pieces: usize,
+}
+
+impl OpenOffsetSplit {
+    /// The operator-facing sentence of the split.
+    #[must_use]
+    pub fn message(&self) -> String {
+        let [x, y] = self.start;
+        let what = match self.pieces {
+            0 => "no piece is cut beside it".to_owned(),
+            n => format!("{n} pieces are cut"),
+        };
+        format!(
+            "The open path from X {x:.3} Y {y:.3} ({:.3} mm): the tool cannot follow \
+             the inside of a bend tighter than its radius here; {what}.",
+            self.length_mm
+        )
+    }
+}
+
 /// Which rest reference a claims pipeline resolved to, and under what
 /// conditions (A/M6).
 ///

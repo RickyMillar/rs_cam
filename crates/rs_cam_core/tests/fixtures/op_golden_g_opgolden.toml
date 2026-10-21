@@ -981,6 +981,20 @@ moves_hash = "07e6962b0a515a03"
 span_count = 11
 spans_hash = "61c22b855756efc6"
 
+["trace/left_open"]
+outcome = "ok"
+move_count = 30
+rapid_count = 18
+linear_count = 12
+arc_count = 0
+cutting_length_mm = 49.564
+rapid_length_mm = 137.459
+bbox_min = [-8.9834, -0.5801, -1.0]
+bbox_max = [5.2451, 4.4793, 10.0]
+moves_hash = "16e83d260836eba2"
+span_count = 31
+spans_hash = "8fec5a6e05a3f143"
+
 ["trace/rest"]
 outcome = "ok"
 move_count = 15
@@ -994,6 +1008,20 @@ bbox_max = [20.0, 12.0, 10.0]
 moves_hash = "07e6962b0a515a03"
 span_count = 11
 spans_hash = "61c22b855756efc6"
+
+["trace/right_open"]
+outcome = "ok"
+move_count = 30
+rapid_count = 18
+linear_count = 12
+arc_count = 0
+cutting_length_mm = 49.564
+rapid_length_mm = 139.402
+bbox_min = [-5.0166, -4.4793, -1.0]
+bbox_max = [9.8398, 0.5801, 10.0]
+moves_hash = "00fbfda1bd704357"
+span_count = 31
+spans_hash = "8fec5a6e05a3f143"
 
 ["unified_finish/claims"]
 outcome = "ok"

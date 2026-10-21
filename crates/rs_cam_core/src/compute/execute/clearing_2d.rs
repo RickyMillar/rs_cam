@@ -94,6 +94,9 @@ pub(crate) fn generate_trace(
             safe_z: feeds.safe_z,
             compensation: cfg.compensation,
             top_z: ctx.heights.top_z,
+            // P6.2: a Bottom setup mirrors the drawing; the side of an
+            // open path holds in the drawing.
+            drawing_mirrored: ctx.z_flipped(),
         },
     };
     run_layered(&pass, ctx, prepared)
@@ -348,6 +351,27 @@ impl LayeredOp for ZigzagRaster {
     }
 }
 
+/// What one Trace `prepare` reports (P6.2): the offset failures, and each
+/// open path whose offset to one side is not one piece.
+struct TraceReport {
+    offsets: OffsetFailures,
+    splits: Vec<crate::compute::toolpath_stats::OpenOffsetSplit>,
+}
+
+impl super::findings::RecordFindings for TraceReport {
+    fn record_into(&self, findings: &mut super::GenerationFindings) {
+        super::findings::RecordFindings::record_into(&self.offsets, findings);
+        // P6.2: `GenerationFindings` has no field for the split yet. The
+        // field, the stats copy and the diagnostic adapter are outside
+        // this item (`compute/execute.rs`, `compute/stats.rs`,
+        // `diagnostics/adapters/from_generation.rs`). Until they land, the
+        // split goes to the log.
+        for split in &self.splits {
+            tracing::warn!(pieces = split.pieces, "Trace: {}", split.message());
+        }
+    }
+}
+
 /// The Trace op: the compensated rings of each region, traced at each
 /// level.
 struct TracePass<'a> {
@@ -359,7 +383,7 @@ struct TracePass<'a> {
 impl LayeredOp for TracePass<'_> {
     type Input = Polygon2;
     type Geometry = Vec<Polygon2>;
-    type Report = OffsetFailures;
+    type Report = TraceReport;
 
     fn region_ordering(&self) -> RegionOrdering {
         self.cfg.region_ordering
@@ -369,9 +393,8 @@ impl LayeredOp for TracePass<'_> {
         self.rest_use
     }
 
-    /// The lines of the selection (P2.3a): closed loops and open paths on
-    /// the line (`ItemUse::Curves`), or the closed areas as lines with a
-    /// compensation (`ItemUse::Regions`, until the open offset of P6).
+    /// The lines of the selection (P2.3a): closed loops and open paths
+    /// (`ItemUse::Curves`), for every compensation (P6.2).
     fn outlines<'p>(
         &'p self,
         prepared: &'p Prepared<'p>,
@@ -386,7 +409,7 @@ impl LayeredOp for TracePass<'_> {
 
     /// The compensated rings are the tool centre, so the tool reaches one
     /// radius from them.
-    // P1: an open path reads as closed here; the chord only widens the band (safe). P6: exact.
+    // P1: an open path (or open offset piece, P6.2) reads as closed here; the chord only widens the band (safe). P6.3: exact.
     fn reach_band(&self, geometry: &Self::Geometry, tool_radius: f64) -> ReachBand {
         ReachBand {
             rings: geometry
@@ -406,13 +429,21 @@ impl LayeredOp for TracePass<'_> {
     ) -> Result<(Self::Geometry, Self::Report), OperationError> {
         let mut rings = Vec::new();
         let mut failures = 0;
+        let mut splits = Vec::new();
         for piece in region {
-            let (piece_rings, piece_failures) =
+            let compensated =
                 crate::ops::trace_path::trace_compensated_polygons_reported(piece, &self.params);
-            failures += piece_failures;
-            rings.extend(piece_rings);
+            failures += compensated.failures;
+            splits.extend(compensated.split);
+            rings.extend(compensated.paths);
         }
-        Ok((rings, OffsetFailures(failures)))
+        Ok((
+            rings,
+            TraceReport {
+                offsets: OffsetFailures(failures),
+                splits,
+            },
+        ))
     }
 
     fn emit_level(

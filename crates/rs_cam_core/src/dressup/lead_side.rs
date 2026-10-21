@@ -9,6 +9,8 @@
 //! part. Measured on HEAD 52cf29db (tool radius 3, lead radius 2,
 //! `tests/a_lead_curls_away_from_the_part_p6_0c.rs`): Trace Left and
 //! Profile Outside conventional cut 1.837 mm into the band round the part.
+//! (These labels are from before P6.2. The O-1 ruling flipped the Trace
+//! sign, so the old Trace Left is the new Trace Right.)
 //!
 //! # The rule
 //!

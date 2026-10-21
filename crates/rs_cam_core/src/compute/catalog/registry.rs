@@ -489,8 +489,7 @@ pub(super) static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
         floor_inside_stock: true,
         ladder_includes_top: false,
         lut_route: LutRoute::AsStated,
-        // Compensation `None` (the default). `OperationConfig::capabilities`
-        // states `Regions` for `Left` and `Right`.
+        // Every compensation reads `Curves`: open paths and loops (P6.2).
         item_use: ItemUse::Curves,
     },
     generate: crate::compute::execute::generate_trace,

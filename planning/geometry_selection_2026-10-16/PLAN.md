@@ -706,3 +706,15 @@ Defects found by the design:
   in the emission frame, but the draw shifts them into the display frame
   (`translate_annotated`); with a non-zero stock origin the pick and the
   draw disagree.
+- P6.1 done (f8cdfd70): Profile side On (refuses "not yet" until P6.3),
+  `ChamferSide`, G40 for On, On + In Control refuses at every door.
+- P6.2 done: the open offset kernel (`offset_open_path_reported`); Trace
+  Left/Right cut beside an open path; O-1: Left = tool on the left of
+  travel on loops too (old Left = new Right, proved byte for byte by the
+  W3 pin). No repo job file holds a Trace Left/Right. Follow-ups:
+  - P6.2b: `OpenOffsetSplit` and a zero-piece open offset reach only
+    `tracing::warn!`; wire them to `GenerationFindings` (needs
+    `compute/execute.rs`, `compute/stats.rs`, the diagnostics adapter and
+    ids, `trace/narrate.rs`).
+  - An open offset pass gets no lead: a tangent lead starts behind the
+    path end. P6.0d needs a lead shape that stays inside the end normals.

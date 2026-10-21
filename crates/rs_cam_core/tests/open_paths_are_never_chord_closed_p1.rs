@@ -23,8 +23,11 @@
 //!   refusal (`OperationError::Selection`).
 //! - (c) Trace with compensation `None` (`ItemUse::Curves`) cuts an open
 //!   path on the line, with no chord, and cuts a 2-point line.
-//! - (d) Trace `Left` (`ItemUse::Regions`) is a closed-region op: (a) and
-//!   (b) cover it.
+//! - (d) P6.2 (rewritten): Trace `Left` reads `ItemUse::Curves`. It cuts
+//!   the open paths beside their drawn line (the open offset kernel) and
+//!   the closed loop inside it (O-1: the left of a counter-clockwise
+//!   loop), with no chord and no note. Before P6.2 it was a closed-region
+//!   op, and (a) and (b) covered it.
 //! - (e) P1b (lead ruling 2026-10-19): Trace on the line cuts exactly the
 //!   drawn open path. With the default dressups of Trace (lead-in/out on),
 //!   no move goes past the start or the end of an open path. A closed loop
@@ -104,11 +107,12 @@ fn open(points: &[[f64; 2]]) -> Polygon2 {
     Polygon2::open_path(points.iter().map(|&[x, y]| P2::new(x, y)).collect())
 }
 
-/// Every closed-region op that reads a drawing, from the registry, and
-/// Trace offset to the left. Face reads the stock outline by default
-/// (P4.2, `is_stock_based`), not the drawing, so it is not in the list.
+/// Every closed-region op that reads a drawing, from the registry. Face
+/// reads the stock outline by default (P4.2, `is_stock_based`), not the
+/// drawing, so it is not in the list. P6.2: Trace offset to one side reads
+/// curves, so it left the list (arm (d)).
 fn region_ops() -> Vec<OperationConfig> {
-    let mut ops: Vec<OperationConfig> = OperationType::ALL
+    let ops: Vec<OperationConfig> = OperationType::ALL
         .iter()
         .filter(|op| {
             op.geometry_requirement() == GeometryRequirement::Items
@@ -122,7 +126,6 @@ fn region_ops() -> Vec<OperationConfig> {
         "non-vacuity: the eight closed-region ops, found {}",
         ops.len()
     );
-    ops.push(trace(TraceCompensation::Left));
     ops
 }
 
@@ -163,7 +166,7 @@ fn generate(session: &mut ProjectSession) -> Result<Toolpath, String> {
         .clone())
 }
 
-/// (a) + (d): with the V and the line beside the square, a closed-region
+/// (a): with the V and the line beside the square, a closed-region
 /// op emits exactly the toolpath of the square alone, and the note counts
 /// the two open paths.
 #[test]
@@ -247,7 +250,7 @@ fn the_note_reaches_the_diagnostics_p1() {
     }
 }
 
-/// (b) + (d): with open paths only, a closed-region op refuses, and the
+/// (b): with open paths only, a closed-region op refuses, and the
 /// message names the open paths and the fix.
 #[test]
 fn a_region_op_given_only_open_paths_refuses_p1() {
@@ -337,6 +340,48 @@ fn trace_cuts_an_open_path_on_the_line_with_no_chord_p1() {
         });
         assert!(!back, "{what}: the line is not cut back to its start");
     }
+}
+
+/// (d), P6.2: Trace `Left` cuts the square, the V and the line, with no
+/// note. The V is cut beside its line (round the outside of its apex), the
+/// line one tool radius to its left (+Y), the square inside (O-1). No fed
+/// move joins the two ends of the V offset (its chord).
+#[test]
+fn trace_left_cuts_the_open_paths_beside_their_line_p6_2() {
+    let op = trace(TraceCompensation::Left);
+    let r = tool_for(OperationType::Trace).diameter / 2.0;
+    let mut s = session(&op, vec![square(), open(&V), open(&LINE)], |tc| {
+        tc.dressups = no_dressups();
+    });
+    let tp = generate(&mut s).expect("Trace Left generates");
+    assert_eq!(
+        s.get_result(0).expect("the result").stats.selection_note,
+        None,
+        "Trace Left leaves nothing out"
+    );
+    let fed = fed_segments(&tp);
+    let cut_at = |x: f64, y: f64| {
+        fed.iter()
+            .any(|(_, b, z)| *z < 0.0 && (b - P2::new(x, y)).norm() < 1e-6)
+    };
+    // The line: its end, one radius to the left (+Y).
+    assert!(cut_at(LINE[1][0], LINE[1][1] + r), "the line is cut at +Y");
+    // The V: the top of the arc round its apex (a right turn, so the left
+    // is the outside of the bend).
+    assert!(
+        cut_at(V[1][0], V[1][1] + r),
+        "the V apex is cut round its outside"
+    );
+    // The square: its first corner, one radius inside.
+    let [x0, y0] = [-40.0, -15.0];
+    assert!(cut_at(x0 + r, y0 + r), "the square is cut inside (O-1)");
+    // No chord between the two ends of the V offset: both ends sit at
+    // Y -10 + R / sqrt(5), on the left normals of the two legs.
+    let end_y = -10.0 + r / 5.0_f64.sqrt();
+    let chord = fed.iter().find(|(a, b, _)| {
+        (a.y - end_y).abs() < 1e-6 && (b.y - end_y).abs() < 1e-6 && (a - b).norm() > 1.0
+    });
+    assert!(chord.is_none(), "a chord of the V offset is cut: {chord:?}");
 }
 
 /// The XY box of `points`, as (min, max).

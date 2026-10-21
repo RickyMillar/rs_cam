@@ -28,7 +28,7 @@ module is reached through `compute::execute::execute_operation_annotated` (`pub(
   `total / ceil(total / per_pass)`, top excluded) and `ConstantStep` for
   finishing (constant step from the top, top included). Build no third.
 - `ops/trace_path.rs` is the follow-path OPERATION (`trace/` holds the records). P1: on
-  the line it cuts an open path with no chord; offset, closed loops only. P1b: leads on closed loops only.
+  the line it cuts an open path with no chord. P6.2: `Left`/`Right` put the tool on that side of travel (O-1, as G41/G42), on a loop and on an open path (`polygon::offset_open_path_reported`; the drawn direction, held in the drawing frame on a Bottom setup; sentry `trace_cuts_beside_an_open_path_p6_2`). P1b: leads on closed loops only.
 - `inlay.rs` (R2): `Inlay` = pocket V walls only; `InlayPlug` = mirrored plug,
   own project, start depth `pocket_depth − glue_gap` (module doc derives it).
 

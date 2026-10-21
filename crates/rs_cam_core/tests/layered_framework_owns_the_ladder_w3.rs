@@ -429,11 +429,13 @@ fn zigzag_op(region_ordering: RegionOrdering) -> OperationConfig {
     })
 }
 
+/// O-1 (P6.2): `Right` is the outward offset that `Left` was before the
+/// ruling, so the pinned toolpath of before W3.2 holds unchanged.
 fn trace_op(region_ordering: RegionOrdering) -> OperationConfig {
     OperationConfig::Trace(TraceConfig {
         depth: DEPTH,
         depth_per_pass: DPP,
-        compensation: TraceCompensation::Left,
+        compensation: TraceCompensation::Right,
         region_ordering,
         ..TraceConfig::default()
     })

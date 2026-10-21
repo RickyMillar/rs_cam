@@ -277,6 +277,16 @@ impl Polygon2 {
         pline
     }
 
+    /// Convert the exterior to an OPEN cavalier_contours polyline (no arcs,
+    /// no closing segment), in the drawn point order (P6.2).
+    pub(crate) fn path_to_pline(&self) -> Polyline<f64> {
+        let mut pline = Polyline::with_capacity(self.exterior.len(), false);
+        for p in &self.exterior {
+            pline.add(p.x, p.y, 0.0);
+        }
+        pline
+    }
+
     /// Perimeter length of the exterior boundary.
     pub fn perimeter(&self) -> f64 {
         ring_perimeter(&self.exterior)
@@ -489,6 +499,15 @@ pub enum OffsetRejection {
     /// The exterior ring fell below three vertices once repeat positions
     /// within `PLINE_POS_EQUAL_EPS` were removed.
     ExteriorDegenerateAfterDedupe,
+    /// P6.2: the open offset ([`offset_open_path_reported`]) got a closed
+    /// polygon. A closed loop takes [`offset_polygon_reported`].
+    ClosedInputToOpenOffset,
+    /// P6.2: the open path has fewer than two points, so it has no
+    /// direction and no side.
+    PathBelowTwoPoints,
+    /// P6.2: the open path fell below two points once repeat positions
+    /// within `PLINE_POS_EQUAL_EPS` were removed.
+    PathDegenerateAfterDedupe,
 }
 
 impl OffsetFailure {
@@ -515,6 +534,17 @@ impl OffsetFailure {
                 OffsetRejection::ExteriorDegenerateAfterDedupe => {
                     "the exterior ring collapses below three vertices once repeat \
                      positions are removed"
+                        .to_owned()
+                }
+                OffsetRejection::ClosedInputToOpenOffset => {
+                    "the open-path offset got a closed loop".to_owned()
+                }
+                OffsetRejection::PathBelowTwoPoints => {
+                    "the open path has fewer than two points".to_owned()
+                }
+                OffsetRejection::PathDegenerateAfterDedupe => {
+                    "the open path collapses below two points once repeat positions \
+                     are removed"
                         .to_owned()
                 }
             },
@@ -598,7 +628,9 @@ pub fn offset_polygon_reported(
     (out, failure)
 }
 
-/// The single chokepoint where cavalier_contours' offset is called.
+/// The single chokepoint where cavalier_contours' closed single-shot offset
+/// is called. The open offset ([`offset_open_path_reported`], P6.2) and the
+/// cascade ([`RingGroup::offset`]) each hold their own containment.
 fn offset_one(polygon: &Polygon2, distance: f64) -> (Vec<Polygon2>, Option<OffsetFailure>) {
     // R1 (tech-debt review 2026-06-10): cavalier_contours 0.7.0 asserts
     // on some degenerate offset inputs ("start index should be less
@@ -930,6 +962,90 @@ fn offset_polygon_inner(polygon: &Polygon2, distance: f64) -> Result<Vec<Polygon
 
         Ok(polygons)
     }
+}
+
+/// The offset of an OPEN path by `distance` to one side (P6.2).
+///
+/// Sign: `distance > 0` is to the LEFT of the drawn direction (the first
+/// point to the last), `distance < 0` to the right. This is the sign of
+/// cavalier's `parallel_offset` (positive = left of the segment tangent),
+/// and of [`offset_polygon`] on a CCW ring, where left is inward.
+///
+/// The result is the open pieces of the offset, each a
+/// [`Polygon2::open_path`] in the drawn direction, in the order cavalier
+/// stitches them. Cavalier removes every raw offset segment that comes
+/// nearer than `|distance|` to the input, and the circles at the two input
+/// ends trim the raw offset. So no piece comes nearer than `|distance|`
+/// to the path (less the flatten budget, below), and no piece goes past
+/// the normal at either end. A bend tighter than `|distance|` on the
+/// offset side removes the offset there, and the offset splits into
+/// several pieces. The material in the bend stays.
+///
+/// The arc joins go through [`flatten_arcs`] with
+/// [`FlattenPolicy::untoleranced`], as in [`offset_polygon`] (P6.0): each
+/// point sits ON its arc, and a chord lies at most
+/// `FlattenPolicy::UNTOLERANCED_MM` inside it.
+///
+/// The failure channel is that of [`offset_polygon_reported`]. A closed
+/// polygon, a path below two points and a path that dedupes below two
+/// points are a [`OffsetFailure::RejectedInput`]. A contained cavalier
+/// panic (the R1 assertion text names the open-polyline branch) and an arc
+/// that cannot flatten are a [`OffsetFailure::LibraryFailure`]. An empty
+/// result with no failure is a collapse: every raw offset segment came
+/// nearer than `|distance|` to the path.
+#[must_use]
+pub fn offset_open_path_reported(
+    path: &Polygon2,
+    distance: f64,
+) -> (Vec<Polygon2>, Option<OffsetFailure>) {
+    let rejected = |reason| (Vec::new(), Some(OffsetFailure::RejectedInput { reason }));
+    if path.closed {
+        return rejected(OffsetRejection::ClosedInputToOpenOffset);
+    }
+    if path.exterior.len() < 2 {
+        return rejected(OffsetRejection::PathBelowTwoPoints);
+    }
+    let pline = dedupe_pline(path.path_to_pline());
+    if pline.vertex_count() < 2 {
+        return rejected(OffsetRejection::PathDegenerateAfterDedupe);
+    }
+    // The same containment as `offset_one`: a cavalier panic is a reported
+    // failure, never a silent empty pass.
+    let raw = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        pline.parallel_offset(distance)
+    })) {
+        Ok(raw) => raw,
+        Err(payload) => {
+            let assertion = crate::util::panic_message::panic_payload_message(payload.as_ref());
+            tracing::warn!(
+                distance,
+                path_verts = path.exterior.len(),
+                assertion = %assertion,
+                "offset_open_path: cavalier_contours panicked; the path gives no offset"
+            );
+            return (
+                Vec::new(),
+                Some(OffsetFailure::LibraryFailure { assertion }),
+            );
+        }
+    };
+    let policy = FlattenPolicy::untoleranced();
+    let mut pieces = Vec::with_capacity(raw.len());
+    for pl in &raw {
+        let Some(flat) = flatten_arcs(pl, policy) else {
+            return (
+                Vec::new(),
+                Some(OffsetFailure::LibraryFailure {
+                    assertion: ARC_FLATTEN_FAILURE.to_owned(),
+                }),
+            );
+        };
+        let points: Vec<P2> = flat.iter_vertexes().map(|v| P2::new(v.x, v.y)).collect();
+        if points.len() >= 2 {
+            pieces.push(Polygon2::open_path(points));
+        }
+    }
+    (pieces, None)
 }
 
 /// **M5 research candidate (c): lossless cleanup.** Drop vertices that carry
@@ -2300,6 +2416,176 @@ mod tests {
         let recovered = Polygon2::new(flat.iter_vertexes().map(|v| P2::new(v.x, v.y)).collect());
         assert_eq!(recovered.exterior, original.exterior);
         assert_relative_eq!(recovered.area(), original.area(), epsilon = 1e-10);
+    }
+
+    // --- P6.2: the open offset ---
+
+    fn open(points: &[[f64; 2]]) -> Polygon2 {
+        Polygon2::open_path(points.iter().map(|&[x, y]| P2::new(x, y)).collect())
+    }
+
+    /// The distance from `p` to the nearest segment of the open `path`.
+    fn distance_to_open(path: &Polygon2, p: P2) -> f64 {
+        path.exterior
+            .windows(2)
+            .map(|w| point_segment_distance_sq(&p, &w[0], &w[1]).sqrt())
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    /// Offset `path` by `distance`: no failure, every piece open, and every
+    /// piece point at least `|distance| - UNTOLERANCED_MM` from the path.
+    fn open_offset_checked(path: &Polygon2, distance: f64) -> Vec<Polygon2> {
+        let (pieces, failure) = offset_open_path_reported(path, distance);
+        assert_eq!(failure, None, "no failure");
+        for piece in &pieces {
+            assert!(!piece.closed, "a piece is an open path");
+            for p in &piece.exterior {
+                let d = distance_to_open(path, *p);
+                assert!(
+                    d >= distance.abs() - FlattenPolicy::UNTOLERANCED_MM,
+                    "piece point {p:?} is {d} from the path, below {} - {}",
+                    distance.abs(),
+                    FlattenPolicy::UNTOLERANCED_MM
+                );
+            }
+        }
+        pieces
+    }
+
+    /// A line east: `+R` is the left (+Y), `-R` the right (-Y). The piece
+    /// runs in the drawn direction and ends on the end normals.
+    #[test]
+    fn open_offset_of_a_line_is_beside_it_on_the_stated_side() {
+        let line = open(&[[0.0, 0.0], [10.0, 0.0]]);
+        for (distance, y) in [(2.0, 2.0), (-2.0, -2.0)] {
+            let pieces = open_offset_checked(&line, distance);
+            assert_eq!(pieces.len(), 1, "{distance}: one piece");
+            let piece = &pieces[0].exterior;
+            for p in piece {
+                assert!((p.y - y).abs() < 1e-9, "{distance}: {p:?} on Y {y}");
+                assert!(
+                    (-1e-9..=10.0 + 1e-9).contains(&p.x),
+                    "{distance}: {p:?} inside the end normals"
+                );
+            }
+            let (first, last) = (piece[0], piece[piece.len() - 1]);
+            assert!((first.x - 0.0).abs() < 1e-9, "{distance}: starts at X 0");
+            assert!((last.x - 10.0).abs() < 1e-9, "{distance}: ends at X 10");
+        }
+    }
+
+    /// An L (east, then north): the left offset is inside the bend and
+    /// meets at a sharp corner; the right offset goes round it on an arc,
+    /// with each point on the arc.
+    #[test]
+    fn open_offset_of_an_l_follows_both_legs() {
+        let l = open(&[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]);
+        let left = open_offset_checked(&l, 1.0);
+        assert_eq!(left.len(), 1);
+        let left = &left[0].exterior;
+        assert!((left[0] - P2::new(0.0, 1.0)).norm() < 1e-9, "{left:?}");
+        assert!(
+            (left[left.len() - 1] - P2::new(9.0, 10.0)).norm() < 1e-9,
+            "{left:?}"
+        );
+        assert!(
+            left.iter().any(|p| (p - P2::new(9.0, 1.0)).norm() < 1e-9),
+            "the inside corner: {left:?}"
+        );
+
+        let right = open_offset_checked(&l, -1.0);
+        assert_eq!(right.len(), 1);
+        let right = &right[0].exterior;
+        assert!((right[0] - P2::new(0.0, -1.0)).norm() < 1e-9, "{right:?}");
+        assert!(
+            (right[right.len() - 1] - P2::new(11.0, 10.0)).norm() < 1e-9,
+            "{right:?}"
+        );
+        // The arc round the corner: more than the two leg ends, each point
+        // one radius from the corner (on the arc, not on a chord).
+        let on_arc: Vec<&P2> = right
+            .iter()
+            .filter(|p| p.x > 10.0 + 1e-9 && p.y < -1e-9)
+            .collect();
+        assert!(!on_arc.is_empty(), "the corner is an arc: {right:?}");
+        for p in on_arc {
+            assert!(
+                ((p - P2::new(10.0, 0.0)).norm() - 1.0).abs() < 1e-9,
+                "{p:?} is on the arc"
+            );
+        }
+    }
+
+    /// A hook: east 30, north 10, west 15, south 7, so the end (15, 3)
+    /// comes back within R 2 of the offset of the first leg. The end circle
+    /// cuts the offset there, and it splits into two pieces, in the drawn
+    /// order. (A bend that only narrows the offset, as a 1 mm bump at the
+    /// path, keeps one piece: the arcs round its two corners meet.)
+    #[test]
+    fn open_offset_of_a_bend_tighter_than_r_gives_two_pieces() {
+        let hook = open(&[
+            [0.0, 0.0],
+            [30.0, 0.0],
+            [30.0, 10.0],
+            [15.0, 10.0],
+            [15.0, 3.0],
+        ]);
+        let pieces = open_offset_checked(&hook, 2.0);
+        assert_eq!(pieces.len(), 2, "{pieces:?}");
+        let (a, b) = (&pieces[0].exterior, &pieces[1].exterior);
+        // The cut gap: the points of Y 2 at R from the end (15, 3).
+        let half_gap = (2.0_f64 * 2.0 - 1.0).sqrt();
+        assert!((a[0] - P2::new(0.0, 2.0)).norm() < 1e-9, "{a:?}");
+        assert!(
+            (a[a.len() - 1] - P2::new(15.0 - half_gap, 2.0)).norm() < 1e-6,
+            "{a:?}"
+        );
+        assert!(
+            (b[0] - P2::new(15.0 + half_gap, 2.0)).norm() < 1e-6,
+            "{b:?}"
+        );
+        assert!((b[b.len() - 1] - P2::new(17.0, 3.0)).norm() < 1e-9, "{b:?}");
+        // A 1 mm bump keeps one piece on its inside.
+        let bump = open(&[
+            [0.0, 0.0],
+            [10.0, 0.0],
+            [10.0, 3.0],
+            [11.0, 3.0],
+            [11.0, 0.0],
+            [21.0, 0.0],
+        ]);
+        assert_eq!(open_offset_checked(&bump, -2.0).len(), 1);
+    }
+
+    /// A closed loop and a path below two points refuse; they never give a
+    /// silent empty result.
+    #[test]
+    fn open_offset_refuses_a_closed_input() {
+        let (pieces, failure) = offset_open_path_reported(&square(10.0), 1.0);
+        assert!(pieces.is_empty());
+        assert_eq!(
+            failure,
+            Some(OffsetFailure::RejectedInput {
+                reason: OffsetRejection::ClosedInputToOpenOffset
+            })
+        );
+        let (pieces, failure) = offset_open_path_reported(&open(&[[1.0, 1.0]]), 1.0);
+        assert!(pieces.is_empty());
+        assert_eq!(
+            failure,
+            Some(OffsetFailure::RejectedInput {
+                reason: OffsetRejection::PathBelowTwoPoints
+            })
+        );
+        let (pieces, failure) =
+            offset_open_path_reported(&open(&[[1.0, 1.0], [1.0, 1.0 + 1e-7]]), 1.0);
+        assert!(pieces.is_empty());
+        assert_eq!(
+            failure,
+            Some(OffsetFailure::RejectedInput {
+                reason: OffsetRejection::PathDegenerateAfterDedupe
+            })
+        );
     }
 
     // --- offset tests ---

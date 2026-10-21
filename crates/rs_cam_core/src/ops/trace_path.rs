@@ -3,11 +3,20 @@
 //! Follows polygon paths exactly at a specified depth, optionally offset
 //! by the tool radius for left/right cutter compensation.
 
+use crate::compute::toolpath_stats::OpenOffsetSplit;
 use crate::geo::{P2, P3};
 use crate::polygon::Polygon2;
 use crate::toolpath::{ClosedPassMoves, MoveIntent, RingMaterial, SidedToolpath, Toolpath};
 
 /// Cutter compensation direction relative to the travel direction.
+///
+/// O-1 (operator ruling 2026-10-21): the label is the side of the tool
+/// centre, as G41 and G42: `Left` puts the tool on the LEFT of the
+/// direction of travel, `Right` on the right. This holds for a closed loop
+/// (travel = the cut direction of the ring: an exterior counter-clockwise,
+/// a hole clockwise, so `Left` cuts inside an exterior) and for an open
+/// path (travel = the drawn direction, the first point to the last).
+/// Before O-1 a closed `Left` cut to the right of travel (design D-A).
 #[derive(
     Debug,
     Clone,
@@ -29,17 +38,18 @@ pub enum TraceCompensation {
 }
 
 impl TraceCompensation {
-    /// The signed offset (mm) of the region for a tool of `tool_radius`, in
-    /// the `offset_polygon` sign (negative grows the region), or `None` for
-    /// no compensation. THE sign of each arm: the cut and the material side
-    /// ([`Self::ring_material`]) both read it, so a change of the sign (O-1)
-    /// moves both.
+    /// The signed offset (mm) for a tool of `tool_radius`: positive is to
+    /// the LEFT of travel, the sign of `polygon::offset_polygon` on a CCW
+    /// ring (inward) and of `polygon::offset_open_path_reported`. `None`
+    /// for no compensation. THE sign of each arm (O-1): the cut and the
+    /// material side ([`Self::ring_material`]) both read it, so a change of
+    /// the sign moves both.
     #[must_use]
     pub fn region_offset(self, tool_radius: f64) -> Option<f64> {
         match self {
             Self::None => None,
-            Self::Left => Some(-tool_radius),
-            Self::Right => Some(tool_radius),
+            Self::Left => Some(tool_radius),
+            Self::Right => Some(-tool_radius),
         }
     }
 
@@ -77,11 +87,30 @@ pub struct TraceParams {
     pub compensation: TraceCompensation,
     /// Starting Z (top of material). Depth stepping goes from top_z down.
     pub top_z: f64,
+    /// True when the setup frame mirrors the drawing (a `Bottom` setup:
+    /// `(x, y)` to `(x, D - y)`, determinant -1). P6.2: the side of an open
+    /// path is the side of its drawn direction IN THE DRAWING (P2.2 rule),
+    /// and the mirror keeps the point order, so the open offset takes the
+    /// other sign in the setup frame. A closed ring needs no change: the
+    /// mirror re-winds it, and inside stays inside.
+    pub drawing_mirrored: bool,
+}
+
+/// The compensated paths of one input polygon (P6.2), and what the offset
+/// reported.
+#[derive(Debug, Clone, Default)]
+pub struct CompensatedPaths {
+    /// The tool-centre paths: closed rings, or open pieces.
+    pub paths: Vec<Polygon2>,
+    /// The offsets that came back with an `OffsetFailure` (0 or 1).
+    pub failures: usize,
+    /// An open path whose offset is not one piece.
+    pub split: Option<OpenOffsetSplit>,
 }
 
 /// The **Z-independent half** of a trace pass (the Layered Trace adapter's
-/// `prepare`): the cutter-compensated rings this trace will follow, plus Checkpoint C's offset
-/// failure count.
+/// `prepare`): the cutter-compensated paths this trace will follow, plus
+/// Checkpoint C's offset failure count.
 ///
 /// Split out for the G2 hoist (2026-08-20). A depth-stepped trace used to
 /// re-run this offset once per Z level to produce the same rings every time;
@@ -90,17 +119,55 @@ pub struct TraceParams {
 /// An empty result means the compensation offset collapsed (or failed and was
 /// contained), which is why the failure count is returned alongside rather
 /// than inferred from the emptiness — the two are not the same event.
+///
+/// P6.2: a closed loop offsets through `polygon::offset_polygon_reported`;
+/// an open path through `polygon::offset_open_path_reported`, to the side
+/// of its drawn direction. The open pieces start and end on the end
+/// normals of the path, and no piece comes nearer than the tool radius to
+/// it. A bend tighter than the radius splits the offset ([`OpenOffsetSplit`]).
 #[must_use]
 pub fn trace_compensated_polygons_reported(
     polygon: &Polygon2,
     params: &TraceParams,
-) -> (Vec<Polygon2>, usize) {
-    match params.compensation.region_offset(params.tool_radius) {
-        None => (vec![polygon.clone()], 0),
-        Some(distance) => {
-            let (result, failure) = crate::polygon::offset_polygon_reported(polygon, distance);
-            (result, usize::from(failure.is_some()))
-        }
+) -> CompensatedPaths {
+    let Some(distance) = params.compensation.region_offset(params.tool_radius) else {
+        return CompensatedPaths {
+            paths: vec![polygon.clone()],
+            ..CompensatedPaths::default()
+        };
+    };
+    if polygon.closed {
+        let (paths, failure) = crate::polygon::offset_polygon_reported(polygon, distance);
+        return CompensatedPaths {
+            paths,
+            failures: usize::from(failure.is_some()),
+            split: None,
+        };
+    }
+    let distance = if params.drawing_mirrored {
+        -distance
+    } else {
+        distance
+    };
+    let (paths, failure) = crate::polygon::offset_open_path_reported(polygon, distance);
+    // A failure is reported through the count; a split is a different
+    // event (the offset worked, and the bend left no room).
+    let split = (failure.is_none() && paths.len() != 1).then(|| OpenOffsetSplit {
+        start: polygon.exterior.first().map_or([0.0, 0.0], |p| [p.x, p.y]),
+        length_mm: polygon
+            .exterior
+            .windows(2)
+            .map(|w| match w {
+                [a, b] => (b - a).norm(),
+                _ => 0.0,
+            })
+            .sum(),
+        pieces: paths.len(),
+    });
+    CompensatedPaths {
+        paths,
+        failures: usize::from(failure.is_some()),
+        split,
     }
 }
 
@@ -109,14 +176,16 @@ pub fn trace_compensated_polygons_reported(
 /// `z` is the only thing a depth-stepped caller varies, which is the whole of
 /// G2 for this family.
 ///
-/// P1: an open path (`closed == false`) is cut on the line, from its first
-/// point to its last, with no chord back to the start. Only compensation
-/// `None` gets open paths: the prologue gives a `Left` or `Right` Trace the
-/// closed polygons only (`ItemUse::Regions`).
+/// P1: an open path (`closed == false`) is cut from its first point to its
+/// last, with no chord back to the start. P6.2: with compensation `Left` or
+/// `Right` the open paths here are the offset pieces of
+/// [`trace_compensated_polygons_reported`], cut the same way.
 ///
 /// P6.0c: each closed ring states its material side
 /// ([`TraceCompensation::ring_material`]); an open path states none, and the
-/// lead dressup gives it no lead.
+/// lead dressup gives it no lead. P6.2 keeps that for an open offset piece:
+/// a lead arc starts one lead radius back along the travel, past the end
+/// normal of the drawn path.
 #[must_use]
 pub fn trace_polygons_at_z(polygons: &[Polygon2], z: f64, params: &TraceParams) -> SidedToolpath {
     let mut tp = SidedToolpath::new();
@@ -197,7 +266,7 @@ mod tests {
     /// link between levels belongs to `run_layered`, and no test here reads
     /// it. D3 deleted the public wrapper.
     fn trace_levels(polygon: &Polygon2, params: &TraceParams) -> Toolpath {
-        let (rings, _failures) = trace_compensated_polygons_reported(polygon, params);
+        let rings = trace_compensated_polygons_reported(polygon, params).paths;
         let mut tp = Toolpath::new();
         for z in DepthStepping::new(
             params.top_z,
@@ -226,6 +295,7 @@ mod tests {
             safe_z: 10.0,
             compensation: TraceCompensation::None,
             top_z: 0.0,
+            drawing_mirrored: false,
         }
     }
 
@@ -305,7 +375,7 @@ mod tests {
     }
 
     #[test]
-    fn trace_with_compensation_offsets_path() {
+    fn trace_left_on_a_loop_offsets_inward_o1() {
         let poly = Polygon2::rectangle(0.0, 0.0, 20.0, 20.0);
         let mut params = default_params();
         params.tool_radius = 2.0;
@@ -314,14 +384,14 @@ mod tests {
         params.compensation = TraceCompensation::None;
         let tp_none = trace_levels(&poly, &params);
 
-        // Right compensation: tool offset inward (for CCW exterior)
-        params.compensation = TraceCompensation::Right;
-        let tp_right = trace_levels(&poly, &params);
+        // O-1: Left compensation is left of the CCW travel, so inward.
+        params.compensation = TraceCompensation::Left;
+        let tp_left = trace_levels(&poly, &params);
 
         assert!(!tp_none.moves.is_empty());
-        assert!(!tp_right.moves.is_empty());
+        assert!(!tp_left.moves.is_empty());
 
-        // With right compensation, the cutting area should be smaller
+        // With left compensation, the cutting area should be smaller
         // (offset inward). Check that X/Y positions differ from uncompensated.
         let none_feed_xs: Vec<f64> = tp_none
             .moves
@@ -330,7 +400,7 @@ mod tests {
             .map(|m| m.target.x)
             .collect();
 
-        let right_feed_xs: Vec<f64> = tp_right
+        let left_feed_xs: Vec<f64> = tp_left
             .moves
             .iter()
             .filter(|m| matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10))
@@ -338,34 +408,34 @@ mod tests {
             .collect();
 
         // The uncompensated path touches x=0 and x=20.
-        // The right-compensated path should be inward of those bounds.
+        // The left-compensated path should be inward of those bounds.
         let none_x_min = none_feed_xs.iter().cloned().fold(f64::INFINITY, f64::min);
         let none_x_max = none_feed_xs
             .iter()
             .cloned()
             .fold(f64::NEG_INFINITY, f64::max);
-        let right_x_min = right_feed_xs.iter().cloned().fold(f64::INFINITY, f64::min);
-        let right_x_max = right_feed_xs
+        let left_x_min = left_feed_xs.iter().cloned().fold(f64::INFINITY, f64::min);
+        let left_x_max = left_feed_xs
             .iter()
             .cloned()
             .fold(f64::NEG_INFINITY, f64::max);
 
         assert!(
-            right_x_min > none_x_min + 0.5,
-            "Right-compensated x_min ({}) should be inward of uncompensated ({})",
-            right_x_min,
+            left_x_min > none_x_min + 0.5,
+            "Left-compensated x_min ({}) should be inward of uncompensated ({})",
+            left_x_min,
             none_x_min
         );
         assert!(
-            right_x_max < none_x_max - 0.5,
-            "Right-compensated x_max ({}) should be inward of uncompensated ({})",
-            right_x_max,
+            left_x_max < none_x_max - 0.5,
+            "Left-compensated x_max ({}) should be inward of uncompensated ({})",
+            left_x_max,
             none_x_max
         );
     }
 
     #[test]
-    fn trace_with_left_compensation_offsets_outward() {
+    fn trace_right_on_a_loop_offsets_outward_o1() {
         let poly = Polygon2::rectangle(0.0, 0.0, 20.0, 20.0);
         let mut params = default_params();
         params.tool_radius = 2.0;
@@ -374,12 +444,12 @@ mod tests {
         params.compensation = TraceCompensation::None;
         let tp_none = trace_levels(&poly, &params);
 
-        // Left compensation: tool offset outward (for CCW exterior)
-        params.compensation = TraceCompensation::Left;
-        let tp_left = trace_levels(&poly, &params);
+        // O-1: Right compensation is right of the CCW travel, so outward.
+        params.compensation = TraceCompensation::Right;
+        let tp_right = trace_levels(&poly, &params);
 
         assert!(!tp_none.moves.is_empty());
-        assert!(!tp_left.moves.is_empty());
+        assert!(!tp_right.moves.is_empty());
 
         let none_x_max = tp_none
             .moves
@@ -388,7 +458,7 @@ mod tests {
             .map(|m| m.target.x)
             .fold(f64::NEG_INFINITY, f64::max);
 
-        let left_x_max = tp_left
+        let right_x_max = tp_right
             .moves
             .iter()
             .filter(|m| matches!(m.move_type, MoveType::Linear { feed_rate } if (feed_rate - 1000.0).abs() < 1e-10))
@@ -396,9 +466,9 @@ mod tests {
             .fold(f64::NEG_INFINITY, f64::max);
 
         assert!(
-            left_x_max > none_x_max + 0.5,
-            "Left-compensated x_max ({}) should be outward of uncompensated ({})",
-            left_x_max,
+            right_x_max > none_x_max + 0.5,
+            "Right-compensated x_max ({}) should be outward of uncompensated ({})",
+            right_x_max,
             none_x_max
         );
     }
@@ -459,6 +529,35 @@ mod tests {
         );
     }
 
+    /// P6.2 and O-1: an open line east, offset Left, lies at +Y; Right at
+    /// -Y; on a mirrored setup frame each lies on the other side (the side
+    /// holds in the drawing). The open path stays open.
+    #[test]
+    fn an_open_path_takes_the_side_of_its_drawn_direction_p6_2() {
+        let line = Polygon2::open_path(vec![P2::new(0.0, 0.0), P2::new(10.0, 0.0)]);
+        let mut params = default_params();
+        params.tool_radius = 2.0;
+        for (compensation, mirrored, y) in [
+            (TraceCompensation::Left, false, 2.0),
+            (TraceCompensation::Right, false, -2.0),
+            (TraceCompensation::Left, true, -2.0),
+            (TraceCompensation::Right, true, 2.0),
+        ] {
+            params.compensation = compensation;
+            params.drawing_mirrored = mirrored;
+            let out = trace_compensated_polygons_reported(&line, &params);
+            assert_eq!((out.failures, out.split), (0, None));
+            assert_eq!(out.paths.len(), 1, "{compensation:?} {mirrored}");
+            let piece = &out.paths[0];
+            assert!(!piece.closed);
+            assert!(
+                piece.exterior.iter().all(|p| (p.y - y).abs() < 1e-9),
+                "{compensation:?} mirrored {mirrored}: {:?} at Y {y}",
+                piece.exterior
+            );
+        }
+    }
+
     #[test]
     fn trace_empty_polygon_produces_empty_toolpath() {
         let poly = Polygon2::new(vec![]);
@@ -473,7 +572,8 @@ mod tests {
         let tiny = Polygon2::rectangle(0.0, 0.0, 1.0, 1.0);
         let mut params = default_params();
         params.tool_radius = 5.0;
-        params.compensation = TraceCompensation::Right;
+        // O-1: Left is inward on a CCW loop.
+        params.compensation = TraceCompensation::Left;
 
         let tp = trace_levels(&tiny, &params);
         assert!(

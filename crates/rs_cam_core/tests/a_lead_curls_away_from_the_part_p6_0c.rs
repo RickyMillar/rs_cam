@@ -25,11 +25,16 @@
 //! | Chamfer Outside | 0.0616 |
 //! | Chamfer Inside | 2.0000 |
 //!
+//! O-1 (P6.2, operator ruling 2026-10-21) swapped the Trace labels: the
+//! Trace Left row above is the ring round the part, which is Trace Right
+//! now; the Trace Right row is the inward ring, which is Trace Left now.
+//! The cases below carry the new labels.
+//!
 //! Two mechanisms:
 //!
 //! - **The side.** 1.8369 is the lead arc on the material side of a ring
 //!   that starts on an arc join: Profile Outside conventional (a CCW ring
-//!   round the part) and Trace Left (the same ring).
+//!   round the part) and Trace Left (the same ring; Trace Right after O-1).
 //! - **The concave start corner.** 2.0000 (the lead radius) is the tangent
 //!   approach of a ring that starts at a sharp corner of an inward offset.
 //!   The arc ends `r` back along the cut line, past the corner, into the
@@ -52,8 +57,8 @@
 //! no air check) every arm but Profile Outside climb fails with the HEAD
 //! numbers above, and `the_lead_stays_where_the_side_is_free` still passes
 //! (the HEAD rule gives every case a lead). With the side rule but no air
-//! check, the six concave-start arms (Profile Inside, Pocket, Trace Right,
-//! Chamfer Inside) still fail at 2.0000. With no lead at all,
+//! check, the six concave-start arms (Profile Inside, Pocket, Trace Right
+//! (Trace Left after O-1), Chamfer Inside) still fail at 2.0000. With no lead at all,
 //! `the_lead_stays_where_the_side_is_free` fails. The P6.0c report holds
 //! the runs.
 
@@ -366,18 +371,20 @@ fn cases() -> Vec<Case> {
             clearance: R,
         });
     }
+    // O-1 (P6.2): Trace Right cuts round the part (left of a CCW loop is
+    // inside, so Right is outside); Trace Left cuts inside the loop.
     v.push(Case {
-        name: "trace left",
+        name: "trace right",
         outline: part(),
-        op: trace(TraceCompensation::Left),
+        op: trace(TraceCompensation::Right),
         tool: end(),
         material: Material::Inside,
         clearance: R,
     });
     v.push(Case {
-        name: "trace right",
+        name: "trace left",
         outline: part(),
-        op: trace(TraceCompensation::Right),
+        op: trace(TraceCompensation::Left),
         tool: end(),
         material: Material::Outside,
         clearance: R,
@@ -466,13 +473,13 @@ fn pocket_conventional_keeps_its_leads_off_the_wall_and_the_island() {
 }
 
 #[test]
-fn trace_left_keeps_its_lead_off_the_part() {
-    assert_within_bound("trace left");
+fn trace_right_keeps_its_lead_off_the_part() {
+    assert_within_bound("trace right");
 }
 
 #[test]
-fn trace_right_keeps_its_lead_off_the_wall() {
-    assert_within_bound("trace right");
+fn trace_left_keeps_its_lead_off_the_wall() {
+    assert_within_bound("trace left");
 }
 
 /// On the line both sides are material: the pass keeps its plunge and
@@ -506,7 +513,7 @@ fn the_lead_stays_where_the_side_is_free() {
         "profile outside conventional",
         "pocket island climb",
         "pocket island conventional",
-        "trace left",
+        "trace right",
         "chamfer outside",
     ] {
         let (_, leads) = measure(name);

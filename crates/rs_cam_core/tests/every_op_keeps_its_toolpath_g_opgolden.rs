@@ -98,6 +98,7 @@ use rs_cam_core::finish::pencil::PencilDetector;
 use rs_cam_core::finish::unified_finish::ClaimsReference;
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::ops::profile::ProfileSide;
+use rs_cam_core::ops::trace_path::TraceCompensation;
 use rs_cam_core::selection::{MatchKey, Selection, SelectionEdit};
 use rs_cam_core::session::{
     AddModelArgs, Command, EditSelectionArgs, ProjectSession, SelectionTarget,
@@ -466,6 +467,41 @@ const W650_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[
     ),
 ];
 
+/// P6.2: Trace offset to the left of each drawn open curve.
+fn trace_left(op: &mut OperationConfig) {
+    let OperationConfig::Trace(cfg) = op else {
+        unreachable!("trace arm on another op")
+    };
+    cfg.compensation = TraceCompensation::Left;
+}
+
+/// P6.2: Trace offset to the right of each drawn open curve.
+fn trace_right(op: &mut OperationConfig) {
+    let OperationConfig::Trace(cfg) = op else {
+        unreachable!("trace arm on another op")
+    };
+    cfg.compensation = TraceCompensation::Right;
+}
+
+/// The P6.2 arms: op, arm, tweak, frame, curve. All on fresh stock, on the
+/// three open curves of [`split_curve_model`] (the open offset kernel).
+const P62_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[
+    (
+        OperationType::Trace,
+        "left_open",
+        trace_left,
+        Frame::TopUp,
+        CurveModel::Split,
+    ),
+    (
+        OperationType::Trace,
+        "right_open",
+        trace_right,
+        Frame::TopUp,
+        CurveModel::Split,
+    ),
+];
+
 /// Three open curves over the cap, with gaps of 1 mm and 2 mm between
 /// them. Each curve is one chain, so the link stage has two gaps to join.
 fn split_curve_model() -> rs_cam_core::session::LoadedModel {
@@ -734,7 +770,7 @@ fn cases() -> Vec<Case> {
             curve: CurveModel::Fixture,
         });
     }
-    for (op, arm, tweak, frame, curve) in W650_CASES {
+    for (op, arm, tweak, frame, curve) in W650_CASES.iter().chain(P62_CASES) {
         cases.push(Case {
             op: *op,
             arm,
@@ -1081,6 +1117,21 @@ fn every_op_keeps_its_toolpath() {
             "{key}: the arm is the fresh toolpath, so its switch does nothing"
         );
     }
+    // P6.2 non-vacuity: each open-offset arm cuts (it is no refusal), and
+    // the two sides differ.
+    for (op, arm, ..) in P62_CASES {
+        let key = format!("{}/{arm}", op.kind_str());
+        let got = &actual[&key];
+        assert!(
+            got.move_count > 0,
+            "{key}: the arm emits no moves ({})",
+            got.outcome
+        );
+    }
+    assert_ne!(
+        actual["trace/left_open"].moves_hash, actual["trace/right_open"].moves_hash,
+        "trace/left_open: the side switch changes nothing on the open curves"
+    );
     assert_ne!(
         actual["project_curve/side_inside"].moves_hash, actual["project_curve/square"].moves_hash,
         "project_curve/side_inside: the side switch changes nothing on the square"

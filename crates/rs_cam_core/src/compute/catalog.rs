@@ -902,20 +902,12 @@ impl OperationConfig {
                 ),
                 ..row
             },
-            // P1: the compensation decides how Trace cuts its items. On
-            // the line it follows a closed or an open path; an offset to
-            // one side needs a closed loop (the open-offset kernel is P6).
-            OperationConfig::Trace(c) => Capabilities {
-                item_use: match c.compensation {
-                    crate::ops::trace_path::TraceCompensation::None => ItemUse::Curves,
-                    crate::ops::trace_path::TraceCompensation::Left
-                    | crate::ops::trace_path::TraceCompensation::Right => ItemUse::Regions,
-                },
-                ..row
-            },
             // No field of these configs changes a capability beyond the
-            // entry probe, which `entry_probe` resolved above.
-            OperationConfig::Pencil(_)
+            // entry probe, which `entry_probe` resolved above. P6.2: Trace
+            // reads `Curves` for every compensation (the row): on the line,
+            // or offset to one side of a loop or an open path.
+            OperationConfig::Trace(_)
+            | OperationConfig::Pencil(_)
             | OperationConfig::SpiralFinish(_)
             | OperationConfig::RadialFinish(_)
             | OperationConfig::HorizontalFinish(_)

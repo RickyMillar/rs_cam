@@ -47,12 +47,16 @@
 //!
 //! Trace Left with its default dressups cut 1.8369 mm into the band. Only
 //! the lead-in/out dressup moved it (lead off: 0.0000). The lead arc curled
-//! to the LEFT of travel (`dressup::apply_lead_in_out`). Trace Left offsets
-//! OUTWARD and runs the ring CCW (`trace_with_left_compensation_offsets_
-//! outward`), so the part is on the left, and both lead arcs went into the
-//! part. P6.0c turns the arc away from the material the op states
-//! (`a_lead_curls_away_from_the_part_p6_0c.rs`), and
-//! [`trace_left_keeps_each_corner_with_its_lead`] holds the bound.
+//! to the LEFT of travel (`dressup::apply_lead_in_out`). Trace Left offset
+//! OUTWARD then and ran the ring CCW, so the part was on the left, and both
+//! lead arcs went into the part. P6.0c turns the arc away from the material
+//! the op states (`a_lead_curls_away_from_the_part_p6_0c.rs`), and
+//! [`trace_right_keeps_each_corner_with_its_lead`] holds the bound.
+//!
+//! O-1 (P6.2, operator ruling 2026-10-21): Trace `Left` is now the left of
+//! travel, inward on a CCW loop. The outward cut round the part is Trace
+//! `Right`, so the Trace arms here moved from `Left` to `Right`; the
+//! toolpath they measure is the same.
 //!
 //! # Red proof
 //!
@@ -166,11 +170,11 @@ fn pocket() -> OperationConfig {
     })
 }
 
-fn trace_left() -> OperationConfig {
+fn trace_right() -> OperationConfig {
     OperationConfig::Trace(TraceConfig {
         depth: DEPTH,
         depth_per_pass: DEPTH,
-        compensation: TraceCompensation::Left,
+        compensation: TraceCompensation::Right,
         ..TraceConfig::default()
     })
 }
@@ -357,14 +361,14 @@ fn pocket_wall_keeps_the_reflex_corner() {
     assert_within_bound("pocket wall L, defaults", &l_outline(), &op, defaults(&op));
 }
 
-/// Trace Left with its default dressups less the lead (the lead arm is
-/// below): entry, link, arc fit and rapid order.
+/// Trace Right (Trace Left before O-1) with its default dressups less the
+/// lead (the lead arm is below): entry, link, arc fit and rapid order.
 #[test]
-fn trace_left_keeps_each_corner_without_its_lead() {
-    let op = trace_left();
+fn trace_right_keeps_each_corner_without_its_lead() {
+    let op = trace_right();
     let mut d = defaults(&op);
     d.lead_in_out = None;
-    assert_within_bound("trace left, defaults less the lead", &part(), &op, d);
+    assert_within_bound("trace right, defaults less the lead", &part(), &op, d);
 }
 
 // ── The merge alone (arc fitting off) ───────────────────────────────────
@@ -405,11 +409,11 @@ fn the_merge_alone_keeps_the_pocket_wall_reflex_corner() {
 /// A finishing op has no merge by default. An operator who turns it on
 /// gets the cap too.
 #[test]
-fn the_merge_alone_keeps_the_trace_left_corners() {
-    let op = trace_left();
+fn the_merge_alone_keeps_the_trace_right_corners() {
+    let op = trace_right();
     let mut d = merge_without_arc_fit(&op);
     d.lead_in_out = None;
-    assert_within_bound("trace left, merge without arc fit", &part(), &op, d);
+    assert_within_bound("trace right, merge without arc fit", &part(), &op, d);
 }
 
 // ── The rule reads the row ──────────────────────────────────────────────
@@ -450,14 +454,14 @@ fn the_cap_reads_the_finished_edge_row() {
 
 // ── The lead side (P6.0c) ───────────────────────────────────────────────
 
-/// Trace Left with every default dressup, the lead included. On HEAD
-/// 6dd89feb the lead arc curled into the part: 1.8369 mm into the band
+/// Trace Right (Trace Left before O-1) with every default dressup, the
+/// lead included. On HEAD 6dd89feb the lead arc curled into the part: 1.8369 mm into the band
 /// (the lead-out ended at (-17.849, -11.163), 1.163 mm from the edge
 /// y = -10). P6.0c turns it away from the part.
 #[test]
-fn trace_left_keeps_each_corner_with_its_lead() {
-    let op = trace_left();
-    assert_within_bound("trace left, defaults", &part(), &op, defaults(&op));
+fn trace_right_keeps_each_corner_with_its_lead() {
+    let op = trace_right();
+    assert_within_bound("trace right, defaults", &part(), &op, defaults(&op));
 }
 
 // ── Instruments ─────────────────────────────────────────────────────────
@@ -478,7 +482,7 @@ fn per_dressup_intrusion() {
             profile(ProfileSide::Inside),
         ),
         ("pocket wall L", l_outline(), pocket()),
-        ("trace left", part(), trace_left()),
+        ("trace right", part(), trace_right()),
     ];
     for (arm, outline, op) in arms {
         let base = defaults(&op);

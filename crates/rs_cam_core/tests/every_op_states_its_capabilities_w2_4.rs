@@ -61,9 +61,10 @@
 //! P1 (geometry selection, 2026-10-19) added the `item_use` column (a
 //! fourth table, [`frozen_p1`]): how the op cuts its drawing items. The
 //! prologue gives a `Regions` op the closed polygons only and a `Curves`
-//! op every polygon. Trace reads its compensation: `None` is `Curves`,
-//! `Left` and `Right` are `Regions`. The column is new; no earlier answer
-//! moved. [`every_field_has_a_frozen_column`] destructures `Capabilities`
+//! op every polygon. Trace read its compensation: `None` was `Curves`,
+//! `Left` and `Right` were `Regions`. The column is new; no earlier answer
+//! moved. P6.2 (the open offset): Trace is `Curves` for every compensation
+//! ([`trace_compensation_picks_its_item_use_p1`] moved by name). [`every_field_has_a_frozen_column`] destructures `Capabilities`
 //! with no `..`, so the next new field does not compile here until it has
 //! a column.
 //!
@@ -687,14 +688,15 @@ fn every_op_keeps_its_item_use_p1() {
     }
 }
 
-/// P1: Trace on the line follows any path; Trace offset to one side needs
-/// a closed loop.
+/// P1: Trace on the line follows any path. P6.2: Trace offset to one side
+/// follows any path too (the open offset kernel), so every compensation
+/// reads `Curves`. Before P6.2, `Left` and `Right` read `Regions`.
 #[test]
 fn trace_compensation_picks_its_item_use_p1() {
     for (compensation, expected) in [
         (TraceCompensation::None, ItemUse::Curves),
-        (TraceCompensation::Left, ItemUse::Regions),
-        (TraceCompensation::Right, ItemUse::Regions),
+        (TraceCompensation::Left, ItemUse::Curves),
+        (TraceCompensation::Right, ItemUse::Curves),
     ] {
         let mut cfg = OperationConfig::new_default(OperationType::Trace);
         let OperationConfig::Trace(trace) = &mut cfg else {
