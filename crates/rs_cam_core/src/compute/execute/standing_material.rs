@@ -304,7 +304,9 @@ pub(crate) fn regions_per_level(
 /// a new wall.
 ///
 /// `paths` are the closed tool-centre rings of the op, in the frame of the
-/// stock. `half_width` is the tool radius when the path is the tool
+/// stock. `open` are its open tool-centre paths (P6.3): their band holds
+/// only their own segments, never a chord between their ends, so a level
+/// whose material lies only across the mouth of an open path is skipped. `half_width` is the tool radius when the path is the tool
 /// centre, and twice the radius when the controller offsets the path (the
 /// band then covers both sides). The reach band is every window cell whose
 /// centre lies within `half_width - cell / 2` of a ring: the footprint
@@ -326,6 +328,7 @@ pub(crate) fn regions_per_level(
 pub(crate) fn levels_in_reach(
     stock: Option<&TriDexelStock>,
     paths: &[Vec<P2>],
+    open: &[Vec<P2>],
     levels: &[f64],
     half_width: f64,
     cancel: &dyn CancelCheck,
@@ -344,7 +347,7 @@ pub(crate) fn levels_in_reach(
             }),
         )
     };
-    let Some([px_min, py_min, px_max, py_max]) = paths_bbox(paths) else {
+    let Some([px_min, py_min, px_max, py_max]) = paths_bbox(paths.iter().chain(open)) else {
         // No path: the op emits nothing at any level.
         return Ok(unread());
     };
@@ -375,7 +378,7 @@ pub(crate) fn levels_in_reach(
             },
         ));
     }
-    let reach = band_mask(grid, &window, paths, band);
+    let reach = band_mask(grid, &window, paths, open, band);
     if !reach.contains(&true) {
         // No cell centre lies in the band: the grid cannot see the paths.
         // Cut every level rather than skip a level on no evidence.
@@ -710,8 +713,8 @@ pub(crate) fn column_top(stock: &TriDexelStock, xy: P2, reach: f64) -> ColumnTop
 }
 
 /// The XY box of every point of `paths`, or `None` when they hold no point.
-fn paths_bbox(paths: &[Vec<P2>]) -> Option<[f64; 4]> {
-    let mut points = paths.iter().flatten();
+fn paths_bbox<'a>(paths: impl IntoIterator<Item = &'a Vec<P2>>) -> Option<[f64; 4]> {
+    let mut points = paths.into_iter().flatten();
     let first = points.next()?;
     Some(points.fold(
         [first.x, first.y, first.x, first.y],
@@ -720,22 +723,31 @@ fn paths_bbox(paths: &[Vec<P2>]) -> Option<[f64; 4]> {
 }
 
 /// The window cells whose centre lies within `band` of a closed ring of
-/// `paths`. Row-major, like the material mask. Each segment marks only the
-/// cells of its own box grown by `band`, so the cost follows the path
-/// length, not the window area times the segment count.
+/// `paths` or of an open path of `open`. Row-major, like the material
+/// mask. A closed ring adds its closing segment; an open path does not
+/// (P6.3: no chord). Each segment marks only the cells of its own box
+/// grown by `band`, so the cost follows the path length, not the window
+/// area times the segment count.
 fn band_mask(
     grid: &crate::stock::dexel::DexelGrid,
     window: &LatticeWindow,
     paths: &[Vec<P2>],
+    open: &[Vec<P2>],
     band: f64,
 ) -> Vec<bool> {
     let cell = grid.cell_size;
     let mut mask = vec![false; window.cell_count()];
     let to_index =
         |u: f64, origin: f64, first: isize| ((u - origin) / cell).floor() as isize - first;
-    for ring in paths {
+    // (path, is closed): a closed ring has n segments, an open path n - 1.
+    let lines = paths
+        .iter()
+        .map(|p| (p, true))
+        .chain(open.iter().map(|p| (p, false)));
+    for (ring, closed) in lines {
         let n = ring.len();
-        for i in 0..n {
+        let segments = if closed { n } else { n.saturating_sub(1) };
+        for i in 0..segments {
             let (Some(&a), Some(&b)) = (ring.get(i), ring.get((i + 1) % n)) else {
                 continue;
             };
@@ -797,4 +809,106 @@ fn footprint_mask(
         }
     }
     mask
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+mod tests {
+    use super::*;
+    use crate::geo::{BoundingBox3, P3};
+    use crate::interrupt::NeverCancel;
+
+    /// P6.3: the reach band of an OPEN path has no chord between its ends.
+    ///
+    /// A U path (open at the top, its mouth on Y 0 from X 20 back to X 0)
+    /// and a stock that holds material only in a 4 x 2 mm block at the
+    /// middle of the mouth. The block is 1 mm or less from the chord and
+    /// 8 mm or more from every segment of the U. With the U as an open
+    /// path, no band cell holds material, so the level is skipped. The
+    /// control: the same points as a closed ring add the chord, and the
+    /// level is cut.
+    #[test]
+    fn an_open_band_has_no_chord_p6_3() {
+        let cell = 0.5;
+        let tool_radius = 3.0;
+        let mut stock = TriDexelStock::from_bounds(
+            &BoundingBox3 {
+                min: P3::new(-15.0, -35.0, -10.0),
+                max: P3::new(35.0, 15.0, 0.0),
+            },
+            cell,
+        );
+        // Clear every column outside the block at the mouth.
+        let grid = &mut stock.z_grid;
+        let mut kept = 0;
+        for row in 0..grid.rows {
+            for col in 0..grid.cols {
+                let (x, y) = grid.cell_to_world(row, col);
+                if (8.0..=12.0).contains(&x) && (-1.0..=1.0).contains(&y) {
+                    kept += 1;
+                    continue;
+                }
+                grid.subtract_interval_at(row * grid.cols + col, -100.0, 100.0);
+            }
+        }
+        assert!(
+            kept > 0,
+            "non-vacuity: the block at the mouth holds material"
+        );
+        let u = vec![
+            P2::new(0.0, 0.0),
+            P2::new(0.0, -20.0),
+            P2::new(20.0, -20.0),
+            P2::new(20.0, 0.0),
+        ];
+        let levels = [-5.0];
+        let open = levels_in_reach(
+            Some(&stock),
+            &[],
+            std::slice::from_ref(&u),
+            &levels,
+            tool_radius,
+            &NeverCancel,
+        )
+        .unwrap();
+        assert_eq!(
+            open.levels,
+            vec![LevelRegion::Empty],
+            "an open U path read its chord: the material at the mouth kept the level"
+        );
+        let closed = levels_in_reach(
+            Some(&stock),
+            std::slice::from_ref(&u),
+            &[],
+            &levels,
+            tool_radius,
+            &NeverCancel,
+        )
+        .unwrap();
+        assert_eq!(
+            closed.levels,
+            vec![LevelRegion::Whole],
+            "control: the closed ring holds the chord, so the block keeps the level"
+        );
+        // The open band still reads material on its own segments.
+        let leg = levels_in_reach(
+            Some(&stock),
+            &[],
+            &[vec![P2::new(8.0, 0.0), P2::new(12.0, 0.0)]],
+            &levels,
+            tool_radius,
+            &NeverCancel,
+        )
+        .unwrap();
+        assert_eq!(
+            leg.levels,
+            vec![LevelRegion::Whole],
+            "an open path over the block reads it"
+        );
+    }
 }

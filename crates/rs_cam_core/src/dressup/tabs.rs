@@ -806,7 +806,10 @@ pub struct HandTab {
 
 /// The hand tabs `tab_points` (drawing frame) in the setup frame, each
 /// snapped to the nearest exterior of `regions` (the loops a Profile
-/// cuts). `setup` moves a drawing point into the setup frame
+/// cuts). P6.3 (L-8): only a closed polygon takes a hand tab; an open path
+/// of a Profile with side `On` is not a candidate. The index of a region
+/// stays its index in `regions`, so the caller passes every line of the
+/// op, open paths too. `setup` moves a drawing point into the setup frame
 /// (`SetupTransformInfo::drawing_to_local`, as the frame door moves the
 /// loops); `None` is the identity.
 ///
@@ -833,6 +836,7 @@ pub fn resolve_hand_tabs(
             let nearest = regions
                 .iter()
                 .enumerate()
+                .filter(|(_, r)| r.closed)
                 .filter_map(|(i, r)| nearest_on_loop(&r.exterior, local).map(|(q, _, d)| (i, q, d)))
                 .min_by(|a, b| a.2.total_cmp(&b.2));
             match nearest {
@@ -881,6 +885,10 @@ pub struct PlannedContour {
     /// The index of the region in the op's regions, or `None` when the
     /// piece is not one of them (it then takes no hand tab).
     pub region: Option<usize>,
+    /// False for an open path of a Profile with side `On` (P6.3): the pass
+    /// cuts `tabbed.ring` from its first point to its last point and does
+    /// not close it. An open contour has no tab.
+    pub closed: bool,
     /// The ring in cut order, its start in the largest gap, and its zones.
     pub tabbed: TabbedRing,
     /// One entry per zone of `tabbed`, in the same order.
@@ -936,6 +944,10 @@ pub fn plan_profile_tabs(
         offset_failures: 0,
     };
     for piece in pieces {
+        if rule.profile.side == crate::ops::profile::ProfileSide::On {
+            on_line_tabs(piece, rule, tabs_on, &mut plan);
+            continue;
+        }
         let (contour, failures) = crate::ops::profile::profile_path_reported(piece, rule.profile);
         plan.offset_failures += failures;
         let Some(contour) = contour else { continue };
@@ -949,19 +961,90 @@ pub fn plan_profile_tabs(
         let planned = if tabs_on {
             contour_tabs(piece, region, &ring, rule, &mut plan.notes)
         } else {
-            PlannedContour {
-                region,
-                tabbed: TabbedRing {
-                    ring,
-                    zones: Vec::new(),
-                    points: Vec::new(),
-                },
-                tabs: Vec::new(),
-            }
+            untabbed(region, ring, true)
         };
         plan.contours.push(planned);
     }
     plan
+}
+
+/// A contour with no tab: `ring` in cut order, its start as it is.
+fn untabbed(region: Option<usize>, ring: Vec<P2>, closed: bool) -> PlannedContour {
+    PlannedContour {
+        region,
+        closed,
+        tabbed: TabbedRing {
+            ring,
+            zones: Vec::new(),
+            points: Vec::new(),
+        },
+        tabs: Vec::new(),
+    }
+}
+
+/// The lines of one piece of a Profile with side `On` (P6.3), added to
+/// `plan` ([`crate::ops::profile::on_line_contours`]):
+///
+/// - each closed ring is cut on the line in the order of
+///   [`crate::ops::profile::profile_ring`] (climb reverses it, L-1) and
+///   takes tabs by the rule of [`plan_profile_tabs`]. The exterior is the
+///   region of the piece and takes its hand tabs; a nested ring takes auto
+///   tabs only;
+/// - an open path is cut in its drawn direction (climb is not read, L-1)
+///   and takes no tab (L-8). With `count > 0` it gives ONE
+///   [`TabNote::OpenPath`](crate::compute::toolpath_stats::TabNote::OpenPath)
+///   note.
+///
+/// No offset is made, so no offset failure is counted.
+fn on_line_tabs(
+    piece: &crate::polygon::Polygon2,
+    rule: &ProfileTabRule<'_>,
+    tabs_on: bool,
+    plan: &mut ProfileTabPlan,
+) {
+    use crate::ops::profile::OnLineContour;
+    let region = rule
+        .regions
+        .iter()
+        .position(|r| r.closed == piece.closed && r.exterior == piece.exterior);
+    for (index, contour) in crate::ops::profile::on_line_contours(piece)
+        .into_iter()
+        .enumerate()
+    {
+        match contour {
+            OnLineContour::Open(path) => {
+                if rule.count > 0
+                    && let Some(first) = path.first()
+                {
+                    plan.notes
+                        .push(crate::compute::toolpath_stats::TabNote::OpenPath {
+                            start: [first.x, first.y],
+                            asked: rule.count,
+                        });
+                }
+                plan.contours.push(untabbed(None, path, false));
+            }
+            OnLineContour::Closed(ring_points) => {
+                // The exterior comes first; a nested ring is no region of
+                // the op, so it takes no hand tab.
+                let (outline, ring_region) = if index == 0 {
+                    (std::borrow::Cow::Borrowed(piece), region)
+                } else {
+                    (
+                        std::borrow::Cow::Owned(crate::polygon::Polygon2::new(ring_points.clone())),
+                        None,
+                    )
+                };
+                let ring = crate::ops::profile::profile_ring(&ring_points, rule.profile.climb);
+                let planned = if tabs_on {
+                    contour_tabs(&outline, ring_region, &ring, rule, &mut plan.notes)
+                } else {
+                    untabbed(ring_region, ring, true)
+                };
+                plan.contours.push(planned);
+            }
+        }
+    }
 }
 
 /// The tabs of the cut ring `ring` of `outline`, the region at index
@@ -1050,6 +1133,7 @@ fn contour_tabs(
         .collect();
     PlannedContour {
         region,
+        closed: true,
         tabbed,
         tabs,
     }

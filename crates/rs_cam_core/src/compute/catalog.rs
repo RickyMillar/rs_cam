@@ -895,6 +895,17 @@ impl OperationConfig {
                 ),
                 ..row
             },
+            // P6.3: side On cuts on the line, so it reads the lines of the
+            // selection (closed rings and open paths). Outside and Inside
+            // keep the row's closed areas.
+            OperationConfig::Profile(c) => Capabilities {
+                item_use: match c.side {
+                    crate::ops::profile::ProfileSide::On => ItemUse::Curves,
+                    crate::ops::profile::ProfileSide::Outside
+                    | crate::ops::profile::ProfileSide::Inside => row.item_use,
+                },
+                ..row
+            },
             OperationConfig::Adaptive(c) => Capabilities {
                 planner_uniform_engagement: matches!(
                     c.path_strategy,
@@ -913,7 +924,6 @@ impl OperationConfig {
             | OperationConfig::HorizontalFinish(_)
             | OperationConfig::Face(_)
             | OperationConfig::Pocket(_)
-            | OperationConfig::Profile(_)
             | OperationConfig::Inlay(_)
             | OperationConfig::InlayPlug(_)
             | OperationConfig::Zigzag(_)

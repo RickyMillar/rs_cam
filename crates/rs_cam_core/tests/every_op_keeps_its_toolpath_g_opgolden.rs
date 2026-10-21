@@ -502,6 +502,34 @@ const P62_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[
     ),
 ];
 
+/// P6.3: Profile with side `On` (the tool centre on the line).
+fn profile_on(op: &mut OperationConfig) {
+    let OperationConfig::Profile(cfg) = op else {
+        unreachable!("profile arm on another op")
+    };
+    cfg.side = ProfileSide::On;
+}
+
+/// The P6.3 arms: Profile `On` on the three open curves of
+/// [`split_curve_model`] and on the closed square of
+/// [`square_curve_model`]. Fresh stock.
+const P63_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[
+    (
+        OperationType::Profile,
+        "on_open",
+        profile_on,
+        Frame::TopUp,
+        CurveModel::Split,
+    ),
+    (
+        OperationType::Profile,
+        "on_closed",
+        profile_on,
+        Frame::TopUp,
+        CurveModel::Square,
+    ),
+];
+
 /// Three open curves over the cap, with gaps of 1 mm and 2 mm between
 /// them. Each curve is one chain, so the link stage has two gaps to join.
 fn split_curve_model() -> rs_cam_core::session::LoadedModel {
@@ -770,7 +798,7 @@ fn cases() -> Vec<Case> {
             curve: CurveModel::Fixture,
         });
     }
-    for (op, arm, tweak, frame, curve) in W650_CASES.iter().chain(P62_CASES) {
+    for (op, arm, tweak, frame, curve) in W650_CASES.iter().chain(P62_CASES).chain(P63_CASES) {
         cases.push(Case {
             op: *op,
             arm,
@@ -1120,6 +1148,16 @@ fn every_op_keeps_its_toolpath() {
     // P6.2 non-vacuity: each open-offset arm cuts (it is no refusal), and
     // the two sides differ.
     for (op, arm, ..) in P62_CASES {
+        let key = format!("{}/{arm}", op.kind_str());
+        let got = &actual[&key];
+        assert!(
+            got.move_count > 0,
+            "{key}: the arm emits no moves ({})",
+            got.outcome
+        );
+    }
+    // P6.3 non-vacuity: each side On arm cuts (it is no refusal).
+    for (op, arm, ..) in P63_CASES {
         let key = format!("{}/{arm}", op.kind_str());
         let got = &actual[&key];
         assert!(

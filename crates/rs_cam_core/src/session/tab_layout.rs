@@ -96,15 +96,30 @@ impl ProjectSession {
                 OperationError::InvalidTool(text).to_string(),
             ));
         }
-        let regions = items.regions().ok_or_else(|| {
-            SessionError::OperationFailed(format!(
-                "{}: the selection gives no closed area.",
-                op_type.label()
-            ))
-        })?;
+        // P6.3: side On reads the lines of the selection (`Curves`), open
+        // paths too; Outside and Inside read the closed areas. A tab goes on
+        // a closed ring only (L-8).
+        let item_use = tc.operation.capabilities().item_use;
+        let (lines, regions) = match item_use {
+            crate::compute::catalog::ItemUse::Curves => {
+                (items.curves().map(|c| c.as_slice()), None)
+            }
+            _ => {
+                let regions = items.regions();
+                (regions.map(|r| r.as_slice()), regions)
+            }
+        };
+        let lines = lines
+            .filter(|lines| lines.iter().any(|l| l.closed))
+            .ok_or_else(|| {
+                SessionError::OperationFailed(format!(
+                    "{}: the selection gives no closed area.",
+                    op_type.label()
+                ))
+            })?;
         let tool_radius = crate::tool::MillingCutter::radius(&super::session_cutter(tool)?);
         let frame = ctx.local_to_global.as_ref();
-        let hand = resolve_hand_tabs(&cfg.tab_points, frame, tool_radius, regions.as_slice())
+        let hand = resolve_hand_tabs(&cfg.tab_points, frame, tool_radius, lines)
             .map_err(|text| SessionError::Operation(OperationError::InvalidParam(text)))?;
         let profile = ProfileParams {
             tool_radius,
@@ -117,9 +132,9 @@ impl ProjectSession {
             compensate_in_controller: cfg.compensation == CompensationType::InControl,
         };
         let plan = plan_profile_tabs(
-            regions.as_slice(),
+            lines,
             &ProfileTabRule {
-                regions: regions.as_slice(),
+                regions: lines,
                 hand: &hand,
                 count: cfg.tab_count,
                 width: cfg.tab_width,
@@ -129,17 +144,24 @@ impl ProjectSession {
         // The frame door keeps the order of the items, so the index of an
         // item in the setup half names the same item in the model half. The
         // key of the model half is the key a pick of the item stores.
+        // A `Curves` view keeps no item index, so a closed line finds its
+        // item by its ring (`curve_item`). An open path is no loop.
         let key_of = |region: usize| {
-            regions
-                .exterior_item(region)
-                .and_then(|i| frames.model.items().get(i))
+            let item = match regions {
+                Some(regions) => regions.exterior_item(region),
+                None => lines
+                    .get(region)
+                    .filter(|line| line.closed)
+                    .and_then(|line| curve_item(frames.setup.items(), line)),
+            };
+            item.and_then(|i| frames.model.items().get(i))
                 .map(|r| r.identity().clone())
         };
         let drawing = |p: P2| {
             let q = frame.map_or(p, |info| info.local_to_drawing(p));
             [q.x, q.y]
         };
-        let loops = (0..regions.as_slice().len()).filter_map(key_of).collect();
+        let loops = (0..lines.len()).filter_map(key_of).collect();
         let mut marks = Vec::new();
         for contour in &plan.contours {
             let Some(loop_key) = contour.region.and_then(key_of) else {
@@ -154,6 +176,25 @@ impl ProjectSession {
         }
         Ok(TabLayoutAnswer { marks, loops })
     }
+}
+
+/// The index in `items` of the item whose ring is the exterior of the
+/// closed line `line` of a `Curves` view (P6.3): a loop, a circle ring or
+/// the outer ring of a face. The view can reverse a ring to its winding
+/// (`Polygon2::ensure_winding`), so a reversed ring matches too.
+fn curve_item(
+    items: &[crate::selection::ResolvedItem],
+    line: &crate::polygon::Polygon2,
+) -> Option<usize> {
+    let same = |ring: &[P2]| {
+        ring == line.exterior.as_slice() || ring.iter().rev().eq(line.exterior.iter())
+    };
+    items.iter().position(|r| match r.item().shape() {
+        crate::selection::Shape::Face(face) => same(&face.rings.exterior),
+        shape => shape
+            .drawing_ring()
+            .is_some_and(|ring| ring.closed && same(&ring.exterior)),
+    })
 }
 
 /// One act of the viewport tab editor. Every point is in the drawing frame.

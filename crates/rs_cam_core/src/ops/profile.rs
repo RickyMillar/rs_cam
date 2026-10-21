@@ -24,11 +24,16 @@ pub enum ProfileSide {
     Outside,
     /// Tool inside the boundary (cutting an internal contour/hole).
     Inside,
-    /// Tool centre on the boundary (P6.1): the cut has no side, so both
-    /// sides are material. The Profile generator refuses it until the
-    /// on-the-line cut lands (P6.3). It asks the controller for no
-    /// compensation (G40), and `InControl` compensation refuses at every
-    /// door (`compute::domain`, L-5).
+    /// Tool centre on the line (P6.1, P6.3): the cut has no side, so both
+    /// sides are material. The op reads its items as lines
+    /// (`ItemUse::Curves`): every closed ring is cut on the line (the
+    /// exterior and each nested ring, as Trace compensation None), in the
+    /// direction of [`profile_ring`] (climb reverses it, L-1). An open path
+    /// is cut on the line from its first point to its last point, the
+    /// drawn direction; climb does not act on it (L-1), and it takes no
+    /// tab (L-8) and no lead. It asks the controller for no compensation
+    /// (G40), and `InControl` compensation refuses at every door
+    /// (`compute::domain`, L-5).
     On,
 }
 
@@ -140,7 +145,13 @@ pub fn profile_contour_reported(
         ProfileSide::Outside => -tool_radius, // outward (negative)
         ProfileSide::On => {
             // On the line: the contour is the ring itself. No offset is
-            // made, so there is nothing to count.
+            // made, so there is nothing to count. This is a CLOSED contour:
+            // an open path gives none here (P6.3), because the closed
+            // emitter would close it with a chord. An open path goes
+            // through [`on_line_contours`] and [`profile_path_open_to_toolpath`].
+            if !polygon.closed {
+                return (None, 0);
+            }
             let pts = polygon.exterior.clone();
             return (if pts.len() < 3 { None } else { Some(pts) }, 0);
         }
@@ -155,6 +166,66 @@ pub fn profile_contour_reported(
         .filter(|p| p.exterior.len() >= 3)
         .map(|p| p.exterior);
     (contour, usize::from(failure.is_some()))
+}
+
+/// One line of a Profile with side `On` (P6.3): a closed ring or an open
+/// path, with its points in the drawn order (a closed ring in the winding
+/// of the selection view).
+#[derive(Debug, Clone, PartialEq)]
+pub enum OnLineContour {
+    /// A closed ring of at least 3 points. The pass cuts it in the order of
+    /// [`profile_ring`] and closes it.
+    Closed(Vec<P2>),
+    /// An open path of at least 2 points. The pass cuts it from its first
+    /// point to its last point and does not close it.
+    Open(Vec<P2>),
+}
+
+/// The lines a Profile with side `On` cuts in `polygon` (P6.3): every ring
+/// of a closed polygon (the exterior, then each nested ring), or the open
+/// path itself. The open/closed choice reads `polygon.closed` before any
+/// point count, so an open path never reaches the closed emitter. A ring
+/// below 3 points and a path below 2 points give no line.
+#[must_use]
+pub fn on_line_contours(polygon: &Polygon2) -> Vec<OnLineContour> {
+    if !polygon.closed {
+        return if polygon.exterior.len() >= 2 {
+            vec![OnLineContour::Open(polygon.exterior.clone())]
+        } else {
+            Vec::new()
+        };
+    }
+    std::iter::once(&polygon.exterior)
+        .chain(&polygon.holes)
+        .filter(|ring| ring.len() >= 3)
+        .map(|ring| OnLineContour::Closed(ring.clone()))
+        .collect()
+}
+
+/// One pass along the open path `path` at `params.cut_depth` (P6.3, side
+/// `On`): rapid over the first point, plunge, feed through the points to
+/// the last point, retract. No move goes back to the first point, and the
+/// pass states no closed side, so no lead goes on it. `params.climb` is
+/// not read: an open path keeps its drawn direction (L-1). A path below 2
+/// points emits nothing.
+#[must_use]
+pub fn profile_path_open_to_toolpath(path: &[P2], params: &ProfileParams) -> SidedToolpath {
+    let mut tp = SidedToolpath::new();
+    if path.len() < 2 {
+        return tp;
+    }
+    let points: Vec<P3> = path
+        .iter()
+        .map(|p| P3::new(p.x, p.y, params.cut_depth))
+        .collect();
+    tp.toolpath.emit_path_segment_with_intent(
+        &points,
+        params.safe_z,
+        params.feed_rate,
+        params.plunge_rate,
+        MoveIntent::FinishingCut,
+    );
+    tp
 }
 
 /// S.7 (planning/finishing_stack_review_2026-07.md): emits via the shared

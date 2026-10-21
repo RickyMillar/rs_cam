@@ -34,9 +34,13 @@ use std::path::PathBuf;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::session::{ProjectFile, ProjectSessionBuilder, SessionError};
 
+/// A directory of its own for each call: the tests run in parallel, and
+/// each one deletes its directory.
 fn temp_path() -> PathBuf {
-    let mut dir = std::env::temp_dir();
-    dir.push(format!("rs_cam_retired_floor_{}", std::process::id()));
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+    dir.push(format!("rs_cam_retired_floor_{}_{n}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     dir.push("project.toml");
     dir

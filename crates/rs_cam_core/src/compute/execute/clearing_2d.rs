@@ -102,11 +102,6 @@ pub(crate) fn generate_trace(
     run_layered(&pass, ctx, prepared)
 }
 
-/// The refusal of a Profile with side `On` (P6.1). The side is in the
-/// schema; the cut on the line lands in P6.3.
-pub(crate) const PROFILE_SIDE_ON_NOT_YET: &str = "Profile side On (the tool centre on the line) is not yet available. Set side to Outside \
-     or Inside, or use a Trace with compensation None to cut on the line.";
-
 /// Profile family adapter (W3.2): [`ProfilePass`] on the Layered runner.
 /// The side and the climb direction act in `prepare` and `emit_level`; the
 /// tabs go on each level at the final Z ([`LevelInfo::is_final`]). The
@@ -123,22 +118,19 @@ pub(crate) const PROFILE_SIDE_ON_NOT_YET: &str = "Profile side On (the tool cent
 /// the op: a dropped hand tab is a part with less hold than the user set.
 ///
 /// [`hand_tab_reach`]: crate::dressup::tabs::hand_tab_reach
+///
+/// P6.3: side `On` reads its items as lines (`ItemUse::Curves`): closed
+/// rings and open paths, cut on the line. Outside and Inside read the
+/// closed areas (`ItemUse::Regions`). The capability decides, not the side.
 pub(crate) fn generate_profile(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Profile, "generate_profile");
-    // P6.1: the schema holds side On, but the on-the-line cut is not
-    // built (P6.3). The refusal comes before the selection read, so a
-    // selection of open paths gets this text, not a selection refusal.
-    if cfg.side == crate::ops::profile::ProfileSide::On {
-        return Err(OperationError::InvalidParam(
-            PROFILE_SIDE_ON_NOT_YET.to_owned(),
-        ));
-    }
     let feeds = LayerFeeds::new(ctx, op);
-    let regions = prepared.regions()?.as_slice();
+    let capabilities = op.capabilities();
+    let regions = profile_lines(prepared, capabilities.item_use)?;
     let hand_tabs = crate::dressup::tabs::resolve_hand_tabs(
         &cfg.tab_points,
         ctx.setup_transform,
@@ -148,9 +140,10 @@ pub(crate) fn generate_profile(
     .map_err(OperationError::InvalidParam)?;
     let pass = ProfilePass {
         cfg,
+        item_use: capabilities.item_use,
         regions,
         hand_tabs,
-        rest_use: op.capabilities().rest_use,
+        rest_use: capabilities.rest_use,
         base: crate::ops::profile::ProfileParams {
             tool_radius: feeds.tool_radius,
             side: cfg.side,
@@ -163,6 +156,27 @@ pub(crate) fn generate_profile(
         },
     };
     run_layered(&pass, ctx, prepared)
+}
+
+/// The lines a Profile cuts (P6.3): the closed areas of a `Regions` op
+/// (Outside, Inside), or the closed rings and open paths of a `Curves` op
+/// (side `On`).
+///
+/// # Errors
+///
+/// The prologue's geometry mismatch, or a use that a Profile never states.
+fn profile_lines<'p>(
+    prepared: &'p Prepared<'p>,
+    item_use: crate::compute::catalog::ItemUse,
+) -> Result<&'p [Polygon2], OperationError> {
+    use crate::compute::catalog::ItemUse;
+    match item_use {
+        ItemUse::Regions => Ok(prepared.regions()?.as_slice()),
+        ItemUse::Curves => Ok(prepared.curves()?.as_slice()),
+        ItemUse::None | ItemUse::Holes { .. } => Err(OperationError::Internal(format!(
+            "Profile states item use {item_use:?}; it reads Regions or Curves"
+        ))),
+    }
 }
 
 /// Pocket family adapter (W3.1): the Contour or the Zigzag pattern on the
@@ -408,15 +422,18 @@ impl LayeredOp for TracePass<'_> {
     }
 
     /// The compensated rings are the tool centre, so the tool reaches one
-    /// radius from them.
-    // P1: an open path (or open offset piece, P6.2) reads as closed here; the chord only widens the band (safe). P6.3: exact.
+    /// radius from them. P6.3: an open path (or an open offset piece,
+    /// P6.2) goes into `open`, so its band has no closing chord.
     fn reach_band(&self, geometry: &Self::Geometry, tool_radius: f64) -> ReachBand {
+        let (closed, open): (Vec<&Polygon2>, Vec<&Polygon2>) =
+            geometry.iter().partition(|poly| poly.closed);
         ReachBand {
-            rings: geometry
+            rings: closed
                 .iter()
                 .flat_map(|poly| std::iter::once(&poly.exterior).chain(&poly.holes))
                 .cloned()
                 .collect(),
+            open: open.iter().map(|poly| poly.exterior.clone()).collect(),
             half_width: tool_radius,
         }
     }
@@ -481,8 +498,11 @@ impl LayeredOp for TracePass<'_> {
 /// level, with tabs on each level below the tab top (P5b).
 struct ProfilePass<'a> {
     cfg: &'a ProfileConfig,
-    /// The regions of the op (`Prepared::regions`), to find the region of
-    /// an outline in `prepare` and its hand tabs.
+    /// How the op reads its items (P6.3): `Regions` (Outside, Inside) or
+    /// `Curves` (side `On`).
+    item_use: crate::compute::catalog::ItemUse,
+    /// The lines of the op ([`profile_lines`]), to find the region of an
+    /// outline in `prepare` and its hand tabs.
     regions: &'a [Polygon2],
     hand_tabs: Vec<crate::dressup::tabs::HandTab>,
     rest_use: RestUse,
@@ -492,9 +512,12 @@ struct ProfilePass<'a> {
 
 /// One contour of a Profile region: the ring the pass cuts (in cut order,
 /// its start in a gap between tabs) and its tabs. The tabs do not depend
-/// on Z: every level reuses them.
+/// on Z: every level reuses them. P6.3: `closed == false` is an open path
+/// of side `On`: the pass cuts it from its first point to its last point,
+/// with no tab.
 struct ProfileContour {
     ring: Vec<P2>,
+    closed: bool,
     tabs: Vec<crate::dressup::Tab>,
 }
 
@@ -525,13 +548,34 @@ impl LayeredOp for ProfilePass<'_> {
         self.rest_use
     }
 
+    /// The lines of the op ([`profile_lines`]): the regions for Outside
+    /// and Inside, the closed rings and open paths for side `On` (P6.3).
+    fn outlines<'p>(
+        &'p self,
+        prepared: &'p Prepared<'p>,
+    ) -> Result<std::borrow::Cow<'p, [Polygon2]>, OperationError>
+    where
+        Self::Input: 'p,
+    {
+        profile_lines(prepared, self.item_use).map(std::borrow::Cow::Borrowed)
+    }
+
     /// A computed contour is the tool centre: the tool reaches one radius
     /// from it. With the controller compensation the contour is the
     /// outline itself, and the controller puts the tool centre one radius
-    /// to one side, so the band is two radii wide on each side.
+    /// to one side, so the band is two radii wide on each side. P6.3: an
+    /// open contour goes into `open`, so its band has no closing chord.
     fn reach_band(&self, geometry: &Self::Geometry, tool_radius: f64) -> ReachBand {
+        let ring_of = |closed: bool| {
+            geometry
+                .iter()
+                .filter(move |c| c.closed == closed)
+                .map(|c| c.ring.clone())
+                .collect()
+        };
         ReachBand {
-            rings: geometry.iter().map(|c| c.ring.clone()).collect(),
+            rings: ring_of(true),
+            open: ring_of(false),
             half_width: if self.base.compensate_in_controller {
                 2.0 * tool_radius
             } else {
@@ -569,6 +613,7 @@ impl LayeredOp for ProfilePass<'_> {
             .map(|c| ProfileContour {
                 tabs: c.tabbed.tabs(self.cfg.tab_height),
                 ring: c.tabbed.ring,
+                closed: c.closed,
             })
             .collect();
         let tabs =
@@ -604,6 +649,15 @@ impl LayeredOp for ProfilePass<'_> {
         };
         let mut tp = SidedToolpath::new();
         for contour in geometry {
+            if !contour.closed {
+                // P6.3: an open path of side `On`, in its drawn direction,
+                // with no chord, no tab and no closed side (no lead).
+                tp.append(crate::ops::profile::profile_path_open_to_toolpath(
+                    &contour.ring,
+                    &params,
+                ));
+                continue;
+            }
             let pass = crate::ops::profile::profile_ring_to_toolpath(
                 &contour.ring,
                 &params,

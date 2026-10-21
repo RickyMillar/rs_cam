@@ -561,6 +561,34 @@ moves_hash = "ab1d424fde4a4525"
 span_count = 19
 spans_hash = "1ccce14a8994ebbe"
 
+["profile/on_closed"]
+outcome = "ok"
+move_count = 45
+rapid_count = 9
+linear_count = 36
+arc_count = 0
+cutting_length_mm = 254.924
+rapid_length_mm = 70.5
+bbox_min = [-4.0, -4.0, -6.0]
+bbox_max = [4.0, 4.0, 10.0]
+moves_hash = "26aafe7ca9c13fbd"
+span_count = 19
+spans_hash = "493312ebc71bd0df"
+
+["profile/on_open"]
+outcome = "ok"
+move_count = 132
+rapid_count = 27
+linear_count = 105
+arc_count = 0
+cutting_length_mm = 514.542
+rapid_length_mm = 247.564
+bbox_min = [-7.0, -2.0, -6.0]
+bbox_max = [7.0, 2.0, 10.0]
+moves_hash = "f5e97567fc3ba024"
+span_count = 55
+spans_hash = "58c9599b0ed7122f"
+
 ["profile/rest"]
 outcome = "ok"
 move_count = 50

@@ -121,8 +121,12 @@ pub(crate) struct LevelInfo {
 /// of the band the tool reaches around them. [`RestUse::LevelSkip`] reads
 /// it ([`LayeredOp::reach_band`]).
 pub(crate) struct ReachBand {
-    /// The closed tool-centre rings.
+    /// The closed tool-centre rings. The band of a ring holds its closing
+    /// segment, from the last point back to the first.
     pub rings: Vec<Vec<P2>>,
+    /// The open tool-centre paths (P6.3). The band of a path holds only
+    /// its own segments: no chord joins its two ends.
+    pub open: Vec<Vec<P2>>,
     /// The distance (mm) from a ring to the edge of the cut: the tool
     /// radius for a tool-centre ring, twice the radius when the controller
     /// offsets the ring.
@@ -270,6 +274,7 @@ pub(crate) trait LayeredOp {
     fn reach_band(&self, _geometry: &Self::Geometry, tool_radius: f64) -> ReachBand {
         ReachBand {
             rings: Vec::new(),
+            open: Vec::new(),
             half_width: tool_radius,
         }
     }
@@ -787,6 +792,7 @@ fn prepare_outline<O: LayeredOp>(
             let plan = levels_in_reach(
                 unguarded,
                 &band.rings,
+                &band.open,
                 levels,
                 band.half_width,
                 layer.cancel,

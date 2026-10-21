@@ -18,6 +18,10 @@
 //! 4. A Profile with side `On` does not compensate `InControl`
 //!    ([`side_on_in_control`], P6.1, L-5): a cut on the line
 //!    has no side for G41/G42.
+//! 5. A Profile with side `On` does not take the floor "Each picked face"
+//!    ([`side_on_each_face`], P6.3): side `On` reads lines, and a line has
+//!    no face floor. The one ladder would go to the deepest face floor and
+//!    cut a shallower face below its own floor.
 //!
 //! The session calls it at `AddToolpath`, at the op change
 //! (`SetToolpathOperation`), in the generic arm of `set_toolpath_param`
@@ -75,6 +79,12 @@ pub enum OpDomainRefusal {
         /// The op label.
         op: &'static str,
     },
+    /// A Profile with side `On` takes the floor "Each picked face" (P6.3).
+    /// Side `On` reads lines, and a line has no face floor.
+    SideOnEachFace {
+        /// The op label.
+        op: &'static str,
+    },
     /// The config has no TOML form, so its numbers cannot be read.
     Unreadable {
         /// The op label.
@@ -112,6 +122,12 @@ impl std::fmt::Display for OpDomainRefusal {
                 f,
                 "{op} side On cuts on the line; it has no side for G41/G42. Set compensation \
                  to In Computer"
+            ),
+            Self::SideOnEachFace { op } => write!(
+                f,
+                "{op} side On cuts on the line and reads lines, so the floor Each picked face \
+                 has no face floor for a line. Set the floor to Top Z, Stock top, Stock bottom, \
+                 Model top or Absolute Z, or set side to Outside or Inside"
             ),
             Self::Unreadable { op, detail } => {
                 write!(
@@ -214,6 +230,20 @@ pub fn side_on_in_control(operation: &OperationConfig) -> bool {
     )
 }
 
+/// Whether `operation` is a Profile with side `On` and the floor "Each
+/// picked face" (P6.3). Side `On` reads lines (`ItemUse::Curves`), and the
+/// per-face ladders come from a closed-area view only, so the pair is
+/// refused at every door.
+#[must_use]
+pub fn side_on_each_face(operation: &OperationConfig) -> bool {
+    use super::operation_configs::ProfileSide;
+    matches!(
+        operation,
+        OperationConfig::Profile(c)
+            if c.side == ProfileSide::On && matches!(c.floor, super::floor::Floor::EachFace { .. })
+    )
+}
+
 /// The number a TOML value holds, or `None` for a value that is not a
 /// number. An integer reads as its `f64`.
 // SAFETY: a published integer is a count or a size far below 2^53, and the
@@ -266,7 +296,8 @@ fn published_numbers(
 /// # Errors
 ///
 /// The first [`OpDomainRefusal`] in def order: a number out of range, then
-/// an inverted pair, then the floor, then side `On` with `InControl`.
+/// an inverted pair, then the floor, then side `On` with `InControl`, then
+/// side `On` with the floor "Each picked face".
 pub fn validate_operation(operation: &OperationConfig) -> Result<(), OpDomainRefusal> {
     for (def, value) in published_numbers(operation)? {
         check_param(operation, def.name, value)?;
@@ -290,6 +321,11 @@ pub fn validate_operation(operation: &OperationConfig) -> Result<(), OpDomainRef
     }
     if side_on_in_control(operation) {
         return Err(OpDomainRefusal::SideOnInControl {
+            op: operation.label(),
+        });
+    }
+    if side_on_each_face(operation) {
+        return Err(OpDomainRefusal::SideOnEachFace {
             op: operation.label(),
         });
     }

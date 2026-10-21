@@ -1093,6 +1093,15 @@ pub enum TabNote {
         placed: usize,
         asked: usize,
     },
+    /// P6.3 (L-8): an open path of a Profile with side `On` takes no tab.
+    /// A tab holds a part inside a closed outline; an open path has no
+    /// inside. One note per open path when `tab_count > 0`.
+    OpenPath {
+        /// The drawn start of the path (setup frame).
+        start: [f64; 2],
+        /// The tab count asked (`tab_count`).
+        asked: usize,
+    },
 }
 
 impl std::fmt::Display for TabNote {
@@ -1116,6 +1125,15 @@ impl std::fmt::Display for TabNote {
                 f,
                 "Loop {loop_index} (centre X{x:.2} Y{y:.2}): its straight sides hold {placed} \
                  of the {asked} tabs asked, clear of the corners and of each other."
+            ),
+            Self::OpenPath {
+                start: [x, y],
+                asked,
+            } => write!(
+                f,
+                "The open path from X{x:.2} Y{y:.2} takes none of the {asked} tabs asked: \
+                 tabs go on closed loops only. Close the path in the drawing to hold a part \
+                 with tabs."
             ),
         }
     }

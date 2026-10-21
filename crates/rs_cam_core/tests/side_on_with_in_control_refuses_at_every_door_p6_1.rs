@@ -14,8 +14,8 @@
 //! - project load.
 //!
 //! Each door has a positive control: side `On` with `InComputer` passes.
-//! The Profile generator then refuses side `On` with a "not yet" text,
-//! because the on-the-line cut lands in P6.3.
+//! The Profile generator then cuts side `On` on the line (P6.3; P6.1 gave
+//! a "not yet" refusal there).
 
 #![allow(
     clippy::unwrap_used,
@@ -240,31 +240,42 @@ fn the_loader_refuses_side_on_in_control() {
     );
 }
 
-/// Side `On` passes every door in the computer, but the Profile generator
-/// refuses it with a "not yet" text until the on-the-line cut lands
-/// (P6.3). The text names the fix.
+/// Side `On` passes every door in the computer, and the Profile generator
+/// cuts it on the line (P6.3; before P6.3 it refused with a "not yet"
+/// text). The fixture outline is a closed rectangle: every cut point lies
+/// on it.
 #[test]
-fn the_profile_generator_refuses_side_on_as_not_yet() {
+fn the_profile_generator_cuts_side_on_p6_3() {
     use common::op_fixtures::{flat_stock, outline_model, tool_for};
+    use rs_cam_core::toolpath::MoveIntent;
+    let model = outline_model();
     let mut s = common::session::single_op_session_with(
         flat_stock(),
         tool_for(OperationType::Profile),
-        outline_model(),
+        model,
         "p6_1",
         on_in_computer(),
         |_| {},
     );
     let cancel = AtomicBool::new(false);
-    let text = match s.generate_toolpath(0, &cancel) {
-        Ok(_) => panic!("side On generated a toolpath; P6.1 refuses it"),
-        Err(error) => error.to_string(),
-    };
-    assert!(
-        text.contains("side On") && text.contains("not yet available"),
-        "{text}"
+    s.generate_toolpath(0, &cancel)
+        .unwrap_or_else(|e| panic!("side On generates (P6.3): {e}"));
+    let result = s.get_result(0).expect("a result");
+    let cuts: Vec<_> = result
+        .toolpath()
+        .moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::FinishingCut)
+        .map(|m| m.target)
+        .collect();
+    assert!(!cuts.is_empty(), "side On cuts");
+    let (x, y) = (
+        common::op_fixtures::OUTLINE_HALF_X,
+        common::op_fixtures::OUTLINE_HALF_Y,
     );
-    assert!(
-        text.contains("Outside") && text.contains("Inside"),
-        "{text}"
-    );
+    for p in cuts {
+        let on_x = (p.x.abs() - x).abs() < 1e-3 && p.y.abs() <= y + 1e-3;
+        let on_y = (p.y.abs() - y).abs() < 1e-3 && p.x.abs() <= x + 1e-3;
+        assert!(on_x || on_y, "a cut point is off the outline: {p:?}");
+    }
 }

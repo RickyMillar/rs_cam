@@ -64,7 +64,11 @@
 //! op every polygon. Trace read its compensation: `None` was `Curves`,
 //! `Left` and `Right` were `Regions`. The column is new; no earlier answer
 //! moved. P6.2 (the open offset): Trace is `Curves` for every compensation
-//! ([`trace_compensation_picks_its_item_use_p1`] moved by name). [`every_field_has_a_frozen_column`] destructures `Capabilities`
+//! ([`trace_compensation_picks_its_item_use_p1`] moved by name). P6.3:
+//! Profile side `On` is `Curves` ([`profile_side_picks_its_item_use_p6_3`]),
+//! and the Profile transform moved by name to `TRANSFORM_PROFILE` (L-2):
+//! `leads_on_closed_passes_only` is `true`, so an open pass of side `On`
+//! takes no lead. A closed pass keeps its lead. [`every_field_has_a_frozen_column`] destructures `Capabilities`
 //! with no `..`, so the next new field does not compile here until it has
 //! a column.
 //!
@@ -163,7 +167,7 @@ fn frozen() -> Vec<Row> {
     vec![
     row((OperationType::Face, [false, false, false, false, false, false, false, false, false, false], None, Some(40.0), FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelClip, TerritoryXy::ClipAfter)),
     row((OperationType::Pocket, [true, false, true, false, false, false, false, false, false, true], None, Some(40.0), FloorOwner::OpFloor, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::PocketCell, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelClip, TerritoryXy::ClipAfter)),
-    row((OperationType::Profile, [true, false, true, false, false, false, false, false, false, true], None, Some(40.0), FloorOwner::OpFloor, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelSkip, TerritoryXy::ClipAfter)),
+    row((OperationType::Profile, [true, false, true, false, false, false, false, false, true, true], None, Some(40.0), FloorOwner::OpFloor, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelSkip, TerritoryXy::ClipAfter)),
     row((OperationType::Adaptive, [false, false, true, false, false, true, true, true, false, true], None, Some(40.0), FloorOwner::OpFloor, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::Adaptive2d, DocBasis::DepthPerPass, AirCutHint::Roughing, None, AxialEnvelope::NotApplied, RestUse::LevelMask, TerritoryXy::ClipAfter)),
     row((OperationType::VCarve, [true, false, false, false, false, false, false, false, false, true], Some(3), Some(40.0), FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::VBitDepth, AirCutHint::CurveFollowing, None, AxialEnvelope::VBitGroove, RestUse::None, TerritoryXy::ClipAfter)),
     row((OperationType::Inlay, [true, false, false, false, false, false, false, false, false, true], Some(3), Some(40.0), FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::None, TerritoryXy::ClipAfter)),
@@ -704,6 +708,26 @@ fn trace_compensation_picks_its_item_use_p1() {
         };
         trace.compensation = compensation;
         assert_eq!(cfg.capabilities().item_use, expected, "{compensation:?}");
+    }
+}
+
+/// P6.3: Profile side `On` cuts on the line, so it reads the lines of the
+/// selection (`Curves`: closed rings and open paths). Outside and Inside
+/// keep the row's closed areas (`Regions`).
+#[test]
+fn profile_side_picks_its_item_use_p6_3() {
+    use rs_cam_core::ops::profile::ProfileSide;
+    for (side, expected) in [
+        (ProfileSide::Outside, ItemUse::Regions),
+        (ProfileSide::Inside, ItemUse::Regions),
+        (ProfileSide::On, ItemUse::Curves),
+    ] {
+        let mut cfg = OperationConfig::new_default(OperationType::Profile);
+        let OperationConfig::Profile(profile) = &mut cfg else {
+            unreachable!()
+        };
+        profile.side = side;
+        assert_eq!(cfg.capabilities().item_use, expected, "{side:?}");
     }
 }
 

@@ -24,8 +24,8 @@ use super::capabilities::{
     AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbeRule, FloorOwner, ItemUse,
     LutRoute, MoveCountModel, RestUse, TRANSFORM_ADAPTIVE_2D, TRANSFORM_ADAPTIVE_3D,
     TRANSFORM_BARRIERED_NODES, TRANSFORM_CONTINUOUS, TRANSFORM_DEPTH_ORDER, TRANSFORM_FACE,
-    TRANSFORM_ORDERED_LINKABLE, TRANSFORM_TRACE, TRANSFORM_V_WIDTH, TRANSFORM_XY_INDEPENDENT,
-    TerritoryXy,
+    TRANSFORM_ORDERED_LINKABLE, TRANSFORM_PROFILE, TRANSFORM_TRACE, TRANSFORM_V_WIDTH,
+    TRANSFORM_XY_INDEPENDENT, TerritoryXy,
 };
 use super::schema::{
     DressupPolicy, Kinematics, OpParams as _, OpPolicy, OpRegistryEntry, ToolConstraintsDef,
@@ -148,7 +148,7 @@ pub(super) static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
     dressup_policy: DressupPolicy::ANY_DRESSUP,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
-        transform: TRANSFORM_DEPTH_ORDER,
+        transform: TRANSFORM_PROFILE,
         air_cut_high_threshold_pct: Some(AIR_CUT_BAR_CLEARING_PCT),
         floor_owner: FloorOwner::OpFloor,
         entry_probe: EntryProbeRule::Prism,
@@ -171,6 +171,8 @@ pub(super) static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
         floor_inside_stock: true,
         ladder_includes_top: false,
         lut_route: LutRoute::AsStated,
+        // Sides Outside and Inside. `OperationConfig::capabilities` states
+        // `Curves` for side `On` (P6.3).
         item_use: ItemUse::Regions,
     },
     generate: crate::compute::execute::generate_profile,

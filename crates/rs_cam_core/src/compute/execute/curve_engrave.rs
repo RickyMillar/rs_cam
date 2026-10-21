@@ -284,6 +284,7 @@ impl LayeredOp for ChamferPass {
     fn reach_band(&self, geometry: &Self::Geometry, _tool_radius: f64) -> ReachBand {
         ReachBand {
             rings: geometry.iter().map(|ring| ring.points.clone()).collect(),
+            open: Vec::new(),
             half_width: self.cone_radius_at_top(),
         }
     }

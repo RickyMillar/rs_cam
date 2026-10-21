@@ -232,7 +232,8 @@ pub enum ItemUse {
     /// it refuses when no closed polygon is left.
     Regions,
     /// Lines to follow, closed and open: the op cuts on the line or to one
-    /// side of it. Trace (every compensation, P6.2), Project Curve.
+    /// side of it. Trace (every compensation, P6.2), Profile with side `On`
+    /// (P6.3), Project Curve.
     Curves,
     /// Hole positions. `may_be_empty`: the op may have no hole to cut (Pin
     /// Drill, whose holes come from the alignment pins).
@@ -547,6 +548,14 @@ pub const TRANSFORM_DEPTH_ORDER: OperationTransformCapabilities =
 /// pass offset to one side takes no lead either. A lead arc starts one lead
 /// radius back along the travel, past the end normal of the drawn path.
 pub const TRANSFORM_TRACE: OperationTransformCapabilities =
+    TRANSFORM_DEPTH_ORDER.with_leads_on_closed_passes_only();
+
+/// Profile (P6.3, L-2): the depth order of [`TRANSFORM_DEPTH_ORDER`], and
+/// leads only on closed passes. Side `On` cuts an open path on the drawn
+/// line, from its first point to its last; a lead arc would start past
+/// the end normal of the path. A closed pass keeps its lead, so Outside
+/// and Inside (closed passes only) cut as with `TRANSFORM_DEPTH_ORDER`.
+pub const TRANSFORM_PROFILE: OperationTransformCapabilities =
     TRANSFORM_DEPTH_ORDER.with_leads_on_closed_passes_only();
 
 /// 2D Adaptive: the planner clears one material grid per level in the

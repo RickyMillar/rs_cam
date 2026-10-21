@@ -20,6 +20,9 @@
 //! 5. L-5: the conversion of the auto tabs of a loop keeps the other tabs
 //!    where they were and moves the one.
 //! 6. O-4: the delete of the last tab of a loop is refused and names it.
+//! 7. P6.3: a Profile with side `On` (it reads `Curves`) on a square and an
+//!    open path. The editor accepts it: the marks are the lifts on the
+//!    square, the loops name the square only (an open path is no loop).
 
 #![allow(
     clippy::unwrap_used,
@@ -424,4 +427,31 @@ fn the_last_tab_of_a_loop_is_not_deleted_o4() {
     let points = apply_tab_edit(&answer, &tab_points(&s), &TabEdit::Delete { mark: 0 })
         .expect("a loop with two tabs");
     assert_eq!(points.len(), 1);
+}
+
+/// Arm 7 (P6.3): a Profile with side `On` reads the lines of the selection
+/// (`Curves`). The tab editor accepts it: the marks are the cut lifts, all
+/// on the square, and the loop list holds the square only (an open path
+/// takes no tab, L-8).
+#[test]
+fn a_side_on_profile_gives_the_tabs_of_its_closed_rings_p6_3() {
+    let square = rect(-40.0, -20.0, 40.0, 20.0);
+    let path = Polygon2::open_path(vec![P2::new(-60.0, 40.0), P2::new(60.0, 40.0)]);
+    let cfg = ProfileConfig {
+        side: ProfileSide::On,
+        ..profile(2, vec![])
+    };
+    let mut s = session(vec![square, path], cfg);
+    let answer = layout(&s).expect("the tab editor accepts a Profile with side On");
+    assert_eq!(answer.loops.len(), 1, "one loop: the square");
+    assert!(!answer.marks.is_empty(), "the square has tabs");
+    for m in &answer.marks {
+        let [x, y] = m.on_loop;
+        let on_side = ((x.abs() - 40.0).abs() < EPS && y.abs() <= 20.0 + EPS)
+            || ((y.abs() - 20.0).abs() < EPS && x.abs() <= 40.0 + EPS);
+        assert!(on_side, "a mark is not on the square: {m:?}");
+        assert_eq!(m.loop_key, answer.loops[0], "every mark names the square");
+    }
+    let cut = lift_centres(&generate(&mut s).unwrap());
+    assert_same_points(&marks_in_setup(&s, &answer), &cut);
 }
