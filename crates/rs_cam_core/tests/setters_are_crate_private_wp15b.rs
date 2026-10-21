@@ -19,7 +19,7 @@
 //! 1. Every `fn … (&mut self` declared inside an `impl ProjectSession`
 //!    block under `crates/rs_cam_core/src/session/` (sub-folders
 //!    included) reads
-//!    `pub(crate) fn`. Three doors and six compute doors are exempt.
+//!    `pub(crate) fn`. Three doors and four compute doors are exempt.
 //! 2. (Deleted, W14a F156.) No `.rs` file in any crate outside
 //!    `crates/rs_cam_core/src` named `.<setter>(`. Arm 1 makes such a
 //!    call a compile error in the crate that holds it, so the scan
@@ -83,12 +83,16 @@ use std::path::{Path, PathBuf};
 /// names.
 const DOORS: &[&str] = &["apply", "query", "start"];
 
-/// The six compute entry points.
+/// The four compute entry points.
 ///
-/// Each one runs a generation, a simulation or a plan rather than
-/// writing a field. §25 ruling 4 assigns them to the `Job` programme and
-/// keeps them public. WP15a's `setters_have_rows_wp15a.rs` exempts the
-/// same six.
+/// Each one runs a generation or a simulation rather than writing a
+/// field. §25 ruling 4 assigns them to the `Job` programme and keeps
+/// them public. WP15a's `setters_have_rows_wp15a.rs` exempts the same
+/// four.
+///
+/// W9a made two former entries `pub(crate)`: `plan_multitool_finishing`
+/// (F040, the `PlanMultitoolFinishing` row) and
+/// `modulate_simulation_trace` (F115, the `AdoptSimulation` row).
 const COMPUTE_DOORS: &[&str] = &[
     "generate_toolpath",
     "generate_all",
@@ -99,8 +103,6 @@ const COMPUTE_DOORS: &[&str] = &[
     // `session/compute/simulation.rs`, so this list missed it until the
     // walk descended.
     "run_simulation_memoized",
-    "modulate_simulation_trace",
-    "plan_multitool_finishing",
 ];
 
 /// The lowest number of `&mut self` methods the declaration scan must

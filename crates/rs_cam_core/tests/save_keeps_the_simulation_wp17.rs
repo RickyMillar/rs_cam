@@ -188,6 +188,7 @@ fn session_with_simulation() -> ProjectSession {
         .apply(Command::AdoptSimulation(AdoptSimulationArgs {
             result: Box::new(simulation),
             epoch: session.simulation_epoch(),
+            modulation: None,
         }))
         .expect("the adopt stores the simulation");
     session

@@ -80,7 +80,7 @@ struct Justified {
     reason: &'static str,
 }
 
-/// The four viz sites that discard an answer for a stated reason.
+/// The viz sites that discard an answer for a stated reason.
 const JUSTIFIED: &[Justified] = &[
     Justified {
         path: "src/controller/events/compute.rs",
@@ -88,12 +88,10 @@ const JUSTIFIED: &[Justified] = &[
         reason: "`forget_core_result` is a free function holding no `AppState`, \
                  so the caller owns the runtime row it is already writing",
     },
-    Justified {
-        path: "src/controller/events/compute.rs",
-        needle: "Command::AdoptSimulation(",
-        reason: "storing a simulation leaves the session's `Some`, so `stale` is empty \
-                 and `simulation_cleared` is false (`session/command.rs`)",
-    },
+    // F115 (W9a): the `Command::AdoptSimulation(` site reads its answer
+    // now. The modulation runs inside the row, and the drain mirrors
+    // `Effects::modulated` and `Effects::stale`
+    // (`mirror_adopted_simulation`), so the row went.
     // Geometry selection P2.3c / P2.6 held two rows here: the drill hole
     // selector and the face Clear edited a selection VALUE with
     // `Selection::apply`. P4.3 (lead ruling L-1) deleted both sites: the
@@ -148,9 +146,8 @@ const MIN_CLI_EXEMPTED: usize = 5;
 
 /// How far above a statement the allowlist needle may look.
 ///
-/// `forget_core_result` and the `AdoptSimulation` site both build the
-/// payload into a local on an earlier line, so the statement alone does
-/// not name the row.
+/// `forget_core_result` builds the payload into a local on an earlier
+/// line, so the statement alone does not name the row.
 const LOOKBACK: usize = 12;
 
 /// The highest number of lines one accumulated statement may run to.

@@ -781,9 +781,7 @@ fn configure_arm(
                 ..MultitoolPlanSpec::default()
             };
             let spec = blob_islands(spec, &mut notes);
-            let outcome = session
-                .plan_multitool_finishing(&spec)
-                .expect("the planner emits the chain");
+            let outcome = plan_multitool(session, &spec).expect("the planner emits the chain");
             assert!(
                 outcome.replaced.is_empty(),
                 "the fixture holds no planner op; replaced {:?}",
@@ -873,9 +871,7 @@ fn configure_arm(
                 tier_strategies: vec![TierStrategy::IsoScallop; 2],
                 ..MultitoolPlanSpec::default()
             };
-            let outcome = session
-                .plan_multitool_finishing(&spec)
-                .expect("the planner emits the chain");
+            let outcome = plan_multitool(session, &spec).expect("the planner emits the chain");
             assert!(
                 outcome.replaced.is_empty(),
                 "the fixture holds no planner op"
@@ -1897,4 +1893,20 @@ fn tier_trial_350_config_only() {
             }
         }
     }
+}
+
+/// Run the multi-tool planner through its command row (F040) and return
+/// the outcome that `Effects::planned` carries.
+fn plan_multitool(
+    session: &mut rs_cam_core::session::ProjectSession,
+    spec: &rs_cam_core::session::MultitoolPlanSpec,
+) -> Result<rs_cam_core::session::MultitoolPlanOutcome, rs_cam_core::session::SessionError> {
+    let effects = session.apply(rs_cam_core::session::Command::PlanMultitoolFinishing(
+        rs_cam_core::session::PlanMultitoolFinishingArgs {
+            spec: Box::new(spec.clone()),
+        },
+    ))?;
+    Ok(*effects
+        .planned
+        .expect("the PlanMultitoolFinishing row reports its outcome"))
 }

@@ -348,11 +348,11 @@ impl ProjectSession {
         // Modulation no longer requires an explicit machine `kinematics`
         // block — it falls back to `effective_kinematics` (the generic
         // wood-router profile), matching the strategy advisor. The GUI/MCP
-        // sim path applies the same pass via [`modulate_simulation_trace`].
-        // N7 (2026-09-11): the pass's cycle-time re-integration DOES require
-        // that block, so with `kinematics: None` the feeds move and the
-        // published runtimes do not.
-        self.modulate_simulation_trace(&mut result.cut_trace, opts);
+        // sim path applies the same pass inside `Command::AdoptSimulation`
+        // (F115). N7 (2026-09-11): the pass's cycle-time re-integration DOES
+        // require that block, so with `kinematics: None` the feeds move and
+        // the published runtimes do not.
+        let _modulated = self.modulate_simulation_trace(&mut result.cut_trace, opts);
 
         self.store_simulation(result);
         // SAFETY: we just assigned Some
@@ -406,23 +406,27 @@ impl ProjectSession {
     }
 
     /// F-039 — apply the adaptive feed-modulation post-pass to an
-    /// already-computed simulation cut trace. The public entry point for the
-    /// GUI/MCP sim path (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §10.6):
-    /// the in-process worker produces the trace, this applies modulation on
-    /// the main thread where the session lives. Mutates the modulated
-    /// toolpaths into `self.results` (so G-code export carries the optimized
-    /// per-move feeds) and stamps `modulation_summaries` + re-timed runtimes
-    /// onto the trace in place. Gated on `opts.adaptive_feed_modulation`;
-    /// otherwise a no-op (the byte-identical baseline).
-    pub fn modulate_simulation_trace(
+    /// already-computed simulation cut trace
+    /// (`planning/UNIFIED_LOAD_MODEL_2026-06-18.md` §10.6). It writes the
+    /// modulated toolpaths into `self.results` (so G-code export carries
+    /// the optimized per-move feeds) and stamps `modulation_summaries` and
+    /// the re-timed runtimes onto the trace in place. Gated on
+    /// `opts.adaptive_feed_modulation`; otherwise a no-op (the
+    /// byte-identical baseline).
+    ///
+    /// F115: crate-private. It writes `self.results`, so it runs only
+    /// inside a door: `run_simulation` and `Command::AdoptSimulation`
+    /// (the GUI and MCP path). It returns every toolpath index whose
+    /// result it rewrote.
+    pub(crate) fn modulate_simulation_trace(
         &mut self,
         cut_trace: &mut Option<Arc<crate::stock::simulation_cut::SimulationCutTrace>>,
         opts: &super::SimulationOptions,
-    ) {
+    ) -> std::collections::BTreeSet<usize> {
         if !opts.adaptive_feed_modulation {
-            return;
+            return std::collections::BTreeSet::new();
         }
-        self.apply_adaptive_feed_modulation(cut_trace, opts);
+        self.apply_adaptive_feed_modulation(cut_trace, opts)
     }
 
     /// N2 — integrate ONE toolpath's stored motion on the caller's clock.
@@ -493,12 +497,14 @@ impl ProjectSession {
         &mut self,
         cut_trace: &mut Option<Arc<crate::stock::simulation_cut::SimulationCutTrace>>,
         opts: &super::SimulationOptions,
-    ) {
+    ) -> std::collections::BTreeSet<usize> {
+        // F115: every index whose result slot the loop below rewrites.
+        let mut rewritten = std::collections::BTreeSet::new();
         // Engagement aggregation + `ModulationContext` build now live in the
         // shared `modulate_annotated_against_trace`; this pass only needs the
         // chipload band (or point, A2) of each toolpath.
         let Some(cut_trace_ref) = cut_trace.as_deref() else {
-            return;
+            return rewritten;
         };
         // Modulation runs against the machine's effective kinematics — the
         // generic-wood-router fallback when no explicit block is set — so it
@@ -631,6 +637,7 @@ impl ProjectSession {
                     simulation_run,
                     source,
                 };
+                let _ = rewritten.insert(idx);
             }
         }
         // The swaps above give new `Arc`s with the same moves. Point every
@@ -647,7 +654,7 @@ impl ProjectSession {
         // the modulated cycle time. N2 (2026-09-10) extends "every
         // toolpath" to mean it: read the ONE CLOCK note below.
         let Some(trace_arc) = cut_trace.as_mut() else {
-            return;
+            return rewritten;
         };
         let trace = Arc::make_mut(trace_arc);
         // N7 (2026-09-11, operator ruling) — the re-time integrates only when
@@ -829,5 +836,6 @@ impl ProjectSession {
                 }
             }
         }
+        rewritten
     }
 }

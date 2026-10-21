@@ -30,6 +30,7 @@
 
 mod common;
 
+use common::session::plan_multitool;
 use common::tools::ball_tool_config;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{BoundarySource, StockSource};
@@ -82,8 +83,7 @@ fn the_plan_emits_a_coarse_to_fine_chain_with_provenance() {
     let (mut session, coarse_id, fine_id, model_id) = session_with_ladder();
     // Deliberately FINE FIRST: the ladder sorts on cusp radius itself, so
     // the caller's order must not reach the emitted chain.
-    let outcome = session
-        .plan_multitool_finishing(&spec(vec![fine_id, coarse_id], model_id))
+    let outcome = plan_multitool(&mut session, &spec(vec![fine_id, coarse_id], model_id))
         .expect("a two-ball ladder over a mesh must plan");
 
     assert_eq!(outcome.toolpath_ids.len(), 2);
@@ -133,9 +133,7 @@ fn the_plan_emits_a_coarse_to_fine_chain_with_provenance() {
 #[test]
 fn only_fine_tiers_carry_a_tier_region_boundary() {
     let (mut session, coarse_id, fine_id, model_id) = session_with_ladder();
-    session
-        .plan_multitool_finishing(&spec(vec![coarse_id, fine_id], model_id))
-        .expect("plan");
+    plan_multitool(&mut session, &spec(vec![coarse_id, fine_id], model_id)).expect("plan");
     let tcs = session.toolpath_configs();
 
     assert!(
@@ -172,12 +170,10 @@ fn only_fine_tiers_carry_a_tier_region_boundary() {
 #[test]
 fn a_re_plan_replaces_the_prior_chain_rather_than_accumulating() {
     let (mut session, coarse_id, fine_id, model_id) = session_with_ladder();
-    let first = session
-        .plan_multitool_finishing(&spec(vec![coarse_id, fine_id], model_id))
+    let first = plan_multitool(&mut session, &spec(vec![coarse_id, fine_id], model_id))
         .expect("first plan");
-    let second = session
-        .plan_multitool_finishing(&spec(vec![coarse_id, fine_id], model_id))
-        .expect("re-plan");
+    let second =
+        plan_multitool(&mut session, &spec(vec![coarse_id, fine_id], model_id)).expect("re-plan");
 
     assert_eq!(
         second.replaced, first.toolpath_ids,
@@ -218,12 +214,8 @@ fn a_re_plan_leaves_hand_built_ops_alone() {
         }))
         .expect("add the hand op");
 
-    session
-        .plan_multitool_finishing(&spec(vec![coarse_id, fine_id], model_id))
-        .expect("first plan");
-    session
-        .plan_multitool_finishing(&spec(vec![coarse_id, fine_id], model_id))
-        .expect("re-plan");
+    plan_multitool(&mut session, &spec(vec![coarse_id, fine_id], model_id)).expect("first plan");
+    plan_multitool(&mut session, &spec(vec![coarse_id, fine_id], model_id)).expect("re-plan");
 
     let names: Vec<&str> = session
         .toolpath_configs()
@@ -250,9 +242,7 @@ fn a_re_plan_leaves_hand_built_ops_alone() {
 #[test]
 fn every_tier_is_dialled_to_the_same_cusp() {
     let (mut session, coarse_id, fine_id, model_id) = session_with_ladder();
-    session
-        .plan_multitool_finishing(&spec(vec![coarse_id, fine_id], model_id))
-        .expect("plan");
+    plan_multitool(&mut session, &spec(vec![coarse_id, fine_id], model_id)).expect("plan");
 
     let stepovers: Vec<f64> = session
         .toolpath_configs()
@@ -289,18 +279,15 @@ fn every_tier_is_dialled_to_the_same_cusp() {
 fn a_one_tool_ladder_and_a_missing_model_are_refused_by_name() {
     let (mut session, coarse_id, fine_id, model_id) = session_with_ladder();
 
-    let err = session
-        .plan_multitool_finishing(&spec(vec![coarse_id], model_id))
+    let err = plan_multitool(&mut session, &spec(vec![coarse_id], model_id))
         .expect_err("a one-tool ladder is an ordinary finish pass");
     assert!(format!("{err}").contains("at least two tools"), "{err}");
 
-    let err = session
-        .plan_multitool_finishing(&spec(vec![coarse_id, fine_id], model_id + 99))
+    let err = plan_multitool(&mut session, &spec(vec![coarse_id, fine_id], model_id + 99))
         .expect_err("an absent model must refuse, not plan against nothing");
     assert!(format!("{err}").contains("no model with id"), "{err}");
 
-    let err = session
-        .plan_multitool_finishing(&spec(vec![coarse_id, 9_999], model_id))
+    let err = plan_multitool(&mut session, &spec(vec![coarse_id, 9_999], model_id))
         .expect_err("an unknown tool id must refuse");
     assert!(format!("{err}").contains("no tool with id"), "{err}");
 

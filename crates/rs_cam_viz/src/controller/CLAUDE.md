@@ -18,7 +18,7 @@
 
 ## Invariants
 
-- The view mirrors `Effects`. Use `Effects.stale`; never a narrower answer.
+- The view mirrors `Effects`. Use `Effects.stale`; never a narrower answer. F040: `apply_multitool_plan` applies `PlanMultitoolFinishing`; F115: the sim drain re-points `rt.result` for `Effects::modulated`.
 - A toolpath edit clears the viewport simulation. A stale mesh beside a new toolpath is a wrong picture.
 - A GUI `Job` (the tier-map preview; the STL faces: `process_model_faces`, one submit per cold model)
   sets `AppState::job_run`; only `deliver_gui_job` clears it.

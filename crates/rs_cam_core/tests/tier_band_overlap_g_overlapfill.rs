@@ -506,9 +506,7 @@ fn write_rivmap100_tiered_finish_fixture() {
         tolerance_mm: RIVMAP_TOLERANCE_MM,
         ..MultitoolPlanSpec::default()
     };
-    let outcome = session
-        .plan_multitool_finishing(&spec)
-        .expect("the ladder plans");
+    let outcome = plan_multitool(&mut session, &spec).expect("the ladder plans");
     eprintln!(
         "planned {} tier op(s), replaced {}",
         outcome.toolpath_ids.len(),
@@ -909,4 +907,20 @@ fn rivmap350_tiered_finish_step0_preview() {
         )
         .expect("the x3.5 terrain previews with the 15 mm flute copy");
     print_step0_preview("x3.5: F3 arm, fine tool with 15 mm of flute", &lc15);
+}
+
+/// Run the multi-tool planner through its command row (F040) and return
+/// the outcome that `Effects::planned` carries.
+fn plan_multitool(
+    session: &mut rs_cam_core::session::ProjectSession,
+    spec: &rs_cam_core::session::MultitoolPlanSpec,
+) -> Result<rs_cam_core::session::MultitoolPlanOutcome, rs_cam_core::session::SessionError> {
+    let effects = session.apply(rs_cam_core::session::Command::PlanMultitoolFinishing(
+        rs_cam_core::session::PlanMultitoolFinishingArgs {
+            spec: Box::new(spec.clone()),
+        },
+    ))?;
+    Ok(*effects
+        .planned
+        .expect("the PlanMultitoolFinishing row reports its outcome"))
 }

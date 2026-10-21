@@ -449,8 +449,8 @@ impl<B: ComputeBackend> AppController<B> {
             let command = Command::RemoveToolpath(RemoveToolpathArgs { index: tp_idx });
             let _ = self.apply_quietly(command);
             self.state.gui.toolpath_rt.remove(&tp_id);
-            // W1: the viz twin `mark_derived_rest_dependents_stale` is NOT
-            // called here any more. `remove_toolpath` walks the dependents
+            // W1: the viz twin of the Regions rule is NOT called here
+            // (F040 deleted it). `remove_toolpath` walks the dependents
             // BEFORE it takes the config out
             // (`session/mutation/toolpath.rs:88-91`), so the Regions edge
             // still resolves, the walker names every consumer, and

@@ -22,7 +22,7 @@
 //! allowlists carry the exceptions, and each one says what it exempts:
 //!
 //! - [`DOORS`] — the three doors themselves. A door is not a setter.
-//! - [`COMPUTE_DOORS`] — the six compute entry points. They are the
+//! - [`COMPUTE_DOORS`] — the four compute entry points. They are the
 //!   `Job` programme's second write surface (§25 ruling 4), not
 //!   WP15a's.
 //! - [`WRAPPERS_OVER_APPLY`] — a setter whose own body calls
@@ -85,11 +85,16 @@ use std::path::{Path, PathBuf};
 /// listed anyway, so the allowlist names the door set the plan names.
 const DOORS: &[&str] = &["apply", "query", "start"];
 
-/// The six compute entry points.
+/// The four compute entry points.
 ///
-/// Each one runs a generation, a simulation or a plan rather than
-/// writing a field. They carry roughly 230 external callers and §25
-/// ruling 4 assigns them to the `Job` programme, not to WP15a.
+/// Each one runs a generation or a simulation rather than writing a
+/// field. They carry roughly 230 external callers and §25 ruling 4
+/// assigns them to the `Job` programme, not to WP15a.
+///
+/// W9a removed two entries. F040: `plan_multitool_finishing` is the door
+/// of the `PlanMultitoolFinishing` row. F115: `modulate_simulation_trace`
+/// runs inside the `AdoptSimulation` arm. Both are setters now, and both
+/// rows delegate to them.
 const COMPUTE_DOORS: &[&str] = &[
     "generate_toolpath",
     "generate_all",
@@ -97,8 +102,6 @@ const COMPUTE_DOORS: &[&str] = &[
     // CMP-23: the S5-memoized twin of `run_simulation`. It runs a
     // simulation with a held prefix snapshot and writes nothing else.
     "run_simulation_memoized",
-    "modulate_simulation_trace",
-    "plan_multitool_finishing",
 ];
 
 /// Setters that are thin wrappers over [`ProjectSession::apply`].

@@ -79,7 +79,9 @@ use std::path::{Path, PathBuf};
 
 /// The nine accessors WP7 closed. Three stay as `pub(crate) fn`
 /// (`setups_mut`, `find_toolpath_config_by_id_mut`,
-/// `toolpath_configs_mut`); WP7 deleted the other six.
+/// `toolpath_configs_mut`); WP7 deleted the other six. `setups_mut` and
+/// `toolpath_configs_mut` (F126) are also `#[cfg(test)]`: no production
+/// caller is left.
 const HATCHES: &[&str] = &[
     "stock_mut",
     "machine_mut",

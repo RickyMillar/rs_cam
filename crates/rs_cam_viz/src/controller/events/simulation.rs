@@ -852,6 +852,7 @@ mod release_for_new_run_m1 {
             .apply(Command::AdoptSimulation(AdoptSimulationArgs {
                 result: Box::new(core),
                 epoch,
+                modulation: None,
             }))
             .expect("the fixture epoch is the live epoch");
 

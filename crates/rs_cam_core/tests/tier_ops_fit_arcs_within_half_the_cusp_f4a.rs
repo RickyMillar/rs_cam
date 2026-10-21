@@ -25,6 +25,7 @@
 
 mod common;
 
+use common::session::plan_multitool;
 use common::tools::ball_tool_config;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::config::{ArcFitParams, DressupConfig};
@@ -92,16 +93,18 @@ fn a_tier_op_fits_arcs_at_half_the_cusp_and_a_hand_finish_keeps_the_role_default
             TierStrategy::IsoScallop,
         ] {
             let (mut session, coarse_id, fine_id, model_id) = session_with_hand_finish();
-            let outcome = session
-                .plan_multitool_finishing(&MultitoolPlanSpec {
+            let outcome = plan_multitool(
+                &mut session,
+                &MultitoolPlanSpec {
                     setup_index: 0,
                     model_id,
                     tool_ids: vec![coarse_id, fine_id],
                     cusp_height_mm: cusp_mm,
                     tier_strategies: vec![strategy; 2],
                     ..MultitoolPlanSpec::default()
-                })
-                .expect("the ladder plans");
+                },
+            )
+            .expect("the ladder plans");
             assert_eq!(outcome.toolpath_ids.len(), 2);
 
             let want = cusp_mm / 2.0;
@@ -151,15 +154,17 @@ fn a_cusp_height_with_no_tolerance_fits_no_arcs() {
         assert_eq!(tier_arc_tolerance_mm(bad), None, "cusp {bad}");
     }
     let (mut session, coarse_id, fine_id, model_id) = session_with_hand_finish();
-    let _ = session
-        .plan_multitool_finishing(&MultitoolPlanSpec {
+    let _ = plan_multitool(
+        &mut session,
+        &MultitoolPlanSpec {
             setup_index: 0,
             model_id,
             tool_ids: vec![coarse_id, fine_id],
             cusp_height_mm: 0.0,
             ..MultitoolPlanSpec::default()
-        })
-        .expect("the ladder plans");
+        },
+    )
+    .expect("the ladder plans");
     for tc in session.toolpath_configs() {
         if tc.planner_origin.is_some() {
             assert!(

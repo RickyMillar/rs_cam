@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use rs_cam_core::session::{AdoptSimulationArgs, Command, ForgetResultArgs};
+use rs_cam_core::session::{
+    AdoptSimulationArgs, Command, Effects, FeedModulation, ForgetResultArgs,
+};
 
 use crate::compute::{ComputeBackend, ComputeError, ComputeMessage, ComputeRequest};
 use crate::state::simulation::{SimulationResults, SimulationRunMeta};
@@ -373,44 +375,6 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    /// Mark every toolpath whose *enabled* boundary is `DerivedRestRegions`
-    /// referencing `source_id` as stale, using the same `stale_since`
-    /// mechanism `crate::state::stale::stamp_stale` gives every command
-    /// route.
-    ///
-    /// W1 removed the generation-completion caller: core's `AdoptResult`
-    /// walks the source's consumers itself (D1) and the drain stamps
-    /// `Effects::stale`, which covers the Regions consumers. What is
-    /// left are the two REMOVAL callers, `handle_remove_toolpath` and the
-    /// multi-tool planner. Both run against a session the source has already
-    /// left, where a Regions edge resolves to no source at all, so the core
-    /// walk cannot name the consumer and this sweep still can.
-    pub(crate) fn mark_derived_rest_dependents_stale(&mut self, source_id: ToolpathId) {
-        let dependent_ids: Vec<ToolpathId> = self
-            .state
-            .session
-            .toolpath_configs()
-            .iter()
-            .filter(|tc| {
-                tc.boundary.enabled
-                    && matches!(
-                        tc.boundary.source,
-                        crate::state::toolpath::BoundarySource::DerivedRestRegions {
-                            source_toolpath_id,
-                        } if source_toolpath_id == source_id
-                    )
-            })
-            .map(|tc| tc.id)
-            .collect();
-        if dependent_ids.is_empty() {
-            return;
-        }
-        let now = std::time::Instant::now();
-        for id in dependent_ids {
-            self.state.gui.toolpath_rt_or_default(id).stale_since = Some(now);
-        }
-    }
-
     /// Take every result the lanes have finished and adopt it.
     ///
     /// One dispatch, one named method per `ComputeMessage` kind. Three of
@@ -610,9 +574,9 @@ impl<B: ComputeBackend> AppController<B> {
                     }
                 }
                 rt.result = Some(computed);
-                // W1: the viz twin `mark_derived_rest_dependents_stale` is
-                // NOT called here any more. It re-derived the Regions rule
-                // by hand. The core walker's answer covers it, so the GUI
+                // W1: the viz twin of the Regions rule is not called here
+                // (F040 deleted it). It re-derived the rule by hand. The
+                // core walker's answer covers it, so the GUI
                 // auto-regeneration clock reads the one truth.
                 crate::state::stale::stamp_stale(&mut self.state, &adopt_stale);
             }
@@ -660,6 +624,68 @@ impl<B: ComputeBackend> AppController<B> {
         self.toolpath_completion_landed(tp_id);
     }
 
+    /// Mirror the answer of an accepted `AdoptSimulation` (F115).
+    ///
+    /// - The view reads the STORED trace back from the session, so the
+    ///   viewport and the session share one `Arc`: the modulated trace.
+    /// - Each toolpath that `Effects::modulated` names re-points its
+    ///   `rt.result` to the session's result, so the feed-coloured
+    ///   viewport draws the feeds that export emits. The upload key holds
+    ///   the `Arc` identity of the toolpath, so the buffer rebuilds.
+    fn mirror_adopted_simulation(&mut self, effects: Effects) {
+        // Every field is named, so a new `Effects` field must state here
+        // whether this door mirrors it.
+        let Effects {
+            stale,
+            // The store leaves the session's simulation `Some`, so the
+            // flag is false.
+            simulation_cleared: _,
+            revision: _,
+            created: _,
+            selection_dropped: _,
+            planned: _,
+            modulated,
+        } = effects;
+        crate::state::stale::stamp_stale(&mut self.state, &stale);
+        let stored_trace = self
+            .state
+            .session
+            .simulation_result()
+            .and_then(|stored| stored.cut_trace.as_ref())
+            .map(Arc::clone);
+        if let Some(results) = self.state.simulation.results.as_mut() {
+            results.cut_trace = stored_trace;
+        }
+        for index in modulated {
+            let Some(id) = self
+                .state
+                .session
+                .get_toolpath_config(index)
+                .map(|tc| tc.id)
+            else {
+                continue;
+            };
+            let Some(annotated) = self
+                .state
+                .session
+                .get_result(index)
+                .map(|result| Arc::clone(result.annotated()))
+            else {
+                continue;
+            };
+            if let Some(held) = self
+                .state
+                .gui
+                .toolpath_rt
+                .get_mut(&id)
+                .and_then(|rt| rt.result.as_mut())
+            {
+                held.annotated = annotated;
+            }
+        }
+        self.pending_upload = true;
+    }
+
     /// Adopt one simulation-lane result.
     ///
     /// Epoch rule (G-LATESIM with WP28):
@@ -671,7 +697,8 @@ impl<B: ComputeBackend> AppController<B> {
     ///   The fixtures inject unstamped results on purpose: a result with
     ///   no submit behind it is stored and reads stale, never current.
     /// - Only a result stamped with the live epoch runs the feed
-    ///   modulation, because modulation writes `session.results`.
+    ///   modulation, because modulation writes the core result cache.
+    ///   The modulation runs inside `Command::AdoptSimulation` (F115).
     fn adopt_simulation_result(
         &mut self,
         result: Result<Box<crate::compute::SimulationResult>, ComputeError>,
@@ -842,96 +869,71 @@ impl<B: ComputeBackend> AppController<B> {
                     prior_stocks,
                 });
 
-                // F-039 — apply adaptive feed modulation to the
-                // just-completed sim trace (unified load model §10.6,
-                // option A). The async worker runs the dexel sim only;
-                // modulation needs session context (material / machine
-                // / vendor LUT) so it runs here on the main thread. The
-                // post-pass stamps `modulation_summaries` onto the trace
-                // — so the Feeds-tab "operating point" card + the
-                // tool-load report populate — and swaps the modulated
-                // toolpaths into `session.results`, which G-code export
-                // reads, so exported feeds are the optimized per-move
-                // schedule. That last clause was aspirational until
-                // 2026-08-22: the viz exporter read the worker's
-                // pre-modulation IR out of `gui.toolpath_rt` instead
-                // (G-MODEXPORT). `io::export::emitted_toolpaths` now
-                // resolves from `session.results`, so the claim holds
-                // on the GUI/MCP path as well as the CLI one — sentried
-                // by `tests/modulated_feeds_reach_gcode_g_modexport.rs`.
-                // Default-on in the GUI. Take the trace out
-                // and put it back so the session (results) and the
-                // viz-side cut_trace are borrowed disjointly.
-                {
-                    let opts = rs_cam_core::session::SimulationOptions {
-                    adaptive_feed_modulation: true,
-                    modulation_strategy:
-                        rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
-                    modulation_feed_scale: 1.0,
-                    ..Default::default()
-                };
-                    // A run that does not answer the live epoch is NOT
-                    // modulated, but the view KEEPS its trace. The put-back
-                    // sat inside the live-epoch branch, so a late run lost
-                    // its trace: the cycle time then read "not simulated"
-                    // beside the run on screen (machine import during a
-                    // run, 2026-10-02).
-                    let mut cut_trace = self
-                        .state
-                        .simulation
-                        .results
-                        .as_mut()
-                        .and_then(|r| r.cut_trace.take());
-                    if answers_live_epoch && cut_trace.is_some() {
-                        self.state
-                            .session
-                            .modulate_simulation_trace(&mut cut_trace, &opts);
-                    }
-                    if let Some(results) = self.state.simulation.results.as_mut() {
-                        results.cut_trace = cut_trace;
-                    }
-                }
-
-                // N12 item 10 — the session adopts the simulation
-                // the viewport just adopted, so `start` sees the
-                // prior stock a `FromRemainingStock` operation
-                // needs.
+                // F-039 / F115 — adaptive feed modulation of the
+                // just-completed run (unified load model §10.6, option A).
+                // The async worker runs the dexel sim only. Modulation
+                // needs session context (material, machine, vendor LUT),
+                // so it runs in core, INSIDE `Command::AdoptSimulation`,
+                // after the epoch check and before the store: the order
+                // `ProjectSession::run_simulation` uses. It stamps
+                // `modulation_summaries` onto the trace (the Feeds-tab
+                // "operating point" card and the tool-load report read
+                // them) and swaps the modulated toolpaths into the core
+                // result cache, which G-code export reads
+                // (G-MODEXPORT, `tests/modulated_feeds_reach_gcode_g_modexport.rs`).
                 //
-                // The trace is attached HERE and not in
-                // `core_simulation_from_lane`. The modulation pass
-                // above rewrites the trace through `Arc::make_mut`,
-                // which COPIES while a second `Arc` exists — so a
-                // copy taken before that pass would leave the
-                // session reading the pre-modulation trace and the
-                // viewport reading the modulated one. Taken after
-                // it, the two share one `Arc`.
-                adopted.cut_trace = self
-                    .state
-                    .simulation
-                    .results
-                    .as_ref()
-                    .and_then(|results| results.cut_trace.as_ref())
-                    .map(Arc::clone);
-                // D7 (W0c): the run reaches the core only with the
-                // epoch the submit door stamped. An UNSTAMPED result
-                // adopts nothing: there is no fallback to the live
-                // epoch, because "this run answers the project as it
-                // stands" is a claim only the submit door can make.
-                // The view keeps the result either way; the core
-                // stays empty and every reader calls it not current.
+                // N12 item 10 — the session adopts the simulation the
+                // viewport just adopted, so `start` sees the prior stock
+                // a `FromRemainingStock` operation needs.
+                //
+                // D7 (W0c): the run reaches the core only with the epoch
+                // the submit door stamped. An UNSTAMPED result adopts
+                // nothing: there is no fallback to the live epoch,
+                // because "this run answers the project as it stands" is
+                // a claim only the submit door can make. The view keeps
+                // the result either way; the core stays empty and every
+                // reader calls it not current.
                 match self.state.simulation.submitted_simulation_epoch {
                     Some(epoch) => {
+                        // The trace: a live run MOVES the view's trace into
+                        // the command. The modulation pass rewrites it
+                        // through `Arc::make_mut`, which COPIES while a
+                        // second `Arc` exists (G-SIMMEM: never copy a
+                        // trace), and the view reads the stored trace
+                        // back below. A run that does not answer the live
+                        // epoch is refused before it modulates, so it
+                        // takes a cheap `Arc` clone and the view KEEPS its
+                        // trace: the cycle time then reads the run on
+                        // screen (machine import during a run, 2026-10-02).
+                        let view_trace =
+                            self.state.simulation.results.as_mut().and_then(|results| {
+                                if answers_live_epoch {
+                                    results.cut_trace.take()
+                                } else {
+                                    results.cut_trace.as_ref().map(Arc::clone)
+                                }
+                            });
+                        adopted.cut_trace = view_trace;
                         let args = AdoptSimulationArgs {
                             result: Box::new(adopted),
                             epoch,
+                            // Default-on in the GUI and MCP, as the CLI
+                            // default is.
+                            modulation: Some(FeedModulation {
+                                strategy:
+                                    rs_cam_core::dressup::feed_modulation::ModulationStrategy::ConstrainedMax,
+                                feed_scale: 1.0,
+                            }),
                         };
-                        let adopt = Command::AdoptSimulation(args);
-                        // WP19: the `Ok` arm stays absent on purpose.
-                        // Storing a simulation leaves the session's
-                        // `Some`, so `stale` is empty and
-                        // `simulation_cleared` is false.
-                        if let Err(error) = self.state.session.apply(adopt) {
-                            tracing::warn!("simulation not adopted into the session: {error}");
+                        match self.state.session.apply(Command::AdoptSimulation(args)) {
+                            Ok(effects) => self.mirror_adopted_simulation(effects),
+                            // The only refusal is `StaleSimulation`. A live
+                            // run cannot meet it: the epoch check above and
+                            // this apply run in the same frame. A stale run
+                            // kept its trace above.
+                            Err(error) => {
+                                tracing::warn!("simulation not adopted into the session: {error}");
+                            }
                         }
                     }
                     None => tracing::warn!(

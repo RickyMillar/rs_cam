@@ -1803,19 +1803,14 @@ impl RsCamApp {
                         Some("tool_id"),
                     )
                 }
-                _ => CoreReply::refused(&format!("Error: {error}"), Some("index")),
+                // F215: the field comes from the error, which names it
+                // through an exhaustive match in core.
+                _ => CoreReply::refused(&format!("Error: {error}"), error.field()),
             },
             // The core setter's own refusal already lists the model ids
             // that exist, so nothing is appended here.
             CommandId::SetToolpathModel => {
-                let refused_field = match error {
-                    SessionError::ModelNotFound { .. } => "model_id",
-                    _ => "index",
-                };
-                CoreReply::refused(
-                    &format!("Error: {error}"),
-                    Some(refused_field),
-                )
+                CoreReply::refused(&format!("Error: {error}"), error.field())
             }
             // A save answers in plain text, so its refusal does too. The
             // sentence carried "Save failed" twice until WP20, because
@@ -1884,6 +1879,10 @@ impl RsCamApp {
             // F114: the apply_feeds tool reaches this row through the
             // controller funnel, so no CoreRequest builds it.
             | CommandId::ApplyFeeds
+            // F040: the plan_multitool_finishing tool reaches this row
+            // through the controller reconciler, so no CoreRequest
+            // builds it.
+            | CommandId::PlanMultitoolFinishing
             | CommandId::GenerateToolpath
             | CommandId::RecommendClearingStrategy
             | CommandId::PreviewTierMap
@@ -2695,19 +2694,13 @@ impl RsCamApp {
             }
             CommandId::SetBoundaryConfig => {
                 self.controller.state_mut().gui.mark_edited();
-                let mut stale = self.core_stale(&effects);
+                // F120: the stale set is the core answer alone. Core's
+                // `set_boundary_config` runs the rest-analysis producer
+                // hook on the source inside the same `Effects` window,
+                // so `effects.stale` names the source when the hook
+                // changed it. The GUI boundary picker reads the same set.
+                let stale = self.core_stale(&effects);
                 let index = before.index();
-                // P2 pencil-panel consolidation: `set_boundary_config`
-                // may have just auto-enabled rest analysis on the SOURCE
-                // toolpath (`ProjectSession::auto_enable_rest_analysis_for_source`,
-                // the demand-driven producer hook — see its doc comment).
-                // Surface that toolpath as stale too so a live GUI session
-                // watching this MCP-driven change sees it needs
-                // regeneration, mirroring the GUI boundary picker's own
-                // handling in `properties/mod.rs`. Slightly conservative:
-                // fires whenever the boundary points at an already-enabled
-                // source too (harmless — just an extra "needs regen" nudge).
-                self.core_stale_rest_source(index, &mut stale);
                 CoreReply::succeeded(self.mcp_mutation_result(
                     format!("Boundary set on toolpath {index}. Regenerate to apply."),
                     before.extra.clone(),
@@ -2884,6 +2877,10 @@ impl RsCamApp {
             // F114: the apply_feeds tool reaches this row through the
             // controller funnel, so no CoreRequest builds it.
             | CommandId::ApplyFeeds
+            // F040: the plan_multitool_finishing tool reaches this row
+            // through the controller reconciler, so no CoreRequest
+            // builds it.
+            | CommandId::PlanMultitoolFinishing
             | CommandId::GenerateToolpath
             | CommandId::RecommendClearingStrategy
             | CommandId::PreviewTierMap
@@ -2912,51 +2909,6 @@ impl RsCamApp {
                 ),
                 None,
             ),
-        }
-    }
-
-    /// Mark the rest-analysis SOURCE toolpath of a derived-rest boundary
-    /// stale, and add it to the reply's set.
-    fn core_stale_rest_source(&mut self, index: usize, stale: &mut Vec<usize>) {
-        let source = {
-            let state = self.controller.state();
-            let Some(tc) = state.session.get_toolpath_config(index) else {
-                return;
-            };
-            if !tc.boundary.enabled {
-                return;
-            }
-            let BoundarySource::DerivedRestRegions { source_toolpath_id } = &tc.boundary.source
-            else {
-                return;
-            };
-            let source_toolpath_id = *source_toolpath_id;
-            state
-                .session
-                .find_toolpath_config_by_id(source_toolpath_id)
-                .map(|(idx, source_tc)| {
-                    let is_rest_depth_pencil = matches!(
-                        &source_tc.operation,
-                        rs_cam_core::compute::catalog::OperationConfig::Pencil(cfg)
-                            if cfg.detector
-                                == rs_cam_core::finish::pencil::PencilDetector::RestDepth
-                    );
-                    (idx, source_toolpath_id, is_rest_depth_pencil)
-                })
-        };
-        if let Some((source_index, source_toolpath_id, false)) = source {
-            if let Some(rt) = self
-                .controller
-                .state_mut()
-                .gui
-                .toolpath_rt
-                .get_mut(&source_toolpath_id)
-            {
-                rt.stale_since = Some(std::time::Instant::now());
-            }
-            if !stale.contains(&source_index) {
-                stale.push(source_index);
-            }
         }
     }
 }

@@ -46,13 +46,13 @@ pub use command::{
     AddToolArgs, AddToolpathArgs, AdoptModelGeometryArgs, AdoptRestFreshComparisonArgs,
     AdoptResultArgs, AdoptSimulationArgs, ApplyFeedsArgs, AutoEnableRestAnalysisArgs,
     BuildModelFacesArgs, Command, CommandId, CommandKind, EditModelDrawingArgs, EditSelectionArgs,
-    Effects, ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer,
+    Effects, FeedModulation, ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer,
     GetOperationSchemaArgs, ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs,
     InvalidateStockArgs, InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer,
     JobHandle, LedgerEdit, ListItemsAnswer, ListItemsArgs, MoveStockChangeArgs,
-    MoveToolpathToSetupArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
-    RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveModelArgs, RemoveObstacleArgs,
-    RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
+    MoveToolpathToSetupArgs, PlanMultitoolFinishingArgs, PreviewTierMapArgs, Query, QueryAnswer,
+    Reach, RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveModelArgs,
+    RemoveObstacleArgs, RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
     ReorderToolpathArgs, ReplaceObstacleArgs, ReplaceStockChangeArgs, ReplaceToolArgs,
     ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs,
     SelectionStatusArgs, SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs,
@@ -356,6 +356,52 @@ pub enum SessionError {
 }
 
 impl SessionError {
+    /// The request field that this refusal names, or `None` when the
+    /// refusal names no one field.
+    ///
+    /// F215: a surface that reports a refused field reads this method.
+    /// The match is exhaustive and has no `_` arm, so a new variant
+    /// must state its field here before the crate compiles. A refusal
+    /// that is not about an index never names `"index"`.
+    pub fn field(&self) -> Option<&'static str> {
+        match self {
+            Self::ToolpathNotFound(_) | Self::StaleCompletion { .. } => Some("index"),
+            Self::ToolpathIdNotFound(_) => Some("toolpath_id"),
+            Self::ToolNotFound(_) | Self::ToolInUse(_) => Some("tool_id"),
+            Self::SetupNotFound(_) => Some("setup_index"),
+            Self::ModelNotFound { .. } => Some("model_id"),
+            Self::ModelIndexNotFound(_) => Some("model_index"),
+            Self::Io(_)
+            | Self::TomlParse(_)
+            | Self::TomlSerialize(_)
+            | Self::ModelLoad { .. }
+            | Self::MissingGeometry(_)
+            | Self::Operation(_)
+            | Self::OperationFailed(_)
+            | Self::ObstacleRefused(_)
+            | Self::Obstacle(_)
+            | Self::Simulation(_)
+            | Self::CollisionCheck(_)
+            | Self::Export(_)
+            | Self::InvalidParam(_)
+            | Self::NotACamProject(_)
+            | Self::UnsupportedFormatVersion { .. }
+            | Self::UnsupportedSetup(_)
+            | Self::GeneratedEmpty(_)
+            | Self::StaleSimulation { .. }
+            | Self::StockChangeRefused(_)
+            | Self::RetiredKeys(_)
+            | Self::MissingOperation { .. }
+            | Self::Selection(_)
+            | Self::ToolOutOfDomain { .. }
+            | Self::UnknownSetupDatum { .. }
+            | Self::DuplicateId { .. }
+            | Self::OutOfDomain(_)
+            | Self::HeightOrder(_)
+            | Self::FeedsRefused(_) => None,
+        }
+    }
+
     /// The [`Self::ToolOutOfDomain`] refusal for `tool`, as a `map_err`
     /// argument.
     pub(crate) fn out_of_domain(
@@ -2147,14 +2193,13 @@ impl ProjectSession {
         self.setups.iter().enumerate().find(|(_, s)| s.id == id)
     }
 
-    /// Mutable access to all toolpath configs.
-    ///
-    /// Prefer named mutation methods: [`set_toolpath_enabled()`](Self::set_toolpath_enabled),
-    /// [`edit_toolpath_selection()`](Self::edit_toolpath_selection),
-    /// [`set_dressup_config()`](Self::set_dressup_config), etc.
+    /// Mutable access to all toolpath configs, for unit tests only.
     ///
     /// Crate-private since WP7; every surface mutates through
-    /// `ProjectSession::apply`.
+    /// `ProjectSession::apply`. F126 deleted the last production caller
+    /// (`compute::validate::apply_stale_default_fix`), so the accessor
+    /// is `#[cfg(test)]`, as `setups_mut` is.
+    #[cfg(test)]
     pub(crate) fn toolpath_configs_mut(&mut self) -> &mut Vec<ToolpathConfig> {
         &mut self.toolpath_configs
     }

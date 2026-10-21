@@ -41,7 +41,7 @@ use crate::compute::tool_config::{ToolConfig, ToolId};
 use crate::feeds::ToolGeometryHint;
 use crate::ids::ToolpathId;
 use crate::material::Material;
-use crate::session::{ProjectSession, SessionError, ToolpathConfig};
+use crate::session::{ProjectSession, ToolpathConfig};
 use crate::tool::MillingCutter;
 use crate::tool_load::plunge_stress::safe_plunge_cap_mm_min;
 use serde::{Deserialize, Serialize};
@@ -158,27 +158,13 @@ pub fn validate_one_toolpath(
     out
 }
 
-/// Apply the auto-fix for one detected stale default. Returns
-/// `Err(SessionError::ToolpathNotFound)` if the toolpath has been
-/// removed since validation.
-pub fn apply_stale_default_fix(
-    session: &mut ProjectSession,
-    defect: &StaleDefault,
-) -> Result<(), SessionError> {
-    let configs = session.toolpath_configs_mut();
-    let tc = configs
-        .iter_mut()
-        .find(|tc| tc.id == defect.toolpath_id)
-        .ok_or(SessionError::ToolpathIdNotFound(defect.toolpath_id))?;
-    apply_stale_default_to_op(&mut tc.operation, &mut tc.feeds_provenance, defect);
-    Ok(())
-}
-
 /// Apply the auto-fix's field change directly to an [`OperationConfig`].
-/// Used by callers that hold the operation mutably without a session
-/// (e.g. the GUI toolpath-properties panel, which builds a transient
-/// `ToolpathEntry` and writes back to the session at the end of the
-/// frame). Session-level callers should prefer [`apply_stale_default_fix`].
+///
+/// A caller that holds the operation as a draft uses this function. An
+/// example is the GUI toolpath-properties panel: it builds a transient
+/// `ToolpathEntry` and writes it back to the session through
+/// `ProjectSession::apply`. F126: no function writes the fix into a
+/// session outside that door.
 pub fn apply_stale_default_to_op(
     op: &mut OperationConfig,
     provenance: &mut crate::feeds::FeedsProvenance,
@@ -425,6 +411,19 @@ mod tests {
         t
     }
 
+    /// Write one fix into the session's own config, the way a GUI draft
+    /// writes it. The test reaches the config through the `#[cfg(test)]`
+    /// accessor, because no production door writes a fix outside
+    /// `ProjectSession::apply` (F126).
+    fn apply_fix(s: &mut ProjectSession, defect: &StaleDefault) {
+        let tc = s
+            .toolpath_configs_mut()
+            .iter_mut()
+            .find(|tc| tc.id == defect.toolpath_id)
+            .expect("the defect names a toolpath of the session");
+        apply_stale_default_to_op(&mut tc.operation, &mut tc.feeds_provenance, defect);
+    }
+
     fn wood_session() -> ProjectSession {
         let mut s = ProjectSession::new_empty();
         let mut stock = s.stock_config().clone();
@@ -631,7 +630,7 @@ mod tests {
             .unwrap();
         let defects = validate_stale_defaults(&s);
         assert_eq!(defects.len(), 1);
-        apply_stale_default_fix(&mut s, &defects[0]).unwrap();
+        apply_fix(&mut s, &defects[0]);
         let after = validate_stale_defaults(&s);
         assert!(after.is_empty(), "auto-fix should clear the defect");
     }
@@ -772,7 +771,7 @@ mod tests {
             .unwrap();
         let defects = validate_stale_defaults(&s);
         assert_eq!(defects.len(), 1);
-        apply_stale_default_fix(&mut s, &defects[0]).unwrap();
+        apply_fix(&mut s, &defects[0]);
         let OperationConfig::ProjectCurve(after) = &s.toolpath_configs()[0].operation else {
             panic!("operation type changed during auto-fix");
         };

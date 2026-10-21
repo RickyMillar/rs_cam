@@ -430,3 +430,22 @@ pub fn generate_all_in_plan_order(
     }
     failures
 }
+
+/// Run the multi-tool planner through its command row (F040) and return
+/// the outcome that `Effects::planned` carries.
+///
+/// The planner is the `PlanMultitoolFinishing` row; no public session
+/// method writes the ladder outside `ProjectSession::apply`.
+pub fn plan_multitool(
+    session: &mut ProjectSession,
+    spec: &rs_cam_core::session::MultitoolPlanSpec,
+) -> Result<rs_cam_core::session::MultitoolPlanOutcome, rs_cam_core::session::SessionError> {
+    let effects = session.apply(rs_cam_core::session::Command::PlanMultitoolFinishing(
+        rs_cam_core::session::PlanMultitoolFinishingArgs {
+            spec: Box::new(spec.clone()),
+        },
+    ))?;
+    Ok(*effects
+        .planned
+        .expect("the PlanMultitoolFinishing row reports its outcome"))
+}

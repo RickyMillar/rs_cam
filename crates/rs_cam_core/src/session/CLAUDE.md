@@ -12,14 +12,14 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 
 ## Invariants
 
-- A command returns `Effects`. `Effects.stale` is the stale set. F114: `ApplyFeeds` is the one Apply-Suggest row (GUI; MCP through the controller; CLI); `suggest_slots` is the one Suggest context assembly.
+- A command returns `Effects`. `Effects.stale` is the stale set. F114: `ApplyFeeds` is the one Apply-Suggest row (GUI; MCP through the controller; CLI); `suggest_slots` is the one Suggest context assembly. F040: `PlanMultitoolFinishing` is the planner row (one `Effects` window, the outcome on `Effects::planned`). F215: `SessionError::field` (exhaustive) names the refused field.
 - An edit invalidates the result chain to fixpoint: `invalidate_output_dependents_of_set`; an S2 stock change, from its setup on: `drop_stock_change_dependents`.
 - `dependencies::edges` (rules), `generation_plan` (order; a row that gains a result in the plan stales the snapshots below it, W1.5b): no surface re-derives either. `walk_output_dependents` drops results and touches no simulation; an edit takes `invalidate_output_dependents_of_set`.
 - `drop_simulation(cause)` is the one site that clears the simulation. It
   bumps `simulation_epoch` and records the cause. `AdoptResult` refuses a
   stale revision, `AdoptSimulation` a stale epoch. `store_simulation` is the one
   store; it numbers the run. W2.5: a slot is `Dressed` until modulation rewrites it (`Modulated
-  { simulation_run, source }`, B5: current while `source` is); every export reads `feed_stage`.
+  { simulation_run, source }`, B5: current while `source` is); every export reads `feed_stage`. F115: `AdoptSimulation` with a `FeedModulation` modulates after the epoch check, before the store (the `run_simulation` order); `Effects::modulated` names the rewritten indices.
 - ONE stored `simulation_resolution` sets every cell. `try_with_effects` drops a rest result whose `SourceStock` no longer matches (G-RESTRES).
 - There are no public `*_mut` hatches. `setups_mut` stays `#[cfg(test)]`. Read `ProjectSession::simulation_triage`, not a raw issue count.
 - Generation passes `entry_feed_rate()`, not the raw ramp feed (G10 B4), and
@@ -35,5 +35,5 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
 ## Sentries
 
 `cargo test -p rs_cam_core -q --test <name>`, one per name (W2.5: viz `export_states_the_feed_stage_w2_5`): `command_registry_completeness`, `mutation_paths_invalidate_alike_p0`,
-`adopt_result_rejects_stale_completion`, `stale_set_has_one_answer_wp28`, `dependency_edges_are_the_walker_dep1`, `generation_plan_is_the_edge_walk_w0b`, `a_late_simulation_does_not_refill_the_core_d7`, `rest_stock_identity_g_restres`,
+`adopt_result_rejects_stale_completion`, `the_planner_is_one_command_f040`, `the_adopt_modulates_as_run_simulation_does_f115`, `stale_set_has_one_answer_wp28`, `dependency_edges_are_the_walker_dep1`, `generation_plan_is_the_edge_walk_w0b`, `a_late_simulation_does_not_refill_the_core_d7`, `rest_stock_identity_g_restres`,
 `stock_changes_stale_from_their_setup_on_s2`, `a_plan_resimulates_after_an_upstream_change_w1_5b`, `fresh_generation_ignores_simulation_b19` (B19: `Fresh` reads no prior stock), `selection_status_is_memoised_p2_4`, P2.5 `a_reimport_stales_every_reader_of_the_model_p2_5`, `a_missing_tool_id_refuses_p2_5`, `a_retired_boundary_source_is_named_p2_5`, P2.6 `selection_round_trips_p2_6`, P2.7 `one_item_is_one_pick_p2_7`, P4.1 `a_3d_op_face_pick_sets_its_top_p4_1`, P4.2 `a_face_op_reads_its_selection_p4_2`, P4.4 `item_states_match_the_cut_p4_4`, P4.6 `the_tab_layout_is_the_cut_layout_p4_6`, P4.7 `stl_flat_regions_are_face_items_p4_7` (`--features test-support`), P4.8 `import_reports_joins_and_open_shapes_p4_8`, P4.9 `drawing_edits_replay_on_reimport_p4_9`, Heights and floor: `one_heights_resolver_for_every_surface_p3_1`, `a_retired_floor_key_is_named_p3_2`, `the_floor_reaches_the_motion_g_bottompin`, F015 `an_unknown_z_datum_is_refused_at_load_f015`, F034/F053 `every_project_table_refuses_an_unknown_key_f034`, W6b `a_value_outside_its_domain_is_refused_at_every_door_w6b`, F033 viz `one_height_order_rule_for_every_surface_f033`.

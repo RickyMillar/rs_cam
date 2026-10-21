@@ -53,7 +53,7 @@ mod common;
 use std::sync::atomic::AtomicBool;
 
 use common::meshes::height_field;
-use common::session::{mesh_model, stock_over};
+use common::session::{mesh_model, plan_multitool, stock_over};
 use common::tools::ball_tool_config;
 use rs_cam_core::compute::config::{ArcFitParams, BoundaryConfig, StockSource};
 use rs_cam_core::compute::cutter::build_cutter;
@@ -337,13 +337,15 @@ fn session_with_fine_tier(mesh: TriangleMesh, half: f64) -> (ProjectSession, usi
     let fine_id = builder.tools()[fine].id.0;
     let model_id = builder.add_model(mesh_model(mesh, "knolls_and_wall"));
     let mut session = builder.build();
-    let outcome = session
-        .plan_multitool_finishing(&MultitoolPlanSpec {
+    let outcome = plan_multitool(
+        &mut session,
+        &MultitoolPlanSpec {
             model_id,
             tool_ids: vec![coarse_id, fine_id],
             ..MultitoolPlanSpec::default()
-        })
-        .expect("the ladder plans");
+        },
+    )
+    .expect("the ladder plans");
     let fine_tp = *outcome.toolpath_ids.last().expect("two tiers");
     let (index, _) = session.find_toolpath_config_by_id(fine_tp).unwrap();
     let _ = session

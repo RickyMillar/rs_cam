@@ -47,11 +47,13 @@
 //! WP4 adds the MCP mutation section: most `Command` rows carry an MCP
 //! wire name. This module states no row count. `CommandId::ALL.len()`
 //! is the count, and a count written in prose goes stale the day the
-//! next row lands. This one did, twice. Two MCP mutations stay
-//! hand-written holdouts and are NOT rows here
-//! (§15 ruling 4): `plan_multitool_finishing`, whose outcome IS the
-//! reply; and `export_gcode`, whose pre-flight gate reads the view's own
-//! simulation slot. F114 made `apply_feeds` a row (`ApplyFeeds`): it
+//! next row lands. This one did, twice. One MCP mutation stays a
+//! hand-written holdout and is NOT a row here (§15 ruling 4):
+//! `export_gcode`, whose pre-flight gate reads the view's own
+//! simulation slot. F040 made `plan_multitool_finishing` a row
+//! (`PlanMultitoolFinishing`): its outcome rides on
+//! [`Effects::planned`], and the GUI dialog and the MCP tool both reach
+//! it through the controller reconciler. F114 made `apply_feeds` a row (`ApplyFeeds`): it
 //! resolves tool, machine, material and the recommendation from the
 //! session, so the GUI, MCP and the CLI write one value. The MCP tool
 //! still reaches it through the controller funnel, not the Core arm.
@@ -821,6 +823,21 @@ macro_rules! for_each_command {
                      "the batch CLI exposes no such command",
                  ),
              }),
+            // F040: the multi-tool finishing planner. It removes the
+            // planner ops of the setup and appends the new ladder inside
+            // ONE `Effects` window. The answer carries the outcome on
+            // `Effects::planned`.
+            (Command, PlanMultitoolFinishing, "plan_multitool_finishing",
+             PlanMultitoolFinishingArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip(
+                     "the plan_multitool_finishing tool reaches this row through the controller reconciler, not the Core arm",
+                 ),
+                 cli: Reach::Skip(
+                     "the batch CLI exposes no planner command",
+                 ),
+             }),
             (Job, GenerateToolpath, "generate_toolpath", GenerateToolpathArgs,
              ToolpathComputeResult,
              Surfaces {
@@ -992,10 +1009,11 @@ pub struct AdoptSimulationArgs {
     /// stores it: the display mesh, the boundaries, the checkpoints, the
     /// collisions, the cut trace and the prior stocks.
     ///
-    /// A caller that modulates the cut trace attaches the MODULATED trace
-    /// here. `run_simulation` stores the trace its own post-pass leaves,
-    /// and a caller that adopted the pre-modulation trace would publish
-    /// two different traces on two surfaces.
+    /// F115: the caller attaches the trace AS SIMULATED. When
+    /// [`Self::modulation`] is `Some`, the command modulates the trace
+    /// and the toolpath results before it stores them, as
+    /// `run_simulation` does. The caller then reads the stored trace
+    /// back from the session, so every surface reads one trace.
     pub result: Box<SimulationResult>,
     /// The simulation epoch the lane started from, read with
     /// [`ProjectSession::simulation_epoch`](super::ProjectSession::simulation_epoch).
@@ -1006,6 +1024,14 @@ pub struct AdoptSimulationArgs {
     /// this against the epoch the session carries and refuses a mismatch
     /// with [`SessionError::StaleSimulation`], storing nothing.
     pub epoch: u64,
+    /// F115: the feed modulation to run before the store, or `None` to
+    /// store the result as given.
+    ///
+    /// Modulation writes the modulated toolpaths into the result cache,
+    /// and export reads them. It runs inside this command, after the
+    /// epoch check, so a stale run modulates nothing. The indices it
+    /// rewrote come back on [`Effects::modulated`].
+    pub modulation: Option<FeedModulation>,
 }
 
 /// Names the simulation's countable parts, and no geometry.
@@ -1021,6 +1047,7 @@ impl std::fmt::Debug for AdoptSimulationArgs {
             .field("prior_stocks", &self.result.prior_stocks.len())
             .field("cut_trace", &self.result.cut_trace.is_some())
             .field("epoch", &self.epoch)
+            .field("modulation", &self.modulation)
             .finish_non_exhaustive()
     }
 }
@@ -1144,6 +1171,35 @@ pub struct RecommendClearingStrategyArgs {
     pub index: usize,
 }
 
+/// The arguments of the `plan_multitool_finishing` command (F040).
+///
+/// The command removes every planner op of `spec.setup_index` and
+/// appends the new ladder, coarse to fine. One [`Effects`] window covers
+/// every removal and every append, so `stale` and `simulation_cleared`
+/// answer for the whole plan. [`Effects::planned`] carries the
+/// [`MultitoolPlanOutcome`](super::MultitoolPlanOutcome).
+///
+/// The spec is boxed, as [`PreviewTierMapArgs`] boxes its own.
+#[derive(Debug, Clone)]
+pub struct PlanMultitoolFinishingArgs {
+    /// The ladder and the dials to plan with.
+    pub spec: Box<MultitoolPlanSpec>,
+}
+
+/// How the `adopt_simulation` command modulates the feeds (F115).
+///
+/// The fields are the two modulation dials of
+/// [`SimulationOptions`](super::SimulationOptions). The command runs the
+/// same pass as [`ProjectSession::run_simulation`](super::ProjectSession::run_simulation)
+/// with these dials.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FeedModulation {
+    /// The modulation strategy.
+    pub strategy: crate::dressup::feed_modulation::ModulationStrategy,
+    /// The scale on the modulated feed.
+    pub feed_scale: f64,
+}
+
 /// The arguments of the `preview_tier_map` job.
 ///
 /// The spec is BOXED. Every other payload in this registry is a handful
@@ -1170,7 +1226,7 @@ pub struct BuildModelFacesArgs {
 /// The type carries `#[must_use]`. A caller that runs a mutation and
 /// drops the answer states that it drops it, with `let _ =`.
 #[must_use]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Effects {
     /// Every toolpath index whose generation-input revision moved.
     ///
@@ -1226,6 +1282,21 @@ pub struct Effects {
     /// `SetToolpathOperation` sets it: the new op holds no selection (a
     /// 3D op), so the old selection has no place to go.
     pub selection_dropped: bool,
+    /// The outcome of a multi-tool plan (F040), or `None` when the
+    /// command planned nothing. Only `PlanMultitoolFinishing` sets it.
+    ///
+    /// The outcome names the emitted ops and the removed ops by id.
+    /// [`Self::stale`] answers for the toolpath indices, as on every
+    /// other row.
+    pub planned: Option<Box<super::MultitoolPlanOutcome>>,
+    /// Every toolpath index whose cached result the feed modulation
+    /// rewrote (F115). Only `AdoptSimulation` with a
+    /// [`FeedModulation`] fills it.
+    ///
+    /// A modulation moves no generation input, so these indices are not
+    /// in [`Self::stale`]. A surface that holds its own copy of a
+    /// toolpath re-reads these indices from the session.
+    pub modulated: BTreeSet<usize>,
 }
 
 // ── WP4 payloads ─────────────────────────────────────────────────
@@ -2538,7 +2609,11 @@ impl ProjectSession {
                 }))
             }
             Command::AdoptSimulation(args) => {
-                let AdoptSimulationArgs { result, epoch } = args;
+                let AdoptSimulationArgs {
+                    mut result,
+                    epoch,
+                    modulation,
+                } = args;
                 // D7. The same guard `AdoptResult` makes, for the same
                 // reason: an edit that cleared the simulation moved the
                 // epoch, so this run answers material the project no
@@ -2559,9 +2634,30 @@ impl ProjectSession {
                 // `before && !after`, and the store leaves `after` as
                 // `Some`, so it reads false whether or not the session
                 // held a simulation already.
-                Ok(self.with_effects(None, move |session| {
+                //
+                // F115: the modulation runs here, after the epoch check
+                // and before the store, in the order `run_simulation`
+                // runs it. `run_simulation` numbers the store after the
+                // pass, and so does this arm.
+                let mut modulated = BTreeSet::new();
+                let mut effects = self.with_effects(None, |session| {
+                    if let Some(FeedModulation {
+                        strategy,
+                        feed_scale,
+                    }) = modulation
+                    {
+                        let opts = super::SimulationOptions {
+                            adaptive_feed_modulation: true,
+                            modulation_strategy: strategy,
+                            modulation_feed_scale: feed_scale,
+                            ..Default::default()
+                        };
+                        modulated = session.modulate_simulation_trace(&mut result.cut_trace, &opts);
+                    }
                     session.store_simulation(*result);
-                }))
+                });
+                effects.modulated = modulated;
+                Ok(effects)
             }
             // ── WP4: the MCP mutation section ────────────────────
             //
@@ -2721,6 +2817,10 @@ impl ProjectSession {
             Command::ReplaceTools(args) => self.replace_tools(args.tools),
             Command::SetFeedsProvenance(args) => {
                 self.set_feeds_provenance(args.index, *args.feeds_provenance)
+            }
+            Command::PlanMultitoolFinishing(args) => {
+                let PlanMultitoolFinishingArgs { spec } = args;
+                self.plan_multitool_finishing(&spec)
             }
             Command::RestoreToolpathSnapshot(args) => {
                 let RestoreToolpathSnapshotArgs {
@@ -3003,6 +3103,8 @@ impl ProjectSession {
                 .map(|i| self.toolpath_revision(i)),
             created: None,
             selection_dropped: false,
+            planned: None,
+            modulated: BTreeSet::new(),
         })
     }
 

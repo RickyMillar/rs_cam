@@ -934,14 +934,15 @@ impl ProjectSession {
     /// Public door onto the chain invalidation for callers that write
     /// `ToolpathConfig` fields directly rather than through a setter.
     ///
-    /// The feeds Apply funnel is the one such caller
+    /// The feeds Apply funnel was the one such caller
     /// (`controller/events/mod.rs::apply_feeds_through_funnel`, N13). It
-    /// resolves the tool, the machine, the material and the
-    /// recommendation from GUI state, then writes `operation` and
+    /// resolved the tool, the machine, the material and the
+    /// recommendation from GUI state, then wrote `operation` and
     /// `feeds_provenance` through `toolpath_configs_mut`, so no core
-    /// setter runs. It reads
+    /// setter ran. F114 replaced it with `Command::ApplyFeeds`, and F126
+    /// made that accessor `#[cfg(test)]`. It read
     /// [`ToolpathConfig::generation_inputs_signature`](super::ToolpathConfig::generation_inputs_signature)
-    /// either side of that write and calls this door when the signature
+    /// either side of that write and called this door when the signature
     /// moved. Before this door existed the core kept the PREVIOUS result
     /// and export emitted it (R0.1 §2.2 item 1), and the downstream
     /// `FromRemainingStock` chain was never invalidated either.

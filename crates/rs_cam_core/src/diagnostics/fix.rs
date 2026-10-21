@@ -27,10 +27,10 @@ pub enum DiagnosticFix {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         old_value: Option<serde_json::Value>,
     },
-    /// Apply a known stale-default rule's fix. The
-    /// [`crate::compute::validate::StaleDefault::rule_id`] is carried
-    /// so consumers can call the existing `apply_stale_default_fix`
-    /// path.
+    /// Apply a known stale-default rule's fix. The payload carries the
+    /// [`crate::compute::validate::StaleDefault::rule_id`]. A consumer
+    /// writes the fix through `ProjectSession::apply`, for example with
+    /// `SetToolpathParam` (F126).
     ApplyStaleDefault {
         rule_id: String,
         toolpath_id: ToolpathId,

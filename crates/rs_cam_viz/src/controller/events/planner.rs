@@ -30,7 +30,9 @@
 //! used to draw during the walk is deleted.
 
 use rs_cam_core::compute::cutter::build_cutter;
-use rs_cam_core::session::{MultitoolPlanOutcome, MultitoolPlanSpec};
+use rs_cam_core::session::{
+    Command, Effects, MultitoolPlanOutcome, MultitoolPlanSpec, PlanMultitoolFinishingArgs,
+};
 use rs_cam_core::tool::MillingCutter;
 
 use crate::compute::ComputeBackend;
@@ -50,6 +52,16 @@ impl<B: ComputeBackend> AppController<B> {
     /// frame loop. The emitted chain is NOT generated: the ops land stale and
     /// the operator (or `generate_all`'s fixpoint ladder) generates them.
     ///
+    /// F040: the door applies `Command::PlanMultitoolFinishing` and mirrors
+    /// its [`Effects`] the way `apply_quietly` mirrors every row:
+    /// `Effects::stale` reaches the toolpath cards, and
+    /// `Effects::simulation_cleared` clears the viewport simulation. The
+    /// stale set comes from the core dependency walk. A removal walks the
+    /// dependents of the op before it takes the op out, so a
+    /// `DerivedRestRegions` consumer of a replaced op is in the set, and no
+    /// view-side sweep re-derives it. The MCP tool calls this door too, so
+    /// the GUI and MCP mirror one answer.
+    ///
     /// # Errors
     /// The core planner's own refusal, rendered. Nothing is mutated when it
     /// refuses — the reconciliation below only runs on success.
@@ -57,28 +69,50 @@ impl<B: ComputeBackend> AppController<B> {
         &mut self,
         spec: &MultitoolPlanSpec,
     ) -> Result<MultitoolPlanOutcome, String> {
-        let outcome = self
+        let command = Command::PlanMultitoolFinishing(PlanMultitoolFinishingArgs {
+            spec: Box::new(spec.clone()),
+        });
+        // `apply_quietly` drops the refusal, and this door returns it to
+        // the dialog and to the MCP reply, so it applies the command
+        // itself and mirrors the answer with the same two calls.
+        let effects = self
             .state
             .session
-            .plan_multitool_finishing(spec)
+            .apply(command)
             .map_err(|e| e.to_string())?;
+        // Every field is named, so a new `Effects` field must state here
+        // whether this door mirrors it.
+        let Effects {
+            stale,
+            simulation_cleared,
+            revision: _,
+            created: _,
+            selection_dropped: _,
+            planned,
+            modulated: _,
+        } = effects;
+        crate::state::stale::stamp_stale(&mut self.state, &stale);
+        if simulation_cleared {
+            self.invalidate_simulation();
+        }
+        let Some(outcome) = planned else {
+            return Err("the planner reported no outcome".to_owned());
+        };
+        let outcome = *outcome;
 
         // Ops the planner superseded: the same teardown `handle_remove_toolpath`
         // does, minus the session removal the planner already performed.
         for id in &outcome.replaced {
             self.state.gui.toolpath_rt.remove(id);
-            // A consumer whose `DerivedRestRegions` boundary pointed at a
-            // replaced op just lost its source; force it to regenerate so it
-            // fails loudly instead of clipping against orphaned regions.
-            self.mark_derived_rest_dependents_stale(*id);
             if self.state.selection == Selection::Toolpath(*id) {
                 self.state.selection = Selection::None;
             }
         }
 
-        // Emitted ops: the same runtime entry `handle_add_toolpath` creates.
-        // `insert`, not `entry`, so a recycled id cannot inherit a previous
-        // op's cached result.
+        // Emitted ops: the same runtime entry `handle_add_toolpath` creates,
+        // after the stamp, in the same order as that door. `insert`, not
+        // `entry`, so a recycled id cannot inherit a previous op's cached
+        // result.
         for id in &outcome.toolpath_ids {
             let auto_regen = self
                 .state
@@ -213,8 +247,8 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Emit the previewed ladder.
     ///
-    /// Routes through [`Self::apply_multitool_plan`] — never
-    /// `session.plan_multitool_finishing` directly — because that method owns
+    /// Routes through [`Self::apply_multitool_plan`] — never the command
+    /// directly — because that method owns
     /// the GUI-side bookkeeping (runtime entries for the emitted ops, teardown
     /// for the replaced ones and selection).
     ///

@@ -253,6 +253,7 @@ fn adopt_simulation(session: &mut ProjectSession, covered: &[usize]) {
                 obstacle_collisions: Vec::new(),
             }),
             epoch: session.simulation_epoch(),
+            modulation: None,
         }))
         .expect("the fixture stores a simulation");
 }

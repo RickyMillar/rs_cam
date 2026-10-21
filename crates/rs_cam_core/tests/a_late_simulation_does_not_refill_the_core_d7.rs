@@ -188,6 +188,7 @@ fn adopt_at(
     session.apply(Command::AdoptSimulation(AdoptSimulationArgs {
         result: Box::new(result),
         epoch,
+        modulation: None,
     }))
 }
 

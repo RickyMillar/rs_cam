@@ -217,6 +217,7 @@ fn rest_chain_session(feed_optimization: bool) -> ProjectSession {
         .apply(Command::AdoptSimulation(AdoptSimulationArgs {
             result: Box::new(simulation),
             epoch: session.simulation_epoch(),
+            modulation: None,
         }))
         .expect("the adopt stores the simulation");
     session

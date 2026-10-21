@@ -32,6 +32,7 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::session::plan_multitool;
 use common::tools::{ball_cutter, ball_tool_config};
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::UnifiedFinishConfig;
@@ -299,9 +300,7 @@ fn the_skip_dial_resolves_tier_zero_to_the_complement() {
         coarse_skips_fine_islands: true,
         ..spec(coarse_id, fine_id, model_id)
     };
-    let outcome = session
-        .plan_multitool_finishing(&plan_spec)
-        .expect("skip-dial plan emits");
+    let outcome = plan_multitool(&mut session, &plan_spec).expect("skip-dial plan emits");
 
     let cancel = AtomicBool::new(false);
     let tier0_id = outcome.toolpath_ids[0];

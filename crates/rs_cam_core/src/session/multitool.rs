@@ -19,7 +19,7 @@
 //!
 //! # Planning is CHEAP; the tier map is not computed here
 //!
-//! [`ProjectSession::plan_multitool_finishing`] computes **no tier map**. It
+//! [`Command::PlanMultitoolFinishing`](super::Command::PlanMultitoolFinishing) computes **no tier map**. It
 //! validates the ladder, allocates a plan id, replaces any prior plan, and
 //! writes `k` configs. The boundary each fine tier carries is a *recipe*
 //! ([`BoundarySource::PlannedTierRegions`]), resolved lazily at generation
@@ -63,7 +63,7 @@
 //!
 //! One plan per setup. Re-planning removes **every** op in the target setup
 //! carrying a [`PlannerOrigin`], whatever its `plan_id`, before emitting the
-//! new ladder — through [`ProjectSession::remove_toolpath`], so the setups'
+//! new ladder — through `ProjectSession::remove_toolpath`, so the setups'
 //! index lists and the results cache stay consistent. The removed ids come
 //! back on [`MultitoolPlanOutcome::replaced`] so a caller can tell the
 //! operator what went.
@@ -89,7 +89,9 @@ use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::tool::{MillingCutter, ToolDefinition};
 
-use super::{PlannerOrigin, ProjectSession, SessionError, SetupEvalContext, ToolpathConfig};
+use super::{
+    Effects, PlannerOrigin, ProjectSession, SessionError, SetupEvalContext, ToolpathConfig,
+};
 
 /// Default tier-map planning resolution (mm).
 ///
@@ -285,7 +287,7 @@ pub struct MultitoolPreview {
     /// Tool names in the same order, for labelling.
     pub tool_names: Vec<String>,
     /// Session tool ids in the same order — the ladder
-    /// [`ProjectSession::plan_multitool_finishing`] will emit with, already
+    /// [`Command::PlanMultitoolFinishing`](super::Command::PlanMultitoolFinishing) will emit with, already
     /// sorted, so a caller that applies this preview gets the tiers it saw.
     pub tool_ids: Vec<usize>,
     /// Tiered-finish F3c: per fine tier, the owned territory the tier's tool
@@ -327,6 +329,15 @@ impl ProjectSession {
     ///
     /// **Cheap**: no tier map is computed. See the module doc.
     ///
+    /// F040: this is the door of the `PlanMultitoolFinishing` row, and it
+    /// is crate-private. The removals and the appends run inside ONE
+    /// [`Self::try_with_effects`] window, so the [`Effects`] it returns
+    /// folds every inner add and remove: `stale` names every index whose
+    /// revision moved (a removal walks its dependents before it takes the
+    /// op out, so a `DerivedRestRegions` consumer of a removed op is in
+    /// the set), and `simulation_cleared` is true when the plan dropped
+    /// a simulation. [`Effects::planned`] carries the outcome.
+    ///
     /// # Errors
     ///
     /// [`SessionError::SetupNotFound`] for an unknown setup;
@@ -334,44 +345,47 @@ impl ProjectSession {
     /// no 3D mesh; [`SessionError::InvalidParam`] for a ladder under two
     /// tools, an unknown tool id, or a ladder
     /// [`TierLadder::new`] refuses.
-    pub fn plan_multitool_finishing(
+    pub(crate) fn plan_multitool_finishing(
         &mut self,
         spec: &MultitoolPlanSpec,
-    ) -> Result<MultitoolPlanOutcome, SessionError> {
+    ) -> Result<Effects, SessionError> {
         // SES-06: validate, resolve, build. The three run in that order and
         // each one has its own door, so a reader follows one at a time.
+        // The first two take `&self`, so a refusal there writes nothing.
         self.validate_multitool_spec(spec)?;
         let ctx = self.resolve_multitool_plan(spec)?;
 
         let plan_id = self.next_plan_id();
-        let replaced = self.remove_planned_toolpaths(spec.setup_index);
-
+        let mut replaced = Vec::new();
         let mut toolpath_ids = Vec::with_capacity(ctx.ladder_tools.len());
-        for (tier_usize, tool) in ctx.ladder_tools.iter().enumerate() {
-            // Unreachable: `tier_count` converted in `resolve_multitool_plan`,
-            // so every index below it fits a `u8`. Written as a `let ... else`
-            // rather than an unwrap because a lint-clean impossibility costs
-            // one line.
-            let Ok(tier) = u8::try_from(tier_usize) else {
-                continue;
-            };
-            let cfg = self.build_tier_config(&ctx, spec, tier, tool, plan_id);
-            // The `pub(crate)` half. The public `add_toolpath` reports
-            // `Effects`, and this planner answers with its own outcome
-            // record; the two halves append the same toolpath.
-            let index = self.add_toolpath_impl(spec.setup_index, cfg)?;
-            let Some(added) = self.toolpath_configs.get(index) else {
-                return Err(SessionError::ToolpathNotFound(index));
-            };
-            toolpath_ids.push(added.id);
-        }
-
-        Ok(MultitoolPlanOutcome {
+        let mut effects = self.try_with_effects(None, |session| {
+            replaced = session.remove_planned_toolpaths(spec.setup_index)?;
+            for (tier_usize, tool) in ctx.ladder_tools.iter().enumerate() {
+                // Unreachable: `tier_count` converted in
+                // `resolve_multitool_plan`, so every index below it fits a
+                // `u8`. Written as a `let ... else` rather than an unwrap
+                // because a lint-clean impossibility costs one line.
+                let Ok(tier) = u8::try_from(tier_usize) else {
+                    continue;
+                };
+                let cfg = session.build_tier_config(&ctx, spec, tier, tool, plan_id);
+                // The raw half. This window measures the append, as
+                // `add_toolpath` measures its own.
+                let index = session.add_toolpath_impl(spec.setup_index, cfg)?;
+                let Some(added) = session.toolpath_configs.get(index) else {
+                    return Err(SessionError::ToolpathNotFound(index));
+                };
+                toolpath_ids.push(added.id);
+            }
+            Ok::<(), SessionError>(())
+        })?;
+        effects.planned = Some(Box::new(MultitoolPlanOutcome {
             plan_id,
             toolpath_ids,
             replaced,
             band_advisories: ctx.band_advisories,
-        })
+        }));
+        Ok(effects)
     }
 
     /// Resolve everything a whole ladder shares, before anything is written.
@@ -644,7 +658,7 @@ impl ProjectSession {
     /// generated, and reject without cost". A preview that could mutate would
     /// make rejecting cost something.
     ///
-    /// It is NOT cheap the way [`Self::plan_multitool_finishing`] is — this is
+    /// It is NOT cheap the way [`Command::PlanMultitoolFinishing`](super::Command::PlanMultitoolFinishing) is — this is
     /// the call that pays for the grid walk (≈ 8 s at 0.6 mm, ≈ 31 s at 0.3 mm
     /// per ladder tool on the reference board). It is memoised
     /// ([`crate::maps::tier_map_cache`]), so a second preview that changes only the
@@ -654,7 +668,7 @@ impl ProjectSession {
     ///
     /// # Errors
     ///
-    /// Everything [`Self::plan_multitool_finishing`] refuses, plus
+    /// Everything [`Command::PlanMultitoolFinishing`](super::Command::PlanMultitoolFinishing) refuses, plus
     /// [`SessionError::MissingGeometry`] when the model's mesh cannot be
     /// resolved in the setup's frame and [`SessionError::OperationFailed`]
     /// when the walk is cancelled or the island extraction refuses.
@@ -816,9 +830,17 @@ impl ProjectSession {
     /// removal — because that is what re-keys the results cache and shifts
     /// every setup's `toolpath_indices`. Indices are taken descending so
     /// each removal cannot invalidate the next one.
-    fn remove_planned_toolpaths(&mut self, setup_index: usize) -> Vec<ToolpathId> {
+    ///
+    /// The caller runs this inside its own `Effects` window, which measures
+    /// what each removal stales; the inner answers are not read. A removal
+    /// that refuses stops the plan (F040: it was a `warn` and the plan went
+    /// on).
+    fn remove_planned_toolpaths(
+        &mut self,
+        setup_index: usize,
+    ) -> Result<Vec<ToolpathId>, SessionError> {
         let Some(setup) = self.setups.get(setup_index) else {
-            return Vec::new();
+            return Err(SessionError::SetupNotFound(setup_index));
         };
         let mut victims: Vec<usize> = setup
             .toolpath_indices
@@ -836,15 +858,10 @@ impl ProjectSession {
             .filter_map(|&i| self.toolpath_configs.get(i).map(|tc| tc.id))
             .collect();
         for &index in victims.iter().rev() {
-            if let Err(e) = self.remove_toolpath(index) {
-                warn!(
-                    index,
-                    error = %e,
-                    "multi-tool re-plan: could not remove a prior planner op"
-                );
-            }
+            // The outer window measures this removal.
+            let _ = self.remove_toolpath(index)?;
         }
-        ids
+        Ok(ids)
     }
 
     /// Run the Suggest funnel for one emitted tier and return its

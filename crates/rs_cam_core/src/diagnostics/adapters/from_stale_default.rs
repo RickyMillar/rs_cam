@@ -2,8 +2,8 @@
 //! list.
 //!
 //! Stale-default defects carry their own per-rule `id`, title,
-//! detail, current/new values, and a canonical fix path
-//! ([`crate::compute::validate::apply_stale_default_fix`]). The
+//! detail, current/new values, and the field change of the fix
+//! ([`crate::compute::validate::apply_stale_default_to_op`]). The
 //! adapter wraps each into a `Caution`-severity diagnostic with an
 //! [`crate::diagnostics::DiagnosticFix::ApplyStaleDefault`] payload
 //! so consumers can render a one-click Fix button.
