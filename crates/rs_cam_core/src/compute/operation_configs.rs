@@ -12,6 +12,7 @@ pub use crate::finish::ramp_finish::CutDirection;
 pub use crate::finish::scallop::ScallopDirection;
 pub use crate::finish::spiral_finish::SpiralDirection;
 pub use crate::finish::unified_finish::{ClaimsReference, CreaseReference};
+pub use crate::ops::chamfer::ChamferSide;
 pub use crate::ops::face::FaceDirection;
 pub use crate::ops::profile::ProfileSide;
 pub use crate::ops::trace_path::TraceCompensation;
@@ -469,7 +470,7 @@ pub struct ChamferConfig {
                 of its holes are chamfered. Inside: the outline is a pocket or a hole; its walls \
                 are chamfered. The bevel always goes into the material."
     )]
-    pub side: ProfileSide,
+    pub side: ChamferSide,
     #[param(
         help = "Width of the chamfer on the face (mm). Depth computed from tool angle.",
         range = 0.1..=10.0,
@@ -508,7 +509,7 @@ pub struct ChamferConfig {
 impl Default for ChamferConfig {
     fn default() -> Self {
         Self {
-            side: ProfileSide::Outside,
+            side: ChamferSide::Outside,
             chamfer_width: 1.0,
             tip_offset: 0.1,
             feed_rate: 800.0,

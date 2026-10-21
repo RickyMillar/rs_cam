@@ -39,7 +39,7 @@ use rs_cam_core::{
     finish::steep_shallow::SteepShallowParams,
     geo::{BoundingBox3, P2},
     mesh::{SpatialIndex, TriangleMesh, make_test_hemisphere},
-    ops::chamfer::ChamferParams,
+    ops::chamfer::{ChamferParams, ChamferSide},
     ops::drill::{DrillCycle, DrillParams},
     ops::face::FaceDirection,
     ops::inlay::{InlayPlugParams, InlayPocketParams},
@@ -1419,7 +1419,7 @@ fn default_chamfer_params() -> ChamferParams {
         chamfer_width: 1.0,
         tip_offset: 0.1,
         tool_half_angle: std::f64::consts::FRAC_PI_4, // 45 degrees
-        side: ProfileSide::Outside,
+        side: ChamferSide::Outside,
         feed_rate: 800.0,
         plunge_rate: 400.0,
         safe_z: 10.0,

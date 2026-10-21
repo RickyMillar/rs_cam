@@ -95,6 +95,7 @@ use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::ids::ToolpathId;
+use rs_cam_core::ops::chamfer::ChamferSide;
 use rs_cam_core::ops::profile::ProfileSide;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig};
@@ -667,7 +668,7 @@ fn flat_cases() -> Vec<FlatCase> {
         (
             || {
                 OperationConfig::Chamfer(ChamferConfig {
-                    side: ProfileSide::Outside,
+                    side: ChamferSide::Outside,
                     ramp_feed_rate: None,
                     chamfer_width: 1.5,
                     tip_offset: 0.1,

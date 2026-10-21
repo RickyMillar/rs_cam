@@ -2,11 +2,11 @@
 // These types were moved to core as part of the service layer extraction (Phase 1).
 pub use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, Adaptive3dEntryStyle, AdaptiveConfig, AlignmentPinDrillConfig, ChamferConfig,
-    ClaimsReference, ClearingStrategy, CompensationType, CutDirection, DrillConfig, DrillCycleType,
-    DropCutterConfig, FaceConfig, FaceDirection, HorizontalFinishConfig, InlayConfig,
-    InlayPlugConfig, PencilConfig, PocketConfig, PocketPattern, ProfileConfig, ProfileSide,
-    ProjectCurveConfig, ProjectCurveDirection, ProjectCurveProjection, ProjectCurveSide,
-    RadialFinishConfig, RampFinishConfig, RegionOrdering, ScallopConfig, ScallopDirection,
-    SpiralDirection, SpiralFinishConfig, SteepShallowConfig, TraceCompensation, TraceConfig,
-    UnifiedFinishConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
+    ChamferSide, ClaimsReference, ClearingStrategy, CompensationType, CutDirection, DrillConfig,
+    DrillCycleType, DropCutterConfig, FaceConfig, FaceDirection, HorizontalFinishConfig,
+    InlayConfig, InlayPlugConfig, PencilConfig, PocketConfig, PocketPattern, ProfileConfig,
+    ProfileSide, ProjectCurveConfig, ProjectCurveDirection, ProjectCurveProjection,
+    ProjectCurveSide, RadialFinishConfig, RampFinishConfig, RegionOrdering, ScallopConfig,
+    ScallopDirection, SpiralDirection, SpiralFinishConfig, SteepShallowConfig, TraceCompensation,
+    TraceConfig, UnifiedFinishConfig, VCarveConfig, WaterlineConfig, ZigzagConfig,
 };

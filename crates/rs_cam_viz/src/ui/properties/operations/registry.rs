@@ -45,7 +45,9 @@ use super::{
     draw_zigzag_params,
 };
 use crate::state::job::{ModelId, ToolId};
-use crate::state::toolpath::{OperationConfig, OperationType, ProfileSide, StockSource};
+use crate::state::toolpath::{
+    ChamferSide, OperationConfig, OperationType, ProfileSide, StockSource,
+};
 use crate::ui::properties::pills::PillSuggestions;
 
 /// Everything a per-operation editor may read or write, in one place.
@@ -366,19 +368,22 @@ editor!(ed_alignment_pin_drill, AlignmentPinDrill, |ui, cfg, cx| {
 
 fn dia_profile(op: &OperationConfig, ui: &mut egui::Ui) {
     if let OperationConfig::Profile(cfg) = op {
-        let side = match cfg.side {
-            ProfileSide::Outside => "Outside",
-            ProfileSide::Inside => "Inside",
+        // P6.1: On cuts on the line, so the diagram draws no offset (as
+        // Trace with compensation None).
+        let (label, offset) = match cfg.side {
+            ProfileSide::Outside => ("Outside", Some("Outside")),
+            ProfileSide::Inside => ("Inside", Some("Inside")),
+            ProfileSide::On => ("On", None),
         };
-        draw_outline_diagram(ui, &format!("Profile ({side})"), Some(side));
+        draw_outline_diagram(ui, &format!("Profile ({label})"), offset);
     }
 }
 
 fn dia_chamfer(op: &OperationConfig, ui: &mut egui::Ui) {
     if let OperationConfig::Chamfer(cfg) = op {
         let side = match cfg.side {
-            ProfileSide::Outside => "Outside",
-            ProfileSide::Inside => "Inside",
+            ChamferSide::Outside => "Outside",
+            ChamferSide::Inside => "Inside",
         };
         draw_outline_diagram(ui, &format!("Chamfer ({side})"), Some(side));
     }

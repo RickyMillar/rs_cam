@@ -84,6 +84,7 @@ use rs_cam_core::compute::operation_configs::{
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::geometry::arc_util::linearize_arc;
+use rs_cam_core::ops::chamfer::ChamferSide;
 use rs_cam_core::ops::profile::ProfileSide;
 use rs_cam_core::ops::trace_path::TraceCompensation;
 use rs_cam_core::polygon::{FlattenPolicy, Polygon2};
@@ -160,7 +161,7 @@ fn trace(compensation: TraceCompensation) -> OperationConfig {
     })
 }
 
-fn chamfer(side: ProfileSide) -> OperationConfig {
+fn chamfer(side: ChamferSide) -> OperationConfig {
     OperationConfig::Chamfer(ChamferConfig {
         side,
         ..ChamferConfig::default()
@@ -392,7 +393,7 @@ fn cases() -> Vec<Case> {
     v.push(Case {
         name: "chamfer outside",
         outline: part(),
-        op: chamfer(ProfileSide::Outside),
+        op: chamfer(ChamferSide::Outside),
         tool: vbit(),
         material: Material::Inside,
         clearance: ChamferConfig::default().tip_offset,
@@ -400,7 +401,7 @@ fn cases() -> Vec<Case> {
     v.push(Case {
         name: "chamfer inside",
         outline: part(),
-        op: chamfer(ProfileSide::Inside),
+        op: chamfer(ChamferSide::Inside),
         tool: vbit(),
         material: Material::Outside,
         clearance: ChamferConfig::default().tip_offset,

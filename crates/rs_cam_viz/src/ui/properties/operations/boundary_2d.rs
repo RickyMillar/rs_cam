@@ -325,10 +325,12 @@ pub(in crate::ui::properties) fn draw_profile_params(
             .selected_text(match cfg.side {
                 ProfileSide::Outside => "Outside",
                 ProfileSide::Inside => "Inside",
+                ProfileSide::On => "On",
             })
             .show_ui(ui, |ui| {
                 ui.selectable_value(&mut cfg.side, ProfileSide::Outside, "Outside");
                 ui.selectable_value(&mut cfg.side, ProfileSide::Inside, "Inside");
+                ui.selectable_value(&mut cfg.side, ProfileSide::On, "On");
             });
         ui.end_row();
         floor_row(ui, OperationType::Profile, &mut cfg.floor, floor);

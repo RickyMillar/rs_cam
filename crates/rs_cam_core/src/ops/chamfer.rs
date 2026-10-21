@@ -28,6 +28,53 @@ use crate::polygon::Polygon2;
 use crate::toolpath::RingMaterial;
 use crate::toolpath::{MaterialRing, SidedToolpath, Toolpath};
 
+/// Where the material is beside a chamfered outline (the module doc).
+///
+/// P6.1 (L-4) splits it from [`ProfileSide`]: a chamfer has a material
+/// side by definition, and a chamfer "on the line" is a V groove, not a
+/// bevel. The type holds only the two sides. The file names are the
+/// names of the old `ProfileSide` values, so a project file does not
+/// change.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    rs_cam_derive::ParamEnum,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ChamferSide {
+    /// The outline is a part: the material is inside it.
+    Outside,
+    /// The outline is a cavity (a pocket or a hole): the material is
+    /// outside it.
+    Inside,
+}
+
+impl ChamferSide {
+    /// Where the material is beside the exterior ring of the outline
+    /// (P6.0c): inside a part's ring, outside a cavity's ring.
+    #[must_use]
+    pub const fn ring_material(self) -> RingMaterial {
+        match self {
+            Self::Outside => RingMaterial::Inside,
+            Self::Inside => RingMaterial::Outside,
+        }
+    }
+}
+
+impl From<ChamferSide> for ProfileSide {
+    fn from(side: ChamferSide) -> Self {
+        match side {
+            ChamferSide::Outside => Self::Outside,
+            ChamferSide::Inside => Self::Inside,
+        }
+    }
+}
+
 /// Parameters for chamfer cutting with a V-bit.
 pub struct ChamferParams {
     /// Width of the chamfer on the workpiece face (mm).
@@ -40,7 +87,7 @@ pub struct ChamferParams {
     pub tool_half_angle: f64,
     /// Where the material is: `Outside` chamfers a part, `Inside` chamfers a
     /// cavity. The module doc states the rule for the hole rings.
-    pub side: ProfileSide,
+    pub side: ChamferSide,
     /// Cutting feed rate (mm/min).
     pub feed_rate: f64,
     /// Plunge feed rate (mm/min).
@@ -96,8 +143,8 @@ pub(crate) fn chamfer_rings_reported(
     } else {
         // Negative distance = outward, positive = inward (profile's sign).
         let distance = match params.side {
-            ProfileSide::Outside => -params.tip_offset,
-            ProfileSide::Inside => params.tip_offset,
+            ChamferSide::Outside => -params.tip_offset,
+            ChamferSide::Inside => params.tip_offset,
         };
         let (pieces, failure) = crate::polygon::offset_polygon_reported(polygon, distance);
         (pieces, usize::from(failure.is_some()))
@@ -136,7 +183,7 @@ pub(crate) fn chamfer_rings_at_z(
 ) -> SidedToolpath {
     let profile_params = ProfileParams {
         tool_radius: params.tip_offset,
-        side: params.side,
+        side: params.side.into(),
         cut_depth: z,
         feed_rate: params.feed_rate,
         plunge_rate: params.plunge_rate,
@@ -197,7 +244,7 @@ mod tests {
             chamfer_width: 2.0,
             tip_offset: 0.1,
             tool_half_angle: FRAC_PI_4, // 45 degrees
-            side: ProfileSide::Outside,
+            side: ChamferSide::Outside,
             feed_rate: 800.0,
             plunge_rate: 400.0,
             safe_z: 10.0,
@@ -225,7 +272,7 @@ mod tests {
             chamfer_width: 2.0,
             tip_offset: 0.0,
             tool_half_angle: std::f64::consts::FRAC_PI_6,
-            side: ProfileSide::Outside,
+            side: ChamferSide::Outside,
             feed_rate: 800.0,
             plunge_rate: 400.0,
             safe_z: 10.0,
@@ -431,7 +478,7 @@ mod tests {
         island.reverse();
         pocket.holes.push(island);
         let params = ChamferParams {
-            side: ProfileSide::Inside,
+            side: ChamferSide::Inside,
             ..default_chamfer_params()
         };
         let radii = cut_radii(&chamfer_toolpath(&pocket, &params), params.feed_rate);

@@ -28,6 +28,11 @@
 //! is "no operation advertises a value its config cannot hold", so the next
 //! drift of this class fails here rather than reaching an operator.
 //!
+//! P6.1 (geometry selection) adds `on` to `ProfileSide` as a real variant,
+//! so serde holds it and the schema names it. The Profile generator
+//! refuses it with a "not yet" text until P6.3; the schema rule here is
+//! only "serde holds each advertised value", and it holds.
+//!
 //! Note what this does NOT check: that the generator DOES something different
 //! for each advertised value. Serde accepting `climb=false` says nothing about
 //! whether the generator reverses direction. That is a per-operation question
@@ -153,25 +158,31 @@ fn every_advertised_enum_value_is_one_the_config_can_hold() {
 
 /// The specific F1.16 case, pinned so the fix cannot silently regress.
 ///
-/// Profile's side is `outside|inside` and nothing more. W5: the order is the
-/// `ProfileSide` declaration order, which `#[derive(ParamEnum)]` reads. The on-the-line cut
-/// exists in this repo twice under its own names — `project_curve` with
-/// `side: center` (labelled "On Line") and `trace` with
-/// `compensation: none`, whose doc says "tool center follows the path
-/// exactly" — so a third spelling on Profile would claim the capability lives
-/// somewhere it does not.
+/// Profile's side is `outside|inside|on` and nothing more. W5: the order is
+/// the `ProfileSide` declaration order, which `#[derive(ParamEnum)]` reads.
+/// F1.16 removed an `on` that serde did not hold; P6.1 adds `On` as a real
+/// variant (the generator refuses it until P6.3). Chamfer's side is its own
+/// type, `ChamferSide` (L-4), with only the two material sides: a chamfer
+/// on the line is a V groove, not a bevel.
 #[test]
-fn profile_side_advertises_only_the_two_sides_it_cuts() {
+fn profile_side_advertises_the_three_sides_it_holds_p6_1() {
     let op = OperationConfig::new_default(OperationType::Profile);
     let type_name = op
         .param_type_name("side")
         .expect("profile advertises a side param");
     assert_eq!(
-        type_name, "enum:outside|inside",
-        "profile's side schema must name exactly the two ProfileSide variants"
+        type_name, "enum:outside|inside|on",
+        "profile's side schema must name exactly the three ProfileSide variants"
     );
 
-    // The capability it used to claim, where it really lives.
+    let chamfer = OperationConfig::new_default(OperationType::Chamfer);
+    assert_eq!(
+        chamfer.param_type_name("side"),
+        Some("enum:outside|inside"),
+        "chamfer's side schema must name exactly the two ChamferSide variants"
+    );
+
+    // The on-the-line cut that exists today.
     let pc = OperationConfig::new_default(OperationType::ProjectCurve);
     assert_eq!(
         pc.param_type_name("side"),

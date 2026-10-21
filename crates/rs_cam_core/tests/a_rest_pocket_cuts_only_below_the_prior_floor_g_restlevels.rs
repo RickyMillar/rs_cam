@@ -99,6 +99,7 @@ use rs_cam_core::compute::toolpath_stats::RestLevelsFinding;
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::dexel_stock::{FRESH_MATERIAL_THRESHOLD_MM, TriDexelStock};
 use rs_cam_core::geo::P2;
+use rs_cam_core::ops::chamfer::ChamferSide;
 use rs_cam_core::ops::drill_op::DrillHole;
 use rs_cam_core::ops::profile::ProfileSide;
 use rs_cam_core::polygon::Polygon2;
@@ -1116,7 +1117,7 @@ fn vbit() -> ToolConfig {
 
 fn chamfer() -> OperationConfig {
     OperationConfig::Chamfer(ChamferConfig {
-        side: ProfileSide::Outside,
+        side: ChamferSide::Outside,
         chamfer_width: CHAMFER_WIDTH,
         tip_offset: CHAMFER_TIP,
         ..ChamferConfig::default()

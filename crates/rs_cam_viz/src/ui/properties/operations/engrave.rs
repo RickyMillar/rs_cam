@@ -1,6 +1,6 @@
 use super::super::pills::PillSuggestions;
 
-use crate::state::toolpath::{ChamferConfig, ProfileSide, TraceCompensation, TraceConfig};
+use crate::state::toolpath::{ChamferConfig, ChamferSide, TraceCompensation, TraceConfig};
 
 use super::super::{depth_caution_row, dv, help_for, p};
 use super::DepthBeyondStock;
@@ -69,12 +69,12 @@ pub(in crate::ui::properties) fn draw_chamfer_params(
         egui::ComboBox::from_id_salt("chamfer_side")
             .truncate()
             .selected_text(match cfg.side {
-                ProfileSide::Outside => "Outside",
-                ProfileSide::Inside => "Inside",
+                ChamferSide::Outside => "Outside",
+                ChamferSide::Inside => "Inside",
             })
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut cfg.side, ProfileSide::Outside, "Outside");
-                ui.selectable_value(&mut cfg.side, ProfileSide::Inside, "Inside");
+                ui.selectable_value(&mut cfg.side, ChamferSide::Outside, "Outside");
+                ui.selectable_value(&mut cfg.side, ChamferSide::Inside, "Inside");
             });
         ui.end_row();
         dv(

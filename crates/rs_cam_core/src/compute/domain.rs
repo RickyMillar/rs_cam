@@ -15,6 +15,9 @@
 //! 3. The driver-set `floor` of the four floor ops passes
 //!    `Floor::door_refusal` (selection P3.2), because the derive check of
 //!    W6a does not reach inside it.
+//! 4. A Profile with side `On` does not compensate `InControl`
+//!    ([`side_on_in_control`], P6.1, L-5): a cut on the line
+//!    has no side for G41/G42.
 //!
 //! The session calls it at `AddToolpath`, at the op change
 //! (`SetToolpathOperation`), in the generic arm of `set_toolpath_param`
@@ -66,6 +69,12 @@ pub enum OpDomainRefusal {
         /// The refusal.
         refusal: FloorRefusal,
     },
+    /// A Profile with side `On` asks for `InControl` compensation (P6.1,
+    /// L-5). A cut on the line has no side for G41/G42.
+    SideOnInControl {
+        /// The op label.
+        op: &'static str,
+    },
     /// The config has no TOML form, so its numbers cannot be read.
     Unreadable {
         /// The op label.
@@ -99,6 +108,11 @@ impl std::fmt::Display for OpDomainRefusal {
                  '{low}' to '{high}' then admits nothing. Set '{low}' at or below '{high}'"
             ),
             Self::Floor { op, refusal } => write!(f, "{op} floor: {refusal}"),
+            Self::SideOnInControl { op } => write!(
+                f,
+                "{op} side On cuts on the line; it has no side for G41/G42. Set compensation \
+                 to In Computer"
+            ),
             Self::Unreadable { op, detail } => {
                 write!(
                     f,
@@ -186,6 +200,20 @@ pub fn ordered_pair(operation: &OperationConfig) -> Option<(&'static str, f64, &
     }
 }
 
+/// Whether `operation` is a Profile with side `On` and `InControl`
+/// compensation (P6.1, L-5). The controller offsets the tool to one side
+/// of the path (G41/G42), and a cut on the line has no side, so the pair
+/// is refused at every door.
+#[must_use]
+pub fn side_on_in_control(operation: &OperationConfig) -> bool {
+    use super::operation_configs::{CompensationType, ProfileSide};
+    matches!(
+        operation,
+        OperationConfig::Profile(c)
+            if c.side == ProfileSide::On && c.compensation == CompensationType::InControl
+    )
+}
+
 /// The number a TOML value holds, or `None` for a value that is not a
 /// number. An integer reads as its `f64`.
 // SAFETY: a published integer is a count or a size far below 2^53, and the
@@ -238,7 +266,7 @@ fn published_numbers(
 /// # Errors
 ///
 /// The first [`OpDomainRefusal`] in def order: a number out of range, then
-/// an inverted pair, then the floor.
+/// an inverted pair, then the floor, then side `On` with `InControl`.
 pub fn validate_operation(operation: &OperationConfig) -> Result<(), OpDomainRefusal> {
     for (def, value) in published_numbers(operation)? {
         check_param(operation, def.name, value)?;
@@ -258,6 +286,11 @@ pub fn validate_operation(operation: &OperationConfig) -> Result<(), OpDomainRef
         return Err(OpDomainRefusal::Floor {
             op: operation.label(),
             refusal,
+        });
+    }
+    if side_on_in_control(operation) {
+        return Err(OpDomainRefusal::SideOnInControl {
+            op: operation.label(),
         });
     }
     Ok(())

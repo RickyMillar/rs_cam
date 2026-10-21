@@ -751,7 +751,7 @@ fn chamfer_link_moves_preserves_material_state() {
             chamfer_width: 1.0,
             tip_offset: 0.1,
             tool_half_angle: std::f64::consts::FRAC_PI_4,
-            side: rs_cam_core::ops::profile::ProfileSide::Outside,
+            side: rs_cam_core::ops::chamfer::ChamferSide::Outside,
             feed_rate: 800.0,
             plunge_rate: 400.0,
             safe_z: 30.0,

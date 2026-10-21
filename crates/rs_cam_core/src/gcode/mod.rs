@@ -1256,7 +1256,10 @@ fn refuse_controller_compensation<'a, 'b: 'a>(
 /// A Profile operation that compensates `InControl` emits G41 or G42.
 /// The side and the cut direction together decide which one. Every
 /// other operation, and a Profile that compensates in the computer,
-/// returns `None`.
+/// returns `None`. A Profile with side `On` cuts on the line, so it has
+/// no side for G41/G42 and returns `None` (G40, P6.1). The domain check
+/// refuses `On` with `InControl` at every door (L-5); this arm is the
+/// emitter's own answer when a config reaches it all the same.
 ///
 /// **This is the one mapping.** The viz export door called its own copy
 /// until 2026-09-16, so two doors could emit different words for one
@@ -1271,12 +1274,13 @@ pub fn controller_compensation_for(
     if let OperationConfig::Profile(ref cfg) = tc.operation
         && cfg.compensation == CompensationType::InControl
     {
-        return Some(match (cfg.side, cfg.climb) {
-            (ProfileSide::Outside, true) => ControllerCompensation::Right,
-            (ProfileSide::Outside, false) => ControllerCompensation::Left,
-            (ProfileSide::Inside, true) => ControllerCompensation::Left,
-            (ProfileSide::Inside, false) => ControllerCompensation::Right,
-        });
+        return match (cfg.side, cfg.climb) {
+            (ProfileSide::Outside, true) => Some(ControllerCompensation::Right),
+            (ProfileSide::Outside, false) => Some(ControllerCompensation::Left),
+            (ProfileSide::Inside, true) => Some(ControllerCompensation::Left),
+            (ProfileSide::Inside, false) => Some(ControllerCompensation::Right),
+            (ProfileSide::On, _) => None,
+        };
     }
     None
 }
@@ -1726,6 +1730,43 @@ mod tests {
                 PocketConfig::default()
             )))
             .is_none()
+        );
+    }
+
+    /// P6.1: side `On` cuts on the line, so it asks the controller for no
+    /// compensation (G40, no G41/G42), with either cut direction and
+    /// either compensation type.
+    #[test]
+    fn side_on_asks_no_controller_compensation_p6_1() {
+        use crate::compute::catalog::OperationConfig;
+        use crate::compute::operation_configs::{CompensationType, ProfileConfig};
+        use crate::ops::profile::ProfileSide;
+
+        for compensation in [CompensationType::InControl, CompensationType::InComputer] {
+            for climb in [true, false] {
+                let tc = toolpath_running(OperationConfig::Profile(ProfileConfig {
+                    side: ProfileSide::On,
+                    climb,
+                    compensation,
+                    ..ProfileConfig::default()
+                }));
+                assert_eq!(
+                    controller_compensation_for(&tc),
+                    None,
+                    "side On, climb {climb}, {compensation:?}: no G41/G42"
+                );
+            }
+        }
+        // Positive control: the same config with a side asks for G41/G42.
+        let sided = toolpath_running(OperationConfig::Profile(ProfileConfig {
+            side: ProfileSide::Outside,
+            climb: true,
+            compensation: CompensationType::InControl,
+            ..ProfileConfig::default()
+        }));
+        assert_eq!(
+            controller_compensation_for(&sided),
+            Some(ControllerCompensation::Right)
         );
     }
 

@@ -66,7 +66,7 @@ use std::sync::atomic::AtomicBool;
 use common::session::{generate, polygon_model, square_polygon, toolpath_config};
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::operation_configs::{ChamferConfig, PocketConfig, ProfileSide};
+use rs_cam_core::compute::operation_configs::{ChamferConfig, ChamferSide, PocketConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::dexel_stock::{FRESH_MATERIAL_THRESHOLD_MM, TriDexelStock};
 use rs_cam_core::geo::P2;
@@ -126,10 +126,10 @@ enum Fixture {
 
 impl Fixture {
     /// The side the operator picks for this edge.
-    const fn side(self) -> ProfileSide {
+    const fn side(self) -> ChamferSide {
         match self {
-            Self::Pocket => ProfileSide::Inside,
-            Self::Hole => ProfileSide::Outside,
+            Self::Pocket => ChamferSide::Inside,
+            Self::Hole => ChamferSide::Outside,
         }
     }
 
@@ -198,7 +198,7 @@ fn pocket_op() -> OperationConfig {
     })
 }
 
-fn chamfer_op(side: ProfileSide) -> OperationConfig {
+fn chamfer_op(side: ChamferSide) -> OperationConfig {
     OperationConfig::Chamfer(ChamferConfig {
         side,
         chamfer_width: WIDTH,
@@ -208,7 +208,7 @@ fn chamfer_op(side: ProfileSide) -> OperationConfig {
 }
 
 /// Two ops: the pocket that opens the cavity, then the chamfer.
-fn session(fixture: Fixture, side: ProfileSide, included_angle_deg: f64) -> ProjectSession {
+fn session(fixture: Fixture, side: ChamferSide, included_angle_deg: f64) -> ProjectSession {
     let (cavity, part) = match fixture {
         Fixture::Pocket => {
             let cavity = square_polygon(POCKET_HALF);
@@ -282,7 +282,7 @@ struct Bevel {
     cavity_floor: f64,
 }
 
-fn measure(fixture: Fixture, side: ProfileSide, included_angle_deg: f64) -> Bevel {
+fn measure(fixture: Fixture, side: ChamferSide, included_angle_deg: f64) -> Bevel {
     let mut session = session(fixture, side, included_angle_deg);
     generate(&mut session, 0);
     generate(&mut session, 1);

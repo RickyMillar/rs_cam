@@ -24,6 +24,12 @@ pub enum ProfileSide {
     Outside,
     /// Tool inside the boundary (cutting an internal contour/hole).
     Inside,
+    /// Tool centre on the boundary (P6.1): the cut has no side, so both
+    /// sides are material. The Profile generator refuses it until the
+    /// on-the-line cut lands (P6.3). It asks the controller for no
+    /// compensation (G40), and `InControl` compensation refuses at every
+    /// door (`compute::domain`, L-5).
+    On,
 }
 
 impl ProfileSide {
@@ -31,12 +37,15 @@ impl ProfileSide {
     /// (P6.0c): `Outside` cuts round a part, so the material is inside the
     /// ring; `Inside` cuts a hole, so the material is outside it. The ring
     /// is the closed offset of the region, so the statement holds for
-    /// either cut direction (climb or conventional).
+    /// either cut direction (climb or conventional). `On` cuts on the
+    /// line, so the material is on both sides (as Trace compensation
+    /// None).
     #[must_use]
     pub const fn ring_material(self) -> RingMaterial {
         match self {
             Self::Outside => RingMaterial::Inside,
             Self::Inside => RingMaterial::Outside,
+            Self::On => RingMaterial::BothSides,
         }
     }
 }
@@ -129,6 +138,12 @@ pub fn profile_contour_reported(
     let distance = match side {
         ProfileSide::Inside => tool_radius,   // inward (positive)
         ProfileSide::Outside => -tool_radius, // outward (negative)
+        ProfileSide::On => {
+            // On the line: the contour is the ring itself. No offset is
+            // made, so there is nothing to count.
+            let pts = polygon.exterior.clone();
+            return (if pts.len() < 3 { None } else { Some(pts) }, 0);
+        }
     };
 
     let (results, failure) = crate::polygon::offset_polygon_reported(polygon, distance);

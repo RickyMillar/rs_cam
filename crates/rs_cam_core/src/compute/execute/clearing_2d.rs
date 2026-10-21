@@ -99,6 +99,11 @@ pub(crate) fn generate_trace(
     run_layered(&pass, ctx, prepared)
 }
 
+/// The refusal of a Profile with side `On` (P6.1). The side is in the
+/// schema; the cut on the line lands in P6.3.
+pub(crate) const PROFILE_SIDE_ON_NOT_YET: &str = "Profile side On (the tool centre on the line) is not yet available. Set side to Outside \
+     or Inside, or use a Trace with compensation None to cut on the line.";
+
 /// Profile family adapter (W3.2): [`ProfilePass`] on the Layered runner.
 /// The side and the climb direction act in `prepare` and `emit_level`; the
 /// tabs go on each level at the final Z ([`LevelInfo::is_final`]). The
@@ -121,6 +126,14 @@ pub(crate) fn generate_profile(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Profile, "generate_profile");
+    // P6.1: the schema holds side On, but the on-the-line cut is not
+    // built (P6.3). The refusal comes before the selection read, so a
+    // selection of open paths gets this text, not a selection refusal.
+    if cfg.side == crate::ops::profile::ProfileSide::On {
+        return Err(OperationError::InvalidParam(
+            PROFILE_SIDE_ON_NOT_YET.to_owned(),
+        ));
+    }
     let feeds = LayerFeeds::new(ctx, op);
     let regions = prepared.regions()?.as_slice();
     let hand_tabs = crate::dressup::tabs::resolve_hand_tabs(
