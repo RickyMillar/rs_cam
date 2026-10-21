@@ -68,7 +68,7 @@ pub fn embedded_vendor_lut() -> &'static VendorLut {
 }
 
 use crate::machine::MachineProfile;
-use crate::material::Material;
+use crate::material::{ConstantSource, FormulaConstant, MATERIAL_FORMULA_CONSTANTS, Material};
 
 /// Hint about the tool geometry for effective diameter calculation.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1294,6 +1294,64 @@ pub fn effective_rubbing_floor(band: Option<ChiploadBounds>) -> f64 {
     rubbing_floor(band).0
 }
 
+// ---------------------------------------------------------------------
+// F201: the formula-path constants of `feeds::calculate` and their source.
+// `material::ConstantSource` explains the two kinds. The registry
+// `formula_constants` lists every row;
+// `tests/every_feeds_formula_constant_states_its_source_f201.rs` pins the
+// unsourced count.
+// ---------------------------------------------------------------------
+
+/// The RPM when the engaged diameter is zero or less (Step 1).
+const FALLBACK_RPM: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.calculate.fallback_rpm",
+    18_000.0,
+    "a guard value for a zero engaged diameter; no record in the repo",
+);
+
+const DRILL_TIER_CLAIM: &str =
+    "repo rule; the W6 audit (2026-08-04) found that the cited sources do not state the tiers";
+const DRILL_TIER_SMALL_MAX_D_MM: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.drill_rpm_envelope_for_diameter.small_max_d_mm",
+    6.0,
+    DRILL_TIER_CLAIM,
+);
+const DRILL_TIER_MID_MAX_D_MM: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.drill_rpm_envelope_for_diameter.mid_max_d_mm",
+    10.0,
+    DRILL_TIER_CLAIM,
+);
+const DRILL_TIER_SMALL_FLOOR_RPM: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.drill_rpm_envelope_for_diameter.small_floor_rpm",
+    8_000.0,
+    DRILL_TIER_CLAIM,
+);
+const DRILL_TIER_SMALL_CEILING_RPM: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.drill_rpm_envelope_for_diameter.small_ceiling_rpm",
+    14_000.0,
+    DRILL_TIER_CLAIM,
+);
+const DRILL_TIER_MID_FLOOR_RPM: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.drill_rpm_envelope_for_diameter.mid_floor_rpm",
+    6_000.0,
+    DRILL_TIER_CLAIM,
+);
+const DRILL_TIER_MID_CEILING_RPM: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.drill_rpm_envelope_for_diameter.mid_ceiling_rpm",
+    10_000.0,
+    DRILL_TIER_CLAIM,
+);
+const DRILL_TIER_LARGE_FLOOR_RPM: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.drill_rpm_envelope_for_diameter.large_floor_rpm",
+    4_000.0,
+    DRILL_TIER_CLAIM,
+);
+const DRILL_TIER_LARGE_CEILING_RPM: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.drill_rpm_envelope_for_diameter.large_ceiling_rpm",
+    8_000.0,
+    DRILL_TIER_CLAIM,
+);
+
 /// Diameter-tiered RPM envelope for wood-drilling ops: a named repo cap
 /// (repo rule, unsourced; CREDITS.md "Drill-subsystem provenance"). The
 /// band narrows and drops as the diameter grows, because chip evacuation
@@ -1312,14 +1370,84 @@ pub fn effective_rubbing_floor(band: Option<ChiploadBounds>) -> f64 {
 ///   literature-matrix `flat_12mm_drill_oak_big` cell.
 #[must_use]
 pub(crate) fn drill_rpm_envelope_for_diameter(d_mm: f64) -> (f64, f64) {
-    if d_mm <= 6.0 {
-        (8_000.0, 14_000.0)
-    } else if d_mm <= 10.0 {
-        (6_000.0, 10_000.0)
+    if d_mm <= DRILL_TIER_SMALL_MAX_D_MM.value {
+        (
+            DRILL_TIER_SMALL_FLOOR_RPM.value,
+            DRILL_TIER_SMALL_CEILING_RPM.value,
+        )
+    } else if d_mm <= DRILL_TIER_MID_MAX_D_MM.value {
+        (
+            DRILL_TIER_MID_FLOOR_RPM.value,
+            DRILL_TIER_MID_CEILING_RPM.value,
+        )
     } else {
-        (4_000.0, 8_000.0)
+        (
+            DRILL_TIER_LARGE_FLOOR_RPM.value,
+            DRILL_TIER_LARGE_CEILING_RPM.value,
+        )
     }
 }
+
+/// The tiers of [`milling_rpm_ceiling_for_diameter`]: (largest diameter in
+/// mm, ceiling in RPM). The last row has an infinite diameter.
+const MILLING_CEILING_CLAIM: &str =
+    "the doc names Onsrud 70/85, Amana Spektra and GWizard bands; no file in the repo prints them";
+const MILLING_CEILING_TIERS: [(FormulaConstant, FormulaConstant); 4] = [
+    (
+        FormulaConstant::unsourced(
+            "feeds.milling_rpm_ceiling_for_diameter.tier1_max_d_mm",
+            3.0,
+            MILLING_CEILING_CLAIM,
+        ),
+        FormulaConstant::unsourced(
+            "feeds.milling_rpm_ceiling_for_diameter.tier1_ceiling_rpm",
+            22_000.0,
+            MILLING_CEILING_CLAIM,
+        ),
+    ),
+    (
+        FormulaConstant::unsourced(
+            "feeds.milling_rpm_ceiling_for_diameter.tier2_max_d_mm",
+            6.0,
+            MILLING_CEILING_CLAIM,
+        ),
+        FormulaConstant::unsourced(
+            "feeds.milling_rpm_ceiling_for_diameter.tier2_ceiling_rpm",
+            20_000.0,
+            MILLING_CEILING_CLAIM,
+        ),
+    ),
+    (
+        FormulaConstant::unsourced(
+            "feeds.milling_rpm_ceiling_for_diameter.tier3_max_d_mm",
+            8.0,
+            MILLING_CEILING_CLAIM,
+        ),
+        FormulaConstant::unsourced(
+            "feeds.milling_rpm_ceiling_for_diameter.tier3_ceiling_rpm",
+            18_000.0,
+            MILLING_CEILING_CLAIM,
+        ),
+    ),
+    (
+        FormulaConstant::unsourced(
+            "feeds.milling_rpm_ceiling_for_diameter.tier4_max_d_mm",
+            10.0,
+            MILLING_CEILING_CLAIM,
+        ),
+        FormulaConstant::unsourced(
+            "feeds.milling_rpm_ceiling_for_diameter.tier4_ceiling_rpm",
+            16_000.0,
+            MILLING_CEILING_CLAIM,
+        ),
+    ),
+];
+/// The ceiling above the last tier of [`MILLING_CEILING_TIERS`].
+const MILLING_CEILING_LARGE_RPM: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.milling_rpm_ceiling_for_diameter.large_ceiling_rpm",
+    14_000.0,
+    MILLING_CEILING_CLAIM,
+);
 
 /// Diameter-tiered RPM ceiling for milling ops under
 /// [`SpindleStrategy::MaxSpeed`]. The MaxSpeed strategy walks RPM up
@@ -1358,17 +1486,12 @@ pub(crate) fn drill_rpm_envelope_for_diameter(d_mm: f64) -> (f64, f64) {
 /// with vendor `rpm_max` (when published) and the machine safety
 /// headroom via `.min()` — the lowest defensible cap wins.
 fn milling_rpm_ceiling_for_diameter(d_mm: f64) -> f64 {
-    if d_mm <= 3.0 {
-        22_000.0
-    } else if d_mm <= 6.0 {
-        20_000.0
-    } else if d_mm <= 8.0 {
-        18_000.0
-    } else if d_mm <= 10.0 {
-        16_000.0
-    } else {
-        14_000.0
-    }
+    MILLING_CEILING_TIERS
+        .iter()
+        .find(|(max_d, _)| d_mm <= max_d.value)
+        .map_or(MILLING_CEILING_LARGE_RPM.value, |(_, ceiling)| {
+            ceiling.value
+        })
 }
 
 /// Assemble the Suggest path's inputs to the canonical two-term power
@@ -1402,6 +1525,31 @@ fn power_model_terms(
         flute_count: f64::from(input.flute_count),
     })
 }
+
+/// Step 4: the depth cap as a share of the flute length.
+const FLUTE_GUARD_FACTOR: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.calculate.flute_guard_factor",
+    0.8,
+    "no comment and no record in the repo",
+);
+/// Step 4: the depth cap in diameters when the flute length is unknown.
+const FLUTE_GUARD_NO_LENGTH_D: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.calculate.flute_guard_no_length_d",
+    2.0,
+    "no comment and no record in the repo",
+);
+/// Step 4b: the radial width, in diameters, above which the cut is a slot.
+const SLOTTING_THRESHOLD: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.calculate.slotting_threshold_d",
+    0.85,
+    "no comment and no record in the repo",
+);
+/// Step 4b: the depth cap of a slot, in diameters.
+const SLOTTING_DOC_CAP: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.calculate.slotting_doc_cap_d",
+    0.25,
+    "no comment and no record in the repo",
+);
 
 /// Main calculation entry point.
 /// Smallest axial depth the power ladder may propose (mm).
@@ -1538,11 +1686,10 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     );
 
     // --- Step 1: RPM ---
-    const FALLBACK_RPM: f64 = 18000.0;
     let ideal_rpm = if effective_d > 0.0 {
         (material.base_cutting_speed_m_min() * 1000.0) / (std::f64::consts::PI * effective_d)
     } else {
-        FALLBACK_RPM
+        FALLBACK_RPM.value
     };
     let mut rpm = machine.clamp_rpm(ideal_rpm);
 
@@ -1952,11 +2099,10 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     }
 
     // --- Step 4: Flute guard ---
-    const FLUTE_GUARD_FACTOR: f64 = 0.8;
     let flute_guard = if input.flute_length > 0.0 {
-        input.flute_length * FLUTE_GUARD_FACTOR
+        input.flute_length * FLUTE_GUARD_FACTOR.value
     } else {
-        d * 2.0
+        d * FLUTE_GUARD_NO_LENGTH_D.value
     };
     if ap > flute_guard {
         warnings.push(FeedsWarning::DocExceedsFlute {
@@ -1973,10 +2119,8 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     ae = ae.min(d);
 
     // --- Step 4b: Slotting detection ---
-    const SLOTTING_THRESHOLD: f64 = 0.85;
-    const SLOTTING_DOC_CAP: f64 = 0.25;
-    if ae > d * SLOTTING_THRESHOLD {
-        let slotting_cap = d * SLOTTING_DOC_CAP;
+    if ae > d * SLOTTING_THRESHOLD.value {
+        let slotting_cap = d * SLOTTING_DOC_CAP.value;
         if ap > slotting_cap {
             warnings.push(FeedsWarning::SlottingDetected {
                 doc_reduced_to: slotting_cap,
@@ -2809,6 +2953,13 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
     }
 }
 
+/// The source of every factor in [`operation_default_profile`] (F201).
+/// [`formula_constants`] lists one row per factor; it reads each value from
+/// the function, so the rows cannot drift from the table.
+const OPERATION_DEFAULT_PROFILE_SOURCE: ConstantSource = ConstantSource::Unsourced {
+    claim: "DOC/WOC matrix of reference/shapeoko_feeds_and_speeds calcs.rs (not in the repo)",
+};
+
 /// Operation default DOC/WOC profile factors (multiplied by tool diameter).
 struct DefaultProfile {
     ap_factor: f64,
@@ -2922,6 +3073,281 @@ fn operation_default_profile(family: OperationFamily, role: PassRole) -> Default
     }
 }
 
+/// Every constant on the feeds formula path, with its source (F201).
+///
+/// The formula path is `feeds::calculate` and the `Material` methods that it
+/// reads. The rows of [`operation_default_profile`] and of the default
+/// [`crate::machine::ChipLoadFormula`] read their values from that code. Every
+/// other row is the constant that the code reads. Thus no row can drift from
+/// the number that the formula uses.
+///
+/// Out of the list: design tolerances and solver limits with a stated reason
+/// (`SPINDLE_CEILING_HEADROOM`, the power-ladder floors, `MIN_AP_MM`,
+/// `MIN_AE_MM`, the bisection limits, the chip-thinning clamp), unit
+/// conversions, and the per-machine `RigidityProfile` values.
+#[must_use]
+pub fn formula_constants() -> Vec<FormulaConstant> {
+    let mut rows: Vec<FormulaConstant> = MATERIAL_FORMULA_CONSTANTS.to_vec();
+    rows.extend([
+        FALLBACK_RPM,
+        DRILL_TIER_SMALL_MAX_D_MM,
+        DRILL_TIER_MID_MAX_D_MM,
+        DRILL_TIER_SMALL_FLOOR_RPM,
+        DRILL_TIER_SMALL_CEILING_RPM,
+        DRILL_TIER_MID_FLOOR_RPM,
+        DRILL_TIER_MID_CEILING_RPM,
+        DRILL_TIER_LARGE_FLOOR_RPM,
+        DRILL_TIER_LARGE_CEILING_RPM,
+    ]);
+    for (max_d, ceiling) in MILLING_CEILING_TIERS {
+        rows.push(max_d);
+        rows.push(ceiling);
+    }
+    rows.push(MILLING_CEILING_LARGE_RPM);
+    rows.extend([
+        FormulaConstant::unsourced(
+            "feeds.MAX_SPINDLE_SPEEDUP",
+            MAX_SPINDLE_SPEEDUP,
+            "the rough magnitude of a chart's rpm_max over rpm_nominal; no record in the repo",
+        ),
+        FormulaConstant::unsourced(
+            "feeds.RUBBING_FLOOR_MM_TOOTH",
+            RUBBING_FLOOR_MM_TOOTH,
+            "repo rule with no primary source (the doc says so)",
+        ),
+        FormulaConstant::unsourced(
+            "feeds.LD_SEVERE_THRESHOLD",
+            LD_SEVERE_THRESHOLD,
+            "repo rule, unsourced (ruling R4 Q7)",
+        ),
+        FormulaConstant::unsourced(
+            "feeds.LD_MODERATE_THRESHOLD",
+            LD_MODERATE_THRESHOLD,
+            "repo rule, unsourced (ruling R4 Q7)",
+        ),
+        FormulaConstant::unsourced(
+            "feeds.LD_SEVERE_SHARE",
+            LD_SEVERE_SHARE,
+            "repo rule, unsourced (ruling R4 Q7)",
+        ),
+        FormulaConstant::unsourced(
+            "feeds.LD_MODERATE_SHARE",
+            LD_MODERATE_SHARE,
+            "repo rule, unsourced (ruling R4 Q7)",
+        ),
+        FLUTE_GUARD_FACTOR,
+        FLUTE_GUARD_NO_LENGTH_D,
+        SLOTTING_THRESHOLD,
+        SLOTTING_DOC_CAP,
+        ADAPTIVE_FLAT_AP,
+        ADAPTIVE_FLAT_AE,
+        ADAPTIVE_BALL_AP,
+        ADAPTIVE_BALL_AE,
+        ADAPTIVE_TAPERED_AP,
+        ADAPTIVE_TAPERED_AE,
+        ADAPTIVE_SEMI_AP_SCALE,
+        ADAPTIVE_SEMI_AE_SCALE,
+        ADAPTIVE_MULTI_FLUTE_AE_SCALE,
+        ADAPTIVE_HARD_THRESHOLD,
+        ADAPTIVE_HARD_AP_SCALE,
+        ADAPTIVE_HARD_AE_SCALE,
+        ADAPTIVE_MEDIUM_THRESHOLD,
+        ADAPTIVE_MEDIUM_AP_SCALE,
+        ADAPTIVE_MEDIUM_AE_SCALE,
+        ADAPTIVE_SOFT_THRESHOLD,
+        ADAPTIVE_SOFT_AP_SCALE,
+        ADAPTIVE_SOFT_AE_SCALE,
+        ADAPTIVE_RIGIDITY_DOC_DIVISOR,
+        FINISH_BALL_AP,
+        FINISH_BALL_AE,
+        SEMI_FINISH_BALL_AP,
+        SEMI_FINISH_BALL_AE,
+        FINISH_TAPERED_AP,
+        FINISH_TAPERED_AE,
+        SEMI_FINISH_TAPERED_AP,
+        SEMI_FINISH_TAPERED_AE,
+    ]);
+    let families = crate::all_variants!(OperationFamily:
+        Adaptive, Pocket, Contour, Parallel, Scallop, Trace, Face, Drill,
+    );
+    let roles = crate::all_variants!(PassRole: Roughing, SemiFinish, Finish);
+    for family in families {
+        // The Drill row is 0 / 0 for type completeness; the drill RPM
+        // tiers and the drill feed envelope set the drill operating point.
+        if family == OperationFamily::Drill {
+            continue;
+        }
+        for role in roles {
+            let profile = operation_default_profile(family, role);
+            for (axis, value) in [("ap", profile.ap_factor), ("ae", profile.ae_factor)] {
+                rows.push(FormulaConstant {
+                    name: std::borrow::Cow::Owned(format!(
+                        "feeds.operation_default_profile.{family:?}.{role:?}.{axis}_factor"
+                    )),
+                    value,
+                    source: OPERATION_DEFAULT_PROFILE_SOURCE,
+                });
+            }
+        }
+    }
+    // `machine/` owns these defaults; `calculate` reads them through
+    // `machine.chip_load` (Step 2).
+    let chip_load = crate::machine::ChipLoadFormula::default();
+    let chip_load_claim = ConstantSource::Unsourced {
+        claim: "\"Soft wood baseline from Shapeoko empirical data\" (reference/, not in the repo)",
+    };
+    for (key, value) in [("k0", chip_load.k0), ("p", chip_load.p), ("q", chip_load.q)] {
+        rows.push(FormulaConstant {
+            name: std::borrow::Cow::Owned(format!("machine.ChipLoadFormula.default.{key}")),
+            value,
+            source: chip_load_claim,
+        });
+    }
+    rows
+}
+
+// `default_engagement`: the adaptive matrix per tool shape, its derates, and
+// the ball and tapered-ball finish overrides (factors of the diameter).
+const ADAPTIVE_CLAIM: &str =
+    "adaptive matrix of reference/shapeoko_feeds_and_speeds calcs.rs (not in the repo)";
+const FINISH_OVERRIDE_CLAIM: &str =
+    "finish override for a ball or a tapered ball; no record in the repo";
+const ADAPTIVE_FLAT_AP: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.flat_bull_ap",
+    1.20,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_FLAT_AE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.flat_bull_ae",
+    0.14,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_BALL_AP: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.ball_ap",
+    0.80,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_BALL_AE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.ball_ae",
+    0.10,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_TAPERED_AP: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.tapered_ball_ap",
+    0.70,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_TAPERED_AE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.tapered_ball_ae",
+    0.08,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_SEMI_AP_SCALE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.semi_finish_ap_scale",
+    0.75,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_SEMI_AE_SCALE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.semi_finish_ae_scale",
+    0.85,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_MULTI_FLUTE_AE_SCALE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.three_or_more_flutes_ae_scale",
+    0.85,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_HARD_THRESHOLD: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.hard_feed_scale_threshold",
+    1.40,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_HARD_AP_SCALE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.hard_ap_scale",
+    0.80,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_HARD_AE_SCALE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.hard_ae_scale",
+    0.90,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_MEDIUM_THRESHOLD: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.medium_feed_scale_threshold",
+    1.15,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_MEDIUM_AP_SCALE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.medium_ap_scale",
+    0.90,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_MEDIUM_AE_SCALE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.medium_ae_scale",
+    0.95,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_SOFT_THRESHOLD: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.soft_feed_scale_threshold",
+    0.85,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_SOFT_AP_SCALE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.soft_ap_scale",
+    1.05,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_SOFT_AE_SCALE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.soft_ae_scale",
+    1.05,
+    ADAPTIVE_CLAIM,
+);
+const ADAPTIVE_RIGIDITY_DOC_DIVISOR: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.adaptive.rigidity_doc_divisor",
+    1.50,
+    ADAPTIVE_CLAIM,
+);
+const FINISH_BALL_AP: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.finish.ball_ap",
+    0.06,
+    FINISH_OVERRIDE_CLAIM,
+);
+const FINISH_BALL_AE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.finish.ball_ae",
+    0.025,
+    FINISH_OVERRIDE_CLAIM,
+);
+const SEMI_FINISH_BALL_AP: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.semi_finish.ball_ap",
+    0.10,
+    FINISH_OVERRIDE_CLAIM,
+);
+const SEMI_FINISH_BALL_AE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.semi_finish.ball_ae",
+    0.04,
+    FINISH_OVERRIDE_CLAIM,
+);
+const FINISH_TAPERED_AP: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.finish.tapered_ball_ap",
+    0.10,
+    FINISH_OVERRIDE_CLAIM,
+);
+const FINISH_TAPERED_AE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.finish.tapered_ball_ae",
+    0.03,
+    FINISH_OVERRIDE_CLAIM,
+);
+const SEMI_FINISH_TAPERED_AP: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.semi_finish.tapered_ball_ap",
+    0.14,
+    FINISH_OVERRIDE_CLAIM,
+);
+const SEMI_FINISH_TAPERED_AE: FormulaConstant = FormulaConstant::unsourced(
+    "feeds.default_engagement.semi_finish.tapered_ball_ae",
+    0.05,
+    FINISH_OVERRIDE_CLAIM,
+);
+
 fn default_engagement(
     d: f64,
     profile: &DefaultProfile,
@@ -2932,38 +3358,52 @@ fn default_engagement(
     let mut ae_factor = profile.ae_factor;
 
     // --- Adaptive-specific engagement matrix per tool geometry ---
-    // From reference calcs.rs: separate entries for Flat/Ball/TaperedBall
+    // From reference calcs.rs: separate entries for Flat/Ball/TaperedBall.
+    // F201: that file is not in the repo; every factor below is a marked
+    // unsourced constant (`ADAPTIVE_*`).
     if input.operation == OperationFamily::Adaptive {
         let roughing = input.pass_role == PassRole::Roughing;
         let semi = input.pass_role == PassRole::SemiFinish;
         if roughing || semi {
             let (ap_base, ae_base) = match input.tool_geometry {
-                ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. } => (1.20, 0.14),
-                ToolGeometryHint::Ball => (0.80, 0.10),
-                ToolGeometryHint::TaperedBall { .. } => (0.70, 0.08),
+                ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. } => {
+                    (ADAPTIVE_FLAT_AP.value, ADAPTIVE_FLAT_AE.value)
+                }
+                ToolGeometryHint::Ball => (ADAPTIVE_BALL_AP.value, ADAPTIVE_BALL_AE.value),
+                ToolGeometryHint::TaperedBall { .. } => {
+                    (ADAPTIVE_TAPERED_AP.value, ADAPTIVE_TAPERED_AE.value)
+                }
                 ToolGeometryHint::VBit { .. } => (ap_factor, ae_factor),
             };
-            ap_factor = if roughing { ap_base } else { ap_base * 0.75 };
-            ae_factor = if roughing { ae_base } else { ae_base * 0.85 };
+            ap_factor = if roughing {
+                ap_base
+            } else {
+                ap_base * ADAPTIVE_SEMI_AP_SCALE.value
+            };
+            ae_factor = if roughing {
+                ae_base
+            } else {
+                ae_base * ADAPTIVE_SEMI_AE_SCALE.value
+            };
 
             // Multi-flute AE derate for adaptive (>= 3 flutes)
             if input.flute_count >= 3 {
-                ae_factor *= 0.85;
+                ae_factor *= ADAPTIVE_MULTI_FLUTE_AE_SCALE.value;
             }
 
             // Feed-scale-dependent adaptive derates — harder materials
             // (higher factor) want shallower ap/ae; softer materials
             // can take a slightly more aggressive bite.
             let feed_scale = input.material.feed_scale_factor();
-            if feed_scale > 1.40 {
-                ap_factor *= 0.80;
-                ae_factor *= 0.90;
-            } else if feed_scale > 1.15 {
-                ap_factor *= 0.90;
-                ae_factor *= 0.95;
-            } else if feed_scale < 0.85 {
-                ap_factor *= 1.05;
-                ae_factor *= 1.05;
+            if feed_scale > ADAPTIVE_HARD_THRESHOLD.value {
+                ap_factor *= ADAPTIVE_HARD_AP_SCALE.value;
+                ae_factor *= ADAPTIVE_HARD_AE_SCALE.value;
+            } else if feed_scale > ADAPTIVE_MEDIUM_THRESHOLD.value {
+                ap_factor *= ADAPTIVE_MEDIUM_AP_SCALE.value;
+                ae_factor *= ADAPTIVE_MEDIUM_AE_SCALE.value;
+            } else if feed_scale < ADAPTIVE_SOFT_THRESHOLD.value {
+                ap_factor *= ADAPTIVE_SOFT_AP_SCALE.value;
+                ae_factor *= ADAPTIVE_SOFT_AE_SCALE.value;
             }
         }
 
@@ -2981,7 +3421,10 @@ fn default_engagement(
         // sits in the "light" bin (≤ 0.10 D — too narrow), wasting
         // cycle time without improving safety. See
         // `planning/PRE_OPTIMIZE_DEFAULTS_AUDIT.md` Fix 1.
-        ap_factor = ap_factor.max(machine.rigidity.adaptive_doc_factor * profile.ap_factor / 1.5);
+        ap_factor = ap_factor.max(
+            machine.rigidity.adaptive_doc_factor * profile.ap_factor
+                / ADAPTIVE_RIGIDITY_DOC_DIVISOR.value,
+        );
         // Wood-class match goes through Material::is_wood_class() so that
         // species-aware variants (SolidWoodByJanka — FPL Ch.5 species
         // library) qualify for the wood-router adaptive WOC floor.
@@ -3006,32 +3449,32 @@ fn default_engagement(
             OperationFamily::Parallel | OperationFamily::Scallop,
             PassRole::Finish,
         ) => {
-            ap_factor = 0.06;
-            ae_factor = 0.025;
+            ap_factor = FINISH_BALL_AP.value;
+            ae_factor = FINISH_BALL_AE.value;
         }
         (
             ToolGeometryHint::Ball,
             OperationFamily::Parallel | OperationFamily::Scallop,
             PassRole::SemiFinish,
         ) => {
-            ap_factor = 0.10;
-            ae_factor = 0.04;
+            ap_factor = SEMI_FINISH_BALL_AP.value;
+            ae_factor = SEMI_FINISH_BALL_AE.value;
         }
         (
             ToolGeometryHint::TaperedBall { .. },
             OperationFamily::Parallel | OperationFamily::Scallop,
             PassRole::Finish,
         ) => {
-            ap_factor = 0.10;
-            ae_factor = 0.03;
+            ap_factor = FINISH_TAPERED_AP.value;
+            ae_factor = FINISH_TAPERED_AE.value;
         }
         (
             ToolGeometryHint::TaperedBall { .. },
             OperationFamily::Parallel | OperationFamily::Scallop,
             PassRole::SemiFinish,
         ) => {
-            ap_factor = 0.14;
-            ae_factor = 0.05;
+            ap_factor = SEMI_FINISH_TAPERED_AP.value;
+            ae_factor = SEMI_FINISH_TAPERED_AE.value;
         }
         _ => {}
     }

@@ -5,10 +5,9 @@ layers read from it. The principal type is `Material` in `mod.rs`.
 
 ## Files
 
-- `mod.rs` — `Material`, `WoodSpecies` and the other grade enums,
-  `MaterialCategory`, the GUI picker merge, and the per-material constants:
-  Janka hardness, `force_line()`, `WoodSpecies::fpl_density`, cutting speed,
-  plunge and drill envelopes.
+- `mod.rs` — `Material`, `WoodSpecies`, the grade enums, `MaterialCategory`, the GUI picker merge, and the
+  per-material constants (Janka, `force_line()`, `fpl_density`, cutting speed, plunge and drill envelopes).
+  F201: a formula-path value is a `FormulaConstant`, `Cited` or `Unsourced`, in `MATERIAL_FORMULA_CONSTANTS`.
 - `force_line.rs` — `ForceLine`, `ForceLineRefusal`, `WoodDensity`,
   `ChipRegime` (ruling B6): the Curti 2021 density law, the Goli 2018 MDF
   line, FPL Ch.4 Eq. (4-11), the card and hover texts.
@@ -36,7 +35,6 @@ layers read from it. The principal type is `Material` in `mod.rs`.
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --test the_force_line_is_printed_per_family_b6`
-- `cargo test -p rs_cam_core -q --test wood_species_library_provenance`
-- `cargo test -p rs_cam_core -q --test efficiency_abstains_without_kc_g_specenergy`
-- `cargo test -p rs_cam_core -q --test _litmatrix_ipe_janka_scaling`
+- Run each with `cargo test -p rs_cam_core -q --test <name>`: `the_force_line_is_printed_per_family_b6`,
+  `wood_species_library_provenance`, `efficiency_abstains_without_kc_g_specenergy`, `_litmatrix_ipe_janka_scaling`,
+  `every_feeds_formula_constant_states_its_source_f201` (F201: the unsourced count is pinned; cite a value or raise it).

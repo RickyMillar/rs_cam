@@ -190,9 +190,9 @@ impl PlywoodGrade {
     /// extrapolation P2 steps 3 and 4).
     pub fn effective_janka_lbf(self) -> f64 {
         match self {
-            PlywoodGrade::Softwood => 600.0,
-            PlywoodGrade::BalticBirch => 1200.0,
-            PlywoodGrade::HardwoodFaced => 1000.0,
+            PlywoodGrade::Softwood => JANKA_PLYWOOD_SOFTWOOD.value,
+            PlywoodGrade::BalticBirch => JANKA_PLYWOOD_BALTIC_BIRCH.value,
+            PlywoodGrade::HardwoodFaced => JANKA_PLYWOOD_HARDWOOD_FACED.value,
         }
     }
 
@@ -226,9 +226,9 @@ impl SheetGoodKind {
     /// and 4).
     pub fn effective_janka_lbf(self) -> f64 {
         match self {
-            SheetGoodKind::Mdf => 1100.0,
-            SheetGoodKind::Hdf => 1300.0,
-            SheetGoodKind::Particleboard => 750.0,
+            SheetGoodKind::Mdf => JANKA_SHEET_MDF.value,
+            SheetGoodKind::Hdf => JANKA_SHEET_HDF.value,
+            SheetGoodKind::Particleboard => JANKA_SHEET_PARTICLEBOARD.value,
         }
     }
 
@@ -661,6 +661,376 @@ pub const DRILL_PLUNGE_FLOOR_WOOD_PER_MM: f64 = 50.0;
 /// Repo rule, unsourced (W6 audit 2026-08-04, item R-10).
 pub const DRILL_PLUNGE_FLOOR_BOARD_PER_MM: f64 = 40.0;
 
+// ---------------------------------------------------------------------
+// F201: the source of each constant on the feeds formula path.
+// ---------------------------------------------------------------------
+
+/// The source of one constant on the feeds formula path (F201).
+///
+/// The root rule says that a constant is derived by math or printed in a
+/// source that is in the repo. `Cited` names that file. `Unsourced` marks a
+/// value that no file in the repo states, and records what the code comment
+/// claims for it. Operator ruling 6 (2026-10-22) keeps the unsourced values
+/// and lists them; `tests/every_feeds_formula_constant_states_its_source_f201.rs`
+/// pins the list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConstantSource {
+    /// A file in the repo prints the number, or prints the input of a
+    /// derivation that the constant's doc states.
+    Cited {
+        /// The file, relative to the repo root.
+        path: &'static str,
+        /// Text that the file contains verbatim: the printed figure.
+        printed: &'static str,
+    },
+    /// No file in the repo prints the number.
+    Unsourced {
+        /// What the code comment claims for the value.
+        claim: &'static str,
+    },
+}
+
+/// One named constant on the feeds formula path and its source (F201).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FormulaConstant {
+    /// The registry name: `<owner>.<function or constant>.<case>`.
+    pub name: std::borrow::Cow<'static, str>,
+    /// The value that the production code reads.
+    pub value: f64,
+    /// Where the value comes from.
+    pub source: ConstantSource,
+}
+
+impl FormulaConstant {
+    /// A constant that no file in the repo prints.
+    #[must_use]
+    pub const fn unsourced(name: &'static str, value: f64, claim: &'static str) -> Self {
+        Self {
+            name: std::borrow::Cow::Borrowed(name),
+            value,
+            source: ConstantSource::Unsourced { claim },
+        }
+    }
+
+    /// A constant that a file in the repo prints.
+    #[must_use]
+    pub const fn cited(
+        name: &'static str,
+        value: f64,
+        path: &'static str,
+        printed: &'static str,
+    ) -> Self {
+        Self {
+            name: std::borrow::Cow::Borrowed(name),
+            value,
+            source: ConstantSource::Cited { path, printed },
+        }
+    }
+}
+
+// `Material::base_cutting_speed_m_min` (m/min). No file in the repo prints
+// these speeds; the comment of the old port names
+// `reference/shapeoko_feeds_and_speeds`, which `.gitignore` excludes.
+const SPEED_CLAIM_PORT: &str = "ported from reference/shapeoko_feeds_and_speeds (not in the repo)";
+const SPEED_SOLID_WOOD: FormulaConstant = FormulaConstant::unsourced(
+    "material.base_cutting_speed_m_min.solid_wood",
+    200.0,
+    SPEED_CLAIM_PORT,
+);
+const SPEED_PLYWOOD: FormulaConstant = FormulaConstant::unsourced(
+    "material.base_cutting_speed_m_min.plywood",
+    180.0,
+    SPEED_CLAIM_PORT,
+);
+const SPEED_SHEET_GOOD: FormulaConstant = FormulaConstant::unsourced(
+    "material.base_cutting_speed_m_min.sheet_good",
+    170.0,
+    SPEED_CLAIM_PORT,
+);
+const SPEED_PLASTIC: FormulaConstant = FormulaConstant::unsourced(
+    "material.base_cutting_speed_m_min.plastic",
+    250.0,
+    SPEED_CLAIM_PORT,
+);
+const SPEED_ALUMINUM: FormulaConstant = FormulaConstant::unsourced(
+    "material.base_cutting_speed_m_min.aluminum",
+    100.0,
+    "conservative SFM placeholder; garr_aluminum.json prints Vc 125-180 m/min, not 100",
+);
+const SPEED_FOAM: FormulaConstant = FormulaConstant::unsourced(
+    "material.base_cutting_speed_m_min.foam",
+    300.0,
+    SPEED_CLAIM_PORT,
+);
+const SPEED_FIBERGLASS: FormulaConstant = FormulaConstant::unsourced(
+    "material.base_cutting_speed_m_min.fiberglass",
+    120.0,
+    "midpoint of the Garr SMM 79-157 m/min (garr_fiberglass.json); that midpoint is 118, not 120",
+);
+const SPEED_CUSTOM: FormulaConstant = FormulaConstant::unsourced(
+    "material.base_cutting_speed_m_min.custom",
+    200.0,
+    "the solid wood value reused",
+);
+
+// `Material::plunge_rate_base`: the baseline at the reference diameter
+// (mm/min, divided by `feed_scale_factor` where the arm says so) and the
+// linear diameter scale with its clamp.
+const PLUNGE_CLAIM: &str = "calibrated against a 6 mm reference cutter (no record in the repo)";
+const PLUNGE_SOLID_WOOD: FormulaConstant =
+    FormulaConstant::unsourced("material.plunge_rate_base.solid_wood", 1000.0, PLUNGE_CLAIM);
+const PLUNGE_BOARD: FormulaConstant = FormulaConstant::unsourced(
+    "material.plunge_rate_base.plywood_and_sheet_good",
+    900.0,
+    PLUNGE_CLAIM,
+);
+const PLUNGE_PLASTIC: FormulaConstant =
+    FormulaConstant::unsourced("material.plunge_rate_base.plastic", 1500.0, PLUNGE_CLAIM);
+const PLUNGE_ALUMINUM: FormulaConstant = FormulaConstant::unsourced(
+    "material.plunge_rate_base.aluminum",
+    250.0,
+    "conservative placeholder; the comment says the vendor LUT must supply it",
+);
+const PLUNGE_FOAM: FormulaConstant =
+    FormulaConstant::unsourced("material.plunge_rate_base.foam", 2000.0, PLUNGE_CLAIM);
+const PLUNGE_FIBERGLASS: FormulaConstant = FormulaConstant::unsourced(
+    "material.plunge_rate_base.fiberglass",
+    200.0,
+    "conservative placeholder, slower than wood to avoid delamination",
+);
+const PLUNGE_CUSTOM: FormulaConstant =
+    FormulaConstant::unsourced("material.plunge_rate_base.custom", 800.0, PLUNGE_CLAIM);
+const PLUNGE_REFERENCE_DIAMETER_MM: FormulaConstant = FormulaConstant::unsourced(
+    "material.plunge_rate_base.reference_diameter_mm",
+    6.0,
+    PLUNGE_CLAIM,
+);
+const PLUNGE_DIAMETER_SCALE_MIN: FormulaConstant = FormulaConstant::unsourced(
+    "material.plunge_rate_base.diameter_scale_min",
+    0.25,
+    "linear diameter scale clamp (audit fix #7, 2026-06-02)",
+);
+const PLUNGE_DIAMETER_SCALE_MAX: FormulaConstant = FormulaConstant::unsourced(
+    "material.plunge_rate_base.diameter_scale_max",
+    3.0,
+    "linear diameter scale clamp (audit fix #7, 2026-06-02)",
+);
+
+// `Material::feed_scale_factor`: the hardness law and the per-class scalars.
+const FEED_SCALE_JANKA_REFERENCE_LBF: FormulaConstant = FormulaConstant::unsourced(
+    "material.feed_scale_factor.janka_reference_lbf",
+    600.0,
+    "soft wood baseline; law (janka / 600)^0.4 ported from reference/ (not in the repo)",
+);
+const FEED_SCALE_EXPONENT: FormulaConstant = FormulaConstant::unsourced(
+    "material.feed_scale_factor.exponent",
+    0.4,
+    "law (janka / 600)^0.4 ported from reference/ (not in the repo)",
+);
+const FEED_SCALE_PLASTIC: FormulaConstant = FormulaConstant::unsourced(
+    "material.feed_scale_factor.plastic",
+    0.5,
+    "hardcoded per class",
+);
+const FEED_SCALE_ALUMINUM_BRINELL_REFERENCE_HB: FormulaConstant = FormulaConstant::unsourced(
+    "material.feed_scale_factor.aluminum_brinell_reference_hb",
+    60.0,
+    "(brinell / 60)^0.4, a feed-rate placeholder, not a physical hardness",
+);
+const FEED_SCALE_FOAM_LOW: FormulaConstant = FormulaConstant::unsourced(
+    "material.feed_scale_factor.foam_low",
+    0.15,
+    "per-density hardcode",
+);
+const FEED_SCALE_FOAM_MEDIUM: FormulaConstant = FormulaConstant::unsourced(
+    "material.feed_scale_factor.foam_medium",
+    0.25,
+    "per-density hardcode",
+);
+const FEED_SCALE_FOAM_HIGH: FormulaConstant = FormulaConstant::unsourced(
+    "material.feed_scale_factor.foam_high",
+    0.40,
+    "per-density hardcode",
+);
+const FEED_SCALE_FIBERGLASS: FormulaConstant = FormulaConstant::unsourced(
+    "material.feed_scale_factor.fiberglass",
+    1.3,
+    "placeholder pending bench validation",
+);
+
+// `PlywoodGrade::effective_janka_lbf` and `SheetGoodKind::effective_janka_lbf`:
+// hardness proxies that reach the formula through `feed_scale_factor`.
+const JANKA_PROXY_CLAIM: &str = "no source prints a Janka value for this board; a proxy";
+const JANKA_PLYWOOD_SOFTWOOD: FormulaConstant = FormulaConstant::unsourced(
+    "material.plywood_effective_janka_lbf.softwood",
+    600.0,
+    JANKA_PROXY_CLAIM,
+);
+const JANKA_PLYWOOD_BALTIC_BIRCH: FormulaConstant = FormulaConstant::unsourced(
+    "material.plywood_effective_janka_lbf.baltic_birch",
+    1200.0,
+    JANKA_PROXY_CLAIM,
+);
+const JANKA_PLYWOOD_HARDWOOD_FACED: FormulaConstant = FormulaConstant::unsourced(
+    "material.plywood_effective_janka_lbf.hardwood_faced",
+    1000.0,
+    JANKA_PROXY_CLAIM,
+);
+const JANKA_SHEET_MDF: FormulaConstant = FormulaConstant::unsourced(
+    "material.sheet_good_effective_janka_lbf.mdf",
+    1100.0,
+    JANKA_PROXY_CLAIM,
+);
+const JANKA_SHEET_HDF: FormulaConstant = FormulaConstant::unsourced(
+    "material.sheet_good_effective_janka_lbf.hdf",
+    1300.0,
+    JANKA_PROXY_CLAIM,
+);
+const JANKA_SHEET_PARTICLEBOARD: FormulaConstant = FormulaConstant::unsourced(
+    "material.sheet_good_effective_janka_lbf.particleboard",
+    750.0,
+    "proxy; the doc names ANSI A208.1 for a 500 lbf minimum, not for 750",
+);
+
+// `Material::drill_plunge_feed_envelope_per_mm` for the classes with no
+// named constant above (mm/min per mm of diameter). `feeds::calculate`
+// clamps a drill feed into this envelope.
+const DRILL_ENVELOPE_CLAIM: &str = "application-edge envelope; no record in the repo";
+const DRILL_ENVELOPE_PLASTIC_LO: FormulaConstant = FormulaConstant::unsourced(
+    "material.drill_plunge_feed_envelope_per_mm.plastic_floor",
+    60.0,
+    DRILL_ENVELOPE_CLAIM,
+);
+const DRILL_ENVELOPE_PLASTIC_HI: FormulaConstant = FormulaConstant::unsourced(
+    "material.drill_plunge_feed_envelope_per_mm.plastic_ceiling",
+    500.0,
+    DRILL_ENVELOPE_CLAIM,
+);
+const DRILL_ENVELOPE_ALUMINUM_LO: FormulaConstant = FormulaConstant::unsourced(
+    "material.drill_plunge_feed_envelope_per_mm.aluminum_floor",
+    40.0,
+    DRILL_ENVELOPE_CLAIM,
+);
+const DRILL_ENVELOPE_ALUMINUM_HI: FormulaConstant = FormulaConstant::unsourced(
+    "material.drill_plunge_feed_envelope_per_mm.aluminum_ceiling",
+    250.0,
+    DRILL_ENVELOPE_CLAIM,
+);
+const DRILL_ENVELOPE_FOAM_LO: FormulaConstant = FormulaConstant::unsourced(
+    "material.drill_plunge_feed_envelope_per_mm.foam_floor",
+    100.0,
+    DRILL_ENVELOPE_CLAIM,
+);
+const DRILL_ENVELOPE_FOAM_HI: FormulaConstant = FormulaConstant::unsourced(
+    "material.drill_plunge_feed_envelope_per_mm.foam_ceiling",
+    1000.0,
+    DRILL_ENVELOPE_CLAIM,
+);
+const DRILL_ENVELOPE_FIBERGLASS_LO: FormulaConstant = FormulaConstant::unsourced(
+    "material.drill_plunge_feed_envelope_per_mm.fiberglass_floor",
+    40.0,
+    DRILL_ENVELOPE_CLAIM,
+);
+const DRILL_ENVELOPE_FIBERGLASS_HI: FormulaConstant = FormulaConstant::unsourced(
+    "material.drill_plunge_feed_envelope_per_mm.fiberglass_ceiling",
+    200.0,
+    DRILL_ENVELOPE_CLAIM,
+);
+const DRILL_ENVELOPE_CUSTOM_LO: FormulaConstant = FormulaConstant::unsourced(
+    "material.drill_plunge_feed_envelope_per_mm.custom_floor",
+    40.0,
+    DRILL_ENVELOPE_CLAIM,
+);
+const DRILL_ENVELOPE_CUSTOM_HI: FormulaConstant = FormulaConstant::unsourced(
+    "material.drill_plunge_feed_envelope_per_mm.custom_ceiling",
+    500.0,
+    DRILL_ENVELOPE_CLAIM,
+);
+
+/// The Amana Spektra v24 chart in the repo (ruling B5 drill ceilings).
+const AMANA_SPEKTRA_V24: &str =
+    "crates/rs_cam_core/data/vendor_lut/sources/amana_spektra_spiral_plunge_v24.txt";
+
+/// Every constant of `material/` on the feeds formula path, with its source
+/// (F201). The formula reads each value from the constant that this list
+/// names, so the list cannot drift from the code.
+pub const MATERIAL_FORMULA_CONSTANTS: &[FormulaConstant] = &[
+    SPEED_SOLID_WOOD,
+    SPEED_PLYWOOD,
+    SPEED_SHEET_GOOD,
+    SPEED_PLASTIC,
+    SPEED_ALUMINUM,
+    SPEED_FOAM,
+    SPEED_FIBERGLASS,
+    SPEED_CUSTOM,
+    PLUNGE_SOLID_WOOD,
+    PLUNGE_BOARD,
+    PLUNGE_PLASTIC,
+    PLUNGE_ALUMINUM,
+    PLUNGE_FOAM,
+    PLUNGE_FIBERGLASS,
+    PLUNGE_CUSTOM,
+    PLUNGE_REFERENCE_DIAMETER_MM,
+    PLUNGE_DIAMETER_SCALE_MIN,
+    PLUNGE_DIAMETER_SCALE_MAX,
+    FEED_SCALE_JANKA_REFERENCE_LBF,
+    FEED_SCALE_EXPONENT,
+    FEED_SCALE_PLASTIC,
+    FEED_SCALE_ALUMINUM_BRINELL_REFERENCE_HB,
+    FEED_SCALE_FOAM_LOW,
+    FEED_SCALE_FOAM_MEDIUM,
+    FEED_SCALE_FOAM_HIGH,
+    FEED_SCALE_FIBERGLASS,
+    JANKA_PLYWOOD_SOFTWOOD,
+    JANKA_PLYWOOD_BALTIC_BIRCH,
+    JANKA_PLYWOOD_HARDWOOD_FACED,
+    JANKA_SHEET_MDF,
+    JANKA_SHEET_HDF,
+    JANKA_SHEET_PARTICLEBOARD,
+    // Amana prints the wood ramp-down 72.5 in/min at 1/8 in:
+    // 72.5 × 25.4 / 3.175 = 580.
+    FormulaConstant::cited(
+        "material.DRILL_PLUNGE_CEILING_WOOD_PER_MM",
+        DRILL_PLUNGE_CEILING_WOOD_PER_MM,
+        AMANA_SPEKTRA_V24,
+        "46127-K          46227-K              1/8\"              145\"     .0040\"     72.5\"",
+    ),
+    FormulaConstant::cited(
+        "material.DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM",
+        DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM,
+        AMANA_SPEKTRA_V24,
+        "46127-K          46227-K              1/8\"              145\"     .0040\"     72.5\"",
+    ),
+    // Amana prints the MDF ramp-down 90 in/min at 1/8 in:
+    // 90 × 25.4 / 3.175 = 720.
+    FormulaConstant::cited(
+        "material.DRILL_PLUNGE_CEILING_SHEET_PER_MM",
+        DRILL_PLUNGE_CEILING_SHEET_PER_MM,
+        AMANA_SPEKTRA_V24,
+        "72.5\"     180\"       .0050\"      90\"",
+    ),
+    FormulaConstant::unsourced(
+        "material.DRILL_PLUNGE_FLOOR_WOOD_PER_MM",
+        DRILL_PLUNGE_FLOOR_WOOD_PER_MM,
+        "repo rule (W6 audit 2026-08-04, item R-10)",
+    ),
+    FormulaConstant::unsourced(
+        "material.DRILL_PLUNGE_FLOOR_BOARD_PER_MM",
+        DRILL_PLUNGE_FLOOR_BOARD_PER_MM,
+        "repo rule (W6 audit 2026-08-04, item R-10)",
+    ),
+    DRILL_ENVELOPE_PLASTIC_LO,
+    DRILL_ENVELOPE_PLASTIC_HI,
+    DRILL_ENVELOPE_ALUMINUM_LO,
+    DRILL_ENVELOPE_ALUMINUM_HI,
+    DRILL_ENVELOPE_FOAM_LO,
+    DRILL_ENVELOPE_FOAM_HI,
+    DRILL_ENVELOPE_FIBERGLASS_LO,
+    DRILL_ENVELOPE_FIBERGLASS_HI,
+    DRILL_ENVELOPE_CUSTOM_LO,
+    DRILL_ENVELOPE_CUSTOM_HI,
+];
+
 /// Shared Janka → drill chip-welding D/d threshold band lookup.
 ///
 /// Three bands matching the existing `Material::SolidWood` per-species
@@ -826,34 +1196,43 @@ impl Material {
     /// [`wood_hardness_lbf`]: Self::wood_hardness_lbf
     pub fn feed_scale_factor(&self) -> f64 {
         match self {
-            Material::SolidWood { species } => (species.janka_lbf() / 600.0).powf(0.4),
+            Material::SolidWood { species } => (species.janka_lbf()
+                / FEED_SCALE_JANKA_REFERENCE_LBF.value)
+                .powf(FEED_SCALE_EXPONENT.value),
             Material::SolidWoodByJanka { janka_lbf, .. } => {
                 if janka_lbf.is_finite()
                     && (JANKA_CALIBRATED_BAND_LOW_LBF..=JANKA_CALIBRATED_BAND_HIGH_LBF)
                         .contains(janka_lbf)
                 {
-                    (janka_lbf / 600.0).powf(0.4)
+                    (janka_lbf / FEED_SCALE_JANKA_REFERENCE_LBF.value)
+                        .powf(FEED_SCALE_EXPONENT.value)
                 } else {
                     // Out-of-band parametric Janka — same fall-back as
                     // Custom-with-invalid-factor: softwood baseline.
                     1.0
                 }
             }
-            Material::Plywood { grade } => (grade.effective_janka_lbf() / 600.0).powf(0.4),
-            Material::SheetGood { kind } => (kind.effective_janka_lbf() / 600.0).powf(0.4),
-            Material::Plastic { .. } => 0.5,
-            Material::Aluminum { alloy } => (alloy.brinell_hb() / 60.0).powf(0.4),
+            Material::Plywood { grade } => (grade.effective_janka_lbf()
+                / FEED_SCALE_JANKA_REFERENCE_LBF.value)
+                .powf(FEED_SCALE_EXPONENT.value),
+            Material::SheetGood { kind } => (kind.effective_janka_lbf()
+                / FEED_SCALE_JANKA_REFERENCE_LBF.value)
+                .powf(FEED_SCALE_EXPONENT.value),
+            Material::Plastic { .. } => FEED_SCALE_PLASTIC.value,
+            Material::Aluminum { alloy } => (alloy.brinell_hb()
+                / FEED_SCALE_ALUMINUM_BRINELL_REFERENCE_HB.value)
+                .powf(FEED_SCALE_EXPONENT.value),
             Material::Foam { density } => match density {
-                FoamDensity::Low => 0.15,
-                FoamDensity::Medium => 0.25,
-                FoamDensity::High => 0.40,
+                FoamDensity::Low => FEED_SCALE_FOAM_LOW.value,
+                FoamDensity::Medium => FEED_SCALE_FOAM_MEDIUM.value,
+                FoamDensity::High => FEED_SCALE_FOAM_HIGH.value,
             },
             // Fiberglass: harder to feed than hardwood (abrasive, fiber
             // pullout / delamination risk). 1.3 sits above the
             // hardwood baseline (factor ≈ 1.0–1.4 across the Janka
             // range) but below aluminum. Placeholder pending bench
             // validation — refine when real-cut data lands.
-            Material::Fiberglass { .. } => 1.3,
+            Material::Fiberglass { .. } => FEED_SCALE_FIBERGLASS.value,
             Material::Custom {
                 feed_scale_factor, ..
             } => {
@@ -954,23 +1333,25 @@ impl Material {
     /// Used to derive initial RPM from tool diameter.
     pub fn base_cutting_speed_m_min(&self) -> f64 {
         match self {
-            Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => 200.0,
-            Material::Plywood { .. } => 180.0,
-            Material::SheetGood { .. } => 170.0,
-            Material::Plastic { .. } => 250.0,
+            Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => {
+                SPEED_SOLID_WOOD.value
+            }
+            Material::Plywood { .. } => SPEED_PLYWOOD.value,
+            Material::SheetGood { .. } => SPEED_SHEET_GOOD.value,
+            Material::Plastic { .. } => SPEED_PLASTIC.value,
             // Aluminum on a wood router is application-edge; this is a
             // conservative SFM placeholder, not validated machining
             // guidance. Real cutting-data lookup should always come
             // from the vendor LUT for aluminum operations.
-            Material::Aluminum { .. } => 100.0,
-            Material::Foam { .. } => 300.0,
+            Material::Aluminum { .. } => SPEED_ALUMINUM.value,
+            Material::Foam { .. } => SPEED_FOAM.value,
             // Fiberglass cutting speed — conservative placeholder.
             // Vendor Garr GP-plastics row indicates SMM 79–157 m/min
             // for the composite line. Pick the midpoint as the
             // formula fallback SFM; real fiberglass jobs should
             // route through the LUT.
-            Material::Fiberglass { .. } => 120.0,
-            Material::Custom { .. } => 200.0,
+            Material::Fiberglass { .. } => SPEED_FIBERGLASS.value,
+            Material::Custom { .. } => SPEED_CUSTOM.value,
         }
     }
 
@@ -988,19 +1369,24 @@ impl Material {
     pub fn plunge_rate_base(&self, tool_diameter_mm: f64) -> f64 {
         let h = self.feed_scale_factor();
         let baseline_at_6mm = match self {
-            Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => 1000.0 / h,
-            Material::Plywood { .. } | Material::SheetGood { .. } => 900.0 / h,
-            Material::Plastic { .. } => 1500.0,
+            Material::SolidWood { .. } | Material::SolidWoodByJanka { .. } => {
+                PLUNGE_SOLID_WOOD.value / h
+            }
+            Material::Plywood { .. } | Material::SheetGood { .. } => PLUNGE_BOARD.value / h,
+            Material::Plastic { .. } => PLUNGE_PLASTIC.value,
             // Conservative placeholder — aluminum plunge guidance
             // should come from the vendor LUT, not this default.
-            Material::Aluminum { .. } => 250.0 / h,
-            Material::Foam { .. } => 2000.0,
+            Material::Aluminum { .. } => PLUNGE_ALUMINUM.value / h,
+            Material::Foam { .. } => PLUNGE_FOAM.value,
             // Fiberglass plunge — slower than wood to avoid
             // delamination on tool entry. Conservative placeholder.
-            Material::Fiberglass { .. } => 200.0 / h,
-            Material::Custom { .. } => 800.0 / h,
+            Material::Fiberglass { .. } => PLUNGE_FIBERGLASS.value / h,
+            Material::Custom { .. } => PLUNGE_CUSTOM.value / h,
         };
-        let d_scale = (tool_diameter_mm.max(0.1) / 6.0).clamp(0.25, 3.0);
+        let d_scale = (tool_diameter_mm.max(0.1) / PLUNGE_REFERENCE_DIAMETER_MM.value).clamp(
+            PLUNGE_DIAMETER_SCALE_MIN.value,
+            PLUNGE_DIAMETER_SCALE_MAX.value,
+        );
         baseline_at_6mm * d_scale
     }
 
@@ -1146,18 +1532,30 @@ impl Material {
                 DRILL_PLUNGE_FLOOR_BOARD_PER_MM,
                 DRILL_PLUNGE_CEILING_SHEET_PER_MM,
             ),
-            Material::Plastic { .. } => (60.0, 500.0),
+            Material::Plastic { .. } => (
+                DRILL_ENVELOPE_PLASTIC_LO.value,
+                DRILL_ENVELOPE_PLASTIC_HI.value,
+            ),
             // Aluminum on a wood router is application-edge —
             // conservative envelope (slower than wood min, lower than
             // plastic max). Real aluminum drilling should always be
             // vendor-LUT-driven.
-            Material::Aluminum { .. } => (40.0, 250.0),
-            Material::Foam { .. } => (100.0, 1000.0),
+            Material::Aluminum { .. } => (
+                DRILL_ENVELOPE_ALUMINUM_LO.value,
+                DRILL_ENVELOPE_ALUMINUM_HI.value,
+            ),
+            Material::Foam { .. } => (DRILL_ENVELOPE_FOAM_LO.value, DRILL_ENVELOPE_FOAM_HI.value),
             // Fiberglass plunge envelope — sub-aluminum (slower max
             // to limit delamination, lower min because abrasion
             // doesn't reward dwelling at the cut face).
-            Material::Fiberglass { .. } => (40.0, 200.0),
-            Material::Custom { .. } => (40.0, 500.0),
+            Material::Fiberglass { .. } => (
+                DRILL_ENVELOPE_FIBERGLASS_LO.value,
+                DRILL_ENVELOPE_FIBERGLASS_HI.value,
+            ),
+            Material::Custom { .. } => (
+                DRILL_ENVELOPE_CUSTOM_LO.value,
+                DRILL_ENVELOPE_CUSTOM_HI.value,
+            ),
         }
     }
 
