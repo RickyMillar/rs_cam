@@ -19,7 +19,7 @@ use rs_cam_core::tool::TaperedBallEndmill;
 const WANAKA_MESH: &str = "/home/ricky/Downloads/wanaka200/rivmap_export/terrain.stl";
 
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_lift_probe_g3() {
     if !Path::new(WANAKA_MESH).exists() {
         eprintln!("SKIP: mesh not present");

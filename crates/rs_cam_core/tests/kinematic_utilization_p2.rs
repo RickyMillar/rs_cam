@@ -523,7 +523,7 @@ fn headroom_estimate_is_positive_and_below_the_feed_rise() {
 /// The measured figures print to stderr on every run, pass or fail — see
 /// `tests/plunge_guard_ab_p3.rs` for the paired A/B they came from.
 #[test]
-#[ignore = "instrument run: needs the user-local wanaka200 project and a full simulation"]
+#[ignore = "instrument: needs the user-local wanaka200 project and a full simulation"]
 fn wanaka_front_rough_reports_the_plunge_class_peak() {
     use rs_cam_core::dressup::feed_modulation::ModulationStrategy;
     use rs_cam_core::session::{Command, ProjectSession, SetMachineArgs, SimulationOptions};

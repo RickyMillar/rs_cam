@@ -505,6 +505,7 @@ fn the_power_limited_warning_compares_like_with_like() {
 }
 
 #[test]
+#[ignore = "instrument: prints the before/after feeds; no assertion"]
 fn report_before_after_feeds_on_representative_fixtures() {
     // The ruling asked for before/after feed values on representative
     // fixtures. This prints them from live code so the commit body's

@@ -342,7 +342,7 @@ fn dump_svg(
 }
 
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_scallop_solo_vs_unified_s1() {
     eprintln!(
         "\n========== S1 — PURE SCALLOP vs THE UNIFIED BAND MIX ==========\n\

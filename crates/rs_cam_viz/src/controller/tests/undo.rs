@@ -1389,13 +1389,15 @@ mod pin_edit_one_door_p5 {
         assert!(!controller.show_load_warnings, "the modal closes");
     }
 
-    /// The mini test piece (`planning/rivmap_block_job/testpiece_mini.toml`)
+    /// The mini test piece (a dated copy of the operator's
+    /// `testpiece_mini.toml` and its models, in the core fixtures, F155)
     /// still loads with ONE pin-drill operation of 6 mm and its three pins.
     /// A pin edit that keeps the pins leaves it unchanged.
     #[test]
     fn the_mini_project_keeps_one_pin_drill_r1() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../planning/rivmap_block_job/testpiece_mini.toml");
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
+            "../rs_cam_core/tests/fixtures/testpiece_mini_2026-10-20_c3808eb0/testpiece_mini.toml",
+        );
         let mut controller = AppController::with_backend(ScriptedBackend::new());
         controller
             .open_job_from_path(&path)

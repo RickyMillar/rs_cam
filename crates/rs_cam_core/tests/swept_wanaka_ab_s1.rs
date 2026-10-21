@@ -236,7 +236,7 @@ fn sim_options(resolution: f64) -> SimulationOptions {
 }
 
 #[test]
-#[ignore = "full-project dexel simulation ladder over wanaka200; run with --ignored --nocapture and RS_CAM_STAMP_DISPATCH set"]
+#[ignore = "evidence: full-project dexel simulation ladder over wanaka200; run with --ignored --nocapture and RS_CAM_STAMP_DISPATCH set"]
 fn swept_wanaka_ab_s1() {
     let mode = mode_tag();
     let raw_env = std::env::var("RS_CAM_STAMP_DISPATCH").unwrap_or_else(|_| "<unset>".to_owned());

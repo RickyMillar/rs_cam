@@ -45,8 +45,11 @@
 //! The simulation test also rewrites `MATRIX_SUMMARY.md`. The summary is
 //! not compared: it prints the wall-clock of the subset.
 //!
-//! Outputs, under `planning/feeds_matrix_2026-09-23/`:
+//! Outputs, under `tests/fixtures/feeds_matrix_2026-09-23/`:
 //! `matrix_2026-09-23.csv`, `matrix_2026-09-23_sim.csv`, `MATRIX_SUMMARY.md`.
+//! W14a (F155) copied them there from `planning/feeds_matrix_2026-09-23/`,
+//! which now holds the programme record only: a gate reads no
+//! `planning/` file.
 
 #![allow(
     clippy::unwrap_used,
@@ -98,8 +101,8 @@ use rs_cam_core::tool_load::{
 /// not fork the files.
 const DATE: &str = "2026-09-23";
 
-/// The planning folder of the programme, relative to the repository root.
-const OUT_DIR: &str = "planning/feeds_matrix_2026-09-23";
+/// The golden folder of the programme, relative to the repository root.
+const OUT_DIR: &str = "crates/rs_cam_core/tests/fixtures/feeds_matrix_2026-09-23";
 
 /// The re-bless command, printed into the summary and the failure text.
 const RUN_COMMAND: &str = "RS_CAM_UPDATE_FEEDS_MATRIX=1 scripts/cargo_lane.sh test -p \
@@ -1632,7 +1635,7 @@ fn the_feeds_matrix_is_the_committed_csv_fm1() {
 #[test]
 #[cfg_attr(
     not(feature = "heavy-tests"),
-    ignore = "FM1 simulation gate, about 150 s: runs with --features heavy-tests"
+    ignore = "heavy: FM1 simulation gate, about 150 s; runs with --features heavy-tests"
 )]
 fn the_sim_subset_is_the_committed_csv_fm1() {
     let machine = MachineProfile::default();

@@ -95,6 +95,20 @@ pub fn repo_root() -> PathBuf {
         .expect("repo root resolves")
 }
 
+/// The fixture a test reads, which must exist (F153).
+///
+/// A gate test that returns early when its fixture is missing passes with
+/// nothing checked. The fixtures live in the repository, so a missing one
+/// is a defect of the checkout, and the test panics and names the path.
+pub fn require_fixture(path: &std::path::Path) -> &std::path::Path {
+    assert!(
+        path.exists(),
+        "fixture {} is missing; a gate test does not skip, it fails",
+        path.display()
+    );
+    path
+}
+
 /// Canonical 6 mm 2-flute flat end mill used across the F-024/F-035 and
 /// lift-bridge pocket sentries (45 mm stickout, 6.35 mm shank).
 pub fn make_endmill_6mm() -> ToolConfig {

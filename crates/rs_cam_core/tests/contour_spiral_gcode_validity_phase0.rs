@@ -341,6 +341,7 @@ fn measure_merge(tp: &Toolpath, tol: f64) -> (usize, usize, usize, usize) {
 /// Diagnostic only (prints; never fails) — informs whether the merge lever is
 /// worth a full library pass vs. going straight to arc-fitting (Phase 2).
 #[test]
+#[ignore = "instrument: prints the segment-merge ceiling; no assertion"]
 fn phase1_segment_merge_ceiling() {
     let cases: Vec<(&str, Polygon2)> = vec![
         ("square60", square(60.0)),

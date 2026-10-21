@@ -219,7 +219,7 @@ fn load() -> (ProjectSession, usize, Option<ArcFitParams>) {
 }
 
 #[test]
-#[ignore = "generates the rivmap100 fine tier per arm (minutes); run with --ignored --nocapture"]
+#[ignore = "instrument: generates the rivmap100 fine tier per arm (minutes); run with --ignored --nocapture"]
 fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
     let arms = std::env::var("ARMS").unwrap_or_else(|_| "base".into());
     let (mut session, index, _) = load();

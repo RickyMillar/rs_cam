@@ -17,7 +17,7 @@
 //! a chord wider than the ceiling, so the replay splits the spiral and it
 //! re-enters (56-119 entries on the harness shapes). The former claim of
 //! one plunge per region (at most 3, rapids at most 5 % of the cut) is
-//! retired; `contour_spiral_travel_contract` records it, ignored.
+//! retired, and its test was deleted (W14a, F152).
 //!
 //! Stage 2 (same review, §5): trochoidal inserts. Where the predicted
 //! leading-arc engagement along a wrap exceeds the cap — concave-corner

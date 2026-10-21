@@ -9,12 +9,14 @@
 //! green (G-FRESHSTATE). WP6 replaces every such site with a scratch copy
 //! plus one `Command`.
 //!
-//! Three scans measure that, in the source-reading idiom of
+//! Scans 2 and 3 measure that, in the source-reading idiom of
 //! `crates/rs_cam_viz/tests/ui_string_hygiene.rs:78-105`:
 //!
-//! 1. No file under `src/ui/` names one of the four hatches. The scan
-//!    strips line comments and stops at the test MODULE, so a test
-//!    fixture that builds a session by hand is out of scope.
+//! 1. (Deleted, W14a F156.) The first scan refused a hatch name under
+//!    `src/ui/`. WP7 made every hatch `pub(crate)` or deleted it, so a
+//!    viz call to one is a compile error, and this crate's own test build
+//!    reports it. The reader self-tests below stay: scan 2 reads through
+//!    the same reader.
 //! 2. The five post-write notification events are gone from the
 //!    `AppEvent` enum (§14 ruling 3). Core invalidation through the rows
 //!    replaces them.
@@ -42,14 +44,6 @@
 use std::path::{Path, PathBuf};
 
 use rs_cam_core::session::{CommandId, Reach};
-
-/// The session hatches a draw site must not name.
-const HATCHES: &[&str] = &[
-    ".stock_mut(",
-    ".machine_mut(",
-    ".tools_mut(",
-    ".find_setup_by_id_mut(",
-];
 
 /// The five post-write notification events §14 ruling 3 deletes.
 const DELETED_EVENTS: &[&str] = &[
@@ -160,39 +154,11 @@ fn production_lines(source: &str) -> Vec<(usize, String)> {
     out
 }
 
-// ── scan 1: the hatches ──────────────────────────────────────────
-
-/// No draw site names a session hatch.
-#[test]
-fn no_ui_source_names_a_session_hatch() {
-    let mut offences: Vec<String> = Vec::new();
-    let mut scanned = 0_usize;
-    for path in ui_sources() {
-        let source = read(&path);
-        for (number, line) in production_lines(&source) {
-            scanned += 1;
-            for hatch in HATCHES {
-                if line.contains(hatch) {
-                    offences.push(format!("{}:{number} names {hatch}", path.display()));
-                }
-            }
-        }
-    }
-    assert!(
-        scanned > 0,
-        "the scan read no production line, so it asserts nothing"
-    );
-    assert!(
-        offences.is_empty(),
-        "a draw site still writes the session through a hatch. Each site \
-         must edit a scratch copy and apply one Command:\n{}",
-        offences.join("\n")
-    );
-}
+// ── the reader (scan 2 reads through it) ─────────────────────────
 
 /// The scan's reader finds a hatch on a code line, and only there.
 ///
-/// A locator that matched nothing would pass the scan above on any tree.
+/// A locator that matched nothing would pass a scan on any tree.
 /// This pins the reader against a synthetic source rather than against
 /// core's own declarations: WP7 deletes those declarations, and a test
 /// that asserts they still exist goes red the day WP7 succeeds.

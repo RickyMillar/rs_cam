@@ -43,7 +43,7 @@ fn r3_ball() -> ToolConfig {
 }
 
 #[test]
-#[ignore = "tier trial blob preview: release build, minutes"]
+#[ignore = "instrument: tier trial blob preview: release build, minutes"]
 fn tier_trial_blob_preview() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let fixture = root.join("planning/fixtures/rivmap100/rivmap100_memory_repro.toml");

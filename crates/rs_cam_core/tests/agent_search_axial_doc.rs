@@ -25,7 +25,7 @@ use rs_cam_core::toolpath::MoveType;
 use std::path::Path;
 
 #[test]
-#[ignore = "expensive AgentSearch axial-DOC diagnostic; run with `cargo test --test agent_search_axial_doc -- --ignored`"]
+#[ignore = "instrument: expensive AgentSearch axial-DOC diagnostic; run with `cargo test --test agent_search_axial_doc -- --ignored`"]
 fn agent_search_axial_doc_diag() {
     // Prefer the actual wanaka mesh if present; fallback to fixture.
     let wanaka = Path::new(concat!(

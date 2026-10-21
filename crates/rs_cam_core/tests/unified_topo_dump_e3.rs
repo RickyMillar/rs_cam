@@ -65,7 +65,7 @@ fn band_color(theta_deg: f64) -> &'static str {
 }
 
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_unified_topo_dump_e3() {
     eprintln!(
         "\n========== E3 — THE PRODUCTION UNIFIED FINISH, ALL THREE BANDS ==========\n\

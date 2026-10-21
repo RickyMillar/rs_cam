@@ -61,7 +61,7 @@ const BALL_DIAMETER_MM: f64 = 3.0;
 const SIM_RESOLUTION_MM: f64 = 0.25;
 
 #[test]
-#[ignore = "H2.6 narration cost probe — generates and simulates a real toolpath, then times \
+#[ignore = "instrument: H2.6 narration cost probe — generates and simulates a real toolpath, then times \
             narration on an idle lane. Prints; asserts only a sanity bound."]
 fn narrate_toolpath_on_an_idle_lane_is_timed() {
     let mesh = sawtooth_plate(HALF_MM, 6.0, 2.0);

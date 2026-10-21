@@ -1157,7 +1157,7 @@ fn run_fixture(
 /// noise control, runs both censuses on both, and prints PASS/FAIL against
 /// the pre-registered bars. It generates no toolpath.
 #[test]
-#[ignore = "evidence run — minutes of release-mode compute; results land in planning/bikeseat_gate_2026-09-01/FINDINGS.md"]
+#[ignore = "evidence: minutes of release-mode compute; results land in planning/bikeseat_gate_2026-09-01/FINDINGS.md"]
 fn bikeseat_gate_censuses() {
     println!();
     println!("########################################################################");

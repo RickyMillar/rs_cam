@@ -726,10 +726,12 @@ fn boundary_clear_preclear_engages_precondition() {
     );
 }
 
-/// ASPIRATIONAL — the fix contract for decision **D4**, carried here so that
-/// when the fix lands the bar is un-ignored rather than re-derived.
+/// The fix contract for decision **D4**, pinned INVERTED (W14a, F152): the
+/// test holds today's known-bad state (a non-zero B1 over-claim and a
+/// non-zero B2 leak on both strategies) and goes red when the fix lands.
+/// Then flip both assertions to `== 0` and rename the test `..._eliminated_d4`.
 ///
-/// # What has to change for this to go green
+/// # What has to change for the inverted pin to go red
 ///
 /// **F-A — stop conflating "where material is" with "where a cutter centre may
 /// go."** `session::compute::resolve_containment_polygon` hands adaptive3d the
@@ -748,8 +750,7 @@ fn boundary_clear_preclear_engages_precondition() {
 /// changes near containment edges, which is why they are a separate decision
 /// package with a before/after rather than part of this sentry's wave.
 #[test]
-#[ignore = "aspirational: red until D4 boundary fix (inset pre-clear + waterline_cleanup boundary param) lands"]
-fn boundary_clear_in_scope_overclaim_eliminated_d4() {
+fn boundary_clear_in_scope_overclaim_still_open_d4() {
     for (label, strategy) in [
         (
             "ContourParallel / boundary=left-half / clipped",
@@ -762,21 +763,22 @@ fn boundary_clear_in_scope_overclaim_eliminated_d4() {
     ] {
         let m = measure(label, strategy, Some(&half_stock_boundary()));
         report(&m);
-        assert_eq!(
-            m.in_scope_over_claim(),
-            0,
-            "[{label}] D4: {} of {} in-containment cells ({:.2}%) still read `sim_higher` — \
-             in-scope, tool-reachable material the planner believes it removed. F-A is not \
-             (fully) in place.",
-            m.in_scope_over_claim(),
-            m.in_containment_population(),
-            m.in_scope_over_claim_fraction() * 100.0,
+        assert!(
+            m.in_containment_population() > 0,
+            "[{label}] non-vacuity: the containment holds no cell"
         );
-        assert_eq!(
-            m.cut_moves_outside_containment, 0,
-            "[{label}] D4: {} emitted cutting endpoints still land outside the containment — \
-             F-B (`waterline_cleanup` boundary parameter) is not in place.",
-            m.cut_moves_outside_containment,
+        assert!(
+            m.in_scope_over_claim() > 0,
+            "[{label}] D4 F-A LANDED: no in-containment cell reads `sim_higher` any more \
+             ({} cells). Flip this pin to `== 0` (the D4 bar) and rename the test; it was \
+             pinned inverted while D4 was open.",
+            m.in_containment_population(),
+        );
+        assert!(
+            m.cut_moves_outside_containment > 0,
+            "[{label}] D4 F-B LANDED: no emitted cutting endpoint lands outside the \
+             containment any more. Flip this pin to `== 0` (the D4 bar) and rename the \
+             test; it was pinned inverted while D4 was open.",
         );
     }
 }

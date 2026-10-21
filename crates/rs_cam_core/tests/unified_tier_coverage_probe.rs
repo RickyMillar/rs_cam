@@ -55,7 +55,7 @@ fn repo_root() -> PathBuf {
 }
 
 #[test]
-#[ignore = "research probe; minutes of release time"]
+#[ignore = "instrument: research probe; minutes of release time"]
 fn unified_tier_coverage_probe() {
     let fixture = std::env::var("PROBE_FIXTURE").map_or_else(
         |_| repo_root().join("planning/fixtures/rivmap100/rivmap100_tiered_finish.toml"),

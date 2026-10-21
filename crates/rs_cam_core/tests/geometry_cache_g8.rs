@@ -436,7 +436,7 @@ fn measurement_mesh() -> (TriangleMesh, String) {
 }
 
 #[test]
-#[ignore = "timing probe; run with --ignored --nocapture"]
+#[ignore = "instrument: timing probe; run with --ignored --nocapture"]
 fn g8_unit_costs() {
     let (mesh, label) = measurement_mesh();
     println!("mesh: {label}");

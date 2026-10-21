@@ -284,8 +284,8 @@ const FIXTURE_FILE_DIFFERENCES: &[&str] = &[
     // Two open paths of equal chord-closed area swap places (an 8-point
     // and a 9-point path, lines 31 and 32 of the dump). Class 3 hid this
     // entry until P2.3a closed it.
-    "planning/fixtures/rivmap100/rivmap_export/rivers_aligned.dxf Millimeters [flipped] curves",
-    "planning/fixtures/rivmap100/rivmap_export/rivers_aligned.dxf Inches [flipped] curves",
+    "crates/rs_cam_core/tests/fixtures/rivmap100_dxf_2026-10-20_c3808eb0/rivers_aligned.dxf Millimeters [flipped] curves",
+    "crates/rs_cam_core/tests/fixtures/rivmap100_dxf_2026-10-20_c3808eb0/rivers_aligned.dxf Inches [flipped] curves",
     // 2. SVG circle centre.
     "fixtures/demo_pocket.svg Inches [model] holes",
     "fixtures/demo_pocket.svg Inches [flipped] holes",

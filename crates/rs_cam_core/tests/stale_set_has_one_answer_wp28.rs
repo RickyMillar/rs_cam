@@ -20,7 +20,8 @@
 //!
 //! WP28 part 2 deletes the second producer. This arm keeps it deleted: no
 //! `.rs` file under any `crates/*/src` names `compute_stale_set` or
-//! `MutationKind` outside a comment.
+//! `MutationKind` outside a comment. The viz half runs in the viz gate
+//! (`rs_cam_viz/tests/stale_set_has_one_answer_in_viz_wp28.rs`, W14a F171).
 //!
 //! The scan covers the in-`src` test modules too. That is deliberate: a
 //! `#[cfg(test)]` module inside `session/compute.rs` is what held the
@@ -75,13 +76,10 @@ use rs_cam_core::session::{CommandId, Reach};
 /// The two names the second staleness producer published.
 const FORBIDDEN: &[&str] = &["compute_stale_set", "MutationKind"];
 
-/// The production source roots. Every crate in the workspace.
-const SRC_ROOTS: &[&str] = &[
-    "src",
-    "../rs_cam_viz/src",
-    "../rs_cam_cli/src",
-    "../rs_cam_mcp/src",
-];
+/// The production source roots: every crate in the workspace but viz.
+/// W14a (F171) moved the viz root to the viz gate,
+/// `crates/rs_cam_viz/tests/stale_set_has_one_answer_in_viz_wp28.rs`.
+const SRC_ROOTS: &[&str] = &["src", "../rs_cam_cli/src", "../rs_cam_mcp/src"];
 
 /// The lowest number of `.rs` files the walk must visit.
 ///

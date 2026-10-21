@@ -636,7 +636,7 @@ fn svg_dump(path: &std::path::Path, runs: &[Vec<P3>], window: [f64; 4], stroke: 
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_graded_raster_e1() {
     eprintln!(
         "\n========== Avenue F, E1 — GRADED RASTER, COSTED ==========\n\

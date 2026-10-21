@@ -212,7 +212,7 @@ fn pocket_csv(tree: &PocketTree, nx: usize, ny: usize) -> String {
 }
 
 #[test]
-#[ignore = "research probe; reads planning/fixtures/rivmap100"]
+#[ignore = "evidence: research probe; reads planning/fixtures/rivmap100"]
 fn pocket_merge_tree_census_on_the_rough() {
     let project = PathBuf::from(
         std::env::var("MERGE_TREE_PROJECT").unwrap_or_else(|_| DEFAULT_PROJECT.to_owned()),

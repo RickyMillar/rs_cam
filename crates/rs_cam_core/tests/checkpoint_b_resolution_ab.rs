@@ -1176,7 +1176,7 @@ fn only_three_consumers_can_see_the_generation_resolution() {
 /// Prints markdown tables straight into
 /// `planning/review_2026-07-29/CHECKPOINT_B_EVIDENCE.md`'s shape.
 #[test]
-#[ignore = "full A/B grid — minutes; the Checkpoint B evidence run"]
+#[ignore = "evidence: full A/B grid — minutes; the Checkpoint B evidence run"]
 fn full_resolution_ab_grid() {
     let t = taper();
     let arms = arms(&t);
@@ -1411,7 +1411,7 @@ fn ramp_finish_reach_clamp_removes_the_cone_fixture_gouge() {
 ///
 /// Prints markdown for the evidence addendum. `#[ignore]`: minutes.
 #[test]
-#[ignore = "PR-8c max_rings experiment — minutes; evidence only, adopts nothing"]
+#[ignore = "evidence: PR-8c max_rings experiment — minutes; evidence only, adopts nothing"]
 fn max_rings_budget_experiment() {
     let t = taper();
     let cusp_arm = FinishResolutionPolicy::cusp_quarter(&t, TOLERANCE_MM);

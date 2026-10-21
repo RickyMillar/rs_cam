@@ -1,5 +1,7 @@
-//! F-018 regression: assert that every row in
-//! `planning/toolpath_acceptance/cases_agent_smoke.csv` references a
+//! F-018 regression: assert that every row in the agent smoke case list
+//! (`tests/fixtures/agent_smoke_2026-10-20_c3808eb0/cases_agent_smoke.csv`,
+//! a dated copy of `planning/toolpath_acceptance/cases_agent_smoke.csv`,
+//! F155) references a
 //! `test_data/ux_*.toml` template that
 //!
 //! 1. exists on disk,
@@ -47,7 +49,9 @@ const KNOWN_MATERIAL_MISMATCHES: &[(&str, &str, &str)] = &[
 ];
 
 fn csv_path() -> PathBuf {
-    repo_root().join("planning/toolpath_acceptance/cases_agent_smoke.csv")
+    repo_root().join(
+        "crates/rs_cam_core/tests/fixtures/agent_smoke_2026-10-20_c3808eb0/cases_agent_smoke.csv",
+    )
 }
 
 /// Minimal CSV row representation — just the columns the test needs.

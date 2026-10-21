@@ -1121,6 +1121,7 @@ mod machine_head_h2 {
     /// The surface number parity rule: the run sheet, the toolpath panel and
     /// `inspect_machine`'s `shoe_plan` read one plan and print one text.
     #[test]
+    #[cfg(feature = "mcp")]
     fn the_run_sheet_and_the_panel_match_inspect_machine_h2() {
         let controller = shoe_controller();
         let session = &controller.state.session;

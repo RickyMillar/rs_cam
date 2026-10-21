@@ -18,7 +18,7 @@ use rs_cam_core::geo::P2;
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::toolpath::MoveType;
 
-#[ignore = "wanaka boundary diagnostic — run with --ignored"]
+#[ignore = "evidence: wanaka boundary diagnostic — run with --ignored"]
 #[test]
 fn wanaka_back_rough_cuts_outside_silhouette() {
     let toml = concat!(

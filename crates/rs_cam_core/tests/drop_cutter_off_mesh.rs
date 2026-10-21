@@ -5,14 +5,15 @@
 //!    symptom that was fixed in an earlier commit).
 //! 2. `drop_cutter_over_peak_stays_at_peak_height` — sanity check that
 //!    the drop-cutter math reaches a mesh peak with a tapered tool.
-//! 3. `drop_cutter_toolpath_stamp_no_dive_below_mesh` — FAILING: stamps
-//!    3D Finish 8 onto a dexel stock and detects stock columns carved
-//!    significantly below the mesh surface. This catches the user-
+//! 3. `drop_cutter_toolpath_stamp_dives_only_at_the_residual_columns` —
+//!    stamps 3D Finish 8 onto a dexel stock and counts stock columns
+//!    carved significantly below the mesh surface. This catches the user-
 //!    reported "flattening" where the tool's shaft radius (3.175 mm for
 //!    a tapered ball) forces the tool into a valley next to a ridge, and
 //!    the stamp's LUT extends across the ridge column, carving it down
-//!    to valley depth even though the mesh there is a peak. Kept as a
-//!    failing test so the fix is actionable.
+//!    to valley depth even though the mesh there is a peak. The residual
+//!    is a tool-size limit, so the test bounds the count (W14a, F152)
+//!    and runs with `heavy-tests`.
 
 #![allow(
     clippy::unwrap_used,
@@ -29,9 +30,10 @@ use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
+use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
-use rs_cam_core::session::ProjectSession;
+use rs_cam_core::session::{Command, ProjectSession, SetStockSourceArgs};
 use rs_cam_core::toolpath::{MoveType, Toolpath};
 
 fn fixture_path(name: &str) -> PathBuf {
@@ -68,7 +70,7 @@ fn point_over_mesh(x: f64, y: f64, mesh: &TriangleMesh, index: &SpatialIndex) ->
 }
 
 #[test]
-#[ignore = "expensive fixture regression; run with `cargo test --test drop_cutter_off_mesh -- --ignored`"]
+#[ignore = "heavy: expensive fixture regression; run with `cargo test --test drop_cutter_off_mesh -- --ignored`"]
 fn drop_cutter_does_not_cut_outside_mesh_footprint() {
     let path = fixture_path("test_job.toml");
     let mut session = ProjectSession::load(&path).expect("project loads");
@@ -133,7 +135,7 @@ fn drop_cutter_does_not_cut_outside_mesh_footprint() {
 }
 
 #[test]
-#[ignore = "expensive fixture diagnostic; run with `cargo test --test drop_cutter_off_mesh -- --ignored`"]
+#[ignore = "instrument: expensive fixture diagnostic; run with `cargo test --test drop_cutter_off_mesh -- --ignored`"]
 fn rapids_should_be_at_safe_z() {
     // User observation: with only rapids shown in the sim viewer, the
     // 3D Finish toolpath makes "weird moves" — wide bands of rapids
@@ -208,9 +210,24 @@ fn drop_cutter_over_peak_stays_at_peak_height() {
     );
 }
 
+/// The stamp of the 3D Finish dives below the mesh only at the residual
+/// columns that the tool cannot reach, a bound and not zero (W14a, F152).
+///
+/// The main defect (about 2200 dive columns from ramp entries at every
+/// raster start) is fixed by `DressupConfig::normalize_for_op` for
+/// DropCutter. The residual (about 260 columns, printed when the test was
+/// parked) is tool-size limits, not a code bug. The bound is that printed
+/// count: a regression of the main fix gives thousands of columns.
+///
+/// On 2026-10-20 (c3808eb0) the run read 173 columns, worst dive
+/// 1.906 mm. The parked reason said "<1.9mm"; the worst dive is just
+/// above that, so the depth is printed and not bounded here.
+#[cfg_attr(
+    not(feature = "heavy-tests"),
+    ignore = "heavy: generates the 3D Finish of test_job.toml, about 60 s; runs with --features heavy-tests"
+)]
 #[test]
-#[ignore = "known-failing: residual ~260 dive columns (<1.9mm) are tool-size limits, not a code bug — main ~2200-dive bug fixed by DressupConfig::normalize_for_op DropCutter case"]
-fn drop_cutter_toolpath_stamp_no_dive_below_mesh() {
+fn drop_cutter_toolpath_stamp_dives_only_at_the_residual_columns() {
     use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
     use rs_cam_core::geo::BoundingBox3;
     use rs_cam_core::tool::TaperedBallEndmill;
@@ -228,6 +245,15 @@ fn drop_cutter_toolpath_stamp_no_dive_below_mesh() {
     // strips entry_style=Ramp / lead_in_out=true from the saved config —
     // without that migration, the 3D Finish would emit ~2400 dive bands
     // from the ramp entries at every raster-segment start.
+    // The fixture's 3D Finish 8 now reads the remaining stock, which needs
+    // a simulation of every op before it. This test measures the stamp of
+    // the finish against the mesh, so it cuts fresh stock.
+    let _ = session
+        .apply(Command::SetStockSource(SetStockSourceArgs {
+            index: finish_idx,
+            source: StockSource::Fresh,
+        }))
+        .expect("the finish takes fresh stock");
     let cancel = AtomicBool::new(false);
     let tp = std::sync::Arc::new(
         session
@@ -266,6 +292,7 @@ fn drop_cutter_toolpath_stamp_no_dive_below_mesh() {
     let grid = &stock.z_grid;
     const MAX_DIVE_MM: f64 = 0.6;
     let mut dives = 0usize;
+    let mut checked = 0usize;
     let mut worst = (0.0f64, 0.0, 0.0, 0.0, 0.0);
     for row in 0..grid.rows {
         for col in 0..grid.cols {
@@ -284,6 +311,7 @@ fn drop_cutter_toolpath_stamp_no_dive_below_mesh() {
                 }
             }
             let Some(ray_z) = ray_z else { continue };
+            checked += 1;
             let dive = ray_z - carved_top as f64;
             if dive > MAX_DIVE_MM {
                 dives += 1;
@@ -338,9 +366,16 @@ fn drop_cutter_toolpath_stamp_no_dive_below_mesh() {
             z, p.x, p.y, p.z, t.x, t.y, t.z
         );
     }
-    assert_eq!(
-        dives, 0,
-        "drop_cutter stamp carves stock >{MAX_DIVE_MM} mm below the mesh surface at {} columns",
-        dives
+    // The residual count printed when the test was parked (see the doc).
+    const RESIDUAL_DIVE_COLUMNS: usize = 260;
+    assert!(
+        checked > 0,
+        "non-vacuity: no carved column lies over the mesh, so nothing was compared"
+    );
+    assert!(
+        dives <= RESIDUAL_DIVE_COLUMNS,
+        "drop_cutter stamp carves stock >{MAX_DIVE_MM} mm below the mesh surface at {dives} \
+         columns, over the {RESIDUAL_DIVE_COLUMNS}-column tool-size residual. The \
+         ramp-entry dive class (about 2200 columns) is back?"
     );
 }

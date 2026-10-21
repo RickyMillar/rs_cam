@@ -546,7 +546,7 @@ const P90_TOLERANCE_UM: f64 = 10.0;
 const ON_SIZE_TOLERANCE_PP: f64 = 0.5;
 
 #[test]
-#[ignore = "M3 decisive gate: two UnifiedFinish generations + two tip-matched dexel sims. \
+#[ignore = "heavy: M3 decisive gate: two UnifiedFinish generations + two tip-matched dexel sims. \
             Run --release, --test-threads=1, on a quiet machine."]
 fn m3_columns_ab_shipped_vs_production_classifier() {
     let window_mm = env_f64("M3_AB_WINDOW_MM", DEFAULT_WINDOW_MM);

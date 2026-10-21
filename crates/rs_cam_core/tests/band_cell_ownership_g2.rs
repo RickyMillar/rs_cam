@@ -138,7 +138,7 @@ struct RegionAttribution {
 }
 
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_band_cell_ownership_g2() {
     eprintln!(
         "\n========== Avenue G, G2 — BAND-CELL OWNERSHIP ATTRIBUTION ==========\n\

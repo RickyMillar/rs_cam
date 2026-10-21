@@ -28,7 +28,7 @@ const WANAKA_FIXTURE: &str = concat!(
 );
 
 #[test]
-#[ignore = "expensive WANAKA histogram diagnostic; run with `cargo test --test kinematics_histogram -- --ignored`"]
+#[ignore = "evidence: expensive WANAKA histogram diagnostic; run with `cargo test --test kinematics_histogram -- --ignored`"]
 fn kinematics_histogram_wanaka() {
     let toml_path = Path::new(WANAKA_FIXTURE);
     if !toml_path.exists() {

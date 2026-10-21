@@ -39,6 +39,8 @@
     clippy::print_stderr
 )]
 
+mod common;
+
 use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -244,9 +246,8 @@ fn cycle_time_matches_naive_for_pure_straight_line() {
 /// the integrator's accel + corner-decel logic end-to-end.
 ///
 /// The test loads `tests/fixtures/wanaka100/wanaka_full_tuned.toml`
-/// — a user-local file. On any machine that doesn't have it (CI / other
-/// devs) the test logs `skip:` and returns Ok, matching the pattern
-/// `wanaka_e2e_chipload_gate.rs` uses.
+/// — a fixture in the repository. A missing file fails the test
+/// (`common::require_fixture`, F153); it does not skip.
 ///
 /// `MachineKinematics::shapeoko_xxl_ricky_tuned()` now carries the
 /// machine's real per-axis accel ($120/$121/$122 = 500/500/270) and
@@ -280,11 +281,7 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
         ToolpathId(12),
     ];
 
-    let toml_path = Path::new(WANAKA_TOML);
-    if !toml_path.exists() {
-        eprintln!("skip: {WANAKA_TOML} not present on this machine");
-        return;
-    }
+    let toml_path = common::require_fixture(Path::new(WANAKA_TOML));
 
     let mut session = ProjectSession::load(toml_path).expect("load wanaka project");
     let mut machine = session.machine().clone();

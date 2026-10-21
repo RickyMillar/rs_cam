@@ -1449,7 +1449,7 @@ fn eligible(ctx: &MeshCtx<'_>, candidates: &[P2]) -> Vec<(P2, f64)> {
 }
 
 #[test]
-#[ignore = "instrument — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "instrument: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_curvature_anisotropy() {
     let mesh_path = Path::new(WANAKA_MESH);
     if !mesh_path.exists() {

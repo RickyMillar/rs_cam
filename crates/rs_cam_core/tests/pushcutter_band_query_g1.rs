@@ -486,7 +486,7 @@ fn band_query_actually_prunes() {
 ///     -- --ignored --nocapture measure_query_vs_contact_split
 /// ```
 #[test]
-#[ignore = "measurement, not an assertion — see doc comment"]
+#[ignore = "instrument: measurement, not an assertion — see doc comment"]
 fn measure_query_vs_contact_split() {
     use std::time::Instant;
 

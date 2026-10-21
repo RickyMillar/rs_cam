@@ -323,7 +323,7 @@ fn every_x_fiber_row_is_blocked_across_both_long_walls() {
 /// Y-fiber intervals at three columns inside the right wall, for a reading
 /// by eye.
 #[test]
-#[ignore = "needs /home/ricky/Downloads/Corne Case Hex.stl; evidence run, not a gate"]
+#[ignore = "evidence: needs /home/ricky/Downloads/Corne Case Hex.stl; evidence run, not a gate"]
 #[allow(clippy::print_stdout)] // SAFETY: an evidence run whose output is read off the terminal
 fn corne_case_hex_at_z10_has_no_point_inside_the_right_wall() {
     let path = Path::new("/home/ricky/Downloads/Corne Case Hex.stl");

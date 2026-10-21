@@ -149,7 +149,7 @@ fn rough6_rapid_collisions(s: &mut ProjectSession, cell_mm: f64) -> usize {
 }
 
 #[test]
-#[ignore = "wanaka chain and two simulations (minutes); run with --release --ignored"]
+#[ignore = "evidence: wanaka chain and two simulations (minutes); run with --release --ignored"]
 fn wanaka_rough6_rapids_into_no_stock_g_phantomstamp() {
     let mut s = built_chain();
 

@@ -211,7 +211,7 @@ fn fast_two_d_generators_survive_search_space_corners() {
 }
 
 #[test]
-#[ignore = "tens of minutes in debug: full pocket/adaptive clearing at the 0.05 mm \
+#[ignore = "heavy: tens of minutes in debug: full pocket/adaptive clearing at the 0.05 mm \
             stepover floor (hundreds of offset rings / spiral passes). Run manually \
             when touching pocket/adaptive clearing or polygon offsetting."]
 fn slow_two_d_clearing_at_stepover_floor() {
@@ -238,7 +238,7 @@ fn slow_two_d_clearing_at_stepover_floor() {
 }
 
 #[test]
-#[ignore = "~40 min in debug: full adaptive3d clearing at the 0.05 mm stepover floor \
+#[ignore = "heavy: ~40 min in debug: full adaptive3d clearing at the 0.05 mm stepover floor \
             over terrain_small. Run manually when touching adaptive3d/clearing or \
             polygon offsetting. The cheap CI teeth for the same crash class are \
             offset_polygon_degenerate_inputs_r1.rs (captured WANAKA asset) and the \

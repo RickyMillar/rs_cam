@@ -1430,7 +1430,7 @@ fn report_worst_rows(rows: &[FineRow]) {
 // ══════════════════════════════════════════════════════════════════════
 
 #[test]
-#[ignore = "evidence run — replays two shipped .nc programs against fine dexels; build --release"]
+#[ignore = "evidence: replays two shipped .nc programs against fine dexels; build --release"]
 fn replay_shipped_wanaka_rapids_s1() {
     let specs = setups();
     for path in specs.iter().map(|s| s.path.as_str()).chain([WANAKA_TOML]) {

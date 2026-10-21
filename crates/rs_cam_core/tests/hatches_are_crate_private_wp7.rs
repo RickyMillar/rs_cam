@@ -45,7 +45,10 @@
 //!    from `crates/rs_cam_core/src/session/` altogether. No hatch reads
 //!    `pub fn`. All nine names must be accounted for, so a name that
 //!    neither arm reaches fails here.
-//! 2. No line outside `crates/rs_cam_core/src` names `.<hatch>(`.
+//! 2. No line outside `crates/rs_cam_core/src` names `.<hatch>(`. This
+//!    file reads the core tests and benches and the CLI; the viz half runs
+//!    in the viz gate (`rs_cam_viz/tests/hatches_are_not_named_in_viz_wp7.rs`,
+//!    W14a F171).
 //! 3. `insert_result` is not public, and `wizard_mut` is declared
 //!    nowhere. WP3 closed the first; §19 ruling 5 deleted the second.
 //!
@@ -59,7 +62,8 @@
 //! # The scanner allowlist
 //!
 //! Three files name the hatches as DATA, not as calls: the two WP6 /
-//! WP6b source scanners and this file. A scanner's own table of
+//! WP6b source scanners (viz tests, so the viz half skips them) and this
+//! file. A scanner's own table of
 //! forbidden strings is not a call, so [`SCANNER_FILES`] skips them.
 //! The list is deliberately short and explicit: a new entry is a claim
 //! that the file scans source rather than mutates a session.
@@ -89,11 +93,10 @@ const HATCHES: &[&str] = &[
 ];
 
 /// Files that carry a hatch name as scanner data. See the module doc.
-const SCANNER_FILES: &[&str] = &[
-    "egui_draw_sites_write_through_commands_wp6.rs",
-    "non_egui_sites_write_through_commands_wp6b.rs",
-    "hatches_are_crate_private_wp7.rs",
-];
+///
+/// The WP6 and WP6b scanners sit in the viz tests, so the viz half lists
+/// them.
+const SCANNER_FILES: &[&str] = &["hatches_are_crate_private_wp7.rs"];
 
 /// The lowest number of files the walk must visit. A walk that finds a
 /// handful of files proves nothing, so an empty or truncated tree fails
@@ -112,11 +115,11 @@ fn core_root() -> PathBuf {
 fn scanned_roots() -> Vec<PathBuf> {
     let core = core_root();
     let mut out = Vec::new();
+    // W14a (F171): the viz roots moved to the viz gate,
+    // `crates/rs_cam_viz/tests/hatches_are_not_named_in_viz_wp7.rs`.
     for relative in [
         "tests",
         "benches",
-        "../rs_cam_viz/src",
-        "../rs_cam_viz/tests",
         "../rs_cam_cli/src",
         "../rs_cam_cli/examples",
     ] {

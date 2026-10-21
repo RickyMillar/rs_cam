@@ -586,7 +586,7 @@ fn run_arm(
 // ---- The instrument ----------------------------------------------------------
 
 #[test]
-#[ignore = "Track B evidence instrument — run explicitly with --ignored --nocapture"]
+#[ignore = "evidence: Track B evidence instrument — run explicitly with --ignored --nocapture"]
 fn shipped_shallow_raster_spacing_on_analytic_fixtures() {
     eprintln!(
         "\n================ TRACK B — SHIPPED SHALLOW RASTER vs ITS OWN SCALLOP SPEC \

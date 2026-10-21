@@ -536,7 +536,7 @@ fn b5_non_reportable_region_map() {
 /// [`b5_non_reportable_region_map`] floor holds without it, because
 /// `max(V2, V4) ≥ V4`.
 #[test]
-#[ignore = "T3 tier: 5x full generate+simulate over ARP-1; needs an uncontended Cargo slot"]
+#[ignore = "heavy: T3 tier: 5x full generate+simulate over ARP-1; needs an uncontended Cargo slot"]
 fn v2_regeneration_variance() {
     panic!(
         "NOT RUN by design — see this test's doc comment. Running it is a \
@@ -562,7 +562,7 @@ fn v2_regeneration_variance() {
 ///
 /// **Owner:** the same scheduled pass as [`v2_regeneration_variance`].
 #[test]
-#[ignore = "T3 tier: characterization sweep; no bar, must never be used to choose a bin"]
+#[ignore = "instrument: T3 tier: characterization sweep; no bar, must never be used to choose a bin"]
 fn v3_cell_sensitivity() {
     panic!(
         "NOT RUN by design — see this test's doc comment. B-4 carries NO BAR \

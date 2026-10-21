@@ -406,7 +406,7 @@ fn the_three_empty_results_are_distinguishable() {
 ///     --ignored --nocapture --test-threads=1 census_direct_cavalier_calls
 /// ```
 #[test]
-#[ignore = "installs a process-global panic hook per call; run single-threaded"]
+#[ignore = "serial: installs a process-global panic hook per call; run single-threaded"]
 fn census_direct_cavalier_calls() {
     let mut table = String::from("| fixture | distance | direct cavalier call |\n|---|---|---|\n");
     let mut panics = 0usize;

@@ -263,26 +263,10 @@ fn no_surface_divides_air_cut_by_a_runtime_without_naming_it() {
         .expect("workspace root")
         .to_path_buf();
 
-    // (file, what its air-cut label must say)
-    let surfaces: [(&str, &[&str]); 5] = [
-        (
-            "crates/rs_cam_viz/src/ui/sim_diagnostics.rs",
-            &["% of total runtime)", "{pct:.0}% of total runtime"],
-        ),
-        // F181: the MCP `get_diagnostics` reply is the serialized core
-        // report, so its denominators are the names of the core fields
-        // (the `diagnostics_types.rs` row below).
-        (
-            "crates/rs_cam_viz/src/controller/events/compute.rs",
-            &["serde_json::to_value(&core_diagnostics)"],
-        ),
-        (
-            "crates/rs_cam_viz/src/app/mcp/simulation.rs",
-            &[
-                "air_cut_pct_of_total_runtime",
-                "air_cut_pct_of_cutting_time",
-            ],
-        ),
+    // (file, what its air-cut label must say). W14a (F171): the three viz
+    // rows moved to the viz gate,
+    // `crates/rs_cam_viz/tests/air_cut_labels_name_their_denominator_lh1.rs`.
+    let surfaces: [(&str, &[&str]); 2] = [
         (
             "crates/rs_cam_cli/src/job.rs",
             &["% of total runtime", "% of cutting time"],

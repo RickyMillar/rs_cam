@@ -958,7 +958,8 @@ fn no_emitted_cut_target_sits_where_the_surface_probe_finds_nothing() {
 /// population against a populated footprint, which is exactly the evidence
 /// wanted.
 ///
-/// Writes to `planning/review_2026-08-04/artifacts/w8/`:
+/// Writes to `<target>/tmp/d16_1_w8/` (`CARGO_TARGET_TMPDIR`; before
+/// W14a, F155, a gate run wrote into `planning/`):
 ///
 /// | file | what it shows |
 /// |---|---|
@@ -1081,7 +1082,7 @@ fn the_run_off_population_is_rendered_to_an_artifact() {
 // ── Render plumbing ──────────────────────────────────────────────────────
 
 fn artifact_dir() -> PathBuf {
-    let dir = common::repo_root().join("planning/review_2026-08-04/artifacts/w8");
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("d16_1_w8");
     std::fs::create_dir_all(&dir).expect("create the W8 artifact directory");
     dir
 }

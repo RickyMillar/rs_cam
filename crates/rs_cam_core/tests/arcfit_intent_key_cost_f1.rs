@@ -372,6 +372,7 @@ fn run(
 /// is unchanged on every fixture, and that is the count the Q3 ruling asked
 /// PR-6 to price.
 #[test]
+#[ignore = "instrument: prints the arc-fit intent-key cost; no assertion"]
 fn pr6_measure_arcfit_intent_key_cost() {
     // RE-PINNED 2026-09-25 (operator rulings 2026-09-24/25: an entry helix
     // or ramp takes the full material depth from 0.5 mm above the material;

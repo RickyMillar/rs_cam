@@ -539,7 +539,12 @@ fn target() -> f64 {
 /// plunges whose first steps are exempt (`PassLoad::departing`).
 ///
 /// The spiral's former travel contract (at most 3 plunges, rapids at most
-/// 5 % of the cut) is retired: see `contour_spiral_travel_contract`.
+/// 5 % of the cut) is retired (G-ADAPTPASSLOAD round 3): under the
+/// swept-width pass load the trochoid inserts do not bound the swept
+/// width, so the replay splits them and the spiral re-enters (56-119
+/// plunges on these shapes, 2026-09-26). W14a (F152) deleted the ignored
+/// test that held it; `planning/adaptive_load_2026-09-26/PASSLOAD_PLAN.md`
+/// is the record.
 #[test]
 fn both_strategies_hold_the_pass_load() {
     let mut failures: Vec<String> = Vec::new();
@@ -604,41 +609,8 @@ fn both_strategies_hold_the_pass_load() {
     );
 }
 
-/// The spiral's Stage 1 travel contract: one continuous stay-down pass, at
-/// most 3 plunges, rapids at most 5 % of the cut. It held under the
-/// leading-arc trigger (cap 1.2 x target). Under the swept-width pass load
-/// (G-ADAPTPASSLOAD) the spiral's trochoid inserts do not bound the swept
-/// width (a loop meets the frontier across a chord of the pitch-deep cap,
-/// 0.8 of D at pitch 0.6 s), so the replay splits them and the spiral
-/// re-enters: 56-119 plunges on the harness shapes (2026-09-26, round 3).
-/// The claim is RETIRED (lead decision, G-ADAPTPASSLOAD round 3): no doc
-/// or help text states it; this test is kept, ignored, as the record of
-/// what the spiral once held and why it no longer does.
 #[test]
-#[ignore = "retired claim: under G-ADAPTPASSLOAD the spiral's trochoids exceed the swept-width ceiling and it re-enters"]
-fn contour_spiral_travel_contract() {
-    let mut failures: Vec<String> = Vec::new();
-    for (name, poly) in shapes() {
-        let s = run_strategy(&poly, PathStrategy2d::ContourSpiral);
-        if s.plunges > 3 {
-            failures.push(format!("{name}: {} plunges (cap 3)", s.plunges));
-        }
-        if s.rapid_mm > s.cut_mm * 0.05 + 1.0 {
-            failures.push(format!(
-                "{name}: rapid {:.0}mm > 5% of cut {:.0}mm",
-                s.rapid_mm, s.cut_mm
-            ));
-        }
-    }
-    assert!(
-        failures.is_empty(),
-        "travel contract:\n{}",
-        failures.join("\n")
-    );
-}
-
-#[test]
-#[ignore]
+#[ignore = "instrument: prints the trochoid cap sweep against the agent; no assertion"]
 fn trochoid_cap_distance_load_tradeoff() {
     let tgt = target();
     println!("\n=== trochoid cap sweep (target a/2pi = {tgt:.3}, over% = >1.3x target) ===");

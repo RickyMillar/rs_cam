@@ -1112,7 +1112,9 @@ fn tessellation_rule_reports_both_terms_and_beats_the_alias_floor() {
 /// writes the surface those aggregates were computed on, so it can be looked
 /// at.
 ///
-/// Three PGM images to `planning/review_2026-08-04/artifacts/e_impl/`:
+/// Three PGM images to `<target>/tmp/reference_plate_e_impl/`
+/// (`CARGO_TARGET_TMPDIR`; before W14a, F155, a gate run wrote into
+/// `planning/`):
 /// height, exact slope, and the zone attribution map. PGM because it needs no
 /// dependency and is losslessly convertible; the point is that the pixels are
 /// the plate's own evaluators, not a re-derivation.
@@ -1123,8 +1125,7 @@ fn render_the_plate_before_any_verdict_is_read() {
     let plate = ReferencePlate::arp1();
     let half = plate.half_extent_mm();
     let n = 900usize;
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../planning/review_2026-08-04/artifacts/e_impl");
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("reference_plate_e_impl");
     std::fs::create_dir_all(&dir).expect("artifact dir");
 
     let mut height = vec![0u8; n * n];

@@ -20,9 +20,10 @@
 //! `conservative_top` keeps the level above. `Z22_PROBE_REGEN=1` shows the
 //! count is 0 when the toolpath is generated while a simulation stands.
 //!
-//! The second test, `a_descent_beside_two_overlapping_swaths_is_not_a_strike`,
-//! is the two-pass reproduction. It stays red until the coverage-union fix
-//! lands in `dexel_stock/stamping.rs`.
+//! The second test, `a_descent_beside_two_overlapping_swaths_still_strikes_g_staletop`,
+//! is the two-pass reproduction, pinned inverted (W14a, F152): it runs in
+//! the gate, holds today's false strike, and goes red when the
+//! coverage-union fix lands in `dexel_stock/stamping.rs`.
 //!
 //! Run it (about 160 s; `Z22_PROBE_CELLS` / `Z22_PROBE_SKIP` select cells):
 //! `cargo test -p rs_cam_core -q --test a_descent_over_two_overlapping_swaths_g_staletop -- --ignored --nocapture the_z22`
@@ -759,7 +760,7 @@ fn regen_with_the_simulation_standing(session: &mut ProjectSession, index: usize
 }
 
 #[test]
-#[ignore = "evidence instrument: loads the mini project and runs three project simulations"]
+#[ignore = "evidence: loads the mini project and runs three project simulations"]
 fn the_z22_rapid_collisions_at_stepover_1_05() {
     let wall = Instant::now();
     if !Path::new(MODEL_DIR).is_dir() || !Path::new(SOURCE_PROJECT).is_file() {
@@ -838,18 +839,23 @@ fn two_passes_then_descent(gap: f64) -> (bool, usize) {
     (strikes, exact)
 }
 
-/// The proposed sentry for the coverage-union residue that the Z22 probe
-/// found (the test the owner adds with the fix).
+/// The coverage-union residue that the Z22 probe found, pinned INVERTED
+/// (W14a, F152): the test holds today's known-bad answer and fails when the
+/// fix lands.
 ///
 /// - Gap 2.9 mm (< 2r): the two swaths overlap by 0.1 mm, so their union
 ///   cuts every point of the row-31.8 cell squares, but neither stamp
 ///   covers one square whole. `conservative_top` stays at 24.5 and the
-///   high channel flags a descent that enters no material. Must be clear.
+///   high channel flags a descent that enters no material. Today it
+///   strikes (the known false strike, G-STALETOP residue).
 /// - Gap 3.1 mm (> 2r): a real 0.1 mm strip stands 1.22 mm tall, 0.45 mm
 ///   from the axis, inside the footprint. Must strike (the sliver class).
+///
+/// When the `conservative_top` coverage-union fix lands
+/// (`dexel_stock/stamping.rs`), the last assertion goes red: flip it to
+/// `!union_covered` and rename the test `..._is_not_a_strike`.
 #[test]
-#[ignore = "red until the conservative_top coverage-union fix lands (dexel_stock/stamping.rs)"]
-fn a_descent_beside_two_overlapping_swaths_is_not_a_strike() {
+fn a_descent_beside_two_overlapping_swaths_still_strikes_g_staletop() {
     let (union_covered, exact_union) = two_passes_then_descent(2.9);
     let (real_strip, exact_strip) = two_passes_then_descent(3.1);
     line(&format!(
@@ -865,7 +871,9 @@ fn a_descent_beside_two_overlapping_swaths_is_not_a_strike() {
         "a real 0.1 mm strip inside the footprint must strike"
     );
     assert!(
-        !union_covered,
-        "the two swaths cut the whole band between them; a descent over it enters no material"
+        union_covered,
+        "G-STALETOP residue FIXED: a descent over the union of two overlapping swaths no \
+         longer strikes. Flip this assertion to `!union_covered` (the descent enters no \
+         material) and rename the test; it was pinned inverted while the fix was open."
     );
 }

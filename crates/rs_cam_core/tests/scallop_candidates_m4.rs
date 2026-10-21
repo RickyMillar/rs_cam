@@ -539,7 +539,7 @@ fn corrected_so(cusp_r: f64, angle: f64, curvature: f64) -> f64 {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "M4 phase B evidence — minutes; produces the Checkpoint C tables and diff maps"]
+#[ignore = "evidence: M4 phase B evidence — minutes; produces the Checkpoint C tables and diff maps"]
 fn candidate_matrix() {
     let tool = cutter();
     let resolution = FinishResolutionPolicy::legacy_envelope_quarter(&tool, TOLERANCE_MM);
@@ -636,7 +636,7 @@ fn candidate_matrix() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "M4 phase B evidence — the min-across-ring decomposition"]
+#[ignore = "evidence: M4 phase B evidence — the min-across-ring decomposition"]
 fn min_across_ring_decomposition() {
     let tool = cutter();
     let resolution = FinishResolutionPolicy::legacy_envelope_quarter(&tool, TOLERANCE_MM);
@@ -694,7 +694,7 @@ fn min_across_ring_decomposition() {
 /// did not — `max_rings` truncating a cascade the finer grid had slowed down.
 /// Its addendum said the fix belonged in `ring_stepover`. This is that test.
 #[test]
-#[ignore = "M4 phase B evidence — the cusp/4 re-test under the culprit fix"]
+#[ignore = "evidence: M4 phase B evidence — the cusp/4 re-test under the culprit fix"]
 fn cusp_quarter_rejection_under_the_culprit_fix() {
     let tool = cutter();
     let legacy = FinishResolutionPolicy::legacy_envelope_quarter(&tool, TOLERANCE_MM);
@@ -741,7 +741,7 @@ fn cusp_quarter_rejection_under_the_culprit_fix() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "M4 phase B evidence — the committed terrain fixture, headline arms only"]
+#[ignore = "evidence: M4 phase B evidence — the committed terrain fixture, headline arms only"]
 fn terrain_headline_arms() {
     let path = common::repo_root().join("crates/rs_cam_core/tests/fixtures/terrain.stl");
     let Ok(full) = TriangleMesh::from_stl(&path) else {

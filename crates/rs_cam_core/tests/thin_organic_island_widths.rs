@@ -271,7 +271,7 @@ fn report_widths(label: &str, rows: &mut [(f64, f64)], stepover: f64) {
 }
 
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_tier_and_band_region_widths() {
     let path = Path::new(WANAKA_MESH);
     if !path.exists() {
@@ -567,7 +567,7 @@ fn wanaka_tier_and_band_region_widths() {
 /// the cell hypothesis is needlessly expensive.  This setup intentionally
 /// stops once the real Wanaka Shallow regions exist, then runs only I/J.
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_monotone_cells_kept_retracts() {
     let path = Path::new(WANAKA_MESH);
     if !path.exists() {
@@ -2955,7 +2955,7 @@ fn stage_l_region_one(
 ///   wanaka_ceiling_rebaseline_a3 -- --ignored --nocapture
 /// ```
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_ceiling_rebaseline_a3() {
     let path = Path::new(WANAKA_MESH);
     if !path.exists() {
@@ -4073,7 +4073,7 @@ fn d1_setup() -> Option<D1Setup> {
 ///   wanaka_per_cell_direction_d1 -- --ignored --nocapture
 /// ```
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_per_cell_direction_d1() {
     let Some(setup) = d1_setup() else {
         return;
@@ -4895,7 +4895,7 @@ fn stage_n(input: &A3Inputs<'_>, regions: &[RegionCells]) {
 /// additive stage must not be able to move an existing stage's numbers — still
 /// holds, because nothing in the setup or in Stages L/M is edited.
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_per_cell_pattern_d2() {
     let Some(setup) = d1_setup() else {
         return;

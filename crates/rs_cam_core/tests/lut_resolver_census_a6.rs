@@ -272,7 +272,7 @@ fn run_census() -> BTreeMap<(String, String), Cell> {
 
 /// The report. `#[ignore]`d: it is an instrument, not a gate.
 #[test]
-#[ignore = "reporting instrument — run with --ignored --nocapture"]
+#[ignore = "instrument: reporting instrument — run with --ignored --nocapture"]
 fn lut_resolver_selection_census_report() {
     let cells = run_census();
     println!("# F-LUT2 resolver-selection census (A-6, number-preserving)\n");
@@ -407,7 +407,7 @@ const REROUTES: [(OperationType, LutOperationFamily); 3] = [
 /// was never the diameter law or the DOC derate. It is two different
 /// rows, reached from two different operation families.
 #[test]
-#[ignore = "reporting instrument — run with --ignored --nocapture"]
+#[ignore = "instrument: reporting instrument — run with --ignored --nocapture"]
 fn operation_family_reroute_band_delta_report() {
     let lut = embedded_vendor_lut();
     println!("# F-LUT2 axis 2: the operation-family reroute\n");

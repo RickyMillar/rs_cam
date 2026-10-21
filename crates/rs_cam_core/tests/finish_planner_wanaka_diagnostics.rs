@@ -48,7 +48,7 @@ fn wanaka_project_path() -> PathBuf {
 /// systematically under-reads steepness. This quantifies how much of
 /// wanaka's real steepness the Ø6-ball offset surface hides.
 #[test]
-#[ignore = "full-mesh sampling; run with --ignored --nocapture"]
+#[ignore = "instrument: full-mesh sampling; run with --ignored --nocapture"]
 fn wanaka_slope_distribution_diagnostic() {
     let path = wanaka_project_path();
     let session = ProjectSession::load(&path).expect("load wanaka.toml");
@@ -163,7 +163,7 @@ fn wanaka_slope_distribution_diagnostic() {
 /// ribbon is the thin VerySteep structure min-area tends to eat (the
 /// design doc's "thin-ring absorption" datapoint).
 #[test]
-#[ignore = "wanaka conditioning dial sweep; run with --ignored --nocapture"]
+#[ignore = "evidence: wanaka conditioning dial sweep; run with --ignored --nocapture"]
 fn p2e_conditioning_dial_sweep() {
     let path = wanaka_project_path();
     let session = ProjectSession::load(&path).expect("load wanaka.toml");
@@ -318,7 +318,7 @@ fn p2e_conditioning_dial_sweep() {
 ///
 /// Diagnostic, not a gate: it prints band mixes and asserts nothing.
 #[test]
-#[ignore = "full-mesh sampling; run with --ignored --nocapture"]
+#[ignore = "instrument: full-mesh sampling; run with --ignored --nocapture"]
 fn wanaka_band_mix_vs_cusp_radius() {
     let path = wanaka_project_path();
     let session = ProjectSession::load(&path).expect("load wanaka project");

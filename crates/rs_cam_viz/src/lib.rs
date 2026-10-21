@@ -221,7 +221,7 @@ mod no_mcp_feature_tests {
     #[test]
     fn mcp_mode_fails_before_event_loop_creation() {
         assert!(matches!(
-            super::run(true),
+            super::run(true, crate::io::app_settings::LoadedSettings::default()),
             Err(eframe::Error::AppCreation(_))
         ));
     }

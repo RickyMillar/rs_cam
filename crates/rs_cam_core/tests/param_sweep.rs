@@ -440,7 +440,7 @@ fn assert_any_change(diff: &FingerprintDiff, context: &str) {
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_pocket_stepover() {
     let poly = rect_polygon();
     let cutter = FlatEndmill::new(6.35, 25.0);
@@ -480,7 +480,7 @@ fn sweep_pocket_stepover() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_pocket_feed_rate() {
     let poly = rect_polygon();
 
@@ -513,7 +513,7 @@ fn sweep_pocket_feed_rate() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_pocket_cut_depth() {
     let poly = rect_polygon();
 
@@ -544,7 +544,7 @@ fn sweep_pocket_cut_depth() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_pocket_climb() {
     let poly = rect_polygon();
 
@@ -572,7 +572,7 @@ fn sweep_pocket_climb() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_pocket_safe_z() {
     let poly = rect_polygon();
 
@@ -611,7 +611,7 @@ fn sweep_pocket_safe_z() {
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_profile_side() {
     let poly = rect_polygon();
 
@@ -647,7 +647,7 @@ fn sweep_profile_side() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_profile_feed_rate() {
     let poly = rect_polygon();
 
@@ -674,7 +674,7 @@ fn sweep_profile_feed_rate() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_profile_climb() {
     let poly = rect_polygon();
 
@@ -702,7 +702,7 @@ fn sweep_profile_climb() {
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_adaptive_stepover() {
     let poly = rect_polygon();
     let cutter = FlatEndmill::new(6.35, 25.0);
@@ -733,7 +733,7 @@ fn sweep_adaptive_stepover() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_adaptive_slot_clearing() {
     let poly = rect_polygon();
 
@@ -758,7 +758,7 @@ fn sweep_adaptive_slot_clearing() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_adaptive_tolerance() {
     let poly = rect_polygon();
 
@@ -784,7 +784,7 @@ fn sweep_adaptive_tolerance() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_adaptive_min_cutting_radius() {
     let poly = l_shape_polygon(); // L-shape has sharp inside corners
 
@@ -810,7 +810,7 @@ fn sweep_adaptive_min_cutting_radius() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_adaptive_engagement_measure() {
     // F1 A/B (algorithm review 2026-06-12): DiskArea is the historical
     // measure, LeadingArc the units-correct one. The path MUST change —
@@ -863,7 +863,7 @@ fn generate_dropcutter(
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_dropcutter_stepover() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -897,7 +897,7 @@ fn sweep_dropcutter_stepover() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_dropcutter_feed_rate() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -922,7 +922,7 @@ fn sweep_dropcutter_feed_rate() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_dropcutter_min_z() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -950,7 +950,7 @@ fn sweep_dropcutter_min_z() {
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_waterline_z_step() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -984,7 +984,7 @@ fn sweep_waterline_z_step() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_waterline_sampling() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -1016,7 +1016,7 @@ fn sweep_waterline_sampling() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_waterline_feed_rate() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -1048,7 +1048,7 @@ fn sweep_waterline_feed_rate() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_waterline_z_range() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -1099,7 +1099,7 @@ fn default_face_params() -> FaceConfig {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_face_stepover() {
     let bounds = stock_bounds_2d();
     let result = run_sweep(
@@ -1123,7 +1123,7 @@ fn sweep_face_stepover() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_face_direction() {
     let bounds = stock_bounds_2d();
     let result = run_sweep(
@@ -1151,7 +1151,7 @@ fn sweep_face_direction() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_face_depth() {
     let bounds = stock_bounds_2d();
     let result = run_sweep(
@@ -1175,7 +1175,7 @@ fn sweep_face_depth() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_face_stock_offset() {
     let bounds = stock_bounds_2d();
     let result = run_sweep(
@@ -1214,7 +1214,7 @@ fn default_zigzag_params() -> ZigzagParams {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_zigzag_angle() {
     let poly = rect_polygon();
     let result = run_sweep(
@@ -1237,7 +1237,7 @@ fn sweep_zigzag_angle() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_zigzag_stepover() {
     let poly = rect_polygon();
     let result = run_sweep(
@@ -1280,7 +1280,7 @@ fn default_trace_params() -> TraceConfig {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_trace_compensation() {
     let poly = rect_polygon();
     let result = run_sweep(
@@ -1315,7 +1315,7 @@ fn sweep_trace_compensation() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_trace_depth() {
     let poly = rect_polygon();
     let result = run_sweep(
@@ -1358,7 +1358,7 @@ fn default_drill_params() -> DrillParams {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_drill_cycle() {
     let holes = drill_holes();
     let result = run_sweep(
@@ -1387,7 +1387,7 @@ fn sweep_drill_cycle() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_drill_depth() {
     let holes = drill_holes();
     let result = run_sweep(
@@ -1428,7 +1428,7 @@ fn default_chamfer_params() -> ChamferParams {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_chamfer_width() {
     let poly = rect_polygon();
     let result = run_sweep(
@@ -1470,7 +1470,7 @@ fn default_vcarve_params() -> VCarveParams {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_vcarve_max_depth() {
     let poly = l_shape_polygon();
     let result = run_sweep(
@@ -1493,7 +1493,7 @@ fn sweep_vcarve_max_depth() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_vcarve_stepover() {
     let poly = l_shape_polygon();
     let result = run_sweep(
@@ -1561,7 +1561,7 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_adaptive3d_stepover() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = FlatEndmill::new(6.35, 25.0);
@@ -1595,7 +1595,7 @@ fn sweep_adaptive3d_stepover() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_adaptive3d_depth_per_pass() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = FlatEndmill::new(6.35, 25.0);
@@ -1629,7 +1629,7 @@ fn sweep_adaptive3d_depth_per_pass() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_adaptive3d_clearing_strategy() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = FlatEndmill::new(6.35, 25.0);
@@ -1669,7 +1669,7 @@ fn sweep_adaptive3d_clearing_strategy() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_adaptive3d_z_blend() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = FlatEndmill::new(6.35, 25.0);
@@ -1702,7 +1702,7 @@ fn sweep_adaptive3d_z_blend() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_adaptive3d_engagement_measure() {
     // F1 A/B for the 3D AgentSearch dispatch (delegates per-slice to the
     // 2D adaptive engine, so the measure flows through ClearZLevelContext).
@@ -1767,7 +1767,7 @@ fn default_pencil_params() -> PencilParams {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_pencil_bitangency_angle() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -1792,7 +1792,7 @@ fn sweep_pencil_bitangency_angle() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_pencil_num_offset_passes() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -1838,7 +1838,7 @@ fn default_scallop_params() -> ScallopParams {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_scallop_height() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -1868,7 +1868,7 @@ fn sweep_scallop_height() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_scallop_direction() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -1918,7 +1918,7 @@ fn default_steep_shallow_params() -> SteepShallowParams {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_steep_shallow_threshold() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -1967,7 +1967,7 @@ fn default_ramp_finish_params() -> RampFinishParams {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_ramp_finish_max_stepdown() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -1997,7 +1997,7 @@ fn sweep_ramp_finish_max_stepdown() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_ramp_finish_direction() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -2049,7 +2049,7 @@ fn default_spiral_finish_params() -> SpiralFinishParams {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_spiral_finish_stepover() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -2079,7 +2079,7 @@ fn sweep_spiral_finish_stepover() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_spiral_finish_direction() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -2123,7 +2123,7 @@ fn default_radial_finish_params() -> RadialFinishParams {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_radial_finish_angular_step() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -2167,7 +2167,7 @@ fn default_horizontal_finish_params() -> HorizontalFinishParams {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_horizontal_finish_angle_threshold() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -2195,7 +2195,7 @@ fn sweep_horizontal_finish_angle_threshold() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_horizontal_finish_stepover() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -2260,7 +2260,7 @@ fn default_inlay_plug_params() -> InlayPlugParams {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_inlay_pocket_depth() {
     let poly = l_shape_polygon();
     let result = run_sweep(
@@ -2286,7 +2286,7 @@ fn sweep_inlay_pocket_depth() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_inlay_glue_gap() {
     let poly = l_shape_polygon();
     let result = run_sweep(
@@ -2337,7 +2337,7 @@ fn default_project_curve_params() -> ProjectCurveParams {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_project_curve_depth() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);
@@ -2368,7 +2368,7 @@ fn sweep_project_curve_depth() {
 }
 
 #[test]
-#[ignore = "expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
+#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
 fn sweep_project_curve_point_spacing() {
     let (mesh, index) = hemisphere_mesh();
     let cutter = BallEndmill::new(6.35, 25.0);

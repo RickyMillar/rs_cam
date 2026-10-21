@@ -50,6 +50,8 @@
     clippy::print_stderr
 )]
 
+mod common;
+
 use rs_cam_core::ids::ToolpathId;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
@@ -156,11 +158,7 @@ fn run_back_rough(modulate: bool) -> f64 {
 /// stays in [0.5, 1.7]. Measured 1.48 anchors the upper side.
 #[test]
 fn modulated_cycle_time_in_safe_envelope_against_real_machine() {
-    let toml_path = Path::new(WANAKA_TOML);
-    if !toml_path.exists() {
-        eprintln!("skip: {WANAKA_TOML} not present on this machine");
-        return;
-    }
+    common::require_fixture(Path::new(WANAKA_TOML));
 
     let unmod_predicted = run_back_rough(false);
     let mod_predicted = run_back_rough(true);
@@ -192,11 +190,7 @@ fn modulated_cycle_time_in_safe_envelope_against_real_machine() {
 /// unmodulated reference, not the modulated one.
 #[test]
 fn modulated_cycle_time_prediction_within_25_percent_of_machine() {
-    let toml_path = Path::new(WANAKA_TOML);
-    if !toml_path.exists() {
-        eprintln!("skip: {WANAKA_TOML} not present on this machine");
-        return;
-    }
+    common::require_fixture(Path::new(WANAKA_TOML));
 
     let mod_predicted = run_back_rough(true);
     let ratio = mod_predicted / MEASURED_MODULATED_S;

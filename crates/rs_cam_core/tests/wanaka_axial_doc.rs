@@ -28,7 +28,7 @@ use std::sync::atomic::AtomicBool;
 /// equal heights cut equally (engine conforms to mesh). A wide spread =
 /// equal heights cut unequally (the user is right; engine bug).
 #[test]
-#[ignore = "expensive WANAKA diagnostic; run with `cargo test --test wanaka_axial_doc -- --ignored`"]
+#[ignore = "evidence: expensive WANAKA diagnostic; run with `cargo test --test wanaka_axial_doc -- --ignored`"]
 fn wanaka_deep_region_localization() {
     use rs_cam_core::compute::transform::{FaceUp, ZRotation};
     use rs_cam_core::mesh::SpatialIndex;
@@ -224,7 +224,7 @@ fn wanaka_deep_region_localization() {
 /// stock (the user's complaint); if not, the rough is uniform and the deep
 /// bits are genuinely deeper mesh.
 #[test]
-#[ignore = "expensive WANAKA diagnostic; run with `cargo test --test wanaka_axial_doc -- --ignored`"]
+#[ignore = "evidence: expensive WANAKA diagnostic; run with `cargo test --test wanaka_axial_doc -- --ignored`"]
 fn wanaka_final_surface_vs_mesh() {
     use rs_cam_core::compute::transform::{FaceUp, ZRotation};
     use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
@@ -424,7 +424,7 @@ fn wanaka_final_surface_vs_mesh() {
 }
 
 #[test]
-#[ignore = "expensive WANAKA diagnostic; run with `cargo test --test wanaka_axial_doc -- --ignored`"]
+#[ignore = "evidence: expensive WANAKA diagnostic; run with `cargo test --test wanaka_axial_doc -- --ignored`"]
 fn wanaka_back_rough_axial_doc() {
     let toml_path = Path::new(concat!(
         env!("CARGO_MANIFEST_DIR"),

@@ -132,7 +132,7 @@ fn deepest_gouge_um(fixture: &Fx, tp: &Toolpath) -> f64 {
 ///   bound, and it is bounded by `chord_tolerance` only where refinement
 ///   actually runs.
 #[test]
-#[ignore = "M4 phase C diagnosis — prints the gouge anatomy"]
+#[ignore = "instrument: M4 phase C diagnosis — prints the gouge anatomy"]
 fn where_does_the_isofield_gouge_come_from() {
     let tool = tools::wanaka_taper();
     for (label, policy) in [
@@ -374,7 +374,7 @@ fn neither_ring_source_emits_sub_ten_micron_segments() {
 /// Render the residual field for the three arms so the gouge can be LOOKED at
 /// before anything is claimed about it (the v3 rule).
 #[test]
-#[ignore = "M4 phase C diagnosis — writes residual maps"]
+#[ignore = "instrument: M4 phase C diagnosis — writes residual maps"]
 fn render_the_gouge() {
     let tool = tools::wanaka_taper();
     for (tag, policy) in [
@@ -405,7 +405,7 @@ fn render_the_gouge() {
 /// that flagged it: deepest single point, gouge area, and the segment-length
 /// tail, shipped cascade vs iso-field.
 #[test]
-#[ignore = "M4 phase C evidence — the gouge matrix across all five fixtures"]
+#[ignore = "evidence: M4 phase C evidence — the gouge matrix across all five fixtures"]
 fn gouge_matrix_across_the_fixture_set() {
     let tool = tools::wanaka_taper();
     let fixtures: Vec<Fx> = vec![

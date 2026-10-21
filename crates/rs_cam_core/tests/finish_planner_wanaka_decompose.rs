@@ -136,7 +136,7 @@ fn the_pinned_fixtures_live_under_tests_fixtures() {
 }
 
 #[test]
-#[ignore = "full-mesh drop-cutter sampling; run with --ignored --nocapture"]
+#[ignore = "instrument: full-mesh drop-cutter sampling; run with --ignored --nocapture"]
 fn wanaka_decomposes_to_order_ten_regions() {
     let path = wanaka_project_path();
     assert!(

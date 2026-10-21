@@ -10122,7 +10122,7 @@ fn arm_terrain(
 /// what PROGRAMME.md, FINDINGS_F2 and this file's own header run-command
 /// quote. It now carries the analytic arms as well as the terrain ones.
 #[test]
-#[ignore = "evidence run — long runtime (6+ plan_spiral solves, three on ~37k/~14k/~36k-triangle analytic regions, plus four analytic meshes built in-process, plus THREE direction_field Poisson solves + marching-triangles extractions per analytic arm since 2026-08-31 — the curvature field, the synthesis §4.3 sweep field and the operator's medial-axis field, the last of which additionally builds one distance-transform grid per region); needs NO external files, every analytic fixture is generated and the terrain one is in-repo"]
+#[ignore = "evidence: long runtime (6+ plan_spiral solves, three on ~37k/~14k/~36k-triangle analytic regions, plus four analytic meshes built in-process, plus THREE direction_field Poisson solves + marching-triangles extractions per analytic arm since 2026-08-31 — the curvature field, the synthesis §4.3 sweep field and the operator's medial-axis field, the last of which additionally builds one distance-transform grid per region); needs NO external files, every analytic fixture is generated and the terrain one is in-repo"]
 fn terrain_small_conformal_spiral_f2() {
     use rs_cam_core::machine::kinematics::MachineKinematics;
 

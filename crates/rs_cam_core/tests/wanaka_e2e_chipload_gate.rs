@@ -9,9 +9,13 @@
 //! wanaka project with no manual feed/RPM/stepover input from the user.
 //! This test is the bar.
 //!
-//! Requires `tests/fixtures/wanaka100/wanaka_full_tuned.toml`.
-//! On machines that don't have that file the test is a no-op (early
-//! return with a `skip:` log line) so CI stays green.
+//! Requires `tests/fixtures/wanaka100/wanaka_full_tuned.toml` (in the
+//! repository; a missing file fails the test, F153).
+//!
+//! W14a (F152): the bar is pinned INVERTED while O4 is open. The test
+//! holds today's known-bad chipload verdict (`Exceeds`) and fails when the
+//! auto-fix chain makes it `Within`; then flip the match arm back to the
+//! bar. The axial-DOC bar (the O3 half) holds today and stays a bar.
 
 #![allow(
     clippy::unwrap_used,
@@ -24,6 +28,8 @@
 
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
+
+mod common;
 
 use rs_cam_core::session::{ProjectSession, SimulationOptions};
 
@@ -41,25 +47,23 @@ const BACK_ROUGH_DEPTH_PER_PASS_MM: f64 = 3.0;
 /// budget the planning doc set.
 const AXIAL_DOC_TOLERANCE_MM: f64 = 0.5;
 
-/// Currently red. The O5b/O5c/O6 chain landed but two gaps remain:
-/// - Axial DOC overshoot to ~15mm on a Helix sample (likely the open
-///   O3 issue: single contiguous-feed Z descent path in adaptive3d not
-///   covered by O5b's per-Z residual cleanup).
-/// - Burn-risk on low-engagement edge samples (O6's correct arc-average
-///   switch dropped the chip thickness for samples just above the 2%
-///   air-cut threshold below the LUT minimum — the existing
-///   investigation log's "O4 two layers of chipload" issue).
+/// Pinned inverted (W14a, F152). The O5b/O5c/O6 chain landed; on
+/// 2026-10-20 (c3808eb0) the run read:
+/// - axial DOC peak 3.456 mm against the 3.0 + 0.5 mm bar: the O3 half
+///   (a ~15 mm overshoot on a Helix sample) no longer shows, so that bar
+///   runs as written;
+/// - chipload `Exceeds(High)` at 0.1875 mm/tooth nominal against the
+///   0.127 mm/tooth LUT cap (the O4 "two layers of chipload" issue), so
+///   that bar is pinned inverted.
 ///
-/// `#[ignore]` until O3 + O4 follow-up land. Run explicitly with
-/// `cargo test -p rs_cam_core --test wanaka_e2e_chipload_gate -- --ignored`.
-#[ignore = "blocked on O3 helix-descent + O4 burn-risk edge filter"]
+/// About 80 s in a test build; it runs with `heavy-tests`.
+#[cfg_attr(
+    not(feature = "heavy-tests"),
+    ignore = "heavy: wanaka Back Rough generate and simulate, about 80 s; runs with --features heavy-tests"
+)]
 #[test]
-fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
-    let toml_path = Path::new(WANAKA_TOML);
-    if !toml_path.exists() {
-        eprintln!("skip: {WANAKA_TOML} not present on this machine");
-        return;
-    }
+fn wanaka_back_rough_chipload_still_exceeds_after_auto_fix_o4() {
+    let toml_path = common::require_fixture(Path::new(WANAKA_TOML));
 
     let mut session = ProjectSession::load(toml_path).expect("load wanaka project");
     let toolpaths = session.list_toolpaths();
@@ -267,22 +271,24 @@ fn wanaka_back_rough_chipload_gate_passes_after_auto_fix() {
     match &back_rough_verdict.chipload {
         rs_cam_core::tool_load::ChiploadVerdict::Within {
             approach_to_max, ..
-        } => {
-            println!(
-                "  peak chipload (mean convention): {:.5} mm/tooth",
-                approach_to_max.observed_mm_per_tooth
-            );
-        }
+        } => panic!(
+            "O4 FIXED: the Back Rough chipload verdict is Within (peak {:.5} mm/tooth, \
+             mean convention). Flip this arm back to the bar (Within passes, Exceeds \
+             fails) and rename the test; it was pinned inverted while O4 was open.",
+            approach_to_max.observed_mm_per_tooth
+        ),
+        // The known-bad state while O4 is open (W14a pin). The old bar's
+        // diagnosis: O6 should drop the peak below the LUT cap; if it does
+        // not, the simulator may still expose max_chip_thickness_mm rather
+        // than mean_chip_thickness_mm in dexel_stock::effective_chip_thickness_mm.
         rs_cam_core::tool_load::ChiploadVerdict::Exceeds {
             side, triggering, ..
-        } => panic!(
-            "Back Rough chipload verdict is Exceeds({side:?}) at peak={:.5} \
-             mm/tooth. The auto-fix chain (O5b/O5c/O6) did not land. \
-             Inspect: O6 should drop the peak below the LUT cap; if it didn't, \
-             the simulator might still be exposing max_chip_thickness_mm rather \
-             than mean_chip_thickness_mm in dexel_stock::effective_chip_thickness_mm.",
-            triggering.observed_mm_per_tooth
-        ),
+        } => {
+            println!(
+                "  pinned known-bad (O4 open): Exceeds({side:?}) at peak {:.5} mm/tooth",
+                triggering.observed_mm_per_tooth
+            );
+        }
         rs_cam_core::tool_load::ChiploadVerdict::Unmodeled { reason } => panic!(
             "Back Rough chipload verdict is Unmodeled({reason:?}) — gate could not \
              evaluate. Either the simulation didn't capture arc engagement, or no \

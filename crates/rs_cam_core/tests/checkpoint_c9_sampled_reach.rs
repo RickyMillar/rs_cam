@@ -672,6 +672,7 @@ fn curved_wall_valley_sampled_reach_beats_the_v_model() {
 /// decides `reach::PRODUCTION_REACH_MODEL`: a model whose accuracy is bounded
 /// by its pitch cannot be adopted on the strength of fine-pitch numbers alone.
 #[test]
+#[ignore = "instrument: prints the resolution sweep; no assertion"]
 fn resolution_sweep_separates_model_error_from_grid_error() {
     println!();
     println!("== C9 sub-item 4 — rest-cell resolution, SAMPLED model held constant ==");

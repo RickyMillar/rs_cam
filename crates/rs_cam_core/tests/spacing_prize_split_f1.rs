@@ -81,7 +81,7 @@ const LADDERS: [&[f64]; 3] = [
 ];
 
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_spacing_prize_split_f1() {
     eprintln!(
         "\n========== Avenue F, F1 — SPACING-PRIZE SPLIT ==========\n\

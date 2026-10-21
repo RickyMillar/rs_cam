@@ -183,7 +183,7 @@ fn run(case: &Case, bound: RingSampleBound) -> Run {
 
 /// The evidence run. Every column the decision rule needs, per fixture.
 #[test]
-#[ignore = "wave 14 evidence — the +88%-moves adjudication"]
+#[ignore = "evidence: wave 14 evidence — the +88%-moves adjudication"]
 fn sample_bound_matrix() {
     let tool = tools::wanaka_taper();
     println!(

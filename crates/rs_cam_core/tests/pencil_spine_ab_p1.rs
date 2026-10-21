@@ -853,7 +853,7 @@ fn y_truth_xy(sloped_exit: bool) -> Vec<(f64, f64)> {
 }
 
 #[test]
-#[ignore = "evidence run — fast synthetic A/B, not a sentry"]
+#[ignore = "evidence: fast synthetic A/B, not a sentry"]
 fn synthetic_flat_closed_pencil_spine_ab() {
     // The DEGENERATE case: a flat-floored closed groove. Recorded as a bounded
     // finding, not the ruling — flow accumulation has no along-valley gradient
@@ -863,7 +863,7 @@ fn synthetic_flat_closed_pencil_spine_ab() {
 }
 
 #[test]
-#[ignore = "evidence run — fast synthetic A/B, not a sentry"]
+#[ignore = "evidence: fast synthetic A/B, not a sentry"]
 fn synthetic_sloped_exit_pencil_spine_ab() {
     // The FAIR case for the operator's claim: a sloping valley that exits the
     // board edge, so flow accumulation has a real gradient and outlet.
@@ -872,7 +872,7 @@ fn synthetic_sloped_exit_pencil_spine_ab() {
 }
 
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_pencil_spine_ab() {
     let path = Path::new(WANAKA_MESH);
     if !path.exists() {

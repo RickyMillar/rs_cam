@@ -328,7 +328,7 @@ fn a_surviving_hole_is_a_real_polygon_not_a_collapsed_ring() {
 /// clamped to half a median sliver width — as a MEASUREMENT, not a change:
 /// nothing in the shipped path reads it.
 #[test]
-#[ignore = "loads the wanaka mesh and walks three full tier maps; run with --ignored --nocapture"]
+#[ignore = "evidence: loads the wanaka mesh and walks three full tier maps; run with --ignored --nocapture"]
 fn wanaka_owned_versus_machining_area_at_three_tolerances() {
     use std::path::PathBuf;
     use std::sync::atomic::AtomicBool;
@@ -493,7 +493,7 @@ const RIVMAP_TOLERANCE_MM: f64 = 0.15;
 /// planner's own dials, tolerance 0.15, then `save`. Run once to (re)build
 /// the fixture; the Step 0 instrument below reads it.
 #[test]
-#[ignore = "rewrites planning/fixtures/rivmap100/rivmap100_tiered_finish.toml"]
+#[ignore = "evidence: rewrites planning/fixtures/rivmap100/rivmap100_tiered_finish.toml"]
 fn write_rivmap100_tiered_finish_fixture() {
     use rs_cam_core::session::{MultitoolPlanSpec, ProjectSession};
 
@@ -523,7 +523,7 @@ fn write_rivmap100_tiered_finish_fixture() {
 ///
 /// Measurement only. Prints; asserts nothing but that the pieces ran.
 #[test]
-#[ignore = "walks the rivmap100 tier map and generates the fine tier; run with --ignored --nocapture"]
+#[ignore = "instrument: walks the rivmap100 tier map and generates the fine tier; run with --ignored --nocapture"]
 fn rivmap100_tiered_finish_step0() {
     use std::sync::atomic::AtomicBool;
 
@@ -803,7 +803,7 @@ fn print_step0_preview(label: &str, p: &rs_cam_core::session::MultitoolPreview) 
 /// generated: at this size the fine tier takes too long in a debug build,
 /// and the F3c flute-reach pass is the per-cell reading of the same rule.
 #[test]
-#[ignore = "walks a 350 x 350 mm tier map; run with --ignored --nocapture"]
+#[ignore = "instrument: walks a 350 x 350 mm tier map; run with --ignored --nocapture"]
 fn rivmap350_tiered_finish_step0_preview() {
     use std::sync::atomic::AtomicBool;
 

@@ -1325,7 +1325,7 @@ fn write_basin_svg(inputs: &BasinSvg<'_>, path: &Path, title: &str) -> std::io::
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_catchment_basin_census_w0b() {
     eprintln!(
         "\n========== Track H W0b — CATCHMENT BASIN CENSUS (lake- and flat-corrected) ==========\n\

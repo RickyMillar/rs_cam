@@ -2238,7 +2238,7 @@ fn evaluate_mask(
 }
 
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh + rivers DXF (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh + rivers DXF (not in repo)"]
 fn wanaka_valley_prize_census_h0() {
     eprintln!(
         "\n========== Track H V0 — VALLEY PRIZE CENSUS ==========\n\

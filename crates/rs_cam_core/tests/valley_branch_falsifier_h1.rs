@@ -1470,7 +1470,7 @@ struct ArmReport {
 }
 
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_valley_branch_falsifier_h1() {
     use rs_cam_core::finish::surface_link::LinkCeiling;
     use rs_cam_core::geometry::region_set::RegionSet;

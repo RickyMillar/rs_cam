@@ -948,7 +948,7 @@ fn cancellable_2d_families_return_after_the_flag_is_set() {
 /// Set `R2_ARTIFACT_DIR` to write the SVG gallery somewhere other than
 /// `target/adversarial_2d/`.
 #[test]
-#[ignore = "the full 9 × 22 hostile matrix: minutes in debug, and it writes an \
+#[ignore = "heavy: the full 9 × 22 hostile matrix: minutes in debug, and it writes an \
             SVG gallery. This is the campaign that produces \
             ADVERSARIAL_2D_FINDINGS.md; the CI teeth are \
             every_2d_operation_survives_its_worst_fixtures."]

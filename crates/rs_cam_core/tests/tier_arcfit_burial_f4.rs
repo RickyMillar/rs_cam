@@ -463,7 +463,7 @@ fn an_arc_fit_buries_no_deeper_than_the_source_path_plus_its_tolerance() {
 }
 
 #[test]
-#[ignore = "generates and simulates three arms of a 40 x 40 mm finish; run with --ignored --nocapture"]
+#[ignore = "instrument: generates and simulates three arms of a 40 x 40 mm finish; run with --ignored --nocapture"]
 fn arc_fit_burial_against_arcs_off_on_knolls_and_a_wall() {
     let (mut session, index) = session_with_fine_tier(mesh(), HALF);
     let tc = session.get_toolpath_config(index).unwrap().clone();
@@ -550,7 +550,7 @@ fn arc_fit_burial_against_arcs_off_on_knolls_and_a_wall() {
 /// Step 0 instrument: the rest chain needs a simulation first, and a
 /// finishing path follows the mesh either way.
 #[test]
-#[ignore = "generates the rivmap100 fine tier three times (minutes each in debug); run with --ignored --nocapture"]
+#[ignore = "instrument: generates the rivmap100 fine tier three times (minutes each in debug); run with --ignored --nocapture"]
 fn arc_fit_burial_on_the_rivmap100_fine_tier() {
     use rs_cam_core::compute::config::BoundarySource;
 

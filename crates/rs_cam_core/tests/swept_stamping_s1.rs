@@ -698,7 +698,7 @@ fn swept_removal_is_sample_density_independent_and_per_stamp_is_not() {
 /// cargo test -p rs_cam_core --test swept_stamping_s1 -- --ignored --nocapture
 /// ```
 #[test]
-#[ignore = "measurement, not a gate — prints the S1 metric delta"]
+#[ignore = "instrument: measurement, not a gate — prints the S1 metric delta"]
 fn print_swept_metric_delta() {
     let tp = mixed_pass();
     for (label, cutter) in [

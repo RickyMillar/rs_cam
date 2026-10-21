@@ -779,20 +779,33 @@ fn chamfer_link_moves_preserves_material_state() {
 
 #[test]
 fn pencil_link_moves_preserves_material_state() {
-    let (mesh, index) = hemisphere_mesh();
-    let cutter = BallEndmill::new(6.35, 25.0);
+    // F153: the smooth hemisphere gave pencil no chain, so this arm
+    // returned early and checked nothing. The corrugated plate of
+    // `pencil_hop_dial_g_pencilhop` (period 6 mm, amplitude 2 mm, a 3 mm
+    // ball) gives one valley chain per period; adjacent chain ends sit one
+    // period apart, inside the 10 mm link distance below.
+    //
+    // Measured 2026-10-20 (W14a): the dressup applies NO link here (3417
+    // moves and 232.1 mm of rapid before and after). Every bridge crosses
+    // a ridge the toolpath has not cut, so `bridge_corridor_is_swept`
+    // refuses it. The arm therefore pins the gate and neutrality, as the
+    // Chamfer arm does; a pencil fixture whose links the corridor rule
+    // accepts is still to find.
+    let mesh = common::meshes::sawtooth_plate(20.0, 6.0, 2.0);
+    let index = SpatialIndex::build_auto(&mesh);
+    let cutter = BallEndmill::new(3.0, 25.0);
     let raw = rs_cam_core::interrupt::run_uncancellable(|cancel| {
         pencil_toolpath_structured_annotated_with_cancel(
             &mesh,
             &index,
             &cutter,
             &PencilParams {
-                // Very high angle so the smooth hemisphere produces detectable
-                // chains for link_moves to act on. (175° matches the audit's
-                // empirical pencil row.)
+                // 175° matches the audit's empirical pencil row.
                 bitangency_angle: 175.0,
                 min_cut_length: 1.0,
-                hookup_distance: 5.0,
+                // Below the 6 mm period, so the generator leaves the chains
+                // apart and the dressup sees each 6 mm gap.
+                hookup_distance: 1.0,
                 num_offset_passes: 1,
                 offset_stepover: 0.5,
                 sampling: 0.5,
@@ -826,25 +839,18 @@ fn pencil_link_moves_preserves_material_state() {
         )
     })
     .0;
-    if raw.moves.is_empty() {
-        eprintln!(
-            "pencil_link_moves_preserves_material_state: SKIPPED — \
-             pencil produced no chains on hemisphere fixture (geometry too smooth). \
-             The audit verified pencil empirically against real fixtures \
-             showing 0.41% pixel diff."
-        );
-        return;
-    }
     assert_link_moves_neutral(
         OperationType::Pencil,
         raw,
         &cutter,
-        6.35,
+        3.0,
         0.5,
         10.0,
         0.05,
         0.02,
-        /* expect_links_applied */ true,
+        // The corridor rule refuses every bridge on this fixture (above).
+        /* expect_links_applied */
+        false,
     );
 }
 

@@ -849,7 +849,7 @@ fn run_spiral_arm(label: &str, slug: &str, derate: bool) {
 // ── the arms ─────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "Track G evidence instrument — run explicitly with --ignored --nocapture"]
+#[ignore = "evidence: Track G evidence instrument — run explicitly with --ignored --nocapture"]
 fn ledger_d2_xy_spaced_spiral() {
     run_spiral_arm(
         "ARM D2 — whole-board spiral, XY-spaced (legacy raster spacing)",
@@ -859,7 +859,7 @@ fn ledger_d2_xy_spaced_spiral() {
 }
 
 #[test]
-#[ignore = "Track G evidence instrument — run explicitly with --ignored --nocapture"]
+#[ignore = "evidence: Track G evidence instrument — run explicitly with --ignored --nocapture"]
 fn ledger_d1_spec_honest_spiral() {
     run_spiral_arm(
         "ARM D1 — whole-board spiral, spec-honest (per-ring worst-slope derate)",
@@ -872,7 +872,7 @@ fn ledger_d1_spec_honest_spiral() {
 /// same mesh, costed by the harness integrator. Pairs with CLI arm B to
 /// calibrate the two scales.
 #[test]
-#[ignore = "Track G evidence instrument — run explicitly with --ignored --nocapture"]
+#[ignore = "evidence: Track G evidence instrument — run explicitly with --ignored --nocapture"]
 fn ledger_cal_unified_whole_board() {
     use rs_cam_core::finish::finish_planner::FinishPlannerParams;
     use rs_cam_core::finish::unified_finish::{

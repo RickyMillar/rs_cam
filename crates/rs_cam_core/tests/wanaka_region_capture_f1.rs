@@ -488,7 +488,7 @@ fn load_region1_capture() -> Option<CapturedRegion> {
 /// would turn a legitimate deliberate re-cut into a red capture run. The
 /// SENTRY below is where drift is caught.
 #[test]
-#[ignore = "capture — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: capture — needs the operator's wanaka mesh (not in repo)"]
 fn capture_wanaka_region_1_boundary() {
     let path = Path::new(WANAKA_MESH);
     if !path.exists() {
@@ -532,7 +532,7 @@ fn capture_wanaka_region_1_boundary() {
 /// Skips (never fails) on either missing input: the mesh is machine-local, and
 /// the artifact does not exist until the capture above has been run once.
 #[test]
-#[ignore = "drift sentry — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: drift sentry — needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_region_1_capture_matches_recomputation() {
     const DRIFT: &str = "The region-1 derivation chain has DRIFTED: the committed capture at \
          test_data/wanaka_region1_boundary_f1.json no longer matches what the \

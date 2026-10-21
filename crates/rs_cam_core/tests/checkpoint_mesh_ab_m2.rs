@@ -106,7 +106,7 @@ fn hash_mesh(h: &mut std::collections::hash_map::DefaultHasher, mesh: &StockMesh
 }
 
 #[test]
-#[ignore = "A/B instrument: compare against the eager build of fd06f407"]
+#[ignore = "instrument: A/B instrument: compare against the eager build of fd06f407"]
 fn the_on_demand_checkpoint_mesh_equals_the_eager_mesh_m2() {
     // The identity group emits in WORLD coordinates (F-024).
     let top: Vec<SimToolpathEntry> = (0..3)

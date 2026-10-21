@@ -910,9 +910,9 @@ const RAW_DRAG_VALUE_ALLOWANCE: &[(&str, usize, &str)] = &[
     ),
     (
         "ui/properties/setup.rs",
-        2,
-        "the datum Z offset and the fixture clearance draw in \
-         `ui.horizontal` rows",
+        1,
+        "the datum Z offset draws in a `ui.horizontal` row (K2 6a013a78 \
+         moved the fixture clearance to the obstacle editor)",
     ),
     (
         "ui/properties/machine_panel.rs",

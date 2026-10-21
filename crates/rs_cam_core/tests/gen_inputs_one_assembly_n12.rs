@@ -22,7 +22,9 @@
 //! - **(b) The worker names no loose executor.** No file under
 //!   `crates/rs_cam_viz/src/` names `execute_operation_annotated`, comment
 //!   lines excluded. A viz-side call to the loose entry is a second
-//!   assembly, whatever else the worker does.
+//!   assembly, whatever else the worker does. W14a (F171) moved this arm
+//!   to the viz gate:
+//!   `rs_cam_viz/tests/loose_executor_is_not_named_in_viz_wp12.rs`.
 //! - **(c) The bundle keeps one producer.** The `-> Result<ResolvedGenInputs`
 //!   spelling appears once in the core crate. WP11a's own sentry scans three
 //!   spellings; this arm pins the one WP11b must not multiply.
@@ -219,7 +221,10 @@ fn both_core_routes_report_one_feed_optimisation_answer() {
     );
 }
 
-// ── (b) the worker names no loose executor ──────────────────────────
+// ── (b) moved to the viz gate (W14a, F171) ──────────────────────
+//
+// `crates/rs_cam_viz/tests/loose_executor_is_not_named_in_viz_wp12.rs`
+// refuses a viz line that names the loose executor.
 
 /// A line comment, a doc comment, or a module doc comment.
 fn is_comment(line: &str) -> bool {
@@ -239,61 +244,6 @@ fn rust_sources_under(dir: &Path, out: &mut Vec<PathBuf>) {
             out.push(path);
         }
     }
-}
-
-/// Every `.rs` file under the viz crate's `src/`, in a stable order.
-fn viz_sources() -> Vec<PathBuf> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("rs_cam_viz")
-        .join("src");
-    assert!(
-        root.is_dir(),
-        "{} is not a directory; retarget this test",
-        root.display()
-    );
-    let mut files = Vec::new();
-    rust_sources_under(&root, &mut files);
-    files.sort();
-    files
-}
-
-/// The GUI worker calls no loose executor.
-///
-/// The loose entry takes 21 arguments and builds nothing, so a viz-side call
-/// to it is a second input assembly however the request is shaped. Comment
-/// lines are excluded: several comments name the function to explain the
-/// history, and a comment is not a call.
-#[test]
-fn no_viz_source_names_the_loose_executor() {
-    let files = viz_sources();
-    assert!(
-        !files.is_empty(),
-        "the viz source scan read no file; an empty population passes and \
-         looks healthy"
-    );
-
-    let mut hits: Vec<String> = Vec::new();
-    for path in &files {
-        let text = std::fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-        for (index, line) in text.lines().enumerate() {
-            if is_comment(line) {
-                continue;
-            }
-            if line.contains("execute_operation_annotated") {
-                hits.push(format!("{}:{}", path.display(), index + 1));
-            }
-        }
-    }
-
-    assert!(
-        hits.is_empty(),
-        "the GUI worker must reach the executor through \
-         rs_cam_core::session::execute_job, never the loose entry; these \
-         lines name it: {}",
-        hits.join(", ")
-    );
 }
 
 // ── (c) the bundle keeps one producer ───────────────────────────────

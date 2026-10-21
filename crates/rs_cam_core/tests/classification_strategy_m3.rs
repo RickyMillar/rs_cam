@@ -1377,7 +1377,7 @@ fn print_timings(title: &str, rows: &[Timing]) {
 }
 
 #[test]
-#[ignore = "M3 study row: loads the 10 MB terrain and sweeps to 849²; minutes, release only"]
+#[ignore = "instrument: M3 study row: loads the 10 MB terrain and sweeps to 849²; minutes, release only"]
 fn terrain_equivalence_and_timing() {
     let _serial = TIMING_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let Some(path) = terrain_path() else {
@@ -1441,7 +1441,7 @@ fn terrain_equivalence_and_timing() {
 }
 
 #[test]
-#[ignore = "M3 study row: analytic timing sweep, release only"]
+#[ignore = "instrument: M3 study row: analytic timing sweep, release only"]
 fn analytic_timing_sweep() {
     let _serial = TIMING_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let cutter = common::tools::wanaka_taper();

@@ -189,7 +189,7 @@ fn fixture_path(name: &str) -> PathBuf {
 }
 
 #[test]
-#[ignore = "expensive live-project debug repro: generates/simulates full fixture and can exceed normal cargo test timeouts"]
+#[ignore = "instrument: expensive live-project debug repro: generates/simulates full fixture and can exceed normal cargo test timeouts"]
 fn live_project_pc6_has_no_phantom_cuts() {
     // Load the actual project the user is running: bottom-face setup,
     // terrain.stl + rivers_aligned.dxf, PC6 at toolpath id 12. Runs the

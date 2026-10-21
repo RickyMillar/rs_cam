@@ -53,7 +53,7 @@ fn wanaka_project_path() -> PathBuf {
 }
 
 #[test]
-#[ignore = "full-project dexel simulation ladder; run with --ignored --nocapture"]
+#[ignore = "instrument: full-project dexel simulation ladder; run with --ignored --nocapture"]
 fn p1_headless_ab_full_chain_intent_decomposition() {
     let path = wanaka_project_path();
     assert!(

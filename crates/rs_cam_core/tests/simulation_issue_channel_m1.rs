@@ -498,7 +498,7 @@ fn fixture_path(name: &str) -> PathBuf {
 ///
 /// This test decides between them by attributing the peak.
 #[test]
-#[ignore = "expensive: generates + simulates the terrain fixture; run explicitly with --ignored"]
+#[ignore = "heavy: expensive: generates + simulates the terrain fixture; run explicitly with --ignored"]
 fn rivers_b4_probe_project_curve_on_remaining_stock() {
     let path = fixture_path("test_job.toml");
     let mut session = ProjectSession::load(&path).expect("test_job.toml loads");

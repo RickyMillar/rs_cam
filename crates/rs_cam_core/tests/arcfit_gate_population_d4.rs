@@ -656,7 +656,7 @@ fn modelled_gate_verdicts_across_the_two_classifications() {
 /// cargo test -p rs_cam_core --test arcfit_gate_population_d4 -- --ignored --nocapture
 /// ```
 #[test]
-#[ignore = "expensive: generates + simulates the committed terrain fixture; run explicitly with --ignored"]
+#[ignore = "heavy: expensive: generates + simulates the committed terrain fixture; run explicitly with --ignored"]
 fn verdict_delta_probe_on_the_committed_fixture() {
     use std::collections::HashMap;
     use std::path::PathBuf;

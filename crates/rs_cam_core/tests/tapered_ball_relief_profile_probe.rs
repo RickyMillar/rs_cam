@@ -138,6 +138,7 @@ fn report_scallop_stepover_and_pass_count() {
 }
 
 #[test]
+#[ignore = "instrument: prints the stock to leave on sloped walls; no assertion"]
 fn report_stock_to_leave_on_sloped_walls() {
     eprintln!(
         "\nSTOCK-TO-LEAVE IS VERTICAL — what actually remains normal to a wall\n\
@@ -168,6 +169,7 @@ fn report_stock_to_leave_on_sloped_walls() {
 /// this tool on the real machine and material, and where that lands
 /// inside the vendor band it is judged against.
 #[test]
+#[ignore = "instrument: prints what Suggest commands for a relief finish; no assertion"]
 fn report_what_suggest_commands_for_a_relief_finish() {
     let machine = MachineProfile::shapeoko_vfd();
     let material = Material::SolidWood {

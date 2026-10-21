@@ -14,25 +14,27 @@
 //! `planning/arch_consolidation_2026-09-09/IMPLEMENTATION_PLAN.md` §25
 //! ruling 2. §27 ruling 1 orders the package last in the programme.
 //!
-//! # The three arms
+//! # The arms
 //!
 //! 1. Every `fn … (&mut self` declared inside an `impl ProjectSession`
 //!    block under `crates/rs_cam_core/src/session/` (sub-folders
 //!    included) reads
 //!    `pub(crate) fn`. Three doors and six compute doors are exempt.
-//! 2. No `.rs` file in any crate outside `crates/rs_cam_core/src` names
-//!    `.<setter>(`.
-//! 3. The walk is not vacuous: it visits enough files, it finds enough
-//!    methods, and enough methods survive the two allowlists.
+//! 2. (Deleted, W14a F156.) No `.rs` file in any crate outside
+//!    `crates/rs_cam_core/src` named `.<setter>(`. Arm 1 makes such a
+//!    call a compile error in the crate that holds it, so the scan
+//!    re-checked what the compiler holds.
+//! 3. The walk is not vacuous: it finds enough methods, and enough
+//!    methods survive the two allowlists.
 //!
 //! # Why a source scan
 //!
 //! A `pub(crate)` declaration is a compile-time fact, and the compiler
 //! reports it only where a caller stands. A source scan answers the
 //! question the type system cannot put on one surface: which
-//! declarations are still public, and which files still name them. WP7's
+//! declarations are still public. WP7's
 //! `hatches_are_crate_private_wp7.rs` reads the same evidence the same
-//! way, and this file reuses its walk.
+//! way.
 //!
 //! # The population, measured at `2c593c7d`
 //!
@@ -54,52 +56,16 @@
 //! `pub fn` and names each one with its path and line. The binary
 //! compiles, because the sentry commit flips no visibility.
 //!
-//! **Arm 2 fails on its assertion.** It reads **609** matches in **118**
-//! files, over **530** files walked: 483 in `crates/rs_cam_core/tests`, 4
-//! in `crates/rs_cam_core/benches`, 54 in `crates/rs_cam_viz/src` and 68
-//! in `crates/rs_cam_viz/tests`. The CLI crate and the MCP crate read
-//! **0**, and the arm pins that zero. The receiver rule skips 4 matches.
+//! **Arm 2** (deleted since) read 609 call sites in 118 files before the
+//! migration; the visibility flip of arm 1 then made each one a compile
+//! error.
 //!
 //! **Arm 3 passes at every commit.** It fails only on a truncated tree.
 //!
-//! The core migration lands first, so arm 2 reads **122** matches after
-//! it — the viz half alone. Arm 2 goes green when the viz migration
-//! lands. Arm 1 goes green when the visibility flips.
-//!
-//! # The receiver rule
-//!
-//! A bare `.<setter>(` pattern raises three classes of false positive.
-//! [`is_excluded_receiver`] skips each one, and each skip is a claim a
-//! reader can check.
-//!
-//! - `self` — the viz `Controller` declares its own
-//!   `adopt_model_geometry` (`crates/rs_cam_viz/src/controller/io.rs`).
-//!   Three lines there read `self.adopt_model_geometry(…)`, and that
-//!   receiver is a `Controller`, not a session.
-//! - a receiver whose trailing identifier is `controller` —
-//!   `crates/rs_cam_viz/src/app/input.rs` reads
-//!   `self.controller.set_setup_pause_message(…)`, the same collision one
-//!   layer out. The viz `Controller` also declares its own
-//!   `set_pin_part_models` (`crates/rs_cam_viz/src/controller/events/pins.rs`,
-//!   2bc278e5), and `controller/tests/undo.rs` calls it on a local
-//!   `controller`. A `Controller` is never a session.
-//! - a receiver whose trailing identifier ends in `builder` —
-//!   [`rs_cam_core::session::ProjectSessionBuilder`] publishes four
-//!   ALLOCATING methods that carry the setter names on purpose:
-//!   `add_tool`, `add_model`, `add_setup` and `add_toolpath`. A migrated
-//!   fixture calls them, and the call is not a session call.
-//!
-//! **The third skip is a naming convention, and every migrated fixture
-//! follows it.** Name the builder `builder`, or name it with a `_builder`
-//! suffix. A session variable named `builder` would slip past arm 2; the
-//! visibility flip catches it, because such a call fails to compile.
-//!
 //! # What this file does NOT measure
 //!
-//! It reads source text. It does not prove the migration is complete: a
-//! caller the walk never visited is invisible here. The compile of the
-//! visibility flip is the completeness proof, and this scan is the
-//! surface that says what is left to do before it.
+//! It reads declarations, not callers. The compile of every crate that
+//! links `rs_cam_core` is the proof that no caller outside it remains.
 
 #![allow(
     clippy::unwrap_used,
@@ -137,32 +103,6 @@ const COMPUTE_DOORS: &[&str] = &[
     "plan_multitool_finishing",
 ];
 
-/// Files that carry a setter name as scanner data rather than as a call.
-///
-/// `production_writes_go_through_apply_wp15a.rs` holds `.add_setup(`
-/// inside a string literal, as its own positive control. The WP6, WP6b
-/// and WP7 scanners hold their forbidden names the same way. A new entry
-/// here is a claim that the file scans source rather than mutates a
-/// session.
-const SCANNER_FILES: &[&str] = &[
-    "egui_draw_sites_write_through_commands_wp6.rs",
-    "non_egui_sites_write_through_commands_wp6b.rs",
-    "hatches_are_crate_private_wp7.rs",
-    "production_writes_go_through_apply_wp15a.rs",
-    "setters_are_crate_private_wp15b.rs",
-    // 4eb46da8: `the_rest_confirm_says_may_g_vpstate` reads the body of
-    // `auto_enable_rest_analysis_for_source` and holds
-    // `session.drop_result(idx)` in a string literal as its needle.
-    "the_dock_states_read_live_state_g_vpstate.rs",
-];
-
-/// The lowest number of files the walk must visit.
-///
-/// A walk that reads a handful of files proves nothing. An empty or
-/// truncated tree fails here rather than passing green. WP7 uses the same
-/// bar over a narrower root list.
-const MIN_FILES_WALKED: usize = 100;
-
 /// The lowest number of `&mut self` methods the declaration scan must
 /// find, before any allowlist applies.
 const MIN_SETTERS: usize = 50;
@@ -188,13 +128,6 @@ fn read(path: &Path) -> String {
 /// Whether `line` is a comment. Prose names a setter to explain it.
 fn is_comment(line: &str) -> bool {
     line.trim_start().starts_with("//")
-}
-
-/// Whether the file's own name puts it on the scanner allowlist.
-fn is_scanner(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| SCANNER_FILES.contains(&name))
 }
 
 // ── arm 1: the declarations ─────────────────────────────────────────────
@@ -366,37 +299,11 @@ fn every_session_setter_is_declared_crate_private() {
     );
 }
 
-// ── arm 2: the call sites ───────────────────────────────────────────────
-
-/// The directories outside `crates/rs_cam_core/src` that link this crate.
-///
-/// Every one of them is a separate compilation unit, so every one of them
-/// breaks on a `pub(crate)` setter. WP7 walks the first six.
-/// `../rs_cam_cli/tests` and `../rs_cam_mcp/src` read zero today, and the
-/// arm pins that zero.
-fn scanned_roots() -> Vec<PathBuf> {
-    let core = core_root();
-    let mut out = Vec::new();
-    for relative in [
-        "tests",
-        "benches",
-        "../rs_cam_viz/src",
-        "../rs_cam_viz/tests",
-        "../rs_cam_cli/src",
-        "../rs_cam_cli/examples",
-        "../rs_cam_cli/tests",
-        "../rs_cam_mcp/src",
-    ] {
-        let path = core.join(relative);
-        assert!(
-            path.is_dir(),
-            "scanned root {} no longer exists",
-            path.display()
-        );
-        out.push(path);
-    }
-    out
-}
+// ── arm 2 (deleted, W14a F156) ──────────────────────────────────────────
+//
+// Arm 2 refused a `.<setter>(` call in any crate outside `rs_cam_core`.
+// The setters are `pub(crate)` (arm 1), so such a call is a compile error in
+// the crate that holds it, and that crate's own test build reports it.
 
 fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {
     let entries =
@@ -411,134 +318,15 @@ fn collect_rs(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Every `.rs` file under every scanned root.
-fn scanned_files() -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    for root in scanned_roots() {
-        collect_rs(&root, &mut files);
-    }
-    files.sort();
-    files
-}
-
-/// One source text as logical lines, each with the number of its first
-/// physical line.
-///
-/// The reader does two things in one pass. It strips every `//` comment,
-/// because prose names a setter to explain it. It then folds a line whose
-/// first character is `.` back onto the line above it, because
-/// `cargo fmt` breaks a method chain over several lines and a line-wise
-/// pattern cannot see `state\n.session\n.add_toolpath(`.
-///
-/// The strip is line-wise and deliberately crude. It cannot tell a `//`
-/// inside a string literal from a comment. [`SCANNER_FILES`] carries the
-/// files where that matters.
-fn logical_lines(text: &str) -> Vec<(usize, String)> {
-    let mut out: Vec<(usize, String)> = Vec::new();
-    for (index, raw) in text.lines().enumerate() {
-        let line = match raw.find("//") {
-            Some(at) => &raw[..at],
-            None => raw,
-        };
-        let trimmed = line.trim_start();
-        if trimmed.starts_with('.')
-            && let Some(last) = out.last_mut()
-        {
-            while last.1.ends_with(' ') {
-                last.1.pop();
-            }
-            last.1.push_str(trimmed);
-        } else {
-            out.push((index + 1, line.to_owned()));
-        }
-    }
-    out
-}
-
-/// The identifier `text` ends with, or an empty string.
-fn trailing_identifier(text: &str) -> &str {
-    let start = text
-        .char_indices()
-        .rev()
-        .take_while(|(_, c)| c.is_ascii_alphanumeric() || *c == '_')
-        .last()
-        .map_or(text.len(), |(index, _)| index);
-    &text[start..]
-}
-
-/// Whether a receiver names something other than a `ProjectSession`.
-///
-/// The module doc states all three cases and what each one costs.
-fn is_excluded_receiver(receiver: &str) -> bool {
-    let tail = trailing_identifier(receiver);
-    if tail == "self" || tail == "controller" {
-        return true;
-    }
-    tail.ends_with("builder")
-}
-
-/// ARM 2. No crate outside `rs_cam_core` names a setter.
-///
-/// This arm reports what the visibility flip would break. A hit is a call
-/// site to migrate, not a defect in the code under test.
-#[test]
-fn no_crate_outside_core_names_a_session_setter() {
-    let files = scanned_files();
-    assert!(
-        files.len() >= MIN_FILES_WALKED,
-        "the walk must visit at least {MIN_FILES_WALKED} files, or arm 2 \
-         passes on a tree it never read. I read {}",
-        files.len()
-    );
-
-    let names: Vec<String> = setters()
-        .into_iter()
-        .map(|method| format!(".{}(", method.name))
-        .collect();
-
-    let mut hits: Vec<String> = Vec::new();
-    for path in &files {
-        if is_scanner(path) {
-            continue;
-        }
-        for (number, line) in logical_lines(&read(path)) {
-            for pattern in &names {
-                let mut from = 0_usize;
-                while let Some(offset) = line[from..].find(pattern.as_str()) {
-                    let at = from + offset;
-                    from = at + 1;
-                    if is_excluded_receiver(&line[..at]) {
-                        continue;
-                    }
-                    hits.push(format!("{}:{number}: {}", path.display(), line.trim()));
-                }
-            }
-        }
-    }
-
-    assert!(
-        hits.is_empty(),
-        "WP15b: the `ProjectSession` setters are crate-private. A fixture \
-         outside `rs_cam_core` builds a session with \
-         `ProjectSessionBuilder` and mutates one with \
-         `ProjectSession::apply`. I read {} call site(s) in {} file(s):\n  \
-         {}",
-        hits.len(),
-        files.len(),
-        hits.join("\n  ")
-    );
-}
-
 // ── arm 3: non-vacuity ──────────────────────────────────────────────────
 
-/// ARM 3. Neither scan reads an empty tree.
+/// ARM 3. The declaration scan does not read an empty tree.
 ///
-/// Arm 1 and arm 2 both assert an EMPTY list, so both pass on a walk that
-/// found nothing. This arm states the three floors in one place, and it
-/// fails on a truncated tree, a moved directory or an allowlist that grew
-/// to cover the population.
+/// Arm 1 asserts an EMPTY list, so it passes on a walk that found
+/// nothing. This arm states the floors, and it fails on a truncated tree,
+/// a moved directory or an allowlist that grew to cover the population.
 #[test]
-fn neither_scan_is_vacuous() {
+fn the_declaration_scan_is_not_vacuous() {
     let methods = declared_methods();
     assert!(
         methods.len() >= MIN_SETTERS,
@@ -553,12 +341,5 @@ fn neither_scan_is_vacuous() {
         checked >= MIN_CHECKED_SETTERS,
         "at least {MIN_CHECKED_SETTERS} of those must survive `DOORS` and \
          `COMPUTE_DOORS`. I read {checked}"
-    );
-
-    let files = scanned_files().len();
-    assert!(
-        files >= MIN_FILES_WALKED,
-        "the call-site walk must visit at least {MIN_FILES_WALKED} files. \
-         I read {files}"
     );
 }

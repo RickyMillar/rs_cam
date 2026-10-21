@@ -11,7 +11,7 @@ origin_x = -10.0
 origin_y = -10.0
 origin_z = -12.0
 padding = 5.0
-auto_from_model = false
+auto_from_model = true
 
 [job.stock.material.SolidWood]
 species = "GenericSoftwood"

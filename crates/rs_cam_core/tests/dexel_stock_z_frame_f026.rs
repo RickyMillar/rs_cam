@@ -137,29 +137,24 @@ fn auto_from_model_load_grows_stock_z_to_enclose_terrain_mesh() {
 #[test]
 fn auto_from_model_load_grows_stock_xy_to_enclose_polygon_model() {
     let toml_path = repo_root().join("test_data/ux_2d_pocket_softwood.toml");
-    let Ok(session) = ProjectSession::load(&toml_path) else {
-        // Skip if the fixture isn't present (CI matrix can have minimal
-        // test data). The terrain test above is the primary signal.
-        eprintln!("skip: ux_2d_pocket_softwood.toml not loadable");
-        return;
-    };
-
-    if !session.stock_config().auto_from_model {
-        eprintln!("skip: ux_2d_pocket_softwood doesn't have auto_from_model = true");
-        return;
-    }
+    // F153: this arm used to return early on a load error, on
+    // `auto_from_model = false` (the fixture held false from its first
+    // commit) and on a model with no polygon, so it never checked F-026.
+    let session = ProjectSession::load(&toml_path).expect("ux_2d_pocket_softwood.toml loads");
+    assert!(
+        session.stock_config().auto_from_model,
+        "ux_2d_pocket_softwood.toml fixture must have auto_from_model = true"
+    );
 
     // Compute the polygon XY extent inline (the helper is pub(crate)).
     let mut model_x_max: f64 = f64::NEG_INFINITY;
     let mut model_y_max: f64 = f64::NEG_INFINITY;
     let mut model_x_min: f64 = f64::INFINITY;
     let mut model_y_min: f64 = f64::INFINITY;
-    let mut have_polygon = false;
     for m in session.models() {
         if let Some(polys) = &m.outlines_pre_selection() {
             for poly in polys.iter() {
                 for p in poly.exterior.iter() {
-                    have_polygon = true;
                     model_x_max = model_x_max.max(p.x);
                     model_y_max = model_y_max.max(p.y);
                     model_x_min = model_x_min.min(p.x);
@@ -168,10 +163,10 @@ fn auto_from_model_load_grows_stock_xy_to_enclose_polygon_model() {
             }
         }
     }
-    if !have_polygon {
-        eprintln!("skip: no polygon model in fixture");
-        return;
-    }
+    assert!(
+        model_x_max > model_x_min && model_y_max > model_y_min,
+        "the fixture's SVG model must give a polygon with an XY extent"
+    );
 
     let stock_bbox = session.stock_bbox();
     assert!(
@@ -183,6 +178,24 @@ fn auto_from_model_load_grows_stock_xy_to_enclose_polygon_model() {
         model_x_max,
         model_y_max,
     );
-    let _ = model_x_min;
-    let _ = model_y_min;
+
+    // The saved stock (x = y = 100, origin -10) already encloses the model,
+    // so enclosure alone passes without the fix. `update_from_bbox` gives
+    // one exact answer: the model extent grown by `padding` on each side.
+    let stock = session.stock_config();
+    let pad = stock.padding;
+    for (axis, origin, size, lo, hi) in [
+        ("x", stock.origin_x, stock.x, model_x_min, model_x_max),
+        ("y", stock.origin_y, stock.y, model_y_min, model_y_max),
+    ] {
+        assert!(
+            (origin - (lo - pad)).abs() < 1e-6 && (size - (hi - lo + 2.0 * pad)).abs() < 1e-6,
+            "F-026: auto_from_model stock {axis} must be the model extent \
+             [{lo:.3}, {hi:.3}] grown by padding {pad:.3}: origin {:.3}, size {:.3}; \
+             got origin {origin:.3}, size {size:.3} (the saved TOML values \
+             mean the load did not re-derive the stock)",
+            lo - pad,
+            hi - lo + 2.0 * pad,
+        );
+    }
 }

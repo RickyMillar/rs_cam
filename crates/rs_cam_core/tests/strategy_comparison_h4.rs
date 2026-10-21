@@ -1284,7 +1284,7 @@ fn adjudicate(fixture_label: &str, run: &FixtureRun, min_mix_combos: usize) {
 // ── Evidence tests (minutes-long) ───────────────────────────────────────
 
 #[test]
-#[ignore = "H4 strategy comparison (terrain): 3 arms (Scallop, UnifiedFinish, 2-op cascade), \
+#[ignore = "instrument: H4 strategy comparison (terrain): 3 arms (Scallop, UnifiedFinish, 2-op cascade), \
             each with its own generation + measurement simulation. Run --release, \
             --test-threads=1, on a quiet machine."]
 fn h4_strategy_comparison_terrain() {
@@ -1305,7 +1305,7 @@ fn h4_strategy_comparison_terrain() {
 }
 
 #[test]
-#[ignore = "H4 strategy comparison (grooved_block): the concave fixture — terrain.stl alone \
+#[ignore = "instrument: H4 strategy comparison (grooved_block): the concave fixture — terrain.stl alone \
             cannot adjudicate rest-routing behaviour on re-entrant territory. Run --release, \
             --test-threads=1, on a quiet machine."]
 fn h4_strategy_comparison_grooved_block() {
@@ -1729,7 +1729,7 @@ fn nearest_region_to(
 }
 
 #[test]
-#[ignore = "D-16.1 residual locating probe: two arms (UnifiedFinish, Scallop) on the grooved \
+#[ignore = "instrument: D-16.1 residual locating probe: two arms (UnifiedFinish, Scallop) on the grooved \
             fixture, each with its own generation + 0.1 mm measurement simulation. Research \
             only — it asserts non-vacuity and prints, it does not gate quality. Run --release, \
             --test-threads=1."]
@@ -2203,7 +2203,7 @@ fn print_contact_dump(
 }
 
 #[test]
-#[ignore = "D-16.1 single-column contact probe (FINISHING_OPEN_DEFECTS_EVIDENCE.md §7.6): one \
+#[ignore = "evidence: D-16.1 single-column contact probe (FINISHING_OPEN_DEFECTS_EVIDENCE.md §7.6): one \
             generation of arm B, NO simulation, then a per-triangle drop-cutter dump at the \
             named column and the named move. Research only — non-vacuity bars, no quality gate."]
 fn d16_1_single_column_contact_probe() {

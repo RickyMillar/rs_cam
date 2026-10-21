@@ -1332,7 +1332,7 @@ fn vm_hwm_kb() -> Option<u64> {
 // ── The instrument ──────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "tier trial instrument: one arm per run (TIER_TRIAL_ARM), release build, minutes"]
+#[ignore = "instrument: tier trial instrument: one arm per run (TIER_TRIAL_ARM), release build, minutes"]
 fn tier_trial_350() {
     let wall = Instant::now();
     let arm_name = std::env::var("TIER_TRIAL_ARM").expect("set TIER_TRIAL_ARM (A1..F1)");
@@ -1830,7 +1830,7 @@ fn tier_trial_350() {
 /// policy, then print every op. Nothing is generated or simulated.
 /// `TIER_TRIAL_ARM` picks one arm; unset, it runs P1, P2 and P3.
 #[test]
-#[ignore = "tier trial config check: configures arms without generating"]
+#[ignore = "instrument: tier trial config check: configures arms without generating"]
 fn tier_trial_350_config_only() {
     let arms: Vec<String> = std::env::var("TIER_TRIAL_ARM").map_or_else(
         |_| vec!["P1".to_owned(), "P2".to_owned(), "P3".to_owned()],

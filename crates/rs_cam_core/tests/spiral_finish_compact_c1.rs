@@ -1181,7 +1181,7 @@ fn print_branched_refusal() {
 }
 
 #[test]
-#[ignore = "Track C evidence instrument — run explicitly with --ignored --nocapture"]
+#[ignore = "evidence: Track C evidence instrument — run explicitly with --ignored --nocapture"]
 fn spiral_finish_compact_c1_evidence() {
     eprintln!("\n########## TRACK C — shape-selected spiral on COMPACT regions ##########");
     eprintln!(

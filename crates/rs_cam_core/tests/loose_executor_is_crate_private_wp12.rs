@@ -20,14 +20,17 @@
 //! # The three arms
 //!
 //! * (a) No file outside `crates/rs_cam_core/src/` names `execute_operation`.
-//!   The scan reads `crates/*/tests`, `crates/*/benches`,
-//!   `crates/rs_cam_viz/src` and `crates/rs_cam_cli/src`. Comment lines are
-//!   excluded: several comments name the entry to explain the history, and a
-//!   comment is not a call.
+//!   The scan reads `crates/*/tests` and `crates/*/benches` (viz's
+//!   excepted) and `crates/rs_cam_cli/src`. Comment lines are excluded:
+//!   several comments name the entry to explain the history, and a comment
+//!   is not a call. The viz half (viz `src/` and `tests/`) runs in the viz
+//!   gate, `rs_cam_viz/tests/loose_executor_is_not_named_in_viz_wp12.rs`
+//!   (W14a F171).
 //! * (b) Every `execute_operation*` declaration in `compute/execute.rs`
 //!   reads `pub(crate) fn`, and no line there reads `pub fn
 //!   execute_operation`.
-//! * (c) No line under `crates/rs_cam_viz/src` names `session/compute.rs`
+//! * (c) (Moved to the viz gate with the viz half of (a), W14a F171.) No
+//!   line under `crates/rs_cam_viz/src` names `session/compute.rs`
 //!   except the two the allowlist names. WP11b deleted the mirrored input
 //!   assembly, so a viz file that still describes itself against that file
 //!   describes a shape the tree no longer has. **Comment lines are
@@ -79,12 +82,11 @@ const ENTRY: &str = "execute_operation";
 /// a longer sibling. CMP-02 left exactly one.
 const DECLARATIONS: &[&str] = &["execute_operation_annotated"];
 
-/// The two files that SCAN for the entry name instead of calling it. Both
-/// hold the name in a string literal, which is not a comment and not a call.
-const SCANNERS: &[&str] = &[
-    "loose_executor_is_crate_private_wp12.rs",
-    "gen_inputs_one_assembly_n12.rs",
-];
+/// The file that SCANS for the entry name instead of calling it. It holds
+/// the name in a string literal, which is not a comment and not a call.
+///
+/// W14a (F171) moved N12's arm (b), the other scanner, to the viz gate.
+const SCANNERS: &[&str] = &["loose_executor_is_crate_private_wp12.rs"];
 
 /// A line comment, a doc comment, or a module doc comment.
 fn is_comment(line: &str) -> bool {
@@ -126,8 +128,8 @@ fn is_scanner(path: &Path) -> bool {
 
 /// Every `.rs` file that arm (a) reads, in a stable order.
 ///
-/// The population is every test and bench target in the workspace, plus the
-/// two consumer crates' own sources. Core's `src/` is deliberately absent:
+/// The population is every test and bench target in the workspace but
+/// viz's, plus the CLI crate's own sources. Core's `src/` is deliberately absent:
 /// that is where the entry lives and where its own unit tests call it.
 fn scanned_sources() -> Vec<PathBuf> {
     let crates = crates_root();
@@ -144,6 +146,9 @@ fn scanned_sources() -> Vec<PathBuf> {
         }
     }
     members.sort();
+    // W14a (F171): the viz crate's tests and sources are scanned by the
+    // viz gate, `crates/rs_cam_viz/tests/loose_executor_is_not_named_in_viz_wp12.rs`.
+    members.retain(|member| !member.ends_with("rs_cam_viz"));
     for member in &members {
         for leaf in ["tests", "benches"] {
             let dir = member.join(leaf);
@@ -153,15 +158,13 @@ fn scanned_sources() -> Vec<PathBuf> {
         }
     }
 
-    for consumer in ["rs_cam_viz", "rs_cam_cli"] {
-        let dir = crates.join(consumer).join("src");
-        assert!(
-            dir.is_dir(),
-            "{} is not a directory; retarget this test",
-            dir.display()
-        );
-        roots.push(dir);
-    }
+    let cli_src = crates.join("rs_cam_cli").join("src");
+    assert!(
+        cli_src.is_dir(),
+        "{} is not a directory; retarget this test",
+        cli_src.display()
+    );
+    roots.push(cli_src);
 
     let mut files = Vec::new();
     for root in &roots {
@@ -257,128 +260,4 @@ fn the_generation_entry_is_crate_private() {
         DECLARATIONS.len(),
         path.display()
     );
-}
-
-// ── (c) no viz source mirrors `session/compute.rs` ──────────────────
-
-/// The module a viz file must not describe itself against.
-const CORE_GENERATION_MODULE: &str = "session/compute.rs";
-
-/// One legitimate cross-reference to core's generation module.
-///
-/// A line passes only when an entry matches BOTH halves: `path_marker`
-/// against the file's path, and `line_marker` against the line itself. The
-/// path half is a fragment, not a full name, so a file that moves into a
-/// directory of its own keeps its allowance.
-struct AllowedReference {
-    /// A fragment of the file's path.
-    path_marker: &'static str,
-    /// A fragment of the line, chosen to name the reference's PURPOSE.
-    line_marker: &'static str,
-    /// Why this reference is legitimate.
-    why: &'static str,
-}
-
-/// Every line under `crates/rs_cam_viz/src` that may name core's generation
-/// module. Both entries cite core's BEHAVIOUR to explain the viz side;
-/// neither describes a mirrored input assembly.
-const ALLOWED_REFERENCES: &[AllowedReference] = &[
-    AllowedReference {
-        path_marker: "app/mcp",
-        line_marker: "SessionError::ToolNotFound",
-        why: "B7 divergence 3: the GUI narration's doc comment cites core's \
-              sibling narration, which refuses an unresolved tool id rather \
-              than narrating with another tool's geometry",
-    },
-    AllowedReference {
-        // A path FRAGMENT, not a file name: `81493c1a` split
-        // `ui/properties/mod.rs` and this line moved to its
-        // `toolpath_panel.rs` child, which left the arm red from
-        // 2026-09-17 until CMP-02 read it. The fragment is the directory
-        // now, so the next split inside it keeps the allowance.
-        path_marker: "ui/properties",
-        line_marker: "one generation uses",
-        why: "UX-R03-009 (G-BOUNDARYINHERIT): the boundary panel names the \
-              stored source generation reads, because the core door clones \
-              `tc.boundary` unconditionally",
-    },
-];
-
-/// The allowlist entry that allows this line, if any.
-fn allowance_for(path: &Path, line: &str) -> Option<usize> {
-    let shown = path.display().to_string();
-    ALLOWED_REFERENCES.iter().position(|allowed| {
-        shown.contains(allowed.path_marker) && line.contains(allowed.line_marker)
-    })
-}
-
-/// No viz line names `session/compute.rs` outside the allowlist.
-///
-/// The GUI worker runs core's `Job` steps since WP11b. A viz file that
-/// describes itself against core's generation module describes a mirror that
-/// no longer exists.
-///
-/// H4: this arm used to skip comment lines. A file path appears in Rust only
-/// inside a comment, so the arm could match nothing and passed on the very
-/// tree it was written to refuse. It reads every line now, and the two
-/// surviving cross-references are named above with the reason each one
-/// stands. An entry that stops matching fails this arm: a stale allowance is
-/// an exemption nothing checks.
-#[test]
-fn viz_names_the_core_generation_module_only_where_the_allowlist_says() {
-    let root = crates_root().join("rs_cam_viz").join("src");
-    assert!(
-        root.is_dir(),
-        "{} is not a directory; retarget this test",
-        root.display()
-    );
-    let mut files = Vec::new();
-    rust_sources_under(&root, &mut files);
-    files.sort();
-    assert!(
-        files.len() > 20,
-        "the viz scan read only {} files; an empty or tiny population passes \
-         and looks healthy",
-        files.len()
-    );
-    assert!(
-        files
-            .iter()
-            .any(|path| path.display().to_string().contains("/compute/")),
-        "the scan must cover `crates/rs_cam_viz/src/compute`, the directory \
-         H4 names; no scanned path sits under it"
-    );
-
-    let mut hits: Vec<String> = Vec::new();
-    let mut matched = vec![false; ALLOWED_REFERENCES.len()];
-    for path in &files {
-        let text = std::fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-        for (index, line) in text.lines().enumerate() {
-            if !line.contains(CORE_GENERATION_MODULE) {
-                continue;
-            }
-            match allowance_for(path, line) {
-                Some(entry) => matched[entry] = true,
-                None => hits.push(format!("{}:{}", path.display(), index + 1)),
-            }
-        }
-    }
-
-    assert!(
-        hits.is_empty(),
-        "the worker runs core's Job steps; it mirrors no core module. A line \
-         that names {CORE_GENERATION_MODULE} needs an entry in \
-         ALLOWED_REFERENCES saying why. These lines have none: {}",
-        hits.join(", ")
-    );
-    for (entry, allowed) in ALLOWED_REFERENCES.iter().enumerate() {
-        assert!(
-            matched[entry],
-            "the allowlist entry ({}, {}) matches no line any more, so it \
-             exempts nothing and hides the next mirror. Delete it, or \
-             retarget it. It was allowed because: {}",
-            allowed.path_marker, allowed.line_marker, allowed.why
-        );
-    }
 }

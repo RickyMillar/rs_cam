@@ -40,10 +40,10 @@ fixtures/gui_step/plate_100x60x10.step Millimeters | polygons None | targets 0 |
 fixtures/gui_step/plate_100x60x10.step Inches | polygons None | targets 0 | fnv 6224314e552e2948
 fixtures/gui_step/stepped_block.step Millimeters | polygons None | targets 0 | fnv e3704895d80ba38c
 fixtures/gui_step/stepped_block.step Inches | polygons None | targets 0 | fnv 87071d6a2b291287
-planning/fixtures/rivmap100/rivmap_export/machinable_edge_band.dxf Millimeters | polygons 1 | targets 0 | fnv 01e65e163685fce3
-planning/fixtures/rivmap100/rivmap_export/machinable_edge_band.dxf Inches | polygons 1 | targets 0 | fnv 40f70f2817f7ec1f
-planning/fixtures/rivmap100/rivmap_export/rivers_aligned.dxf Millimeters | polygons 36 | targets 0 | fnv e9516f79980344a4
-planning/fixtures/rivmap100/rivmap_export/rivers_aligned.dxf Inches | polygons 36 | targets 0 | fnv f2b146651e6485f4
+crates/rs_cam_core/tests/fixtures/rivmap100_dxf_2026-10-20_c3808eb0/machinable_edge_band.dxf Millimeters | polygons 1 | targets 0 | fnv 01e65e163685fce3
+crates/rs_cam_core/tests/fixtures/rivmap100_dxf_2026-10-20_c3808eb0/machinable_edge_band.dxf Inches | polygons 1 | targets 0 | fnv 40f70f2817f7ec1f
+crates/rs_cam_core/tests/fixtures/rivmap100_dxf_2026-10-20_c3808eb0/rivers_aligned.dxf Millimeters | polygons 36 | targets 0 | fnv e9516f79980344a4
+crates/rs_cam_core/tests/fixtures/rivmap100_dxf_2026-10-20_c3808eb0/rivers_aligned.dxf Inches | polygons 36 | targets 0 | fnv f2b146651e6485f4
 crates/rs_cam_core/tests/fixtures/selection_p2_1/mix.dxf Millimeters | polygons 8 | targets 4 | fnv f8af2af18dc51749
 crates/rs_cam_core/tests/fixtures/selection_p2_1/mix.dxf Inches | polygons 8 | targets 4 | fnv 0fbf8f0ee86e9bd5
 crates/rs_cam_core/tests/fixtures/selection_p2_1/inch.dxf Millimeters | polygons 2 | targets 2 | fnv 4667532c8be5c3c5

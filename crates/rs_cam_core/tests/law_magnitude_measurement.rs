@@ -153,7 +153,7 @@ fn cells() -> Vec<Cell> {
 }
 
 #[test]
-#[ignore = "measurement harness — produces LAW_MAGNITUDE_TABLES.md, not a gate"]
+#[ignore = "instrument: measurement harness — produces LAW_MAGNITUDE_TABLES.md, not a gate"]
 fn measure_law_magnitudes_on_the_named_cells() {
     println!(
         "\nshipped exponents: diameter ^{CHIPLOAD_DIAMETER_EXPONENT}, \
@@ -224,7 +224,7 @@ fn measure_law_magnitudes_on_the_named_cells() {
 }
 
 #[test]
-#[ignore = "measurement harness — whole-LUT sweep for LAW_MAGNITUDE_TABLES.md"]
+#[ignore = "instrument: measurement harness — whole-LUT sweep for LAW_MAGNITUDE_TABLES.md"]
 fn measure_law_magnitudes_across_the_whole_lut() {
     // Per-row, per-query-diameter band multiplier. Reported as
     // quantiles so a reader can see the shape, plus the named worst

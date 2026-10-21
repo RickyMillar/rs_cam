@@ -6,15 +6,18 @@
 //! `ProjectSession::apply`. The core sentry
 //! (`crates/rs_cam_core/tests/setters_have_rows_wp15a.rs`) holds the
 //! registry side of that property: every public setter has a row. This
-//! file holds the SURFACE side: no production file under
-//! `crates/rs_cam_viz/src` or `crates/rs_cam_cli/src` calls a setter.
-//! A surface that calls one writes the session without naming a row,
-//! and the registry's surface table then answers for a write that did
-//! not happen (IMPLEMENTATION_PLAN §25 ruling 1).
+//! file holds the SURFACE side: a row's `gui` and `cli` reach columns
+//! match the constructions in the view and CLI sources. That no surface
+//! calls a setter outside `apply` is now the compiler's: the setters are
+//! `pub(crate)` (WP15b), so the registry's surface table cannot answer
+//! for a write that did not happen (IMPLEMENTATION_PLAN §25 ruling 1).
 //!
-//! # The three properties
+//! # The properties
 //!
-//! 1. No production line names `session.<setter>(`.
+//! 1. (Deleted, W14a F156.) It refused a production line that names
+//!    `session.<setter>(`. WP15b made every setter `pub(crate)`, so a
+//!    call from viz or the CLI is a compile error, and each crate's own
+//!    test build reports it. The scan re-checked what the compiler holds.
 //! 2. Every row whose `gui` reach reads `Reached` is CONSTRUCTED in the
 //!    view's own sources.
 //! 3. Every row whose `cli` reach reads `Reached` is CONSTRUCTED in
@@ -28,28 +31,9 @@
 //!
 //! # Why a source scan
 //!
-//! A method call is not a type. The registry publishes `CommandId::ALL`,
-//! so a test can read every row; it publishes nothing about who calls a
-//! setter. The evidence is the source text, as WP7's
-//! `hatches_are_crate_private_wp7.rs` reads it.
-//!
-//! # Two limits a reader must know
-//!
-//! The needle is `session.<setter>(` after the scan joins the lines
-//! rustfmt broke. A call through a receiver spelled otherwise —
-//! `sess.add_tool(`, or a `&mut ProjectSession` parameter named
-//! anything else — is NOT seen. The core sentry covers that gap from
-//! the other side: such a call still reaches a setter that carries a
-//! row. And the scan reads production files only; a test may call a
-//! setter directly, which §25 ruling 2 records as a test-only residual
-//! until WP15b.
-//!
-//! # Red before the fix
-//!
-//! I read 48 production call sites: 39 under `crates/rs_cam_viz/src`
-//! in eight files, and 9 under `crates/rs_cam_cli/src` in three. The
-//! core sentry is the package's red-first evidence; the red of THIS
-//! scan is shown by putting one direct setter call back.
+//! A reach column is not a type. The registry publishes `CommandId::ALL`,
+//! so a test can read every row; it publishes nothing about who builds
+//! one. The evidence is the source text.
 
 #![allow(
     clippy::unwrap_used,
@@ -58,43 +42,18 @@
     clippy::indexing_slicing
 )]
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use rs_cam_core::session::{CommandId, CommandKind, Reach};
 
 // ── allowlists ───────────────────────────────────────────────────────
 
-/// The three doors. A door runs a row; it is not a setter.
-///
-/// `query` takes `&self` and never matches the `&mut self` scan. It is
-/// listed anyway, so the allowlist names the door set the plan names.
-const DOORS: &[&str] = &["apply", "query", "start"];
-
-/// The six compute entry points.
-///
-/// Each one runs a generation, a simulation or a plan rather than
-/// writing a field. §25 ruling 4 assigns them to the `Job` programme as
-/// a second write surface, not to WP15a.
-///
-/// `run_simulation_memoized` is `run_simulation` holding the S5 prefix
-/// cache (CMP-23, 2026-09-17). It joined the list on 2026-09-18, because
-/// the CLI ladder took it and this property read it as a setter.
-const COMPUTE_DOORS: &[&str] = &[
-    "generate_toolpath",
-    "generate_all",
-    "run_simulation",
-    "run_simulation_memoized",
-    "modulate_simulation_trace",
-    "plan_multitool_finishing",
-];
-
 /// The rows the batch CLI reaches through a compute door, not a row.
 ///
 /// `GenerateToolpath` is a `Job` row whose `cli` column reads `Reached`
 /// because the CLI generates. It generates through
-/// `ProjectSession::generate_toolpath`, which is one of
-/// [`COMPUTE_DOORS`], so no CLI source builds the payload. The `Job`
+/// `ProjectSession::generate_toolpath`, a compute door, so no CLI
+/// source builds the payload. The `Job`
 /// programme closes this; WP15a records it.
 const CLI_COMPUTE_DOOR_ROWS: &[CommandId] = &[CommandId::GenerateToolpath];
 
@@ -129,32 +88,11 @@ const MCP_SOURCES: &[&str] = &[
     "src/controller/tests",
 ];
 
-// ── non-vacuity bars ─────────────────────────────────────────────────
-
-/// The lowest number of setter names the core scan must collect.
-const MIN_SETTERS: usize = 50;
-
-/// The lowest number of production `.rs` files the walk must read.
-const MIN_FILES_WALKED: usize = 100;
-
-/// The highest number of files the `#[cfg(test)] mod` resolver may drop.
-///
-/// The two crates declare nine such modules today, and one of them —
-/// `controller::tests` — is a DIRECTORY module with eighteen theme
-/// children since SHL-03. The bar catches a resolver that starts
-/// excluding production code, not a new test.
-const MAX_EXCLUDED_FILES: usize = 40;
-
 // ── file helpers ─────────────────────────────────────────────────────
 
 /// This crate's root directory.
 fn viz_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-/// The `rs_cam_core` crate root, as a sibling of this one.
-fn core_root() -> PathBuf {
-    viz_root().join("../rs_cam_core")
 }
 
 /// The `rs_cam_cli` crate root, as a sibling of this one.
@@ -203,31 +141,7 @@ fn strip_comments(text: &str) -> String {
         .join("\n")
 }
 
-/// Join the lines `cargo fmt` broke inside one method chain.
-///
-/// Thirteen of the 48 sites WP15a routed read
-/// `self\n.state\n.session\n.add_setup(`, and a line-wise
-/// `session.<setter>(` pattern cannot see one. A line whose first
-/// character is `.` continues the line above it, so the scan folds it
-/// back before matching.
-fn join_continuations(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for line in text.lines() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with('.') && !out.is_empty() {
-            while out.ends_with(' ') {
-                out.pop();
-            }
-            out.push_str(trimmed);
-        } else {
-            out.push('\n');
-            out.push_str(line);
-        }
-    }
-    out
-}
-
-// ── the `#[cfg(test)]` exclusion ─────────────────────────────────────
+// ── the inline `#[cfg(test)]` module removal ─────────────────────────
 
 /// The index of the ITEM line a `#[cfg(test)]` attribute introduces.
 ///
@@ -251,107 +165,6 @@ fn item_line_after_attributes(lines: &[&str], attribute: usize) -> Option<usize>
         index += 1;
     }
     None
-}
-
-/// The files a `#[cfg(test)] mod <name>;` declaration names.
-///
-/// A module declared inside `foo.rs` lives in `foo/`; one declared
-/// inside `mod.rs` or `lib.rs` lives beside it. Nine such files sit
-/// under `crates/rs_cam_viz/src`: eight test modules and one shared
-/// fixture builder, `compute/worker/test_fixture.rs`.
-fn declared_module_files(declaring: &Path, name: &str) -> Vec<PathBuf> {
-    let Some(stem) = declaring.file_stem().and_then(|s| s.to_str()) else {
-        return Vec::new();
-    };
-    let Some(parent) = declaring.parent() else {
-        return Vec::new();
-    };
-    let dir = if stem == "mod" || stem == "lib" {
-        parent.to_path_buf()
-    } else {
-        parent.join(stem)
-    };
-    let file = dir.join(format!("{name}.rs"));
-    if file.is_file() {
-        return vec![file];
-    }
-    // A DIRECTORY module names its whole subtree. `controller/tests.rs`
-    // became `controller/tests/` with eighteen theme children on
-    // 2026-09-18 (SHL-03), and a resolver that read only the one-file
-    // form would have put all eighteen back into the production scan.
-    let module_dir = dir.join(name);
-    if module_dir.join("mod.rs").is_file() {
-        return collect_rs(&module_dir);
-    }
-    Vec::new()
-}
-
-/// Every file a `#[cfg(test)] mod <name>;` declaration excludes.
-///
-/// The compiler proves the gating: a module declared under
-/// `#[cfg(test)]` is not in the production build. The failure the
-/// resolver CAN have is naming the wrong file, so
-/// [`guard_excluded_files`] reads the answer back.
-fn cfg_test_module_files(sources: &[PathBuf]) -> BTreeSet<PathBuf> {
-    let mut excluded = BTreeSet::new();
-    for path in sources {
-        let text = read(path);
-        let lines: Vec<&str> = text.lines().collect();
-        for (index, line) in lines.iter().enumerate() {
-            if line.trim() != "#[cfg(test)]" {
-                continue;
-            }
-            let Some(item) = item_line_after_attributes(&lines, index) else {
-                continue;
-            };
-            let trimmed = lines[item].trim();
-            let Some(rest) = trimmed.strip_prefix("mod ") else {
-                continue;
-            };
-            let Some(name) = rest.strip_suffix(';') else {
-                continue;
-            };
-            excluded.extend(declared_module_files(path, name));
-        }
-    }
-    guard_excluded_files(&excluded);
-    excluded
-}
-
-/// The exclusion set is small, holds no crate root, and holds tests.
-///
-/// A resolver that hid production code would show one of three shapes:
-/// an exclusion set the size of the crate, a crate root among the
-/// names, or a set that names no test at all. One shared fixture
-/// builder carries no `#[test]` of its own, so the test check is a
-/// property of the SET rather than of every member.
-fn guard_excluded_files(excluded: &BTreeSet<PathBuf>) {
-    assert!(
-        !excluded.is_empty() && excluded.len() <= MAX_EXCLUDED_FILES,
-        "the `#[cfg(test)] mod` resolver excluded {} file(s). Zero \
-         means it stopped finding the test modules these crates \
-         declare. More than {MAX_EXCLUDED_FILES} means it hides \
-         production code from the scan.",
-        excluded.len()
-    );
-    for path in excluded {
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        assert!(
-            // `mod` is allowed: a DIRECTORY test module's own root is
-            // `<name>/mod.rs`, and excluding it is the point.
-            !matches!(stem, "lib" | "main"),
-            "the resolver excluded {}, which is a crate root. A crate root \
-             is never declared under `#[cfg(test)]`.",
-            path.display()
-        );
-    }
-    assert!(
-        excluded.iter().any(|path| read(path).contains("#[test]")),
-        "the resolver excluded {} file(s) and not one of them declares \
-         a `#[test]`, so it is no longer finding the test modules it is \
-         built to find.",
-        excluded.len()
-    );
 }
 
 /// One source text with every inline `#[cfg(test)] mod … { … }` removed.
@@ -391,185 +204,6 @@ fn without_inline_test_modules(text: &str) -> String {
         }
     }
     kept.join("\n")
-}
-
-// ── the setter list, read from core ──────────────────────────────────
-
-/// Every `pub fn … (&mut self` declared inside an `impl ProjectSession`
-/// block under `crates/rs_cam_core/src/session/`, minus the allowlists.
-///
-/// The scan is SCOPED to those blocks, as the core sentry scopes its
-/// own: `LoadedModel::adopt_geometry` and `CycleTime::fold` are public
-/// `&mut self` methods in the same directory, and an unscoped scan
-/// reads them as session setters.
-fn session_setters() -> Vec<String> {
-    let dir = core_root().join("src/session");
-    let mut names = Vec::new();
-    for path in collect_rs(&dir) {
-        let text = read(&path);
-        let lines: Vec<&str> = text.lines().collect();
-        let mut index = 0_usize;
-        while index < lines.len() {
-            if lines[index] != "impl ProjectSession {" {
-                index += 1;
-                continue;
-            }
-            let mut end = index + 1;
-            while end < lines.len() && lines[end] != "}" {
-                end += 1;
-            }
-            for inner in (index + 1)..end {
-                let line = lines[inner];
-                if line.trim_start().starts_with("//") {
-                    continue;
-                }
-                let Some(name) = public_fn_name(line) else {
-                    continue;
-                };
-                if !signature(&lines, inner).contains("&mut self") {
-                    continue;
-                }
-                if DOORS.contains(&name) || COMPUTE_DOORS.contains(&name) {
-                    continue;
-                }
-                names.push(name.to_owned());
-            }
-            index = end;
-        }
-    }
-    names.sort();
-    names.dedup();
-    names
-}
-
-/// The name of the function one declaration line opens.
-///
-/// Both spellings count. WP15b flipped the setters to `pub(crate) fn`,
-/// and a reader that accepts only `pub fn ` returns an empty list after
-/// that flip, which takes the non-vacuity guard below with it.
-fn public_fn_name(line: &str) -> Option<&str> {
-    let trimmed = line.trim_start();
-    let rest = trimmed
-        .strip_prefix("pub(crate) fn ")
-        .or_else(|| trimmed.strip_prefix("pub fn "))?;
-    let name = rest.split('(').next()?;
-    let plain = name
-        .chars()
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
-    (!name.is_empty() && plain).then_some(name)
-}
-
-/// The whole signature of the declaration that starts at `start`.
-///
-/// A signature runs to the line that opens the body. Most setters put
-/// `&mut self` on the line AFTER the opening paren, so a same-line
-/// pattern misses them.
-fn signature(lines: &[&str], start: usize) -> String {
-    let mut out = String::new();
-    for line in lines.iter().skip(start) {
-        out.push(' ');
-        out.push_str(line);
-        if line.trim_end().ends_with('{') {
-            break;
-        }
-    }
-    out
-}
-
-// ── the scanned production text ──────────────────────────────────────
-
-/// One production file, ready to match: comments stripped, inline test
-/// modules removed, broken method chains joined.
-fn scannable(path: &Path) -> String {
-    join_continuations(&without_inline_test_modules(&strip_comments(&read(path))))
-}
-
-/// Every production `.rs` file of both surfaces, with the nine
-/// `#[cfg(test)] mod` files dropped.
-fn production_sources() -> Vec<PathBuf> {
-    let mut sources = collect_rs(&viz_root().join("src"));
-    sources.extend(collect_rs(&cli_root().join("src")));
-    let excluded = cfg_test_module_files(&sources);
-    sources.retain(|p| !excluded.contains(p));
-    sources
-}
-
-// ── P1 — no production site calls a setter ───────────────────────────
-
-#[test]
-fn no_production_site_calls_a_session_setter() {
-    let setters = session_setters();
-    assert!(
-        setters.len() >= MIN_SETTERS,
-        "the core scan must collect at least {MIN_SETTERS} setter \
-         names, or this file asserts nothing. I read {}",
-        setters.len()
-    );
-
-    let sources = production_sources();
-    assert!(
-        sources.len() >= MIN_FILES_WALKED,
-        "the production walk must read at least {MIN_FILES_WALKED} \
-         files, or it asserts nothing. I read {}",
-        sources.len()
-    );
-
-    let mut found: Vec<String> = Vec::new();
-    for path in &sources {
-        let text = scannable(path);
-        for (number, line) in text.lines().enumerate() {
-            for setter in &setters {
-                if line.contains(&format!("session.{setter}(")) {
-                    found.push(format!("{}:~{}: {setter}", path.display(), number + 1));
-                }
-            }
-        }
-    }
-
-    assert!(
-        found.is_empty(),
-        "WP15a (§25 ruling 1): a production surface writes \
-         `ProjectSession` through one door, `apply`. Build the row's \
-         `Command` and take that door — `apply_quietly` or \
-         `apply_controller_command` in the viz controller, \
-         `apply_panel_command` in a draw site, \
-         `rs_cam_cli::command::apply_command` in the batch CLI — and \
-         flip the row's `gui` or `cli` column to `Reached` in the same \
-         commit. I read {} direct setter call(s):\n  {}",
-        found.len(),
-        found.join("\n  ")
-    );
-}
-
-/// The matcher sees a method chain `cargo fmt` broke over four lines.
-///
-/// Without [`join_continuations`] the scan above reads every such site
-/// as clean, and thirteen of WP15a's forty-eight were that shape. This
-/// is the positive control for the whole file.
-#[test]
-fn the_scan_matches_a_broken_method_chain() {
-    // `concat!` and not a backslash-continued literal: `cargo fmt`
-    // re-indents a continued literal and bakes the new spaces into the
-    // string, which would silently change what this control measures.
-    let sample = concat!(
-        "        let _ = self\n",
-        "            .state\n",
-        "            .session\n",
-        "            .add_setup(name, FaceUp::default());\n",
-    );
-    let joined = join_continuations(&strip_comments(sample));
-    assert!(
-        joined.contains("session.add_setup("),
-        "the continuation joiner no longer folds a broken chain, so \
-         `no_production_site_calls_a_session_setter` cannot see two \
-         thirds of the shapes it is built to catch. I read: {joined}"
-    );
-    let untouched = "        let _ = other.add_setup(name);\n";
-    assert!(
-        !join_continuations(untouched).contains("session.add_setup("),
-        "the needle must name the session receiver, or every same-named \
-         method on another type reads as a violation"
-    );
 }
 
 // ── P2 and P3 — a reach column is a claim about a caller ─────────────

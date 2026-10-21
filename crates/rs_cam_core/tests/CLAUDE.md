@@ -11,7 +11,12 @@ part says what the file protects. Search by claim words, not by code.
   comes from `op_fixtures::generated_op` (the session door); one 2.5D level from `kernels.rs`.
 - `fixtures/` — the pinned projects, `terrain.stl`, the STEP samples, the
   golden files. A project or baseline a test loads lives HERE, not in
-  `planning/`, dated and hashed; re-bless a golden on a measured cause.
+  `planning/` (not `planning/fixtures/` either), as
+  `fixtures/<name>_<date>_<hash>/` with relative model paths; re-bless a
+  golden on a measured cause. A test that runs reads no `planning/` or
+  `/home/` path and writes output under `CARGO_TARGET_TMPDIR`
+  (`gate_tests_read_no_operator_paths_f155`, a viz twin). A test that
+  needs a large operator file is `#[ignore = "evidence: .."]`.
 - `literature_matrix/` — the cited feeds cells and their invariants; the
   `/refresh-lit-matrix` skill maintains `sources.toml`.
 - `ARCHIVED_HARNESSES.md` — two mega harnesses that left this directory.
@@ -27,7 +32,13 @@ part says what the file protects. Search by claim words, not by code.
   research run without its feature errors. No CI exists. Locally, name one
   binary and ask the operator first.
 - `#[ignore]` marks an instrument or an evidence run, not a broken test.
-  Run one by name with `-- --ignored`. Never use `--include-ignored`.
+  The reason starts with `instrument:`, `evidence:`, `heavy:`,
+  `external:` or `serial:` (`every_ignore_states_its_kind_f152`). A known
+  red is an inverted assertion that runs and fails when the fix lands; a
+  retired claim is deleted. Run one by name with `-- --ignored`. Never use
+  `--include-ignored`.
+- A gate test does not skip on a missing fixture: `common::require_fixture`
+  panics and names the path.
 - A `planning/…` path in a doc comment may no longer exist; the tag
   `planning-pre-purge-2026-09-17` holds it.
 
@@ -35,6 +46,10 @@ part says what the file protects. Search by claim words, not by code.
 
 - A source-scanning test needs a non-vacuity anchor: assert the needle is
   present before you assert its property, and do not match comments.
+  `common/source_scan.rs` (included by `#[path]`) strips comments and
+  finds the items a running test reaches.
+- A scan of viz source lives in `rs_cam_viz/tests`, so the viz gate runs
+  it. Do not re-check a `pub(crate)` rule by a scan: the compiler holds it.
 - Inject the guarded defect once and confirm the test goes red before you
   trust it.
 - The lint allowances for a test module are in `../CLAUDE.md`.

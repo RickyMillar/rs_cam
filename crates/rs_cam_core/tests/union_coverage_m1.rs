@@ -176,7 +176,7 @@ fn run_arm(label: &str, project: &Path) -> UnionCoverageReport {
 }
 
 #[test]
-#[ignore = "evidence run — full wanaka200 chains, release mode, tens of minutes per arm"]
+#[ignore = "evidence: full wanaka200 chains, release mode, tens of minutes per arm"]
 fn union_coverage_judges_the_rejected_overlap_variant() {
     let root = repo_root().join("planning/multitool_2026-08-23");
     let production = run_arm("PRODUCTION", &root.join("wanaka200_mt2.toml"));

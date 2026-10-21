@@ -870,7 +870,7 @@ fn tile_zones(field: &[TriField], base: &[u32], size: f64) -> Vec<Vec<u32>> {
 /// the repo. It SKIPs rather than fails when the mesh is absent, following
 /// `tests/wanaka_region_capture_f1.rs`.
 #[test]
-#[ignore = "census — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: census — needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_zone_coherence_census() {
     let path = Path::new(WANAKA_MESH);
     if !path.exists() {

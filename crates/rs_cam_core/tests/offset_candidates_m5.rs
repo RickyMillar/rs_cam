@@ -305,7 +305,7 @@ fn shipped_ring_cleanup_reproduces_the_shipped_scallop_path() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "M5 evidence: 9 arms x 8 fixtures; --ignored --nocapture"]
+#[ignore = "evidence: M5 evidence: 9 arms x 8 fixtures; --ignored --nocapture"]
 fn candidate_arms_on_every_fixture() {
     let budget = CascadeBudget {
         max_rings: 50,
@@ -391,7 +391,7 @@ fn candidate_arms_on_every_fixture() {
 /// AREA? An arm can keep every vertex at the right distance and still have
 /// dropped an island.
 #[test]
-#[ignore = "M5 evidence: rasterised erosion area; --ignored --nocapture"]
+#[ignore = "evidence: M5 evidence: rasterised erosion area; --ignored --nocapture"]
 fn candidate_arms_keep_the_eroded_area() {
     let budget = CascadeBudget {
         max_rings: 20,
@@ -448,7 +448,7 @@ fn candidate_arms_keep_the_eroded_area() {
 /// as its cancel, which both bounds this test and measures the thing worth
 /// measuring: how far a real pocket gets before a user would give up.
 #[test]
-#[ignore = "M5 evidence: pocket-boundary fidelity; --ignored --nocapture"]
+#[ignore = "evidence: M5 evidence: pocket-boundary fidelity; --ignored --nocapture"]
 fn pocket_boundary_fidelity_against_the_analytic_erosion() {
     // A plus/cross: four reflex corners, an exactly known erosion, and the
     // shape class 2.5D pocketing actually meets.
@@ -633,7 +633,7 @@ fn oracle_fixtures() -> Vec<(&'static str, TriangleMesh, ScallopParams)> {
 }
 
 #[test]
-#[ignore = "M5 evidence: M4 envelope oracle across ring cleanups; --ignored --nocapture"]
+#[ignore = "evidence: M5 evidence: M4 envelope oracle across ring cleanups; --ignored --nocapture"]
 fn scallop_oracle_across_ring_cleanups() {
     let tool = tools::wanaka_taper();
     let cancel = || false;
@@ -711,7 +711,7 @@ fn scallop_oracle_across_ring_cleanups() {
 /// C0 and the two arms that inflate are included so the gate has a
 /// falsifying side.
 #[test]
-#[ignore = "M5 evidence: the 200-ring acceptance gate; --ignored --nocapture"]
+#[ignore = "evidence: M5 evidence: the 200-ring acceptance gate; --ignored --nocapture"]
 fn two_hundred_offsets_on_the_stress_fixtures() {
     let budget = CascadeBudget {
         max_rings: 200,

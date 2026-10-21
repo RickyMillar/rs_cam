@@ -271,6 +271,7 @@ fn calc_ipe_6mm_long_tool() -> rs_cam_core::feeds::FeedsResult {
 /// docstring can be re-measured rather than trusted.
 /// `cargo test -p rs_cam_core --test _litmatrix_rubbing_floor_clamp -- --nocapture`
 #[test]
+#[ignore = "instrument: prints the cell record; no assertion"]
 fn record_the_cell() {
     for (label, result) in [
         ("ipe", calc_ipe_6mm(SetupContext::default())),

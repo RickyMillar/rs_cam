@@ -1243,7 +1243,7 @@ fn stage_e(
 
 /// Phase F1 steps 1–5, end to end.
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo) and the region-1 capture"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo) and the region-1 capture"]
 fn wanaka_direction_field_f1() {
     use rs_cam_core::machine::kinematics::MachineKinematics;
 
@@ -2590,7 +2590,7 @@ fn print_pre_registration() {
 
 /// Phase F1-S: does segmentation collapse the fragmentation?
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo) and the region-1 capture"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo) and the region-1 capture"]
 fn wanaka_direction_field_segmented_f1() {
     use rs_cam_core::machine::kinematics::MachineKinematics;
 

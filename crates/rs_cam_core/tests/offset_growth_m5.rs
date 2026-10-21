@@ -211,7 +211,7 @@ fn curve_row(fx: &OffsetFixture, cleanup: Cleanup, run: &Cascade) -> String {
 }
 
 #[test]
-#[ignore = "M5 evidence: repeated offset cascades on 8 fixtures; --ignored --nocapture"]
+#[ignore = "evidence: M5 evidence: repeated offset cascades on 8 fixtures; --ignored --nocapture"]
 fn growth_curves_with_and_without_todays_compensation() {
     let mut csv = String::from("fixture,cleanup,ring,polys,verts,area_mm2,seconds\n");
     println!(
@@ -290,7 +290,7 @@ fn attribution_row(name: &str, ring: usize, a: &RingAttribution) -> String {
 }
 
 #[test]
-#[ignore = "M5 evidence: per-ring vertex attribution; --ignored --nocapture"]
+#[ignore = "evidence: M5 evidence: per-ring vertex attribution; --ignored --nocapture"]
 fn where_the_new_vertices_come_from() {
     println!(
         "\nClasses are measured on the FLATTENED output — exactly the vertices `Polygon2::from_pline` keeps."
@@ -367,7 +367,7 @@ fn where_the_new_vertices_come_from() {
 ///
 /// Run once; the asset is committed.
 #[test]
-#[ignore = "capture: full-mesh classification sampling; --ignored --nocapture"]
+#[ignore = "instrument: capture: full-mesh classification sampling; --ignored --nocapture"]
 fn capture_terrain_mid_steep_polygon() {
     use rs_cam_core::finish::finish_planner::{FinishBand, FinishPlannerParams, decompose_surface};
     use rs_cam_core::finish::finish_setup::build_classification_surface_with_cancel;

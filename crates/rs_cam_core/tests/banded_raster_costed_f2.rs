@@ -649,7 +649,7 @@ fn merge_submachinable(
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
-#[ignore = "evidence run — needs the operator's wanaka mesh (not in repo)"]
+#[ignore = "evidence: needs the operator's wanaka mesh (not in repo)"]
 fn wanaka_banded_raster_costed_f2() {
     eprintln!(
         "\n========== Avenue F, F2 — BANDED RASTER, COSTED ==========\n\

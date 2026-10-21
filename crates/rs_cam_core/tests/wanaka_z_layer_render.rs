@@ -169,7 +169,7 @@ fn write_side_by_side(svg_first: &str, svg_last: &str, out_path: &Path) {
     fs::write(out_path, combined).expect("write svg");
 }
 
-#[ignore = "wanaka diagnostic — run with --ignored"]
+#[ignore = "evidence: wanaka diagnostic — run with --ignored"]
 #[test]
 fn wanaka_back_rough_first_and_last_z_layers() {
     if !Path::new(STL_PATH).exists() {
