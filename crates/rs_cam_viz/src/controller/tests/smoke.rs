@@ -236,8 +236,18 @@ fn controller_save_open_and_export_smoke() {
     // Unmodeled(SimulationRequired) verdicts like a user would.
     controller.state.gui.tool_load_overrides.accept_unmodeled = true;
 
-    let gcode = controller.export_gcode().expect("export gcode");
+    let rs_cam_core::gcode::ExportedGcode {
+        gcode,
+        machine_safety: _,
+        load_outcome,
+        feeds_cautions,
+    } = controller.export_gcode_reporting().expect("export gcode");
     assert!(gcode.contains("G"));
+    assert!(
+        !load_outcome.overridden.is_empty(),
+        "the export waived the unmodelled load, so the outcome must record it"
+    );
+    assert!(feeds_cautions.is_empty(), "nothing here was modulated");
 
     let svg = controller.export_svg_preview().expect("export svg preview");
     assert!(svg.contains("<svg"));
@@ -253,7 +263,7 @@ fn controller_save_open_and_export_smoke() {
         .open_job_from_path(&save_path)
         .expect("reopen saved job through controller");
 
-    assert!(controller.export_gcode().is_err());
+    assert!(controller.export_gcode_reporting().is_err());
     assert!(controller.export_svg_preview().is_err());
 
     let setup = controller.export_setup_sheet_html();

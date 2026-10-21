@@ -41,9 +41,8 @@ use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::error::VizError;
 use rs_cam_viz::io::export::{
-    export_combined_gcode_from_session, export_gcode_from_session,
-    export_gcode_from_session_with_policy, export_setup_gcode_from_session,
-    export_single_toolpath_from_session,
+    export_gcode_from_session, export_gcode_from_session_with_policy,
+    export_setup_gcode_from_session, export_single_toolpath_from_session,
 };
 use rs_cam_viz::state::job::SetupId;
 use rs_cam_viz::state::runtime::{GuiState, ToolpathRuntime};
@@ -52,7 +51,7 @@ use rs_cam_viz::state::toolpath::{OperationConfig, ToolpathResult};
 use rs_cam_viz::state::wizard::OutputLayout;
 
 /// F072: every export door reads the session post config, so a test sets
-/// the dialect through the command door, not on `GuiState::post`.
+/// the dialect through the command door.
 fn set_post_format(session: &mut ProjectSession, format: PostFormat) {
     let mut post = session.post_config().clone();
     post.format = format;
@@ -491,7 +490,7 @@ fn viz_phase_assembly_uses_per_op_spindle_rpm() {
     path.feed_to(P3::new(30.0, 0.0, -1.0), 600.0);
     seed_generated_result(&mut session, &mut gui, tp2_id, path);
 
-    let default_rpm = gui.post.spindle_speed;
+    let default_rpm = session.post_config().spindle_speed;
     assert_ne!(default_rpm, 12_345, "test premise: override differs");
 
     let gcode = export_gcode_from_session(&session, &gui, &sim).expect("export succeeds");
@@ -666,11 +665,9 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
     path.feed_to(P3::new(20.0, 0.0, -1.0), 600.0);
     seed_generated_result(&mut session, &mut gui, bottom_tp_id, path);
 
-    // The combined-gcode emit is what produces inter-setup M0s; the
-    // SingleFile path concatenates phases without setup boundaries.
+    // G3: the single-file emit puts an M0 between setups.
     // Default emit: pause text should mention the setup name.
-    let default_gcode =
-        export_combined_gcode_from_session(&session, &gui, &sim).expect("default export");
+    let default_gcode = export_gcode_from_session(&session, &gui, &sim).expect("default export");
     assert!(
         default_gcode.contains("Setup change: Bottom"),
         "default pause text must mention the setup name: {default_gcode}"
@@ -696,8 +693,7 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
         }))
         .expect("the bottom setup sits at a live index");
 
-    let override_gcode =
-        export_combined_gcode_from_session(&session, &gui, &sim).expect("override export");
+    let override_gcode = export_gcode_from_session(&session, &gui, &sim).expect("override export");
     assert!(
         override_gcode.contains("Run Z Probe macro then Resume"),
         "override pause_message must replace the default text in the M0 block: {override_gcode}"

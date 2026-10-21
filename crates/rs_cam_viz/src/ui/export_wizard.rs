@@ -134,7 +134,7 @@ fn step_post(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     ui.heading("Post-processor");
     ui.add_space(4.0);
 
-    let current = state.gui.post.format;
+    let current = state.session().post_config().format;
     let mut selected = current;
 
     egui::ComboBox::from_label("Controller")
@@ -203,7 +203,7 @@ fn step_post(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     });
 
     ui.add_space(10.0);
-    draw_limit_warnings(ui, post_def, state.gui.post.spindle_speed);
+    draw_limit_warnings(ui, post_def, state.session().post_config().spindle_speed);
 }
 
 // ── Step 2 — Output layout ───────────────────────────────────────────
@@ -214,7 +214,10 @@ fn step_output_layout(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppE
 
     let wiz = &state.gui.wizard;
     let setups_with_ops = crate::io::export::setups_with_enabled_ops(state.session());
-    let current = wiz.effective_layout(state.gui.post.format.definition(), setups_with_ops);
+    let current = wiz.effective_layout(
+        state.session().post_config().format.definition(),
+        setups_with_ops,
+    );
     let mut selected = current;
 
     ui.label("How should the emitted g-code be split across files?");
@@ -313,7 +316,7 @@ fn step_coord_units(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
     ui.heading("Coordinate system & units");
     ui.add_space(4.0);
 
-    let post = state.gui.post.format.definition();
+    let post = state.session().post_config().format.definition();
     let wiz = &state.gui.wizard;
 
     // ── WCS picker ──
@@ -404,7 +407,7 @@ fn step_coord_units(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
     ui.add_space(12.0);
 
     // ── Safe-Z override ──
-    let project_safe_z = state.gui.post.safe_z;
+    let project_safe_z = state.session().post_config().safe_z;
     ui.label(
         egui::RichText::new(format!("Project default: {project_safe_z:.3} mm"))
             .small()
@@ -535,7 +538,7 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
     ui.add_space(4.0);
     {
         use rs_cam_core::gcode::ToolChangeMode;
-        let post = state.gui.post.format.definition();
+        let post = state.session().post_config().format.definition();
         let post_uses_m6 = post.tool_change_commands_m6();
         ui.label(
             egui::RichText::new(format!(
@@ -587,7 +590,7 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
         }
     }
 
-    if state.gui.post.format == rs_cam_core::gcode::PostFormat::GrblHal {
+    if state.session().post_config().format == rs_cam_core::gcode::PostFormat::GrblHal {
         ui.add_space(12.0);
         draw_grblhal_options(ui, state, events);
     }
@@ -719,7 +722,7 @@ fn draw_grblhal_options(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<Ap
     let layout = state
         .gui
         .wizard
-        .effective_layout(state.gui.post.format.definition(), setups);
+        .effective_layout(state.session().post_config().format.definition(), setups);
     let mut per_setup = layout == OutputLayout::PerSetup;
     if ui
         .checkbox(&mut per_setup, "One file per setup")
@@ -1002,7 +1005,7 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
     let session = state.session();
     let wiz = &state.gui.wizard;
-    let post = state.gui.post.format;
+    let post = state.session().post_config().format;
     let post_def = post.definition();
 
     let gcode_result =

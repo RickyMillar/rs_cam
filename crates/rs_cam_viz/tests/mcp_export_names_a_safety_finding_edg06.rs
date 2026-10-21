@@ -165,7 +165,16 @@ fn build_state(safe_z: f64) -> (ProjectSession, GuiState, SimulationState) {
     let mut rt = ToolpathRuntime::new(true);
     rt.run = rs_cam_viz::state::runtime::ToolpathRun::Done(viz_result(sample_toolpath()));
     gui.toolpath_rt.insert(tp_id, rt);
-    gui.post.safe_z = safe_z;
+    // F072: the session holds the only post config.
+    let mut post = session.post_config().clone();
+    post.safe_z = safe_z;
+    let _ = session
+        .apply(Command::SetPostConfig(
+            rs_cam_core::session::SetPostConfigArgs {
+                post: Box::new(post),
+            },
+        ))
+        .expect("set the project safe Z");
     // No simulation runs here, so every tool-load criterion reads
     // Unmodeled. The gate is covered elsewhere; this file is about what
     // the export surface says after a successful emit.

@@ -14,7 +14,6 @@ use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 
 use crate::render::upload_cache::{self, Refresh, SlotInputs};
 
-use super::job::PostConfig;
 use super::toolpath::ToolpathId;
 
 // Re-export ComputeStatus from core (canonical definition).
@@ -506,8 +505,6 @@ pub struct GuiState {
     pub file_path: Option<PathBuf>,
     pub dirty: bool,
     pub edit_counter: u64,
-    /// Viz-friendly post config view (mirrors session post config with enum format).
-    pub post: PostConfig,
     /// Per-toolpath GUI runtime state, keyed by toolpath semantic ID.
     pub toolpath_rt: HashMap<rs_cam_core::ToolpathId, ToolpathRuntime>,
     /// User-toggled overrides for the tool-load export gate. Reset on project load.
@@ -566,7 +563,6 @@ impl GuiState {
             file_path: None,
             dirty: false,
             edit_counter: 0,
-            post: PostConfig::default(),
             toolpath_rt: HashMap::new(),
             tool_load_overrides: ToolLoadOverrides::default(),
             stale_export: StaleResultPolicy::default(),
@@ -579,12 +575,6 @@ impl GuiState {
             selection_ui: crate::state::pick::SelectionUi::default(),
         }
     }
-
-    // UI-07: `post_from_session` and `post_to_session` lived here. They
-    // copied six fields each way between `gcode::PostConfig` and
-    // `session::ProjectPostConfig`, and a field added to one side reached
-    // three of the four halves. The session holds `gcode::PostConfig` now,
-    // so `gui.post` is a CLONE of it and a new field needs no edit here.
 
     /// Mark the project as having unsaved changes.
     pub fn mark_edited(&mut self) {
@@ -609,9 +599,7 @@ impl Default for GuiState {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
-    use super::*;
-
-    use rs_cam_core::gcode::PostFormat;
+    use rs_cam_core::gcode::{PostConfig, PostFormat};
 
     /// W9 / P-1. The Post panel's dropdown used to reset from grblHAL to
     /// GRBL on every reload, because one of two hand-written translations

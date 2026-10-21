@@ -456,7 +456,6 @@ pub(super) fn apply_machine_import(
         import: Box::new(import),
     });
     if apply_panel_command(state, command) {
-        state.gui.post = state.session().post_config().clone();
         state.gui.mark_edited();
     }
 }
@@ -472,7 +471,7 @@ pub(super) fn flush_post_snapshot(state: &mut AppState) {
                 .history
                 .push(crate::state::history::UndoAction::PostChange {
                     old,
-                    new: state.gui.post.clone(),
+                    new: state.session().post_config().clone(),
                 });
             state.gui.mark_edited();
         } else {

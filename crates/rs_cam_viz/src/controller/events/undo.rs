@@ -17,13 +17,11 @@ impl<B: ComputeBackend> AppController<B> {
                     self.apply_stock_snapshot(old);
                 }
                 UndoAction::PostChange { old, .. } => {
-                    // F072: the session owns the post config; the GUI
-                    // copy is rebuilt from it, never written first.
+                    // F072: the session holds the only post config.
                     let command = Command::SetPostConfig(SetPostConfigArgs {
                         post: Box::new(old),
                     });
                     let _ = self.apply_quietly(command);
-                    self.refresh_post_mirror();
                 }
                 UndoAction::ToolChange { tool_id, old, .. } => {
                     self.apply_tool_snapshot(tool_id, old);
@@ -95,13 +93,11 @@ impl<B: ComputeBackend> AppController<B> {
                     self.apply_stock_snapshot(new);
                 }
                 UndoAction::PostChange { new, .. } => {
-                    // F072: the session owns the post config; the GUI
-                    // copy is rebuilt from it, never written first.
+                    // F072: the session holds the only post config.
                     let command = Command::SetPostConfig(SetPostConfigArgs {
                         post: Box::new(new),
                     });
                     let _ = self.apply_quietly(command);
-                    self.refresh_post_mirror();
                 }
                 UndoAction::ToolChange { tool_id, new, .. } => {
                     self.apply_tool_snapshot(tool_id, new);

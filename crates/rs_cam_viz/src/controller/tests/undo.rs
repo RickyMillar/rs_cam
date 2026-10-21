@@ -34,8 +34,8 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
             "PostChange",
             Box::new(
                 |c: &AppController<ScriptedBackend>| UndoAction::PostChange {
-                    old: c.state.gui.post.clone(),
-                    new: c.state.gui.post.clone(),
+                    old: c.state.session().post_config().clone(),
+                    new: c.state.session().post_config().clone(),
                 },
             ),
         ),

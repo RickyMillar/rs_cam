@@ -571,11 +571,10 @@ impl<B: ComputeBackend> AppController<B> {
                 self.open_feeds_modal(toolpath_id);
             }
             AppEvent::SetSpindleStrategy(strategy) => {
-                // Project-level setting; updates both the session
-                // post (persisted to TOML on save) and the viz post
-                // mirror (drives the modal's preview values on next
-                // frame). Invalidates Suggest's cached output via the
-                // existing dirty-tracking hooks.
+                // Project-level setting in the session post config
+                // (persisted to TOML on save). The modal reads the
+                // session on the next frame. Invalidates Suggest's cached
+                // output via the existing dirty-tracking hooks.
                 if self.state.session().post_config().spindle_strategy != strategy {
                     // `SetPostConfig` replaces the WHOLE block, so a
                     // surface that offers one field reads the current
@@ -585,12 +584,8 @@ impl<B: ComputeBackend> AppController<B> {
                     let command = Command::SetPostConfig(SetPostConfigArgs {
                         post: Box::new(post),
                     });
-                    if self.apply_controller_command(command, "the spindle strategy") {
-                        // SHL-01: one door rebuilds the mirror. This arm
-                        // copied `spindle_strategy` alone, and it copied
-                        // it even when the command was refused.
-                        self.refresh_post_mirror();
-                    }
+                    // The helper logs a refusal; nothing else follows.
+                    let _ = self.apply_controller_command(command, "the spindle strategy");
                     self.state.gui.mark_edited();
                 }
             }

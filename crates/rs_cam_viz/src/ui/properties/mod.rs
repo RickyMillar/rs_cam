@@ -1272,37 +1272,46 @@ pub(crate) fn drill_tool_diameters(session: &rs_cam_core::session::ProjectSessio
 }
 
 /// The `PostProcessor` arm of [`draw`]'s selection dispatch.
+///
+/// F072: the panel edits a one-frame copy of the session post config. The
+/// session holds the only stored copy; [`commit_post_edit`] writes a
+/// changed copy back in the same frame.
 fn draw_post_selection(ui: &mut egui::Ui, state: &mut AppState) {
     // Capture snapshot for undo before editing
     if state.history.post_snapshot.is_none() {
-        state.history.post_snapshot = Some(state.gui.post.clone());
+        state.history.post_snapshot = Some(state.session().post_config().clone());
     }
     let stock_top = state.session().stock_config().origin_z + state.session().stock_config().z;
-    post::draw(ui, &mut state.gui.post, stock_top);
-    // W2.2 [P1-004]: the session is canonical for post config. Push the
-    // edited gui.post straight through so `session.post_config()` can't
-    // lag behind the panel (the stale window the GUI-vs-MCP race read).
-    // Guarded on a real change: the panel must not write the
-    // session on every idle frame. WP17 moved the second half of
-    // this reason into the setter — `set_post_config` clears the
-    // simulation only for a field that reaches emitted motion,
-    // so an unchanged write clears nothing now either.
-    let session_post = state.gui.post.clone();
-    if *state.session().post_config() != session_post {
-        let command =
-            rs_cam_core::session::Command::SetPostConfig(rs_cam_core::session::SetPostConfigArgs {
-                post: Box::new(session_post),
-            });
-        // UI-08: the Post tab is a panel door, so it marks the
-        // project edited exactly as the other seven doors do. Without
-        // this the operator changes Safe Z, closes the window, and the
-        // `app.rs` close guard reads a clean project and asks nothing.
-        // The compare above already gates on a real change, so an idle
-        // frame still dirties nothing.
-        if apply_panel_command(state, command) {
-            state.gui.mark_edited();
-        }
+    let mut edited = state.session().post_config().clone();
+    post::draw(ui, &mut edited, stock_top);
+    let _ = commit_post_edit(state, edited);
+}
+
+/// Write an edited post config through `Command::SetPostConfig` and mark
+/// the project edited. The Post panel calls it on every frame.
+///
+/// The compare guards the write: an idle frame writes nothing, and it does
+/// not mark the project edited. WP17: `set_post_config` clears the
+/// simulation only for a field that reaches emitted motion.
+///
+/// UI-08: the Post tab is a panel door, so it marks the project edited as
+/// the other seven doors do. Without this the operator changes Safe Z,
+/// closes the window, and the `app.rs` close guard reads a clean project.
+///
+/// Returns `true` when the session took the edit.
+pub fn commit_post_edit(state: &mut AppState, edited: rs_cam_core::gcode::PostConfig) -> bool {
+    if *state.session().post_config() == edited {
+        return false;
     }
+    let command =
+        rs_cam_core::session::Command::SetPostConfig(rs_cam_core::session::SetPostConfigArgs {
+            post: Box::new(edited),
+        });
+    let applied = apply_panel_command(state, command);
+    if applied {
+        state.gui.mark_edited();
+    }
+    applied
 }
 
 /// The `Machine` arm of [`draw`]'s selection dispatch.

@@ -395,8 +395,12 @@ impl<B: ComputeBackend> AppController<B> {
             stock_bbox,
             stock_top_z: stock_bbox.max.z,
             resolution: request_resolution,
-            spindle_rpm: self.state.gui.post.spindle_speed,
-            rapid_feed_mm_min: self.state.gui.post.rapid_feed_mm_min(machine),
+            spindle_rpm: self.state.session().post_config().spindle_speed,
+            rapid_feed_mm_min: self
+                .state
+                .session()
+                .post_config()
+                .rapid_feed_mm_min(machine),
             model_mesh,
             kinematics,
             display_stride: 1,

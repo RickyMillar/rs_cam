@@ -264,7 +264,7 @@ pub enum AppEvent {
     /// Step 3: units override. `None` = inherit from the post.
     WizardSetUnitsOverride(Option<rs_cam_core::gcode::Units>),
     /// Step 3: safe-Z override (mm). `None` = use the project default
-    /// (`gui.post.safe_z`).
+    /// (`session.post_config().safe_z`).
     WizardSetSafeZOverride(Option<f64>),
     /// Step 3: dry-run mode. When true, the emit pass clamps every
     /// cutting move's Z to the effective safe-Z so the spindle stays

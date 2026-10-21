@@ -6,12 +6,12 @@
 //! (`CriterionStatus::bound`, S4). A hand-built `ToolLoadReport` would let a
 //! test agree with itself: the fixture would carry the bound the assertion
 //! expects. So this module runs the SHIPPED path — `generate_toolpath`, then
-//! `run_simulation` with metrics, then `gcode::project_load_report` through
+//! `run_simulation` with metrics, then `build_tool_load_report` through
 //! the panel's own producer. The bounds the assertions read are the ones the
 //! shipped gates set.
 //!
 //! The freshness gate is the reason the trace cannot be hand-built either.
-//! `gcode::sim_trace_is_fresh` compares `SimulationProvenance::toolpath_hashes`
+//! `ProjectSession::sim_trace_is_fresh` compares `SimulationProvenance::toolpath_hashes`
 //! against `hash_toolpath` of each enabled toolpath's cached result, and
 //! `hash_toolpath` is `pub(crate)`. A trace this crate could assemble would
 //! therefore always read STALE, and every row would paint `—` for a reason

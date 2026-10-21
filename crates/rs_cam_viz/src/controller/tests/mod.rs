@@ -23,7 +23,7 @@ mod machine_import_during_a_run_g_machinestale;
 mod mcp_cancel;
 mod model_relink;
 mod planner;
-mod post_mirror;
+mod post_event;
 mod prior_stock_blocker_crosses_setups_d11;
 mod rapid_collision_verdict_g_rapidframe;
 mod rest_cascade_parity_g_restres;
@@ -1303,39 +1303,6 @@ fn controller_holding_a_simulation() -> AppController<RestChainBackend> {
         "the control: the viewport holds one too"
     );
     controller
-}
-
-// --- SHL-01: one door rebuilds the post mirror --------------------------
-
-/// The mirror must carry the WHOLE session block, not the one field a
-/// route remembered to copy.
-///
-/// UI-07: the mirror and the session block are the SAME type, so this is a
-/// direct `PartialEq` over every field. It used to compare through
-/// `post_to_session`, one half of a translation pair a new field could
-/// miss.
-fn assert_post_mirror_matches_session<B: ComputeBackend>(
-    controller: &AppController<B>,
-    route: &str,
-) {
-    let mirrored = controller.state.gui.post.clone();
-    assert_eq!(
-        &mirrored,
-        controller.state.session().post_config(),
-        "SHL-01: after {route} the viz post mirror does not match the session block"
-    );
-}
-
-/// Drive every mirror field away from the session, so a route that copies
-/// ONE field back leaves the rest wrong.
-fn drift_the_post_mirror<B: ComputeBackend>(controller: &mut AppController<B>) {
-    let post = &mut controller.state.gui.post;
-    post.format = rs_cam_core::gcode::PostFormat::Mach3;
-    post.spindle_speed = post.spindle_speed.wrapping_add(1234);
-    post.safe_z += 37.5;
-    post.high_feedrate_mode = !post.high_feedrate_mode;
-    post.high_feedrate += 111.0;
-    post.spindle_strategy = rs_cam_core::feeds::SpindleStrategy::MaxSpeed;
 }
 
 /// F217: the panel write-back sends `ReplaceToolpathConfig` only on a frame

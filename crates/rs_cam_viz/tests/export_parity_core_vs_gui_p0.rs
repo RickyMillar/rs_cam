@@ -61,7 +61,7 @@
 //!   `Current` (`state/freshness.rs:78-96`) and the door emits the same
 //!   toolpath the core door reads.
 //! - Post store. F072 (W5): both doors resolve the post from
-//!   `project.post_config()`; the GUI door no longer reads `gui.post`.
+//!   `project.post_config()`; `GuiState` holds no post config.
 //!   Both emit through the shipped GRBL post
 //!   (`crates/rs_cam_core/posts/grbl.toml`), the `"grbl"` default token.
 //!
@@ -320,7 +320,6 @@ fn build_state(last_coolant: CoolantMode) -> (ProjectSession, GuiState, Simulati
     }
 
     let mut gui = GuiState::new();
-    gui.post = session.post_config().clone();
     // The GUI gate reads the same absent trace the core door reads.
     gui.tool_load_overrides.accept_unmodeled = true;
 
@@ -525,9 +524,8 @@ fn core_and_gui_export_are_byte_identical_on_the_agreeing_properties() {
         spindle_words(&viz),
         "RPM: the two doors resolve the per-operation spindle override \
          differently. The core door reads \
-         project.post_config().spindle_speed (gcode/mod.rs:361-364); \
-         the GUI door reads gui.post.spindle_speed \
-         (io/export.rs:331-335)."
+         project.post_config().spindle_speed; the GUI door must read \
+         the same session value."
     );
     assert_eq!(
         core_changes,

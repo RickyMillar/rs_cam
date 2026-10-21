@@ -18,10 +18,12 @@
 //!
 //! # What the arms hold
 //!
-//! Arm 1 drives the real inspector through a headless `Context` with the
-//! Post tab selected and one changed field. It asserts the dirty flag AND
-//! the session value, so a flag that is set without the command applying
-//! does not pass.
+//! Arm 1 sends one changed field through `properties::commit_post_edit`,
+//! the door the Post tab calls on every frame (F072: the tab edits a
+//! one-frame copy of the session post config). It asserts the dirty flag
+//! AND the session value, so a flag that is set without the command
+//! applying does not pass. It then draws the real inspector and asserts
+//! that the tab keeps the session value.
 //!
 //! Arm 2 is the non-vacuity anchor. It draws the same tab with no edit and
 //! asserts the project stays clean. A dirty flag on an idle frame marks a
@@ -65,8 +67,13 @@ fn a_post_edit_marks_the_project_dirty() {
         "a fresh project is clean before the operator edits anything"
     );
 
-    let edited_safe_z = state.gui.post.safe_z + 7.5;
-    state.gui.post.safe_z = edited_safe_z;
+    let mut edited = state.session().post_config().clone();
+    let edited_safe_z = edited.safe_z + 7.5;
+    edited.safe_z = edited_safe_z;
+    assert!(
+        properties::commit_post_edit(&mut state, edited),
+        "the session must take a changed post config"
+    );
     draw_inspector(&ctx, &mut state);
 
     assert!(

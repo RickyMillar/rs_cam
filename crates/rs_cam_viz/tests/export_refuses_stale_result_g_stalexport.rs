@@ -48,7 +48,7 @@ use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::error::VizError;
 use rs_cam_viz::io::export::{
-    blocking_toolpath_message, blocking_toolpaths, export_combined_gcode_from_session,
+    blocking_toolpath_message, blocking_toolpaths, export_gcode_from_session,
     export_gcode_from_session_with_policy, export_setup_gcode_from_session_with_policy,
     export_single_toolpath_from_session,
 };
@@ -265,8 +265,8 @@ fn every_export_entry_point_refuses_the_edited_operation() {
     edit_the_operation(&mut session);
 
     let combined = expect_export_error(
-        export_combined_gcode_from_session(&session, &gui, &sim),
-        "export_combined_gcode_from_session",
+        export_gcode_from_session(&session, &gui, &sim),
+        "export_gcode_from_session",
     );
     let per_setup = expect_export_error(
         export_setup_gcode_from_session_with_policy(

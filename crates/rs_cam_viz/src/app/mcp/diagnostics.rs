@@ -169,7 +169,7 @@ impl RsCamApp {
         //
         // Built by the session's single producer, which is the SAME call
         // that fills `ToolpathLoadVerdict::kinematic_utilization` in
-        // `gcode::project_load_report`. Going through the load report here
+        // `ProjectSession::build_tool_load_report`. Going through the load report here
         // would evaluate every gate on every toolpath to publish one
         // sentence; narration is a 4 ms call and must stay one.
         //

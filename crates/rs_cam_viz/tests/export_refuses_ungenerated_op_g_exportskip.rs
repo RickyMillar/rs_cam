@@ -45,7 +45,7 @@ use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::error::VizError;
 use rs_cam_viz::io::export::{
-    blocking_toolpath_message, blocking_toolpaths, export_combined_gcode_from_session,
+    blocking_toolpath_message, blocking_toolpaths, export_gcode_from_session,
     export_gcode_from_session_with_policy, export_setup_gcode_from_session_with_policy,
 };
 use rs_cam_viz::state::freshness::freshness_at;
@@ -363,8 +363,8 @@ fn per_setup_and_combined_exports_refuse_the_same_op() {
     );
 
     let combined = expect_export_error(
-        export_combined_gcode_from_session(&session, &gui, &sim),
-        "export_combined_gcode_from_session",
+        export_gcode_from_session(&session, &gui, &sim),
+        "export_gcode_from_session",
     );
     assert!(
         combined.contains(UNGENERATED_NAME),

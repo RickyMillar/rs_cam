@@ -18,19 +18,9 @@ struct EmittedToolpath<'a> {
     feeds: FeedStage,
 }
 
-/// W2.5 (D10): the caution line of each toolpath in `indices` whose
-/// session result was modulated from a simulation the session no longer
-/// holds. The pre-flight modal reads it; the export door reads the same
-/// core list (`ProjectSession::feeds_cautions`).
-pub fn feeds_cautions(
-    session: &ProjectSession,
-    indices: impl Iterator<Item = usize>,
-) -> Vec<String> {
-    session.feeds_cautions(indices)
-}
-
-/// The text an export reply appends for [`feeds_cautions`]; `None` when
-/// there is none.
+/// The text an export reply appends for the feeds cautions
+/// ([`ProjectSession::feeds_cautions`], W2.5 D10); `None` when there is
+/// none.
 pub fn feeds_caution_report(cautions: &[String]) -> Option<String> {
     if cautions.is_empty() {
         return None;
@@ -500,9 +490,10 @@ fn export_through_core(
 
 /// Export all enabled toolpaths as a single G-code file (session-based).
 ///
-/// The text only: the wizard preview and the keyboard route. A door that
-/// writes a file for an operator takes [`export_gcode_from_session_reporting`]
-/// and shows the load outcome and the machine-safety findings.
+/// G3: the door puts an M0 pause between setups. The text only, for a
+/// preview or a test. A door that writes a file for an operator takes
+/// [`export_gcode_from_session_reporting`] and shows the load outcome, the
+/// machine-safety findings and the feeds cautions.
 pub fn export_gcode_from_session(
     session: &ProjectSession,
     gui: &GuiState,
@@ -579,18 +570,6 @@ pub fn export_gcode_from_session_reporting(
     export_through_core(session, gui, sim, arranged, &emitted, policy)
 }
 
-/// Export all setups as a single G-code file with M0 pauses (session-based).
-///
-/// G3: the single-file door now puts the M0 pause between setups itself,
-/// so this is the same export. It stays as a name for the keyboard route.
-pub fn export_combined_gcode_from_session(
-    session: &ProjectSession,
-    gui: &GuiState,
-    sim: &SimulationState,
-) -> Result<String, crate::error::VizError> {
-    export_gcode_from_session(session, gui, sim)
-}
-
 /// How many setups hold an enabled toolpath. A layout default and the MCP
 /// split read it (G3).
 pub fn setups_with_enabled_ops(session: &ProjectSession) -> usize {
@@ -618,7 +597,8 @@ pub struct SetupFile {
     pub machine_safety: Vec<Finding>,
     /// F051: what the load gate let through for this file.
     pub load_outcome: LoadPolicyOutcome,
-    /// W2.5: the feeds cautions of this file ([`feeds_cautions`]).
+    /// W2.5: the feeds cautions of this file
+    /// ([`ProjectSession::feeds_cautions`]).
     pub feeds_cautions: Vec<String>,
 }
 

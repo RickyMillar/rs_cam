@@ -247,7 +247,7 @@ fn ribbon_diagnostics(session: &ProjectSession, idx: usize) -> Vec<Diagnostic> {
         &session.stock_config().material,
         session.stock_config().bbox().min.z,
     );
-    let load_report = rs_cam_core::gcode::project_load_report(session, None);
+    let load_report = session.build_tool_load_report(None);
     let load_verdict = load_report
         .per_toolpath
         .iter()

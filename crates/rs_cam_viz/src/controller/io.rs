@@ -5,7 +5,7 @@ use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::io::ImportOptions;
 use rs_cam_core::session::{
     AddModelArgs, AdoptModelGeometryArgs, Command, ProjectLoadWarning, ProjectSession,
-    SetPostConfigArgs, SetStockConfigArgs,
+    SetStockConfigArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -469,50 +469,12 @@ impl<B: ComputeBackend> AppController<B> {
         Ok(())
     }
 
-    /// Rebuild the viz post mirror from the session block (SHL-01).
-    ///
-    /// `GuiState::post` is a CLONE of `session.post_config()`; the session
-    /// owns the values. Four write sites used to copy ONE field back by
-    /// hand after their command applied, so the Post panel and the Feeds
-    /// modal did not lag until the next save. A field added to the post
-    /// block then reached three of the four and was forgotten in the
-    /// fourth. This is the one function that rebuilds the mirror, and
-    /// UI-07 made it a clone of the one type, so it cannot miss a field.
-    ///
-    /// Safe to call after any command: the Post panel pushes its edited
-    /// `gui.post` into the session in the same frame it changes it
-    /// (`ui/properties/mod.rs`), so no un-synced edit lives in the
-    /// mirror across a command.
-    pub(crate) fn refresh_post_mirror(&mut self) {
-        self.state.gui.post = self.state.session().post_config().clone();
-    }
-
     /// Write the project to `path`.
     ///
-    /// WP17: the sync of the viz post block into the session runs ONLY
-    /// when the two blocks differ, and it takes the command door. This
-    /// method called `set_post_config` on every save, with the block the
-    /// session already held, and that setter dropped the simulation.
-    /// `ProjectSession::start` then refused every `FromRemainingStock`
-    /// operation, because it reads the rest snapshot from the simulation
-    /// (WP11b). The GUI post panel guards the same way
-    /// (`ui/properties/mod.rs`).
+    /// F072: the session holds the only post config, so the save writes
+    /// the session as it is. The Post panel writes each edit through
+    /// `Command::SetPostConfig` in the frame of the edit.
     pub fn save_job_to_path(&mut self, path: &Path) -> Result<(), VizError> {
-        let session_post = self.state.gui.post.clone();
-        if *self.state.session().post_config() != session_post {
-            let command = Command::SetPostConfig(SetPostConfigArgs {
-                post: Box::new(session_post),
-            });
-            match self.apply(command) {
-                Ok(_) => self.refresh_post_mirror(),
-                Err(error) => {
-                    return Err(VizError::Other(format!(
-                        "Save failed: the post block was refused: {error}"
-                    )));
-                }
-            }
-        }
-
         self.state
             .session()
             .save(path)
@@ -539,7 +501,6 @@ impl<B: ComputeBackend> AppController<B> {
         let mut gui = GuiState::new();
         gui.file_path = Some(path.to_path_buf());
         gui.dirty = false;
-        gui.post = session.post_config().clone();
 
         let loaded_at = Instant::now();
         // C10: the loader reports what it could not do. This function used
@@ -616,15 +577,6 @@ impl<B: ComputeBackend> AppController<B> {
         tracing::info!("Loaded project via unified session path");
         Ok(())
     }
-    /// The single-file export text, under the GUI's own overrides.
-    pub fn export_gcode(&self) -> Result<String, VizError> {
-        crate::io::export::export_gcode_from_session(
-            self.state.session(),
-            &self.state.gui,
-            &self.state.simulation,
-        )
-    }
-
     /// The single-file export with every check it ran (F067/F051), under
     /// the GUI's own overrides. The File menu export takes it.
     pub fn export_gcode_reporting(&self) -> Result<crate::io::export::ExportedGcode, VizError> {

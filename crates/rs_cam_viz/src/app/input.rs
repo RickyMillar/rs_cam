@@ -112,12 +112,10 @@ impl RsCamApp {
                             },
                         )
                     };
+                    // `AppController::apply` mirrors the `Effects`.
                     let applied = self.controller.apply(command);
-                    match applied {
-                        Ok(_) => self.controller.refresh_post_mirror(),
-                        Err(error) => {
-                            tracing::warn!("the controller option write was refused: {error}");
-                        }
+                    if let Err(error) = applied {
+                        tracing::warn!("the controller option write was refused: {error}");
                     }
                 }
                 AppEvent::WizardSetFilenameTemplate(template) => {
@@ -131,10 +129,6 @@ impl RsCamApp {
                     // and `simulation_cleared`. F096: `AppController::apply`
                     // mirrors both. It is a method on the controller, so
                     // the borrow of the state ends before the command runs.
-                    //
-                    // SHL-01: `refresh_post_mirror` rebuilds the post
-                    // mirror, so this arm does not copy `format` by hand
-                    // ahead of the write.
                     let command = {
                         let s = self.controller.state_mut();
                         s.gui.mark_edited();
@@ -146,20 +140,25 @@ impl RsCamApp {
                             },
                         )
                     };
+                    // `AppController::apply` mirrors the `Effects`.
                     let applied = self.controller.apply(command);
-                    match applied {
-                        Ok(_) => self.controller.refresh_post_mirror(),
-                        Err(error) => {
-                            tracing::warn!("the post format write was refused: {error}");
-                        }
+                    if let Err(error) = applied {
+                        tracing::warn!("the post format write was refused: {error}");
                     }
                 }
                 AppEvent::ExportCombinedGcode => {
-                    match crate::io::export::export_combined_gcode_from_session(
-                        self.controller.state().session(),
-                        &self.controller.state().gui,
-                        &self.controller.state().simulation,
-                    ) {
+                    // W5: the `_reporting` door, so the load outcome, the
+                    // machine-safety findings and the feeds cautions reach
+                    // the operator. The keyboard route has no pre-flight.
+                    let state = self.controller.state();
+                    let exported = crate::io::export::export_gcode_from_session_reporting(
+                        state.session(),
+                        &state.gui,
+                        &state.simulation,
+                        state.gui.tool_load_overrides.as_policy(),
+                        state.gui.stale_export,
+                    );
+                    match exported.map(|e| self.notify_exported(e)) {
                         Ok(gcode) => {
                             let default_name =
                                 format!("{}_combined.nc", self.controller.state().session().name())
@@ -185,12 +184,17 @@ impl RsCamApp {
                         .find(|s| crate::state::job::SetupId(s.id) == setup_id)
                         .map(|s| s.name.clone())
                         .unwrap_or_default();
-                    match crate::io::export::export_setup_gcode_from_session(
-                        self.controller.state().session(),
-                        &self.controller.state().gui,
-                        &self.controller.state().simulation,
+                    // W5: the `_reporting` door, as the combined export.
+                    let state = self.controller.state();
+                    let exported = crate::io::export::export_setup_gcode_from_session_reporting(
+                        state.session(),
+                        &state.gui,
+                        &state.simulation,
                         setup_id,
-                    ) {
+                        state.gui.tool_load_overrides.as_policy(),
+                        state.gui.stale_export,
+                    );
+                    match exported.map(|e| self.notify_exported(e)) {
                         Ok(gcode) => {
                             let default_name = format!(
                                 "{}_{}.nc",

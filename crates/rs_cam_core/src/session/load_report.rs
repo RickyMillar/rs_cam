@@ -1,6 +1,6 @@
 //! The memo behind [`ProjectSession::tool_load_report_for`].
 //!
-//! [`crate::gcode::project_load_report`] runs the load gates and the
+//! [`ProjectSession::build_tool_load_report`] runs the load gates and the
 //! kinematic reading for every enabled toolpath, and the freshness check
 //! hashes every move of every toolpath. On a project with a 515 146-move
 //! finish that is far too slow for a frame, and the GUI asked for it on
@@ -186,7 +186,7 @@ impl RowKey {
     }
 }
 
-/// Every input [`crate::gcode::project_load_report`] reads.
+/// Every input [`ProjectSession::build_tool_load_report`] reads.
 struct ReportKey {
     rows: Vec<RowKey>,
     tools: Vec<ToolConfig>,
@@ -322,7 +322,7 @@ impl Clone for LoadReportMemo {
 impl ProjectSession {
     /// **The project tool-load report, built once per change.**
     ///
-    /// The answer equals [`crate::gcode::project_load_report`] for the same
+    /// The answer equals [`ProjectSession::build_tool_load_report`] for the same
     /// session and trace. The difference is the cost: a call whose inputs
     /// did not change since the last call returns the stored report and
     /// does no analysis. See the module documentation for the key.
@@ -351,10 +351,7 @@ impl ProjectSession {
         }
         self.load_report_memo.builds.fetch_add(1, Ordering::Relaxed);
         let start = std::time::Instant::now();
-        let report = Arc::new(crate::gcode::project_load_report(
-            self,
-            trace.map(Arc::as_ref),
-        ));
+        let report = Arc::new(self.build_tool_load_report(trace.map(Arc::as_ref)));
         let elapsed = start.elapsed();
         // The log gives the build cost on a real project. A build above
         // one frame (8 ms) is the signal to move it off the frame loop.
@@ -493,7 +490,7 @@ mod tests {
     /// every field, the kinematic move rows included.
     fn assert_same_as_fresh(s: &ProjectSession, trace: Option<&Arc<SimulationCutTrace>>) {
         let memo = s.tool_load_report_for(trace);
-        let fresh = crate::gcode::project_load_report(s, trace.map(Arc::as_ref));
+        let fresh = s.build_tool_load_report(trace.map(Arc::as_ref));
         assert_eq!(format!("{:?}", *memo), format!("{fresh:?}"));
     }
 

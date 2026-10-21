@@ -17,7 +17,7 @@
 //! copy stays. `build_simulation_groups` simulates the GUI copy
 //! (`gui.toolpath_rt[..].result`), the core adopts the run, and the GUI
 //! freshness (`state::freshness::simulation_freshness`) reads `Current`.
-//! `rs_cam_core::gcode::sim_trace_is_fresh` finds no core result for the
+//! `ProjectSession::sim_trace_is_fresh` finds no core result for the
 //! operation and reads the trace as stale, so every gate of EVERY
 //! operation is rewritten to `StaleSimulation`. A re-run repeats the same
 //! steps, so "re-run simulation" can never clear the cards.
@@ -262,7 +262,7 @@ fn freshness_evidence(controller: &AppController) -> String {
     }
     out.push_str(&format!(
         "sim_trace_is_fresh(session, viz trace) = {}\n",
-        rs_cam_core::gcode::sim_trace_is_fresh(session, trace)
+        session.sim_trace_is_fresh(trace)
     ));
     out
 }
@@ -450,8 +450,10 @@ fn the_cards_and_the_gui_agree_on_a_simulation_that_just_landed_g_stalecards() {
             .session()
             .simulation_result()
             .and_then(|sim| sim.cut_trace.clone());
-        let report =
-            rs_cam_core::gcode::project_load_report(controller.state.session(), trace.as_deref());
+        let report = controller
+            .state
+            .session()
+            .build_tool_load_report(trace.as_deref());
         let stale_rows: Vec<ToolpathId> = report
             .per_toolpath
             .iter()

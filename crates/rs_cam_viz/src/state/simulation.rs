@@ -302,10 +302,10 @@ impl SimulationState {
 
 /// Build the cards for one toolpath.
 ///
-/// The context is the one `rs_cam_core::gcode::project_load_report` builds
+/// The context is the one `ProjectSession::build_tool_load_report` builds
 /// for the same toolpath: the same tool, material, LUT family, pass role,
 /// feed, spans filter, drill payload, machine and strict tolerance. The
-/// trace goes to the gates only when `sim_trace_is_fresh` accepts it, which
+/// trace goes to the gates only when `sim_trace_is_fresh_for` accepts it, which
 /// is the rule the load report applies. A stale trace therefore gives no
 /// engagement histogram, because engagement has no verdict to refuse it.
 ///
@@ -341,8 +341,7 @@ fn build_cut_metric_set(
     let env = GateEnv {
         // G-STALECARDS: this operation's own provenance, not the whole
         // project's. An edit to another row leaves these cards measured.
-        sim_trace: trace
-            .filter(|trace| rs_cam_core::gcode::sim_trace_is_fresh_for(session, trace, index)),
+        sim_trace: trace.filter(|trace| session.sim_trace_is_fresh_for(trace, index)),
         machine: Some(session.machine()),
         tolerance: &tolerance,
     };

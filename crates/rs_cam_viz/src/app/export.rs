@@ -223,6 +223,26 @@ impl RsCamApp {
         }
     }
 
+    /// W5: report every check of an export that has no pre-flight (the
+    /// keyboard route), and give back the program text. The machine-safety
+    /// findings and the load outcome go through [`Self::notify_export_checks`];
+    /// the feeds cautions go out as one warning.
+    pub(super) fn notify_exported(&mut self, exported: crate::io::export::ExportedGcode) -> String {
+        let crate::io::export::ExportedGcode {
+            gcode,
+            machine_safety,
+            load_outcome,
+            feeds_cautions,
+        } = exported;
+        self.notify_export_checks(&machine_safety, &load_outcome);
+        if let Some(report) = crate::io::export::feeds_caution_report(&feeds_cautions) {
+            tracing::warn!("{report}");
+            self.controller
+                .push_notification(report, crate::controller::Severity::Warning);
+        }
+        gcode
+    }
+
     pub(super) fn write_one(&mut self, path: &Path, gcode: &str) {
         if let Err(e) = std::fs::write(path, gcode) {
             tracing::error!("Failed to write G-code: {e}");

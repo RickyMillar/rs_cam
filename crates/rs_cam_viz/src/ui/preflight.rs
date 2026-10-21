@@ -73,10 +73,10 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
             // W2.5 (D10): an op whose stored feeds were modulated from a
             // simulation the session no longer holds. A caution, never a
             // block; the export door reports the same lines.
-            for caution in crate::io::export::feeds_cautions(
-                state.session(),
-                0..state.session().toolpath_configs().len(),
-            ) {
+            for caution in state
+                .session()
+                .feeds_cautions(0..state.session().toolpath_configs().len())
+            {
                 check_card(
                     ui,
                     CheckStatus::Warning,

@@ -28,9 +28,8 @@
   wait for a painted frame, which a parked compositor never gives (the 137 s stall).
 - One plan at a time: `process_auto_regen` returns early while one runs, an edit cancels it, and a
   blocked submit never toasts (the row reads WAIT).
-- `GuiState::post` is a CLONE of `session.post_config()` — one type, `gcode::PostConfig`. `io.rs`'s
-  `refresh_post_mirror` rebuilds it. Never copy one post field by hand. F072: it is the Post panel's edit
-  buffer only; export, undo and the setup sheet read `session.post_config()`.
+- F072: the session holds the only post config. Every reader takes `session.post_config()`; every
+  write is `Command::SetPostConfig`. The Post panel edits a one-frame copy (`properties::commit_post_edit`).
 
 ## Sentries
 

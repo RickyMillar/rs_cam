@@ -158,18 +158,6 @@ impl CoreBefore {
 pub(crate) enum CorePlan {
     /// Apply this command, then describe it with this evidence.
     Apply(Command, Box<CoreBefore>),
-    /// Apply a preparation first, then the row's own command.
-    ///
-    /// The FIRST command is the preparation. The dispatch applies it,
-    /// mirrors its [`rs_cam_core::session::Effects`] into viz state and
-    /// describes none of it. The SECOND command is the row's own, and
-    /// it is the one [`RsCamApp::describe_core`] answers for.
-    ///
-    /// One row builds this: `save_project`. The operator's post block
-    /// lives in viz state, and it reaches the session BEFORE the file is
-    /// written. The conversion step reads, it never writes (WP17), so
-    /// the write is a command the dispatch applies.
-    ApplyPair(Command, Command, Box<CoreBefore>),
     /// The surface answered without a mutation: a refusal, or a value the
     /// session already carries. The reply states its own outcome.
     Answered(CoreReply),
@@ -297,35 +285,6 @@ impl RsCamApp {
 }
 
 impl RsCamApp {
-    /// Apply the preparation of a [`CorePlan::ApplyPair`], and reduce
-    /// the plan to the row's own command. Every other plan passes
-    /// through unchanged.
-    ///
-    /// The preparation is a mutation the row needs BEFORE its own
-    /// command runs, so the conversion step can stay a reader (WP17).
-    /// Its effects reach viz state through the controller's own door,
-    /// which is the door the GUI save takes, so the two save routes
-    /// adopt one answer. A refused preparation reaches the log alone:
-    /// the reply belongs to the row's own command, and that command
-    /// still runs.
-    pub(crate) fn run_core_preparation(&mut self, plan: CorePlan) -> CorePlan {
-        match plan {
-            CorePlan::ApplyPair(preparation, command, before) => {
-                let applied = self.controller.apply(preparation);
-                match applied {
-                    Ok(_) => {
-                        self.controller.refresh_post_mirror();
-                    }
-                    Err(error) => {
-                        tracing::warn!("the command preparation was refused: {error}");
-                    }
-                }
-                CorePlan::Apply(command, before)
-            }
-            plan => plan,
-        }
-    }
-
     /// Turn one wire request into the command it runs.
     ///
     /// The conversion parses the wire's own vocabulary, validates what
@@ -481,31 +440,14 @@ impl RsCamApp {
                 )
             }
             CoreRequest::SaveProject(p) => {
-                // The viz post block is the operator's, and it reaches
-                // the session before the file is written, as the
-                // controller's own save door does.
-                //
-                // WP17: this arm called `set_post_config` here. That
-                // broke the contract at the top of this file — the
-                // conversion READS — and the setter dropped the session
-                // simulation on every save, which made
-                // `ProjectSession::start` refuse every
-                // `FromRemainingStock` operation. The write is a command
-                // of its own now, and it runs only when the two blocks
-                // differ.
-                let session_post = self.controller.state().gui.post.clone();
+                // F072: the session holds the only post config, so the
+                // save writes the session as it is. WP17: the conversion
+                // reads; it does not write.
                 before.display_name = Some(p.path.clone());
-                let save = Command::SaveProject(SaveProjectArgs {
-                    path: PathBuf::from(p.path),
-                });
-                if *self.controller.state().session().post_config() == session_post {
-                    return CorePlan::Apply(save, Box::new(before));
-                }
-                CorePlan::ApplyPair(
-                    Command::SetPostConfig(SetPostConfigArgs {
-                        post: Box::new(session_post),
+                CorePlan::Apply(
+                    Command::SaveProject(SaveProjectArgs {
+                        path: PathBuf::from(p.path),
                     }),
-                    save,
                     Box::new(before),
                 )
             }
@@ -2642,7 +2584,6 @@ impl RsCamApp {
             }
             CommandId::ImportMachineSettings => {
                 // G10: a dump that names grblHAL moves the post dialect.
-                self.controller.refresh_post_mirror();
                 self.controller.state_mut().gui.mark_edited();
                 let new_max_feed = self.controller.state().session().machine().max_feed_mm_min;
                 let post_format = self.controller.state().session().post_config().format;
@@ -2669,12 +2610,6 @@ impl RsCamApp {
                 })))
             }
             CommandId::SetPostConfig => {
-                // SHL-01: rebuild the viz mirror through the one door.
-                // The GUI's Feeds & Speeds modal reads that copy, not
-                // the session's. This arm copied `spindle_strategy`
-                // alone, so a second field of the post block set through
-                // this route would not have reached the panel.
-                self.controller.refresh_post_mirror();
                 self.controller.state_mut().gui.mark_edited();
                 let strategy = before.display_name();
                 // Suggest is the read-side consumer — no toolpaths go
