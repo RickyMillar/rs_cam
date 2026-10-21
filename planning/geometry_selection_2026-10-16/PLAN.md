@@ -697,3 +697,6 @@ Defects found by the design:
   - A closed ring starts in the middle of an edge, not at a concave corner,
     so the lead has room.
   - `RingMaterial::NotStated` (Waterline, Steep and Shallow) states a side.
+  - The air check reads one pass ring only. A lead near a second wall (a
+    narrow gap between an island and the outer wall) is not checked.
+- P6.0c done (5d4e2a6c).
