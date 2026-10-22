@@ -878,10 +878,13 @@ fn the_list_groups_hold_each_selected_item_once_gt2() {
     assert!(groups[0].rows.len() > GROUP_CAP && groups[0].starts_closed());
     assert_eq!(groups[1].rows.len(), 1);
     let picked = &groups[1].rows[0];
+    // FR-2 F22: the row text is short; the full text (the place, the
+    // layer) is the hover, and the filter reads it.
+    assert_eq!(picked.label, "\u{00D8}10.00", "{}", picked.label);
     assert!(
-        picked.label.starts_with("\u{00D8} 10.00 at (400.0, 0.0)"),
+        picked.full.starts_with("\u{00D8} 10.00 at (400.0, 0.0)"),
         "{}",
-        picked.label
+        picked.full
     );
     assert!(picked.acts.rule && picked.acts.remove && !picked.acts.floor);
     assert!(groups[0].rows.iter().all(|r| r.acts.remove && !r.acts.rule));
@@ -967,7 +970,7 @@ fn the_geometry_tab_paints_the_groups_and_the_row_hover_gt2() {
             for clipped in &out.shapes {
                 if let egui::epaint::Shape::Text(text) = &clipped.shape {
                     let t = text.galley.job.text.clone();
-                    if t.starts_with("\u{00D8} 10.00 at") {
+                    if t.starts_with("\u{00D8}10.00 \u{00B7}") {
                         row_at = Some(clipped.shape.visual_bounding_rect().center());
                     }
                     texts.push(t);
@@ -983,7 +986,7 @@ fn the_geometry_tab_paints_the_groups_and_the_row_hover_gt2() {
         "the rule header holds its count: {texts:?}"
     );
     assert!(
-        !texts.iter().any(|t| t.starts_with("\u{00D8} 6.00 at")),
+        !texts.iter().any(|t| t.starts_with("\u{00D8}6.00 \u{00B7}")),
         "the closed group paints no row: {texts:?}"
     );
     assert!(
@@ -995,4 +998,186 @@ fn the_geometry_tab_paints_the_groups_and_the_row_hover_gt2() {
         Some(10.0),
         "the row under the pointer lights its item"
     );
+}
+
+/// FR-2 F24: the owner map holds every core diagnostic id once, and holds
+/// no id that core does not declare. A new core id with no row fails here.
+///
+/// Red proof: delete the `SAFETY_CUTS_INTO_MODEL` row: the first
+/// assertion names it.
+#[test]
+fn owner_tab_map_covers_every_id_f24() {
+    use rs_cam_core::diagnostics::ids;
+    let rows: Vec<&str> = super::tab_badges::OWNER_TAB
+        .iter()
+        .map(|(id, _)| *id)
+        .collect();
+    let missing: Vec<&&str> = ids::ALL.iter().filter(|id| !rows.contains(id)).collect();
+    assert!(missing.is_empty(), "ids with no owner row: {missing:?}");
+    let unknown: Vec<&&str> = rows.iter().filter(|id| !ids::ALL.contains(id)).collect();
+    assert!(unknown.is_empty(), "rows of no core id: {unknown:?}");
+    let mut sorted = rows.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(sorted.len(), rows.len(), "each id has one row");
+}
+
+/// FR-2 F24: a finding puts its dot on the tab that holds its fix. A
+/// selection refusal and a model gouge go to Geometry; a load finding to
+/// Feeds & Speeds; a pin finding (no toolpath tab) gives no dot. No
+/// finding puts a dot on Dressup.
+///
+/// Red proof: the old "Mods" rule (every finding dots Dressup) gives no
+/// Geometry dot and a Dressup dot, so the Geometry arm fails.
+#[test]
+fn a_finding_dots_the_tab_of_its_fix_f24() {
+    use rs_cam_core::diagnostics::{
+        Category, Confidence, Diagnostic, DiagnosticState, Scope, Severity, Source, ids,
+    };
+    let finding = |id: &str, severity: Severity| Diagnostic {
+        id: id.into(),
+        scope: Scope::Toolpath {
+            id: rs_cam_core::ToolpathId::from_raw(0),
+        },
+        category: Category::Safety,
+        severity,
+        confidence: Confidence::Static,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: String::new(),
+        evidence: None,
+        fix: None,
+        supersedes: Vec::new(),
+        suppressed_diagnostics: Vec::new(),
+    };
+    let (session, _) = one_pocket_session();
+    let tc = &session.toolpath_configs()[0];
+    let entry = crate::state::toolpath::ToolpathEntry::for_operation(
+        tc.id,
+        "Case".to_owned(),
+        tc.tool_id,
+        tc.model_id,
+        crate::state::toolpath::OperationType::Pocket,
+    );
+    let badges = super::tab_badges::compute_tab_badges(
+        &entry,
+        &[
+            finding(ids::SAFETY_CUTS_INTO_MODEL, Severity::Blocking),
+            finding(ids::LOAD_CHIPLOAD_HIGH, Severity::Caution),
+            finding(ids::PROJECT_PIN_WALL_THIN, Severity::Critical),
+        ],
+        None,
+        false,
+    );
+    assert_eq!(
+        badges.for_tab(ToolpathTab::Geometry),
+        Some(crate::ui::tokens::DANGER)
+    );
+    assert_eq!(
+        badges.for_tab(ToolpathTab::FeedsSpeeds),
+        Some(crate::ui::tokens::CAUTION)
+    );
+    for tab in [
+        ToolpathTab::Cut,
+        ToolpathTab::Linking,
+        ToolpathTab::Heights,
+        ToolpathTab::Dressup,
+    ] {
+        assert_eq!(badges.for_tab(tab), None, "{tab:?} gets no dot");
+    }
+}
+
+/// FR-2 F22 (coordinator ruling): "Done · BLOCKED" is the F20 safety
+/// signal and never truncates. The Generate row gives it its full width
+/// first; the move count drops, then the feed stage, when there is no
+/// room. Nothing paints past the row.
+///
+/// - At the inspector width 280, with a move count and a feed stage, the
+///   full word paints, not elided, inside 280.
+/// - At 200 the full word still paints; the move count drops.
+///
+/// Red proof: the F22 first version (the state word truncates in the
+/// width the figures leave): at 280 the word is elided.
+#[test]
+fn the_blocked_state_word_fits_its_slot_f22() {
+    use rs_cam_core::compute::catalog::ModelGougeRule;
+    use rs_cam_core::compute::model_gouge::ModelGougeFinding;
+    use rs_cam_core::compute::toolpath_stats::ToolpathStats;
+    let stats = ToolpathStats {
+        model_gouge: Some(ModelGougeFinding {
+            rule: ModelGougeRule::Surface {
+                fix: "Set the floor to Each picked face",
+            },
+            judged: 100,
+            gouging: 7,
+            deepest_mm: 10.0,
+            at: [38.9, -2.8, -2.0],
+            surface_z: 8.0,
+            move_index: 12,
+            depth_top_z: None,
+        }),
+        ..ToolpathStats::default()
+    };
+    let finding = crate::ui::toolpath_panel::blocking_finding(
+        Some(&stats),
+        rs_cam_core::ToolpathId::from_raw(0),
+    )
+    .expect("a gouge blocks");
+    let current = crate::state::freshness::FreshnessState::Current;
+    let row = super::toolpath_panel::HeaderRow {
+        can_generate: true,
+        freshness: &current,
+        manual_generation: false,
+        blocking: Some(&finding),
+        moves: Some(12_345),
+        feed_stage: Some(rs_cam_core::session::FeedStage::ModulatedSuperseded {
+            simulation_run: 3,
+            current_run: Some(4),
+        }),
+    };
+    // (text, right edge, elided) of each painted text at `width`.
+    let paint = |width: f32| -> Vec<(String, f32, bool)> {
+        let ctx = egui::Context::default();
+        crate::ui::tokens::apply(&ctx);
+        crate::ui::tokens::apply_fonts(&ctx);
+        let mut texts = Vec::new();
+        for _ in 0..3 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.set_max_width(width);
+                let _ = super::toolpath_panel::draw_generate_row(ui, &row);
+            });
+            texts = out
+                .shapes
+                .iter()
+                .filter_map(|c| match &c.shape {
+                    egui::epaint::Shape::Text(t) => Some((
+                        t.galley.job.text.clone(),
+                        c.shape.visual_bounding_rect().max.x,
+                        t.galley.elided,
+                    )),
+                    _ => None,
+                })
+                .collect();
+            out.textures_delta.clear();
+        }
+        texts
+    };
+    let blocked = crate::ui::toolpath_panel::BLOCKED_HEADER;
+    for width in [280.0, 200.0] {
+        let texts = paint(width);
+        let word: Vec<&(String, f32, bool)> = texts.iter().filter(|t| t.0 == blocked).collect();
+        assert_eq!(word.len(), 1, "at {width}: one state word: {texts:?}");
+        assert!(!word[0].2, "at {width}: BLOCKED is not elided: {texts:?}");
+        let wide: Vec<&(String, f32, bool)> = texts.iter().filter(|t| t.1 > width + 1.0).collect();
+        assert!(
+            wide.is_empty(),
+            "at {width}: nothing past the row: {wide:?}"
+        );
+        if width < 250.0 {
+            assert!(
+                !texts.iter().any(|t| t.0.ends_with("moves")),
+                "at {width}: the move count drops first: {texts:?}"
+            );
+        }
+    }
 }

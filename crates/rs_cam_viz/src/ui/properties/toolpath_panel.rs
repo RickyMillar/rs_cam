@@ -23,6 +23,10 @@ use crate::state::toolpath::{
 use crate::ui::AppEvent;
 use crate::ui::components::{DataRow, DataTable, OneLine, Role, UiExt as _};
 
+/// The header line of a selection refusal (FR-2 F27, IC1): the Geometry tab
+/// owns the text; the header names the tab, and the full text is the hover.
+pub(crate) const REFUSED_SEE_GEOMETRY: &str = "Refused \u{00B7} see Geometry";
+
 pub(super) fn draw_toolpath_panel(
     ui: &mut egui::Ui,
     // The panel's whole read side: the owned entry, both static
@@ -109,158 +113,49 @@ pub(super) fn draw_toolpath_panel(
     // borrow of `entry`.
     let manual_generation =
         !entry.auto_regen && matches!(entry.run, crate::state::runtime::ToolpathRun::Pending);
-    ui.horizontal(|ui| {
-        if ui
-            .add_enabled(can_generate, egui::Button::new("Generate"))
-            .clicked()
-        {
-            events.push(AppEvent::GenerateToolpath(entry.id));
-        }
-        // F2.2 — the same one state the card chip and the workspace counts
-        // read (R0.1 §4.4), in place of the raw `ComputeStatus`. The two
-        // agree on six of seven; the seventh is why this changed.
-        use crate::state::freshness::FreshnessState;
-        match freshness {
-            FreshnessState::NoResult => {
-                // One word, then a hover. A printed sentence that names the
-                // button next to it tells the reader nothing the button does
-                // not already say.
-                if manual_generation {
-                    ui.label(egui::RichText::new("Manual").color(crate::ui::tokens::TEXT_MUTED))
-                        .on_hover_text(
-                            "This operation does not regenerate on its own. Press G, or click \
-                         Generate, to compute it.",
-                        );
-                } else {
-                    ui.label("Ready");
-                }
-            }
-            FreshnessState::Regenerating => {
-                ui.label("Computing...");
-            }
-            // F20 (SAFETY visibility): a current result with a blocking
-            // finding is not "Done": export refuses it. The header names
-            // the state, and its hover holds the finding with its fix. The
-            // footer row stays the one owner of the finding row (IC1).
-            FreshnessState::Current if let Some(finding) = blocking.as_ref() => {
-                ui.label(
-                    egui::RichText::new(crate::ui::toolpath_panel::BLOCKED_HEADER)
-                        .color(crate::ui::tokens::DANGER),
-                )
-                .on_hover_text(format!(
-                    "A blocking finding stands, so this toolpath does not go to G-code. {}",
-                    finding.message
-                ));
-            }
-            FreshnessState::Current => {
-                ui.label(egui::RichText::new("Done").color(crate::ui::tokens::OK));
-            }
-            // NOT green, and it says both halves: the generation finished,
-            // AND what it produced no longer answers the configuration on
-            // this screen. "Done" alone was the whole defect — the header
-            // sat directly above the fields the operator had just changed
-            // and reported success at them.
-            FreshnessState::EditedSince => {
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new("Done \u{00B7} edited since \u{2014} regenerate")
-                            .color(crate::ui::tokens::CAUTION),
-                    )
-                    .truncate()
-                    .show_tooltip_when_elided(false),
-                )
-                .on_hover_text(
-                    "This operation generated successfully, then one of its inputs changed. \
-                     The path in the viewport and the figures on this panel are from that \
-                     earlier generation, not from the settings shown here.",
-                );
-            }
-            FreshnessState::WaitingOnUpstream(block) => {
-                // Amber, not red: this operation is fine, it is waiting its
-                // turn. The hover names the operation it is waiting for.
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new("Waiting on upstream stock")
-                            .color(crate::ui::tokens::CAUTION),
-                    )
-                    .wrap(),
-                )
-                .on_hover_text(&block.message);
-            }
-            FreshnessState::Disabled => {
-                ui.label(egui::RichText::new("Disabled").color(crate::ui::tokens::TEXT_MUTED));
-            }
-            FreshnessState::Error(e) => {
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(format!("Error: {e}")).color(crate::ui::tokens::DANGER),
-                    )
-                    .wrap(),
-                )
-                .on_hover_text(e);
-            }
-        }
-        // DC1 ruling R27 moved the card's figures off the toolpath card, so
-        // this is the product's per-operation move count. It must say whose
-        // generation it counts.
-        //
-        // F2.2 made the card prefix an edited operation's figures with
-        // `old: `, for a reason that applies here unchanged: a confident
-        // number outweighs a quiet state word beside it. R27 deleted the
-        // surface that carried the mark, so the mark moves with the figure.
-        // The word is the card's word, so the two surfaces cannot fork.
-        if let Some(result) = entry.run.result() {
-            let is_stale = matches!(freshness, FreshnessState::EditedSince);
-            let moves = result.stats.move_count;
-            let text = if is_stale {
-                format!("old: {moves} moves")
-            } else {
-                format!("{moves} moves")
-            };
-            ui.label(
-                egui::RichText::new(text)
-                    .small()
-                    .color(crate::ui::tokens::TEXT_FAINT),
-            )
-            .on_hover_text(if is_stale {
-                "This count is from the previous generation. Regenerate the \
-                 operation to measure the settings shown here."
-            } else {
-                "The move count of the current generation."
-            });
-        }
-        // W2.5 (D10): one word for the feed stage of the stored result,
-        // the one export emits. The hover is the sentence the G-code
-        // header prints.
-        if let Some(stage) = inputs.feed_stage {
-            let colour = if stage.is_superseded() {
-                crate::ui::tokens::CAUTION
-            } else {
-                crate::ui::tokens::TEXT_FAINT
-            };
-            ui.label(egui::RichText::new(stage.badge()).small().color(colour))
-                .on_hover_text(stage.statement());
-        }
-    });
+    let header = HeaderRow {
+        can_generate,
+        freshness,
+        manual_generation,
+        blocking: blocking.as_ref(),
+        moves: entry.run.result().map(|result| result.stats.move_count),
+        feed_stage: inputs.feed_stage,
+    };
+    if draw_generate_row(ui, &header) {
+        events.push(AppEvent::GenerateToolpath(entry.id));
+    }
     if !validation_errors.is_empty() {
-        // L-2 (geometry selection P4.3): the Selection section owns the
-        // refusal text. A validation error that IS that refusal gets one
-        // line here, which says why Generate is off and names the section.
+        // L-2, FR-2 F27 (IC1): the Geometry tab owns the refusal text of
+        // the selection. A validation error that IS that refusal (the
+        // section refusal, or the drill form of it from `hole_refusal`) gets
+        // ONE short line here, with the full text on hover. Before F27 the
+        // drill form did not match the section text, so the header painted
+        // the full paragraph a second time and pushed the tabs down.
         let section_refusal = inputs
             .selection_report
             .as_ref()
             .and_then(|read| read.as_ref().ok())
             .and_then(|report| report.refusal.as_ref())
             .map(ToString::to_string);
-        for err in &validation_errors {
-            if section_refusal.as_deref() == Some(err.as_str()) {
-                ui.add(
-                    OneLine::new("The selection refuses. See the Geometry tab.")
-                        .color(crate::ui::tokens::DANGER)
-                        .detail(err.clone()),
-                );
-                continue;
-            }
+        let hole_refusal = operations::hole_refusal(validation, entry.id);
+        let (owned, other): (Vec<&String>, Vec<&String>) =
+            validation_errors.iter().partition(|err| {
+                section_refusal.as_deref() == Some(err.as_str())
+                    || hole_refusal == Some(err.as_str())
+            });
+        if !owned.is_empty() {
+            let detail = owned
+                .iter()
+                .map(|err| err.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
+            ui.add(
+                OneLine::new(REFUSED_SEE_GEOMETRY)
+                    .color(crate::ui::tokens::DANGER)
+                    .detail(detail),
+            );
+        }
+        for err in other {
             // A sentence, so it wraps explicitly rather than inheriting a
             // wrap mode from whatever layout encloses this panel
             // (G-REACHWRAP). It blocks Generate, so it is the danger colour
@@ -1277,4 +1172,289 @@ fn draw_dressup_tab(ui: &mut egui::Ui, entry: &mut crate::state::toolpath::Toolp
 
     // Manual G-code fields (pre_gcode, post_gcode) kept in state
     // for future export wiring — UI removed until export is implemented.
+}
+
+/// What the Generate row of the header shows (FR-2 F22).
+pub(super) struct HeaderRow<'a> {
+    pub can_generate: bool,
+    pub freshness: &'a crate::state::freshness::FreshnessState,
+    pub manual_generation: bool,
+    /// F20: the first blocking finding of the stored result.
+    pub blocking: Option<&'a rs_cam_core::diagnostics::Diagnostic>,
+    /// The move count of the stored result.
+    pub moves: Option<usize>,
+    pub feed_stage: Option<rs_cam_core::session::FeedStage>,
+}
+
+impl HeaderRow<'_> {
+    /// True when the state word is the F20 safety signal "Done · BLOCKED".
+    fn is_blocked(&self) -> bool {
+        matches!(
+            self.freshness,
+            crate::state::freshness::FreshnessState::Current
+        ) && self.blocking.is_some()
+    }
+
+    /// The move count text: "old: N moves" on an edited result.
+    fn moves_text(&self) -> Option<String> {
+        let moves = self.moves?;
+        Some(
+            if matches!(
+                self.freshness,
+                crate::state::freshness::FreshnessState::EditedSince
+            ) {
+                format!("old: {moves} moves")
+            } else {
+                format!("{moves} moves")
+            },
+        )
+    }
+}
+
+/// The Generate row of the header (FR-2 F22). The row never grows the
+/// panel. True when Generate was clicked.
+///
+/// - A blocked result (F20, the safety signal): "Done · BLOCKED" takes its
+///   full width FIRST and never truncates. Then the feed stage and the
+///   move count paint only when they fit (the move count drops first);
+///   the hover of the state word keeps them.
+/// - Every other state: the feed stage and the move count take their
+///   width first, at the right edge; the state word truncates in the
+///   rest, with its text on hover. Before F22 "Done · edited since —
+///   regenerate" and "old: N moves" ran past the panel, and every row
+///   below took the wider width.
+pub(super) fn draw_generate_row(ui: &mut egui::Ui, row: &HeaderRow<'_>) -> bool {
+    ui.horizontal(|ui| {
+        let clicked = ui
+            .add_enabled(row.can_generate, egui::Button::new("Generate"))
+            .clicked();
+        if row.is_blocked() {
+            draw_header_state(
+                ui,
+                row.freshness,
+                row.manual_generation,
+                row.blocking,
+                &figures_hover(row),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                draw_header_figures(ui, row, true);
+            });
+        } else {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                draw_header_figures(ui, row, false);
+                let rest = ui.available_width().max(0.0);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(rest, crate::ui::tokens::ROW_DENSE),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        ui.set_max_width(rest);
+                        draw_header_state(
+                            ui,
+                            row.freshness,
+                            row.manual_generation,
+                            row.blocking,
+                            "",
+                        );
+                    },
+                );
+            });
+        }
+        clicked
+    })
+    .inner
+}
+
+/// The figures as one hover line, for a state word that may push them
+/// out of the row.
+fn figures_hover(row: &HeaderRow<'_>) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(text) = row.moves_text() {
+        parts.push(text);
+    }
+    if let Some(stage) = row.feed_stage {
+        parts.push(stage.statement());
+    }
+    parts.join("\n")
+}
+
+/// The width of one small label of `text`.
+fn small_width(ui: &egui::Ui, text: &str) -> f32 {
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    ui.painter()
+        .layout_no_wrap(text.to_owned(), font, crate::ui::tokens::TEXT_FAINT)
+        .size()
+        .x
+        + ui.spacing().item_spacing.x
+}
+
+/// The figures of the header row, right to left: the feed stage at the
+/// right edge, the move count to its left. With `fit`, a figure that does
+/// not fit the width that is left is not painted (the move count drops
+/// first, then the feed stage).
+fn draw_header_figures(ui: &mut egui::Ui, row: &HeaderRow<'_>, fit: bool) {
+    // W2.5 (D10): one word for the feed stage of the stored result,
+    // the one export emits. The hover is the sentence the G-code
+    // header prints. Right to left: the stage paints first.
+    let mut stage_shown = true;
+    if let Some(stage) = row.feed_stage {
+        stage_shown = !fit || small_width(ui, stage.badge()) <= ui.available_width();
+        if stage_shown {
+            let colour = if stage.is_superseded() {
+                crate::ui::tokens::CAUTION
+            } else {
+                crate::ui::tokens::TEXT_FAINT
+            };
+            ui.label(egui::RichText::new(stage.badge()).small().color(colour))
+                .on_hover_text(stage.statement());
+        }
+    }
+    // DC1 ruling R27 moved the card's figures off the toolpath card, so
+    // this is the product's per-operation move count. It must say whose
+    // generation it counts.
+    //
+    // F2.2 made the card prefix an edited operation's figures with
+    // `old: `, for a reason that applies here unchanged: a confident
+    // number outweighs a quiet state word beside it. R27 deleted the
+    // surface that carried the mark, so the mark moves with the figure.
+    // The word is the card's word, so the two surfaces cannot fork.
+    if let Some(text) = row.moves_text() {
+        if fit && (!stage_shown || small_width(ui, &text) > ui.available_width()) {
+            return;
+        }
+        let is_stale = text.starts_with("old: ");
+        ui.label(
+            egui::RichText::new(text)
+                .small()
+                .color(crate::ui::tokens::TEXT_FAINT),
+        )
+        .on_hover_text(if is_stale {
+            "This count is from the previous generation. Regenerate the \
+             operation to measure the settings shown here."
+        } else {
+            "The move count of the current generation."
+        });
+    }
+}
+
+/// The state word of the header row (FR-2 F22): one line that truncates,
+/// with its text on hover.
+pub(super) fn draw_header_state(
+    ui: &mut egui::Ui,
+    freshness: &crate::state::freshness::FreshnessState,
+    manual_generation: bool,
+    blocking: Option<&rs_cam_core::diagnostics::Diagnostic>,
+    figures: &str,
+) {
+    use crate::state::freshness::FreshnessState;
+    // F2.2 — the same one state the card chip and the workspace counts
+    // read (R0.1 §4.4), in place of the raw `ComputeStatus`. The two
+    // agree on six of seven; the seventh is why this changed.
+    match freshness {
+        FreshnessState::NoResult => {
+            // One word, then a hover. A printed sentence that names the
+            // button next to it tells the reader nothing the button does
+            // not already say.
+            if manual_generation {
+                state_word(
+                    ui,
+                    egui::RichText::new("Manual").color(crate::ui::tokens::TEXT_MUTED),
+                )
+                .on_hover_text(
+                    "This operation does not regenerate on its own. Press G, or click \
+                     Generate, to compute it.",
+                );
+            } else {
+                state_word(ui, egui::RichText::new("Ready"))
+                    .on_hover_text("Ready: this operation has no result yet.");
+            }
+        }
+        FreshnessState::Regenerating => {
+            state_word(ui, egui::RichText::new("Computing..."))
+                .on_hover_text("Computing: the operation is in generation.");
+        }
+        // F20 (SAFETY visibility): a current result with a blocking
+        // finding is not "Done": export refuses it. The header names
+        // the state, and its hover holds the finding with its fix. The
+        // footer row stays the one owner of the finding row (IC1).
+        FreshnessState::Current if let Some(finding) = blocking => {
+            // The safety signal never truncates (FR-2 F22): the row gives it
+            // its full width first. The hover keeps the figures that the
+            // row drops.
+            let figures = if figures.is_empty() {
+                String::new()
+            } else {
+                format!("\n{figures}")
+            };
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(crate::ui::toolpath_panel::BLOCKED_HEADER)
+                        .color(crate::ui::tokens::DANGER),
+                )
+                .extend(),
+            )
+            .on_hover_text(format!(
+                "A blocking finding stands, so this toolpath does not go to G-code. {}{figures}",
+                finding.message
+            ));
+        }
+        FreshnessState::Current => {
+            state_word(ui, egui::RichText::new("Done").color(crate::ui::tokens::OK))
+                .on_hover_text("Done: the result answers the settings shown here.");
+        }
+        // NOT green, and it says both halves: the generation finished,
+        // AND what it produced no longer answers the configuration on
+        // this screen. "Done" alone was the whole defect — the header
+        // sat directly above the fields the operator had just changed
+        // and reported success at them.
+        FreshnessState::EditedSince => {
+            state_word(
+                ui,
+                egui::RichText::new("Done \u{00B7} edited since \u{2014} regenerate")
+                    .color(crate::ui::tokens::CAUTION),
+            )
+            .on_hover_text(
+                "This operation generated successfully, then one of its inputs changed. \
+                 The path in the viewport and the figures on this panel are from that \
+                 earlier generation, not from the settings shown here.",
+            );
+        }
+        FreshnessState::WaitingOnUpstream(block) => {
+            // Amber, not red: this operation is fine, it is waiting its
+            // turn. The hover names the operation it is waiting for.
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new("Waiting on upstream stock")
+                        .color(crate::ui::tokens::CAUTION),
+                )
+                .wrap(),
+            )
+            .on_hover_text(&block.message);
+        }
+        FreshnessState::Disabled => {
+            state_word(
+                ui,
+                egui::RichText::new("Disabled").color(crate::ui::tokens::TEXT_MUTED),
+            )
+            .on_hover_text("Disabled: this operation does not go to G-code.");
+        }
+        FreshnessState::Error(e) => {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(format!("Error: {e}")).color(crate::ui::tokens::DANGER),
+                )
+                .wrap(),
+            )
+            .on_hover_text(e);
+        }
+    }
+}
+
+/// One state word of the header row: a label that truncates in the width
+/// that the figures leave (FR-2 F22). The caller adds the hover.
+fn state_word(ui: &mut egui::Ui, text: egui::RichText) -> egui::Response {
+    ui.add(
+        egui::Label::new(text)
+            .truncate()
+            .show_tooltip_when_elided(false),
+    )
 }

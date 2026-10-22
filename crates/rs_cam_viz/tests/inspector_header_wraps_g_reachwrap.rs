@@ -347,16 +347,12 @@ fn the_diagnostic_message_is_one_line_with_the_whole_message_on_hover() {
 #[test]
 fn the_validation_errors_are_constructed_wrapped() {
     let src = properties_src();
+    // FR-2 F27: a selection refusal is ONE short line ("Refused · see
+    // Geometry") that the loop partitions out first. Every other validator
+    // sentence is in `other`, and it must wrap.
     let at = src
-        .find("for err in &validation_errors {")
+        .find("for err in other {")
         .expect("the validation-error loop moved");
-    // P4.D (L-2): a selection refusal is one line that names the Selection
-    // section, and the branch ends with `continue`. Every other validator
-    // sentence follows it, and it must wrap.
-    let at = at
-        + src[at..]
-            .find("continue;")
-            .expect("the selection-refusal branch of the loop moved");
     let body = &src[at..(at + 500).min(src.len())];
     assert!(
         body.contains("wrapped_small_label("),
@@ -382,13 +378,16 @@ fn every_sentence_in_the_header_is_wrapped() {
         .map(|at| start + at)
         .expect("the header's end marker moved");
     let header = &src[start..end];
+    // FR-2 F22: the state word of the Generate row is drawn by
+    // `draw_header_state`, so the census reads that body too.
+    let state = function_body(&src, "draw_header_state");
 
     // Already wrapped before this commit: the two Generate-row statuses.
     for existing in ["Waiting on upstream stock", "Error: {e}"] {
-        let at = header
+        let at = state
             .find(existing)
-            .unwrap_or_else(|| panic!("{existing:?} left the header"));
-        let after = &header[at..(at + 400).min(header.len())];
+            .unwrap_or_else(|| panic!("{existing:?} left the header state"));
+        let after = &state[at..(at + 400).min(state.len())];
         assert!(
             after.contains(".wrap()"),
             "{existing:?} used to wrap and must still:\n{after}"
@@ -398,7 +397,7 @@ fn every_sentence_in_the_header_is_wrapped() {
     // No bare `ui.label(` may carry a full stop followed by a space in the
     // header — that is the shape of a multi-sentence caveat, and it is the
     // shape that clipped.
-    for (idx, line) in header.lines().enumerate() {
+    for (idx, line) in header.lines().chain(state.lines()).enumerate() {
         assert!(
             !(line.trim_start().starts_with("ui.label(") && line.contains(". ")),
             "header line {idx} draws a sentence through a bare ui.label: {line}"

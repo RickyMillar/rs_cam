@@ -420,7 +420,11 @@ impl ProjectSession {
     ) -> Result<SelectionFrames, SessionError> {
         let empty = Selection::empty();
         let spec = tc.selection_of(target)?.unwrap_or(&empty);
-        self.resolve_spec_frames(tc, spec, ctx, faces)
+        let item_use = match target {
+            SelectionTarget::Op => tc.operation.capabilities().item_use,
+            SelectionTarget::Boundary => BOUNDARY_ITEM_USE,
+        };
+        self.resolve_spec_frames(tc, spec, ctx, faces, item_use)
             .map_err(|e| SessionError::OperationFailed(e.to_string()))
     }
 
@@ -431,13 +435,15 @@ impl ProjectSession {
     ///
     /// P4.7: when `spec` names a face, each mesh model it reads resolves
     /// against its flat-region faces ([`Self::mesh_faces_of`]); `faces`
-    /// says whether a cold cache builds.
+    /// says whether a cold cache builds. `item_use` is the use of the
+    /// reader: the default rule reads it on a model edge item (R-C).
     pub(crate) fn resolve_spec_frames(
         &self,
         tc: &ToolpathConfig,
         spec: &Selection,
         ctx: &SetupEvalContext,
         faces: FaceAccess,
+        item_use: ItemUse,
     ) -> Result<SelectionFrames, ItemError> {
         let mesh_faces = self.mesh_faces_of(tc, spec, faces);
         let resolved = crate::selection::resolve(
@@ -448,6 +454,7 @@ impl ProjectSession {
                 stock_bbox: &ctx.heights_stock_bbox,
                 setup: ctx.local_to_global.as_ref(),
                 mesh_faces: &mesh_faces,
+                item_use,
             },
         );
         let setup = resolved
@@ -482,7 +489,9 @@ impl ProjectSession {
         // invariants in the setup frame (`ItemError`): a face or a ring that
         // a lateral setup turns on its side collapses. That face is not
         // flat and horizontal in this setup.
-        let Ok(frames) = self.resolve_spec_frames(tc, &spec, ctx, faces) else {
+        // A one-pick selection: the use does not change what a pick matches.
+        let item_use = tc.operation.capabilities().item_use;
+        let Ok(frames) = self.resolve_spec_frames(tc, &spec, ctx, faces, item_use) else {
             return Some(Err(SelectionRefusal::new(
                 named,
                 RefusalCause::FaceNotFlat { face: None },
@@ -864,6 +873,14 @@ impl ProjectSession {
             }
             (viewed, _) => viewed,
         };
+        // F29: the `Empty` refusal of a Drill names the hole rims that the
+        // default rule did not take, as the prologue names them.
+        let viewed = match fit_size {
+            Some(size) => {
+                viewed.map_err(|refusal| refusal.with_default_rims(&frames.setup, item_use, &size))
+            }
+            None => viewed,
+        };
         // UX-8: the face of the floor "A picked face" refuses as generation
         // refuses it (before the prologue runs `view`), so the status and
         // generation give one answer.
@@ -923,7 +940,8 @@ impl ProjectSession {
             | ItemUse::None
             | ItemUse::Regions
             | ItemUse::RegionsExtendOpen { .. }
-            | ItemUse::Curves => return None,
+            | ItemUse::Curves
+            | ItemUse::Edges => return None,
         }
         let tool = self.tool_by_id(tc.tool_id)?;
         crate::compute::cutter::build_cutter(tool)
@@ -944,7 +962,11 @@ impl ProjectSession {
     fn extend_radius(&self, tc: &ToolpathConfig) -> Option<f64> {
         match tc.operation.capabilities().item_use {
             ItemUse::RegionsExtendOpen { .. } => {}
-            ItemUse::None | ItemUse::Regions | ItemUse::Curves | ItemUse::Holes { .. } => {
+            ItemUse::None
+            | ItemUse::Regions
+            | ItemUse::Curves
+            | ItemUse::Edges
+            | ItemUse::Holes { .. } => {
                 return None;
             }
         }
@@ -963,7 +985,8 @@ impl ProjectSession {
             ItemUse::None
             | ItemUse::Regions
             | ItemUse::RegionsExtendOpen { .. }
-            | ItemUse::Curves => return Vec::new(),
+            | ItemUse::Curves
+            | ItemUse::Edges => return Vec::new(),
         }
         let Ok(model) = self.toolpath_model(tc) else {
             return Vec::new();
@@ -1006,7 +1029,8 @@ impl ProjectSession {
             ItemUse::None
             | ItemUse::Regions
             | ItemUse::RegionsExtendOpen { .. }
-            | ItemUse::Curves => return None,
+            | ItemUse::Curves
+            | ItemUse::Edges => return None,
         }
         Some(match self.selection_status(tc, SelectionTarget::Op) {
             Ok(report) => HoleSelection {

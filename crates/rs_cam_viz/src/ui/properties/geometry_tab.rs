@@ -149,15 +149,34 @@ fn draw_floor_lines(
     floor: &Floor,
     events: &mut Vec<AppEvent>,
 ) {
-    let floor_z = inputs
+    let answer = inputs
         .toolpath_heights
         .as_ref()
-        .and_then(|answer| answer.as_ref().ok())
-        .and_then(|answer| answer.floor_z(&entry.heights));
-    let z_text = match floor_z {
-        Some(Ok(z)) => format!("Z {z:.2}"),
-        Some(Err(refusal)) => format!("no Z: {refusal}"),
-        None => "Z \u{2014}".to_owned(),
+        .and_then(|answer| answer.as_ref().ok());
+    let floor_z = answer.and_then(|answer| answer.floor_z(&entry.heights));
+    // FR-2 F25: under "Each picked face" each face cuts to its own floor,
+    // so the line gives the range of the face floors (the floors that the
+    // heights diagram draws, `FloorInputs::face_floors`).
+    let face_floors = match (floor, answer) {
+        (Floor::EachFace { .. }, Some(answer)) => {
+            let report = inputs
+                .selection_report
+                .as_ref()
+                .and_then(|read| read.as_ref().ok())
+                .map(AsRef::as_ref);
+            super::FloorInputs::new(answer, &entry.heights, report).face_floors
+        }
+        _ => Vec::new(),
+    };
+    let z_text = match (face_floors.first(), face_floors.last(), &floor_z) {
+        // The floors are top first.
+        (Some(top), Some(bottom), _) if top.z.to_bits() != bottom.z.to_bits() => {
+            format!("Z {:.2} to {:.2}", bottom.z, top.z)
+        }
+        (Some(only), Some(_), _) => format!("Z {:.2}", only.z),
+        (_, _, Some(Ok(z))) => format!("Z {z:.2}"),
+        (_, _, Some(Err(refusal))) => format!("no Z: {refusal}"),
+        (_, _, None) => "Z \u{2014}".to_owned(),
     };
     let color = match floor_z {
         Some(Err(_)) => tokens::DANGER,
@@ -169,18 +188,26 @@ fn draw_floor_lines(
         "Floor",
         &text,
         color,
-        "The floor of the op. Set the reference and the depth in the Heights tab; \
-         \"Use as floor\" on a picked face sets the floor to that face.",
+        &format!(
+            "Floor {text}. The floor of the op. Set the reference and the depth in the Heights \
+             tab; \"Use as floor\" on a picked face sets the floor to that face."
+        ),
         &[],
     );
     if let Some(key) = floor.face_key() {
-        let label = super::selection_section::row_label(key, None);
+        // FR-2 F23: the slot names the face as the list rows do.
+        let face_z = answer.and_then(|answer| answer.floor_references(&entry.heights).floor_face_z);
+        let label = face_z.map_or_else(
+            || super::selection_section::row_label(key, None),
+            super::selection_section::face_label,
+        );
+        let full = super::selection_section::row_full_label(key, face_z);
         if line_with_actions(
             ui,
             FLOOR_FACE,
             &label,
             tokens::TEXT_BODY,
-            "The face that sets the floor. The op does not cut this face.",
+            &format!("{full}. The face that sets the floor. The op does not cut this face."),
             &[(
                 "Clear",
                 "Set the floor to Each picked face when faces remain, else to the op default.",

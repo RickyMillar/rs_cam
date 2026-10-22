@@ -226,8 +226,9 @@ fn show_me_frames_a_note_and_a_lost_pick_p4_4() {
     // Claim 1: the note of the open line on TEXT.
     select(&mut state, 0);
     // The note row paints the detail mark after its text (it has a hover).
+    // FR-2 F32: a kind that the op never cuts is one line for every layer.
     let note = format!(
-        "1 open path on layer TEXT is not cut {}",
+        "Pocket cuts closed loops, circles and faces; 1 other item is not cut {}",
         tokens::GLYPH_DETAIL
     );
     let keys = one_frame_request(&click(&ctx, &mut state, &note));

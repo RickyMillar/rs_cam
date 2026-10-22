@@ -116,7 +116,9 @@ fn region_ops() -> Vec<OperationConfig> {
         .iter()
         .filter(|op| {
             op.geometry_requirement() == GeometryRequirement::Items
-                && op.capabilities().item_use == ItemUse::Regions
+                // R-C: on a drawing, `Edges` (Chamfer) reads the closed
+                // areas as `Regions` does.
+                && matches!(op.capabilities().item_use, ItemUse::Regions | ItemUse::Edges)
                 && !op.is_stock_based()
         })
         .map(|&op| OperationConfig::new_default(op))
@@ -254,10 +256,17 @@ fn a_region_op_given_only_open_paths_refuses_p1() {
         let label = op.label();
         let err = generate(&mut session(&op, vec![open(&V), open(&LINE)], |_| {}))
             .expect_err("no closed loop: the op refuses");
+        // R-C: a Chamfer names its own fix for an open path (Trace with a
+        // V-bit); every other region op names Trace or Project Curve.
+        let other_op = if op.capabilities().item_use == ItemUse::Edges {
+            "use Trace with a V-bit"
+        } else {
+            "Use Trace or Project Curve"
+        };
         for needle in [
             format!("{label}: nothing is left to cut"),
             "2 open paths are not cut".to_owned(),
-            "Use Trace or Project Curve".to_owned(),
+            other_op.to_owned(),
             "close it in the drawing".to_owned(),
         ] {
             assert!(err.contains(&needle), "{label}: {needle:?} in {err}");

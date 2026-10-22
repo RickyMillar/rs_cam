@@ -23,8 +23,12 @@
 //! only the exterior of the first offset result, so the edge of a hole in a
 //! part had no chamfer.
 
-use crate::ops::profile::{ProfileParams, ProfileSide, profile_path_to_toolpath};
+use crate::geo::P2;
+use crate::ops::profile::{
+    ProfileParams, ProfileSide, profile_path_open_to_toolpath, profile_path_to_toolpath,
+};
 use crate::polygon::Polygon2;
+use crate::selection::EdgeMaterial;
 use crate::toolpath::RingMaterial;
 use crate::toolpath::{MaterialRing, SidedToolpath, Toolpath};
 
@@ -125,6 +129,17 @@ pub(crate) fn chamfer_rings_reported(
     polygon: &Polygon2,
     params: &ChamferParams,
 ) -> (Vec<MaterialRing>, usize) {
+    rings_for_side(polygon, params.side, params.tip_offset)
+}
+
+/// [`chamfer_rings_reported`] with the side `side` and the tip offset
+/// `tip_offset` stated apart from the params: a model edge states its own
+/// side (R-C, [`chamfer_edge_reported`]).
+fn rings_for_side(
+    polygon: &Polygon2,
+    side: ChamferSide,
+    tip_offset: f64,
+) -> (Vec<MaterialRing>, usize) {
     // The offset sign and the hole classification both read the winding
     // (exterior CCW, holes CW). Importers normalise it; a hand-built outline
     // may not.
@@ -137,14 +152,14 @@ pub(crate) fn chamfer_rings_reported(
         normalised = p;
         &normalised
     };
-    let (pieces, failures) = if params.tip_offset.abs() < 1e-9 {
+    let (pieces, failures) = if tip_offset.abs() < 1e-9 {
         // A zero tip offset puts the tip on the edge itself: no offset to make.
         (vec![polygon.clone()], 0)
     } else {
         // Negative distance = outward, positive = inward (profile's sign).
-        let distance = match params.side {
-            ChamferSide::Outside => -params.tip_offset,
-            ChamferSide::Inside => params.tip_offset,
+        let distance = match side {
+            ChamferSide::Outside => -tip_offset,
+            ChamferSide::Inside => tip_offset,
         };
         let (pieces, failure) = crate::polygon::offset_polygon_reported(polygon, distance);
         (pieces, usize::from(failure.is_some()))
@@ -152,7 +167,7 @@ pub(crate) fn chamfer_rings_reported(
     // P6.0c: an exterior ring has the material on the side the module doc
     // names (inside a part's ring, outside a cavity's ring); a hole ring
     // has it on the other side.
-    let exterior = params.side.ring_material();
+    let exterior = side.ring_material();
     let hole = match exterior {
         RingMaterial::Inside => RingMaterial::Outside,
         _ => RingMaterial::Inside,
@@ -198,6 +213,84 @@ pub(crate) fn chamfer_rings_at_z(
             &profile_params,
             ring.material,
         ));
+    }
+    tp
+}
+
+/// The tool-centre lines of one convex top model edge (R-C, operator ruling
+/// 2026-10-23): the edge moved `tip_offset` into its air side. The model
+/// states the side of the material (`material`), so the `side` dial does
+/// not apply. The answer holds the closed rings, the open paths (each in
+/// the point order of the edge), and the count of offsets that failed.
+///
+/// - A closed edge with the material inside is a part ring
+///   ([`ChamferSide::Outside`]); with the material outside it is a cavity
+///   ring ([`ChamferSide::Inside`]). `Left` or `Right` on a closed edge
+///   reads its winding (left of a CCW ring is inside).
+/// - An open edge moves to the side opposite its material
+///   (`polygon::offset_open_path_reported`: positive is left). No chord
+///   joins its two ends. `Inside` or `Outside` on an open edge states no
+///   side, so it gives nothing and counts one failure.
+pub(crate) fn chamfer_edge_reported(
+    line: &Polygon2,
+    material: EdgeMaterial,
+    params: &ChamferParams,
+) -> (Vec<MaterialRing>, Vec<Vec<P2>>, usize) {
+    if line.closed {
+        let ccw = line.signed_area() > 0.0;
+        let inside = match material {
+            EdgeMaterial::Inside => true,
+            EdgeMaterial::Outside => false,
+            EdgeMaterial::Left => ccw,
+            EdgeMaterial::Right => !ccw,
+        };
+        let side = if inside {
+            ChamferSide::Outside
+        } else {
+            ChamferSide::Inside
+        };
+        let (rings, failures) = rings_for_side(line, side, params.tip_offset);
+        return (rings, Vec::new(), failures);
+    }
+    let distance = match material {
+        EdgeMaterial::Left => -params.tip_offset,
+        EdgeMaterial::Right => params.tip_offset,
+        EdgeMaterial::Inside | EdgeMaterial::Outside => return (Vec::new(), Vec::new(), 1),
+    };
+    if params.tip_offset.abs() < 1e-9 {
+        return (Vec::new(), vec![line.exterior.clone()], 0);
+    }
+    let (pieces, failure) = crate::polygon::offset_open_path_reported(line, distance);
+    let open = pieces
+        .into_iter()
+        .map(|p| p.exterior)
+        .filter(|p| p.len() >= 2)
+        .collect();
+    (Vec::new(), open, usize::from(failure.is_some()))
+}
+
+/// The cut of the open tool-centre `paths` at the tip Z `z` (R-C): one
+/// pass along each path in its point order, with its own approach and
+/// retract (`ops::profile::profile_path_open_to_toolpath`). No move closes
+/// a path, and a pass states no closed side.
+pub(crate) fn chamfer_open_at_z(
+    paths: &[Vec<P2>],
+    z: f64,
+    params: &ChamferParams,
+) -> SidedToolpath {
+    let profile_params = ProfileParams {
+        tool_radius: params.tip_offset,
+        side: params.side.into(),
+        cut_depth: z,
+        feed_rate: params.feed_rate,
+        plunge_rate: params.plunge_rate,
+        safe_z: params.safe_z,
+        climb: false,
+        compensate_in_controller: false,
+    };
+    let mut tp = SidedToolpath::new();
+    for path in paths {
+        tp.append(profile_path_open_to_toolpath(path, &profile_params));
     }
     tp
 }

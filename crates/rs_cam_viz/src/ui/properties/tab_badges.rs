@@ -6,22 +6,189 @@ use super::ToolpathTab;
 use crate::state::toolpath::{StockSource, ToolpathEntry};
 use crate::ui::components::{TabBadge, TabStrip};
 
-/// Per-tab badge state for the tab bar.
+/// Per-tab badge state for the tab bar: one dot colour per tab, or none.
 pub(super) struct TabBadges {
-    feeds_badge: Option<egui::Color32>,
-    heights_badge: Option<egui::Color32>,
-    dressup_badge: Option<egui::Color32>,
+    dots: [Option<egui::Color32>; ToolpathTab::ALL.len()],
 }
 
 impl TabBadges {
-    fn for_tab(&self, tab: ToolpathTab) -> Option<egui::Color32> {
-        match tab {
-            ToolpathTab::FeedsSpeeds => self.feeds_badge,
-            ToolpathTab::Heights => self.heights_badge,
-            ToolpathTab::Dressup => self.dressup_badge,
-            ToolpathTab::Geometry | ToolpathTab::Cut | ToolpathTab::Linking => None,
+    pub(super) fn for_tab(&self, tab: ToolpathTab) -> Option<egui::Color32> {
+        ToolpathTab::ALL
+            .iter()
+            .position(|t| *t == tab)
+            .and_then(|at| self.dots.get(at).copied().flatten())
+    }
+
+    /// Raise the dot of `tab` to `color` when `color` ranks higher.
+    fn raise(&mut self, tab: ToolpathTab, color: egui::Color32) {
+        if let Some(at) = ToolpathTab::ALL.iter().position(|t| *t == tab)
+            && let Some(dot) = self.dots.get_mut(at)
+        {
+            *dot = Some(worse(*dot, color));
         }
     }
+}
+
+/// The rank of a dot colour: DANGER over CAUTION over INFO.
+fn dot_rank(color: egui::Color32) -> u8 {
+    if color == crate::ui::tokens::DANGER {
+        3
+    } else if color == crate::ui::tokens::CAUTION {
+        2
+    } else {
+        1
+    }
+}
+
+/// The higher-ranked of a dot and a new colour.
+fn worse(dot: Option<egui::Color32>, color: egui::Color32) -> egui::Color32 {
+    match dot {
+        Some(old) if dot_rank(old) >= dot_rank(color) => old,
+        Some(_) | None => color,
+    }
+}
+
+/// FR-2 F24: THE map from a diagnostic id to the tab that holds its fix.
+/// `None`: no tab of the toolpath holds the fix (a setup pin, the tool
+/// editor, the material, an obstacle), so no tab gets a dot; the footer
+/// row is the one owner of the finding. The table holds every id of
+/// core `diagnostics::ids::ALL`; `owner_tab_map_covers_every_id_f24`
+/// fails on an id with no row.
+///
+/// No core id holds a dressup finding (arc fitting, dogbone) today, so no
+/// row names the Dressup tab.
+pub(crate) const OWNER_TAB: &[(&str, Option<ToolpathTab>)] = {
+    use rs_cam_core::diagnostics::ids as i;
+    const G: Option<ToolpathTab> = Some(ToolpathTab::Geometry);
+    const C: Option<ToolpathTab> = Some(ToolpathTab::Cut);
+    const F: Option<ToolpathTab> = Some(ToolpathTab::FeedsSpeeds);
+    const L: Option<ToolpathTab> = Some(ToolpathTab::Linking);
+    const H: Option<ToolpathTab> = Some(ToolpathTab::Heights);
+    const NO: Option<ToolpathTab> = None;
+    &[
+        // The load gates: the feed, the speed and the tool load.
+        (i::LOAD_CHIPLOAD_HIGH, F),
+        (i::LOAD_CHIPLOAD_LOW, F),
+        (i::LOAD_CHIPLOAD_WITHIN, F),
+        (i::LOAD_CHIPLOAD_UNMODELED, F),
+        (i::LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND, F),
+        (i::LOAD_POWER_EXCEEDS, F),
+        (i::LOAD_POWER_WITHIN, F),
+        (i::LOAD_POWER_UNMODELED, F),
+        (i::LOAD_DEFLECTION_EXCEEDS, F),
+        (i::LOAD_DEFLECTION_WITHIN, F),
+        (i::LOAD_DEFLECTION_UNMODELED, F),
+        // The depth of cut is an op parameter.
+        (i::LOAD_DEPTH_WITHIN, C),
+        (i::LOAD_DEPTH_EXCEEDS, C),
+        (i::LOAD_DEPTH_REPORTED, C),
+        (i::LOAD_DEPTH_UNMODELED, C),
+        (i::LOAD_MATERIAL_NOT_JUDGED, NO),
+        (i::DRILL_CHIP_WELDING, F),
+        (i::DRILL_PECK_ADEQUACY, C),
+        (i::DRILL_PLUNGE_FEED, F),
+        // Project findings.
+        (i::PROJECT_HOLDER_COLLISION, NO),
+        (i::PROJECT_HOLDER_CHECK_FAILED, NO),
+        (i::PROJECT_RAPID_COLLISION, H),
+        (i::PROJECT_OBSTACLE_COLLISION, NO),
+        (i::PROJECT_PLUNGE_STRESS, L),
+        (i::PROJECT_AIR_CUT_HIGH, L),
+        (i::PROJECT_GENERATED_EMPTY, G),
+        (i::PROJECT_ALIGNMENT_PINS_UNKEYED, NO),
+        (i::PROJECT_PIN_HOLES_DRILLED_TWICE, NO),
+        (i::PROJECT_DOWEL_HOLES_DISAGREE, NO),
+        (i::PROJECT_PIN_WALL_THIN, NO),
+        (i::PROJECT_PIN_TOOL_MISMATCH, NO),
+        (i::PROJECT_SHOE_GAP_TOO_LOW, H),
+        (i::PROJECT_MEASURABILITY_ABSTAINED, NO),
+        (i::PROJECT_CROSSES_STANDING_MATERIAL, L),
+        (i::PROJECT_ENTRY_LOAD, L),
+        (i::PROJECT_LINK_CUTS_STOCK, L),
+        (i::PROJECT_PLUNGE_CLASS_LOAD, L),
+        (i::PROJECT_REST_SLOWER_THAN_FRESH, C),
+        // Core keeps this id `pub(crate)`, so the row names its text.
+        ("project.kinematic_utilization", NO),
+        // The feeds calculator.
+        (i::FEEDS_FEED_CLAMPED, F),
+        (i::FEEDS_POWER_LIMITED, F),
+        (i::FEEDS_POWER_LADDER_REDUCED_CUT, F),
+        (i::FEEDS_SHANK_TOO_LARGE, F),
+        (i::FEEDS_DOC_EXCEEDS_FLUTE, F),
+        (i::FEEDS_SLOTTING_DETECTED, F),
+        (i::FEEDS_SCALLOP_INVALID, F),
+        (i::FEEDS_CHIPLOAD_BELOW_FLOOR, F),
+        (i::FEEDS_LONG_TOOL_DERATE, F),
+        (i::FEEDS_AGGRESSIVENESS_ENGAGEMENT, F),
+        (i::FEEDS_RPM_LOWERED_FOR_CEILING, F),
+        (i::FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE, F),
+        (i::FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD, F),
+        (i::FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION, F),
+        (i::FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE, F),
+        (i::FEEDS_FEED_VS_LUT_HIGH, F),
+        (i::FEEDS_FEED_VS_LUT_LOW, F),
+        (i::FEEDS_STEPOVER_VS_LUT, F),
+        (i::FEEDS_DPP_VS_LUT, F),
+        // Geometry of the op and its heights.
+        (i::GEOM_STEPOVER_EXCEEDS_DIAMETER, C),
+        (i::GEOM_DPP_EXCEEDS_CUTTING_LENGTH, C),
+        (i::GEOM_BOTTOM_ABOVE_TOP_Z, H),
+        (i::GEOM_FEED_Z_BELOW_TOP_Z, H),
+        (i::GEOM_RETRACT_Z_BELOW_FEED_Z, H),
+        (i::GEOM_CLEARANCE_Z_BELOW_RETRACT_Z, H),
+        (i::GEOM_RETRACT_Z_BELOW_TOP_Z, H),
+        (i::GEOM_PLUNGE_EXCEEDS_FEED, F),
+        // The floor row of an op is on the Cut tab.
+        (i::GEOM_DEPTH_BEYOND_STOCK, C),
+        (i::GEOM_STANDING_MATERIAL, C),
+        (i::GEOM_UNMACHINED_BAND, C),
+        (i::GEOM_CLIPPED_BAND, G),
+        (i::GEOM_TIP_FLOAT, C),
+        (i::GEOM_RAMP_REACH_CLAMP, L),
+        (i::GEOM_ZERO_REMOVAL, C),
+        (i::GEOM_BURIED_CURVE, G),
+        (i::GEOM_SELECTION_NOTE, G),
+        (i::GEOM_TAB_PLACEMENT, C),
+        (i::GEOM_OFFSET_LIBRARY_FAILURE, NO),
+        (i::GEOM_BOUNDARY_CLIP_DROPPED, G),
+        (i::GEOM_WATERLINE_LEVELS_BELOW_STOCK, C),
+        (i::GEOM_WATERLINE_LADDER_EMPTY, C),
+        (i::GEOM_REGION_CAP_TRUNCATED, C),
+        (i::GEOM_REST_LEVELS_FALLBACK, C),
+        (i::CONFIG_DERIVED_STEPOVER, C),
+        (i::CONFIG_CLAIMS_REFERENCE, C),
+        (i::CONFIG_INERT_CLAIMS_DIAL, C),
+        // The tool and the input model combos are on the Cut tab.
+        (i::COMPAT_TOOL_KIND_REFUSED, C),
+        (i::COMPAT_BALL_NOSE_FLAT_CLEARING, C),
+        (i::COMPAT_PROJECT_CURVE_POINT_PROJECTION, G),
+        (i::TOOL_NAME_SIZE_MISMATCH, NO),
+        (i::QUALITY_STEPOVER_OVER_80_PCT, C),
+        (i::QUALITY_FINISH_STEPOVER_OVER_50_PCT, C),
+        (i::QUALITY_BALL_SCALLOP_HEIGHT, C),
+        (i::EFFICIENCY_VERY_FINE_STEPOVER, C),
+        (i::STALE_DROP_CUTTER_MIN_Z, C),
+        (i::STALE_TAPERED_BALL_PLUNGE, C),
+        (i::STALE_WOOD_ADAPTIVE_STEPOVER, C),
+        (i::STALE_PROJECT_CURVE_NEGATIVE_DEPTH, C),
+        // A selection refusal and a model gouge: the Geometry tab.
+        (i::PRECOND_DRILL_NO_HOLES, G),
+        (i::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES, NO),
+        (i::PRECOND_SELECTION_REFUSED, G),
+        (i::PRECOND_BURIED_FACE, G),
+        (i::SAFETY_CUTS_INTO_MODEL, G),
+        (i::PRECOND_PROJECT_CURVE_NO_CURVE, G),
+        (i::PRECOND_PROJECT_CURVE_NO_SURFACE, C),
+        (i::REF_MODEL_MISSING, C),
+    ]
+};
+
+/// The tab that holds the fix of `id` ([`OWNER_TAB`]), or `None`.
+pub(crate) fn owner_tab(id: &str) -> Option<ToolpathTab> {
+    OWNER_TAB
+        .iter()
+        .find(|(row, _)| *row == id)
+        .and_then(|(_, tab)| *tab)
 }
 
 pub(super) fn compute_tab_badges(
@@ -32,14 +199,44 @@ pub(super) fn compute_tab_badges(
 ) -> TabBadges {
     use rs_cam_core::diagnostics::{Category, DiagnosticState, Severity};
 
-    // Heights: badge if any height warning exists. A warning outranks the
-    // pin mark below.
-    let heights_warning = toolpath_heights
-        .and_then(|answer| height_order_badge(answer, &entry.heights, &entry.operation));
+    let mut badges = TabBadges {
+        dots: [None; ToolpathTab::ALL.len()],
+    };
+
+    // F24: each actionable Current finding raises the dot of the tab that
+    // holds its fix ([`owner_tab`]). Pre-sim hints and State (workflow)
+    // notices stay quiet, so a healthy op shows no dot.
+    for d in diagnostics {
+        if d.state != DiagnosticState::Current
+            || matches!(d.category, Category::State | Category::Efficiency)
+        {
+            continue;
+        }
+        let color = match d.severity {
+            Severity::Blocking | Severity::Critical => crate::ui::tokens::DANGER,
+            Severity::Caution => crate::ui::tokens::CAUTION,
+            Severity::Info | Severity::Hint => continue,
+        };
+        if let Some(tab) = owner_tab(d.id.as_str()) {
+            badges.raise(tab, color);
+        }
+    }
+
+    // Heights: the plane order (F033) has its own rule.
+    if let Some(color) = toolpath_heights
+        .and_then(|answer| height_order_badge(answer, &entry.heights, &entry.operation))
+    {
+        badges.raise(ToolpathTab::Heights, color);
+    }
+    // H2: a stated shoe gap below the solver gap is a Caution about the
+    // shoe row, which this tab holds.
+    if shoe_gap_too_low {
+        badges.raise(ToolpathTab::Heights, crate::ui::tokens::CAUTION);
+    }
     // R5 (2026-09-18): a pinned height is a fact the tab states before it
     // opens. A diagram drag pinned Top at −1.37 and nothing on the tab strip
     // said so (`planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §4.2).
-    // INFO is the badge's neutral role; the Feeds badge uses the same one.
+    // INFO is the badge's neutral role; a warning outranks it.
     let hs = &entry.heights;
     let any_pinned = [
         &hs.clearance_z,
@@ -50,55 +247,25 @@ pub(super) fn compute_tab_badges(
     ]
     .into_iter()
     .any(|mode| !mode.is_auto());
-    // H2: a stated shoe gap below the solver gap is a Caution about the
-    // shoe row, which this tab holds.
-    let heights_badge = heights_warning
-        .or(shoe_gap_too_low.then_some(crate::ui::tokens::CAUTION))
-        .or(any_pinned.then_some(crate::ui::tokens::INFO));
-
-    // Feeds: badge if any feed warning from core
-    let feeds_badge = entry.feeds_result.as_ref().and_then(|r| {
-        if r.warnings.is_empty() {
-            None
-        } else if r.power_limited {
-            Some(crate::ui::tokens::CAUTION)
-        } else {
-            Some(crate::ui::tokens::INFO)
-        }
-    });
-
-    // Mods: badge derived from actionable Current diagnostics in
-    // Safety / Geometry / ToolLoad / Quality categories. Pre-sim hints
-    // and State (workflow) notices stay quiet so a healthy op doesn't
-    // flash a yellow tab.
-    let mut has_critical = false;
-    let mut has_caution = false;
-    for d in diagnostics {
-        if d.state != DiagnosticState::Current {
-            continue;
-        }
-        if matches!(d.category, Category::State | Category::Efficiency) {
-            continue;
-        }
-        match d.severity {
-            Severity::Blocking | Severity::Critical => has_critical = true,
-            Severity::Caution => has_caution = true,
-            _ => {}
-        }
+    if let Some(color) = any_pinned.then_some(crate::ui::tokens::INFO) {
+        badges.raise(ToolpathTab::Heights, color);
     }
-    let dressup_badge = if has_critical {
-        Some(crate::ui::tokens::DANGER)
-    } else if has_caution {
-        Some(crate::ui::tokens::CAUTION)
-    } else {
-        None
-    };
 
-    TabBadges {
-        feeds_badge,
-        heights_badge,
-        dressup_badge,
+    // Feeds: the warnings of the feeds result.
+    if let Some(r) = entry.feeds_result.as_ref()
+        && !r.warnings.is_empty()
+    {
+        badges.raise(
+            ToolpathTab::FeedsSpeeds,
+            if r.power_limited {
+                crate::ui::tokens::CAUTION
+            } else {
+                crate::ui::tokens::INFO
+            },
+        );
     }
+
+    badges
 }
 
 /// F033: the Heights tab badge colour of the plane order, or `None`.

@@ -338,6 +338,14 @@ pub(crate) trait LayeredOp {
         effective_levels(ctx.cutting_levels)
     }
 
+    /// The ladder of each outline of `outlines`, when the op states one per
+    /// outline. The default is `None`: every outline steps [`Self::ladder`]
+    /// (or the per-area ladders of the prologue). Chamfer overrides it
+    /// (R-C, F21): each item cuts at its own Z.
+    fn outline_ladders(&self, _outlines: &[Self::Input]) -> Option<Vec<Vec<f64>>> {
+        None
+    }
+
     /// The spans of the finished toolpath. The default builds one depth
     /// run per (outline, level) and snaps it to the ladder `levels`.
     /// Chamfer overrides it: its one level holds one cut run per ring, and
@@ -401,6 +409,19 @@ impl Ladders {
     /// The ladder at `index`; empty for an index that names none.
     pub(super) fn ladder(&self, index: usize) -> &[f64] {
         self.ladders.get(index).map_or(&[], Vec::as_slice)
+    }
+
+    /// One ladder per outline, as the op states them
+    /// ([`LayeredOp::outline_ladders`], R-C). Each passes the L-16 guard
+    /// ([`effective_levels`]).
+    fn per_outline(ladders: &[Vec<f64>]) -> Result<Self, OperationError> {
+        Ok(Self {
+            ladders: ladders
+                .iter()
+                .map(|ladder| effective_levels(ladder))
+                .collect::<Result<_, _>>()?,
+            of_outline: (0..ladders.len()).collect(),
+        })
     }
 
     /// The ladders of `outline_count` outlines: the per-area ladders of the
@@ -515,7 +536,17 @@ pub(crate) fn run_layered<O: LayeredOp>(
     prepared: &Prepared<'_>,
 ) -> Result<GeneratedToolpath, OperationError> {
     let inputs = op.outlines(prepared)?;
-    let ladders = Ladders::new(prepared, op.ladder(ctx)?, inputs.len())?;
+    let ladders = match op.outline_ladders(&inputs) {
+        Some(own) if prepared.region_ladders().is_none() => Ladders::per_outline(&own)?,
+        Some(_) => {
+            return Err(OperationError::Internal(format!(
+                "registry adapter mismatch: {} states a ladder per outline and takes the \
+                 floor \"each picked face\"",
+                prepared.op_type().name()
+            )));
+        }
+        None => Ladders::new(prepared, op.ladder(ctx)?, inputs.len())?,
+    };
     let (outlines, ladder_of) = area_outlines_less_obstacles(op, prepared, inputs, &ladders);
     let union = UnionLadder::of(&ladders.ladders);
     let safe_z = ctx.heights.retract_z;

@@ -37,8 +37,10 @@ use crate::polygon::{Polygon2, detect_containment, detect_containment_tagged};
 
 use super::extend::{CannotExtend, PathSide, extend_to_stock, rings_touch};
 use super::hole_fit::HoleFitRule;
-use super::item::{Item, ItemKind, Shape, SourceRef};
-use super::refusal::{ItemRef, NoteCause, RefusalCause, SelectionNote, SelectionRefusal};
+use super::item::{EdgeForm, EdgeMaterial, Item, ItemKind, Shape, SourceRef};
+use super::refusal::{
+    EdgeRefusal, ItemRef, NoteCause, RefusalCause, SelectionNote, SelectionRefusal,
+};
 use super::resolve::{ResolvedSelection, SelectionFrame, SetupFrame};
 use super::rule::Facing;
 
@@ -63,6 +65,15 @@ impl ItemKind {
                 ItemUse::Curves,
             ) => true,
             (ItemKind::Point, ItemUse::Curves) => false,
+            // R-C: a Chamfer bevels closed areas and the convex top edges
+            // of a model, closed and open. The edge form decides per item
+            // (`item_serves`): a drawing path has no material side, and a
+            // concave model edge refuses.
+            (
+                ItemKind::Loop | ItemKind::Circle | ItemKind::Face | ItemKind::Path,
+                ItemUse::Edges,
+            ) => true,
+            (ItemKind::Point, ItemUse::Edges) => false,
             // P6.6: a point states no size, so a Bore (a circle larger than
             // the tool) does not serve it.
             (ItemKind::Point, ItemUse::Holes { fit, .. }) => match fit {
@@ -156,6 +167,44 @@ impl Regions {
     }
 }
 
+/// One model edge that a Chamfer bevels (R-C): a convex top edge of a
+/// STEP model, at its own Z, with the side of its material. In the SETUP
+/// frame (an upright setup only).
+#[derive(Debug, Clone)]
+pub struct EdgeLine {
+    /// The edge: closed (a ring, a circular edge, a closed chain) or open
+    /// (an edge chain, in its point order).
+    pub line: Polygon2,
+    /// The Z of the edge (the Z of the up face beside it).
+    pub z: f64,
+    /// The side of the material: `Left` or `Right` of the point order for
+    /// an open line, `Inside` or `Outside` for a closed line.
+    pub material: EdgeMaterial,
+}
+
+/// The items of an [`ItemUse::Edges`] op (R-C): the closed areas of a
+/// drawing (and the faces of a mesh), and the convex top edges of a STEP
+/// model.
+#[derive(Debug, Clone)]
+pub struct Edges {
+    regions: Regions,
+    lines: Vec<EdgeLine>,
+}
+
+impl Edges {
+    /// The closed areas of a drawing (and the faces of a mesh), nested as
+    /// [`ItemUse::Regions`] nests them. A Chamfer bevels them with its
+    /// `side` dial.
+    pub fn regions(&self) -> &Regions {
+        &self.regions
+    }
+
+    /// The convex top edges of a STEP model, each at its own Z.
+    pub fn lines(&self) -> &[EdgeLine] {
+        &self.lines
+    }
+}
+
 /// One hole position.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hole {
@@ -207,6 +256,7 @@ enum View {
     Regions(Regions),
     Curves(Curves),
     Holes(Holes),
+    Edges(Edges),
 }
 
 /// The items an op cuts, in the form its [`ItemUse`] reads.
@@ -293,10 +343,12 @@ impl OpItems {
         }
     }
 
-    /// The closed areas of a `Regions` op.
+    /// The closed areas of a `Regions` op, or the drawing areas of an
+    /// `Edges` op (R-C).
     pub fn regions(&self) -> Option<&Regions> {
         match &self.view {
             View::Regions(r) => Some(r),
+            View::Edges(e) => Some(&e.regions),
             View::None | View::Curves(_) | View::Holes(_) => None,
         }
     }
@@ -307,6 +359,7 @@ impl OpItems {
         match &self.view {
             View::Regions(r) => Some(r.as_curves()),
             View::Curves(c) => Some(c),
+            View::Edges(e) => Some(e.regions.as_curves()),
             View::None | View::Holes(_) => None,
         }
     }
@@ -315,7 +368,15 @@ impl OpItems {
     pub fn holes(&self) -> Option<&Holes> {
         match &self.view {
             View::Holes(h) => Some(h),
-            View::None | View::Regions(_) | View::Curves(_) => None,
+            View::None | View::Regions(_) | View::Curves(_) | View::Edges(_) => None,
+        }
+    }
+
+    /// The items of an `Edges` op (R-C).
+    pub fn edges(&self) -> Option<&Edges> {
+        match &self.view {
+            View::Edges(e) => Some(e),
+            View::None | View::Regions(_) | View::Curves(_) | View::Holes(_) => None,
         }
     }
 }
@@ -428,7 +489,13 @@ fn view_with<F: SelectionFrame>(
     let mut roles: Vec<ItemRole> = vec![ItemRole::Skipped; resolved.items().len()];
     for (at, r) in resolved.items().iter().enumerate() {
         let shape = r.item().shape();
-        if shape.serves(item_use) {
+        let serves = item_serves(r.item(), item_use, resolved.upright()).map_err(|why| {
+            SelectionRefusal::new(
+                Some(ItemRef::new(r.identity().clone())),
+                RefusalCause::NotAConvexEdge { why },
+            )
+        })?;
+        if serves {
             // A face that the setup turns on its side (a lateral setup)
             // has no floor in the work plane: it refuses by name.
             if let Shape::Face(face) = shape
@@ -444,7 +511,7 @@ fn view_with<F: SelectionFrame>(
             if let Shape::Face(face) = shape
                 && matches!(
                     item_use,
-                    ItemUse::Regions | ItemUse::RegionsExtendOpen { .. }
+                    ItemUse::Regions | ItemUse::RegionsExtendOpen { .. } | ItemUse::Edges
                 )
                 && down_faces == DownFaces::Refuse
                 && Facing::Down.admits(face.normal.z)
@@ -487,7 +554,13 @@ fn view_with<F: SelectionFrame>(
     }
 
     let empty = |notes: Vec<SelectionNote>| {
-        SelectionRefusal::new(None, RefusalCause::Empty { skipped: notes })
+        SelectionRefusal::new(
+            None,
+            RefusalCause::Empty {
+                skipped: notes,
+                rims: Vec::new(),
+            },
+        )
     };
     let view = match item_use {
         ItemUse::None => View::None,
@@ -554,6 +627,58 @@ fn view_with<F: SelectionFrame>(
                 plane_z,
             })
         }
+        // R-C: the drawing areas nest as `Regions`; each convex top model
+        // edge is a line at its own Z with its material side.
+        ItemUse::Edges => {
+            let (model_at, area_at): (Vec<usize>, Vec<usize>) = (0..served.len())
+                .partition(|&pos| served.get(pos).is_some_and(|i| i.model_edge().is_some()));
+            let areas: Vec<&Item> = area_at
+                .iter()
+                .filter_map(|&pos| served.get(pos).copied())
+                .collect();
+            let RegionParts {
+                polygons,
+                stock,
+                exteriors,
+                plane_z,
+                islands,
+            } = regions_of(&areas);
+            let lines: Vec<EdgeLine> = model_at
+                .iter()
+                .filter_map(|&pos| served.get(pos))
+                .flat_map(|item| edge_lines(item))
+                .collect();
+            if polygons.is_empty() && lines.is_empty() {
+                return Err(empty(notes));
+            }
+            for (pos, &served_pos) in area_at.iter().enumerate() {
+                if let Some(role) = served_at.get(served_pos).and_then(|at| roles.get_mut(*at)) {
+                    *role = if islands.contains(&pos) {
+                        ItemRole::Island
+                    } else {
+                        ItemRole::Cut
+                    };
+                }
+            }
+            for &served_pos in &model_at {
+                if let Some(role) = served_at.get(served_pos).and_then(|at| roles.get_mut(*at)) {
+                    *role = ItemRole::Cut;
+                }
+            }
+            View::Edges(Edges {
+                regions: Regions {
+                    curves: Curves { polygons },
+                    stock,
+                    exterior_items: exteriors
+                        .into_iter()
+                        .filter_map(|pos| area_at.get(pos))
+                        .filter_map(|&served_pos| served_at.get(served_pos).copied())
+                        .collect(),
+                    plane_z,
+                },
+                lines,
+            })
+        }
         ItemUse::Curves => {
             let polygons = curves_of(&served);
             if polygons.is_empty() {
@@ -603,6 +728,77 @@ fn view_with<F: SelectionFrame>(
         },
         notes,
     ))
+}
+
+/// Whether an op of `use_` cuts `item` ([`Shape::serves`]), and for an
+/// [`ItemUse::Edges`] op the edge form rule (R-C, operator ruling
+/// 2026-10-23, SAFETY):
+///
+/// - a model edge item or an up face of a STEP model serves only as a
+///   convex top edge ([`EdgeForm::ConvexTop`]); a concave edge, an edge
+///   that is not a top edge, and any model edge in a turned setup
+///   (`upright` false) refuse by name, under the default rule too;
+/// - a drawing open path states no material side, so it does not serve
+///   (a pick of it refuses `KindNotCut`);
+/// - a drawing loop or circle, the stock ring and a mesh face serve as in
+///   [`ItemUse::Regions`].
+fn item_serves(item: &Item, use_: ItemUse, upright: bool) -> Result<bool, EdgeRefusal> {
+    let kind_serves = item.shape().serves(use_);
+    if use_ != ItemUse::Edges || !kind_serves {
+        return Ok(kind_serves);
+    }
+    match item.model_edge() {
+        Some(_) if !upright => Err(EdgeRefusal::TurnedSetup),
+        Some(edge) => match edge.form {
+            EdgeForm::ConvexTop { .. } => Ok(true),
+            EdgeForm::Concave => Err(EdgeRefusal::Concave),
+            EdgeForm::Other => Err(EdgeRefusal::NotATopEdge),
+        },
+        // A model edge item with no form: the door could not read it.
+        None if item.z().is_some() => Err(EdgeRefusal::NotATopEdge),
+        None => Ok(item.kind() != ItemKind::Path),
+    }
+}
+
+/// The lines of one convex top model item (R-C): a chain, a circular
+/// edge or a ring gives one line; an up face gives its outer ring
+/// (material inside) and each of its own holes (material outside). An
+/// item of another form gives none (`item_serves` refused it).
+fn edge_lines(item: &Item) -> Vec<EdgeLine> {
+    let Some(EdgeForm::ConvexTop { material }) = item.model_edge().map(|e| e.form) else {
+        return Vec::new();
+    };
+    match (item.shape(), item.plane_z()) {
+        (Shape::Loop(p) | Shape::Path(p), Some(z)) => vec![EdgeLine {
+            line: p.clone(),
+            z,
+            material,
+        }],
+        (Shape::Circle { ring, .. }, Some(z)) => vec![EdgeLine {
+            line: ring.clone(),
+            z,
+            material,
+        }],
+        (Shape::Face(face), Some(z)) => {
+            std::iter::once((face.rings.exterior.clone(), EdgeMaterial::Inside))
+                .chain(
+                    face.rings
+                        .holes
+                        .iter()
+                        .map(|h| (h.clone(), EdgeMaterial::Outside)),
+                )
+                .map(|(ring, material)| EdgeLine {
+                    line: Polygon2::new(ring),
+                    z,
+                    material,
+                })
+                .collect()
+        }
+        (Shape::Point(_), _)
+        | (Shape::Loop(_) | Shape::Path(_) | Shape::Circle { .. } | Shape::Face(_), None) => {
+            Vec::new()
+        }
+    }
 }
 
 /// Mark every served item `Cut` (an op that does not nest: `Curves`,

@@ -179,10 +179,25 @@ pub enum ModelGougeRule {
     /// a hole at that XY (the point surface is below the local top) and the
     /// tip goes below the hole floor. A hole where the model is flat is the
     /// intent (a dowel hole that the model does not show).
-    Hole { fix: &'static str },
+    ///
+    /// `names_depth` (F30): the op has a depth dial from the stock top (a
+    /// Drill). The fix text then names the depth to type and the hole
+    /// floor Z that the guard measured.
+    Hole {
+        fix: &'static str,
+        names_depth: bool,
+    },
+    /// R-C (Chamfer): a V-bit bevel cuts below the sharp edge of the model
+    /// by design, by the bevel depth `w / tan(a)` at the edge
+    /// (`OperationConfig::bevel_depth_mm`). A sample gouges when the tip
+    /// goes deeper than that below the drop-cutter CL Z of the V-bit on
+    /// the mesh: the cone then cuts the model beyond the bevel, as at the
+    /// end of an edge that runs into a wall. The guard does not see a cut
+    /// into another face that is shallower than the bevel depth.
+    Bevel { fix: &'static str },
     /// No guard: the cut is the intent, and the model may not show it (an
-    /// engraving, a chamfer, an inlay, a trace, a pin hole), or the op
-    /// follows the surface itself (the 3D ops).
+    /// engraving, an inlay, a trace, a pin hole), or the op follows the
+    /// surface itself (the 3D ops).
     Exempt,
 }
 
@@ -192,7 +207,7 @@ impl ModelGougeRule {
     #[must_use]
     pub const fn fix_hint(self) -> &'static str {
         match self {
-            Self::Surface { fix } | Self::Hole { fix } => fix,
+            Self::Surface { fix } | Self::Hole { fix, .. } | Self::Bevel { fix } => fix,
             Self::Exempt => "",
         }
     }
@@ -236,7 +251,7 @@ pub enum FaceTopRule {
     Face,
     /// The auto top is the face top, and a face below the material that
     /// stands at the start of the op refuses generation (UX-1c, operator
-    /// ruling 2026-10-22, SAFETY): Chamfer, V-Carve, Inlay and Inlay Plug.
+    /// ruling 2026-10-22, SAFETY): V-Carve, Inlay and Inlay Plug (Chamfer: `RefuseBuriedEach`).
     /// These ops cut one depth relative to the face plane, with no ladder
     /// that a higher top can step down, so a face under standing material
     /// buries the tool by all of that material (UX-1b measured 12 to
@@ -246,6 +261,14 @@ pub enum FaceTopRule {
     /// the area of the op (`standing_material::standing_top_in_footprint`).
     /// A pinned top is the operator's statement and does not refuse.
     RefuseBuried,
+    /// R-C / F21 (operator ruling 2026-10-23, SAFETY): as `RefuseBuried`,
+    /// but each item cuts one depth below ITS OWN top (a model edge at its
+    /// Z, a mesh face at its plane), so EACH item refuses when material
+    /// stands over it. Fresh stock: the session compares the LOWEST item Z
+    /// with the stock top (`ToolpathHeights::buried_face_refusal`). "After
+    /// previous ops": the prologue reads the standing material over each
+    /// area and along each edge against the top of that item. Chamfer.
+    RefuseBuriedEach,
 }
 
 /// The capabilities a registry row states: the entry probe is a rule.
@@ -327,6 +350,14 @@ pub enum ItemUse {
     /// side of it. Trace (every compensation, P6.2), Profile with side `On`
     /// (P6.3), Project Curve.
     Curves,
+    /// R-C (operator ruling 2026-10-23, SAFETY): the edges to bevel.
+    /// Closed areas of a drawing as `Regions` (each at the old top), and
+    /// the CONVEX TOP edges of a STEP model: the edge chains, circular
+    /// edges, face rings and up faces whose every segment has the
+    /// material below and on one side only (`selection::EdgeForm`), each
+    /// at its own Z, with its material side from the model. A concave
+    /// edge never serves it, under the default rule or a pick. Chamfer.
+    Edges,
     /// Hole positions. `may_be_empty`: the op may have no hole to cut (Pin
     /// Drill, whose holes come from the alignment pins). `fit`: which holes
     /// the op cuts by their size (geometry selection P6.5, lead ruling

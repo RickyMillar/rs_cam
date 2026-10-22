@@ -26,7 +26,10 @@
 //!    one top edge (a `Path`) cuts along that edge only.
 //! 6. The default rule of a Pocket and of a Profile on a STEP model holds
 //!    the face rings only: no path, circle, point or face. A Drill on the
-//!    default rule has nothing to cut (as before UX-7).
+//!    default rule has nothing to cut (as before UX-7). F29 (2026-10-23):
+//!    its refusal names the top rim of the hole that fits the tool (not the
+//!    floor circle), and the fix names the pick and the rule; the status
+//!    gives the same text.
 //!
 //! The fixture `tests/fixtures/step/block_with_blind_hole.step` comes from
 //! `gen_block_with_blind_hole.py` beside it (block 40 x 30 x 20, hole
@@ -35,6 +38,8 @@
 //! Red proofs (run by hand, 2026-10-22): claim 2 goes red when
 //! `MatchKey::names_same_geometry` ignores `z`; claim 6 goes red when
 //! `rule::served_by_default` admits every drawing kind of an edge item.
+//! (2026-10-23) claim 6 goes red when the prologue does not call
+//! `SelectionRefusal::with_default_rims`.
 //!
 //! ```text
 //! cargo test -p rs_cam_core -q --features step --test a_step_model_gives_edges_circles_and_points_ux7
@@ -510,12 +515,37 @@ fn the_default_rule_on_a_step_model_holds_the_face_rings_only_ux7() {
             );
         }
     }
+    // F29: the refusal names the hole that the default rule did not take
+    // (its top rim, of the tool size), and the fix names the pick and the
+    // rule. The status gives the same text.
+    let tc = session.toolpath_configs()[0].clone();
+    let status = session
+        .selection_status(&tc, SelectionTarget::Op)
+        .unwrap()
+        .refusal
+        .clone()
+        .expect("the status refuses");
     match generate(&mut session) {
         Err(e) => {
             let text = e.to_string();
             assert!(
                 text.contains("nothing is left to cut"),
                 "want the Empty refusal: {text}"
+            );
+            for words in [
+                "The default takes the face rings only. This model has 1 circle that fits the \
+                 tool: Ø6.000 at X 15.000 Y 15.000 Z 20.000",
+                "Fix: Pick the top circle of each hole, or add the rule 'all circles Ø6.000'.",
+            ] {
+                assert!(text.contains(words), "F29: want {words:?} in: {text}");
+            }
+            assert!(
+                !text.contains("Z 12.000"),
+                "F29: the floor circle is not a rim: {text}"
+            );
+            assert!(
+                text.ends_with(&status.to_string()),
+                "status = generation: {text}"
             );
         }
         Ok(_) => panic!("a Drill on the default rule of a STEP model has nothing to cut"),

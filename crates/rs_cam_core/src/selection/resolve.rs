@@ -25,7 +25,7 @@ use crate::session::LoadedModel;
 use crate::ids::ModelId;
 
 use super::extend::StockXy;
-use super::item::{FaceItem, Item, ItemError, ItemSet, Shape, SourceRef};
+use super::item::{FaceItem, Item, ItemError, ItemKind, ItemSet, Shape, SourceRef};
 use super::key::MatchKey;
 use super::rule::{Facing, Selection};
 use super::stock::stock_items;
@@ -52,6 +52,11 @@ pub struct ResolveScope<'a> {
     /// mesh model only when the selection names a face
     /// ([`Selection::names_faces`]); empty for every other read.
     pub mesh_faces: &'a [MeshFaces],
+    /// The use of the op that reads the selection (the boundary reads
+    /// `selection_status::BOUNDARY_ITEM_USE`). The default rule reads it on
+    /// a model edge item (`rule::served_by_default`, R-C): a Chamfer takes
+    /// the convex top chains, every other op the face rings (Q3).
+    pub item_use: crate::compute::catalog::ItemUse,
 }
 
 /// The flat-region face items of one mesh model (geometry selection P4.7),
@@ -222,6 +227,17 @@ pub struct ResolvedSelection<F: SelectionFrame> {
     /// rule of Trace). The side of an open path is in the drawing frame,
     /// so the setup frame gives the other side.
     mirrored: bool,
+    /// R-C: true when the setup keeps the model upright (no setup, or a
+    /// `Top` setup with any Z rotation). The edge form of a model edge
+    /// item is a fact of the model frame, so only an upright setup reads
+    /// it (`view` refuses a Chamfer edge in a turned setup).
+    upright: bool,
+    /// F29: the keys (model frame) of the convex top circular edges of a
+    /// STEP model (the top rim of each hole) that a default rule saw and
+    /// did not take (Q3: it takes the face rings). The `Empty` refusal of
+    /// a Drill names those of the tool size
+    /// ([`super::SelectionRefusal::with_default_holes`]).
+    rims_off_default: Vec<MatchKey>,
     frame: PhantomData<F>,
 }
 
@@ -264,6 +280,8 @@ impl ResolvedSelection<SetupFrame> {
             faces_not_ready: Vec::new(),
             stock_xy: None,
             mirrored: false,
+            upright: true,
+            rims_off_default: Vec::new(),
             frame: PhantomData,
         }
     }
@@ -347,6 +365,18 @@ impl<F: SelectionFrame> ResolvedSelection<F> {
         &self.items
     }
 
+    /// R-C: true when the setup keeps the model upright (no setup, or a
+    /// `Top` setup), so the edge form of a model edge item holds.
+    pub fn upright(&self) -> bool {
+        self.upright
+    }
+
+    /// F29: the keys of the convex top circular edges that a default rule
+    /// saw and did not take, in the model frame.
+    pub fn rims_off_default(&self) -> &[MatchKey] {
+        &self.rims_off_default
+    }
+
     pub fn lost(&self) -> &[LostPick] {
         &self.lost
     }
@@ -395,6 +425,8 @@ impl<F: SelectionFrame> ResolvedSelection<F> {
             faces_not_ready: self.faces_not_ready,
             stock_xy: self.stock_xy,
             mirrored: self.mirrored,
+            upright: self.upright,
+            rims_off_default: self.rims_off_default,
             frame: PhantomData,
         }
     }
@@ -440,6 +472,7 @@ impl ResolvedSelection<ModelFrame> {
         Ok(ResolvedSelection {
             items,
             mirrored: info.is_z_flipped(),
+            upright: matches!(info.face_up, crate::compute::transform::FaceUp::Top),
             ..self
         }
         .relabel())
@@ -673,6 +706,7 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection<M
         }
     };
     let mut unmatched_layers: Vec<String> = Vec::new();
+    let mut rims_off_default: Vec<MatchKey> = Vec::new();
     let mut found: BTreeMap<(usize, usize), MatchedBy> = BTreeMap::new();
     // The rule matches that an exclude removed, by slot position and index.
     let mut removed: BTreeSet<(usize, usize)> = BTreeSet::new();
@@ -708,7 +742,18 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection<M
             MatchedBy::Default { rule: index }
         };
         for (idx, item) in items.iter().enumerate() {
-            if !rule.filter.admits(item, face_frame) {
+            if !rule.filter.admits(item, scope.item_use, face_frame) {
+                // F29: a convex top circular edge (a hole rim) that the
+                // default rule did not take.
+                if !rule.names_kinds()
+                    && item.kind() == ItemKind::Circle
+                    && item.model_edge().is_some_and(|e| e.is_convex_top())
+                    && !rims_off_default
+                        .iter()
+                        .any(|k: &MatchKey| k.matches(item.key()))
+                {
+                    rims_off_default.push(item.key().clone());
+                }
                 continue;
             }
             let excluded = sel
@@ -788,6 +833,8 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection<M
             scope.stock_bbox.max.y,
         ),
         mirrored: false,
+        upright: true,
+        rims_off_default,
         frame: PhantomData,
     }
 }

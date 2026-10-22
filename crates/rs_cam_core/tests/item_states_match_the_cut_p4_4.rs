@@ -190,9 +190,11 @@ fn generation_items(s: &ProjectSession, item_use: ItemUse) -> rs_cam_core::selec
         .with_stock_grown(tool_diameter / 2.0);
     let resolved = match item_use {
         ItemUse::RegionsExtendOpen { .. } => &grown,
-        ItemUse::None | ItemUse::Regions | ItemUse::Curves | ItemUse::Holes { .. } => {
-            inputs.selection()
-        }
+        ItemUse::None
+        | ItemUse::Regions
+        | ItemUse::Curves
+        | ItemUse::Edges
+        | ItemUse::Holes { .. } => inputs.selection(),
     };
     let mut items = view(resolved, item_use).unwrap().0;
     let size = s.toolpath_configs()[0].operation.drill_size(tool_diameter);

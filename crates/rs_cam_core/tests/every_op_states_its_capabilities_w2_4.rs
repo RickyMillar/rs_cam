@@ -102,6 +102,12 @@
 //! `Surface` for Pocket, Profile, Zigzag, Adaptive 2D and Face; `Hole` for
 //! Drill and Bore; `Exempt` for every other op. The column is new; no
 //! earlier answer moved.
+//!
+//! R-C (operator ruling 2026-10-23, SAFETY) moved three Chamfer answers:
+//! `item_use` `Regions` to `Edges` (the convex top edges of a STEP model,
+//! each at its own Z), `face_top` `RefuseBuried` to `RefuseBuriedEach`
+//! (each item is buried against its own top), and `model_gouge` `Exempt`
+//! to `Bevel` (a cut deeper than the bevel below the V-bit CL Z gouges).
 
 #![expect(
     clippy::unwrap_used,
@@ -680,7 +686,7 @@ fn frozen_p1() -> Vec<(OperationType, ItemUse)> {
     (O::Trace, ItemUse::Curves),
     (O::Drill, ItemUse::Holes { may_be_empty: false, fit: HoleFitRule::ToolSize }),
     (O::Bore, ItemUse::Holes { may_be_empty: false, fit: HoleFitRule::LargerThanTool }),
-    (O::Chamfer, ItemUse::Regions),
+    (O::Chamfer, ItemUse::Edges),
     (O::DropCutter, ItemUse::None),
     (O::Adaptive3d, ItemUse::None),
     (O::Waterline, ItemUse::None),
@@ -890,7 +896,9 @@ fn every_op_keeps_its_ladder_top_f033b() {
 /// Chamfer, V-Carve, Inlay and Inlay Plug from `Face` to `RefuseBuried`.
 #[rustfmt::skip]
 fn frozen_ux1b() -> Vec<(OperationType, FaceTopRule)> {
-    use FaceTopRule::{Face as F, HigherOfFaceAndStock as S, RefuseBuried as R};
+    use FaceTopRule::{
+        Face as F, HigherOfFaceAndStock as S, RefuseBuried as R, RefuseBuriedEach as RE,
+    };
     use OperationType as O;
     vec![
     (O::Face, S),
@@ -904,7 +912,7 @@ fn frozen_ux1b() -> Vec<(OperationType, FaceTopRule)> {
     (O::Trace, S),
     (O::Drill, F),
     (O::Bore, S),
-    (O::Chamfer, R),
+    (O::Chamfer, RE),
     (O::DropCutter, F),
     (O::Adaptive3d, F),
     (O::Waterline, F),
@@ -978,7 +986,7 @@ fn every_field_has_a_frozen_column() {
 #[rustfmt::skip]
 fn frozen_ux7b() -> Vec<(OperationType, &'static str)> {
     use OperationType as O;
-    let (s, h, e) = ("Surface", "Hole", "Exempt");
+    let (s, h, b, e) = ("Surface", "Hole", "Bevel", "Exempt");
     vec![
     (O::Face, s),
     (O::Pocket, s),
@@ -991,7 +999,7 @@ fn frozen_ux7b() -> Vec<(OperationType, &'static str)> {
     (O::Trace, e),
     (O::Drill, h),
     (O::Bore, h),
-    (O::Chamfer, e),
+    (O::Chamfer, b),
     (O::DropCutter, e),
     (O::Adaptive3d, e),
     (O::Waterline, e),
@@ -1013,6 +1021,7 @@ fn gouge_variant(rule: ModelGougeRule) -> &'static str {
     match rule {
         ModelGougeRule::Surface { .. } => "Surface",
         ModelGougeRule::Hole { .. } => "Hole",
+        ModelGougeRule::Bevel { .. } => "Bevel",
         ModelGougeRule::Exempt => "Exempt",
     }
 }

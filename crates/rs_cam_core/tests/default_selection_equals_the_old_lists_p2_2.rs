@@ -145,6 +145,8 @@ fn differences(label: &str, model: &LoadedModel, setup: Option<&SetupTransformIn
             stock_bbox: &stock,
             setup,
             mesh_faces: &[],
+            // A drawing: the use reads only a model edge item (R-C).
+            item_use: ItemUse::Regions,
         },
     );
     let resolved = resolved.to_setup_frame(setup).unwrap();
@@ -489,6 +491,7 @@ fn an_open_path_keeps_its_drawn_direction_in_the_view() {
             stock_bbox: &stock,
             setup: None,
             mesh_faces: &[],
+            item_use: ItemUse::Curves,
         },
     );
     let (items, _) = view(&resolved, ItemUse::Curves).unwrap();

@@ -23,7 +23,7 @@ One renderer per repeated UI element; `DESIGN_SPEC.md` gives the sections.
 - A recommendation row shows only when it differs at the printed precision.
 - The default view: the values the operator sets, the differences, and one
   status row (`DataRow::note`) per problem. Derivation and provenance go in
-  ONE closed `Details` per section. A chart sits above its table.
+  ONE closed `Details` per section; `Details::label` may name its content (F28). A chart sits above its table.
 - A value not measured reads "N/A", no chip; the reason opens the hover (IC3).
 - Units: mm 2 decimals (coordinates 3), mm/tooth 4, mm/min and RPM 0, % 0-1.
 

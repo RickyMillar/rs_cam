@@ -313,7 +313,8 @@ pub fn brep_face_items(enriched: &crate::geometry::enriched_mesh::EnrichedMesh) 
 /// The items of a STEP model (the door, geometry selection UX-7): the face
 /// items ([`brep_face_items`]) first, so a face keeps its index, then the
 /// model edge items ([`brep_items::brep_edge_items`]: face rings, edge
-/// chains, circular edges and vertices, each at its own Z). The count of
+/// chains, circular edges and vertices, each at its own Z). Each up face,
+/// ring, chain and circle holds its edge form (R-C). The count of
 /// the edges that are not at one Z goes to the log.
 pub fn brep_items(enriched: &crate::geometry::enriched_mesh::EnrichedMesh) -> ItemSet {
     let faces = brep_face_items(enriched);
@@ -324,7 +325,21 @@ pub fn brep_items(enriched: &crate::geometry::enriched_mesh::EnrichedMesh) -> It
         skipped_edges = edges.skipped,
         "STEP model edge items (vertical and sloped edges give no item)"
     );
-    let mut items: Vec<crate::selection::Item> = faces.iter().cloned().collect();
+    // R-C: an up face holds the edge form of its rings.
+    let mut items: Vec<crate::selection::Item> = faces
+        .iter()
+        .zip(
+            edges
+                .face_edges
+                .iter()
+                .copied()
+                .chain(std::iter::repeat(None)),
+        )
+        .map(|(face, edge)| match edge {
+            Some(edge) => face.clone().with_model_edge(edge),
+            None => face.clone(),
+        })
+        .collect();
     items.extend(edges.items);
     ItemSet::new(items)
 }

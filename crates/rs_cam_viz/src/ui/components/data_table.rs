@@ -32,8 +32,9 @@
 //! - a record, one full-width line for a sentence that core writes
 //!   (`DataRow::record`) or for a status line (`DataRow::note`).
 //!
-//! `Details` is the one disclosure for derivation. It is closed by default,
-//! and every section uses the same label.
+//! `Details` is the one disclosure for derivation. It is closed by default.
+//! It reads "Details" unless a section names what it holds
+//! (`Details::label`, FR-2 F28: "Skipped items · 6").
 
 use crate::ui::components::{ProvKind, ProvenanceBadge};
 use crate::ui::components::{Role, kv_row::row_hover_tint};
@@ -644,12 +645,13 @@ fn paint_trailing(ui: &mut egui::Ui, row: &DataRow) {
     });
 }
 
-/// The one disclosure for derivation and provenance: closed by default,
-/// the same label in every section.
+/// The one disclosure for derivation and provenance: closed by default.
+/// The label is [`DETAILS_LABEL`] unless the section names what it holds.
 #[must_use]
 pub struct Details {
     id_salt: egui::Id,
     count: Option<usize>,
+    label: &'static str,
 }
 
 impl Details {
@@ -658,7 +660,15 @@ impl Details {
         Self {
             id_salt: egui::Id::new(id_salt),
             count: None,
+            label: DETAILS_LABEL,
         }
+    }
+
+    /// The label: what the disclosure holds (FR-2 F28). Do not use a tab
+    /// name (DC5).
+    pub fn label(mut self, label: &'static str) -> Self {
+        self.label = label;
+        self
     }
 
     /// The number of rows inside, shown after the label.
@@ -674,8 +684,8 @@ impl Details {
         add: impl FnOnce(&mut egui::Ui) -> R,
     ) -> egui::CollapsingResponse<R> {
         let label = match self.count {
-            Some(n) => format!("{DETAILS_LABEL} \u{00B7} {n}"),
-            None => DETAILS_LABEL.to_owned(),
+            Some(n) => format!("{} \u{00B7} {n}", self.label),
+            None => self.label.to_owned(),
         };
         egui::CollapsingHeader::new(caption(label, tokens::TEXT_MUTED))
             .id_salt(self.id_salt)

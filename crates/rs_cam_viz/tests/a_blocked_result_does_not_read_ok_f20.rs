@@ -48,6 +48,7 @@ fn stats(gouging: usize) -> ToolpathStats {
             at: [38.9, -2.8, -2.0],
             surface_z: 8.0,
             move_index: 12,
+            depth_top_z: None,
         }),
         ..ToolpathStats::default()
     }

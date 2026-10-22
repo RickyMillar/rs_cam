@@ -12,6 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::compute::catalog::ItemUse;
 use crate::ids::ModelId;
 
 use super::item::{Item, ItemKind, Shape, SourceRef};
@@ -27,7 +28,8 @@ pub enum KindFilter {
     /// drawing kind: it enters a selection only by a pick or by a rule that
     /// names it (`Only([Face])`). On a STEP model the default rule selects
     /// the loops only (the face rings, UX-7 / ruling Q3,
-    /// [`served_by_default`]), so a Drill there has nothing to cut.
+    /// [`served_by_default`]), so a Drill there has nothing to cut; a
+    /// Chamfer (`ItemUse::Edges`, R-C) takes the convex top chains.
     ///
     /// `resolve` does not know the op, so it matches every drawing kind
     /// here and marks the match [`super::MatchedBy::Default`]. `view` then
@@ -152,14 +154,23 @@ impl Filter {
     /// and the normal Z part of a face, and the Z of a model edge item, in
     /// the setup frame (`resolve::face_in_setup_frame`,
     /// `resolve::item_z_in_setup_frame`).
-    pub(super) fn admits(&self, item: &Item, face_frame: impl Fn(&Item) -> (f64, f64)) -> bool {
+    ///
+    /// `item_use` is the use of the op that reads the selection: the
+    /// default rule ([`KindFilter::Served`]) reads it on a model edge item
+    /// ([`served_by_default`]).
+    pub(super) fn admits(
+        &self,
+        item: &Item,
+        item_use: ItemUse,
+        face_frame: impl Fn(&Item) -> (f64, f64),
+    ) -> bool {
         let layer_ok = self.layers.is_empty()
             || item
                 .layer()
                 .is_some_and(|l| self.layers.iter().any(|want| want == l));
         let kind = item.kind();
         let kind_ok = match &self.kinds {
-            KindFilter::Served => served_by_default(kind, item.z().is_some()),
+            KindFilter::Served => served_by_default(item, item_use),
             KindFilter::Only(kinds) => kinds.contains(&kind),
         };
         let diameter_ok = match (&self.diameter, item.shape()) {
@@ -184,21 +195,42 @@ impl Filter {
     }
 }
 
-/// The kinds that the default rule (`KindFilter::Served`) selects.
+/// The items that the default rule (`KindFilter::Served`) selects, for an
+/// op of `item_use`.
 ///
 /// - A drawing item (no Z): every drawing kind ([`is_drawing_kind`]).
-/// - A model edge item of a STEP model (`edge_item`, geometry selection
-///   UX-7, operator ruling Q3 "default to face rings (loops) unless there
-///   is a selection for edges"): the loops only. A face ring and a closed
-///   edge chain that is not a ring are loops; an open edge chain, a
-///   circular edge and a vertex enter by a pick or a rule that names them.
-pub(super) fn served_by_default(kind: ItemKind, edge_item: bool) -> bool {
-    if !edge_item {
+/// - A model edge item of a STEP model (geometry selection UX-7, operator
+///   ruling Q3 "default to face rings (loops) unless there is a selection
+///   for edges"): the loops only. A face ring and a closed edge chain that
+///   is not a ring are loops; an open edge chain, a circular edge and a
+///   vertex enter by a pick or a rule that names them.
+/// - R-C (operator ruling 2026-10-23, SAFETY; a departure from Q3 for
+///   Chamfer only): an op of [`ItemUse::Edges`] takes the CONVEX TOP edge
+///   chains and circular edges ([`super::ModelEdge::is_convex_top`]), not
+///   the face rings. A face ring holds concave edges too (the Z 20 ring of
+///   the stepped block meets the Z 30 wall), and a V-bit along a concave
+///   edge cuts into the wall above it. The convex runs of each ring are
+///   its chains.
+pub(super) fn served_by_default(item: &Item, item_use: ItemUse) -> bool {
+    let kind = item.kind();
+    if item.z().is_none() {
         return is_drawing_kind(kind);
     }
-    match kind {
-        ItemKind::Loop => true,
-        ItemKind::Path | ItemKind::Point | ItemKind::Circle | ItemKind::Face => false,
+    match item_use {
+        ItemUse::Edges => match kind {
+            ItemKind::Loop | ItemKind::Path | ItemKind::Circle => item
+                .model_edge()
+                .is_some_and(|edge| !edge.ring && edge.is_convex_top()),
+            ItemKind::Point | ItemKind::Face => false,
+        },
+        ItemUse::None
+        | ItemUse::Regions
+        | ItemUse::RegionsExtendOpen { .. }
+        | ItemUse::Curves
+        | ItemUse::Holes { .. } => match kind {
+            ItemKind::Loop => true,
+            ItemKind::Path | ItemKind::Point | ItemKind::Circle | ItemKind::Face => false,
+        },
     }
 }
 

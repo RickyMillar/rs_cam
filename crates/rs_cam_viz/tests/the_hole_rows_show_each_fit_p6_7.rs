@@ -11,8 +11,8 @@
 //! | Size (6 mm tool) | Drill                      | Bore                   |
 //! |---|---|---|
 //! | 6 mm (x 2)       | drilled, Ok                | the tool size, Caution |
-//! | 10 mm            | larger than the tool, Caution | helix r 2.000, Ok   |
-//! | 4 mm             | smaller than the tool, Caution | (not held)         |
+//! | 10 mm            | larger, Caution            | helix r 2.000, Ok      |
+//! | 4 mm             | smaller, Caution           | (not held)             |
 //! | 14 mm            | leaves a core, Caution     | leaves a core, Danger  |
 //! | points           | drilled at the tool diameter, Ok | (not held)       |
 //!
@@ -126,8 +126,8 @@ fn the_hole_rows_show_each_fit_p6_7() {
         !h::find(&painted, "\u{00D7} 2").is_empty(),
         "the two 6 mm circles are one row of 2"
     );
-    assert_status(&painted, "larger than the tool", tokens::CAUTION);
-    assert_status(&painted, "smaller than the tool", tokens::CAUTION);
+    assert_status(&painted, "larger", tokens::CAUTION);
+    assert_status(&painted, "smaller", tokens::CAUTION);
     assert_status(&painted, "leaves a core", tokens::CAUTION);
     assert_status(&painted, "drilled at \u{00D8} 6.000", tokens::OK);
     let wrapped = h::wrapped(&painted);

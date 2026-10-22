@@ -43,6 +43,9 @@
 //!    probe shrinks its corner too).
 //! 10. A Bore on the blind hole (Ø4 tool) gouges below the hole floor and
 //!     is clean at it.
+//! 11. F30 (claim 6): the Drill text names the depth to type, from the
+//!     stock top that the Depth field measures from, and the hole floor Z:
+//!     "Set the depth to 8.000 mm (the hole floor is at Z 12.000)".
 //!
 //! Red proofs (run by hand, 2026-10-22; each went red, then was restored):
 //! - the lone-ring winding back after the early return: claims 3 and 5;
@@ -53,7 +56,8 @@
 //! - the Hole rule with no "has a hole" test: claim 6;
 //! - a ring pick not counted as an area: claim 2;
 //! - the corner radius not shrunk: claim 9;
-//! - no depth reaches the verdict: claims 3, 4, 5, 6 and 10.
+//! - no depth reaches the verdict: claims 3, 4, 5, 6 and 10;
+//! - (2026-10-23) the Drill row with `names_depth: false`: claim 11.
 //!
 //! The Z tolerance of claim 8 (band plus CAD rounding) is a derivation: the
 //! fixture face is exactly flat, so 0.01 mm also passes.
@@ -417,6 +421,8 @@ fn a_tool_tangent_to_a_wall_is_clean_and_a_tool_in_it_is_not_ux7b() {
         index: &index,
         reduced_tool: &reduced,
         tool_radius: R,
+        bevel_depth_mm: 0.0,
+        depth_top_z: None,
     };
     let rule = OperationType::Pocket.capabilities().model_gouge;
     let line = |x: f64| {
@@ -476,7 +482,22 @@ fn a_drill_gouges_only_below_the_floor_of_a_model_hole_ux7b() {
         "the hole floor is Z 12: {}",
         finding.message()
     );
+    // F30: the fix names the depth to type (from the stock top, Z 20, the
+    // top the Depth field measures from) and the hole floor Z.
+    assert!(
+        finding
+            .message()
+            .contains("Set the depth to 8.000 mm (the hole floor is at Z 12.000)"),
+        "{}",
+        finding.message()
+    );
     assert_eq!(gouge_diagnostics(&deep, 0).len(), 1);
+    assert!(
+        gouge_diagnostics(&deep, 0)[0]
+            .message
+            .contains("Set the depth to 8.000 mm"),
+        "the diagnostic carries the text"
+    );
     assert!(matches!(
         export_refusal(&deep),
         Some(ExportRefusal::CutsIntoModel { .. })
@@ -499,6 +520,8 @@ fn a_drill_gouges_only_below_the_floor_of_a_model_hole_ux7b() {
         index: &index,
         reduced_tool: &tool,
         tool_radius: 3.0,
+        bevel_depth_mm: 0.0,
+        depth_top_z: None,
     };
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(30.0, 15.0, 25.0));

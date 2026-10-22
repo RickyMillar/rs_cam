@@ -260,6 +260,67 @@ pub struct Item {
     /// circular edge or vertex. `None` for a drawing item (it lies in the
     /// drawing plane), a stock item and a face (a face holds `plane_z`).
     z: Option<f64>,
+    /// How a STEP edge item meets the material (R-C): a ring, an edge
+    /// chain, a circular edge, or an up face (its rings). `None` for every
+    /// other item. The key does not hold it: it is a fact of the model,
+    /// not a name of the item.
+    edge: Option<ModelEdge>,
+}
+
+/// Which side of a model edge holds the material (R-C), in the MODEL
+/// frame. The STEP door computes it from the up face beside the edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeMaterial {
+    /// An open chain: the material is on the left of the point order.
+    Left,
+    /// An open chain: the material is on the right of the point order.
+    Right,
+    /// A closed ring: the material is inside the ring (the outer ring of
+    /// an up face, a boss).
+    Inside,
+    /// A closed ring: the material is outside the ring (the rim of a
+    /// hole, an inner ring of an up face).
+    Outside,
+}
+
+/// How a model edge meets the material (R-C, operator ruling 2026-10-23).
+/// The STEP door decides it for each segment from the two faces at the
+/// segment (`io::brep_items`), in the MODEL frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeForm {
+    /// Every segment is a convex top edge: on one side an up face at the
+    /// item Z, on the other side a face that lies at or below the item Z.
+    /// The material is below the edge and on one side only. A Chamfer
+    /// cuts it.
+    ConvexTop { material: EdgeMaterial },
+    /// At least one segment is concave: the face beside the up face rises
+    /// above the item Z (a wall stands over the edge). A V-bit along it
+    /// cuts into that wall.
+    Concave,
+    /// The edge is neither: the faces at a segment are not an up face and
+    /// a face below it (a bottom edge, an edge between two walls), or the
+    /// door could not read the faces at a segment.
+    Other,
+}
+
+/// The model edge data of a STEP item (R-C): its form, and whether it is a
+/// face ring (an outer or inner ring of an up face) rather than an edge
+/// chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModelEdge {
+    pub form: EdgeForm,
+    /// True for a face ring and for an up face: the default rule of a
+    /// Chamfer takes the chains, not the rings (R-C).
+    pub ring: bool,
+}
+
+impl ModelEdge {
+    /// True when every segment is a convex top edge
+    /// ([`EdgeForm::ConvexTop`]).
+    #[must_use]
+    pub const fn is_convex_top(&self) -> bool {
+        matches!(self.form, EdgeForm::ConvexTop { .. })
+    }
 }
 
 /// A ring check shared by the closed shapes.
@@ -354,7 +415,22 @@ impl Item {
             key,
             shape,
             z,
+            edge: None,
         })
+    }
+
+    /// The same item with the model edge data `edge` (R-C). The STEP door
+    /// calls it; the key does not change.
+    #[must_use]
+    pub fn with_model_edge(mut self, edge: ModelEdge) -> Self {
+        self.edge = Some(edge);
+        self
+    }
+
+    /// The model edge data of a STEP ring, edge chain, circular edge or up
+    /// face (R-C), in the MODEL frame. `None` for every other item.
+    pub fn model_edge(&self) -> Option<ModelEdge> {
+        self.edge
     }
 
     pub fn source(&self) -> SourceRef {
@@ -408,18 +484,25 @@ impl Item {
     /// frame door (`ResolvedSelection::to_setup_frame`) calls
     /// [`Self::with_shape_at`].
     pub(crate) fn with_shape(&self, shape: Shape) -> Result<Self, ItemError> {
-        Self::build(self.source, self.layer.clone(), shape, self.z)
+        Self::build(self.source, self.layer.clone(), shape, self.z).map(|i| i.keep_edge(self))
+    }
+
+    /// `self` with the model edge data of `from` (R-C): a rebuild of the
+    /// same edge keeps its form.
+    fn keep_edge(mut self, from: &Item) -> Self {
+        self.edge = from.edge;
+        self
     }
 
     /// [`Self::with_shape`] with `z` in place of the item Z (the frame
     /// door moves the Z of a model edge item, UX-7).
     pub(crate) fn with_shape_at(&self, shape: Shape, z: Option<f64>) -> Result<Self, ItemError> {
-        Self::build(self.source, self.layer.clone(), shape, z)
+        Self::build(self.source, self.layer.clone(), shape, z).map(|i| i.keep_edge(self))
     }
 
     /// The same item with a different source. The key is computed again.
     fn rebuilt(&self, source: SourceRef, shape: Shape) -> Result<Self, ItemError> {
-        Self::build(source, self.layer.clone(), shape, self.z)
+        Self::build(source, self.layer.clone(), shape, self.z).map(|i| i.keep_edge(self))
     }
 }
 
@@ -679,6 +762,7 @@ impl ItemSet {
             i.shape.scaled(scale),
             i.z.map(|z| z * scale),
         )
+        .map(|item| item.keep_edge(i))
     }
 
     /// The same items with `source` as their source.

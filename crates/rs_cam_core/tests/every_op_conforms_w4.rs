@@ -1600,6 +1600,7 @@ fn check9_an_op_holds_a_selection_exactly_when_it_cuts_items() {
             ItemUse::Regions
             | ItemUse::RegionsExtendOpen { .. }
             | ItemUse::Curves
+            | ItemUse::Edges
             | ItemUse::Holes { .. } => true,
         };
         let held = cfg.selection();

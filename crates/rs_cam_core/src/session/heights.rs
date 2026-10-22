@@ -21,7 +21,7 @@
 //!    the clamp when its row states `FaceTopRule::HigherOfFaceAndStock`
 //!    (`clamps_face_top`): the `OpFloor` ops (UX-1), Face and Trace
 //!    (UX-1b). Every other op keeps the face top. UX-1c: on an op whose
-//!    row states `FaceTopRule::RefuseBuried` (Chamfer, V-Carve, Inlay,
+//!    row states `FaceTopRule::RefuseBuried` or `RefuseBuriedEach` (Chamfer, V-Carve, Inlay,
 //!    Inlay Plug) a face top below the stock top refuses generation on
 //!    fresh stock ([`ToolpathHeights::buried_face_refusal`]).
 //!
@@ -261,8 +261,9 @@ impl ToolpathHeights {
 
     /// UX-1c (operator ruling 2026-10-22, SAFETY): the refusal of a face
     /// pick below the stock top on an op whose row states
-    /// `FaceTopRule::RefuseBuried` (Chamfer, V-Carve, Inlay, Inlay Plug),
-    /// or `None`. The op cuts one depth from the face plane, so on fresh
+    /// `FaceTopRule::RefuseBuried` (V-Carve, Inlay, Inlay Plug: the face
+    /// top) or `RefuseBuriedEach` (Chamfer, R-C: the lowest item, because
+    /// each item cuts below its own Z), or `None`. The op cuts one depth from the face plane, so on fresh
     /// stock a face under the stock top buries the tool by all of the
     /// stock above it. Generation refuses with it, and the diagnostics
     /// show the same text before generation.
@@ -282,14 +283,17 @@ impl ToolpathHeights {
         heights: &HeightsConfig,
         stock_source: crate::session::StockSource,
     ) -> Option<BuriedFaceRefusal> {
-        match op.capabilities().face_top {
-            FaceTopRule::RefuseBuried => {}
+        // R-C / F21: an op that cuts each item below its own top is buried
+        // at its lowest item.
+        let item_z = match op.capabilities().face_top {
+            FaceTopRule::RefuseBuried => self.face_top_z,
+            FaceTopRule::RefuseBuriedEach => self.face_bottom_z,
             FaceTopRule::HigherOfFaceAndStock | FaceTopRule::Face => return None,
-        }
+        };
         if stock_source.reads_machined_stock() || self.top_source(heights) != TopSource::AutoFaces {
             return None;
         }
-        let buried_mm = self.context.stock_top_z - self.face_top_z?;
+        let buried_mm = self.context.stock_top_z - item_z?;
         (buried_mm >= BuriedFaceRefusal::STOCK_TOP_EPS_MM).then_some(BuriedFaceRefusal {
             op: op.op_type().label(),
             buried_mm,
@@ -398,7 +402,7 @@ fn clamps_face_top(op: &crate::compute::OperationConfig) -> bool {
         FaceTopRule::HigherOfFaceAndStock => true,
         // UX-1c: a `RefuseBuried` op keeps the face top; a face below the
         // standing material refuses (`ToolpathHeights::buried_face_refusal`).
-        FaceTopRule::Face | FaceTopRule::RefuseBuried => false,
+        FaceTopRule::Face | FaceTopRule::RefuseBuried | FaceTopRule::RefuseBuriedEach => false,
     }
 }
 

@@ -22,6 +22,7 @@ use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 use crate::trace::toolpath_spans::AnnotatedToolpath;
 use crate::trace::transform_provenance::ReconcileSet;
+use std::borrow::Cow;
 
 use super::curve::{CurveFrame, CurveLink, CurveOp, run_curve};
 use super::height_field::{
@@ -214,12 +215,15 @@ impl HeightFieldOp for VCarvePass<'_> {
 
 /// Chamfer family adapter (W3.5): [`ChamferPass`] on the Layered runner.
 /// The ladder is one level, `top_z - (w + t) / tan(a)`, from the tool angle
-/// and not from the heights. The dispatch prologue refuses a tool that is
-/// not a V-bit, and checks the cancel flag ahead of the polygon and V-bit
-/// refusals (W2.2). The kernel has no cancel of its own; the runner polls
-/// the cancel before each (outline, level), which is one poll per polygon
-/// here, as before (pinned by
-/// `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
+/// and not from the heights. R-C / F21 (operator ruling 2026-10-23): each
+/// outline has its own top ([`ChamferInput::top_z`]): a convex top edge of
+/// a STEP model cuts from its own Z, a mesh face from its own plane under
+/// an auto top, and a drawing area from the op Top Z, as before. The
+/// dispatch prologue refuses a tool that is not a V-bit, and checks the
+/// cancel flag ahead of the polygon and V-bit refusals (W2.2). The kernel
+/// has no cancel of its own; the runner polls the cancel before each
+/// (outline, level), which is one poll per outline here, as before
+/// (pinned by `every_generator_polls_a_preset_cancel_flag_past_the_prologue`).
 pub(crate) fn generate_chamfer(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
@@ -228,6 +232,7 @@ pub(crate) fn generate_chamfer(
     let cfg = config_guard!(op, Chamfer, "generate_chamfer");
     let pass = ChamferPass {
         rest_use: op.capabilities().rest_use,
+        top_pinned: ctx.heights.top_pinned,
         params: crate::ops::chamfer::ChamferParams {
             chamfer_width: cfg.chamfer_width,
             tip_offset: cfg.tip_offset,
@@ -242,11 +247,61 @@ pub(crate) fn generate_chamfer(
     run_layered(&pass, ctx, prepared)
 }
 
+/// One outline of the Chamfer (R-C): a closed area of a drawing or a mesh
+/// face, or a convex top edge of a STEP model.
+#[derive(Debug, Clone)]
+pub(crate) struct ChamferInput {
+    /// The area outline or the edge line (closed or open).
+    outline: Polygon2,
+    /// The Z the bevel starts from: the Z of a model edge, or the plane of
+    /// a mesh face under an auto top. `None`: the op Top Z (a drawing
+    /// area, or any area under a pinned top).
+    top_z: Option<f64>,
+    /// The side of the material that the model states, or `None` for an
+    /// area (the `side` dial decides).
+    material: Option<crate::selection::EdgeMaterial>,
+}
+
+impl super::layered::LayerInput for ChamferInput {
+    fn outline(&self) -> Option<&Polygon2> {
+        Some(&self.outline)
+    }
+
+    /// An area of the op Top Z with the `side` dial: a rest clip piece or
+    /// a plain polygon list.
+    fn from_polygons<'p>(polygons: Cow<'p, [Polygon2]>) -> Cow<'p, [Self]>
+    where
+        Self: 'p,
+    {
+        Cow::Owned(
+            polygons
+                .iter()
+                .map(|outline| Self {
+                    outline: outline.clone(),
+                    top_z: None,
+                    material: None,
+                })
+                .collect(),
+        )
+    }
+}
+
+/// The tool-centre lines of one Chamfer outline: the closed rings (with
+/// their material side) and the open paths of a model edge chain.
+pub(crate) struct ChamferGeometry {
+    rings: Vec<crate::toolpath::MaterialRing>,
+    open: Vec<Vec<crate::geo::P2>>,
+}
+
 /// The Chamfer op: the tip rings of each outline (the W1.3b side rule,
-/// `ops::chamfer::chamfer_rings_reported`), cut at the one level the tool
-/// angle gives.
+/// `ops::chamfer::chamfer_rings_reported`), or the tip line of each convex
+/// top model edge (`ops::chamfer::chamfer_edge_reported`, R-C), cut at the
+/// one level the tool angle gives below the top of that outline.
 struct ChamferPass {
     rest_use: RestUse,
+    /// True when the Top Z is pinned: a drawing area or a mesh face then
+    /// cuts from it. A model edge always cuts from its own Z.
+    top_pinned: bool,
     params: crate::ops::chamfer::ChamferParams,
 }
 
@@ -258,8 +313,8 @@ impl ChamferPass {
 }
 
 impl LayeredOp for ChamferPass {
-    type Input = Polygon2;
-    type Geometry = Vec<crate::toolpath::MaterialRing>;
+    type Input = ChamferInput;
+    type Geometry = ChamferGeometry;
     type Report = OffsetFailures;
 
     /// One level, so the order of the outlines is the order of the cuts in
@@ -276,17 +331,54 @@ impl LayeredOp for ChamferPass {
         self.rest_use
     }
 
-    /// The tip rings and the cone radius at `top_z`. The cone removes
-    /// material only within `w + t` of a tip ring, between the level and
-    /// `top_z` (`ops/chamfer.rs`, the geometry of `chamfer_toolpath`). The
-    /// V-bit radius would read material at the full flute height, which
-    /// the bevel never cuts.
+    /// The tip rings and paths and the cone radius at `top_z`. The cone
+    /// removes material only within `w + t` of a tip line, between the
+    /// level and `top_z` (`ops/chamfer.rs`, the geometry of
+    /// `chamfer_toolpath`). The V-bit radius would read material at the
+    /// full flute height, which the bevel never cuts.
     fn reach_band(&self, geometry: &Self::Geometry, _tool_radius: f64) -> ReachBand {
         ReachBand {
-            rings: geometry.iter().map(|ring| ring.points.clone()).collect(),
-            open: Vec::new(),
+            rings: geometry
+                .rings
+                .iter()
+                .map(|ring| ring.points.clone())
+                .collect(),
+            open: geometry.open.clone(),
             half_width: self.cone_radius_at_top(),
         }
+    }
+
+    /// The drawing areas (each with the op Top Z, or the plane of a mesh
+    /// face under an auto top), then the convex top model edges (each at
+    /// its own Z, with its material side), R-C.
+    fn outlines<'p>(
+        &'p self,
+        prepared: &'p Prepared<'p>,
+    ) -> Result<Cow<'p, [Self::Input]>, OperationError>
+    where
+        Self::Input: 'p,
+    {
+        let edges = prepared.edges()?;
+        let regions = edges.regions();
+        let areas = regions
+            .as_slice()
+            .iter()
+            .enumerate()
+            .map(|(i, outline)| ChamferInput {
+                outline: outline.clone(),
+                top_z: if self.top_pinned {
+                    None
+                } else {
+                    regions.plane_z(i)
+                },
+                material: None,
+            });
+        let lines = edges.lines().iter().map(|line| ChamferInput {
+            outline: line.line.clone(),
+            top_z: Some(line.z),
+            material: Some(line.material),
+        });
+        Ok(Cow::Owned(areas.chain(lines).collect()))
     }
 
     /// One level: the tip at `top_z - (w + t) / tan(a)`. The catalogue
@@ -298,20 +390,53 @@ impl LayeredOp for ChamferPass {
         ])
     }
 
+    /// F21: one level per outline, below the top of THAT outline. `None`
+    /// when no outline has its own top (a drawing): the one ladder of
+    /// [`Self::ladder`] then serves every outline, as before R-C.
+    fn outline_ladders(&self, outlines: &[Self::Input]) -> Option<Vec<Vec<f64>>> {
+        if outlines.iter().all(|o| o.top_z.is_none()) {
+            return None;
+        }
+        let depth = crate::ops::chamfer::chamfer_depth(&self.params);
+        Some(
+            outlines
+                .iter()
+                .map(|o| vec![o.top_z.unwrap_or(self.params.top_z) - depth])
+                .collect(),
+        )
+    }
+
     fn prepare(
         &self,
-        region: &[Polygon2],
-        _layer: &LayerCtx<'_>,
+        region: &[Self::Input],
+        _layer: &LayerCtx<'_, Self::Input>,
     ) -> Result<(Self::Geometry, Self::Report), OperationError> {
-        let mut rings = Vec::new();
+        let mut geometry = ChamferGeometry {
+            rings: Vec::new(),
+            open: Vec::new(),
+        };
         let mut failures = 0;
         for piece in region {
-            let (piece_rings, piece_failures) =
-                crate::ops::chamfer::chamfer_rings_reported(piece, &self.params);
-            failures += piece_failures;
-            rings.extend(piece_rings);
+            match piece.material {
+                None => {
+                    let (rings, piece_failures) =
+                        crate::ops::chamfer::chamfer_rings_reported(&piece.outline, &self.params);
+                    failures += piece_failures;
+                    geometry.rings.extend(rings);
+                }
+                Some(material) => {
+                    let (rings, open, piece_failures) = crate::ops::chamfer::chamfer_edge_reported(
+                        &piece.outline,
+                        material,
+                        &self.params,
+                    );
+                    failures += piece_failures;
+                    geometry.rings.extend(rings);
+                    geometry.open.extend(open);
+                }
+            }
         }
-        Ok((rings, OffsetFailures(failures)))
+        Ok((geometry, OffsetFailures(failures)))
     }
 
     fn emit_level(
@@ -321,11 +446,14 @@ impl LayeredOp for ChamferPass {
         _rest: &LevelRest<'_>,
         _cancel: &dyn CancelCheck,
     ) -> Result<crate::toolpath::SidedToolpath, OperationError> {
-        Ok(crate::ops::chamfer::chamfer_rings_at_z(
-            geometry,
+        let mut tp =
+            crate::ops::chamfer::chamfer_rings_at_z(&geometry.rings, level.z, &self.params);
+        tp.append(crate::ops::chamfer::chamfer_open_at_z(
+            &geometry.open,
             level.z,
             &self.params,
-        ))
+        ));
+        Ok(tp)
     }
 
     /// One cut run per ring, labelled "Chamfer run", as before W3.5.

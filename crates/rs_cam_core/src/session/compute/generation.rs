@@ -577,6 +577,7 @@ impl ProjectSession {
                 selection,
                 &ctx,
                 super::super::selection_status::FaceAccess::Build,
+                super::super::selection_status::BOUNDARY_ITEM_USE,
             )
             .map_err(|e| refuse(e.to_string()))?
             .setup;

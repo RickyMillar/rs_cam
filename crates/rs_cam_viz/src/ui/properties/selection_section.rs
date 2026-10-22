@@ -27,8 +27,8 @@ use std::collections::BTreeSet;
 use rs_cam_core::compute::catalog::ItemUse;
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::selection::{
-    Facing, HoleFit, HoleFitRule, ItemKind, KindFilter, MatchKey, MatchedBy, RefusalCause, Rule,
-    Selection, SelectionEdit, SourceRef, kind_noun,
+    Facing, HoleFit, HoleFitRule, ItemKind, KindFilter, MatchKey, MatchedBy, NoteCause,
+    RefusalCause, Rule, Selection, SelectionEdit, SelectionNote, SourceRef, kind_noun,
 };
 use rs_cam_core::session::{ItemState, RuleOffer, SelectionReport, SelectionTarget};
 
@@ -157,21 +157,29 @@ pub(crate) fn draw_selection_section(
 
     // ── 1. The summary ─────────────────────────────────────────────
     let mut table = DataTable::new(inputs.salt("selection_counts"));
-    table = table.row(cuts_row(report));
-    let held = report.map_or(0, |r| r.rows.len());
-    table = table.row(
-        DataRow::value("Selected", format!("{held} {}", items_word(held)))
-            .hover("The items that this selection names: the rule matches and the picks."),
-    );
+    table = table.row(cuts_row(inputs, report));
+    // GUI/MCP parity (operator rule): "Selected" is the held count, the
+    // same number as MCP `selection_status`. On the default rule there is
+    // no Selected row: the Cuts row says what the op cuts, and the default
+    // row says the rule (FR-2 F32).
+    let default = inputs.is_default();
+    if !default {
+        let held = report.map_or(0, |r| r.rows.len());
+        table = table.row(
+            DataRow::value("Selected", format!("{held} {}", items_word(held)))
+                .hover("The items that this selection names: the rule matches and the picks."),
+        );
+    }
     // The hole sizes (P6.7): one row per size, after the counts.
     let sizes = report.map_or_else(Vec::new, |report| hole_sizes(inputs, report));
     for size in &sizes {
         table = table.row(size.row(inputs.tool_diameter));
     }
     // A hole size row answers a click: Show me frames the holes of that
-    // size. The first two rows are the Cuts and Selected rows.
+    // size. The rows before it are Cuts and, off the default rule, Selected.
+    let first_size = if default { 1 } else { 2 };
     if let Some(clicked) = table.show(ui).clicked
-        && let Some(size) = clicked.checked_sub(2).and_then(|at| sizes.get(at))
+        && let Some(size) = clicked.checked_sub(first_size).and_then(|at| sizes.get(at))
     {
         show_me(inputs, events, size.keys.clone());
     }
@@ -257,6 +265,52 @@ fn items_word(count: usize) -> &'static str {
     if count == 1 { "item" } else { "items" }
 }
 
+/// Every item kind, in the order of the "cuts" phrase.
+const KINDS: [ItemKind; 5] = [
+    ItemKind::Loop,
+    ItemKind::Circle,
+    ItemKind::Face,
+    ItemKind::Path,
+    ItemKind::Point,
+];
+
+/// The count of the items that the default rule holds and that the op
+/// never cuts: the skipped items of a kind that does not serve the op.
+fn never_cut_count(inputs: &SelectionSectionInputs<'_>, report: &SelectionReport) -> usize {
+    report
+        .skipped_by_kind
+        .iter()
+        .filter(|(kind, _)| !kind.serves(inputs.item_use))
+        .map(|(_, n)| *n)
+        .sum()
+}
+
+/// The one line of the items that the op never cuts (FR-2 F32): "Drill
+/// cuts circles and points; 6 other items are not cut".
+pub(crate) fn never_cut_line(op: &str, item_use: ItemUse, count: usize) -> String {
+    let served: Vec<&str> = KINDS
+        .iter()
+        .filter(|kind| kind.serves(item_use))
+        .map(|kind| kind_noun(*kind, 2))
+        .collect();
+    let cuts = match served.as_slice() {
+        [] => "cuts no drawing item".to_owned(),
+        [one] => format!("cuts {one}"),
+        [rest @ .., last] => format!("cuts {} and {last}", rest.join(", ")),
+    };
+    let verb = if count == 1 { "is" } else { "are" };
+    format!(
+        "{op} {cuts}; {count} other {} {verb} not cut",
+        items_word(count)
+    )
+}
+
+/// True when `note` is of a kind that the op never cuts: the one line
+/// holds it, and the Skipped items list names its layer.
+fn is_never_cut(note: &SelectionNote) -> bool {
+    matches!(note.cause, NoteCause::KindNotServed)
+}
+
 /// What a row of the selected list offers (L-R4, L-R5, GT-Q8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct RowActs {
@@ -273,8 +327,11 @@ pub(crate) struct RowActs {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ListRow {
     pub key: MatchKey,
-    /// The text of the row: the item and its facts.
+    /// The short text of the row: the kind, the size and the Z (FR-2 F22).
     pub label: String,
+    /// The full text of the row: the place and the layer too. The hover
+    /// shows it, and the filter box reads it.
+    pub full: String,
     /// The report state of the item.
     pub state: ItemState,
     pub acts: RowActs,
@@ -298,6 +355,8 @@ pub(crate) struct ListGroup {
     pub kind: GroupKind,
     /// The header text, with no count.
     pub title: String,
+    /// The hover of the header: the full rule text.
+    pub hover: String,
     pub rows: Vec<ListRow>,
 }
 
@@ -306,7 +365,7 @@ impl ListGroup {
     pub(crate) fn kept<'a>(&'a self, filter: &str) -> Vec<&'a ListRow> {
         self.rows
             .iter()
-            .filter(|row| filter.is_empty() || row.label.to_lowercase().contains(filter))
+            .filter(|row| filter.is_empty() || row.full.to_lowercase().contains(filter))
             .collect()
     }
 
@@ -327,8 +386,43 @@ impl ListGroup {
     }
 }
 
-/// The text of one item row: the kind, the size, the place and the layer.
+/// The short text of one item row (FR-2 F22): the kind, the size and the
+/// Z, so that the row fits the inspector column with its acts. The place
+/// and the layer are in [`row_full_label`], on the hover. A circle reads
+/// "Ø6.00 Z20", a face "Face Z20.00".
 pub(crate) fn row_label(key: &MatchKey, plane_z: Option<f64>) -> String {
+    let z = plane_z.map_or_else(String::new, |z| format!(" Z{}", short_number(z)));
+    let m = key.measure;
+    match key.kind {
+        ItemKind::Circle => format!("\u{00D8}{m:.2}{z}"),
+        ItemKind::Face => plane_z.map_or_else(|| format!("Face {m:.1} mm"), face_label),
+        ItemKind::Loop => format!("Loop{z} {m:.1} mm"),
+        ItemKind::Path => format!("Path{z} {m:.1} mm"),
+        ItemKind::Point => format!("Point{z}"),
+    }
+}
+
+/// The short name of a face at plane `z`: "Face Z20.00" (FR-2 F23). The
+/// list rows and the floor face slot read it.
+pub(crate) fn face_label(z: f64) -> String {
+    format!("Face Z{z:.2}")
+}
+
+/// `value` at 2 decimals with no trailing zero: 20.00 is "20", 12.50 is
+/// "12.5".
+fn short_number(value: f64) -> String {
+    let text = format!("{value:.2}");
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    if text == "-0" {
+        "0".to_owned()
+    } else {
+        text.to_owned()
+    }
+}
+
+/// The full text of one item row: the kind, the size, the place and the
+/// layer.
+pub(crate) fn row_full_label(key: &MatchKey, plane_z: Option<f64>) -> String {
     let at = format!("({:.1}, {:.1})", key.anchor[0], key.anchor[1]);
     let z = plane_z.map_or_else(String::new, |z| format!(" Z {z:.2}"));
     let layer = key
@@ -367,13 +461,17 @@ pub(crate) fn list_groups(
     let row_of = |row: &rs_cam_core::session::SelectedRow, acts: RowActs| ListRow {
         key: row.key.clone(),
         label: row_label(&row.key, row.plane_z),
+        full: row_full_label(&row.key, row.plane_z),
         state: report.row_state(row),
         acts,
     };
     if default {
+        // FR-2 F32: the default row lists the items of a kind that the op
+        // cuts. The other items are the one "not cut" note.
         let rows: Vec<ListRow> = report
             .rows
             .iter()
+            .filter(|row| row.key.kind.serves(inputs.item_use))
             .map(|row| row_of(row, RowActs::default()))
             .collect();
         let kinds: BTreeSet<ItemKind> = rows.iter().map(|r| r.key.kind).collect();
@@ -383,9 +481,25 @@ pub(crate) fn list_groups(
             let names: Vec<&str> = kinds.iter().map(|k| kind_noun(*k, 1)).collect();
             format!("Default: every {}", names.join(", "))
         };
+        let rules: Vec<String> = inputs
+            .op_default
+            .rules()
+            .iter()
+            .map(|rule| rule_text(rule, inputs.models))
+            .collect();
+        let hover = format!(
+            "{title}. The default rule of {}: {}.",
+            inputs.op_label,
+            if rules.is_empty() {
+                "no rule".to_owned()
+            } else {
+                rules.join("; ")
+            }
+        );
         return vec![ListGroup {
             kind: GroupKind::Default,
             title,
+            hover,
             rows,
         }];
     }
@@ -407,9 +521,11 @@ pub(crate) fn list_groups(
                 )
             })
             .collect();
+        let title = rule_text(rule, inputs.models);
         groups.push(ListGroup {
             kind: GroupKind::Rule(index),
-            title: rule_text(rule, inputs.models),
+            hover: title.clone(),
+            title,
             rows,
         });
     }
@@ -436,9 +552,11 @@ pub(crate) fn list_groups(
         }
     }
     for (kind, rows) in picked {
+        let title = format!("Picked {}", kind_noun(kind, 2));
         groups.push(ListGroup {
             kind: GroupKind::Picked(kind),
-            title: format!("Picked {}", kind_noun(kind, 2)),
+            hover: title.clone(),
+            title,
             rows,
         });
     }
@@ -474,7 +592,8 @@ fn draw_group(
     } else {
         tokens::TEXT_BODY
     };
-    match line_with_actions(ui, "", &header, color, &header, &actions) {
+    let hover = format!("{} ({})", group.hover, group.count_text(filter));
+    match line_with_actions(ui, "", &header, color, &hover, &actions) {
         Some(0) => open = !open,
         Some(_) => {
             if let GroupKind::Rule(index) = group.kind {
@@ -560,11 +679,12 @@ fn draw_row(
     let acts = row_actions(row.acts);
     let labels: Vec<(&str, &str)> = acts.iter().map(|(_, l, h)| (*l, *h)).collect();
     let text = format!("{} \u{00B7} {}", row.label, state_word(row.state));
+    let hover = format!("{} \u{00B7} {}", row.full, state_word(row.state));
     let color = match row.state {
         ItemState::Cut | ItemState::Island => tokens::TEXT_BODY,
         ItemState::Skipped | ItemState::Excluded | ItemState::NotSelected => tokens::TEXT_MUTED,
     };
-    let (clicked, hovered) = line_with_actions_hover(ui, "", &text, color, &text, &labels);
+    let (clicked, hovered) = line_with_actions_hover(ui, "", &text, color, &hover, &labels);
     if hovered {
         // GT-2: the viewport hover buffer draws the row item.
         ui_state.row_hover = Some(row.key.clone());
@@ -678,7 +798,7 @@ pub(crate) fn counts_text(report: &SelectionReport) -> Option<String> {
 }
 
 /// The "Cuts" row: the counts and one status chip.
-fn cuts_row(report: Option<&SelectionReport>) -> DataRow {
+fn cuts_row(inputs: &SelectionSectionInputs<'_>, report: Option<&SelectionReport>) -> DataRow {
     let Some(report) = report else {
         return DataRow::not_measured("Cuts");
     };
@@ -693,7 +813,11 @@ fn cuts_row(report: Option<&SelectionReport>) -> DataRow {
             .status(Role::Info, "Wait");
     }
     let text = counts_text(report).unwrap_or_else(|| "nothing".to_owned());
-    let findings = report.notes.len() + report.lost.len();
+    // One finding per note row: the items of the kinds that the op never
+    // cuts are one row (F32).
+    let never_cut = usize::from(never_cut_count(inputs, report) > 0);
+    let other_notes = report.notes.iter().filter(|n| !is_never_cut(n)).count();
+    let findings = never_cut + other_notes + report.lost.len();
     let row = DataRow::value("Cuts", text.clone()).hover(text);
     if report.refusal.is_some() {
         row.status(Role::Danger, "Refused")
@@ -729,8 +853,14 @@ impl HoleSize {
             || "the tool".to_owned(),
             |d| format!("the tool \u{00D8} {d:.3}"),
         );
+        // FR-2 F22: the status word is short; the hover gives it in full.
+        let long = match word.as_str() {
+            "larger" => "larger than the tool",
+            "smaller" => "smaller than the tool",
+            other => other,
+        };
         let hover = format!(
-            "{word}. The fit compares the hole with {tool}, within the size tolerance of \
+            "{long}. The fit compares the hole with {tool}, within the size tolerance of \
              the op. Click to show these holes in the viewport."
         );
         DataRow::value(name, format!("\u{00D7} {}", self.keys.len()))
@@ -776,12 +906,12 @@ impl HoleSize {
                 (Role::Caution, "the tool size: not bored".to_owned())
             }
             (HoleFitRule::ToolSize | HoleFitRule::None, HoleFit::Larger) => {
-                (Role::Caution, "larger than the tool".to_owned())
+                (Role::Caution, "larger".to_owned())
             }
             (HoleFitRule::ToolSize | HoleFitRule::None, HoleFit::LeavesCore) => {
                 (Role::Caution, "leaves a core".to_owned())
             }
-            (_, HoleFit::Smaller) => (Role::Caution, "smaller than the tool".to_owned()),
+            (_, HoleFit::Smaller) => (Role::Caution, "smaller".to_owned()),
         }
     }
 }
@@ -1029,56 +1159,43 @@ fn line_with_actions_hover(
     actions: &[(&str, &str)],
 ) -> (Option<usize>, bool) {
     let mut clicked = None;
+    // FR-2 F22: the act buttons take their width first, at the right edge;
+    // the label takes what is left and truncates, with the full text on
+    // hover. No width estimate, so the row never grows the panel.
     let line = ui.horizontal(|ui| {
-        // Each button is at least as wide as its label and padding.
-        let action_width: f32 = actions
-            .iter()
-            .map(|(label, _)| action_width(ui, label))
-            .sum();
-        let line_width = (ui.available_width() - action_width).max(0.0);
-        ui.allocate_ui_with_layout(
-            egui::vec2(line_width, tokens::ROW_DENSE),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                ui.set_width(line_width);
-                let face = if name.is_empty() {
-                    text.to_owned()
-                } else {
-                    format!("{name}  {text}")
-                };
-                ui.add(
-                    egui::Label::new(egui::RichText::new(face).color(color))
-                        .truncate()
-                        .show_tooltip_when_elided(false),
-                )
-                .on_hover_text(hover);
-            },
-        );
-        for (index, (label, action_hover)) in actions.iter().enumerate() {
-            if ui
-                .add(Button::quiet(*label))
-                .on_hover_text(*action_hover)
-                .clicked()
-            {
-                clicked = Some(index);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            for (index, (label, action_hover)) in actions.iter().enumerate().rev() {
+                if ui
+                    .add(Button::quiet(*label))
+                    .on_hover_text(*action_hover)
+                    .clicked()
+                {
+                    clicked = Some(index);
+                }
             }
-        }
+            let rest = ui.available_width().max(0.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(rest, tokens::ROW_DENSE),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.set_max_width(rest);
+                    let face = if name.is_empty() {
+                        text.to_owned()
+                    } else {
+                        format!("{name}  {text}")
+                    };
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(face).color(color))
+                            .truncate()
+                            .show_tooltip_when_elided(false),
+                    )
+                    .on_hover_text(hover);
+                },
+            );
+        });
     });
     let hovered = ui.rect_contains_pointer(line.response.rect);
     (clicked, hovered)
-}
-
-/// The width a quiet button of `label` takes in a line, with its spacing:
-/// at least `SPACE_7`, as before P4.4.
-fn action_width(ui: &egui::Ui, label: &str) -> f32 {
-    let font = egui::TextStyle::Button.resolve(ui.style());
-    let text = ui
-        .painter()
-        .layout_no_wrap(label.to_owned(), font, tokens::TEXT_BODY)
-        .size()
-        .x;
-    let padding = ui.spacing().button_padding.x;
-    (text + 2.0 * padding).max(tokens::SPACE_7) + ui.spacing().item_spacing.x
 }
 
 /// P4.4: ask the viewport to frame and flash `keys`.
@@ -1098,9 +1215,39 @@ fn draw_findings(
     events: &mut Vec<AppEvent>,
 ) {
     // A note row with items answers a click: "Show me" frames the items
-    // of the note (`note_item_keys`; IC2: the note stays one row).
+    // of the note (`note_item_keys`; IC2: the note stays one row). Each
+    // table row holds the keys it frames.
     let mut notes = DataTable::new(inputs.salt("selection_notes"));
+    let mut row_keys: Vec<Vec<MatchKey>> = Vec::new();
+    // FR-2 F32: the items of a kind that the op never cuts are ONE line;
+    // the Skipped items list names each layer.
+    let never_cut = never_cut_count(inputs, report);
+    if never_cut > 0 {
+        let face = never_cut_line(inputs.op_label, inputs.item_use, never_cut);
+        let keys: Vec<MatchKey> = report
+            .notes
+            .iter()
+            .enumerate()
+            .filter(|(_, note)| is_never_cut(note))
+            .filter_map(|(index, _)| inputs.note_items.get(index))
+            .flatten()
+            .cloned()
+            .collect();
+        let row = DataRow::note(Role::Caution, face.clone());
+        notes = notes.row(if keys.is_empty() {
+            row.hover(format!("{face}. The Skipped items list names each layer."))
+        } else {
+            row.hover(format!(
+                "{face}. The Skipped items list names each layer. {SHOW_ME_NOTE_HOVER}"
+            ))
+            .clickable()
+        });
+        row_keys.push(keys);
+    }
     for (index, note) in report.notes.iter().enumerate() {
+        if is_never_cut(note) {
+            continue;
+        }
         let layer = note
             .layer
             .as_deref()
@@ -1112,16 +1259,18 @@ fn draw_findings(
             kind_noun(note.kind, note.count)
         );
         let row = DataRow::note(Role::Caution, face);
-        let has_items = inputs.note_items.get(index).is_some_and(|k| !k.is_empty());
-        notes = notes.row(if has_items {
+        let keys = inputs.note_items.get(index).cloned().unwrap_or_default();
+        notes = notes.row(if keys.is_empty() {
+            row.hover(note.to_string())
+        } else {
             row.hover(format!("{note} {SHOW_ME_NOTE_HOVER}"))
                 .clickable()
-        } else {
-            row.hover(note.to_string())
         });
+        row_keys.push(keys);
     }
     if let Some(index) = notes.show(ui).clicked
-        && let Some(keys) = inputs.note_items.get(index)
+        && let Some(keys) = row_keys.get(index)
+        && !keys.is_empty()
     {
         show_me(inputs, events, keys.clone());
     }
@@ -1175,9 +1324,19 @@ fn draw_findings(
     }
 }
 
-/// The derivation: what the reader leaves out, and how many items the
-/// selection holds. One closed `Details` (IC2).
+/// The label of the derivation of a selection block (FR-2 F28): the items
+/// that the op does not cut.
+pub(crate) const SKIPPED_ITEMS: &str = "Skipped items";
+
+/// The derivation: the items that the op leaves out, by kind, and each
+/// layer of the items that it never cuts (FR-2 F32). One closed `Details`
+/// named [`SKIPPED_ITEMS`] (IC2, F28), with the count of the skipped
+/// items. No `Details` when the op leaves nothing out.
 fn draw_details(ui: &mut egui::Ui, inputs: &SelectionSectionInputs<'_>, report: &SelectionReport) {
+    let skipped: usize = report.skipped_by_kind.values().sum();
+    if skipped == 0 {
+        return;
+    }
     let mut rows: Vec<DataRow> = report
         .skipped_by_kind
         .iter()
@@ -1187,12 +1346,22 @@ fn draw_details(ui: &mut egui::Ui, inputs: &SelectionSectionInputs<'_>, report: 
                 .hover("Items the rules match that this operation does not cut.")
         })
         .collect();
-    rows.push(
-        DataRow::value("Items held", report.selected.len().to_string())
-            .hover("The items the selection holds, before the operation reads them."),
-    );
+    for note in report.notes.iter().filter(|note| is_never_cut(note)) {
+        let layer = note
+            .layer
+            .as_deref()
+            .map_or_else(|| "No layer".to_owned(), |l| format!("Layer {l}"));
+        rows.push(
+            DataRow::value(
+                layer,
+                format!("{} {}", note.count, kind_noun(note.kind, note.count)),
+            )
+            .hover(note.to_string()),
+        );
+    }
     Details::new(inputs.salt("selection_details"))
-        .count(rows.len())
+        .label(SKIPPED_ITEMS)
+        .count(skipped)
         .show(ui, |ui| {
             DataTable::new(inputs.salt("selection_details_rows"))
                 .rows(rows)

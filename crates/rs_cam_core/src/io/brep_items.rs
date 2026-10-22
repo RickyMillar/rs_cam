@@ -23,6 +23,14 @@
 //!   vertex item.
 //! - **Skipped.** A run that is not at one Z (a vertical or a sloped edge)
 //!   gives no item; [`BrepEdgeItems::skipped`] counts the edges.
+//! - **Edge form (R-C).** Each ring, chain and circle, and each up face,
+//!   holds a [`ModelEdge`]: whether each segment is a convex top edge (an
+//!   up face at the item Z on one side, a face at or below that Z on the
+//!   other: the material is below the edge and on one side only), a
+//!   concave edge (the face beside the up face rises over the edge), or
+//!   neither. The side of the up face is the material side. A segment
+//!   whose faces the door cannot read is neither ([`EdgeForm::Other`]), so
+//!   a Chamfer never cuts it.
 //!
 //! The items are in a fixed order (rings in face order, then circles,
 //! paths, loops and points, each sorted by Z from the top, then X, then Y),
@@ -33,7 +41,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::geo::{P2, P3};
 use crate::geometry::enriched_mesh::EnrichedMesh;
 use crate::polygon::Polygon2;
-use crate::selection::{CAD_ROUNDING_MM, Item, ItemKind, ItemSet, Shape, SourceRef};
+use crate::selection::{
+    CAD_ROUNDING_MM, EdgeForm, EdgeMaterial, Item, ItemKind, ItemSet, ModelEdge, Shape, SourceRef,
+};
 
 /// The Z tolerance (mm) of a horizontal edge: two points of one run differ
 /// in Z by no more than this. It is the vertex grid of the STEP door
@@ -45,6 +55,16 @@ pub const HORIZONTAL_TOL_MM: f64 = 1e-3;
 /// circle at the door tolerance has more; a square rim has 4.
 const CIRCLE_MIN_POINTS: usize = 8;
 
+/// The Z tolerance (mm) of the edge form (R-C): the up face lies at the
+/// edge Z within this distance. It is the CAD rounding of a drawn length
+/// (`CAD_ROUNDING_MM`, L-13).
+const EDGE_FORM_Z_TOL_MM: f64 = CAD_ROUNDING_MM;
+
+/// The distance (mm) from a segment midpoint to the probe point that finds
+/// the side of the up face (R-C). Ten vertex grid cells: far from the
+/// round-off of the segment, and far inside any face a 2.5D part holds.
+const SIDE_PROBE_MM: f64 = 10.0 * HORIZONTAL_TOL_MM;
+
 /// The model edge items of one STEP model, and the edges that gave none.
 #[derive(Debug, Clone, Default)]
 pub struct BrepEdgeItems {
@@ -54,6 +74,223 @@ pub struct BrepEdgeItems {
     /// The count of edges that are not at one Z (vertical or sloped): no
     /// item stands for them.
     pub skipped: usize,
+    /// The model edge data of each face item of the `faces` input, in its
+    /// order (R-C): `None` for a face that points down. An up face holds
+    /// the form of all its rings together.
+    pub face_edges: Vec<Option<ModelEdge>>,
+}
+
+/// What the door knows of each face group for the edge form (R-C).
+struct FaceFacts {
+    /// For each (face group, boundary segment on the vertex grid): the Z
+    /// of the third corner of the triangle of that group on that segment.
+    /// It says whether the face goes down or up from the segment.
+    third_z: BTreeMap<(usize, SegmentKey), f64>,
+    /// For each face group that is an up face item: its plane Z and its
+    /// rings (outer first, then its own holes), by group index.
+    up: BTreeMap<usize, (f64, Polygon2)>,
+}
+
+impl FaceFacts {
+    fn of(enriched: &EnrichedMesh, faces: &ItemSet) -> Self {
+        let index_of: BTreeMap<u16, usize> = enriched
+            .face_groups
+            .iter()
+            .enumerate()
+            .map(|(i, g)| (g.id.0, i))
+            .collect();
+        let mut up = BTreeMap::new();
+        for item in faces {
+            let Shape::Face(face) = item.shape() else {
+                continue;
+            };
+            let Some(group) = face.brep.and_then(|id| index_of.get(&id.0)) else {
+                continue;
+            };
+            if face.normal.z > 0.0 {
+                up.insert(*group, (face.plane_z, face.rings.clone()));
+            }
+        }
+        let mesh = &enriched.mesh;
+        let mut third_z = BTreeMap::new();
+        for (group, g) in enriched.face_groups.iter().enumerate() {
+            for tri in mesh.triangles.get(g.triangle_range.clone()).unwrap_or(&[]) {
+                let corner = |k: usize| {
+                    tri.get(k)
+                        .and_then(|&v| mesh.vertices.get(v as usize))
+                        .copied()
+                };
+                let (Some(a), Some(b), Some(c)) = (corner(0), corner(1), corner(2)) else {
+                    continue;
+                };
+                for (p, q, r) in [(a, b, c), (b, c, a), (c, a, b)] {
+                    third_z.insert((group, segment_key(&p, &q)), r.z);
+                }
+            }
+        }
+        Self { third_z, up }
+    }
+
+    /// The up face at `z` of group `group`, or `None`.
+    fn up_at(&self, group: usize, z: f64) -> Option<&Polygon2> {
+        self.up
+            .get(&group)
+            .filter(|(plane_z, _)| (plane_z - z).abs() <= EDGE_FORM_Z_TOL_MM)
+            .map(|(_, rings)| rings)
+    }
+
+    /// How the face `group` leaves the horizontal segment `a`-`b` at `z`,
+    /// beside an up face: down (a convex top edge), up (a concave edge),
+    /// or unknown. The triangle of the face on the segment says it: its
+    /// third corner lies below or above the segment.
+    fn side_of(&self, group: usize, a: P3, b: P3, z: f64) -> EdgeForm {
+        let Some(&c) = self.third_z.get(&(group, segment_key(&a, &b))) else {
+            return EdgeForm::Other;
+        };
+        if c < z - HORIZONTAL_TOL_MM {
+            // The material side is set by the caller.
+            EdgeForm::ConvexTop {
+                material: EdgeMaterial::Left,
+            }
+        } else if c > z + HORIZONTAL_TOL_MM {
+            EdgeForm::Concave
+        } else {
+            EdgeForm::Other
+        }
+    }
+
+    /// The form of the segments of `points` (each pair of neighbours, and
+    /// the closing pair when `closed`) on the face `group` at `z`: concave
+    /// when one segment is, a convex top edge when every segment is one.
+    fn segments_form(&self, group: usize, points: &[P3], closed: bool, z: f64) -> EdgeForm {
+        let n = points.len();
+        let count = if closed { n } else { n.saturating_sub(1) };
+        if count == 0 {
+            return EdgeForm::Other;
+        }
+        let mut form = EdgeForm::ConvexTop {
+            material: EdgeMaterial::Left,
+        };
+        for i in 0..count {
+            let (Some(&a), Some(&b)) = (points.get(i), points.get((i + 1) % n)) else {
+                return EdgeForm::Other;
+            };
+            match self.side_of(group, a, b, z) {
+                EdgeForm::Concave => return EdgeForm::Concave,
+                EdgeForm::Other => form = EdgeForm::Other,
+                EdgeForm::ConvexTop { .. } => {}
+            }
+        }
+        form
+    }
+}
+
+/// True when the point `SIDE_PROBE_MM` to the left of the segment `a`-`b`
+/// lies on `face`.
+fn face_on_left(face: &Polygon2, a: P2, b: P2) -> bool {
+    let d = b - a;
+    let len = d.norm();
+    if len <= 0.0 {
+        return false;
+    }
+    let mid = P2::new(0.5 * (a.x + b.x), 0.5 * (a.y + b.y));
+    let probe = P2::new(
+        mid.x - d.y / len * SIDE_PROBE_MM,
+        mid.y + d.x / len * SIDE_PROBE_MM,
+    );
+    face.contains_point(&probe)
+}
+
+/// The form of a chain at `z` that the wall `wall` gives and that borders
+/// the face `other` (R-C). `points` are the run points (the closing point
+/// last when it closes). `xy` is the chain in the item point order;
+/// `closed` says whether it closes (its closing point is not in `xy`).
+fn chain_form(
+    facts: &FaceFacts,
+    wall: usize,
+    other: Option<usize>,
+    z: f64,
+    points: &[P3],
+    xy: &[P2],
+    closed: bool,
+) -> EdgeForm {
+    let Some(up) = other.and_then(|o| facts.up_at(o, z)) else {
+        return EdgeForm::Other;
+    };
+    match facts.segments_form(wall, points, false, z) {
+        EdgeForm::ConvexTop { .. } => {}
+        form @ (EdgeForm::Concave | EdgeForm::Other) => return form,
+    }
+    let (Some(&a), Some(&b)) = (xy.first(), xy.get(1)) else {
+        return EdgeForm::Other;
+    };
+    let left = face_on_left(up, a, b);
+    let material = if closed {
+        let ccw = Polygon2::new(xy.to_vec()).signed_area() > 0.0;
+        if left == ccw {
+            EdgeMaterial::Inside
+        } else {
+            EdgeMaterial::Outside
+        }
+    } else if left {
+        EdgeMaterial::Left
+    } else {
+        EdgeMaterial::Right
+    };
+    EdgeForm::ConvexTop { material }
+}
+
+/// The form of one ring of the up face `group` at `z` (R-C): each segment
+/// reads the face on its other side ([`FaceFacts::side_of`]). Any concave
+/// segment makes the ring concave; a ring is a convex top edge only when
+/// every segment is one. `material` is the side of the face (inside its
+/// outer ring, outside a hole ring).
+fn ring_form(
+    facts: &FaceFacts,
+    neighbours: &BTreeMap<([i64; 3], [i64; 3]), BTreeSet<usize>>,
+    group: usize,
+    z: f64,
+    ring: &[P2],
+    material: EdgeMaterial,
+) -> EdgeForm {
+    let n = ring.len();
+    let mut form = EdgeForm::ConvexTop { material };
+    for i in 0..n {
+        let (Some(a), Some(b)) = (ring.get(i), ring.get((i + 1) % n)) else {
+            return EdgeForm::Other;
+        };
+        let (a, b) = (P3::new(a.x, a.y, z), P3::new(b.x, b.y, z));
+        let other = neighbours
+            .get(&segment_key(&a, &b))
+            .and_then(|faces| faces.iter().copied().find(|f| *f != group));
+        let segment = match other {
+            Some(o) => facts.side_of(o, a, b, z),
+            None => EdgeForm::Other,
+        };
+        match segment {
+            EdgeForm::Concave => return EdgeForm::Concave,
+            EdgeForm::Other => form = EdgeForm::Other,
+            EdgeForm::ConvexTop { .. } => {}
+        }
+    }
+    form
+}
+
+/// The form of an up face from the forms of its rings (R-C): concave when
+/// one ring is, a convex top edge when every ring is one.
+fn face_form(rings: &[EdgeForm]) -> EdgeForm {
+    if rings.contains(&EdgeForm::Concave) {
+        return EdgeForm::Concave;
+    }
+    if rings
+        .iter()
+        .all(|f| matches!(f, EdgeForm::ConvexTop { .. }))
+    {
+        return EdgeForm::ConvexTop {
+            material: EdgeMaterial::Inside,
+        };
+    }
+    EdgeForm::Other
 }
 
 /// A point on the vertex grid of the STEP door, for the joins of this
@@ -76,6 +313,10 @@ fn open_loop(pts: &[P3]) -> &[P3] {
     }
 }
 
+/// An unordered segment on the vertex grid: its two grid points, the
+/// lower first.
+type SegmentKey = ([i64; 3], [i64; 3]);
+
 /// An unordered segment on the vertex grid.
 fn segment_key(a: &P3, b: &P3) -> ([i64; 3], [i64; 3]) {
     let (ga, gb) = (grid(a), grid(b));
@@ -87,6 +328,8 @@ struct Run {
     points: Vec<P3>,
     closed: bool,
     horizontal: bool,
+    /// The face on the other side of the run (one face for the whole run).
+    other: Option<usize>,
 }
 
 /// The runs of one loop (closing point removed) of face `face`. A run
@@ -122,6 +365,7 @@ fn runs_of(
             points: (0..n).map(at).collect(),
             closed: true,
             horizontal: flat(0),
+            other: other(0),
         }];
     };
     let mut runs = Vec::new();
@@ -148,6 +392,7 @@ fn runs_of(
             points,
             closed,
             horizontal: flat(first),
+            other: other(first),
         });
         k = last + 1 - start;
     }
@@ -212,37 +457,13 @@ fn order(a: &Item, b: &Item) -> std::cmp::Ordering {
 pub fn brep_edge_items(enriched: &EnrichedMesh, faces: &ItemSet) -> BrepEdgeItems {
     let source = SourceRef::ToolpathModel;
     let mut out = BrepEdgeItems::default();
-
-    // Rings: each ring of each UP face, at the face Z.
-    let mut rings: Vec<Item> = Vec::new();
-    for item in faces {
-        let Shape::Face(face) = item.shape() else {
-            continue;
-        };
-        if face.normal.z <= 0.0 {
-            continue;
-        }
-        let all = std::iter::once(&face.rings.exterior).chain(face.rings.holes.iter());
-        for ring in all {
-            let mut pts = ring.clone();
-            if pts.len() > 1
-                && pts
-                    .first()
-                    .zip(pts.last())
-                    .is_some_and(|(a, b)| (a - b).norm() <= 1e-9)
-            {
-                pts.pop();
-            }
-            if pts.len() < 3 {
-                continue;
-            }
-            if let Ok(ring_item) =
-                Item::at_z(source, None, Shape::Loop(Polygon2::new(pts)), face.plane_z)
-            {
-                rings.push(ring_item);
-            }
-        }
-    }
+    let facts = FaceFacts::of(enriched, faces);
+    let index_of: BTreeMap<u16, usize> = enriched
+        .face_groups
+        .iter()
+        .enumerate()
+        .map(|(i, g)| (g.id.0, i))
+        .collect();
 
     // The faces on each side of every loop segment.
     let mut neighbours: BTreeMap<([i64; 3], [i64; 3]), BTreeSet<usize>> = BTreeMap::new();
@@ -259,6 +480,50 @@ pub fn brep_edge_items(enriched: &EnrichedMesh, faces: &ItemSet) -> BrepEdgeItem
                 }
             }
         }
+    }
+
+    // Rings: each ring of each UP face, at the face Z, with its form.
+    let mut rings: Vec<Item> = Vec::new();
+    for item in faces {
+        let Shape::Face(face) = item.shape() else {
+            out.face_edges.push(None);
+            continue;
+        };
+        if face.normal.z <= 0.0 {
+            out.face_edges.push(None);
+            continue;
+        }
+        let group = face.brep.and_then(|id| index_of.get(&id.0)).copied();
+        let all = std::iter::once((&face.rings.exterior, EdgeMaterial::Inside))
+            .chain(face.rings.holes.iter().map(|h| (h, EdgeMaterial::Outside)));
+        let mut forms = Vec::new();
+        for (ring, material) in all {
+            let mut pts = ring.clone();
+            if pts.len() > 1
+                && pts
+                    .first()
+                    .zip(pts.last())
+                    .is_some_and(|(a, b)| (a - b).norm() <= 1e-9)
+            {
+                pts.pop();
+            }
+            if pts.len() < 3 {
+                continue;
+            }
+            let form = group.map_or(EdgeForm::Other, |g| {
+                ring_form(&facts, &neighbours, g, face.plane_z, &pts, material)
+            });
+            forms.push(form);
+            if let Ok(ring_item) =
+                Item::at_z(source, None, Shape::Loop(Polygon2::new(pts)), face.plane_z)
+            {
+                rings.push(ring_item.with_model_edge(ModelEdge { form, ring: true }));
+            }
+        }
+        out.face_edges.push(Some(ModelEdge {
+            form: face_form(&forms),
+            ring: true,
+        }));
     }
 
     let mut chains: Vec<Item> = Vec::new();
@@ -285,6 +550,15 @@ pub fn brep_edge_items(enriched: &EnrichedMesh, faces: &ItemSet) -> BrepEdgeItem
                         Some((centre, diameter)) => {
                             let mut ring = Polygon2::new(ring);
                             ring.ensure_winding();
+                            let form = chain_form(
+                                &facts,
+                                face,
+                                run.other,
+                                z,
+                                &run.points,
+                                &ring.exterior,
+                                true,
+                            );
                             Item::at_z(
                                 source,
                                 None,
@@ -295,8 +569,14 @@ pub fn brep_edge_items(enriched: &EnrichedMesh, faces: &ItemSet) -> BrepEdgeItem
                                 },
                                 z,
                             )
+                            .map(|i| i.with_model_edge(ModelEdge { form, ring: false }))
                         }
-                        None => Item::at_z(source, None, Shape::Loop(Polygon2::new(ring)), z),
+                        None => {
+                            let form =
+                                chain_form(&facts, face, run.other, z, &run.points, &ring, true);
+                            Item::at_z(source, None, Shape::Loop(Polygon2::new(ring)), z)
+                                .map(|i| i.with_model_edge(ModelEdge { form, ring: false }))
+                        }
                     }
                 } else {
                     // One direction for the two faces that give the edge:
@@ -324,7 +604,9 @@ pub fn brep_edge_items(enriched: &EnrichedMesh, faces: &ItemSet) -> BrepEdgeItem
                     {
                         corners.entry(grid(end)).or_insert(*end);
                     }
+                    let form = chain_form(&facts, face, run.other, z, &run.points, &xy, false);
                     Item::at_z(source, None, Shape::Path(Polygon2::open_path(xy)), z)
+                        .map(|i| i.with_model_edge(ModelEdge { form, ring: false }))
                 };
                 let Ok(item) = item else {
                     continue;

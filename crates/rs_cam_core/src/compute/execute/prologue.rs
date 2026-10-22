@@ -71,7 +71,7 @@ use crate::selection::{
 };
 use crate::tool::MillingCutter;
 
-use super::standing_material::{ColumnTop, standing_top_in_footprint};
+use super::standing_material::{ColumnTop, standing_top_in_band, standing_top_in_footprint};
 use super::territory::Territory;
 use super::{BuriedFaceRefusal, BuriedUnder, ExecutionContext, OperationError};
 
@@ -199,6 +199,14 @@ impl<'a> Prepared<'a> {
             .ok_or_else(|| self.mismatch("curves"))
     }
 
+    /// The items of an `Edges` op (R-C): the drawing areas and the convex
+    /// top model edges. Never both empty.
+    pub fn edges(&self) -> Result<&crate::selection::Edges, OperationError> {
+        self.items()
+            .and_then(OpItems::edges)
+            .ok_or_else(|| self.mismatch("edges"))
+    }
+
     /// The hole positions of a `Holes` op, in the emission frame, after the
     /// hole fit step (P6.5: a Drill gets the points and the circles of the
     /// tool size only). Empty only for an op that may be empty (Pin Drill).
@@ -301,7 +309,7 @@ pub(super) fn check_inputs<'a>(
 }
 
 /// UX-1c (operator ruling 2026-10-22, SAFETY): a one-depth op
-/// (`FaceTopRule::RefuseBuried`: Chamfer, V-Carve, Inlay, Inlay Plug) on
+/// (`FaceTopRule::RefuseBuried`: V-Carve, Inlay, Inlay Plug; `RefuseBuriedEach`: Chamfer, per item) on
 /// the remaining stock refuses when material stands above its top over its
 /// area ([`standing_top_in_footprint`] with the tool radius). Its auto top
 /// under a face pick is the face top, and it cuts one depth from there, so
@@ -322,10 +330,11 @@ fn refuse_buried_face(
     op: &OperationConfig,
     prepared: &Prepared<'_>,
 ) -> Result<(), OperationError> {
-    match op.capabilities().face_top {
-        FaceTopRule::RefuseBuried => {}
+    let each = match op.capabilities().face_top {
+        FaceTopRule::RefuseBuried => false,
+        FaceTopRule::RefuseBuriedEach => true,
         FaceTopRule::HigherOfFaceAndStock | FaceTopRule::Face => return Ok(()),
-    }
+    };
     if ctx.heights.top_pinned {
         return Ok(());
     }
@@ -340,16 +349,47 @@ fn refuse_buried_face(
     };
     let top_z = ctx.heights.top_z;
     let tool_radius = ctx.tool_def.diameter() / 2.0;
-    match standing_top_in_footprint(stock, regions.as_slice(), tool_radius) {
-        ColumnTop::Top(material) if material > top_z + FRESH_MATERIAL_THRESHOLD_MM => {
-            Err(OperationError::BuriedFace(BuriedFaceRefusal {
-                op: op.op_type().label(),
-                buried_mm: material - top_z,
-                under: BuriedUnder::StandingMaterial,
-            }))
+    let refusal = |material: f64, top: f64| {
+        OperationError::BuriedFace(BuriedFaceRefusal {
+            op: op.op_type().label(),
+            buried_mm: material - top,
+            under: BuriedUnder::StandingMaterial,
+        })
+    };
+    let buried = |column: ColumnTop, top: f64| match column {
+        ColumnTop::Top(material) if material > top + FRESH_MATERIAL_THRESHOLD_MM => {
+            Err(refusal(material, top))
         }
         ColumnTop::Top(_) | ColumnTop::Empty | ColumnTop::NoEvidence => Ok(()),
+    };
+    if !each {
+        return buried(
+            standing_top_in_footprint(stock, regions.as_slice(), tool_radius),
+            top_z,
+        );
     }
+    // R-C / F21: each area against its own top, and each model edge along
+    // a band of the cone radius of the bevel on both sides of the edge.
+    for (i, outline) in regions.as_slice().iter().enumerate() {
+        let own_top = regions.plane_z(i).unwrap_or(top_z);
+        buried(
+            standing_top_in_footprint(stock, std::slice::from_ref(outline), tool_radius),
+            own_top,
+        )?;
+    }
+    let reach = op.bevel_reach_mm().unwrap_or(tool_radius);
+    for line in items
+        .edges()
+        .map_or(&[][..], crate::selection::Edges::lines)
+    {
+        let (rings, paths): (&[Vec<crate::geo::P2>], &[Vec<crate::geo::P2>]) = if line.line.closed {
+            (std::slice::from_ref(&line.line.exterior), &[])
+        } else {
+            (&[], std::slice::from_ref(&line.line.exterior))
+        };
+        buried(standing_top_in_band(stock, rings, paths, reach), line.z)?;
+    }
+    Ok(())
 }
 
 /// P3.5: the ladder of each closed area under the floor "each picked
@@ -423,19 +463,19 @@ fn require_items(
                 .with_stock_grown(ctx.tool_def.diameter() / 2.0);
             &grown
         }
-        ItemUse::None | ItemUse::Regions | ItemUse::Curves | ItemUse::Holes { .. } => {
-            &ctx.selection.resolved
-        }
+        ItemUse::None
+        | ItemUse::Regions
+        | ItemUse::Curves
+        | ItemUse::Edges
+        | ItemUse::Holes { .. } => &ctx.selection.resolved,
     };
-    let (mut items, view_notes) = view(resolved, item_use).map_err(selection_error)?;
+    let size = op.drill_size(ctx.tool_def.diameter());
+    // F29: an `Empty` Drill names the hole rims that the default rule did
+    // not take.
+    let (mut items, view_notes) = view(resolved, item_use)
+        .map_err(|refusal| selection_error(refusal.with_default_rims(resolved, item_use, &size)))?;
     notes.extend(view_notes);
-    let fit_notes = fit_holes(
-        resolved,
-        &mut items,
-        item_use,
-        op.drill_size(ctx.tool_def.diameter()),
-    )
-    .map_err(selection_error)?;
+    let fit_notes = fit_holes(resolved, &mut items, item_use, size).map_err(selection_error)?;
     notes.extend(fit_notes);
     Ok(items)
 }

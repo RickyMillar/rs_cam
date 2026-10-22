@@ -4,7 +4,7 @@ Every door that reads a file. The entry point is `io::load_model_file`.
 
 ## Files
 - `mod.rs` — import helpers, size guard, `brep_items` (the STEP door: `brep_face_items` faces first, signed normal from the triangles, then
-  `brep_items.rs` `brep_edge_items`: up-face rings, horizontal edge runs, round rims, corners, each `Item::at_z`, UX-7), `default_import_units`.
+  `brep_items.rs` `brep_edge_items`: up-face rings, horizontal edge runs, round rims, corners, each `Item::at_z`, UX-7; R-C: each ring, chain, rim and up face gets `ModelEdge` from the triangle of the other face at each segment, `FaceFacts::side_of`), `default_import_units`.
   `import_options.rs` — `ImportOptions` (saved), `ImportReport` (not saved), `DrawingImport`.
 - `dxf_input.rs` — DXF entities to items, one per entity with its layer (a circle is ONE item); the
   open pieces join through `selection::join`. `svg_input.rs` — SVG paths to items; layer = id of the

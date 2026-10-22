@@ -117,6 +117,7 @@ fn arm_of(cause: &RefusalCause) -> &'static str {
         RefusalCause::FacesNotReady { .. } => "faces_not_ready",
         RefusalCause::HoleDoesNotFit { .. } => "hole_does_not_fit",
         RefusalCause::CannotExtend { .. } => "cannot_extend",
+        RefusalCause::NotAConvexEdge { .. } => "not_a_convex_edge",
     }
 }
 
@@ -137,6 +138,7 @@ const ARMS: &[&str] = &[
     "faces_not_ready",
     "hole_does_not_fit",
     "cannot_extend",
+    "not_a_convex_edge",
 ];
 
 fn square(cx: f64) -> Polygon2 {
@@ -257,7 +259,10 @@ fn assert_names(refusal: &SelectionRefusal, names: &[&str]) {
 #[test]
 fn every_cause_has_an_arm() {
     let samples = [
-        RefusalCause::Empty { skipped: vec![] },
+        RefusalCause::Empty {
+            skipped: vec![],
+            rims: vec![],
+        },
         RefusalCause::LostPick,
         RefusalCause::FloorFaceLost,
         RefusalCause::AmbiguousPick { matches: 2 },
@@ -286,6 +291,9 @@ fn every_cause_has_an_arm() {
         RefusalCause::CannotExtend {
             why: rs_cam_core::selection::CannotExtend::NoArea,
         },
+        RefusalCause::NotAConvexEdge {
+            why: rs_cam_core::selection::EdgeRefusal::Concave,
+        },
     ];
     let causes: BTreeSet<&str> = samples.iter().map(arm_of).collect();
     let arms: BTreeSet<&str> = ARMS.iter().copied().collect();
@@ -300,7 +308,7 @@ fn empty() {
         |_| {},
     );
     let r = refusal_of(&mut s);
-    assert!(matches!(&r.cause, RefusalCause::Empty { skipped } if !skipped.is_empty()));
+    assert!(matches!(&r.cause, RefusalCause::Empty { skipped, .. } if !skipped.is_empty()));
     assert_names(
         &r,
         &["open path on layer 'TEXT'", "starts at X -10.000 Y 15.000"],
@@ -317,6 +325,64 @@ fn open_item(pts: &[[f64; 2]]) -> Item {
         )),
     )
     .unwrap()
+}
+
+/// R-C: a Chamfer that names a model edge that is not a convex top edge
+/// refuses by the item, and says why: a concave edge (a wall rises over
+/// it) and an edge that is not a top edge. The items are hand-built model
+/// edge items at the stock top (Z 0) with their form, as the STEP door
+/// gives them (`io::brep_items`).
+#[test]
+fn not_a_convex_edge() {
+    use rs_cam_core::compute::operation_configs::ChamferConfig;
+    use rs_cam_core::compute::tool_config::{ToolId, ToolType};
+    use rs_cam_core::selection::{EdgeForm, EdgeRefusal, ModelEdge};
+    for (form, why, words) in [
+        (
+            EdgeForm::Concave,
+            EdgeRefusal::Concave,
+            "this edge is concave",
+        ),
+        (
+            EdgeForm::Other,
+            EdgeRefusal::NotATopEdge,
+            "not a convex top edge",
+        ),
+    ] {
+        let mut path = Polygon2::new(vec![P2::new(-10.0, 15.0), P2::new(10.0, 15.0)]);
+        path.closed = false;
+        let edge = Item::at_z(SourceRef::ToolpathModel, None, Shape::Path(path), 0.0)
+            .unwrap()
+            .with_model_edge(ModelEdge { form, ring: false });
+        let mut vbit = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::VBit,
+        );
+        vbit.diameter = 6.0;
+        vbit.included_angle = 90.0;
+        let mut s = single_op_session_with(
+            stock_under(STOCK_HALF, STOCK_HEIGHT),
+            vbit,
+            drawing_model(vec![edge.clone()]),
+            "p2_4 chamfer",
+            OperationConfig::Chamfer(ChamferConfig {
+                selection: Selection::from_picks(vec![pick_of(&edge)]),
+                ..ChamferConfig::default()
+            }),
+            |_| {},
+        );
+        let r = refusal_of(&mut s);
+        assert_eq!(r.cause, RefusalCause::NotAConvexEdge { why }, "{r}");
+        let text = r.to_string();
+        assert!(text.starts_with("Chamfer: "), "{text}");
+        for name in ["open path", "starts at X -10.000 Y 15.000", words] {
+            assert!(
+                text.contains(name),
+                "the refusal does not name {name:?}: {text}"
+            );
+        }
+        assert!(text.ends_with(&format!("Fix: {}.", r.fix())), "{text}");
+    }
 }
 
 /// Geometry selection P6.4 (ruling O-2): a Pocket with Extend to stock
@@ -1110,6 +1176,7 @@ fn faces_not_ready() {
             stock_bbox: &stock,
             setup: None,
             mesh_faces: &cold,
+            item_use: ItemUse::Regions,
         },
     );
     let r = view(&resolved, ItemUse::Regions)

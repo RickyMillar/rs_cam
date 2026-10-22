@@ -115,6 +115,9 @@ fn resolve_in(
             stock_bbox: &bbox,
             setup,
             mesh_faces: &[],
+            // The default rule reads the use on a model edge item only
+            // (R-C); these tests view the Q3 default.
+            item_use: ItemUse::Regions,
         },
     )
 }
@@ -595,7 +598,7 @@ fn nothing_left_to_cut_refuses_empty_and_names_the_skipped_items() {
         path("TEXT", &[[0.0, 10.0], [5.0, 15.0]]),
     ]);
     let refusal = view(&resolve_on(&Selection::drawing(), &m), ItemUse::Regions).unwrap_err();
-    let RefusalCause::Empty { skipped } = &refusal.cause else {
+    let RefusalCause::Empty { skipped, .. } = &refusal.cause else {
         panic!("{refusal:?}");
     };
     assert_eq!(skipped.len(), 1);
@@ -607,7 +610,13 @@ fn nothing_left_to_cut_refuses_empty_and_names_the_skipped_items() {
     // A STEP model with the default selection: no face is a drawing item.
     let step = model(vec![face(5.0, 1.0, 0)]);
     let refusal = view(&resolve_on(&Selection::drawing(), &step), ItemUse::Regions).unwrap_err();
-    assert_eq!(refusal.cause, RefusalCause::Empty { skipped: vec![] });
+    assert_eq!(
+        refusal.cause,
+        RefusalCause::Empty {
+            skipped: vec![],
+            rims: vec![]
+        }
+    );
     // A drill with no hole refuses; a pin drill may be empty.
     let r = resolve_on(&Selection::drawing(), &m);
     assert!(matches!(
@@ -651,7 +660,7 @@ fn only_a_skipped_open_path_gives_a_note() {
         ItemUse::Regions,
     )
     .unwrap_err();
-    let RefusalCause::Empty { skipped } = &refusal.cause else {
+    let RefusalCause::Empty { skipped, .. } = &refusal.cause else {
         panic!("{refusal:?}");
     };
     assert_eq!(skipped.len(), 1);

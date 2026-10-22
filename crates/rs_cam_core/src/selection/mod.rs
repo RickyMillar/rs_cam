@@ -35,12 +35,15 @@ pub use drawing_edit::{
 pub use extend::{CannotExtend, ExtendedEnds, PathSide, StockXy, extend_ends, extend_to_stock};
 pub use flat_regions::{FLAT_REGION_Z_BAND_MM, flat_region_items};
 pub use hole_fit::{HoleFit, HoleFitRule, fit_holes, hole_fit};
-pub use item::{FaceItem, Item, ItemCounts, ItemError, ItemKind, ItemSet, Shape, SourceRef};
+pub use item::{
+    EdgeForm, EdgeMaterial, FaceItem, Item, ItemCounts, ItemError, ItemKind, ItemSet, ModelEdge,
+    Shape, SourceRef,
+};
 pub use key::{CAD_ROUNDING_MM, KEY_MATCH_EPS_MM, MatchKey};
 pub use near::{PickLine, items_near, polyline_distance};
 pub use refusal::{
-    ItemRef, NoteCause, RefusalCause, SelectionNote, SelectionRefusal, kind_not_cut_reason,
-    kind_noun,
+    EdgeRefusal, ItemRef, NoteCause, RefusalCause, SelectionNote, SelectionRefusal,
+    kind_not_cut_reason, kind_noun,
 };
 pub use resolve::{
     ExcludedItem, LostPick, MatchedBy, MeshFaces, ModelFrame, ResolveScope, ResolvedItem,
@@ -52,4 +55,6 @@ pub use rule::{
     SelectionEdit, ZRange,
 };
 pub use stock::stock_items;
-pub use view::{Curves, Hole, Holes, ItemRole, OpItems, Regions, view, view_boundary};
+pub use view::{
+    Curves, EdgeLine, Edges, Hole, Holes, ItemRole, OpItems, Regions, view, view_boundary,
+};

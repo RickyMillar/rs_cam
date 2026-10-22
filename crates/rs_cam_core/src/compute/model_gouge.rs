@@ -18,6 +18,11 @@
 //! - [`ModelGougeRule::Hole`] (Drill, Bore): a sample gouges only when the
 //!   model has a hole at that XY (the point surface lies below the top
 //!   round it) and the tip goes below the hole floor.
+//! - [`ModelGougeRule::Bevel`] (Chamfer, R-C): the V-bit cuts below the
+//!   sharp edge of the model by design, by the bevel depth `w / tan(a)`. A
+//!   sample gouges when the tip goes deeper than the drop-cutter CL Z of
+//!   the V-bit less that depth: the cone then cuts the model beyond the
+//!   bevel (the end of an edge that runs into a wall).
 //! - [`ModelGougeRule::Exempt`]: no guard.
 //!
 //! # The tangent wall
@@ -89,6 +94,10 @@ pub struct ModelGougeFinding {
     pub surface_z: f64,
     /// The index of the move that holds the deepest gouge.
     pub move_index: usize,
+    /// F30: the Z that the depth dial of the op measures from (the stock
+    /// box top of a Drill), from [`GougeProbe::depth_top_z`]. A Drill
+    /// names the depth to type from it: `depth_top_z - surface_z`.
+    pub depth_top_z: Option<f64>,
 }
 
 impl ModelGougeFinding {
@@ -102,7 +111,36 @@ impl ModelGougeFinding {
     #[must_use]
     pub fn message(&self) -> String {
         let [x, y, z] = self.at;
-        let fix = self.rule.fix_hint();
+        if let ModelGougeRule::Bevel { fix } = self.rule {
+            return format!(
+                "The toolpath cuts into the model: {count} of {judged} sampled cutting \
+                 positions cut deeper than the bevel. The deepest is {deep:.3} mm at X {x:.3} \
+                 Y {y:.3}: the tool tip is at Z {z:.3}, and the bevel there may go down to Z \
+                 {limit:.3}. {fix}. [Measured at generation on the emitted moves against the \
+                 mesh of the toolpath model, tolerance {tol} mm in Z; export refuses while \
+                 this stands.]",
+                count = self.gouging,
+                judged = self.judged,
+                deep = self.deepest_mm,
+                limit = self.surface_z,
+                tol = MODEL_GOUGE_Z_TOL_MM,
+            );
+        }
+        let fix = match (self.rule, self.depth_top_z) {
+            // F30: the Drill names the depth to type, from the numbers the
+            // guard measured.
+            (
+                ModelGougeRule::Hole {
+                    names_depth: true, ..
+                },
+                Some(top),
+            ) => format!(
+                "Set the depth to {depth:.3} mm (the hole floor is at Z {floor:.3})",
+                depth = top - self.surface_z,
+                floor = self.surface_z,
+            ),
+            (rule, _) => rule.fix_hint().to_owned(),
+        };
         format!(
             "The toolpath cuts into the model: {count} of {judged} sampled cutting positions \
              go below the model surface. The deepest is {deep:.3} mm at X {x:.3} Y {y:.3}: \
@@ -129,6 +167,14 @@ pub struct GougeProbe<'a> {
     pub reduced_tool: &'a dyn MillingCutter,
     /// The radius of the real tool (mm).
     pub tool_radius: f64,
+    /// [`ModelGougeRule::Bevel`]: the bevel depth (mm) the cut may go
+    /// below the V-bit CL Z (`OperationConfig::bevel_depth_mm`). `0.0` for
+    /// every other rule.
+    pub bevel_depth_mm: f64,
+    /// F30: the Z the depth dial of the op measures from (the stock box
+    /// top in the setup frame), for the fix text of a Drill. `None` when
+    /// the caller does not know it.
+    pub depth_top_z: Option<f64>,
 }
 
 /// Measure `toolpath` under `rule`. `None` for [`ModelGougeRule::Exempt`].
@@ -159,6 +205,7 @@ pub fn measure(
         at: [0.0; 3],
         surface_z: 0.0,
         move_index: 0,
+        depth_top_z: probe.depth_top_z,
     };
     let mut samples: Vec<P3> = Vec::new();
     let mut walked = 0_usize;
@@ -182,6 +229,12 @@ pub fn measure(
                     let cl =
                         point_drop_cutter(p.x, p.y, probe.mesh, probe.index, probe.reduced_tool);
                     cl.contacted.then_some(cl.z)
+                }
+                // R-C: the lowest tip Z the bevel may reach here.
+                ModelGougeRule::Bevel { .. } => {
+                    let cl =
+                        point_drop_cutter(p.x, p.y, probe.mesh, probe.index, probe.reduced_tool);
+                    cl.contacted.then_some(cl.z - probe.bevel_depth_mm)
                 }
                 ModelGougeRule::Hole { .. } => {
                     let floor = point_drop_cutter(p.x, p.y, probe.mesh, probe.index, &point);

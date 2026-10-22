@@ -217,7 +217,10 @@ pub fn fit_holes<F: SelectionFrame>(
     if none_left && !may_be_empty {
         return Err(SelectionRefusal::new(
             None,
-            RefusalCause::Empty { skipped: notes },
+            RefusalCause::Empty {
+                skipped: notes,
+                rims: Vec::new(),
+            },
         ));
     }
     Ok(notes)

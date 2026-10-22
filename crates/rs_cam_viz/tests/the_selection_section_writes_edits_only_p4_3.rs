@@ -445,9 +445,7 @@ fn a_selection_refusal_has_one_owner_p4_3() {
          footer name the section in one line: {whole:?}"
     );
     assert!(
-        texts
-            .iter()
-            .any(|t| t == "The selection refuses. See the Geometry tab."),
+        texts.iter().any(|t| t == "Refused \u{00B7} see Geometry"),
         "the header must say why Generate is off in one line; painted: {texts:?}"
     );
     assert!(

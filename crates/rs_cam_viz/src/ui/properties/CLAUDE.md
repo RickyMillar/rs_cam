@@ -4,12 +4,11 @@
 - `mod.rs` — `draw`, `PanelEdit`, `ToolpathTab`, the snapshot and inputs builders, `apply_auto_enable`.
   Beside it: `panel_apply.rs`, `machine_panel.rs`, `feeds_speeds.rs`, `tab_badges.rs`, `tests.rs`,
   `linking_dressup.rs` (`Param`, `dv`, `dv_pill`, `dv_dressup`, `advanced`), `toolpath_panel.rs` (a fn per tab).
-- `geometry_tab.rs` (GT-1, the FIRST tab; the old one is `Cut`, `draw_cut_tab`): the op block, `Pick faces` for an op with
-  no op selection, the Floor line and the floor face slot (`UseAsFloor`/`ClearFloorFace`), the `Boundary` block (GT-Q7).
-- `selection_section.rs` — one block per selection: summary (Cuts, Selected, hole sizes), Pick + Reset, filter (`SelectionUi::list_filter`),
-  `list_groups` (default row L-R2, a group per rule, per picked kind; each report row in ONE group; `GROUP_CAP` 8, `show_rows`),
-  row acts `Rule…` (core `rule_offers`, one `Replace`), `Use as floor`, `×` (`RemovePick`; GT-Q8 in core); `row_hover` lights the
-  item; then the notes (`ADD_A_BORE`, Open paths, findings, `PICK_A_FACE_FIX`, `Details`). No `+ Rule` card, no O-2 hint.
+- `geometry_tab.rs` (GT-1, FIRST tab; old one is `Cut`): op block, `Pick faces`, Floor line (F25: face floor range), floor face slot, `Boundary`.
+- `selection_section.rs` — one block per selection: summary (Cuts, Selected, hole sizes), Pick + Reset, filter, `list_groups` (default
+  row L-R2, a group per rule, per picked kind; `GROUP_CAP` 8), row acts `Rule…`, `Use as floor`, `×`; `row_hover` lights the item; notes
+  (`ADD_A_BORE`, Open paths, findings, `PICK_A_FACE_FIX`, `SKIPPED_ITEMS`). FR-2: a row is short (`row_label` "Ø6.00 Z20", `face_label`),
+  `row_full_label` is hover + filter; acts first, label truncates. F32: default rule: never-cut kinds ONE line, no Selected row (MCP parity).
 - `model_sim_panels.rs` — a drawing gets "Import" (scale, join tolerance, report) and "Open shapes" (core
   `open_shapes`, Show me, the two close acts, Join all within, a lost edit in DANGER, the ledger in `Details`).
 - `operations/` — an editor per op family, `registry.rs`, `shape_diagrams.rs`, `height_diagram.rs`, `validate.rs`;
@@ -19,7 +18,8 @@
 ## Invariants
 - Every edit writes through the core command path. Helix r: None = rule. The inspector nests ONCE.
 - The toolpath panel takes `ToolpathPanelSnapshot` and `ToolpathPanelInputs`. Add a field there, not a
-  parameter. The width does not depend on the tab.
+  parameter. Width: not from tab or content (F22); "Done · BLOCKED" never truncates (figures drop). Header refusal: `REFUSED_SEE_GEOMETRY`.
+  A tab dot comes from `tab_badges::OWNER_TAB`, THE id-to-tab map (F24); an id with no tab gives no dot.
 - A panel door marks the project edited on success; `app.rs` guards on it. A pinned Bottom Z note names
   the ops that `capabilities().floor_owner` does not mark `HeightsBottom`. An `OpFloor` op has the Floor row (`floor_row`, Cut tab; `Floor::row_references`, no "A picked face"); a reference change and a diagram drag use `FloorReferences` (L-10); the Heights tab has a read-only Floor line, no Bottom row (L-11). The diagram floor runs come from `floor_runs` (`FloorInputs::face_floors`: Z and face count); every run has a hover. F033: every heights write (a row, an Auto button, a diagram drag and its rounding) goes through `admit_heights_edit` (core `ToolpathHeights::edit_refusal`); the badge is `height_order_badge`; the refusal text is GUI state (`state.panels.heights_refusal`, scoped to the toolpath), not egui memory (ui09).
   "Show me" frames `selection_highlight::note_item_keys`: the skipped items of a note's kind and layer, or the one face of an at-the-top note.
@@ -35,6 +35,6 @@
 
 ## Sentries (`cargo test -p rs_cam_viz -q`)
 - `--test bottom_z_pin_note_g_bottompin --test height_diagram_drag_prefers_bottom_and_rounds_r5 --test stock_panel_edit_clears_auto_from_model_r12`; floor: `--test every_depth_shows_its_reference_p3_7 --test a_floor_reference_change_keeps_the_cut_p3_7 --test the_heights_diagram_fits_f2 --test one_height_order_rule_for_every_surface_f033`
-- `--test boundary_controls_always_visible_g_boundaryinherit --test depth_beyond_stock_cautions_g_depthstock`; `--lib a_setup_map_op_draws_no_boundary_controls_d3`; `--test the_inspector_nests_once_dc5 --test inspector_width_is_tab_independent_up4 --test the_inspector_text_is_bounded_ic1 --test tabular_data_reads_one_table_ic2`
+- `--test boundary_controls_always_visible_g_boundaryinherit --test depth_beyond_stock_cautions_g_depthstock`; `--lib a_setup_map_op_draws_no_boundary_controls_d3`; `--test the_inspector_nests_once_dc5 --test inspector_width_is_tab_independent_up4 --test the_inspector_text_is_bounded_ic1 --test tabular_data_reads_one_table_ic2 --test the_geometry_rows_fit_the_inspector_f22`; `--lib _f24`
 - `--test the_head_and_shoe_rows_fit_the_rail_h2 --test the_help_key_is_the_param_name_ui04 --test operations_registry_ui05 --test one_start_from_row_g_startfrom`; `--test keyed_pin_panel_reads_the_real_strips_g_pinpanel --test pin_editor_and_viewport_p7 --test the_selection_section_writes_edits_only_p4_3`
 - `--test show_me_frames_the_items_p4_4 --test a_2d_op_cuts_a_step_face_p4_d --test the_panel_feeds_run_once_per_input_f216`; `--lib p4_d` (one Pick: `the_selection_section_shows_one_pick_p4_d`), `--lib _gt2`, `--lib use_as_floor_matches_set_toolpath_floor_gt4`; P6.7: `--test side_on_greys_in_control_p6_7 --test the_hole_rows_show_each_fit_p6_7 --test the_pocket_open_paths_row_p6_7 --test add_bore_copies_the_selection_p6_7` (Profile On: core `domain::side_on_*` predicates)

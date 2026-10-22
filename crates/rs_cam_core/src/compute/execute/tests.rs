@@ -1148,7 +1148,8 @@ fn every_generator_polls_a_preset_cancel_flag_past_the_prologue() {
             crate::compute::catalog::ItemUse::None
             | crate::compute::catalog::ItemUse::Regions
             | crate::compute::catalog::ItemUse::RegionsExtendOpen { .. }
-            | crate::compute::catalog::ItemUse::Curves => {
+            | crate::compute::catalog::ItemUse::Curves
+            | crate::compute::catalog::ItemUse::Edges => {
                 crate::compute::execute::SelectionInputs::from_polygons(polygons.as_slice())
             }
         };

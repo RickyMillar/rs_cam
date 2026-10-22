@@ -415,6 +415,34 @@ impl super::catalog::OperationConfig {
             _ => DrillSize::strict(tool_diameter),
         }
     }
+
+    /// R-C: the distance (mm) from a chamfered edge to the far side of the
+    /// cone of the V-bit at the top of the bevel: `w + 2 t` (the tip runs
+    /// `t` into the air, and the cone radius at the top is `w + t`). The
+    /// buried check of a model edge reads material within it. `None` for
+    /// every op that bevels no edge.
+    pub fn bevel_reach_mm(&self) -> Option<f64> {
+        match self {
+            super::catalog::OperationConfig::Chamfer(cfg) => {
+                Some(cfg.chamfer_width + 2.0 * cfg.tip_offset)
+            }
+            _ => None,
+        }
+    }
+
+    /// R-C: the depth (mm) of a bevel below its edge, `w / tan(a)` for the
+    /// half angle `half_angle_rad` of the V-bit: the depth the cone cuts
+    /// below the corner of a sharp edge. The model gouge guard of a
+    /// Chamfer allows a cut this deep below the model (`ModelGougeRule::
+    /// Bevel`). `None` for every op that bevels no edge.
+    pub fn bevel_depth_mm(&self, half_angle_rad: f64) -> Option<f64> {
+        match self {
+            super::catalog::OperationConfig::Chamfer(cfg) => {
+                Some(cfg.chamfer_width / half_angle_rad.tan())
+            }
+            _ => None,
+        }
+    }
 }
 
 /// The Bore op (geometry selection P6.6, design 4.4, lead ruling L-11): a

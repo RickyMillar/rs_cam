@@ -6,6 +6,7 @@
 //! counts the items that the default rule matched and that the op cannot
 //! cut: the op cuts the rest, and the note says what it left out.
 
+use std::borrow::Cow;
 use std::fmt;
 
 use crate::compute::catalog::ItemUse;
@@ -13,9 +14,10 @@ use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::ModelId;
 
 use super::extend::{CannotExtend, PathSide};
-use super::hole_fit::{DrillSize, HoleFit, HoleFitRule};
+use super::hole_fit::{DrillSize, HoleFit, HoleFitRule, hole_fit};
 use super::item::{ItemKind, SourceRef};
 use super::key::MatchKey;
+use super::resolve::{ResolvedSelection, SelectionFrame};
 
 /// The name of one item in a refusal or a note: its match key, which holds
 /// the source, the kind, the layer, the anchor and the measure. It is the
@@ -77,6 +79,10 @@ fn use_phrase(use_: ItemUse) -> &'static str {
              to the stock on its right side"
         }
         ItemUse::Curves => "follows lines only (closed loops, circles, open paths, face outlines)",
+        ItemUse::Edges => {
+            "bevels closed areas of a drawing (closed loops, circles, faces) and the convex top \
+             edges of a STEP model only"
+        }
         ItemUse::Holes {
             fit: HoleFitRule::None,
             ..
@@ -152,9 +158,11 @@ fn hole_fit_fix(rule: HoleFitRule, fit: HoleFit) -> &'static str {
 fn fit_rule(item_use: ItemUse) -> HoleFitRule {
     match item_use {
         ItemUse::Holes { fit, .. } => fit,
-        ItemUse::None | ItemUse::Regions | ItemUse::RegionsExtendOpen { .. } | ItemUse::Curves => {
-            HoleFitRule::None
-        }
+        ItemUse::None
+        | ItemUse::Regions
+        | ItemUse::RegionsExtendOpen { .. }
+        | ItemUse::Curves
+        | ItemUse::Edges => HoleFitRule::None,
     }
 }
 
@@ -301,6 +309,11 @@ fn note_fix(kind: ItemKind, item_use: ItemUse) -> Option<&'static str> {
         (ItemKind::Path, ItemUse::Holes { .. }) => {
             Some("To cut the open path, add a Trace or Project Curve operation.")
         }
+        // R-C: a drawing path states no material side, so a Chamfer does
+        // not bevel it.
+        (ItemKind::Path, ItemUse::Edges) => {
+            Some("To bevel along an open path, close it in the drawing, or use Trace with a V-bit.")
+        }
         // An op that follows lines cuts an open path, an op that extends
         // an open path to the stock cuts it (P6.4), and an op that reads no
         // item skips nothing: none gives a path note.
@@ -312,9 +325,60 @@ fn note_fix(kind: ItemKind, item_use: ItemUse) -> Option<&'static str> {
             ItemUse::Regions
             | ItemUse::RegionsExtendOpen { .. }
             | ItemUse::Curves
+            | ItemUse::Edges
             | ItemUse::Holes { .. }
             | ItemUse::None,
         ) => None,
+    }
+}
+
+/// Why a model edge does not serve a Chamfer (R-C, operator ruling
+/// 2026-10-23, SAFETY). The STEP door states the form of each edge
+/// (`selection::EdgeForm`, in the model frame).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeRefusal {
+    /// A wall rises above the edge (a concave edge). A V-bit along it cuts
+    /// into that wall.
+    Concave,
+    /// The material is not below the edge on one side only: a bottom edge,
+    /// an edge between two walls, or an edge whose faces the STEP door
+    /// could not read.
+    NotATopEdge,
+    /// The setup turns the model (a Bottom or a side setup). The edge form
+    /// is a fact of the model frame, so it does not hold in this setup.
+    TurnedSetup,
+}
+
+impl EdgeRefusal {
+    /// The cause as a phrase.
+    const fn phrase(self) -> &'static str {
+        match self {
+            Self::Concave => {
+                "this edge is concave: a wall rises above it, so a V-bit along it cuts into \
+                 that wall"
+            }
+            Self::NotATopEdge => {
+                "this edge is not a convex top edge: the material is not below it on one \
+                 side only"
+            }
+            Self::TurnedSetup => {
+                "the setup turns the model, so an edge of the model is not a top edge in \
+                 this setup"
+            }
+        }
+    }
+
+    /// The fix.
+    const fn fix(self) -> &'static str {
+        match self {
+            Self::Concave | Self::NotATopEdge => {
+                "Remove the edge from the selection, and pick the convex top edges to chamfer"
+            }
+            Self::TurnedSetup => {
+                "Chamfer the edges of the model in a Top setup, or pick closed loops of a \
+                 drawing"
+            }
+        }
     }
 }
 
@@ -323,8 +387,16 @@ fn note_fix(kind: ItemKind, item_use: ItemUse) -> Option<&'static str> {
 pub enum RefusalCause {
     /// The op has nothing to cut. `skipped` holds the items the default
     /// rule matched and the op cannot cut (empty when the rules matched
-    /// nothing at all).
-    Empty { skipped: Vec<SelectionNote> },
+    /// nothing at all). `rims` (F29) holds the top rims of the holes of a
+    /// STEP model (convex top circular edges) that fit the tool of a Drill
+    /// and that the default rule did not take (Q3: it takes the face
+    /// rings), so the text names the holes
+    /// ([`SelectionRefusal::with_default_rims`]). Empty for every other
+    /// op.
+    Empty {
+        skipped: Vec<SelectionNote>,
+        rims: Vec<ItemRef>,
+    },
     /// No item matches a stored pick (the drawing changed).
     LostPick,
     /// No item matches the face key of the floor "A picked face"
@@ -378,6 +450,12 @@ pub enum RefusalCause {
     /// cannot extend (`P6_DESIGN.md` 3.4). Under the default rule it
     /// refuses too: the op serves the kind (lead ruling L-10).
     CannotExtend { why: CannotExtend },
+    /// R-C (operator ruling 2026-10-23, SAFETY): a Chamfer names a model
+    /// edge (a chain, a circular edge, a face ring or an up face) that is
+    /// not a convex top edge, or a model edge in a turned setup. The item
+    /// names the edge. The default rule of a Chamfer takes the convex top
+    /// chains only, so it never gives a concave edge.
+    NotAConvexEdge { why: EdgeRefusal },
     /// A rule or a pick names a model that does not exist. No fallback to
     /// another model.
     MissingSource(SourceRef),
@@ -420,8 +498,51 @@ impl SelectionRefusal {
         self
     }
 
+    /// F29: the same refusal, with the top rims of the holes that fit
+    /// `size` and that the default rule of `resolved` did not take
+    /// ([`ResolvedSelection::rims_off_default`]). Only an `Empty` refusal
+    /// of a Drill (`HoleFitRule::ToolSize`) changes; the selection does not
+    /// change (ruling R-B is open).
+    #[must_use]
+    pub fn with_default_rims<F: SelectionFrame>(
+        mut self,
+        resolved: &ResolvedSelection<F>,
+        item_use: ItemUse,
+        size: &DrillSize,
+    ) -> Self {
+        let ItemUse::Holes {
+            fit: HoleFitRule::ToolSize,
+            ..
+        } = item_use
+        else {
+            return self;
+        };
+        if let RefusalCause::Empty { rims, .. } = &mut self.cause {
+            *rims = resolved
+                .rims_off_default()
+                .iter()
+                .filter(|key| hole_fit(Some(key.measure), size) == HoleFit::ToolSize)
+                .map(|key| ItemRef::new(key.clone()))
+                .collect();
+        }
+        self
+    }
+
     /// The fix: one text per cause.
-    pub fn fix(&self) -> &'static str {
+    pub fn fix(&self) -> Cow<'static, str> {
+        if let RefusalCause::Empty { rims, .. } = &self.cause
+            && let Some(first) = rims.first()
+        {
+            return Cow::Owned(format!(
+                "Pick the top circle of each hole, or add the rule 'all circles Ø{:.3}'",
+                first.key.measure
+            ));
+        }
+        Cow::Borrowed(self.static_fix())
+    }
+
+    /// The fix of each cause that states one text.
+    fn static_fix(&self) -> &'static str {
         match &self.cause {
             RefusalCause::Empty { .. } => {
                 "Add items that the operation can cut to its selection, or use \
@@ -456,6 +577,7 @@ impl SelectionRefusal {
                  face from the selection"
             }
             RefusalCause::CannotExtend { why } => why.fix(),
+            RefusalCause::NotAConvexEdge { why } => why.fix(),
             RefusalCause::HoleDoesNotFit { fit, rule, .. } => match (*rule, *fit) {
                 (HoleFitRule::LargerThanTool, HoleFit::ToolSize) => {
                     "Drill it with a Drill op, or remove the circle from the selection"
@@ -493,18 +615,19 @@ impl SelectionRefusal {
     /// The cause as a phrase.
     fn cause_text(&self) -> String {
         match &self.cause {
-            RefusalCause::Empty { skipped } if skipped.is_empty() => {
+            RefusalCause::Empty { skipped, rims } if skipped.is_empty() && rims.is_empty() => {
                 "the selection holds no item to cut".to_owned()
             }
-            RefusalCause::Empty { skipped } => {
-                let notes: Vec<String> = skipped.iter().map(ToString::to_string).collect();
+            RefusalCause::Empty { skipped, rims } => {
+                let mut notes: Vec<String> = skipped.iter().map(ToString::to_string).collect();
+                if !rims.is_empty() {
+                    notes.push(rims_text(rims));
+                }
                 // Each note ends with a full stop, and the refusal adds
                 // its own before "Fix:", so the last one goes (no "..").
                 let notes = notes.join(" ");
-                format!(
-                    "nothing is left to cut. {}",
-                    notes.strip_suffix('.').unwrap_or(&notes)
-                )
+                let notes = notes.strip_suffix('.').unwrap_or(&notes);
+                format!("nothing is left to cut. {notes}")
             }
             RefusalCause::LostPick => "no item of the drawing matches this pick".to_owned(),
             RefusalCause::FloorFaceLost => {
@@ -547,6 +670,7 @@ impl SelectionRefusal {
             RefusalCause::CannotExtend { why } => {
                 format!("the open path cannot extend to the stock: {}", why.phrase())
             }
+            RefusalCause::NotAConvexEdge { why } => why.phrase().to_owned(),
             RefusalCause::MissingSource(source) => {
                 let name = match source {
                     SourceRef::ToolpathModel => "the model of the toolpath".to_owned(),
@@ -569,6 +693,34 @@ impl SelectionRefusal {
             }
         }
     }
+}
+
+/// F29: "The default takes the face rings only. This model has 1 circle
+/// that fits the tool: Ø6.000 at X 15.000 Y 15.000 Z 20.000." Each rim at
+/// its centre and Z, in the model frame (the frame of the item name).
+fn rims_text(rims: &[ItemRef]) -> String {
+    let at: Vec<String> = rims
+        .iter()
+        .map(|rim| {
+            let k = &rim.key;
+            let z = k.z.map_or_else(String::new, |z| format!(" Z {z:.3}"));
+            format!(
+                "Ø{:.3} at X {:.3} Y {:.3}{z}",
+                k.measure, k.anchor[0], k.anchor[1]
+            )
+        })
+        .collect();
+    let (noun, verb) = if rims.len() == 1 {
+        ("circle", "fits")
+    } else {
+        ("circles", "fit")
+    };
+    format!(
+        "The default takes the face rings only. This model has {} {noun} that {verb} the \
+         tool: {}.",
+        rims.len(),
+        at.join("; ")
+    )
 }
 
 impl fmt::Display for SelectionRefusal {

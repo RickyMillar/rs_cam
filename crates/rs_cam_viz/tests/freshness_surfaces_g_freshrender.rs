@@ -88,7 +88,7 @@ fn the_inspector_header_reads_the_freshness_state() {
     let at = src
         .find("// F2.2 — the same one state the card chip")
         .expect("the header's status match moved");
-    let block = &src[at..(at + 3000).min(src.len())];
+    let block = &src[at..(at + 6000).min(src.len())];
 
     assert!(
         block.contains("match freshness {"),

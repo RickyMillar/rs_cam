@@ -771,11 +771,21 @@ impl JobPhases<'_, '_> {
         reduced.corner_radius_mm = reduced.corner_radius_mm.min(reduced.diameter / 2.0);
         let reduced_tool = crate::session::session_cutter(&reduced)?;
         self.observer.set_phase("Check against the model");
+        // R-C: a Chamfer may cut the bevel depth below the V-bit CL Z.
+        let half_angle = (self.inputs.tool.included_angle / 2.0).to_radians();
         let probe = GougeProbe {
             mesh,
             index,
             reduced_tool: &reduced_tool,
             tool_radius: self.inputs.tool_def.radius(),
+            bevel_depth_mm: self
+                .inputs
+                .operation
+                .bevel_depth_mm(half_angle)
+                .unwrap_or(0.0),
+            // F30: a Drill measures its depth from the stock box top
+            // (`execute::drilling::drill_hole_columns`).
+            depth_top_z: Some(self.inputs.emission_stock_bbox.max.z),
         };
         // W2.2: a kernel's `Cancelled` is the operation's `Cancelled`.
         let finding = measure(&annotated.toolpath, rule, &probe, cancel)

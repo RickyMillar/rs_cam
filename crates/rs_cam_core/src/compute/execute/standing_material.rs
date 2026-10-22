@@ -792,6 +792,56 @@ pub(crate) fn standing_top_in_footprint(
     }
 }
 
+/// R-C / F21: the highest material top within `half_width` of the closed
+/// `rings` and the open `paths` (each open path with no chord), on the
+/// remaining stock. The Chamfer reads it along each model edge against
+/// the Z of that edge. A cell counts when its centre lies within
+/// `half_width - cell / 2` of a line: the band rule of
+/// [`levels_in_reach`]. [`ColumnTop::NoEvidence`]: no band cell lies on
+/// the grid, or the window is too large for the grid.
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "row and col are cast only after the `row < 0 || col < 0` test skips a negative index"
+)]
+pub(crate) fn standing_top_in_band(
+    stock: &TriDexelStock,
+    rings: &[Vec<P2>],
+    paths: &[Vec<P2>],
+    half_width: f64,
+) -> ColumnTop {
+    let Some(bbox) = paths_bbox(rings.iter().chain(paths)) else {
+        return ColumnTop::NoEvidence;
+    };
+    let grid = &stock.z_grid;
+    let band = (half_width - 0.5 * grid.cell_size).max(0.0);
+    let pad_cells = crate::util::steps::steps(band, grid.cell_size).unwrap_or(0) + 2;
+    let window = grid.lattice_window(bbox, pad_cells);
+    let limit = (WINDOW_SPAN_OVER_GRID * (grid.rows + 2 * pad_cells))
+        * (WINDOW_SPAN_OVER_GRID * (grid.cols + 2 * pad_cells));
+    if window.cell_count() > limit {
+        return ColumnTop::NoEvidence;
+    }
+    let reach = band_mask(grid, &window, rings, paths, band);
+    let mut seen = false;
+    let mut top: Option<f32> = None;
+    for (i, _) in reach.iter().enumerate().filter(|(_, r)| **r) {
+        let row = window.row0 + (i / window.cols) as isize;
+        let col = window.col0 + (i % window.cols) as isize;
+        if row < 0 || col < 0 || row as usize >= grid.rows || col as usize >= grid.cols {
+            continue;
+        }
+        seen = true;
+        if let Some(t) = grid.top_z_at(row as usize, col as usize) {
+            top = Some(top.map_or(t, |prev| prev.max(t)));
+        }
+    }
+    match (seen, top) {
+        (false, _) => ColumnTop::NoEvidence,
+        (true, None) => ColumnTop::Empty,
+        (true, Some(t)) => ColumnTop::Top(f64::from(t)),
+    }
+}
+
 /// The XY box of every point of `paths`, or `None` when they hold no point.
 fn paths_bbox<'a>(paths: impl IntoIterator<Item = &'a Vec<P2>>) -> Option<[f64; 4]> {
     let mut points = paths.into_iter().flatten();

@@ -47,6 +47,9 @@ const FIX_PROFILE: &str =
 const FIX_FACE: &str = "Set the Face depth so that the face stays above the model";
 /// UX-7b: the fix sentence of the guard on a Drill.
 const FIX_DRILL: &str = "Set the drill depth no deeper than the hole floor of the model";
+/// R-C: the fix sentence of the guard on a Chamfer.
+const FIX_CHAMFER: &str = "Remove from the selection each edge that runs into a wall (the cone \
+                           of the V-bit cuts into that wall), or set a smaller chamfer width";
 /// UX-7b: the fix sentence of the guard on a Bore.
 const FIX_BORE: &str = "Set the floor no lower than the hole floor of the model";
 
@@ -587,7 +590,10 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
             may_be_empty: false,
             fit: HoleFitRule::ToolSize,
         },
-        model_gouge: ModelGougeRule::Hole { fix: FIX_DRILL },
+        model_gouge: ModelGougeRule::Hole {
+            fix: FIX_DRILL,
+            names_depth: true,
+        },
     },
     generate: crate::compute::execute::generate_drill,
 };
@@ -660,7 +666,10 @@ pub(super) static REG_BORE: OpRegistryEntry = OpRegistryEntry {
             may_be_empty: false,
             fit: HoleFitRule::LargerThanTool,
         },
-        model_gouge: ModelGougeRule::Hole { fix: FIX_BORE },
+        model_gouge: ModelGougeRule::Hole {
+            fix: FIX_BORE,
+            names_depth: false,
+        },
     },
     generate: crate::compute::execute::generate_bore,
 };
@@ -709,10 +718,10 @@ pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
         top_on_stock_box: false,
         floor_inside_stock: true,
         ladder_includes_top: false,
-        face_top: FaceTopRule::RefuseBuried,
+        face_top: FaceTopRule::RefuseBuriedEach,
         lut_route: LutRoute::AsStated,
-        item_use: ItemUse::Regions,
-        model_gouge: ModelGougeRule::Exempt,
+        item_use: ItemUse::Edges,
+        model_gouge: ModelGougeRule::Bevel { fix: FIX_CHAMFER },
     },
     generate: crate::compute::execute::generate_chamfer,
 };
