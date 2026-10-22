@@ -211,3 +211,32 @@ Fixture B: `crates/rs_cam_core/tests/fixtures/wanaka100/wanaka_full_tuned.toml`
 - The Drill shows one HoleFit note per circle beside the size rows.
 - Trace Left/Right on a closed loop has no side ring.
 - The side ring shows only with the selection-states overlay on.
+
+## Review notes (operator, 2026-10-22)
+
+- N1 (B1, Profile on fixture A): the Profile cuts two passes on the larger
+  (0..60) square. Diagnosis (geometry session, screenshot
+  /tmp/claude-1001/shots/profile.png): the Profile is side Inside, and the
+  OUTER layer nests as one region, the 0..60 ring with the 10..50 ring and
+  the Ø 4 circle as holes. Inside keeps the tool in that 10 mm band, so the
+  region has two walls: the outer wall and the wall round the hole. The
+  Ø 4 circle joins them at the bottom-left corner (the C-shaped gap). Each
+  of the 6 depth levels cuts both walls. Correct for "Inside" on a region
+  with a hole; the operator decides if that is the intended reading.
+- N2 (B1): the Profile used tool 0, "V-Bittest" (Ø 6, 90°), not the 6 mm
+  end mill (T2). A new op takes the first tool.
+- N3 (B1): the default selection rule is "this model, every layer, served
+  kinds", so a pick of one square ADDS it to a rule that already selects
+  every closed shape (all OUTER rings, HOLES circle, KEEP, SPARE). Question
+  for the operator: should a first pick replace the default rule?
+- Related: the Selection section labels the 10..50 ring "Island" ("the op
+  cuts round it"); on this generation that label is TRUE (the wall round
+  the hole). The pending "Profile Island role" fix is on hold until a
+  generation test measures Outside and Inside with near and far holes.
+- N3 ruled (operator, O-PICK, in the geometry PLAN.md d019ac39): on an op
+  whose selection is still the default rule, the first pick replaces that
+  rule; Reset brings the default back. Queued after the final gate.
+- N4 (B1): Profile Inside leaves about 6.6 mm of wall uncut at the (0,0)
+  corner. The Ø 4 hole at (5,5) plus the tool radius keeps the tool out,
+  and the gap is narrower than the 6 mm tool. Staying out is correct; the
+  defect is that no note says so. Fix: a finding with Show me. Queued.
