@@ -915,3 +915,19 @@ default rule that already selects every served item on every layer.
 - Concept: B (op editor) in the inspector, with C's group-by-facts rows
   as the way to add a rule from a picked item ("all circles Ø 6"). A
   (named sets) waits.
+
+## UX-1 done (293c0de5); follow-ups
+
+- Lead decision: the floor still measures from the face (`depth_base_z`),
+  so raising the top adds air levels and keeps the cut depth.
+- UX-1b, SAFETY: Face, Trace, Chamfer, V-Carve and the 3D ops (3D Rough,
+  Waterline, Unified Finish) still take the face top under a face pick,
+  so they can start inside fresh stock. Ruling Q1 covers them. They need a
+  depth base through `cutting_levels` (the depth dial measures from the
+  face; the first level starts at the stock top).
+- The entry ramp splits a contour arc with a centre about 0.02 mm off, so
+  a ramp end lies about 0.007 mm inside a keep-out (P4.7 boss). The P4.7
+  sentry holds it with a 0.02 mm slack. Fix the split in the ramp dressup.
+- "After previous ops" arm of the UX-1 sentry: no cheap fixture yet.
+- The Top row reads 32 while the floor reads "Top Z - 12" = 8: the name
+  "Top Z" for the depth base is now wrong. Q8 (names) owns the rename.
