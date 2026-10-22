@@ -78,3 +78,26 @@ session scratchpad (`fr2/01..08`); the morning report carries them.
 
 R-A, R-B, R-D, R-E (FR-1), F31 (union stock), F26 (deny unknown MCP
 fields: a wire break), Q5-Q10.
+
+## After 21a032d2 (R-C, FR-2 fixes), live on a release GUI built from HEAD
+
+- F29 fixed: the default STEP Drill refusal names "1 circle that fits the
+  tool: Ø6.000 at X 15 Y 15 Z 20" and the fix. The header reads
+  "Refused · see Geometry"; the dot is on Geometry (09).
+- F30 fixed and checked: the text says "Set the depth to 13.000 mm (the
+  hole floor is at Z 12.000)". Depth 13 generates clean (the Drill
+  measures depth from the stock top, Z 25).
+- F19 root cause: the Heights panel and the static check give Top Z 20
+  ("auto: faces") and Bottom Z -5 for that Drill, but the Drill motion
+  starts from the stock top (Z 25). "Depth exceeds stock thickness by
+  5.00 mm" is wrong; the tip stops at Z 0. One rule must own the Drill
+  top.
+- F22/F24/F27 fixed: the panel fits; "Done · BLOCKED" shows in full; the
+  red dot is on Geometry, the amber dot on Cut (10).
+- F34 (flow, the main gap): the default Pocket on stepped_block cuts each
+  step inside its face ring and leaves a wall of stock round the part
+  (11: the sim shows a tub). Then the Chamfer on "After previous ops"
+  refuses: "the face is 10.0 mm below the material that stands over it".
+  "Pocket the steps, then chamfer the edges" does not work. R-D (a face
+  pocket crosses its open edges to the stock edge) or R-A (an outline
+  item for Profile) is needed. This is the first ruling to ask.
