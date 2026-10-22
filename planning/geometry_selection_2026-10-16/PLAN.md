@@ -959,3 +959,16 @@ default rule that already selects every served item on every layer.
   4. GT: the Geometry inspector tab (rename the old tab to Cut).
   5. UX-C: the uncut-corner finding.
   6. P7.
+
+## Operator instruction 2026-10-22 night (operator asleep)
+
+"I am a little concerned still that a lot of the standard flows where
+people will want to select things on the model might be a little awkward
+still. So think of the things someone might want to do then drive the mcp
+and look at the gui to review the flows and if they could be slicker."
+
+Overnight plan (lead): UX-7 -> rebuild GUI -> flow review FR-1 (drive MCP,
+screenshot the GUI, count clicks per common job on STEP, DXF, STL) ->
+feed FR-1 into the Geometry tab -> UX-8, GT, UX-C -> flow review FR-2 on
+the new tab -> a morning report with before/after screenshots. No push;
+no gate over 3 minutes; rulings that change what is cut wait on a list.
