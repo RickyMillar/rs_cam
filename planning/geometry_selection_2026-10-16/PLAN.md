@@ -874,3 +874,26 @@ default rule that already selects every served item on every layer.
   the material that stands at the start; check the P3.1 heights resolver.
 - Operator: "Overall I think we need a ux review for different
   workflows". It is the planned picking UX pass, brought forward.
+
+## Operator rulings 2026-10-22 on UX_REVIEW.md Q1-Q4
+
+- Q1 (SAFETY): the auto top under a face pick is the higher of the face
+  top and the stock top. An op on "After previous ops" skips the air
+  levels through its remaining-stock clip. (UX-1, first.)
+- Q2: the first face pick on a floor op whose floor is still the op
+  default sets "Each picked face", depth 0, in the same undo step, with a
+  one-line note. This overturns lead ruling O-2 (2026-10-20).
+- Q3: STEP edge chains (paths and loops), circular edges (circles) and
+  vertices (points) become items. Operator: "edges circles points. but
+  default to face rings (loops) unless there is a selection for edges".
+  So the default rule on a STEP model serves the face boundary rings as
+  loops; edges, circles and points enter only by a pick or a rule that
+  names them. The part outline (silhouette) comes later as its own
+  package.
+- Q4: a new floor reference "A picked face": one face key sets the
+  floor, and a re-import follows the face.
+- Q5-Q10 are still open.
+- f9a3d2b1: the GUI add takes the first tool that the op accepts; a
+  refused add shows a toast. Correction to the earlier note: the Bore
+  refusal had a 6 s toast; the silent path was `apply_quietly` (add,
+  Duplicate, Add a Bore).
