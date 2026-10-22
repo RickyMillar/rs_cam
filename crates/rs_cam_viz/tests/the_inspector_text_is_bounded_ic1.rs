@@ -21,12 +21,11 @@
 //!
 //! Run it with `--nocapture` to print the inventory of each surface.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::path::PathBuf;

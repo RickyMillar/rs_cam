@@ -246,7 +246,12 @@ pub fn fit_two_mixed_diameters(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::compute::alignment_pins::{pattern_is_keyed, validate_pins_for_flip};

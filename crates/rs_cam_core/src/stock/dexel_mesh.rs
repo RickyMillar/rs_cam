@@ -52,8 +52,10 @@ pub(crate) const CUT_B: f32 = 0.10;
 /// the segment it shows: the top segment for a high-side entry, the bottom
 /// segment for a low-side entry. A grid with no added material records no
 /// slot.
-// SAFETY: every index is below rows x cols by the row and column loops.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every index is below rows x cols by the row and column loops."
+)]
 pub fn dexel_stock_to_entry_surface_mesh(
     stock: &TriDexelStock,
     direction: StockCutDirection,
@@ -298,7 +300,10 @@ pub fn z_grid_to_solid_mesh(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: 
 /// Vertex positions are mapped back to (x, y, z) world coordinates:
 /// - Y-grid (u=X, v=Z, depth=Y): vertex = (u, depth, v)
 /// - X-grid (u=Y, v=Z, depth=X): vertex = (depth, u, v)
-#[allow(clippy::indexing_slicing)] // grid indexing bounded by row*cols iteration
+#[expect(
+    clippy::indexing_slicing,
+    reason = "grid indexing bounded by row*cols iteration"
+)]
 fn side_grid_to_mesh(grid: &DexelGrid, stock_top_depth: f64, stock_bottom_depth: f64) -> StockMesh {
     let rows = grid.rows;
     let cols = grid.cols;
@@ -556,11 +561,10 @@ pub fn append_drill_cylinders(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;
@@ -1182,8 +1186,10 @@ mod tests {
     /// arrays stay dense; the fix only removes indices. So the preview
     /// never costs more than the dense full-index mesh.
     #[test]
-    // SAFETY: the test prints the measured byte count for the report.
-    #[allow(clippy::print_stderr)]
+    #[expect(
+        clippy::print_stderr,
+        reason = "the test prints the measured byte count for the report."
+    )]
     fn entry_surface_preview_bytes_do_not_grow() {
         let mut stock = TriDexelStock::from_stock(0.0, 0.0, 120.0, 120.0, 0.0, 25.5, 0.2);
         let rows = stock.z_grid.rows;

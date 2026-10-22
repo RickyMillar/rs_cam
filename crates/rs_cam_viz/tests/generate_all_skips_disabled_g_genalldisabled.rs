@@ -16,11 +16,9 @@
 //! Source: `planning/ui_review_2026-09-09/results/W03/support/r05_source_track.md`
 //! §4 item 2 and §8.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::{Arc, Mutex};

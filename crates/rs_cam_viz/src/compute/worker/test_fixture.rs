@@ -229,10 +229,10 @@ fn toolpath_config(
 ///
 /// Panics with the refusal when `start` refuses: a fixture that cannot
 /// submit is a broken fixture, and the message names what is missing.
-// The spec is read, not consumed: the builder clones each field and
-// `toolpath_config` borrows the spec afterwards. A reference here would move
-// the lint onto `build_request` and every one of its callers.
-#[allow(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The spec is read, not consumed: the builder clones each field and `toolpath_config` borrows the spec afterwards. A reference here would move the lint onto `build_request` and every one of its callers."
+)]
 pub(super) fn request(spec: RequestSpec) -> ComputeRequest {
     let mut builder = ProjectSessionBuilder::new()
         .stock(spec.stock.clone())

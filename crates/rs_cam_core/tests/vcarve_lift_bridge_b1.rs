@@ -12,12 +12,11 @@
 //! (2026-09-18) made the Finish default a plunge, so the fixture pins the
 //! Ramp entry itself: the lift-bridge path is the ramp emitter's.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::ids::ToolpathId;

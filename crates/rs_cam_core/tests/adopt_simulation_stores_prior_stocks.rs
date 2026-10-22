@@ -40,11 +40,10 @@
 //! of the one before it. The same recipe
 //! `job_three_steps_equal_generate_toolpath.rs` builds.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::HashMap;

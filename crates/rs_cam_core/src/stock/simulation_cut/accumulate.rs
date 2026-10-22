@@ -150,8 +150,10 @@ impl SummaryAccumulator {
             // samples with `MoveIntent::Retract` were already reclassified
             // to `is_cutting=false` in Step 1, so they don't reach this
             // branch.
-            #[allow(clippy::indexing_slicing)]
-            // SAFETY: `cut_kinematics.index()` is bounded by COUNT.
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "`cut_kinematics.index()` is bounded by COUNT."
+            )]
             self.per_kinematics[sample.cut_kinematics.index()].observe_cutting(sample);
         } else {
             self.rapid_runtime_s += sample.segment_time_s;

@@ -386,9 +386,10 @@ pub fn place_keyed_pins(req: &PinPlacementRequest) -> Result<[AlignmentPin; 3], 
                 continue;
             }
             let margin = a.wall_mm.min(p.wall_mm) - wall;
-            // SAFETY: a margin in steps of 0.5 mm on a stock of finite size
-            // fits an i64 with room to spare.
-            #[allow(clippy::cast_possible_truncation)]
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "a margin in steps of 0.5 mm on a stock of finite size fits an i64 with room to spare."
+            )]
             let margin_steps = (margin / step + 1e-6).floor().max(0.0) as i64;
             scored.push(Scored {
                 margin_steps,

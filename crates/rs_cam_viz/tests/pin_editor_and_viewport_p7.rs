@@ -20,12 +20,11 @@
 //! 5. a pick on a flipped setup with the stock origin not at 0 hits the
 //!    pin where the upload draws it (C8).
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
-    clippy::float_cmp
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::Arc;

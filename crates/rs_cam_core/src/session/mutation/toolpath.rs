@@ -162,8 +162,10 @@ impl ProjectSession {
             let bore_index = session.add_toolpath_impl(setup_index, config)?;
             // `add_toolpath_impl` appends to the setup. Move the Bore to
             // the place after the Drill in the plan order of the setup.
-            // SAFETY: `setup_index` is a position in `setups` (above).
-            #[allow(clippy::indexing_slicing)]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "`setup_index` is a position in `setups` (above)."
+            )]
             let order = &mut session.setups[setup_index].toolpath_indices;
             order.retain(|&i| i != bore_index);
             let at = order
@@ -693,8 +695,10 @@ impl ProjectSession {
                 setup.toolpath_indices.retain(|&i| i != tp_index);
             }
 
-            // SAFETY: target_setup_index bounds-checked above
-            #[allow(clippy::indexing_slicing)]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "target_setup_index bounds-checked above"
+            )]
             let target = &mut session.setups[target_setup_index].toolpath_indices;
             let at = target_position.unwrap_or(target.len()).min(target.len());
             target.insert(at, tp_index);

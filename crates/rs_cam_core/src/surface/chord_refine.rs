@@ -106,7 +106,6 @@ impl<'a> ChordRefineCtx<'a> {
     /// A gouge check for a fed path that is not a scallop ring: only a
     /// chord below the surface is split ([`ChordSide::Below`]), and the
     /// probe step is [`probe_step_for_tool`].
-    #[allow(clippy::too_many_arguments)] // SAFETY: the ctx fields, named at the call site
     pub(crate) fn gouge_check(
         mesh: &'a TriangleMesh,
         index: &'a SpatialIndex,
@@ -348,7 +347,11 @@ pub(crate) fn refine_chord(
         .min(len * 0.125)
         .max(CHORD_REFINE_MIN_SPLIT_MM);
     let segments = (len / step).ceil().max(2.0);
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "segments is at least 2 and at most len / CHORD_REFINE_MIN_SPLIT_MM, so it fits a usize"
+    )]
     let segments = segments as usize;
 
     // (t, surface_z, |err|) of the worst interior probe.

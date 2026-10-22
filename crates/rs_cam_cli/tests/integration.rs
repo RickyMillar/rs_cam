@@ -2,12 +2,13 @@
 //!
 //! These tests exercise job parsing, tool construction, operation execution,
 //! and G-code output without spawning subprocesses.
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::map_err_ignore
+    clippy::map_err_ignore,
+    reason = "test code: a panic is how a test reports a failure; test code accepts the style lint map_err_ignore"
 )]
 
 // Re-use the public API from the job module (re-exported by the crate's lib-like structure).

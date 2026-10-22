@@ -26,6 +26,10 @@ use crate::ui_command::{
 
 /// All ephemeral view state for the modal, stashed in egui temp memory.
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent state of the modal view"
+)]
 struct ToolLibraryView {
     selected_catalog: Option<String>,
     selected_index: Option<usize>,

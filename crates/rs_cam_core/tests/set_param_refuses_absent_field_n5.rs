@@ -58,11 +58,11 @@
 //! arm. This test asserts only that the five arms call the same helper,
 //! so the two routes cannot drift apart.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

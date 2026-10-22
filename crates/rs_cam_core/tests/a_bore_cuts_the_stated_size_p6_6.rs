@@ -33,14 +33,17 @@
 //! cargo test -p rs_cam_core -q --test a_bore_cuts_the_stated_size_p6_6
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
-// The measured wall radius and floor of each hole ARE the record.
-#![allow(clippy::print_stderr)]
+#![expect(
+    clippy::print_stderr,
+    reason = "The measured wall radius and floor of each hole ARE the record."
+)]
 
 mod common;
 

@@ -40,11 +40,10 @@
 //! sampling cell on every side. The two-loop assertion below pins that pad
 //! as well as the sampler.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::Path;
@@ -324,7 +323,10 @@ fn every_x_fiber_row_is_blocked_across_both_long_walls() {
 /// by eye.
 #[test]
 #[ignore = "evidence: needs /home/ricky/Downloads/Corne Case Hex.stl; evidence run, not a gate"]
-#[allow(clippy::print_stdout)] // SAFETY: an evidence run whose output is read off the terminal
+#[expect(
+    clippy::print_stdout,
+    reason = "an evidence run whose output is read off the terminal"
+)]
 fn corne_case_hex_at_z10_has_no_point_inside_the_right_wall() {
     let path = Path::new("/home/ricky/Downloads/Corne Case Hex.stl");
     if !path.exists() {

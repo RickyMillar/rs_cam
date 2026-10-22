@@ -56,11 +56,10 @@
 //! world Z0 (2D operations cut at negative Z), and two pockets. Index 0
 //! cuts fresh stock. Index 1 takes the remaining stock of index 0.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::HashMap;

@@ -38,11 +38,11 @@
 //!   welds, the blob is kept, and real islands are dropped instead. The
 //!   owned area in the field is a PINNED MEASUREMENT of the defect.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::maps::grid::GridSpec;

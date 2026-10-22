@@ -193,7 +193,6 @@ fn chunk_fits(job: &SweptJob, radius: f64, cs: f64) -> bool {
 /// `out.len()` must be `job.bins`; anything shorter is a programming error and
 /// the extra bins are dropped rather than panicking (this runs inside a rayon
 /// closure).
-#[allow(clippy::too_many_arguments)]
 pub(super) fn stamp_chunk(
     band: &mut GridBand<'_>,
     lut: &RadialProfileLUT,
@@ -246,8 +245,10 @@ pub(super) fn stamp_chunk(
 /// without changing the sample stream: each of those 250 subsegments carries
 /// its own `SimulationCutSample` with its own `plunge_descent_mm` and its own
 /// share of the removed volume, and a drill-adjacent gate reads them.
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::indexing_slicing)] // bounded by clamped bbox / bin count
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded by clamped bbox / bin count"
+)]
 fn stamp_plunge_chunk(
     band: &mut GridBand<'_>,
     lut: &RadialProfileLUT,
@@ -266,9 +267,10 @@ fn stamp_plunge_chunk(
     // Per-bin tip depth, verbatim from the shipped degenerate branch:
     // `d = sd.min(ed)` on the bin's own reconstructed endpoints.
     let mut depths = Vec::with_capacity(bins);
-    // The index is the loop's subject, not an accident: `b` addresses `job.bin_segment(b)` as well as `out[b]`,
-    // so `enumerate()` would only move the same integer across the tuple.
-    #[allow(clippy::needless_range_loop)]
+    #[expect(
+        clippy::needless_range_loop,
+        reason = "The index is the loop's subject, not an accident: `b` addresses `job.bin_segment(b)` as well as `out[b]`, so `enumerate()` would only move the same integer across the tuple."
+    )]
     for b in 0..bins {
         let (s, e) = job.bin_segment(b);
         depths.push(s.2.min(e.2));
@@ -413,8 +415,10 @@ fn stamp_plunge_chunk(
 /// bound sits at or below `depth` is inert by the same argument written out at
 /// `cell_can_remove` — so the one-bin case is bit-identical, which
 /// `swept_with_one_bin_matches_per_stamp_bit_for_bit` pins.
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::indexing_slicing)] // bounded by clamped bbox / bin count
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded by clamped bbox / bin count"
+)]
 fn stamp_swept_chunk(
     band: &mut GridBand<'_>,
     lut: &RadialProfileLUT,
@@ -646,9 +650,10 @@ fn stamp_swept_chunk(
                     out[0].pre_volume += inert;
                     out[0].post_volume += inert;
                 } else {
-                    // The index is the loop's subject, not an accident: `b` addresses `weight(b)` as well as `out[b]`,
-                    // so `enumerate()` would only move the same integer across the tuple.
-                    #[allow(clippy::needless_range_loop)]
+                    #[expect(
+                        clippy::needless_range_loop,
+                        reason = "The index is the loop's subject, not an accident: `b` addresses `weight(b)` as well as `out[b]`, so `enumerate()` would only move the same integer across the tuple."
+                    )]
                     for b in b_lo..=b_hi {
                         let w = weight(b);
                         if w <= 0.0 {
@@ -703,9 +708,10 @@ fn stamp_swept_chunk(
                 if single {
                     out[0].removed_by_slot.merge(&by_slot);
                 } else {
-                    // SAFETY: `b` addresses `weight(b)` as well as `out[b]`, as in the
-                    // volume loop below, so `enumerate()` would only move the integer.
-                    #[allow(clippy::needless_range_loop)]
+                    #[expect(
+                        clippy::needless_range_loop,
+                        reason = "`b` addresses `weight(b)` as well as `out[b]`, as in the volume loop below, so `enumerate()` would only move the integer."
+                    )]
                     for b in b_lo..=b_hi {
                         let w = weight(b);
                         if w <= 0.0 {
@@ -719,9 +725,10 @@ fn stamp_swept_chunk(
                 out[0].pre_volume += pre_len * cell_area;
                 out[0].post_volume += post_len * cell_area;
             } else {
-                // The index is the loop's subject, not an accident: `b` addresses `weight(b)` as well as `out[b]`,
-                // so `enumerate()` would only move the same integer across the tuple.
-                #[allow(clippy::needless_range_loop)]
+                #[expect(
+                    clippy::needless_range_loop,
+                    reason = "The index is the loop's subject, not an accident: `b` addresses `weight(b)` as well as `out[b]`, so `enumerate()` would only move the same integer across the tuple."
+                )]
                 for b in b_lo..=b_hi {
                     let w = weight(b);
                     if w <= 0.0 {
@@ -768,9 +775,10 @@ fn stamp_swept_chunk(
                     pre_fresh > FRESH_MATERIAL_THRESHOLD_MM && coverage >= PERP_COVERAGE_GATE;
                 let perp = (-seg_dv * dm_u + seg_du * dm_v) * inv_seg_len;
                 let removed_here = (pre_len - post_len).max(0.0);
-                // The index is the loop's subject, not an accident: `b` addresses `weight(b)` as well as `out[b]`,
-                // so `enumerate()` would only move the same integer across the tuple.
-                #[allow(clippy::needless_range_loop)]
+                #[expect(
+                    clippy::needless_range_loop,
+                    reason = "The index is the loop's subject, not an accident: `b` addresses `weight(b)` as well as `out[b]`, so `enumerate()` would only move the same integer across the tuple."
+                )]
                 for b in b_lo..=b_hi {
                     if weight(b) <= 0.0 {
                         continue;
@@ -987,7 +995,10 @@ impl SweptDispatch {
     /// in `whole_path::BandDispatch::run_batch` and for the same reason
     /// (`CancelCheck` is not `Sync`); the enumerator still polls per
     /// subsegment.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     pub(super) fn run_batch(
         &mut self,
         grid: &mut DexelGrid,
@@ -1174,12 +1185,6 @@ pub(super) fn classify_subsegment(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::*;
 

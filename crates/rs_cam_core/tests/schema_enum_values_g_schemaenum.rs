@@ -38,12 +38,10 @@
 //! whether the generator reverses direction. That is a per-operation question
 //! and it needs per-operation evidence.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};

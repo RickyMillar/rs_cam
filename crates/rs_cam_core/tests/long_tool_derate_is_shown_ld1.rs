@@ -25,11 +25,10 @@
 //! 4. The factor on the warning is the share in the derate record, and the
 //!    feed is the same at every stickout (Q7: no feed cut).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::diagnostics::adapters::from_feeds::diagnostics_from_feeds_result;

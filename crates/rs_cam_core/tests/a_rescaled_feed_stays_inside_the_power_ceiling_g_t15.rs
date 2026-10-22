@@ -84,13 +84,11 @@
 //!   85 % of the ceiling, under the 89.4 % p90 the register re-measured after
 //!   R1 — and pass 9 lifts it over.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    // SAFETY: a sentry that measures a utilisation should print the margin it
-    // measured, the same allowance the sibling power instruments take.
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "a sentry that measures a utilisation should print the margin it measured, the same allowance the sibling power instruments take."
 )]
 
 use rs_cam_core::compute::catalog::OperationConfig;

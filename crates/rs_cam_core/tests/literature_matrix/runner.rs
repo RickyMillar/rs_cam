@@ -481,7 +481,10 @@ fn rubbing_floor_rule(detail: SubVerdictDetail, snap: &ShimSnapshot) -> SubVerdi
     }
 }
 
-#[allow(dead_code)] // utility for harness_tests / future Phase 1 wiring
+#[expect(
+    dead_code,
+    reason = "utility for harness_tests / future Phase 1 wiring"
+)]
 pub fn worst_verdict(rows: &[SubVerdictRow]) -> SubVerdict {
     let mut worst = SubVerdict::Within;
     for r in rows {

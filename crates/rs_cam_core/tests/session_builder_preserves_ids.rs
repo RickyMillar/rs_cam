@@ -18,11 +18,10 @@
 //! NOT MEASURED: the machine profile and the post configuration. The builder
 //! writes both, and no test consumes either today.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::Arc;

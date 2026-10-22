@@ -43,12 +43,12 @@
 //! cargo test -p rs_cam_core -q --test a_link_through_stock_is_flagged_g_linkplough
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;

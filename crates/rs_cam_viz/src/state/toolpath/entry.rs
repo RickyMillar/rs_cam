@@ -127,6 +127,10 @@ impl ToolpathEntryInit {
     }
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent toggle that the operator sets on the toolpath row"
+)]
 pub struct ToolpathEntry {
     pub id: ToolpathId,
     pub name: String,
@@ -293,7 +297,6 @@ impl ToolpathEntry {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::state::job::{ModelId, ToolId};

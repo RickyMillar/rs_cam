@@ -26,11 +26,10 @@
 //!   shipped floored to 3999; the rationale row sits on the RPM entry, and
 //!   the diagnostic is Info.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::catalog::OperationType;

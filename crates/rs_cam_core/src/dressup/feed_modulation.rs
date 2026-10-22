@@ -401,8 +401,10 @@ impl ModulationOutcome {
         let median = if deltas.is_empty() {
             0.0
         } else {
-            // SAFETY: deltas.len() > 0 verified just above.
-            #[allow(clippy::indexing_slicing)]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "deltas.len() > 0 verified just above."
+            )]
             {
                 let mid = deltas.len() / 2;
                 if deltas.len() % 2 == 1 {
@@ -906,10 +908,10 @@ pub fn adaptive_feed_modulate_with_materials(
     );
 
     let mut outcome = ModulationOutcome::default();
-    #[allow(clippy::indexing_slicing)]
-    // SAFETY: `i` bounded by `engagements.len()`, which we just
-    // verified equals `toolpath.moves.len()`. The Phase 3 guard also
-    // reads `moves[i - 1]`, under its own `i > 0` test.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "`i` bounded by `engagements.len()`, which we just verified equals `toolpath.moves.len()`. The Phase 3 guard also reads `moves[i - 1]`, under its own `i > 0` test."
+    )]
     for (i, &engagement) in engagements.iter().enumerate() {
         let move_intent = toolpath.moves[i].intent;
         let move_type = toolpath.moves[i].move_type;
@@ -1021,11 +1023,10 @@ pub fn adaptive_feed_modulate_with_materials(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

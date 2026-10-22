@@ -12,11 +12,9 @@
 //! (`session/cycle_time.rs`); this file pins the viz half: the label text
 //! on the row and the remedy text on hover and below the row.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#![expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::session::{CycleTime, CycleTimeBasis, CycleTimeEvidence, MissingInput};

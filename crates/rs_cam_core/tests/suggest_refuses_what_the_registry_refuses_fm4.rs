@@ -17,12 +17,9 @@
 //!   and EndMill/SpiralFinish refuse; BallNose/Pencil, VBit/Chamfer and
 //!   BallNose/SpiralFinish ship.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stdout
+#![expect(
+    clippy::print_stdout,
+    reason = "the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::compute::catalog::OperationType;

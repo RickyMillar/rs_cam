@@ -24,11 +24,9 @@
 //! helpers are pure, so the rule is testable the day it is written
 //! rather than the day its first producer arrives.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::gcode::{

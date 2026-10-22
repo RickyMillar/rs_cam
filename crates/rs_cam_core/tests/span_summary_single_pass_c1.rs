@@ -41,11 +41,9 @@
 //! its `span_path`, not to one of them. Test 1 pins that against the parent's
 //! own answer rather than against a hand-computed expectation.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#![expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::HashSet;

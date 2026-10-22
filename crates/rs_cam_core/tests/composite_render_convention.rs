@@ -18,11 +18,12 @@
 //! `reference_composites_for_visual_review` writes PNGs to
 //! `target/render_checks/` — that is the artifact to open and look at.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

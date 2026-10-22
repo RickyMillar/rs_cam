@@ -157,7 +157,10 @@ fn path_length(pts: &[P2]) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::polygon::Polygon2;

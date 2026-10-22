@@ -66,11 +66,9 @@
 //! `mod common;`, and `common/mod.rs`'s migration policy says a working
 //! sentry moves over only when it is being edited anyway.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#![expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

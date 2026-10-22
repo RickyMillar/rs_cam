@@ -86,8 +86,10 @@ impl StockMesh {
         // Transform and append vertices
         let mut i = 0;
         while i + 2 < other.vertices.len() {
-            // SAFETY: loop guard ensures i+2 is in bounds
-            #[allow(clippy::indexing_slicing)]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "loop guard ensures i+2 is in bounds"
+            )]
             let (x, y, z) = (
                 other.vertices[i],
                 other.vertices[i + 1],

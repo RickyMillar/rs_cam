@@ -280,10 +280,15 @@ pub fn ring_stepover_with_policy(
     }
     let mut sorted = samples.clone();
     sorted.sort_by(f64::total_cmp);
-    // SAFETY: `sorted` is non-empty (checked above).
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "`sorted` is non-empty (checked above)."
+    )]
     let (lo, hi) = (sorted[0], sorted[sorted.len() - 1]);
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "`sorted` is non-empty (checked above)."
+    )]
     let p50 = sorted[sorted.len() / 2];
     let selected = policy.reducer.reduce(&sorted);
 
@@ -333,7 +338,7 @@ impl RingReducer {
     }
 
     /// `sorted` must be non-empty and ascending.
-    #[allow(clippy::indexing_slicing)] // SAFETY: caller guarantees non-empty
+    #[expect(clippy::indexing_slicing, reason = "caller guarantees non-empty")]
     fn reduce(self, sorted: &[f64]) -> f64 {
         let n = sorted.len();
         match self {
@@ -1018,7 +1023,6 @@ pub fn scallop_generation_resolution(
 /// it is `#[cfg(test)]` and no longer public API.
 #[cfg(test)]
 #[tracing::instrument(skip(mesh, index, cutter, params), fields(scallop_height = params.scallop_height))]
-#[allow(clippy::indexing_slicing)] // ring/filtered indexing is guarded by len checks
 fn scallop_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -1055,7 +1059,6 @@ impl crate::compute::spans::RuntimeLabel for ScallopRuntimeAnnotation {
 /// their own independent ring set, concatenated (regions are disjoint by
 /// construction, so no de-duplication is needed). `None` reproduces
 /// today's single mesh-bbox-rectangle behavior byte-for-byte.
-#[allow(clippy::too_many_arguments)]
 pub fn scallop_toolpath_structured_annotated_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -1094,7 +1097,10 @@ pub fn scallop_toolpath_structured_annotated_with_cancel(
 ///
 /// `None` is the ring-order relink ([`RingLink::RingOrder`]) with no
 /// ceiling: `reorder: false`, `link_ceiling: None`, no loop rotation.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub fn scallop_toolpath_structured_annotated_with_cancel_and_stage(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -1133,7 +1139,10 @@ pub fn scallop_toolpath_structured_annotated_with_cancel_and_stage(
 /// `scallop_generation_resolution(cutter, params.tolerance)` reproduces the
 /// shipped path exactly (that is literally what the wrapper above does), so
 /// this adds no behavior and changes no default.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub fn scallop_toolpath_structured_annotated_with_resolution(
     mesh: &TriangleMesh,
     index: &SpatialIndex,

@@ -57,11 +57,10 @@
 //! total in BOTH arms. That gap predates N7 and belongs to the F-034 flag, not
 //! to this ruling. This file asserts nothing about the drill's share.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

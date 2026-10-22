@@ -51,12 +51,13 @@
 //! which now holds the programme record only: a gate reads no
 //! `planning/` file.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;

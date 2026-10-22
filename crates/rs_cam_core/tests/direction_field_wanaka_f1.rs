@@ -141,12 +141,11 @@
 //!   wanaka_direction_field_f1 -- --ignored --nocapture
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::collections::{HashMap, VecDeque};
@@ -1487,7 +1486,10 @@ enum FitOutcome {
 /// Solve the symmetric 6×6 system `A x = b` by Gauss-Jordan with partial
 /// pivoting, returning `(x, min|pivot| / max|pivot|)`. **Restated verbatim
 /// from `wanaka_curvature_anisotropy.rs:547-602`**, `#[allow]` included.
-#[allow(clippy::needless_range_loop)] // Gauss-Jordan indexes three arrays by the same counter.
+#[expect(
+    clippy::needless_range_loop,
+    reason = "Gauss-Jordan indexes three arrays by the same counter."
+)]
 fn solve_sym6(a: &[[f64; 6]; 6], b: &[f64; 6]) -> Option<([f64; 6], f64)> {
     let mut m = [[0.0f64; 7]; 6];
     for row in 0..6 {
@@ -1546,7 +1548,10 @@ fn solve_sym6(a: &[[f64; 6]; 6], b: &[f64; 6]) -> Option<([f64; 6], f64)> {
 /// Mirror the accumulated upper triangle into the lower one and scale by
 /// `inv = 1/count`. **Restated verbatim from
 /// `wanaka_curvature_anisotropy.rs:652-664`**, `#[allow]` included.
-#[allow(clippy::needless_range_loop)] // symmetric mirror indexes both [i][j] and [j][i]
+#[expect(
+    clippy::needless_range_loop,
+    reason = "symmetric mirror indexes both [i][j] and [j][i]"
+)]
 fn finalise_normal_equations(normal: &mut [[f64; 6]; 6], rhs: &mut [f64; 6], inv: f64) {
     for i in 0..6 {
         for j in 0..6 {

@@ -170,7 +170,10 @@ pub(super) struct Lifted {
 /// [`super::PULLBACK_LADDER`] is dropped from all four lists at once, so
 /// [`SpiralResult::spiral_disk`] and [`SpiralResult::spiral_contact`] can
 /// never drift apart.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub(super) fn lift_disk_aligned(
     locator: &FlatLocator,
     region: &RegionMesh,

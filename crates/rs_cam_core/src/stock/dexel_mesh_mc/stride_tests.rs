@@ -12,9 +12,11 @@
 //! 3. Stride 2 keeps about 1/4 of the vertices and the same bounding box.
 //! 4. `display_stride_for` arithmetic, on the plan's rivmap350 numbers.
 
-// SAFETY: test module; the legacy oracle and the fixtures index in bounds,
-// and a failed precondition panics on purpose.
-#![allow(clippy::indexing_slicing, clippy::panic)]
+#![expect(
+    clippy::indexing_slicing,
+    clippy::panic,
+    reason = "test module; the legacy oracle and the fixtures index in bounds, and a failed precondition panics on purpose."
+)]
 
 use super::{
     MIN_MATERIAL_THICKNESS, cell_center, display_stride_for, find_matching_gap,
@@ -29,7 +31,10 @@ use crate::stock::stock_mesh::StockMesh;
 
 // ── The legacy oracle: from `b3a4a7ac`, renamed, plus the F1 winding swap. ─
 
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 fn legacy_z_grid_marching_cubes(
     grid: &DexelGrid,
     stock_top_z: f64,
@@ -332,7 +337,10 @@ fn legacy_z_grid_marching_cubes(
 /// face (at gap_top, normal +Z) for the 2x2 cell block sharing the gap.
 /// Vertical cavity walls are emitted where adjacent cells differ in gap
 /// topology.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 fn legacy_emit_cavity_surfaces(
     grid: &DexelGrid,
     vertices: &mut Vec<f32>,

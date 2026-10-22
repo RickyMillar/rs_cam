@@ -2,12 +2,11 @@
 //!
 //! Run with: cargo bench -p rs_cam_core
 //! Results saved to target/criterion/
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::indexing_slicing,
-    clippy::str_to_string,
-    clippy::semicolon_if_nothing_returned
+    clippy::semicolon_if_nothing_returned,
+    reason = "test code: a panic is how a test reports a failure; test code accepts the style lint semicolon_if_nothing_returned"
 )]
 
 use criterion::{BatchSize, BenchmarkId, Criterion, black_box, criterion_group, criterion_main};

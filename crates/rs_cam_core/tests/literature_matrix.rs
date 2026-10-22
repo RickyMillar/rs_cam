@@ -9,15 +9,13 @@
 //! `--test literature_matrix`; it is NOT pulled in by
 //! `cargo test -p rs_cam_core --lib`.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
     clippy::print_stdout,
-    clippy::print_stderr,
-    clippy::needless_pass_by_value,
-    dead_code
+    dead_code,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader; the binary keeps helpers that not every test calls"
 )]
 
 #[path = "literature_matrix/cell.rs"]

@@ -15,11 +15,11 @@
 //! cargo test -p rs_cam_core -q --test a_signature_serialises_every_op_f065
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

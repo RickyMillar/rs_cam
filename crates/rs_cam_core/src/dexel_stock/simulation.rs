@@ -122,8 +122,14 @@ impl TriDexelStock {
     /// enumerated**: `RS_CAM_PLAYBACK_DISPATCH=serial` stamps each move as it is
     /// reached, `banded` queues it and stamps whole batches across row bands.
     /// The two produce bit-identical grids — see `playback.rs`.
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     fn replay_moves(
         &mut self,
         toolpath: &Toolpath,
@@ -268,7 +274,10 @@ impl TriDexelStock {
     }
 
     /// One playback stamp: straight to the grid, or queued for its band batch.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     fn playback_stamp(
         &mut self,
         lut: &RadialProfileLUT,
@@ -319,7 +328,10 @@ impl TriDexelStock {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     pub fn simulate_toolpath_with_metrics_with_cancel(
         &mut self,
         toolpath: &Toolpath,
@@ -357,7 +369,10 @@ impl TriDexelStock {
     }
 
     /// Simulate with metrics using a pre-built LUT.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     pub fn simulate_toolpath_with_lut_metrics_cancel(
         &mut self,
         toolpath: &Toolpath,
@@ -409,8 +424,14 @@ impl TriDexelStock {
     /// samples. The memory programme's M8 added a mode that kept no sample;
     /// the operator ruling of 2026-10-02 ("always capture") removed its last
     /// caller, and the mode with it.
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     pub fn simulate_toolpath_with_lut_metrics_rapid_checked(
         &mut self,
         toolpath: &Toolpath,
@@ -825,7 +846,10 @@ impl TriDexelStock {
     /// dispatch the moves preceding a rapid may still be sitting in a batch.
     /// Splitting a batch earlier cannot move a result — job order within a band
     /// is preserved either way — so this is a schedule change only.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     fn flush_pending_stamps(
         &mut self,
         lut: &RadialProfileLUT,
@@ -925,7 +949,10 @@ impl TriDexelStock {
         );
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     fn capture_cutting_segment(
         &mut self,
         lut: &RadialProfileLUT,
@@ -1086,7 +1113,6 @@ impl TriDexelStock {
 /// its timings are identical between them by construction rather than by
 /// keeping two loops in step — which `DELTA_sim_w2.md` §3f called the hardest
 /// part of the restructure, correctly.
-#[allow(clippy::too_many_arguments)]
 fn push_cutting_sample(
     samples: &mut SampleSink,
     next_sample_index: &mut usize,
@@ -1293,7 +1319,10 @@ fn apply_subsegment_metrics(
 ///
 /// Split out only so the closure that borrows `samples` has one construction
 /// site, shared by the mid-toolpath flush and the final one.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn run_batch_into_samples(
     queue: &mut BandDispatch,
     grid: &mut DexelGrid,
@@ -1328,7 +1357,10 @@ fn run_batch_into_samples(
 /// The twin of [`run_batch_into_samples`]; both end in the same
 /// [`apply_subsegment_metrics`], so a divergence would have to be a divergence
 /// in the stamp.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn run_swept_batch_into_samples(
     queue: &mut SweptDispatch,
     grid: &mut DexelGrid,
@@ -1374,7 +1406,10 @@ impl TriDexelStock {
     /// subsegment is skipped — the last one because a chunk's sample slots are
     /// `first_slot..first_slot + bins` and a skipped subsegment would put a
     /// hole in that run.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     fn capture_cutting_segment_swept(
         &mut self,
         lut: &RadialProfileLUT,
@@ -1518,7 +1553,10 @@ impl TriDexelStock {
     }
 
     /// Queue one finished chunk, and run the batch if it is due.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     fn flush_swept_job(
         &mut self,
         job: SweptJob,
@@ -1554,7 +1592,10 @@ impl TriDexelStock {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     fn estimate_and_stamp_cutting_subsegment(
         &mut self,
         lut: &RadialProfileLUT,
@@ -1766,7 +1807,7 @@ pub fn chip_thickness_stats(
 /// 9.5 GB allocation before the scallop's first stamp. The raw samples above
 /// the kept count never exceed `sample_coalesce::staging_budget`, so the
 /// doublings they can cost are bounded by the grid.
-#[allow(clippy::indexing_slicing)] // bounded by the loop range
+#[expect(clippy::indexing_slicing, reason = "bounded by the loop range")]
 fn estimate_sample_count(toolpath: &Toolpath, sample_step_mm: f64) -> usize {
     let step = sample_step_mm.max(1e-3);
     let mut total = 0usize;
@@ -1813,11 +1854,9 @@ fn classify_cut_kinematics(start: P3, end: P3, is_arc: bool) -> CutKinematics {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

@@ -191,7 +191,10 @@ impl TileMaxTop {
         }
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded by rows/cols, checked above
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded by rows/cols, checked above"
+    )]
     fn rebuild(&mut self, grid: &DexelGrid) {
         for slot in self.tile_max.iter_mut() {
             *slot = f32::NEG_INFINITY;
@@ -215,7 +218,10 @@ impl TileMaxTop {
     ///
     /// The bound is taken over whole tiles, so it covers a superset of the
     /// rectangle — which is the safe direction: a looser bound skips less.
-    #[allow(clippy::indexing_slicing)] // tile indices derived from clamped cells
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "tile indices derived from clamped cells"
+    )]
     pub(super) fn max_over(
         &self,
         row_lo: usize,
@@ -245,11 +251,9 @@ impl TileMaxTop {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

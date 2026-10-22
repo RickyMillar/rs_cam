@@ -47,7 +47,10 @@ pub(crate) const FEED_EPS: f64 = 1e-6;
 ///
 /// Hands back the N-to-M collapse under the C1 provenance contract, so
 /// channels other than the spans can follow it.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Transformed {
     // Barriers we must not merge across — same set arc-fit honours. A barrier
     // at index `b` sits before `moves[b]`; a run that included `b` would erase
@@ -195,11 +198,11 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Transf
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

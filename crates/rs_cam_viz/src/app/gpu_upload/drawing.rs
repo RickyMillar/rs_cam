@@ -119,8 +119,10 @@ pub(super) fn upload(
             }
         };
         for pair in ring.windows(2) {
-            // SAFETY: windows(2) guarantees exactly 2 elements per slice.
-            #[allow(clippy::indexing_slicing)]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "windows(2) guarantees exactly 2 elements per slice."
+            )]
             draw_segment(transform_pt(&pair[0]), transform_pt(&pair[1]));
         }
         if close && let (Some(last), Some(first)) = (ring.last(), ring.first()) {

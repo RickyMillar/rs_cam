@@ -65,14 +65,16 @@
 //! each "merge without arc fit" arm 0.2284 mm. The P6.0b report holds the
 //! run.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
-// The two instruments print their tables.
-#![allow(clippy::print_stderr)]
+#![expect(
+    clippy::print_stderr,
+    reason = "The two instruments print their tables."
+)]
 
 mod common;
 

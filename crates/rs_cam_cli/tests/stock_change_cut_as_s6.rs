@@ -9,12 +9,11 @@
 //! (`StockChangeRow::line`) of each. The GUI and MCP half is in
 //! `rs_cam_viz/src/app/mcp/commands/stock_changes.rs`.
 
-#![allow(
-    // SAFETY: test code; a failed fixture is a failed test.
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code; a failed fixture is a failed test."
 )]
 
 use std::path::{Path, PathBuf};

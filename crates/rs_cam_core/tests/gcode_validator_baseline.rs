@@ -27,13 +27,9 @@
 //! No `#[ignore]` — this is a normal test. It only depends on files
 //! committed at `tests/fixtures/gcode_golden/` (the G9 goldens), no
 //! external tooling.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
+#![expect(
     clippy::print_stdout,
-    clippy::print_stderr
+    reason = "the test prints its measurements for the reader"
 )]
 
 mod common;

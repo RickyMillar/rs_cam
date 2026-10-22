@@ -70,11 +70,11 @@
 //! instead of `apply` is the viz/CLI sentry's question, and a green
 //! reading here is not evidence about that.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

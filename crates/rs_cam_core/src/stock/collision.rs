@@ -424,8 +424,7 @@ pub fn check_collisions_interpolated_with_cancel(
         }
 
         // Get previous position for interpolation
-        // SAFETY: move_idx > 0 checked in condition
-        #[allow(clippy::indexing_slicing)]
+        #[expect(clippy::indexing_slicing, reason = "move_idx > 0 checked in condition")]
         let prev = if move_idx > 0 {
             toolpath.moves[move_idx - 1].target
         } else {
@@ -560,8 +559,10 @@ pub fn check_rapid_collisions_against_stock(
 ) -> Vec<RapidCollision> {
     let mut collisions = Vec::new();
 
-    // SAFETY: i ranges 1..len, so i and i-1 are always valid
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "i ranges 1..len, so i and i-1 are always valid"
+    )]
     for i in 1..toolpath.moves.len() {
         if !matches!(toolpath.moves[i].move_type, MoveType::Rapid) {
             continue;
@@ -808,7 +809,10 @@ impl<'a> RapidClearanceCheck<'a> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::mesh::{SpatialIndex, make_test_hemisphere};

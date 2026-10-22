@@ -17,11 +17,10 @@
 //! `transform_stock_mesh_to_global` is in the hash. The `local_to_global` arm
 //! and the drill cylinders are not in this fixture.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::hash::{Hash, Hasher};

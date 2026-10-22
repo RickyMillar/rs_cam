@@ -1,11 +1,12 @@
 //! Unit tests for operation execution. Moved out of `compute/execute.rs` by
 //! P4; the module body is unchanged.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use crate::compute::config::{DressupConfig, DressupEntryStyle};

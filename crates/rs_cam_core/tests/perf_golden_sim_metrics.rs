@@ -185,13 +185,12 @@
 //! cargo test -p rs_cam_core --test perf_golden_sim_metrics
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
     clippy::print_stderr,
-    clippy::print_stdout
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::path::PathBuf;

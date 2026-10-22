@@ -12,8 +12,10 @@
 //!   the same cells.
 //! - The guard records WHY a job stopped, and the first reason stays.
 
-// SAFETY: test module; a failed unwrap or panic is a failed test.
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![expect(
+    clippy::panic,
+    reason = "test module; a failed unwrap or panic is a failed test."
+)]
 
 use std::mem::size_of;
 use std::sync::Arc;

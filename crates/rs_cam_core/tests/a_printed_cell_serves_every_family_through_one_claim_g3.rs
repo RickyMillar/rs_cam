@@ -51,7 +51,11 @@
 //!   longer belongs beside the facing bit here: it routes to
 //!   (Trace, Finish) instead.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};

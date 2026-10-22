@@ -180,13 +180,13 @@
 //! it never substitutes `fixtures/terrain_small.stl` (banned by the
 //! pre-registration).
 
-#![allow(
+#![expect(
     clippy::print_stderr,
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader; test code accepts the style lint too_many_lines"
 )]
 
 use std::fmt::Write as _;
@@ -689,7 +689,10 @@ fn surface_z(mesh: &TriangleMesh, index: &SpatialIndex, at: P2) -> Option<f64> {
     best
 }
 
-#[allow(clippy::needless_range_loop)]
+#[expect(
+    clippy::needless_range_loop,
+    reason = "test code accepts the style lint needless_range_loop"
+)]
 fn solve_sym6(a: &[[f64; 6]; 6], b: &[f64; 6]) -> Option<([f64; 6], f64)> {
     let mut m = [[0.0f64; 7]; 6];
     for row in 0..6 {
@@ -770,7 +773,10 @@ fn fit_from_derivatives((f_x, f_y): (f64, f64), (f_xx, f_xy, f_yy): (f64, f64, f
     }
 }
 
-#[allow(clippy::needless_range_loop)]
+#[expect(
+    clippy::needless_range_loop,
+    reason = "test code accepts the style lint needless_range_loop"
+)]
 fn finalise_normal_equations(normal: &mut [[f64; 6]; 6], rhs: &mut [f64; 6], inv: f64) {
     for i in 0..6 {
         for j in 0..6 {

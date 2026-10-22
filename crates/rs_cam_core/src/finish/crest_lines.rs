@@ -100,10 +100,14 @@ pub(crate) struct Curvature {
     /// Maximal principal direction (t₁) per vertex — the direction of maximum
     /// **signed** normal curvature, paired with `k1`. Not read by the valley
     /// march; carried for `finish::direction_field`.
-    // SAFETY: `finish::direction_field` is the only reader, and the `research`
-    // feature gates that module. The march computes t₁ on the way to t₂, so the
-    // field is free to keep and the research arm needs it.
-    #[cfg_attr(not(feature = "research"), allow(dead_code))]
+    // `finish::direction_field` is the only reader.
+    #[cfg_attr(
+        not(feature = "research"),
+        expect(
+            dead_code,
+            reason = "only a research arm reads it, and the `research` feature gates that arm. The march computes t₁ on the way to t₂, so the field is free to keep."
+        )
+    )]
     pub(crate) pdir1: Vec<V3>,
     /// Minimal principal direction (t₂) per vertex.
     pub(crate) pdir2: Vec<V3>,
@@ -223,7 +227,10 @@ fn diagonalize(
 /// Mixed Voronoi corner areas (Meyer, Desbrun, Schröder & Barr 2003). Returns
 /// `(pointareas, cornerareas)`: the per-vertex mixed area and the per-face
 /// per-corner area used as the vertex-accumulation weight.
-#[allow(clippy::indexing_slicing)] // tri vertex indices validated on mesh load
+#[expect(
+    clippy::indexing_slicing,
+    reason = "tri vertex indices validated on mesh load"
+)]
 fn point_areas(mesh: &TriangleMesh) -> (Vec<f64>, Vec<[f64; 3]>) {
     let nv = mesh.vertices.len();
     let mut pointareas = vec![0.0_f64; nv];
@@ -278,7 +285,10 @@ fn point_areas(mesh: &TriangleMesh) -> (Vec<f64>, Vec<[f64; 3]>) {
 /// Area-weighted per-vertex normals, each oriented to point +Z (the relief is a
 /// heightfield cut from above). Orienting up fixes a stable curvature sign so a
 /// concave valley reliably reads κ₂ < 0 regardless of STL winding.
-#[allow(clippy::indexing_slicing)] // tri vertex indices validated on mesh load
+#[expect(
+    clippy::indexing_slicing,
+    reason = "tri vertex indices validated on mesh load"
+)]
 fn vertex_normals(mesh: &TriangleMesh) -> Vec<V3> {
     let mut normals = vec![V3::zeros(); mesh.vertices.len()];
     for (tri, face) in mesh.triangles.iter().zip(mesh.faces.iter()) {
@@ -321,7 +331,7 @@ fn solve3(w: [[f64; 3]; 3], m: [f64; 3]) -> Option<[f64; 3]> {
 
 /// Solve the symmetric 4×4 normal-equation system `w·x = m` (dcurv fit).
 fn solve4(w: [[f64; 4]; 4], m: [f64; 4]) -> Option<[f64; 4]> {
-    #[allow(clippy::indexing_slicing)] // fixed 4×4 literal indices
+    #[expect(clippy::indexing_slicing, reason = "fixed 4×4 literal indices")]
     let mat = Matrix4::from_fn(|i, j| w[i][j]);
     let rhs = Vector4::new(m[0], m[1], m[2], m[3]);
     mat.lu().solve(&rhs).map(|x| [x.x, x.y, x.z, x.w])
@@ -330,7 +340,10 @@ fn solve4(w: [[f64; 4]; 4], m: [f64; 4]) -> Option<[f64; 4]> {
 /// Estimate the per-vertex principal-curvature tensor (Rusinkiewicz 2004),
 /// smooth the tensor field, diagonalise it, and compute the minimal-curvature
 /// extremality e₂ = ∂κ₂/∂t₂ from the derivative-of-curvature tensor.
-#[allow(clippy::indexing_slicing)] // all indices are mesh vertex/face indices or fixed 0..3
+#[expect(
+    clippy::indexing_slicing,
+    reason = "all indices are mesh vertex/face indices or fixed 0..3"
+)]
 pub(crate) fn compute_curvature(
     mesh: &TriangleMesh,
     adj: &[Vec<u32>],
@@ -570,7 +583,10 @@ pub(crate) fn compute_curvature(
 }
 
 /// Build the 1-ring vertex adjacency (deduplicated neighbour lists).
-#[allow(clippy::indexing_slicing)] // tri vertex indices validated on mesh load
+#[expect(
+    clippy::indexing_slicing,
+    reason = "tri vertex indices validated on mesh load"
+)]
 pub(crate) fn vertex_adjacency(mesh: &TriangleMesh) -> Vec<Vec<u32>> {
     let mut adj: Vec<Vec<u32>> = vec![Vec::new(); mesh.vertices.len()];
     let mut push = |a: u32, b: u32| {
@@ -603,7 +619,10 @@ struct Crossing {
 /// edges where e₂ changes sign, and keeps the segment only where it is concave
 /// (κ₂ < 0), the concave direction dominates (|κ₂| ≥ |κ₁|), and it is sharp
 /// enough (|κ₂| ≥ `saliency`).
-#[allow(clippy::indexing_slicing)] // tri/loop indices bounded to mesh data and 0..3
+#[expect(
+    clippy::indexing_slicing,
+    reason = "tri/loop indices bounded to mesh data and 0..3"
+)]
 fn march_valley_segments(
     mesh: &TriangleMesh,
     cv: &Curvature,
@@ -798,12 +817,10 @@ pub fn detect_valley_lines(mesh: &TriangleMesh, params: &CrestParams) -> Vec<Vec
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stdout,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 mod tests {
     use super::*;

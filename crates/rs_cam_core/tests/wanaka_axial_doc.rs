@@ -1,13 +1,12 @@
 //! Reproduce the live wanaka peak_axial_doc=19.71mm via ProjectSession.
 //! Synthetic test passes (3mm). This loads wanaka.toml the same way MCP
 //! does — finds where the live-only path differs.
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
     clippy::print_stderr,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::session::ProjectSession;

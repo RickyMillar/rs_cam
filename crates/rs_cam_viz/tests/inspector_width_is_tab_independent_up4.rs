@@ -25,11 +25,11 @@
 //! This arm drives the real panel through a headless `Context` and compares
 //! the width each tab requests.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

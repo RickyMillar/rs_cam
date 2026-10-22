@@ -23,11 +23,11 @@
 //! * the Feeds card header paints "tip Ø… (R…)" for a tapered ball;
 //! * no surface paints the other diameter glyph `⌀` (U+2300).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

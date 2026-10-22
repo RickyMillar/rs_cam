@@ -66,13 +66,12 @@
 //! - [`the_anchor_cut_is_modelled_not_refused`] — non-vacuity for the
 //!   refusals: the anchor returns `Ok` with `available_kw > required_kw > 0`.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    // SAFETY: a sentry that measures a ratio should print the ratio it
-    // measured, the same allowance the sibling power instruments take.
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "a sentry that measures a ratio should print the ratio it measured, the same allowance the sibling power instruments take."
 )]
 
 use rs_cam_core::compute::catalog::OperationConfig;

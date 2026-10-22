@@ -30,11 +30,11 @@
 //! setter at all; a test that wants the `true` case now seeds through
 //! that row and then runs a mutation that clears the simulation.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::BTreeSet;

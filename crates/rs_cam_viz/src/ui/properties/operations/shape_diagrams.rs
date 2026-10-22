@@ -1160,8 +1160,10 @@ pub(in crate::ui::properties) fn draw_inlay_diagram(
         egui::Color32::from_rgba_unmultiplied(male_color.r(), male_color.g(), male_color.b(), 40),
         egui::Stroke::NONE,
     ));
-    // SAFETY: plug_pts always has exactly 4 elements, constructed on the lines above.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "plug_pts always has exactly 4 elements, constructed on the lines above."
+    )]
     let plug_outline = vec![
         plug_pts[0],
         plug_pts[1],

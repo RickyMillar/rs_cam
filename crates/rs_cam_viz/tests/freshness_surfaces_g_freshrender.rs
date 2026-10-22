@@ -17,11 +17,10 @@
 //! session and no GUI may be started, so neither was run and neither is
 //! claimed. Visual confirmation is owed to V6.2.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 /// Every `.rs` file directly in `src/ui/properties/`, concatenated in

@@ -430,10 +430,10 @@ pub fn profile_through_cut(
 /// surface makes too). Ruling R4 (2026-09-24): the aggressiveness record
 /// becomes `feeds.aggressiveness_engagement` here, so no Suggest calculation
 /// is invisible in the ribbon.
-// SAFETY: the ribbon reads eight independent inputs of one toolpath. The
-// snapshot owns three of them, and the panel borrows its entry mutably
-// while it reads the others, so one struct would not remove a parameter.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the ribbon reads eight independent inputs of one toolpath. The snapshot owns three of them, and the panel borrows its entry mutably while it reads the others, so one struct would not remove a parameter."
+)]
 pub fn collect_diagnostics(
     entry: &ToolpathEntry,
     tool: Option<&rs_cam_core::compute::tool_config::ToolConfig>,

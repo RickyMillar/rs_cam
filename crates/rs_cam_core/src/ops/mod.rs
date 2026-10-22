@@ -6,6 +6,10 @@
 //! `trace_path` is the follow-path operation. The toolpath records live in
 //! `trace`, which is a different thing.
 
+// F195 (W16): a float or a signed value that becomes a count or an index
+// here goes through `util::steps`, or its `#[expect]` names the bound.
+#![deny(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+
 pub mod adaptive_shared;
 pub mod bore;
 pub mod chamfer;

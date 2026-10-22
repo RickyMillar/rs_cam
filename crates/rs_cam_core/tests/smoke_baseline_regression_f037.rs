@@ -9,11 +9,11 @@
 //!    the CSV without running the smoke suite — the diff invariant the
 //!    `smoke --diff` CLI relies on.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

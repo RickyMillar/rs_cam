@@ -1,6 +1,9 @@
 //! UR5's visibility seam on the Simulation operation list.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use std::path::{Path, PathBuf};
 

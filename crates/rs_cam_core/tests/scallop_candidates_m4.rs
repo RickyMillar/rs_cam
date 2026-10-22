@@ -32,8 +32,16 @@
 //! Behind the `heavy-tests` feature to keep the dev loop fast:
 //! `cargo test -p rs_cam_core --features heavy-tests --test scallop_candidates_m4`.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-#![allow(clippy::indexing_slicing, clippy::print_stdout, clippy::print_stderr)]
+#![expect(
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+#![expect(
+    clippy::indexing_slicing,
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
+)]
 
 mod common;
 
@@ -273,7 +281,10 @@ struct Run {
     rings: usize,
     cascade_rings: usize,
     uncut_core_mm2: f64,
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "reported by hand in the ad-hoc probes, kept for parity with the Checkpoint B table"
+    )]
     // reported by hand in the ad-hoc probes, kept for parity with Checkpoint B's table
     moves: usize,
     report: OracleReport,

@@ -27,11 +27,12 @@
 //! cargo test -p rs_cam_core -q --test drawing_edits_replay_on_reimport_p4_9
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

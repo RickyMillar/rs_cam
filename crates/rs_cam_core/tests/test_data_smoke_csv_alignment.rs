@@ -21,11 +21,11 @@
 //! `KNOWN_MATERIAL_MISMATCHES` with the divergence we tolerate;
 //! flipping them is left to a follow-up finding.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

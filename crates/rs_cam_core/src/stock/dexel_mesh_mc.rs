@@ -59,7 +59,6 @@ pub(crate) const MIN_MATERIAL_THICKNESS: f32 = 0.05;
 /// Returns a [`StockMesh`] with consistent CCW winding around outward-facing
 /// normals. The mesh is watertight for single-segment rays; multi-segment
 /// rays additionally emit per-gap cavity surfaces.
-#[allow(clippy::indexing_slicing)]
 pub fn z_grid_marching_cubes(grid: &DexelGrid, stock_top_z: f64, stock_bottom_z: f64) -> StockMesh {
     let rows = grid.rows;
     let cols = grid.cols;
@@ -223,8 +222,10 @@ pub fn z_grid_marching_cubes_strided(
 /// The public function sends `k = 1` to [`z_grid_marching_cubes`]. The
 /// `stride_tests` module calls this function with `k = 1` directly, and
 /// checks that the block path gives the full-resolution mesh bit for bit.
-// SAFETY: every index is below rows x cols by the block bounds.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every index is below rows x cols by the block bounds."
+)]
 fn marching_cubes_on_blocks(
     grid: &DexelGrid,
     stock_top_z: f64,
@@ -450,8 +451,10 @@ pub fn display_stride_for(allowance_bytes: u64, cells: u64, bytes_per_cell: u64)
 /// cells take no part in a corner average, so the corner-average dives at
 /// boundaries and gives sub-cell-accurate walls. Returns `(corner_top,
 /// corner_bot, corner_empty)`.
-// SAFETY: every index is below (rows + 1) x (cols + 1) or rows x cols by the loop bounds.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every index is below (rows + 1) x (cols + 1) or rows x cols by the loop bounds."
+)]
 fn corner_envelope(
     rows: usize,
     cols: usize,
@@ -523,9 +526,10 @@ fn bottom_slot(ray: &DexelRay) -> MaterialSlot {
 /// number wins, so an added material keeps the corners on its edge and a
 /// one-cell inlay stays visible. A corner with no non-empty neighbour gets
 /// slot 0; [`corner_envelope`] marks it empty, so no vertex reads it.
-// SAFETY: every index is below (rows + 1) x (cols + 1), rows x cols or
-// MATERIAL_SLOT_CAPACITY by the loop bounds and the slot-table cap.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every index is below (rows + 1) x (cols + 1), rows x cols or MATERIAL_SLOT_CAPACITY by the loop bounds and the slot-table cap."
+)]
 fn corner_slots(
     rows: usize,
     cols: usize,
@@ -598,8 +602,10 @@ struct EnvelopeGrid<'a> {
 /// it from outside the material, so `(b - a) x (c - a)` points out of the
 /// solid. Render review 2026-10-09 F1: before the fix, every triangle here
 /// had the opposite order and each normal pointed into the solid.
-// SAFETY: every index is below the corner or cell count by the loop bounds.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every index is below the corner or cell count by the loop bounds."
+)]
 fn emit_envelope(
     env: &EnvelopeGrid<'_>,
     corner_xy: impl Fn(usize, usize) -> (f32, f32),
@@ -831,8 +837,10 @@ struct Gap {
 
 /// The gaps between the segments of one ray. A ray with fewer than two
 /// segments has none.
-// SAFETY: `windows(2)` gives slices of length two.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`windows(2)` gives slices of length two."
+)]
 fn ray_gaps(ray: &DexelRay) -> Vec<Gap> {
     if ray.len() < 2 {
         return Vec::new();
@@ -886,9 +894,11 @@ impl MeshBuffers<'_> {
 /// col, z)` gives the world position of a cell at height `z`. A floor
 /// vertex takes the slot of the segment under its gap, a ceiling vertex the
 /// slot of the segment over it.
-// SAFETY: the indices stay inside `cell_gaps` (rows x cols) by the loop
-// bounds; the arguments are the grid, the mesh buffers and the colour ramp.
-#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+#[expect(
+    clippy::indexing_slicing,
+    clippy::too_many_arguments,
+    reason = "the indices stay inside `cell_gaps` (rows x cols) by the loop bounds; the arguments are the grid, the mesh buffers and the colour ramp."
+)]
 fn emit_cavity_surfaces(
     rows: usize,
     cols: usize,
@@ -985,12 +995,10 @@ fn wood_color_at_z(z: f32, stock_top: f32, _stock_bot: f32, range: f32) -> (f32,
 mod stride_tests;
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
+#[expect(
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 mod tests {
     use super::*;

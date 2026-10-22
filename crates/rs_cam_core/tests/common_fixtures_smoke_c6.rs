@@ -21,11 +21,10 @@
 //! `pencil_tip_float_channel_d1`, `coverage_routing_pr5`,
 //! `generic_rest_routing_pr7`), their parameters are already covered below.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

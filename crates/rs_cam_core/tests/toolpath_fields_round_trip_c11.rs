@@ -40,11 +40,10 @@
 //! it pins that the id the finish operation names still resolves to the
 //! rough operation after the load.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

@@ -70,12 +70,12 @@
 //! **reporting instrument**: its output IS its product, exactly as
 //! `power_ceiling_parity_f2.rs` does. `print_stdout` stays denied.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::path::Path;
@@ -995,7 +995,10 @@ fn adjudicate_fine(ctx: &ReplayContext<'_>, flag: &RapidFlag, totals: &mut Total
 // SECTION 7 — one setup, end to end
 // ══════════════════════════════════════════════════════════════════════
 
-#[allow(clippy::too_many_lines)] // one instrument, one linear narrative
+#[expect(
+    clippy::too_many_lines,
+    reason = "one instrument, one linear narrative"
+)]
 fn run_setup(spec: &SetupSpec, tools: &[ToolEntry], totals: &mut Totals) {
     let started = Instant::now();
     let src = std::fs::read_to_string(&spec.path).expect("read shipped .nc");

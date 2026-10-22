@@ -291,7 +291,7 @@ pub fn emit_drill_samples(toolpath_id: ToolpathId, drill_op: &DrillOp) -> Vec<Dr
             samples.push(DrillSample {
                 toolpath_id,
                 hole_id,
-                peck_index: i as u32,
+                peck_index: u32::try_from(i).unwrap_or(u32::MAX),
                 descent_mm: descent.length(),
                 cutting_descent_mm: cutting,
                 cumulative_depth_mm: cum,
@@ -427,11 +427,9 @@ pub fn classify_chip_welding(max_dtd: f64, material: &Material) -> ChipWeldingRi
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

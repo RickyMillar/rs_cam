@@ -11,7 +11,10 @@
 //! `data/vendor_lut/source_manifest.json` `amana_zrn_3d_profiling_v8` and
 //! `spetool_2d3d_tapered_router_bit_chart`.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::feeds::vendor_lookup::{LookupQuery, lookup_best};
 use rs_cam_core::feeds::vendor_lut::{

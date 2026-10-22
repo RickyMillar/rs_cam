@@ -114,11 +114,10 @@
 //! before a test can run. Arm 1 goes red either way, because removing a
 //! `#[cfg]` line compiles under both feature sets.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

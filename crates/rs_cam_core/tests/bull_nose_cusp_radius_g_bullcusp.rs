@@ -35,12 +35,10 @@
 //! name; it keeps `radius()`, because a cusp radius of zero would collapse
 //! every equation downstream into a divide-by-zero or a zero stepover.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::session::multitool::equal_cusp_stepover_mm;

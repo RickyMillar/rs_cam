@@ -22,11 +22,10 @@
 //! 2. The toolpath list names the missing id in place of a tool name.
 //! 3. Non-vacuity: the same toolpath on tool id 1 generates.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

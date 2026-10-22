@@ -24,11 +24,12 @@
 //! cargo test -p rs_cam_viz -q --test a_floor_reference_change_keeps_the_cut_p3_7
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

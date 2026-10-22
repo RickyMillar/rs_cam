@@ -286,13 +286,6 @@ impl MaterialPopulations<'_> {
 }
 
 #[cfg(test)]
-#[allow(
-    // SAFETY: test code; a failed lookup is a failed test.
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::*;
     use crate::material::WoodSpecies;

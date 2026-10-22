@@ -5,7 +5,11 @@
 //! library row that cites a missing/typo'd source can't slip in
 //! silently. Phase E (completion plan, 2026-05-31).
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use std::collections::HashSet;
 use std::path::PathBuf;

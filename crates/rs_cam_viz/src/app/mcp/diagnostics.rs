@@ -812,7 +812,10 @@ fn span_to_json(id: usize, s: &rs_cam_core::trace::toolpath_spans::Span) -> serd
 /// of `kind`, `parent_id`, `pass_index`, `region_id` switches to detail mode
 /// and returns matching spans under `spans`, with `total_matching` and
 /// `truncated` reflecting `max_spans`.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub(super) fn build_inspect_spans_response(
     toolpath_id: rs_cam_core::ToolpathId,
     toolpath_index: usize,

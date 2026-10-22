@@ -72,12 +72,11 @@
 //! from 3.8236 to 1.7171 on its own. Any decision about this defect must be
 //! taken against the numbers below, not against those.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::compute::catalog::OperationType;

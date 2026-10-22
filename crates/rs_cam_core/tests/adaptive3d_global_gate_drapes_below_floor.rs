@@ -32,11 +32,10 @@
 //!   left all of them at Z 6.
 //! - No basin cell is below Z 3.5 by more than 0.05 mm.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

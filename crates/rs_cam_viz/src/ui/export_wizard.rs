@@ -630,8 +630,10 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
     let mut counts = [0usize; 4];
     for tc in &enabled_tcs {
         let idx = coolant_idx(tc.coolant);
-        // SAFETY: coolant_idx returns 0..=3, counts is len 4.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "coolant_idx returns 0..=3, counts is len 4."
+        )]
         {
             counts[idx] += 1;
         }

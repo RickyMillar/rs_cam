@@ -748,11 +748,9 @@ pub(crate) fn build_world_stock_bbox(
 /// M1 (memory programme 2026-10-01): a new run releases the view of the
 /// previous run before it starts, and a run that does not land says so.
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod release_for_new_run_m1 {
     use std::collections::HashMap;

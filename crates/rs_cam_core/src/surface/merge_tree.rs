@@ -166,8 +166,10 @@ struct Component {
 }
 
 fn find(uf: &mut [usize], mut i: usize) -> usize {
-    // SAFETY: every entry of `uf` is a cell index below `uf.len()`.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "every entry of `uf` is a cell index below `uf.len()`."
+    )]
     {
         let mut root = i;
         while uf[root] != root {
@@ -193,10 +195,10 @@ fn resolve(nodes: &[Node], mut n: usize) -> usize {
 ///
 /// `field.z` is the tool-CL height of each cell (the drop-cutter grid of the
 /// roughing tool). See the module doc for the pocket definition.
-// SAFETY: every index is a cell index below `field.len()` (from `0..n`, from
-// the sorted order of those, or from `neighbour`), a node index below
-// `nodes.len()`, or a component index taken from a union-find root.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every index is a cell index below `field.len()` (from `0..n`, from the sorted order of those, or from `neighbour`), a node index below `nodes.len()`, or a component index taken from a union-find root."
+)]
 #[must_use]
 pub fn build_pocket_tree(field: &FlowField, top_z: f64, params: &MergeTreeParams) -> PocketTree {
     let n = field.len();
@@ -380,7 +382,11 @@ pub fn build_pocket_tree(field: &FlowField, top_z: f64, params: &MergeTreeParams
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

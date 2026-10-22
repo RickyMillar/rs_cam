@@ -31,11 +31,11 @@
 //! cargo test -p rs_cam_core -q --test project_curve_from_below_on_a_flipped_setup_w6_5
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

@@ -62,11 +62,10 @@
 //! `generated_empty_refusal_g_entryempty.rs` uses for its non-empty
 //! control, so the generation is known to emit cutting motion.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::atomic::AtomicBool;

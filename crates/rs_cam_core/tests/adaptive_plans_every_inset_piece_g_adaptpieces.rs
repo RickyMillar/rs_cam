@@ -34,14 +34,12 @@
 //! 4. Each arm: the move from one lobe to the other crosses the neck above
 //!    the stock top, and the neck centre keeps its full height.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
-// The measured numbers ARE the record.
-#![allow(clippy::print_stderr)]
+#![expect(clippy::print_stderr, reason = "The measured numbers ARE the record.")]
 
 mod common;
 

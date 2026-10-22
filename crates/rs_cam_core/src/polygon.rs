@@ -334,8 +334,10 @@ impl Polygon2 {
             if n < 2 {
                 continue;
             }
-            // SAFETY: i and its (+1)%n successor are bounded by 0..n.
-            #[allow(clippy::indexing_slicing)]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "i and its (+1)%n successor are bounded by 0..n."
+            )]
             for i in 0..n {
                 let a = &ring[i];
                 let b = &ring[(i + 1) % n];
@@ -570,7 +572,6 @@ impl OffsetFailure {
 ///
 /// Uses cavalier_contours for arc-preserving parallel offset.
 ///
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Sign convention (for CCW exterior, matching cavalier_contours):
 /// - `distance > 0` = **inward** (shrink) — used for pocket clearing
 /// - `distance < 0` = **outward** (grow) — used for profile offset
@@ -1084,12 +1085,13 @@ fn cleanup_ring(ring: &[P2], pos_eps: f64, deviation_tol: f64) -> Option<Vec<P2>
     }
     let mut out: Vec<P2> = Vec::with_capacity(n);
     for i in 0..n {
-        // SAFETY: `i < n` and the modulo keeps `next` in range.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "`i < n` and the modulo keeps `next` in range."
+        )]
         let (cur, next) = (ring[i], ring[(i + 1) % n]);
         let prev = *out.last().unwrap_or_else(|| {
-            // SAFETY: `n >= 3` checked above.
-            #[allow(clippy::indexing_slicing)]
+            #[expect(clippy::indexing_slicing, reason = "`n >= 3` checked above.")]
             &ring[n - 1]
         });
         if (cur.x - prev.x).hypot(cur.y - prev.y) <= pos_eps {
@@ -1147,13 +1149,11 @@ fn simplify_closed_ring(ring: &[P2], tol: f64) -> Vec<P2> {
     if n < 5 {
         return ring.to_vec();
     }
-    // SAFETY: `n >= 5`.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(clippy::indexing_slicing, reason = "`n >= 5`.")]
     let head = ring[0];
     let far = (1..n)
         .max_by(|a, b| {
-            // SAFETY: indices come from `1..n`.
-            #[allow(clippy::indexing_slicing)]
+            #[expect(clippy::indexing_slicing, reason = "indices come from `1..n`.")]
             let (pa, pb) = (ring[*a], ring[*b]);
             (pa.x - head.x)
                 .hypot(pa.y - head.y)
@@ -1161,10 +1161,9 @@ fn simplify_closed_ring(ring: &[P2], tol: f64) -> Vec<P2> {
         })
         .unwrap_or(n / 2);
 
-    // SAFETY: `far` is in `1..n`.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(clippy::indexing_slicing, reason = "`far` is in `1..n`.")]
     let first: Vec<P2> = ring[0..=far].to_vec();
-    #[allow(clippy::indexing_slicing)]
+    #[expect(clippy::indexing_slicing, reason = "`far` is in `1..n`.")]
     let mut second: Vec<P2> = ring[far..n].to_vec();
     second.push(head);
 
@@ -1182,8 +1181,7 @@ fn rdp(chain: &[P2], tol: f64) -> Vec<P2> {
     if n < 3 {
         return chain.to_vec();
     }
-    // SAFETY: `n >= 3`.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(clippy::indexing_slicing, reason = "`n >= 3`.")]
     let (a, b) = (chain[0], chain[n - 1]);
     let mut worst = 0.0_f64;
     let mut worst_i = 0usize;
@@ -1197,10 +1195,9 @@ fn rdp(chain: &[P2], tol: f64) -> Vec<P2> {
     if worst_i == 0 || worst <= tol * tol {
         return vec![a, b];
     }
-    // SAFETY: `0 < worst_i < n - 1`.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(clippy::indexing_slicing, reason = "`0 < worst_i < n - 1`.")]
     let left = rdp(&chain[0..=worst_i], tol);
-    #[allow(clippy::indexing_slicing)]
+    #[expect(clippy::indexing_slicing, reason = "`0 < worst_i < n - 1`.")]
     let right = rdp(&chain[worst_i..n], tol);
     let mut out = left;
     out.pop();
@@ -1548,8 +1545,10 @@ fn subdivide_ring(ring: &[P2], max_segment_mm: f64) -> Vec<P2> {
     }
     let mut out: Vec<P2> = Vec::with_capacity(n);
     for i in 0..n {
-        // SAFETY: `i < n` and the modulo keeps the successor in range.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "`i < n` and the modulo keeps the successor in range."
+        )]
         let (a, b) = (ring[i], ring[(i + 1) % n]);
         out.push(a);
         let len = (b.x - a.x).hypot(b.y - a.y);
@@ -1560,7 +1559,11 @@ fn subdivide_ring(ring: &[P2], max_segment_mm: f64) -> Vec<P2> {
         if !pieces.is_finite() || pieces > 100_000.0 {
             continue;
         }
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "pieces is finite, at least 1 and at most 100000 (checked above), so it fits a usize"
+        )]
         let pieces = pieces as usize;
         for k in 1..pieces {
             let t = k as f64 / pieces as f64;
@@ -1743,7 +1746,6 @@ pub fn detect_containment(polygons: Vec<Polygon2>) -> Vec<Polygon2> {
 /// exterior of each result polygon. The selection view reads the index to
 /// know which region has the stock ring as its exterior (geometry
 /// selection P4.2), with no compare of coordinates.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub(crate) fn detect_containment_tagged(polygons: Vec<Polygon2>) -> Vec<(Polygon2, usize)> {
     let mut polygons: Vec<(Polygon2, usize)> = polygons
         .into_iter()
@@ -1786,9 +1788,10 @@ pub(crate) fn detect_containment_tagged(polygons: Vec<Polygon2>) -> Vec<(Polygon
     // Track holes to add to each polygon
     let mut holes_for: Vec<Vec<usize>> = vec![Vec::new(); n];
 
-    // Safety: i and j are bounded by n (polygon count); depths, consumed and
-    // holes_for are sized to n. All indices are valid by loop construction.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "Safety: i and j are bounded by n (polygon count); depths, consumed and holes_for are sized to n. All indices are valid by loop construction."
+    )]
     {
         // Pass 1: containment depth of every closed polygon. A container is
         // strictly larger, so with the area-descending sort above it always
@@ -1826,9 +1829,10 @@ pub(crate) fn detect_containment_tagged(polygons: Vec<Polygon2>) -> Vec<(Polygon
     }
 
     // Build result: outer polygons with their holes attached
-    // Safety: i iterates over 0..n, hole_idx values stored in holes_for[i]
-    // are valid polygon indices by construction above.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "i iterates over 0..n, hole_idx values stored in holes_for[i] are valid polygon indices by construction above."
+    )]
     let result = {
         let mut result = Vec::new();
         for (i, (poly, tag)) in polygons.iter().enumerate() {
@@ -1872,7 +1876,6 @@ fn polygon_contains_polygon(outer: &Polygon2, inner: &Polygon2) -> bool {
         .all(|p| point_in_polygon(p, &outer.exterior))
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Ray-casting point-in-polygon test. THE canonical ray cast for this
 /// crate — `pub(crate)` so other modules reuse it instead of keeping their
 /// own copy (R1.7, 2026-07-06: `boundary.rs`'s test-only duplicate was
@@ -1883,8 +1886,10 @@ pub(crate) fn point_in_polygon(point: &P2, polygon: &[P2]) -> bool {
         return false;
     }
     let mut inside = false;
-    // Safety: i is bounded by 0..n, j tracks previous index (also < n).
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "Safety: i is bounded by 0..n, j tracks previous index (also < n)."
+    )]
     for i in 0..n {
         let pi = &polygon[i];
         let pj = &polygon[(i + n - 1) % n];
@@ -1952,15 +1957,16 @@ pub fn largest_by_area(polys: &[Polygon2]) -> Option<&Polygon2> {
     })
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn shoelace_area(pts: &[P2]) -> f64 {
     let n = pts.len();
     if n < 3 {
         return 0.0;
     }
     let mut area = 0.0;
-    // Safety: i is bounded by 0..n, j = (i+1)%n is also < n.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "Safety: i is bounded by 0..n, j = (i+1)%n is also < n."
+    )]
     for i in 0..n {
         let j = (i + 1) % n;
         area += pts[i].x * pts[j].y;
@@ -1982,7 +1988,6 @@ fn ring_to_geo(pts: &[P2]) -> geo::LineString<f64> {
     geo::LineString::new(coords)
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 fn ring_from_geo(ring: &geo::LineString<f64>) -> Vec<P2> {
     let mut pts: Vec<P2> = ring.coords().map(|c| P2::new(c.x, c.y)).collect();
     // Strip duplicated closing vertex
@@ -1996,15 +2001,16 @@ fn ring_from_geo(ring: &geo::LineString<f64>) -> Vec<P2> {
     pts
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 fn ring_perimeter(pts: &[P2]) -> f64 {
     let n = pts.len();
     if n < 2 {
         return 0.0;
     }
     let mut perim = 0.0;
-    // Safety: i is bounded by 0..n, j = (i+1)%n is also < n.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "Safety: i is bounded by 0..n, j = (i+1)%n is also < n."
+    )]
     for i in 0..n {
         let j = (i + 1) % n;
         perim += (pts[j] - pts[i]).norm();
@@ -2098,8 +2104,10 @@ fn ring_has_self_intersection(ring: &[P2]) -> bool {
         // segment pair is adjacent.
         return false;
     }
-    // Safety: i, j, and their (+1)%n successors are all bounded by 0..n.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "Safety: i, j, and their (+1)%n successors are all bounded by 0..n."
+    )]
     for i in 0..n {
         let a1 = &ring[i];
         let a2 = &ring[(i + 1) % n];
@@ -2137,8 +2145,10 @@ fn ring_near_point(ring: &[P2], p: &P2, eps: f64) -> bool {
         return false;
     }
     let eps_sq = eps * eps;
-    // Safety: i and its (+1)%n successor are bounded by 0..n.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "Safety: i and its (+1)%n successor are bounded by 0..n."
+    )]
     for i in 0..n {
         let a = &ring[i];
         let b = &ring[(i + 1) % n];
@@ -2150,11 +2160,10 @@ fn ring_near_point(ring: &[P2], p: &P2, eps: f64) -> bool {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

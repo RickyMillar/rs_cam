@@ -162,9 +162,11 @@ pub fn surface_z(mesh: &TriangleMesh, index: &SpatialIndex, at: P2) -> Option<f6
 /// Hand-rolled so the pivot ratio is available as a reported conditioning
 /// number. `A` is expected already scale-normalised, so its pivots are O(1)
 /// and their ratio is meaningful.
-// SAFETY: every index is a constant or a loop counter bounded by the fixed
-// 6x7 array dimensions.
-#[allow(clippy::needless_range_loop, clippy::indexing_slicing)]
+#[expect(
+    clippy::needless_range_loop,
+    clippy::indexing_slicing,
+    reason = "every index is a constant or a loop counter bounded by the fixed 6x7 array dimensions."
+)]
 fn solve_sym6(a: &[[f64; 6]; 6], b: &[f64; 6]) -> Option<([f64; 6], f64)> {
     let mut m = [[0.0f64; 7]; 6];
     for row in 0..6 {
@@ -225,8 +227,11 @@ fn solve_sym6(a: &[[f64; 6]; 6], b: &[f64; 6]) -> Option<([f64; 6], f64)> {
 /// Mirror the accumulated upper triangle into the lower one and scale
 /// everything by `inv = 1/count`, so the normal matrix is a *mean* of rank-1
 /// terms with O(1) entries at every radius.
-// SAFETY: loop counters bounded by the fixed 6x6 dimensions.
-#[allow(clippy::needless_range_loop, clippy::indexing_slicing)]
+#[expect(
+    clippy::needless_range_loop,
+    clippy::indexing_slicing,
+    reason = "loop counters bounded by the fixed 6x6 dimensions."
+)]
 fn finalise_normal_equations(normal: &mut [[f64; 6]; 6], rhs: &mut [f64; 6], inv: f64) {
     for i in 0..6 {
         for j in 0..6 {
@@ -307,11 +312,10 @@ pub fn fit_from_derivatives(
 
 /// Fit the local quadric at `at` (surface height `z0`) over fit radius
 /// `radius`. One streaming pass: nothing is stored per neighbour.
-// SAFETY: triangle ids index `mesh.triangles`, vertex ids index
-// `mesh.vertices` and `scratch.stamp` (sized to the vertex count by
-// `MongeScratch::new`); `beta`/`basis`/`normal` indices are constants
-// bounded by the fixed 6-parameter quadric.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "triangle ids index `mesh.triangles`, vertex ids index `mesh.vertices` and `scratch.stamp` (sized to the vertex count by `MongeScratch::new`); `beta`/`basis`/`normal` indices are constants bounded by the fixed 6-parameter quadric."
+)]
 pub fn fit_quadric(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -483,8 +487,10 @@ pub struct Quantiles {
 }
 
 /// `pairs` is `(value, area weight)`; consumed because it is sorted in place.
-// SAFETY: guarded by the `is_empty` early return.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "guarded by the `is_empty` early return."
+)]
 pub fn quantiles(mut pairs: Vec<(f64, f64)>) -> Option<Quantiles> {
     if pairs.is_empty() {
         return None;
@@ -501,9 +507,10 @@ pub fn quantiles(mut pairs: Vec<(f64, f64)>) -> Option<Quantiles> {
 }
 
 /// First value whose cumulative area weight reaches `q * total`.
-// SAFETY: callers pass a non-empty slice (the `quantiles` guard); the
-// final index is `len - 1` of that slice.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "callers pass a non-empty slice (the `quantiles` guard); the final index is `len - 1` of that slice."
+)]
 pub fn weighted_pick(sorted: &[(f64, f64)], total: f64, q: f64) -> f64 {
     if total <= 0.0 {
         return f64::NAN;
@@ -521,9 +528,10 @@ pub fn weighted_pick(sorted: &[(f64, f64)], total: f64, q: f64) -> f64 {
 
 /// Plain (unweighted) median of `values`, which this function sorts.
 /// `NaN` for an empty slice.
-// SAFETY: guarded by the `is_empty` early return; `mid` < `len`, and the
-// even arm requires `len >= 2` so `mid - 1` is in range.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "guarded by the `is_empty` early return; `mid` < `len`, and the even arm requires `len >= 2` so `mid - 1` is in range."
+)]
 pub fn median(mut values: Vec<f64>) -> f64 {
     if values.is_empty() {
         return f64::NAN;

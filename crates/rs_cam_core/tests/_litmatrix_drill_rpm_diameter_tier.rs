@@ -26,13 +26,6 @@
 //! `SpindleStrategy::MaxSpeed` (the speedup path) — the same two
 //! entry points the round-2 ceiling test covered.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-
 use rs_cam_core::feeds::{
     FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, ToolGeometryHint,
     calculate, embedded_vendor_lut,

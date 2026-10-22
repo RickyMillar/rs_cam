@@ -43,12 +43,11 @@
 //! `PencilConfig::default()` carries `None`, so every saved project loads
 //! and emits exactly what it emitted before.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stdout
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

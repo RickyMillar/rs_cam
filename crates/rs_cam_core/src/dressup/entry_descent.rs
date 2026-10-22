@@ -88,7 +88,10 @@ fn run_arc_spacing_mm(radius: f64) -> f64 {
         .clamp(0.02, FOLD_ARC_SPACING_MM)
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 pub(super) fn find_next_xy_direction(moves: &[Move], from_idx: usize) -> (f64, f64) {
     let base = &moves[from_idx].target;
     for m in &moves[from_idx + 1..] {
@@ -122,7 +125,10 @@ const FOLD_ARC_SPACING_MM: f64 = 0.5;
 /// The walk starts AT the plunge target and stops at the first rapid, the
 /// first following plunge, or once it has `want` mm of XY in hand — the
 /// most a fold can consume. Arc moves are linearised.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 pub(super) fn collect_following_cut(moves: &[Move], from_idx: usize, want: f64) -> Vec<P3> {
     let mut points = vec![moves[from_idx].target];
     if want <= 0.0 {
@@ -250,8 +256,10 @@ pub const RAMP_FOLD_MAX_LAPS: u32 = 3;
 ///
 /// Returns `base` unchanged when it is already long enough, and gives up
 /// (returning what it has) on a run too degenerate to grow.
-// SAFETY: every slice below is guarded by the `base.len() < 2` early return.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every slice below is guarded by the `base.len() < 2` early return."
+)]
 fn extend_fold_path(base: &[P3], closed: bool, want: f64) -> Vec<P3> {
     let mut ext = base.to_vec();
     if base.len() < 2 {
@@ -285,8 +293,10 @@ fn extend_fold_path(base: &[P3], closed: bool, want: f64) -> Vec<P3> {
 /// That is not harmless — the same Z drop over less XY is a STEEPER ramp
 /// than the angle dial asked for — so [`fold_ramp_points`] checks the
 /// walked length and degrades to a plunge rather than emit it.
-// SAFETY: `windows(2)` yields slices of exactly two elements.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`windows(2)` yields slices of exactly two elements."
+)]
 fn walk_fold_path(path: &[P3], want: f64) -> Vec<P3> {
     let mut walked = Vec::new();
     let Some(first) = path.first() else {
@@ -326,8 +336,10 @@ fn walk_fold_path(path: &[P3], want: f64) -> Vec<P3> {
 ///
 /// Returns empty when the ramp would lap the run more than
 /// [`RAMP_FOLD_MAX_LAPS`] times (R10). The caller degrades to a plunge.
-// SAFETY: `windows(2)` yields slices of exactly two elements.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`windows(2)` yields slices of exactly two elements."
+)]
 fn fold_ramp_points(
     follow: &[P3],
     closed: bool,
@@ -475,10 +487,10 @@ pub(crate) fn emit_stock_aware_plunge(
     }
 }
 
-// SAFETY: eight parameters, one over clippy's threshold. The eighth is
-// `fold`, and grouping the rest into a struct would move the emitter's
-// existing contract for one added argument.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "eight parameters, one over clippy's threshold. The eighth is `fold`, and grouping the rest into a struct would move the emitter's existing contract for one added argument."
+)]
 pub(crate) fn emit_ramp(
     tp: &mut Toolpath,
     start: &P3,
@@ -598,7 +610,10 @@ pub(crate) fn emit_ramp(
     // deeper ramp laps the same ground more times.
     let half_len = ramp_xy_len / 2.0;
     let leg_cap = ENTRY_CLEARANCE / tan / 2.0;
-    let legs = (2.0 * (ramp_xy_len / (2.0 * leg_cap)).ceil()).max(2.0) as usize;
+    let legs = crate::util::steps::steps(ramp_xy_len, 2.0 * leg_cap)
+        .unwrap_or(0)
+        .saturating_mul(2)
+        .max(2);
     let leg = ramp_xy_len / legs as f64;
     let mut planned = Vec::with_capacity(legs + 1);
     planned.push(P3::new(start.x, start.y, ramp_start_z));
@@ -692,14 +707,16 @@ const ENTRY_CLIP_SPACING_MM: f64 = 0.5;
 /// stays at or above the planned straight line, and every skipped
 /// sample was measured at or above the floor, so the emitted path
 /// never dips below a measured sample.
-#[allow(clippy::indexing_slicing)] // windows(2) pairs, bounded
+#[expect(clippy::indexing_slicing, reason = "windows(2) pairs, bounded")]
 fn clip_polyline_to_floor(planned: &[P3], probe: &EntrySurfaceProbe<'_>) -> Option<Vec<P3>> {
     let mut out = Vec::new();
     for pair in planned.windows(2) {
         let (a, b) = (pair[0], pair[1]);
         let (dx, dy, dz) = (b.x - a.x, b.y - a.y, b.z - a.z);
         let len = (dx * dx + dy * dy + dz * dz).sqrt();
-        let n = (len / ENTRY_CLIP_SPACING_MM).ceil().max(1.0) as usize;
+        let n = crate::util::steps::steps(len, ENTRY_CLIP_SPACING_MM)
+            .unwrap_or(0)
+            .max(1);
         for k in 1..=n {
             let t = k as f64 / n as f64;
             let q = P3::new(a.x + dx * t, a.y + dy * t, a.z + dz * t);
@@ -798,12 +815,15 @@ pub(crate) fn emit_helix(
     // descent after a lift starts from the LIFTED height, so the helix never
     // falls faster than its pitch; it takes more turns instead. On a lost
     // surface contact, fall back to the straight plunge.
-    const STEPS_PER_REV: f64 = 36.0;
-    let step_angle = std::f64::consts::TAU / STEPS_PER_REV;
-    let step_dz = pitch / STEPS_PER_REV;
+    const STEPS_PER_REV: usize = 36;
+    let step_angle = std::f64::consts::TAU / STEPS_PER_REV as f64;
+    let step_dz = pitch / STEPS_PER_REV as f64;
     // A floor that never lets the helix reach the target (a pit narrower
     // than the turn) stops the turns; the return to the centre then ends it.
-    let max_steps = (dz / step_dz).ceil() as usize * 4 + 2 * STEPS_PER_REV as usize;
+    let max_steps = crate::util::steps::steps(dz, step_dz)
+        .unwrap_or(0)
+        .saturating_mul(4)
+        .saturating_add(2 * STEPS_PER_REV);
     let center_x = end.x;
     let center_y = end.y;
     let mut turns = Vec::new();
@@ -839,8 +859,10 @@ pub(crate) fn emit_helix(
         let last_angle = step_angle * turns.len() as f64;
         // An inward spiral of `revs` turns is about `revs * PI * radius`
         // long; half a pitch per turn keeps its slope under the helix's.
-        let revs = ((z - end.z) / (pitch * 0.5)).ceil().max(1.0);
-        let n = (revs * STEPS_PER_REV) as usize;
+        let revs = crate::util::steps::steps(z - end.z, pitch * 0.5)
+            .unwrap_or(0)
+            .max(1);
+        let n = revs.saturating_mul(STEPS_PER_REV);
         let z0 = z;
         // Lay the points out first, then spread the drop by arc length: the
         // steps near the centre are short, and an even drop per step would

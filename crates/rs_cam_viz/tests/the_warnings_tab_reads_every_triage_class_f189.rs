@@ -7,8 +7,6 @@
 //! `SimulationTriage::findings` and matches the class in one exhaustive
 //! match (`triage_row_role`), and the badge counts by class.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 use rs_cam_core::diagnostics::{
     Category, Confidence, Diagnostic, DiagnosticId, DiagnosticState, Scope, Severity, Source, ids,
 };

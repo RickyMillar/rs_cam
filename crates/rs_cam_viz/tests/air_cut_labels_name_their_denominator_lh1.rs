@@ -11,11 +11,9 @@
 //! which a unit test reaches. If this test fails because a file moved,
 //! retarget it; do not delete it.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 #[test]

@@ -21,16 +21,11 @@
 //! cargo test -p rs_cam_core --test swept_stamping_s1
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    // Three of the tests here ARE measurements — they print the slope they
-    // assert on so a reader can see the shape, not just the verdict. That is
-    // the point of `print_swept_metric_delta`, and `tracing` is not wired in
-    // a test binary.
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "Three of the tests here ARE measurements — they print the slope they assert on so a reader can see the shape, not just the verdict. That is the point of `print_swept_metric_delta`, and `tracing` is not wired in a test binary."
 )]
 
 use rs_cam_core::dexel_stock::{StampDispatch, StockCutDirection, TriDexelStock};

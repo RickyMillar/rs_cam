@@ -38,7 +38,12 @@
 //! row, so the scorer cannot choose another row and the arm tests the
 //! hardness law alone.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::feeds::EMBEDDED_LUT;
 use rs_cam_core::feeds::extrapolation::{HardnessBasis, JankaFrom};

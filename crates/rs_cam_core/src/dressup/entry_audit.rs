@@ -85,7 +85,7 @@ pub fn buried_fed_chords(
                     m.target.z - prev.target.z,
                 );
                 let len = (d.x * d.x + d.y * d.y + d.z * d.z).sqrt();
-                let n = (len / spacing).ceil().max(1.0) as usize;
+                let n = crate::util::steps::steps(len, spacing).unwrap_or(0).max(1);
                 (0..=n)
                     .map(|s| {
                         let t = s as f64 / n as f64;
@@ -226,7 +226,7 @@ pub fn fed_moves_outside_region(
                     m.target.z - prev.target.z,
                 );
                 let len = (d.x * d.x + d.y * d.y + d.z * d.z).sqrt();
-                let n = (len / spacing).ceil().max(1.0) as usize;
+                let n = crate::util::steps::steps(len, spacing).unwrap_or(0).max(1);
                 (0..=n)
                     .map(|s| {
                         let t = s as f64 / n as f64;

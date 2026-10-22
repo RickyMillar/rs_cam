@@ -28,12 +28,10 @@
 //! output range, junction rapids included — against a fingerprint of the
 //! transform's own output. That is the channel G6 rewrote.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
+#![expect(
     clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 // Just the canonical fingerprint, not the whole `common` fixture library:

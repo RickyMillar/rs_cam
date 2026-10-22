@@ -1,14 +1,13 @@
 //! Diagnostic: load a terrain mesh, run AgentSearch roughing, simulate,
 //! and dump the deepest axial-DOC samples plus their context. Used to
 //! diagnose where wanaka's 18.7mm peak axial DOC originates.
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
     clippy::print_stderr,
     clippy::print_stdout,
-    clippy::redundant_clone
+    clippy::redundant_clone,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader; test code accepts the style lint redundant_clone"
 )]
 
 use rs_cam_core::adaptive3d::{

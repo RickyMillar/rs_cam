@@ -15,7 +15,10 @@ use crate::tool::MillingCutter;
 
 use super::PencilPath;
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Generate an offset polyline by shifting each point perpendicular to the
 /// path direction in XY, by a PER-POINT offset distance (`offsets[i]` for
 /// `points[i]`; a short `offsets` reads the missing tail as `0.0`).
@@ -91,7 +94,10 @@ pub(crate) const FAIRING_PASSES: usize = 2;
 /// moving it materially off the valley floor. Z is left untouched — the
 /// subsequent `lift_to_surface` drop re-solves it gouge-safely from the faired
 /// X,Y — and endpoints are pinned so chains don't shrink at their tips.
-#[allow(clippy::indexing_slicing)] // i bounded to 1..len-1; neighbours i±1 valid
+#[expect(
+    clippy::indexing_slicing,
+    reason = "i bounded to 1..len-1; neighbours i±1 valid"
+)]
 pub(super) fn fair_polyline_xy(points: &[P3], passes: usize, strength: f64) -> Vec<P3> {
     if points.len() < 3 || passes == 0 || strength <= 0.0 {
         return points.to_vec();
@@ -264,7 +270,10 @@ pub(crate) fn reach_gap_threshold() -> f64 {
 /// chain already uses for exactly this question, at the same XY. That probe
 /// has its own (tiny) float in a sharp V, so the reported residual is a
 /// slight UNDER-estimate — never an over-claim.
-#[allow(clippy::too_many_arguments)] // cohesive per-chain emit; splitting hurts clarity
+#[expect(
+    clippy::too_many_arguments,
+    reason = "cohesive per-chain emit; splitting hurts clarity"
+)]
 pub(crate) fn paths_from_sampled(
     sampled: &[P3],
     chain_index: usize,

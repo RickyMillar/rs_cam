@@ -26,8 +26,6 @@
 //! validation arm catches everything it should. The editor field is
 //! compiler-enforced: the struct literal cannot be written without it.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_viz::ui::properties::operations::registry::{OP_UI_ROWS, OpDiagram};
 

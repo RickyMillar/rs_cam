@@ -228,10 +228,11 @@ impl SimulationState {
             return false;
         }
         self.playback.partial_move += self.playback.speed * dt;
-        // SAFETY: f32 < 4e9 fits usize on every target we care about;
-        // partial_move is clamped to [0, speed * dt] so this can't grow
-        // without bound.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "f32 < 4e9 fits usize on every target we care about; partial_move is clamped to [0, speed * dt] so this can't grow without bound."
+        )]
         let step = self.playback.partial_move.floor() as usize;
         if step > 0 {
             self.playback.partial_move -= step as f32;

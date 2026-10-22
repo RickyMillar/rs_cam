@@ -12,7 +12,10 @@
 //! The CLI flags are named from `cli_flag()` at the clap attribute, so the
 //! compiler holds that one.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::gcode::LoadOverride;
 

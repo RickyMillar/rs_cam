@@ -50,7 +50,10 @@ pub const TOOLPATH_PALETTE: [[f32; 3]; 8] = [
 ];
 
 /// Get the palette color for a toolpath at the given index.
-#[allow(clippy::indexing_slicing)] // modulo indexing into constant-length palette
+#[expect(
+    clippy::indexing_slicing,
+    reason = "modulo indexing into constant-length palette"
+)]
 pub fn palette_color(index: usize) -> [f32; 3] {
     TOOLPATH_PALETTE[index % TOOLPATH_PALETTE.len()]
 }
@@ -361,8 +364,10 @@ const FACE_GROUP_PALETTE: [Rgb; 10] = [
 
 /// The deterministic pastel colour of face group `index`.
 #[must_use]
-// SAFETY: modulo indexing into a constant-length palette cannot go out of bounds.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "modulo indexing into a constant-length palette cannot go out of bounds."
+)]
 pub fn face_group_color(index: usize) -> Rgb {
     FACE_GROUP_PALETTE[index % FACE_GROUP_PALETTE.len()]
 }

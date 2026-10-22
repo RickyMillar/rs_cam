@@ -37,13 +37,6 @@
 //! least one pair with a fraction of .5 or more, and at least one pair the
 //! calculator actually clamped.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::{ToolConfig, ToolId, ToolType};

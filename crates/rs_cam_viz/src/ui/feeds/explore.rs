@@ -473,11 +473,10 @@ impl Corridor {
     }
 }
 
-// The chart carries the two core answers it renders — the chipload corridor
-// and the power figure — beside the recipe, for the reason the inspector card
-// carries them: they are statements about the CUT, and bundling them into a
-// struct would build a second data model of them.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The chart carries the two core answers it renders — the chipload corridor and the power figure — beside the recipe, for the reason the inspector card carries them: they are statements about the CUT, and bundling them into a struct would build a second data model of them."
+)]
 pub(crate) fn draw_chart_c(
     ui: &mut egui::Ui,
     current: &CurrentValues,
@@ -1203,10 +1202,10 @@ fn clip_iso_line(cl: f64, rpm_max: f64, flutes: f64, feed_cap: f64) -> Vec<[f64;
 
 // ── Drag-to-explore controls (Phase 3) ──────────────────────────────
 
-// Same cause as `draw_chart_c`: the explored readout states the power at the
-// explored feed, and that answer comes from the core figure, not from a
-// number this function could rebuild.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Same cause as `draw_chart_c`: the explored readout states the power at the explored feed, and that answer comes from the core figure, not from a number this function could rebuild."
+)]
 fn draw_explore_controls(
     ui: &mut egui::Ui,
     current: &CurrentValues,

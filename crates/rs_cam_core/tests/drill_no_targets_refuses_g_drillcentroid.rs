@@ -33,11 +33,12 @@
 //! | one circle target, default selection | 1 hole at the circle centre | 1 hole at the polygon centroid |
 //! | targets present, empty selection | refusal (unchanged) | refusal |
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

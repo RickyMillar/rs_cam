@@ -37,12 +37,11 @@
 //! against the hoisted one; D3 deleted the wrappers, and `run_layered`
 //! prepares each region once.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::indexing_slicing,
-    clippy::str_to_string,
-    clippy::semicolon_if_nothing_returned
+    clippy::semicolon_if_nothing_returned,
+    reason = "test code: a panic is how a test reports a failure; test code accepts the style lint semicolon_if_nothing_returned"
 )]
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
@@ -130,7 +129,6 @@ fn raster_pass(passes: usize, span: f64, stepover: f64, depth: f64) -> Toolpath 
 }
 
 /// [`run_metric_sim`] with the stamp dispatch forced, for the wave-4 A/B.
-#[allow(clippy::too_many_arguments)]
 fn run_metric_sim_with(
     fresh: &TriDexelStock,
     tp: &Toolpath,
@@ -189,7 +187,6 @@ fn bench_sim_dispatch_ab(c: &mut Criterion) {
     let lateral = raster_pass(6, 40.0, 4.0, -2.0);
     let plunge = plunge_pass(24, -5.0);
 
-    #[allow(clippy::type_complexity)]
     let fixtures: Vec<(&str, f64, f64, &Toolpath)> = vec![
         ("flat12_cs0.1", 12.0, 0.1, &lateral),
         ("flat6_cs0.1", 6.0, 0.1, &lateral),
@@ -299,7 +296,6 @@ fn bench_sim_playback_ab(c: &mut Criterion) {
     let dense = raster_pass(40, 40.0, 0.6, -2.0);
     let plunge = plunge_pass(24, -5.0);
 
-    #[allow(clippy::type_complexity)]
     let fixtures: Vec<(&str, f64, f64, &Toolpath)> = vec![
         ("flat12_cs0.1", 12.0, 0.1, &lateral),
         ("flat6_cs0.1", 6.0, 0.1, &lateral),
@@ -351,7 +347,6 @@ fn bench_sim_playback_ab(c: &mut Criterion) {
 /// `simulate_toolpath_with_metrics_with_cancel` (which rebuilds the LUT per
 /// call) and emphatically not the non-metric `simulate_toolpath` that
 /// `perf_suite.rs` benches at roughly 1/25th the per-cell cost.
-#[allow(clippy::too_many_arguments)]
 fn run_metric_sim(
     fresh: &TriDexelStock,
     tp: &Toolpath,

@@ -16,16 +16,11 @@
 //! `$110/$111/$112 = 10000/10000/1000`, junction deviation
 //! `$11 = 0.020`.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    // The ignored instrument run at the end of this file MEASURES; a
-    // measurement nobody can read is not one. Opted in explicitly, as
-    // `tests/power_ceiling_parity_f2.rs` does — `print_stderr` is denied
-    // in tests otherwise.
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "The ignored instrument run at the end of this file MEASURES; a measurement nobody can read is not one. Opted in explicitly, as `tests/power_ceiling_parity_f2.rs` does — `print_stderr` is denied in tests otherwise."
 )]
 
 use rs_cam_core::geo::P3;

@@ -45,12 +45,12 @@
 //! `Debug` on `f64` round-trips every bit, so this is a byte-level identity
 //! check on the whole move list, not a lossy summary.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;

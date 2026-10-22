@@ -44,11 +44,11 @@
 //! 9. `no_removed_token_is_left_in_the_core_source` — item 9.
 //! 10. `the_card_headlines_are_the_plan_strings` — item 10.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

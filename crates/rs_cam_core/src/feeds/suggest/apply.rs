@@ -104,10 +104,10 @@ impl ApplyScope {
 ///
 /// The fields this call does not write, and their provenance, stay untouched
 /// under every scope.
-// SAFETY: the canonical suggest funnel needs the operation, the provenance
-// out-param, the result, tool/machine/material, pass_role, context, the apply
-// subset and the speeds-explored flag together.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the canonical suggest funnel needs the operation, the provenance out-param, the result, tool/machine/material, pass_role, context, the apply subset and the speeds-explored flag together."
+)]
 fn apply_feeds_subset(
     operation: &mut OperationConfig,
     provenance: &mut crate::feeds::FeedsProvenance,
@@ -400,10 +400,10 @@ fn apply_feeds_subset(
 /// Callers that don't have the context cheaply available should pass
 /// [`SuggestContext::default()`]; the back-off short-circuits to a no-op
 /// when `model_bbox` is `None`.
-// SAFETY: W2.1 added the `provenance` out-param for per-field stamping, so the
-// funnel needs the operation, the provenance, the result, tool/machine/material,
-// pass_role and context together.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "W2.1 added the `provenance` out-param for per-field stamping, so the funnel needs the operation, the provenance, the result, tool/machine/material, pass_role and context together."
+)]
 #[cfg(any(test, feature = "test-support"))]
 pub fn apply_feeds_result_to_op(
     operation: &mut OperationConfig,
@@ -433,10 +433,10 @@ pub fn apply_feeds_result_to_op(
 /// geometry (stepover / DOC) and its provenance untouched. The "Apply
 /// recommended speeds" action — speed-only by construction (W3.1). F042: a
 /// test door (`test-support`); production writes through [`apply`].
-// SAFETY: this door forwards the whole funnel argument list — operation,
-// provenance, result, tool/machine/material, pass_role and context — to
-// `apply_feeds_subset`, so it cannot carry fewer arguments.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this door forwards the whole funnel argument list — operation, provenance, result, tool/machine/material, pass_role and context — to `apply_feeds_subset`, so it cannot carry fewer arguments."
+)]
 #[cfg(any(test, feature = "test-support"))]
 pub fn apply_speeds_to_op(
     operation: &mut OperationConfig,
@@ -466,10 +466,10 @@ pub fn apply_speeds_to_op(
 /// speeds and their provenance untouched. The attributed "Apply cut" action
 /// (W3.1) — kept distinct because changing DOC/WOC changes the cut. F042: a
 /// test door (`test-support`); production writes through [`apply`].
-// SAFETY: this door forwards the whole funnel argument list — operation,
-// provenance, result, tool/machine/material, pass_role and context — to
-// `apply_feeds_subset`, so it cannot carry fewer arguments.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "this door forwards the whole funnel argument list — operation, provenance, result, tool/machine/material, pass_role and context — to `apply_feeds_subset`, so it cannot carry fewer arguments."
+)]
 #[cfg(any(test, feature = "test-support"))]
 pub fn apply_cut_geometry_to_op(
     operation: &mut OperationConfig,
@@ -653,9 +653,10 @@ pub fn preview_field_applies(
 /// Test door:
 /// `crates/rs_cam_core/tests/pill_writes_clamped_value_g_pillclamp.rs` and
 /// `crates/rs_cam_viz/tests/apply_contract_a3.rs`.
-// SAFETY: one field of the dry run, so it carries the whole
-// `preview_field_applies` argument list plus the field selector.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one field of the dry run, so it carries the whole `preview_field_applies` argument list plus the field selector."
+)]
 pub fn preview_field_apply(
     operation: &OperationConfig,
     result: &FeedsResult,

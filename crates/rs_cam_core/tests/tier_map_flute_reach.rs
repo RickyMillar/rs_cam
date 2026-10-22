@@ -30,11 +30,11 @@
 //! r_contact` (± 1 cell), and at `H = L_c − 1` nothing binds: the whole
 //! wall is below the flute top.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

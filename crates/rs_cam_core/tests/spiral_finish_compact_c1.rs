@@ -36,12 +36,13 @@
 //! cargo test --release -p rs_cam_core --features research --test spiral_finish_compact_c1 -- --ignored --nocapture
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::collections::HashMap;
@@ -726,7 +727,10 @@ struct FixtureSpec {
     concave: bool,
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "test code accepts the style lint too_many_lines"
+)]
 fn run_fixture(spec: &FixtureSpec) {
     eprintln!("\n══════════ {} ══════════", spec.label);
     let mesh = spherical_cap_mesh(

@@ -3,11 +3,12 @@
 //! query z at the five worst gouge XYs from the v4 G-code analysis vs the
 //! ball-standoff z the 47.44° chamfer plane demands. Evidence run.
 
-#![allow(
+#![expect(
     clippy::print_stderr,
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::path::Path;

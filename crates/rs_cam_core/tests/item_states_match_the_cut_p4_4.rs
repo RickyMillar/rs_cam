@@ -54,11 +54,12 @@
 //! cargo test -p rs_cam_core -q --test item_states_match_the_cut_p4_4
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

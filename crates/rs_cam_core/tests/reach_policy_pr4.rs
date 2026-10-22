@@ -12,12 +12,12 @@
 //! Basis: `planning/review_2026-07-29/CHECKPOINT_A_EVIDENCE.md` (approved
 //! 2026-07-29) and `TECH_DEBT_RESEARCH_AND_FIX_PLAN.md` §H2.1.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::finish::rest_detector::{RestDetection, RestReferenceChoice, detect_rest};

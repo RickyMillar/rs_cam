@@ -21,11 +21,10 @@
 //!   match the same row;
 //! - the depth de-rate still divides by the cone diameter, not by the tip.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::catalog::OperationType;

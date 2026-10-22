@@ -29,8 +29,6 @@
 //! asserts the project stays clean. A dirty flag on an idle frame marks a
 //! freshly loaded project edited the moment the operator looks at the tab.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::selection::Selection;
 use rs_cam_viz::ui::{properties, tokens};

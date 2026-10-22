@@ -22,11 +22,10 @@
 //! The full spacing measurement against the analytic surface lives in the
 //! `shipped_raster_spacing_b1` evidence instrument (fix-acceptance gate).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::BTreeMap;

@@ -111,11 +111,11 @@
 //!   in `set_toolpath_param_impl`'s chain call. `Effects::simulation_cleared`
 //!   has the same limit: this file asserts no case of it.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::BTreeSet;

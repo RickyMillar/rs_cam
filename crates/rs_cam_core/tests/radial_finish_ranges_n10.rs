@@ -46,11 +46,11 @@
 //! toolpath and names neither dial. A bare `is_err()` would pass on the
 //! pre-fix code and prove nothing.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

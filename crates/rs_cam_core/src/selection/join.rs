@@ -128,8 +128,10 @@ pub fn join_open_pieces(pieces: &[OpenPiece], tol: f64) -> (Vec<JoinedShape>, Ve
                     layer: name,
                     counts: JoinCounts::default(),
                 });
-                // SAFETY: the push above made the list non-empty.
-                #[allow(clippy::expect_used)]
+                #[expect(
+                    clippy::expect_used,
+                    reason = "the push above made the list non-empty."
+                )]
                 layers.last_mut().expect("just pushed")
             }
         };
@@ -142,7 +144,7 @@ pub fn join_open_pieces(pieces: &[OpenPiece], tol: f64) -> (Vec<JoinedShape>, Ve
 /// tail are closer than `tol`) or an open path. The join uses it for every
 /// chain, so no open path is auto-closed and no phantom segment spans the
 /// whole curve.
-#[allow(clippy::indexing_slicing)] // len >= 2 guarded below
+#[expect(clippy::indexing_slicing, reason = "len >= 2 guarded below")]
 pub fn polygon_from_unknown_closure(pts: Vec<P2>, tol: f64) -> Polygon2 {
     if pts.len() < 2 {
         return Polygon2::open_path(pts);
@@ -196,7 +198,10 @@ pub struct Chain {
 ///    joined end point is not repeated in the chain.
 /// 6. The chain stops when its tail meets its head (with 3 or more
 ///    points): it is closed.
-#[allow(clippy::indexing_slicing)] // piece indices come from 0..pieces.len()
+#[expect(
+    clippy::indexing_slicing,
+    reason = "piece indices come from 0..pieces.len()"
+)]
 pub fn chain_open_pieces(pieces: &[OpenPiece], tol: f64) -> Vec<Chain> {
     use std::collections::HashMap;
 
@@ -317,11 +322,9 @@ pub fn chain_open_pieces(pieces: &[OpenPiece], tol: f64) -> Vec<Chain> {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

@@ -637,7 +637,6 @@ pub fn slope_filter_active(slope_from: f64, slope_to: f64) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

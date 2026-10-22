@@ -29,12 +29,11 @@
 //! The pinned BOTTOM Z is the one reading that was deliberately dropped —
 //! see `depth_beyond_stock_cautions_g_depthstock.rs` case (d).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::collections::HashMap;

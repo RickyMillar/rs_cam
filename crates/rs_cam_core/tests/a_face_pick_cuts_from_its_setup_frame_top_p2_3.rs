@@ -30,11 +30,11 @@
 //! cargo test -p rs_cam_core -q --test a_face_pick_cuts_from_its_setup_frame_top_p2_3
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

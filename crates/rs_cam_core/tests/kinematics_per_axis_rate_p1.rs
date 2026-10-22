@@ -28,11 +28,10 @@
 //! 2026-09-07 and are pinned as raw IEEE-754 bit patterns, not
 //! tolerances: "byte-identical when unset" is the whole promise.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::geo::P3;

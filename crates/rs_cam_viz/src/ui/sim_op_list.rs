@@ -713,7 +713,10 @@ fn sort_span_indices(indices: &mut [usize], spans: &[Span]) {
     });
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn draw_span_item_row(
     ui: &mut egui::Ui,
     spans: &[Span],
@@ -812,9 +815,6 @@ const fn span_kind_rank(kind: SpanKind) -> u8 {
 /// `Entry` and a green-ish `GeometryRefit`, so a span list read as a
 /// verdict column when no span carries a verdict (`DESIGN_SPEC.md` §2.6
 /// principle 1). They walk `SPAN_SCALE` in declaration order instead.
-#[allow(clippy::indexing_slicing)]
-// SAFETY: every index is a literal in `0..6` and `SPAN_SCALE` has six
-// entries, so each one is in bounds at compile time.
 const fn span_kind_color(kind: SpanKind) -> egui::Color32 {
     use crate::ui::tokens::SPAN_SCALE;
 
@@ -880,8 +880,11 @@ fn draw_semantic_outline(
     }
 }
 
-// SAFETY: item_index from recursive traversal of trace.items children
-#[allow(clippy::too_many_arguments, clippy::indexing_slicing)]
+#[expect(
+    clippy::too_many_arguments,
+    clippy::indexing_slicing,
+    reason = "item_index from recursive traversal of trace.items children"
+)]
 fn draw_semantic_item_row(
     ui: &mut egui::Ui,
     trace: &rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace,
@@ -1307,11 +1310,10 @@ fn criterion_detail(status: &rs_cam_core::tool_load::verdict::CriterionStatus<'_
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

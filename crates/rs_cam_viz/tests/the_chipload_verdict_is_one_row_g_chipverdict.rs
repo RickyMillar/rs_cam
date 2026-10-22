@@ -43,14 +43,13 @@
 //! partners: a suite in which everything abstains would pass the refusal arms
 //! and prove nothing.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    // The spread arm RECORDS its measurement as well as asserting on it;
-    // `--nocapture` is how the figure in V4_IMPLEMENTATION.md was taken.
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "The spread arm RECORDS its measurement as well as asserting on it; `--nocapture` is how the figure in V4_IMPLEMENTATION.md was taken."
 )]
 
 use std::path::PathBuf;

@@ -1,11 +1,10 @@
 //! Unit tests for the canonical Suggest path. Moved out of `feeds/suggest.rs`
 //! by P4; the module body is unchanged.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use super::axial_envelope::recompute_chipload_bounds_for_dpp;
@@ -2532,7 +2531,7 @@ fn operation_feeds_hints_is_an_explicit_per_op_decision() {
         let config = OperationConfig::new_default(op_type);
         let actual = operation_feeds_hints(&config);
 
-        #[allow(clippy::match_same_arms)] // one arm per op = the point
+        #[expect(clippy::match_same_arms, reason = "one arm per op = the point")]
         let expected: (Option<f64>, Option<f64>, Option<f64>) = match &config {
             // Ops that feed operation-specific hints into the
             // calculator (axial, radial, scallop):

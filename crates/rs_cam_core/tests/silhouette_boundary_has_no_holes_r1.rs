@@ -30,11 +30,10 @@
 //!    is `pub(crate)`, so a source scan of `session/compute/generation.rs`
 //!    pins the call, anchored on the `cached_silhouette` read beside it.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::geo::{P2, P3};

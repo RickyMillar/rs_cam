@@ -45,11 +45,9 @@
 //! change, so "the exporter was made to agree" cannot be satisfied by
 //! quietly moving the viewport instead. It is green on both sides.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#![expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::export::ribbon::toolpath_to_tube_mesh_with_spans;

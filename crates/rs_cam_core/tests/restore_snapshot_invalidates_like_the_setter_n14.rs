@@ -32,11 +32,11 @@
 //! cannot seed a simulation. Every arm here reads the `false` case only,
 //! and that is not evidence about the `true` one.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::BTreeSet;

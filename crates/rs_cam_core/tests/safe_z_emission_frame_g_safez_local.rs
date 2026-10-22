@@ -25,11 +25,10 @@
 //! Non-identity setups are unaffected either way: for them
 //! `heights_stock_bbox == local_stock_bbox`, so the two readings agree.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

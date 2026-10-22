@@ -403,11 +403,9 @@ impl DrillGatesVerdict {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#[expect(
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;
@@ -466,7 +464,9 @@ mod tests {
             DrillGateOutcome::Exceeds { severity, .. } => {
                 assert_eq!(severity, DrillGateSeverity::Critical);
             }
-            other => panic!("expected critical chip-welding exceed, got {other:?}"),
+            other @ DrillGateOutcome::Within { .. } => {
+                panic!("expected critical chip-welding exceed, got {other:?}")
+            }
         }
     }
 
@@ -479,7 +479,9 @@ mod tests {
             DrillGateOutcome::Exceeds { severity, .. } => {
                 assert_eq!(severity, DrillGateSeverity::Elevated);
             }
-            other => panic!("expected elevated chip-welding exceed, got {other:?}"),
+            other @ DrillGateOutcome::Within { .. } => {
+                panic!("expected elevated chip-welding exceed, got {other:?}")
+            }
         }
     }
 
@@ -528,7 +530,9 @@ mod tests {
             DrillGateOutcome::Exceeds { severity, .. } => {
                 assert_eq!(severity, DrillGateSeverity::Elevated);
             }
-            other => panic!("expected elevated at exact band edge, got {other:?}"),
+            other @ DrillGateOutcome::Within { .. } => {
+                panic!("expected elevated at exact band edge, got {other:?}")
+            }
         }
     }
 
@@ -569,7 +573,9 @@ mod tests {
             DrillGateOutcome::Exceeds { severity, .. } => {
                 assert_eq!(severity, DrillGateSeverity::Elevated);
             }
-            other => panic!("expected elevated plunge-feed exceed, got {other:?}"),
+            other @ DrillGateOutcome::Within { .. } => {
+                panic!("expected elevated plunge-feed exceed, got {other:?}")
+            }
         }
     }
 
@@ -581,7 +587,9 @@ mod tests {
             DrillGateOutcome::Exceeds { severity, .. } => {
                 assert_eq!(severity, DrillGateSeverity::Critical);
             }
-            other => panic!("expected critical plunge-feed exceed, got {other:?}"),
+            other @ DrillGateOutcome::Within { .. } => {
+                panic!("expected critical plunge-feed exceed, got {other:?}")
+            }
         }
     }
 }

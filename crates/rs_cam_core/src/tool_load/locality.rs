@@ -246,12 +246,6 @@ pub fn is_configured_entry(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::*;
     use crate::stock::simulation_cut::CutKinematics;

@@ -20,11 +20,9 @@
 //! writes `format_version = 3` and reads that one shape; a pre-v3 file fails
 //! to open, which is the decided behaviour, not a regression.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

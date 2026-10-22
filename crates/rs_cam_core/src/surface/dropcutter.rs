@@ -30,8 +30,10 @@ pub fn point_drop_cutter<C: MillingCutter + ?Sized>(
     let tri_indices = index.query(x, y, envelope_radius);
 
     for &idx in &tri_indices {
-        // SAFETY: idx comes from SpatialIndex which only stores valid face indices
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "idx comes from SpatialIndex which only stores valid face indices"
+        )]
         let tri = &mesh.faces[idx];
         if !drop_cutter_can_contact(&cl, tri, envelope_radius) {
             continue;
@@ -84,8 +86,10 @@ pub struct DropCutterGrid {
 impl DropCutterGrid {
     /// Get the CL point at grid position (row, col).
     pub fn get(&self, row: usize, col: usize) -> &CLPoint {
-        // SAFETY: callers use row < self.rows and col < self.cols from grid iteration
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "callers use row < self.rows and col < self.cols from grid iteration"
+        )]
         &self.points[row * self.cols + col]
     }
 }
@@ -494,8 +498,10 @@ pub(crate) fn batch_drop_cutter_windowed_with_cancel<C: MillingCutter + ?Sized>(
 /// and cheap next to the `point_drop_cutter` call it accompanies.
 pub fn point_is_over_mesh_xy(x: f64, y: f64, mesh: &TriangleMesh, index: &SpatialIndex) -> bool {
     index.query(x, y, 0.0).iter().any(|&idx| {
-        // SAFETY: idx comes from SpatialIndex which only stores valid face indices
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "idx comes from SpatialIndex which only stores valid face indices"
+        )]
         mesh.faces[idx].contains_point_xy(x, y)
     })
 }
@@ -560,7 +566,10 @@ pub(crate) fn sample_grid_cell<C: MillingCutter + ?Sized>(
     (cl, covered)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 /// Shared helper: compute CL points (and, optionally, per-cell mesh-coverage
 /// flags) for a grid, using rayon parallelism when available.
 ///
@@ -635,7 +644,11 @@ pub(crate) fn batch_sample_grid<C: MillingCutter + ?Sized>(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::geo::P3;

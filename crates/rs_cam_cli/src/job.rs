@@ -1372,7 +1372,11 @@ pub(crate) fn param_value_from_str(s: &str) -> serde_json::Value {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 
@@ -1741,7 +1745,10 @@ mod tests {
             let source = format!("[tools.t]\ntype = \"{token}\"\ndiameter = 6.0\n");
             #[derive(Deserialize)]
             struct ToolsOnly {
-                #[allow(dead_code)]
+                #[expect(
+                    dead_code,
+                    reason = "the test only checks that the parse fails; it never reads the field"
+                )]
                 tools: HashMap<String, ToolDef>,
             }
             let parsed: Result<ToolsOnly, _> = toml::from_str(&source);

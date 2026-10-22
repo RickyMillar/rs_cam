@@ -80,7 +80,10 @@ impl GridBand<'_> {
     /// [`DexelGrid::lower_conservative_top`], with the same contract: a caller
     /// that stamps the same ground twice cannot walk the bound back up.
     #[inline]
-    #[allow(clippy::indexing_slicing)] // caller derives `local` from clamped bounds
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "caller derives `local` from clamped bounds"
+    )]
     pub(super) fn lower_conservative_top(&mut self, local: usize, surface: f32) {
         if surface < self.conservative_top[local] {
             self.conservative_top[local] = surface;
@@ -310,11 +313,9 @@ pub(super) fn stamp_bbox_cells(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

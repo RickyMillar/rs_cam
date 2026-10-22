@@ -133,7 +133,10 @@ pub fn build_field(
     // Rasterise the region. Interior cells start at INFINITY (unsolved);
     // everything outside stays 0 and is the Dirichlet boundary condition.
     let mut inside = vec![false; rows * cols];
-    #[allow(clippy::indexing_slicing)] // SAFETY: i = row*cols + col with both bounded by the loops
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "i = row*cols + col with both bounded by the loops"
+    )]
     for row in 0..rows {
         for col in 0..cols {
             let x = slope_map.origin_x + col as f64 * cell;
@@ -192,8 +195,10 @@ fn distance_to_boundary(poly: &Polygon2, x: f64, y: f64) -> f64 {
             return;
         }
         for i in 0..ring.len() {
-            // SAFETY: i and (i + 1) % len are both in 0..len.
-            #[allow(clippy::indexing_slicing)]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "i and (i + 1) % len are both in 0..len."
+            )]
             let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
             let (dx, dy) = (b.x - a.x, b.y - a.y);
             let len_sq = dx * dx + dy * dy;
@@ -239,8 +244,11 @@ fn distance_to_boundary(poly: &Polygon2, x: f64, y: f64) -> f64 {
 ///
 /// Cost is bounded by the region PERIMETER, not its area: only nodes with a
 /// neighbour on the other side of the edge are ever measured.
-#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
-// SAFETY: every index is bounded by the loop ranges below.
+#[expect(
+    clippy::indexing_slicing,
+    clippy::too_many_arguments,
+    reason = "every index is bounded by the loop ranges below."
+)]
 fn seed_boundary(
     boundary: &Polygon2,
     passes: &mut [f64],
@@ -302,8 +310,10 @@ fn seed_boundary(
 /// one cell. Four sweep directions, repeated until no cell moves by more than
 /// a tolerance — capped, because a pathological field must not hang a
 /// generator.
-#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
-// SAFETY: every index is bounded by the loop ranges
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every index is bounded by the loop ranges"
+)]
 fn fast_sweep(
     passes: &mut [f64],
     inside: &[bool],
@@ -368,7 +378,7 @@ fn fast_sweep(
     }
 }
 
-#[allow(clippy::indexing_slicing)] // SAFETY: bounds checked before each read
+#[expect(clippy::indexing_slicing, reason = "bounds checked before each read")]
 fn neighbour_min(
     passes: &[f64],
     rows: usize,
@@ -424,7 +434,10 @@ pub fn extract_rings(field: &IsoScallopField) -> Vec<Vec<P2>> {
 /// midpoint. A boolean grid has no sub-cell information to interpolate with; a
 /// scalar field does, and throwing it away would hand the iso-field candidate
 /// a half-cell placement error it does not actually have.
-#[allow(clippy::indexing_slicing)] // SAFETY: row/col bounded by the loop ranges
+#[expect(
+    clippy::indexing_slicing,
+    reason = "row/col bounded by the loop ranges"
+)]
 fn iso_contour(field: &IsoScallopField, level: f64) -> Vec<Vec<P2>> {
     if field.rows < 2 || field.cols < 2 {
         return Vec::new();
@@ -488,8 +501,10 @@ fn iso_contour(field: &IsoScallopField, level: f64) -> Vec<Vec<P2>> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

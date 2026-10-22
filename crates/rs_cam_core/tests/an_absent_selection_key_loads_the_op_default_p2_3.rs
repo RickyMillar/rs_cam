@@ -21,11 +21,10 @@
 //! cargo test -p rs_cam_core -q --test an_absent_selection_key_loads_the_op_default_p2_3
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

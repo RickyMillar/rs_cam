@@ -320,9 +320,10 @@ fn find_best_vbit_row_where(
         };
         let (base_score, diam_score) = score_observation(criteria, obs, transferred);
         let score = base_score + angle_bonus;
-        // SAFETY: `best.i` was stored from this same iteration over
-        // `lut.observations`, so the index is in range.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "`best.i` was stored from this same iteration over `lut.observations`, so the index is in range."
+        )]
         if beats(
             (
                 score,
@@ -346,8 +347,10 @@ fn find_best_vbit_row_where(
         }
     }
     best.map(|(score, diameter_match_score, _, i)| {
-        // SAFETY: `i` was stored from a valid iteration over `lut.observations`
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "`i` was stored from a valid iteration over `lut.observations`"
+        )]
         let obs = &lut.observations[i];
         build_result(lut, obs, criteria, score, diameter_match_score)
     })
@@ -771,9 +774,10 @@ fn lookup_best_where(
             continue;
         }
         let (score, diam_score) = score_observation(query, obs, transferred);
-        // SAFETY: `best.i` was stored from this same iteration over
-        // `lut.observations`, so the index is in range.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "`best.i` was stored from this same iteration over `lut.observations`, so the index is in range."
+        )]
         if beats(
             (
                 score,
@@ -791,8 +795,10 @@ fn lookup_best_where(
     }
 
     best.map(|(score, diameter_match_score, _, i)| {
-        // SAFETY: `i` was stored from a valid iteration over `lut.observations`
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "`i` was stored from a valid iteration over `lut.observations`"
+        )]
         let obs = &lut.observations[i];
         build_result(lut, obs, query, score, diameter_match_score)
     })
@@ -1019,11 +1025,10 @@ pub(crate) fn chipload_midpoint(obs: &VendorObservation) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::str_to_string
+    clippy::str_to_string,
+    reason = "test code: a panic is how a test reports a failure; test code accepts the style lint str_to_string"
 )]
 mod tests {
     use super::*;

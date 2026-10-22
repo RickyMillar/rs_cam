@@ -11,7 +11,7 @@
 //! with `status` set to the failure class. The auditor consumes the CSV;
 //! `harness_error` rows surface as findings in the next loop round.
 
-#![allow(clippy::print_stdout)] // CLI surface
+#![expect(clippy::print_stdout, reason = "CLI surface")]
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -445,7 +445,10 @@ fn went_blind(base: &str, curr: &str) -> bool {
 /// Returns `(tp_idx, op_type, param_warnings)` on success, or a
 /// `BaselineRow` describing the failure class so callers can short-
 /// circuit with it.
-#[allow(clippy::result_large_err)] // tp_idx tuple is small; failure path is the rare branch
+#[expect(
+    clippy::result_large_err,
+    reason = "tp_idx tuple is small; failure path is the rare branch"
+)]
 fn materialize_case_toolpath(
     session: &mut ProjectSession,
     case: &SmokeCase,
@@ -1205,11 +1208,9 @@ fn material_for_family(family: &str) -> Option<Material> {
 // peak and a changed `op_kind` were all silent.
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

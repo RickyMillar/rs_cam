@@ -47,11 +47,11 @@
 //! (`feeds::extrapolation::SizeLaw`, `LookupResult::size_basis`), and the
 //! refusal texts above are its texts for a tool under 1.5 mm.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::catalog::OperationType;

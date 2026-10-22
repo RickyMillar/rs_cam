@@ -19,11 +19,10 @@
 //! Source: `planning/ui_review_2026-09-09/results/W03/support/r05_source_track.md`
 //! §6 ("`reorder_toolpath` swaps the two `toolpath_indices` entries") and §9.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};

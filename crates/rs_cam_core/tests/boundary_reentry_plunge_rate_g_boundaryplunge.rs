@@ -33,7 +33,10 @@
 //! | `no_plunge_rate_preserves_the_cut_feed` | `None`, a zero and a non-finite rate all keep the cut feed — the disable condition the Phase 3 guard uses |
 //! | `the_reentry_descent_is_pure_vertical_and_plunge_rated` | the walk rapids to the target XY first, so its descent is pure-vertical BY CONSTRUCTION — and it is plunge-rated whether or not it is |
 
-#![allow(clippy::indexing_slicing, clippy::expect_used)]
+#![expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::geo::P3;
 use rs_cam_core::geometry::boundary::{

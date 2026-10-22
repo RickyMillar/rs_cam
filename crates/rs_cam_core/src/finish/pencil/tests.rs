@@ -1,7 +1,11 @@
 //! Unit tests for pencil finishing. Moved out of `finish/pencil.rs` by P4;
 //! the module body is unchanged.
 
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use crate::finish::pencil_dihedral::{
     SharedEdge, build_edge_adjacency, chain_concave_edges, compute_shared_edges,
@@ -307,7 +311,7 @@ fn pencil_real_mesh_gate() {
 
 /// Minimal top-down 2D line raster of a toolpath (feed moves only) — fast and
 /// clear for seeing crease structure, unlike the 3D tube composite.
-#[allow(clippy::indexing_slicing)] // bounded by moves.len()
+#[expect(clippy::indexing_slicing, reason = "bounded by moves.len()")]
 fn rasterize_topdown(
     tp: &Toolpath,
     w: u32,
@@ -1170,10 +1174,10 @@ fn link_lift_refuses_when_the_clearance_reaches_safe_z() {
 /// pencil pass that was silently the wrong strategy. The three canonical
 /// tokens still load.
 #[test]
-// SAFETY: a test that asserts on a serde refusal; a panic IS the failure
-// report. The file already allows `unwrap_used` and `panic` for the same
-// reason.
-#[allow(clippy::expect_used)]
+#[expect(
+    clippy::expect_used,
+    reason = "a test that asserts on a serde refusal; a panic IS the failure report. The file already allows `unwrap_used` and `panic` for the same reason."
+)]
 fn an_unknown_detector_token_refuses_the_load() {
     use crate::compute::operation_configs::PencilConfig;
 

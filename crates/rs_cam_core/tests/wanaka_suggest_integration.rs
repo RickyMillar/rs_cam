@@ -97,12 +97,11 @@
 //!    and pins that row's identity — so the literal is a cross-check
 //!    rather than the whole guarantee).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::ids::ToolpathId;

@@ -131,7 +131,7 @@ impl Fiber {
     ///
     /// Single-pass in-place: scans existing intervals once, merging overlaps
     /// and inserting the result without allocating a new Vec.
-    #[allow(clippy::indexing_slicing)] // SAFETY: indices bounded by len checks
+    #[expect(clippy::indexing_slicing, reason = "indices bounded by len checks")]
     pub fn add_interval(&mut self, new: Interval) {
         // Clamp to [0, 1]
         let clamped = Interval::new(new.lower.max(0.0), new.upper.min(1.0));
@@ -197,7 +197,10 @@ impl Fiber {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

@@ -22,11 +22,12 @@
 //! Two mirrored render colours and the rest ramp top are pinned against
 //! their render sources, so the legend cannot drift from the picture.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::BTreeMap;

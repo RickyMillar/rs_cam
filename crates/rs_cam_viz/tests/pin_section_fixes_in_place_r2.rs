@@ -22,12 +22,12 @@
 //! 4. R5b: at the two default inspector widths the pin block is no wider
 //!    than the panel.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
-    clippy::float_cmp
+    clippy::float_cmp,
+    reason = "test code: a panic is how a test reports a failure; test code accepts the style lint float_cmp"
 )]
 
 use std::sync::Arc;

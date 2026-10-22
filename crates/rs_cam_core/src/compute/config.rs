@@ -1157,6 +1157,10 @@ pub struct DressupConfig {
 /// This struct exists so CUT-13 can fix the in-memory type without moving a
 /// single wire key. Read `DressupConfig`; nothing else should name this.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the wire struct mirrors the saved keys, and each bool is one saved dressup switch"
+)]
 struct DressupConfigWire {
     entry_style: DressupEntryStyle,
     ramp_angle: f64,
@@ -1640,11 +1644,12 @@ impl DressupConfig {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

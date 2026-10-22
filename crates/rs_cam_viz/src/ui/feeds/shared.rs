@@ -41,8 +41,6 @@ use crate::ui::tokens;
 /// of them reads a data scale rather than a semantic role (`DESIGN_SPEC.md`
 /// §2.6). The machine envelope is the one exception and takes `DANGER`
 /// directly, because a wall the machine cannot pass IS a verdict.
-// SAFETY: every index below is a literal inside its own array's length.
-#[allow(clippy::indexing_slicing)]
 pub(crate) mod chart {
     use crate::ui::tokens;
 

@@ -158,10 +158,10 @@ pub(super) fn enforce_invariants(
 
 /// The invariant chain for a speeds-only apply: the operation's geometry is
 /// fixed, and the speeds are resolved for it. See [`GeometryPasses::Fixed`].
-// SAFETY: the chain needs the operation, tool/machine/material, pass_role
-// and context of `enforce_invariants`, plus the two calculator geometry
-// values that pass 9 compares against.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the chain needs the operation, tool/machine/material, pass_role and context of `enforce_invariants`, plus the two calculator geometry values that pass 9 compares against."
+)]
 pub(super) fn enforce_invariants_at_fixed_geometry(
     operation: &mut OperationConfig,
     tool: &ToolConfig,

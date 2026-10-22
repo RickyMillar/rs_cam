@@ -1184,7 +1184,6 @@ pub fn plan_spiral(
 
 /// The pipeline itself, writing into a caller-owned report so that every
 /// early return leaves behind whatever was measured before it.
-#[allow(clippy::result_large_err)]
 fn plan_into(
     mesh: &TriangleMesh,
     region_triangles: &[u32],
@@ -1282,7 +1281,6 @@ struct Topology {
 /// the rest as holes; with no slit map there is no *rest*, so a second loop is
 /// a refusal, not a choice. Loop walks start at the smallest local vertex id
 /// so the emitted order is deterministic.
-#[allow(clippy::result_large_err)]
 fn region_topology(region: &RegionMesh) -> Result<Topology, SpiralRefusal> {
     // Directed half-edges in winding order; undirected use counts.
     let mut undirected: HashMap<(usize, usize), usize> = HashMap::new();
@@ -1527,7 +1525,6 @@ fn mean_value_weights(region: &RegionMesh) -> MeanValueWeights {
 /// ```
 ///
 /// See the module header for why this replaced Phase F1's cotangent + CG.
-#[allow(clippy::result_large_err)]
 fn flatten_to_disk(
     region: &RegionMesh,
     topo: &Topology,
@@ -2548,7 +2545,10 @@ struct LiftStats {
 /// The centre curve is the contact curve offset `+K_c` along the interpolated
 /// surface normal — **[SOURCE-2025 §3.1]**'s own construction. See the module
 /// header for why the instrument's drop-cutter CL supersedes it downstream.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn lift_polyline(
     locator: &FlatLocator,
     region: &RegionMesh,
@@ -2666,7 +2666,10 @@ struct RingLoopState {
 /// `flat area / 3D area` (1/mm²), so its square root is disk-units-per-mm;
 /// the radial bucket containing the last placed radius supplies it, with the
 /// global median as the fallback when that bucket is empty.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn publish_ring_rows(
     rings: &[Ring],
     uncovered: &[usize],
@@ -2778,7 +2781,6 @@ fn publish_ring_rows(
 /// previous one, and it covers nothing — which is the
 /// [`SpiralRefusal::RingSearchStalled`] path.
 /// [`StallContext::interior_radius_feasible`] is `false` exactly then.
-#[allow(clippy::result_large_err)]
 fn search_rings(
     locator: &FlatLocator,
     normals: &[V3],

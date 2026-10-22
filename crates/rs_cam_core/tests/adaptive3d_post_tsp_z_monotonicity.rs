@@ -6,11 +6,9 @@ use rs_cam_core::toolpath::{MoveType, Toolpath};
 use rs_cam_core::trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
 use rs_cam_core::trace::transform_provenance::ReconcileSet;
 
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

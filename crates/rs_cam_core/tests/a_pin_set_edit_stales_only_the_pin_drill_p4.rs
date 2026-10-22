@@ -12,11 +12,11 @@
 //! deleted `flip_axis` key refuses and names the key; without the key it
 //! loads and says the keying fact once.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::BTreeSet;

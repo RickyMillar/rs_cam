@@ -621,7 +621,10 @@ impl TriDexelStock {
         max_tip_z.map(|high| (low, high))
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Clear all material above `z` at the given cell on the Z-grid.
     ///
     /// After this call, no material exists above `z` at (row, col).
@@ -636,7 +639,10 @@ impl TriDexelStock {
         self.z_grid.lower_conservative_top(idx, z);
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Clear all material **below** `z` at the given cell on the Z-grid.
     ///
     /// The mirror of [`Self::clear_above_at`], for a tool entering from the
@@ -835,7 +841,11 @@ impl TriDexelStock {
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::ids::ToolpathId;

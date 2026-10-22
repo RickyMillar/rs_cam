@@ -28,11 +28,11 @@
 //! Run it (about 160 s; `Z22_PROBE_CELLS` / `Z22_PROBE_SKIP` select cells):
 //! `cargo test -p rs_cam_core -q --test a_descent_over_two_overlapping_swaths_g_staletop -- --ignored --nocapture the_z22`
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;
@@ -93,9 +93,10 @@ struct Attributed {
 
 /// Print one line of the report.
 fn line(text: &str) {
-    // SAFETY: an `#[ignore]` evidence instrument; its output is the
-    // deliverable, and only `--nocapture` shows it.
-    #[allow(clippy::print_stderr)]
+    #[expect(
+        clippy::print_stderr,
+        reason = "an `#[ignore]` evidence instrument; its output is the deliverable, and only `--nocapture` shows it."
+    )]
     {
         eprintln!("{text}");
     }

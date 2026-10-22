@@ -855,6 +855,10 @@ impl RenderResources {
 }
 
 /// Per-frame callback data passed to the paint callback.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent draw toggle for this frame"
+)]
 pub struct ViewportCallback {
     pub mesh_uniforms: MeshUniforms,
     pub line_uniforms: LineUniforms,
@@ -946,8 +950,10 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
         encoder: &mut wgpu::CommandEncoder,
         callback_resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
-        // SAFETY: RenderResources inserted in RsCamApp::new; always present.
-        #[allow(clippy::unwrap_used)]
+        #[expect(
+            clippy::unwrap_used,
+            reason = "RenderResources inserted in RsCamApp::new; always present."
+        )]
         let resources: &mut RenderResources = callback_resources.get_mut().unwrap();
 
         // Ensure offscreen targets are the right size
@@ -1055,11 +1061,15 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
 
         // Render 3D scene to offscreen texture with depth buffer.
         // After ensure_offscreen and write_buffer, we only need immutable access.
-        // SAFETY: RenderResources inserted in RsCamApp::new; always present.
-        #[allow(clippy::unwrap_used)]
+        #[expect(
+            clippy::unwrap_used,
+            reason = "RenderResources inserted in RsCamApp::new; always present."
+        )]
         let resources: &RenderResources = callback_resources.get().unwrap();
-        // SAFETY: ensure_offscreen was called above, so offscreen is always Some.
-        #[allow(clippy::unwrap_used)]
+        #[expect(
+            clippy::unwrap_used,
+            reason = "ensure_offscreen was called above, so offscreen is always Some."
+        )]
         let offscreen = resources.offscreen.as_ref().unwrap();
 
         {
@@ -1414,8 +1424,10 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
         render_pass: &mut wgpu::RenderPass<'static>,
         callback_resources: &egui_wgpu::CallbackResources,
     ) {
-        // SAFETY: RenderResources inserted in RsCamApp::new; always present.
-        #[allow(clippy::unwrap_used)]
+        #[expect(
+            clippy::unwrap_used,
+            reason = "RenderResources inserted in RsCamApp::new; always present."
+        )]
         let resources: &RenderResources = callback_resources.get().unwrap();
 
         if let Some(offscreen) = &resources.offscreen {

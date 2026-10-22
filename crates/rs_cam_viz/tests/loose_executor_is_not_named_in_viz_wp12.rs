@@ -15,11 +15,10 @@
 //! re-implements it under its name). Arm (c) reads comment lines on purpose:
 //! a file path appears in Rust only inside a comment.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

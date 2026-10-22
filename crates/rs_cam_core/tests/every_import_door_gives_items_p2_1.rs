@@ -31,11 +31,12 @@
 //! points was dropped in silence; it is now a 2-point path (DESIGN 2.2).
 //! `a_closed_two_point_polyline_is_kept_as_a_path` holds it.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

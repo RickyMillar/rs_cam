@@ -30,11 +30,11 @@
 //! Each step asserts the exact header line on the core door
 //! (`export_gcode_checked`) and the viz door (the one MCP and the GUI use).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::f64::consts::TAU;

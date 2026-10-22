@@ -58,13 +58,6 @@
 //! adoption — the docstring had already been made law-agnostic, which
 //! is why.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-
 use rs_cam_core::feeds::{
     FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, ToolGeometryHint,
     calculate, embedded_vendor_lut,

@@ -22,11 +22,10 @@
 //! state a never-generated operation has always had, which every surface
 //! F2.2 wired renders as outstanding work — and never `Error`.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

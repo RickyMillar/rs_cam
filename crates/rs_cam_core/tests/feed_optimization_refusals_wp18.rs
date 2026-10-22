@@ -67,11 +67,11 @@
 //!   emission bounding box is the world stock bounding box
 //!   (`session/eval_context.rs`, `heights_stock_bbox`).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::HashMap;

@@ -140,12 +140,13 @@
 //!   closed volume must add their own walls and floor. This follows
 //!   [`super::meshes::grooved_block`]'s precedent, not `plateau`'s.
 
-#![allow(dead_code)]
 #![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    dead_code,
+    reason = "each test binary that includes this module uses only part of it"
+)]
+#![expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::f64::consts::PI;

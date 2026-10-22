@@ -13,11 +13,11 @@
 //! Run one with:
 //! `cargo test -p rs_cam_core --features heavy-tests --test finish_planner_wanaka_diagnostics -- --ignored --nocapture`
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::path::PathBuf;

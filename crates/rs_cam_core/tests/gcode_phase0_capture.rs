@@ -17,11 +17,9 @@
 //! Then review the diff of `tests/fixtures/gcode_golden/` in the same
 //! commit. A fixture that a post refuses has no golden file; the test
 //! asserts that the refusal is still there.
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

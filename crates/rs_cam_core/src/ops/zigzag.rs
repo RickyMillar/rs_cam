@@ -31,7 +31,6 @@ pub struct ZigzagParams {
     pub angle: f64,
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Generate the 2D zigzag scan lines (no Z, no toolpath yet).
 ///
 /// Each line is a pair of P2 endpoints. Lines alternate direction for zigzag.
@@ -92,7 +91,10 @@ fn perp_range(inset: &[Polygon2], perp_x: f64, perp_y: f64) -> (f64, f64) {
 /// rows of the larger one: each row it cuts lies on a row of the whole.
 /// A row below `lattice` is not cut. `None` puts row 0 on the region's own
 /// lowest point.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 #[must_use]
 pub(crate) fn zigzag_lines_on_lattice_reported(
     polygon: &Polygon2,
@@ -152,6 +154,11 @@ pub(crate) fn zigzag_lines_on_lattice_reported(
 
     // Generate scan lines at stepover intervals, from row 0 of the lattice
     // (the region's own lowest point when no lattice is given).
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "stepover > 0 (checked at the top) and max(0.0) keep the row index not negative; a saturated index only makes the row loop below empty"
+    )]
     let (origin, first) = match lattice {
         None => (perp_min, 0),
         Some(origin) => (
@@ -164,7 +171,7 @@ pub(crate) fn zigzag_lines_on_lattice_reported(
         ),
     };
     let mut lines = Vec::new();
-    let n_lines = ((perp_max - origin) / stepover).ceil().max(0.0) as usize + 1;
+    let n_lines = crate::util::steps::steps(perp_max - origin, stepover).unwrap_or(0) + 1;
 
     for i in first..n_lines {
         let perp_pos = origin + i as f64 * stepover;
@@ -318,7 +325,10 @@ pub fn lines_to_toolpath(lines: &[[P2; 2]], params: &ZigzagParams) -> Toolpath {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;

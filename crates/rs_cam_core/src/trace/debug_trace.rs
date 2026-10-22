@@ -422,8 +422,10 @@ impl ToolpathDebugRecorder {
         }
     }
 
-    // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "Mutex::lock only fails if poisoned (panic in another thread)"
+    )]
     pub fn finish(self) -> ToolpathDebugTrace {
         self.publish_phase(None);
         let state = self.inner.lock().expect("debug recorder poisoned");
@@ -481,8 +483,10 @@ impl ToolpathDebugRecorder {
         }
     }
 
-    // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "Mutex::lock only fails if poisoned (panic in another thread)"
+    )]
     fn start_span_with_parent(
         &self,
         parent_id: Option<u64>,
@@ -522,8 +526,10 @@ impl ToolpathDebugRecorder {
         }
     }
 
-    // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "Mutex::lock only fails if poisoned (panic in another thread)"
+    )]
     pub fn add_annotation(&self, move_index: usize, label: impl Into<String>) {
         let mut state = self.inner.lock().expect("debug recorder poisoned");
         state.annotations.push(ToolpathDebugAnnotation {
@@ -557,8 +563,10 @@ impl ToolpathDebugRecorder {
             bucket_size_z_bits: record.bucket_size_z.map(f64::to_bits),
         };
 
-        // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
-        #[allow(clippy::expect_used)]
+        #[expect(
+            clippy::expect_used,
+            reason = "Mutex::lock only fails if poisoned (panic in another thread)"
+        )]
         let mut state = self.inner.lock().expect("debug recorder poisoned");
         let entry = state
             .hotspots
@@ -646,8 +654,10 @@ impl ToolpathDebugScope {
         self.finish_inner();
     }
 
-    // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "Mutex::lock only fails if poisoned (panic in another thread)"
+    )]
     fn update_span(&self, apply: impl FnOnce(&mut ToolpathDebugSpan)) {
         let mut state = self.recorder.inner.lock().expect("debug recorder poisoned");
         if let Some(span) = state.spans.get_mut(&self.span_id) {
@@ -655,8 +665,10 @@ impl ToolpathDebugScope {
         }
     }
 
-    // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "Mutex::lock only fails if poisoned (panic in another thread)"
+    )]
     fn finish_inner(&mut self) {
         if self.finished {
             return;
@@ -690,11 +702,10 @@ impl Drop for ToolpathDebugScope {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

@@ -814,12 +814,6 @@ pub fn swept_footprint_mm2_per_s(area: ProjectedXyAreaMm2, seconds: f64) -> f64 
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::*;
     use crate::geo::P3;

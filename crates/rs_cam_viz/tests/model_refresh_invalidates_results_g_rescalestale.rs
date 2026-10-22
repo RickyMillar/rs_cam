@@ -44,11 +44,10 @@
 //! Source: `planning/ui_fix_2026-09-09/reports/F4.4.md` §7 row F4.7, and
 //! `research/R0.7.md` §3.3 (the "Reload / Rescale" row).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

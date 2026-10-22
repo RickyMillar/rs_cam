@@ -133,7 +133,11 @@ pub(crate) fn run_curve<O: CurveOp>(
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    #![expect(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        reason = "test code: a panic is how a test reports a failure"
+    )]
 
     use super::*;
     use crate::compute::cutter::build_cutter;

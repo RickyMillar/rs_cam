@@ -114,7 +114,6 @@ pub fn below_low(observed: f64, bound: f64, tolerance: f64) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

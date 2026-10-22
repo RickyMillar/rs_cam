@@ -11,11 +11,10 @@
 //! `Arc::ptr_eq` (never a bare pointer — the ABA hazard that module documents),
 //! every float in the key compared by `to_bits`.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;
@@ -35,7 +34,10 @@ use rs_cam_core::tool::MillingCutter;
 /// device as `geometry_cache_g8.rs::counter_lock`.
 fn cache_lock() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    #[allow(clippy::unwrap_used)] // poisoning would mean another test panicked
+    #[expect(
+        clippy::unwrap_used,
+        reason = "poisoning would mean another test panicked"
+    )]
     LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
 }
 

@@ -967,6 +967,10 @@ pub struct SimulationResults {
 }
 
 /// Transport / playback state — independent of whether results exist.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent flag of the playback transport"
+)]
 pub struct SimulationPlayback {
     /// Animation playback state.
     pub playing: bool,
@@ -1383,7 +1387,10 @@ impl SimulationDebugState {
 }
 
 impl SimulationSemanticIndex {
-    #[allow(clippy::indexing_slicing)] // item_index from enumerate(), bounded by trace.items
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "item_index from enumerate(), bounded by trace.items"
+    )]
     fn build(trace: &ToolpathSemanticTrace) -> Self {
         let mut item_index_by_id = HashMap::with_capacity(trace.items.len());
         let mut child_indices_by_parent: HashMap<Option<u64>, Vec<usize>> = HashMap::new();
@@ -1423,7 +1430,10 @@ impl SimulationSemanticIndex {
         }
     }
 
-    #[allow(clippy::indexing_slicing)] // item indices from move_item_indices, bounded by trace.items
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "item indices from move_item_indices, bounded by trace.items"
+    )]
     fn active_item_index(&self, trace: &ToolpathSemanticTrace, local_move: usize) -> Option<usize> {
         self.move_item_indices
             .iter()
@@ -1447,7 +1457,10 @@ impl SimulationSemanticIndex {
             })
     }
 
-    #[allow(clippy::indexing_slicing)] // index from item_index_by_id, bounded by trace.items
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "index from item_index_by_id, bounded by trace.items"
+    )]
     fn ancestry(
         &self,
         trace: &ToolpathSemanticTrace,

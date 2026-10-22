@@ -67,21 +67,17 @@ fn sample_scan_line(
     tan_half: f64,
     params: &VCarveParams,
 ) -> Vec<P3> {
-    #[allow(clippy::indexing_slicing)]
-    // SAFETY: `line` is a fixed-size [P2; 2] array.
     let (dx, dy) = (line[1].x - line[0].x, line[1].y - line[0].y);
     let len = (dx * dx + dy * dy).sqrt();
     if len < 1e-10 {
         return Vec::new();
     }
 
-    let n_samples = (len / sample_step).ceil() as usize;
+    let n_samples = crate::util::steps::steps(len, sample_step).unwrap_or(0);
     let mut points: Vec<P3> = Vec::with_capacity(n_samples + 1);
 
     for i in 0..=n_samples {
         let t = i as f64 / n_samples.max(1) as f64;
-        #[allow(clippy::indexing_slicing)]
-        // SAFETY: `line` is a fixed-size [P2; 2] array.
         let (x, y) = (line[0].x + t * dx, line[0].y + t * dy);
 
         let dist = field.distance(&P2::new(x, y));
@@ -192,7 +188,6 @@ pub fn vcarve_toolpath_with_cancel(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use std::f64::consts::FRAC_PI_4;
@@ -226,7 +221,7 @@ mod tests {
             if len < 1e-10 {
                 continue;
             }
-            let n_samples = (len / sample_step).ceil() as usize;
+            let n_samples = crate::util::steps::steps(len, sample_step).unwrap_or(0);
             let mut points: Vec<P3> = Vec::with_capacity(n_samples + 1);
             for i in 0..=n_samples {
                 let t = i as f64 / n_samples.max(1) as f64;

@@ -17,11 +17,10 @@
 //! resolution (~a minute). Run with:
 //! `cargo test -p rs_cam_core --test finish_planner_wanaka_decompose -- --ignored --nocapture`
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::path::PathBuf;

@@ -173,8 +173,10 @@ pub fn show(
         frame.to_screen(x, y)
     };
     let scale_r = |d: f64| {
-        // SAFETY: a pin diameter in mm is far inside the f32 range.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a pin diameter in mm is far inside the f32 range."
+        )]
         let r = 0.5 * d as f32 * frame.scale;
         r.max(MIN_PIN_PX)
     };
@@ -242,7 +244,10 @@ pub fn show(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use rs_cam_core::compute::transform::{FaceUp, ZRotation};

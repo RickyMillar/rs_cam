@@ -634,7 +634,10 @@ impl<B: ComputeBackend> AppController<B> {
             ));
         }
 
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "toolpaths is not empty (checked above), so index 0 exists"
+        )]
         Ok(toolpath_to_svg(toolpaths[0], 800.0, 600.0))
     }
 

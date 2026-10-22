@@ -197,7 +197,10 @@ pub(super) fn curvature_arm(
 /// bare-surface probe with the sign flipped. NOTE the sign-flip trap: a
 /// *real* reference equal to the pencil tool still yields rest ≈ 0 via
 /// `ref_z − pencil_z`, NOT probe mode.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub(super) fn rest_depth_arm(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -354,7 +357,10 @@ pub(super) fn dihedral_arm(
 
     // Per-edge wall normals for bisector positioning; built from the
     // filtered concave edges so the offset uses the exact two walls.
-    #[allow(clippy::indexing_slicing)] // face_a/face_b are valid mesh face indices
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "face_a/face_b are valid mesh face indices"
+    )]
     let edge_norms: HashMap<EdgeKey, (V3, V3)> = concave_owned
         .iter()
         .map(|e| {

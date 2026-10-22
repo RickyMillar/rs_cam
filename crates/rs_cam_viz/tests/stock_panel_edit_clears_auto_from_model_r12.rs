@@ -30,12 +30,9 @@
 //! The live checkbox untick during a drag, which needs an egui frame, and
 //! the caption under the checkbox.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
+#![expect(
     clippy::float_cmp,
-    clippy::indexing_slicing
+    reason = "test code accepts the style lint float_cmp"
 )]
 
 use rs_cam_core::compute::stock_config::StockConfig;

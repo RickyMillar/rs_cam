@@ -43,7 +43,10 @@ pub enum StepImportError {
 ///
 /// `tolerance` controls tessellation resolution (chord height in mm).
 /// For wood routing, 0.1 mm is appropriate. Smaller values produce more triangles.
-#[allow(clippy::indexing_slicing)] // mesh vertex/face indices bounded by tessellation output
+#[expect(
+    clippy::indexing_slicing,
+    reason = "mesh vertex/face indices bounded by tessellation output"
+)]
 pub fn load_step(path: &Path, tolerance: f64) -> Result<EnrichedMesh, StepImportError> {
     // EDG-03: the three import doors share one size mechanism and keep
     // their own error type.
@@ -350,7 +353,10 @@ fn classify_face_surface(vertices: &[P3]) -> (SurfaceType, SurfaceParams) {
 }
 
 /// Extract boundary loops from mesh edges (boundary = edges in only one triangle).
-#[allow(clippy::indexing_slicing)] // triangle indices [0..3] and vertex lookups bounded by mesh
+#[expect(
+    clippy::indexing_slicing,
+    reason = "triangle indices [0..3] and vertex lookups bounded by mesh"
+)]
 fn extract_boundary_loops(vertices: &[P3], triangles: &[[u32; 3]]) -> Vec<Vec<P3>> {
     use std::collections::HashMap;
 
@@ -457,7 +463,10 @@ fn find_shared_edge_vertices(a: &FaceTessellation, b: &FaceTessellation) -> Opti
 }
 
 /// Build a BrepEdge from shared vertices between two adjacent faces.
-#[allow(clippy::indexing_slicing)] // vertex indices bounded by mesh topology
+#[expect(
+    clippy::indexing_slicing,
+    reason = "vertex indices bounded by mesh topology"
+)]
 fn build_brep_edge(
     id: usize,
     face_a: FaceGroupId,
@@ -520,7 +529,10 @@ fn build_brep_edge(
 }
 
 /// Compute the average normal of a face tessellation from its surface params.
-#[allow(clippy::indexing_slicing)] // vertex indices bounded by face tessellation
+#[expect(
+    clippy::indexing_slicing,
+    reason = "vertex indices bounded by face tessellation"
+)]
 fn face_avg_normal(tess: &FaceTessellation) -> V3 {
     match &tess.surface_params {
         SurfaceParams::Plane { normal, .. } => *normal,

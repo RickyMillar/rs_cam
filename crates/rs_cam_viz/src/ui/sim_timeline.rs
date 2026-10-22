@@ -399,7 +399,6 @@ fn draw_transport_and_scrubber(
 /// contract: drag anywhere scrubs; a click's side-effect is decided by which
 /// sub-band Y-region it lands in. This kills the three-divergent-axes /
 /// three-orphan-playheads problem (TIM-001/002).
-#[allow(clippy::too_many_arguments)]
 fn draw_boundary_timeline(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
@@ -691,7 +690,10 @@ fn span_subband_present(
 /// shows the span label; a click (when the pointer is in this sub-band's Y
 /// region) sets the chip-row scope and seeks to the span start. No own
 /// playhead — the Tier-2 widget paints one shared playhead over every band.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn paint_span_subband(
     ui: &egui::Ui,
     rect: egui::Rect,
@@ -801,15 +803,9 @@ fn paint_span_subband(
     // UP4: the ribbon blocks are a CATEGORY plus two states, so they walk
     // `SPAN_SCALE` and keep their original brightness order — odd darkest,
     // then even, then the playhead-current block, then the locked one.
-    // SAFETY: every index is a literal in `0..6` and `SPAN_SCALE` has six
-    // entries, so each one is in bounds at compile time.
-    #[allow(clippy::indexing_slicing)]
     const COLOR_EVEN: egui::Color32 = crate::ui::tokens::SPAN_SCALE[1];
-    #[allow(clippy::indexing_slicing)]
     const COLOR_ODD: egui::Color32 = crate::ui::tokens::SPAN_SCALE[0];
-    #[allow(clippy::indexing_slicing)]
     const COLOR_LOCKED: egui::Color32 = crate::ui::tokens::SPAN_SCALE[5];
-    #[allow(clippy::indexing_slicing)]
     const COLOR_PLAYHEAD: egui::Color32 = crate::ui::tokens::SPAN_SCALE[3];
     const COLOR_HOVER_OUTLINE: egui::Color32 = crate::ui::tokens::TEXT_STRONG;
 
@@ -908,8 +904,6 @@ fn paint_span_subband(
             // UP4: Region sub-blocks are another span KIND, so they take
             // two lighter steps of the same category ramp rather than the
             // amber pair they carried.
-            // SAFETY: both indices are literals in `0..6`.
-            #[allow(clippy::indexing_slicing)]
             let color = if Some(sid_u32) == scope_span_id {
                 crate::ui::tokens::SPAN_SCALE[4]
             } else {
@@ -1288,9 +1282,14 @@ fn semantic_subband_present(
 /// offset by `boundary.start_move`) and shares the single Tier-2 playhead and
 /// click contract (TIM-001/002). Click side-effects (annotation → DebugTrace,
 /// cut-issue → CutQuality, semantic item → pin) are unchanged.
-// SAFETY: item_index and depths[] from semantic index built from trace.items
-#[allow(clippy::indexing_slicing)]
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "item_index and depths[] from semantic index built from trace.items"
+)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn paint_semantic_subband(
     ui: &egui::Ui,
     rect: egui::Rect,
@@ -1376,9 +1375,6 @@ fn paint_semantic_subband(
             // principle 1). Neither dot is a judgement on the toolpath; the
             // verdict lives in the load report. They take two steps of the
             // chart-series ramp instead.
-            // SAFETY: both indices are literals in `0..4` and `CHART_SERIES`
-            // has four entries.
-            #[allow(clippy::indexing_slicing)]
             let color = match issue.kind {
                 rs_cam_core::stock::simulation_cut::SimulationCutIssueKind::AirCut => {
                     crate::ui::tokens::CHART_SERIES[1]

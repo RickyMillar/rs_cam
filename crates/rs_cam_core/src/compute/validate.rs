@@ -352,12 +352,13 @@ fn find_tool_for(session: &ProjectSession, id: ToolId) -> Option<&ToolConfig> {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::field_reassign_with_default
+    clippy::field_reassign_with_default,
+    reason = "test code: a panic is how a test reports a failure; test code accepts the style lint field_reassign_with_default"
 )]
 mod tests {
     use super::*;

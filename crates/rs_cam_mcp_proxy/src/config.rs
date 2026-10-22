@@ -74,8 +74,10 @@ fn millis(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<Duratio
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
-    // SAFETY: test code; a failed unwrap is the test failure report.
+    #![expect(
+        clippy::unwrap_used,
+        reason = "test code; a failed unwrap is the test failure report."
+    )]
 
     use super::*;
 

@@ -576,8 +576,10 @@ impl ToolpathSemanticRecorder {
         }
     }
 
-    // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "Mutex::lock only fails if poisoned (panic in another thread)"
+    )]
     pub fn finish(self) -> ToolpathSemanticTrace {
         let state = self.inner.lock().expect("semantic recorder poisoned");
         let mut items: Vec<_> = state.items.values().cloned().collect();
@@ -604,8 +606,10 @@ impl ToolpathSemanticRecorder {
         kind: ToolpathSemanticKind,
         label: impl Into<String>,
     ) -> ToolpathSemanticScope {
-        // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
-        #[allow(clippy::expect_used)]
+        #[expect(
+            clippy::expect_used,
+            reason = "Mutex::lock only fails if poisoned (panic in another thread)"
+        )]
         let mut state = self.inner.lock().expect("semantic recorder poisoned");
         let id = state.next_item_id;
         state.next_item_id += 1;
@@ -636,8 +640,10 @@ impl ToolpathSemanticRecorder {
     /// currently carries a move link. The stored `move_end` is inclusive;
     /// this converts once so callers only ever deal with the half-open
     /// convention the span machinery uses.
-    // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "Mutex::lock only fails if poisoned (panic in another thread)"
+    )]
     fn move_links(&self) -> Vec<(u64, usize, usize)> {
         let state = self.inner.lock().expect("semantic recorder poisoned");
         state
@@ -656,8 +662,10 @@ impl ToolpathSemanticRecorder {
     ///
     /// `toolpath` is the post-transform toolpath — the one the new indices
     /// index. See [`Self::rederive_geometry_for`] for the geometry policy.
-    // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "Mutex::lock only fails if poisoned (panic in another thread)"
+    )]
     fn apply_links(&self, links: &[(u64, Option<(usize, usize)>)], toolpath: &Toolpath) {
         let mut state = self.inner.lock().expect("semantic recorder poisoned");
         for (id, link) in links {
@@ -773,7 +781,10 @@ impl ToolpathSemanticRecorder {
 /// byte-identical geometry.
 ///
 /// `None` when the range is empty or out of bounds.
-#[allow(clippy::indexing_slicing)] // bounds checked on the line above each index
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounds checked on the line above each index"
+)]
 fn range_geometry(
     toolpath: &Toolpath,
     start: usize,
@@ -905,8 +916,10 @@ impl ToolpathSemanticScope {
         self.finish_inner();
     }
 
-    // SAFETY: Mutex::lock only fails if poisoned (panic in another thread)
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "Mutex::lock only fails if poisoned (panic in another thread)"
+    )]
     fn update_item(&self, apply: impl FnOnce(&mut ToolpathSemanticItem)) {
         let mut state = self
             .recorder
@@ -932,7 +945,10 @@ impl Drop for ToolpathSemanticScope {
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 pub fn enrich_traces(
     debug_trace: &mut ToolpathDebugTrace,
     semantic_trace: &mut ToolpathSemanticTrace,
@@ -1160,12 +1176,11 @@ pub fn write_toolpath_trace_artifact(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::str_to_string
+    clippy::str_to_string,
+    reason = "test code: a panic is how a test reports a failure; test code accepts the style lint str_to_string"
 )]
 mod tests {
     use super::*;

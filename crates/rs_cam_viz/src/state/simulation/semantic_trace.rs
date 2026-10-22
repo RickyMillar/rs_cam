@@ -49,7 +49,10 @@ impl SimulationState {
             .and_then(|trace| trace.hotspots.get(hotspot_index))
     }
 
-    #[allow(clippy::indexing_slicing)] // active_index from active_item_index() bounded by trace.items
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "active_index from active_item_index() bounded by trace.items"
+    )]
     pub(crate) fn playback_semantic_item(&mut self, gui: &GuiState) -> Option<ActiveSemanticItem> {
         let (boundary_index, toolpath_id, local_move) = self.current_local_toolpath_move()?;
         self.sync_debug_state(gui);
@@ -302,7 +305,10 @@ impl SimulationState {
         )))
     }
 
-    #[allow(clippy::indexing_slicing)] // item_index from enumerate(), bounded by trace.items
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "item_index from enumerate(), bounded by trace.items"
+    )]
     pub fn pick_semantic_item_with_ray(
         &mut self,
         gui: &GuiState,

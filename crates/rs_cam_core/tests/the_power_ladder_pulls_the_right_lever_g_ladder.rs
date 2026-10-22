@@ -42,13 +42,6 @@
 //!
 //! See `planning/load_model_2026-09-16/DERATE_SPEC.md` and `derate_levers.py`.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-
 use rs_cam_core::feeds::{
     FeedsInput, FeedsWarning, OperationFamily, PassRole, SetupContext, SpindleStrategy,
     ToolGeometryHint, calculate, embedded_vendor_lut,

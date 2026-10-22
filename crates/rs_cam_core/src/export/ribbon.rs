@@ -43,7 +43,10 @@ pub fn dimmed(mesh: &StockMesh, factor: f32) -> StockMesh {
 ///
 /// Maps Z values: Blue (low) → Green (mid) → Red (high).
 /// Input: flat `[x, y, z, ...]` vertex array. Returns one `[r, g, b]` per vertex.
-#[allow(clippy::indexing_slicing)] // stride-3 loop bounded by num_verts
+#[expect(
+    clippy::indexing_slicing,
+    reason = "stride-3 loop bounded by num_verts"
+)]
 pub fn height_gradient_colors(vertices: &[f32]) -> Vec<[f32; 3]> {
     let num_verts = vertices.len() / 3;
     if num_verts == 0 {
@@ -185,8 +188,10 @@ pub fn toolpath_to_tube_mesh_with_spans(
     };
 
     for m_idx in 1..toolpath.moves.len() {
-        // SAFETY: m_idx in 1..len; prev set from index 0.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "m_idx in 1..len; prev set from index 0."
+        )]
         let mv = &toolpath.moves[m_idx];
         let Some(from) = prev else { continue };
         prev = Some(mv.target);
@@ -247,8 +252,10 @@ pub fn toolpath_to_tube_mesh(
     let mut prev = toolpath.moves.first().map(|m| m.target);
 
     for m_idx in 1..toolpath.moves.len() {
-        // SAFETY: m_idx is 1..len, always valid; prev set from index 0
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "m_idx is 1..len, always valid; prev set from index 0"
+        )]
         let mv = &toolpath.moves[m_idx];
         let Some(from) = prev else { continue };
         prev = Some(mv.target);
@@ -374,8 +381,6 @@ fn push_tube_segment(
     }
 
     // 12 triangles (6 faces)
-    // SAFETY: indices offset by base which accounts for prior vertices
-    #[allow(clippy::indexing_slicing)]
     {
         let idx: [[u32; 3]; 12] = [
             [0, 1, 5],

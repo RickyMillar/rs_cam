@@ -22,11 +22,11 @@
 //! cargo test -p rs_cam_viz -q --test add_bore_copies_the_selection_p6_7
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod inspector_harness_p6_7;

@@ -1120,11 +1120,10 @@ fn composite_supersample(w: usize, h: usize) -> usize {
 }
 
 /// Box-filter the supersampled buffer down into the output buffer.
-// SAFETY: `src` is `src_w * region_h * ss` rows of `src_w` RGBA pixels and
-// `dst` is at least `dst_w * region_h` RGBA pixels; every index below is
-// `(row_in_range * width + col_in_range) * 4 + {0..3}`, bounded by the loop
-// ranges that were used to size both buffers.
-#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`src` is `src_w * region_h * ss` rows of `src_w` RGBA pixels and `dst` is at least `dst_w * region_h` RGBA pixels; every index below is `(row_in_range * width + col_in_range) * 4 + {0..3}`, bounded by the loop ranges that were used to size both buffers."
+)]
 fn downsample_into(
     src: &[u8],
     src_w: usize,
@@ -1168,10 +1167,11 @@ fn downsample_into(
 }
 
 /// Rasterize one view of the mesh into an RGBA pixel buffer.
-// SAFETY: vertex/colour reads are `i * 3 + {0,1,2}` with `i < vert_count`,
-// and `vert_count` is `vertices.len() / 3`; triangle indices are range-checked
-// against `vert_count` before use.
-#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+#[expect(
+    clippy::indexing_slicing,
+    clippy::too_many_arguments,
+    reason = "vertex/colour reads are `i * 3 + {0,1,2}` with `i < vert_count`, and `vert_count` is `vertices.len() / 3`; triangle indices are range-checked against `vert_count` before use."
+)]
 fn render_view_to_pixels(
     pixels: &mut [u8],
     buf_w: usize,
@@ -1309,9 +1309,10 @@ fn render_view_to_pixels(
 /// depth at each pixel with the barycentric weights. Render review
 /// 2026-10-09, F11: one depth per triangle (the centroid) let a tall wall or
 /// skirt triangle paint over a nearer floor.
-// SAFETY: the arguments are the target buffer, its viewport and the triangle;
-// a struct for them would only rename the same values.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the arguments are the target buffer, its viewport and the triangle; a struct for them would only rename the same values."
+)]
 fn rasterize_triangle(
     pixels: &mut [u8],
     zbuf: &mut [f64],
@@ -1381,10 +1382,10 @@ fn rasterize_triangle(
             let e2 = (fx - x2) * dy20 - (fy - y2) * dx20;
 
             if (e0 >= 0.0 && e1 >= 0.0 && e2 >= 0.0) || (e0 <= 0.0 && e1 <= 0.0 && e2 <= 0.0) {
-                // SAFETY: zi is bounded by min_y..=max_y × vw + min_x..=max_x,
-                // which are clamped to the viewport dimensions that size zbuf.
-                // pi is bounds-checked explicitly before writing.
-                #[allow(clippy::indexing_slicing)]
+                #[expect(
+                    clippy::indexing_slicing,
+                    reason = "zi is bounded by min_y..=max_y × vw + min_x..=max_x, which are clamped to the viewport dimensions that size zbuf. pi is bounds-checked explicitly before writing."
+                )]
                 {
                     let zi = py * vw + px;
                     if zi >= zbuf.len() {
@@ -1492,8 +1493,11 @@ fn text_width_px(text: &str, scale: usize) -> usize {
     text.chars().count() * (GLYPH_W + 1) * scale
 }
 
-// SAFETY: every write is guarded by an explicit `i + 3 < pixels.len()` test.
-#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+#[expect(
+    clippy::indexing_slicing,
+    clippy::too_many_arguments,
+    reason = "every write is guarded by an explicit `i + 3 < pixels.len()` test."
+)]
 fn fill_rect(
     pixels: &mut [u8],
     buf_w: usize,
@@ -1517,8 +1521,11 @@ fn fill_rect(
     }
 }
 
-// SAFETY: every write is guarded by an explicit `i + 3 < pixels.len()` test.
-#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+#[expect(
+    clippy::indexing_slicing,
+    clippy::too_many_arguments,
+    reason = "every write is guarded by an explicit `i + 3 < pixels.len()` test."
+)]
 fn draw_text(
     pixels: &mut [u8],
     buf_w: usize,
@@ -1566,7 +1573,10 @@ fn draw_text(
 }
 
 /// Text on a solid plate, so a caption stays readable over light material.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn draw_label(
     pixels: &mut [u8],
     buf_w: usize,
@@ -1803,12 +1813,12 @@ pub struct SweepVariant {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::str_to_string
+    clippy::str_to_string,
+    reason = "test code: a panic is how a test reports a failure; test code accepts the style lint str_to_string"
 )]
 mod tests {
     use super::*;

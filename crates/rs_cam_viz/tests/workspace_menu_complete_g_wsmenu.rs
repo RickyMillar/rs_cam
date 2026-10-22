@@ -32,11 +32,11 @@
 //! Readiness in the Workspace menu; update stale 'project tree' wording")
 //! and `IA/CURRENT_MAP.md` §1 and §3.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_viz::state::Workspace;

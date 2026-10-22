@@ -87,7 +87,10 @@ impl Default for SteepShallowParams {
 
 /// Dilate a boolean grid by `radius_cells`, setting additional cells to `true`.
 /// 8-connected expansion.
-#[allow(clippy::indexing_slicing)] // bounded indexing in grid morphology
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in grid morphology"
+)]
 pub fn dilate_grid(grid: &[bool], rows: usize, cols: usize, radius_cells: usize) -> Vec<bool> {
     if radius_cells == 0 {
         return grid.to_vec();
@@ -151,7 +154,11 @@ fn erode_grid(grid: &[bool], rows: usize, cols: usize, radius_cells: usize) -> V
 ///
 /// `rest` (W6.4.6): a kept point must also pass material at the level
 /// ([`ComposedRest`]). `None` (a fresh pass) adds no rule.
-#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+#[expect(
+    clippy::indexing_slicing,
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn emit_steep_passes(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -374,7 +381,10 @@ fn emit_steep_passes(
 ///
 /// `rest` (W6.4.6): a kept point must also pass material at its drop
 /// ([`ComposedRest`]). `None` (a fresh pass) adds no rule.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn emit_shallow_passes(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -1011,11 +1021,11 @@ impl SteepShallowOp<'_> {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

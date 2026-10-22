@@ -22,7 +22,10 @@ pub fn stock_items(stock_bbox: &BoundingBox3) -> Result<ItemSet, ItemError> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::geo::P3;

@@ -33,13 +33,6 @@
 //!    just an alias for `clamp_rpm` on a spindle that never rounds up.
 //! 3. The result is always a speed the spindle can actually run.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-
 use rs_cam_core::machine::{MachineProfile, SpindleConfig};
 
 /// Requests spanning the gaps between the discrete speeds, so at least some

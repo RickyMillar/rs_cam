@@ -1,4 +1,4 @@
-#![allow(clippy::print_stdout)] // CLI surface
+#![expect(clippy::print_stdout, reason = "CLI surface")]
 
 //! `nc-time`: parse a G-code .nc file and replay it through F-034's
 //! kinematics integrator to get an independent predicted cycle time.
@@ -307,11 +307,10 @@ fn strip_comments(line: &str) -> String {
 
 /// Tokenize a G-code line into (letter, value) pairs. Returns `[]` for
 /// lines with no valid words.
-// SAFETY: every `bytes[i]` access is guarded by `i < bytes.len()` either
-// directly or by the loop condition. `line[start..i]` slice is safe
-// because `start` and `i` come from byte indices the ASCII-only scan
-// never advances past a multi-byte boundary.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every `bytes[i]` access is guarded by `i < bytes.len()` either directly or by the loop condition. `line[start..i]` slice is safe because `start` and `i` come from byte indices the ASCII-only scan never advances past a multi-byte boundary."
+)]
 fn tokenize_gcode(line: &str) -> Vec<(char, f64)> {
     let mut words = Vec::new();
     let bytes = line.as_bytes();
@@ -342,7 +341,12 @@ fn tokenize_gcode(line: &str) -> Vec<(char, f64)> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

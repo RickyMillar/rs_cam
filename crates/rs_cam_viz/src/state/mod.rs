@@ -132,6 +132,10 @@ pub fn unsaved_project_summary(state: &AppState) -> Option<String> {
 }
 
 /// Top-level application state. Single source of truth.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent window or panel that is open or closed"
+)]
 pub struct AppState {
     pub workspace: Workspace,
     /// Unified project session — single source of truth for CAM data.
@@ -673,7 +677,6 @@ impl Default for AppState {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 

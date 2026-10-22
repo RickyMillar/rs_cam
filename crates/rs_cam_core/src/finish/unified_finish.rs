@@ -1401,7 +1401,10 @@ pub fn unified_finish_mid_steep_generation_resolution(
 /// also carries a stock: that one is `Some` only when `pencil_claims` is on,
 /// and whether a link cuts through standing material has nothing to do with
 /// whether the crease detector ran.
-#[allow(clippy::too_many_arguments)] // op-generator adapter surface, mirrors the strategy fns it composes
+#[expect(
+    clippy::too_many_arguments,
+    reason = "op-generator adapter surface, mirrors the strategy fns it composes"
+)]
 pub fn unified_finish_toolpath_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -1722,7 +1725,11 @@ fn apply_territory_clip(
             // (untrusted keeps coverage).
             true
         } else {
-            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+            #[expect(
+                clippy::cast_sign_loss,
+                clippy::cast_possible_truncation,
+                reason = "gc and gr are rounded, not negative and inside the grid (checked above)"
+            )]
             let gi = spec.index_of(gr as usize, gc as usize);
             keep_dilated.get(gi).copied().unwrap_or(true)
         };

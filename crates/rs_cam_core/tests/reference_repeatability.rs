@@ -57,12 +57,11 @@
 //! instead of measuring them summed. The simulated form remains available and
 //! is what [`v3_cell_sensitivity`] would exercise.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;

@@ -24,11 +24,10 @@
 //! The old-versus-new bit check (the eager mesh of `fd06f407` against
 //! `build_mesh`) is the ignored instrument in `checkpoint_mesh_ab_m2.rs`.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::Arc;

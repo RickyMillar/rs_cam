@@ -46,12 +46,12 @@
 //!   1.0, so v = 0.127. The gate samples cut at 2.0 mm (ratio 2 / 6 <= 1), so
 //!   v' = 0.127.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};

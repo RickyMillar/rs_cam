@@ -26,11 +26,10 @@
 //! on the ring within [`TOL_MM`]. The pre-fix laps ran along the chord of
 //! the first quarter arc, 1.17 mm inside a 4 mm ring at its midpoint.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::dexel_stock::TriDexelStock;

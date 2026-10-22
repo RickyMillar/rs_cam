@@ -42,11 +42,10 @@
 //! deliberately — a test asserting "the bbox is 254 mm wide" would pass just
 //! as well if both paths were wrong together.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

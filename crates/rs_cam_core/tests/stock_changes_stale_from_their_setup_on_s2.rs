@@ -23,12 +23,12 @@
 //! record lists it) is in `session/compute/tests.rs`; the cache key is in
 //! `compute/sim_prefix.rs`.
 
-#![allow(
-    // SAFETY: test code; a failed fixture is a failed test.
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code; a failed fixture is a failed test."
 )]
 
 use std::collections::BTreeSet;

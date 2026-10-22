@@ -16,7 +16,10 @@
 //! wire reaches the patch through an exhaustive `From` in `rs_cam_mcp`, so
 //! the wire and the patch cannot differ either.
 
-#![allow(clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::compute::stock_config::{StockConfig, StockConfigPatch};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolParamKey, ToolType};

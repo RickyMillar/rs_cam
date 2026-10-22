@@ -48,11 +48,10 @@
 //! - (e) a plunge in plastic or aluminium refuses (decision 3);
 //! - (f) the MDF 3.175 mm cell reads Within on the plunge-feed gate.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::catalog::OperationType;
@@ -482,6 +481,8 @@ fn the_mdf_eighth_inch_cell_is_within_the_plunge_envelope_g6() {
                 "about 560 per mm: {observed}"
             );
         }
-        other => panic!("the MDF 3.175 mm plunge must read Within, got {other:?}"),
+        other @ DrillGateOutcome::Exceeds { .. } => {
+            panic!("the MDF 3.175 mm plunge must read Within, got {other:?}")
+        }
     }
 }

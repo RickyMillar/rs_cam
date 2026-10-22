@@ -31,11 +31,12 @@
 //! cargo test -p rs_cam_viz -q --test pick_mode_picks_by_kind_p4_5
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::BTreeSet;

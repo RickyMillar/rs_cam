@@ -603,11 +603,10 @@ pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) 
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;
@@ -622,7 +621,10 @@ mod tests {
 
     /// Adapts this module's legacy positional-arg test calls to the
     /// Phase 6 `(ctx, env)` gate signature.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "test code accepts the style lint too_many_arguments"
+    )]
     fn evaluate_args(
         toolpath_id: usize,
         tool: &crate::tool::ToolDefinition,
@@ -951,7 +953,9 @@ mod tests {
         );
         let peak = match v {
             PowerVerdict::Within { peak_kw, .. } | PowerVerdict::Exceeds { peak_kw, .. } => peak_kw,
-            other => panic!("expected modeled verdict, got {other:?}"),
+            other @ PowerVerdict::Unmodeled { .. } => {
+                panic!("expected modeled verdict, got {other:?}")
+            }
         };
         // Hand compute: engagement_radius(1.0) for 90° V-bit = 1.0 mm;
         // radial_width = (arc/π)·2·1.0 = 1.0; triangular area = 0.5·1·1 =
@@ -1136,7 +1140,11 @@ mod tests {
 /// plumbing, and because the pre-R1 linear formula is written out here
 /// in full so the before/after is readable without reading git history.
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod r1_two_term_model {
     use super::*;
     use crate::material::{Material, WoodSpecies};

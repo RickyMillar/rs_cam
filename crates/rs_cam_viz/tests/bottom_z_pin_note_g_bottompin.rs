@@ -26,12 +26,10 @@
 //! GUI must not be started, so a rendered check was out of reach. Read arm 4
 //! as a wiring guard, never as evidence that the operator saw the note.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::path::{Path, PathBuf};

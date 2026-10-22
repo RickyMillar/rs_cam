@@ -24,11 +24,12 @@
 //!    open path. The editor accepts it: the marks are the lifts on the
 //!    square, the loops name the square only (an open path is no loop).
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;
@@ -129,7 +130,10 @@ fn generate(session: &mut ProjectSession) -> Result<Toolpath, String> {
 /// vertical fed rise from the final Z to the tab top (final Z + H) and the
 /// descent after it.
 fn lift_centres(tp: &Toolpath) -> Vec<P2> {
-    #[allow(non_snake_case)]
+    #[expect(
+        non_snake_case,
+        reason = "test code accepts the style lint non_snake_case"
+    )]
     let Z = tp
         .moves
         .iter()

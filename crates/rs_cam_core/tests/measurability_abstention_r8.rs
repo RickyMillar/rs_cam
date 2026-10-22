@@ -24,11 +24,11 @@
 //! tuned; a `NotMeasurable` metric stops feeding its gate; collision
 //! detection always stays live.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};

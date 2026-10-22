@@ -28,11 +28,12 @@
 //! chain of pockets: index 0 cuts fresh stock, every later one takes the
 //! remaining stock of the ones above it. Cheap: a 2D pocket at a 1 mm cell.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::Arc;

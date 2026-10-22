@@ -1,7 +1,11 @@
 //! Unit tests for scallop finishing. Moved out of `finish/scallop.rs` by
 //! P4; the module body is unchanged.
 
-#![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use crate::surface::dropcutter::point_drop_cutter;
 use crate::toolpath::MoveIntent;

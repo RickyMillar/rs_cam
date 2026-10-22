@@ -82,8 +82,10 @@ pub struct EdgeDistanceField {
 /// A one-vertex ring therefore contributes a single degenerate `(p, p)`
 /// segment, exactly as the old helper did — `point_to_segment_distance`
 /// treats that as a point, and dropping it would change the answer.
-#[allow(clippy::indexing_slicing)]
-// SAFETY: `windows(2)` yields slices of exactly length 2, so w[0]/w[1] exist.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`windows(2)` yields slices of exactly length 2, so w[0]/w[1] exist."
+)]
 fn push_ring(edges: &mut Vec<(P2, P2)>, ring: &[P2]) {
     for w in ring.windows(2) {
         edges.push((w[0], w[1]));
@@ -285,7 +287,10 @@ impl EdgeDistanceField {
     /// column range and the per-column row range carry a one-cell halo, which
     /// is what makes the "the closest point's cell is always stamped" claim
     /// robust to boundary rounding.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     fn for_each_cell(
         min_x: f64,
         min_y: f64,
@@ -434,7 +439,10 @@ impl EdgeDistanceField {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

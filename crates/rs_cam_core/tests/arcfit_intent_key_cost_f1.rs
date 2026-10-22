@@ -30,13 +30,10 @@
 //!
 //! Run with `-- --nocapture` to see the raw census lines.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
+#![expect(
     clippy::indexing_slicing,
     clippy::print_stdout,
-    clippy::too_many_arguments
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::{

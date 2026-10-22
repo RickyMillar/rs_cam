@@ -57,12 +57,12 @@
 //! Whole-toolpath worst-case `axial_engagement_mm` across all steady-state
 //! (non-plunge, non-transit) cutting samples ≤ `depth_per_pass + 0.5`.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;

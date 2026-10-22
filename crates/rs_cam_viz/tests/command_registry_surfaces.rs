@@ -23,11 +23,9 @@
 //! measures it: every `Reached` row has a `CoreRequest` variant whose
 //! `id()` names that row, and one dispatch arm applies them all.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::session::{CommandId, Reach};

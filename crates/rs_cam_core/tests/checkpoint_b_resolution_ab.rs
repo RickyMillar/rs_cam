@@ -69,13 +69,12 @@
 //! Behind the `heavy-tests` feature to keep the dev loop fast:
 //! `cargo test -p rs_cam_core --features heavy-tests --test checkpoint_b_resolution_ab`.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
     clippy::print_stdout,
-    clippy::too_many_arguments
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::time::Instant;
@@ -806,7 +805,10 @@ fn run_steep_shallow(
 }
 
 /// The three generation-surface consumers, as (label, runner) pairs.
-#[allow(clippy::type_complexity)]
+#[expect(
+    clippy::type_complexity,
+    reason = "test code accepts the style lint type_complexity"
+)]
 const OPS: [(
     &str,
     fn(&Fixture, &dyn MillingCutter, FinishResolutionPolicy) -> OpRun,

@@ -239,7 +239,10 @@ fn floor_contour(points: &[P3], closed: bool) -> Vec<P3> {
 /// the excluded stretch becomes a retract/replunge gap rather than a
 /// straight-line close across material outside the boundary. `None`
 /// reproduces today's unconditional closed-contour emission byte-for-byte.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub fn waterline_toolpath_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -599,8 +602,8 @@ pub fn waterline_contours_with_cancel(
     let y_min = bbox.min.y - r - sampling;
     let y_max = bbox.max.y + r + sampling;
 
-    let ny = ((y_max - y_min) / sampling).ceil() as usize + 1;
-    let nx = ((x_max - x_min) / sampling).ceil() as usize + 1;
+    let ny = crate::util::steps::steps(y_max - y_min, sampling).unwrap_or(0) + 1;
+    let nx = crate::util::steps::steps(x_max - x_min, sampling).unwrap_or(0) + 1;
     // The X fibers first, then the Y fibers, in one batch. A fiber is
     // pushed on its own, so one batch gives each fiber the interval two
     // batches give it. W6.1: the batch polls `cancel` between its chunks,
@@ -625,7 +628,11 @@ pub fn waterline_contours_with_cancel(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::mesh::{SpatialIndex, make_test_hemisphere};

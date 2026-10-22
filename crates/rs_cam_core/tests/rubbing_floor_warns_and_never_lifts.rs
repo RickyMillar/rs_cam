@@ -36,12 +36,11 @@
 //!    `BandMinimum`, and the feed is not raised.
 //! 4. On the Ø6.35 oak ball control no warning fires.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::feeds::vendor_lut::{

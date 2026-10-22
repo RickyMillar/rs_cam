@@ -251,7 +251,6 @@ pub fn transform_mesh(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use rs_cam_core::geo::P3;

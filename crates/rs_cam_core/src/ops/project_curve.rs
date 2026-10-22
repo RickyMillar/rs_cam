@@ -127,7 +127,10 @@ pub struct ProjectCurveParams {
 /// reject points that fall inside mesh holes — `point_drop_cutter` would
 /// otherwise happily report a contact on the hole's rim, producing a
 /// phantom cutting bridge across the hole.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "idx comes from the spatial index built over mesh.faces, so it is in bounds"
+)]
 fn point_over_triangle(x: f64, y: f64, mesh: &TriangleMesh, index: &SpatialIndex) -> bool {
     for &idx in &index.query(x, y, 0.0) {
         let tri = &mesh.faces[idx];
@@ -143,11 +146,9 @@ fn close_ring(ring: &[P2]) -> Vec<P2> {
     if ring.len() < 2 {
         return ring.to_vec();
     }
-    // SAFETY: len >= 2 checked above
-    #[allow(clippy::indexing_slicing)]
+    #[expect(clippy::indexing_slicing, reason = "len >= 2 checked above")]
     let first = ring[0];
-    // SAFETY: ring.len() >= 2 checked above
-    #[allow(clippy::expect_used)]
+    #[expect(clippy::expect_used, reason = "ring.len() >= 2 checked above")]
     let last = *ring.last().expect("len >= 2");
     let d = ((first.x - last.x).powi(2) + (first.y - last.y).powi(2)).sqrt();
     if d > 1e-9 {
@@ -180,12 +181,14 @@ fn sample_vertices_and_steps(points: &[P2], spacing: f64) -> Vec<P2> {
         if len < 1e-9 {
             continue;
         }
-        // SAFETY: `len / spacing` is finite and positive here (len >= 1e-9,
-        // spacing > 1e-6); a curve segment never needs 2^32 steps.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "`len / spacing` is finite and positive here (len >= 1e-9, spacing > 1e-6); a curve segment never needs 2^32 steps."
+        )]
         let steps = (len / spacing).ceil().max(1.0) as usize;
         for k in 1..steps {
-            #[allow(clippy::cast_precision_loss)] // SAFETY: k < steps, a small count
+            #[expect(clippy::cast_precision_loss, reason = "k < steps, a small count")]
             let t = k as f64 / steps as f64;
             out.push(a + delta * t);
         }
@@ -240,7 +243,6 @@ pub fn project_curve_toolpath_with_cancel(
 /// Inner projection loop. When `z_flip` is true, the mesh was Z-flipped before
 /// calling, so the output Z coordinates are negated back to world space and
 /// depth goes upward (into the bottom surface).
-#[allow(clippy::too_many_arguments)]
 fn project_curve_inner_with_cancel(
     polygon: &Polygon2,
     mesh: &TriangleMesh,
@@ -287,7 +289,10 @@ fn project_curve_inner_with_cancel(
     Ok(tp)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn project_polygon_rings_with_cancel(
     polygon: &Polygon2,
     mesh: &TriangleMesh,
@@ -399,7 +404,11 @@ fn project_polygon_rings_with_cancel(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

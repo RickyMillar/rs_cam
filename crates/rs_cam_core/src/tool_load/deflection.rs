@@ -400,11 +400,11 @@ pub fn evaluate(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;
@@ -418,7 +418,6 @@ mod tests {
 
     /// Adapts this module's legacy positional-arg test calls to the
     /// Phase 6 `(ctx, env)` gate signature.
-    #[allow(clippy::too_many_arguments)]
     fn evaluate_args(
         toolpath_id: usize,
         tool: &crate::tool::ToolDefinition,
@@ -873,7 +872,9 @@ mod tests {
         let peak_um = match v {
             DeflectionVerdict::Within { peak_mm, .. }
             | DeflectionVerdict::Exceeds { peak_mm, .. } => peak_mm * 1000.0,
-            other => panic!("expected modeled verdict, got {other:?}"),
+            other @ DeflectionVerdict::Unmodeled { .. } => {
+                panic!("expected modeled verdict, got {other:?}")
+            }
         };
         assert!(
             peak_um < EXCEEDS_BOUND_MM * 1000.0,

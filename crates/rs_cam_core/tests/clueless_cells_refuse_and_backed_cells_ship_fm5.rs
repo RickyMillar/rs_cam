@@ -35,7 +35,11 @@
 //!   where no v8 row exists, refuses on the size rule (orchestrator
 //!   decision 4); a 0.4 mm tip refuses on the tip floor (ruling B1).
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};

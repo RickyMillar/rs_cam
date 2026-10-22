@@ -28,11 +28,12 @@
 //! - `note_item_keys` with the kind-and-layer filter for an at-the-top
 //!   note too (the P3.7 code): claim 4 went red (two keys, not one).
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};

@@ -9,6 +9,10 @@
 //! viz test prose that records the removal. Nothing in `rs_cam_viz` or
 //! `rs_cam_cli` calls this module.
 
+// F195 (W16): a float or a signed value that becomes a count or an index
+// here goes through `util::steps`, or its `#[expect]` names the bound.
+#![deny(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::compute::catalog::OperationConfig;
@@ -662,32 +666,29 @@ pub(crate) fn execute_operation_annotated(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 mod project_curve_chaining;
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod unified_finish_ring_collapse_g_unifiedcrash;
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
     clippy::print_stdout,
-    clippy::print_stderr
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 mod unified_finish_semantic_regions;
 

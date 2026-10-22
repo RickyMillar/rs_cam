@@ -33,11 +33,10 @@
 //! cargo test --release -p rs_cam_core --test adaptive3d_wanaka_rough6_no_phantom_rapid_g_phantomstamp -- --ignored --nocapture
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::path::PathBuf;

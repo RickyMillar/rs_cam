@@ -16,13 +16,6 @@
 //! - **R-13**: ops with no commanded axial step were told there was no
 //!   denominator and then handed a ratio to form anyway.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::ids::ToolpathId;

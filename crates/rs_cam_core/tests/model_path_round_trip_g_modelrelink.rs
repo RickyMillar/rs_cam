@@ -22,11 +22,11 @@
 //! Source: `planning/ui_fix_2026-09-09/research/R0.7.md` §2.1 and §3.2 (rule
 //! R1), and PLAN.md §6 row F4.3.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

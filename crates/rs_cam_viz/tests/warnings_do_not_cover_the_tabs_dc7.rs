@@ -24,11 +24,10 @@
 //! renderer, and the arm below drives its rules directly, because `resolve` is
 //! a pure function and a `Ui` proves nothing extra here.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

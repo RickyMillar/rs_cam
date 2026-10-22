@@ -50,13 +50,11 @@
 //!    and is deliberately not the bar here. What this probe can settle is
 //!    the *mechanism class* on a committed fixture.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stderr,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 // Deliberately does NOT `mod common;` — R2's wave is editing

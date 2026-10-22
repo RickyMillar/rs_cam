@@ -631,7 +631,7 @@ fn evaluate_inner(
                 None
             } else {
                 ratios.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                #[allow(clippy::indexing_slicing)] // SAFETY: non-empty checked above
+                #[expect(clippy::indexing_slicing, reason = "non-empty checked above")]
                 Some(ratios[ratios.len() / 2])
             }
         } else {
@@ -822,7 +822,10 @@ fn evaluate_inner(
         None
     } else {
         let median_idx = burn_samples.len() / 2;
-        #[allow(clippy::indexing_slicing)] // SAFETY: median_idx < len() by construction
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "median_idx < len() by construction"
+        )]
         Some(burn_samples[median_idx])
     };
     // Layer 1 tolerance band: narrow the burn-risk trigger by
@@ -1011,11 +1014,11 @@ fn evaluate_inner(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;
@@ -1032,7 +1035,10 @@ mod tests {
 
     /// Adapts this module's legacy positional-arg test calls to the
     /// Phase 6 `(ctx, env)` gate signature.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "test code accepts the style lint too_many_arguments"
+    )]
     fn evaluate_args(
         toolpath_id: usize,
         tool: &crate::tool::ToolDefinition,
@@ -2045,7 +2051,9 @@ mod tests {
                     .min_mm_per_tooth
                     .expect("LUT row carries a min for the chosen fixture")
             }
-            other => panic!("expected a judged verdict, got {other:?}"),
+            other @ ChiploadVerdict::Unmodeled { .. } => {
+                panic!("expected a judged verdict, got {other:?}")
+            }
         }
     }
 

@@ -140,15 +140,10 @@
 //! genuinely moves the geometry. If either fails, the headline arm
 //! proves nothing regardless of its verdict.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    // Same allowance the sibling power instrument takes: an instrument
-    // that cannot report its measurement is not an instrument, and a
-    // green run here should still print the margin it measured.
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "Same allowance the sibling power instrument takes: an instrument that cannot report its measurement is not an instrument, and a green run here should still print the margin it measured."
 )]
 
 use rs_cam_core::compute::catalog::OperationConfig;
@@ -209,7 +204,10 @@ const DIAMETER_MM: f64 = 12.0;
 /// `(49.95, 5.30) · kc/35.1` (the woodresearch.sk anchor) with `A = 2.0`.
 /// Leaving the old expression here would have kept this instrument green
 /// while measuring a power the engine no longer predicts.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "test code accepts the style lint too_many_arguments"
+)]
 fn predicted_power_kw(
     line: &ForceLine,
     cross_section_mm2: f64,

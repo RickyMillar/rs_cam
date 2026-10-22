@@ -40,11 +40,10 @@
 //! 3. The Feeds tab's worst annotation row stays inside the panel (F-3).
 //! 4. Non-vacuity for arms 1 and 2.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

@@ -34,8 +34,6 @@
 //! handled separately. Until one exists, the structural guard is what can be
 //! written honestly, and it says so here rather than pretending otherwise.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 /// The producer's source, with line comments stripped. This file discusses the
 /// defect by name, and a scan that reads a comment reports code that is absent.
 fn producer_source() -> String {

@@ -33,11 +33,12 @@
 //! Source: `planning/ui_fix_2026-09-09/reports/F4.4.md` §7 row F4.8;
 //! `planning/geometry_selection_2026-10-16/DESIGN.md` 5.3.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

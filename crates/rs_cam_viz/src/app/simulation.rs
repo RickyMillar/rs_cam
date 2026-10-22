@@ -51,8 +51,10 @@ impl RsCamApp {
                 pb.last_mesh_upload_at = Some(Instant::now());
             }
             if let Some(rs) = frame.wgpu_render_state() {
-                // SAFETY: display_mesh was set to Some on the line above.
-                #[allow(clippy::unwrap_used)]
+                #[expect(
+                    clippy::unwrap_used,
+                    reason = "display_mesh was set to Some on the line above."
+                )]
                 let mesh_ref = self
                     .controller
                     .state()
@@ -62,8 +64,10 @@ impl RsCamApp {
                     .as_ref()
                     .unwrap();
                 let mut renderer = rs.renderer.write();
-                // SAFETY: RenderResources inserted in RsCamApp::new; always present.
-                #[allow(clippy::unwrap_used)]
+                #[expect(
+                    clippy::unwrap_used,
+                    reason = "RenderResources inserted in RsCamApp::new; always present."
+                )]
                 let resources: &mut RenderResources =
                     renderer.callback_resources.get_mut().unwrap();
                 let updated = resources
@@ -116,8 +120,10 @@ impl RsCamApp {
     /// playback stock of the group before it. The metrics, the gates and the
     /// checkpoint meshes read the carried stock, so the scrub shows the same
     /// material at the group boundary.
-    // SAFETY: cp_idx is from enumerate over boundaries; vertex loop uses step_by(3) within len
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "cp_idx is from enumerate over boundaries; vertex loop uses step_by(3) within len"
+    )]
     pub(super) fn update_live_sim(&mut self, frame: &mut eframe::Frame) {
         use rs_cam_core::dexel_stock::TriDexelStock;
         use rs_cam_core::stock::dexel_mesh::{
@@ -509,8 +515,10 @@ impl RsCamApp {
             let mut upload_elapsed = Duration::ZERO;
             if let Some(rs) = frame.wgpu_render_state() {
                 let upload_start = Instant::now();
-                // SAFETY: display_mesh was set to Some on the line above.
-                #[allow(clippy::unwrap_used)]
+                #[expect(
+                    clippy::unwrap_used,
+                    reason = "display_mesh was set to Some on the line above."
+                )]
                 let mesh_ref = self
                     .controller
                     .state()
@@ -520,8 +528,10 @@ impl RsCamApp {
                     .as_ref()
                     .unwrap();
                 let mut renderer = rs.renderer.write();
-                // SAFETY: RenderResources inserted in RsCamApp::new; always present.
-                #[allow(clippy::unwrap_used)]
+                #[expect(
+                    clippy::unwrap_used,
+                    reason = "RenderResources inserted in RsCamApp::new; always present."
+                )]
                 let resources: &mut RenderResources =
                     renderer.callback_resources.get_mut().unwrap();
                 let updated = resources
@@ -598,8 +608,6 @@ impl RsCamApp {
     }
 
     /// Update tool model position during simulation playback.
-    // SAFETY: local_idx bounds-checked against moves.len() before indexing
-    #[allow(clippy::indexing_slicing)]
     pub(super) fn update_sim_tool_position(&mut self, frame: &mut eframe::Frame) {
         use crate::render::sim_render::ToolGeometry;
 
@@ -734,8 +742,10 @@ impl RsCamApp {
                 shoe,
             );
             let mut renderer = rs.renderer.write();
-            // SAFETY: RenderResources inserted in RsCamApp::new; always present.
-            #[allow(clippy::unwrap_used)]
+            #[expect(
+                clippy::unwrap_used,
+                reason = "RenderResources inserted in RsCamApp::new; always present."
+            )]
             let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
             resources.tool_model_data = Some(
                 crate::render::sim_render::ToolModelGpuData::from_tool_assembly_colored(
@@ -887,11 +897,11 @@ fn deflection_render_color(deflection_mm: Option<f64>) -> [f32; 3] {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use std::sync::Arc;

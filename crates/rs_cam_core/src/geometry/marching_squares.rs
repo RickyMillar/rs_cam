@@ -91,6 +91,10 @@ pub const EDGE_TOP: u8 = 3;
 /// Classify a cell's 4 corner samples into the 4-bit marching-squares case
 /// index (`bit0=bl, bit1=br, bit2=tr, bit3=tl`).
 #[inline]
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "the four corner samples are the inputs of the case table in bit order"
+)]
 pub fn cell_case(bl: bool, br: bool, tr: bool, tl: bool) -> u8 {
     (bl as u8) | ((br as u8) << 1) | ((tr as u8) << 2) | ((tl as u8) << 3)
 }
@@ -146,7 +150,7 @@ pub(crate) const CHAIN_QUANTIZE_SCALE: f64 = 1e5;
 /// chains on `(P2, P2)` with a constant Z carried separately by the caller
 /// (see `contour_extract::weave_contours`), since Z never varies within a
 /// single marching-squares pass.
-#[allow(clippy::indexing_slicing)] // SAFETY: indices bounded by segment count
+#[expect(clippy::indexing_slicing, reason = "indices bounded by segment count")]
 pub fn chain_segments(segments: &[(P2, P2)]) -> Vec<Vec<P2>> {
     if segments.is_empty() {
         return Vec::new();
@@ -234,11 +238,9 @@ pub fn chain_segments(segments: &[(P2, P2)]) -> Vec<Vec<P2>> {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

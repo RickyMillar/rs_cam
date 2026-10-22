@@ -19,11 +19,11 @@
 //! cargo test -p rs_cam_core -q --test the_default_floor_cuts_as_the_depth_did_p3_2
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

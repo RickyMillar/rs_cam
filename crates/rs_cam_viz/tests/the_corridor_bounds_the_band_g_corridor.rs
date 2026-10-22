@@ -70,11 +70,10 @@
 //! built and never reaches the plot, and for a line drawn in the wrong
 //! place.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;
@@ -103,8 +102,6 @@ const SCREEN: egui::Vec2 = egui::Vec2::new(1400.0, 1000.0);
 const CORRIDOR_LINE_ALPHA: u8 = 150;
 
 /// The suggested line's colour: `chart::BAND`, opaque.
-// SAFETY: `CHART_SERIES` has four entries and 1 is a literal inside it.
-#[allow(clippy::indexing_slicing)]
 fn suggested_colour() -> egui::Color32 {
     tokens::CHART_SERIES[1]
 }

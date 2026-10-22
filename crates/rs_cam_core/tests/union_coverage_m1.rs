@@ -22,13 +22,14 @@
 //! cargo test --release -p rs_cam_core --test union_coverage_m1 -- --ignored --nocapture
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
-#![allow(clippy::print_stderr)]
+#![expect(
+    clippy::print_stderr,
+    reason = "the test prints its measurements for the reader"
+)]
 
 mod common;
 

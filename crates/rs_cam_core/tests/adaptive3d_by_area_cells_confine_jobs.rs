@@ -24,12 +24,11 @@
 //! The waterline cleanup after the last region has no mask (F9), so the
 //! test reads only the moves between a `RegionStart` and the cleanup.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

@@ -414,7 +414,10 @@ fn arc_sweep(dir: ArcDir, start: (f64, f64), end: (f64, f64), center: (f64, f64)
 /// When the arc's start point is unknown (`pos = None`; can't happen on
 /// builder output, which always opens with a rapid) both guards are
 /// skipped and the legacy threshold-only behaviour applies.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn emit_arc(
     output: &mut String,
     post: &PostDefinition,
@@ -482,11 +485,9 @@ fn emit_arc(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

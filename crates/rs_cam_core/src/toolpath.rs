@@ -323,7 +323,10 @@ impl Toolpath {
         });
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     pub fn total_cutting_distance(&self) -> f64 {
         let mut dist = 0.0;
         for i in 1..self.moves.len() {
@@ -333,13 +336,12 @@ impl Toolpath {
                     let p2 = &self.moves[i].target;
                     dist += (p2 - p1).norm();
                 }
-                _ => {}
+                MoveType::Rapid => {}
             }
         }
         dist
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Emit rapid→plunge→feed→retract for a 3D path.
     ///
     /// For an empty path, this is a no-op. For a single point, emits
@@ -365,7 +367,10 @@ impl Toolpath {
         );
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Emit rapid(Linking)→plunge(EntryPlunge)→feed(`body_intent`)→rapid(Retract)
     /// for a 3D path.
     ///
@@ -401,7 +406,10 @@ impl Toolpath {
         }
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Emit rapid(Linking)→plunge(EntryPlunge)→feed(`body_intent`)→close→rapid(Retract)
     /// for a closed contour loop (e.g. waterline bands, steep/shallow boundaries).
     ///
@@ -469,7 +477,10 @@ impl Toolpath {
         }
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     pub fn total_rapid_distance(&self) -> f64 {
         let mut dist = 0.0;
         for i in 1..self.moves.len() {
@@ -633,7 +644,10 @@ pub fn simplify_path_3d(points: &[P3], tolerance: f64) -> Vec<P3> {
 /// re-matching by coordinate.
 ///
 /// Iterative stack-based implementation avoids per-recursion Vec allocations.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 pub fn simplify_path_3d_keep_mask(points: &[P3], tolerance: f64) -> Vec<bool> {
     let n = points.len();
     if n <= 2 {
@@ -731,7 +745,6 @@ pub fn simplify_path_3d_keep_mask(points: &[P3], tolerance: f64) -> Vec<bool> {
     keep
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Convert a drop-cutter grid into a zigzag raster toolpath.
 ///
 /// When `min_z` is `Some(z)`, contiguous segments where every point is
@@ -909,7 +922,10 @@ pub fn raster_toolpath_from_grid(
 /// the default `MoveIntent::Unknown` a plain `feed_to` would leave them
 /// with), so downstream engagement/air-cut metrics can distinguish this
 /// pass's cuts from retracts and other move kinds.
-#[allow(clippy::indexing_slicing, clippy::too_many_arguments)] // bounded by grid dimensions
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub fn raster_toolpath_from_grid_with_slope_filter(
     grid: &DropCutterGrid,
     slope_angles: &[f64],
@@ -1003,7 +1019,10 @@ pub fn raster_toolpath_from_grid_with_slope_filter(
 /// Merge segments separated by short gaps, but never merge across a gap that
 /// contains any clamped point — cutting through clamped points would dive
 /// the tool to the min_z floor.
-#[allow(clippy::indexing_slicing)] // first element access guarded by is_empty check
+#[expect(
+    clippy::indexing_slicing,
+    reason = "first element access guarded by is_empty check"
+)]
 fn merge_segments_skip_clamped(
     segments: &[(usize, usize)],
     max_gap: usize,
@@ -1029,7 +1048,11 @@ fn merge_segments_skip_clamped(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

@@ -281,13 +281,9 @@ pub fn region_polygons_from_mask_reported(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
+#[expect(
     clippy::indexing_slicing,
-    clippy::print_stdout,
-    clippy::print_stderr
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

@@ -27,13 +27,6 @@
 //! This sentry asserts that under `SpindleStrategy::MaxSpeed` a Drill op
 //! cannot exceed the 14k drill ceiling.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-
 use rs_cam_core::feeds::{
     FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, ToolGeometryHint,
     calculate, embedded_vendor_lut,

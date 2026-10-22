@@ -223,8 +223,6 @@ pub fn artifact_dir(file: Option<&Path>) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    // SAFETY: test module; a failed unwrap is a failed test.
-    #![allow(clippy::unwrap_used)]
 
     use super::*;
 

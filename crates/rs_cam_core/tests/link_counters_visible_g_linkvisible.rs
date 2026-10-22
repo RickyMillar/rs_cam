@@ -50,12 +50,11 @@
 //! Nothing here moves a toolpath byte. The counters were already computed on
 //! every one of these paths; only their destination changed.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;

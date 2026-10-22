@@ -201,7 +201,10 @@ fn hsl_to_rgb(hue_deg: f32, saturation: f32, lightness: f32) -> [f32; 3] {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

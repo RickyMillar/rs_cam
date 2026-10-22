@@ -24,11 +24,10 @@
 //! `61cb27a4`; `pin_holes_in_emission_frame` is now the single place both
 //! frames meet, and neither hole list ever takes the other's correction.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

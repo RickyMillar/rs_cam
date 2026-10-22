@@ -126,7 +126,7 @@ pub struct ToolpathGpuData {
 
 impl ToolpathGpuData {
     /// Compute how many cut and rapid vertices to draw for the first `n_moves` moves.
-    #[allow(clippy::indexing_slicing)] // n - 1 is safe: n > 0 and n <= len
+    #[expect(clippy::indexing_slicing, reason = "n - 1 is safe: n > 0 and n <= len")]
     pub fn vertices_for_moves(&self, n_moves: usize) -> (u32, u32) {
         let n = n_moves.min(self.move_cut_counts.len());
         if n == 0 {
@@ -359,7 +359,7 @@ fn arc_step_mm(radius: f64, deviation_mm: f64) -> f64 {
 ///
 /// - A rapid or a line gives its two ends.
 /// - An arc gives the points of core
-///   [`linearize_arc_into`](rs_cam_core::geometry::arc_util::linearize_arc_into),
+///   [`linearize_arc_into`],
 ///   the arc walk of the simulator. Each chord is within `deviation_mm` of
 ///   the arc, and an arc gives at least two chords.
 pub fn move_draw_points_into(buffer: &mut Vec<P3>, from: P3, m: &Move, deviation_mm: f64) {
@@ -405,7 +405,10 @@ impl ToolpathLines {
     /// every Nth move. It always keeps the rapids (they show the retract and
     /// approach structure) and the first and last moves. The count includes
     /// the arc chords, so the stride bounds the real buffer.
-    #[allow(clippy::indexing_slicing)] // i in 1..moves.len(); a window has 2 points
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "i in 1..moves.len(); a window has 2 points"
+    )]
     fn walk(
         tp: &Toolpath,
         max_verts: usize,
@@ -684,7 +687,10 @@ pub(crate) fn engagement_color(feed: f64, nominal: f64) -> [f32; 3] {
 /// - Lead-in arc: a quarter-circle arc leading into the first cutting direction
 ///
 /// Returns empty if entry_style is None or there are no cutting moves.
-#[allow(clippy::indexing_slicing)] // first_cut_idx validated by position() and bounds > 0
+#[expect(
+    clippy::indexing_slicing,
+    reason = "first_cut_idx validated by position() and bounds > 0"
+)]
 pub fn entry_preview_vertices(tp: &Toolpath, config: &EntryPreviewConfig) -> Vec<LineVertex> {
     let color = super::colors::ENTRY_PREVIEW.array();
 
@@ -911,11 +917,10 @@ pub fn tool_profile_preview_vertices(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

@@ -21,7 +21,7 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
 - G-RETRACTDIAL is closed (CUT-03): the retract COUNT is the lever. `filter_air_cuts` bridges an
   air run only when `machine::kinematics::retract_saves_time` says the retract is faster (10-15).
 - Every linking arm calls the shared `relink_fragments` kernel in `finish/surface_link.rs`. Do not add a second linking implementation.
-- `ModulationContext::cutting_ceiling` is `CuttingCeilingMmMin`, made only by `MachineProfile::cutting_ceiling` (F002).
+- `ModulationContext::cutting_ceiling` is `CuttingCeilingMmMin`, made only by `MachineProfile::cutting_ceiling` (F002). F195: the folder denies `cast_possible_truncation` and `cast_sign_loss`; a count from a user length goes through `util::steps`, or its `#[expect]` reason names the bound.
 - A helix or ramp starts `entry_clearance_mm` over the material and takes
   the full depth at `ramp_feed_rate`; air is straight (rulings 09-24/25). A
   `helix_floor_lap` helix (2D Adaptive) ends on a flat lap and shrinks to

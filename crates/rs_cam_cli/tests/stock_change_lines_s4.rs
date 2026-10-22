@@ -11,11 +11,11 @@
 //! tools print. The CLI must print exactly those lines. The GUI and MCP
 //! half is in `rs_cam_viz/src/app/mcp/commands/stock_changes.rs`.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

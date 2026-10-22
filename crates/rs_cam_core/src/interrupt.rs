@@ -67,8 +67,10 @@ impl CancelCheck for FlagCancel<'_> {
 /// `false` unconditionally — it could only mean the computation invented a
 /// cancellation it was never told about, which is a defect in that
 /// computation and must not be mapped to a silent empty answer.
-// SAFETY: unreachable by construction — see the paragraph above.
-#[allow(clippy::expect_used)]
+#[expect(
+    clippy::expect_used,
+    reason = "unreachable by construction — see the paragraph above."
+)]
 pub fn run_uncancellable<T>(run: impl FnOnce(&NeverCancel) -> Result<T, Cancelled>) -> T {
     run(&NeverCancel).expect("a computation run under NeverCancel reported cancellation")
 }

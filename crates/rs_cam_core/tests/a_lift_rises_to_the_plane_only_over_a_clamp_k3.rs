@@ -33,13 +33,12 @@
 //!   holder footprint out of the territory: testpiece_mini front finish,
 //!   12918 mm of cut fell to 7601 mm.)
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    // SAFETY: the two raster tests print their lift counts for the report.
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "the two raster tests print their lift counts for the report."
 )]
 
 mod common;

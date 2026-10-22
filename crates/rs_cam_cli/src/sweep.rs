@@ -3,7 +3,10 @@
 //! Takes a base TOML job file, varies one parameter across specified values,
 //! runs each variant through the full job pipeline (dressups, depth stepping,
 //! simulation, G-code), and produces structured JSON output for agent analysis.
-#![allow(clippy::print_stdout)]
+#![expect(
+    clippy::print_stdout,
+    reason = "the sweep command writes its JSON report to stdout"
+)]
 
 use anyhow::{Context, Result, bail};
 use std::path::Path;
@@ -383,7 +386,11 @@ fn simulate_and_export(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::resolve_base_value;
     use crate::job::JobFile;

@@ -25,13 +25,6 @@
 //!   ladder planner without the rule plans laps. Red without the rule.
 //! - In material, the start point lies past the wall: the ladder stays.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::dressup::{RestEntryRamp, optimize_entry_descents};
 use rs_cam_core::geo::P3;

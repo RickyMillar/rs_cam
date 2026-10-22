@@ -78,9 +78,10 @@ pub enum ScallopRingBudget {
 /// `link_ceiling` is the ceiling of the one builder (`link_ceiling_for`,
 /// ruling R1): the op adapter reads it from the runner's link stage. The
 /// rings keep their emitted order ([`RingLink::RingOrder`]).
-// SAFETY: each argument is a distinct kernel input (mesh, index, cutter,
-// params, debug, regions, ceiling, cancel); a struct adds no safety.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is a distinct kernel input (mesh, index, cutter, params, debug, regions, ceiling, cancel); a struct adds no safety."
+)]
 pub fn scallop_toolpath_iso_field_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -123,7 +124,10 @@ pub fn scallop_toolpath_iso_field_with_cancel(
 /// **Research seam, not a production entry point** (PR-8c). Passing
 /// [`ScallopRingBudget::FlatGroundStepover`] reproduces the shipped path
 /// exactly — that is what the wrapper above does.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub fn scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -159,7 +163,10 @@ pub fn scallop_toolpath_structured_annotated_with_resolution_and_ring_budget(
 /// that is what the wrapper above does, and
 /// `scallop_candidates_m4::shipped_policy_reproduces_the_shipped_fingerprint`
 /// asserts it byte for byte.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub fn scallop_toolpath_research(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -211,7 +218,10 @@ pub(crate) enum RingLink<'s> {
 
 /// [`scallop_toolpath_research`] with the link configuration of the caller
 /// ([`RingLink`]).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub(crate) fn scallop_toolpath_research_with_link(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -528,8 +538,10 @@ pub(crate) fn scallop_toolpath_research_with_link(
         // REAL last emitted point after every run — anchoring rotation on
         // the geometric ring end let the connector hop diverge arbitrarily
         // far from where the tool actually stopped.
-        // SAFETY: rings.len() >= 2 checked above; rings entries have >= 3 points.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "rings.len() >= 2 checked above; rings entries have >= 3 points."
+        )]
         let mut anchor: P3 = rings[0].last().map_or(rings[0][0].0, |&(p, _)| p);
         let mut tool_down = false;
         // The rings' own lift context (`generate_scallop_rings_with_cancel`),

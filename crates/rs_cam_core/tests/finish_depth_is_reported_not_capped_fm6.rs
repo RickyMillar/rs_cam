@@ -23,11 +23,11 @@
 //!
 //! Run: `scripts/cargo_lane.sh test -p rs_cam_core -q --test finish_depth_is_reported_not_capped_fm6`
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::catalog::OperationType;

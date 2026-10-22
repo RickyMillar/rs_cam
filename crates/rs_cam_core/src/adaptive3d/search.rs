@@ -42,7 +42,10 @@ pub(super) struct MaterialFloorDiagnostic {
     pub cells_with_material: u64,
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// The floor-cell histogram for the debug counters. Only call when a debug
 /// span is open.
 pub(super) fn material_remaining_at_level_diag(
@@ -179,7 +182,10 @@ pub(super) fn blend_corners_3d(path: &[P3], min_radius: f64) -> Vec<P3> {
         .collect()
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Find Z at (x, y) by finding the nearest segment on the original 3D path
 /// and interpolating linearly.
 fn interpolate_z_from_path(path: &[P3], x: f64, y: f64) -> f64 {
@@ -221,12 +227,6 @@ fn interpolate_z_from_path(path: &[P3], x: f64, y: f64) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod link_gate_tests {
     //! Sentries for the `is_clear_path_3d` floor fix (algorithm review
     //! 2026-06-12, Stage 0). Pre-fix the function ignored the surface

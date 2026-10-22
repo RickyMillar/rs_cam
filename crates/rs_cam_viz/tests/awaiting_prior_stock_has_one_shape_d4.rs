@@ -24,7 +24,11 @@
 //!
 //! The wording of `message`. Its own sentry owns that.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::compute::config::AwaitingPriorStock;
 
@@ -142,6 +146,7 @@ fn no_surface_hand_builds_the_block() {
 /// It now carries `BlockedRow`, the same type every other array site
 /// renders, and the row is the three identifying keys plus the flattened
 /// block.
+#[cfg(feature = "mcp")]
 #[test]
 fn the_generate_all_reply_renders_the_one_row_shape() {
     use rs_cam_viz::mcp_bridge::{BlockedRow, GenerateAllSummary, build_generate_all_response};

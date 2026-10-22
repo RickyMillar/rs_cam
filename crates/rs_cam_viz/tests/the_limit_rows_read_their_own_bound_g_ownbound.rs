@@ -56,11 +56,11 @@
 //! stops producing a modelled row with a positive peak. Every arm below
 //! would pass on an all-unmodelled report, where every row paints `—`.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod limits_fixture;

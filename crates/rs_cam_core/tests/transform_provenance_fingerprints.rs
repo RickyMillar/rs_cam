@@ -61,14 +61,6 @@
 //! contiguously, and `split_count` is unchanged at 6. The arc-raster and
 //! three-pass fixtures carry no lead-in and did not move at all.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_arguments
-)]
-
 use rs_cam_core::{
     compute::catalog::{OperationTransformCapabilities, OperationType},
     compute::config::{

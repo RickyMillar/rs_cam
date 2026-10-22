@@ -95,7 +95,10 @@ pub(super) fn rest_field_params(
 /// `RestAnalysisConfig::reference_tool_id` the same way pencil's own
 /// `reference_tool_id` is resolved), else the stage's bare-surface probe.
 /// Unlike `rest_depth_arm`, this pass has no nominal-ball tier.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 // post-generation attach point; every
 // argument is a distinct upstream source (geometry, tool, reference, stock,
 // dials, findings sink)

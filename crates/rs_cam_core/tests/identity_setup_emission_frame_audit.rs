@@ -17,11 +17,10 @@
 //! identity setup. All cutting moves must stay at or below the world
 //! stock top (0.0); pre-fix the first pass landed near +10.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

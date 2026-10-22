@@ -66,14 +66,16 @@
 //! RS_CAM_BLESS_OPGOLDEN=1 cargo test -p rs_cam_core -q --test every_op_keeps_its_toolpath_g_opgolden
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
-// The per-field diff and the bless notice ARE the record.
-#![allow(clippy::print_stderr)]
+#![expect(
+    clippy::print_stderr,
+    reason = "The per-field diff and the bless notice ARE the record."
+)]
 
 mod common;
 

@@ -36,12 +36,11 @@
 //! one sample); that test clears such samples by exact geometry and pins
 //! their count (`a_straight_plunge_entry_is_exempt_only_leaving_its_hole`).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;

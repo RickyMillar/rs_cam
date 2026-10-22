@@ -2373,7 +2373,10 @@ fn draw_span_section(
 /// The Span section body: span facts, the per-span metrics grid, and the
 /// in-span findings list. Split out of `draw_span_section` so the lock toggle
 /// and the nested drill-downs can sit around it.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn draw_span_body(
     ui: &mut egui::Ui,
     sim: &mut SimulationState,
@@ -2744,12 +2747,6 @@ fn draw_generation_trace_disclosure(ui: &mut egui::Ui, sim: &mut SimulationState
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::*;
 

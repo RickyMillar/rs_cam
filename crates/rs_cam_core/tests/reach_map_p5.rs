@@ -18,11 +18,10 @@
 //! 5. the tolerance decides the verdict: one gap, two tolerances, two
 //!    answers.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::Arc;

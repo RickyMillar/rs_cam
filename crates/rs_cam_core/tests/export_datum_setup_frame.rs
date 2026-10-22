@@ -60,11 +60,10 @@
 //! (stock-relative) — a constant 20.000 mm apart, i.e. exactly
 //! `-origin_x`. With the fix both read `18.000..50.000`.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

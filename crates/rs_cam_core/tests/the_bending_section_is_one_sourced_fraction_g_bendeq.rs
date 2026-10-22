@@ -35,13 +35,6 @@
 //! exist, they look authoritative, and a per-flute function looks more precise
 //! than one constant. Arm 2 fails on any such change.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolMaterial, ToolType};
 use rs_cam_core::feeds::predict::{ENDMILL_EQUIVALENT_DIAMETER_FRACTION, bending_diameter_mm};
 use rs_cam_core::tool::{FlatEndmill, ToolDefinition};

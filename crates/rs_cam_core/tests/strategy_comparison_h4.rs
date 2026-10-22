@@ -227,12 +227,13 @@
 //! re-runs them. The on-demand cadence above exists specifically to stop
 //! that — re-run before citing this table, don't assume it still holds.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;
@@ -1117,9 +1118,15 @@ const CASCADE_NON_BLIND_MAX_FRACTION: f64 = 0.90;
 /// 10 µm is under half that cusp, 25 µm is just over it. Copied from
 /// `classification_columns_ab_m3.rs`'s tolerance block, which used the same
 /// justification for the same dial set.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the tolerance is on record beside the dial set; no test reads it yet"
+)]
 const ON_SIZE_BIN_10_UM: f64 = 10.0;
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the tolerance is on record beside the dial set; no test reads it yet"
+)]
 const ON_SIZE_BIN_25_UM: f64 = 25.0;
 
 /// Non-vacuity: Arm B's mix on the terrain fixture must exercise at least
@@ -1173,7 +1180,6 @@ fn run_all_arms(
 /// just two), render every surface and the pairwise diffs, and run the
 /// safety/non-vacuity assertions. `min_mix_combos` gates Arm B's mix size
 /// (0 to skip — the sentry-scale fixtures don't need this).
-#[allow(clippy::too_many_lines)]
 fn adjudicate(fixture_label: &str, run: &FixtureRun, min_mix_combos: usize) {
     let cells_d = by_cell(&run.d.columns);
     let cells_b = by_cell(&run.b.columns);
@@ -1231,13 +1237,10 @@ fn adjudicate(fixture_label: &str, run: &FixtureRun, min_mix_combos: usize) {
 
     // ── Safety ────────────────────────────────────────────────────────
     for arm in [&run.d, &run.b, &run.c] {
-        // SAFETY (lint, not memory): `MAX_RAPID_COLLISIONS_PER_ARM` is a
-        // tunable BOUND that currently sits at 0, so `<=` on a `usize` is
-        // trivially `== 0` and clippy says so. Kept as `<=` against the named
-        // constant on purpose: the assertion should still read correctly, and
-        // still hold, if an operator ever raises the bound. Writing `== 0`
-        // here would silently decouple the check from the constant.
-        #[allow(clippy::absurd_extreme_comparisons)]
+        #[expect(
+            clippy::absurd_extreme_comparisons,
+            reason = "(lint, not memory): `MAX_RAPID_COLLISIONS_PER_ARM` is a tunable BOUND that currently sits at 0, so `<=` on a `usize` is trivially `== 0` and clippy says so. Kept as `<=` against the named constant on purpose: the assertion should still read correctly, and still hold, if an operator ever raises the bound. Writing `== 0` here would silently decouple the check from the constant."
+        )]
         let within_collision_bound = arm.collisions <= MAX_RAPID_COLLISIONS_PER_ARM;
         assert!(
             within_collision_bound,

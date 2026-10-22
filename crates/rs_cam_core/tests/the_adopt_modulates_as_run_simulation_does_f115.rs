@@ -16,11 +16,10 @@
 //!    claim is vacuous.
 //! 2. A stale run modulates nothing: the epoch refusal comes first.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

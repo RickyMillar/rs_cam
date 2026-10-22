@@ -27,11 +27,10 @@
 //! (`command_surface_completeness.rs`) requires every command it carried to
 //! keep a route. Arm 3 names each one.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

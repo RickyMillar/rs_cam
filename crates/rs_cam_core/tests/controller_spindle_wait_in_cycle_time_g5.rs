@@ -4,11 +4,10 @@
 //! (spindle_control.c:787-790, 828-838 in grblHAL/core@c3a887e). The
 //! cycle-time estimate adds that wait at each spindle start, and the
 //! export reads the same profile fact to drop its own warm-up dwell.
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

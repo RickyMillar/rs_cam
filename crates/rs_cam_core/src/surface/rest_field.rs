@@ -556,7 +556,10 @@ fn past_rim_cells(cell: f64, envelope_radius_mm: f64) -> usize {
     ((envelope_radius_mm / cell.max(1e-9)).ceil() as usize).clamp(1, CROSS_SECTION_WALK_CELLS)
 }
 
-#[allow(clippy::too_many_arguments)] // one cohesive measurement off five grids
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one cohesive measurement off five grids"
+)]
 fn measure_cross_section(
     ridge: usize,
     perp: (f64, f64),
@@ -810,9 +813,10 @@ fn sample_rest_field(
         .zip(rest.as_slice())
         .map(|((&ct, &dt), &rv)| ct && dt >= erode_cells && rv > threshold)
         .collect();
-    // SAFETY: mask_data is built by zipping three grids all constructed with
-    // the same nx*ny above, so the length always matches.
-    #[allow(clippy::unwrap_used)]
+    #[expect(
+        clippy::unwrap_used,
+        reason = "mask_data is built by zipping three grids all constructed with the same nx*ny above, so the length always matches."
+    )]
     let mask = Grid2::from_vec(nx, ny, mask_data).unwrap();
 
     // Snapshot the continuous rest field for the GUI heatmap overlay. Trusted
@@ -1361,8 +1365,7 @@ pub fn classify_rest_regions(
 /// only ever `comp_cells.len()` at the moment all three get pushed together).
 #[inline]
 fn at<T: Copy>(v: &[T], i: usize) -> T {
-    // SAFETY: see doc comment above.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(clippy::indexing_slicing, reason = "see doc comment above.")]
     v[i]
 }
 
@@ -1370,8 +1373,7 @@ fn median_sorted(sorted: &[f64]) -> f64 {
     if sorted.is_empty() {
         return 0.0;
     }
-    // SAFETY: len > 0 → len/2 < len.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(clippy::indexing_slicing, reason = "len > 0 → len/2 < len.")]
     sorted[sorted.len() / 2]
 }
 
@@ -1477,10 +1479,10 @@ fn zhang_suen_thin(mask: &Grid2<bool>) -> Grid2<bool> {
                     let p4 = nb(&m, r, c, 2);
                     let p6 = nb(&m, r, c, 4);
                     let p8 = nb(&m, r, c, 6);
-                    // Verbatim from the published Zhang-Suen conditions; the
-                    // factored form clippy prefers is harder to check against the
-                    // paper, so keep the literal triple-AND tests.
-                    #[allow(clippy::nonminimal_bool)]
+                    #[expect(
+                        clippy::nonminimal_bool,
+                        reason = "Verbatim from the published Zhang-Suen conditions; the factored form clippy prefers is harder to check against the paper, so keep the literal triple-AND tests."
+                    )]
                     let ok = if sub == 0 {
                         !(p2 && p4 && p6) && !(p4 && p6 && p8)
                     } else {
@@ -2054,7 +2056,7 @@ pub(crate) mod hillshade_test_util {
                     let y = bbox.min.y + r as f64 * cell;
                     let cl = point_drop_cutter(x, y, mesh, index, &probe);
                     if cl.contacted {
-                        #[allow(clippy::indexing_slicing)] // r,c bounded by nx,ny above
+                        #[expect(clippy::indexing_slicing, reason = "r,c bounded by nx,ny above")]
                         {
                             z[r * nx + c] = cl.z;
                             valid[r * nx + c] = true;
@@ -2074,7 +2076,10 @@ pub(crate) mod hillshade_test_util {
 
         /// NW-lit hillshade render of this DEM (dark background where the
         /// probe never contacted the mesh).
-        #[allow(clippy::indexing_slicing)] // all indices bounded by nx/ny by construction
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "all indices bounded by nx/ny by construction"
+        )]
         pub(crate) fn render(&self) -> image::RgbImage {
             let (nx, ny, cell) = (self.nx, self.ny, self.cell);
             let ll = -1.0 / 3.0_f64.sqrt();
@@ -2146,13 +2151,12 @@ pub(crate) mod hillshade_test_util {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
     clippy::print_stdout,
-    clippy::print_stderr
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 mod tests {
     use super::*;

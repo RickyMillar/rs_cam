@@ -18,11 +18,10 @@
 //! Ruling: Checkpoint D Q1 (2026-08-04), sequenced first because the arcfit
 //! population bar (Q3) is expressed in terms of this field.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};

@@ -33,11 +33,11 @@
 //! field's owner at all, and the owner is the defect. Each arm below names a
 //! fact that is cheap to check and expensive to get wrong.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

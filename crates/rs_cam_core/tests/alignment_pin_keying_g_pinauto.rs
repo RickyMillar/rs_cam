@@ -31,11 +31,12 @@
 //! `alignment_pin_keying_intrinsic_p1.rs`. Review:
 //! planning/alignment_pins_review_2026-10-12/REVIEW.md, C1.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::alignment_pins::{

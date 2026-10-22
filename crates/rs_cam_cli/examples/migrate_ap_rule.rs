@@ -19,7 +19,7 @@
 //!   cargo run -p rs_cam_cli --example migrate_ap_rule -- \
 //!     crates/rs_cam_core/data/vendor_lut/observations
 
-#![allow(clippy::print_stdout, clippy::print_stderr)] // CLI example surface
+#![expect(clippy::print_stdout, reason = "CLI example surface")]
 
 use serde_json::Value;
 use std::collections::HashMap;

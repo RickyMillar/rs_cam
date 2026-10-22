@@ -92,11 +92,11 @@ pub(super) fn plan_edit_model_drawing(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     //! GUI/MCP parity of the edit ledger (geometry selection P4.9).

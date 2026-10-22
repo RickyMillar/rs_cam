@@ -26,11 +26,10 @@
 //! renders egui. The one source-level arm is the button FACE, which A-3's
 //! contract places on the button rather than its hover.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::Arc;

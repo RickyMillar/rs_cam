@@ -1,6 +1,11 @@
 //! Unit tests for the operation catalogue.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use super::*;
 use crate::feeds::CutterKind;
@@ -913,7 +918,10 @@ fn a_param_name_resolves_to_at_most_one_row_ui04() {
 /// - `set_toolpath_param` refuses it as an unknown name,
 /// - an old operation that sets it still loads, and the key is ignored.
 #[test]
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 fn coarse_steps_is_gone_from_the_wire() {
     use crate::compute::operation_configs::Adaptive3dConfig;
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};

@@ -455,9 +455,10 @@ fn depth_cap_for_raise(
     cap.max(ap0)
 }
 
-// SAFETY: the record carries every field of the warning; a struct literal at
-// each call site would repeat all fourteen fields twice.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the record carries every field of the warning; a struct literal at each call site would repeat all fourteen fields twice."
+)]
 fn engagement_record(
     aggressiveness: f64,
     ld_factor: f64,

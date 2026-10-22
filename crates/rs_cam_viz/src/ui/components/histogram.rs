@@ -377,9 +377,10 @@ fn paint_bars(
 
 /// Paint an off-scale bound at the chart edge: an arrow that points out of
 /// the chart, and the value with its unit beside it.
-// SAFETY: a private painter helper; the nine inputs are one marker's
-// place, text and style, and a struct for them would be used once.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a private painter helper; the nine inputs are one marker's place, text and style, and a struct for them would be used once."
+)]
 fn paint_off_scale(
     painter: &egui::Painter,
     placed: &mut Vec<egui::Rect>,
@@ -694,9 +695,10 @@ enum Nudge {
 /// placed, and keep it inside `bounds`. A label with a `Nudge` moves clear
 /// of the label it collides with, in that direction, and is left out when
 /// it still collides or leaves `bounds`.
-// SAFETY: a private painter helper; the nine inputs are one label's
-// position, text, style and nudge, and a struct for them would be used once.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a private painter helper; the nine inputs are one label's position, text, style and nudge, and a struct for them would be used once."
+)]
 fn place_label(
     painter: &egui::Painter,
     placed: &mut Vec<egui::Rect>,

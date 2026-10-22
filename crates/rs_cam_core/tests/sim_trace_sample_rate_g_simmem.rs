@@ -17,11 +17,12 @@
 //! clock is the path's own feed time. Red before the fix (the count was
 //! `Σ max(⌈len/step⌉, ⌈|Δz|/0.02⌉)`, 25x the bound on these 45° ramps).
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::dexel_stock::{StampDispatch, StockCutDirection, TriDexelStock};

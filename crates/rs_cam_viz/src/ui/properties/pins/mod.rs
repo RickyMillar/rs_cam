@@ -261,7 +261,11 @@ pub fn keyed_pin_plan(
 }
 
 #[cfg(test)]
-#[allow(clippy::indexing_slicing, clippy::unwrap_used, clippy::panic)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use rs_cam_core::compute::alignment_pins::PinObstacleKind;
@@ -378,7 +382,10 @@ mod tests {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[expect(
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod command_tests {
     use rs_cam_core::compute::alignment_pins::PinSetupMap;
     use rs_cam_core::session::Command;
@@ -437,7 +444,6 @@ mod command_tests {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
 mod split_tests {
     use rs_cam_core::session::Command;
 

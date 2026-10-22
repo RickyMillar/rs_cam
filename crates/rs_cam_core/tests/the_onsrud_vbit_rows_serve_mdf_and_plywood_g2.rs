@@ -55,7 +55,11 @@
 //! 1.0: an MDF query gets no hardness scale since P2 step 3; see
 //! `one_janka_table_for_row_and_query_g2`).
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};

@@ -15,7 +15,12 @@
 //! parallel/finish to reach ball-nose data) are NOT tested here — that
 //! divergence is a feature, not a parity bug.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::compute::tool_config::ToolMaterial;
 use rs_cam_core::feeds::geometry::lut_key_diameter_for_cutter;

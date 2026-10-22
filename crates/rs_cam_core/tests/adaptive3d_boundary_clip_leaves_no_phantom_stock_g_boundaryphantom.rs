@@ -57,12 +57,11 @@
 //! cargo test -p rs_cam_core -q --test adaptive3d_boundary_clip_leaves_no_phantom_stock_g_boundaryphantom
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;

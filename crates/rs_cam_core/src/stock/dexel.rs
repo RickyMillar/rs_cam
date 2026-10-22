@@ -50,7 +50,10 @@ impl DexelSegment {
 /// non-overlapping.
 pub type DexelRay = SmallVec<[DexelSegment; 1]>;
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Remove all material **above** `z` (i.e. with coordinate > z).
 ///
 /// Used for top-down cuts on a Z-grid: material above the tool surface is air.
@@ -71,7 +74,10 @@ pub fn ray_subtract_above(ray: &mut DexelRay, z: f32) {
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Remove all material **below** `z` (i.e. with coordinate < z).
 ///
 /// Used for bottom-up cuts on a Z-grid.
@@ -94,7 +100,10 @@ pub fn ray_subtract_below(ray: &mut DexelRay, z: f32) {
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Partial-blend variant of [`ray_subtract_above`]: shrink the above-`surface`
 /// portion of each segment by a fraction `f ∈ [0, 1]` of its height.
 ///
@@ -138,7 +147,10 @@ pub fn ray_blend_above(ray: &mut DexelRay, surface: f32, f: f32) {
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Mirror of [`ray_blend_above`] for bottom-up cuts: shrink the below-`surface`
 /// portion of each segment by `f ∈ [0, 1]`.
 pub fn ray_blend_below(ray: &mut DexelRay, surface: f32, f: f32) {
@@ -172,7 +184,10 @@ pub fn ray_blend_below(ray: &mut DexelRay, surface: f32, f: f32) {
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Remove the interval `[a, b]` from the ray (general boolean subtract).
 ///
 /// Any segment fully inside `[a, b]` is deleted.  Segments that partially
@@ -206,7 +221,6 @@ pub fn ray_subtract_interval(ray: &mut DexelRay, a: f32, b: f32) {
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Add material of `slot` over `[a, b]` (a boolean union).
 ///
 /// - Only the EMPTY parts of `[a, b]` get `slot`. Where material already
@@ -257,7 +271,10 @@ pub fn ray_union_interval(ray: &mut DexelRay, a: f32, b: f32, slot: MaterialSlot
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Merge each pair of neighbour segments that touch (`exit == enter`) and
 /// have the same slot.
 fn ray_merge_touching(ray: &mut DexelRay) {
@@ -601,21 +618,30 @@ impl DexelGrid {
         )
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Borrow the ray at (row, col).
     #[inline]
     pub fn ray(&self, row: usize, col: usize) -> &DexelRay {
         &self.rays[row * self.cols + col]
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Mutably borrow the ray at (row, col).
     #[inline]
     pub fn ray_mut(&mut self, row: usize, col: usize) -> &mut DexelRay {
         &mut self.rays[row * self.cols + col]
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Top material Z at cell. Returns `None` if the ray is empty.
     ///
     /// Equivalent to `Heightmap::get(row, col)` for cells with material.
@@ -625,7 +651,10 @@ impl DexelGrid {
         ray_top(ray)
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Does any material exist above `z_floor` at this cell?
     #[inline]
     pub fn has_material_above(&self, row: usize, col: usize, z_floor: f32) -> bool {
@@ -702,14 +731,20 @@ impl DexelGrid {
         }
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Total material length at cell (sum of all segment lengths along the ray).
     #[inline]
     pub fn material_length_at(&self, row: usize, col: usize) -> f32 {
         ray_material_length(&self.rays[row * self.cols + col])
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Sliver-safe upper bound on material height anywhere inside this cell.
     /// See [`DexelGrid::conservative_top`] — this is the reading a clearance
     /// ceiling must use, not [`Self::top_z_at`].
@@ -718,7 +753,10 @@ impl DexelGrid {
         self.conservative_top[row * self.cols + col]
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// The slot of the top segment at cell, or `None` if the ray is empty.
     /// The display mesh reads it to colour a surface by material (S5).
     #[inline]
@@ -765,7 +803,10 @@ impl DexelGrid {
         }
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Lower the sliver-safe bound at a flat cell index — monotone, so a
     /// caller that stamps the same ground twice cannot walk the bound back
     /// up. `surface` must already be an upper bound of the removal surface
@@ -781,11 +822,10 @@ impl DexelGrid {
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

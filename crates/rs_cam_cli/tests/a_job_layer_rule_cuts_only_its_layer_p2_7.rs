@@ -15,12 +15,10 @@
 //! `operation.params.selection`, and the CLI applies it through the
 //! `edit_toolpath_selection` command.
 
-#![allow(
-    // SAFETY: test code; a failed fixture is a failed test.
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code; a failed fixture is a failed test."
 )]
 
 use std::path::{Path, PathBuf};

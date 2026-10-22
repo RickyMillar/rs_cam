@@ -41,14 +41,11 @@
 //! Before the fix the bevel did not exist: the cone met the board only at
 //! the edge line, and no cell inside the outline was cut.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
-// The measured numbers ARE the record.
-#![allow(clippy::print_stderr)]
+#![expect(clippy::print_stderr, reason = "The measured numbers ARE the record.")]
 
 mod common;
 

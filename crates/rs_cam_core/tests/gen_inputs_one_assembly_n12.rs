@@ -36,11 +36,11 @@
 //! NOT MEASURED here: the viz drain, the lane and the artifact write. Those
 //! are viz-side and their sentries live in `crates/rs_cam_viz/`.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};
@@ -293,9 +293,10 @@ fn one_core_function_returns_the_resolved_bundle() {
 /// compiler. The loose 21-argument entry stays for the in-module strategy
 /// advisor until WP12; what this arm pins is that the narrow one exists and
 /// that its inputs are the two unconstructible bundles.
-// The explicit argument list IS the claim, so it does not factor into a
-// type alias.
-#[allow(clippy::type_complexity)]
+#[expect(
+    clippy::type_complexity,
+    reason = "The explicit argument list IS the claim, so it does not factor into a type alias."
+)]
 #[test]
 fn the_narrowed_executor_reads_the_resolved_bundle() {
     let _narrowed: fn(

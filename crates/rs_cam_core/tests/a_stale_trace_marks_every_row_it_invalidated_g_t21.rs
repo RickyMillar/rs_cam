@@ -29,11 +29,9 @@
 //! op's own geometry and feeds, never a simulation trace, so no trace
 //! can invalidate them.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#![expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::catalog::OperationConfig;

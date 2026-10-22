@@ -123,13 +123,13 @@
 //! repo. It SKIPS rather than fails when the mesh is absent, and it never
 //! substitutes `fixtures/terrain_small.stl` (banned by the pre-registration).
 
-#![allow(
+#![expect(
     clippy::print_stderr,
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader; test code accepts the style lint too_many_lines"
 )]
 
 use std::fmt::Write as _;
@@ -212,9 +212,15 @@ const COVERAGE_FAIL_FRACTION: f64 = 0.01;
 /// would feed them is blocked (see the run report). They are left here so the
 /// gate's thresholds are on the record at the same commit as the blocker,
 /// not invented later.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the threshold is on record but no test reads it yet; the doc above says why"
+)]
 const SPACING_EXCEED_RATIO: f64 = 1.05;
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the threshold is on record but no test reads it yet; the doc above says why"
+)]
 const SPACING_EXCEED_FAIL_PCT: f64 = 5.0;
 
 /// `s = 2·sqrt(2Rh − h²)` — the equal-cusp law, restated so the instrument

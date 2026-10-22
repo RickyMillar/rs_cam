@@ -24,7 +24,10 @@
 //! (`lut_route`, read by `feeds::vendor_normalize::lut_query_for` and the
 //! explain payload).
 
-use super::{FeedsHints, OperationTransformCapabilities};
+use super::{
+    DepthOrder, FeedsHints, GlobalReorder, LinkMoves, OperationTransformCapabilities,
+    PathContinuity,
+};
 use crate::compute::execute::LinkCeilingNeed;
 use crate::selection::HoleFitRule;
 
@@ -36,6 +39,10 @@ use crate::selection::HoleFitRule;
 /// resolves the rule against the config and returns the default `P`,
 /// [`EntryProbe`], which holds the real leave.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent capability of an operation row, and the rows set them by name"
+)]
 pub struct Capabilities<P = EntryProbe> {
     /// The order and link safety of the dressups. The row holds the value
     /// without the R10 lap cap; `OperationType::capabilities` adds the cap
@@ -524,17 +531,26 @@ pub enum AxialEnvelope {
 /// rapid→plunge→cut→retract unit with no order between chains (audited
 /// fix-family Phase 1). Drop Cutter rows are independent too.
 pub const TRANSFORM_XY_INDEPENDENT: OperationTransformCapabilities =
-    OperationTransformCapabilities::new(true, false, false, true);
+    OperationTransformCapabilities::new(
+        GlobalReorder::Allowed,
+        DepthOrder::Free,
+        PathContinuity::Free,
+        LinkMoves::Allowed,
+    );
 
 /// Face: its one-way rows and depth barriers encode the machining
 /// sequence. It vetoes every rapid-order permutation and keeps the other
 /// dressups; it is not continuous and takes no straight link. It cuts the
 /// stock top and has no wall, so the segment merge keeps the operator's
 /// tolerance (P6.0b).
-pub const TRANSFORM_FACE: OperationTransformCapabilities =
-    OperationTransformCapabilities::new(false, false, false, false)
-        .without_rapid_reorder()
-        .without_finished_edge();
+pub const TRANSFORM_FACE: OperationTransformCapabilities = OperationTransformCapabilities::new(
+    GlobalReorder::Forbidden,
+    DepthOrder::Free,
+    PathContinuity::Free,
+    LinkMoves::Forbidden,
+)
+.without_rapid_reorder()
+.without_finished_edge();
 
 /// V-bit ops (VCarve, Inlay, Inlay Plug): link moves gouged even WITH the
 /// swept-corridor check (2026-08-03: Inlay 8.21 mm, VCarve 5.78 mm, all
@@ -542,19 +558,33 @@ pub const TRANSFORM_FACE: OperationTransformCapabilities =
 /// V-bit depends on depth, so "the tip passed within the radius at this
 /// Z" does not prove the corridor is clear to the width a bridge needs.
 /// No links; rapid-order eligibility stays.
-pub const TRANSFORM_V_WIDTH: OperationTransformCapabilities =
-    OperationTransformCapabilities::new(false, false, false, false);
+pub const TRANSFORM_V_WIDTH: OperationTransformCapabilities = OperationTransformCapabilities::new(
+    GlobalReorder::Forbidden,
+    DepthOrder::Free,
+    PathContinuity::Free,
+    LinkMoves::Forbidden,
+);
 
 /// Ordered ops that may take links: Horizontal Finish (the generator sorts
 /// regions high to low Z to avoid collisions, `horizontal_finish.rs`, so
 /// TSP would override that safety order), Chamfer, Pencil, Radial Finish.
 pub const TRANSFORM_ORDERED_LINKABLE: OperationTransformCapabilities =
-    OperationTransformCapabilities::new(false, false, false, true);
+    OperationTransformCapabilities::new(
+        GlobalReorder::Forbidden,
+        DepthOrder::Free,
+        PathContinuity::Free,
+        LinkMoves::Allowed,
+    );
 
 /// Depth-stepping ops (Pocket, Profile, Zigzag, Waterline, Trace): depth
 /// order is the constraint, not continuity.
 pub const TRANSFORM_DEPTH_ORDER: OperationTransformCapabilities =
-    OperationTransformCapabilities::new(false, true, false, false);
+    OperationTransformCapabilities::new(
+        GlobalReorder::Forbidden,
+        DepthOrder::Required,
+        PathContinuity::Free,
+        LinkMoves::Forbidden,
+    );
 
 /// Trace: the depth order of [`TRANSFORM_DEPTH_ORDER`], and leads only on
 /// closed loops. An open path is cut exactly on the drawn line, from its
@@ -584,11 +614,16 @@ pub const TRANSFORM_PROFILE: OperationTransformCapabilities =
 /// helix finishes its floor flat; it emits the path it walked, so the
 /// dressup merge does not move its cuts.
 pub const TRANSFORM_ADAPTIVE_2D: OperationTransformCapabilities =
-    OperationTransformCapabilities::new(false, true, false, false)
-        .without_rapid_reorder()
-        .with_helix_floor_lap()
-        .with_stock_aware_plunge()
-        .with_planner_segment_merge();
+    OperationTransformCapabilities::new(
+        GlobalReorder::Forbidden,
+        DepthOrder::Required,
+        PathContinuity::Free,
+        LinkMoves::Forbidden,
+    )
+    .without_rapid_reorder()
+    .with_helix_floor_lap()
+    .with_stock_aware_plunge()
+    .with_planner_segment_merge();
 
 /// Adaptive3d plans every run against its own dexel stock, in the order it
 /// emits them. Each entry's rapid floor and helix start, each keep-down
@@ -603,10 +638,15 @@ pub const TRANSFORM_ADAPTIVE_2D: OperationTransformCapabilities =
 /// that leaves `stock_to_leave_axial` over the surface, so it states no
 /// finished edge (P6.0b); the dressup merge skips it anyway.
 pub const TRANSFORM_ADAPTIVE_3D: OperationTransformCapabilities =
-    OperationTransformCapabilities::new(false, true, false, false)
-        .without_rapid_reorder()
-        .with_planner_segment_merge()
-        .without_finished_edge();
+    OperationTransformCapabilities::new(
+        GlobalReorder::Forbidden,
+        DepthOrder::Required,
+        PathContinuity::Free,
+        LinkMoves::Forbidden,
+    )
+    .without_rapid_reorder()
+    .with_planner_segment_merge()
+    .without_finished_edge();
 
 /// Ops stitched from independent nodes. `generate_unified_finish` emits a
 /// `RapidOrderBarrier` at every node start (and per Z inside waterline
@@ -617,12 +657,22 @@ pub const TRANSFORM_ADAPTIVE_3D: OperationTransformCapabilities =
 /// `surface_link::build_surface_link`. Steep/Shallow is the same shape one
 /// level simpler: the two halves and the steep Z levels are barriered.
 pub const TRANSFORM_BARRIERED_NODES: OperationTransformCapabilities =
-    OperationTransformCapabilities::new(false, false, false, false);
+    OperationTransformCapabilities::new(
+        GlobalReorder::Forbidden,
+        DepthOrder::Free,
+        PathContinuity::Free,
+        LinkMoves::Forbidden,
+    );
 
 /// Continuous traces (Scallop, Ramp Finish, Spiral Finish): helical or
 /// spiral paths whose passes are not retract-separated.
 pub const TRANSFORM_CONTINUOUS: OperationTransformCapabilities =
-    OperationTransformCapabilities::new(false, false, true, false);
+    OperationTransformCapabilities::new(
+        GlobalReorder::Forbidden,
+        DepthOrder::Free,
+        PathContinuity::Required,
+        LinkMoves::Forbidden,
+    );
 
 /// Discrete-ring Scallop (`ScallopConfig::continuous == false`, the
 /// default): rings are radial offsets of ONE finishing pass to the same
@@ -635,4 +685,9 @@ pub const TRANSFORM_CONTINUOUS: OperationTransformCapabilities =
 /// This value carries NO R10 lap cap, as the per-instance override did
 /// before W2.4. The static Scallop row (continuous) gets the finishing cap.
 pub const TRANSFORM_DISCRETE_SCALLOP: OperationTransformCapabilities =
-    OperationTransformCapabilities::new(true, false, false, false);
+    OperationTransformCapabilities::new(
+        GlobalReorder::Allowed,
+        DepthOrder::Free,
+        PathContinuity::Free,
+        LinkMoves::Forbidden,
+    );

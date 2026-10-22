@@ -61,8 +61,23 @@ str_to_string = "deny"
 semicolon_if_nothing_returned = "deny"
 manual_let_else = "deny"
 
+# F170 (W16): every lint exception names its reason, and the compiler holds
+# it. `#[expect(lint, reason = "..")]` fails when the lint stops firing, so a
+# stale exception cannot stay. An inner `#![allow(.., reason = "..")]` stays
+# legal for a lint that fires in only some feature sets or test binaries.
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+
+# F172 (W16): a `_` arm that stands for exactly one variant names it.
+match_wildcard_for_single_variants = "deny"
+
+# F027 (W16): a run of bare bool flags is a hidden enum.
+fn_params_excessive_bools = "deny"
+struct_excessive_bools = "deny"
+
 [workspace.lints.rust]
-unsafe_code = "deny"
+# F172 (W16): no crate may lift this with an `allow`.
+unsafe_code = "forbid"
 
 # F142: a doc link that names nothing (or two things) fails `cargo doc`.
 # A link to a `pub(crate)` item is intended: the crate docs are internal

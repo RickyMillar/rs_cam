@@ -63,6 +63,13 @@ pub(crate) enum PinDrillSync {
 
 impl PinDrillSync {
     /// The reply word for this outcome.
+    #[cfg_attr(
+        not(feature = "mcp"),
+        expect(
+            dead_code,
+            reason = "only the MCP server reads it, and the `mcp` feature is off"
+        )
+    )]
     pub(crate) fn action(&self) -> &'static str {
         match self {
             PinDrillSync::Unchanged => "unchanged",
@@ -146,6 +153,13 @@ pub(crate) enum PinDrillBlocker {
 impl PinDrillBlocker {
     /// The refusal text.
     #[must_use]
+    #[cfg_attr(
+        not(feature = "mcp"),
+        expect(
+            dead_code,
+            reason = "only the MCP server reads it, and the `mcp` feature is off"
+        )
+    )]
     pub(crate) fn text(&self) -> String {
         match self {
             PinDrillBlocker::NeedsTopSetup => PIN_DRILL_NEEDS_TOP_SETUP.to_owned(),

@@ -602,9 +602,13 @@ pub(crate) enum LoadedGeometry {
     /// Only constructed when the `step` cargo feature is on; the
     /// match arm consuming it is also gated, but the variant lives
     /// outside the cfg so callers needn't sprinkle cfg-pattern matches.
-    // SAFETY: only the `step` feature constructs this variant; without it
-    // the variant is dead by design, as the doc above says.
-    #[cfg_attr(not(feature = "step"), allow(dead_code))]
+    #[cfg_attr(
+        not(feature = "step"),
+        expect(
+            dead_code,
+            reason = "only the `step` feature constructs this variant; without it the variant is dead by design, as the doc above says"
+        )
+    )]
     Enriched(EnrichedMesh),
 }
 
@@ -1378,12 +1382,10 @@ impl ToolpathConfig {
 /// The serde-json text of one part of
 /// [`ToolpathConfig::generation_inputs_signature`].
 fn signature_json<T: serde::Serialize>(value: &T) -> String {
-    // SAFETY: the three parts (`OperationConfig`, `DressupConfig`,
-    // `HeightsConfig`) derive `Serialize` and hold no map, so serde-json
-    // cannot refuse them (it refuses only a non-string map key or a custom
-    // impl's error). `tests/a_signature_serialises_every_op_f065.rs` signs
-    // the default of every operation type.
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "the three parts (`OperationConfig`, `DressupConfig`, `HeightsConfig`) derive `Serialize` and hold no map, so serde-json cannot refuse them (it refuses only a non-string map key or a custom impl's error). `tests/a_signature_serialises_every_op_f065.rs` signs the default of every operation type."
+    )]
     serde_json::to_string(value).expect("a generation input always serialises (F065)")
 }
 
@@ -2463,11 +2465,12 @@ impl ProjectSession {
 // ── Tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::project_file::parse_tool_type;

@@ -23,11 +23,11 @@
 //! near 3x the trace and phase 2 near 5x.
 
 #![cfg(target_os = "linux")]
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::Arc;

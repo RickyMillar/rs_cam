@@ -94,7 +94,10 @@ fn centerline_is_measured(cl: &RestCenterline) -> bool {
 ///
 /// Returns `Err(Cancelled)` if `cancel` fires mid-loop (checked once per
 /// centreline, same granularity as the original inline loop).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub fn centerline_cut_paths(
     centerlines: &[RestCenterline],
     mesh: &TriangleMesh,
@@ -293,11 +296,9 @@ fn resample_with_reach(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

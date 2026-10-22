@@ -19,12 +19,10 @@
 //! adds the *invariant* assertion they don't make, on top of a synthetic
 //! multi-pass span fixture that exercises every interesting dressup combo.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::too_many_arguments
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::{

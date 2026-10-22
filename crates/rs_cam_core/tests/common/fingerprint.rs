@@ -14,12 +14,9 @@
 //! Reference consumers: `finish_resolution_policy_pr3.rs` (three pinned
 //! `(moves, hash)` constants captured at HEAD `5fc2411` / PR-8a / PR-8b).
 
-#![allow(dead_code)]
 #![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    dead_code,
+    reason = "each test binary that includes this module uses only part of it"
 )]
 
 use std::fmt::Debug;

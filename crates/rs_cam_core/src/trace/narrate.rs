@@ -928,14 +928,18 @@ fn find_or_create_level_accumulator(
         .iter()
         .position(|level| (level.summary.z - z).abs() <= Z_EPSILON_MM)
     {
-        // SAFETY: `pos` came from `levels.iter().position`, so it is in bounds.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "`pos` came from `levels.iter().position`, so it is in bounds."
+        )]
         return &mut levels[pos];
     }
     levels.push(ZLevelAccumulator::new(z));
     let last_index = levels.len() - 1;
-    // SAFETY: we just pushed one element, so the last element exists.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "we just pushed one element, so the last element exists."
+    )]
     &mut levels[last_index]
 }
 
@@ -2200,11 +2204,10 @@ fn move_type_label(move_type: MoveType) -> &'static str {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

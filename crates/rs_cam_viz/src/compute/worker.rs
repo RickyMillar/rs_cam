@@ -1,27 +1,27 @@
 pub(crate) mod execute;
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod gen_parity_p0_tests;
 pub mod helpers;
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#[expect(
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod test_fixture;
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests;
 
@@ -321,7 +321,6 @@ pub struct CollisionResult {
     pub positions: Vec<[f32; 3]>,
 }
 
-#[allow(clippy::large_enum_variant)]
 enum AnalysisRequest {
     /// A simulation and its memory estimate for the ledger, in bytes.
     /// `None` means NOT ESTIMATED: the budget has no limit, so the submit
@@ -918,8 +917,7 @@ impl<Request> LaneQueue<Request> {
             };
             // `front` above proved the queue is not empty, and the lock has
             // been held since.
-            // SAFETY: the queue is not empty here.
-            #[allow(clippy::expect_used)]
+            #[expect(clippy::expect_used, reason = "the queue is not empty here.")]
             let request = inner.queue.pop_front().expect("queue checked");
             self.cancel.store(false, Ordering::SeqCst);
             inner.state = LaneState::Running;

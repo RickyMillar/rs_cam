@@ -216,7 +216,10 @@ impl CoverageFastPath {
 /// - `near_dist_sq` — squared distance from cell center's segment-projection
 ///   to the cell (the "closest in-stadium point" distance), useful as the
 ///   LUT query (§6.F gap 3).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 #[inline]
 pub(super) fn segment_cell_coverage(
     cu: f64,
@@ -557,12 +560,18 @@ impl StampTarget for DexelGrid {
         row * self.cols + col
     }
     #[inline]
-    #[allow(clippy::indexing_slicing)] // caller derives idx from clamped bounds
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "caller derives idx from clamped bounds"
+    )]
     fn top_at_index(&self, idx: usize) -> f32 {
         self.conservative_top[idx]
     }
     #[inline]
-    #[allow(clippy::indexing_slicing)] // caller derives idx from clamped bounds
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "caller derives idx from clamped bounds"
+    )]
     fn ray_at_index(&mut self, idx: usize) -> &mut DexelRay {
         &mut self.rays[idx]
     }
@@ -586,12 +595,18 @@ impl StampTarget for GridBand<'_> {
         self.local(row, col)
     }
     #[inline]
-    #[allow(clippy::indexing_slicing)] // caller derives idx from clamped bounds
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "caller derives idx from clamped bounds"
+    )]
     fn top_at_index(&self, idx: usize) -> f32 {
         self.conservative_top[idx]
     }
     #[inline]
-    #[allow(clippy::indexing_slicing)] // caller derives idx from clamped bounds
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "caller derives idx from clamped bounds"
+    )]
     fn ray_at_index(&mut self, idx: usize) -> &mut DexelRay {
         &mut self.rays[idx]
     }
@@ -746,7 +761,6 @@ where
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Stamp a tool at a single position on a grid (axis-agnostic).
 ///
 /// `(cu, cv)` is the tool center in the grid's planar axes.
@@ -757,7 +771,10 @@ where
 /// `DEXEL_Z_ONLY_INVESTIGATION.md` §6.F): boundary cells are blended toward
 /// the cutter surface by their fractional coverage `f` instead of flipping
 /// binary on/off at the cell-center crossing.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub(super) fn stamp_point_on_grid(
     grid: &mut DexelGrid,
     lut: &RadialProfileLUT,
@@ -855,7 +872,6 @@ pub(super) fn stamp_point_on_grid(
     );
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Stamp a tool along a linear segment on a grid (axis-agnostic).
 ///
 /// `start` and `end` are `(u, v, depth)` — the segment endpoints decomposed
@@ -863,7 +879,6 @@ pub(super) fn stamp_point_on_grid(
 ///
 /// Uses sub-cell coverage (F.a — see [`stamp_point_on_grid`]) to area-weight
 /// per-cell ray updates against the swept-stadium footprint.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn stamp_segment_on_grid(
     grid: &mut DexelGrid,
     lut: &RadialProfileLUT,
@@ -1027,8 +1042,10 @@ impl PlaybackPartial {
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 /// [`stamp_segment_on_grid`], restricted to one row band (SIM w6).
 ///
 /// The band-clipped twin of the non-metric playback kernel. Every per-cell
@@ -1499,8 +1516,10 @@ impl StampPartial {
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 /// Stamp a tool along a linear segment AND compute metrics in a single pass.
 ///
 /// Fuses the work of `stamp_segment_on_grid`, `estimate_disk_cut_metrics`, and
@@ -2035,7 +2054,10 @@ pub(super) fn lerp_point(start: P3, end: P3, t: f64) -> P3 {
     start + (end - start) * t
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 pub(super) fn build_move_semantic_lookup(
     move_count: usize,
     trace: Option<&ToolpathSemanticTrace>,
@@ -2094,11 +2116,10 @@ pub(super) fn build_move_semantic_lookup(
 // ── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::super::tile_mip::SkipStats;

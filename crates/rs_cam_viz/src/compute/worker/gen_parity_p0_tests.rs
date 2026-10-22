@@ -270,7 +270,10 @@ enum Feeds {
     Compare,
     /// The item-3 flip left no caller: both doors now compare the feed rates.
     /// The variant stays because the comparator below documents it.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "the variant has no caller; the doc above says why it stays"
+    )]
     Ignore,
 }
 

@@ -35,12 +35,10 @@
 //! `cargo test --release -p rs_cam_core --test narration_cost_probe_h26 --
 //! --ignored --nocapture`.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::sync::atomic::AtomicBool;

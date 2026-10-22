@@ -156,13 +156,13 @@
 //! rather than fails when it is absent, and never substitutes
 //! `fixtures/terrain_small.stl` (banned by the pre-registration).
 
-#![allow(
+#![expect(
     clippy::print_stderr,
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader; test code accepts the style lint too_many_lines"
 )]
 
 use std::collections::VecDeque;

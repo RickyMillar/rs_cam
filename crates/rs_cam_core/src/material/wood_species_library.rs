@@ -62,12 +62,10 @@ const WOOD_SPECIES_TOML: &str = include_str!("../../data/wood_species.toml");
 /// Parsed once per process. Entries keep the published order of each
 /// source (FPL first, Wood Database fill-ins second).
 static WOOD_SPECIES: LazyLock<Vec<WoodSpeciesEntry>> = LazyLock::new(|| {
-    // SAFETY: the shipped TOML is validated by the
-    // `wood_species_library_provenance` tests, which parse it, pin its
-    // row hash and check every `source_id`. A malformed shipped file
-    // fails those tests before it reaches production, so parse-on-init
-    // may panic here.
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "the shipped TOML is validated by the `wood_species_library_provenance` tests, which parse it, pin its row hash and check every `source_id`. A malformed shipped file fails those tests before it reaches production, so parse-on-init may panic here."
+    )]
     let file: SpeciesFile =
         toml::from_str(WOOD_SPECIES_TOML).expect("shipped wood_species.toml must parse");
     file.species

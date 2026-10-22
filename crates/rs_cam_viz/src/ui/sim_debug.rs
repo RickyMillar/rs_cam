@@ -89,9 +89,6 @@ pub fn semantic_kind_label(
 ///
 /// They now walk [`SPAN_SCALE`](crate::ui::tokens::SPAN_SCALE), the six-step cool ramp that exists for a
 /// category, in declaration order, so no two neighbouring kinds share a step.
-#[allow(clippy::indexing_slicing)]
-// SAFETY: every index below is a literal in `0..6` and `SPAN_SCALE` has six
-// entries, so each one is in bounds at compile time.
 pub fn semantic_kind_color(
     kind: &rs_cam_core::trace::semantic_trace::ToolpathSemanticKind,
 ) -> egui::Color32 {

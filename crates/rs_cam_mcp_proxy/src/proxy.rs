@@ -1338,8 +1338,11 @@ fn exit_record(status: Option<ExitStatus>, facts: &ExitFacts) -> Value {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
-    // SAFETY: test code; a failed unwrap is the test failure report.
+    #![expect(
+        clippy::unwrap_used,
+        clippy::indexing_slicing,
+        reason = "test code; a failed unwrap is the test failure report."
+    )]
 
     use super::*;
 

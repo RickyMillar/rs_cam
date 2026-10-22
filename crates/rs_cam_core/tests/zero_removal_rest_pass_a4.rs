@@ -57,15 +57,15 @@
 //! own right and is filed as such — see the wave-16 log entry — but it is
 //! not this sentry's subject.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
-// The measured numbers ARE the record. Printing them makes a regression
-// readable in CI output rather than only as a threshold that tripped.
-#![allow(clippy::print_stderr)]
+#![expect(
+    clippy::print_stderr,
+    reason = "The measured numbers ARE the record. Printing them makes a regression readable in CI output rather than only as a threshold that tripped."
+)]
 
 mod common;
 

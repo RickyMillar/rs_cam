@@ -23,11 +23,11 @@
 //! cargo test -p rs_cam_core -q --test a_two_face_pick_keeps_both_faces_p2_4
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

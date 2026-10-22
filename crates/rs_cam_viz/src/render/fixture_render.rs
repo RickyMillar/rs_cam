@@ -133,9 +133,10 @@ fn vertical_indices(ring: &[P2]) -> Vec<usize> {
 /// Push a prism: the ring at `z0`, the ring at `z1`, and a vertical edge at
 /// each corner of the ring (see [`MAX_PRISM_VERTICALS`]). Every vertex
 /// takes `shift`.
-// SAFETY: the indices come from `vertical_indices`, which reads only
-// `0..ring.len()`.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "the indices come from `vertical_indices`, which reads only `0..ring.len()`."
+)]
 pub fn push_prism_lines(
     out: &mut Vec<LineVertex>,
     ring: &[P2],
@@ -154,13 +155,6 @@ pub fn push_prism_lines(
 }
 
 #[cfg(test)]
-#[allow(
-    // SAFETY: test code; a failed lookup is a failed test.
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::*;
 

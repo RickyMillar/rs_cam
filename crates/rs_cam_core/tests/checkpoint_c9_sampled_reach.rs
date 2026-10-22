@@ -49,12 +49,9 @@
 //!
 //! Nothing here is imported by production code.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stdout
+#![expect(
+    clippy::print_stdout,
+    reason = "the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::surface::reach::{
@@ -92,7 +89,10 @@ const SHIPPED_REST_CELL_MM: f64 = 0.5;
 /// top.
 struct Section {
     /// Fixture name, for report lines.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "the name is for report lines that are not printed now"
+    )]
     name: &'static str,
     z: Box<dyn Fn(f64) -> f64>,
     lipschitz: f64,

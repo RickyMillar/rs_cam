@@ -1,53 +1,63 @@
 #![deny(clippy::indexing_slicing)]
 
 mod events;
+#[cfg_attr(
+    not(any(test, feature = "mcp")),
+    expect(
+        unused_imports,
+        reason = "only the MCP server and the tests read it, and this build has neither"
+    )
+)]
 pub(crate) use events::pins::PinDrillSync;
 pub(crate) use events::pins::{PinDrillBlocker, pin_drill_blocker};
 pub mod generate_all;
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod holder_clearance_scope_g_holderscope;
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod holder_clearance_staleness_g_holderstale;
 mod io;
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::field_reassign_with_default
+    reason = "test code: a panic is how a test reports a failure"
+)]
+#[cfg_attr(
+    feature = "mcp",
+    expect(
+        clippy::panic,
+        clippy::indexing_slicing,
+        reason = "test code: a panic is how a test reports a failure; the panic and index sites sit in the MCP tests"
+    )
 )]
 mod results_parity_tests;
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-mod tests;
-#[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::collapsible_if,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+mod tests;
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
     clippy::clone_on_ref_ptr,
     clippy::field_reassign_with_default,
-    dead_code
+    dead_code,
+    reason = "test code: a panic is how a test reports a failure; test code accepts the style lints clone_on_ref_ptr, field_reassign_with_default; the module keeps helpers that not every test calls"
 )]
 mod workflow_tests;
 

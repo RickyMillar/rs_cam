@@ -66,8 +66,10 @@ pub fn resolve_limit(flag: Option<MemoryLimit>, file: MemoryLimit) -> MemoryLimi
 
 #[cfg(test)]
 mod tests {
-    // SAFETY: test module; a failed unwrap is a failed test.
-    #![allow(clippy::unwrap_used)]
+    #![expect(
+        clippy::unwrap_used,
+        reason = "test module; a failed unwrap is a failed test."
+    )]
 
     use super::*;
 

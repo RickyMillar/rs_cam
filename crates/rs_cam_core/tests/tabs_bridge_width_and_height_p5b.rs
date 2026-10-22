@@ -21,11 +21,10 @@
 //! Every case generates through the session door (`generate_toolpath`)
 //! with the dressups off, so the moves are the Profile runner's output.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

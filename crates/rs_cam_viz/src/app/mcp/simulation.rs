@@ -73,7 +73,10 @@ impl RsCamApp {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     pub(super) fn mcp_get_cut_trace(
         &self,
         toolpath_id: Option<usize>, // wire-level raw id; typed immediately below
@@ -855,7 +858,6 @@ pub(super) fn sim_mesh_in_world_frame(
 ///
 /// Order is the documented [`rs_cam_mcp::response::ORDERING_SPAN_SUMMARIES`]:
 /// toolpath index ascending, then span id ascending.
-#[allow(clippy::too_many_arguments)]
 fn build_span_cut_summaries(
     state: &crate::state::AppState,
     trace: &rs_cam_core::stock::simulation_cut::SimulationCutTrace,
@@ -1051,7 +1053,7 @@ pub(super) fn build_per_depth_pass_summary(
                 }
             });
             if let Some(pos) = pass_pos {
-                #[allow(clippy::indexing_slicing)] // pos came from pass_index_of
+                #[expect(clippy::indexing_slicing, reason = "pos came from pass_index_of")]
                 accs[pos].observe(sample);
             }
         }
@@ -1103,7 +1105,10 @@ fn render_per_kinematics_json(
     use rs_cam_core::stock::simulation_cut::CutKinematics;
     let mut map = serde_json::Map::new();
     for kind in CutKinematics::ALL {
-        #[allow(clippy::indexing_slicing)] // SAFETY: `kind.index()` is bounded by COUNT.
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "`kind.index()` is bounded by COUNT."
+        )]
         let sub = &acc.per_kinematics[kind.index()];
         if sub.sample_count == 0 {
             continue;

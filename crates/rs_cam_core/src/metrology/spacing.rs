@@ -330,12 +330,6 @@ pub fn path_structure(toolpath: &Toolpath, ring_starts: &[usize], bucket_mm: f64
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::{point_to_segment_distance_3d, quantile};
     use crate::geo::P3;

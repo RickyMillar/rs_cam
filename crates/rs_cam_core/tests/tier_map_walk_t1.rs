@@ -25,11 +25,12 @@
 //! left to the consumer (Phase I / `rest_field`'s chamfer distance), so the
 //! plane assertions below stay one coarse envelope inside the mesh edge.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

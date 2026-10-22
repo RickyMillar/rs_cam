@@ -40,12 +40,11 @@
 //! three. The standing rule — *never clear collisions across mismatched
 //! resolutions* — is only enforceable if that number exists.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};

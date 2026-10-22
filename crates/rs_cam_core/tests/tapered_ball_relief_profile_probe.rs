@@ -26,12 +26,9 @@
 //! 3. `stock_to_leave` is a VERTICAL offset. What remains measured
 //!    normal to a wall sloped at A is `stock_to_leave · cos A`.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stderr
+#![expect(
+    clippy::print_stderr,
+    reason = "the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::feeds::geometry::scallop_stepover;

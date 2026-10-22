@@ -38,11 +38,9 @@
 //! - the constants: the exponent 0.61, the flat and tapered spreads, the
 //!   0.5 mm tip floor and the [0.5, 2] window.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::feeds::embedded_vendor_lut;

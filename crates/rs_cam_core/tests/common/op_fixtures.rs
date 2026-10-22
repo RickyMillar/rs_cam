@@ -30,12 +30,15 @@
 //! back onto the top-up input, moved by `-origin`. A frame-correct op then
 //! emits the top-up toolpath moved by `-origin`.
 
-#![allow(dead_code)]
 #![allow(
+    dead_code,
+    reason = "each test binary that includes this module uses only part of it"
+)]
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::Arc;

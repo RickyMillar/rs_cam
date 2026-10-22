@@ -11,12 +11,12 @@
 //! test is exact and a volume is a whole number of columns: within one cell
 //! of the analytic value by construction.
 
-#![allow(
-    // SAFETY: test code; a failed fixture is a failed test.
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code; a failed fixture is a failed test."
 )]
 
 use std::sync::Arc;

@@ -114,7 +114,7 @@ pub(super) fn bridge_corridor_is_swept(
     }
 
     let spacing = (tool_radius * 0.5).max(1e-6);
-    let n_segments = (dist / spacing).ceil().max(1.0) as usize;
+    let n_segments = crate::util::steps::steps(dist, spacing).unwrap_or(0).max(1);
     if n_segments < 2 {
         // Gap is smaller than half a tool radius — only the (trivially
         // covered) endpoints exist as samples.

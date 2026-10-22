@@ -701,8 +701,10 @@ fn detect_conflicting_rows(observations: &[VendorObservation]) -> Vec<String> {
     for rows in by_key.values() {
         for (i, a) in rows.iter().enumerate() {
             for b in rows.iter().skip(i + 1) {
-                // SAFETY: filtered to rows with both bounds above.
-                #[allow(clippy::unwrap_used)]
+                #[expect(
+                    clippy::unwrap_used,
+                    reason = "filtered to rows with both bounds above."
+                )]
                 let (a_min, a_max, b_min, b_max) = (
                     a.chipload_min_mm_tooth.unwrap(),
                     a.chipload_max_mm_tooth.unwrap(),
@@ -724,7 +726,12 @@ fn detect_conflicting_rows(observations: &[VendorObservation]) -> Vec<String> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 
@@ -1048,8 +1055,7 @@ mod tests {
     }
 
     fn synthetic_row() -> VendorObservation {
-        // SAFETY: parse of a known-good literal.
-        #[allow(clippy::expect_used)]
+        #[expect(clippy::expect_used, reason = "parse of a known-good literal.")]
         serde_json::from_str(
             r#"{
                 "observation_id": "synthetic-test-row",

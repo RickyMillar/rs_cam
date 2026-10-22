@@ -25,11 +25,10 @@
 //!
 //! Run: `cargo test -p rs_cam_core -q --test a_fresh_stock_pass_at_its_own_depth_is_not_an_overcut_g_overcutref`
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::BTreeMap;

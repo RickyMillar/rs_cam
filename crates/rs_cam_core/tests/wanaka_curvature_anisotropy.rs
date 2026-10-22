@@ -337,12 +337,12 @@
 //! nothing about the terrain: like `wanaka_region_capture_f1.rs`, an instrument
 //! records what it finds and leaves the bar to a human.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::path::{Path, PathBuf};
@@ -559,7 +559,10 @@ fn surface_z(mesh: &TriangleMesh, index: &SpatialIndex, at: P2) -> Option<f64> {
 /// edge for six rows is not worth the manifest churn. `A` is expected already
 /// scale-normalised (see the module doc's `u = (x−x₀)/r`), so its pivots are
 /// O(1) and their ratio is meaningful.
-#[allow(clippy::needless_range_loop)] // Gauss-Jordan indexes three arrays by the same counter.
+#[expect(
+    clippy::needless_range_loop,
+    reason = "Gauss-Jordan indexes three arrays by the same counter."
+)]
 fn solve_sym6(a: &[[f64; 6]; 6], b: &[f64; 6]) -> Option<([f64; 6], f64)> {
     let mut m = [[0.0f64; 7]; 6];
     for row in 0..6 {
@@ -664,7 +667,10 @@ fn fit_from_derivatives(
 ///
 /// Row-major order means `normal[j][i]` for `j < i` has already been scaled by
 /// the time it is copied, so the mirror never double-scales.
-#[allow(clippy::needless_range_loop)] // symmetric mirror indexes both [i][j] and [j][i]
+#[expect(
+    clippy::needless_range_loop,
+    reason = "symmetric mirror indexes both [i][j] and [j][i]"
+)]
 fn finalise_normal_equations(normal: &mut [[f64; 6]; 6], rhs: &mut [f64; 6], inv: f64) {
     for i in 0..6 {
         for j in 0..6 {

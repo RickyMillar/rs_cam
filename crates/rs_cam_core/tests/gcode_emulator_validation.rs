@@ -51,13 +51,12 @@
 //!
 //! See `planning/post_reference_notes.md` ("Validator install") for build
 //! and install instructions for each validator.
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
     clippy::print_stdout,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::path::{Path, PathBuf};
@@ -401,7 +400,10 @@ fn assert_rs274_accepts(fixture: &str, dialect: &str) {
 // ── grblHAL_validator (currently unusable — upstream hang) ─────────────
 // Path stub kept so future work can wire it in once upstream fixes the
 // EOF-exit bug. See module docs for details.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the validator path is on record for when the upstream hang is fixed; see the comment above"
+)]
 fn grblhal_validator_path() -> PathBuf {
     workspace_root()
         .join("reference")

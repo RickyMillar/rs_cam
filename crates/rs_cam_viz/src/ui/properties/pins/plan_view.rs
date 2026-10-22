@@ -68,8 +68,10 @@ impl PlanFrame {
             return None;
         }
         let inner = outer.shrink(MARGIN_PX);
-        // SAFETY: a stock dimension in mm is far inside the f32 range.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a stock dimension in mm is far inside the f32 range."
+        )]
         let (w32, d32) = (w as f32, d as f32);
         let scale = (inner.width() / w32).min(inner.height() / d32);
         if !(scale.is_finite() && scale > 0.0) {
@@ -83,8 +85,10 @@ impl PlanFrame {
     /// The screen point of the stock-local point `(x, y)` mm. Y points up.
     #[must_use]
     pub fn to_screen(&self, x: f64, y: f64) -> egui::Pos2 {
-        // SAFETY: a stock-local coordinate in mm is far inside the f32 range.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a stock-local coordinate in mm is far inside the f32 range."
+        )]
         let (x, y) = (x as f32, y as f32);
         egui::pos2(
             self.stock_rect.left() + x * self.scale,
@@ -105,8 +109,10 @@ impl PlanFrame {
 /// The height a view takes for a `w` x `d` stock at `width`, at most
 /// `max_height`.
 pub(super) fn view_height(width: f32, w: f64, d: f64, max_height: f32) -> f32 {
-    // SAFETY: the aspect ratio of a stock is far inside the f32 range.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the aspect ratio of a stock is far inside the f32 range."
+    )]
     let aspect = if w > 0.0 { (d / w) as f32 } else { 1.0 };
     let inner = (width - 2.0 * MARGIN_PX).max(1.0);
     (inner * aspect + 2.0 * MARGIN_PX).clamp(4.0 * MARGIN_PX, max_height.max(4.0 * MARGIN_PX))
@@ -118,8 +124,10 @@ fn pin_at(frame: &PlanFrame, pins: &[AlignmentPin], pos: egui::Pos2) -> Option<u
         .enumerate()
         .map(|(i, p)| {
             let centre = frame.to_screen(p.at.x(), p.at.y());
-            // SAFETY: a pin diameter in mm is far inside the f32 range.
-            #[allow(clippy::cast_possible_truncation)]
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "a pin diameter in mm is far inside the f32 range."
+            )]
             let radius = 0.5 * p.diameter as f32 * frame.scale;
             (i, centre.distance(pos) - radius)
         })
@@ -321,8 +329,10 @@ fn paint(
     if !report.flip.keyed() {
         for (i, &(x, y)) in report.wrong_seating_images.iter().enumerate() {
             let d = pins.get(i).map_or(0.0, |p| p.diameter);
-            // SAFETY: a ring radius in mm is far inside the f32 range.
-            #[allow(clippy::cast_possible_truncation)]
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "a ring radius in mm is far inside the f32 range."
+            )]
             let radius = ghost_ring_radius(d) as f32 * frame.scale;
             let centre = frame.to_screen(x, y);
             let ring: Vec<egui::Pos2> = (0..=32_u8)
@@ -344,8 +354,10 @@ fn paint(
     // thinnest wall of each.
     for (i, pin) in pins.iter().enumerate() {
         let centre = frame.to_screen(pin.at.x(), pin.at.y());
-        // SAFETY: a pin diameter in mm is far inside the f32 range.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a pin diameter in mm is far inside the f32 range."
+        )]
         let radius = 0.5 * pin.diameter as f32 * frame.scale;
         let colour = pin_status_colour(report.pin_status(i));
         painter.circle_filled(centre, radius.max(MIN_PIN_PX), colour);
@@ -474,7 +486,10 @@ pub(super) fn fill_polygon(painter: &egui::Painter, points: &[egui::Pos2], colou
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

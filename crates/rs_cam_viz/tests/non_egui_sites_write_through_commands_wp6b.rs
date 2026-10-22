@@ -48,11 +48,10 @@
 //! reports `wizard_mut`, and scan 3 reports the rows the CLI does not
 //! construct yet.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

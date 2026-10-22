@@ -1,7 +1,11 @@
 //! One-shot: load project, apply LUT-suggested feeds/speeds, save to a new path.
 //! Used to prepare a "suggest-applied" project file for MCP validation.
 
-#![allow(clippy::print_stdout, clippy::print_stderr)] // CLI example surface
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "CLI example surface"
+)]
 
 use std::path::PathBuf;
 

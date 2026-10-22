@@ -21,11 +21,11 @@
 //! 5. The setup notes say "drills the holes" only when every pin size is
 //!    drilled in that setup.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::atomic::AtomicBool;

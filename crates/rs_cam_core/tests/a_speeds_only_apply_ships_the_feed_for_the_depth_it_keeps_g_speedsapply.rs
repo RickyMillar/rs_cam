@@ -36,11 +36,9 @@
 //! `SolidWoodByJanka` stock). This file builds its own copy and does not
 //! call the optimizer.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::catalog::OperationConfig;

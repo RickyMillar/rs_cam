@@ -344,7 +344,10 @@ pub(crate) fn run_height_field<O: HeightFieldOp>(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     //! The runner's own contract: it records the report, it records the
     //! link totals only when the stage ran, and it keeps the span labels.

@@ -56,11 +56,10 @@
 //! copied — it folds a line whose first character is `.`, and three of
 //! the seven viz sites wrap after `let _ =` instead.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::BTreeSet;

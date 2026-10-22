@@ -14,11 +14,11 @@
 //! (it pins today's bad value and fails when the fix lands); a retired
 //! claim is deleted.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 #[path = "common/source_scan.rs"]

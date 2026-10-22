@@ -47,12 +47,12 @@
 //! fail GATE 2; one that lifted but dropped the link's job would fail GATE 4's
 //! coverage half.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::collections::{HashMap, HashSet};

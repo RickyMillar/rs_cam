@@ -92,7 +92,10 @@ impl<'a> StockReference<'a> {
 }
 
 #[cfg(test)]
-#[allow(clippy::panic)] // SAFETY: a test asserts the variant by panicking on the wrong one
+#[expect(
+    clippy::panic,
+    reason = "a test asserts the variant by panicking on the wrong one"
+)]
 mod tests {
     use super::*;
     use crate::geo::P3;

@@ -51,7 +51,10 @@ pub(crate) struct SharedEdge {
     pub(crate) is_concave: bool,
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Build the edge-to-face adjacency map.
 /// Returns a map from sorted vertex pair to list of face indices.
 pub(crate) fn build_edge_adjacency(mesh: &TriangleMesh) -> HashMap<EdgeKey, Vec<usize>> {
@@ -69,7 +72,10 @@ pub(crate) fn build_edge_adjacency(mesh: &TriangleMesh) -> HashMap<EdgeKey, Vec<
     edge_map
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Compute shared edge info for all edges with exactly 2 adjacent faces.
 pub(crate) fn compute_shared_edges(
     mesh: &TriangleMesh,
@@ -136,7 +142,10 @@ pub(crate) fn compute_shared_edges(
     shared
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Chain connected concave edges into polylines.
 /// Returns a list of vertex-index chains, where each chain is an ordered
 /// sequence of vertex indices forming a polyline along concave edges.
@@ -343,7 +352,10 @@ fn bisector_offset_xy(n1: &V3, n2: &V3, r: f64, strength: f64) -> (f64, f64) {
 /// this reduces to plain unweighted chain sampling (see `pencil`'s private
 /// `resample_polyline` for the equivalent walk over already-materialized
 /// points).
-#[allow(clippy::indexing_slicing)] // chain entries are valid vertex indices
+#[expect(
+    clippy::indexing_slicing,
+    reason = "chain entries are valid vertex indices"
+)]
 pub(crate) fn sample_chain_bisected(
     mesh: &TriangleMesh,
     chain: &[u32],
@@ -400,12 +412,6 @@ pub(crate) fn sample_chain_bisected(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::*;
 

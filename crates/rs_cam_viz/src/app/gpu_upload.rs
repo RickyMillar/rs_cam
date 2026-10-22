@@ -109,8 +109,10 @@ impl RsCamApp {
     /// through. Both halves are fixed at the source now
     /// (G-SIM-IDENTITY-FRAME, 2026-08-19); keeping the shift here would
     /// double-count it.
-    // SAFETY: step_by(3) loop with i+1, i+2 bounded by vertices.len() (always multiple of 3)
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "step_by(3) loop with i+1, i+2 bounded by vertices.len() (always multiple of 3)"
+    )]
     pub(super) fn transform_mesh_to_local_frame(
         &self,
         mesh: &mut rs_cam_core::stock::stock_mesh::StockMesh,
@@ -155,8 +157,10 @@ impl RsCamApp {
             }
         };
         let mut renderer = render_state.renderer.write();
-        // SAFETY: RenderResources inserted in RsCamApp::new; always present.
-        #[allow(clippy::unwrap_used)]
+        #[expect(
+            clippy::unwrap_used,
+            reason = "RenderResources inserted in RsCamApp::new; always present."
+        )]
         let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
         resources.hover_lines = if verts.is_empty() {
             None
@@ -198,8 +202,10 @@ impl RsCamApp {
             }
         };
         let mut renderer = render_state.renderer.write();
-        // SAFETY: RenderResources inserted in RsCamApp::new; always present.
-        #[allow(clippy::unwrap_used)]
+        #[expect(
+            clippy::unwrap_used,
+            reason = "RenderResources inserted in RsCamApp::new; always present."
+        )]
         let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
         resources.tab_lines = if verts.is_empty() {
             None
@@ -248,8 +254,10 @@ impl RsCamApp {
         };
 
         let mut renderer = render_state.renderer.write();
-        // SAFETY: RenderResources inserted in RsCamApp::new; always present.
-        #[allow(clippy::unwrap_used)]
+        #[expect(
+            clippy::unwrap_used,
+            reason = "RenderResources inserted in RsCamApp::new; always present."
+        )]
         let resources: &mut RenderResources = renderer.callback_resources.get_mut().unwrap();
         let stats_before = resources.upload_stats;
         resources.upload_stats.passes += 1;
@@ -651,7 +659,12 @@ pub(crate) fn hover_vertices(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::translate_annotated;
 

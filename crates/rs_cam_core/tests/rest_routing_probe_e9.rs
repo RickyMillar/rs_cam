@@ -109,12 +109,11 @@
 //! `measure_cross_section`, which is downstream of the defect and whose own
 //! contribution is bounded by one cell.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::finish::rest_detector::{RestReferenceChoice, detect_rest};

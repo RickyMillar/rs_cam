@@ -67,11 +67,10 @@
 //! It reads declarations, not callers. The compile of every crate that
 //! links `rs_cam_core` is the proof that no caller outside it remains.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

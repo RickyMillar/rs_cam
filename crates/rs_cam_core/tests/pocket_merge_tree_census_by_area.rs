@@ -35,11 +35,12 @@
 //! and the output folder (default: `<temp dir>/merge_tree`). The probe asserts nothing about the
 //! counts: it is an instrument, not a gate.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::fmt::Write as _;

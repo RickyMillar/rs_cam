@@ -109,6 +109,10 @@ pub struct OperationSpec {
 
 /// Safety metadata for dressups that can alter topology or move order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent dressup permission that the dressups read by name; the constructor takes enums"
+)]
 pub struct OperationTransformCapabilities {
     /// Master permission for either rapid-order transform. Operations may
     /// independently impose the narrower global/depth/continuity constraints
@@ -199,19 +203,51 @@ pub struct OperationTransformCapabilities {
     pub finished_edge: bool,
 }
 
+/// May cutting segments be reordered globally by XY proximity?
+/// The first argument of [`OperationTransformCapabilities::new`] (F027).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalReorder {
+    Allowed,
+    Forbidden,
+}
+
+/// Must the toolpath keep its depth-pass order?
+/// The second argument of [`OperationTransformCapabilities::new`] (F027).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DepthOrder {
+    Required,
+    Free,
+}
+
+/// Is the toolpath one continuous trace that a reorder or a link can break?
+/// The third argument of [`OperationTransformCapabilities::new`] (F027).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathContinuity {
+    Required,
+    Free,
+}
+
+/// May `apply_link_moves` bridge two fragments with a stay-down link?
+/// The fourth argument of [`OperationTransformCapabilities::new`] (F027).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkMoves {
+    Allowed,
+    Forbidden,
+}
+
 impl OperationTransformCapabilities {
     pub const fn new(
-        allows_global_rapid_reorder: bool,
-        requires_depth_order: bool,
-        continuous_path_required: bool,
-        allows_link_moves: bool,
+        global_reorder: GlobalReorder,
+        depth_order: DepthOrder,
+        continuity: PathContinuity,
+        link_moves: LinkMoves,
     ) -> Self {
         Self {
             allows_rapid_reorder: true,
-            allows_global_rapid_reorder,
-            requires_depth_order,
-            continuous_path_required,
-            allows_link_moves,
+            allows_global_rapid_reorder: matches!(global_reorder, GlobalReorder::Allowed),
+            requires_depth_order: matches!(depth_order, DepthOrder::Required),
+            continuous_path_required: matches!(continuity, PathContinuity::Required),
+            allows_link_moves: matches!(link_moves, LinkMoves::Allowed),
             ramp_fold_lap_cap: None,
             planner_applies_segment_merge: false,
             helix_floor_lap: false,

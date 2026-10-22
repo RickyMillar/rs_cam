@@ -53,13 +53,15 @@
 //! here, since a generic helper cannot know which fixture (wanaka,
 //! v3-scaled-wanaka, or a future third caller) it is running against.
 
-#![allow(dead_code)]
 #![allow(
-    clippy::unwrap_used,
+    dead_code,
+    reason = "each test binary that includes this module uses only part of it"
+)]
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::path::PathBuf;
@@ -110,7 +112,11 @@ impl BandMap {
         if col < 0.0 || row < 0.0 || col >= self.cols as f64 || row >= self.rows as f64 {
             return 0;
         }
-        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_sign_loss,
+            clippy::cast_possible_truncation,
+            reason = "test code accepts the style lints cast_possible_truncation, cast_sign_loss"
+        )]
         let idx = row as usize * self.cols + col as usize;
         self.codes[idx]
     }

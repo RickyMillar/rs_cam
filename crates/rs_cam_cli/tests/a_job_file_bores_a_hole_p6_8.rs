@@ -22,12 +22,10 @@
 //! cargo test -p rs_cam_cli -q --test a_job_file_bores_a_hole_p6_8
 //! ```
 
-#![allow(
-    // SAFETY: test code; a failed fixture is a failed test.
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code; a failed fixture is a failed test."
 )]
 
 use std::path::{Path, PathBuf};

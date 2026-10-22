@@ -67,6 +67,10 @@ use crate::stock::dexel::{LatticeWindow, MaterialMask};
 /// The floor of level `z`: material counts when it stands above
 /// `z + FRESH_MATERIAL_THRESHOLD_MM`, the floor below which the simulator
 /// itself calls material absent. Every rest rule of this module reads it.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the dexel grid holds f32 heights, so the floor is compared in f32"
+)]
 fn standing_floor(z: f64) -> f32 {
     (z + FRESH_MATERIAL_THRESHOLD_MM) as f32
 }
@@ -178,7 +182,7 @@ pub(crate) fn regions_per_level(
     let dilate_mm = 2.0 * tool_radius + cell;
     // Two cells more than the dilation, so no grown region touches the
     // window edge (marching squares drops a loop that touches it).
-    let pad_cells = (dilate_mm / cell).ceil() as usize + 2;
+    let pad_cells = crate::util::steps::steps(dilate_mm, cell).unwrap_or(0) + 2;
     let window = grid.lattice_window([ox_min, oy_min, ox_max, oy_max], pad_cells);
     let limit = (WINDOW_SPAN_OVER_GRID * (grid.rows + 2 * pad_cells))
         * (WINDOW_SPAN_OVER_GRID * (grid.cols + 2 * pad_cells));
@@ -198,6 +202,10 @@ pub(crate) fn regions_per_level(
             let (row, col) = (i / window.cols, i % window.cols);
             let row = window.row0 + row as isize;
             let col = window.col0 + col as isize;
+            #[expect(
+                clippy::cast_sign_loss,
+                reason = "row >= 0 and col >= 0 are tested before each cast on the same line"
+            )]
             let on_grid =
                 row >= 0 && col >= 0 && (row as usize) < grid.rows && (col as usize) < grid.cols;
             *r = *r && on_grid;
@@ -365,7 +373,7 @@ pub(crate) fn levels_in_reach(
             RestLevelsFallback::StockOffOutline,
         ));
     }
-    let pad_cells = (band / cell).ceil() as usize + 2;
+    let pad_cells = crate::util::steps::steps(band, cell).unwrap_or(0) + 2;
     let window = grid.lattice_window([px_min, py_min, px_max, py_max], pad_cells);
     let limit = (WINDOW_SPAN_OVER_GRID * (grid.rows + 2 * pad_cells))
         * (WINDOW_SPAN_OVER_GRID * (grid.cols + 2 * pad_cells));
@@ -554,6 +562,11 @@ pub(crate) fn standing_near(
 impl StandingNear<'_> {
     /// True when the contour point `p` passes material, or when the grid
     /// holds no answer in its band. See [`standing_near`].
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a far point saturates its cell index, and the range test rejects it; r and c are cast only after `on_grid` proves them not negative"
+    )]
     pub(crate) fn keeps(&self, p: P2) -> bool {
         let grid = self.grid;
         let cell = grid.cell_size;
@@ -680,11 +693,15 @@ pub(crate) enum ColumnTop {
 /// covers in part, so no material in the disc stands above the result.
 /// This is the safe side for a rapid; [`levels_in_reach`] takes the other
 /// side, because a skipped level makes no motion.
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "row and col are cast only after the `row < 0 || col < 0` test skips a negative index"
+)]
 pub(crate) fn column_top(stock: &TriDexelStock, xy: P2, reach: f64) -> ColumnTop {
     let grid = &stock.z_grid;
     let cell = grid.cell_size;
     let band = reach + cell;
-    let pad_cells = (band / cell).ceil() as usize + 1;
+    let pad_cells = crate::util::steps::steps(band, cell).unwrap_or(0) + 1;
     let window = grid.lattice_window([xy.x, xy.y, xy.x, xy.y], pad_cells);
     let mut seen = false;
     let mut top: Option<f32> = None;
@@ -728,6 +745,11 @@ fn paths_bbox<'a>(paths: impl IntoIterator<Item = &'a Vec<P2>>) -> Option<[f64; 
 /// (P6.3: no chord). Each segment marks only the cells of its own box
 /// grown by `band`, so the cost follows the path length, not the window
 /// area times the segment count.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a far point saturates its cell index, and the clamp to `0..rows` and `0..cols` bounds it; r and c are at least r0 and c0, which are at least 0"
+)]
 fn band_mask(
     grid: &crate::stock::dexel::DexelGrid,
     window: &LatticeWindow,
@@ -812,11 +834,9 @@ fn footprint_mask(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

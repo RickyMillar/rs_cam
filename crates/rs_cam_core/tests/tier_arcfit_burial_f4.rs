@@ -40,12 +40,12 @@
 //! `cargo test -p rs_cam_core --test tier_arcfit_burial_f4 -- --ignored
 //! --nocapture`. Results: `planning/tiered_finish_2026-09-30/RESULTS.md`.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;

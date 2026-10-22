@@ -36,9 +36,10 @@ pub use super::toolpath::ToolpathResult;
 /// prints; [`Self::status`] derives it. `ComputeStatus::Disabled` is never
 /// derived here, because [`ComputeStatus::effective`] adds it from
 /// `enabled`.
-// SAFETY: `Done` holds the result inline, as the `Option<ToolpathResult>`
-// field it replaces did. One value per toolpath, so the size is not a cost.
-#[allow(clippy::large_enum_variant)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "`Done` holds the result inline, as the `Option<ToolpathResult>` field it replaces did. One value per toolpath, so the size is not a cost."
+)]
 #[derive(Clone)]
 pub enum ToolpathRun {
     /// No run, or a cancelled run. No result.
@@ -597,7 +598,10 @@ impl Default for GuiState {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[expect(
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use rs_cam_core::gcode::{PostConfig, PostFormat};
 

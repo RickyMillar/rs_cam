@@ -66,11 +66,9 @@
 //! allowlist entry still matches a line: an entry that no longer describes
 //! the tree is an allowance nothing checks.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

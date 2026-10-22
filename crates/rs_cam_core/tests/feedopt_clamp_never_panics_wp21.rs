@@ -54,11 +54,10 @@
 //!   capped floor for reasons that have nothing to do with WP21. Arm (b)
 //!   measures the floor on the pass's own output instead.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::atomic::AtomicBool;

@@ -39,6 +39,10 @@ use super::{ExecutionContext, GeneratedToolpath, MeshInput, OperationError, Prep
 
 /// What a planner that owns its stock states about itself (W6.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent statement that the planner makes about itself"
+)]
 pub(crate) struct PlannerOwns {
     /// It seeds its own dexel stock from the seed stock
     /// (`RestUse::Planner`).

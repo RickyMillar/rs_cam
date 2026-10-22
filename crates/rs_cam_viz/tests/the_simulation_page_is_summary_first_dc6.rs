@@ -51,11 +51,10 @@
 //! air-cut emission tally, thousands of entries on a healthy cut, and it has
 //! been mistaken for a defect count before.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

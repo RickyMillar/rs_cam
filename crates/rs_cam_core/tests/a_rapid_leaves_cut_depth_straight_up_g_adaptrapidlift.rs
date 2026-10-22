@@ -39,12 +39,12 @@
 //! not union residue). The fix is the sub-cell-exact clearance query
 //! (`planning/rapid_safety_2026-08-28/RAPIDPLUNGETOL_PLAN.md` Option C).
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;
@@ -211,7 +211,7 @@ fn cut_pieces(tp: &rs_cam_core::toolpath::Toolpath) -> Vec<Vec<CutPiece>> {
             MoveType::Rapid => None,
             MoveType::ArcCW { i, j, .. } => Some((i, j, true)),
             MoveType::ArcCCW { i, j, .. } => Some((i, j, false)),
-            _ => {
+            MoveType::Linear { .. } => {
                 pieces.push(CutPiece {
                     a: P2::new(from.x, from.y),
                     b: P2::new(m.target.x, m.target.y),

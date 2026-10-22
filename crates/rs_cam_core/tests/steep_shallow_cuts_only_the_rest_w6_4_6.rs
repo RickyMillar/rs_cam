@@ -54,14 +54,15 @@
 //! cargo test -p rs_cam_core -q --test steep_shallow_cuts_only_the_rest_w6_4_6
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
-// SAFETY: the measurement of each arm is the record of W6.4.6.
-#![allow(clippy::print_stderr)]
+#![expect(
+    clippy::print_stderr,
+    reason = "the measurement of each arm is the record of W6.4.6."
+)]
 
 mod common;
 

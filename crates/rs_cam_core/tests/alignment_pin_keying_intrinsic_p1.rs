@@ -10,11 +10,11 @@
 //! planning/alignment_pins_review_2026-10-12/REVIEW.md, on the 65 x 65
 //! mini test piece with Ø6 dowels. The bar is the hole radius (3 mm).
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::alignment_pins::{

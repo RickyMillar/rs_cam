@@ -1480,6 +1480,10 @@ fn push_circle_vertices(
 /// `OverlayMechanism::UploadTime` and is missing from this key is the defect
 /// class the tool-profile ghost shipped with (audit §3.6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one overlay toggle that changes the upload, and the key compares all of them"
+)]
 pub(crate) struct OverlayUploadKey {
     tool_profile: bool,
     obstacles: bool,

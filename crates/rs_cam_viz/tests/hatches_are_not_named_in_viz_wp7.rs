@@ -11,11 +11,10 @@
 //! does not compile. This scan names the call site and the reason in one
 //! line, where a compile error names only the visibility.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

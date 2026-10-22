@@ -37,11 +37,12 @@
 //! cargo test -p rs_cam_core -q --features step --test a_down_face_gives_no_top_and_no_floor_p3_4
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

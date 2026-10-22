@@ -336,8 +336,10 @@ impl<B: ComputeBackend> AppController<B> {
             && let Some(local_pos) = setup.toolpath_indices().iter().position(|&i| i == tp_idx)
             && local_pos > 0
         {
-            // SAFETY: local_pos - 1 is valid since local_pos > 0
-            #[allow(clippy::indexing_slicing)]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "local_pos - 1 is valid since local_pos > 0"
+            )]
             let swap_with = setup.toolpath_indices()[local_pos - 1];
             let command = Command::ReorderToolpath(ReorderToolpathArgs {
                 from_index: tp_idx,
@@ -549,6 +551,13 @@ impl<B: ComputeBackend> AppController<B> {
     /// An MCP call cannot answer a GUI pop-up and must not wait on a click.
     /// When the stored cell is too coarse for the rest, the call refuses
     /// with the sentence the CLI prints, and the waiter resolves at once.
+    #[cfg_attr(
+        not(feature = "mcp"),
+        expect(
+            dead_code,
+            reason = "only the MCP server reads it, and the `mcp` feature is off"
+        )
+    )]
     pub(crate) fn handle_generate_toolpath_mcp(&mut self, tp_id: ToolpathId) {
         use rs_cam_core::session::generation_plan::{Scope, Step, plan};
 

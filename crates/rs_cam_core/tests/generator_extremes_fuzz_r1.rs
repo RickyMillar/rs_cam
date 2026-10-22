@@ -24,11 +24,10 @@
 //!   are pinned cheaply by `offset_polygon_degenerate_inputs_r1.rs`
 //!   (captured WANAKA asset + synthetic repeat-vertex contract test).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

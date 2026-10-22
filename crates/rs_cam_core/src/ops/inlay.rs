@@ -183,15 +183,13 @@ fn sample_line(
     depth_at: &(dyn Fn(P2) -> Option<f64> + Sync),
     top_z: f64,
 ) -> Runs {
-    #[allow(clippy::indexing_slicing)]
-    // SAFETY: `line` is a fixed-size [P2; 2] array.
     let (a, b) = (line[0], line[1]);
     let (dx, dy) = (b.x - a.x, b.y - a.y);
     let len = (dx * dx + dy * dy).sqrt();
     if len < 1e-10 {
         return Vec::new();
     }
-    let n = (len / sample_step).ceil() as usize;
+    let n = crate::util::steps::steps(len, sample_step).unwrap_or(0);
     let mut runs: Runs = Vec::new();
     let mut current: Vec<P3> = Vec::new();
     for i in 0..=n {
@@ -262,7 +260,10 @@ fn sample_batch(
 
 /// Emit every run of every sampled line. Polls `cancel` once per
 /// [`SCAN_CHUNK`] lines, the V-carve cadence (G9).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn emit_scan(
     tp: &mut Toolpath,
     lines: &[[P2; 2]],
@@ -343,7 +344,7 @@ pub fn inlay_pocket_toolpath_with_cancel(
 
     let overlap = params.floor_overlap.max(0.0);
     let pitch = floor_ring_pitch(params.floor_ridge, params.half_angle, params.tip_flat);
-    let rings = (overlap / pitch).ceil() as usize;
+    let rings = crate::util::steps::steps(overlap, pitch).unwrap_or(0);
     let z = params.top_z - params.pocket_depth;
     // The arc-carrying offset, flattened once to the op tolerance: a plain
     // `offset_polygon` turns the join arc at a reflex corner into its
@@ -476,7 +477,10 @@ pub fn inlay_plug_toolpath_with_cancel(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;

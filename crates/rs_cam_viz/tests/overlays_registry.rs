@@ -25,11 +25,11 @@
 //! (audit §4.5) — and the trigger lives in a `pub(crate)` struct an
 //! integration test cannot name.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::BTreeMap;

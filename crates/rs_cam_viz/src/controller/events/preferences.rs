@@ -113,8 +113,11 @@ impl<B: ComputeBackend> AppController<B> {
 
 #[cfg(test)]
 mod tests {
-    // SAFETY: test module; a failed unwrap or expect is a failed test.
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    #![expect(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        reason = "test module; a failed unwrap or expect is a failed test."
+    )]
 
     use rs_cam_core::budget::{MemoryBudget, MemoryLimit};
     use rs_cam_core::settings::{AppSettings, LoadedSettings};

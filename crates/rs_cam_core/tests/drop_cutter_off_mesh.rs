@@ -15,15 +15,14 @@
 //!    is a tool-size limit, so the test bounds the count (W14a, F152)
 //!    and runs with `heavy-tests`.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
     clippy::print_stdout,
     clippy::let_unit_value,
     clippy::redundant_clone,
-    noop_method_call
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader; test code accepts the style lints let_unit_value, redundant_clone"
 )]
 
 use rs_cam_core::ids::ToolpathId;

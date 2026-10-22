@@ -11,16 +11,15 @@
 //! the DXF. Good cutting moves sit on top of the DXF (distance ~0). So if
 //! any move's midpoint is far from all DXF edges, the test fails.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
     clippy::print_stdout,
     clippy::collapsible_if,
     clippy::field_reassign_with_default,
     clippy::let_unit_value,
-    dead_code
+    dead_code,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader; test code accepts the style lints collapsible_if, field_reassign_with_default, let_unit_value; the binary keeps helpers that not every test calls"
 )]
 
 mod common;

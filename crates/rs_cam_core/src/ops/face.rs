@@ -151,10 +151,7 @@ fn normalise_oneway(
         // Compute reference dot product from the first line's direction.
         let ref_dot = reference.or_else(|| {
             lines.first().map(|first| {
-                #[allow(clippy::indexing_slicing)]
-                // SAFETY: each line is a fixed-size [P2; 2] array
                 let dx = first[1].x - first[0].x;
-                #[allow(clippy::indexing_slicing)]
                 let dy = first[1].y - first[0].y;
                 dx * cos_a + dy * sin_a
             })
@@ -162,8 +159,6 @@ fn normalise_oneway(
 
         if let Some(ref_dot) = ref_dot {
             for line in &mut lines {
-                #[allow(clippy::indexing_slicing)]
-                // SAFETY: each line is a fixed-size [P2; 2] array
                 let dot = (line[1].x - line[0].x) * cos_a + (line[1].y - line[0].y) * sin_a;
                 // If this row goes the opposite way, swap its endpoints.
                 if dot * ref_dot < 0.0 {
@@ -177,7 +172,10 @@ fn normalise_oneway(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::geo::P3;

@@ -60,11 +60,10 @@
 //! flat-disc answer fails it. GATE 1 fails any stub that always relaxes, and
 //! GATE 4 fails any stub that relaxes too far.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::dexel_stock::TriDexelStock;

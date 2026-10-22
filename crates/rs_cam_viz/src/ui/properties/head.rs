@@ -438,12 +438,10 @@ fn draw_part_rows(
 }
 
 #[cfg(test)]
-#[allow(
-    // SAFETY: test code; a failed lookup is a failed test.
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code; a failed lookup is a failed test."
 )]
 mod tests {
     use super::*;

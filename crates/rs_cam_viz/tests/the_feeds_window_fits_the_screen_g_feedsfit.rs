@@ -44,11 +44,11 @@
 //! with its own window instead — the same shape as
 //! `the_extend_mode_really_does_overflow_up4`.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

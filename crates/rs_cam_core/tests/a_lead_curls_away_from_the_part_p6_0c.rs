@@ -62,14 +62,14 @@
 //! `the_lead_stays_where_the_side_is_free` fails. The P6.0c report holds
 //! the runs.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
-// The instruments print their tables.
-#![allow(clippy::print_stderr)]
+#![expect(clippy::print_stderr, reason = "The instruments print their tables.")]
 
 mod common;
 #[path = "common/source_scan.rs"]

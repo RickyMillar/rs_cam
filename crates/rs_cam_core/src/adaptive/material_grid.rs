@@ -49,7 +49,10 @@ pub(super) const CELL_CLEARED: u8 = 2;
 pub(super) const CELL_FRINGE: u8 = 3;
 
 impl MaterialGrid {
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Build a material grid from a polygon. Cells inside the polygon (and
     /// not inside holes) are marked as material.
     pub fn from_polygon(polygon: &Polygon2, cell_size: f64) -> Self {
@@ -96,7 +99,10 @@ impl MaterialGrid {
     /// [`CELL_CLEARED`] when none does. Sub-points outside the part are
     /// never stock, so a cell straddling a wall clears when the cutter
     /// reaches the wall.
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     pub(super) fn keep_fringe(&mut self, polygon: &Polygon2) {
         let mut sub = vec![0u16; self.cells.len()];
         for row in 0..self.rows {
@@ -133,7 +139,10 @@ impl MaterialGrid {
             .unwrap_or(0)
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Build a boolean grid caching which cells are inside the given polygon.
     /// Used to avoid repeated point-in-polygon calls during direction search.
     pub fn build_machinable_mask(
@@ -173,7 +182,10 @@ impl MaterialGrid {
         Some((row, col))
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Get cell value at world coordinates. Returns CELL_AIR for out-of-bounds.
     #[inline]
     pub(crate) fn get_at(&self, x: f64, y: f64) -> u8 {
@@ -250,7 +262,10 @@ impl MaterialGrid {
     }
 
     /// The capsule stamp behind [`Self::clear_segment`] (fringe grids).
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     fn clear_capsule_inner(
         &mut self,
         a: P2,
@@ -329,7 +344,10 @@ impl MaterialGrid {
         }
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     fn clear_circle_inner(
         &mut self,
         cx: f64,
@@ -419,7 +437,10 @@ impl MaterialGrid {
         }
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// G-RESTLEVELS (`RestUse::LevelMask`): the start state of one level.
     /// Each material cell whose centre (`origin + index * cell_size`, the
     /// point [`Self::from_polygon`] samples) reads no material in `mask`
@@ -451,7 +472,10 @@ impl MaterialGrid {
         self.material_count as f64 / self.total_solid as f64
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Fast check if a position is inside the machinable region using the cached mask.
     #[inline]
     pub fn is_machinable(&self, mask: &[bool], x: f64, y: f64) -> bool {
@@ -463,8 +487,10 @@ impl MaterialGrid {
 
     /// The machinable lattice point nearest `(x, y)` within `radius`, if
     /// any: where a cutter of that radius can stand to touch `(x, y)`.
-    // SAFETY: rows and columns are clamped to the grid before indexing.
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "rows and columns are clamped to the grid before indexing."
+    )]
     pub(super) fn nearest_machinable_within(
         &self,
         mask: &[bool],
@@ -535,7 +561,10 @@ impl MaterialGrid {
             .map(|(r, c)| r * self.cols + c)
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Search for nearest material within a given radius from (x, y).
     fn find_nearest_material_in_radius(
         &self,
@@ -605,7 +634,10 @@ impl MaterialGrid {
         dist
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Look up boundary distance at world coordinates (nearest cell).
     /// Returns 0.0 for out-of-bounds (treated as on-boundary).
     #[inline]
@@ -616,7 +648,10 @@ impl MaterialGrid {
         }
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Compute gradient of the boundary distance field using central differences.
     /// Returns (gx, gy) pointing away from the nearest boundary (toward interior).
     pub fn boundary_gradient(&self, distances: &[f64], x: f64, y: f64) -> (f64, f64) {

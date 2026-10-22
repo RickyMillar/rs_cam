@@ -335,6 +335,10 @@ fn ascii_look_alike(ch: char) -> &'static str {
 /// driven by `decimals`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the struct mirrors the post TOML file, and each bool is one key of that file"
+)]
 pub struct PostDefinition {
     pub name: String,
     pub decimals: Decimals,
@@ -558,10 +562,10 @@ static MACH3: OnceLock<PostDefinition> = OnceLock::new();
 /// The shipped GRBL post definition.
 pub fn grbl() -> &'static PostDefinition {
     GRBL.get_or_init(|| {
-        // SAFETY: the shipped TOML is validated by `posts_load_*` tests below.
-        // A malformed shipped TOML would fail those tests in CI before
-        // reaching production, so unwrap-on-init is acceptable here.
-        #[allow(clippy::expect_used)]
+        #[expect(
+            clippy::expect_used,
+            reason = "the shipped TOML is validated by `posts_load_*` tests below. A malformed shipped TOML would fail those tests in CI before reaching production, so unwrap-on-init is acceptable here."
+        )]
         PostDefinition::from_toml(GRBL_TOML).expect("shipped grbl.toml must parse")
     })
 }
@@ -569,8 +573,10 @@ pub fn grbl() -> &'static PostDefinition {
 /// The shipped grblHAL post definition.
 pub fn grblhal() -> &'static PostDefinition {
     GRBLHAL.get_or_init(|| {
-        // SAFETY: see `grbl()` — shipped TOML is test-gated.
-        #[allow(clippy::expect_used)]
+        #[expect(
+            clippy::expect_used,
+            reason = "see `grbl()` — shipped TOML is test-gated."
+        )]
         PostDefinition::from_toml(GRBLHAL_TOML).expect("shipped grblhal.toml must parse")
     })
 }
@@ -578,8 +584,10 @@ pub fn grblhal() -> &'static PostDefinition {
 /// The shipped LinuxCNC post definition.
 pub fn linuxcnc() -> &'static PostDefinition {
     LINUXCNC.get_or_init(|| {
-        // SAFETY: see `grbl()` — shipped TOML is test-gated.
-        #[allow(clippy::expect_used)]
+        #[expect(
+            clippy::expect_used,
+            reason = "see `grbl()` — shipped TOML is test-gated."
+        )]
         PostDefinition::from_toml(LINUXCNC_TOML).expect("shipped linuxcnc.toml must parse")
     })
 }
@@ -587,14 +595,20 @@ pub fn linuxcnc() -> &'static PostDefinition {
 /// The shipped Mach3 post definition.
 pub fn mach3() -> &'static PostDefinition {
     MACH3.get_or_init(|| {
-        // SAFETY: see `grbl()` — shipped TOML is test-gated.
-        #[allow(clippy::expect_used)]
+        #[expect(
+            clippy::expect_used,
+            reason = "see `grbl()` — shipped TOML is test-gated."
+        )]
         PostDefinition::from_toml(MACH3_TOML).expect("shipped mach3.toml must parse")
     })
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

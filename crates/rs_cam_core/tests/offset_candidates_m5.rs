@@ -43,8 +43,16 @@
 //! Behind the `heavy-tests` feature to keep the dev loop fast:
 //! `cargo test -p rs_cam_core --features heavy-tests --test offset_candidates_m5`.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-#![allow(clippy::indexing_slicing, clippy::print_stdout, clippy::print_stderr)]
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+#![expect(
+    clippy::indexing_slicing,
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
+)]
 
 mod common;
 

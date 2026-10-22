@@ -21,12 +21,11 @@
 //! the tolerance. Test 4 checks the invariant directly: no fed move with an
 //! XY length starts from another position than it did in the input.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;

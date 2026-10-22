@@ -35,12 +35,6 @@ pub fn apply_command(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::*;
     use rs_cam_core::session::SetToolpathParamArgs;

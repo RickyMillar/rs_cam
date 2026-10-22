@@ -33,11 +33,11 @@
 //! The b21e3294 lesson: a test that checks that a style is SET does not
 //! check that the layout is RIGHT. Arms 1 and 2 measure the layout.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

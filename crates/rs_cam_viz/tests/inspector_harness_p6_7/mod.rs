@@ -6,7 +6,10 @@
 //! `the_selection_section_writes_edits_only_p4_3.rs`: three passes settle
 //! the layout and find the label, one pass presses and one pass releases.
 
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "each test binary that includes this module uses only part of it"
+)]
 
 use std::path::PathBuf;
 use std::sync::Arc;

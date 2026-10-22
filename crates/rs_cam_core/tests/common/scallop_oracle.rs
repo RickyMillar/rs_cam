@@ -81,6 +81,11 @@
 //! (`classification_columns_ab_m3.rs`) remains the right tool, and the M4
 //! evidence run cross-checks the two on the headline comparison.
 
+#![allow(
+    unused_imports,
+    reason = "each test binary that includes this module uses only part of it"
+)]
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -583,10 +588,10 @@ impl EnvelopeOracle {
 
         let standing_threshold = params.dial_mm * params.standing_mult;
 
-        // FOUR parallel grids are read at the same index (`true_z`,
-        // `machined_z`, `resid`, `slope_deg`); an `enumerate()` over one of
-        // them would only move the indexing to the other three.
-        #[allow(clippy::needless_range_loop)]
+        #[expect(
+            clippy::needless_range_loop,
+            reason = "FOUR parallel grids are read at the same index (`true_z`, `machined_z`, `resid`, `slope_deg`); an `enumerate()` over one of them would only move the indexing to the other three."
+        )]
         for idx in 0..self.grid.len() {
             let t = self.true_z[idx];
             if t.is_nan() {
@@ -795,7 +800,6 @@ impl OracleReport {
 // `quantile` live in `rs_cam_core::metrology::spacing`, extracted verbatim
 // from this module. Re-exported here so every M4 consumer keeps its
 // import path.
-#[allow(unused_imports)]
 pub use rs_cam_core::metrology::spacing::{PathStructure, path_structure};
 
 // ---------------------------------------------------------------------------
@@ -868,7 +872,6 @@ fn save_rgba(path: &Path, buf: &[u8], w: u32, h: u32) {
 // Small helpers
 // ---------------------------------------------------------------------------
 
-#[allow(unused_imports)]
 pub use rs_cam_core::metrology::spacing::quantile;
 
 fn frac(n: usize, d: usize) -> f64 {
@@ -959,5 +962,4 @@ pub fn closed_form_cusp_quantile(r: f64, d: f64, q: f64) -> f64 {
     closed_form_cusp(r, d * q)
 }
 
-#[allow(dead_code)]
 fn _p2_unused(_: P2) {}

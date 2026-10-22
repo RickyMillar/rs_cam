@@ -107,5 +107,7 @@ On a shared machine run every cargo command through `scripts/cargo_lane.sh
 <cargo args>`. It serialises cargo jobs and waits for free memory; two
 concurrent builds have crashed the machine.
 
-Every production `allow(...)` carries a `// SAFETY:` line; the lint rules for
-test modules are in `crates/rs_cam_core/CLAUDE.md`.
+A lint exception is `#[expect(lint, reason = "..")]`; the workspace lints deny
+`#[allow]` and a missing reason, so the compiler holds this rule (W16). An inner
+`#![allow(.., reason = "..")]` stays only where the lint fires in some feature
+sets or test binaries; the test-module rules are in `crates/rs_cam_core/CLAUDE.md`.

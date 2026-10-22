@@ -113,7 +113,10 @@ pub struct SurfaceHeightmap {
 
 impl SurfaceHeightmap {
     /// Build via rayon-parallelized drop-cutter queries at each grid cell.
-    #[allow(clippy::too_many_arguments, clippy::expect_used)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     pub fn from_mesh(
         mesh: &TriangleMesh,
         index: &SpatialIndex,
@@ -132,7 +135,10 @@ impl SurfaceHeightmap {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     pub fn from_mesh_with_cancel(
         mesh: &TriangleMesh,
         index: &SpatialIndex,
@@ -235,7 +241,10 @@ impl SurfaceHeightmap {
     /// # Panics
     /// When `z_values.len() != covered.len()` or either differs from
     /// `rows * cols`: the pairing is this type's whole invariant.
-    #[allow(clippy::too_many_arguments, clippy::panic)]
+    #[expect(
+        clippy::panic,
+        reason = "the pairing of z values, coverage and grid size is the whole invariant of this type; the doc above names the panic"
+    )]
     #[must_use]
     pub fn from_parts(
         z_values: Vec<f64>,
@@ -264,7 +273,10 @@ impl SurfaceHeightmap {
         }
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// O(1) typed cell read: the Z **and** whether mesh backs it.
     ///
     /// # Panics
@@ -287,7 +299,7 @@ impl SurfaceHeightmap {
     /// Typed cell read by flat row-major index — for the loops that walk a
     /// parallel grid (the dexel stock's `z_grid`) and index both by the same
     /// `row * cols + col`. [`GridZ::OutOfBounds`] past the end.
-    #[allow(clippy::indexing_slicing)] // bounds checked on the line above
+    #[expect(clippy::indexing_slicing, reason = "bounds checked on the line above")]
     #[inline]
     #[must_use]
     pub fn z_at_index(&self, i: usize) -> GridZ {
@@ -328,7 +340,10 @@ impl SurfaceHeightmap {
         Some((row as usize, col as usize))
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// O(1) **untyped** Z lookup: the stored number whether or not mesh backs
     /// the cell. The escape hatch, named so the choice is visible at the call
     /// site — clearing strategies that must take stock beside the model down
@@ -418,7 +433,10 @@ impl SurfaceHeightmap {
     }
 
     /// Whether the cell's vertical ray actually passes through the mesh.
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     #[inline]
     pub fn covered_at(&self, row: usize, col: usize) -> bool {
         self.covered[row * self.cols + col]
@@ -480,8 +498,11 @@ pub struct SlopeMap {
 /// Compute normal, angle, curvature from derivatives and store at `idx`.
 /// Shared by the [`SlopeMap`] constructors.
 #[inline(always)]
-#[allow(clippy::indexing_slicing)] // SAFETY: idx bounded by caller loop ranges
-#[allow(clippy::needless_pass_by_value)] // tuple of mut refs is the natural pattern
+#[expect(clippy::indexing_slicing, reason = "idx bounded by caller loop ranges")]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "tuple of mut refs is the natural pattern"
+)]
 fn store_slope_cell(
     out: (&mut [V3], &mut [f64], &mut [f64]),
     idx: usize,
@@ -497,7 +518,6 @@ fn store_slope_cell(
 }
 
 impl SlopeMap {
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
     /// Build a SlopeMap from a grid of Z values using finite differences.
     ///
     /// Central differences for interior cells, forward/backward at boundaries.
@@ -525,8 +545,10 @@ impl SlopeMap {
             let row_above = (row - 1) * cols;
             let row_below = (row + 1) * cols;
             for col in 1..cols.saturating_sub(1) {
-                // SAFETY: row in 1..rows-1 and col in 1..cols-1 ensures all offsets are in bounds
-                #[allow(clippy::indexing_slicing)]
+                #[expect(
+                    clippy::indexing_slicing,
+                    reason = "row in 1..rows-1 and col in 1..cols-1 ensures all offsets are in bounds"
+                )]
                 let (dz_dx, dz_dy, d2z_dx2, d2z_dy2) = {
                     let zc = z_values[row_base + col];
                     let zl = z_values[row_base + col - 1];
@@ -558,7 +580,10 @@ impl SlopeMap {
                 if row > 0 && row < rows - 1 && col > 0 && col < cols - 1 {
                     continue;
                 }
-                #[allow(clippy::indexing_slicing)]
+                #[expect(
+                    clippy::indexing_slicing,
+                    reason = "the cell is a boundary cell of a rows x cols grid and each branch reads only neighbours that its own test proves exist"
+                )]
                 let dz_dx = if col == 0 && cols > 1 {
                     (z_values[row * cols + 1] - z_values[row * cols]) * inv_cs
                 } else if col == cols - 1 && cols > 1 {
@@ -569,7 +594,10 @@ impl SlopeMap {
                     0.0
                 };
 
-                #[allow(clippy::indexing_slicing)]
+                #[expect(
+                    clippy::indexing_slicing,
+                    reason = "the cell is a boundary cell of a rows x cols grid and each branch reads only neighbours that its own test proves exist"
+                )]
                 let dz_dy = if row == 0 && rows > 1 {
                     (z_values[cols + col] - z_values[col]) * inv_cs
                 } else if row == rows - 1 && rows > 1 {
@@ -581,7 +609,10 @@ impl SlopeMap {
                 };
 
                 let d2z_dx2 = if col > 0 && col < cols - 1 {
-                    #[allow(clippy::indexing_slicing)]
+                    #[expect(
+                        clippy::indexing_slicing,
+                        reason = "0 < col < cols - 1 (tested on the line above), so col - 1 and col + 1 are in the row"
+                    )]
                     let v = (z_values[row * cols + col + 1] - 2.0 * z_values[row * cols + col]
                         + z_values[row * cols + col - 1])
                         * inv_cs_sq;
@@ -591,7 +622,10 @@ impl SlopeMap {
                 };
 
                 let d2z_dy2 = if row > 0 && row < rows - 1 {
-                    #[allow(clippy::indexing_slicing)]
+                    #[expect(
+                        clippy::indexing_slicing,
+                        reason = "0 < row < rows - 1 (tested on the line above), so row - 1 and row + 1 are in the grid"
+                    )]
                     let v = (z_values[(row + 1) * cols + col] - 2.0 * z_values[row * cols + col]
                         + z_values[(row - 1) * cols + col])
                         * inv_cs_sq;
@@ -644,7 +678,10 @@ impl SlopeMap {
     /// angle is unaffected by the choice. Curvature keeps the same central
     /// second differences as `from_z_grid` (zero where a neighbour is
     /// missing).
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     pub fn from_z_grid_max_gradient(
         z_values: &[f64],
         rows: usize,
@@ -724,35 +761,50 @@ impl SlopeMap {
         }
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Slope angle at cell indices (radians from horizontal).
     #[inline]
     pub fn angle_at(&self, row: usize, col: usize) -> f64 {
         self.angles[row * self.cols + col]
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Surface normal at cell indices.
     #[inline]
     pub fn normal_at(&self, row: usize, col: usize) -> V3 {
         self.normals[row * self.cols + col]
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Mean curvature at cell indices.
     #[inline]
     pub fn curvature_at(&self, row: usize, col: usize) -> f64 {
         self.curvatures[row * self.cols + col]
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Slope angle at world coordinates. Returns None for out-of-bounds.
     pub fn angle_at_world(&self, x: f64, y: f64) -> Option<f64> {
         let (row, col) = self.world_to_cell(x, y)?;
         Some(self.angles[row * self.cols + col])
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Mean curvature at world coordinates. Returns None for out-of-bounds.
     pub fn curvature_at_world(&self, x: f64, y: f64) -> Option<f64> {
         let (row, col) = self.world_to_cell(x, y)?;
@@ -788,11 +840,10 @@ pub fn classify_steep_shallow(slope_map: &SlopeMap, threshold_deg: f64) -> Vec<b
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

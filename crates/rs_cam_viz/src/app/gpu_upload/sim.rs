@@ -152,8 +152,10 @@ fn build_collisions(inputs: &CollisionInputs<'_>, gpu: &Gpu<'_>, resources: &mut
             p[1] + display_shift.y as f32,
             p[2] + display_shift.z as f32,
         ];
-        // SAFETY: densities has same length as positions
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "densities has same length as positions"
+        )]
         let t = densities[i] as f32 / max_density as f32;
         // Yellow (isolated) → Red (clustered)
         let color = [0.95, 0.8 * (1.0 - t) + 0.1, 0.1 * (1.0 - t)];

@@ -18,7 +18,10 @@
 //!    map to its parent), or it is in the caller's exclusion list.
 //!    `mod.rs` and `tests.rs` are excluded everywhere.
 
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "each test binary that includes this module uses only part of it"
+)]
 
 use std::path::{Path, PathBuf};
 

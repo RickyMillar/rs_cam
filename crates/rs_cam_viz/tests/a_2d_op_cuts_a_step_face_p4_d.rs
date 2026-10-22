@@ -35,11 +35,12 @@
 //! cargo test -p rs_cam_viz -q --test a_2d_op_cuts_a_step_face_p4_d
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;
@@ -161,7 +162,9 @@ fn click(session: &mut ProjectSession, index: usize, key: MatchKey) {
     let tc = session.toolpath_configs()[index].clone();
     let edit = match session.click_edit(&tc, SelectionTarget::Op, key).unwrap() {
         ClickEdit::Selection(edit) => edit,
-        other => panic!("a click on a 2D op edits its op selection: {other:?}"),
+        other @ ClickEdit::BoundaryToSelection { .. } => {
+            panic!("a click on a 2D op edits its op selection: {other:?}")
+        }
     };
     assert!(
         matches!(edit, SelectionEdit::AddPick(_)),

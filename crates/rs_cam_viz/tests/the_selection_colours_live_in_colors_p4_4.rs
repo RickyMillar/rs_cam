@@ -23,11 +23,12 @@
 //! - Claim 3: `ReportDetector::changed` that does not store the new report
 //!   (it always answers "changed"): the no-change frame fired an upload.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::Path;

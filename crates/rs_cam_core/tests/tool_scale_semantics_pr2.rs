@@ -24,11 +24,12 @@
 //! 4. **`FinishSurface::cell_source` consistency** (PR-0 integration). The
 //!    provenance tag must name the radius that actually sized the grid.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::tool_config::ToolMaterial;

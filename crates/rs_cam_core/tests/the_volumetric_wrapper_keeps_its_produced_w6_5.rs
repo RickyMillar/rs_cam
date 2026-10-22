@@ -31,14 +31,16 @@
 //! cargo test -p rs_cam_core -q --test the_volumetric_wrapper_keeps_its_produced_w6_5
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
-// The per-arm diff and the bless notice ARE the record.
-#![allow(clippy::print_stderr)]
+#![expect(
+    clippy::print_stderr,
+    reason = "The per-arm diff and the bless notice ARE the record."
+)]
 
 mod common;
 

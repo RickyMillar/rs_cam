@@ -53,11 +53,12 @@ pub(crate) fn toolpath_heights_json(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     //! GUI/MCP parity of the floor (geometry selection P3.3, L-17).

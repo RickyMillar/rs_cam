@@ -47,7 +47,10 @@ fn z_color(z: f64, z_min: f64, z_range: f64) -> (f32, f32, f32) {
 }
 
 /// Serialize a toolpath's cutting and rapid moves into line segment vertex strings.
-#[allow(clippy::indexing_slicing)] // i starts at 1, so i-1 is always valid
+#[expect(
+    clippy::indexing_slicing,
+    reason = "i starts at 1, so i-1 is always valid"
+)]
 fn serialize_toolpath_lines(toolpath: &Toolpath) -> ToolpathLineData {
     let (z_min, _z_max, z_range) = toolpath_cutting_z_range(toolpath);
 
@@ -227,7 +230,10 @@ if (rapidVerts.length > 0) {{
 }
 
 /// Emit grid helper and axes for the 3D scene.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn html_grid_axes(
     out: &mut String,
     grid_size: f64,
@@ -278,7 +284,10 @@ animate();
     );
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Generate an SVG showing the toolpath from a top-down (XY) view.
 /// Z is encoded as color: deeper = darker blue, higher = lighter/warmer.
 pub fn toolpath_to_svg(toolpath: &Toolpath, width: f64, height: f64) -> String {
@@ -362,7 +371,10 @@ pub fn toolpath_to_svg(toolpath: &Toolpath, width: f64, height: f64) -> String {
     svg
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Generate a 3D HTML viewer for a toolpath without a mesh.
 ///
 /// Shows the toolpath with a wireframe stock outline box.
@@ -571,7 +583,10 @@ pub struct SimPhase<'a> {
     pub label: String,
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Generate a stacked multi-tool simulation viewer.
 ///
 /// Plays through multiple phases sequentially (e.g. roughing then rest
@@ -619,7 +634,7 @@ pub fn stacked_simulation_3d_html(
                     global_z_min = global_z_min.min(m.target.z);
                     global_z_max = global_z_max.max(m.target.z);
                 }
-                _ => {}
+                MoveType::Rapid => {}
             }
         }
     }
@@ -1155,8 +1170,10 @@ fn serialize_stock_mesh(mesh: &StockMesh) -> (String, String, String) {
     let mut verts = String::new();
     let mut i = 0;
     while i + 2 < mesh.vertices.len() {
-        // SAFETY: loop guard ensures i+2 is in bounds
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "loop guard ensures i+2 is in bounds"
+        )]
         let _ = write!(
             verts,
             "{},{},{},",
@@ -1170,8 +1187,10 @@ fn serialize_stock_mesh(mesh: &StockMesh) -> (String, String, String) {
     let mut colors = String::new();
     let mut j = 0;
     while j + 2 < mesh.colors.len() {
-        // SAFETY: loop guard ensures j+2 is in bounds
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "loop guard ensures j+2 is in bounds"
+        )]
         let _ = write!(
             colors,
             "{:.3},{:.3},{:.3},",
@@ -1196,8 +1215,10 @@ fn stock_mesh_bbox(vertices: &[f32]) -> BoundingBox3 {
     let mut bbox = BoundingBox3::empty();
     let mut i = 0;
     while i + 2 < vertices.len() {
-        // SAFETY: loop guard ensures i+2 is in bounds
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "loop guard ensures i+2 is in bounds"
+        )]
         bbox.expand_to(P3::new(
             f64::from(vertices[i]),
             f64::from(vertices[i + 1]),
@@ -1213,7 +1234,6 @@ fn stock_mesh_bbox(vertices: &[f32]) -> BoundingBox3 {
 /// Renders the stock surface with per-vertex depth coloring (from `dexel_stock_to_mesh`).
 /// Optionally overlays toolpath lines. No animation, no re-simulation — pure visualization
 /// of an existing `StockMesh`.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub fn stock_mesh_to_3d_html(mesh: &StockMesh, toolpaths: &[&Toolpath], title: &str) -> String {
     let mut html = String::with_capacity(2 * 1024 * 1024);
 

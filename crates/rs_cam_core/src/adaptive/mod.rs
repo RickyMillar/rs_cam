@@ -424,11 +424,11 @@ pub(crate) fn inset_piece_outlines(outline: &Polygon2, tool_radius: f64) -> Vec<
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use std::f64::consts::PI;
@@ -1685,7 +1685,10 @@ mod tests {
     //
     // Run with `cargo test -p rs_cam_core --lib adaptive::tests::instrument_corner_burrow -- --nocapture`.
     #[test]
-    #[allow(clippy::print_stderr)]
+    #[expect(
+        clippy::print_stderr,
+        reason = "the test prints its measurements for the reader"
+    )]
     fn instrument_corner_burrow_50mm_square() {
         // 50mm × 50mm square, 6mm tool (radius 3mm), 50% stepover.
         // Matches the user's "burrowing into a corner" report shape.
@@ -1853,7 +1856,6 @@ mod tests {
     //
     // Output: target/adaptive_corner_burrow_50mm.svg (relative to repo root)
     #[test]
-    #[allow(clippy::print_stderr)]
     fn render_corner_burrow_svg() {
         let polygon = square_polygon(50.0);
         let tool_radius = 3.0;
@@ -1881,7 +1883,10 @@ mod tests {
     // dashed orange. Cut groups numbered by emission order. `label`
     // appears at the top of the legend so different variants are easy
     // to tell apart in side-by-side viewing.
-    #[allow(clippy::print_stderr)]
+    #[expect(
+        clippy::print_stderr,
+        reason = "the test prints its measurements for the reader"
+    )]
     fn write_segments_svg(
         segments: &[AdaptiveSegment],
         polygon: &Polygon2,
@@ -2089,7 +2094,10 @@ mod tests {
     // for is_clear_path (≤ 20% material along the line). The "cheap fix"
     // INVERTS that test: extend when the line DOES cross material, so the
     // cutter cleans residue along the way instead of skipping over it.
-    #[allow(clippy::print_stderr, dead_code)]
+    #[expect(
+        clippy::print_stderr,
+        reason = "the investigation helper prints its findings for the reader"
+    )]
     fn apply_boundary_extend_fix(
         polygon: &Polygon2,
         tool_radius: f64,
@@ -2221,7 +2229,6 @@ mod tests {
     // ── Variant renders ────────────────────────────────────────────────
 
     #[test]
-    #[allow(clippy::print_stderr)]
     fn render_corner_burrow_cheap_fix_svg() {
         let polygon = square_polygon(50.0);
         let tool_radius = 3.0;
@@ -2291,7 +2298,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::print_stderr)]
     fn render_corner_burrow_proper_fix_svg() {
         let polygon = square_polygon(50.0);
         let tool_radius = 3.0;
@@ -2333,7 +2339,10 @@ mod tests {
     //
     // Output: target/adaptive_shape_<name>_{baseline,proper}.svg
     #[test]
-    #[allow(clippy::print_stderr)]
+    #[expect(
+        clippy::print_stderr,
+        reason = "the test prints its measurements for the reader"
+    )]
     fn render_shape_matrix_svg() {
         // Shape definitions. Each returns a (name, polygon) pair sized to
         // ~50mm extent so they're directly comparable to the square test.
@@ -2533,7 +2542,10 @@ mod tests {
     // step numbered. Lets us see whether the initial direction-search
     // takes a wandering path before settling into the main spiral.
     #[test]
-    #[allow(clippy::print_stderr)]
+    #[expect(
+        clippy::print_stderr,
+        reason = "the test prints its measurements for the reader"
+    )]
     fn render_corner_burrow_initial_wiggle_svg() {
         use std::io::Write;
 

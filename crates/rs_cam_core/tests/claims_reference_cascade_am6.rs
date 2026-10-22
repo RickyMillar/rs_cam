@@ -41,16 +41,15 @@
 //! shank is Ø6. Rest measured on a grid coarser than the tip is not evidence
 //! about what a finish pass left (`feedback_rest_measurement_prerequisites`).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
-// The measured numbers ARE the record this sentry exists to keep. Printing
-// them on every run is what makes a regression readable in CI output instead
-// of only as a threshold that tripped.
-#![allow(clippy::print_stderr)]
+#![expect(
+    clippy::print_stderr,
+    reason = "The measured numbers ARE the record this sentry exists to keep. Printing them on every run is what makes a regression readable in CI output instead of only as a threshold that tripped."
+)]
 
 mod common;
 

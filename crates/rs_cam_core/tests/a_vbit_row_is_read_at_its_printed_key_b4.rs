@@ -76,12 +76,12 @@
 //!   `depth_derate_diameter_for_cutter`) read one nominal diameter, so
 //!   the two give one band at each depth.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
@@ -318,7 +318,7 @@ fn gate_bounds(
             approach_to_max, ..
         } => approach_to_max.bounds,
         ChiploadVerdict::Exceeds { triggering, .. } => triggering.bounds,
-        other => panic!(
+        other @ ChiploadVerdict::Unmodeled { .. } => panic!(
             "{op:?} {} mm: the gate must judge the cut: {other:?}",
             tool.diameter
         ),

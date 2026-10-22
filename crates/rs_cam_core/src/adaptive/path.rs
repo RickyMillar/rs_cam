@@ -215,7 +215,6 @@ impl LinkLoad {
 
     /// The legal lattice point nearest `(x, y)` within R whose entry the
     /// planner models ([`Self::entry_modelled`]).
-    #[allow(clippy::indexing_slicing)] // bounded lattice scan
     fn helix_entry_near(&self, grid: &MaterialGrid, mask: &[bool], x: f64, y: f64) -> Option<P2> {
         let r = self.tool_radius;
         let cell = grid.cell_size;
@@ -414,10 +413,10 @@ const CUT_ONLY_MAX_AIR_STEPS: usize = 4;
 /// cuts stock and ends after [`CUT_ONLY_MAX_AIR_STEPS`] steps in air, cut
 /// back to its last step in stock (the final wall pass walks the whole
 /// region boundary for the slivers left along it).
-// SAFETY: not memory safety; the walker's state (grid, cursor, output) and
-// its two mode flags are one call, and a struct for them would be built
-// once per call site.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "not memory safety; the walker's state (grid, cursor, output) and its two mode flags are one call, and a struct for them would be built once per call site."
+)]
 fn emit_capped_walk_with(
     path: &[P2],
     grid: &mut MaterialGrid,
@@ -668,7 +667,10 @@ pub(super) fn adaptive_segments(
     adaptive_segments_with_debug(polygon, &params, cancel, None, None)
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Generate 2D adaptive segments and optionally record detailed debug spans.
 pub(crate) fn adaptive_segments_with_debug(
     polygon: &Polygon2,
@@ -1324,8 +1326,7 @@ pub(crate) fn adaptive_segments_with_debug(
         let path_debug_bounds = path_bounds(&path);
 
         if path_len >= 2 {
-            // SAFETY: path.len() >= 2 checked on line above
-            #[allow(clippy::expect_used)]
+            #[expect(clippy::expect_used, reason = "path.len() >= 2 checked on line above")]
             let endpoint = *path.last().expect("path is non-empty after loop");
             last_pos = Some(endpoint);
             pass_endpoints.insert(endpoint);
@@ -1537,7 +1538,10 @@ const SHORT_CUT_UNIQUE_FRACTION: f64 = 0.10;
 /// the long Cuts wouldn't (i.e. `unique_fraction >= SHORT_CUT_UNIQUE_FRACTION`).
 /// Preceding Rapid/Link approaches are dropped along with the Cuts
 /// they introduce (consistent with the original blunt filter).
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 fn filter_short_cuts_by_redundancy(
     segments: &[AdaptiveSegment],
     polygon: &Polygon2,
@@ -1625,7 +1629,10 @@ fn filter_short_cuts_by_redundancy(
     filtered
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 pub(crate) fn apply_residue_mop_cleanup(
     polygon: &Polygon2,
     params: &AdaptiveParams,
@@ -1767,7 +1774,7 @@ pub(crate) fn apply_contour_parallel_residue_cleanup(
             && matches!(seg, AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_))
         {
             let mut has_cut_next = false;
-            #[allow(clippy::indexing_slicing)] // i < filtered.len()
+            #[expect(clippy::indexing_slicing, reason = "i < filtered.len()")]
             for next in &filtered[i + 1..] {
                 match next {
                     AdaptiveSegment::Cut(_) => {
@@ -1798,7 +1805,10 @@ pub(crate) fn apply_contour_parallel_residue_cleanup(
     if machinable_vec.is_empty() {
         return out;
     }
-    #[allow(clippy::indexing_slicing)] // machinable_vec non-empty checked above
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "machinable_vec non-empty checked above"
+    )]
     let machinable = &machinable_vec[0];
     let machinable_mask = MaterialGrid::build_machinable_mask(
         machinable,
@@ -1943,7 +1953,6 @@ fn finish_walls_once(
     out.extend(mop);
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 /// Walks the MaterialGrid directly, emitting one Cut per reachable
 /// residue patch. See doc on `apply_residue_mop_cleanup`.
 pub(crate) fn mop_residue_into_segments(
@@ -2394,8 +2403,10 @@ fn mop_capped_step(
     None
 }
 
-// SAFETY: a private helper; the arguments are the search state.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a private helper; the arguments are the search state."
+)]
 fn mop_capped_step_of(
     grid: &MaterialGrid,
     mask: &[bool],
@@ -2483,7 +2494,6 @@ fn mop_capped_step_of(
 ///
 /// Reference: Autodesk patent US7831332 (Fusion HSM transition
 /// portion), Bieterman & Sandström (Boeing, ~2003), Ren & Bi (2014).
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 fn emit_helical_starter_pocket(
     grid: &mut MaterialGrid,
     machinable_mask: &[bool],
@@ -2647,7 +2657,10 @@ fn is_narrow_machinable(machinable: &Polygon2, tool_radius: f64, stepover: f64) 
 /// emits every loop, but a post-spiral call emits only the loops that
 /// would actually remove residue. Adjacent emitted loops are connected
 /// by Link when within 6R via a clear path, else by Rapid.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn contour_parallel_segments(
     machinable: &Polygon2,
     grid: &mut MaterialGrid,
@@ -2741,9 +2754,12 @@ fn contour_parallel_segments(
                 if path.len() < 2 {
                     continue;
                 }
-                #[allow(clippy::indexing_slicing)] // path.len() >= 2 checked above
+                #[expect(clippy::indexing_slicing, reason = "path.len() >= 2 checked above")]
                 let entry = path[0];
-                #[allow(clippy::expect_used)]
+                #[expect(
+                    clippy::expect_used,
+                    reason = "path.len() >= 2 (checked above), so last() is Some"
+                )]
                 let end = *path.last().expect("path non-empty");
 
                 match last_pos {
@@ -2805,7 +2821,7 @@ fn contour_passes_material(contour: &[P2], grid: &MaterialGrid) -> bool {
     let mut total = 0usize;
     let mut i = 0;
     while i < contour.len() {
-        #[allow(clippy::indexing_slicing)] // i < contour.len() bounded above
+        #[expect(clippy::indexing_slicing, reason = "i < contour.len() bounded above")]
         let p = contour[i];
         if grid.is_material(p.x, p.y) {
             hits += 1;
@@ -2827,12 +2843,12 @@ fn contour_passes_material(contour: &[P2], grid: &MaterialGrid) -> bool {
 fn rotate_contour_to_nearest(contour: &[P2], target: P2) -> Vec<P2> {
     let mut verts = contour;
     if verts.len() >= 2 {
-        #[allow(clippy::indexing_slicing)] // len >= 2 checked
+        #[expect(clippy::indexing_slicing, reason = "len >= 2 checked")]
         let (first, last) = (verts[0], verts[verts.len() - 1]);
         let dx = first.x - last.x;
         let dy = first.y - last.y;
         if dx * dx + dy * dy < 1e-18 {
-            #[allow(clippy::indexing_slicing)] // len >= 2 checked
+            #[expect(clippy::indexing_slicing, reason = "len >= 2 checked")]
             let trimmed = &contour[..contour.len() - 1];
             verts = trimmed;
         }
@@ -2851,9 +2867,9 @@ fn rotate_contour_to_nearest(contour: &[P2], target: P2) -> Vec<P2> {
             best_idx = i;
         }
     }
-    #[allow(clippy::indexing_slicing)] // best_idx in 0..verts.len()
+    #[expect(clippy::indexing_slicing, reason = "best_idx in 0..verts.len()")]
     let mut rotated = verts[best_idx..].to_vec();
-    #[allow(clippy::indexing_slicing)] // best_idx in 0..verts.len()
+    #[expect(clippy::indexing_slicing, reason = "best_idx in 0..verts.len()")]
     rotated.extend_from_slice(&verts[..best_idx]);
     rotated
 }
@@ -2880,15 +2896,15 @@ fn contour_walk_points(contour: &[P2], cell_size: f64) -> Vec<P2> {
     if contour.len() < 2 {
         return path;
     }
-    #[allow(clippy::indexing_slicing)] // contour.len() >= 2 checked above
+    #[expect(clippy::indexing_slicing, reason = "contour.len() >= 2 checked above")]
     let start = contour[0];
     path.push(start);
 
     let n = contour.len();
     for i in 0..n {
-        #[allow(clippy::indexing_slicing)] // i, (i+1)%n bounded by contour len
+        #[expect(clippy::indexing_slicing, reason = "i, (i+1)%n bounded by contour len")]
         let a = contour[i];
-        #[allow(clippy::indexing_slicing)]
+        #[expect(clippy::indexing_slicing, reason = "i, (i+1)%n bounded by contour len")]
         let b = contour[(i + 1) % n];
         let dx = b.x - a.x;
         let dy = b.y - a.y;
@@ -2905,7 +2921,10 @@ fn contour_walk_points(contour: &[P2], cell_size: f64) -> Vec<P2> {
     path
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Simplify a path using the Douglas-Peucker algorithm.
 pub(crate) fn simplify_path(points: &[P2], tolerance: f64) -> Vec<P2> {
     if points.len() <= 2 {
@@ -3002,11 +3021,15 @@ pub(crate) fn simplify_path_keeping_reversals(
         max_idx = points.len() / 2;
     }
     if max_dist > tolerance || leaves_region {
-        // SAFETY: 0 < max_idx < points.len() - 1, both slices are in bounds.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "0 < max_idx < points.len() - 1, both slices are in bounds."
+        )]
         let mut left = simplify_path_keeping_reversals(&points[..=max_idx], tolerance, region);
-        // SAFETY: 0 < max_idx < points.len() - 1, both slices are in bounds.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "0 < max_idx < points.len() - 1, both slices are in bounds."
+        )]
         let right = simplify_path_keeping_reversals(&points[max_idx..], tolerance, region);
         left.pop();
         left.extend(right);
@@ -3173,11 +3196,9 @@ impl crate::compute::spans::RuntimeLabel for AdaptiveRuntimeAnnotation {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod link_load_tests {
     //! G-ADAPTLINKLOAD: a keep-down link is a pass-load cut or nothing.

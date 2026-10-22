@@ -68,11 +68,11 @@
 //!   geometric cap does not reach them and the pass still overwrites their
 //!   operator-tuned feeds. That is a side finding, not WP22 work.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::atomic::AtomicBool;

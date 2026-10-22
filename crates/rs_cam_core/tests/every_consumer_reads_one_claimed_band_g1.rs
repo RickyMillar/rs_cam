@@ -53,11 +53,10 @@
 //!   `(3.175 / 6.0)^0.61 = 0.678252514240`, band 0.016956312856 -
 //!   0.027130100570.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};

@@ -43,13 +43,6 @@
 //! whether it holds the field and picks its arm from the answer. A config
 //! that gains or loses `depth_per_pass` moves between arms on its own.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::feeds::suggest::{

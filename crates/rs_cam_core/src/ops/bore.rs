@@ -123,9 +123,11 @@ pub fn centre_radius(diameter: f64, tool_diameter: f64) -> f64 {
 pub fn turn_count(depth: f64, pitch: f64) -> usize {
     let turns = (depth / pitch).ceil();
     if turns.is_finite() && turns >= 1.0 {
-        // SAFETY: a finite count of at least one; a depth of a few metres
-        // at the smallest pitch is far below `usize::MAX`.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a finite count of at least one; a depth of a few metres at the smallest pitch is far below `usize::MAX`."
+        )]
         let n = turns as usize;
         n
     } else {
@@ -163,7 +165,10 @@ fn on_circle(centre: P2, radius: f64, angle: f64, z: f64) -> P3 {
 
 /// One helix from `from_z` to `to_z` on `radius`, in `turns` whole turns,
 /// starting and ending at angle 0.
-#[allow(clippy::too_many_arguments)] // SAFETY: each argument is one helix input
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one helix input"
+)]
 fn helix(
     tp: &mut Toolpath,
     centre: P2,
@@ -289,7 +294,11 @@ pub fn bore_hole(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::toolpath::MoveType;

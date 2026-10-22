@@ -805,8 +805,10 @@ impl MachineProfile {
         match &self.spindle {
             SpindleConfig::Variable { min_rpm, max_rpm } => rpm.clamp(*min_rpm, *max_rpm),
             SpindleConfig::Discrete { speeds } => {
-                // SAFETY: speeds is non-empty by construction; mid-index is always valid
-                #[allow(clippy::indexing_slicing)]
+                #[expect(
+                    clippy::indexing_slicing,
+                    reason = "speeds is non-empty by construction; mid-index is always valid"
+                )]
                 let fallback = &speeds[speeds.len() / 2];
                 *speeds
                     .iter()
@@ -901,7 +903,10 @@ impl MachineProfile {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

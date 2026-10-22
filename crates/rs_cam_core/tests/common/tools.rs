@@ -12,12 +12,13 @@
 //! `ball_control`), `finish_resolution_policy_pr3.rs` (`wanaka_taper`),
 //! `standing_material_channel_am9.rs` (the `ToolConfig` builders).
 
-#![allow(dead_code)]
 #![allow(
+    dead_code,
+    reason = "each test binary that includes this module uses only part of it"
+)]
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};

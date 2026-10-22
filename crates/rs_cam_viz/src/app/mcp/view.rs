@@ -435,9 +435,10 @@ impl RsCamApp {
     /// switches and modal opens behave identically to user clicks (they
     /// land later this same frame via `handle_events`). Returns a JSON
     /// echo of the resulting view state.
-    #[allow(clippy::too_many_arguments)]
-    // SAFETY: one parameter per optional field of the `set_ui_view` wire
-    // type, applied in order; a struct would only rename the destructure.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one parameter per optional field of the `set_ui_view` wire type, applied in order; a struct would only rename the destructure."
+    )]
     pub(super) fn mcp_set_ui_view(
         &mut self,
         ctx: &egui::Context,

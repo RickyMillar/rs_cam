@@ -26,11 +26,12 @@
 //!    playback frame (`map_stock_to_global`), is setup 1's final stock bit
 //!    for bit, and it adds no difference to the playback stock of its own.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::Arc;

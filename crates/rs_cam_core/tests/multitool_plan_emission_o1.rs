@@ -21,11 +21,11 @@
 //! recipe, resolved at generation time — that half is
 //! `tests/planned_tier_regions_boundary_o2.rs`.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

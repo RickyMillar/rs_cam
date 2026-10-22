@@ -31,11 +31,11 @@
 //! cargo test -p rs_cam_core --test rapid_check_catches_shallow_plunges_g_rapidplungetol
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};

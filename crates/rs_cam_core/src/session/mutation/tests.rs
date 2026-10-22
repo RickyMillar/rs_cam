@@ -2,11 +2,12 @@
 //!
 //! Moved out of `session/mutation.rs` by P4.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use crate::geo::{BoundingBox3, P3};

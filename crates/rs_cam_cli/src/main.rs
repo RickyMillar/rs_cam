@@ -1,6 +1,12 @@
 #![deny(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-#![allow(clippy::print_stderr)] // CLI uses eprintln! for user-facing diagnostic output
-#![allow(clippy::print_stdout)] // CLI `version` prints build info to stdout
+#![expect(
+    clippy::print_stderr,
+    reason = "CLI uses eprintln! for user-facing diagnostic output"
+)]
+#![expect(
+    clippy::print_stdout,
+    reason = "CLI `version` prints build info to stdout"
+)]
 
 mod command;
 mod job;
@@ -733,8 +739,11 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    // SAFETY: test module; a failed unwrap or a panic is a failed test.
-    #![allow(clippy::unwrap_used, clippy::panic)]
+    #![expect(
+        clippy::unwrap_used,
+        clippy::panic,
+        reason = "test module; a failed unwrap or a panic is a failed test."
+    )]
 
     use super::{Cli, Commands};
     use clap::Parser;

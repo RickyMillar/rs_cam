@@ -100,6 +100,10 @@ pub struct Finding {
 /// Per-post invariant configuration. `supports_m6` and `no_canned_cycles`
 /// come from the post data (F214); the rest is a per-dialect table.
 #[derive(Debug, Clone, Copy)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one independent dialect rule of the post"
+)]
 struct PostInvariants {
     /// Whether the post may emit `M6` for tool changes. Grbl 1.1
     /// doesn't support M6 in its parser; LinuxCNC and Mach3 do.
@@ -903,12 +907,6 @@ pub fn validate_machine_safety(gcode: &str, cfg: MachineSafety) -> Vec<Finding> 
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::*;
 

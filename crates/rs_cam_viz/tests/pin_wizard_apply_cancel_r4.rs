@@ -18,11 +18,11 @@
 //! 6. A drag on the plan view ACROSS the flip axis moves the set only
 //!    along the axis, in 0.1 mm steps, and only the draft.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::Arc;

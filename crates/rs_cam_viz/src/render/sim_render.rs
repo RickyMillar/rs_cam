@@ -78,7 +78,10 @@ struct ColorFingerprint {
 }
 
 impl ColorFingerprint {
-    #[allow(clippy::indexing_slicing)] // stride loop bounded by colors.len()
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "stride loop bounded by colors.len()"
+    )]
     fn from_colors(colors: &[[f32; 3]]) -> Self {
         let len = colors.len();
         let first = colors.first().copied().unwrap_or([0.0; 3]);
@@ -143,7 +146,10 @@ pub fn deviation_colors_for_mesh(
 impl SimMeshGpuData {
     /// Upload a StockMesh to the GPU using its embedded wood-tone colors.
     /// Returns `None` if the buffer exceeds GPU device limits.
-    #[allow(clippy::indexing_slicing)] // stride-3 loop bounded by num_verts = vertices.len()/3
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "stride-3 loop bounded by num_verts = vertices.len()/3"
+    )]
     pub fn from_heightmap_mesh(
         device: &wgpu::Device,
         limits: &GpuLimits,
@@ -236,7 +242,10 @@ impl SimMeshGpuData {
 
     /// Split a mesh into GPU-buffer-sized chunks. Each chunk gets its own
     /// vertex and index buffer with re-based indices starting from 0.
-    #[allow(clippy::indexing_slicing)] // triangle stride-3 access bounded by loop
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "triangle stride-3 access bounded by loop"
+    )]
     fn upload_chunked(
         device: &wgpu::Device,
         limits: &GpuLimits,
@@ -324,8 +333,7 @@ impl SimMeshGpuData {
         hm: &StockMesh,
         colors: &[[f32; 3]],
     ) -> bool {
-        // SAFETY: length checked on the line above.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(clippy::indexing_slicing, reason = "length checked on the line above.")]
         let Some(chunk) = (self.chunks.len() == 1).then(|| &mut self.chunks[0]) else {
             return false;
         };
@@ -369,8 +377,7 @@ impl SimMeshGpuData {
         }
 
         // Fast path: single chunk — write directly.
-        // SAFETY: length checked on the line above.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(clippy::indexing_slicing, reason = "length checked on the line above.")]
         if self.chunks.len() == 1 {
             let mesh_verts = Self::build_vertex_data(hm, colors);
             queue.write_buffer(
@@ -388,7 +395,10 @@ impl SimMeshGpuData {
     }
 
     /// Build the full vertex array (positions + normals + colors) from a StockMesh.
-    #[allow(clippy::indexing_slicing)] // stride-3 loops bounded by vertex/index counts
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "stride-3 loops bounded by vertex/index counts"
+    )]
     fn build_vertex_data(hm: &StockMesh, colors: &[[f32; 3]]) -> Vec<ColoredMeshVertex> {
         let num_verts = hm.vertices.len() / 3;
         // One colour per vertex. A shorter list was filled in silently and
@@ -1076,12 +1086,9 @@ impl ToolWireCtx {
 }
 
 #[cfg(test)]
-#[allow(
-    // SAFETY: test code; a failed lookup is a failed test.
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code; a failed lookup is a failed test."
 )]
 mod head_draw_tests {
     use super::*;

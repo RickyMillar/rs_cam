@@ -51,11 +51,9 @@
 //! (`rs_cam_viz/src/app/mcp.rs:4781-4782`). This is a report-only
 //! correction under Checkpoint B Q2.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::dexel_stock::{

@@ -42,12 +42,13 @@
 //!
 //! See `planning/acceptance_loop/findings/F-036b-feed-modulation-flag-plumbing.md`.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::ids::ToolpathId;

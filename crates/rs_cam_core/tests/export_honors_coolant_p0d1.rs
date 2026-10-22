@@ -58,11 +58,9 @@
 //! runs here, so every tool-load criterion reads `Unmodeled`; another
 //! file covers the gate.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::Arc;

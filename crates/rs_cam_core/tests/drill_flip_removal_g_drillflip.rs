@@ -47,11 +47,10 @@
 //! 5. A lateral setup abstains explicitly instead of carving a fabricated
 //!    Z-axis hole (G-DRILLLATERAL).
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::simulate::group_drill_op_to_global;

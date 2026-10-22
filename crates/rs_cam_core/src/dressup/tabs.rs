@@ -63,7 +63,10 @@ pub struct Tab {
 /// The fed lift onto a tab keeps the cut intent. It removes material, and a
 /// `Retract`-tagged feed is forbidden — see
 /// `tests/retract_intent_move_type_census_w6.rs`.
-#[allow(clippy::indexing_slicing)] // SAFETY: `cp` indexes `cutting_indices` and `cum_dist` (same length) below their length; each entry of `cutting_indices` indexes `toolpath.moves`
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`cp` indexes `cutting_indices` and `cum_dist` (same length) below their length; each entry of `cutting_indices` indexes `toolpath.moves`"
+)]
 pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64, floor_z: f64) -> Toolpath {
     use crate::toolpath::MoveIntent;
 
@@ -100,8 +103,10 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64, floor_z: f64
         let ddx = curr.x - prev.x;
         let ddy = curr.y - prev.y;
         let d = (ddx * ddx + ddy * ddy).sqrt();
-        // SAFETY: cum_dist is initialized with [0.0] and only grows
-        #[allow(clippy::expect_used)]
+        #[expect(
+            clippy::expect_used,
+            reason = "cum_dist is initialized with [0.0] and only grows"
+        )]
         cum_dist.push(cum_dist.last().expect("cum_dist starts with [0.0]") + d);
     }
 
@@ -491,7 +496,10 @@ fn dot(a: (f64, f64), b: (f64, f64)) -> f64 {
 /// not a side: an arc joint turns more than the run tolerance and no more
 /// than the arc step. So a circle has no side.
 #[must_use]
-#[allow(clippy::indexing_slicing)] // SAFETY: every index is taken modulo the length, or is below it by the loop bound
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every index is taken modulo the length, or is below it by the loop bound"
+)]
 pub fn straight_sides(ring: &[P2]) -> Vec<Side> {
     let (segs, total) = segments(ring);
     let n = segs.len();
@@ -642,7 +650,10 @@ pub enum AutoTabs {
 /// is as long as on the outline; `tab_corner_clearance` holds the
 /// shortening of the cut at an inside corner.
 #[must_use]
-#[allow(clippy::indexing_slicing)] // SAFETY: every index is taken modulo the length, or is below it by the loop bound
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every index is taken modulo the length, or is below it by the loop bound"
+)]
 pub fn auto_tabs(outline: &[P2], min_count: usize, tab_width: f64, tool_radius: f64) -> AutoTabs {
     let clearance = tab_corner_clearance(tab_width, tool_radius);
     let lift = straight_tab_lift(tab_width, tool_radius);
@@ -660,7 +671,11 @@ pub fn auto_tabs(outline: &[P2], min_count: usize, tab_width: f64, tool_radius: 
     }
     let capacity: Vec<usize> = eligible
         .iter()
-        .map(|&(_, len)| ((len / (lift + clearance)).floor() as usize).max(1))
+        .map(|&(_, len)| {
+            crate::util::steps::whole_steps(len, lift + clearance)
+                .unwrap_or(0)
+                .max(1)
+        })
         .collect();
     let mut per_side = vec![1_usize; eligible.len()];
     for _ in eligible.len()..min_count.max(eligible.len()) {
@@ -740,7 +755,10 @@ impl TabbedRing {
 /// short and drilled through. With the start in a gap, every zone is whole
 /// (when the tabs leave a gap at all).
 #[must_use]
-#[allow(clippy::indexing_slicing)] // SAFETY: every index is taken modulo the length, or is below it by the loop bound
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every index is taken modulo the length, or is below it by the loop bound"
+)]
 pub fn tabbed_ring(ring: &[P2], centres: &[P2], tab_width: f64, tool_radius: f64) -> TabbedRing {
     let (segs, total) = segments(ring);
     let chord = straight_tab_lift(tab_width, tool_radius);
@@ -1141,7 +1159,10 @@ fn contour_tabs(
 
 /// The closed ring `ring` started at distance `s` along it. A start inside
 /// a segment becomes a new vertex; a start on a vertex starts there.
-#[allow(clippy::indexing_slicing)] // SAFETY: every index is taken modulo the length, or is below it by the loop bound
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every index is taken modulo the length, or is below it by the loop bound"
+)]
 fn start_at(ring: &[P2], s: f64) -> Vec<P2> {
     let n = ring.len();
     let mut walked = 0.0;

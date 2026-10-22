@@ -8,7 +8,10 @@
 //! This source scan finds such a list anywhere under `src/`. The anchors
 //! prove the scan read the three sites that once held one.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::unwrap_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use std::path::{Path, PathBuf};
 

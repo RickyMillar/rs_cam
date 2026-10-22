@@ -38,11 +38,10 @@
 //! day someone reintroduces the shape by another route, and would fail on
 //! the many grids in this crate that are perfectly fine.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

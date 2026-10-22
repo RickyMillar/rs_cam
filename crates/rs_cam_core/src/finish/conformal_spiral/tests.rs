@@ -1,11 +1,12 @@
 //! Unit tests for the conformal-spiral research module. Moved out of
 //! `finish/conformal_spiral.rs` by P4; the module body is unchanged.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use super::{

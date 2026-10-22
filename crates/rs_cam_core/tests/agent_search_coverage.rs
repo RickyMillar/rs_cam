@@ -23,13 +23,13 @@
 //! Pre-fix, certain interior cells stay at ray_top = stock_top after
 //! the agent-search portion. Post-fix (Option A defensive cleanup), the
 //! per-Z residual sweep clears them before waterline runs.
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
     clippy::print_stderr,
-    clippy::manual_range_contains
+    clippy::manual_range_contains,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader; test code accepts the style lint manual_range_contains"
 )]
 
 use rs_cam_core::{

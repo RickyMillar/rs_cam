@@ -1,12 +1,11 @@
 //! Unit tests for the dressup transforms. Moved out of `dressup/mod.rs`
 //! by P4; the module body is unchanged.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::redundant_clone
+    clippy::redundant_clone,
+    reason = "test code: a panic is how a test reports a failure; test code accepts the style lint redundant_clone"
 )]
 
 use super::*;

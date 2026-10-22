@@ -9,11 +9,13 @@
 //! operations it generated. The reply now names the skipped ones and the
 //! enabled count, so the two runs read "5 + 2 of 7" and "7 + 0 of 7".
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#![cfg_attr(
+    feature = "mcp",
+    expect(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        reason = "test code: a panic is how a test reports a failure; only the MCP tests here make these calls"
+    )
 )]
 
 use rs_cam_core::ToolpathId;

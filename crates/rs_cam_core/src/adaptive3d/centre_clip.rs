@@ -117,7 +117,10 @@ impl CentreClip {
 
     /// Mark the cells near an edge, then give every other cell the side of
     /// its connected run, read once at the run's first cell.
-    #[allow(clippy::indexing_slicing)] // SAFETY: indices bounded by rows/cols checks
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "indices bounded by rows/cols checks"
+    )]
     fn classify(&mut self) {
         let step = self.cell * 0.5;
         for poly in &self.polygons {
@@ -381,11 +384,11 @@ pub(super) fn clip_segment(
 
 #[cfg(test)]
 mod tests {
-    #![allow(
+    #![expect(
         clippy::unwrap_used,
-        clippy::expect_used,
         clippy::panic,
-        clippy::indexing_slicing
+        clippy::indexing_slicing,
+        reason = "test code: a panic is how a test reports a failure"
     )]
 
     use super::*;

@@ -32,11 +32,10 @@
 //! cargo test -p rs_cam_core --test rapid_check_catches_real_side_strikes_g_rapid6497
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};

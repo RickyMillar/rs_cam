@@ -46,12 +46,11 @@
 //! heuristics) and the `Info` severity. Raising severity moves badge
 //! counts, which is a product decision, not a re-measurement.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::diagnostics::adapters::from_tool_load::diagnostics_from_load_verdict;

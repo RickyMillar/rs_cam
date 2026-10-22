@@ -108,12 +108,6 @@ fn classify_3d_terrain(model_bbox: Option<&BoundingBox3>) -> GeometryClass {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::*;
     use crate::geo::P3;

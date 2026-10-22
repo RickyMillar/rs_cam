@@ -186,7 +186,7 @@ pub(super) fn swept_path_is_all_air(
                 m.target.z - prev.z,
             );
             let len = (dx * dx + dy * dy + dz * dz).sqrt();
-            let steps = (len / step).ceil() as usize;
+            let steps = crate::util::steps::steps(len, step).unwrap_or(0);
             // 0 or 1 steps: the endpoints already are the whole segment.
             (1..steps).all(|k| {
                 let t = k as f64 / steps as f64;

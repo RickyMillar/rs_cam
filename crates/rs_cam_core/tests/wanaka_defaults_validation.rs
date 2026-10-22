@@ -13,14 +13,6 @@
 //! Fix 5 (existing-project re-derivation policy) is a planning-doc
 //! decision, no code, so it isn't validated here.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stderr
-)]
-
 use rs_cam_core::feeds::{
     FeedsInput, OperationFamily, PassRole, SetupContext, ToolGeometryHint, calculate,
 };

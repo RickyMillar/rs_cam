@@ -31,12 +31,12 @@
 //! Generate only — no simulation. The ladder is read from the annotated
 //! toolpath's `SpanKind::DepthPass` spans (`compute::spans::push_adaptive3d_spans`).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;

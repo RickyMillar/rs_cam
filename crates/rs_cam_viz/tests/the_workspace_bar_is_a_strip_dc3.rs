@@ -49,11 +49,9 @@
 //! behaviour; this arm owns the fact that DC3's render change did not
 //! reorder or delete a branch while moving the badge onto the tab.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_viz::ui::components::Role;

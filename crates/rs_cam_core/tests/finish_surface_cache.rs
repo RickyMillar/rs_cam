@@ -19,11 +19,9 @@
 //! `a_cached_surface_equals_a_fresh_build`, the `geometry_cache_g8` precedent
 //! that the cached object is the real answer and not a stale one.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;
@@ -50,7 +48,10 @@ use rs_cam_core::tool::MillingCutter;
 /// `geometry_cache_g8.rs::counter_lock`.
 fn cache_lock() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    #[allow(clippy::unwrap_used)] // poisoning would mean another test panicked
+    #[expect(
+        clippy::unwrap_used,
+        reason = "poisoning would mean another test panicked"
+    )]
     LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
 }
 

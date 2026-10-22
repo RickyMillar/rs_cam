@@ -18,11 +18,11 @@
 //!
 //! The viz half is `crates/rs_cam_viz/tests/gate_tests_read_no_operator_paths_f155.rs`.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 #[path = "common/source_scan.rs"]

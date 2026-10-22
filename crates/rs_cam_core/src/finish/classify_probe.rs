@@ -341,9 +341,10 @@ fn drop_cutter_probe_scratch(
         let mut cl = CLPoint::new(x, y);
         index.query_into(x, y, radius, scratch, tris);
         for &idx in tris.iter() {
-            // SAFETY: indices come from the SpatialIndex, which only stores
-            // valid face indices (same contract as `point_drop_cutter`).
-            #[allow(clippy::indexing_slicing)]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "indices come from the SpatialIndex, which only stores valid face indices (same contract as `point_drop_cutter`)."
+            )]
             probe.drop_cutter(&mut cl, &mesh.faces[idx]);
         }
         if cl.z < spec.min_z {
@@ -353,8 +354,7 @@ fn drop_cutter_probe_scratch(
         // a zero-radius query, i.e. the single-cell fast path.
         index.query_into(x, y, 0.0, scratch, tris);
         let covered = tris.iter().any(|&idx| {
-            // SAFETY: as above.
-            #[allow(clippy::indexing_slicing)]
+            #[expect(clippy::indexing_slicing, reason = "as above.")]
             mesh.faces[idx].contains_point_xy(x, y)
         });
         (cl.z, covered)
@@ -396,7 +396,10 @@ fn keep_higher(current: &mut f64, candidate: f64) {
 ///
 /// `z` / `covered` are the tile's own buffers, `(row1-row0)*(col1-col0)` long.
 /// Cells never touched keep `f64::NEG_INFINITY` / `false`.
-#[allow(clippy::indexing_slicing)] // SAFETY: every index is derived from the tile bounds below
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every index is derived from the tile bounds below"
+)]
 fn burn_faces_into_tile(
     mesh: &TriangleMesh,
     faces: impl Iterator<Item = usize>,
@@ -532,8 +535,10 @@ fn vertical_ray(
         let mut best = f64::NEG_INFINITY;
         let mut covered = false;
         for &idx in index.cell_triangles_at(x, y) {
-            // SAFETY: indices come from the SpatialIndex.
-            #[allow(clippy::indexing_slicing)]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "indices come from the SpatialIndex."
+            )]
             let face = &mesh.faces[idx];
             if !face.contains_point_xy(x, y) {
                 continue;
@@ -553,7 +558,10 @@ fn vertical_ray(
 
 // ── Arm 3: tile-parallel rasterisation ──────────────────────────────────
 
-#[allow(clippy::indexing_slicing)] // SAFETY: tile bounds are derived from spec.rows/cols
+#[expect(
+    clippy::indexing_slicing,
+    reason = "tile bounds are derived from spec.rows/cols"
+)]
 fn tile_raster(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -707,11 +715,9 @@ where
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

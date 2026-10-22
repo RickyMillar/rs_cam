@@ -26,11 +26,9 @@
 //!
 //! See `planning/acceptance_loop/findings/F-036a-feed-modulation-gcode-emission.md`.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#![expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::gcode::{emit_gcode, post};

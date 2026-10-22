@@ -194,6 +194,11 @@ pub fn pass_count(total_depth_mm: f64, step_mm: f64) -> Option<usize> {
     if passes > usize::MAX as f64 {
         return None;
     }
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "passes is finite, at least 1 and at most usize::MAX (checked above)"
+    )]
     Some(passes as usize)
 }
 
@@ -276,7 +281,11 @@ impl DepthStepping {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

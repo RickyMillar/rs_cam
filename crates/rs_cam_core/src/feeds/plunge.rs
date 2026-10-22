@@ -330,7 +330,11 @@ pub fn resolve_plunge(basis: &PlungeBasis, feed_mm_min: f64) -> Option<(f64, Plu
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::feeds::vendor_lut::{MaterialFamily, ToolFamily};

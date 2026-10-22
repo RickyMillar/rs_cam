@@ -20,11 +20,10 @@
 //! nearest tested point was the target of the rapid move 0 at 12 px, not
 //! the arc.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::geo::P3;

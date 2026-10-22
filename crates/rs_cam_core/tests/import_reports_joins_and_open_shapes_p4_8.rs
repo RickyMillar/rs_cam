@@ -22,11 +22,12 @@
 //! 6. A circle under a uniform scale with a rotation stays a `Circle` with
 //!    the scaled diameter; under a non-uniform scale or a skew it is a loop.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

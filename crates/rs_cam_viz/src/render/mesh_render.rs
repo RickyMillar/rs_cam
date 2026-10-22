@@ -63,7 +63,10 @@ impl MeshGpuData {
     /// smaller for typical meshes).
     ///
     /// Returns `None` if the buffer exceeds GPU device limits.
-    #[allow(clippy::indexing_slicing)] // vertex/triangle indices bounded by mesh invariants
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "vertex/triangle indices bounded by mesh invariants"
+    )]
     pub fn from_mesh(
         device: &wgpu::Device,
         limits: &GpuLimits,
@@ -148,7 +151,10 @@ impl MeshGpuData {
 /// vertex, and when a buffer exceeds the device limits. A length mismatch is
 /// a caller error — the colours are indexed by vertex — so it refuses rather
 /// than padding, which would mis-colour the part silently.
-#[allow(clippy::indexing_slicing)] // vertex/triangle indices bounded by mesh invariants
+#[expect(
+    clippy::indexing_slicing,
+    reason = "vertex/triangle indices bounded by mesh invariants"
+)]
 pub fn colored_mesh_gpu_data(
     device: &wgpu::Device,
     limits: &GpuLimits,
@@ -245,7 +251,10 @@ fn face_group_color(id: FaceGroupId) -> [f32; 3] {
 pub type VertexTransform<'a> =
     Option<Box<dyn Fn(rs_cam_core::geo::P3) -> rs_cam_core::geo::P3 + 'a>>;
 
-#[allow(clippy::indexing_slicing)] // vertex/triangle indices bounded by mesh invariants
+#[expect(
+    clippy::indexing_slicing,
+    reason = "vertex/triangle indices bounded by mesh invariants"
+)]
 pub fn enriched_mesh_gpu_data(
     device: &wgpu::Device,
     limits: &GpuLimits,

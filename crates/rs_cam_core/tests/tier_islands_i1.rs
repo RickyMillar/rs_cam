@@ -21,8 +21,15 @@
 //! rounding a Euclidean dilation leaves. The min-area FILTER, by contrast,
 //! counts CELLS — it is a population test on the mask, not a polygon test.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-#![allow(clippy::indexing_slicing)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+#![expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::geo::P2;
 use rs_cam_core::maps::grid::GridSpec;

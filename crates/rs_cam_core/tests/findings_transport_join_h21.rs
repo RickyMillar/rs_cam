@@ -32,13 +32,6 @@
 //! Report-only channels throughout: no gate consumes any of these and no
 //! verdict moves on them.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-
 use rs_cam_core::compute::catalog::ItemUse;
 use rs_cam_core::compute::config::BoundaryContainment;
 use rs_cam_core::compute::execute::GenerationFindings;

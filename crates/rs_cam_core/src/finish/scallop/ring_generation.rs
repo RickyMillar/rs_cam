@@ -161,8 +161,10 @@ fn refine_ring_chords(ring: Vec<(P3, bool)>, ctx: &RingLiftCtx<'_>) -> Vec<(P3, 
     }
     let mut out: Vec<(P3, bool)> = Vec::with_capacity(n * 2);
     for i in 0..n {
-        // SAFETY: i and (i + 1) % n are both in 0..n.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "i and (i + 1) % n are both in 0..n."
+        )]
         let (a, b) = (ring[i], ring[(i + 1) % n]);
         out.push(a);
         // Only chords between two KEPT points are ever fed along; the
@@ -194,23 +196,28 @@ fn dropped_arc_length_mm(ring: &[(P3, bool)]) -> f64 {
     // `ring[(i + 1) % n]`.
     let mut seg: Vec<f64> = Vec::with_capacity(n);
     for i in 0..n {
-        // SAFETY: `i` and `(i + 1) % n` are both in `0..n`.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "`i` and `(i + 1) % n` are both in `0..n`."
+        )]
         let (a, b) = (ring[i].0, ring[(i + 1) % n].0);
         seg.push(((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt());
     }
     let mut total = 0.0;
     for i in 0..n {
-        // SAFETY: `i` is in `0..n`, so `ring[i]` is in bounds.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "`i` is in `0..n`, so `ring[i]` is in bounds."
+        )]
         let kept = ring[i].1;
         if kept {
             continue;
         }
         let prev = (i + n - 1) % n;
-        // SAFETY: `prev` and `i` are both in `0..n`, and `seg` has length
-        // `n` (built above from the same range).
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "`prev` and `i` are both in `0..n`, and `seg` has length `n` (built above from the same range)."
+        )]
         {
             total += 0.5 * (seg[prev] + seg[i]);
         }
@@ -230,7 +237,10 @@ fn dropped_arc_length_mm(ring: &[(P3, bool)]) -> f64 {
 /// external `scallop_untouched_standing_h4` sentry, which cannot see a
 /// private item — can drive the cascade directly without a full mesh or
 /// toolpath generation.
-#[allow(clippy::too_many_arguments, clippy::expect_used)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub fn generate_scallop_rings(
     boundary: &Polygon2,
     mesh: &TriangleMesh,
@@ -269,7 +279,10 @@ pub fn generate_scallop_rings(
 /// Cancellable variant of [`generate_scallop_rings`]. Polls `cancel` once per
 /// ring (the expensive step: `ring_to_3d` runs a `point_drop_cutter` query per
 /// ring point).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub(super) fn generate_scallop_rings_with_cancel(
     boundary: &Polygon2,
     mesh: &TriangleMesh,
@@ -349,8 +362,10 @@ pub(super) fn generate_scallop_rings_with_cancel(
                 .collect();
             finite.sort_by(f64::total_cmp);
             if !finite.is_empty() {
-                // SAFETY: non-empty checked on the line above.
-                #[allow(clippy::indexing_slicing)]
+                #[expect(
+                    clippy::indexing_slicing,
+                    reason = "non-empty checked on the line above."
+                )]
                 let spread = (
                     finite[0],
                     finite[finite.len() / 2],
@@ -703,8 +718,10 @@ pub(super) fn rotate_ring(ring: &[(P3, bool)], start_idx: usize) -> Vec<(P3, boo
         return ring.to_vec();
     }
     let mut result = Vec::with_capacity(n);
-    // SAFETY: (start_idx + i) % n is always in 0..n
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "(start_idx + i) % n is always in 0..n"
+    )]
     for i in 0..n {
         result.push(ring[(start_idx + i) % n]);
     }

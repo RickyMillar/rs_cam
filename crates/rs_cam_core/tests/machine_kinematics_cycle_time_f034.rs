@@ -31,12 +31,11 @@
 //! Behind the `heavy-tests` feature to keep the dev loop fast:
 //! `cargo test -p rs_cam_core --features heavy-tests --test machine_kinematics_cycle_time_f034`.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;
@@ -268,7 +267,10 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
     /// Pin Drill also measured at 1:05 (65 s) on the same run — kept
     /// here as a future reference once per-axis kinematics + drill-op
     /// runtime accounting land.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "the measurement is on record for a future test; no test reads it yet"
+    )]
     const PIN_DRILL_MEASURED_S: f64 = 65.0;
     /// Back Rough is the only Setup 1 toolpath we keep; the others get
     /// skipped by id.

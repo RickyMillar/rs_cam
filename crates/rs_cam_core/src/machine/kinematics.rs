@@ -870,7 +870,10 @@ pub fn compute_cycle_time(
 /// `plunge_rate`, or (b) plunge from `safe_z` at `plunge_rate`.
 /// Integrated rest-to-rest, which is conservative for both this and
 /// [`surface_link_time`] equally — the comparison stays fair.
-#[allow(clippy::too_many_arguments)] // link geometry + machine envelope are irreducible inputs
+#[expect(
+    clippy::too_many_arguments,
+    reason = "link geometry + machine envelope are irreducible inputs"
+)]
 pub fn retract_link_time(
     from: P3,
     to: P3,
@@ -1072,8 +1075,10 @@ fn digest_moves(
     rapid_feed_mm_s: f64,
 ) -> Vec<MoveDigest> {
     let mut digests: Vec<MoveDigest> = Vec::with_capacity(toolpath.moves.len());
-    #[allow(clippy::indexing_slicing)]
-    // SAFETY: bounded by `toolpath.moves.len()`.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded by `toolpath.moves.len()`."
+    )]
     for i in 1..toolpath.moves.len() {
         let p0 = &toolpath.moves[i - 1].target;
         let p1 = &toolpath.moves[i].target;
@@ -1131,8 +1136,10 @@ fn walk_junctions(
     // Junction velocity entering move i — first move starts at rest.
     let mut v_in = 0.0;
     let n = digests.len();
-    #[allow(clippy::indexing_slicing)]
-    // SAFETY: i bounded by digests.len(); i+1 guarded by `i + 1 < n`.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "i bounded by digests.len(); i+1 guarded by `i + 1 < n`."
+    )]
     for i in 0..n {
         let v_cmd = digests[i].v_cmd_mm_s;
         // Junction with the next move. Last move ends at rest.
@@ -1524,11 +1531,10 @@ pub(crate) fn move_end_tangents(
 /// P2 (2026-09-07): `pub` so
 /// [`crate::machine::kinematic_utilization`] reads the SAME corner model the two
 /// integrators read. Do not reimplement it.
-// Shared integrator helper: the corner geometry genuinely needs both
-// directions, both commanded feeds, corner accel, δ, the optional clamp,
-// and the rapid flag. Bundling them into a struct would only obscure the
-// call sites in the two pairwise integrators above.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Shared integrator helper: the corner geometry genuinely needs both directions, both commanded feeds, corner accel, δ, the optional clamp, and the rapid flag. Bundling them into a struct would only obscure the call sites in the two pairwise integrators above."
+)]
 pub fn junction_velocity(
     dir_in: &[f64; 3],
     dir_out: &[f64; 3],
@@ -1604,11 +1610,10 @@ fn trapezoidal_time(length: f64, v_in: f64, v_out: f64, v_cmd: f64, accel: f64) 
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

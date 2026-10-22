@@ -102,12 +102,13 @@
 //! the repo — the same meaning `#[ignore]` carries everywhere else here. Both
 //! SKIP rather than fail when an input is absent.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::path::{Path, PathBuf};

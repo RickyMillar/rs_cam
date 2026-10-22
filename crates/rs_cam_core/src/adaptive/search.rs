@@ -101,7 +101,10 @@ pub(crate) fn tool_centre_pieces(polygon: &Polygon2, tool_radius: f64) -> Vec<Po
 
 /// Compute engagement fraction at position (cx, cy) with tool of given radius.
 ///
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Uses disk-area sampling: counts the fraction of grid cells within the
 /// tool circle that contain uncut material. This is more precise than
 /// circumference-only sampling (which only measures the engagement angle)
@@ -193,11 +196,10 @@ pub(crate) fn compute_engagement_arc(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod engagement_measure_tests {
     //! Closed-form oracle for the engagement measures (adaptive algorithm
@@ -620,8 +622,6 @@ const SWEPT_WIDTH_PRESENT: f64 = 1e-6;
 ///
 /// Returns 0 on no material, and at least [`SWEPT_WIDTH_PRESENT`] when the
 /// disc holds any material.
-// SAFETY: rows and columns are clamped to the grid before indexing.
-#[allow(clippy::indexing_slicing)]
 pub(crate) fn compute_swept_width(
     grid: &MaterialGrid,
     cx: f64,
@@ -647,8 +647,10 @@ pub(crate) fn compute_swept_width_with_slivers(
     swept_width_on(grid, cx, cy, radius, dir_angle, true, None)
 }
 
-// SAFETY: rows and columns are clamped to the grid before indexing.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "rows and columns are clamped to the grid before indexing."
+)]
 fn swept_width_on(
     grid: &MaterialGrid,
     cx: f64,
@@ -916,8 +918,11 @@ pub(crate) fn measure_step(
     }
     let (dx, dy) = (nx - from.x, ny - from.y);
     let n = (dx.hypot(dy) / grid.cell_size).ceil();
-    // `n` is a small positive count of cells (a step is a few cells long).
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "`n` is a small positive count of cells (a step is a few cells long)."
+    )]
     let n = n.max(1.0) as usize;
     let mut worst = reading;
     let mut prev = from;
@@ -1000,7 +1005,10 @@ pub(super) fn path_bounds(path: &[P2]) -> Option<ToolpathDebugBounds2> {
 ///
 /// When near a wall (boundary_distance < 2 × tool_radius), a tangential
 /// bias steers the tool along the wall instead of into it.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 #[cfg(test)]
 pub(crate) fn search_direction(
     grid: &MaterialGrid,
@@ -1044,7 +1052,6 @@ pub(crate) fn search_direction(
 ///
 /// Returns `None` if the next position would leave the machinable
 /// region; otherwise returns the chosen angle.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn search_direction_gradient(
     grid: &MaterialGrid,
     machinable_mask: &[bool],
@@ -1082,7 +1089,10 @@ pub(super) fn search_direction_gradient(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub(super) fn search_direction_with_metrics(
     grid: &MaterialGrid,
     machinable_mask: &[bool],
@@ -1362,7 +1372,10 @@ fn find_nearest_material_spread(
     find_nearest_material_spread_in_radius(grid, x, y, pass_endpoints, max_radius)
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 fn find_nearest_material_spread_in_radius(
     grid: &MaterialGrid,
     x: f64,
@@ -1411,7 +1424,10 @@ fn find_nearest_material_spread_in_radius(
 }
 
 /// Walk the machinable polygon boundary, sampling engagement at regular
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// intervals. Returns the boundary position with the best engagement
 /// that isn't too close to a previous endpoint.
 ///
@@ -1481,7 +1497,7 @@ fn walk_boundary_for_entry(
 /// Reference: Bieterman & Sandström (Boeing, ~2003), Ren & Bi (Int. J.
 /// Adv. Manuf. Tech., 2014). The "DT max" point is what BobCAD/
 /// Fusion/HSMWorks use as their helical-plunge seed.
-#[allow(clippy::indexing_slicing)] // bounded grid indexing
+#[expect(clippy::indexing_slicing, reason = "bounded grid indexing")]
 pub(crate) fn find_entry_via_distance_transform(
     grid: &MaterialGrid,
     machinable_mask: &[bool],

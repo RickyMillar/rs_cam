@@ -53,7 +53,12 @@
 //!   corrected — see
 //!   [`the_pre_conversion_safe_feed_was_three_times_the_vendor_maximum`].
 
-#![allow(clippy::expect_used, clippy::panic, clippy::print_stderr)]
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
+)]
 
 use rs_cam_core::ids::ToolpathId;
 use std::f64::consts::FRAC_PI_2;
@@ -95,7 +100,10 @@ fn wanaka_tool() -> ToolDefinition {
 /// feed/RPM/flutes. The `effective_chip_thickness_mm` is filled in by
 /// the simulator helper `effective_chip_thickness_mm(...)` — this is
 /// the line the fix changes.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the sample template is on record for a future test; no test calls it yet"
+)]
 fn half_engagement_sample(
     cutter: &dyn MillingCutter,
     tp_id: usize,

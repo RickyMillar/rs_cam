@@ -33,11 +33,12 @@
 //! (the peck stays at the registry default 3 mm), and claim 1 fails its
 //! non-vacuity guard (`CutGeometry` writes nothing on the Drill).
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};

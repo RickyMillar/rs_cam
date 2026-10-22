@@ -321,7 +321,10 @@ impl BandDispatch {
 
     /// Run the queued batch and hand each job's four published metrics to
     /// `patch`, **in job order**.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     pub(super) fn run_batch(
         &mut self,
         grid: &mut DexelGrid,
@@ -367,12 +370,6 @@ impl BandDispatch {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::*;
 

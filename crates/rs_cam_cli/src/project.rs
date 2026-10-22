@@ -784,7 +784,11 @@ fn check_toolpath_filters(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    clippy::fn_params_excessive_bools,
+    reason = "each parameter is one CLI flag or input, and the one caller in `main.rs` passes each by name from the parsed arguments"
+)]
 pub fn run_project_command(
     input: &Path,
     output_dir: &Path,
@@ -1578,7 +1582,10 @@ fn print_triage_report(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

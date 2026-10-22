@@ -22,11 +22,11 @@
 //! 2. The memo itself: a move of each of the six `FeedsInputs` fields runs
 //!    the build again (the model box has no session edit in this fixture).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

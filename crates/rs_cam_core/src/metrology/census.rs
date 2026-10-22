@@ -599,12 +599,6 @@ pub fn prize_cell(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::{
         COHERENCE_ANGLES_DEG, COHERENCE_TURN_DEG, TriField, VERDICT_ANGLE_INDEX, ZoneVerdict,

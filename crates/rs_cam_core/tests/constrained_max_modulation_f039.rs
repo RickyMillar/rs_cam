@@ -28,11 +28,11 @@
 //!
 //! See `planning/acceptance_loop/findings/F-039-constrained-max-feed-modulation.md`.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::dressup::feed_modulation::{

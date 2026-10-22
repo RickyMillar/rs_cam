@@ -177,7 +177,6 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 // ── Toolpath property tab system ─────────────────────────────────────────
 // The per-toolpath properties panel is chartered into five concern tabs
 // (IA cleanup W3.2, FINAL_DESIGN §4): Geometry (what to cut), Feeds & Speeds

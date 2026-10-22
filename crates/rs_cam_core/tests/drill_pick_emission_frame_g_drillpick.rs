@@ -50,11 +50,10 @@
 //! transform twice, which would put the flipped pick at (70, 40) rather
 //! than (50, 185).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

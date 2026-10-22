@@ -39,11 +39,11 @@
 //! a fraction of a cell proud of a marching-squares edge without the
 //! confinement having failed.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

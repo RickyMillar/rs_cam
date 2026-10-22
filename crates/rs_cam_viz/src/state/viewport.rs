@@ -10,6 +10,10 @@ use std::collections::HashMap;
 /// the Overlays panel disables these four rows outside Palette and says why
 /// (P6, audit §3.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one span-kind row of the Overlays filter"
+)]
 pub struct SpanKindFilter {
     pub show_entry: bool,
     pub show_lead_out: bool,
@@ -54,6 +58,10 @@ impl Default for ToolpathMoveVisibility {
 /// (`crate::ui::overlays::registry`), and the completeness sentry
 /// `overlays_registry.rs` fails if a field is added without a row. Add the
 /// row in the same commit as the field.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each `show_*` bool is one row of the Overlays registry; the doc above names the sentry that holds the pairing"
+)]
 pub struct ViewportState {
     pub show_grid: bool,
     /// The imported model surface — the plain (STL) draw loop AND the

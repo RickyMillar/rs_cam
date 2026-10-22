@@ -17,11 +17,10 @@
 //! 4. Non-vacuity: the panel calls `draw_connectors(` and names neither the
 //!    deleted badge nor its words.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::BTreeSet;

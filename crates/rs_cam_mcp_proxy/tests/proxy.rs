@@ -1,13 +1,12 @@
 //! Integration tests: the proxy in front of the fake MCP child
 //! (`rs_cam_mcp_fake_child`), driven over stdio as Claude Code drives it.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code; a failed unwrap or panic is the test failure report."
 )]
-// SAFETY: test code; a failed unwrap or panic is the test failure report.
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;

@@ -112,12 +112,12 @@
 //! The instrument records what it finds. The verdict lines compare against
 //! the pre-registered bars and say PASS or FAIL; the human reads FINDINGS.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;
@@ -1057,7 +1057,6 @@ fn eligible(mesh: &TriangleMesh, index: &SpatialIndex, candidates: &[P2]) -> Vec
         .collect()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_fixture(
     label: &str,
     height: impl Fn(f64, f64) -> f64 + Sync,

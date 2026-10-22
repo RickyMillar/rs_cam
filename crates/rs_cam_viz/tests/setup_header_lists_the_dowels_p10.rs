@@ -14,7 +14,11 @@
 //! The test calls `setup_file_header` directly: the header reads only the
 //! session, so the toolpaths need no generated result.
 
-#![allow(clippy::expect_used, clippy::indexing_slicing)]
+#![expect(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::compute::alignment_pins::{AlignmentPin, NOT_KEYED_WARNING};
 use rs_cam_core::compute::catalog::OperationConfig;

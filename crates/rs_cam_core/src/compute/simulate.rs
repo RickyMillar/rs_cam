@@ -941,11 +941,10 @@ where
 pub fn hash_operation_config(op: &crate::compute::catalog::OperationConfig) -> u64 {
     // serde-json output is stable for typed structs — field order is
     // determined by the struct definition, not by hash iteration.
-    // SAFETY: `OperationConfig` derives `Serialize` and holds no map, so
-    // serde-json cannot refuse it (it refuses only a non-string map key or
-    // a custom impl's error). `tests/a_signature_serialises_every_op_f065.rs`
-    // serialises the default of every operation type.
-    #[allow(clippy::expect_used)]
+    #[expect(
+        clippy::expect_used,
+        reason = "`OperationConfig` derives `Serialize` and holds no map, so serde-json cannot refuse it (it refuses only a non-string map key or a custom impl's error). `tests/a_signature_serialises_every_op_f065.rs` serialises the default of every operation type."
+    )]
     let bytes = serde_json::to_vec(op).expect("an OperationConfig always serialises (F065)");
     hash_with(|hasher| {
         bytes.hash(hasher);
@@ -1491,7 +1490,10 @@ fn added_material_slots(
 /// only while no Z-axis group has written the composite. The replace keeps
 /// an S5 resume correct, because the restored composite never survives a
 /// later Z-axis group.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn finish_group<F>(
     run: &mut PrefixState,
     group_stock: &TriDexelStock,
@@ -1568,7 +1570,10 @@ fn finish_group<F>(
 ///
 /// The caller decides whether to call this at all: a lateral group is
 /// skipped outright (G-LATERALSCRUB).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn stamp_playback_stock(
     run: &mut PrefixState,
     entry: &SimToolpathEntry,
@@ -2526,7 +2531,6 @@ fn apply_kinematics_cycle_time(
 /// REPORTED x/y stay in the group's own reporting frame (world for
 /// identity groups, stock-relative global for non-identity — origin
 /// never re-added, see `SetupTransformInfo::stock_origin_x`).
-#[allow(clippy::too_many_arguments)] // deviation-pass plumbing, mirrors the call site's request fields
 fn collect_column_deviations(
     stock: &TriDexelStock,
     local_to_global: &Option<SetupTransformInfo>,
@@ -2618,9 +2622,10 @@ fn collect_column_deviations(
 /// per-column path still frame-maps because it reads the group's own
 /// (world-framed, for identity setups) dexel grid — see
 /// `collect_column_deviations`' frame doc.
-// SAFETY: indexing with `i * 3 + {0,1,2}` where `i < num_verts` and
-// `num_verts = stock_vertices.len() / 3`, so all accesses are in bounds.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indexing with `i * 3 + {0,1,2}` where `i < num_verts` and `num_verts = stock_vertices.len() / 3`, so all accesses are in bounds."
+)]
 fn compute_deviations(stock_vertices: &[f32], model_mesh: &TriangleMesh) -> Vec<f32> {
     let num_verts = stock_vertices.len() / 3;
     let index = SpatialIndex::build_auto(model_mesh);
@@ -2673,7 +2678,7 @@ fn compute_deviations(stock_vertices: &[f32], model_mesh: &TriangleMesh) -> Vec<
 ///
 /// Returns `(bottom_z, top_z)` -- the lowest and highest model surface at this point.
 /// Only considers triangles whose 2D footprint contains (x, y).
-#[allow(clippy::indexing_slicing)] // triangle indices bounded by mesh
+#[expect(clippy::indexing_slicing, reason = "triangle indices bounded by mesh")]
 fn query_model_z_range(
     index: &SpatialIndex,
     mesh: &TriangleMesh,
@@ -2696,11 +2701,11 @@ fn query_model_z_range(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

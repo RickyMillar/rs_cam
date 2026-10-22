@@ -868,7 +868,10 @@ pub(super) fn effective_levels(cutting_levels: &[f64]) -> Result<Vec<f64>, Opera
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     //! Claim 3 of `tests/layered_framework_owns_the_ladder_w3.rs`: a cancel
     //! set mid-ladder stops the runner at the next level. The hook sits

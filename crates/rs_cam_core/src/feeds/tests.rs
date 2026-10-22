@@ -1,7 +1,11 @@
 //! Unit tests for the feeds calculator. Moved out of `feeds/mod.rs` by P4;
 //! the module body is unchanged.
 
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use super::*;
 use crate::machine::MachineProfile;
@@ -740,7 +744,9 @@ fn test_vbit_rpm_uses_engaged_diameter() {
     let machine = MachineProfile::shapeoko_vfd();
     let machine_max_rpm = match &machine.spindle {
         crate::machine::SpindleConfig::Variable { max_rpm, .. } => *max_rpm,
-        _ => panic!("expected variable spindle on shapeoko_vfd"),
+        crate::machine::SpindleConfig::Discrete { .. } => {
+            panic!("expected variable spindle on shapeoko_vfd")
+        }
     };
 
     // 20° V-bit, 5.5 mm shank, at 0.5 mm DOC. Engaged tip diameter

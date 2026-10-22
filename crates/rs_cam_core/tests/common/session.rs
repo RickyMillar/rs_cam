@@ -29,12 +29,14 @@
 //! `unified_finish_tapered_end_to_end_m21.rs` and
 //! `pencil_tip_float_channel_d1.rs` carry the same shapes locally.
 
-#![allow(dead_code)]
 #![allow(
-    clippy::unwrap_used,
+    dead_code,
+    reason = "each test binary that includes this module uses only part of it"
+)]
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

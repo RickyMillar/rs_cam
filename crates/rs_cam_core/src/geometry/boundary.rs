@@ -697,7 +697,6 @@ pub(crate) const SILHOUETTE_CELL_SIZE: f64 = 0.5;
 /// pinch the same way `contour_extract`'s marching squares already did,
 /// rather than the opposite way this function used before. No test pinned
 /// the old behavior; see `planning/finishing_stack_review_2026-07.md` §R1.2.
-#[allow(clippy::indexing_slicing)] // bounded by grid dimensions computed from mesh bbox
 pub fn model_silhouette(mesh: &TriangleMesh, cell_size: Option<f64>) -> Vec<Polygon2> {
     let cell = cell_size.unwrap_or(SILHOUETTE_CELL_SIZE);
     let bbox = &mesh.bbox;
@@ -768,7 +767,10 @@ pub fn silhouette_machining_outline(silhouettes: &[Polygon2]) -> Option<Polygon2
 }
 
 /// Rasterize one triangle's XY projection onto the boolean grid (scanline).
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`v`, `gx` and `gy` are fixed 3-element arrays, `xs` holds two entries where it is read, and rows and columns are clamped to the nx x ny grid"
+)]
 fn rasterize_triangle_xy(
     v: &[P3; 3],
     grid: &mut [bool],
@@ -840,7 +842,10 @@ fn rasterize_triangle_xy(
 /// Canonical edge keys `(row, col, orientation)`:
 /// - Horizontal edge (0): midpoint of the edge between nodes (row,col) and (row,col+1)
 /// - Vertical edge (1): midpoint of the edge between nodes (row,col) and (row+1,col)
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "rows and cols run to ny - 1 and nx - 1, so row + 1 and col + 1 stay inside the nx x ny grid"
+)]
 fn marching_squares_grid(
     grid: &[bool],
     nx: usize,
@@ -981,7 +986,11 @@ fn marching_squares_grid(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::toolpath::Move;

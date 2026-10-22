@@ -38,11 +38,10 @@
 //! that is exactly one peck: every later descent re-enters through
 //! `PECK_REENTRY_CLEARANCE_MM` and so measures `peck + 0.5`.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

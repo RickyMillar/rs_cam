@@ -11,13 +11,10 @@
 //!      no analytic cylinder (2026-10-09), so the MC wall is the one hole
 //!      wall and no seam exists.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
+#![expect(
     clippy::indexing_slicing,
     clippy::print_stderr,
-    clippy::print_stdout
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};

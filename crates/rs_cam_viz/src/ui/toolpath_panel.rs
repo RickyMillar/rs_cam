@@ -381,8 +381,10 @@ pub fn draw(
                 .session()
                 .setup_of_toolpath_id(dragged_tp_id)
                 .map(|idx| {
-                    // SAFETY: setup_of_toolpath_id returns a valid index into list_setups
-                    #[allow(clippy::indexing_slicing)]
+                    #[expect(
+                        clippy::indexing_slicing,
+                        reason = "setup_of_toolpath_id returns a valid index into list_setups"
+                    )]
                     state.session().list_setups()[idx].id
                 });
 
@@ -467,9 +469,10 @@ fn draw_generate_all(ui: &mut egui::Ui, ctx: &PanelContext, events: &mut Vec<App
         .min_width(ui.available_width())
         .enabled(ctx.pending_confirm.is_none());
     if let Some(plan) = ctx.plan.as_ref() {
-        // SAFETY: `of` is clamped to 1, so the ratio is finite and in 0..=1,
-        // and both counts are plan step positions, far inside f32.
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "`of` is clamped to 1, so the ratio is finite and in 0..=1, and both counts are plan step positions, far inside f32."
+        )]
         let fraction = plan.step as f32 / plan.of.max(1) as f32;
         button = button.progress(fraction);
     }
@@ -581,8 +584,6 @@ fn draw_toolpath_card(
                     let elapsed = when.elapsed().as_secs_f32();
                     let duration = 2.0;
                     if elapsed < duration {
-                        // SAFETY: arithmetic bounded: (1.0 - 0..1) * 60.0 = 0..60, fits u8.
-                        #[allow(clippy::indexing_slicing)]
                         let alpha = ((1.0 - elapsed / duration) * 60.0) as u8;
                         let rect = ui.max_rect();
                         ui.painter().rect_filled(
@@ -812,15 +813,17 @@ fn draw_sim_ring(ui: &mut egui::Ui, rect: egui::Rect) {
 
     let centre = rect.center();
     let radius = tokens::SPACE_2;
-    // SAFETY: the clock is reduced to one turn first, so the cast is exact
-    // to well inside f32 precision however long the session has run.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the clock is reduced to one turn first, so the cast is exact to well inside f32 precision however long the session has run."
+    )]
     let start = ui.input(|i| i.time.rem_euclid(1.0)) as f32 * std::f32::consts::TAU;
     let points: Vec<egui::Pos2> = (0..=SEGMENTS)
         .map(|k| {
-            // SAFETY: k and SEGMENTS are both at most 24, so both casts are
-            // exact.
-            #[allow(clippy::cast_precision_loss)]
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "k and SEGMENTS are both at most 24, so both casts are exact."
+            )]
             let along = k as f32 / SEGMENTS as f32;
             let angle = start + along * SWEEP;
             egui::pos2(

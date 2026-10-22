@@ -48,7 +48,10 @@ use super::{ExecutionContext, GeneratedToolpath, OperationError, Prepared};
 /// `initial_stock` is the stock the generator was seeded with (`None` on a
 /// fresh pass). A Drill reads it through [`drill_hole_columns`], as
 /// `generate_drill` does, so both views name the same hole tops (D8).
-#[allow(clippy::too_many_arguments)] // SAFETY: each argument is one generator input this view must mirror
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one generator input this view must mirror"
+)]
 pub fn build_drill_op_for_config(
     op: &OperationConfig,
     selection: &ResolvedSelection<SetupFrame>,

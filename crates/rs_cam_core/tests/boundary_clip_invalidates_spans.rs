@@ -6,7 +6,11 @@
 //! and assert the new contract: spans pass through with `spans_valid = true`
 //! and their move ranges remapped to the post-clip output indices.
 
-#![allow(clippy::indexing_slicing, clippy::expect_used)]
+#![expect(
+    clippy::indexing_slicing,
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
 use rs_cam_core::compute::execute::GenerationFindings;

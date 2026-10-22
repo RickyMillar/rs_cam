@@ -812,7 +812,10 @@ impl ProjectSession {
     /// `plunge_rate_mm_min` is the operation's own plunge rate, used for the
     /// re-entry descent the clipper emits (G-BOUNDARYPLUNGE) — see
     /// [`crate::geometry::boundary::clip_toolpath_to_boundary_set_with_provenance`].
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     pub fn apply_boundary_clip(
         annotated: crate::trace::toolpath_spans::AnnotatedToolpath,
         boundary_config: &crate::compute::config::BoundaryConfig,
@@ -1008,7 +1011,10 @@ impl ProjectSession {
     /// `plunge_rate_mm_min` is the operation's own plunge rate, used for the
     /// re-entry descent the clipper emits (G-BOUNDARYPLUNGE) — see
     /// [`crate::geometry::boundary::clip_toolpath_to_boundary_set_with_provenance`].
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     pub fn apply_boundary_clip_multi(
         annotated: crate::trace::toolpath_spans::AnnotatedToolpath,
         boundary_config: &crate::compute::config::BoundaryConfig,

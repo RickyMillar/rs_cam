@@ -450,7 +450,6 @@ pub fn cached_transform(mesh: &Arc<TriangleMesh>, info: &SetupTransformInfo) -> 
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::mesh::{make_test_flat, make_test_hemisphere};

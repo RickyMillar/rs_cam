@@ -2032,8 +2032,10 @@ impl RsCamApp {
                     }
                 }
                 if let Some(bbox) = bbox {
-                    // SAFETY: resp is a known JSON object just built here
-                    #[allow(clippy::indexing_slicing)]
+                    #[expect(
+                        clippy::indexing_slicing,
+                        reason = "resp is a known JSON object just built here"
+                    )]
                     {
                         resp["bbox"] = serde_json::json!({
                             "min": [bbox.min.x, bbox.min.y, bbox.min.z],

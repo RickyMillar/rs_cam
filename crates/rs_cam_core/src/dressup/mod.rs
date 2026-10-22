@@ -11,6 +11,10 @@
 //! ordering and the entry burial audit. The G-code post-processor is
 //! `gcode::post`, which is a different layer.
 
+// F195 (W16): a float or a signed value that becomes a count or an index
+// here goes through `util::steps`, or its `#[expect]` names the bound.
+#![deny(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+
 pub mod arcfit;
 pub mod condition;
 pub mod entry_audit;
@@ -367,7 +371,10 @@ impl OwnStockReplay {
 ///
 /// Hands back the 1→K plunge expansion under the C1 provenance contract,
 /// so channels other than the spans can follow it.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 pub fn apply_entry(
     annotated: AnnotatedToolpath,
     style: EntryStyle,
@@ -1048,7 +1055,7 @@ pub enum LeadScope {
 /// True when move `i` is the last cut of a pass: a fed move that a rapid
 /// up of more than 1 mm follows. [`apply_lead_in_out`] puts a lead-out
 /// there.
-#[allow(clippy::indexing_slicing)] // i + 1 < moves.len() checked first
+#[expect(clippy::indexing_slicing, reason = "i + 1 < moves.len() checked first")]
 fn is_pass_end(moves: &[Move], i: usize) -> bool {
     i + 1 < moves.len()
         && matches!(moves[i].move_type, MoveType::Linear { .. })
@@ -1060,7 +1067,7 @@ fn is_pass_end(moves: &[Move], i: usize) -> bool {
 /// pass. A pass runs from a plunge ([`is_plunge`]) to the next pass end
 /// ([`is_pass_end`]). It is open when the last cut does not come back to
 /// the plunge point in XY (within [`XY_STATIONARY_EPS_MM`]).
-#[allow(clippy::indexing_slicing)] // i, j < moves.len() by loop bounds
+#[expect(clippy::indexing_slicing, reason = "i, j < moves.len() by loop bounds")]
 fn open_pass_ends(moves: &[Move]) -> Vec<bool> {
     let mut ends = vec![false; moves.len()];
     for i in 1..moves.len() {
@@ -1206,7 +1213,10 @@ fn lift_arc_points(probe: &EntrySurfaceProbe<'_>, arc_pts: &mut [P3]) -> bool {
 /// synthetic toolpath): the inherited height stands, which is what this
 /// dressup always did. The one production caller,
 /// `compute::execute::apply_dressups`, passes its own `safe_z`.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 pub fn apply_lead_in_out(
     annotated: AnnotatedToolpath,
     radius: f64,
@@ -1604,7 +1614,10 @@ pub fn apply_lead_in_out(
 ///
 /// Hands back the overcut insertions under the C1 provenance contract, so
 /// channels other than the spans can follow them.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 pub fn apply_dogbones(
     annotated: AnnotatedToolpath,
     tool_radius: f64,
@@ -1786,7 +1799,10 @@ pub struct LinkMoveParams {
 ///
 /// Hands back the retract-triple → bridge collapse under the C1 provenance
 /// contract, so channels other than the spans can follow it.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 pub fn apply_link_moves(annotated: AnnotatedToolpath, params: &LinkMoveParams) -> Transformed {
     // Barriers we must not collapse across. A barrier at index `b` sits before
     // moves[b]; collapsing the window (i, i+1, i+2) into one bridge erases the
@@ -2036,7 +2052,7 @@ pub fn reference_engagement_of_cutting_moves(
                     m.target.z - prev.z,
                 );
                 let len = (dx * dx + dy * dy + dz * dz).sqrt();
-                let steps = (len / step).ceil().max(1.0) as usize;
+                let steps = crate::util::steps::steps(len, step).unwrap_or(0).max(1);
                 for k in 0..=steps {
                     let t = k as f64 / steps as f64;
                     sample(
@@ -2141,7 +2157,10 @@ pub struct AirBridgeTiming<'a> {
 /// This is the one dressup that DELETES moves, so its provenance is the one
 /// that makes channels unlink — see
 /// [`crate::trace::semantic_trace::ToolpathSemanticItem::move_end`].
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 pub fn filter_air_cuts(
     annotated: AnnotatedToolpath,
     prior_stock: &TriDexelStock,

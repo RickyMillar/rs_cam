@@ -61,11 +61,10 @@
 //!    plastic roughing pocket emits `DeflectionBackoffUnmodeled` carrying
 //!    the reason, and the same operation in hard maple never emits it.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::BTreeSet;

@@ -25,12 +25,10 @@
 //! The fixture is `limits_fixture`: the demo pocket, generated and simulated
 //! through the shipped path, so the cards read a fresh cut trace.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod limits_fixture;

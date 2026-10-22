@@ -18,11 +18,10 @@
 //! times), R-7 (evidence pointing at sample 0), R-2 (the summary models
 //! a cycle the emitter does not emit).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::diagnostics::adapters::from_tool_load::diagnostics_from_load_verdict;
@@ -152,7 +151,9 @@ fn elevated_chip_welding_must_not_claim_exceedance_below_its_threshold() {
             );
             observed
         }
-        other => panic!("fixture must reach the Elevated band, got {other:?}"),
+        other @ DrillGateOutcome::Within { .. } => {
+            panic!("fixture must reach the Elevated band, got {other:?}")
+        }
     };
     assert!(
         !message.contains("exceeds"),
@@ -226,7 +227,9 @@ fn within_chip_welding_displays_the_boundary_that_decided_it() {
                  got {advisory}"
             );
         }
-        other => panic!("fixture must read Within, got {other:?}"),
+        other @ DrillGateOutcome::Exceeds { .. } => {
+            panic!("fixture must read Within, got {other:?}")
+        }
     }
 }
 

@@ -13,11 +13,10 @@
 //!
 //! Behind the `heavy-tests` feature to keep the dev loop fast:
 //! `cargo test -p rs_cam_core --features heavy-tests --test strategy_advisor_smoke`.
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

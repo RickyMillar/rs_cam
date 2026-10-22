@@ -41,11 +41,11 @@
 //! Z = -3 sat below the whole grid it removed the FULL 20 mm ray depth
 //! rather than 3 mm.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::sync::Arc;

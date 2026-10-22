@@ -3165,7 +3165,10 @@ pub fn text(msg: impl Into<String>) -> String {
 ///
 /// Nothing consumes the formatting: every reader on the wire is a JSON
 /// parser. The indentation was pure transport cost.
-#[allow(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "the callers build the value for this call only, so it takes the value"
+)]
 pub fn json_str(data: serde_json::Value) -> String {
     serde_json::to_string(&data).unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}"))
 }
@@ -3388,11 +3391,12 @@ pub fn no_project_error() -> String {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

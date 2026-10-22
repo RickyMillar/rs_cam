@@ -60,11 +60,11 @@
 //!   the call site handing `None`, because `gen_initial_stock` is `None` on a
 //!   `StockSource::Fresh` operation (`session/compute.rs`).
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

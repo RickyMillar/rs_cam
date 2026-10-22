@@ -53,11 +53,11 @@
 //! answers and `vendor_lookup::vbit_key_text` reads "keyed at the printed
 //! angle 60 deg (the chart prints no cutting diameter)".
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

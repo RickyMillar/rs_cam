@@ -86,7 +86,10 @@ pub fn fit_arcs(annotated: AnnotatedToolpath, tolerance: f64, tool_radius: f64) 
 /// wall (G-ADAPTPASSLOAD round 3: 0.041 mm on a 2D Adaptive link). An arc
 /// is kept only when every point along it lies inside a containment piece;
 /// else the run is shortened, as for an arc out of tolerance.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 pub(crate) fn fit_arcs_within(
     annotated: AnnotatedToolpath,
     tolerance: f64,
@@ -359,7 +362,9 @@ fn arc_inside(pieces: &[crate::polygon::Polygon2], start: &P3, end: &P3, arc: &A
     };
     // Chord sagitta r·(1 − cos(Δ/2)) ≤ s  ⇔  Δ ≤ 2·acos(1 − s/r).
     let max_step = 2.0 * (1.0 - (ARC_CONTAINMENT_SAGITTA_MM / r).min(1.0)).acos();
-    let n = ((sweep.abs() / max_step).ceil() as usize).max(1);
+    let n = crate::util::steps::steps(sweep.abs(), max_step)
+        .unwrap_or(0)
+        .max(1);
     (0..=n).all(|k| {
         let a = a0 + sweep * k as f64 / n as f64;
         let p = crate::geo::P2::new(arc.cx + r * a.cos(), arc.cy + r * a.sin());
@@ -373,7 +378,10 @@ struct ArcParams {
     clockwise: bool,
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Try to fit a circular arc through a sequence of XY points.
 /// Returns arc parameters if all points are within tolerance of the arc.
 ///
@@ -541,8 +549,10 @@ fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcPa
     {
         let mut poly_len = 0.0_f64;
         for w in points.windows(2) {
-            // SAFETY: `windows(2)` always yields exactly two elements.
-            #[allow(clippy::indexing_slicing)]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "`windows(2)` always yields exactly two elements."
+            )]
             let (p, q) = (w[0], w[1]);
             poly_len += ((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt();
         }
@@ -659,9 +669,10 @@ fn try_fit_arc(points: &[&P3], tolerance: f64, tool_radius: f64) -> Option<ArcPa
                 return None;
             }
             for (i, seg) in points.windows(2).enumerate() {
-                // SAFETY: `windows(2)` yields two elements; `swept` has one
-                // entry per point, so `i + 1 < swept.len()`.
-                #[allow(clippy::indexing_slicing)]
+                #[expect(
+                    clippy::indexing_slicing,
+                    reason = "`windows(2)` yields two elements; `swept` has one entry per point, so `i + 1 < swept.len()`."
+                )]
                 let (p, q, s0, s1) = (seg[0], seg[1], swept[i], swept[i + 1]);
                 for k in 0..=ARC_DEVIATION_SAMPLES {
                     let lambda = k as f64 / ARC_DEVIATION_SAMPLES as f64;
@@ -782,12 +793,12 @@ fn circle_from_3_points(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::redundant_clone
+    clippy::redundant_clone,
+    reason = "test code: a panic is how a test reports a failure; test code accepts the style lint redundant_clone"
 )]
 mod tests {
     use super::*;
@@ -1467,6 +1478,11 @@ mod tests {
         let (cx, cy, radius) = (0.0, 0.0, 2.0);
         let steps_per_rev = 36usize;
         let revs = 2.0;
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "2 revolutions of 36 steps: the fixed count 72"
+        )]
         let total_steps = (revs * steps_per_rev as f64) as usize;
         let z_top = 1.0;
         let dz = 2.0;

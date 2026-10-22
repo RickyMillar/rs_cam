@@ -28,7 +28,6 @@ use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 use crate::command::apply_command;
 
 /// CLI arguments for `run`, mirrored from the clap variant in `main.rs`.
-#[allow(clippy::struct_excessive_bools)]
 pub struct RunArgs {
     pub op: Option<String>,
     pub list_ops: bool,

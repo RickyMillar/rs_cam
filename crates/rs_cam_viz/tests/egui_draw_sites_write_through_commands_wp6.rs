@@ -34,11 +34,9 @@
 //! exist yet, and the scan reports each missing name as a failure rather
 //! than as a build error.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

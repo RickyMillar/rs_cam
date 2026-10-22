@@ -39,12 +39,12 @@
 //!    mutation classes, including the seven that move no toolpath
 //!    revision.
 
-// SAFETY: test-module lint allowances, per `crates/rs_cam_core/CLAUDE.md`.
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test-module lint allowances, per `crates/rs_cam_core/CLAUDE.md`."
 )]
 
 use std::collections::HashMap;

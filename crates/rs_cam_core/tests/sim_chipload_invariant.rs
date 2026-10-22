@@ -9,12 +9,11 @@
 //! does), and `removed_volume` is no longer involved (it sums across the
 //! full segment-sweep bbox, a different footprint than the midpoint disk).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::ids::ToolpathId;

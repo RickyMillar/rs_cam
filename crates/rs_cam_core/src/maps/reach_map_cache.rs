@@ -254,7 +254,6 @@ fn put(mesh: &Arc<TriangleMesh>, key: ReachMapKey, map: Arc<ReachMap>) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::compute::tool_config::ToolMaterial;

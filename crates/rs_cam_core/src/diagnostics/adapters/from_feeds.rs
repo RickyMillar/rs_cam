@@ -508,7 +508,10 @@ pub fn heuristic_hints_from_recommendation(
     out
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn ratio_hint(
     tp_id: ToolpathId,
     id: &str,

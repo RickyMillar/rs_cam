@@ -63,13 +63,12 @@
 //! cargo test -p rs_cam_core --release --test retract_intent_move_type_census_w6 -- --nocapture
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
     clippy::print_stdout,
-    clippy::print_stderr
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::collections::{BTreeMap, BTreeSet};

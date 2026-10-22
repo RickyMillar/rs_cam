@@ -9,12 +9,11 @@
 //! Run: `cargo test --release -p rs_cam_core --features test-support --test
 //! tier_trial_blob_preview -- --ignored --nocapture`.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use std::path::PathBuf;

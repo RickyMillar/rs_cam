@@ -47,12 +47,11 @@
 //! - Every strategy: region B has at least 95 % as many cells at its floor
 //!   (Z 3.5) as Global has. Either defect of §3.4 gives 0 cells.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

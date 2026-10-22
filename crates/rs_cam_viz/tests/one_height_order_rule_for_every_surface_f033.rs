@@ -31,11 +31,11 @@
 //! cargo test -p rs_cam_viz -q --test one_height_order_rule_for_every_surface_f033
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

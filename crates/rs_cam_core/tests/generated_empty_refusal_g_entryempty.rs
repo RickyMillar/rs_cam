@@ -40,11 +40,11 @@
 //! trigger is arithmetic rather than a tuned fixture; the same square with a
 //! Ø6 tool cuts, which is what the non-vacuity test measures.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

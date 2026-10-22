@@ -545,11 +545,11 @@ fn segments_touch(a: P2, b: P2, c: P2, d: P2) -> bool {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     //! P6.4 lib sentries: each refusal row of `P6_DESIGN.md` 3.4; Left and

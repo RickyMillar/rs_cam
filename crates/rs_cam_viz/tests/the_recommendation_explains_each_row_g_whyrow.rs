@@ -32,11 +32,11 @@
 //! writes nothing in its place would satisfy arms 1 and 4 and leave the
 //! operator with less than they started with.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

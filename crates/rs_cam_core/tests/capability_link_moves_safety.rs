@@ -62,18 +62,20 @@
 //! All tests must pass on master HEAD. A failure here means real material
 //! divergence — investigate before shipping.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
     clippy::print_stdout,
-    clippy::print_stderr,
-    clippy::too_many_arguments
+    clippy::too_many_arguments,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader; test code accepts the style lint too_many_arguments"
 )]
 
 use rs_cam_core::{
-    compute::catalog::{OperationConfig, OperationTransformCapabilities, OperationType},
+    compute::catalog::{
+        DepthOrder, GlobalReorder, LinkMoves, OperationConfig, OperationTransformCapabilities,
+        OperationType, PathContinuity,
+    },
     compute::config::{DressupConfig, LinkDressupParams},
     compute::execute::apply_dressups,
     compute::operation_configs::ScallopConfig,
@@ -150,7 +152,10 @@ fn rect_polygon() -> Polygon2 {
     Polygon2::rectangle(0.0, 0.0, 40.0, 30.0)
 }
 
-#[allow(dead_code)] // retained fixture: used again when Face/Inlay/VCarve links are re-measured
+#[expect(
+    dead_code,
+    reason = "retained fixture: used again when Face/Inlay/VCarve links are re-measured"
+)]
 fn l_shape_polygon() -> Polygon2 {
     Polygon2::new(vec![
         P2::new(0.0, 0.0),
@@ -1520,7 +1525,12 @@ fn scallop_discrete_reorder_preserves_cuts_and_link_moves_are_now_safe() {
     // should no longer be able to produce the gouge — the capability flag
     // stays `false` in production as defence in depth, not because this
     // fixture still needs it to avoid the defect.
-    let permissive_link_caps = OperationTransformCapabilities::new(true, false, false, true);
+    let permissive_link_caps = OperationTransformCapabilities::new(
+        GlobalReorder::Allowed,
+        DepthOrder::Free,
+        PathContinuity::Free,
+        LinkMoves::Allowed,
+    );
     let linked = dressup_with_caps(
         raw_for_links,
         &DressupConfig {

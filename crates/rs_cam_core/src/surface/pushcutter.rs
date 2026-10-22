@@ -208,7 +208,10 @@ pub fn push_cutter_fiber_into(
 /// given fiber ROW is identical at every Z level — the waterline fiber grid's
 /// XY does not move as the plane descends — so a multi-level caller can pay
 /// for the query once and replay the contact tests per level.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 pub(crate) fn push_cutter_fiber_over(
     fiber: &mut Fiber,
     mesh: &TriangleMesh,
@@ -602,7 +605,10 @@ fn push_segment_xy(fiber: &mut Fiber, a: (f64, f64), b: (f64, f64), w: f64) {
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Edge push: for each triangle edge, compute the interval on the fiber
 /// where the cutter contacts that edge.
 fn edge_push(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
@@ -613,7 +619,10 @@ fn edge_push(fiber: &mut Fiber, tri: &Triangle, cutter: &dyn MillingCutter) {
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Push-cutter for a single edge against a fiber.
 ///
 /// Finds where the cutter profile, swept along the fiber at constant Z,
@@ -797,7 +806,10 @@ fn edge_push_single(fiber: &mut Fiber, p1: &P3, p2: &P3, cutter: &dyn MillingCut
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::tool::{BallEndmill, FlatEndmill};

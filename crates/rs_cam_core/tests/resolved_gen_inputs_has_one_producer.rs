@@ -28,11 +28,10 @@
 //! NOT MEASURED here: whether the GUI door calls the resolver. WP10 and WP11b
 //! measure that door. This test measures what the core crate publishes.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

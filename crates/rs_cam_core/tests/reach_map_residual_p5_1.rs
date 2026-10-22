@@ -111,16 +111,15 @@
 //! * the tier map on the V-groove, to show what the two instruments each
 //!   answer.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
-// This file is an instrument as well as a gate: the F1 tables are printed so
-// a re-run reproduces the numbers in the doc above rather than only asserting
-// on them. `print_stderr` is denied workspace-wide, including in tests.
-#![allow(clippy::print_stderr)]
+#![expect(
+    clippy::print_stderr,
+    reason = "This file is an instrument as well as a gate: the F1 tables are printed so a re-run reproduces the numbers in the doc above rather than only asserting on them. `print_stderr` is denied workspace-wide, including in tests."
+)]
 
 use rs_cam_core::geo::P3;
 use rs_cam_core::maps::reach_map::{ReachMap, reach_map_for_mesh};

@@ -51,12 +51,14 @@
 //! a test over when you are editing it anyway — and when you do, its
 //! assertions and any pinned constants must come through untouched.
 
-#![allow(dead_code)]
 #![allow(
-    clippy::unwrap_used,
+    dead_code,
+    reason = "each test binary that includes this module uses only part of it"
+)]
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 pub mod adaptive_islands;

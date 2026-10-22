@@ -1352,8 +1352,10 @@ impl RsCamApp {
         }
     }
 
-    // SAFETY: edge indices are compile-time constants 0..7 into an 8-element projected array
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "edge indices are compile-time constants 0..7 into an 8-element projected array"
+    )]
     fn draw_semantic_item_overlay(
         &self,
         ui: &mut egui::Ui,

@@ -168,8 +168,7 @@ pub fn recommend_strategy(
         .copied()
         // SAFETY: `ranked` is non-empty (checked above), so `first` is Some.
         .unwrap_or_else(|| {
-            #[allow(clippy::expect_used)]
-            // SAFETY: non-empty per the guard above.
+            #[expect(clippy::expect_used, reason = "non-empty per the guard above.")]
             *ranked.first().expect("ranked is non-empty")
         });
 
@@ -242,11 +241,9 @@ fn build_reason(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

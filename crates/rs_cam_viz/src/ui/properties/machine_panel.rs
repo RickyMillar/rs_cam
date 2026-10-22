@@ -110,8 +110,10 @@ pub(super) fn draw_machine_library_row(
     }
 }
 
-// SAFETY: selected_idx from position() within presets; i from enumerate over presets
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "selected_idx from position() within presets; i from enumerate over presets"
+)]
 pub(super) fn draw_machine_panel(
     ui: &mut egui::Ui,
     state: &mut AppState,
@@ -381,8 +383,10 @@ pub(super) fn draw_machine_kinematics(
             ("Accel Y:", 1, "GRBL $121"),
             ("Accel Z:", 2, "GRBL $122"),
         ] {
-            // SAFETY: the three indices are literals into a [f64; 3]
-            #[allow(clippy::indexing_slicing)]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "the three indices are literals into a [f64; 3]"
+            )]
             let response = accel_row(ui, label, &mut axes[index], hint);
             changed |= response.changed();
             edit.drag(&response);

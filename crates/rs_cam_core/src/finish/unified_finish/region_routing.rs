@@ -73,7 +73,10 @@ pub(crate) struct RegionPath {
 /// memo needs, since it serves every region). Build the box with
 /// [`region_sampling_window`], which carries the proof that it is a superset
 /// of everything the band can emit for that region.
-#[allow(clippy::too_many_arguments)] // lattice dials (step, direction, window) ride beside the op params, mirroring the C2 call sites
+#[expect(
+    clippy::too_many_arguments,
+    reason = "lattice dials (step, direction, window) ride beside the op params, mirroring the C2 call sites"
+)]
 pub(super) fn build_shallow_raster_grid(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -336,7 +339,10 @@ pub(super) fn trailing_retracts(tp: &Toolpath) -> (usize, Option<P3>) {
 /// `link_ceiling` (B16, W6.4) is the op's ceiling from the one builder
 /// (`compute::execute::link_ceiling_for`): each surface candidate takes its
 /// shape under it ([`choose_link`]).
-#[allow(clippy::too_many_arguments)] // link geometry + machine envelope are irreducible inputs
+#[expect(
+    clippy::too_many_arguments,
+    reason = "link geometry + machine envelope are irreducible inputs"
+)]
 pub(super) fn route_greedy(
     paths: &[RegionPath],
     mesh: &TriangleMesh,
@@ -423,7 +429,10 @@ pub(super) fn route_greedy(
 /// with it, else it lifts clear of the standing material, and a lift that
 /// reaches `safe_z` leaves the retract. The cost model then prices the
 /// geometry that is emitted.
-#[allow(clippy::too_many_arguments)] // link geometry + machine envelope are irreducible inputs
+#[expect(
+    clippy::too_many_arguments,
+    reason = "link geometry + machine envelope are irreducible inputs"
+)]
 fn choose_link(
     from: P3,
     to: &RegionPath,
@@ -601,7 +610,11 @@ pub(super) fn rest_grid_index(grid: &RestGrid, x: f64, y: f64) -> Option<usize> 
     if col < 0.0 || row < 0.0 {
         return None;
     }
-    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation,
+        reason = "col and row are rounded and not negative (checked above); the next line refuses a value past the grid"
+    )]
     let (col, row) = (col as usize, row as usize);
     if col >= spec.nx || row >= spec.ny {
         return None;

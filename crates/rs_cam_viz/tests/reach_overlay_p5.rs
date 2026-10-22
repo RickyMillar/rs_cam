@@ -20,11 +20,9 @@
 //! `SetupTransformInfo::apply_to_mesh`. The two frames' coordinates differ; the
 //! ordering must not.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#![expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::maps::reach_map::{ReachMap, reach_map_for_mesh};

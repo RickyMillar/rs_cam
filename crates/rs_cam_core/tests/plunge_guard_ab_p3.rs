@@ -102,13 +102,11 @@
 //! re-run of this instrument should read 1.0 if the attribution is right,
 //! and is what would confirm it. The bars below are unchanged.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    // This file's whole purpose is to publish a measurement.
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "This file's whole purpose is to publish a measurement."
 )]
 
 use rs_cam_core::ids::ToolpathId;

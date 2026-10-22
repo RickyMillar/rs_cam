@@ -11,11 +11,10 @@
 //! cargo test -p rs_cam_viz --test an_empty_queue_offers_add_toolpath_g_emptyadd
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

@@ -12,11 +12,10 @@
 //! new empty `tool/stray_f140.rs` made `every_rs_file_is_on_a_map_f140` name
 //! it.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 #[path = "common/folder_maps.rs"]

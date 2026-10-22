@@ -22,12 +22,13 @@
 //! | [`FlatFloor`] | `lead_out_retract_lifts_from_the_arc_f2.rs`, `arcfit_intent_boundary_f1.rs`, `isoclip_link_rapid_g_isocliprapid.rs`, `transform_provenance_fingerprints.rs` (P6.0c: a surface pass gets its lead under a probe) |
 //! | [`disconnected_hemispheres`] | `disconnected_finish_retract_structure_p0.rs`; reproduces `capability_link_moves_safety.rs`'s local `scallop_island_mesh` (centres `(±15, ±15)`, radius 5.0, divisions 10), which keeps its own copy |
 
-#![allow(dead_code)]
 #![allow(
+    dead_code,
+    reason = "each test binary that includes this module uses only part of it"
+)]
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::geo::P3;

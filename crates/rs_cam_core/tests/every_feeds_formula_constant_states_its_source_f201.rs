@@ -16,9 +16,14 @@
 //!    the pinned count on purpose. The citation task is
 //!    `planning/tech_debt_2026-10-19/F201_UNSOURCED_FEEDS_CONSTANTS.md`.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-// SAFETY: the test prints the unsourced list on purpose (check 4).
-#![allow(clippy::print_stderr)]
+#![expect(
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+#![expect(
+    clippy::print_stderr,
+    reason = "the test prints the unsourced list on purpose (check 4)."
+)]
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;

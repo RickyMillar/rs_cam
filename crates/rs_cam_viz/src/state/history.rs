@@ -7,16 +7,10 @@ use rs_cam_core::machine::head::{MachineHead, ShoeSetting};
 use rs_cam_core::session::{Obstacle, SetupData};
 
 /// A snapshot of undoable state.
-// SAFETY: ToolpathParamChange holds 2× OperationConfig + 2× DressupConfig +
-// 2× BoundaryConfig + 2× FeedsProvenance, which is intentional — undo/redo needs the full state
-// snapshot. The byte figure this comment used to carry (≈648) was measured
-// before WP8 added the provenance pair, so it is dropped rather than guessed
-// at. The surrounding code stores UndoAction in a bounded history Vec (not a
-// hot loop), so the per-variant size diff vs simple variants like StockChange
-// is acceptable for the readability win of keeping the variants inline.
-// Boxing the large variant is a possible refactor when memory pressure shows
-// up.
-#[allow(clippy::large_enum_variant)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "ToolpathParamChange holds 2× OperationConfig + 2× DressupConfig + 2× BoundaryConfig + 2× FeedsProvenance, which is intentional — undo/redo needs the full state snapshot. The byte figure this comment used to carry (≈648) was measured before WP8 added the provenance pair, so it is dropped rather than guessed at. The surrounding code stores UndoAction in a bounded history Vec (not a hot loop), so the per-variant size diff vs simple variants like StockChange is acceptable for the readability win of keeping the variants inline. Boxing the large variant is a possible refactor when memory pressure shows up."
+)]
 #[derive(Debug, Clone)]
 pub enum UndoAction {
     StockChange {
@@ -258,7 +252,11 @@ impl Default for UndoHistory {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

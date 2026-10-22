@@ -43,14 +43,15 @@
 //! cargo test -p rs_cam_core -q --test a_scallop_iso_field_link_clears_standing_stock_d1
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
-// SAFETY: the measurement of each arm is the record of D1.
-#![allow(clippy::print_stderr)]
+#![expect(
+    clippy::print_stderr,
+    reason = "the measurement of each arm is the record of D1."
+)]
 
 mod common;
 

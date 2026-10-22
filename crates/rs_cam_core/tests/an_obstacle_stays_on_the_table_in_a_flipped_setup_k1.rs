@@ -15,11 +15,10 @@
 //! setup transform. The asymmetric outline below keeps its XY, and the
 //! mesh keeps its XY and its top, on a Bottom setup.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

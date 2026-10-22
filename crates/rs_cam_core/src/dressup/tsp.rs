@@ -145,7 +145,10 @@ fn split_into_segments(toolpath: &Toolpath, internal_link_ceiling_z: Option<f64>
 /// start of the next segment in the order.
 #[cfg(test)]
 fn total_rapid_distance(order: &[usize], segments: &[Segment]) -> f64 {
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "test helper: `order` holds segment indices and `windows(2)` gives slices of length 2"
+    )]
     order.windows(2).fold(0.0, |dist, pair| {
         dist + xy_distance(&segments[pair[0]].end, &segments[pair[1]].start)
     })
@@ -200,9 +203,6 @@ fn total_rapid_distance(order: &[usize], segments: &[Segment]) -> f64 {
 /// into a claim's new bounding range, and a channel that only knew the
 /// bounding remap would widen the claim to cover strangers instead of
 /// dropping it. Same rule the span filter below applies, same predicate.
-// SAFETY: all indexing in this function is bounded by `n` (segment count)
-// and group_bounds, both built locally.
-#[allow(clippy::indexing_slicing)]
 pub fn optimize_rapid_order(
     annotated: AnnotatedToolpath,
     safe_z: f64,
@@ -313,9 +313,10 @@ pub fn optimize_rapid_order(
 /// Run the single-group nearest-neighbor + 2-opt over `[group_start..group_end)`
 /// of the input, append the reordered moves to `result`, and update `old_to_new`
 /// so each input cutting move points to its new index.
-// SAFETY: `group` is a locally constructed, in-bounds input move range; all
-// `old_to_new` writes use indices from that same range.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`group` is a locally constructed, in-bounds input move range; all `old_to_new` writes use indices from that same range."
+)]
 fn optimize_one_group(
     toolpath: &Toolpath,
     group: Range<usize>,
@@ -400,8 +401,10 @@ fn rapid_length_from(here: Option<P3>, moves: &[Move]) -> f64 {
 /// [`rejoin_displaced_fed_start`] when its fed first move would otherwise
 /// be fed from elsewhere. The input moves follow in order, so input move
 /// `group.start + k` sits at `len - group.len() + k`.
-// SAFETY: `group` is an in-bounds input move range.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`group` is an in-bounds input move range."
+)]
 fn verbatim_group(
     toolpath: &Toolpath,
     group: Range<usize>,
@@ -416,8 +419,10 @@ fn verbatim_group(
 
 /// Append a [`verbatim_group`] to `result`, each input move of `group` to its
 /// own slot.
-// SAFETY: `group` is the in-bounds input range `verbatim` was built from.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`group` is the in-bounds input range `verbatim` was built from."
+)]
 fn append_verbatim(
     verbatim: Toolpath,
     group: Range<usize>,
@@ -445,9 +450,10 @@ fn append_verbatim(
 /// `intra_region_hookup_mm` 0 that was a 29.36 mm `Linking` feed 3.453 mm
 /// under the surface. A group whose predecessor is still in place is
 /// copied byte-identically.
-// SAFETY: `start` is an in-bounds input index (a group start), and `start -
-// 1` is read only when `start > 0`.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`start` is an in-bounds input index (a group start), and `start - 1` is read only when `start > 0`."
+)]
 fn rejoin_displaced_fed_start(
     toolpath: &Toolpath,
     start: usize,
@@ -476,9 +482,10 @@ fn rejoin_displaced_fed_start(
 }
 
 /// Nearest-neighbor seed order over `segments`.
-// SAFETY: `order` contains only segment indices inserted from `0..n`, and is
-// non-empty before its final-element index is read.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`order` contains only segment indices inserted from `0..n`, and is non-empty before its final-element index is read."
+)]
 fn nearest_neighbor_order(segments: &[Segment]) -> Vec<usize> {
     let n = segments.len();
     let mut order = Vec::with_capacity(n);
@@ -516,9 +523,10 @@ fn nearest_neighbor_order(segments: &[Segment]) -> Vec<usize> {
 }
 
 /// Nearest-neighbor + directed, fixed-orientation 2-opt over `segments`.
-// SAFETY: loop bounds keep every `order` index below `n`; a selected reversal
-// is exactly the in-bounds candidate range `i + 1..=j`.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "loop bounds keep every `order` index below `n`; a selected reversal is exactly the in-bounds candidate range `i + 1..=j`."
+)]
 fn run_tsp(segments: &[Segment]) -> Vec<usize> {
     let n = segments.len();
     let mut order = nearest_neighbor_order(segments);
@@ -605,8 +613,10 @@ fn run_tsp(segments: &[Segment]) -> Vec<usize> {
 /// `LeadIn`, `EntryPlunge` and `FinishingCut` survive the pass untouched,
 /// which is the invariant the session's drill entry-strip predicate
 /// depends on.
-// SAFETY: `order` is a permutation of `segments` indices.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`order` is a permutation of `segments` indices."
+)]
 fn rebuild_group(
     segments: &[Segment],
     order: &[usize],
@@ -671,9 +681,10 @@ fn rebuild_group(
 /// trailing rapids (after the last surviving cut) map to
 /// `group_new_end..group_new_end`. Mid-group rapids that lie between
 /// surviving cuts map to the next cut's slot.
-// SAFETY: `group` is an in-bounds range for `old_to_new`, constructed from
-// input move bounds before this helper is called.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`group` is an in-bounds range for `old_to_new`, constructed from input move bounds before this helper is called."
+)]
 fn fill_group_rapids(
     old_to_new: &mut [Option<Range<usize>>],
     group: Range<usize>,
@@ -797,11 +808,10 @@ fn remap_spans(spans: &[Span], remap: &MoveRemap, new_n: usize, moves: &[Move]) 
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

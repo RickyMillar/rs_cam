@@ -70,11 +70,12 @@
 //! cargo test -p rs_cam_core -q --test every_op_conforms_w4
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;
@@ -636,9 +637,10 @@ fn stocks(op: OperationType, pair: &RestPair) -> Option<Stocks<'_>> {
 /// Non-vacuity: each rule the registry uses (other than `None` and
 /// `Reference`) has an op whose Fresh cut lowers some cells.
 #[test]
-// SAFETY: the W6.1 `ContourFilter` measurement (leftover, time, rapids) is
-// printed as the record of the arm.
-#[allow(clippy::print_stderr)]
+#[expect(
+    clippy::print_stderr,
+    reason = "the W6.1 `ContourFilter` measurement (leftover, time, rapids) is printed as the record of the arm."
+)]
 fn check2_rest_rule_per_op() {
     let mut reached: BTreeMap<String, usize> = BTreeMap::new();
     let mut defects = Vec::new();

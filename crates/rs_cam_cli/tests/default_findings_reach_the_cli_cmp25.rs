@@ -37,8 +37,6 @@
 //! asserts anything about its content. A scan that reads nothing passes and
 //! looks healthy.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 /// The producer's source, with line comments stripped. This file names the
 /// call it looks for, and a scan that reads a comment reports code that is
 /// absent.

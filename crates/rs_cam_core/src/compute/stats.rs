@@ -22,8 +22,10 @@ pub fn compute_stats(tp: &Toolpath) -> ToolpathStats {
 /// resolve `spans_valid == false` to `None` itself before calling this:
 /// [`RetractTripCount`]'s X-19 contract is that an untrustworthy split
 /// reports as unmeasured, never as a confident zero.
-// SAFETY: loop from 1..len, indexing [i] and [i-1] always in bounds
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "loop from 1..len, indexing [i] and [i-1] always in bounds"
+)]
 pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> ToolpathStats {
     let mut cutting = 0.0;
     let mut rapid = 0.0;

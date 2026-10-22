@@ -18,7 +18,10 @@
 ///
 /// Reference: Felzenszwalb & Huttenlocher, "Distance Transforms of Sampled
 /// Functions", Theory of Computing 2012.
-#[allow(clippy::indexing_slicing)] // SAFETY: all indices bounded by loop variables and n
+#[expect(
+    clippy::indexing_slicing,
+    reason = "all indices bounded by loop variables and n"
+)]
 fn edt_1d(f: &mut [f64]) {
     let n = f.len();
     if n == 0 {
@@ -75,7 +78,10 @@ fn edt_1d(f: &mut [f64]) {
 /// Returns the Euclidean distance (in cell units) from each cell to the
 /// nearest `true` cell. Uses two-pass separable 1D EDT
 /// (Felzenszwalb & Huttenlocher 2004) — O(rows * cols) total.
-#[allow(clippy::indexing_slicing)] // SAFETY: all indices bounded by rows/cols loop variables
+#[expect(
+    clippy::indexing_slicing,
+    reason = "all indices bounded by rows/cols loop variables"
+)]
 pub fn distance_transform_2d(grid: &[bool], rows: usize, cols: usize) -> Vec<f64> {
     let total = rows * cols;
     let big = (rows * rows + cols * cols) as f64; // larger than any possible distance^2
@@ -124,7 +130,10 @@ pub fn distance_transform_2d(grid: &[bool], rows: usize, cols: usize) -> Vec<f64
 /// Returns curvature in cell⁻¹ units (positive = convex, negative = concave).
 /// Cells where the gradient magnitude is near zero (flat regions, medial axis)
 /// are set to κ = 0.
-#[allow(clippy::indexing_slicing)] // SAFETY: all indices bounded by row/col loop ranges
+#[expect(
+    clippy::indexing_slicing,
+    reason = "all indices bounded by row/col loop ranges"
+)]
 pub fn edt_curvature_field(edt: &[f64], rows: usize, cols: usize) -> Vec<f64> {
     let total = rows * cols;
     let mut curvature = vec![0.0f64; total];
@@ -177,7 +186,10 @@ pub fn edt_curvature_field(edt: &[f64], rows: usize, cols: usize) -> Vec<f64> {
 ///
 /// `radius` is the half-width of the kernel (e.g. radius=2 → 5×5 kernel).
 /// Boundary cells within `radius` of the edge are left unchanged.
-#[allow(clippy::indexing_slicing)] // SAFETY: all indices bounded by row/col loop ranges
+#[expect(
+    clippy::indexing_slicing,
+    reason = "all indices bounded by row/col loop ranges"
+)]
 pub fn smooth_grid(grid: &mut [f64], rows: usize, cols: usize, radius: usize) {
     if radius == 0 || rows <= 2 * radius || cols <= 2 * radius {
         return;
@@ -209,11 +221,9 @@ pub fn smooth_grid(grid: &mut [f64], rows: usize, cols: usize, radius: usize) {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

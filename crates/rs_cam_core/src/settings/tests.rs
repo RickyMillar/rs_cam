@@ -1,5 +1,7 @@
-// SAFETY: test module; a failed unwrap is a failed test.
-#![allow(clippy::unwrap_used)]
+#![expect(
+    clippy::unwrap_used,
+    reason = "test module; a failed unwrap is a failed test."
+)]
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

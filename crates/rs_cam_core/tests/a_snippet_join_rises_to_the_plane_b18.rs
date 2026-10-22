@@ -29,11 +29,11 @@
 //! Control: with no clamp, the first Z after the snippet is below the
 //! plane, so the rise comes from the obstacle step.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

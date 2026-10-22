@@ -33,12 +33,11 @@
 //! - A 2.5D pocket (the `demo_pocket` shape, 12 mm deep, Depth/Pass 1.2)
 //!   through the dressup door, helix and ramp.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stderr
+    clippy::print_stderr,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;

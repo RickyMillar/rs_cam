@@ -1944,6 +1944,13 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     /// Deliver one finished plan's summary.
+    #[cfg_attr(
+        not(feature = "mcp"),
+        expect(
+            clippy::needless_pass_by_value,
+            reason = "without the `mcp` feature only the GUI arm is left, and it does not consume the sink"
+        )
+    )]
     fn report_plan(
         &mut self,
         sink: crate::controller::generate_all::GenerateAllSink,
@@ -2417,9 +2424,10 @@ impl<B: ComputeBackend> AppController<B> {
                     .get(&tc.id)
                     .cloned()
                     .unwrap_or_else(|| serde_json::json!({}));
-                // SAFETY: row is a JSON object — either a serialised
-                // `ToolpathDiagnostic` (a struct) or the empty map above.
-                #[allow(clippy::indexing_slicing)]
+                #[expect(
+                    clippy::indexing_slicing,
+                    reason = "row is a JSON object — either a serialised `ToolpathDiagnostic` (a struct) or the empty map above."
+                )]
                 {
                     row["toolpath_index"] = serde_json::json!(index);
                     row["toolpath_id"] = serde_json::json!(tc.id);
@@ -2465,8 +2473,10 @@ impl<B: ComputeBackend> AppController<B> {
                 });
             }
         };
-        // SAFETY: resp is a JSON object (the match above returns otherwise).
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "resp is a JSON object (the match above returns otherwise)."
+        )]
         {
             resp["per_toolpath"] = serde_json::Value::Array(per_toolpath);
             // F113: the project verdict is core's `ProjectDiagnostics::verdict`,
@@ -2482,8 +2492,10 @@ impl<B: ComputeBackend> AppController<B> {
         if let Some(ref sim_results) = self.state.simulation.results
             && let Some(ref ct) = sim_results.cut_trace
         {
-            // SAFETY: resp is a known JSON object we just constructed
-            #[allow(clippy::indexing_slicing)]
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "resp is a known JSON object we just constructed"
+            )]
             {
                 resp["semantic_summary_count"] = serde_json::json!(ct.semantic_summaries.len());
                 resp["hotspot_count"] = serde_json::json!(ct.hotspots.len());
@@ -2504,8 +2516,10 @@ impl<B: ComputeBackend> AppController<B> {
             .state
             .session()
             .simulation_triage_with_diagnostics(&evidence, &core_diagnostics);
-        // SAFETY: resp is a known JSON object we just constructed.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "resp is a known JSON object we just constructed."
+        )]
         {
             // `Value::Null` is a constant, so the lazy form is the
             // `unnecessary_lazy_evaluations` lint.

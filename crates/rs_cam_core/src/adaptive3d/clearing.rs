@@ -101,8 +101,10 @@ pub(super) fn detect_material_regions(
 /// [`detect_material_regions`] and its flood-fill label grid (row-major,
 /// one id per cell; `usize::MAX` is a cell with no material). Each region
 /// carries its id in `bfs_label`. The By Area overlay reads the grid.
-// SAFETY: bounded indexing in algorithmic code; every index is below rows * cols.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code; every index is below rows * cols."
+)]
 pub(super) fn detect_material_regions_labeled(
     material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
@@ -418,7 +420,10 @@ pub(super) struct ClearZLevelContext<'a> {
 /// With a mask, only the owned cells can be `true`.
 ///
 /// Returns `(padded_grid, padded_rows, padded_cols, origin_x, origin_y, cell_size)`.
-#[allow(clippy::indexing_slicing)] // SAFETY: padded grid indices bounded by loop ranges
+#[expect(
+    clippy::indexing_slicing,
+    reason = "padded grid indices bounded by loop ranges"
+)]
 fn build_material_bool_grid(
     material_stock: &TriDexelStock,
     surface_hm: &SurfaceHeightmap,
@@ -598,7 +603,10 @@ pub(super) struct PlannerCursor {
 /// planner spent seven weeks believing it had removed material its own
 /// emitted toolpath leaves standing — see
 /// `planning/review_2026-08-04/ADAPTIVE3D_RED_BASELINE.md` §3.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn stamp_emitted_segment(
     material_stock: &mut TriDexelStock,
     lut: &RadialProfileLUT,
@@ -885,7 +893,10 @@ fn corridor_ceiling_z(stock: &TriDexelStock, from: P3, to: P3, radius: f64) -> f
 /// With a boundary the segment first passes the clip
 /// (`centre_clip::clip_segment`): the planner pushes and stamps only the
 /// pieces the session's boundary clip keeps (G-BOUNDARYPHANTOM).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn push_segment_with_stamp(
     segments: &mut Vec<Adaptive3dSegment>,
     material_stock: &mut TriDexelStock,
@@ -930,7 +941,10 @@ fn push_segment_with_stamp(
 }
 
 /// [`push_segment_with_stamp`] for a segment that has passed the clip.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn push_segment_with_stamp_unclipped(
     segments: &mut Vec<Adaptive3dSegment>,
     material_stock: &mut TriDexelStock,
@@ -959,7 +973,10 @@ fn push_segment_with_stamp_unclipped(
 
 /// Plan an entry (its floor and keep-down proof), stamp the segment into the
 /// planner stock and move the cursor past it. Returns the segment to emit.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn stamp_and_advance(
     material_stock: &mut TriDexelStock,
     lut: &RadialProfileLUT,
@@ -1026,7 +1043,10 @@ fn stamp_and_advance(
 ///
 /// This replaces the polygon-offset approach which hung on fine tools
 /// due to iterative `offset_polygon` on high-vertex polygons.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub(super) fn clear_z_level_contour_parallel(
     ctx: &ClearZLevelContext<'_>,
     material_stock: &mut TriDexelStock,
@@ -1166,7 +1186,10 @@ pub(super) fn clear_z_level_contour_parallel(
             // single-segment cleanup paths are left alone.
             if path_3d.len() >= 3 {
                 let stock_top_at_path_idx = |idx: usize| -> f64 {
-                    #[allow(clippy::indexing_slicing)] // idx < path_3d.len() by construction
+                    #[expect(
+                        clippy::indexing_slicing,
+                        reason = "idx < path_3d.len() by construction"
+                    )]
                     let p = &path_3d[idx];
                     match material_stock.z_grid.world_to_cell(p.x, p.y) {
                         Some((row, col)) => stock_top_z_at(material_stock, row, col),
@@ -1292,8 +1315,10 @@ pub(super) fn clear_z_level_contour_parallel(
         for row in 0..cr {
             let mut run_start: Option<usize> = None;
             for col in 0..cc {
-                // SAFETY: row*cc+col bounded by grid dimensions
-                #[allow(clippy::indexing_slicing)]
+                #[expect(
+                    clippy::indexing_slicing,
+                    reason = "row*cc+col bounded by grid dimensions"
+                )]
                 let is_mat = cleanup_grid[row * cc + col];
                 if is_mat {
                     if run_start.is_none() {
@@ -1404,7 +1429,10 @@ pub(super) fn clear_z_level_contour_parallel(
 /// varying threshold based on EDT level-set curvature.  At convex boundary
 /// sections the stepover shrinks (preventing engagement spikes); at concave
 /// sections it grows (avoiding wasted light passes).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub(super) fn clear_z_level_adaptive(
     ctx: &ClearZLevelContext<'_>,
     material_stock: &mut TriDexelStock,
@@ -1570,13 +1598,19 @@ pub(super) fn clear_z_level_adaptive(
     Ok(())
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Run waterline boundary cleanup at a given Z level.
 ///
 /// When `slope_map` is provided, only traces contours through steep regions
 /// (slope angle > 30°). This avoids re-tracing shallow areas that the
 /// adaptive spiral already cleared.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub(super) fn waterline_cleanup(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -1756,7 +1790,7 @@ fn polygon_centroid_xy(poly: &crate::polygon::Polygon2) -> (f64, f64) {
 /// produces a handful of regions, for which the picker scans linearly and
 /// this is a consolidation rather than a speed-up; the guarantee is that no
 /// level can produce enough regions to hang.
-#[allow(clippy::indexing_slicing)] // anchors indexed by enumerate idx
+#[expect(clippy::indexing_slicing, reason = "anchors indexed by enumerate idx")]
 fn nearest_neighbor_order(anchors: &[(f64, f64)], start: (f64, f64)) -> Vec<usize> {
     let mut picker = crate::geometry::nn_order::NearestPicker::new(
         crate::geometry::nn_order::Metric::EuclidSq,
@@ -1791,9 +1825,9 @@ fn polygon_signed_area(points: &[P2]) -> f64 {
     }
     let mut acc = 0.0;
     for i in 0..n {
-        #[allow(clippy::indexing_slicing)] // SAFETY: i < n, (i+1) % n < n
+        #[expect(clippy::indexing_slicing, reason = "i < n, (i+1) % n < n")]
         let a = points[i];
-        #[allow(clippy::indexing_slicing)]
+        #[expect(clippy::indexing_slicing, reason = "i < n, (i+1) % n < n")]
         let b = points[(i + 1) % n];
         acc += a.x * b.y - b.x * a.y;
     }
@@ -1986,7 +2020,10 @@ fn detect_and_order_regions(
         let start = last_pos.map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
         let anchors: Vec<(f64, f64)> = regions.iter().map(polygon_centroid_xy).collect();
         let order = nearest_neighbor_order(&anchors, start);
-        #[allow(clippy::indexing_slicing)] // order entries are valid region indices
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "order entries are valid region indices"
+        )]
         let reordered: Vec<_> = order.into_iter().map(|i| regions[i].clone()).collect();
         regions = reordered;
     }
@@ -2226,9 +2263,10 @@ fn planner_outlines(
 /// Plan one outline: the 2D adaptive walk, its residue cleanup and the
 /// F-038 short-group filter. It appends the spiral's predicted engagement
 /// to `slice_eng_2d`.
-// SAFETY: the arguments are the per-region state of `clear_one_region`,
-// passed through unchanged.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the arguments are the per-region state of `clear_one_region`, passed through unchanged."
+)]
 fn plan_one_outline(
     ctx: &ClearZLevelContext<'_>,
     params_2d: &crate::adaptive::AdaptiveParams,
@@ -2367,9 +2405,10 @@ fn plan_one_outline(
 /// which becomes a 3D Rapid: retract to safe_z, traverse XY, plunge. Between
 /// disjoint regions that retract is correct; the 2D adaptive cannot link
 /// across regions because each call sees only its own region's polygon.
-// SAFETY: every `path_2d[i]` and `pts[i]` below indexes a vector this
-// function just built, at an index its own `len()` guard admits.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every `path_2d[i]` and `pts[i]` below indexes a vector this function just built, at an index its own `len()` guard admits."
+)]
 fn clear_one_region(
     ctx: &ClearZLevelContext<'_>,
     plan: &RegionClearPlan<'_>,
@@ -2876,7 +2915,10 @@ fn coalesce_level_entries(
     replaced_entries
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub(super) fn clear_z_level_agent_2d_slice(
     ctx: &ClearZLevelContext<'_>,
     material_stock: &mut TriDexelStock,
@@ -3100,7 +3142,6 @@ fn update_level_marker_metrics(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod region_order_tests {
     use super::{air_run_crossover_mm, nearest_neighbor_order};
 

@@ -1,6 +1,10 @@
 //! Integration tests for STEP file import via truck.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![cfg(feature = "step")]
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::geometry::enriched_mesh::SurfaceType;
 use rs_cam_core::io::step_input::load_step;

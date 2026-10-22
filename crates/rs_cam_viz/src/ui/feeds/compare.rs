@@ -145,12 +145,10 @@ pub(crate) fn compute_preview(
     ))
 }
 
-// SAFETY: the card reads the operation, the tool, the material and the
-// machine on top of the recommendation, because the chipload verdict is a
-// statement about the cut, not about the recipe. `draw_feeds_card` carries
-// the same allow for the same reason: bundling what the session already
-// holds into a struct would build a second data model of it.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the card reads the operation, the tool, the material and the machine on top of the recommendation, because the chipload verdict is a statement about the cut, not about the recipe. `draw_feeds_card` carries the same allow for the same reason: bundling what the session already holds into a struct would build a second data model of it."
+)]
 pub(crate) fn draw_inspector_comparison(
     ui: &mut egui::Ui,
     current: &CurrentValues,

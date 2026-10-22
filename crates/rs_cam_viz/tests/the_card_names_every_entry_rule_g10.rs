@@ -28,11 +28,11 @@
 //! `egui::Context`, as `a_claimed_row_states_its_claim_on_the_card_g_claimcard`
 //! does.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;
@@ -361,6 +361,7 @@ fn the_entry_lines_name_angle_pitch_pip_and_clearance_g10() {
 
 /// The MCP basis carries the plunge source, the re-derive record, the entry
 /// notes and the ramp arm, from the same profile the card reads.
+#[cfg(feature = "mcp")]
 #[test]
 fn the_mcp_basis_carries_plunge_and_entry_g10() {
     let state = state_for(

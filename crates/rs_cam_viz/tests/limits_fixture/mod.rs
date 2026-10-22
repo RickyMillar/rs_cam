@@ -26,10 +26,11 @@
 
 #![allow(
     dead_code,
-    clippy::unwrap_used,
+    reason = "each test binary that includes this module uses only part of it"
+)]
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::HashMap;

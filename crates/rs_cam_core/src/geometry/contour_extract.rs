@@ -62,7 +62,10 @@ pub fn weave_contours(x_fibers: &[Fiber], y_fibers: &[Fiber], z: f64) -> Vec<Vec
         .collect()
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Build a 2D boolean grid from fiber intervals.
 fn build_boolean_grid(x_fibers: &[Fiber], y_fibers: &[Fiber]) -> Vec<Vec<bool>> {
     let n_rows = x_fibers.len();
@@ -91,7 +94,10 @@ fn build_boolean_grid(x_fibers: &[Fiber], y_fibers: &[Fiber]) -> Vec<Vec<bool>> 
     grid
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Run marching squares on the boolean grid.
 /// Returns 2D line segments at boundaries between inside/outside cells (Z is
 /// constant across a single weave and is reattached by the caller).
@@ -145,7 +151,10 @@ fn fiber_marching_squares(
     segments
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Compute a point on a horizontal cell edge (between two columns at the same row).
 /// The point lies at the X-coordinate where the X-fiber's interval boundary crosses.
 fn edge_point_x(
@@ -167,7 +176,10 @@ fn edge_point_x(
     P2::new(boundary_x, y)
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Compute a point on a vertical cell edge (between two rows at the same column).
 fn edge_point_y(
     x_fibers: &[Fiber],
@@ -265,7 +277,10 @@ pub fn marching_squares_bool_grid(
 /// array below (`[left, bottom, right, top]`) already lines up with those
 /// local labels (Left = bl-tl, Bottom = bl-br, Right = br-tr, Top = tl-tr),
 /// so no further adapter is needed. See `marching_squares`'s module doc.
-#[allow(clippy::indexing_slicing)] // SAFETY: row/col bounded by loop ranges checked above
+#[expect(
+    clippy::indexing_slicing,
+    reason = "row/col bounded by loop ranges checked above"
+)]
 fn ms_bool_segments(
     grid: &[bool],
     rows: usize,
@@ -339,11 +354,9 @@ fn ms_bool_segments(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

@@ -25,16 +25,11 @@
 //! envelope is an exact multiple of the cell size, and Z planes at the exact
 //! mesh min/max.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    // The `#[ignore]`d lever-2 headroom harness REPORTS a measurement — the
-    // number is its entire output, and it is read off the terminal by whoever
-    // runs it explicitly. Same reason `classification.rs` and
-    // `pocket_lift_bridge_b1.rs` carry the print allows.
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "The `#[ignore]`d lever-2 headroom harness REPORTS a measurement — the number is its entire output, and it is read off the terminal by whoever runs it explicitly. Same reason `classification.rs` and `pocket_lift_bridge_b1.rs` carry the print allows."
 )]
 
 mod common;

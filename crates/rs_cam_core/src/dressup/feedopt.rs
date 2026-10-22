@@ -269,8 +269,10 @@ fn smooth_feed_rates(feeds: &mut [f64], moves: &[Move], ramp_rate: f64) {
         return;
     }
 
-    // SAFETY: i ranges over valid indices; i-1 and i+1 are checked by loop bounds
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "i ranges over valid indices; i-1 and i+1 are checked by loop bounds"
+    )]
     {
         // Forward pass: limit feed rate increases
         for i in 1..feeds.len() {
@@ -302,7 +304,10 @@ fn move_distance(a: &P3, b: &P3) -> f64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::tool::FlatEndmill;

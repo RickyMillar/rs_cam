@@ -2,11 +2,11 @@
 //! reducer are tested in isolation; integration with `ProjectSession`
 //! lands in PR-3 once consumers cut over.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::indexing_slicing,
-    clippy::panic
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use super::*;

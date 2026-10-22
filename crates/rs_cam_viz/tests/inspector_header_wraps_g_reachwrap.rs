@@ -70,11 +70,10 @@
 //! `.wrap()` calls make each line's behaviour local rather than inherited.
 //! Whether that is sufficient is exactly what V6.2 has to look at.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 /// Every `.rs` file directly in `src/ui/properties/`, concatenated in

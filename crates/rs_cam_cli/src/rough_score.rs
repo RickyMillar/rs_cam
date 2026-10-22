@@ -1,4 +1,7 @@
-#![allow(clippy::print_stdout)] // CLI surface: the JSON records go to stdout
+#![expect(
+    clippy::print_stdout,
+    reason = "CLI surface: the JSON records go to stdout"
+)]
 
 //! `rough-score`: the scoring instrument of the step-ladder roughing plan.
 //!
@@ -493,11 +496,11 @@ impl MoveCounts {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

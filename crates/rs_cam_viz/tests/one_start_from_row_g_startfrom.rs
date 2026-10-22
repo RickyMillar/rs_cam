@@ -19,11 +19,11 @@
 //! branch. Every arm here drives the production `properties::draw` through a
 //! headless `Context` and reads the glyphs it painted.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::BTreeSet;

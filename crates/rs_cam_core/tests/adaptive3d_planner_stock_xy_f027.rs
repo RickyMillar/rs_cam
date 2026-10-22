@@ -54,12 +54,9 @@
 //! Behind the `heavy-tests` feature to keep the dev loop fast:
 //! `cargo test -p rs_cam_core --features heavy-tests --test adaptive3d_planner_stock_xy_f027`.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stderr
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

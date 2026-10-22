@@ -517,8 +517,10 @@ pub fn preflight_simulation(
     })
 }
 
-// SAFETY: test module; a failed `let ... else` is a failed test.
-#[allow(clippy::panic)]
+#[expect(
+    clippy::panic,
+    reason = "test module; a failed `let ... else` is a failed test."
+)]
 #[cfg(test)]
 mod wave3_tests {
     //! The preflight arithmetic. The limits are arbitrary values on the two

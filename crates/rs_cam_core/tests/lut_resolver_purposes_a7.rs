@@ -33,12 +33,10 @@
 //! disclosure; on a fixture LUT that holds only the two Whiteside V-bit RPM
 //! anchors, the `trace/vbit60` cells rest on an anchor and must disclose it.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
+#![expect(
     clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 use rs_cam_core::feeds::vendor_lut::VendorLut;

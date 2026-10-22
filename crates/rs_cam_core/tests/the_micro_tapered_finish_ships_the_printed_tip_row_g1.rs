@@ -24,11 +24,10 @@
 //! `VendorBacked`, not `Extrapolated`. Both scales are exactly 1.0
 //! (`1.0^0.61` and `(1450 / 1450)^0.5`), so the band ships as printed.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::catalog::OperationType;

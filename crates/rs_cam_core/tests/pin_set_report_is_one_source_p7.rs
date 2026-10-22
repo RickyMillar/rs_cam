@@ -14,7 +14,11 @@
 //! 3. `SetPinPartModels` changes the walls and stales nothing;
 //! 4. the choice survives a save and a load.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use std::sync::Arc;
 

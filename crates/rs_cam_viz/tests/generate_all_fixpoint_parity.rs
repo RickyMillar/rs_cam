@@ -14,11 +14,9 @@
 //! so reading it is not a default (R1). The GUI now arms a plan on auto, and
 //! asks only when the panel's PINNED value is coarser than the rest needs.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};

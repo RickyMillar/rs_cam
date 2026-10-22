@@ -6,11 +6,9 @@
 //! must not turn that number into an S clamp: the export keeps S18000.
 //! Fixture: `tests/fixtures/grblhal_dump_2026-10-08/` (welcome line, `$I`,
 //! `$$`, CRLF, as the controller printed them).
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::gcode::{PostFormat, WizardOverlay, emitter, program_builder};

@@ -44,11 +44,10 @@
 //! number may move. One clock for every published runtime is the ruling; a
 //! byte-identical drill would contradict it.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

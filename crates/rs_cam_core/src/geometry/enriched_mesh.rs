@@ -135,8 +135,10 @@ impl EnrichedMesh {
     /// # Panics
     /// Panics if `tri_idx` is out of bounds.
     pub fn face_for_triangle(&self, tri_idx: usize) -> FaceGroupId {
-        // SAFETY: documented to panic on out-of-bounds tri_idx
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "documented to panic on out-of-bounds tri_idx"
+        )]
         FaceGroupId(self.triangle_to_face[tri_idx])
     }
 
@@ -274,14 +276,19 @@ impl EnrichedMesh {
         }
 
         // First loop is the exterior, rest are holes
-        // SAFETY: loops_2d is non-empty (checked above)
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "loops_2d is non-empty (checked above)"
+        )]
         let exterior = loops_2d[0].clone();
         if exterior.len() < 3 {
             return None;
         }
 
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "loops_2d is non-empty (checked above), so the range 1.. is in bounds"
+        )]
         let holes: Vec<Vec<P2>> = loops_2d[1..]
             .iter()
             .filter(|h| h.len() >= 3)
@@ -434,8 +441,10 @@ fn compute_2d_boundary(
         .map(|loop_3d| loop_3d.iter().map(|p| P2::new(p.x, p.y)).collect())
         .collect();
 
-    // SAFETY: short-circuit on is_empty() ensures [0] is valid
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "short-circuit on is_empty() ensures [0] is valid"
+    )]
     if loops_2d.is_empty() || loops_2d[0].len() < 3 {
         return None;
     }
@@ -444,7 +453,11 @@ fn compute_2d_boundary(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

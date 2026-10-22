@@ -70,14 +70,13 @@
 //! Each rule has a red proof: with the rule off, the claim fails. The red
 //! runs are recorded in the W3.4 report.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
-// The measured numbers ARE the record.
-#![allow(clippy::print_stderr)]
+#![expect(clippy::print_stderr, reason = "The measured numbers ARE the record.")]
 
 mod common;
 

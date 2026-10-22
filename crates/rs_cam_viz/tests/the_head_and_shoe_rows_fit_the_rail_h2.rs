@@ -8,11 +8,10 @@
 //! section painted its anchor text (a non-vacuity anchor): a section that
 //! does not draw fits any width.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

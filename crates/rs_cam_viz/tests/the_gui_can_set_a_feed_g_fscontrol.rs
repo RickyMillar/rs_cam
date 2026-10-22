@@ -31,11 +31,11 @@
 //! and a second arm asserts they WRITE. A control that renders and writes
 //! nothing is the same defect wearing a coat.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

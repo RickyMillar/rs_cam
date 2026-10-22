@@ -59,13 +59,13 @@
 //! `#[ignore]` — evidence run; needs the operator's wanaka mesh (not in
 //! the repo). SKIPs when absent; never substitutes a fixture mesh.
 
-#![allow(
+#![expect(
     clippy::print_stderr,
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader; test code accepts the style lint too_many_lines"
 )]
 
 use std::path::Path;
@@ -356,7 +356,10 @@ fn wanaka_band_cell_ownership_g2() {
     eprintln!("\ntotal wall time {:.0} s", started.elapsed().as_secs_f64());
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "test code accepts the style lint too_many_arguments"
+)]
 fn attribute_region(
     mesh: &TriangleMesh,
     poly: &Polygon2,

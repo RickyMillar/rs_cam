@@ -1215,7 +1215,10 @@ fn polyline_to_svg_path(
     d
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn ring_to_svg_subpath(
     ring: &[P2],
     minx: f64,
@@ -1243,13 +1246,10 @@ fn ring_to_svg_subpath(
 // ── Tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stdout,
-    clippy::print_stderr
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

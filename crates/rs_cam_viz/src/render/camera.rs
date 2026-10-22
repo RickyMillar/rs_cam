@@ -84,7 +84,10 @@ impl OrbitCamera {
     }
 
     /// Combined view-projection matrix.
-    #[allow(clippy::indexing_slicing)] // nalgebra 4x4 matrix slice is always 16 elements
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "nalgebra 4x4 matrix slice is always 16 elements"
+    )]
     pub fn view_proj(&self, aspect: f32) -> [[f32; 4]; 4] {
         let vp = self.projection_matrix(aspect) * self.view_matrix();
         let s = vp.as_slice();
@@ -134,7 +137,6 @@ impl OrbitCamera {
     }
 
     /// Fit the camera to a bounding box.
-    #[allow(clippy::indexing_slicing)] // fixed-size [f32; 3] arrays
     pub fn fit_to_bounds(&mut self, min: [f32; 3], max: [f32; 3]) {
         let cx = (min[0] + max[0]) * 0.5;
         let cy = (min[1] + max[1]) * 0.5;
@@ -241,11 +243,9 @@ impl Default for OrbitCamera {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

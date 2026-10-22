@@ -198,7 +198,10 @@ fn max_opt(a: Option<f64>, b: Option<f64>) -> Option<f64> {
 
 /// Fold `samples[first + 1..end]` into `samples[first]` by the rules in the
 /// module doc. All of them are one segment's subsegments.
-#[allow(clippy::indexing_slicing)] // first < end <= samples.len(), by the caller
+#[expect(
+    clippy::indexing_slicing,
+    reason = "first < end <= samples.len(), by the caller"
+)]
 fn merge_into_first(samples: &mut [SimulationCutSample], first: usize, end: usize) {
     if end - first <= 1 {
         return;
@@ -274,11 +277,10 @@ fn merge_into_first(samples: &mut [SimulationCutSample], first: usize, end: usiz
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

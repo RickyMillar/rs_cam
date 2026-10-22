@@ -28,11 +28,10 @@
 //! `the_readiness_fixture_measures_something_g_readylimits` fails the file if
 //! the fixture stops producing a modelled row with a positive peak.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod limits_fixture;

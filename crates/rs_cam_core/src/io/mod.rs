@@ -347,12 +347,6 @@ pub fn infer_kind_from_path(path: &Path) -> Option<ModelKind> {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::*;
 

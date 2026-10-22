@@ -28,11 +28,9 @@
 //! `tool_scale_semantics_pr2::finish_surface_cell_source_names_the_radius_that_sized_the_grid`,
 //! which this PR deliberately leaves untouched.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::finish::finish_setup::{

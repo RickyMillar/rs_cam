@@ -15,11 +15,10 @@
 //! - with the centroid depth, the red square covers all of it, and no blue
 //!   pixel shows.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::export::fingerprint::{composite_panel_layout, render_mesh_composite};

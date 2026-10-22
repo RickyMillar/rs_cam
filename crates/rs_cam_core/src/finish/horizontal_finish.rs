@@ -92,7 +92,6 @@ struct FlatRegion {
 /// wrapper only saved the module's own tests a `run_uncancellable` line, so
 /// it is `#[cfg(test)]` and no longer public API.
 #[cfg(test)]
-#[allow(clippy::indexing_slicing, clippy::expect_used)]
 fn horizontal_finish_toolpath(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -115,7 +114,10 @@ fn horizontal_finish_toolpath(
 /// The point is recorded as `None`, same as an off-mesh or non-flat point,
 /// so the existing run-split contiguous-segment logic treats it as a gap.
 /// `None` reproduces today's full-region sampling byte-for-byte.
-#[allow(clippy::indexing_slicing, clippy::too_many_arguments)] // mesh vertex/face indexing is bounded by mesh structure
+#[expect(
+    clippy::indexing_slicing,
+    reason = "mesh vertex/face indexing is bounded by mesh structure"
+)]
 pub fn horizontal_finish_toolpath_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -331,7 +333,10 @@ pub fn horizontal_finish_toolpath_with_cancel(
     Ok(tp)
 }
 
-#[allow(clippy::indexing_slicing)] // tri_idx bounded by flat_face_set.len() check
+#[expect(
+    clippy::indexing_slicing,
+    reason = "tri_idx bounded by flat_face_set.len() check"
+)]
 /// Check whether the point (x, y) lies over at least one flat triangle.
 ///
 /// Uses the spatial index to find nearby triangles, then tests XY containment
@@ -357,7 +362,11 @@ fn is_point_over_flat_triangle(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::mesh::{SpatialIndex, make_test_flat};

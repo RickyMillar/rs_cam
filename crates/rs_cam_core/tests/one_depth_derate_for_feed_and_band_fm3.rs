@@ -17,7 +17,10 @@
 //!   `feeds.depth_beyond_published_table` Caution;
 //! - (d) the id `geom.dpp_over_1_5x_diameter` is gone from `ids.rs`.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;

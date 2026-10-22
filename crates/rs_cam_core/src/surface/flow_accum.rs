@@ -82,7 +82,10 @@ impl FlowField {
 ///
 /// SAFETY: every caller iterates `k` over `0..8` and `NB8` has 8 entries, so
 /// the `NB8[k]` access is bounded.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every caller iterates `k` over `0..8` and `NB8` has 8 entries, so the `NB8[k]` access is bounded."
+)]
 #[must_use]
 pub fn neighbour(field: &FlowField, i: usize, k: usize) -> Option<(usize, f64)> {
     let (dr, dc) = NB8[k];
@@ -137,7 +140,10 @@ impl PartialOrd for HeapItem {
 /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
 /// only callers. No production path reads it, so it sits
 /// behind `test-support` (F085).
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "indices come from `0..n` (`n == field.len()`) or from [`neighbour`], which returns only in-range cells; every `out`/`closed`/`field.*` access is bounded. **Test door.** The harnesses under `crates/rs_cam_core/tests` are the only callers. No production path reads it, so it sits behind `test-support` (F085)."
+)]
 #[must_use]
 #[cfg(feature = "test-support")]
 pub fn priority_flood_epsilon(field: &FlowField) -> Vec<f64> {
@@ -207,7 +213,10 @@ pub fn priority_flood_epsilon(field: &FlowField) -> Vec<f64> {
 /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
 /// only callers. No production path reads it, so it sits
 /// behind `test-support` (F085).
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`cells`, `d_low`, `d_high` are indexed by positions produced from the flat's own membership BFS; `out`/`filled`/`member` are indexed by cell ids in `0..n`; `neighbour` returns only in-range cells. **Test door.** The harnesses under `crates/rs_cam_core/tests` are the only callers. No production path reads it, so it sits behind `test-support` (F085)."
+)]
 #[must_use]
 #[cfg(feature = "test-support")]
 pub fn resolve_flats(field: &FlowField, filled: &[f64]) -> (Vec<f64>, usize, usize, usize) {
@@ -354,7 +363,10 @@ pub fn resolve_flats(field: &FlowField, filled: &[f64]) -> (Vec<f64>, usize, usi
 ///
 /// SAFETY: `i` ranges over `0..n`; `filled`/`field.nodata` are `len == n`;
 /// `neighbour` returns only in-range cells.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`i` ranges over `0..n`; `filled`/`field.nodata` are `len == n`; `neighbour` returns only in-range cells."
+)]
 #[must_use]
 pub fn d8_receivers(field: &FlowField, filled: &[f64]) -> Vec<Option<u32>> {
     let n = field.len();
@@ -391,7 +403,10 @@ pub fn d8_receivers(field: &FlowField, filled: &[f64]) -> Vec<Option<u32>> {
 /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are the
 /// only callers. No production path reads it, so it sits
 /// behind `test-support` (F085).
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`order` holds only data-cell ids in `0..n`; `acc`/`receivers` are `len == n`; each receiver id came from [`d8_receivers`] and is in range. **Test door.** The harnesses under `crates/rs_cam_core/tests` are the only callers. No production path reads it, so it sits behind `test-support` (F085)."
+)]
 #[must_use]
 #[cfg(feature = "test-support")]
 pub fn d8_accumulation(field: &FlowField, filled: &[f64], receivers: &[Option<u32>]) -> Vec<f64> {

@@ -448,12 +448,6 @@ fn classify_engagement(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::*;
     use crate::stock::simulation_cut::{Engagement, SimulationCutSample};

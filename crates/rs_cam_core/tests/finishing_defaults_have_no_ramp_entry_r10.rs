@@ -32,8 +32,6 @@
 //! 4. The roughing family is unmoved: `Pocket` creates with `Ramp`,
 //!    `Adaptive` with `Helix`.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 use rs_cam_core::compute::catalog::{EntryStylePolicy, OperationType, UiProcessRole};
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 

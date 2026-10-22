@@ -38,11 +38,9 @@
 //! Whether the help text is CORRECT, and the tooltips of rows that are not
 //! `dv` rows (a checkbox or a combo carries its own `on_hover_text`).
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

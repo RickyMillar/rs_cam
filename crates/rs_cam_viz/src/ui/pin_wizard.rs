@@ -621,7 +621,6 @@ fn part_models(ui: &mut egui::Ui, session: &ProjectSession, events: &mut Vec<App
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
 

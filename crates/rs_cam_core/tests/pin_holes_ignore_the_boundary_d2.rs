@@ -18,11 +18,10 @@
 //!    boundary clip is on and it removes a hole at a pin position.
 //! 2. The Pin Drill with the same boundary drills both pins.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

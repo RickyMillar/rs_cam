@@ -129,9 +129,13 @@ impl ProjectSession {
     /// reads — that arm panics when no `impl ProjectSession` block
     /// declares it. And it is the one setter whose own body proves the
     /// two routes are one.
-    // SAFETY: the declared wrapper exemption above; the non-test build
-    // has no caller, and the WP15a sentry reads the body as text.
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the declared wrapper exemption above; the non-test build has no caller, and the WP15a sentry reads the body as text"
+        )
+    )]
     pub(crate) fn set_toolpath_param(
         &mut self,
         index: usize,
@@ -186,8 +190,10 @@ impl ProjectSession {
             if f < i64::MIN as f64 || f > i64::MAX as f64 {
                 return None;
             }
-            // SAFETY: finite + integer-valued + i64 range checked above.
-            #[allow(clippy::cast_possible_truncation)]
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "finite + integer-valued + i64 range checked above."
+            )]
             Some(serde_json::Value::Number(serde_json::Number::from(
                 f as i64,
             )))
@@ -284,8 +290,11 @@ impl ProjectSession {
                                 "spindle_rpm must be a whole number: {f}"
                             )));
                         }
-                        // SAFETY: bounds + finite + integer-valued checked above.
-                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                        #[expect(
+                            clippy::cast_possible_truncation,
+                            clippy::cast_sign_loss,
+                            reason = "bounds + finite + integer-valued checked above."
+                        )]
                         Some(f as u32)
                     }
                 };

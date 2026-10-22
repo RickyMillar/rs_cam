@@ -348,8 +348,7 @@ impl ProjectSession {
         let _modulated = self.modulate_simulation_trace(&mut result.cut_trace, opts);
 
         self.store_simulation(result);
-        // SAFETY: we just assigned Some
-        #[allow(clippy::unwrap_used)]
+        #[expect(clippy::unwrap_used, reason = "we just assigned Some")]
         Ok(self.simulation.as_ref().unwrap())
     }
 
@@ -360,7 +359,10 @@ impl ProjectSession {
     /// The session door onto the free `modulate_annotated_against_trace`,
     /// which holds the body. The strategy advisor takes that
     /// function directly with the records its handle captured.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each parameter is a separate input that the callers supply"
+    )]
     fn modulate_annotated_against_trace(
         &self,
         annotated: &crate::trace::toolpath_spans::AnnotatedToolpath,

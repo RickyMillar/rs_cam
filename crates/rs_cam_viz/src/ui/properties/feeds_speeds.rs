@@ -17,7 +17,10 @@ use crate::ui::feeds::shared::{material_family_label, tool_family_label};
 /// (F216), and draw the feeds card. The calculator never writes to the operation
 /// here (Roadmap F.5). The canonical comparison's `Apply all` is the
 /// only path that pushes calculated values into the operation.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub(super) fn calculate_and_apply_feeds(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
@@ -164,12 +167,10 @@ pub(super) fn draw_speed_controls(
     });
 }
 
-// The card reads the tool, the machine, the material, the project RPM, the
-// accepted load verdict and two session policies to answer one question. Its
-// caller `calculate_and_apply_feeds` carries the same allow for the same
-// reason: bundling these into a struct would build a second data model of
-// what the session already holds.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The card reads the tool, the machine, the material, the project RPM, the accepted load verdict and two session policies to answer one question. Its caller `calculate_and_apply_feeds` carries the same allow for the same reason: bundling these into a struct would build a second data model of what the session already holds."
+)]
 fn draw_feeds_card(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,

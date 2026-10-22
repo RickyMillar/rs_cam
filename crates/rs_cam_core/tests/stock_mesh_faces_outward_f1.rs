@@ -22,11 +22,10 @@
 //! 6. The composite draws the TOP and the BOTTOM panel of an uncut block lit
 //!    (the `probe/src/bin/shade.rs` check, as a test).
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};

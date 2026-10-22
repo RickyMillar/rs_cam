@@ -7,16 +7,13 @@
 //! Run all sweeps:    `cargo test --test param_sweep -- --ignored`
 //! Run one family:    `cargo test --test param_sweep sweep_pocket`
 //! Run one parameter: `cargo test --test param_sweep sweep_pocket_stepover`
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stdout,
-    clippy::print_stderr,
     clippy::too_many_arguments,
     clippy::str_to_string,
-    unused_variables
+    unused_variables,
+    reason = "test code: a panic is how a test reports a failure; test code accepts the style lints str_to_string, too_many_arguments, unused_variables"
 )]
 
 use rs_cam_core::{

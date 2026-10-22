@@ -378,9 +378,10 @@ fn gate_chains_by_depth(
     threshold: f64,
 ) -> Vec<Vec<u32>> {
     let keep = |c: &Vec<u32>| -> bool {
-        // SAFETY: chain vertex indices come from `chain_concave_edges`, which
-        // only ever walks vertex indices produced by this same mesh's edges.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "chain vertex indices come from `chain_concave_edges`, which only ever walks vertex indices produced by this same mesh's edges."
+        )]
         let pts: Vec<P3> = c.iter().map(|&i| mesh.vertices[i as usize]).collect();
         polyline_passes_depth(&pts, mesh, index, cutter, reference, threshold)
     };
@@ -395,7 +396,10 @@ fn gate_chains_by_depth(
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Order chains by nearest-neighbor to minimize rapids.
 fn order_paths_nearest(paths: &mut [PencilPath]) {
     if paths.len() <= 1 {
@@ -520,7 +524,7 @@ fn polyline_passes_depth(
     let mut depths: Vec<f64> = Vec::new();
     let mut i = 0;
     while i < n {
-        #[allow(clippy::indexing_slicing)] // i < n by loop guard
+        #[expect(clippy::indexing_slicing, reason = "i < n by loop guard")]
         let v = pts[i];
         if let Some(pencil_gap) = reach_gap_at_point(v.x, v.y, v.z, mesh, index, cutter) {
             let rest = match reference {
@@ -538,7 +542,7 @@ fn polyline_passes_depth(
         return false;
     }
     depths.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    #[allow(clippy::indexing_slicing)] // depths non-empty → index < len
+    #[expect(clippy::indexing_slicing, reason = "depths non-empty → index < len")]
     let median = depths[depths.len() / 2];
     median > threshold
 }

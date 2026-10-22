@@ -9,11 +9,10 @@
 //! clean. Each figure is now `None`, and `cut_metrics_not_measured` names
 //! the reason in the words MCP `get_diagnostics` uses.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::ids::ToolpathId;

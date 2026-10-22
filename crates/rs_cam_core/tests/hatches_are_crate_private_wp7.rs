@@ -68,11 +68,10 @@
 //! The list is deliberately short and explicit: a new entry is a claim
 //! that the file scans source rather than mutates a session.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

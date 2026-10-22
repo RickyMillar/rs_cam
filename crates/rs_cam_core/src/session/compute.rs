@@ -1781,7 +1781,10 @@ struct FeedContext<'a> {
 ///
 /// Returns `None` when the op carries no usable RPM, has no moves, or
 /// the modulator refuses (e.g. an empty engagement vector).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn modulate_annotated_against_trace(
     context: &FeedContext<'_>,
     annotated: &crate::trace::toolpath_spans::AnnotatedToolpath,
@@ -1907,8 +1910,10 @@ fn modulate_annotated_against_trace(
         if w <= 0.0 {
             continue;
         }
-        #[allow(clippy::indexing_slicing)]
-        // SAFETY: move_index < move_count checked above.
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "move_index < move_count checked above."
+        )]
         {
             radial_num[sample.move_index] += sample.engagement.radial_woc_fraction.max(0.0) * w;
             // C2: an unmeasured axial fraction contributes nothing but
@@ -1925,20 +1930,16 @@ fn modulate_annotated_against_trace(
     }
     let engagements: Vec<PerMoveEngagement> = (0..move_count)
         .map(|i| {
-            #[allow(clippy::indexing_slicing)]
-            // SAFETY: i < move_count by construction.
+            #[expect(clippy::indexing_slicing, reason = "i < move_count by construction.")]
             let w = weight_sum[i];
             if w <= 0.0 {
                 return PerMoveEngagement::default();
             }
-            #[allow(clippy::indexing_slicing)]
-            // SAFETY: i < move_count by construction.
+            #[expect(clippy::indexing_slicing, reason = "i < move_count by construction.")]
             let sim_radial = radial_num[i] / w;
-            #[allow(clippy::indexing_slicing)]
-            // SAFETY: i < move_count by construction.
+            #[expect(clippy::indexing_slicing, reason = "i < move_count by construction.")]
             let axial = axial_num[i] / w;
-            #[allow(clippy::indexing_slicing)]
-            // SAFETY: i < move_count by construction.
+            #[expect(clippy::indexing_slicing, reason = "i < move_count by construction.")]
             let axial_mm = axial_mm_num[i] / w;
             // Apply the planner engagement on lateral clearing /
             // finishing cuts only — entry helix, ramp, and linking
@@ -2583,10 +2584,10 @@ impl ProjectSession {
             revision: handle.revision,
             result: Box::new(result),
         }))?;
-        // SAFETY: the adopt above inserted at this key. It refuses and
-        // returns early when the index names no toolpath or the revision
-        // moved, and neither can happen under one `&mut self`.
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "the adopt above inserted at this key. It refuses and returns early when the index names no toolpath or the revision moved, and neither can happen under one `&mut self`."
+        )]
         Ok(&self.results[&index])
     }
 

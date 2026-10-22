@@ -139,7 +139,10 @@ fn kept_ranges<T>(points: &[T], keep: &impl Fn(usize, &T) -> bool) -> Vec<(usize
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

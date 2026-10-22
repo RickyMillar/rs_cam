@@ -371,7 +371,10 @@ pub(crate) fn simulation_detail(state: &AppState) -> String {
 }
 
 /// A check card with status icon, label, detail, and optional action link.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn check_card(
     ui: &mut egui::Ui,
     status: CheckStatus,

@@ -26,11 +26,10 @@
 //! NOT MEASURED here: the `units` write is a caller-supplied override
 //! that only the rescale door sends. Property 1 pins both arms of it.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

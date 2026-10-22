@@ -499,9 +499,10 @@ fn centroid(v: &[P3; 3]) -> P3 {
 }
 
 /// Build the induced submesh. Returns `None` when nothing usable is left.
-#[allow(clippy::indexing_slicing)]
-// SAFETY: every index below is either a fixed 0..3 corner index or a local
-// index just produced by the local-vertex map in this same function.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every index below is either a fixed 0..3 corner index or a local index just produced by the local-vertex map in this same function."
+)]
 pub(crate) fn build_region_mesh(
     mesh: &TriangleMesh,
     region_triangles: &[u32],
@@ -645,10 +646,6 @@ struct RawDirection {
 /// normal curvature and no re-sort is needed here: feeding along it leaves the
 /// minimum signed curvature κ₂ perpendicular, which is what maximises the
 /// side-step `√(8h/(k_s + 1/r))`.
-#[allow(clippy::indexing_slicing)]
-// SAFETY: `c` holds local vertex indices produced by `build_region_mesh`, and
-// `gv` is a global vertex id from the same mesh the curvature was computed on;
-// both are bounded by construction.
 fn raw_direction(
     region: &RegionMesh,
     curvature: &Curvature,
@@ -1084,9 +1081,10 @@ fn cotangent(apex: P3, a: P3, b: P3) -> f64 {
 /// Hessian, hence positive semi-definite by construction (its per-triangle
 /// blocks are Gram matrices of the linear basis gradients), so negative
 /// cotangents from obtuse triangles cannot make it indefinite.
-#[allow(clippy::indexing_slicing)]
-// SAFETY: `c` holds local vertex indices produced by `build_region_mesh`, and
-// `rhs`/`weights` are sized from the same local vertex count.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`c` holds local vertex indices produced by `build_region_mesh`, and `rhs`/`weights` are sized from the same local vertex count."
+)]
 pub(crate) fn assemble_poisson(region: &RegionMesh, target: &[V3]) -> (SparseLaplacian, Vec<f64>) {
     let nv = region.verts.len();
     let mut weights: HashMap<(usize, usize), f64> = HashMap::new();
@@ -1149,9 +1147,10 @@ pub(crate) fn assemble_poisson(region: &RegionMesh, target: &[V3]) -> (SparseLap
 /// deficient. The paper states no boundary conditions at all (extraction
 /// gap 2). Pinning the lowest-indexed vertex of each component to zero is the
 /// standard fix and keeps the remaining system SPD.
-#[allow(clippy::indexing_slicing)]
-// SAFETY: union-find arrays are sized from the local vertex count and every
-// index below comes from `RegionMesh::corners`, which returns local indices.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "union-find arrays are sized from the local vertex count and every index below comes from `RegionMesh::corners`, which returns local indices."
+)]
 fn pin_one_vertex_per_component(region: &RegionMesh, report: &mut FieldReport) -> Vec<bool> {
     let nv = region.verts.len();
     let mut parent: Vec<usize> = (0..nv).collect();
@@ -1349,10 +1348,10 @@ struct MarchResult {
 /// not "degenerate" — the level does not pass through it at all — so the count
 /// only rises for a triangle with values on both sides that still failed to
 /// produce a clean pair of crossings.
-#[allow(clippy::indexing_slicing)]
-// SAFETY: `c`/`d` are fixed 3-element arrays indexed by the 0..3 corner
-// indices of `TRI_EDGES`; `c` holds local vertex indices from
-// `build_region_mesh`.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`c`/`d` are fixed 3-element arrays indexed by the 0..3 corner indices of `TRI_EDGES`; `c` holds local vertex indices from `build_region_mesh`."
+)]
 fn march_iso_segments(region: &RegionMesh, phi: &[f64], level: f64) -> MarchResult {
     let mut segments: Vec<(EdgeKey, EdgeKey)> = Vec::new();
     let mut positions: HashMap<EdgeKey, P3> = HashMap::new();
@@ -1528,9 +1527,10 @@ fn is_closed(line: &[P3]) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Gradient of the piecewise-linear `phi` on one triangle.
-#[allow(clippy::indexing_slicing)]
-// SAFETY: `c` holds local vertex indices produced by `build_region_mesh` and
-// the 0..3 literals index its fixed-size array.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`c` holds local vertex indices produced by `build_region_mesh` and the 0..3 literals index its fixed-size array."
+)]
 fn triangle_gradient(region: &RegionMesh, phi: &[f64], tri: usize) -> V3 {
     let area = region.area(tri);
     if area < MIN_TRIANGLE_AREA_MM2 {
@@ -1674,11 +1674,10 @@ fn extract_levels(
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
+#[expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::{

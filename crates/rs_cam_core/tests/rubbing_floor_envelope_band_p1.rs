@@ -88,11 +88,10 @@
 //! shipped data rather than hard-coding a row id that a LUT edit could
 //! silently retire, and fails naming the axis to widen if it finds none.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::feeds::vendor_lookup;

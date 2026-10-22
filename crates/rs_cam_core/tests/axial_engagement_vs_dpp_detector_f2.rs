@@ -17,11 +17,10 @@
 //! Adaptive3d is covered by the stricter whole-toolpath bar in
 //! `adaptive3d_interior_cell_parity_f029.rs` (F-031).
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

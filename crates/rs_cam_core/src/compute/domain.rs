@@ -247,9 +247,10 @@ pub fn side_on_each_face(operation: &OperationConfig) -> bool {
 
 /// The number a TOML value holds, or `None` for a value that is not a
 /// number. An integer reads as its `f64`.
-// SAFETY: a published integer is a count or a size far below 2^53, and the
-// check only compares it with a declared bound.
-#[allow(clippy::cast_precision_loss)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "a published integer is a count or a size far below 2^53, and the check only compares it with a declared bound."
+)]
 fn toml_number(value: &toml::Value) -> Option<f64> {
     match value {
         toml::Value::Float(f) => Some(*f),
@@ -420,7 +421,11 @@ pub fn validate_toolpath(config: &crate::session::ToolpathConfig) -> Result<(), 
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::compute::catalog::OperationType;

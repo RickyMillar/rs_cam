@@ -32,7 +32,10 @@ use crate::trace::transform_provenance::Transformed;
 /// `t` refuses the link (`None`, the caller retracts). Unrefined, the
 /// rivmap100 fine tier's links went 0.356 mm under the surface. `None` keeps
 /// the unrefined link for the callers that have no path tolerance.
-#[allow(clippy::too_many_arguments)] // SAFETY: the link's geometry dials, each named at the call site
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the link's geometry dials, each named at the call site"
+)]
 pub fn build_surface_link(
     from: P3,
     to: P3,
@@ -324,7 +327,10 @@ pub(crate) fn push_link_landing(
 /// degenerate case — a gap shorter than one sample spacing, where
 /// `build_surface_link` yields no interior points at all — is the same rule
 /// with an empty middle, not a special case that feeds across at depth.
-#[allow(clippy::too_many_arguments)] // SAFETY: the candidate, the surface and the ceiling are separate inputs
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the candidate, the surface and the ceiling are separate inputs"
+)]
 pub(crate) fn shape_under_ceiling(
     ceiling: &LinkCeiling<'_>,
     from: P3,
@@ -861,7 +867,6 @@ pub fn relink_fragments(
 /// purpose: `RelinkParams` is spelled out as an exhaustive struct literal at
 /// 27 sites across the crate and its tests, and a new field would rewrite
 /// every one of them for a value that only two callers can supply.
-#[allow(clippy::too_many_arguments)] // SAFETY: the relink inputs plus the fragment kinds, which ride a parameter (see above)
 pub fn relink_fragments_with_kinds(
     annotated: AnnotatedToolpath,
     mesh: &TriangleMesh,
@@ -1372,11 +1377,10 @@ pub fn relink_fragments_with_kinds(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

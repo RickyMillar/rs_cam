@@ -387,7 +387,10 @@ fn arc_is_full_circle(arc: &dxf::entities::Arc) -> bool {
     (sweep_deg - 360.0).abs() < 0.01
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 fn lwpolyline_to_points(lwp: &dxf::entities::LwPolyline, arc_step: f64) -> Vec<P2> {
     let n = lwp.vertices.len();
     let mut pts = Vec::new();
@@ -409,7 +412,10 @@ fn lwpolyline_to_points(lwp: &dxf::entities::LwPolyline, arc_step: f64) -> Vec<P
     pts
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 fn polyline_to_points(verts: &[&dxf::entities::Vertex], arc_step: f64) -> Vec<P2> {
     let n = verts.len();
     let mut pts = Vec::new();
@@ -600,7 +606,10 @@ fn ellipse_to_points(ell: &dxf::entities::Ellipse, arc_step: f64) -> (Vec<P2>, b
 // ---------------------------------------------------------------------------
 
 /// Evaluate a B-spline at parameter `t` using De Boor's algorithm.
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 ///
 /// - `degree`: spline degree (p)
 /// - `knots`: knot vector of length `control_points.len() + degree + 1`
@@ -657,7 +666,10 @@ fn de_boor_eval(degree: usize, knots: &[f64], control_points: &[P2], t: f64) -> 
     Some(d[p])
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Tessellate a DXF Spline entity into polyline points using De Boor's algorithm.
 fn spline_to_points(spline: &dxf::entities::Spline, arc_step: f64) -> Vec<P2> {
     let degree = spline.degree_of_curve as usize;
@@ -697,7 +709,12 @@ fn spline_to_points(spline: &dxf::entities::Spline, arc_step: f64) -> Vec<P2> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

@@ -50,11 +50,12 @@
 //! and a hand-built trace reads stale, so the section would draw only its
 //! `NotMeasured` state. Arm A holds the section's wiring instead.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::{Path, PathBuf};

@@ -142,7 +142,6 @@ impl crate::compute::spans::RuntimeLabel for SpiralFinishRuntimeAnnotation {
 /// still enforces exact containment — this is a conservative superset
 /// filter for performance. `None` reproduces today's full-mesh sampling
 /// byte-for-byte.
-#[allow(clippy::too_many_arguments)]
 pub fn spiral_finish_toolpath_structured_annotated_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -341,11 +340,11 @@ fn generate_spiral_samples(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

@@ -23,12 +23,9 @@
 //! one triangle is one interval (two convex bodies), so the push cutter now
 //! adds the hull of a triangle's contacts.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stderr
+#![expect(
+    clippy::print_stderr,
+    reason = "the test prints its measurements for the reader"
 )]
 
 mod common;

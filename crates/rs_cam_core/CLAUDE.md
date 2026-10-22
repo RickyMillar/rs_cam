@@ -39,7 +39,7 @@ sentries and traps, which this file does not repeat.
 | `metrology/` | Measurement instruments | `metrology/CLAUDE.md` |
 | `budget/` | The memory budget, the job guard, the estimators, the grid caps, the memory-limit text | `budget/CLAUDE.md` |
 | `settings/` | The app settings file (`settings.toml`): loader, writer, the library and artifact folders | `settings/CLAUDE.md` |
-| `util/` | Panic classification and crate build identity | — |
+| `util/` | Panic classification, crate build identity, checked step counts (`util::steps`, F195) | — |
 
 ## Core contracts
 
@@ -52,10 +52,12 @@ sentries and traps, which this file does not repeat.
 - The F-024..F-040 acceptance findings are protected by tests under `tests/`,
   including `_litmatrix_*.rs`. When a change touches one of those behaviours,
   find and run its sentry.
-- Test modules may allow only `unwrap_used`, `expect_used`, `panic` and
+- Test modules may expect only `unwrap_used`, `expect_used`, `panic` and
   `indexing_slicing`; `println!` / `eprintln!` stay denied unless a test has
-  a specific `print_stderr` allowance. Prefer a local allow with a `SAFETY:`
-  comment over a file-wide production allow.
+  a specific `print_stderr` expectation. Write a lint exception as
+  `#[expect(lint, reason = "..")]` on the smallest item; the workspace lints
+  deny `allow` and a missing reason (F170). Keep `#![allow(.., reason)]`
+  only where the lint fires in some feature sets or test binaries.
 - Tests live close to the code they protect; `tests/CLAUDE.md` explains the
   integration-test naming and layout. The heavy core binaries sit behind
   `heavy-tests`. Run the smallest relevant sentry; each folder file

@@ -124,7 +124,10 @@ fn commit_height_row(mode: &mut HeightMode, display: ReferenceOffset, edited: bo
 /// `default_z` is the absolute Z the core resolver produces for this row (see
 /// [`height_row_display`]). An `Auto` row displays that value and stays `Auto`
 /// until the user actually edits the row.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn draw_height_row(
     ui: &mut egui::Ui,
     label: &str,
@@ -511,7 +514,11 @@ pub(super) fn draw_heights_params(
 // The banner above marks the end of the Heights panel section.
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;

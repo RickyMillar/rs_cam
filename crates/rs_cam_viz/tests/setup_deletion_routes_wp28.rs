@@ -1,6 +1,9 @@
 //! Source sentry for the two GUI setup-deletion routes.
 
-#![allow(clippy::panic, clippy::indexing_slicing)]
+#![expect(
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 const INSPECTOR: &str = include_str!("../src/ui/properties/setup.rs");
 const SETUP_PANEL: &str = include_str!("../src/ui/setup_panel.rs");

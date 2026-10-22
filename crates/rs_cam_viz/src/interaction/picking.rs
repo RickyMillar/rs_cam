@@ -92,9 +92,10 @@ impl PickContext<'_> {
 /// displays (`state::pin_view::active_display_setup`). The pins are picked
 /// where that frame draws them (C8), and only that setup's obstacles are
 /// picked (K2).
-// SAFETY: one flat pick entry; each argument is a distinct input the
-// viewport already holds.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one flat pick entry; each argument is a distinct input the viewport already holds."
+)]
 pub fn pick(
     ctx: &PickContext<'_>,
     session: &ProjectSession,

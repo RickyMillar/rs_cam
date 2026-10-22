@@ -38,11 +38,12 @@
 //!   moved the CLI jobs onto the W5 schema, so a CLI job reads the same
 //!   config defaults and has no separate entry rule to test.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;

@@ -111,17 +111,25 @@ pub(crate) enum BlendedMove {
 ///
 /// Same corner detection as [`blend_corners`] but returns [`BlendedMove`] descriptors
 /// so the caller can emit native arc commands instead of linearized segments.
-// SAFETY: same indexing bounds as blend_corners
-#[allow(clippy::indexing_slicing, clippy::expect_used)]
+#[expect(
+    clippy::expect_used,
+    reason = "path.len() >= 3 (checked at the top), so last() is Some"
+)]
 pub(crate) fn blend_corners_to_moves(path: &[P2], min_radius: f64) -> Vec<BlendedMove> {
     if min_radius <= 0.0 || path.len() < 3 {
         return path.iter().map(|&p| BlendedMove::Linear(p)).collect();
     }
 
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "path.len() >= 3 (checked above), so path[0] exists"
+    )]
     let mut result = vec![BlendedMove::Linear(path[0])];
 
-    #[allow(clippy::indexing_slicing)]
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "i runs over 1..len-1, so i - 1 and i + 1 are in bounds"
+    )]
     for i in 1..path.len() - 1 {
         let a = path[i - 1];
         let b = path[i];
@@ -241,6 +249,11 @@ fn linearise_blended_moves(moves: &[BlendedMove], min_radius: f64) -> Vec<P2> {
                 // The upper clamp is unreachable: the wrap above puts
                 // `sweep` in `[-PI, PI]`, so `ceil(|sweep| / 10 degrees)` is
                 // at most 18. It is kept because the pre-CUT-01 body had it.
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "the clamp bounds the count to 2..=20, also for a saturated cast"
+                )]
                 let n_pts = ((sweep.abs() / (PI / 18.0)).ceil() as usize).clamp(2, 20);
                 for j in 1..n_pts {
                     let t = j as f64 / n_pts as f64;
@@ -258,12 +271,6 @@ fn linearise_blended_moves(moves: &[BlendedMove], min_radius: f64) -> Vec<P2> {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
 mod tests {
     use super::*;
 
@@ -307,6 +314,11 @@ mod tests {
                         if sweep < -PI {
                             sweep += TAU;
                         }
+                        #[expect(
+                            clippy::cast_possible_truncation,
+                            clippy::cast_sign_loss,
+                            reason = "the clamp bounds the count to 2..=20, also for a saturated cast"
+                        )]
                         let n_pts = ((sweep.abs() / (PI / 18.0)).ceil() as usize).clamp(2, 20);
                         for j in 1..n_pts {
                             let t = j as f64 / n_pts as f64;

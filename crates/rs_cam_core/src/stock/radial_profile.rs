@@ -112,10 +112,15 @@ impl RadialProfileLUT {
         let idx_f = dist_sq * self.inv_step;
         let idx = idx_f as usize;
         let frac = idx_f - idx as f64;
-        // SAFETY: dist_sq <= radius_sq guarantees idx+1 is within heights.len()
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "dist_sq <= radius_sq guarantees idx+1 is within heights.len()"
+        )]
         let h0 = self.heights[idx];
-        #[allow(clippy::indexing_slicing)]
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "dist_sq <= radius_sq guarantees idx+1 is within heights.len()"
+        )]
         let h1 = self.heights[idx + 1];
         if h0 == f64::INFINITY {
             return None;
@@ -137,11 +142,10 @@ impl RadialProfileLUT {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

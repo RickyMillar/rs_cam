@@ -30,13 +30,6 @@
 //! Vendor `rpm_max` still wins when published — the tier ceiling only
 //! gates the LUT-says-nothing path.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-
 use rs_cam_core::feeds::{
     FeedsInput, OperationFamily, PassRole, SetupContext, SpindleStrategy, ToolGeometryHint,
     calculate, embedded_vendor_lut,

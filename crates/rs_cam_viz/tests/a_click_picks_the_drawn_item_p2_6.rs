@@ -31,11 +31,12 @@
 //! cargo test -p rs_cam_viz -q --test a_click_picks_the_drawn_item_p2_6
 //! ```
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::PathBuf;

@@ -16,12 +16,12 @@
 //!    STL path to measure the review's reference workload; otherwise the
 //!    in-repo `fixtures/terrain_small.stl` is used.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
 mod common;
@@ -37,7 +37,10 @@ use std::time::Instant;
 /// the tests in one binary on a thread pool; this serialises just those.
 fn counter_lock() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    #[allow(clippy::unwrap_used)] // poisoning would mean another test panicked
+    #[expect(
+        clippy::unwrap_used,
+        reason = "poisoning would mean another test panicked"
+    )]
     LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
 }
 

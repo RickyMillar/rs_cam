@@ -10,7 +10,12 @@
 //! declared length without writing a byte, so the case costs no disk and
 //! runs in milliseconds.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use std::fs::File;
 use std::path::{Path, PathBuf};

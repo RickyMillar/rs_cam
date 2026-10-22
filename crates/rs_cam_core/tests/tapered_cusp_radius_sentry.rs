@@ -14,11 +14,10 @@
 //! behaviourally inert. This file is the missing coverage — synthetic and
 //! fast, so it runs in the default gate rather than behind `#[ignore]`.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use rs_cam_core::compute::tool_config::ToolMaterial;

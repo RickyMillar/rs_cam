@@ -141,7 +141,11 @@ fn geometric_ring_cap(polygon: &Polygon2, stepover: f64) -> usize {
     if !rings.is_finite() || rings > 1e7 {
         return 10_000_000;
     }
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "rings is finite, at least 0 and at most 1e7 (checked above), so it fits a usize"
+    )]
     let rings = rings as usize;
     rings.saturating_add(2).max(8)
 }
@@ -397,12 +401,13 @@ pub fn pocket_contours_to_sided_toolpath(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::print_stdout
+    clippy::print_stdout,
+    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 mod tests {
     use super::*;

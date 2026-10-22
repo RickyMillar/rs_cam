@@ -105,14 +105,13 @@
 //! feed ceiling, because whether the machine ceiling binds decides whether
 //! the lift is realised at all.
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
-// The measured numbers ARE the record.
-#![allow(clippy::print_stdout, clippy::print_stderr)]
+#![expect(clippy::print_stdout, reason = "The measured numbers ARE the record.")]
 
 mod common;
 

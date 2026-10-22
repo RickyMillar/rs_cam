@@ -238,7 +238,11 @@ fn orientation_cue(pins: &[AlignmentPin], map: &PinSetupMap, stock_w: f64, stock
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+#[expect(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
 

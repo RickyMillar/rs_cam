@@ -341,12 +341,9 @@ impl SourceStockWire {
 }
 
 #[cfg(test)]
-#[allow(
-    // SAFETY: test code; a missing record is a failed test.
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+#[expect(
+    clippy::indexing_slicing,
+    reason = "test code; a missing record is a failed test."
 )]
 mod tests {
     use super::*;

@@ -30,8 +30,10 @@ use crate::trace::debug_trace::{DebugSpanKind, ToolpathDebugContext};
 /// history is calibrated against this denominator, and re-basing it on
 /// covered cells only changes flat-level insertion on every existing job.
 /// Recorded, not silently changed.
-// SAFETY: `bin` is tested against `n_bins`, which is `histogram.len()`.
-#[allow(clippy::indexing_slicing)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "`bin` is tested against `n_bins`, which is `histogram.len()`."
+)]
 pub(crate) fn flat_shelf_levels(
     surface: &SurfaceHeightmap,
     surface_bottom: f64,
@@ -376,7 +378,10 @@ struct LevelSlot<'r> {
 /// Clear one Z level. The ByArea and the Global branches both call this
 /// function; it pushes the level marker, runs the clearing strategy and
 /// fills the `z_level_clear` debug span.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn clear_planned_level(
     ctx: &ClearZLevelContext<'_>,
     material_stock: &mut TriDexelStock,
@@ -560,17 +565,17 @@ pub(super) struct Adaptive3dSegmentsResult {
     pub area_regions: Option<AreaRegionMap>,
     /// Test-only: planner's internal dexel state at the end of the run.
     /// The F-029 probe and the `#[cfg(test)]` module read it.
-    // SAFETY: only the `test-support` probe and the unit tests read it, so
-    // the default build reads it nowhere.
     #[cfg_attr(
         not(any(test, feature = "test-support")),
-        allow(dead_code, reason = "read only by the test-support probe")
+        expect(
+            dead_code,
+            reason = "only the `test-support` probe and the unit tests read it, so the default build reads it nowhere"
+        )
     )]
     pub final_material_stock: TriDexelStock,
     /// Test-only: heightmap used to surface-drape Cut paths. Only the
     /// `#[cfg(test)]` module reads it.
-    // SAFETY: only the unit tests read it.
-    #[cfg_attr(not(test), allow(dead_code, reason = "read only by the unit tests"))]
+    #[cfg_attr(not(test), expect(dead_code, reason = "only the unit tests read it"))]
     pub surface_heightmap: SurfaceHeightmap,
 }
 
@@ -581,8 +586,11 @@ pub(super) struct Adaptive3dSegmentsResult {
 ///
 /// **Test door** behind `test-support` (F085). The harnesses under
 /// `crates/rs_cam_core/tests` are the only callers.
+#[expect(
+    clippy::type_complexity,
+    reason = "diagnostic probe; returns raw cell-grid metadata"
+)]
 #[cfg(feature = "test-support")]
-#[allow(clippy::type_complexity)] // diagnostic probe; returns raw cell-grid metadata
 pub fn debug_adaptive_3d_segments_for_f029_probe(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -613,7 +621,6 @@ pub fn debug_adaptive_3d_segments_for_f029_probe(
     ))
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
 pub(super) fn adaptive_3d_segments(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -1223,7 +1230,10 @@ const STAY_DOWN_FROM_XY_EPS_MM: f64 = 0.05;
 ///      `MoveIntent::Linking`: (a) ascend at the start XY to link_z, (b) XY
 ///      traverse at link_z to the entry XY, (c) descend through air to
 ///      `descend_to_z`. Each step is skipped if it has no length.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 fn try_emit_stay_down_link(
     tp: &mut Toolpath,
     from: P3,
@@ -1725,11 +1735,10 @@ impl crate::compute::spans::RuntimeLabel for Adaptive3dRuntimeAnnotation {
 }
 
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#[expect(
     clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

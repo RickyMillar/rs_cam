@@ -34,11 +34,11 @@
 //! point is offset `R·sin θ` — 1.48 mm at 80° — so the guard band has to clear
 //! that too. [`INTERIOR_MM`] is the resulting margin.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;
@@ -82,7 +82,10 @@ const FINE_DIA_MM: f64 = 0.5;
 /// `tier_map_cache_t3.rs::cache_lock`.
 fn walk_lock() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    #[allow(clippy::unwrap_used)] // poisoning would mean another test panicked
+    #[expect(
+        clippy::unwrap_used,
+        reason = "poisoning would mean another test panicked"
+    )]
     LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
 }
 
@@ -303,9 +306,10 @@ fn a_70_degree_ramp_is_still_compensated_below_the_cap() {
     // make a wall behave, this fails: 70° is mid-steep terrain the coarse
     // tool machines perfectly and must keep.
     let _guard = walk_lock();
-    // Deliberate constant tripwire: this test's meaning depends on 70° being
-    // BELOW the cap; if the cap moves under it, fail here, not mysteriously.
-    #[allow(clippy::assertions_on_constants)]
+    #[expect(
+        clippy::assertions_on_constants,
+        reason = "Deliberate constant tripwire: this test's meaning depends on 70° being BELOW the cap; if the cap moves under it, fail here, not mysteriously."
+    )]
     {
         assert!(70.0 < MAX_COMPENSATED_SLOPE_DEG);
     }
@@ -322,9 +326,10 @@ fn above_the_cap_a_near_vertical_wall_is_not_handed_to_the_coarse_tool() {
     // shipped policy is to ABSTAIN instead, so the wall keeps its raw
     // residual and stays fine-tier — the waterline band's territory anyway.
     let _guard = walk_lock();
-    // Deliberate constant tripwire: this test's meaning depends on 80° being
-    // ABOVE the cap; if the cap moves over it, fail here, not mysteriously.
-    #[allow(clippy::assertions_on_constants)]
+    #[expect(
+        clippy::assertions_on_constants,
+        reason = "Deliberate constant tripwire: this test's meaning depends on 80° being ABOVE the cap; if the cap moves over it, fail here, not mysteriously."
+    )]
     {
         assert!(80.0 > MAX_COMPENSATED_SLOPE_DEG);
     }

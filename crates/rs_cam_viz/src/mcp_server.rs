@@ -497,10 +497,7 @@ impl EmbeddedCamServer {
     )]
     async fn get_operation_schema(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(OperationSchemaParam { operation_type }): Parameters<
-            OperationSchemaParam,
-        >,
+        Parameters(OperationSchemaParam { operation_type }): Parameters<OperationSchemaParam>,
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::GetOperationSchema {
@@ -569,7 +566,7 @@ impl EmbeddedCamServer {
     )]
     async fn get_cut_trace(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(CutTraceParam {
+        Parameters(CutTraceParam {
             toolpath_id,
             max_hotspots,
             max_issues,
@@ -615,7 +612,7 @@ impl EmbeddedCamServer {
     )]
     async fn get_generation_debug_trace(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(GenDebugTraceParam {
+        Parameters(GenDebugTraceParam {
             index,
             span_kind,
             exit_reason,
@@ -1107,9 +1104,7 @@ impl EmbeddedCamServer {
     )]
     async fn get_toolpath_diagnostics(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(IndexParam { index }): Parameters<
-            IndexParam,
-        >,
+        Parameters(IndexParam { index }): Parameters<IndexParam>,
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::GetToolpathDiagnostics { index })
@@ -1148,7 +1143,7 @@ impl EmbeddedCamServer {
     )]
     async fn add_toolpath_via_gui(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(AddToolpathViaGuiParam {
+        Parameters(AddToolpathViaGuiParam {
             operation_type,
             setup_index,
         }): Parameters<AddToolpathViaGuiParam>,
@@ -1168,7 +1163,7 @@ impl EmbeddedCamServer {
     )]
     async fn get_notifications(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(GetNotificationsParam {
+        Parameters(GetNotificationsParam {
             include_expired,
             limit,
         }): Parameters<GetNotificationsParam>,
@@ -1340,9 +1335,7 @@ impl EmbeddedCamServer {
     )]
     async fn plan_multitool_finishing(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(spec): Parameters<
-            PlanMultitoolFinishingParam,
-        >,
+        Parameters(spec): Parameters<PlanMultitoolFinishingParam>,
     ) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::PlanMultitoolFinishing { spec })
@@ -1354,10 +1347,7 @@ impl EmbeddedCamServer {
         name = "preview_tier_map",
         description = "Look before you emit: build the multi-tool tier map and its per-tier islands for a ladder of library tool ids and REPORT the territory, without emitting an operation, changing a parameter, or generating anything — the reply's `modified` is always false. Takes the same dial set as plan_multitool_finishing (cell_mm 0.4, tolerance_mm 0.05, margin_mm 0.5, cusp_height_mm 0.03, coarseness 1.0, overlap_mm 2.0, max_regions_per_tier 24, slope-compensated residuals unconditionally), so a preview and the plan that follows describe the same job. Replies with per-tier rows — tool, cusp radius, island count, raw island count before filtering, owned area mm2, and what the island cap did — plus map stats (cell size, grid size, tier count, cells no tool reaches). Pass `svg_path` (absolute, ending .svg, parent directory must already exist — it is not created) to also write a compact top-down SVG: one group per fine tier, owned islands filled, the overlap band stroked, POLYGONS ONLY so a 64-island board is tens of KB rather than the 948 MB the interactive HTML path produced. UNLIKE the planner this does real work — a full-grid drop-cutter residual walk, roughly 8 s at 0.6 mm cells and 31 s at 0.3 mm on a 200 mm board, faster when the tier-map cache is warm; never preview at 0.15 mm."
     )]
-    async fn preview_tier_map(
-        &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(spec): Parameters<PreviewTierMapParam>,
-    ) -> String {
+    async fn preview_tier_map(&self, Parameters(spec): Parameters<PreviewTierMapParam>) -> String {
         Self::format_result(
             self.send_request(McpRequestKind::PreviewTierMap { spec })
                 .await,
@@ -1488,7 +1478,6 @@ impl EmbeddedCamServer {
     )]
     async fn apply_feeds(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
         Parameters(ApplyFeedsParam { index, scope }): Parameters<ApplyFeedsParam>,
     ) -> String {
         Self::format_result(
@@ -1508,10 +1497,7 @@ impl EmbeddedCamServer {
     )]
     async fn generate_toolpath(
         &self,
-        #[allow(clippy::needless_pass_by_value)]
-        Parameters(GenerateToolpathParam { index, timeout_s }): Parameters<
-            GenerateToolpathParam,
-        >,
+        Parameters(GenerateToolpathParam { index, timeout_s }): Parameters<GenerateToolpathParam>,
         meta: Meta,
         peer: Peer<RoleServer>,
     ) -> String {
@@ -1532,7 +1518,7 @@ impl EmbeddedCamServer {
     )]
     async fn generate_all(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(GenerateAllParam {
+        Parameters(GenerateAllParam {
             timeout_s,
             fixpoint,
             simulation_resolution_mm,
@@ -1759,7 +1745,7 @@ impl EmbeddedCamServer {
     )]
     async fn screenshot_simulation(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(ScreenshotSimParam {
+        Parameters(ScreenshotSimParam {
             path,
             width,
             height,
@@ -1787,7 +1773,7 @@ impl EmbeddedCamServer {
     )]
     async fn screenshot_toolpath(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(ScreenshotToolpathParam {
+        Parameters(ScreenshotToolpathParam {
             index,
             path,
             width,
@@ -1843,7 +1829,7 @@ impl EmbeddedCamServer {
     )]
     async fn screenshot_gui(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(ScreenshotGuiParam {
+        Parameters(ScreenshotGuiParam {
             path,
             width,
             height,
@@ -1867,7 +1853,7 @@ impl EmbeddedCamServer {
     )]
     async fn set_ui_view(
         &self,
-        #[allow(clippy::needless_pass_by_value)] Parameters(SetUiViewParam {
+        Parameters(SetUiViewParam {
             workspace,
             toolpath_index,
             properties_tab,

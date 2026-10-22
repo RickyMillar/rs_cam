@@ -9,8 +9,12 @@
 //! preserved the BREP — this test pins the project loader to the same
 //! contract.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 #![cfg(feature = "step")]
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::session::ProjectSession;

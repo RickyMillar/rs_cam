@@ -17,11 +17,11 @@
 //! it published both under names that say which is which. This file is the
 //! net that keeps them named.
 
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::indexing_slicing
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::collections::BTreeMap;

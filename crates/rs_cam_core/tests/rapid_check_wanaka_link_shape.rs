@@ -23,13 +23,6 @@
 //! sentries pinning the healthy behaviours the S2 fix must preserve: a
 //! descent below the column top flags, a vertical retract never does.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
-)]
-
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::geo::P3;
 use rs_cam_core::stock::collision::check_rapid_collisions_against_stock;

@@ -52,11 +52,10 @@
 //! cargo test -p rs_cam_core -q --test a_drill_hole_is_cut_once_g_drilltwice
 //! ```
 
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 
 mod common;
@@ -149,8 +148,10 @@ fn drill_op() -> OperationConfig {
 }
 
 /// The live dressups: every dressup on, entry None.
-// By value: `session` takes these as `fn(DressupConfig) -> DressupConfig`.
-#[allow(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "By value: `session` takes these as `fn(DressupConfig) -> DressupConfig`."
+)]
 fn live_dressups(base: DressupConfig) -> DressupConfig {
     DressupConfig {
         entry_style: DressupEntryStyle::None,
@@ -167,8 +168,10 @@ fn live_dressups(base: DressupConfig) -> DressupConfig {
 }
 
 /// Every dressup off, entry None: the generator alone.
-// By value: `session` takes these as `fn(DressupConfig) -> DressupConfig`.
-#[allow(clippy::needless_pass_by_value)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "By value: `session` takes these as `fn(DressupConfig) -> DressupConfig`."
+)]
 fn no_dressups(base: DressupConfig) -> DressupConfig {
     DressupConfig {
         entry_style: DressupEntryStyle::None,

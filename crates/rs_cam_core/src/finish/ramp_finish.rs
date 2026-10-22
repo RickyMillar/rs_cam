@@ -255,7 +255,10 @@ struct ParamContour {
 }
 
 impl ParamContour {
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     fn from_contour(contour: &[P3]) -> Self {
         let n = contour.len();
         let mut params = Vec::with_capacity(n);
@@ -284,7 +287,10 @@ impl ParamContour {
         }
     }
 
-    #[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "bounded indexing in algorithmic code"
+    )]
     /// Interpolate a point at parameter t ∈ [0, 1].
     fn point_at(&self, t: f64) -> P3 {
         let t = t.clamp(0.0, 1.0);
@@ -317,7 +323,10 @@ impl ParamContour {
     }
 }
 
-#[allow(clippy::indexing_slicing)] // bounded indexing in algorithmic code
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
 /// Match contours between adjacent Z levels by nearest centroid.
 ///
 /// Returns pairs of indices (upper_idx, lower_idx) for matched contours.
@@ -497,7 +506,6 @@ impl crate::compute::spans::RuntimeLabel for RampFinishRuntimeAnnotation {
 /// slope band (when active) AND inside a machining-boundary region (when
 /// given). The split always runs when either filter is active; `None`
 /// reproduces today's slope-only (or unfiltered) output byte-for-byte.
-#[allow(clippy::too_many_arguments)]
 pub fn ramp_finish_toolpath_structured_annotated_with_cancel(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -527,7 +535,11 @@ pub fn ramp_finish_toolpath_structured_annotated_with_cancel(
 /// for why H3's Checkpoint B harness needs one. Passing
 /// `ramp_finish_generation_resolution(cutter, params.tolerance)` reproduces
 /// the shipped path exactly.
-#[allow(clippy::indexing_slicing, clippy::too_many_arguments)]
+#[expect(
+    clippy::indexing_slicing,
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
 pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -873,11 +885,11 @@ pub fn ramp_finish_toolpath_structured_annotated_with_resolution(
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
     use super::*;

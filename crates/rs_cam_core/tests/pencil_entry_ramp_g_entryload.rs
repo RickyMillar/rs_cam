@@ -39,12 +39,9 @@
 //! the stock-aware arm must stay inside it. A stub that always ramped, or
 //! never did, fails one of the two.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::print_stdout
+#![expect(
+    clippy::print_stdout,
+    reason = "the test prints its measurements for the reader"
 )]
 
 use std::collections::HashMap;

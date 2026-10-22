@@ -56,8 +56,14 @@ const OUTER_WRAP_FLOOR_CELLS: f64 = 0.5;
 /// On success, appends one `Rapid`-free continuous `Cut` (the caller's
 /// helical starter already positioned the tool) plus a `PassEntry`
 /// marker, stamps the grid along the path, and updates `last_pos`.
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::indexing_slicing)] // bounded indexing over grid/loop buffers
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing over grid/loop buffers"
+)]
 pub(super) fn spiral_passes(
     grid: &mut MaterialGrid,
     machinable_mask: &[bool],
@@ -276,7 +282,6 @@ struct TrochoidParams {
 /// frontier advance (`pitch`) rather than the local material width.
 /// Skipped (straight cut instead) when no cleared side exists nearby —
 /// a full-material loop would just be a circular slot.
-#[allow(clippy::indexing_slicing)] // fixed-size direction/loop sampling
 fn emit_trochoid_loop(
     grid: &mut MaterialGrid,
     tool_radius: f64,
@@ -327,7 +332,10 @@ fn emit_trochoid_loop(
 /// Marching-squares iso-contour of `edt > tau`, selecting the loop that
 /// contains `center` (the spiral's nesting chain). Falls back to the
 /// longest loop when containment fails numerically.
-#[allow(clippy::indexing_slicing)] // padded-grid indices bounded by construction
+#[expect(
+    clippy::indexing_slicing,
+    reason = "padded-grid indices bounded by construction"
+)]
 fn extract_center_wrap(edt: &[f64], grid: &MaterialGrid, tau: f64, center: P2) -> Option<Vec<P2>> {
     let (rows, cols) = (grid.rows, grid.cols);
     let (prows, pcols) = (rows + 2, cols + 2);
@@ -368,7 +376,7 @@ fn extract_center_wrap(edt: &[f64], grid: &MaterialGrid, tau: f64, center: P2) -
 }
 
 /// Resample a closed loop to roughly uniform `step` spacing.
-#[allow(clippy::indexing_slicing)] // loop indices bounded by len
+#[expect(clippy::indexing_slicing, reason = "loop indices bounded by len")]
 fn resample_loop(loop_pts: &[P2], step: f64) -> Vec<P2> {
     let n = loop_pts.len();
     if n < 3 {
