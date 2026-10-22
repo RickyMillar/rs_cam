@@ -848,3 +848,13 @@ default rule that already selects every served item on every layer.
   corner(s): the tool does not fit between the wall and <item>".
   Measure it at generation (the cut ring against the region boundary
   with a tolerance). Do not run a simulation for it.
+- Add Bore does nothing (operator: "add toolpath Boar ... it does nothing.
+  no side panel opens"). The GUI log shows "Cannot add toolpath: Bore
+  needs a flat end mill or bull nose tool; this tool is a V-bit" three
+  times; `get_notifications` is empty. Two defects:
+  - A new op takes the first tool of the project (here the V-bit), not
+    the first tool that the op accepts. Fix: the add picks the first
+    tool that the op accepts. It refuses only when no tool fits, and the
+    refusal names the tool kinds that the op needs.
+  - A refused add goes to the log only. Fix: a toast with the refusal
+    text. The same holds for every refused add, not only Bore.
