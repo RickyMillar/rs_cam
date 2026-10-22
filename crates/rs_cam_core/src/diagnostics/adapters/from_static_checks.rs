@@ -70,6 +70,13 @@ pub struct ResolvedHeights {
     /// Bottom of the stock this setup presents. Same contract as
     /// [`Self::stock_top_z`].
     pub stock_bottom_z: Option<f64>,
+    /// UX-1: the resolved floor of an `OpFloor` op (Pocket, Profile,
+    /// Zigzag, Adaptive 2D, Bore) from THE session heights
+    /// (`ToolpathHeights::floor_z`). Under a face pick it measures from the
+    /// face top while `top_z` is the stock top, so `top_z - depth` is not
+    /// the floor. `None` when the caller holds no session heights or the
+    /// floor refuses.
+    pub op_floor_z: Option<f64>,
 }
 
 impl ResolvedHeights {
@@ -99,6 +106,7 @@ impl ResolvedHeights {
             clearance_z: ctx.safe_z,
             stock_top_z: Some(ctx.stock_top_z),
             stock_bottom_z: Some(ctx.stock_bottom_z),
+            op_floor_z: None,
         }
     }
 
@@ -109,7 +117,9 @@ impl ResolvedHeights {
         answer: &crate::session::ToolpathHeights,
         heights: &HeightsConfig,
     ) -> Self {
-        Self::from_resolved(&answer.resolve(heights), &answer.context)
+        let mut out = Self::from_resolved(&answer.resolve(heights), &answer.context);
+        out.op_floor_z = answer.floor_z(heights).and_then(Result::ok);
+        out
     }
 
     /// The five planes as the compute struct, for THE order rule
@@ -139,6 +149,7 @@ impl ResolvedHeights {
             clearance_z: resolved.clearance_z,
             stock_top_z: Some(ctx.stock_top_z),
             stock_bottom_z: Some(ctx.stock_bottom_z),
+            op_floor_z: None,
         }
     }
 }
@@ -626,17 +637,26 @@ pub fn depth_beyond_stock(op: &OperationConfig, h: &ResolvedHeights) -> Option<D
     }
     let stock_top_z = h.stock_top_z?;
     let stock_bottom_z = h.stock_bottom_z?;
+    // UX-1: the floor of an `OpFloor` op, when the snapshot holds THE
+    // session floor. Under a face pick it measures from the face top while
+    // `top_z` is the stock top, so `top - depth` would be wrong there.
     // P3.2: a floor that names another reference than the Top Z
     // (`DepthSemantics::Resolved`) is the resolved bottom of the session
     // heights. Every other depth is `top - depth`, as before.
-    let cut_floor_z = match op.depth_semantics() {
+    let op_floor_z = h.op_floor_z.filter(|_| {
+        matches!(
+            op.capabilities().floor_owner,
+            crate::compute::catalog::FloorOwner::OpFloor
+        )
+    });
+    let cut_floor_z = op_floor_z.unwrap_or_else(|| match op.depth_semantics() {
         crate::compute::catalog::DepthSemantics::Resolved => h.bottom_z,
         crate::compute::catalog::DepthSemantics::Explicit(_)
         | crate::compute::catalog::DepthSemantics::DerivedStockTop(_)
         | crate::compute::catalog::DepthSemantics::None => {
             h.top_z - op.default_depth_for_heights().abs()
         }
-    };
+    });
     let excess_mm = stock_bottom_z - cut_floor_z;
     if excess_mm <= DEPTH_BEYOND_STOCK_EPS_MM {
         return None;

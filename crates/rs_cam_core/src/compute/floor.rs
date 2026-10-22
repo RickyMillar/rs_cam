@@ -66,9 +66,12 @@ use crate::selection::{
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "from", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Floor {
-    /// Below the resolved Top Z of the op (auto: the stock top, or the top
-    /// of the picked faces; else the pinned top). The op `depth` before
-    /// P3.2, and the default of each op (ruling L-3).
+    /// Below the resolved Top Z of the op (auto: the stock top; else the
+    /// pinned top). Under an auto top and a face pick the depth measures
+    /// from the highest picked face, and the Top Z is the higher of that
+    /// face and the stock top (UX-1), so the Top Z can read higher than
+    /// the floor plus the depth. The op `depth` before P3.2, and the
+    /// default of each op (ruling L-3).
     Top { depth: f64 },
     /// Below the stock top.
     StockTop { depth: f64 },
@@ -280,8 +283,9 @@ impl Floor {
 /// diagram read it, so a change of reference and a drag use one rule.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FloorReferences {
-    /// The Top Z that [`Floor::Top`] reads: the resolved top under a floor
-    /// that is not each face (an auto top follows the picked faces).
+    /// The Z that [`Floor::Top`] reads: the resolved top under a floor
+    /// that is not each face, or under an auto top the highest picked face
+    /// (UX-1: the resolved top is then the higher of it and the stock top).
     pub top_z: f64,
     /// The stock top.
     pub stock_top_z: f64,

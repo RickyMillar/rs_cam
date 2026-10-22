@@ -322,7 +322,9 @@ pub fn bottom_z_pin_note(op_type: OperationType) -> Option<&'static str> {
 const fn top_tooltip(source: rs_cam_core::session::TopSource) -> &'static str {
     match source {
         rs_cam_core::session::TopSource::AutoFaces => {
-            "Top of material. Cutting starts at this Z. Auto: the highest picked face."
+            "Top of material. Cutting starts at this Z. Auto: the highest picked face. On \
+             an op with a Floor row, the stock top when it is higher; the depth still \
+             measures from the face."
         }
         rs_cam_core::session::TopSource::AutoStockTop | rs_cam_core::session::TopSource::Pinned => {
             "Top of material. Cutting starts at this Z. Usually the stock top surface."
@@ -466,10 +468,13 @@ pub(super) fn draw_heights_params(
     // and set it back to auto.
     // P3.1: where the Top comes from ("auto: faces" with a face pick).
     ui.add_space(2.0);
-    ui.add(crate::ui::components::OneLine::new(format!(
-        "Top: {}",
-        top_source.label()
-    )));
+    // UX-1: the hover states the rule of "auto: faces".
+    let _ = ui
+        .add(crate::ui::components::OneLine::new(format!(
+            "Top: {}",
+            top_source.label()
+        )))
+        .on_hover_text(top_tooltip(top_source));
     // L-4: a model reference on a model with no mesh refuses generation.
     if let Some(refusal) = model_refusal {
         ui.add(crate::ui::components::OneLine::new(refusal));

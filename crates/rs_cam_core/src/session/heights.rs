@@ -12,8 +12,13 @@
 //!    read the drawing box at Z 0 and generation read the stock).
 //! 2. `HeightsConfig::resolve` on that context.
 //! 3. An AUTO top follows the up faces of the selection (N12 item 1,
-//!    DESIGN 7.2), and an auto bottom follows that top by the op depth
-//!    (defect D-A: the GUI and MCP did not apply this step).
+//!    DESIGN 7.2), and an auto bottom follows the face top by the op depth
+//!    (defect D-A: the GUI and MCP did not apply this step). UX-1 (operator
+//!    ruling Q1, SAFETY): the auto top is the higher of the face top and
+//!    the stock top, so the first level never starts inside the material.
+//!    The depth still measures from the face top (`depth_base_z`). Only an
+//!    op whose floor is its `Floor` field (`FloorOwner::OpFloor`) takes the
+//!    clamp; every other op keeps the face top (`clamps_face_top`).
 //!
 //! P3.2: the floor of a Pocket, Profile, Zigzag or Adaptive 2D
 //! (`compute::floor::Floor`) resolves against the context of step 1 into
@@ -71,7 +76,9 @@ use super::selection_status::SelectionTarget;
 pub enum TopSource {
     /// Auto: the stock top in the setup frame.
     AutoStockTop,
-    /// Auto: the highest up face of the selection (setup frame).
+    /// Auto: the up faces of the selection (setup frame). On an op that
+    /// `clamps_face_top` (an `OpFloor` op) the top is the higher of the highest face and the
+    /// stock top (UX-1); the depth measures from the highest face.
     AutoFaces,
     /// The stored Top Z (Manual or from a reference).
     Pinned,
@@ -129,6 +136,9 @@ pub struct ToolpathHeights {
     pub heights: ResolvedHeights,
     /// Where `heights.top_z` comes from.
     pub top_from: TopSource,
+    /// UX-1: the auto top under a face pick is the higher of the face top
+    /// and the stock top ([`clamps_face_top`] of the op).
+    clamp: bool,
     /// The top of the up faces of the selection, in the setup frame.
     face_top_z: Option<f64>,
     /// The plane Z of the lowest up face of the selection, in the setup
@@ -144,13 +154,13 @@ impl ToolpathHeights {
     /// GUI draft, which can differ from the stored config for one frame.
     #[must_use]
     pub fn resolve(&self, heights: &HeightsConfig) -> ResolvedHeights {
-        apply_rule(heights, &self.context, self.face_top_z).0
+        apply_rule(heights, &self.context, self.face_top_z, self.clamp).0
     }
 
     /// Where the top of another `HeightsConfig` of this toolpath comes from.
     #[must_use]
     pub fn top_source(&self, heights: &HeightsConfig) -> TopSource {
-        apply_rule(heights, &self.context, self.face_top_z).1
+        apply_rule(heights, &self.context, self.face_top_z, self.clamp).1
     }
 
     /// P3.7 (ruling L-10): the Z of each floor reference of this toolpath
@@ -162,8 +172,11 @@ impl ToolpathHeights {
     pub fn floor_references(&self, heights: &HeightsConfig) -> FloorReferences {
         let mut context = self.context;
         context.floor = None;
+        let top_z = apply_rule(heights, &context, self.face_top_z, self.clamp)
+            .0
+            .top_z;
         FloorReferences {
-            top_z: apply_rule(heights, &context, self.face_top_z).0.top_z,
+            top_z: depth_base_z(heights, top_z, self.face_top_z),
             stock_top_z: self.context.stock_top_z,
             stock_bottom_z: self.context.stock_bottom_z,
             model_top_z: self.context.model_top_z,
@@ -190,7 +203,8 @@ impl ToolpathHeights {
             Err(refusal) => Some(refusal),
             Ok(floor) => {
                 let top_z = self.resolve(heights).top_z;
-                let floor_z = floor.z(top_z);
+                // UX-1: a depth below the Top Z measures from the face top.
+                let floor_z = floor.z(depth_base_z(heights, top_z, self.face_top_z));
                 (floor_z >= top_z).then_some(FloorRefusal::AboveTop { floor_z, top_z })
             }
         }
@@ -266,11 +280,12 @@ impl ToolpathHeights {
     /// production source for a call of this function.
     #[must_use]
     pub fn from_context(heights: &HeightsConfig, context: HeightContext) -> Self {
-        let (resolved, top_from) = apply_rule(heights, &context, None);
+        let (resolved, top_from) = apply_rule(heights, &context, None, false);
         Self {
             context,
             heights: resolved,
             top_from,
+            clamp: false,
             face_top_z: None,
             face_bottom_z: None,
             floor: context.floor.map(Ok),
@@ -298,11 +313,31 @@ fn door_refusals(
         .collect()
 }
 
+/// UX-1: `true` when the auto top of `op` under a face pick is the higher
+/// of the face top and the stock top: an `OpFloor` op (Pocket, Profile,
+/// Zigzag, Adaptive 2D, Bore). Its floor measures from the face, so the
+/// clamp only adds levels above the face. An `OpDial` op (Trace, Face,
+/// Chamfer, V-Carve, the 3D finishers) derives its own floor or plane from
+/// `heights.top_z` and its dial; under the clamp that floor would move up
+/// to the stock top less the dial. A `HeightsBottom` op (Adaptive3d,
+/// Waterline, Unified Finish) has no depth dial, so its auto bottom under
+/// a face pick is the face top; the clamp would add a ladder from the
+/// stock top down to the face, a new cut with no measured defect. So both
+/// keep the face top until a sentry measures them.
+fn clamps_face_top(op: &crate::compute::OperationConfig) -> bool {
+    match op.capabilities().floor_owner {
+        FloorOwner::OpFloor => true,
+        FloorOwner::OpDial | FloorOwner::HeightsBottom => false,
+    }
+}
+
 /// THE rule: resolve `cfg` on `ctx`, then an auto top follows the face top.
+/// `clamp` is [`clamps_face_top`] of the op.
 fn apply_rule(
     cfg: &HeightsConfig,
     ctx: &HeightContext,
     face_top_z: Option<f64>,
+    clamp: bool,
 ) -> (ResolvedHeights, TopSource) {
     let mut heights = cfg.resolve(ctx);
     if !cfg.top_z.is_auto() {
@@ -316,20 +351,46 @@ fn apply_rule(
     }
     // N12 item 1: an AUTO top follows the picked faces. A PINNED top is the
     // operator's own answer and stays. P2.3b: the top is in the setup frame.
+    // UX-1 (operator ruling Q1, 2026-10-22, SAFETY): with `clamp`, the auto
+    // top is the higher of the face top and the stock top (`stock_top_z` is
+    // in the setup frame). A face below the stock top must not start the
+    // first level inside the material: on fresh stock that buried the tool
+    // by all the stock above the face (14 mm against 2 mm per pass). The
+    // floor still measures from the face, as under L-15, so the cut reaches
+    // the same depth. An op on "After previous ops" skips the air levels
+    // through its remaining-stock clip.
     match face_top_z {
-        Some(top) => {
-            heights.top_z = top;
+        Some(face_top) => {
+            heights.top_z = if clamp {
+                face_top.max(ctx.stock_top_z)
+            } else {
+                face_top
+            };
             if cfg.bottom_z.is_auto() {
                 // P3.2: the floor of an `OpFloor` op follows the face top by
-                // its own rule; every other op keeps `top - depth`.
+                // its own rule; every other op keeps `face top - depth`.
+                let base = depth_base_z(cfg, heights.top_z, face_top_z);
                 heights.bottom_z = match ctx.floor {
-                    Some(floor) => floor.z(top),
-                    None => top - ctx.op_depth.abs(),
+                    Some(floor) => floor.z(base),
+                    None => base - ctx.op_depth.abs(),
                 };
             }
             (heights, TopSource::AutoFaces)
         }
         None => (heights, TopSource::AutoStockTop),
+    }
+}
+
+/// UX-1: the Z that a depth below the Top Z measures from ([`Floor::Top`]
+/// and the auto bottom `top - depth`). Under an AUTO top and a face pick it
+/// is the face top, which can be below the resolved `top_z` (the stock
+/// top). Else it is `top_z`. [`apply_rule`], the floor refusal and the
+/// L-10 floor references read this one rule, so the Floor line, the floor
+/// check and the generated floor agree.
+fn depth_base_z(cfg: &HeightsConfig, top_z: f64, face_top_z: Option<f64>) -> f64 {
+    match face_top_z {
+        Some(face_top) if cfg.top_z.is_auto() => face_top,
+        Some(_) | None => top_z,
     }
 }
 
@@ -613,11 +674,13 @@ impl ProjectSession {
             .floor()
             .map(|floor| floor.resolve(&context, face_bottom_z));
         context.floor = floor.and_then(Result::ok);
-        let (heights, top_from) = apply_rule(&tc.heights, &context, face_top_z);
+        let clamp = clamps_face_top(&tc.operation);
+        let (heights, top_from) = apply_rule(&tc.heights, &context, face_top_z, clamp);
         ToolpathHeights {
             context,
             heights,
             top_from,
+            clamp,
             face_top_z,
             face_bottom_z,
             floor,

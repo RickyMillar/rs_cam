@@ -61,7 +61,7 @@ use rs_cam_core::session::{
     BuildModelFacesArgs, Command, EditSelectionArgs, Job, JobHandle, LoadedModel, ProjectSession,
     SelectionTarget, execute_build_model_faces,
 };
-use rs_cam_core::toolpath::MoveType;
+use rs_cam_core::toolpath::{MoveIntent, MoveType};
 
 /// The tool diameter (mm): it fits the Z 5 face on each side of the boss.
 const TOOL_DIAMETER: f64 = 3.0;
@@ -86,12 +86,15 @@ fn faces_of(set: &rs_cam_core::selection::ItemSet) -> Vec<(f64, usize, f64)> {
 }
 
 /// A Pocket over the stepped mesh as an STL model (no BREP faces), with
-/// the default selection.
+/// the default selection. The stock top is the Z 5 face and the boss stands
+/// out of it: UX-1 makes the auto top the higher of the face top and the
+/// stock top, so a stock top at the face keeps the one level at the face
+/// less the depth.
 fn stl_pocket() -> ProjectSession {
     let stock = StockConfig {
         x: 20.0,
         y: 10.0,
-        z: 8.0,
+        z: 5.0,
         origin_x: 0.0,
         origin_y: 0.0,
         origin_z: 0.0,
@@ -254,15 +257,16 @@ fn generation_with_a_cold_cache_cuts_the_face() {
         .generate_toolpath(0, &cancel)
         .expect("generation builds the faces and cuts");
     // The moves below the face plane are the cuts in the material: the
-    // auto top follows the face (Z 5), so the floor is Z 5 - depth.
-    let cuts: Vec<P3> = result
+    // auto top is the face (Z 5, also the stock top), so the floor is
+    // Z 5 - depth.
+    let cut_moves: Vec<_> = result
         .toolpath()
         .moves
         .iter()
         .filter(|m| !matches!(m.move_type, MoveType::Rapid))
-        .map(|m| m.target)
-        .filter(|p| p.z < 5.0 - 1e-6)
+        .filter(|m| m.target.z < 5.0 - 1e-6)
         .collect();
+    let cuts: Vec<P3> = cut_moves.iter().map(|m| m.target).collect();
     assert!(!cuts.is_empty(), "the face pick cut nothing");
     let floor = cuts.iter().map(|p| p.z).fold(f64::INFINITY, f64::min);
     assert!(
@@ -275,11 +279,43 @@ fn generation_with_a_cold_cache_cuts_the_face() {
             (0.0..=20.0).contains(&p.x) && (0.0..=10.0).contains(&p.y),
             "a cut leaves the Z 5 face: {p:?}"
         );
+    }
+    // The boss check skips the entry ramp. The ramp turns inside an arc of
+    // the contour, and the split arc has a centre 0.02 mm off the contour
+    // arc, so its end lies about 0.01 mm inside the keep-out (a ramp
+    // dressup finding of UX-1, outside this claim). The claim here is that
+    // the face pick cuts round the boss.
+    let level_cuts: Vec<P3> = cut_moves
+        .iter()
+        .filter(|m| m.intent != MoveIntent::EntryRamp)
+        .map(|m| m.target)
+        .collect();
+    assert!(!level_cuts.is_empty(), "the face pick cut no level move");
+    for p in &level_cuts {
         let in_boss = p.x > 8.0 - r + 1e-6
             && p.x < 12.0 + r - 1e-6
             && p.y > 3.0 - r + 1e-6
             && p.y < 7.0 + r - 1e-6;
         assert!(!in_boss, "a cut enters the boss: {p:?}");
+    }
+    // The entry ramp may go into the keep-out by the split-arc error only
+    // (about 0.01 mm, a follow-up of UX-1). A deeper ramp move is a gouge.
+    const RAMP_SLACK_MM: f64 = 0.02;
+    for m in cut_moves
+        .iter()
+        .filter(|m| m.intent == MoveIntent::EntryRamp)
+    {
+        let p = m.target;
+        // The distance from the tool centre to the boss rectangle (8..12,
+        // 3..7); the keep-out has round corners of the tool radius.
+        let dx = (8.0 - p.x).max(p.x - 12.0).max(0.0);
+        let dy = (3.0 - p.y).max(p.y - 7.0).max(0.0);
+        let gap = dx.hypot(dy);
+        assert!(
+            gap >= r - RAMP_SLACK_MM,
+            "an entry ramp move enters the boss by {:.4} mm: {p:?}",
+            r - gap
+        );
     }
     assert_eq!(
         geom_cache::stats().flat_region_builds,

@@ -9,11 +9,12 @@
 //! one Bottom Z, and each is the ABSOLUTE value the fixture states (an
 //! agreement on a wrong number is red):
 //!
-//! 1. A Pocket face pick on a Top setup: the top is the face Z (defect D-A:
-//!    the GUI and MCP showed the stock top), the bottom is the face Z minus
-//!    the depth.
+//! 1. A Pocket face pick on a Top setup: the bottom is the face Z minus the
+//!    depth (defect D-A: the GUI and MCP measured it from the stock top).
+//!    UX-1 (operator ruling Q1): the top is the higher of the face Z and
+//!    the stock top, here the stock top.
 //! 2. The same on a Bottom setup: the down face is up there, at the setup
-//!    Z `stock top - model Z`.
+//!    Z `stock top - model Z`; the top is the setup-frame stock top.
 //! 3. A `ModelTop` top on an STL, Top and Bottom setups: the top is the mesh
 //!    top in the setup frame plus the offset. The MCP diagnostics path
 //!    (`toolpath_heights`) gives the same numbers here.
@@ -281,7 +282,9 @@ fn assert_pair(surface: &str, got: (f64, f64), want: (f64, f64)) {
 #[test]
 fn a_face_pick_gives_one_top_and_one_bottom_on_a_top_setup() {
     let mut s = pocket_session(&[UP_FACE], POCKET_DEPTH, FaceUp::Top);
-    let want = (UP_FACE_Z, UP_FACE_Z - POCKET_DEPTH);
+    // UX-1: the top is the higher of the face top and the stock top; the
+    // floor measures from the face.
+    let want = (world_stock_top(), UP_FACE_Z - POCKET_DEPTH);
     assert_pair("generation", generation(&mut s), want);
     assert_pair("toolpath_heights", session_heights(&s), want);
     let tc = &s.toolpath_configs()[0];
@@ -300,7 +303,14 @@ fn a_face_pick_gives_one_top_and_one_bottom_on_a_bottom_setup() {
     // The setup frame is zero-rooted at the stock bottom as the setup sees
     // it, so a world Z maps to `stock top - Z` (the P2.3 sentry).
     let face_top = world_stock_top() - DOWN_FACE_Z;
-    let want = (face_top, face_top - POCKET_DEPTH);
+    // UX-1: the top is the setup-frame stock top (the stock height), above
+    // the face; the floor measures from the face.
+    let setup_stock_top = stock().z;
+    assert!(
+        face_top < setup_stock_top - 1.0,
+        "the fixture must hold the face below the stock top, or the arm is vacuous"
+    );
+    let want = (setup_stock_top, face_top - POCKET_DEPTH);
     assert_pair("generation", generation(&mut s), want);
     assert_pair("toolpath_heights", session_heights(&s), want);
 }
