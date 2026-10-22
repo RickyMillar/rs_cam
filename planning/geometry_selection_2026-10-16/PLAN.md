@@ -1068,3 +1068,25 @@ blocked.
   refuses to generate until the operator sets it (the O-2 pattern). First
   case: the Pocket depth at add (min(half the stock, 5 mm)). The lead
   lists the other underived defaults before the removal.
+
+## Operator ruling 2026-10-23: remove the underived defaults (UNDERIVED_DEFAULTS.md)
+
+Operator: "yeah, remove them. later we might add defaults per tool like
+fusion does but this is a future issue".
+- The underived depths go (Pocket, 2D Adaptive, Zigzag, Bore, Trace,
+  V-Carve max depth, Inlay pocket depth, Project Curve depth) and the
+  drawing stock thickness (25 mm): the field is empty, the op (or the
+  drawing import) refuses until it is set. A face pick still sets the
+  "each picked face" floor.
+- The raw feeds fallback goes: with no Suggest data for the tool, the op
+  refuses "no feeds data for this tool: set feed and RPM".
+- Derive instead of remove where a derivation exists: Face stock offset
+  = tool radius; link and lead lengths from the tool diameter; Inlay
+  overlap from its tool; the feed-optimisation maximum = machine maximum
+  feed.
+- Kept for now: stock padding 5 mm, material Generic Softwood, the
+  +10/-2 height offsets, the dressup numbers.
+- Future (not now): per-tool defaults as Fusion has (tool library
+  presets).
+- Fix: the CLI job path skips the stock defaults and Suggest (parity
+  defect, `crates/rs_cam_cli/src/job.rs:1207-1209`).
