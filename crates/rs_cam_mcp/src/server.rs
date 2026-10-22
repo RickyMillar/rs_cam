@@ -34,7 +34,7 @@ use rs_cam_core::trace::toolpath_spans::SpanKind;
 
 /// The stock face that points up in a setup: a mirror of core [`FaceUp`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum FaceUpParam {
     #[default]
@@ -94,7 +94,7 @@ impl FaceUpParam {
 /// this mirror cannot be generated from it. The two exhaustive `From`
 /// matches below take its place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum OperationTypeParam {
     Face,
@@ -194,7 +194,7 @@ impl From<OperationType> for OperationTypeParam {
 
 /// A cutter type: a mirror of core [`ToolType`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum ToolTypeParam {
     #[default]
@@ -232,7 +232,7 @@ impl From<ToolType> for ToolTypeParam {
 /// A structural span kind: a mirror of core [`SpanKind`]. The token of
 /// each variant is [`SpanKind::as_key`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum SpanKindParam {
     Operation,
@@ -293,7 +293,7 @@ impl SpanKindParam {
 /// The source of a machining boundary. `derived_rest_regions` needs
 /// `source_toolpath_id` beside it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum BoundarySourceParam {
     /// The stock bounding rectangle.
@@ -309,7 +309,7 @@ pub enum BoundarySourceParam {
 /// How the tool sits against a boundary: a mirror of core
 /// [`BoundaryContainment`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum BoundaryContainmentParam {
     /// The tool centre stays on or inside the boundary.
@@ -343,7 +343,7 @@ impl From<BoundaryContainment> for BoundaryContainmentParam {
 
 /// The project spindle policy: a mirror of core [`SpindleStrategy`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum SpindleStrategyParam {
     /// Use the chart RPM of the vendor row as written.
@@ -384,7 +384,7 @@ impl SpindleStrategyParam {
 
 /// Which dimensions `apply_feeds` writes: a mirror of core [`ApplyScope`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum ApplyScopeParam {
     /// Feed, plunge and RPM. The cut does not change.
@@ -430,7 +430,7 @@ impl ApplyScopeParam {
 /// The finishing operation of one tier of the multi-tool plan: a mirror of
 /// core [`TierStrategy`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum TierStrategyParam {
     /// The band mix (raster, scallop, waterline per slope band).
@@ -464,7 +464,7 @@ impl From<TierStrategy> for TierStrategyParam {
 
 /// The GUI workspace `set_ui_view` switches to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum WorkspaceParam {
     Setup,
@@ -478,7 +478,7 @@ pub enum WorkspaceParam {
 /// geometry selection GT-1). `cut`: the tool, the input model, the start
 /// stock and the op parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum PropertiesTabParam {
     Geometry,
@@ -491,7 +491,7 @@ pub enum PropertiesTabParam {
 
 /// The non-toolpath properties panel `set_ui_view` selects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum SelectPanelParam {
     /// Machine setup, kinematics and the GRBL `$$` import.
@@ -505,7 +505,7 @@ pub enum SelectPanelParam {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize, schemars::JsonSchema,
 )]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum ModalParam {
     FeedsModal,
@@ -519,12 +519,14 @@ pub enum ModalParam {
 // ── Parameter structs ─────────────────────────────────────────────────
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AddSetupParam {
     /// Optional name for the new setup
     pub name: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetSetupFaceParam {
     /// Setup index (0-based)
     pub setup_index: usize,
@@ -547,6 +549,7 @@ pub struct SetSetupFaceParam {
 /// tool schema carries no `$defs`, so the reference does not resolve for
 /// a client — the very discovery problem CLI-09 is about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 #[schemars(inline)]
 pub enum ZRotationParam {
     #[serde(rename = "0")]
@@ -586,6 +589,7 @@ impl std::fmt::Display for ZRotationParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetSetupRotationParam {
     /// Setup index (0-based)
     pub setup_index: usize,
@@ -598,6 +602,7 @@ pub struct SetSetupRotationParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct MoveToolpathToSetupParam {
     /// Toolpath index (0-based, global across all setups)
     pub toolpath_index: usize,
@@ -606,6 +611,7 @@ pub struct MoveToolpathToSetupParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ImportModelParam {
     /// File path to import. Supported formats: .stl, .dxf, .svg, .step/.stp
     pub path: String,
@@ -625,7 +631,12 @@ pub struct ImportModelParam {
 /// `{"kind": "centimeters"}`, `{"kind": "meters"}` or
 /// `{"kind": "custom", "scale": 0.2646}`.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize, schemars::JsonSchema)]
-#[serde(tag = "kind", content = "scale", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    content = "scale",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 #[schemars(inline)]
 pub enum ModelUnitsParam {
     /// 1:1.
@@ -656,6 +667,7 @@ impl From<ModelUnitsParam> for rs_cam_core::compute::stock_config::ModelUnits {
 /// the model reads its file again with them. A changed join can change the
 /// items, so picks of the old pieces flag as lost.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetModelImportOptionsParam {
     /// The model id (`inspect_model`).
     pub model_id: usize,
@@ -666,6 +678,7 @@ pub struct SetModelImportOptionsParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct LoadProjectParam {
     /// Path to the project TOML file
     pub path: String,
@@ -682,6 +695,7 @@ pub struct LoadProjectParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct IndexParam {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -689,6 +703,7 @@ pub struct IndexParam {
 
 /// P5 — the per-tool reach map, as numbers rather than pixels.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ReachMapParam {
     /// Toolpath index (0-based). The operation must be one a reach map
     /// speaks about: a mesh operation that is not a roughing pass.
@@ -706,6 +721,7 @@ pub struct ReachMapParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GenerateToolpathParam {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -721,6 +737,7 @@ pub struct GenerateToolpathParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GenerateAllParam {
     /// Optional wait budget in seconds — see
     /// `GenerateToolpathParam::timeout_s`.
@@ -747,12 +764,14 @@ pub struct GenerateAllParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct OperationSchemaParam {
     /// The operation kind.
     pub operation_type: OperationTypeParam,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SimulationParam {
     /// Optional. SETS the project's one stored simulation resolution, in
     /// mm, and the reply says so. Omit it to simulate at the stored value.
@@ -761,7 +780,7 @@ pub struct SimulationParam {
 
 /// The tool-change handling of one export (`export_gcode`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum ToolChangeModeParam {
     /// M5, the operator message, M0.
@@ -773,6 +792,7 @@ pub enum ToolChangeModeParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ExportParam {
     /// Output file path for G-code
     pub path: String,
@@ -840,6 +860,7 @@ pub struct ExportParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ScreenshotSimParam {
     /// Output file path (.png for 6-view composite, .html for interactive 3D)
     pub path: String,
@@ -855,6 +876,7 @@ pub struct ScreenshotSimParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ScreenshotToolpathParam {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -894,6 +916,7 @@ pub struct ScreenshotToolpathParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ScreenshotGuiParam {
     /// Output file path (must end in .png)
     pub path: String,
@@ -907,6 +930,7 @@ pub struct ScreenshotGuiParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetUiViewParam {
     /// The workspace to switch to.
     pub workspace: Option<WorkspaceParam>,
@@ -968,6 +992,7 @@ pub struct SetUiViewParam {
 
 /// GRBL `$$` settings dump to import onto the live machine profile.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ImportMachineSettingsParam {
     /// The full `$$` settings dump text (`$N=value` lines). Tolerates
     /// grblHAL `(description)` comments, CRLF, and unrelated `$N` lines.
@@ -979,6 +1004,7 @@ pub struct ImportMachineSettingsParam {
 
 /// Name of a machine in the per-user library to snapshot-import.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct LoadMachineFromLibraryParam {
     /// Library machine name (file stem) from `list_machine_library`. The
     /// machine is COPIED into the project (snapshot, no live link).
@@ -986,6 +1012,7 @@ pub struct LoadMachineFromLibraryParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetToolpathParamInput {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -1003,6 +1030,7 @@ pub struct SetToolpathParamInput {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetToolpathHeightsParam {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -1126,6 +1154,7 @@ impl Default for FloorParam {
 /// `set_toolpath_floor` (geometry selection P3.3): the floor of one Pocket,
 /// Profile, Zigzag or Adaptive 2D toolpath.
 #[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SetToolpathFloorParam {
     /// Toolpath index (0-based).
     pub index: usize,
@@ -1136,6 +1165,7 @@ pub struct SetToolpathFloorParam {
 
 /// F3.1 — add a toolpath through the GUI's own add path.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AddToolpathViaGuiParam {
     /// The operation kind, the same vocabulary `add_toolpath` accepts.
     pub operation_type: OperationTypeParam,
@@ -1149,6 +1179,7 @@ pub struct AddToolpathViaGuiParam {
 
 /// F3.5 — read the toast stack.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GetNotificationsParam {
     /// Include entries that have aged past their TTL but have not been
     /// collected yet. Default `true`: a test asserting what the operator
@@ -1161,6 +1192,7 @@ pub struct GetNotificationsParam {
 
 /// F3.7 — rebind a toolpath's cutter.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetToolpathToolParam {
     /// Toolpath index (0-based) from `list_toolpaths`.
     pub index: usize,
@@ -1174,6 +1206,7 @@ pub struct SetToolpathToolParam {
 
 /// F3.8 — rebind a toolpath's input model / geometry.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetToolpathModelParam {
     /// Toolpath index (0-based) from `list_toolpaths`.
     pub index: usize,
@@ -1188,7 +1221,7 @@ pub struct SetToolpathModelParam {
 /// `From` matches are exhaustive in both directions, so a key that core
 /// gains does not compile here until the wire carries it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum ToolParamKeyParam {
     /// Cutting diameter, mm. For `tapered_ball_nose` the BALL TIP diameter.
@@ -1273,6 +1306,7 @@ impl From<ToolParamKey> for ToolParamKeyParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetToolParamInput {
     /// Tool index (0-based)
     pub index: usize,
@@ -1287,18 +1321,21 @@ pub struct SetToolParamInput {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct CollisionCheckParam {
     /// Toolpath index (0-based)
     pub index: usize,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct CompareRestWithFreshParam {
     /// Toolpath index (0-based) of a rest operation (remaining stock)
     pub index: usize,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct CutTraceParam {
     /// Optional: filter results to a single toolpath by its project-level
     /// **id** — NOT its index. Ids come from `list_toolpaths` (`id` field);
@@ -1352,6 +1389,7 @@ pub struct CutTraceParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct InspectSpansParam {
     /// Toolpath index (0-based). Must have been generated first.
     pub index: usize,
@@ -1371,6 +1409,7 @@ pub struct InspectSpansParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct GenDebugTraceParam {
     /// Toolpath index (0-based). Must have been generated first.
     pub index: usize,
@@ -1395,6 +1434,7 @@ pub struct GenDebugTraceParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AddToolpathParam {
     /// Setup index (0-based) to add the toolpath into
     pub setup_index: usize,
@@ -1413,18 +1453,21 @@ pub struct AddToolpathParam {
 /// Geometry selection P6.7: `add_bore_from_drill`, the "Add a Bore for
 /// these" action of a Drill hole row.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AddBoreFromDrillParam {
     /// The index of the Drill toolpath (0-based).
     pub index: usize,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct RemoveToolpathParam {
     /// Toolpath index (0-based)
     pub index: usize,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct AddToolParam {
     /// Display name for the tool
     pub name: String,
@@ -1477,7 +1520,7 @@ pub struct AddToolParam {
 /// The unit a tool size is shown in. Inline for the same reason as
 /// [`StockSourceParam`]: the tool schema carries no `$defs`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum SizeUnitsParam {
     /// Millimetres: `Ø6.00 mm`.
@@ -1496,12 +1539,14 @@ impl From<SizeUnitsParam> for rs_cam_core::compute::tool_config::SizeUnits {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct RemoveToolParam {
     /// Tool index (0-based)
     pub index: usize,
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ListToolCatalogParam {
     /// Catalog name (file stem) from `list_tool_library`, e.g.
     /// "end_mills", "v_bits", "tapered_ball".
@@ -1509,6 +1554,7 @@ pub struct ListToolCatalogParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AddToolFromLibraryParam {
     /// Catalog name (file stem) as returned by `list_tool_library`,
     /// e.g. "end_mills", "v_bits", "tapered_ball".
@@ -1519,6 +1565,7 @@ pub struct AddToolFromLibraryParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SetStockConfigParam {
     /// Stock width (X) in mm. Omit to leave unchanged.
     pub x: Option<f64>,
@@ -1595,6 +1642,7 @@ impl TryFrom<SetStockConfigParam> for rs_cam_core::compute::stock_config::StockC
 /// junction-deviation numbers that decide cycle time and the
 /// parallel-vs-spiral strategy verdict.
 #[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SetMachineKinematicsParam {
     /// X-axis acceleration limit in mm/s^2 (GRBL `$120`).
     pub acceleration_x_mm_s2: Option<f64>,
@@ -1623,6 +1671,7 @@ pub struct SetMachineKinematicsParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetBoundaryConfigParam {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -1666,7 +1715,7 @@ pub struct SetBoundaryConfigParam {
 /// Where an item comes from: `"toolpath_model"`, `{"model": <id>}` (an
 /// `inspect_model` id) or `"stock"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum SourceRefParam {
     /// The model of the toolpath.
@@ -1690,7 +1739,7 @@ impl From<SourceRefParam> for rs_cam_core::selection::SourceRef {
 
 /// The kind of an item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum ItemKindParam {
     /// A closed loop.
@@ -1746,7 +1795,7 @@ impl From<ItemKindParam> for rs_cam_core::selection::ItemKind {
 /// cuts; the op leaves out the others with a note) or `{"only": [kinds]}`
 /// (these kinds; a matched item the op cannot cut refuses).
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum KindFilterParam {
     #[default]
@@ -1765,6 +1814,7 @@ impl From<KindFilterParam> for rs_cam_core::selection::KindFilter {
 
 /// A circle diameter range: `nominal_mm` plus or minus `tolerance_mm`.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 #[schemars(inline)]
 pub struct DiameterRangeParam {
     pub nominal_mm: f64,
@@ -1773,7 +1823,7 @@ pub struct DiameterRangeParam {
 
 /// Which way a face points, in the setup frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum FacingParam {
     Up,
@@ -1783,6 +1833,7 @@ pub enum FacingParam {
 
 /// A Z range in mm, both ends included.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 #[schemars(inline)]
 pub struct ZRangeParam {
     pub min: f64,
@@ -1791,6 +1842,7 @@ pub struct ZRangeParam {
 
 /// A face filter: the facing and the plane Z, in the setup frame.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 #[schemars(inline)]
 pub struct FaceFilterParam {
     pub facing: FacingParam,
@@ -1817,6 +1869,7 @@ impl From<FaceFilterParam> for rs_cam_core::selection::FaceFilter {
 
 /// The test of one rule. Every part must admit the item.
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 #[schemars(inline)]
 pub struct FilterParam {
     /// Only items on these layers. Empty or absent: every layer.
@@ -1859,6 +1912,7 @@ impl From<FilterParam> for rs_cam_core::selection::Filter {
 /// closed loops on layer CUT of the toolpath model):
 /// `{"source": "toolpath_model", "filter": {"layers": ["CUT"], "kinds": {"only": ["loop"]}}}`.
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 #[schemars(inline)]
 pub struct RuleParam {
     pub source: SourceRefParam,
@@ -1880,6 +1934,7 @@ impl From<RuleParam> for rs_cam_core::selection::Rule {
 /// source, kind, layer, BREP id and Z are equal and the anchor and measure
 /// agree within 1e-6 mm.
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 #[schemars(inline)]
 pub struct MatchKeyParam {
     pub source: SourceRefParam,
@@ -1970,7 +2025,7 @@ impl From<SelectionParam> for rs_cam_core::selection::Selection {
 /// `{"remove_rule": <index>}`, `{"replace": <selection>}`, or `"reset"`
 /// (the default selection of the op).
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum SelectionEditParam {
     /// Replace the whole selection.
@@ -2011,7 +2066,7 @@ impl From<SelectionEditParam> for rs_cam_core::selection::SelectionEdit {
 /// `{"join_two": {"a": <key>, "b": <key>}}`. A key is a path key from
 /// `inspect_model` `open_shapes` or `list_model_items`.
 #[derive(Debug, Clone, PartialEq, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum DrawingEditParam {
     /// Chain the open paths whose ends meet within `tolerance_mm` (mm of
@@ -2058,7 +2113,7 @@ impl From<DrawingEditParam> for rs_cam_core::selection::DrawingEdit {
 /// now), `{"remove": <index>}` or `{"replace": [<edit>, ...]}` (the whole
 /// ledger in file units, as the project file and the GUI undo hold it).
 #[derive(Debug, Clone, PartialEq, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum LedgerEditParam {
     /// Add an edit at the end of the ledger.
@@ -2091,6 +2146,7 @@ impl From<LedgerEditParam> for rs_cam_core::session::LedgerEdit {
 /// drawing model. The model replays the ledger, and the toolpaths that read
 /// it go stale.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct EditModelDrawingParam {
     /// The model id (`inspect_model`).
     pub model_id: usize,
@@ -2103,7 +2159,7 @@ pub struct EditModelDrawingParam {
 /// the tool may go). A 3D op holds no op selection; its face picks go in
 /// the boundary. The spelling is the project-file spelling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum SelectionTargetParam {
     /// The selection of the op.
@@ -2126,6 +2182,7 @@ impl From<SelectionTargetParam> for rs_cam_core::session::SelectionTarget {
 /// `target` of a toolpath. The edit stales that toolpath and its
 /// dependents.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct EditToolpathSelectionParam {
     /// Toolpath index (0-based).
     pub index: usize,
@@ -2139,6 +2196,7 @@ pub struct EditToolpathSelectionParam {
 /// `selection_status` (P2.7, P4.1): what the selection `target` of a
 /// toolpath resolves to.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SelectionStatusParam {
     /// Toolpath index (0-based).
     pub index: usize,
@@ -2150,6 +2208,7 @@ pub struct SelectionStatusParam {
 /// `tab_layout` (geometry selection P4.6): the tabs that generation cuts
 /// for a Profile, as marks in the drawing frame.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct TabLayoutParam {
     /// Toolpath index (0-based). The toolpath must be a Profile.
     pub index: usize,
@@ -2158,6 +2217,7 @@ pub struct TabLayoutParam {
 /// `list_model_items` (P2.7): the items of one model, each with its match
 /// key.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ListModelItemsParam {
     /// The model id (`inspect_model` `id`), not an index.
     pub model_id: usize,
@@ -2196,6 +2256,7 @@ impl From<NearParam> for rs_cam_core::session::Near {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetRestAnalysisConfigParam {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -2228,6 +2289,7 @@ pub struct SetRestAnalysisConfigParam {
 /// finishing planner. Every dial is optional; unset means the campaign
 /// default named in that field's doc.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct PlanMultitoolFinishingParam {
     /// Setup index (0-based) the emitted finishing chain belongs to.
     pub setup_index: usize,
@@ -2304,6 +2366,7 @@ pub struct PlanMultitoolFinishingParam {
 /// plan that follows it describe the same territory; the only extra field is
 /// where to write the SVG.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct PreviewTierMapParam {
     /// Setup index (0-based) the ladder would be planned into.
     pub setup_index: usize,
@@ -2369,6 +2432,7 @@ pub struct PreviewTierMapParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetDressupConfigParam {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -2377,6 +2441,7 @@ pub struct SetDressupConfigParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetDressupFieldParam {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -2393,6 +2458,7 @@ pub struct SetDressupFieldParam {
 
 /// The one stored simulation resolution (G-RESTRES).
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetSimulationResolutionParam {
     /// Cell size in mm for EVERY simulation of the project: plan prefixes,
     /// the closing run, `run_simulation`, and the rest operations' stock.
@@ -2407,7 +2473,7 @@ pub struct SetSimulationResolutionParam {
 /// H1: the head presets, as a wire enum. Source of the preset numbers:
 /// `planning/op_architecture_2026-10-14/PLAN.md`, section H.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum HeadPresetParam {
     /// The collet nut (20 mm diameter, 30 mm tall) and the spindle shelf.
@@ -2422,7 +2488,7 @@ pub enum HeadPresetParam {
 
 /// H1: hard or soft, as a wire enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum HeadPartKindParam {
     /// A rigid part. It blocks a move.
@@ -2433,6 +2499,7 @@ pub enum HeadPartKindParam {
 
 /// H1: one head or shoe part, from its bottom upward.
 #[derive(Debug, Clone, PartialEq, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 #[schemars(inline)]
 pub struct HeadPartParam {
     /// The part name.
@@ -2449,6 +2516,7 @@ pub struct HeadPartParam {
 
 /// `set_machine_head` (H1): write the machine head and its dust shoe.
 #[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SetMachineHeadParam {
     /// Start from a preset. Omit it to start from the current head.
     pub preset: Option<HeadPresetParam>,
@@ -2474,7 +2542,7 @@ pub struct SetMachineHeadParam {
 
 /// H1: the shoe setting of one toolpath, as a wire enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum ShoeModeParam {
     /// The shoe solver sets the gap.
@@ -2490,6 +2558,7 @@ pub enum ShoeModeParam {
 
 /// `set_toolpath_shoe` (H1): the dust shoe setting of one toolpath.
 #[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SetToolpathShoeParam {
     /// Toolpath index (0-based).
     pub index: usize,
@@ -2501,6 +2570,7 @@ pub struct SetToolpathShoeParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetToolpathEnabledParam {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -2521,7 +2591,7 @@ pub struct SetToolpathEnabledParam {
 /// schemars emits a `$ref` into `$defs`, and the published tool schema carries
 /// no `$defs`, so the reference does not resolve for a client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum StockSourceParam {
     /// Start from raw stock.
@@ -2541,6 +2611,7 @@ impl From<StockSourceParam> for StockSource {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetStockSourceParam {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -2549,6 +2620,7 @@ pub struct SetStockSourceParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetSpindleStrategyParam {
     /// The project-level spindle policy. It affects every Suggest call
     /// across the project. See `rs_cam_core::feeds::SpindleStrategy`.
@@ -2558,6 +2630,7 @@ pub struct SetSpindleStrategyParam {
 /// `apply_feeds` — the agent-facing entry to the one application funnel
 /// (Checkpoint I-5, 2026-08-12).
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ApplyFeedsParam {
     /// Toolpath index (0-based), as listed by `list_toolpaths`.
     pub index: usize,
@@ -2580,6 +2653,7 @@ pub struct ApplyFeedsParam {
 }
 
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SaveProjectParam {
     /// File path to save the project TOML to (required)
     pub path: String,
@@ -2587,6 +2661,7 @@ pub struct SaveProjectParam {
 
 /// Model ID parameter.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ModelIdParam {
     /// Model ID as returned by `inspect_model` (the opaque DB-assigned
     /// `id` field). NOT a 0-based positional index — IDs typically start
@@ -2598,6 +2673,7 @@ pub struct ModelIdParam {
 
 /// Add alignment pin parameter.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AddAlignmentPinParam {
     /// X position of the alignment pin in mm
     pub x: f64,
@@ -2609,6 +2685,7 @@ pub struct AddAlignmentPinParam {
 
 /// Remove alignment pin parameter.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct RemoveAlignmentPinParam {
     /// Index of the alignment pin to remove (0-based)
     pub index: usize,
@@ -2616,6 +2693,7 @@ pub struct RemoveAlignmentPinParam {
 
 /// One alignment pin of a pin set, stock-local, in mm.
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AlignmentPinParam {
     /// X of the pin centre in mm, from the stock's min corner.
     pub x: f64,
@@ -2627,6 +2705,7 @@ pub struct AlignmentPinParam {
 
 /// `set_alignment_pins` (P5): replace the whole pin set.
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SetAlignmentPinsParam {
     /// The new pin set. An empty list removes every pin (and the pin-drill
     /// toolpath).
@@ -2635,7 +2714,7 @@ pub struct SetAlignmentPinsParam {
 
 /// The pin presets of `place_alignment_pattern`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum AlignmentPatternPreset {
     /// One pin on the flip axis plus a mirror pair off the axis, one
@@ -2659,6 +2738,7 @@ pub enum AlignmentPatternPreset {
 /// so `along` is the stock-local X. For `Bottom` turned 180 deg the axis
 /// is x = W/2 from y = 0, so `along` is Y.
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct PlaceAlignmentPatternParam {
     /// The preset.
     pub preset: AlignmentPatternPreset,
@@ -2684,6 +2764,7 @@ pub struct PlaceAlignmentPatternParam {
 
 /// `move_alignment_pins` (P5): move every pin by one offset.
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct MoveAlignmentPinsParam {
     /// The X offset in mm.
     pub dx: f64,
@@ -2697,7 +2778,7 @@ pub struct MoveAlignmentPinsParam {
 /// `inline` keeps the values IN the property (the tool schema carries no
 /// `$defs`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum StockChangeOpParam {
     /// Put the geometry into the stock as the change's material. The
@@ -2714,7 +2795,7 @@ pub enum StockChangeOpParam {
 /// `rs_cam_core::compute::stock_change::CutAs`; the tokens are the tokens a
 /// project file stores.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum CutAsParam {
     /// Cut the added material exactly as the stock material: the same
@@ -2731,7 +2812,7 @@ pub enum CutAsParam {
 /// S4: where the volume of a stock change comes from, as a wire enum. A
 /// mirror of the kinds of `rs_cam_core::compute::stock_change::StockGeometry`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum StockGeometryKindParam {
     /// A closed mesh model, in the setup frame. `model_ids` holds exactly
@@ -2751,6 +2832,7 @@ pub enum StockGeometryKindParam {
 /// Every Z value is in the SETUP frame: the frame the setup's toolpaths
 /// use, with the setup's +Z up.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AddStockChangeParam {
     /// Setup index (0-based, the `list_setups` order).
     pub setup_index: usize,
@@ -2799,6 +2881,7 @@ pub struct AddStockChangeParam {
 /// To change the geometry, give `kind` with every value that kind needs
 /// (`model_ids`, and `level_z` or `z_bottom` and `z_top`).
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct EditStockChangeParam {
     /// Setup index (0-based, the `list_setups` order).
     pub setup_index: usize,
@@ -2845,6 +2928,7 @@ pub struct EditStockChangeParam {
 /// `move_stock_change` (S4): move one stock change to a new position in its
 /// setup's list. The setup applies the list in order.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct MoveStockChangeParam {
     /// Setup index (0-based, the `list_setups` order).
     pub setup_index: usize,
@@ -2856,6 +2940,7 @@ pub struct MoveStockChangeParam {
 
 /// `remove_stock_change` (S4): remove one stock change from a setup.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct RemoveStockChangeParam {
     /// Setup index (0-based, the `list_setups` order).
     pub setup_index: usize,
@@ -2866,7 +2951,7 @@ pub struct RemoveStockChangeParam {
 /// K1: the geometry kind of an obstacle, as a wire enum. A mirror of the
 /// kinds of `rs_cam_core::compute::obstacle::ObstacleGeometry`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum ObstacleGeometryKindParam {
     /// An axis-aligned box from `min` to `max` ([x, y, z], mm).
@@ -2887,6 +2972,7 @@ pub enum ObstacleGeometryKindParam {
 /// Every value is in the SETUP frame: the frame the setup's toolpaths use,
 /// with the setup's +Z up.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AddObstacleParam {
     /// Setup index (0-based, the `list_setups` order).
     pub setup_index: usize,
@@ -2925,6 +3011,7 @@ pub struct AddObstacleParam {
 /// obstacle on or off. To change the geometry kind, give `kind` with every
 /// value that kind needs.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct EditObstacleParam {
     /// Setup index (0-based, the `list_setups` order).
     pub setup_index: usize,
@@ -2962,6 +3049,7 @@ pub struct EditObstacleParam {
 
 /// `remove_obstacle` (K1): remove one obstacle from a setup.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct RemoveObstacleParam {
     /// Setup index (0-based, the `list_setups` order).
     pub setup_index: usize,
@@ -2971,6 +3059,7 @@ pub struct RemoveObstacleParam {
 
 /// Simulation jump-to-move parameter.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SimJumpToMoveParam {
     /// Move index to jump to (0-based, up to total_moves)
     pub move_index: usize,
@@ -2978,6 +3067,7 @@ pub struct SimJumpToMoveParam {
 
 /// Per-toolpath percentage-based simulation scrub parameter.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SimScrubToolpathParam {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -2987,6 +3077,7 @@ pub struct SimScrubToolpathParam {
 
 /// Jump to the start or end of a specific toolpath in the simulation.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SimJumpToToolpathBoundaryParam {
     /// Toolpath index (0-based)
     pub index: usize,
@@ -4454,5 +4545,95 @@ mod tests {
                 "the wire still accepts {token:?}; the typed enum did not replace the hand parse"
             );
         }
+    }
+
+    /// F26 (operator ruling): every MCP parameter type refuses a field it
+    /// does not know. Before F26, serde dropped an unknown field with no
+    /// error, so a client that sent `model_id` to `add_toolpath_via_gui`
+    /// or `kinds` to `list_model_items` got a reply that ignored its
+    /// request. rmcp wraps the serde error as "failed to deserialize
+    /// parameters: {error}", so the field name reaches the client.
+    ///
+    /// To prove this test red, remove `deny_unknown_fields` from
+    /// `AddToolpathViaGuiParam`. The first assertion then fails.
+    #[test]
+    fn an_unknown_mcp_field_is_refused_f26() {
+        let refused = |result: Result<(), serde_json::Error>, field: &str| {
+            let error = result.err().map(|e| e.to_string()).unwrap_or_else(|| {
+                panic!("the wire accepted the unknown field `{field}`");
+            });
+            assert!(
+                error.contains(&format!("unknown field `{field}`")),
+                "the error does not name the field `{field}`: {error}"
+            );
+        };
+        refused(
+            serde_json::from_value::<AddToolpathViaGuiParam>(serde_json::json!({
+                "operation_type": "pocket",
+                "setup_index": 0,
+                "model_id": 0,
+            }))
+            .map(|_| ()),
+            "model_id",
+        );
+        refused(
+            serde_json::from_value::<ListModelItemsParam>(serde_json::json!({
+                "model_id": 0,
+                "kinds": ["circle"],
+            }))
+            .map(|_| ()),
+            "kinds",
+        );
+        // The same requests without the extra field parse.
+        serde_json::from_value::<AddToolpathViaGuiParam>(serde_json::json!({
+            "operation_type": "pocket",
+            "setup_index": 0,
+        }))
+        .unwrap();
+        serde_json::from_value::<ListModelItemsParam>(serde_json::json!({"model_id": 0})).unwrap();
+
+        // The source scan: every type in this file that derives
+        // `Deserialize` carries `deny_unknown_fields`. A new parameter
+        // type without the attribute makes this assertion fail.
+        let source = include_str!("server.rs");
+        let lines: Vec<&str> = source.lines().collect();
+        let mut missing = Vec::new();
+        let mut scanned = 0_usize;
+        let mut i = 0;
+        while i < lines.len() {
+            if !lines[i].starts_with("#[derive(") {
+                i += 1;
+                continue;
+            }
+            let mut j = i;
+            let mut derive = String::from(lines[i]);
+            while !lines[j].trim_end().ends_with(")]") {
+                j += 1;
+                derive.push_str(lines[j]);
+            }
+            let mut k = j + 1;
+            // rustfmt can split a long `#[serde(..)]` over several lines,
+            // so the scan reads every line up to the item.
+            let mut denies = false;
+            while !lines[k].starts_with("pub struct ") && !lines[k].starts_with("pub enum ") {
+                denies |= lines[k].contains("deny_unknown_fields");
+                k += 1;
+            }
+            if derive.contains("Deserialize") {
+                scanned += 1;
+                if !denies {
+                    missing.push(lines[k]);
+                }
+            }
+            i = k + 1;
+        }
+        assert!(
+            scanned > 100,
+            "the scan found only {scanned} Deserialize types"
+        );
+        assert!(
+            missing.is_empty(),
+            "these types accept an unknown field: {missing:#?}"
+        );
     }
 }

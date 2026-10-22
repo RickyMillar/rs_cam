@@ -2,6 +2,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "Add alignment pin parameter.",
       "properties": {
         "diameter": {
@@ -33,6 +34,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "Geometry selection P6.7: `add_bore_from_drill`, the \"Add a Bore for\nthese\" action of a Drill hole row.",
       "properties": {
         "index": {
@@ -53,6 +55,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`add_obstacle` (K1): add an obstacle to the END of a setup's list. An\nobstacle is a fixture or a keep-out zone (one concept): every operation\nof the setup keeps the tool (cutter, shank and holder) out of it, the\nrapids cross above it, and the simulation counts a hit as a collision.\n\nEvery value is in the SETUP frame: the frame the setup's toolpaths use,\nwith the setup's +Z up.",
       "properties": {
         "clearance": {
@@ -175,6 +178,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "name": {
           "description": "Optional name for the new setup",
@@ -192,6 +196,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`add_stock_change` (S4): add a stock change to the END of a setup's list.\n\nEvery Z value is in the SETUP frame: the frame the setup's toolpaths\nuse, with the setup's +Z up.",
       "properties": {
         "custom_material": {
@@ -332,6 +337,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "corner_radius": {
           "description": "**Required for `bull_nose`** — corner radius in mm. Must be > 0\nand <= diameter / 2 (a corner radius of exactly diameter/2 is a\nball nose). Refused when omitted.",
@@ -464,6 +470,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "catalog": {
           "description": "Catalog name (file stem) as returned by `list_tool_library`,\ne.g. \"end_mills\", \"v_bits\", \"tapered_ball\".",
@@ -488,6 +495,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "model_id": {
           "description": "Model ID (project-assigned `id` field — use the `id` value\nfrom `inspect_model` results, NOT a 0-based positional index;\nIDs typically start at 1 and increment per import).",
@@ -560,6 +568,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "F3.1 — add a toolpath through the GUI's own add path.",
       "properties": {
         "operation_type": {
@@ -614,6 +623,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`apply_feeds` — the agent-facing entry to the one application funnel\n(Checkpoint I-5, 2026-08-12).",
       "properties": {
         "index": {
@@ -669,6 +679,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Toolpath index (0-based)",
@@ -688,6 +699,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Toolpath index (0-based) of a rest operation (remaining stock)",
@@ -707,6 +719,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`edit_model_drawing` (P4.9): one change of the edit ledger of a\ndrawing model. The model replays the ledger, and the toolpaths that read\nit go stale.",
       "properties": {
         "edit": {
@@ -724,6 +737,7 @@
                       "description": "Chain the open paths whose ends meet within `tolerance_mm` (mm of\nthe model). `layer` absent: every layer; a chain never crosses a\nlayer.",
                       "properties": {
                         "join_within": {
+                          "additionalProperties": false,
                           "properties": {
                             "layer": {
                               "default": null,
@@ -753,8 +767,10 @@
                       "description": "Close one open path with a straight line from its end to its start.",
                       "properties": {
                         "close_with_line": {
+                          "additionalProperties": false,
                           "properties": {
                             "path": {
+                              "additionalProperties": false,
                               "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                               "properties": {
                                 "anchor": {
@@ -885,8 +901,10 @@
                       "description": "Close one open path: its end point moves onto its start point.",
                       "properties": {
                         "move_ends_together": {
+                          "additionalProperties": false,
                           "properties": {
                             "path": {
+                              "additionalProperties": false,
                               "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                               "properties": {
                                 "anchor": {
@@ -1017,8 +1035,10 @@
                       "description": "Join two open paths of one layer with a line between their nearest\nends.",
                       "properties": {
                         "join_two": {
+                          "additionalProperties": false,
                           "properties": {
                             "a": {
+                              "additionalProperties": false,
                               "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                               "properties": {
                                 "anchor": {
@@ -1133,6 +1153,7 @@
                               "type": "object"
                             },
                             "b": {
+                              "additionalProperties": false,
                               "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                               "properties": {
                                 "anchor": {
@@ -1295,6 +1316,7 @@
                         "description": "Chain the open paths whose ends meet within `tolerance_mm` (mm of\nthe model). `layer` absent: every layer; a chain never crosses a\nlayer.",
                         "properties": {
                           "join_within": {
+                            "additionalProperties": false,
                             "properties": {
                               "layer": {
                                 "default": null,
@@ -1324,8 +1346,10 @@
                         "description": "Close one open path with a straight line from its end to its start.",
                         "properties": {
                           "close_with_line": {
+                            "additionalProperties": false,
                             "properties": {
                               "path": {
+                                "additionalProperties": false,
                                 "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                                 "properties": {
                                   "anchor": {
@@ -1456,8 +1480,10 @@
                         "description": "Close one open path: its end point moves onto its start point.",
                         "properties": {
                           "move_ends_together": {
+                            "additionalProperties": false,
                             "properties": {
                               "path": {
+                                "additionalProperties": false,
                                 "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                                 "properties": {
                                   "anchor": {
@@ -1588,8 +1614,10 @@
                         "description": "Join two open paths of one layer with a line between their nearest\nends.",
                         "properties": {
                           "join_two": {
+                            "additionalProperties": false,
                             "properties": {
                               "a": {
+                                "additionalProperties": false,
                                 "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                                 "properties": {
                                   "anchor": {
@@ -1704,6 +1732,7 @@
                                 "type": "object"
                               },
                               "b": {
+                                "additionalProperties": false,
                                 "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                                 "properties": {
                                   "anchor": {
@@ -1861,6 +1890,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`edit_obstacle` (K1): change one obstacle in place. Each field that is\ngiven replaces that part; the others stay. Use `enabled` to turn the\nobstacle on or off. To change the geometry kind, give `kind` with every\nvalue that kind needs.",
       "properties": {
         "clearance": {
@@ -2000,6 +2030,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`edit_stock_change` (S4): change one stock change in place. Each field\nthat is given replaces that part of the change; the others stay. Use\n`enabled` to turn a change on or off.\n\nTo change the geometry, give `kind` with every value that kind needs\n(`model_ids`, and `level_z` or `z_bottom` and `z_top`).",
       "properties": {
         "change_id": {
@@ -2173,6 +2204,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`edit_toolpath_selection` (P2.7): apply one edit to the selection\n`target` of a toolpath. The edit stales that toolpath and its\ndependents.",
       "properties": {
         "edit": {
@@ -2189,6 +2221,7 @@
                     "excludes": {
                       "description": "Items removed by hand from the rule matches (match keys).",
                       "items": {
+                        "additionalProperties": false,
                         "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                         "properties": {
                           "anchor": {
@@ -2307,6 +2340,7 @@
                     "picks": {
                       "description": "Items added by hand (match keys).",
                       "items": {
+                        "additionalProperties": false,
                         "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                         "properties": {
                           "anchor": {
@@ -2424,12 +2458,15 @@
                     },
                     "rules": {
                       "items": {
+                        "additionalProperties": false,
                         "description": "One rule: the items of `source` that `filter` admits. Example (the\nclosed loops on layer CUT of the toolpath model):\n`{\"source\": \"toolpath_model\", \"filter\": {\"layers\": [\"CUT\"], \"kinds\": {\"only\": [\"loop\"]}}}`.",
                         "properties": {
                           "filter": {
+                            "additionalProperties": false,
                             "description": "The test of one rule. Every part must admit the item.",
                             "properties": {
                               "diameter": {
+                                "additionalProperties": false,
                                 "description": "Circles only, of this diameter range.",
                                 "properties": {
                                   "nominal_mm": {
@@ -2451,6 +2488,7 @@
                                 ]
                               },
                               "face": {
+                                "additionalProperties": false,
                                 "description": "Faces only, by facing and plane Z.",
                                 "properties": {
                                   "facing": {
@@ -2463,6 +2501,7 @@
                                     "type": "string"
                                   },
                                   "z": {
+                                    "additionalProperties": false,
                                     "description": "A Z range in mm, both ends included.",
                                     "properties": {
                                       "max": {
@@ -2554,6 +2593,7 @@
                                 "type": "array"
                               },
                               "z": {
+                                "additionalProperties": false,
                                 "description": "STEP rings, edges, circles and points only (items with a key `z`),\nby their Z in the setup frame.",
                                 "properties": {
                                   "max": {
@@ -2629,12 +2669,15 @@
               "description": "Add a rule (a rule equal to one the selection holds is not added).",
               "properties": {
                 "add_rule": {
+                  "additionalProperties": false,
                   "description": "One rule: the items of `source` that `filter` admits. Example (the\nclosed loops on layer CUT of the toolpath model):\n`{\"source\": \"toolpath_model\", \"filter\": {\"layers\": [\"CUT\"], \"kinds\": {\"only\": [\"loop\"]}}}`.",
                   "properties": {
                     "filter": {
+                      "additionalProperties": false,
                       "description": "The test of one rule. Every part must admit the item.",
                       "properties": {
                         "diameter": {
+                          "additionalProperties": false,
                           "description": "Circles only, of this diameter range.",
                           "properties": {
                             "nominal_mm": {
@@ -2656,6 +2699,7 @@
                           ]
                         },
                         "face": {
+                          "additionalProperties": false,
                           "description": "Faces only, by facing and plane Z.",
                           "properties": {
                             "facing": {
@@ -2668,6 +2712,7 @@
                               "type": "string"
                             },
                             "z": {
+                              "additionalProperties": false,
                               "description": "A Z range in mm, both ends included.",
                               "properties": {
                                 "max": {
@@ -2759,6 +2804,7 @@
                           "type": "array"
                         },
                         "z": {
+                          "additionalProperties": false,
                           "description": "STEP rings, edges, circles and points only (items with a key `z`),\nby their Z in the setup frame.",
                           "properties": {
                             "max": {
@@ -2844,6 +2890,7 @@
               "description": "Pick an item. It also removes an exclude of that item.",
               "properties": {
                 "add_pick": {
+                  "additionalProperties": false,
                   "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                   "properties": {
                     "anchor": {
@@ -2968,6 +3015,7 @@
               "description": "Remove the pick of an item. With no pick of it, exclude the item\nfrom the rule matches.",
               "properties": {
                 "remove_pick": {
+                  "additionalProperties": false,
                   "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                   "properties": {
                     "anchor": {
@@ -3128,6 +3176,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "accept_exceeded_tool_load": {
           "default": false,
@@ -3220,6 +3269,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "fixpoint": {
           "description": "A/M11 — iterate to a fixpoint over the rest-machining chain: generate,\nsimulate, regenerate whatever was blocked only on missing upstream\nstock, repeat until nothing new generates. Defaults to `true`.\n\nAn operation whose stock source is \"remaining stock\" needs the\n*simulated* stock of the operations before it, and that snapshot only\nexists after a simulation — so it can never see stock produced earlier\nin the same pass. Without the loop, a chain of `k` such operations\nneeds `k` manual sim/generate rounds and nothing tells you `k`. The\nreply reports how many rounds it actually took.\n\nPass `false` for the old single-pass behaviour.",
@@ -3254,6 +3304,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Toolpath index (0-based)",
@@ -3289,6 +3340,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "include_drill_samples": {
           "description": "Optional: also include the per-peck `drill_samples` array in the\nresponse. Defaults to `false` because the stream can be verbose on\nlarge drill cycles; per-toolpath `drill_summaries` are always\nincluded regardless.",
@@ -3432,6 +3484,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "exit_reason": {
           "description": "Optional filter: only include spans whose exit_reason contains this\nsubstring. Useful values for AgentSearch diagnosis:\n\"loop closed\", \"idle\", \"no entry\", \"preflight skip\", \"no viable direction\".",
@@ -3482,6 +3535,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "F3.5 — read the toast stack.",
       "properties": {
         "include_expired": {
@@ -3509,6 +3563,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "operation_type": {
           "description": "The operation kind.",
@@ -3560,6 +3615,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Toolpath index (0-based)",
@@ -3586,6 +3642,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Toolpath index (0-based)",
@@ -3605,6 +3662,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Toolpath index (0-based)",
@@ -3624,6 +3682,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "GRBL `$$` settings dump to import onto the live machine profile.",
       "properties": {
         "dump": {
@@ -3642,6 +3701,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "join_tolerance_mm": {
           "description": "Two open piece ends of a DXF or an SVG closer than this (mm, in the\nfile before the declared units) join into one shape. Omit for the\ndefault, 0.01 mm. The reply's `import_report` states the join.",
@@ -3661,6 +3721,7 @@
               "description": "The declared units of a model file (geometry selection P4.8). The same\nserde shape as core `ModelUnits`, so the wire JSON is the project-file\nJSON: `{\"kind\": \"millimeters\"}`, `{\"kind\": \"inches\"}`,\n`{\"kind\": \"centimeters\"}`, `{\"kind\": \"meters\"}` or\n`{\"kind\": \"custom\", \"scale\": 0.2646}`.",
               "oneOf": [
                 {
+                  "additionalProperties": false,
                   "description": "1:1.",
                   "properties": {
                     "kind": {
@@ -3674,6 +3735,7 @@
                   "type": "object"
                 },
                 {
+                  "additionalProperties": false,
                   "description": "x25.4.",
                   "properties": {
                     "kind": {
@@ -3687,6 +3749,7 @@
                   "type": "object"
                 },
                 {
+                  "additionalProperties": false,
                   "description": "x1000.",
                   "properties": {
                     "kind": {
@@ -3700,6 +3763,7 @@
                   "type": "object"
                 },
                 {
+                  "additionalProperties": false,
                   "description": "x10.",
                   "properties": {
                     "kind": {
@@ -3713,6 +3777,7 @@
                   "type": "object"
                 },
                 {
+                  "additionalProperties": false,
                   "description": "One unit of the file times this factor is 1 mm.",
                   "properties": {
                     "kind": {
@@ -3750,6 +3815,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "Model ID parameter.",
       "properties": {
         "model_id": {
@@ -3791,6 +3857,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Toolpath index (0-based). Must have been generated first.",
@@ -3880,6 +3947,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`list_model_items` (P2.7): the items of one model, each with its match\nkey.",
       "properties": {
         "kind": {
@@ -3982,6 +4050,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "catalog": {
           "description": "Catalog name (file stem) from `list_tool_library`, e.g.\n\"end_mills\", \"v_bits\", \"tapered_ball\".",
@@ -4020,6 +4089,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "Name of a machine in the per-user library to snapshot-import.",
       "properties": {
         "name": {
@@ -4038,6 +4108,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "discard_unsaved": {
           "default": false,
@@ -4060,6 +4131,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`move_alignment_pins` (P5): move every pin by one offset.",
       "properties": {
         "dx": {
@@ -4085,6 +4157,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`move_stock_change` (S4): move one stock change to a new position in its\nsetup's list. The setup applies the list in order.",
       "properties": {
         "change_id": {
@@ -4119,6 +4192,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "target_setup_index": {
           "description": "Target setup index (0-based)",
@@ -4145,6 +4219,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Toolpath index (0-based)",
@@ -4164,6 +4239,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`place_alignment_pattern` (P5): replace the pin set with a preset.\n\nThe preset is dimensioned in the frame of the flip axis of the first\nsetup that turns the part over in plane: `*_along` is the distance in\nmm along the axis from its first end, `pair_across` the distance from\nthe axis. For a `Bottom` setup at 0 deg the axis is y = D/2 from x = 0,\nso `along` is the stock-local X. For `Bottom` turned 180 deg the axis\nis x = W/2 from y = 0, so `along` is Y.",
       "properties": {
         "axis_along": {
@@ -4257,6 +4333,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "Phase O — the machine-readable trigger for the multi-tool island\nfinishing planner. Every dial is optional; unset means the campaign\ndefault named in that field's doc.",
       "properties": {
         "cell_mm": {
@@ -4394,6 +4471,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "Phase U — the look-before-emit twin of [`PlanMultitoolFinishingParam`].\nEvery dial is spelled and defaulted identically, so a preview and the\nplan that follows it describe the same territory; the only extra field is\nwhere to write the SVG.",
       "properties": {
         "cell_mm": {
@@ -4545,6 +4623,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "P5 — the per-tool reach map, as numbers rather than pixels.",
       "properties": {
         "histogram_bins": {
@@ -4582,6 +4661,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Toolpath index (0-based)",
@@ -4601,6 +4681,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "Remove alignment pin parameter.",
       "properties": {
         "index": {
@@ -4621,6 +4702,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`remove_obstacle` (K1): remove one obstacle from a setup.",
       "properties": {
         "obstacle_id": {
@@ -4648,6 +4730,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`remove_stock_change` (S4): remove one stock change from a setup.",
       "properties": {
         "change_id": {
@@ -4675,6 +4758,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Tool index (0-based)",
@@ -4694,6 +4778,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Toolpath index (0-based)",
@@ -4713,6 +4798,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "resolution": {
           "description": "Optional. SETS the project's one stored simulation resolution, in\nmm, and the reply says so. Omit it to simulate at the stored value.",
@@ -4731,6 +4817,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "path": {
           "description": "File path to save the project TOML to (required)",
@@ -4748,6 +4835,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "height": {
           "description": "Optional window height in logical points. Same persistence note as\n`width`.",
@@ -4781,6 +4869,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "checkpoint": {
           "description": "Checkpoint index to render (default: last). Each toolpath produces one\ncheckpoint. Use a lower index to see intermediate states.",
@@ -4832,6 +4921,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "height": {
           "description": "Image height in pixels (default 800, PNG only)",
@@ -4895,6 +4985,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`selection_status` (P2.7, P4.1): what the selection `target` of a\ntoolpath resolves to.",
       "properties": {
         "index": {
@@ -4931,6 +5022,7 @@
     "inputSchema": {
       "$defs": {
         "AlignmentPinParam": {
+          "additionalProperties": false,
           "description": "One alignment pin of a pin set, stock-local, in mm.",
           "properties": {
             "diameter": {
@@ -4958,6 +5050,7 @@
         }
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`set_alignment_pins` (P5): replace the whole pin set.",
       "properties": {
         "pins": {
@@ -4979,6 +5072,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "containment": {
           "anyOf": [
@@ -5040,6 +5134,7 @@
             "excludes": {
               "description": "Items removed by hand from the rule matches (match keys).",
               "items": {
+                "additionalProperties": false,
                 "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                 "properties": {
                   "anchor": {
@@ -5158,6 +5253,7 @@
             "picks": {
               "description": "Items added by hand (match keys).",
               "items": {
+                "additionalProperties": false,
                 "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                 "properties": {
                   "anchor": {
@@ -5275,12 +5371,15 @@
             },
             "rules": {
               "items": {
+                "additionalProperties": false,
                 "description": "One rule: the items of `source` that `filter` admits. Example (the\nclosed loops on layer CUT of the toolpath model):\n`{\"source\": \"toolpath_model\", \"filter\": {\"layers\": [\"CUT\"], \"kinds\": {\"only\": [\"loop\"]}}}`.",
                 "properties": {
                   "filter": {
+                    "additionalProperties": false,
                     "description": "The test of one rule. Every part must admit the item.",
                     "properties": {
                       "diameter": {
+                        "additionalProperties": false,
                         "description": "Circles only, of this diameter range.",
                         "properties": {
                           "nominal_mm": {
@@ -5302,6 +5401,7 @@
                         ]
                       },
                       "face": {
+                        "additionalProperties": false,
                         "description": "Faces only, by facing and plane Z.",
                         "properties": {
                           "facing": {
@@ -5314,6 +5414,7 @@
                             "type": "string"
                           },
                           "z": {
+                            "additionalProperties": false,
                             "description": "A Z range in mm, both ends included.",
                             "properties": {
                               "max": {
@@ -5405,6 +5506,7 @@
                         "type": "array"
                       },
                       "z": {
+                        "additionalProperties": false,
                         "description": "STEP rings, edges, circles and points only (items with a key `z`),\nby their Z in the setup frame.",
                         "properties": {
                           "max": {
@@ -5527,6 +5629,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "dressup": {
           "description": "Dressup configuration as a JSON object (fields match DressupConfig)"
@@ -5550,6 +5653,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Toolpath index (0-based)",
@@ -5586,6 +5690,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`set_machine_head` (H1): write the machine head and its dust shoe.",
       "properties": {
         "mount_mm": {
@@ -5607,6 +5712,7 @@
         "parts": {
           "description": "Replace the fixed parts above the holder face (bottom first).",
           "items": {
+            "additionalProperties": false,
             "description": "H1: one head or shoe part, from its bottom upward.",
             "properties": {
               "diameter_mm": {
@@ -5690,6 +5796,7 @@
         "shoe_parts": {
           "description": "Replace the shoe parts (brush end first). Needs a shoe: start from\nthe `dust_shoe` preset or a head that has one.",
           "items": {
+            "additionalProperties": false,
             "description": "H1: one head or shoe part, from its bottom upward.",
             "properties": {
               "diameter_mm": {
@@ -5762,6 +5869,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`set_machine_kinematics` — typed write path for the accel /\njunction-deviation numbers that decide cycle time and the\nparallel-vs-spiral strategy verdict.",
       "properties": {
         "acceleration_mm_s2": {
@@ -5853,6 +5961,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "Set the import options of a drawing model (geometry selection P4.8):\nthe model reads its file again with them. A changed join can change the\nitems, so picks of the old pieces flag as lost.",
       "properties": {
         "join_tolerance_mm": {
@@ -5875,6 +5984,7 @@
               "description": "The declared units of a model file (geometry selection P4.8). The same\nserde shape as core `ModelUnits`, so the wire JSON is the project-file\nJSON: `{\"kind\": \"millimeters\"}`, `{\"kind\": \"inches\"}`,\n`{\"kind\": \"centimeters\"}`, `{\"kind\": \"meters\"}` or\n`{\"kind\": \"custom\", \"scale\": 0.2646}`.",
               "oneOf": [
                 {
+                  "additionalProperties": false,
                   "description": "1:1.",
                   "properties": {
                     "kind": {
@@ -5888,6 +5998,7 @@
                   "type": "object"
                 },
                 {
+                  "additionalProperties": false,
                   "description": "x25.4.",
                   "properties": {
                     "kind": {
@@ -5901,6 +6012,7 @@
                   "type": "object"
                 },
                 {
+                  "additionalProperties": false,
                   "description": "x1000.",
                   "properties": {
                     "kind": {
@@ -5914,6 +6026,7 @@
                   "type": "object"
                 },
                 {
+                  "additionalProperties": false,
                   "description": "x10.",
                   "properties": {
                     "kind": {
@@ -5927,6 +6040,7 @@
                   "type": "object"
                 },
                 {
+                  "additionalProperties": false,
                   "description": "One unit of the file times this factor is 1 mm.",
                   "properties": {
                     "kind": {
@@ -5964,6 +6078,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "cell_mm": {
           "description": "XY grid cell size (mm) for the rest field. Smaller = finer regions.",
@@ -6038,6 +6153,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "face_up": {
           "description": "The stock face that points up.",
@@ -6070,6 +6186,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "setup_index": {
           "description": "Setup index (0-based)",
@@ -6100,6 +6217,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "The one stored simulation resolution (G-RESTRES).",
       "properties": {
         "resolution_mm": {
@@ -6120,6 +6238,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "strategy": {
           "description": "The project-level spindle policy. It affects every Suggest call\nacross the project. See `rs_cam_core::feeds::SpindleStrategy`.",
@@ -6148,6 +6267,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "auto_from_model": {
           "description": "Auto-fit the stock to the next imported model's bounding box.\n\nSetting any dimension or origin above CLEARS this flag\nautomatically (see the tool description) — pass `true` here only\nif you deliberately want the next `import_model` to overwrite\nwhat you just set. Passing `false` alone turns auto-fit off\nwithout changing any number.",
@@ -6228,6 +6348,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Toolpath index (0-based)",
@@ -6263,6 +6384,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Tool index (0-based)",
@@ -6370,6 +6492,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "enabled": {
           "description": "`true` to enable, `false` to disable",
@@ -6394,6 +6517,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`set_toolpath_floor` (geometry selection P3.3): the floor of one Pocket,\nProfile, Zigzag or Adaptive 2D toolpath.",
       "properties": {
         "floor": {
@@ -6533,6 +6657,7 @@
                   "type": "string"
                 },
                 "key": {
+                  "additionalProperties": false,
                   "description": "The match key of the floor face.",
                   "properties": {
                     "anchor": {
@@ -6675,6 +6800,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "bottom_z": {
           "description": "Bottom / lowest-cut reference Z (absolute). Omit to leave unchanged.\nPocket, Profile, Zigzag and Adaptive 2D refuse a Bottom Z: their\nfloor is `set_toolpath_floor`.",
@@ -6734,6 +6860,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "F3.8 — rebind a toolpath's input model / geometry.",
       "properties": {
         "index": {
@@ -6761,6 +6888,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "index": {
           "description": "Toolpath index (0-based)",
@@ -6797,6 +6925,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`set_toolpath_shoe` (H1): the dust shoe setting of one toolpath.",
       "properties": {
         "gap_mm": {
@@ -6851,6 +6980,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "F3.7 — rebind a toolpath's cutter.",
       "properties": {
         "index": {
@@ -6878,10 +7008,12 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "properties": {
         "frame_items": {
           "description": "Geometry selection P4.4 (\"Show me\"): match keys of items of the\nselected toolpath (copy them from `selection_status` or\n`list_model_items`). The camera frames them and the viewport flashes\nthem. A key that names no item (a lost pick) frames its stored\nposition. Needs a selected toolpath (`toolpath_index` in the same\ncall, or a selection already made).",
           "items": {
+            "additionalProperties": false,
             "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
             "properties": {
               "anchor": {
@@ -7128,6 +7260,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "Simulation jump-to-move parameter.",
       "properties": {
         "move_index": {
@@ -7155,6 +7288,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "Jump to the start or end of a specific toolpath in the simulation.",
       "properties": {
         "index": {
@@ -7175,6 +7309,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "Jump to the start or end of a specific toolpath in the simulation.",
       "properties": {
         "index": {
@@ -7195,6 +7330,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "Per-toolpath percentage-based simulation scrub parameter.",
       "properties": {
         "index": {
@@ -7221,6 +7357,7 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`tab_layout` (geometry selection P4.6): the tabs that generation cuts\nfor a Profile, as marks in the drawing frame.",
       "properties": {
         "index": {

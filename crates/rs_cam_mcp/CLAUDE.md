@@ -20,6 +20,10 @@ run the server; the live server, GUI dispatch and session ownership are in
   A `build_info().features` token records a shipped CAPABILITY, not a key
   name: add one when a reply gains a key, and keep the old one when a key
   is renamed.
+- Every type that derives `Deserialize` in `server.rs` carries
+  `#[serde(deny_unknown_fields)]` (F26). An unknown field gives an MCP
+  error that names the field. Do not use `#[serde(flatten)]` with it.
+  Sentry: `an_unknown_mcp_field_is_refused_f26` (it also scans the file).
 - A cap on a response array is named here, in `response.rs`, never
   written as a number in a handler.
 - A schema change normally requires coordinated updates to this crate, the
