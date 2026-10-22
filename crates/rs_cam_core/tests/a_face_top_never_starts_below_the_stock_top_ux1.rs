@@ -45,8 +45,11 @@
 //! 1.0 mm; Trace first level 31.5 and 37.5, peak 0.5 and 0.5 mm.
 //!
 //! The other ops that take a face pick keep the face top
-//! (`FaceTopRule::Face`); `compute::catalog::capabilities` states why, and
-//! `every_op_keeps_its_face_top_rule_ux1b` freezes the column.
+//! (`FaceTopRule::Face`, `FaceTopRule::RefuseBuried`);
+//! `compute::catalog::capabilities` states why, and
+//! `every_op_keeps_its_face_top_rule_ux1b` freezes the column. UX-1c:
+//! Chamfer, V-Carve, Inlay and Inlay Plug refuse a face below standing
+//! material (`a_buried_face_refuses_a_one_depth_op_ux1c`).
 //!
 //! Not in this file: an op on "After previous ops". The ruling says its
 //! remaining-stock clip skips the air levels; a cheap cascade fixture on a

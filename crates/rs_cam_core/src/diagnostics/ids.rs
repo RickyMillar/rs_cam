@@ -431,6 +431,10 @@ diag_ids! {
     /// generation will refuse. A drill op states the same refusal under its
     /// own no-holes id.
     pub const PRECOND_SELECTION_REFUSED: &str = "precondition.selection_refused";
+    /// UX-1c (operator ruling 2026-10-22, SAFETY): a Chamfer, V-Carve,
+    /// Inlay or Inlay Plug on fresh stock takes a face pick below the stock
+    /// top, so generation will refuse (`OperationError::BuriedFace`).
+    pub const PRECOND_BURIED_FACE: &str = "precondition.buried_face";
     pub const PRECOND_PROJECT_CURVE_NO_CURVE: &str = "precondition.project_curve_no_curve";
     pub const PRECOND_PROJECT_CURVE_NO_SURFACE: &str = "precondition.project_curve_no_surface";
 

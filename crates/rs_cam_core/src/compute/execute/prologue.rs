@@ -43,6 +43,11 @@
 //! picked one (`HoleDoesNotFit`). [`Prepared::holes`] gives the fitted
 //! holes only, so no adapter reads a hole the tool does not make.
 //!
+//! UX-1c (operator ruling 2026-10-22, SAFETY): last, a one-depth op
+//! (`FaceTopRule::RefuseBuried`) on the remaining stock refuses when
+//! material stands above its face top over its area
+//! ([`OperationError::BuriedFace`]).
+//!
 //! Geometry selection P6.4 (ruling O-2 (B)): for an op that extends its open
 //! paths to the stock (`ItemUse::RegionsExtendOpen`, Pocket with Extend to
 //! stock) the prologue grows the stock rectangle of the selection by the
@@ -53,18 +58,22 @@
 
 use std::borrow::Cow;
 
-use crate::compute::catalog::{GeometryRequirement, ItemUse, OperationConfig, OperationType};
+use crate::compute::catalog::{
+    FaceTopRule, GeometryRequirement, ItemUse, OperationConfig, OperationType,
+};
 use crate::compute::config::ResolvedHeights;
 use crate::compute::floor::region_floors;
 use crate::compute::toolpath_stats::SelectionNoteFinding;
+use crate::dexel_stock::FRESH_MATERIAL_THRESHOLD_MM;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::selection::{
     Curves, Holes, OpItems, Regions, ResolvedSelection, SelectionNote, SetupFrame, fit_holes, view,
 };
 use crate::tool::MillingCutter;
 
+use super::standing_material::{ColumnTop, standing_top_in_footprint};
 use super::territory::Territory;
-use super::{ExecutionContext, OperationError};
+use super::{BuriedFaceRefusal, BuriedUnder, ExecutionContext, OperationError};
 
 /// A mesh and its spatial index, both present.
 #[derive(Clone, Copy)]
@@ -281,12 +290,66 @@ pub(super) fn check_inputs<'a>(
     if let Some(text) = op_type.tool_refusal(ctx.tool_cfg.tool_type.cutter_kind()) {
         return Err(OperationError::InvalidTool(text));
     }
-    Ok(Prepared {
+    let prepared = Prepared {
         op_type,
         geometry,
         territory: Territory::resolve(ctx, op),
         region_ladders,
-    })
+    };
+    refuse_buried_face(ctx, op, &prepared)?;
+    Ok(prepared)
+}
+
+/// UX-1c (operator ruling 2026-10-22, SAFETY): a one-depth op
+/// (`FaceTopRule::RefuseBuried`: Chamfer, V-Carve, Inlay, Inlay Plug) on
+/// the remaining stock refuses when material stands above its top over its
+/// area ([`standing_top_in_footprint`] with the tool radius). Its auto top
+/// under a face pick is the face top, and it cuts one depth from there, so
+/// standing material above the face buries the tool.
+///
+/// - Fresh stock (no remaining stock here): the session refuses a face
+///   below the stock top before the job starts
+///   (`ToolpathHeights::buried_face_refusal`); this check does nothing.
+/// - A pinned top is the operator's statement of where the op starts, so
+///   it does not refuse here.
+/// - With no auto face top the top is the stock top, and no material
+///   stands above it.
+/// - Material counts above `top_z + FRESH_MATERIAL_THRESHOLD_MM`, the floor
+///   below which the simulator itself calls material absent. No evidence
+///   (no footprint cell on the grid) does not refuse.
+fn refuse_buried_face(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+    prepared: &Prepared<'_>,
+) -> Result<(), OperationError> {
+    match op.capabilities().face_top {
+        FaceTopRule::RefuseBuried => {}
+        FaceTopRule::HigherOfFaceAndStock | FaceTopRule::Face => return Ok(()),
+    }
+    if ctx.heights.top_pinned {
+        return Ok(());
+    }
+    let Some(stock) = prepared.territory().unguarded_stock() else {
+        return Ok(());
+    };
+    let Some(items) = prepared.items() else {
+        return Ok(());
+    };
+    let Some(regions) = items.regions() else {
+        return Ok(());
+    };
+    let top_z = ctx.heights.top_z;
+    let tool_radius = ctx.tool_def.diameter() / 2.0;
+    match standing_top_in_footprint(stock, regions.as_slice(), tool_radius) {
+        ColumnTop::Top(material) if material > top_z + FRESH_MATERIAL_THRESHOLD_MM => {
+            Err(OperationError::BuriedFace(BuriedFaceRefusal {
+                op: op.op_type().label(),
+                buried_mm: material - top_z,
+                under: BuriedUnder::StandingMaterial,
+            }))
+        }
+        ColumnTop::Top(_) | ColumnTop::Empty | ColumnTop::NoEvidence => Ok(()),
+    }
 }
 
 /// P3.5: the ladder of each closed area under the floor "each picked

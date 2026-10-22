@@ -192,11 +192,21 @@ pub enum FaceTopRule {
     /// The auto top is the face top. The op does not read the top (3D
     /// Rough, the drills, Project Curve, the surface finishers), or a
     /// higher top does not bound its cut on fresh stock (UX-1b, measured):
-    /// Chamfer, V-Carve, Inlay and Inlay Plug cut relative to the face
-    /// plane with no ladder that a higher top can step down, and Waterline
-    /// and Unified Finish follow the surface, so they bury on fresh stock
-    /// with no face pick too.
+    /// Waterline and Unified Finish follow the surface, so they bury on
+    /// fresh stock with no face pick too.
     Face,
+    /// The auto top is the face top, and a face below the material that
+    /// stands at the start of the op refuses generation (UX-1c, operator
+    /// ruling 2026-10-22, SAFETY): Chamfer, V-Carve, Inlay and Inlay Plug.
+    /// These ops cut one depth relative to the face plane, with no ladder
+    /// that a higher top can step down, so a face under standing material
+    /// buries the tool by all of that material (UX-1b measured 12 to
+    /// 15 mm on the stepped block). Fresh stock: the session compares the
+    /// face top with the stock top (`ToolpathHeights::buried_face_refusal`).
+    /// "After previous ops": the prologue reads the standing material over
+    /// the area of the op (`standing_material::standing_top_in_footprint`).
+    /// A pinned top is the operator's statement and does not refuse.
+    RefuseBuried,
 }
 
 /// The capabilities a registry row states: the entry probe is a rule.

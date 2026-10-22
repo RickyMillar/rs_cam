@@ -65,6 +65,63 @@ pub enum OperationError {
     /// the prologue guarantees is absent, and so on. The text names the
     /// defect.
     Internal(String),
+    /// UX-1c (operator ruling 2026-10-22, SAFETY): the picked face of a
+    /// `FaceTopRule::RefuseBuried` op (Chamfer, V-Carve, Inlay, Inlay
+    /// Plug) is below the material that stands at the start of the op.
+    BuriedFace(BuriedFaceRefusal),
+}
+
+/// What a buried face is below (UX-1c).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuriedUnder {
+    /// The stock top in the setup frame: the op starts from fresh stock.
+    StockTop,
+    /// The material that stands over the area of the op on the remaining
+    /// stock ("After previous ops").
+    StandingMaterial,
+}
+
+/// UX-1c (operator ruling 2026-10-22, SAFETY): a Chamfer, V-Carve, Inlay
+/// or Inlay Plug whose auto top comes from a face pick, with the face
+/// below the material that stands at the start of the op. These ops cut
+/// one depth from the face plane, so the tool would go into the material
+/// by all of `buried_mm` in one pass. The text states the cause and the
+/// fix; it is the same on every surface (generation, the diagnostics).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BuriedFaceRefusal {
+    /// The op label (`OperationType::label`).
+    pub op: &'static str,
+    /// How far the face top is below the material (mm).
+    pub buried_mm: f64,
+    /// What the material is.
+    pub under: BuriedUnder,
+}
+
+impl BuriedFaceRefusal {
+    /// The smallest depth (mm) that refuses on fresh stock, so that a face
+    /// AT the stock top does not refuse. The value is the 0.01 mm epsilon
+    /// that the UX-1c task states (lead, 2026-10-22).
+    pub const STOCK_TOP_EPS_MM: f64 = 0.01;
+}
+
+impl std::fmt::Display for BuriedFaceRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let depth = self.buried_mm;
+        match self.under {
+            BuriedUnder::StockTop => write!(
+                f,
+                "{}: the face is {depth:.1} mm below the stock top and no earlier op clears \
+                 it. Clear it first (Pocket or Face), or start from \"After previous ops\".",
+                self.op
+            ),
+            BuriedUnder::StandingMaterial => write!(
+                f,
+                "{}: the face is {depth:.1} mm below the material that stands over it, and \
+                 no earlier op clears it. Clear it first (Pocket or Face).",
+                self.op
+            ),
+        }
+    }
 }
 
 // ── Generated toolpath helpers ───────────────────────────────────────
@@ -247,6 +304,7 @@ impl std::fmt::Display for OperationError {
                 crate::budget::format_bytes(*limit_bytes)
             ),
             Self::Selection(refusal) => write!(f, "{refusal}"),
+            Self::BuriedFace(refusal) => write!(f, "{refusal}"),
             Self::InvalidParam(s) | Self::Internal(s) => write!(f, "{s}"),
         }
     }

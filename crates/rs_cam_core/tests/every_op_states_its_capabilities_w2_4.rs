@@ -85,7 +85,9 @@
 //! pick. `HigherOfFaceAndStock` (the higher of the face top and the stock
 //! top, the depth from the face) for the five `OpFloor` ops (UX-1), Face
 //! and Trace; `Face` for every other op. The column is new; no
-//! earlier answer moved.
+//! earlier answer moved. UX-1c (operator ruling 2026-10-22, SAFETY) moved
+//! Chamfer, V-Carve, Inlay and Inlay Plug to `RefuseBuried`: a face below
+//! the standing material refuses generation.
 //!
 //! P6.0b (geometry selection, SAFETY) added the tenth transform bit,
 //! `finished_edge`: the op's cut can be a finished edge, so the dressup
@@ -877,37 +879,38 @@ fn every_op_keeps_its_ladder_top_f033b() {
     }
 }
 
-/// UX-1b: the `face_top` column, frozen per op kind. `true` is
-/// `FaceTopRule::HigherOfFaceAndStock`.
+/// UX-1b: the `face_top` column, frozen per op kind. UX-1c moved
+/// Chamfer, V-Carve, Inlay and Inlay Plug from `Face` to `RefuseBuried`.
 #[rustfmt::skip]
-fn frozen_ux1b() -> Vec<(OperationType, bool)> {
+fn frozen_ux1b() -> Vec<(OperationType, FaceTopRule)> {
+    use FaceTopRule::{Face as F, HigherOfFaceAndStock as S, RefuseBuried as R};
     use OperationType as O;
     vec![
-    (O::Face, true),
-    (O::Pocket, true),
-    (O::Profile, true),
-    (O::Adaptive, true),
-    (O::VCarve, false),
-    (O::Inlay, false),
-    (O::InlayPlug, false),
-    (O::Zigzag, true),
-    (O::Trace, true),
-    (O::Drill, false),
-    (O::Bore, true),
-    (O::Chamfer, false),
-    (O::DropCutter, false),
-    (O::Adaptive3d, false),
-    (O::Waterline, false),
-    (O::Pencil, false),
-    (O::Scallop, false),
-    (O::UnifiedFinish, false),
-    (O::SteepShallow, false),
-    (O::RampFinish, false),
-    (O::SpiralFinish, false),
-    (O::RadialFinish, false),
-    (O::HorizontalFinish, false),
-    (O::ProjectCurve, false),
-    (O::AlignmentPinDrill, false),
+    (O::Face, S),
+    (O::Pocket, S),
+    (O::Profile, S),
+    (O::Adaptive, S),
+    (O::VCarve, R),
+    (O::Inlay, R),
+    (O::InlayPlug, R),
+    (O::Zigzag, S),
+    (O::Trace, S),
+    (O::Drill, F),
+    (O::Bore, S),
+    (O::Chamfer, R),
+    (O::DropCutter, F),
+    (O::Adaptive3d, F),
+    (O::Waterline, F),
+    (O::Pencil, F),
+    (O::Scallop, F),
+    (O::UnifiedFinish, F),
+    (O::SteepShallow, F),
+    (O::RampFinish, F),
+    (O::SpiralFinish, F),
+    (O::RadialFinish, F),
+    (O::HorizontalFinish, F),
+    (O::ProjectCurve, F),
+    (O::AlignmentPinDrill, F),
     ]
 }
 
@@ -918,12 +921,7 @@ fn every_op_keeps_its_face_top_rule_ux1b() {
     let table = frozen_ux1b();
     let ops: Vec<OperationType> = table.iter().map(|r| r.0).collect();
     assert_eq!(ops, OperationType::ALL.to_vec());
-    for (op, clamps) in table {
-        let want = if clamps {
-            FaceTopRule::HigherOfFaceAndStock
-        } else {
-            FaceTopRule::Face
-        };
+    for (op, want) in table {
         assert_eq!(op.capabilities().face_top, want, "{op:?} (kind)");
         assert_eq!(
             OperationConfig::new_default(op).capabilities().face_top,

@@ -729,6 +729,69 @@ pub(crate) fn column_top(stock: &TriDexelStock, xy: P2, reach: f64) -> ColumnTop
     }
 }
 
+/// UX-1c: the highest material top over the area of a one-depth op on the
+/// remaining stock (`FaceTopRule::RefuseBuried`). A cell counts when its
+/// centre is inside the FOOTPRINT of the tool in one of `outlines`,
+/// `(outline ⊖ R) ⊕ (R - cell / 2)`, the rule of [`regions_per_level`]:
+/// the corner fillets that an earlier cutter of the same radius or a
+/// larger one left are outside it, and so is the wall around the outline.
+///
+/// [`ColumnTop::NoEvidence`]: no footprint cell centre lies on the grid,
+/// or the window is too large for the grid (the fallback of
+/// [`regions_per_level`]). The caller does not refuse on no evidence.
+/// `outlines` must be in the frame of the stock.
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "row and col are cast only after the `row < 0 || col < 0` test skips a negative index"
+)]
+pub(crate) fn standing_top_in_footprint(
+    stock: &TriDexelStock,
+    outlines: &[Polygon2],
+    tool_radius: f64,
+) -> ColumnTop {
+    let Some([x_min, y_min, x_max, y_max]) =
+        paths_bbox(outlines.iter().map(|outline| &outline.exterior))
+    else {
+        return ColumnTop::NoEvidence;
+    };
+    let grid = &stock.z_grid;
+    let pad_cells = 2;
+    let window = grid.lattice_window([x_min, y_min, x_max, y_max], pad_cells);
+    let limit = (WINDOW_SPAN_OVER_GRID * (grid.rows + 2 * pad_cells))
+        * (WINDOW_SPAN_OVER_GRID * (grid.cols + 2 * pad_cells));
+    if window.cell_count() > limit {
+        return ColumnTop::NoEvidence;
+    }
+    let mut reach = vec![false; window.cell_count()];
+    for outline in outlines {
+        for (r, inside) in
+            reach
+                .iter_mut()
+                .zip(footprint_mask(stock, &window, outline, tool_radius))
+        {
+            *r = *r || inside;
+        }
+    }
+    let mut seen = false;
+    let mut top: Option<f32> = None;
+    for (i, _) in reach.iter().enumerate().filter(|(_, r)| **r) {
+        let row = window.row0 + (i / window.cols) as isize;
+        let col = window.col0 + (i % window.cols) as isize;
+        if row < 0 || col < 0 || row as usize >= grid.rows || col as usize >= grid.cols {
+            continue;
+        }
+        seen = true;
+        if let Some(t) = grid.top_z_at(row as usize, col as usize) {
+            top = Some(top.map_or(t, |prev| prev.max(t)));
+        }
+    }
+    match (seen, top) {
+        (false, _) => ColumnTop::NoEvidence,
+        (true, None) => ColumnTop::Empty,
+        (true, Some(t)) => ColumnTop::Top(f64::from(t)),
+    }
+}
+
 /// The XY box of every point of `paths`, or `None` when they hold no point.
 fn paths_bbox<'a>(paths: impl IntoIterator<Item = &'a Vec<P2>>) -> Option<[f64; 4]> {
     let mut points = paths.into_iter().flatten();

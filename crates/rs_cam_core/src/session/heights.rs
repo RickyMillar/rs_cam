@@ -20,7 +20,10 @@
 //!    `ResolvedHeights::depth_base_z` carries to the ladder). An op takes
 //!    the clamp when its row states `FaceTopRule::HigherOfFaceAndStock`
 //!    (`clamps_face_top`): the `OpFloor` ops (UX-1), Face and Trace
-//!    (UX-1b). Every other op keeps the face top.
+//!    (UX-1b). Every other op keeps the face top. UX-1c: on an op whose
+//!    row states `FaceTopRule::RefuseBuried` (Chamfer, V-Carve, Inlay,
+//!    Inlay Plug) a face top below the stock top refuses generation on
+//!    fresh stock ([`ToolpathHeights::buried_face_refusal`]).
 //!
 //! P3.2: the floor of a Pocket, Profile, Zigzag or Adaptive 2D
 //! (`compute::floor::Floor`) resolves against the context of step 1 into
@@ -66,6 +69,7 @@ use crate::compute::config::{
     HeightContext, HeightMode, HeightOrderViolation, HeightReference, HeightsConfig,
     ResolvedHeights, added_refusals, height_order,
 };
+use crate::compute::execute::{BuriedFaceRefusal, BuriedUnder, OperationError};
 use crate::compute::floor::{Floor, FloorRef, FloorReferences, FloorRefusal};
 use crate::mesh::TriangleMesh;
 use crate::session::{Effects, ProjectSession, SessionError, ToolpathConfig};
@@ -226,6 +230,44 @@ impl ToolpathHeights {
         })
     }
 
+    /// UX-1c (operator ruling 2026-10-22, SAFETY): the refusal of a face
+    /// pick below the stock top on an op whose row states
+    /// `FaceTopRule::RefuseBuried` (Chamfer, V-Carve, Inlay, Inlay Plug),
+    /// or `None`. The op cuts one depth from the face plane, so on fresh
+    /// stock a face under the stock top buries the tool by all of the
+    /// stock above it. Generation refuses with it, and the diagnostics
+    /// show the same text before generation.
+    ///
+    /// - A pinned top (Manual or from a reference) is the operator's
+    ///   statement of where the op starts, so it does not refuse here.
+    /// - "After previous ops" reads the standing material, not the stock
+    ///   box: the generation prologue owns that case
+    ///   (`compute::execute::prologue`), because only the job holds the
+    ///   remaining stock.
+    /// - A face less than `BuriedFaceRefusal::STOCK_TOP_EPS_MM` below the
+    ///   stock top is at the stock top.
+    #[must_use]
+    pub fn buried_face_refusal(
+        &self,
+        op: &crate::compute::OperationConfig,
+        heights: &HeightsConfig,
+        stock_source: crate::session::StockSource,
+    ) -> Option<BuriedFaceRefusal> {
+        match op.capabilities().face_top {
+            FaceTopRule::RefuseBuried => {}
+            FaceTopRule::HigherOfFaceAndStock | FaceTopRule::Face => return None,
+        }
+        if stock_source.reads_machined_stock() || self.top_source(heights) != TopSource::AutoFaces {
+            return None;
+        }
+        let buried_mm = self.context.stock_top_z - self.face_top_z?;
+        (buried_mm >= BuriedFaceRefusal::STOCK_TOP_EPS_MM).then_some(BuriedFaceRefusal {
+            op: op.op_type().label(),
+            buried_mm,
+            under: BuriedUnder::StockTop,
+        })
+    }
+
     /// L-4: the refusal of `heights` on this toolpath, or `None`. A Top Z or
     /// a Bottom Z that reads the Model Top or the Model Bottom refuses when
     /// the toolpath has no mesh: the context then holds no model Z.
@@ -324,7 +366,9 @@ fn door_refusals(
 fn clamps_face_top(op: &crate::compute::OperationConfig) -> bool {
     match op.capabilities().face_top {
         FaceTopRule::HigherOfFaceAndStock => true,
-        FaceTopRule::Face => false,
+        // UX-1c: a `RefuseBuried` op keeps the face top; a face below the
+        // standing material refuses (`ToolpathHeights::buried_face_refusal`).
+        FaceTopRule::Face | FaceTopRule::RefuseBuried => false,
     }
 }
 
@@ -627,6 +671,14 @@ impl ProjectSession {
                 "Toolpath '{}': {refusal}",
                 tc.name
             )));
+        }
+        // UX-1c (SAFETY): a face pick below the stock top on a one-depth op
+        // refuses on fresh stock. The prologue reads the standing material
+        // on "After previous ops".
+        if let Some(refusal) =
+            answer.buried_face_refusal(&tc.operation, &tc.heights, tc.stock_source)
+        {
+            return Err(SessionError::Operation(OperationError::BuriedFace(refusal)));
         }
         // F033: a refusing break of the height-plane order refuses
         // generation. Under each face the prologue owns a floor at the top,

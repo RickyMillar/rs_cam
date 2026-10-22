@@ -469,6 +469,13 @@ impl ProjectSession {
             };
 
         let any_loaded_model_has_mesh = self.models.iter().any(|m| m.mesh.is_some());
+        // UX-1c: the fresh-stock refusal of a buried face, from THE heights
+        // rule that generation reads.
+        let buried_face_refusal = self.toolpath_heights(tc).ok().and_then(|answer| {
+            answer
+                .buried_face_refusal(&tc.operation, &tc.heights, tc.stock_source)
+                .map(|refusal| refusal.to_string())
+        });
 
         PreconditionContext {
             target_model,
@@ -483,6 +490,7 @@ impl ProjectSession {
                 .collect(),
             selection_holes,
             selection_refusal,
+            buried_face_refusal,
         }
     }
 

@@ -14,6 +14,10 @@
 //! - **Every other op with a selection** — its selection refuses
 //!   (geometry selection P2.4, `PRECOND_SELECTION_REFUSED`): the
 //!   generator's own refusal sentence, from `selection_status`.
+//! - **Chamfer / V-Carve / Inlay / Inlay Plug** (UX-1c,
+//!   `PRECOND_BURIED_FACE`) — a face pick below the stock top on fresh
+//!   stock: the generator's own refusal sentence, from
+//!   `ToolpathHeights::buried_face_refusal`.
 //! - **ProjectCurve** — needs both a source curve (the toolpath's
 //!   `model_id` must point at a polygon-bearing model) AND a target
 //!   surface mesh (either the same model or any other loaded model).
@@ -61,6 +65,11 @@ pub struct PreconditionContext {
     /// `ProjectSession::selection_status`). `None` when the selection
     /// gives the op its items.
     pub selection_refusal: Option<String>,
+    /// UX-1c: the refusal that generation gives for a face pick below the
+    /// stock top on a one-depth op on fresh stock
+    /// (`ToolpathHeights::buried_face_refusal`). `None` when the op does
+    /// not refuse.
+    pub buried_face_refusal: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -101,7 +110,7 @@ pub fn diagnostics_from_preconditions(
             if let Some(message) = message {
                 out.push(Diagnostic {
                     id: DiagnosticId::from(ids::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES),
-                    scope,
+                    scope: scope.clone(),
                     category: Category::Geometry,
                     severity: Severity::Blocking,
                     confidence: Confidence::Static,
@@ -126,7 +135,29 @@ pub fn diagnostics_from_preconditions(
             out.extend(selection_refused(&scope, ctx));
         }
     }
+    out.extend(buried_face(&scope, ctx));
     out
+}
+
+/// UX-1c (operator ruling 2026-10-22, SAFETY): a one-depth op on fresh
+/// stock whose face pick is below the stock top. The message is the
+/// generator's own refusal sentence (the cause and the fix).
+fn buried_face(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnostic> {
+    let message = ctx.buried_face_refusal.as_ref()?;
+    Some(Diagnostic {
+        id: DiagnosticId::from(ids::PRECOND_BURIED_FACE),
+        scope: scope.clone(),
+        category: Category::Safety,
+        severity: Severity::Blocking,
+        confidence: Confidence::Static,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!("{message} — generation will fail."),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    })
 }
 
 /// Geometry selection P2.4: the selection of an op that is not a drill
