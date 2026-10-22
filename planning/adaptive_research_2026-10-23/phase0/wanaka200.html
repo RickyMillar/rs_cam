@@ -1,0 +1,295 @@
+<!doctype html><html lang='en'><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>wanaka200 roughing baseline</title><style>
+:root{--bg:#fafaf8;--fg:#1d1d1b;--muted:#5d5d58;--line:#d9d8d2;--card:#ffffff;
+--pass:#1f7a3a;--fail:#b3261e;--nm:#8a6d00;--chip:#f0efe9}
+@media (prefers-color-scheme: dark){:root{--bg:#161615;--fg:#ecebe6;--muted:#a3a29b;
+--line:#34332f;--card:#1f1f1d;--pass:#5cc27e;--fail:#ff8a80;--nm:#e0c050;--chip:#2a2a27}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:20px 16px;border-bottom:1px solid var(--line)}
+h1{margin:0 0 8px;font-size:22px}
+h2{font-size:17px;margin:0 0 8px}
+h3{font-size:14px;margin:14px 0 6px}
+.meta{display:grid;grid-template-columns:max-content 1fr;gap:2px 12px;font-size:13px;color:var(--muted)}
+.meta b{color:var(--fg);font-weight:600}
+code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--chip);padding:1px 4px;border-radius:3px;word-break:break-all}
+.cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;padding:16px}
+@media (max-width:1100px){.cols{grid-template-columns:1fr}}
+.col{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;min-width:0}
+figure{margin:0 0 10px}
+figure img{width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:4px;background:#222}
+figcaption{font-size:12px;color:var(--muted);margin-top:3px}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:4px 0 8px}
+th,td{border-top:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top}
+th{font-weight:600;width:38%}
+.PASS{color:var(--pass);font-weight:700}.FAIL{color:var(--fail);font-weight:700}
+.NM{color:var(--nm);font-weight:700}
+.v{margin:4px 0}.v b{display:inline-block;min-width:2.2em}
+.note{font-size:12.5px;color:var(--muted)}
+.crops{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.intro{padding:0 16px;max-width:1100px}
+</style></head><body>
+<header><h1>wanaka200 roughing baseline</h1><div class='meta'>
+<b>Fixture</b><span>wanaka200 (terrain, 2 setups: back then front)</span>
+<b>Fixture project (read only)</b><span><code>planning/multitool_2026-08-23/wanaka200_mt1.toml</code>. It does not load at HEAD; the pages use the copy <code>phase0/projects/wanaka200_base.toml</code>, which replaces the retired drill key <code>depth = 12.0</code> with <code>floor = { from = "stock_top", depth = 12.0 }</code> (see PHASE0_NOTES.md)</span>
+<b>Saved projects</b><span><code>phase0/projects/&lt;fixture&gt;_&lt;strategy&gt;.toml</code> (one per column)</span>
+<b>Code</b><span>HEAD <code>61a8d4b4</code> (commit <code>df6de926</code> on top adds only planning files)</span>
+<b>Binary</b><span><code>/home/ricky/personal_repos/rs_cam/target/release/rs_cam_gui</code></span>
+<b>Binary mtime</b><span>1792706351.82 (2026-10-23 10:59:11 NZDT), checked with gui_status before each column</span>
+<b>Binary sha256</b><span><code>51cbb71324e9b8101a4ec4c52854774e0bc53100d2d6762209420df39aa1d438</code> (from the brief; not re-hashed)</span>
+<b>GUI pid</b><span>84659 for all three columns</span>
+<b>Date</b><span>2026-10-23</span>
+<b>Tools</b><span><code>phase0/tools/links_entries.py</code>, <code>zoom.py</code>, <code>build_page.py</code>, <code>ingest.py</code></span>
+</div></header>
+<div class='intro'><p class='note'>Ops enabled: 1 Pin Drill (setup 1), 2 Back Rough (setup 1, fresh stock, depth per pass 5.46, stepover 2.0, stock_to_leave_axial 4.0) and 6 3D Rough (front) (setup 2, fresh stock, depth per pass 4.2, stepover 1.2). Disabled: 3 Holes, 4 Rivers, 5 Lakes, 7 tier-A, 7b tier-B, 8 Pencil. Only clearing_strategy changes between columns (both roughs).</p><p class='note'>The export writes one .nc for both setups (split_setups not set; the post default here gave one file). Each setup zeroes Z at its own stock top. The links and entries views read each op section on its own.</p><p class='note'>N5 standing spurs: tools/spurs.py replays each op on fresh stock (the two setups are separate sides of the board). On a terrain the opened-surface test also flags steep terrain ridges as thin material, so read the free-standing count and the spur maps, not the total.</p><p class='note'>The stock render colours by height (blue low, red high). It does not show deviation from the model.</p></div>
+<div class='cols'>
+<section class='col'><h2>ContourParallel</h2>
+<p class='note'>Project: <code>phase0/projects/wanaka200_contour_parallel.toml</code><br>G-code: <code>phase0/gcode/wanaka200_contour_parallel.nc</code><br>GUI before this column: mtime 1792706351.8232872, pid 84659</p>
+<p class='note'>Prerequisite: 1 Pin Drill kept (68 moves, current on load). Disabled: 3 Holes, 4 Rivers, 5 Lakes, 7, 7b, 8. Both roughs start from fresh stock. Project verdict: OK; one Important verdict alignment_pins_unkeyed (fixture pin layout).</p>
+<h3>2 Back Rough (index 1)</h3>
+<figure><a href='img/wanaka200_contour_parallel_2BackRough_cut.png'><img loading='lazy' src='img/wanaka200_contour_parallel_2BackRough_cut.png' alt='1. Cutting moves only (screenshot_toolpath include_rapids false)'></a><figcaption>1. Cutting moves only (screenshot_toolpath include_rapids false)</figcaption></figure>
+<figure><a href='img/wanaka200_contour_parallel_2BackRough_rapids.png'><img loading='lazy' src='img/wanaka200_contour_parallel_2BackRough_rapids.png' alt='1b. Cutting + rapids (screenshot_toolpath include_rapids true)'></a><figcaption>1b. Cutting + rapids (screenshot_toolpath include_rapids true)</figcaption></figure>
+<figure><a href='img/wanaka200_contour_parallel_2BackRough_links.png'><img loading='lazy' src='img/wanaka200_contour_parallel_2BackRough_links.png' alt='2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc'></a><figcaption>2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc</figcaption></figure>
+<figure><a href='img/wanaka200_contour_parallel_2BackRough_entries.png'><img loading='lazy' src='img/wanaka200_contour_parallel_2BackRough_entries.png' alt='3. Entries: start point of each inspect_spans Entry span, by label'></a><figcaption>3. Entries: start point of each inspect_spans Entry span, by label</figcaption></figure>
+<figure><a href='img/wanaka200_contour_parallel_2BackRough_stock.png'><img loading='lazy' src='img/wanaka200_contour_parallel_2BackRough_stock.png' alt='4. Final stock (screenshot_simulation; colour by height, not deviation)'></a><figcaption>4. Final stock (screenshot_simulation; colour by height, not deviation)</figcaption></figure>
+<div class='crops'>
+<figure><a href='img/wanaka200_contour_parallel_2BackRough_crop_1.png'><img loading='lazy' src='img/wanaka200_contour_parallel_2BackRough_crop_1.png' alt='crop 1'></a><figcaption>crop 1: Z 8.62 zone: short offset pieces, many entries, G0 hops</figcaption></figure>
+</div>
+<h3>6 3D Rough (front) (index 5)</h3>
+<figure><a href='img/wanaka200_contour_parallel_6Front_cut.png'><img loading='lazy' src='img/wanaka200_contour_parallel_6Front_cut.png' alt='1. Cutting moves only (screenshot_toolpath include_rapids false)'></a><figcaption>1. Cutting moves only (screenshot_toolpath include_rapids false)</figcaption></figure>
+<figure><a href='img/wanaka200_contour_parallel_6Front_rapids.png'><img loading='lazy' src='img/wanaka200_contour_parallel_6Front_rapids.png' alt='1b. Cutting + rapids (screenshot_toolpath include_rapids true)'></a><figcaption>1b. Cutting + rapids (screenshot_toolpath include_rapids true)</figcaption></figure>
+<figure><a href='img/wanaka200_contour_parallel_6Front_links.png'><img loading='lazy' src='img/wanaka200_contour_parallel_6Front_links.png' alt='2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc'></a><figcaption>2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc</figcaption></figure>
+<figure><a href='img/wanaka200_contour_parallel_6Front_entries.png'><img loading='lazy' src='img/wanaka200_contour_parallel_6Front_entries.png' alt='3. Entries: start point of each inspect_spans Entry span, by label'></a><figcaption>3. Entries: start point of each inspect_spans Entry span, by label</figcaption></figure>
+<figure><a href='img/wanaka200_contour_parallel_6Front_stock.png'><img loading='lazy' src='img/wanaka200_contour_parallel_6Front_stock.png' alt='4. Final stock (screenshot_simulation; colour by height, not deviation)'></a><figcaption>4. Final stock (screenshot_simulation; colour by height, not deviation)</figcaption></figure>
+<h3>Hard bars</h3><table>
+<tr><th>Bar 1: 0 rapid + 0 holder collisions</th><td><span class='PASS'>PASS</span> rapid collisions 0 (run_simulation rapid_collision_count, per op and project); holder collisions 0 (collision_check collision_count per rough op)</td></tr>
+<tr><th>Bar 2: coverage audit</th><td><span class='NM'>NOT MEASURED</span> No coverage instrument reaches an adaptive3d op through MCP. run_simulation / get_diagnostics per_toolpath untouched_material_mm2, reached_uncut_estimate_mm2, truncated_core_mm2, unmachined_band_area_mm2 are all null (null = not measured, stock/CLAUDE.md). narrate_toolpath: &#x27;Standing material: not measured&#x27;. metrology/union_coverage.rs is test-support only.</td></tr>
+<tr><th>Bar 3a: mesh gouge on emitted moves</th><td><span class='NM'>NOT MEASURED</span> No mesh-gouge instrument for this op: the model gouge guard (compute/model_gouge.rs, safety.cuts_into_model) is ModelGougeRule::Exempt for 3D Adaptive (compute/catalog/registry.rs REG_ADAPTIVE3D). The cut-trace issue kinds are only air_cut and low_engagement. The stock-side sim-triage ids project.crosses_standing_material and project.link_cuts_stock were looked for in get_toolpath_diagnostics and run_simulation triage.</td></tr>
+<tr><th>Bar 3b: stock-side over-cut / link plough</th><td><span class='FAIL'>FAIL</span> 2 Back Rough: crosses_standing_material absent, link_cuts_stock CRITICAL: 20 samples on 12 link moves over 5.96 mm; worst link move 5147 removes 11.26 mm at (216.9, 55.0, 8.63); 6 3D Rough (front): crosses_standing_material absent, link_cuts_stock absent</td></tr>
+<tr><th>Bar 4: generation, no refusal</th><td><span class='PASS'>PASS</span> every enabled op generated; wall clock 2 Back Rough 14.4 s, 6 3D Rough (front) 14.0 s</td></tr>
+</table>
+<h3>V1-V3</h3><p class='v'><b>V1</b> Absent as loops on the back (square stock, square offsets). On the front, unclear: small offset sets stand around the islands.</p>
+<p class='v'><b>V2</b> Absent: 0-1 arcs per level (narrate).</p>
+<p class='v'><b>V3</b> Present on the front: offsets follow the outer square; the terrain valleys are cleared late by short rows (cut view).</p>
+<h3>New defects</h3><ul>
+<li>N8 hop storm on the back rough: 1 726 G0 runs. 964 go to safe Z; the rest lift only 0.5 mm over the level and move on (G-code Z -4.46 / -9.92 / -15.38). The links view is a solid field of G0 lines. Z 8.62 holds 1 580 cut runs.</li>
+<li>project.link_cuts_stock CRITICAL on the back rough: 20 samples on 12 link moves over 5.96 mm; worst link move 5147 removes 11.26 mm.</li>
+<li>Peak axial DOC 17.13 mm on the back rough (commanded 5.46).</li>
+<li>Cuts with no material at the last level on both roughs (narrate: &#x27;planner emitted cuts but no material to cut&#x27;).</li>
+</ul>
+<h3>The three questions (my reading)</h3>
+<p class='v'><b>Links</b> No: the back rough lifts and hops 1 726 times and some fed links plough 11 mm of stock.</p>
+<p class='v'><b>Path</b> The offsets are orderly; the back rough&#x27;s Z 8.62 level breaks into 1 580 short runs.</p>
+<p class='v'><b>Part</b> Both sides look roughed evenly at the render scale.</p>
+<h3>N5 standing spurs: absent (2 nubs under 2 mm on the back)</h3>
+<p class='note'><b>at end:</b> Back rough: 14 thin patches, 2 free-standing nubs, 1.9 and 1.8 mm tall, at (159.4, 69.1) and (84.2, 130.5). Front rough: 0 thin patches at the end.</p>
+<div class='crops'>
+<figure><a href='img/wanaka200_contour_parallel_spurs_back_end.png'><img loading='lazy' src='img/wanaka200_contour_parallel_spurs_back_end.png' alt='back rough replay to the end'></a><figcaption>back rough replay to the end</figcaption></figure>
+<figure><a href='img/wanaka200_contour_parallel_spurs_front_end.png'><img loading='lazy' src='img/wanaka200_contour_parallel_spurs_front_end.png' alt='front rough replay to the end'></a><figcaption>front rough replay to the end</figcaption></figure>
+</div>
+<h3>Phase 3: 2 Back Rough</h3><table>
+<tr><th>Retracts (G0 runs, narrate_toolpath)</th><td>1726 G0 runs (narrate); 964 go up to safe Z 5.0, the rest are 0.5 mm hops above the level (G-code Z -4.46 / -9.92 / -15.38)</td></tr>
+<tr><th>Entries by type (top-level inspect_spans Entry labels)</th><td>keep-down link 645, plunge entry 964</td></tr>
+<tr><th>Nested Entry spans inside those (the descent parts)</th><td>plunge entry 2370</td></tr>
+<tr><th>Link bridges (inspect_spans LinkBridge)</th><td>1946</td></tr>
+<tr><th>Regions (inspect_spans Region)</th><td>0</td></tr>
+<tr><th>Levels (DepthPass)</th><td>4 (Z 19.54, 14.08, 8.62, 4.0); Z 8.62: 1 580 cut runs, 1 375 planner rapids; Z 4.0: cuts with no material (narrate)</td></tr>
+<tr><th>Entry time (cut trace runtime_by_intent.entry_s)</th><td>856.0 s of 5776.8 s</td></tr>
+</table>
+<h3>Information: 2 Back Rough</h3><table class='note'>
+<tr><th>Cycle time (op, simulation)</th><td>5776.8 s</td></tr>
+<tr><th>Cycle time (project incl. prerequisites)</th><td>8295.9 s</td></tr>
+<tr><th>Move count</th><td>14180</td></tr>
+<tr><th>Cutting / rapid distance</th><td>88747.4 mm / 158535.5 mm</td></tr>
+<tr><th>Sim resolution</th><td>0.5 mm (auto, stored)</td></tr>
+<tr><th>Measurability</th><td>2 Back Rough: all measurable; front: radial/air/chip engagement degraded (cell_too_coarse_for_tip_contact, blind 0.21)</td></tr>
+<tr><th>trochoid_cap_mult (stored)</th><td>1.6</td></tr>
+<tr><th>Other</th><td>peak axial DOC 17.13 mm at move 13111 against 5.46 mm commanded (narrate). stock_to_leave_axial 4.0 (stored).</td></tr>
+</table>
+<h3>Phase 3: 6 3D Rough (front)</h3><table>
+<tr><th>Retracts (G0 runs, narrate_toolpath)</th><td>443</td></tr>
+<tr><th>Entries by type (top-level inspect_spans Entry labels)</th><td>keep-down link 195, plunge entry 411</td></tr>
+<tr><th>Nested Entry spans inside those (the descent parts)</th><td>plunge entry 637</td></tr>
+<tr><th>Link bridges (inspect_spans LinkBridge)</th><td>894</td></tr>
+<tr><th>Regions (inspect_spans Region)</th><td>0</td></tr>
+<tr><th>Levels (DepthPass)</th><td>3 (Z 2.8, -1.4, -2.31); Z -2.31: cuts with no material (narrate)</td></tr>
+<tr><th>Entry time (cut trace runtime_by_intent.entry_s)</th><td>114.4 s of 2492.4 s</td></tr>
+</table>
+<h3>Information: 6 3D Rough (front)</h3><table class='note'>
+<tr><th>Cycle time (op, simulation)</th><td>2492.4 s</td></tr>
+<tr><th>Cycle time (project incl. prerequisites)</th><td>8295.9 s</td></tr>
+<tr><th>Move count</th><td>14049</td></tr>
+<tr><th>Cutting / rapid distance</th><td>51511.4 mm / 47931.2 mm</td></tr>
+<tr><th>Sim resolution</th><td>0.5 mm (auto, stored)</td></tr>
+<tr><th>Measurability</th><td>2 Back Rough: all measurable; front: radial/air/chip engagement degraded (cell_too_coarse_for_tip_contact, blind 0.21)</td></tr>
+<tr><th>trochoid_cap_mult (stored)</th><td>1.6</td></tr>
+<tr><th>Other</th><td>peak axial DOC 4.20 mm (= commanded).</td></tr>
+</table>
+</section>
+<section class='col'><h2>AgentSearch</h2>
+<p class='note'>Project: <code>phase0/projects/wanaka200_agent_search.toml</code><br>G-code: <code>phase0/gcode/wanaka200_agent_search.nc</code><br>GUI before this column: mtime 1792706351.8232872, pid 84659</p>
+<p class='note'>Prerequisite: 1 Pin Drill kept. Disabled: 3 Holes, 4 Rivers, 5 Lakes, 7, 7b, 8. Both roughs start from fresh stock.</p>
+<h3>2 Back Rough (index 1)</h3>
+<figure><a href='img/wanaka200_agent_search_2BackRough_cut.png'><img loading='lazy' src='img/wanaka200_agent_search_2BackRough_cut.png' alt='1. Cutting moves only (screenshot_toolpath include_rapids false)'></a><figcaption>1. Cutting moves only (screenshot_toolpath include_rapids false)</figcaption></figure>
+<figure><a href='img/wanaka200_agent_search_2BackRough_rapids.png'><img loading='lazy' src='img/wanaka200_agent_search_2BackRough_rapids.png' alt='1b. Cutting + rapids (screenshot_toolpath include_rapids true)'></a><figcaption>1b. Cutting + rapids (screenshot_toolpath include_rapids true)</figcaption></figure>
+<figure><a href='img/wanaka200_agent_search_2BackRough_links.png'><img loading='lazy' src='img/wanaka200_agent_search_2BackRough_links.png' alt='2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc'></a><figcaption>2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc</figcaption></figure>
+<figure><a href='img/wanaka200_agent_search_2BackRough_entries.png'><img loading='lazy' src='img/wanaka200_agent_search_2BackRough_entries.png' alt='3. Entries: start point of each inspect_spans Entry span, by label'></a><figcaption>3. Entries: start point of each inspect_spans Entry span, by label</figcaption></figure>
+<figure><a href='img/wanaka200_agent_search_2BackRough_stock.png'><img loading='lazy' src='img/wanaka200_agent_search_2BackRough_stock.png' alt='4. Final stock (screenshot_simulation; colour by height, not deviation)'></a><figcaption>4. Final stock (screenshot_simulation; colour by height, not deviation)</figcaption></figure>
+<h3>6 3D Rough (front) (index 5)</h3>
+<figure><a href='img/wanaka200_agent_search_6Front_cut.png'><img loading='lazy' src='img/wanaka200_agent_search_6Front_cut.png' alt='1. Cutting moves only (screenshot_toolpath include_rapids false)'></a><figcaption>1. Cutting moves only (screenshot_toolpath include_rapids false)</figcaption></figure>
+<figure><a href='img/wanaka200_agent_search_6Front_rapids.png'><img loading='lazy' src='img/wanaka200_agent_search_6Front_rapids.png' alt='1b. Cutting + rapids (screenshot_toolpath include_rapids true)'></a><figcaption>1b. Cutting + rapids (screenshot_toolpath include_rapids true)</figcaption></figure>
+<figure><a href='img/wanaka200_agent_search_6Front_links.png'><img loading='lazy' src='img/wanaka200_agent_search_6Front_links.png' alt='2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc'></a><figcaption>2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc</figcaption></figure>
+<figure><a href='img/wanaka200_agent_search_6Front_entries.png'><img loading='lazy' src='img/wanaka200_agent_search_6Front_entries.png' alt='3. Entries: start point of each inspect_spans Entry span, by label'></a><figcaption>3. Entries: start point of each inspect_spans Entry span, by label</figcaption></figure>
+<figure><a href='img/wanaka200_agent_search_6Front_stock.png'><img loading='lazy' src='img/wanaka200_agent_search_6Front_stock.png' alt='4. Final stock (screenshot_simulation; colour by height, not deviation)'></a><figcaption>4. Final stock (screenshot_simulation; colour by height, not deviation)</figcaption></figure>
+<h3>Hard bars</h3><table>
+<tr><th>Bar 1: 0 rapid + 0 holder collisions</th><td><span class='PASS'>PASS</span> rapid collisions 0 (run_simulation rapid_collision_count, per op and project); holder collisions 0 (collision_check collision_count per rough op)</td></tr>
+<tr><th>Bar 2: coverage audit</th><td><span class='NM'>NOT MEASURED</span> No coverage instrument reaches an adaptive3d op through MCP. run_simulation / get_diagnostics per_toolpath untouched_material_mm2, reached_uncut_estimate_mm2, truncated_core_mm2, unmachined_band_area_mm2 are all null (null = not measured, stock/CLAUDE.md). narrate_toolpath: &#x27;Standing material: not measured&#x27;. metrology/union_coverage.rs is test-support only.</td></tr>
+<tr><th>Bar 3a: mesh gouge on emitted moves</th><td><span class='NM'>NOT MEASURED</span> No mesh-gouge instrument for this op: the model gouge guard (compute/model_gouge.rs, safety.cuts_into_model) is ModelGougeRule::Exempt for 3D Adaptive (compute/catalog/registry.rs REG_ADAPTIVE3D). The cut-trace issue kinds are only air_cut and low_engagement. The stock-side sim-triage ids project.crosses_standing_material and project.link_cuts_stock were looked for in get_toolpath_diagnostics and run_simulation triage.</td></tr>
+<tr><th>Bar 3b: stock-side over-cut / link plough</th><td><span class='PASS'>0 reported</span> neither id appears in the run_simulation triage or get_toolpath_diagnostics. 2 Back Rough: crosses_standing_material absent, link_cuts_stock absent; 6 3D Rough (front): crosses_standing_material absent, link_cuts_stock absent</td></tr>
+<tr><th>Bar 4: generation, no refusal</th><td><span class='PASS'>PASS</span> every enabled op generated; wall clock 2 Back Rough 14.1 s, 6 3D Rough (front) 13.2 s</td></tr>
+</table>
+<h3>V1-V3</h3><p class='v'><b>V1</b> Absent: no corner loop sets.</p>
+<p class='v'><b>V2</b> Absent: 3-5 arcs per level.</p>
+<p class='v'><b>V3</b> Present: one big spiral per level on the back; the corners and edges are walked late with short wiggles. On the front two spiral centres fill the open ground; the valleys are walked.</p>
+<h3>New defects</h3><ul>
+<li>N5 standing spurs: present (see the N5 block); up to 15.6 mm tall at the back edge band.</li>
+<li>Peak axial DOC 10.92 mm on the back (commanded 5.46) and 7.91 mm on the front (commanded 4.2).</li>
+<li>Retracts 190 (back) and 165 (front); project cycle 2 416 s.</li>
+</ul>
+<h3>The three questions (my reading)</h3>
+<p class='v'><b>Links</b> Mostly yes: few long G0 crossings; keep-down links are short dashes between spiral wraps.</p>
+<p class='v'><b>Path</b> The spiral makes sense on open ground; the edge and valley walk does not.</p>
+<p class='v'><b>Part</b> The front looks roughed like the other columns; tall thin spurs stand at the back edges.</p>
+<h3>N5 standing spurs: present</h3>
+<p class='note'><b>at 7min:</b> Front rough at mid-op (move 3250): 26 free-standing, up to 4.2 mm tall (one level), 0.3-1.2 mm wide.</p>
+<p class='note'><b>mechanism:</b> As on the Corne case: the walk leaves slivers between passes that stack over the levels; on the back rough they stand at the edge band where the spiral ends.</p>
+<p class='note'><b>at end:</b> Back rough: 67 thin patches, 19 free-standing; the tallest are 15.1-15.6 mm tall and 0.3-0.7 mm wide at the board edge, e.g. (162.1, 215.0), (78.8, 218.1), (26.4, 174.6). Front rough: 31 free-standing at the end, up to 4.0 mm tall.</p>
+<div class='crops'>
+<figure><a href='img/wanaka200_agent_search_spurs_back_end.png'><img loading='lazy' src='img/wanaka200_agent_search_spurs_back_end.png' alt='back rough replay to the end'></a><figcaption>back rough replay to the end</figcaption></figure>
+<figure><a href='img/wanaka200_agent_search_spurs_front_end.png'><img loading='lazy' src='img/wanaka200_agent_search_spurs_front_end.png' alt='front rough replay to the end'></a><figcaption>front rough replay to the end</figcaption></figure>
+</div>
+<h3>Phase 3: 2 Back Rough</h3><table>
+<tr><th>Retracts (G0 runs, narrate_toolpath)</th><td>190</td></tr>
+<tr><th>Entries by type (top-level inspect_spans Entry labels)</th><td>keep-down link 510, plunge entry 32</td></tr>
+<tr><th>Nested Entry spans inside those (the descent parts)</th><td>plunge entry 699</td></tr>
+<tr><th>Link bridges (inspect_spans LinkBridge)</th><td>542</td></tr>
+<tr><th>Regions (inspect_spans Region)</th><td>0</td></tr>
+<tr><th>Levels (DepthPass)</th><td>4 (Z 19.54, 14.08, 8.62, 4.0); Z 8.62: 496 planner cut pieces; Z 4.0: no material, 589 sub-tool regions dropped</td></tr>
+<tr><th>Entry time (cut trace runtime_by_intent.entry_s)</th><td>318.9 s of 1336.6 s</td></tr>
+</table>
+<h3>Information: 2 Back Rough</h3><table class='note'>
+<tr><th>Cycle time (op, simulation)</th><td>1336.6 s</td></tr>
+<tr><th>Cycle time (project incl. prerequisites)</th><td>2415.8 s</td></tr>
+<tr><th>Move count</th><td>7652</td></tr>
+<tr><th>Cutting / rapid distance</th><td>38108.4 mm / 3602.6 mm</td></tr>
+<tr><th>Sim resolution</th><td>0.5 mm (auto, stored)</td></tr>
+<tr><th>Measurability</th><td>both roughs: radial/air/chip engagement degraded (cell_too_coarse_for_tip_contact, blind 0.19 / 0.26)</td></tr>
+<tr><th>trochoid_cap_mult (stored)</th><td>1.6</td></tr>
+<tr><th>Other</th><td>peak axial DOC 10.92 mm at move 3419 (Z 14.08) against 5.46 mm commanded (narrate). Project removed volume 729 176 mm3 (ContourParallel 750 097 mm3).</td></tr>
+</table>
+<h3>Phase 3: 6 3D Rough (front)</h3><table>
+<tr><th>Retracts (G0 runs, narrate_toolpath)</th><td>165</td></tr>
+<tr><th>Entries by type (top-level inspect_spans Entry labels)</th><td>keep-down link 582, plunge entry 47</td></tr>
+<tr><th>Nested Entry spans inside those (the descent parts)</th><td>plunge entry 746</td></tr>
+<tr><th>Link bridges (inspect_spans LinkBridge)</th><td>629</td></tr>
+<tr><th>Regions (inspect_spans Region)</th><td>0</td></tr>
+<tr><th>Levels (DepthPass)</th><td>2 (Z 2.8, -1.4); Z -1.4: 366 sub-tool regions dropped</td></tr>
+<tr><th>Entry time (cut trace runtime_by_intent.entry_s)</th><td>240.4 s of 1052.5 s</td></tr>
+</table>
+<h3>Information: 6 3D Rough (front)</h3><table class='note'>
+<tr><th>Cycle time (op, simulation)</th><td>1052.5 s</td></tr>
+<tr><th>Cycle time (project incl. prerequisites)</th><td>2415.8 s</td></tr>
+<tr><th>Move count</th><td>6505</td></tr>
+<tr><th>Cutting / rapid distance</th><td>19311.1 mm / 4044.6 mm</td></tr>
+<tr><th>Sim resolution</th><td>0.5 mm (auto, stored)</td></tr>
+<tr><th>Measurability</th><td>both roughs: radial/air/chip engagement degraded (cell_too_coarse_for_tip_contact, blind 0.19 / 0.26)</td></tr>
+<tr><th>trochoid_cap_mult (stored)</th><td>1.6</td></tr>
+<tr><th>Other</th><td>peak axial DOC 7.91 mm at move 5661 against 4.20 mm commanded (narrate).</td></tr>
+</table>
+</section>
+<section class='col'><h2>ContourSpiral</h2>
+<p class='note'>Project: <code>phase0/projects/wanaka200_contour_spiral.toml</code><br>G-code: <code>phase0/gcode/wanaka200_contour_spiral.nc</code><br>GUI before this column: mtime 1792706351.8232872, pid 84659</p>
+<p class='note'>Prerequisite: 1 Pin Drill kept. Disabled: 3 Holes, 4 Rivers, 5 Lakes, 7, 7b, 8. Both roughs start from fresh stock.</p>
+<h3>2 Back Rough (index 1)</h3>
+<figure><a href='img/wanaka200_contour_spiral_2BackRough_cut.png'><img loading='lazy' src='img/wanaka200_contour_spiral_2BackRough_cut.png' alt='1. Cutting moves only (screenshot_toolpath include_rapids false)'></a><figcaption>1. Cutting moves only (screenshot_toolpath include_rapids false)</figcaption></figure>
+<figure><a href='img/wanaka200_contour_spiral_2BackRough_rapids.png'><img loading='lazy' src='img/wanaka200_contour_spiral_2BackRough_rapids.png' alt='1b. Cutting + rapids (screenshot_toolpath include_rapids true)'></a><figcaption>1b. Cutting + rapids (screenshot_toolpath include_rapids true)</figcaption></figure>
+<figure><a href='img/wanaka200_contour_spiral_2BackRough_links.png'><img loading='lazy' src='img/wanaka200_contour_spiral_2BackRough_links.png' alt='2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc'></a><figcaption>2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc</figcaption></figure>
+<figure><a href='img/wanaka200_contour_spiral_2BackRough_entries.png'><img loading='lazy' src='img/wanaka200_contour_spiral_2BackRough_entries.png' alt='3. Entries: start point of each inspect_spans Entry span, by label'></a><figcaption>3. Entries: start point of each inspect_spans Entry span, by label</figcaption></figure>
+<figure><a href='img/wanaka200_contour_spiral_2BackRough_stock.png'><img loading='lazy' src='img/wanaka200_contour_spiral_2BackRough_stock.png' alt='4. Final stock (screenshot_simulation; colour by height, not deviation)'></a><figcaption>4. Final stock (screenshot_simulation; colour by height, not deviation)</figcaption></figure>
+<div class='crops'>
+<figure><a href='img/wanaka200_contour_spiral_2BackRough_crop_1.png'><img loading='lazy' src='img/wanaka200_contour_spiral_2BackRough_crop_1.png' alt='crop 1'></a><figcaption>crop 1: medial seam at y 125: chain of polygon loops with keep-down links (V1, N1)</figcaption></figure>
+</div>
+<h3>6 3D Rough (front) (index 5)</h3>
+<figure><a href='img/wanaka200_contour_spiral_6Front_cut.png'><img loading='lazy' src='img/wanaka200_contour_spiral_6Front_cut.png' alt='1. Cutting moves only (screenshot_toolpath include_rapids false)'></a><figcaption>1. Cutting moves only (screenshot_toolpath include_rapids false)</figcaption></figure>
+<figure><a href='img/wanaka200_contour_spiral_6Front_rapids.png'><img loading='lazy' src='img/wanaka200_contour_spiral_6Front_rapids.png' alt='1b. Cutting + rapids (screenshot_toolpath include_rapids true)'></a><figcaption>1b. Cutting + rapids (screenshot_toolpath include_rapids true)</figcaption></figure>
+<figure><a href='img/wanaka200_contour_spiral_6Front_links.png'><img loading='lazy' src='img/wanaka200_contour_spiral_6Front_links.png' alt='2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc'></a><figcaption>2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc</figcaption></figure>
+<figure><a href='img/wanaka200_contour_spiral_6Front_entries.png'><img loading='lazy' src='img/wanaka200_contour_spiral_6Front_entries.png' alt='3. Entries: start point of each inspect_spans Entry span, by label'></a><figcaption>3. Entries: start point of each inspect_spans Entry span, by label</figcaption></figure>
+<figure><a href='img/wanaka200_contour_spiral_6Front_stock.png'><img loading='lazy' src='img/wanaka200_contour_spiral_6Front_stock.png' alt='4. Final stock (screenshot_simulation; colour by height, not deviation)'></a><figcaption>4. Final stock (screenshot_simulation; colour by height, not deviation)</figcaption></figure>
+<div class='crops'>
+<figure><a href='img/wanaka200_contour_spiral_6Front_crop_1.png'><img loading='lazy' src='img/wanaka200_contour_spiral_6Front_crop_1.png' alt='crop 1'></a><figcaption>crop 1: valley cluster: loops and entries packed round a valley</figcaption></figure>
+</div>
+<h3>Hard bars</h3><table>
+<tr><th>Bar 1: 0 rapid + 0 holder collisions</th><td><span class='PASS'>PASS</span> rapid collisions 0 (run_simulation rapid_collision_count, per op and project); holder collisions 0 (collision_check collision_count per rough op)</td></tr>
+<tr><th>Bar 2: coverage audit</th><td><span class='NM'>NOT MEASURED</span> No coverage instrument reaches an adaptive3d op through MCP. run_simulation / get_diagnostics per_toolpath untouched_material_mm2, reached_uncut_estimate_mm2, truncated_core_mm2, unmachined_band_area_mm2 are all null (null = not measured, stock/CLAUDE.md). narrate_toolpath: &#x27;Standing material: not measured&#x27;. metrology/union_coverage.rs is test-support only.</td></tr>
+<tr><th>Bar 3a: mesh gouge on emitted moves</th><td><span class='NM'>NOT MEASURED</span> No mesh-gouge instrument for this op: the model gouge guard (compute/model_gouge.rs, safety.cuts_into_model) is ModelGougeRule::Exempt for 3D Adaptive (compute/catalog/registry.rs REG_ADAPTIVE3D). The cut-trace issue kinds are only air_cut and low_engagement. The stock-side sim-triage ids project.crosses_standing_material and project.link_cuts_stock were looked for in get_toolpath_diagnostics and run_simulation triage.</td></tr>
+<tr><th>Bar 3b: stock-side over-cut / link plough</th><td><span class='PASS'>0 reported</span> neither id appears in the run_simulation triage or get_toolpath_diagnostics. 2 Back Rough: crosses_standing_material absent, link_cuts_stock absent; 6 3D Rough (front): crosses_standing_material absent, link_cuts_stock absent</td></tr>
+<tr><th>Bar 4: generation, no refusal</th><td><span class='PASS'>PASS</span> every enabled op generated; wall clock 2 Back Rough 14.9 s, 6 3D Rough (front) 13.9 s</td></tr>
+</table>
+<h3>V1-V3</h3><p class='v'><b>V1</b> Present: a chain of small polygon loops along each medial seam (the X diagonals and the horizontal seam at y 125 on the back), joined by keep-down links (crop 1). On the front, dense loop clusters round the valleys (front crop 1).</p>
+<p class='v'><b>V2</b> Present in another form: the seam loops overlap the cleared wraps, so most of each loop cuts air; entry time 921 s of 3 048 s (back) and 1 448 s of 4 097 s (front).</p>
+<p class='v'><b>V3</b> Present: wraps follow the stock walls (concentric squares on the back); the front&#x27;s valleys fill late through loop clusters.</p>
+<h3>New defects</h3><ul>
+<li>N1 bead chain along the medial seams (back crop 1).</li>
+<li>4 414 keep-down links on the front rough; 3 842 planner cut pieces at Z 2.8.</li>
+</ul>
+<h3>The three questions (my reading)</h3>
+<p class='v'><b>Links</b> No: thousands of keep-down links in clusters plus 649 retracts on the front.</p>
+<p class='v'><b>Path</b> The wraps make sense; the seam and valley clean-up does not.</p>
+<p class='v'><b>Part</b> Both sides look roughed like the other columns at the render scale; a few short nubs stand on the front.</p>
+<h3>N5 standing spurs: small on the front at the end</h3>
+<p class='note'><b>at end:</b> Back rough: 24 thin patches, 2 free-standing nubs under 2 mm. Front rough: 0 free-standing at mid-op (move 14000); 7 free-standing at the end, up to 3.4 mm tall (one level), 0.6-1.0 mm wide, e.g. (151.0, 124.0), (135.9, 177.7).</p>
+<div class='crops'>
+<figure><a href='img/wanaka200_contour_spiral_spurs_back_end.png'><img loading='lazy' src='img/wanaka200_contour_spiral_spurs_back_end.png' alt='back rough replay to the end'></a><figcaption>back rough replay to the end</figcaption></figure>
+<figure><a href='img/wanaka200_contour_spiral_spurs_front_end.png'><img loading='lazy' src='img/wanaka200_contour_spiral_spurs_front_end.png' alt='front rough replay to the end'></a><figcaption>front rough replay to the end</figcaption></figure>
+</div>
+<h3>Phase 3: 2 Back Rough</h3><table>
+<tr><th>Retracts (G0 runs, narrate_toolpath)</th><td>285</td></tr>
+<tr><th>Entries by type (top-level inspect_spans Entry labels)</th><td>keep-down link 1896, plunge entry 32</td></tr>
+<tr><th>Nested Entry spans inside those (the descent parts)</th><td>plunge entry 2180</td></tr>
+<tr><th>Link bridges (inspect_spans LinkBridge)</th><td>1928</td></tr>
+<tr><th>Regions (inspect_spans Region)</th><td>0</td></tr>
+<tr><th>Levels (DepthPass)</th><td>4 (Z 19.54, 14.08, 8.62, 4.0); Z 8.62: 1 889 planner cut pieces; Z 4.0: no material, 356 sub-tool regions dropped</td></tr>
+<tr><th>Entry time (cut trace runtime_by_intent.entry_s)</th><td>921.4 s of 3047.7 s</td></tr>
+</table>
+<h3>Information: 2 Back Rough</h3><table class='note'>
+<tr><th>Cycle time (op, simulation)</th><td>3047.7 s</td></tr>
+<tr><th>Cycle time (project incl. prerequisites)</th><td>7171.3 s</td></tr>
+<tr><th>Move count</th><td>16931</td></tr>
+<tr><th>Cutting / rapid distance</th><td>82985.9 mm / 5185.6 mm</td></tr>
+<tr><th>Sim resolution</th><td>0.5 mm (auto, stored)</td></tr>
+<tr><th>Measurability</th><td>both roughs: radial/air/chip engagement degraded (cell_too_coarse_for_tip_contact, blind 0.15 / 0.27)</td></tr>
+<tr><th>trochoid_cap_mult (stored)</th><td>1.6</td></tr>
+<tr><th>Other</th><td>peak axial DOC 5.46 mm (= commanded). Project removed volume 738 967 mm3.</td></tr>
+</table>
+<h3>Phase 3: 6 3D Rough (front)</h3><table>
+<tr><th>Retracts (G0 runs, narrate_toolpath)</th><td>649</td></tr>
+<tr><th>Entries by type (top-level inspect_spans Entry labels)</th><td>keep-down link 4414, plunge entry 49</td></tr>
+<tr><th>Nested Entry spans inside those (the descent parts)</th><td>plunge entry 5062</td></tr>
+<tr><th>Link bridges (inspect_spans LinkBridge)</th><td>4463</td></tr>
+<tr><th>Regions (inspect_spans Region)</th><td>0</td></tr>
+<tr><th>Levels (DepthPass)</th><td>2 (Z 2.8, -1.4); Z 2.8: 3 842 planner cut pieces; Z -1.4: 281 sub-tool regions dropped</td></tr>
+<tr><th>Entry time (cut trace runtime_by_intent.entry_s)</th><td>1447.8 s of 4096.9 s</td></tr>
+</table>
+<h3>Information: 6 3D Rough (front)</h3><table class='note'>
+<tr><th>Cycle time (op, simulation)</th><td>4096.9 s</td></tr>
+<tr><th>Cycle time (project incl. prerequisites)</th><td>7171.3 s</td></tr>
+<tr><th>Move count</th><td>27914</td></tr>
+<tr><th>Cutting / rapid distance</th><td>65273.5 mm / 4257.4 mm</td></tr>
+<tr><th>Sim resolution</th><td>0.5 mm (auto, stored)</td></tr>
+<tr><th>Measurability</th><td>both roughs: radial/air/chip engagement degraded (cell_too_coarse_for_tip_contact, blind 0.15 / 0.27)</td></tr>
+<tr><th>trochoid_cap_mult (stored)</th><td>1.6</td></tr>
+<tr><th>Other</th><td>peak axial DOC 4.40 mm against 4.20 mm commanded (narrate).</td></tr>
+</table>
+</section>
+</div></body></html>

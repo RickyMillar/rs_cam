@@ -1,0 +1,88 @@
+{
+ "fixture": "corne",
+ "strategy": "contour_parallel",
+ "label": "ContourParallel",
+ "project": "phase0/projects/corne_contour_parallel.toml",
+ "gcode": "phase0/gcode/corne_contour_parallel.nc",
+ "gui": {
+  "mtime_unix": 1792706351.8232872,
+  "gui_pid": 946291
+ },
+ "ops": [
+  {
+   "name": "3D Rough 1",
+   "index": 0,
+   "img": "corne_contour_parallel_3DRough1",
+   "trochoid_cap_mult": 1.6,
+   "gen_wall_s": 1.0,
+   "moves": 8006,
+   "cut_mm": 43800.8,
+   "rapid_mm": 7499.4,
+   "op_runtime_s": 973.2,
+   "entry_s": "not given (runtime_by_intent null)",
+   "retracts": 90,
+   "entries": {
+    "plunge entry": 73,
+    "keep-down link": 22
+   },
+   "entries_nested": {
+    "plunge entry": 111
+   },
+   "link_bridge": 249,
+   "regions": 0,
+   "levels": "4 (Z 17, 11, 5, 0.5 setup frame; depth_per_pass 6)",
+   "holder_collisions": 0,
+   "min_safe_stickout_mm": 45.0,
+   "rapid_collisions": 0,
+   "crosses_standing_material": "absent",
+   "link_cuts_stock": "1 (link move 2320 removes 6.50 mm at (21.4,-107.4,11.0); limit 6.30 mm)",
+   "extra": "peak axial DOC 11.25 mm at move 5588 (Z 5) against 6.0 mm commanded (narrate). Machine-bound 61 % of the time; runs at 64 % of commanded feed.",
+   "crops": [
+    1,
+    2
+   ]
+  },
+  {
+   "name": "3D Rough 1 (copy)",
+   "index": 1,
+   "img": "corne_contour_parallel_3DRough1copy",
+   "trochoid_cap_mult": 1.6,
+   "gen_wall_s": 0.9,
+   "moves": 5347,
+   "cut_mm": 14437.3,
+   "rapid_mm": 13569.3,
+   "op_runtime_s": 1049.0,
+   "entry_s": "not given (runtime_by_intent null)",
+   "retracts": 214,
+   "entries": {
+    "plunge entry": 180,
+    "keep-down link": 4
+   },
+   "entries_nested": {
+    "plunge entry": 217
+   },
+   "link_bridge": 187,
+   "regions": 0,
+   "levels": "2 DepthPass spans (Z 15.5 with no material, Z 0.5); the hole rings are cut at setup Z 4.0 and 0.5 (G-code Z -19.0 and -22.5)",
+   "holder_collisions": 0,
+   "min_safe_stickout_mm": 45.0,
+   "rapid_collisions": 0,
+   "crosses_standing_material": "absent",
+   "link_cuts_stock": "3 (worst: link move 3153 removes 3.38 mm at (115.7,-42.4,0.5); limit 3.30 mm)",
+   "extra": "peak axial DOC 12.0 mm at move 976 against 3.0 mm commanded (narrate). Stock source: remaining stock of 3D Rough 1.",
+   "crops": [
+    1
+   ]
+  }
+ ],
+ "sim": {
+  "resolution_mm": 0.3,
+  "mode": "auto",
+  "project_runtime_s": 2022.1,
+  "rapid_collision_count": 0,
+  "collision_count": 0,
+  "degraded": "3D Rough 1: radial/air/chip engagement degraded (cell_too_coarse_for_tip_contact, blind 0.20); copy: NOT MEASURABLE (blind 0.79)",
+  "rerun": "N5 re-run on GUI pid 84659: same moves, 0 rapid collisions, same link_cuts_stock findings, project runtime 1563.6 s"
+ },
+ "face": "No Face op. Waterline 3 disabled. Setup 2 holds no toolpaths (list_setups), so nothing runs there."
+}

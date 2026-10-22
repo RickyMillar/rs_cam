@@ -1,0 +1,14 @@
+{
+ "verdict": "absent (2 nubs under 2 mm on the back)",
+ "at_end": "Back rough: 14 thin patches, 2 free-standing nubs, 1.9 and 1.8 mm tall, at (159.4, 69.1) and (84.2, 130.5). Front rough: 0 thin patches at the end.",
+ "imgs": [
+  [
+   "wanaka200_contour_parallel_spurs_back_end.png",
+   "back rough replay to the end"
+  ],
+  [
+   "wanaka200_contour_parallel_spurs_front_end.png",
+   "front rough replay to the end"
+  ]
+ ]
+}

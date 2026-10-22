@@ -1,0 +1,60 @@
+{
+ "fixture": "rivmap100",
+ "strategy": "agent_search",
+ "label": "AgentSearch",
+ "project": "phase0/projects/rivmap100_agent_search.toml",
+ "gcode": "phase0/gcode/rivmap100_agent_search.nc",
+ "gui": {
+  "mtime_unix": 1792706351.8232872,
+  "gui_pid": 946291
+ },
+ "ops": [
+  {
+   "name": "3D Rough",
+   "index": 1,
+   "img": "rivmap100_agent_search_3DRough",
+   "trochoid_cap_mult": 1.6,
+   "gen_wall_s": 1.8,
+   "moves": 8754,
+   "cut_mm": 18448.9,
+   "rapid_mm": 2985.2,
+   "op_runtime_s": 1484.2,
+   "entry_s": 1123.0,
+   "cutting_s": 238.3,
+   "linking_s": 57.8,
+   "rapid_s": 65.1,
+   "air_pct_total": 86.7,
+   "retracts": 52,
+   "entries": {
+    "helix entry": 50,
+    "keep-down link": 146
+   },
+   "link_bridge": 198,
+   "regions": 0,
+   "levels": "5 (Z 10, 8, 6, 4, 2); no Z 0.5 level; dropped sub-tool regions 25 / 79 / 100 at Z 6 / 4 / 2 (the GUI log shows 6 levels computed; the Z 0.5 plane holds no material per the ContourParallel narration)",
+   "holder_collisions": 0,
+   "min_safe_stickout_mm": 45.0,
+   "rapid_collisions": 0,
+   "crosses_standing_material": "absent",
+   "link_cuts_stock": "absent",
+   "extra": "peak axial DOC 3.0 mm at move 1110 (Z 8) against a commanded 2.0 mm (narrate). Estimated removed volume (project) 69 159 mm3.",
+   "crops": [
+    1,
+    2
+   ],
+   "entries_nested": {
+    "helix entry": 131,
+    "plunge entry": 65
+   }
+  }
+ ],
+ "sim": {
+  "resolution_mm": 0.5,
+  "mode": "auto",
+  "project_runtime_s": 1944.5,
+  "rapid_collision_count": 0,
+  "collision_count": 0,
+  "degraded": "radial_engagement, air_cut, chip_engagement NOT MEASURABLE: cell_too_coarse_for_tip_contact, blind_fraction 0.62"
+ },
+ "face": "Face 5: current on load, 1256 moves"
+}

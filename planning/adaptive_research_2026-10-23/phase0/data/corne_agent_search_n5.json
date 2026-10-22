@@ -1,0 +1,11 @@
+{"t_target_s":420,"move":3577,"op":"3D Rough 1","gui_clock":"7:32 / 21:08 (GUI, no accel)",
+ "gui_note":"GUI sim resolution was 0.10 mm (the operator re-ran it); the GUI images use that run.",
+ "imgs":[["corne_agent_search_crop_spurs_gui_420s.png","GUI simulation at move 3577 (7:32): fins and spikes standing on the floor (crop)"],
+         ["corne_agent_search_spurs_420s_zoom.png","heightmap replay of the .nc to move 3577: S3 wedge at (104.5, 86.0)"],
+         ["corne_agent_search_spurs_420s.png","heightmap replay to move 3577: whole part"],
+         ["corne_agent_search_crop_spurs_gui_end.png","GUI simulation at the end of the program (crop)"],
+         ["corne_agent_search_spurs_end.png","heightmap replay to the end of both roughs"]],
+ "at_7min":"26 thin patches (> 1.5 mm tall, < 2 mm wide), 6 free-standing. Main ones: (104.5, 86.0) wedge 5.0 mm long, 1.0 mm wide, 13.0 mm tall, top at G-code Z -6.0 (setup Z 17); (18.2, 53.9) and (121.7, 67.8) pins 0.3 mm wide, 13.0 mm tall. Op: 3D Rough 1, levels setup Z 11 / 5 / 4.",
+ "mechanism":"At every level below the top the nearest pass centres lie 3.2-3.6 mm from the spur and the tool radius is 3.0 mm, so 0.2-0.6 mm of material stays between the tool edges at the same XY on each level; the slivers stack into a full-depth fin. The (104.5, 86.0) wedge stands where the circular spiral area meets a straight pass along y 86.5 (a region boundary).",
+ "at_end":"Still standing at the end: 238 thin patches, 39 free-standing; the tallest free ones are (118.7, 86.6) and (101.6, 86.7), 16.5 mm tall, 1.0-1.2 mm wide, and (95.1, 97.3), 13.3 mm tall, 7.0 mm long, 0.2 mm wide. The copy op adds hex-hole cores (a post in the middle of many holes).",
+ "verdict":"present"}

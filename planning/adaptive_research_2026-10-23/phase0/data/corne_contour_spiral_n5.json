@@ -1,0 +1,24 @@
+{
+ "verdict": "absent at 7 min; 2 short hole cores at the end",
+ "at_7min": "Replay to move 7356 of 3D Rough 1 (about 420 s; GUI clock 8:13 of 33:36): 1 thin patch, attached (0.3 mm wide, at the outer rim). The GUI view shows the Z 17 level with nothing standing.",
+ "at_end": "Replay to the end: 161 thin patches, 2 free-standing: (19.3, 24.4) and (53.9, 24.3), 3.0 mm tall, 1.3 mm wide, top at G-code Z -19.5, inside hex holes (hole cores left by the copy op).",
+ "mechanism": "The spiral wraps overlap at each level; the residue mop along the seams cleans the slivers.",
+ "imgs": [
+  [
+   "corne_contour_spiral_crop_spurs_gui_420s.png",
+   "GUI simulation at move 7356 (8:13)"
+  ],
+  [
+   "corne_contour_spiral_spurs_420s.png",
+   "heightmap replay to move 7356"
+  ],
+  [
+   "corne_contour_spiral_crop_spurs_gui_end.png",
+   "GUI simulation at the end"
+  ],
+  [
+   "corne_contour_spiral_spurs_end.png",
+   "heightmap replay to the end of both roughs"
+  ]
+ ]
+}

@@ -1,0 +1,72 @@
+{
+ "contour_parallel": {
+  "V1": "Present, and not only in corners. Small concentric circle sets (2-3 rings, about 1.5-3.6 mm radius), each with a plunge entry at its centre, stand at many points: corners (9,9), (96,93), (77,98) and the inside (54,43), (89,92), (80,90). Crops 1 and 2.",
+  "V2": "Present in another form. The full circles are entry circles, not corner-blend arcs: along the bead chains (crop 1, crop 3) each new circle overlaps the one before by most of its area, so most of each circle cuts air.",
+  "V3": "Present. The outer wraps follow the square boundary; the inside lobes are cleared late by separate small circle sets with their own entry (entries view).",
+  "new": [
+   "N1 bead chain: a straight line of helix entries 1-1.5 mm apart, each with a full circle, from (9,9) to (25,25) and from (44,27) to (44,47). Crops 1 and 3.",
+   "N2 fan of long keep-down links: they leave the diagonal bead chain between (15, 15) and (25, 25) and run across the part to (45, 45) and beyond (links view).",
+   "Entry time is 2 364 s of the 3 263 s op runtime (runtime_by_intent).",
+   "Z 0.5 level: 403 cutting moves over a plane with no material (narrate: 'planner emitted cuts but no material to cut').",
+   "N5 standing spurs: absent. The heightmap replay (tools/spurs.py) finds 0 thin patches at mid-rough and 0 at the end."
+  ],
+  "q_links": "No. 104 retracts cross the whole part back and forth, and long keep-down links fan out from the lower-left diagonal.",
+  "q_path": "Partly. The outer offsets are clean; the inside is a field of small circles and bead chains.",
+  "q_part": "The terraces look complete at the render scale; the surface carries many round cusps from the circles.",
+  "ops": {
+   "3D Rough": {
+    "crops": {
+     "1": "bottom-left corner: bead chain of helix entries and overlapping circles (N1, V1, V2)",
+     "2": "top-right: small concentric circle sets, one plunge each (V1)",
+     "3": "centre: vertical bead chain at x 44 (N1)"
+    }
+   }
+  }
+ },
+ "agent_search": {
+  "V1": "Present. Concentric circle sets with a plunge or helix at the centre at (59,77), (95,27.5), (92,32). Crops 1 and 2.",
+  "V2": "Present in another form: 2-3 concentric full circles at one entry point, for example (58.7,79.5) and (92,31.5), where several entries stack (crop 1, crop 2).",
+  "V3": "Present. Two spiral sets clear open ground (a large one at the upper right, a small one at the upper left; cut view); the rest is walked as narrow irregular paths with many re-entries.",
+  "new": [
+   "N3 entry stacking: 4-5 entries (helix, plunge, keep-down) inside 3 mm at one spot, for example (92,32) and (58.7,79.5). Crops 1 and 2.",
+   "Peak axial DOC 3.0 mm against 2.0 mm commanded (narrate).",
+   "N5 standing spurs: passing only. 1 free-standing spur at mid-rough, (16.4, 43.7), 2.0 mm tall (one level), 0.3 mm wide; 0 free-standing at the end.",
+   "N9 narrow valleys left higher: sub-tool regions dropped at the lower levels (narrate); the stock render shows the channels olive, not green."
+  ],
+  "q_links": "Fewer retracts (52), but the keep-down links make star clusters at the re-entry spots.",
+  "q_path": "No clear order: long straight walks between scattered entry spots.",
+  "q_part": "The narrow valleys stay higher than in ContourParallel (olive where ContourParallel reaches green in the stock render). The narration says the planner dropped 25 / 79 / 100 sub-tool regions at Z 6 / 4 / 2.",
+  "ops": {
+   "3D Rough": {
+    "crops": {
+     "1": "stacked entries and concentric circles at (58.7,79.5) and (59,77) (V1, V2, N3)",
+     "2": "stacked entries at (92,32) (N3)"
+    }
+   }
+  }
+ },
+ "contour_spiral": {
+  "V1": "Present and strong. Dozens of overlapping full circles stack on one spot, each with its own entry (crops 1 and 3). They fill the narrow residue between the wraps.",
+  "V2": "Present and strong. The stacked circles overlap almost fully, so most of each circle cuts air; entry_s is 6 100 s of the 7 085 s op runtime.",
+  "V3": "Present. The wraps follow the outer square walls (diagonal seams to the corners in the cut view); the lobes and channels are cleared by the circle clusters.",
+  "new": [
+   "N1 bead chain again, along the slot at (40-52, 29) (crop 2).",
+   "Z 8 holds 22 287 cutting moves and 790 planner cut pieces (narrate).",
+   "Peak axial DOC 2.5 mm against 2.0 mm commanded (narrate).",
+   "N5 standing spurs: passing only. 7 free-standing fins at mid-rough, up to 9.4 mm long, 2.0 mm tall (one level), 0.4 mm wide, for example (58.8, 31.3) and (60.2, 41.6); 0 free-standing at the end (spur map: img/rivmap100_contour_spiral_spurs_end.png).",
+   "N9 narrow valleys left higher (as AgentSearch)."
+  ],
+  "q_links": "No. 1 061 keep-down links (with 745 nested helix and 368 nested plunge descents) form dense clusters all over the part; only 53 retracts.",
+  "q_path": "The outer wraps make sense; the residue clean-up does not (circle stacks).",
+  "q_part": "As AgentSearch: the narrow valleys stay higher than in ContourParallel (dropped sub-tool regions 14 / 69 / 89 at Z 6 / 4 / 2).",
+  "ops": {
+   "3D Rough": {
+    "crops": {
+     "1": "bottom-left: circle stacks, one entry per circle (V1, V2)",
+     "2": "slot at y 29: bead chain of helix entries (N1)",
+     "3": "top-right: circle stack (V1, V2)"
+    }
+   }
+  }
+ }
+}

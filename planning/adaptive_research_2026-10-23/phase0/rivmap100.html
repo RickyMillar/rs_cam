@@ -1,0 +1,209 @@
+<!doctype html><html lang='en'><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>rivmap100 roughing baseline</title><style>
+:root{--bg:#fafaf8;--fg:#1d1d1b;--muted:#5d5d58;--line:#d9d8d2;--card:#ffffff;
+--pass:#1f7a3a;--fail:#b3261e;--nm:#8a6d00;--chip:#f0efe9}
+@media (prefers-color-scheme: dark){:root{--bg:#161615;--fg:#ecebe6;--muted:#a3a29b;
+--line:#34332f;--card:#1f1f1d;--pass:#5cc27e;--fail:#ff8a80;--nm:#e0c050;--chip:#2a2a27}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:20px 16px;border-bottom:1px solid var(--line)}
+h1{margin:0 0 8px;font-size:22px}
+h2{font-size:17px;margin:0 0 8px}
+h3{font-size:14px;margin:14px 0 6px}
+.meta{display:grid;grid-template-columns:max-content 1fr;gap:2px 12px;font-size:13px;color:var(--muted)}
+.meta b{color:var(--fg);font-weight:600}
+code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--chip);padding:1px 4px;border-radius:3px;word-break:break-all}
+.cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;padding:16px}
+@media (max-width:1100px){.cols{grid-template-columns:1fr}}
+.col{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;min-width:0}
+figure{margin:0 0 10px}
+figure img{width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:4px;background:#222}
+figcaption{font-size:12px;color:var(--muted);margin-top:3px}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:4px 0 8px}
+th,td{border-top:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top}
+th{font-weight:600;width:38%}
+.PASS{color:var(--pass);font-weight:700}.FAIL{color:var(--fail);font-weight:700}
+.NM{color:var(--nm);font-weight:700}
+.v{margin:4px 0}.v b{display:inline-block;min-width:2.2em}
+.note{font-size:12.5px;color:var(--muted)}
+.crops{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.intro{padding:0 16px;max-width:1100px}
+</style></head><body>
+<header><h1>rivmap100 roughing baseline</h1><div class='meta'>
+<b>Fixture</b><span>rivmap100</span>
+<b>Fixture project (read only)</b><span><code>planning/fixtures/rivmap100/rivmap100.toml</code></span>
+<b>Saved projects</b><span><code>phase0/projects/&lt;fixture&gt;_&lt;strategy&gt;.toml</code> (one per column)</span>
+<b>Code</b><span>HEAD <code>61a8d4b4</code> (commit <code>df6de926</code> on top adds only planning files)</span>
+<b>Binary</b><span><code>/home/ricky/personal_repos/rs_cam/target/release/rs_cam_gui</code></span>
+<b>Binary mtime</b><span>1792706351.82 (2026-10-23 10:59:11 NZDT), checked with gui_status before each column</span>
+<b>Binary sha256</b><span><code>51cbb71324e9b8101a4ec4c52854774e0bc53100d2d6762209420df39aa1d438</code> (from the brief; not re-hashed)</span>
+<b>GUI pid</b><span>946291 (gui_status before each column)</span>
+<b>Date</b><span>2026-10-23</span>
+<b>Tools</b><span><code>phase0/tools/links_entries.py</code>, <code>zoom.py</code>, <code>build_page.py</code>, <code>ingest.py</code></span>
+</div></header>
+<div class='intro'><p class='note'>Ops enabled: Face 5 (prerequisite, from fresh stock) and 3D Rough (kind adaptive3d, from remaining stock). Scallop Finish and Project Curve disabled. Only clearing_strategy changes between columns.</p><p class='note'>The links and entries views and the crops come from the exported .nc file. Move i of the op is section line i+1 (the post adds one G0 at each end); the G0-run count equals the narration&#x27;s retract count in every column, which checks the mapping.</p><p class='note'>The stock render colours by height (blue low, red high). It does not show deviation from the model.</p></div>
+<div class='cols'>
+<section class='col'><h2>ContourParallel</h2>
+<p class='note'>Project: <code>phase0/projects/rivmap100_contour_parallel.toml</code><br>G-code: <code>phase0/gcode/rivmap100_contour_parallel.nc</code><br>GUI before this column: mtime 1792706351.8232872, pid 946291</p>
+<p class='note'>Prerequisite: Face 5: current on load (computing when the project opened), 1256 moves</p>
+<h3>3D Rough (index 1)</h3>
+<figure><a href='img/rivmap100_contour_parallel_3DRough_cut.png'><img loading='lazy' src='img/rivmap100_contour_parallel_3DRough_cut.png' alt='1. Cutting moves only (screenshot_toolpath include_rapids false)'></a><figcaption>1. Cutting moves only (screenshot_toolpath include_rapids false)</figcaption></figure>
+<figure><a href='img/rivmap100_contour_parallel_3DRough_rapids.png'><img loading='lazy' src='img/rivmap100_contour_parallel_3DRough_rapids.png' alt='1b. Cutting + rapids (screenshot_toolpath include_rapids true)'></a><figcaption>1b. Cutting + rapids (screenshot_toolpath include_rapids true)</figcaption></figure>
+<figure><a href='img/rivmap100_contour_parallel_3DRough_links.png'><img loading='lazy' src='img/rivmap100_contour_parallel_3DRough_links.png' alt='2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc'></a><figcaption>2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc</figcaption></figure>
+<figure><a href='img/rivmap100_contour_parallel_3DRough_entries.png'><img loading='lazy' src='img/rivmap100_contour_parallel_3DRough_entries.png' alt='3. Entries: start point of each inspect_spans Entry span, by label'></a><figcaption>3. Entries: start point of each inspect_spans Entry span, by label</figcaption></figure>
+<figure><a href='img/rivmap100_contour_parallel_3DRough_stock.png'><img loading='lazy' src='img/rivmap100_contour_parallel_3DRough_stock.png' alt='4. Final stock (screenshot_simulation; colour by height, not deviation)'></a><figcaption>4. Final stock (screenshot_simulation; colour by height, not deviation)</figcaption></figure>
+<div class='crops'>
+<figure><a href='img/rivmap100_contour_parallel_3DRough_crop_1.png'><img loading='lazy' src='img/rivmap100_contour_parallel_3DRough_crop_1.png' alt='crop 1'></a><figcaption>crop 1: bottom-left corner: bead chain of helix entries and overlapping circles (N1, V1, V2)</figcaption></figure>
+<figure><a href='img/rivmap100_contour_parallel_3DRough_crop_2.png'><img loading='lazy' src='img/rivmap100_contour_parallel_3DRough_crop_2.png' alt='crop 2'></a><figcaption>crop 2: top-right: small concentric circle sets, one plunge each (V1)</figcaption></figure>
+<figure><a href='img/rivmap100_contour_parallel_3DRough_crop_3.png'><img loading='lazy' src='img/rivmap100_contour_parallel_3DRough_crop_3.png' alt='crop 3'></a><figcaption>crop 3: centre: vertical bead chain at x 44 (N1)</figcaption></figure>
+</div>
+<h3>Hard bars</h3><table>
+<tr><th>Bar 1: 0 rapid + 0 holder collisions</th><td><span class='PASS'>PASS</span> rapid collisions 0 (run_simulation rapid_collision_count, per op and project); holder collisions 0 (collision_check collision_count per rough op)</td></tr>
+<tr><th>Bar 2: coverage audit</th><td><span class='NM'>NOT MEASURED</span> No coverage instrument reaches an adaptive3d op through MCP. run_simulation / get_diagnostics per_toolpath untouched_material_mm2, reached_uncut_estimate_mm2, truncated_core_mm2, unmachined_band_area_mm2 are all null (null = not measured, stock/CLAUDE.md). narrate_toolpath: &#x27;Standing material: not measured&#x27;. metrology/union_coverage.rs is test-support only.</td></tr>
+<tr><th>Bar 3a: mesh gouge on emitted moves</th><td><span class='NM'>NOT MEASURED</span> No mesh-gouge instrument for this op: the model gouge guard (compute/model_gouge.rs, safety.cuts_into_model) is ModelGougeRule::Exempt for 3D Adaptive (compute/catalog/registry.rs REG_ADAPTIVE3D). The cut-trace issue kinds are only air_cut and low_engagement. The stock-side sim-triage ids project.crosses_standing_material and project.link_cuts_stock were looked for in get_toolpath_diagnostics and run_simulation triage.</td></tr>
+<tr><th>Bar 3b: stock-side over-cut / link plough</th><td><span class='PASS'>0 reported</span> neither id appears in the run_simulation triage or get_toolpath_diagnostics. 3D Rough: crosses_standing_material absent, link_cuts_stock absent</td></tr>
+<tr><th>Bar 4: generation, no refusal</th><td><span class='PASS'>PASS</span> every enabled op generated; wall clock 3D Rough 5.2 s</td></tr>
+</table>
+<h3>V1-V3</h3><p class='v'><b>V1</b> Present, and not only in corners. Small concentric circle sets (2-3 rings, about 1.5-3.6 mm radius), each with a plunge entry at its centre, stand at many points: corners (9,9), (96,93), (77,98) and the inside (54,43), (89,92), (80,90). Crops 1 and 2.</p>
+<p class='v'><b>V2</b> Present in another form. The full circles are entry circles, not corner-blend arcs: along the bead chains (crop 1, crop 3) each new circle overlaps the one before by most of its area, so most of each circle cuts air.</p>
+<p class='v'><b>V3</b> Present. The outer wraps follow the square boundary; the inside lobes are cleared late by separate small circle sets with their own entry (entries view).</p>
+<h3>New defects</h3><ul>
+<li>N1 bead chain: a straight line of helix entries 1-1.5 mm apart, each with a full circle, from (9,9) to (25,25) and from (44,27) to (44,47). Crops 1 and 3.</li>
+<li>N2 fan of long keep-down links: they leave the diagonal bead chain between (15, 15) and (25, 25) and run across the part to (45, 45) and beyond (links view).</li>
+<li>Entry time is 2 364 s of the 3 263 s op runtime (runtime_by_intent).</li>
+<li>Z 0.5 level: 403 cutting moves over a plane with no material (narrate: &#x27;planner emitted cuts but no material to cut&#x27;).</li>
+<li>N5 standing spurs: absent. The heightmap replay (tools/spurs.py) finds 0 thin patches at mid-rough and 0 at the end.</li>
+</ul>
+<h3>The three questions (my reading)</h3>
+<p class='v'><b>Links</b> No. 104 retracts cross the whole part back and forth, and long keep-down links fan out from the lower-left diagonal.</p>
+<p class='v'><b>Path</b> Partly. The outer offsets are clean; the inside is a field of small circles and bead chains.</p>
+<p class='v'><b>Part</b> The terraces look complete at the render scale; the surface carries many round cusps from the circles.</p>
+<h3>Phase 3: 3D Rough</h3><table>
+<tr><th>Retracts (G0 runs, narrate_toolpath)</th><td>104</td></tr>
+<tr><th>Entries by type (top-level inspect_spans Entry labels)</th><td>helix entry 101, keep-down link 136</td></tr>
+<tr><th>Nested Entry spans inside those (the descent parts)</th><td>helix entry 59, plunge entry 178</td></tr>
+<tr><th>Link bridges (inspect_spans LinkBridge)</th><td>381</td></tr>
+<tr><th>Regions (inspect_spans Region)</th><td>0</td></tr>
+<tr><th>Levels (DepthPass)</th><td>6 (Z 10, 8, 6, 4, 2, 0.5 setup frame)</td></tr>
+<tr><th>Entry time (cut trace runtime_by_intent.entry_s)</th><td>2364.3 s of 3262.8 s</td></tr>
+</table>
+<h3>Information: 3D Rough</h3><table class='note'>
+<tr><th>Cycle time (op, simulation)</th><td>3262.8 s</td></tr>
+<tr><th>Cycle time (project incl. prerequisites)</th><td>3723.2 s</td></tr>
+<tr><th>Move count</th><td>17649</td></tr>
+<tr><th>Cutting / rapid distance</th><td>42286.6 mm / 7689.9 mm</td></tr>
+<tr><th>Sim resolution</th><td>0.5 mm (auto, stored)</td></tr>
+<tr><th>Measurability</th><td>radial_engagement, air_cut, chip_engagement degraded: cell_too_coarse_for_tip_contact, blind_fraction 0.49</td></tr>
+<tr><th>trochoid_cap_mult (stored)</th><td>1.6</td></tr>
+</table>
+</section>
+<section class='col'><h2>AgentSearch</h2>
+<p class='note'>Project: <code>phase0/projects/rivmap100_agent_search.toml</code><br>G-code: <code>phase0/gcode/rivmap100_agent_search.nc</code><br>GUI before this column: mtime 1792706351.8232872, pid 946291</p>
+<p class='note'>Prerequisite: Face 5: current on load, 1256 moves</p>
+<h3>3D Rough (index 1)</h3>
+<figure><a href='img/rivmap100_agent_search_3DRough_cut.png'><img loading='lazy' src='img/rivmap100_agent_search_3DRough_cut.png' alt='1. Cutting moves only (screenshot_toolpath include_rapids false)'></a><figcaption>1. Cutting moves only (screenshot_toolpath include_rapids false)</figcaption></figure>
+<figure><a href='img/rivmap100_agent_search_3DRough_rapids.png'><img loading='lazy' src='img/rivmap100_agent_search_3DRough_rapids.png' alt='1b. Cutting + rapids (screenshot_toolpath include_rapids true)'></a><figcaption>1b. Cutting + rapids (screenshot_toolpath include_rapids true)</figcaption></figure>
+<figure><a href='img/rivmap100_agent_search_3DRough_links.png'><img loading='lazy' src='img/rivmap100_agent_search_3DRough_links.png' alt='2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc'></a><figcaption>2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc</figcaption></figure>
+<figure><a href='img/rivmap100_agent_search_3DRough_entries.png'><img loading='lazy' src='img/rivmap100_agent_search_3DRough_entries.png' alt='3. Entries: start point of each inspect_spans Entry span, by label'></a><figcaption>3. Entries: start point of each inspect_spans Entry span, by label</figcaption></figure>
+<figure><a href='img/rivmap100_agent_search_3DRough_stock.png'><img loading='lazy' src='img/rivmap100_agent_search_3DRough_stock.png' alt='4. Final stock (screenshot_simulation; colour by height, not deviation)'></a><figcaption>4. Final stock (screenshot_simulation; colour by height, not deviation)</figcaption></figure>
+<div class='crops'>
+<figure><a href='img/rivmap100_agent_search_3DRough_crop_1.png'><img loading='lazy' src='img/rivmap100_agent_search_3DRough_crop_1.png' alt='crop 1'></a><figcaption>crop 1: stacked entries and concentric circles at (58.7,79.5) and (59,77) (V1, V2, N3)</figcaption></figure>
+<figure><a href='img/rivmap100_agent_search_3DRough_crop_2.png'><img loading='lazy' src='img/rivmap100_agent_search_3DRough_crop_2.png' alt='crop 2'></a><figcaption>crop 2: stacked entries at (92,32) (N3)</figcaption></figure>
+</div>
+<h3>Hard bars</h3><table>
+<tr><th>Bar 1: 0 rapid + 0 holder collisions</th><td><span class='PASS'>PASS</span> rapid collisions 0 (run_simulation rapid_collision_count, per op and project); holder collisions 0 (collision_check collision_count per rough op)</td></tr>
+<tr><th>Bar 2: coverage audit</th><td><span class='NM'>NOT MEASURED</span> No coverage instrument reaches an adaptive3d op through MCP. run_simulation / get_diagnostics per_toolpath untouched_material_mm2, reached_uncut_estimate_mm2, truncated_core_mm2, unmachined_band_area_mm2 are all null (null = not measured, stock/CLAUDE.md). narrate_toolpath: &#x27;Standing material: not measured&#x27;. metrology/union_coverage.rs is test-support only.</td></tr>
+<tr><th>Bar 3a: mesh gouge on emitted moves</th><td><span class='NM'>NOT MEASURED</span> No mesh-gouge instrument for this op: the model gouge guard (compute/model_gouge.rs, safety.cuts_into_model) is ModelGougeRule::Exempt for 3D Adaptive (compute/catalog/registry.rs REG_ADAPTIVE3D). The cut-trace issue kinds are only air_cut and low_engagement. The stock-side sim-triage ids project.crosses_standing_material and project.link_cuts_stock were looked for in get_toolpath_diagnostics and run_simulation triage.</td></tr>
+<tr><th>Bar 3b: stock-side over-cut / link plough</th><td><span class='PASS'>0 reported</span> neither id appears in the run_simulation triage or get_toolpath_diagnostics. 3D Rough: crosses_standing_material absent, link_cuts_stock absent</td></tr>
+<tr><th>Bar 4: generation, no refusal</th><td><span class='PASS'>PASS</span> every enabled op generated; wall clock 3D Rough 1.8 s</td></tr>
+</table>
+<h3>V1-V3</h3><p class='v'><b>V1</b> Present. Concentric circle sets with a plunge or helix at the centre at (59,77), (95,27.5), (92,32). Crops 1 and 2.</p>
+<p class='v'><b>V2</b> Present in another form: 2-3 concentric full circles at one entry point, for example (58.7,79.5) and (92,31.5), where several entries stack (crop 1, crop 2).</p>
+<p class='v'><b>V3</b> Present. Two spiral sets clear open ground (a large one at the upper right, a small one at the upper left; cut view); the rest is walked as narrow irregular paths with many re-entries.</p>
+<h3>New defects</h3><ul>
+<li>N3 entry stacking: 4-5 entries (helix, plunge, keep-down) inside 3 mm at one spot, for example (92,32) and (58.7,79.5). Crops 1 and 2.</li>
+<li>Peak axial DOC 3.0 mm against 2.0 mm commanded (narrate).</li>
+<li>N5 standing spurs: passing only. 1 free-standing spur at mid-rough, (16.4, 43.7), 2.0 mm tall (one level), 0.3 mm wide; 0 free-standing at the end.</li>
+<li>N9 narrow valleys left higher: sub-tool regions dropped at the lower levels (narrate); the stock render shows the channels olive, not green.</li>
+</ul>
+<h3>The three questions (my reading)</h3>
+<p class='v'><b>Links</b> Fewer retracts (52), but the keep-down links make star clusters at the re-entry spots.</p>
+<p class='v'><b>Path</b> No clear order: long straight walks between scattered entry spots.</p>
+<p class='v'><b>Part</b> The narrow valleys stay higher than in ContourParallel (olive where ContourParallel reaches green in the stock render). The narration says the planner dropped 25 / 79 / 100 sub-tool regions at Z 6 / 4 / 2.</p>
+<h3>Phase 3: 3D Rough</h3><table>
+<tr><th>Retracts (G0 runs, narrate_toolpath)</th><td>52</td></tr>
+<tr><th>Entries by type (top-level inspect_spans Entry labels)</th><td>helix entry 50, keep-down link 146</td></tr>
+<tr><th>Nested Entry spans inside those (the descent parts)</th><td>helix entry 131, plunge entry 65</td></tr>
+<tr><th>Link bridges (inspect_spans LinkBridge)</th><td>198</td></tr>
+<tr><th>Regions (inspect_spans Region)</th><td>0</td></tr>
+<tr><th>Levels (DepthPass)</th><td>5 (Z 10, 8, 6, 4, 2); no Z 0.5 level; dropped sub-tool regions 25 / 79 / 100 at Z 6 / 4 / 2 (the GUI log shows 6 levels computed; the Z 0.5 plane holds no material per the ContourParallel narration)</td></tr>
+<tr><th>Entry time (cut trace runtime_by_intent.entry_s)</th><td>1123.0 s of 1484.2 s</td></tr>
+</table>
+<h3>Information: 3D Rough</h3><table class='note'>
+<tr><th>Cycle time (op, simulation)</th><td>1484.2 s</td></tr>
+<tr><th>Cycle time (project incl. prerequisites)</th><td>1944.5 s</td></tr>
+<tr><th>Move count</th><td>8754</td></tr>
+<tr><th>Cutting / rapid distance</th><td>18448.9 mm / 2985.2 mm</td></tr>
+<tr><th>Sim resolution</th><td>0.5 mm (auto, stored)</td></tr>
+<tr><th>Measurability</th><td>radial_engagement, air_cut, chip_engagement NOT MEASURABLE: cell_too_coarse_for_tip_contact, blind_fraction 0.62</td></tr>
+<tr><th>trochoid_cap_mult (stored)</th><td>1.6</td></tr>
+<tr><th>Other</th><td>peak axial DOC 3.0 mm at move 1110 (Z 8) against a commanded 2.0 mm (narrate). Estimated removed volume (project) 69 159 mm3.</td></tr>
+</table>
+</section>
+<section class='col'><h2>ContourSpiral</h2>
+<p class='note'>Project: <code>phase0/projects/rivmap100_contour_spiral.toml</code><br>G-code: <code>phase0/gcode/rivmap100_contour_spiral.nc</code><br>GUI before this column: mtime 1792706351.8232872, pid 946291</p>
+<p class='note'>Prerequisite: Face 5: current on load, 1256 moves</p>
+<h3>3D Rough (index 1)</h3>
+<figure><a href='img/rivmap100_contour_spiral_3DRough_cut.png'><img loading='lazy' src='img/rivmap100_contour_spiral_3DRough_cut.png' alt='1. Cutting moves only (screenshot_toolpath include_rapids false)'></a><figcaption>1. Cutting moves only (screenshot_toolpath include_rapids false)</figcaption></figure>
+<figure><a href='img/rivmap100_contour_spiral_3DRough_rapids.png'><img loading='lazy' src='img/rivmap100_contour_spiral_3DRough_rapids.png' alt='1b. Cutting + rapids (screenshot_toolpath include_rapids true)'></a><figcaption>1b. Cutting + rapids (screenshot_toolpath include_rapids true)</figcaption></figure>
+<figure><a href='img/rivmap100_contour_spiral_3DRough_links.png'><img loading='lazy' src='img/rivmap100_contour_spiral_3DRough_links.png' alt='2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc'></a><figcaption>2. Links: G0 moves (orange) and fed keep-down links (blue), top-down XY from the exported .nc</figcaption></figure>
+<figure><a href='img/rivmap100_contour_spiral_3DRough_entries.png'><img loading='lazy' src='img/rivmap100_contour_spiral_3DRough_entries.png' alt='3. Entries: start point of each inspect_spans Entry span, by label'></a><figcaption>3. Entries: start point of each inspect_spans Entry span, by label</figcaption></figure>
+<figure><a href='img/rivmap100_contour_spiral_3DRough_stock.png'><img loading='lazy' src='img/rivmap100_contour_spiral_3DRough_stock.png' alt='4. Final stock (screenshot_simulation; colour by height, not deviation)'></a><figcaption>4. Final stock (screenshot_simulation; colour by height, not deviation)</figcaption></figure>
+<div class='crops'>
+<figure><a href='img/rivmap100_contour_spiral_3DRough_crop_1.png'><img loading='lazy' src='img/rivmap100_contour_spiral_3DRough_crop_1.png' alt='crop 1'></a><figcaption>crop 1: bottom-left: circle stacks, one entry per circle (V1, V2)</figcaption></figure>
+<figure><a href='img/rivmap100_contour_spiral_3DRough_crop_2.png'><img loading='lazy' src='img/rivmap100_contour_spiral_3DRough_crop_2.png' alt='crop 2'></a><figcaption>crop 2: slot at y 29: bead chain of helix entries (N1)</figcaption></figure>
+<figure><a href='img/rivmap100_contour_spiral_3DRough_crop_3.png'><img loading='lazy' src='img/rivmap100_contour_spiral_3DRough_crop_3.png' alt='crop 3'></a><figcaption>crop 3: top-right: circle stack (V1, V2)</figcaption></figure>
+</div>
+<h3>Hard bars</h3><table>
+<tr><th>Bar 1: 0 rapid + 0 holder collisions</th><td><span class='PASS'>PASS</span> rapid collisions 0 (run_simulation rapid_collision_count, per op and project); holder collisions 0 (collision_check collision_count per rough op)</td></tr>
+<tr><th>Bar 2: coverage audit</th><td><span class='NM'>NOT MEASURED</span> No coverage instrument reaches an adaptive3d op through MCP. run_simulation / get_diagnostics per_toolpath untouched_material_mm2, reached_uncut_estimate_mm2, truncated_core_mm2, unmachined_band_area_mm2 are all null (null = not measured, stock/CLAUDE.md). narrate_toolpath: &#x27;Standing material: not measured&#x27;. metrology/union_coverage.rs is test-support only.</td></tr>
+<tr><th>Bar 3a: mesh gouge on emitted moves</th><td><span class='NM'>NOT MEASURED</span> No mesh-gouge instrument for this op: the model gouge guard (compute/model_gouge.rs, safety.cuts_into_model) is ModelGougeRule::Exempt for 3D Adaptive (compute/catalog/registry.rs REG_ADAPTIVE3D). The cut-trace issue kinds are only air_cut and low_engagement. The stock-side sim-triage ids project.crosses_standing_material and project.link_cuts_stock were looked for in get_toolpath_diagnostics and run_simulation triage.</td></tr>
+<tr><th>Bar 3b: stock-side over-cut / link plough</th><td><span class='PASS'>0 reported</span> neither id appears in the run_simulation triage or get_toolpath_diagnostics. 3D Rough: crosses_standing_material absent, link_cuts_stock absent</td></tr>
+<tr><th>Bar 4: generation, no refusal</th><td><span class='PASS'>PASS</span> every enabled op generated; wall clock 3D Rough 5.2 s</td></tr>
+</table>
+<h3>V1-V3</h3><p class='v'><b>V1</b> Present and strong. Dozens of overlapping full circles stack on one spot, each with its own entry (crops 1 and 3). They fill the narrow residue between the wraps.</p>
+<p class='v'><b>V2</b> Present and strong. The stacked circles overlap almost fully, so most of each circle cuts air; entry_s is 6 100 s of the 7 085 s op runtime.</p>
+<p class='v'><b>V3</b> Present. The wraps follow the outer square walls (diagonal seams to the corners in the cut view); the lobes and channels are cleared by the circle clusters.</p>
+<h3>New defects</h3><ul>
+<li>N1 bead chain again, along the slot at (40-52, 29) (crop 2).</li>
+<li>Z 8 holds 22 287 cutting moves and 790 planner cut pieces (narrate).</li>
+<li>Peak axial DOC 2.5 mm against 2.0 mm commanded (narrate).</li>
+<li>N5 standing spurs: passing only. 7 free-standing fins at mid-rough, up to 9.4 mm long, 2.0 mm tall (one level), 0.4 mm wide, for example (58.8, 31.3) and (60.2, 41.6); 0 free-standing at the end (spur map: img/rivmap100_contour_spiral_spurs_end.png).</li>
+<li>N9 narrow valleys left higher (as AgentSearch).</li>
+</ul>
+<h3>The three questions (my reading)</h3>
+<p class='v'><b>Links</b> No. 1 061 keep-down links (with 745 nested helix and 368 nested plunge descents) form dense clusters all over the part; only 53 retracts.</p>
+<p class='v'><b>Path</b> The outer wraps make sense; the residue clean-up does not (circle stacks).</p>
+<p class='v'><b>Part</b> As AgentSearch: the narrow valleys stay higher than in ContourParallel (dropped sub-tool regions 14 / 69 / 89 at Z 6 / 4 / 2).</p>
+<h3>Phase 3: 3D Rough</h3><table>
+<tr><th>Retracts (G0 runs, narrate_toolpath)</th><td>53</td></tr>
+<tr><th>Entries by type (top-level inspect_spans Entry labels)</th><td>helix entry 52, keep-down link 1061</td></tr>
+<tr><th>Nested Entry spans inside those (the descent parts)</th><td>helix entry 745, plunge entry 368</td></tr>
+<tr><th>Link bridges (inspect_spans LinkBridge)</th><td>1113</td></tr>
+<tr><th>Regions (inspect_spans Region)</th><td>0</td></tr>
+<tr><th>Levels (DepthPass)</th><td>5 (Z 10, 8, 6, 4, 2); no Z 0.5 level; Z 8 alone: 22 287 cutting moves, 790 planner cut pieces; dropped sub-tool regions 14 / 69 / 89 at Z 6 / 4 / 2</td></tr>
+<tr><th>Entry time (cut trace runtime_by_intent.entry_s)</th><td>6100.0 s of 7085.1 s</td></tr>
+</table>
+<h3>Information: 3D Rough</h3><table class='note'>
+<tr><th>Cycle time (op, simulation)</th><td>7085.1 s</td></tr>
+<tr><th>Cycle time (project incl. prerequisites)</th><td>7545.4 s</td></tr>
+<tr><th>Move count</th><td>35680</td></tr>
+<tr><th>Cutting / rapid distance</th><td>64529.5 mm / 3030.9 mm</td></tr>
+<tr><th>Sim resolution</th><td>0.5 mm (auto, stored)</td></tr>
+<tr><th>Measurability</th><td>radial_engagement, air_cut, chip_engagement NOT MEASURABLE: cell_too_coarse_for_tip_contact, blind_fraction 0.72</td></tr>
+<tr><th>trochoid_cap_mult (stored)</th><td>1.6</td></tr>
+<tr><th>Other</th><td>peak axial DOC 2.50 mm at move 33879 (Z 6) against a commanded 2.0 mm (narrate). Estimated removed volume (project) 69 476 mm3.</td></tr>
+</table>
+</section>
+</div></body></html>

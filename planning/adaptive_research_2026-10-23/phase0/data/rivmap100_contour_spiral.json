@@ -1,0 +1,61 @@
+{
+ "fixture": "rivmap100",
+ "strategy": "contour_spiral",
+ "label": "ContourSpiral",
+ "project": "phase0/projects/rivmap100_contour_spiral.toml",
+ "gcode": "phase0/gcode/rivmap100_contour_spiral.nc",
+ "gui": {
+  "mtime_unix": 1792706351.8232872,
+  "gui_pid": 946291
+ },
+ "ops": [
+  {
+   "name": "3D Rough",
+   "index": 1,
+   "img": "rivmap100_contour_spiral_3DRough",
+   "trochoid_cap_mult": 1.6,
+   "gen_wall_s": 5.2,
+   "moves": 35680,
+   "cut_mm": 64529.5,
+   "rapid_mm": 3030.9,
+   "op_runtime_s": 7085.1,
+   "entry_s": 6100.0,
+   "cutting_s": 677.2,
+   "linking_s": 241.3,
+   "rapid_s": 66.6,
+   "air_pct_total": 96.1,
+   "retracts": 53,
+   "entries": {
+    "helix entry": 52,
+    "keep-down link": 1061
+   },
+   "link_bridge": 1113,
+   "regions": 0,
+   "levels": "5 (Z 10, 8, 6, 4, 2); no Z 0.5 level; Z 8 alone: 22 287 cutting moves, 790 planner cut pieces; dropped sub-tool regions 14 / 69 / 89 at Z 6 / 4 / 2",
+   "holder_collisions": 0,
+   "min_safe_stickout_mm": 45.0,
+   "rapid_collisions": 0,
+   "crosses_standing_material": "absent",
+   "link_cuts_stock": "absent",
+   "extra": "peak axial DOC 2.50 mm at move 33879 (Z 6) against a commanded 2.0 mm (narrate). Estimated removed volume (project) 69 476 mm3.",
+   "crops": [
+    1,
+    2,
+    3
+   ],
+   "entries_nested": {
+    "helix entry": 745,
+    "plunge entry": 368
+   }
+  }
+ ],
+ "sim": {
+  "resolution_mm": 0.5,
+  "mode": "auto",
+  "project_runtime_s": 7545.4,
+  "rapid_collision_count": 0,
+  "collision_count": 0,
+  "degraded": "radial_engagement, air_cut, chip_engagement NOT MEASURABLE: cell_too_coarse_for_tip_contact, blind_fraction 0.72"
+ },
+ "face": "Face 5: current on load, 1256 moves"
+}

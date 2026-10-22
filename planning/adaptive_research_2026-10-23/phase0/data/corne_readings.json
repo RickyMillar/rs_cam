@@ -1,0 +1,72 @@
+{
+ "contour_parallel": {
+  "V1": "Absent as loops. The square corners take chamfered offset joins (crop 1). In the narrow lower-left wedge the offsets converge and 5 plunge entries stack near the tip (crop 2).",
+  "V2": "Absent: 0-1 arcs per level (narrate); no full circles.",
+  "V3": "Absent on the tray: one region per level, offsets fill the whole tray. The copy op cuts each hex hole as one ring with its own plunge and retract (copy crop 1).",
+  "new": [
+   "N6 wall dips: the copy op runs along the outer wall at G-code Z -6.0 and dips to Z -7.5 at plunge feed about every 19 mm (G-code lines after the tool change; the copy cut view shows them as vertical ticks on the walls).",
+   "project.link_cuts_stock: 3D Rough 1 one link removes 6.50 mm (limit 6.30); copy three links, worst 3.38 mm (limit 3.30).",
+   "Peak axial DOC 11.25 mm (3D Rough 1, commanded 6.0) and 12.0 mm (copy, commanded 3.0) from narrate.",
+   "Cycle time not reproducible: the same saved project and identical moves gave 2 022.1 s, then 1 563.6 s on the re-run for N5 (feed modulation reads the previous simulation)."
+  ],
+  "q_links": "Mostly yes: the copy op visits the hole rows left to right in order; 3D Rough 1 has 90 retracts with long crossings between levels.",
+  "q_path": "Yes for the tray offsets; the holes are one ring each with a plunge at the ring.",
+  "q_part": "The tray and the outer band are cleared evenly; hex corners keep residue as a round tool must leave it.",
+  "ops": {
+   "3D Rough 1": {
+    "crops": {
+     "1": "top-right square corner: chamfered offset joins, no loops",
+     "2": "lower-left wedge: converging offsets, plunge entries stacked at the tip"
+    }
+   },
+   "3D Rough 1 (copy)": {
+    "crops": {
+     "1": "hex holes: one ring per hole, plunge on the ring, G0 between holes"
+    }
+   }
+  }
+ },
+ "agent_search": {
+  "V1": "Unclear: no corner loop sets; entries stack at a few spots (crop 1).",
+  "V2": "Absent: 3-6 arcs per level (narrate).",
+  "V3": "Present. A large spiral fills the left part of the tray; the right part is walked with short wiggles; the band outside the case wall is not cleared.",
+  "new": [
+   "N7 outer band not cleared: the band outside the case wall stays standing (olive, high) with deep round holes punched into it (crops 2 and 3, against ContourParallel). Planner gate post 0.073 / 0.121 / 0.121 / 0.311 (ContourParallel 0.000).",
+   "N5 standing spurs: present (see the N5 block).",
+   "Hex-hole cores: a small post stays in the middle of many holes after the copy op (GUI end view).",
+   "project.crosses_standing_material on the copy op: 4, peak 15.0 mm."
+  ],
+  "q_links": "No: 129 retracts and long crossings; keep-down links are short dashes scattered over the tray.",
+  "q_path": "No: one spiral, then a walk that leaves slivers and the outer band.",
+  "q_part": "No: tall spurs stand in the tray and the outer band is left with holes in it.",
+  "ops": {
+   "3D Rough 1": {
+    "crops": {
+     "1": "top rim band: entries and walks near the wall",
+     "2": "stock render, top rim: AgentSearch leaves the outer band standing with punched holes (N7)",
+     "3": "stock render, top rim: ContourParallel for comparison (band cleared)"
+    }
+   }
+  }
+ },
+ "contour_spiral": {
+  "V1": "Present along the medial seams: chains of small polygon loops (about 4 mm) with keep-down links between them (crop 1).",
+  "V2": "Absent as arcs (0-1 arcs per level); the seam loops are polygons and cut mostly cleared ground.",
+  "V3": "Present: wraps follow the walls; the seams and the centre are cleaned by the loop chains; the outer band is left standing as in AgentSearch.",
+  "new": [
+   "N1 bead chain along the medial seams (crop 1).",
+   "N7 outer band not cleared (stock render, same as AgentSearch). Planner gate post 0.070 / 0.118 / 0.118 / 0.270.",
+   "Z 0.5 level: 357 planner cut pieces (narrate)."
+  ],
+  "q_links": "No: 496 keep-down links along the seams plus 118 retracts with long crossings.",
+  "q_path": "The wraps make sense; the seam clean-up does not.",
+  "q_part": "No spurs at 7 min, but the outer band stays standing with holes.",
+  "ops": {
+   "3D Rough 1": {
+    "crops": {
+     "1": "medial seam: chain of small loops with keep-down links (V1, N1)"
+    }
+   }
+  }
+ }
+}

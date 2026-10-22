@@ -1,0 +1,53 @@
+{
+ "title": "Corne case roughing baseline",
+ "header": [
+  [
+   "Fixture",
+   "Corne case (keyboard case tray with hex switch holes)"
+  ],
+  [
+   "Fixture project (read only)",
+   "<code>planning/corne_case_analysis_2026-09-18/corne_job_corrected.toml</code>"
+  ],
+  [
+   "Saved projects",
+   "<code>phase0/projects/&lt;fixture&gt;_&lt;strategy&gt;.toml</code> (one per column)"
+  ],
+  [
+   "Code",
+   "HEAD <code>61a8d4b4</code> (commit <code>df6de926</code> on top adds only planning files)"
+  ],
+  [
+   "Binary",
+   "<code>/home/ricky/personal_repos/rs_cam/target/release/rs_cam_gui</code>"
+  ],
+  [
+   "Binary mtime",
+   "1792706351.82 (2026-10-23 10:59:11 NZDT), checked with gui_status before each column"
+  ],
+  [
+   "Binary sha256",
+   "<code>51cbb71324e9b8101a4ec4c52854774e0bc53100d2d6762209420df39aa1d438</code> (from the brief; not re-hashed)"
+  ],
+  [
+   "GUI pid",
+   "ContourParallel: 946291 (first run) and 84659 (N5 re-run); AgentSearch and ContourSpiral: 84659. The GUI was restarted between columns on the same binary (mtime unchanged)."
+  ],
+  [
+   "Date",
+   "2026-10-23"
+  ],
+  [
+   "Tools",
+   "<code>phase0/tools/links_entries.py</code>, <code>zoom.py</code>, <code>build_page.py</code>, <code>ingest.py</code>"
+  ]
+ ],
+ "bar2_note": "No coverage instrument reaches an adaptive3d op through MCP. run_simulation / get_diagnostics per_toolpath untouched_material_mm2, reached_uncut_estimate_mm2, truncated_core_mm2, unmachined_band_area_mm2 are all null (null = not measured, stock/CLAUDE.md). narrate_toolpath: 'Standing material: not measured'. metrology/union_coverage.rs is test-support only.",
+ "bar3_note": "No mesh-gouge instrument for this op: the model gouge guard (compute/model_gouge.rs, safety.cuts_into_model) is ModelGougeRule::Exempt for 3D Adaptive (compute/catalog/registry.rs REG_ADAPTIVE3D). The cut-trace issue kinds are only air_cut and low_engagement. The stock-side sim-triage ids project.crosses_standing_material and project.link_cuts_stock were looked for in get_toolpath_diagnostics and run_simulation triage.",
+ "intro": [
+  "Ops enabled: 3D Rough 1 (6 mm flat, fresh stock, depth per pass 6) and 3D Rough 1 (copy) (3 mm flat, from the remaining stock of 3D Rough 1, depth per pass 3). Waterline 3 disabled. Setup 2 holds no toolpaths (list_setups), so nothing runs there. Only clearing_strategy changes between columns (both roughs).",
+  "N5 standing spurs (operator, 2026-10-23, watching the GUI): 'as it's milling down it leaves tall spurs of material; these could snap and cause issues; prominent ones 7 min in'. The operator watched the AgentSearch column (the GUI held that project, re-simulated at 0.10 mm, when they saw the spurs). Each column has an N5 block: the GUI simulation at about 7 min and at the end, and a heightmap replay of the exported .nc (phase0/tools/spurs.py: flat end mill stamps on a 0.2 mm grid; a spur is material more than 1.5 mm tall and less than 2 mm wide; free-standing means no wide material within 2 mm). The replay ignores the part, so a corner residue against a wall counts as attached, not free.",
+  "The 7-minute move comes from phase0/tools/move_time.py (G-code feed times scaled 1.016 to the AgentSearch cut trace, max error 0.8 s over 3 000 trace points; the ContourParallel end estimate is 966 s against 973 s simulated).",
+  "The stock render colours by height (blue low, red high). It does not show deviation from the model."
+ ]
+}

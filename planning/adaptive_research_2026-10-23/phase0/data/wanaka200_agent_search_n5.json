@@ -1,0 +1,16 @@
+{
+ "verdict": "present",
+ "at_7min": "Front rough at mid-op (move 3250): 26 free-standing, up to 4.2 mm tall (one level), 0.3-1.2 mm wide.",
+ "at_end": "Back rough: 67 thin patches, 19 free-standing; the tallest are 15.1-15.6 mm tall and 0.3-0.7 mm wide at the board edge, e.g. (162.1, 215.0), (78.8, 218.1), (26.4, 174.6). Front rough: 31 free-standing at the end, up to 4.0 mm tall.",
+ "mechanism": "As on the Corne case: the walk leaves slivers between passes that stack over the levels; on the back rough they stand at the edge band where the spiral ends.",
+ "imgs": [
+  [
+   "wanaka200_agent_search_spurs_back_end.png",
+   "back rough replay to the end"
+  ],
+  [
+   "wanaka200_agent_search_spurs_front_end.png",
+   "front rough replay to the end"
+  ]
+ ]
+}

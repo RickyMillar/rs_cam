@@ -1,0 +1,60 @@
+{
+ "fixture": "rivmap100",
+ "strategy": "contour_parallel",
+ "label": "ContourParallel",
+ "project": "phase0/projects/rivmap100_contour_parallel.toml",
+ "gcode": "phase0/gcode/rivmap100_contour_parallel.nc",
+ "gui": {
+  "mtime_unix": 1792706351.8232872,
+  "gui_pid": 946291
+ },
+ "ops": [
+  {
+   "name": "3D Rough",
+   "index": 1,
+   "img": "rivmap100_contour_parallel_3DRough",
+   "trochoid_cap_mult": 1.6,
+   "gen_wall_s": 5.2,
+   "moves": 17649,
+   "cut_mm": 42286.6,
+   "rapid_mm": 7689.9,
+   "op_runtime_s": 3262.8,
+   "entry_s": 2364.3,
+   "cutting_s": 612.7,
+   "linking_s": 142.3,
+   "rapid_s": 143.5,
+   "air_pct_total": 86.3,
+   "retracts": 104,
+   "entries": {
+    "helix entry": 101,
+    "keep-down link": 136
+   },
+   "link_bridge": 381,
+   "regions": 0,
+   "levels": "6 (Z 10, 8, 6, 4, 2, 0.5 setup frame)",
+   "holder_collisions": 0,
+   "min_safe_stickout_mm": 45.0,
+   "rapid_collisions": 0,
+   "crosses_standing_material": "absent",
+   "link_cuts_stock": "absent",
+   "crops": [
+    1,
+    2,
+    3
+   ],
+   "entries_nested": {
+    "helix entry": 59,
+    "plunge entry": 178
+   }
+  }
+ ],
+ "sim": {
+  "resolution_mm": 0.5,
+  "mode": "auto",
+  "project_runtime_s": 3723.2,
+  "rapid_collision_count": 0,
+  "collision_count": 0,
+  "degraded": "radial_engagement, air_cut, chip_engagement degraded: cell_too_coarse_for_tip_contact, blind_fraction 0.49"
+ },
+ "face": "Face 5: current on load (computing when the project opened), 1256 moves"
+}

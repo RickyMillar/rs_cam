@@ -1,0 +1,24 @@
+{
+ "verdict": "absent (no free-standing spur); attached hair-thin cusps at the inner wall",
+ "at_7min": "Replay to move 3968 of 3D Rough 1 (about 420 s; GUI clock 8:02 of 26:04): 8 thin patches, 0 free-standing. All are 0.2-0.3 mm cusps against the inner case wall (y 95-100) or the outer rim. The GUI view shows the Z 17 level finished with a clean floor.",
+ "at_end": "Replay to the end of both roughs: 160 thin patches, 0 free-standing (hex-corner residue and wall cusps).",
+ "mechanism": "Offset rings at each level overlap fully; no sliver stays between passes.",
+ "imgs": [
+  [
+   "corne_contour_parallel_crop_spurs_gui_420s.png",
+   "GUI simulation at move 3968 (8:02): clean floor at Z 17"
+  ],
+  [
+   "corne_contour_parallel_spurs_420s.png",
+   "heightmap replay to move 3968"
+  ],
+  [
+   "corne_contour_parallel_crop_spurs_gui_end.png",
+   "GUI simulation at the end"
+  ],
+  [
+   "corne_contour_parallel_spurs_end.png",
+   "heightmap replay to the end of both roughs"
+  ]
+ ]
+}

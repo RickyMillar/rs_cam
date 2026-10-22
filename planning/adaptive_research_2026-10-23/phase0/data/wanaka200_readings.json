@@ -1,0 +1,61 @@
+{
+ "contour_parallel": {
+  "V1": "Absent as loops on the back (square stock, square offsets). On the front, unclear: small offset sets stand around the islands.",
+  "V2": "Absent: 0-1 arcs per level (narrate).",
+  "V3": "Present on the front: offsets follow the outer square; the terrain valleys are cleared late by short rows (cut view).",
+  "new": [
+   "N8 hop storm on the back rough: 1 726 G0 runs. 964 go to safe Z; the rest lift only 0.5 mm over the level and move on (G-code Z -4.46 / -9.92 / -15.38). The links view is a solid field of G0 lines. Z 8.62 holds 1 580 cut runs.",
+   "project.link_cuts_stock CRITICAL on the back rough: 20 samples on 12 link moves over 5.96 mm; worst link move 5147 removes 11.26 mm.",
+   "Peak axial DOC 17.13 mm on the back rough (commanded 5.46).",
+   "Cuts with no material at the last level on both roughs (narrate: 'planner emitted cuts but no material to cut')."
+  ],
+  "q_links": "No: the back rough lifts and hops 1 726 times and some fed links plough 11 mm of stock.",
+  "q_path": "The offsets are orderly; the back rough's Z 8.62 level breaks into 1 580 short runs.",
+  "q_part": "Both sides look roughed evenly at the render scale.",
+  "ops": {
+   "2 Back Rough": {
+    "crops": {
+     "1": "Z 8.62 zone: short offset pieces, many entries, G0 hops"
+    }
+   }
+  }
+ },
+ "agent_search": {
+  "V1": "Absent: no corner loop sets.",
+  "V2": "Absent: 3-5 arcs per level.",
+  "V3": "Present: one big spiral per level on the back; the corners and edges are walked late with short wiggles. On the front two spiral centres fill the open ground; the valleys are walked.",
+  "new": [
+   "N5 standing spurs: present (see the N5 block); up to 15.6 mm tall at the back edge band.",
+   "Peak axial DOC 10.92 mm on the back (commanded 5.46) and 7.91 mm on the front (commanded 4.2).",
+   "Retracts 190 (back) and 165 (front); project cycle 2 416 s."
+  ],
+  "q_links": "Mostly yes: few long G0 crossings; keep-down links are short dashes between spiral wraps.",
+  "q_path": "The spiral makes sense on open ground; the edge and valley walk does not.",
+  "q_part": "The front looks roughed like the other columns; tall thin spurs stand at the back edges.",
+  "ops": {}
+ },
+ "contour_spiral": {
+  "V1": "Present: a chain of small polygon loops along each medial seam (the X diagonals and the horizontal seam at y 125 on the back), joined by keep-down links (crop 1). On the front, dense loop clusters round the valleys (front crop 1).",
+  "V2": "Present in another form: the seam loops overlap the cleared wraps, so most of each loop cuts air; entry time 921 s of 3 048 s (back) and 1 448 s of 4 097 s (front).",
+  "V3": "Present: wraps follow the stock walls (concentric squares on the back); the front's valleys fill late through loop clusters.",
+  "new": [
+   "N1 bead chain along the medial seams (back crop 1).",
+   "4 414 keep-down links on the front rough; 3 842 planner cut pieces at Z 2.8."
+  ],
+  "q_links": "No: thousands of keep-down links in clusters plus 649 retracts on the front.",
+  "q_path": "The wraps make sense; the seam and valley clean-up does not.",
+  "q_part": "Both sides look roughed like the other columns at the render scale; a few short nubs stand on the front.",
+  "ops": {
+   "2 Back Rough": {
+    "crops": {
+     "1": "medial seam at y 125: chain of polygon loops with keep-down links (V1, N1)"
+    }
+   },
+   "6 3D Rough (front)": {
+    "crops": {
+     "1": "valley cluster: loops and entries packed round a valley"
+    }
+   }
+  }
+ }
+}
