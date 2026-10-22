@@ -858,3 +858,19 @@ default rule that already selects every served item on every layer.
     refusal names the tool kinds that the op needs.
   - A refused add goes to the log only. Fix: a toast with the refusal
     text. The same holds for every refused add, not only Bore.
+- STEP picker (operator: "the edges of faces are also loops! and the
+  corners are points! but I cannot seem to select this"). A STEP model
+  gives face items only. Its face boundaries (loops, open edge chains) and
+  its vertices (points) are not items, so Profile, Trace, Chamfer and
+  Drill cannot pick them. Requirement for the UX review.
+- Profile on two STEP faces (operator: "it seems like it cut both to the
+  same height? not to the face?"). Measured on stepped_block.step: faces
+  3 and 5 picked, floor `Top Z` depth 12, so both cut to Z 8; the floor
+  "Each picked face" gives each its own plane, but the operator did not
+  find it. SAFETY FINDING: the top is "auto: faces" (Z 20) while the
+  stock top is Z 32 and no op ran before. The first level at Z 18 buries
+  the tool 14 mm (narrate: peak axial DOC 14.00 mm against 2.00 per
+  pass; 72 % heavy engagement). The top of a 2.5D op must not sit below
+  the material that stands at the start; check the P3.1 heights resolver.
+- Operator: "Overall I think we need a ux review for different
+  workflows". It is the planned picking UX pass, brought forward.
