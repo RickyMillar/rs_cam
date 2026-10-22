@@ -80,6 +80,13 @@
 //! Finish states `true` too: its VerySteep band ladders from the Top Z with
 //! `waterline_z_levels` (`ConstantStep`).
 //!
+//! UX-1b (operator ruling Q1, SAFETY) added the `face_top` column (a
+//! sixth table, [`frozen_ux1b`]): the auto Top Z of the op under a face
+//! pick. `HigherOfFaceAndStock` (the higher of the face top and the stock
+//! top, the depth from the face) for the five `OpFloor` ops (UX-1), Face
+//! and Trace; `Face` for every other op. The column is new; no
+//! earlier answer moved.
+//!
 //! P6.0b (geometry selection, SAFETY) added the tenth transform bit,
 //! `finished_edge`: the op's cut can be a finished edge, so the dressup
 //! segment merge runs at most at `FlattenPolicy::UNTOLERANCED_MM`. Face
@@ -94,9 +101,9 @@
 )]
 
 use rs_cam_core::compute::catalog::{
-    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, FloorOwner,
-    GeometryRequirement, ItemUse, LutRoute, MoveCountModel, OperationConfig, OperationType,
-    RestUse, RowCapabilities, TerritoryXy,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, FaceTopRule,
+    FloorOwner, GeometryRequirement, ItemUse, LutRoute, MoveCountModel, OperationConfig,
+    OperationType, RestUse, RowCapabilities, TerritoryXy,
 };
 use rs_cam_core::compute::execute::LinkCeilingNeed;
 use rs_cam_core::ops::trace_path::TraceCompensation;
@@ -870,7 +877,63 @@ fn every_op_keeps_its_ladder_top_f033b() {
     }
 }
 
-/// P1: every `Capabilities` field has a frozen column in one of the five
+/// UX-1b: the `face_top` column, frozen per op kind. `true` is
+/// `FaceTopRule::HigherOfFaceAndStock`.
+#[rustfmt::skip]
+fn frozen_ux1b() -> Vec<(OperationType, bool)> {
+    use OperationType as O;
+    vec![
+    (O::Face, true),
+    (O::Pocket, true),
+    (O::Profile, true),
+    (O::Adaptive, true),
+    (O::VCarve, false),
+    (O::Inlay, false),
+    (O::InlayPlug, false),
+    (O::Zigzag, true),
+    (O::Trace, true),
+    (O::Drill, false),
+    (O::Bore, true),
+    (O::Chamfer, false),
+    (O::DropCutter, false),
+    (O::Adaptive3d, false),
+    (O::Waterline, false),
+    (O::Pencil, false),
+    (O::Scallop, false),
+    (O::UnifiedFinish, false),
+    (O::SteepShallow, false),
+    (O::RampFinish, false),
+    (O::SpiralFinish, false),
+    (O::RadialFinish, false),
+    (O::HorizontalFinish, false),
+    (O::ProjectCurve, false),
+    (O::AlignmentPinDrill, false),
+    ]
+}
+
+/// UX-1b: the row of each op kind and its default config give the frozen
+/// `face_top`. No config overrides it.
+#[test]
+fn every_op_keeps_its_face_top_rule_ux1b() {
+    let table = frozen_ux1b();
+    let ops: Vec<OperationType> = table.iter().map(|r| r.0).collect();
+    assert_eq!(ops, OperationType::ALL.to_vec());
+    for (op, clamps) in table {
+        let want = if clamps {
+            FaceTopRule::HigherOfFaceAndStock
+        } else {
+            FaceTopRule::Face
+        };
+        assert_eq!(op.capabilities().face_top, want, "{op:?} (kind)");
+        assert_eq!(
+            OperationConfig::new_default(op).capabilities().face_top,
+            want,
+            "{op:?} (config)"
+        );
+    }
+}
+
+/// P1: every `Capabilities` field has a frozen column in one of the six
 /// tables, or a named test of its own. The destructure has no `..`, so a
 /// new field does not compile here until this list (and a table) states it.
 #[test]
@@ -900,5 +963,6 @@ fn every_field_has_a_frozen_column() {
         lut_route: _,                  // frozen_d2()
         item_use: _,                   // frozen_p1()
         ladder_includes_top: _,        // frozen_f033b()
+        face_top: _,                   // frozen_ux1b()
     } = OperationType::Pocket.capabilities();
 }

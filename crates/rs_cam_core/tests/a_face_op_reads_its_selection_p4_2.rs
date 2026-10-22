@@ -11,9 +11,12 @@
 //! 2. A viewport face click (`pick_edit`) on a Face op under the default
 //!    replaces the stock rule with that one pick (ruling L-6). An explicit
 //!    `AddPick` (MCP) adds the pick and keeps the stock rule.
-//! 3. The picked face moves the AUTO top to the face Z in the SETUP frame:
-//!    the face Z on a Top setup, and `stock top - face Z` on a
-//!    `FaceUp::Bottom` setup.
+//! 3. The picked face moves the depth base of an AUTO top to the face Z in
+//!    the SETUP frame: the face Z on a Top setup, and `stock top - face Z`
+//!    on a `FaceUp::Bottom` setup. UX-1b (operator ruling Q1, SAFETY): the
+//!    top itself is the higher of that face and the stock top, so here it
+//!    stays at the stock top in the setup frame (the depth base was the top
+//!    before UX-1b).
 //! 4. A Face op on an STL (a model with no item) and a Face op whose model
 //!    id names no model both generate with the default: the stock rule
 //!    reads no model, so no `MissingSource` refusal comes.
@@ -270,6 +273,12 @@ fn stored(session: &ProjectSession) -> Selection {
 /// The top Z that generation hands the op: the request snapshot of the
 /// generation job, the field the face override writes.
 fn op_top_z(session: &mut ProjectSession) -> f64 {
+    op_heights(session).0
+}
+
+/// The top Z and the depth base that generation hands the op (the request
+/// snapshot).
+fn op_heights(session: &mut ProjectSession) -> (f64, f64) {
     let cancel = AtomicBool::new(false);
     let JobHandle::GenerateToolpath(handle) = session
         .start(
@@ -280,9 +289,15 @@ fn op_top_z(session: &mut ProjectSession) -> f64 {
     else {
         panic!("the generate_toolpath row answers its own handle variant");
     };
-    handle.request_snapshot()["heights"]["top_z"]
-        .as_f64()
-        .expect("the snapshot holds the top")
+    let snapshot = handle.request_snapshot();
+    (
+        snapshot["heights"]["top_z"]
+            .as_f64()
+            .expect("the snapshot holds the top"),
+        snapshot["heights"]["depth_base_z"]
+            .as_f64()
+            .expect("the snapshot holds the depth base"),
+    )
 }
 
 fn generate(session: &mut ProjectSession) -> Toolpath {
@@ -397,10 +412,14 @@ fn a_face_pick_sets_the_auto_top_in_the_setup_frame_p4_2() {
         "non-vacuity: the default top is the stock top {world_stock_top}, got {before}"
     );
     let _ = click_face(&mut s, 0);
-    let top = op_top_z(&mut s);
+    let (top, base) = op_heights(&mut s);
     assert!(
-        (top - TOP_FACE_Z).abs() < EPS,
-        "Top setup: the auto top is {top}, want the face Z {TOP_FACE_Z}"
+        (base - TOP_FACE_Z).abs() < EPS,
+        "Top setup: the depth base is {base}, want the face Z {TOP_FACE_Z}"
+    );
+    assert!(
+        (top - world_stock_top).abs() < EPS,
+        "Top setup: the auto top is {top}, want the stock top {world_stock_top} (UX-1b)"
     );
 
     // A Bottom flip maps a world Z to `stock top - Z` in the zero-rooted
@@ -408,11 +427,17 @@ fn a_face_pick_sets_the_auto_top_in_the_setup_frame_p4_2() {
     let mut s = session(Some(part_model()), FaceUp::Bottom);
     let _ = click_face(&mut s, 1);
     let want = world_stock_top - BOTTOM_FACE_Z;
-    let top = op_top_z(&mut s);
+    let (top, base) = op_heights(&mut s);
     assert!(
-        (top - want).abs() < EPS,
-        "Bottom setup: the auto top is {top}, want {want} (the down face at model Z \
+        (base - want).abs() < EPS,
+        "Bottom setup: the depth base is {base}, want {want} (the down face at model Z \
          {BOTTOM_FACE_Z} in the setup frame)"
+    );
+    // The setup frame is zero-rooted at the stock bottom.
+    assert!(
+        (top - stock.z).abs() < EPS,
+        "Bottom setup: the auto top is {top}, want the setup-frame stock top {} (UX-1b)",
+        stock.z
     );
 }
 

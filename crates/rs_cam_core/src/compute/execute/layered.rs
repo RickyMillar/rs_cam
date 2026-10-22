@@ -966,6 +966,7 @@ mod tests {
             retract_z: 10.0,
             feed_z: 8.0,
             top_z: 0.0,
+            depth_base_z: 0.0,
             bottom_z: -5.0,
             top_pinned: false,
             bottom_pinned: false,

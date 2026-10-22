@@ -58,6 +58,11 @@ pub fn diagnostics_from_static_checks(
 #[derive(Debug, Clone)]
 pub struct ResolvedHeights {
     pub top_z: f64,
+    /// UX-1b: the Z that the depth dial of an `OpDial` op measures from
+    /// (`compute::config::ResolvedHeights::depth_base_z`). Under a face
+    /// pick on Face or Trace it is the face top while `top_z` is the stock
+    /// top. Else it is `top_z`.
+    pub depth_base_z: f64,
     pub bottom_z: f64,
     pub feed_z: f64,
     pub retract_z: f64,
@@ -100,6 +105,7 @@ impl ResolvedHeights {
     pub fn from_context(ctx: &HeightContext) -> Self {
         Self {
             top_z: ctx.stock_top_z,
+            depth_base_z: ctx.stock_top_z,
             bottom_z: ctx.stock_bottom_z,
             feed_z: ctx.stock_top_z,
             retract_z: ctx.safe_z,
@@ -131,6 +137,7 @@ impl ResolvedHeights {
             retract_z: self.retract_z,
             feed_z: self.feed_z,
             top_z: self.top_z,
+            depth_base_z: self.depth_base_z,
             bottom_z: self.bottom_z,
             top_pinned: false,
             bottom_pinned: false,
@@ -143,6 +150,7 @@ impl ResolvedHeights {
     ) -> Self {
         Self {
             top_z: resolved.top_z,
+            depth_base_z: resolved.depth_base_z,
             bottom_z: resolved.bottom_z,
             feed_z: resolved.feed_z,
             retract_z: resolved.retract_z,
@@ -642,7 +650,8 @@ pub fn depth_beyond_stock(op: &OperationConfig, h: &ResolvedHeights) -> Option<D
     // `top_z` is the stock top, so `top - depth` would be wrong there.
     // P3.2: a floor that names another reference than the Top Z
     // (`DepthSemantics::Resolved`) is the resolved bottom of the session
-    // heights. Every other depth is `top - depth`, as before.
+    // heights. Every other depth measures from the depth base (UX-1b:
+    // the face top under a face pick on Face or Trace; else the top).
     let op_floor_z = h.op_floor_z.filter(|_| {
         matches!(
             op.capabilities().floor_owner,
@@ -654,7 +663,7 @@ pub fn depth_beyond_stock(op: &OperationConfig, h: &ResolvedHeights) -> Option<D
         crate::compute::catalog::DepthSemantics::Explicit(_)
         | crate::compute::catalog::DepthSemantics::DerivedStockTop(_)
         | crate::compute::catalog::DepthSemantics::None => {
-            h.top_z - op.default_depth_for_heights().abs()
+            h.depth_base_z - op.default_depth_for_heights().abs()
         }
     });
     let excess_mm = stock_bottom_z - cut_floor_z;

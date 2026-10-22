@@ -107,6 +107,7 @@ fn generate(tool_cfg: &ToolConfig) -> Generated {
         retract_z: bbox.max.z + 5.0,
         feed_z: bbox.max.z + 1.0,
         top_z: bbox.max.z,
+        depth_base_z: bbox.max.z,
         bottom_z: bbox.min.z,
         top_pinned: true,
         bottom_pinned: true,

@@ -691,8 +691,10 @@ impl LayeredOp for ProfilePass<'_> {
 /// F-028: the ladder anchors at `heights.top_z`, which under Auto follows
 /// `ctx.stock_top_z`. An identity setup lands at the world stock top and a
 /// non-identity setup at the local stock top, both in the frame the
-/// toolpath is stamped into. A picked face moves an Auto top to the face
-/// (the 2.5D rule of the session).
+/// toolpath is stamped into. A picked face below the stock top keeps the
+/// Auto top at the stock top and moves the depth base to the face (UX-1b),
+/// so the ladder starts at the stock top and ends at the face less the
+/// depth.
 pub(crate) fn generate_face(
     ctx: &ExecutionContext<'_>,
     prepared: &Prepared<'_>,
@@ -811,12 +813,14 @@ impl LayeredOp for FacePass<'_> {
         Ok(std::borrow::Cow::Borrowed(self.outlines.as_slice()))
     }
 
-    /// The Face ladder of the config, from `heights.top_z`. Face does not
-    /// read `cutting_levels`: its ladder was always its own depth dial
-    /// from the stock top.
+    /// The Face ladder of the config, from `heights.top_z` to the depth
+    /// dial below `heights.depth_base_z` (UX-1b: under a face pick the top
+    /// is the stock top and the base is the face top). Face does not read
+    /// `cutting_levels`: its ladder is its own depth dial.
     fn ladder(&self, ctx: &ExecutionContext<'_>) -> Result<Vec<f64>, OperationError> {
         Ok(crate::ops::face::face_levels(
             ctx.heights.top_z,
+            ctx.heights.depth_base_z,
             self.cfg.depth,
             self.cfg.depth_per_pass,
         ))

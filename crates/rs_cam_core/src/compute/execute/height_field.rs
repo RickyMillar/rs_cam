@@ -454,6 +454,7 @@ mod tests {
             retract_z: 30.0,
             feed_z: 28.0,
             top_z: 25.0,
+            depth_base_z: 25.0,
             bottom_z: 0.0,
             top_pinned: false,
             bottom_pinned: false,

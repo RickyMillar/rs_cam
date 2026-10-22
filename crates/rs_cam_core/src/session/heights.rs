@@ -16,9 +16,11 @@
 //!    (defect D-A: the GUI and MCP did not apply this step). UX-1 (operator
 //!    ruling Q1, SAFETY): the auto top is the higher of the face top and
 //!    the stock top, so the first level never starts inside the material.
-//!    The depth still measures from the face top (`depth_base_z`). Only an
-//!    op whose floor is its `Floor` field (`FloorOwner::OpFloor`) takes the
-//!    clamp; every other op keeps the face top (`clamps_face_top`).
+//!    The depth still measures from the face top (`depth_base_z`, which
+//!    `ResolvedHeights::depth_base_z` carries to the ladder). An op takes
+//!    the clamp when its row states `FaceTopRule::HigherOfFaceAndStock`
+//!    (`clamps_face_top`): the `OpFloor` ops (UX-1), Face and Trace
+//!    (UX-1b). Every other op keeps the face top.
 //!
 //! P3.2: the floor of a Pocket, Profile, Zigzag or Adaptive 2D
 //! (`compute::floor::Floor`) resolves against the context of step 1 into
@@ -59,7 +61,7 @@
 use std::sync::Arc;
 
 use crate::compute::BoundarySource;
-use crate::compute::catalog::{FloorOwner, OperationType};
+use crate::compute::catalog::{FaceTopRule, FloorOwner, OperationType};
 use crate::compute::config::{
     HeightContext, HeightMode, HeightOrderViolation, HeightReference, HeightsConfig,
     ResolvedHeights, added_refusals, height_order,
@@ -77,8 +79,9 @@ pub enum TopSource {
     /// Auto: the stock top in the setup frame.
     AutoStockTop,
     /// Auto: the up faces of the selection (setup frame). On an op that
-    /// `clamps_face_top` (an `OpFloor` op) the top is the higher of the highest face and the
-    /// stock top (UX-1); the depth measures from the highest face.
+    /// `clamps_face_top` (`FaceTopRule::HigherOfFaceAndStock`) the top is
+    /// the higher of the highest face and the stock top (UX-1, UX-1b); the
+    /// depth measures from the highest face.
     AutoFaces,
     /// The stored Top Z (Manual or from a reference).
     Pinned,
@@ -313,21 +316,15 @@ fn door_refusals(
         .collect()
 }
 
-/// UX-1: `true` when the auto top of `op` under a face pick is the higher
-/// of the face top and the stock top: an `OpFloor` op (Pocket, Profile,
-/// Zigzag, Adaptive 2D, Bore). Its floor measures from the face, so the
-/// clamp only adds levels above the face. An `OpDial` op (Trace, Face,
-/// Chamfer, V-Carve, the 3D finishers) derives its own floor or plane from
-/// `heights.top_z` and its dial; under the clamp that floor would move up
-/// to the stock top less the dial. A `HeightsBottom` op (Adaptive3d,
-/// Waterline, Unified Finish) has no depth dial, so its auto bottom under
-/// a face pick is the face top; the clamp would add a ladder from the
-/// stock top down to the face, a new cut with no measured defect. So both
-/// keep the face top until a sentry measures them.
+/// UX-1, UX-1b: `true` when the auto top of `op` under a face pick is the
+/// higher of the face top and the stock top. The op states it in its
+/// registry row (`Capabilities::face_top`). The depth of the op measures
+/// from the face top (`depth_base_z`), so the clamp only adds levels above
+/// the face, and the first level starts at the stock top.
 fn clamps_face_top(op: &crate::compute::OperationConfig) -> bool {
-    match op.capabilities().floor_owner {
-        FloorOwner::OpFloor => true,
-        FloorOwner::OpDial | FloorOwner::HeightsBottom => false,
+    match op.capabilities().face_top {
+        FaceTopRule::HigherOfFaceAndStock => true,
+        FaceTopRule::Face => false,
     }
 }
 
@@ -366,10 +363,13 @@ fn apply_rule(
             } else {
                 face_top
             };
+            // UX-1b: the depth dial of the op (`cutting_levels`, the Face
+            // ladder, the auto bottom) measures from the face top.
+            let base = depth_base_z(cfg, heights.top_z, face_top_z);
+            heights.depth_base_z = base;
             if cfg.bottom_z.is_auto() {
                 // P3.2: the floor of an `OpFloor` op follows the face top by
                 // its own rule; every other op keeps `face top - depth`.
-                let base = depth_base_z(cfg, heights.top_z, face_top_z);
                 heights.bottom_z = match ctx.floor {
                     Some(floor) => floor.z(base),
                     None => base - ctx.op_depth.abs(),

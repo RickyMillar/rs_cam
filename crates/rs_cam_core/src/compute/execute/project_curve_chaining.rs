@@ -152,6 +152,7 @@ fn heights(safe_z: f64) -> ResolvedHeights {
         // snapshot uses is then the mesh itself, so the stock
         // `None` arms measure the link against the surface and nothing else.
         top_z: 0.0,
+        depth_base_z: 0.0,
         bottom_z: -12.0,
         top_pinned: true,
         bottom_pinned: true,

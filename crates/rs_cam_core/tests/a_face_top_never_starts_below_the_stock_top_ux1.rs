@@ -32,6 +32,22 @@
 //! down face of the model is up and its setup-frame Z is below the
 //! setup-frame stock top.
 //!
+//! UX-1b (the same ruling) adds Face and Trace, each on both setups. Their
+//! depth dial (`depth`, `depth_per_pass`) steps from the top to the depth
+//! below `ResolvedHeights::depth_base_z`, which is the face top here. For
+//! them, claim 3 also holds the last level at the face top less the depth.
+//! Measured before UX-1b (0.5 mm sim, fresh stock): Face Top setup top 20,
+//! levels [19], peak axial DOC 0.73 mm (the stock-aware entry ramp descends
+//! each row from the stock top); Face Bottom setup top 32, levels [31],
+//! peak 2.83 mm against 1 mm per pass; Trace Top setup top 20, first level
+//! 19.5, peak 12.5 mm against 0.5; Trace Bottom setup top 32, first level
+//! 31.5, peak 6.5 mm. After: Face first level 31 and 37, peak 0.73 and
+//! 1.0 mm; Trace first level 31.5 and 37.5, peak 0.5 and 0.5 mm.
+//!
+//! The other ops that take a face pick keep the face top
+//! (`FaceTopRule::Face`); `compute::catalog::capabilities` states why, and
+//! `every_op_keeps_its_face_top_rule_ux1b` freezes the column.
+//!
 //! Not in this file: an op on "After previous ops". The ruling says its
 //! remaining-stock clip skips the air levels; a cheap cascade fixture on a
 //! face pick does not exist yet (follow-up).
@@ -48,7 +64,8 @@
 //! `session::heights::apply_rule`. Both arms failed at claim 2. The measured
 //! values also break claims 4 and 5: Top arm top 20, first level 18, peak
 //! axial DOC 14.0 mm (the GUI measure); Bottom arm top 32, first level 30,
-//! peak axial DOC 8.0 mm.
+//! peak axial DOC 8.0 mm. UX-1b: the rows of Face and Trace set back to
+//! `FaceTopRule::Face`: the four Face and Trace arms failed at claim 2.
 //!
 //! ```text
 //! cargo test -p rs_cam_core -q --test a_face_top_never_starts_below_the_stock_top_ux1
@@ -74,7 +91,8 @@ use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::HeightMode;
 use rs_cam_core::compute::floor::Floor;
-use rs_cam_core::compute::operation_configs::ProfileConfig;
+use rs_cam_core::compute::operation_configs::{FaceConfig, ProfileConfig, TraceConfig};
+use rs_cam_core::compute::tool_config::ToolConfig;
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::geo::{P3, V3};
 use rs_cam_core::geometry::enriched_mesh::{
@@ -97,8 +115,17 @@ const FACE_Z10: u16 = 2;
 const FACE_BOTTOM: u16 = 3;
 /// The depth per pass of the Profile (mm), as in the GUI case.
 const DEPTH_PER_PASS: f64 = 2.0;
+/// The depth and the depth per pass of the Face (mm).
+const FACE_DEPTH: f64 = 1.0;
+const FACE_DEPTH_PER_PASS: f64 = 1.0;
+/// The depth and the depth per pass of the Trace (mm): the defaults of
+/// `TraceConfig`.
+const TRACE_DEPTH: f64 = 1.0;
+const TRACE_DEPTH_PER_PASS: f64 = 0.5;
 /// The tool diameter (mm).
 const TOOL_DIAMETER: f64 = 6.0;
+/// The Trace tool diameter (mm).
+const TRACE_TOOL_DIAMETER: f64 = 3.0;
 /// The stock reaches this far past the part in X and Y (mm), as in the GUI
 /// case (stock X -5..65, Y -5..45).
 const XY_MARGIN: f64 = 5.0;
@@ -166,14 +193,69 @@ fn stepped_block() -> LoadedModel {
     }
 }
 
-/// A Profile of `faces` with the floor `Top Z` `depth`, on a setup with
-/// `face_up`, over the stock Z `stock_bottom..32`.
-fn profile_session(
-    faces: &[u16],
+/// One arm: the op, its tool, its depth below the face and its step down.
+struct Arm {
+    name: &'static str,
+    op: OperationConfig,
+    tool: ToolConfig,
+    /// The depth below the face top (mm): the floor is the face top less
+    /// this.
     depth: f64,
-    face_up: FaceUp,
-    stock_bottom: f64,
-) -> ProjectSession {
+    /// The depth per pass of the op (mm).
+    step: f64,
+}
+
+/// A Profile with the floor `Top Z` `depth`.
+fn profile_arm(name: &'static str, depth: f64) -> Arm {
+    Arm {
+        name,
+        op: OperationConfig::Profile(ProfileConfig {
+            floor: Floor::top(depth),
+            depth_per_pass: DEPTH_PER_PASS,
+            selection: Selection::empty(),
+            ..ProfileConfig::default()
+        }),
+        tool: endmill_tool_config(TOOL_DIAMETER),
+        depth,
+        step: DEPTH_PER_PASS,
+    }
+}
+
+/// A Face of the picked faces (UX-1b).
+fn face_arm(name: &'static str) -> Arm {
+    Arm {
+        name,
+        op: OperationConfig::Face(FaceConfig {
+            depth: FACE_DEPTH,
+            depth_per_pass: FACE_DEPTH_PER_PASS,
+            selection: Selection::empty(),
+            ..FaceConfig::default()
+        }),
+        tool: endmill_tool_config(TOOL_DIAMETER),
+        depth: FACE_DEPTH,
+        step: FACE_DEPTH_PER_PASS,
+    }
+}
+
+/// A Trace of the outlines of the picked faces (UX-1b).
+fn trace_arm(name: &'static str) -> Arm {
+    Arm {
+        name,
+        op: OperationConfig::Trace(TraceConfig {
+            depth: TRACE_DEPTH,
+            depth_per_pass: TRACE_DEPTH_PER_PASS,
+            selection: Selection::empty(),
+            ..TraceConfig::default()
+        }),
+        tool: endmill_tool_config(TRACE_TOOL_DIAMETER),
+        depth: TRACE_DEPTH,
+        step: TRACE_DEPTH_PER_PASS,
+    }
+}
+
+/// The op of `arm` on `faces`, on a setup with `face_up`, over the stock
+/// Z `stock_bottom..32`.
+fn op_session(arm: &Arm, faces: &[u16], face_up: FaceUp, stock_bottom: f64) -> ProjectSession {
     let stock = StockConfig {
         x: 60.0 + 2.0 * XY_MARGIN,
         y: 40.0 + 2.0 * XY_MARGIN,
@@ -185,18 +267,12 @@ fn profile_session(
         ..StockConfig::default()
     };
     let mut builder = ProjectSessionBuilder::new().stock(stock);
-    let tool_idx = builder.add_tool(endmill_tool_config(TOOL_DIAMETER));
+    let tool_idx = builder.add_tool(arm.tool.clone());
     let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(stepped_block());
-    let op = OperationConfig::Profile(ProfileConfig {
-        floor: Floor::top(depth),
-        depth_per_pass: DEPTH_PER_PASS,
-        selection: Selection::empty(),
-        ..ProfileConfig::default()
-    });
     let mut cfg = toolpath_config(
-        "ux1 profile",
-        op,
+        arm.name,
+        arm.op.clone(),
         rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
     );
@@ -213,8 +289,9 @@ fn profile_session(
     session
 }
 
-/// The top Z that generation hands the op (the request snapshot).
-fn generated_top_z(session: &mut ProjectSession) -> f64 {
+/// The top Z and the depth base that generation hands the op (the request
+/// snapshot).
+fn generated_top_z(session: &mut ProjectSession) -> (f64, f64) {
     let cancel = AtomicBool::new(false);
     let JobHandle::GenerateToolpath(handle) = session
         .start(
@@ -225,9 +302,15 @@ fn generated_top_z(session: &mut ProjectSession) -> f64 {
     else {
         panic!("the generate_toolpath row answers its own handle variant");
     };
-    handle.request_snapshot()["heights"]["top_z"]
-        .as_f64()
-        .expect("the snapshot holds the top")
+    let snapshot = handle.request_snapshot();
+    (
+        snapshot["heights"]["top_z"]
+            .as_f64()
+            .expect("the snapshot holds the top"),
+        snapshot["heights"]["depth_base_z"]
+            .as_f64()
+            .expect("the snapshot holds the depth base"),
+    )
 }
 
 /// The simulated peak axial DOC of toolpath 0 on fresh stock (mm).
@@ -254,13 +337,16 @@ fn peak_axial_doc(session: &mut ProjectSession) -> f64 {
         .toolpath_summaries
         .iter()
         .find(|s| s.toolpath_id == ToolpathId::from_raw(0))
-        .expect("a summary for the Profile");
+        .expect("a summary for the op");
     summary.peak_axial_doc_mm
 }
 
 /// Claims 1 to 5 on one arm.
 #[track_caller]
-fn assert_arm(mut session: ProjectSession, arm: &str, depth: f64) {
+fn assert_arm(mut session: ProjectSession, arm: &Arm) {
+    let name = arm.name;
+    let step = arm.step;
+    let depth = arm.depth;
     let tc = session.toolpath_configs()[0].clone();
     let answer = session.toolpath_heights(&tc).expect("the heights resolve");
     let stock_top = answer.context.stock_top_z;
@@ -268,38 +354,51 @@ fn assert_arm(mut session: ProjectSession, arm: &str, depth: f64) {
 
     // 1. Non-vacuity: the face top is below the stock top.
     assert!(
-        face_top < stock_top - DEPTH_PER_PASS,
-        "{arm}: the face top {face_top} is not below the stock top {stock_top}; \
+        face_top < stock_top - step,
+        "{name}: the face top {face_top} is not below the stock top {stock_top}; \
          the arm proves nothing"
     );
 
     // 2. The top is the stock top, on every surface.
     assert!(
         (answer.heights.top_z - stock_top).abs() < EPS,
-        "{arm}: the auto top is {}, want the stock top {stock_top} (the face top is \
+        "{name}: the auto top is {}, want the stock top {stock_top} (the face top is \
          {face_top})",
         answer.heights.top_z
     );
-    let generated = generated_top_z(&mut session);
+    let (generated, generated_base) = generated_top_z(&mut session);
     assert!(
         (generated - stock_top).abs() < EPS,
-        "{arm}: generation hands the op the top {generated}, want {stock_top}"
+        "{name}: generation hands the op the top {generated}, want {stock_top}"
     );
 
     // 3. The floor measures from the face top.
     assert!(
+        (answer.heights.depth_base_z - face_top).abs() < EPS
+            && (generated_base - face_top).abs() < EPS,
+        "{name}: the depth base is {} (generation {generated_base}), want the face top \
+         {face_top}",
+        answer.heights.depth_base_z
+    );
+    assert!(
         (answer.heights.bottom_z - (face_top - depth)).abs() < EPS,
-        "{arm}: the floor is {}, want the face top {face_top} less {depth}",
+        "{name}: the floor is {}, want the face top {face_top} less {depth}",
         answer.heights.bottom_z
+    );
+    let levels = tc.operation.cutting_levels(&answer.heights);
+    let last = *levels.last().expect("the op has levels");
+    assert!(
+        (last - (face_top - depth)).abs() < EPS,
+        "{name}: the last level is Z {last}, want the face top {face_top} less {depth}; \
+         levels {levels:?}"
     );
 
     // 4. The first level is at most one pass below the stock top.
-    let levels = tc.operation.cutting_levels(&answer.heights);
-    let first = *levels.first().expect("the Profile has levels");
+    let first = levels[0];
     assert!(
-        stock_top - first <= DEPTH_PER_PASS + EPS,
-        "{arm}: the first level is Z {first}, {} mm below the stock top {stock_top} \
-         (depth per pass {DEPTH_PER_PASS}); levels {levels:?}",
+        stock_top - first <= step + EPS,
+        "{name}: the first level is Z {first}, {} mm below the stock top {stock_top} \
+         (depth per pass {step}); levels {levels:?}",
         stock_top - first
     );
 
@@ -307,12 +406,11 @@ fn assert_arm(mut session: ProjectSession, arm: &str, depth: f64) {
     let doc = peak_axial_doc(&mut session);
     assert!(
         doc > 0.0,
-        "{arm}: the Profile removed no material; the DOC bound proves nothing"
+        "{name}: the op removed no material; the DOC bound proves nothing"
     );
     assert!(
-        doc <= DEPTH_PER_PASS + DOC_SLACK,
-        "{arm}: the peak axial DOC is {doc:.2} mm, want at most {DEPTH_PER_PASS} + \
-         {DOC_SLACK} mm"
+        doc <= step + DOC_SLACK,
+        "{name}: the peak axial DOC is {doc:.2} mm, want at most {step} + {DOC_SLACK} mm"
     );
 }
 
@@ -320,9 +418,11 @@ fn assert_arm(mut session: ProjectSession, arm: &str, depth: f64) {
 /// stock Z 0..32.
 #[test]
 fn a_face_top_never_starts_below_the_stock_top_ux1() {
-    let depth = 12.0;
-    let session = profile_session(&[FACE_Z20, FACE_Z10], depth, FaceUp::Top, 0.0);
-    assert_arm(session, "Top setup", depth);
+    let arm = profile_arm("Profile, Top setup", 12.0);
+    assert_arm(
+        op_session(&arm, &[FACE_Z20, FACE_Z10], FaceUp::Top, 0.0),
+        &arm,
+    );
 }
 
 /// The flipped arm: a Bottom setup picks the down face of the model, which
@@ -330,7 +430,41 @@ fn a_face_top_never_starts_below_the_stock_top_ux1() {
 /// face top (32) is below the setup-frame stock top (38).
 #[test]
 fn a_face_top_never_starts_below_the_stock_top_on_a_bottom_setup_ux1() {
-    let depth = 4.0;
-    let session = profile_session(&[FACE_BOTTOM], depth, FaceUp::Bottom, -6.0);
-    assert_arm(session, "Bottom setup", depth);
+    let arm = profile_arm("Profile, Bottom setup", 4.0);
+    assert_arm(op_session(&arm, &[FACE_BOTTOM], FaceUp::Bottom, -6.0), &arm);
+}
+
+/// UX-1b: a Face of the Z 20 and Z 10 faces on a Top setup.
+#[test]
+fn a_face_op_starts_at_the_stock_top_ux1b() {
+    let arm = face_arm("Face, Top setup");
+    assert_arm(
+        op_session(&arm, &[FACE_Z20, FACE_Z10], FaceUp::Top, 0.0),
+        &arm,
+    );
+}
+
+/// UX-1b: a Face of the down face on a Bottom setup.
+#[test]
+fn a_face_op_starts_at_the_stock_top_on_a_bottom_setup_ux1b() {
+    let arm = face_arm("Face, Bottom setup");
+    assert_arm(op_session(&arm, &[FACE_BOTTOM], FaceUp::Bottom, -6.0), &arm);
+}
+
+/// UX-1b: a Trace of the outlines of the Z 20 and Z 10 faces on a Top
+/// setup.
+#[test]
+fn a_trace_op_starts_at_the_stock_top_ux1b() {
+    let arm = trace_arm("Trace, Top setup");
+    assert_arm(
+        op_session(&arm, &[FACE_Z20, FACE_Z10], FaceUp::Top, 0.0),
+        &arm,
+    );
+}
+
+/// UX-1b: a Trace of the outline of the down face on a Bottom setup.
+#[test]
+fn a_trace_op_starts_at_the_stock_top_on_a_bottom_setup_ux1b() {
+    let arm = trace_arm("Trace, Bottom setup");
+    assert_arm(op_session(&arm, &[FACE_BOTTOM], FaceUp::Bottom, -6.0), &arm);
 }

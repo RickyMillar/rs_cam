@@ -114,16 +114,20 @@ pub(crate) fn face_rectangle(bounds: &BoundingBox3, stock_offset: f64) -> Polygo
     )
 }
 
-/// THE Z ladder of a face pass, top first. `depth <= 0` is one pass at the
-/// stock top. Otherwise the 2.5D ladder (`EvenRedistributed`) from
-/// `stock_top_z` down to `stock_top_z - depth`, with no spring pass. The
-/// kernel, the Layered Face adapter and the catalogue's `cutting_levels`
-/// all read this function.
-pub fn face_levels(stock_top_z: f64, depth: f64, depth_per_pass: f64) -> Vec<f64> {
-    if depth <= 0.0 {
-        vec![stock_top_z]
+/// THE Z ladder of a face pass, top first. The floor is `base_z - depth`
+/// (a `depth <= 0` is the plane `base_z`). A floor at `top_z` is one pass
+/// at the top. Otherwise the 2.5D ladder (`EvenRedistributed`) from
+/// `top_z` down to the floor, with no spring pass. `base_z` is the Z that
+/// the depth measures from: the top, or under a face pick the face top
+/// while `top_z` is the stock top (UX-1b,
+/// `ResolvedHeights::depth_base_z`). The kernel, the Layered Face adapter
+/// and the catalogue's `cutting_levels` all read this function.
+pub fn face_levels(top_z: f64, base_z: f64, depth: f64, depth_per_pass: f64) -> Vec<f64> {
+    let floor_z = base_z - depth.max(0.0);
+    if floor_z >= top_z {
+        vec![top_z]
     } else {
-        DepthStepping::new(stock_top_z, stock_top_z - depth, depth_per_pass).all_levels()
+        DepthStepping::new(top_z, floor_z, depth_per_pass).all_levels()
     }
 }
 
@@ -223,7 +227,12 @@ mod tests {
             None,
         );
         let mut tp = Toolpath::new();
-        for z in face_levels(params.stock_top_z, params.depth, params.depth_per_pass) {
+        for z in face_levels(
+            params.stock_top_z,
+            params.stock_top_z,
+            params.depth,
+            params.depth_per_pass,
+        ) {
             let level = lines_to_toolpath(
                 &rows,
                 &ZigzagParams {

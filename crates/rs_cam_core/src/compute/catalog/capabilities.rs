@@ -143,6 +143,10 @@ pub struct Capabilities<P = EntryProbe> {
     /// its first level is one pass below the top, so top = bottom cuts
     /// nothing.
     pub ladder_includes_top: bool,
+    /// The auto Top Z of the op under a face pick (UX-1, UX-1b; operator
+    /// ruling Q1, SAFETY). The session heights rule reads it
+    /// (`session::heights::clamps_face_top`).
+    pub face_top: FaceTopRule,
     /// How the feeds lookup routes the op's (family, role) query to the
     /// vendor table rows (D2). Read by
     /// `feeds::vendor_normalize::lut_query_for` and `feeds::explain`.
@@ -171,6 +175,28 @@ pub enum FloorOwner {
     /// The op's own dial (a depth, a width) or the surface. A pinned Heights
     /// Bottom Z changes nothing it emits. The other 17 ops.
     OpDial,
+}
+
+/// The auto Top Z of an op under a face pick (UX-1, UX-1b; operator ruling
+/// Q1, 2026-10-22, SAFETY). The heights rule `match`es it, so a new op
+/// states its rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FaceTopRule {
+    /// The auto top is the higher of the face top and the stock top. The
+    /// depth dial still measures from the face top
+    /// (`ResolvedHeights::depth_base_z`), so the floor does not move and
+    /// the first level starts at the stock top. A face below the stock top
+    /// must not start the first level inside fresh stock. Pocket, Profile,
+    /// Zigzag, Adaptive 2D, Bore (UX-1), Face and Trace (UX-1b).
+    HigherOfFaceAndStock,
+    /// The auto top is the face top. The op does not read the top (3D
+    /// Rough, the drills, Project Curve, the surface finishers), or a
+    /// higher top does not bound its cut on fresh stock (UX-1b, measured):
+    /// Chamfer, V-Carve, Inlay and Inlay Plug cut relative to the face
+    /// plane with no ladder that a higher top can step down, and Waterline
+    /// and Unified Finish follow the surface, so they bury on fresh stock
+    /// with no face pick too.
+    Face,
 }
 
 /// The capabilities a registry row states: the entry probe is a rule.
@@ -219,6 +245,7 @@ impl<P> Capabilities<P> {
             top_on_stock_box: self.top_on_stock_box,
             floor_inside_stock: self.floor_inside_stock,
             ladder_includes_top: self.ladder_includes_top,
+            face_top: self.face_top,
             lut_route: self.lut_route,
             item_use: self.item_use,
         }

@@ -580,6 +580,7 @@ fn only_a_top_included_ladder_takes_top_equal_to_bottom_f033b() {
         retract_z: 20.0,
         feed_z: 15.0,
         top_z,
+        depth_base_z: top_z,
         bottom_z,
         top_pinned: true,
         bottom_pinned: true,

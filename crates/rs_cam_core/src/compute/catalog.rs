@@ -17,9 +17,9 @@ mod schema;
 
 pub use capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
-    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, FloorOwner,
-    ItemUse, LutRoute, MoveCountModel, RestUse, RowCapabilities, TRANSFORM_DISCRETE_SCALLOP,
-    TerritoryXy,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, FaceTopRule,
+    FloorOwner, ItemUse, LutRoute, MoveCountModel, RestUse, RowCapabilities,
+    TRANSFORM_DISCRETE_SCALLOP, TerritoryXy,
 };
 
 pub use schema::{
@@ -1575,14 +1575,18 @@ impl OperationConfig {
     /// P3.2: Pocket, Profile, Zigzag and Adaptive 2D step from
     /// `heights.top_z` to `heights.bottom_z`, which IS their resolved
     /// [`crate::compute::floor::Floor`] (`ops::depth::floor_ladder`). Every
-    /// other arm reads `heights.top_z` and its own depth, as before.
+    /// other arm steps from `heights.top_z` to its own depth below
+    /// `heights.depth_base_z` (UX-1b: under a face pick on Face or Trace
+    /// the top is the stock top and the base is the face top; else the two
+    /// are equal, as before).
     pub fn cutting_levels(&self, heights: &ResolvedHeights) -> Vec<f64> {
         use crate::ops::depth::{DepthStepping, floor_ladder};
         let top_z = heights.top_z;
+        let base_z = heights.depth_base_z;
         // The uniform steppers had byte-identical arms. One closure now
         // holds the construction; the arms hold only the two fields.
         let uniform = |depth: f64, step: f64| {
-            DepthStepping::new(top_z, top_z - depth.abs(), step).all_levels()
+            DepthStepping::new(top_z, base_z - depth.abs(), step).all_levels()
         };
         let floor = heights.bottom_z;
         match self {
@@ -1600,7 +1604,9 @@ impl OperationConfig {
             Self::InlayPlug(cfg) => uniform(cfg.total_cut_depth(), cfg.depth_per_pass),
             // The one Face ladder (W3.3): the kernel and the Layered Face
             // read the same function.
-            Self::Face(cfg) => crate::ops::face::face_levels(top_z, cfg.depth, cfg.depth_per_pass),
+            Self::Face(cfg) => {
+                crate::ops::face::face_levels(top_z, base_z, cfg.depth, cfg.depth_per_pass)
+            }
             // No standard depth stepping. The 3D ops drive their own Z
             // ladder from the surface; VCarve, Chamfer and Inlay derive Z
             // from the cutter geometry; the two drilling ops are Z-only;

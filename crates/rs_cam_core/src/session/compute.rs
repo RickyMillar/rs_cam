@@ -361,6 +361,7 @@ impl GenerateToolpathHandle {
                 "feed_z": heights.feed_z,
                 "top_z": heights.top_z,
                 "bottom_z": heights.bottom_z,
+                "depth_base_z": heights.depth_base_z,
             },
             "stock_bbox": {
                 "min": { "x": bbox.min.x, "y": bbox.min.y, "z": bbox.min.z },

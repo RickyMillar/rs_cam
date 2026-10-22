@@ -348,6 +348,7 @@ impl HeightsConfig {
             bottom_z: self
                 .bottom_z
                 .resolve_value(Self::auto_bottom_z(top_z, ctx), ctx),
+            depth_base_z: top_z,
             top_pinned: !self.top_z.is_auto(),
             bottom_pinned: !self.bottom_z.is_auto(),
         }
@@ -394,6 +395,14 @@ pub struct ResolvedHeights {
     pub feed_z: f64,
     pub top_z: f64,
     pub bottom_z: f64,
+    /// The Z that the depth dial of the op measures from (UX-1b). It is
+    /// `top_z`, except under an auto top and a face pick on an op whose
+    /// [`FaceTopRule`](crate::compute::catalog::FaceTopRule) is
+    /// `HigherOfFaceAndStock`: there `top_z` is the stock top and this is
+    /// the face top, so the ladder starts at the stock top and the floor
+    /// stays the face top less the dial. THE session heights rule sets it
+    /// (`session::heights::depth_base_z`).
+    pub depth_base_z: f64,
     /// True when `top_z` came from a user choice (Manual / FromReference)
     /// rather than Auto. Carried for ops that distinguish user intent from
     /// the Auto default; note adaptive3d deliberately ignores a pinned top
@@ -2271,6 +2280,7 @@ mod tests {
             retract_z: 20.0,
             feed_z: 18.0,
             top_z: 10.0,
+            depth_base_z: 10.0,
             bottom_z: 0.0,
             top_pinned: false,
             bottom_pinned: false,
