@@ -1042,3 +1042,13 @@ disagree or no source exists.
   tool (Fusion hole recognition).
 - Q10: holes group by diameter, one Drill per group (Fusion), in the P7
   wizard.
+
+## Operator ruling 2026-10-23: build the obvious, ask on a real conundrum
+
+"for obvious stuf fimpliment without askin. oly ask me if its a real
+conondrum". A REFERENCE_AUDIT.md row with a clear industry default
+(DIFFERS-CHANGE, the references agree) is built without a question. Ask
+the operator only when the references disagree, no source exists, or a
+safety rule conflicts with the reference. The standing rules stay: no
+push without asking, no test run over 3 minutes without asking, P8
+blocked.
