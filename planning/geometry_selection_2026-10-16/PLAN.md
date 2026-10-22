@@ -1009,3 +1009,36 @@ differnt ops / mcp should get errors yes / yeah champher ok. Rest ok too".
     Q9 (B), Q10 (B) in P7, (C) after R-A/R-B land: lead reading,
     UNCONFIRMED (asked 2026-10-23). The report did not list them.
 - P8 stays blocked.
+
+## Industry defaults replace the open questions (operator, 2026-10-23)
+
+Operator: "for a lot of these questions I just want idustry defaults ...
+kirimoto and freecad are probably the oes to relaly check, fusio mauals
+too". Rule from now on: an open UX or machining question takes the
+default of Kiri:Moto, FreeCAD and the Fusion manuals
+(`INDUSTRY_DEFAULTS.md`, sources there). Ask the operator only when they
+disagree or no source exists.
+
+- Chamfer edge that ends at a higher wall: stop short by a clearance
+  (Fusion "Chamfer Clearance"; FreeCAD Deburr gouges; Kiri has no
+  chamfer). Trim the chain; the guard still checks the motion.
+- Drill (R-B, F19): top = hole top, depth to the hole bottom, no break
+  through on a blind hole (Fusion, Kiri; FreeCAD uses the stock top). The
+  feed start stays the higher of the rim and the stock top (Fusion: feed
+  height over the hole top, retract from the stock top), so no rapid goes
+  into stock. Kiri's +5 on every hole is not copied.
+- R-A outline Profile: the silhouette only (no face rings), Outside, to
+  the model bottom, no tabs (Kiri Outline, FreeCAD Profile). A "this cut
+  frees the part" note shows on the default.
+- Q5: a persistent error state on the op row, the message on hover or
+  click (Fusion icon, FreeCAD tree state). No toast for a state.
+- Q6: heights stay relative and re-resolve in the new setup; a typed
+  absolute value refuses the move (FreeCAD).
+- Q7: a new op takes the setup's models, and the current selection as its
+  items (FreeCAD, Fusion).
+- Q8 names: "Top height", "Bottom height", "Geometry" (Fusion). Wire and
+  file keys stay.
+- Q9: the Bore takes a flat end mill that fits the hole, not the drill's
+  tool (Fusion hole recognition).
+- Q10: holes group by diameter, one Drill per group (Fusion), in the P7
+  wizard.
