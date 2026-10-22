@@ -325,7 +325,7 @@ pub struct ToolpathLoadVerdict {
     ///
     /// `Some` only where the producer had the emitted toolpath, the
     /// machine kinematics and the operation's own `plunge_rate` in
-    /// scope — today that is `gcode::project_load_report`, through
+    /// scope — today that is `ProjectSession::build_tool_load_report`, through
     /// [`crate::session::ProjectSession::kinematic_utilization_for`].
     /// A direct `evaluate_toolpath` call leaves it `None`; see the note at
     /// [`crate::tool_load::evaluate_toolpath`].

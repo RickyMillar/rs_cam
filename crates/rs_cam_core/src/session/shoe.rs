@@ -91,8 +91,8 @@ impl ProjectSession {
     /// not in the run order, so it has no row.
     ///
     /// # Errors
-    /// [`SessionError::OperationFailed`] when an obstacle of a setup cannot
-    /// be resolved, or an outward offset fails.
+    /// [`SessionError::Obstacle`] when an obstacle of a setup cannot be
+    /// resolved, or an outward offset fails.
     pub fn shoe_plan(&self) -> Result<Vec<ShoePlanRow>, SessionError> {
         let head = &self.machine.head;
         let mut rows = Vec::new();
@@ -178,8 +178,7 @@ impl ProjectSession {
                             &obstacles,
                             &stock,
                             &joined,
-                        )
-                        .map_err(|e| SessionError::OperationFailed(e.to_string()))?
+                        )?
                     }
                 };
                 let resolved = crate::compute::shoe::resolve(head, setting, solution);

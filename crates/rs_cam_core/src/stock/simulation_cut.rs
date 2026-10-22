@@ -123,7 +123,7 @@ pub struct SimulationProvenance {
     pub captured_arc_engagement: bool,
     pub toolpath_hashes: BTreeMap<ToolpathId, u64>,
     /// Hash of each toolpath's `OperationConfig` at sim time. New in
-    /// PR-4 polish — lets [`crate::gcode::sim_trace_is_fresh`] catch
+    /// PR-4 polish — lets [`crate::session::ProjectSession::sim_trace_is_fresh`] catch
     /// config-only edits (e.g. `feed_rate` changes that don't change
     /// move geometry but do invalidate cached load verdicts). Empty
     /// for traces captured before this field landed; the freshness
@@ -830,8 +830,9 @@ pub struct SimulationCutTrace {
     pub modulated_feeds:
         std::collections::BTreeMap<(ToolpathId, usize), (f64, crate::tool_load::BindingConstraint)>,
     /// F-039 — per-toolpath modulation rollup, keyed by
-    /// `toolpath_id`. The [`crate::gcode::project_load_report`]
-    /// builder reads this map and writes the corresponding
+    /// `toolpath_id`. The
+    /// [`crate::session::ProjectSession::build_tool_load_report`] builder
+    /// reads this map and writes the corresponding
     /// `ModulationSummary` onto each `ToolpathLoadVerdict`.
     /// `#[serde(skip)]` — derived from the per-move map above.
     #[serde(skip)]

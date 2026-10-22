@@ -38,7 +38,8 @@ use rs_cam_core::maps::tier_map::ResidualTreatment;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::session::multitool::MultitoolPlanSpec;
 use rs_cam_core::session::{
-    AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder, equal_cusp_stepover_mm,
+    AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder, SessionError,
+    equal_cusp_stepover_mm,
 };
 
 /// Cusp height (mm) every tier is dialled to.
@@ -285,7 +286,10 @@ fn a_one_tool_ladder_and_a_missing_model_are_refused_by_name() {
 
     let err = plan_multitool(&mut session, &spec(vec![coarse_id, fine_id], model_id + 99))
         .expect_err("an absent model must refuse, not plan against nothing");
-    assert!(format!("{err}").contains("no model with id"), "{err}");
+    assert!(
+        matches!(err, SessionError::ModelNotFound { id, .. } if id.0 == model_id + 99),
+        "{err}"
+    );
 
     let err = plan_multitool(&mut session, &spec(vec![coarse_id, 9_999], model_id))
         .expect_err("an unknown tool id must refuse");

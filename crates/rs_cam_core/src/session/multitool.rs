@@ -78,13 +78,14 @@ use crate::compute::config::{
     ArcFitParams, BoundaryConfig, BoundaryContainment, BoundarySource, DressupConfig,
     HeightsConfig, StockSource,
 };
+use crate::compute::execute::OperationError;
 use crate::compute::operation_configs::UnifiedFinishConfig;
 use crate::compute::tool_config::ToolConfig;
 use crate::ids::ToolpathId;
 use crate::maps::tier_islands::{
     TierBandAdvisory, TierIslandParams, TierIslands, extract_tier_islands,
 };
-use crate::maps::tier_map::{ResidualTreatment, TierLadder, TierMap, TierMapParams};
+use crate::maps::tier_map::{ResidualTreatment, TierLadder, TierMap, TierMapError, TierMapParams};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::tool::{MillingCutter, ToolDefinition};
@@ -341,8 +342,8 @@ impl ProjectSession {
     /// # Errors
     ///
     /// [`SessionError::SetupNotFound`] for an unknown setup;
-    /// [`SessionError::MissingGeometry`] when the model is absent or carries
-    /// no 3D mesh; [`SessionError::InvalidParam`] for a ladder under two
+    /// [`SessionError::ModelNotFound`] when the model is absent;
+    /// [`SessionError::MissingGeometry`] when the model carries no 3D mesh; [`SessionError::InvalidParam`] for a ladder under two
     /// tools, an unknown tool id, or a ladder
     /// [`TierLadder::new`] refuses.
     pub(crate) fn plan_multitool_finishing(
@@ -582,12 +583,7 @@ impl ProjectSession {
             .find(|m| m.id == spec.model_id)
             .map(|m| m.mesh.is_some());
         match model_has_mesh {
-            None => {
-                return Err(SessionError::MissingGeometry(format!(
-                    "multi-tool finishing: no model with id {} in this project",
-                    spec.model_id
-                )));
-            }
+            None => return Err(SessionError::model_not_found(spec.model_id, self)),
             Some(false) => {
                 return Err(SessionError::MissingGeometry(format!(
                     "multi-tool finishing: model {} carries no 3D mesh. The tier map is a \
@@ -670,8 +666,9 @@ impl ProjectSession {
     ///
     /// Everything [`Command::PlanMultitoolFinishing`](super::Command::PlanMultitoolFinishing) refuses, plus
     /// [`SessionError::MissingGeometry`] when the model's mesh cannot be
-    /// resolved in the setup's frame and [`SessionError::OperationFailed`]
-    /// when the walk is cancelled or the island extraction refuses.
+    /// resolved in the setup's frame, [`SessionError::Operation`] with
+    /// `OperationError::Cancelled` when the walk is cancelled, and
+    /// [`SessionError::OperationFailed`] when the island extraction refuses.
     pub fn preview_multitool_plan(
         &self,
         spec: &MultitoolPlanSpec,
@@ -742,10 +739,7 @@ impl ProjectSession {
         cancel: &AtomicBool,
     ) -> Result<Option<Vec<Polygon2>>, SessionError> {
         let Some((_, tc)) = self.find_toolpath_config_by_id(toolpath_id) else {
-            return Err(SessionError::OperationFailed(format!(
-                "no toolpath with id {} while resolving its planned-tier boundary",
-                toolpath_id.0
-            )));
+            return Err(SessionError::ToolpathIdNotFound(toolpath_id));
         };
         if !tc.boundary.enabled {
             return Ok(None);
@@ -1247,8 +1241,9 @@ impl ProjectSession {
     /// [`SessionError::MissingGeometry`] with no mesh or spatial index in
     /// scope; [`SessionError::InvalidParam`] for an unknown tool id, a
     /// ladder [`TierLadder::new`] refuses, or a tier index off the ladder;
-    /// [`SessionError::OperationFailed`] if the walk is cancelled or the
-    /// island extraction refuses. Every message names `op_name`.
+    /// [`SessionError::Operation`] with `OperationError::Cancelled` if the
+    /// walk is cancelled; [`SessionError::OperationFailed`] if the island
+    /// extraction refuses. Every message except the cancel names `op_name`.
     pub(crate) fn resolve_planned_tier_region_polys(
         &self,
         op_name: &str,
@@ -1405,8 +1400,11 @@ fn resolve_tier_plan_with_tools(
         &params,
         &(|| cancel.load(std::sync::atomic::Ordering::SeqCst)),
     )
-    .map_err(|e| {
-        SessionError::OperationFailed(format!("'{op_name}': tier map could not be built — {e}"))
+    .map_err(|e| match e {
+        TierMapError::Cancelled => SessionError::Operation(OperationError::Cancelled),
+        e => {
+            SessionError::OperationFailed(format!("'{op_name}': tier map could not be built — {e}"))
+        }
     })?;
 
     let cusp_radii_mm: Vec<f64> = cutters.iter().map(MillingCutter::cusp_radius_mm).collect();
@@ -1495,8 +1493,9 @@ impl PreviewTierMapHandle {
 ///
 /// [`SessionError::MissingGeometry`] when the model carried no mesh,
 /// [`SessionError::InvalidParam`] when the ladder is not usable, and
-/// [`SessionError::OperationFailed`] when the walk is cancelled or the
-/// island extraction refuses.
+/// [`SessionError::Operation`] with `OperationError::Cancelled` when the
+/// walk or the flute-reach pass is cancelled, and
+/// [`SessionError::OperationFailed`] when the island extraction refuses.
 pub fn execute_preview_tier_map(
     handle: &PreviewTierMapHandle,
     cancel: &AtomicBool,
@@ -1566,11 +1565,7 @@ fn preview_flute_reach(
         index,
         &(|| cancel.load(std::sync::atomic::Ordering::SeqCst)),
     )
-    .map_err(|_cancelled| {
-        SessionError::OperationFailed(format!(
-            "'{PREVIEW_OP_NAME}': the flute-reach pass was cancelled"
-        ))
-    })
+    .map_err(|cancelled| SessionError::Operation(OperationError::from(cancelled)))
 }
 
 /// Prefix a resolver error with the op it belongs to. A boundary failure that

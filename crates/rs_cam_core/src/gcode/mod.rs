@@ -19,7 +19,6 @@ pub use post::{
 pub use wizard_overlay::{ToolChangeMode, WizardOverlay};
 
 use crate::session::ProjectSession;
-use crate::stock::simulation_cut::SimulationCutTrace;
 use crate::toolpath::Toolpath;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -752,33 +751,6 @@ pub fn arrange_phases_by_setup<'a>(
     ExportPhases::Setups(groups)
 }
 
-/// F121: the freshness rule lives on the session
-/// ([`ProjectSession::sim_trace_is_fresh`]). This path stays for the core
-/// integration tests that name it; a new caller takes the method.
-pub fn sim_trace_is_fresh(project: &ProjectSession, trace: &SimulationCutTrace) -> bool {
-    project.sim_trace_is_fresh(trace)
-}
-
-/// F121: see [`ProjectSession::sim_trace_is_fresh_for`]. This path stays
-/// for the core integration tests that name it.
-pub fn sim_trace_is_fresh_for(
-    project: &ProjectSession,
-    trace: &SimulationCutTrace,
-    index: usize,
-) -> bool {
-    project.sim_trace_is_fresh_for(trace, index)
-}
-
-/// F121: the builder lives on the session
-/// ([`ProjectSession::build_tool_load_report`]). This path stays for the
-/// core integration tests that name it; a new caller takes the method.
-pub fn project_load_report(
-    project: &ProjectSession,
-    sim_trace: Option<&SimulationCutTrace>,
-) -> crate::tool_load::ToolLoadReport {
-    project.build_tool_load_report(sim_trace)
-}
-
 /// **The exceeded criteria that may refuse a g-code export.** S4
 /// (2026-09-18).
 ///
@@ -985,7 +957,8 @@ fn unmodeled_clause(status: &crate::tool_load::verdict::CriterionStatus<'_>) -> 
 /// ([`ExportRefusal::LoadUnmodeled`]): they are different operator
 /// actions even though both refuse. A row reads stale only through
 /// [`crate::tool_load::UnmodeledReason::StaleSimulation`], which
-/// [`project_load_report`] writes onto the rows it invalidated.
+/// [`ProjectSession::build_tool_load_report`] writes onto the rows it
+/// invalidated.
 pub fn enforce_unmodeled_policy(
     per_toolpath: &[(
         crate::ids::ToolpathId,
@@ -1504,6 +1477,26 @@ impl Default for PostConfig {
 /// Get a `PostDefinition` by name (CLI / config-string lookup).
 pub fn get_post_definition(name: &str) -> Option<&'static PostDefinition> {
     PostFormat::from_token(name).map(PostFormat::definition)
+}
+
+/// Strip `(...)` comment ranges (and trailing `;` line comments)
+/// before scanning for codes. G-code comments must not trigger rules.
+/// F121: the one copy. The validator (`export::gcode_validator`), the
+/// emitter and the program builder read it to scan the words of a line
+/// (A2 splice warnings, M-code denylist).
+pub(crate) fn strip_comments(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut depth: i32 = 0;
+    for ch in line.chars() {
+        match ch {
+            '(' => depth += 1,
+            ')' if depth > 0 => depth -= 1,
+            ';' if depth == 0 => break,
+            _ if depth == 0 => out.push(ch),
+            _ => {}
+        }
+    }
+    out
 }
 
 #[cfg(test)]

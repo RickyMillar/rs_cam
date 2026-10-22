@@ -656,7 +656,7 @@ fn evaluate_population(
     };
     // §6.E / Step 3 PR2: evaluate drill gates when this toolpath
     // carries a `DrillOp` payload. Mirrors what
-    // `gcode::project_load_report` does for the user-facing report so
+    // `ProjectSession::build_tool_load_report` does for the user-facing report so
     // every report path agrees on drill-side verdicts.
     let drill_gates = ctx.drill_op.map(|drill_op| {
         let samples = crate::ops::drill_metrics::emit_drill_samples(ctx.toolpath_id, drill_op);
@@ -695,7 +695,7 @@ fn evaluate_population(
         // `GateEnv` carries only the trace, the machine and the tolerance
         // bands, so `analyse_toolpath` cannot be called here.
         //
-        // `gcode::project_load_report` DOES hold both (it has the
+        // `ProjectSession::build_tool_load_report` DOES hold both (it has the
         // `ProjectSession`), so it fills this slot after the call — see
         // `ProjectSession::kinematic_utilization_for`. A caller that calls
         // `evaluate_toolpath` directly therefore gets `None`. Closing that divergence — the exact

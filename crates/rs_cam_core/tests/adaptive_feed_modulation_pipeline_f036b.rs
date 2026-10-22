@@ -234,7 +234,7 @@ fn run_session(attach_kinematics: bool, modulate: bool) -> ProjectSession {
 /// `Arc<AnnotatedToolpath>` per toolpath in `results`. We export
 /// G-code via the public emitter and inspect the resulting F-words.
 fn export_session_gcode(session: &ProjectSession) -> String {
-    // `export_gcode_checked` runs through `project_load_report` + the
+    // `export_gcode_checked` runs through `build_tool_load_report` + the
     // gate enforcement. For the byte-identical test we want only the
     // emitted text — pass the most permissive policy so the gate
     // doesn't refuse a hardwood-pocket export.
@@ -536,7 +536,7 @@ fn modulation_runs_and_stays_fresh_without_kinematics() {
          (effective_kinematics fallback) — got no per-toolpath summaries"
     );
     assert!(
-        rs_cam_core::gcode::sim_trace_is_fresh(&session, trace),
+        session.sim_trace_is_fresh(trace),
         "the post-modulation trace must stay FRESH: the provenance toolpath \
          hashes are refreshed to the modulated IR so the load report keeps \
          its gates (and the modulation summary) instead of reading stale"

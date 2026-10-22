@@ -306,7 +306,7 @@ fn a_pick_of_the_larger_circle_refuses_by_item() {
         panic!("not a selection refusal: {err}");
     };
     assert_eq!(
-        refusal, status,
+        *refusal, status,
         "the status and generation give one refusal"
     );
     assert_eq!(

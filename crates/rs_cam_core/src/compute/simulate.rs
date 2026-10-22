@@ -78,7 +78,7 @@ pub struct SimToolpathEntry {
     pub drill_op: Option<Arc<crate::ops::drill_op::DrillOp>>,
     /// Hash of the toolpath's `OperationConfig` at sim-build time.
     /// Carried so the provenance builder can stamp it without having
-    /// access to the raw config. Used by [`sim_trace_is_fresh`](crate::gcode::sim_trace_is_fresh) to
+    /// access to the raw config. Used by [`crate::session::ProjectSession::sim_trace_is_fresh`] to
     /// detect config-only edits (e.g. `feed_rate` changes that don't
     /// alter move geometry) that should invalidate cached load
     /// verdicts.

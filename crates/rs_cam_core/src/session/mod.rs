@@ -308,8 +308,10 @@ pub enum SessionError {
     MissingOperation { setup: String, toolpath: String },
     /// The selection of the op refuses (geometry selection P2.4): the
     /// item, the cause and the fix, with the op label. Generation and the
-    /// `selection_status` query give the same value.
-    Selection(#[source] crate::selection::SelectionRefusal),
+    /// `selection_status` query give the same value. Boxed: the refusal
+    /// is 120 bytes, and an unboxed one makes `SessionError` the size of
+    /// the refusal, at the `clippy::result_large_err` limit.
+    Selection(#[source] Box<crate::selection::SelectionRefusal>),
     /// F029: a tool dimension is outside its domain
     /// ([`ToolConfig::validate`]). Every tool door refuses with it and writes
     /// nothing; a reader that builds a cutter from a stored tool refuses with
@@ -399,6 +401,15 @@ impl SessionError {
             | Self::OutOfDomain(_)
             | Self::HeightOrder(_)
             | Self::FeedsRefused(_) => None,
+        }
+    }
+
+    /// F055: the [`Self::ModelNotFound`] refusal for `id`, with the model
+    /// ids of `session` in project order.
+    pub(crate) fn model_not_found(id: usize, session: &ProjectSession) -> Self {
+        Self::ModelNotFound {
+            id: ModelId(id),
+            known: session.models.iter().map(|m| ModelId(m.id)).collect(),
         }
     }
 
@@ -541,9 +552,7 @@ impl std::fmt::Display for SessionError {
 impl From<crate::compute::execute::OperationError> for SessionError {
     fn from(e: crate::compute::execute::OperationError) -> Self {
         match e {
-            crate::compute::execute::OperationError::Selection(refusal) => {
-                Self::Selection(*refusal)
-            }
+            crate::compute::execute::OperationError::Selection(refusal) => Self::Selection(refusal),
             other => Self::Operation(other),
         }
     }

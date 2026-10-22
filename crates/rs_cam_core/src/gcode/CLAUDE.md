@@ -28,7 +28,7 @@ Z-first, and in a setup with an obstacle the toolpath starts at the plane (`a_sn
   from the SESSION post config; `emit_checked` alone is for the session-less job file. F051/F061: destructure
   `LoadPolicyOutcome { advisories, overridden }` with no `..`; `ExportRefusal` names `LoadOverride` spellings.
 - F121: the freshness rule and the load-report builder are `ProjectSession` methods (`sim_trace_is_fresh(_for)`,
-  `build_tool_load_report`, in `session/compute/export.rs`). The free fns here only forward, for the core tests.
+  `build_tool_load_report`, in `session/compute/export.rs`). `strip_comments` (`mod.rs`) is the one comment stripper; the validator reads it.
 
 ## Sentries
 

@@ -35,7 +35,7 @@
 //! the data-driven post (Phase 3) since they reference per-post
 //! configuration.
 
-use crate::gcode::PostFormat;
+use crate::gcode::{PostFormat, strip_comments};
 
 /// Severity of a validator finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -247,25 +247,6 @@ pub fn validate_with(gcode: &str, post: PostFormat, options: &ValidatorOptions) 
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
-
-/// Strip `(...)` comment ranges (and trailing `;` line comments)
-/// before scanning for codes. G-code comments must not trigger rules.
-/// `pub(crate)`: also used by the gcode emitter / program builder for
-/// word-scanning user snippets (A2 splice warnings, M-code denylist).
-pub(crate) fn strip_comments(line: &str) -> String {
-    let mut out = String::with_capacity(line.len());
-    let mut depth: i32 = 0;
-    for ch in line.chars() {
-        match ch {
-            '(' => depth += 1,
-            ')' if depth > 0 => depth -= 1,
-            ';' if depth == 0 => break,
-            _ if depth == 0 => out.push(ch),
-            _ => {}
-        }
-    }
-    out
-}
 
 /// Returns true if `line` contains the word `<letter><number>` as a
 /// distinct token (not a substring of a longer word like G91.1).

@@ -89,12 +89,11 @@ impl ProjectSession {
         )?;
         let op_type = tc.operation.op_type();
         let (items, _notes) =
-            crate::selection::view(&frames.setup, tc.operation.capabilities().item_use)
-                .map_err(|refusal| SessionError::Selection(refusal.for_op(op_type.label())))?;
+            crate::selection::view(&frames.setup, tc.operation.capabilities().item_use).map_err(
+                |refusal| SessionError::Selection(Box::new(refusal.for_op(op_type.label()))),
+            )?;
         if let Some(text) = op_type.tool_refusal(tool.tool_type.cutter_kind()) {
-            return Err(SessionError::OperationFailed(
-                OperationError::InvalidTool(text).to_string(),
-            ));
+            return Err(SessionError::Operation(OperationError::InvalidTool(text)));
         }
         // P6.3: side On reads the lines of the selection (`Curves`), open
         // paths too; Outside and Inside read the closed areas. A tab goes on

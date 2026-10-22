@@ -316,7 +316,7 @@ impl ProjectSession {
                 edit.for_toolpath_model(model),
                 &op_default.for_toolpath_model(model),
             )
-            .map_err(|e| SessionError::Selection(e.for_op(label)))?;
+            .map_err(|e| SessionError::Selection(Box::new(e.for_op(label))))?;
             *slot = next;
             session.invalidate_result_chain(index, enabled);
             Ok(())

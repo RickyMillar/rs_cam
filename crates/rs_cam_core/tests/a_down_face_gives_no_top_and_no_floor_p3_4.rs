@@ -281,10 +281,10 @@ fn refusal_of(session: &mut ProjectSession) -> SelectionRefusal {
         panic!("generation gave an error that is not a selection refusal: {err}");
     };
     assert_eq!(
-        generated, status,
+        *generated, status,
         "generation and selection_status give different refusals"
     );
-    generated
+    *generated
 }
 
 #[test]

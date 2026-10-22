@@ -636,7 +636,7 @@ fn modelled_gate_verdicts_across_the_two_classifications() {
 /// [`SpanKind::GeometryRefit`] span gets `in_transit_span = true`, which is
 /// exactly what `transit_moves_bitmap` did when those spans were
 /// `DressupArtifact`. Both arms then go through the shipped
-/// `gcode::project_load_report`, which is the same assembly site
+/// `ProjectSession::build_tool_load_report`, which is the same assembly site
 /// `ProjectSession::tool_load_report` uses.
 ///
 /// **Equivalence, stated.** At the parent an arc-fitted sample was phantom
@@ -761,7 +761,7 @@ fn verdict_delta_probe_on_the_committed_fixture() {
         }
     }
 
-    // `gcode::sim_trace_is_fresh` (gcode/mod.rs:301-311) returns false as soon
+    // `ProjectSession::sim_trace_is_fresh` returns false as soon
     // as ANY enabled toolpath has no compute result, and every gate then
     // reports `Unmodeled(StaleSimulation)` instead of a real verdict — which
     // would make the whole table read "no change" for a reason that has
@@ -802,12 +802,12 @@ fn verdict_delta_probe_on_the_committed_fixture() {
     );
     println!(
         "sim_trace_is_fresh: fixed={} parent={}",
-        rs_cam_core::gcode::sim_trace_is_fresh(&session, &trace_fixed),
-        rs_cam_core::gcode::sim_trace_is_fresh(&session, &trace_parent)
+        session.sim_trace_is_fresh(&trace_fixed),
+        session.sim_trace_is_fresh(&trace_parent)
     );
 
-    let report_fixed = rs_cam_core::gcode::project_load_report(&session, Some(&trace_fixed));
-    let report_parent = rs_cam_core::gcode::project_load_report(&session, Some(&trace_parent));
+    let report_fixed = session.build_tool_load_report(Some(&trace_fixed));
+    let report_parent = session.build_tool_load_report(Some(&trace_parent));
 
     println!("\n=== D-4 verdict-delta table — committed test_job.toml ===");
     println!(

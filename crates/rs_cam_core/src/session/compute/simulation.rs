@@ -810,7 +810,7 @@ impl ProjectSession {
         }
         // Modulation rewrote per-move feeds, so each modulated toolpath now
         // hashes differently than the pre-modulation value captured in the
-        // trace's provenance — which would make `sim_trace_is_fresh` (and the
+        // trace's provenance — which would make `Self::sim_trace_is_fresh` (and the
         // load report) read `StaleSimulation`, dropping the very
         // `modulation_summary` this pass just stamped. Refresh the provenance
         // toolpath hashes against the modulated IR so the trace stays FRESH

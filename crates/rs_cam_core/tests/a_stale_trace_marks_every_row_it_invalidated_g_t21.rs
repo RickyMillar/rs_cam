@@ -1,6 +1,6 @@
 //! **T-21 — a stale trace must mark every row it invalidated.**
 //!
-//! `gcode::project_load_report` throws away a trace whose provenance no
+//! `ProjectSession::build_tool_load_report` throws away a trace whose provenance no
 //! longer matches the project, runs the gates without it, and then
 //! rewrites each `Unmodeled(SimulationRequired)` into
 //! `Unmodeled(StaleSimulation)`. The two reasons are different operator
@@ -38,7 +38,6 @@
 
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::PocketConfig;
-use rs_cam_core::gcode::{project_load_report, sim_trace_is_fresh};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
 use rs_cam_core::tool_load::UnmodeledReason;
@@ -121,11 +120,11 @@ fn a_stale_trace_marks_the_depth_row_like_the_rows_beside_it() {
     let trace = stale_trace();
     // Fixture guard: the rewrite only runs on the stale path.
     assert!(
-        !sim_trace_is_fresh(&session, &trace),
+        !session.sim_trace_is_fresh(&trace),
         "fixture guard: this trace must read as stale"
     );
 
-    let report = project_load_report(&session, Some(&trace));
+    let report = session.build_tool_load_report(Some(&trace));
     let v = only_verdict(&report);
     for (name, reason) in reasons(v) {
         assert_eq!(
@@ -158,7 +157,7 @@ fn assert_all_rows_read_not_simulated(report: &ToolLoadReport) {
 #[test]
 fn with_no_trace_the_same_rows_ask_for_a_simulation() {
     let session = milling_session();
-    let report = project_load_report(&session, None);
+    let report = session.build_tool_load_report(None);
     assert_all_rows_read_not_simulated(&report);
     // And the rows are genuinely unmodelled, so the table above is a
     // table of reasons and not of absences.

@@ -1167,13 +1167,9 @@ impl ProjectSession {
         kind: Option<ItemKind>,
         near: Option<Near>,
     ) -> Result<Vec<ModelItem>, SessionError> {
-        let model = self.find_model_by_raw_id(model_id).ok_or_else(|| {
-            let known: Vec<String> = self.models.iter().map(|m| m.id.to_string()).collect();
-            SessionError::MissingGeometry(format!(
-                "No model has id {model_id}; the model ids are [{}]",
-                known.join(", ")
-            ))
-        })?;
+        let model = self
+            .find_model_by_raw_id(model_id)
+            .ok_or_else(|| SessionError::model_not_found(model_id, self))?;
         let source: Arc<ItemSet> = if kind == Some(ItemKind::Face) && model.faces_are_flat_regions()
         {
             model.face_items_built()
@@ -1250,7 +1246,7 @@ impl ProjectSession {
     ) -> Result<BuildModelFacesHandle, SessionError> {
         let model = self
             .find_model_by_raw_id(model_id)
-            .ok_or_else(|| SessionError::MissingGeometry(format!("No model has id {model_id}")))?;
+            .ok_or_else(|| SessionError::model_not_found(model_id, self))?;
         match (&model.mesh, model.faces_are_flat_regions()) {
             (Some(mesh), true) => Ok(BuildModelFacesHandle {
                 model_id,
@@ -1273,8 +1269,8 @@ pub fn execute_build_model_faces(
     cancel: &std::sync::atomic::AtomicBool,
 ) -> Result<ModelFacesBuilt, SessionError> {
     if cancel.load(Ordering::Relaxed) {
-        return Err(SessionError::OperationFailed(
-            crate::compute::execute::OperationError::Cancelled.to_string(),
+        return Err(SessionError::Operation(
+            crate::compute::execute::OperationError::Cancelled,
         ));
     }
     let faces = crate::maps::geom_cache::cached_flat_regions(&handle.mesh).len();
