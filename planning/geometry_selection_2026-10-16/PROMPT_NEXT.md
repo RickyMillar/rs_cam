@@ -33,8 +33,8 @@ You are the lead of the geometry selection programme. Read `PLAN.md` from
 
 ## Queue, in order
 
-1. GUI pass (in progress at the time of writing): audit rows P4, P3, D7,
-   L3, L5, L6, L7. Review, gate, commit.
+1. DONE 44af62dc: GUI pass, audit rows P4, P3, D7,
+   L3, L5 (checkbox), L6, L7.
 2. Underived defaults: the inventory is
    `UNDERIVED_DEFAULTS.md` (if it is absent, run it again). Remove the UNDERIVED ones; first the Pocket depth at add.
 3. Chamfer stop-short: an edge that ends at a higher wall is trimmed by
