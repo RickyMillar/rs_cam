@@ -33,7 +33,7 @@ Lead session: Fable, started 2026-10-23 10:41 NZDT. Next gate: **G0**.
 | R1 FreeCAD Adaptive | done; FreeCAD commit be69b03e, LGPL-2.1, author Kresimir Tusek 2018 (no Freesteel lineage in the source); lead spot-check: cpp:4064-4066 retract penalty, cpp:3880 climb-only fail, cpp:1856 stepOverScaled = R·s, rs_cam path.rs:999 6R link range — all match; accepted | `R1_freecad_adaptive.md` |
 | R2 Freesteel | done; source FOUND through the Wayback CDX index (live site 403/503); 19 posts read; lead spot-check: 5 quoted phrases found in 2 archived posts (2007-01-15, 2013-11-20) — accepted | `R2_freesteel.md` |
 | R3 papers | done; Held 2014 full + 2009 secondary, Bieterman by abstract + patent, Sethian 1999 + Zhang 2005, libactp headers; lead spot-check: Held–de Lorenzo §1.3 quote verified by fetch; L7 label (iso-field solver) was wrong, sent back, fixed; accepted | `R3_papers.md` |
-| Phase 4 refusal count | running | `PHASE4_refusals.md` |
+| Phase 4 refusal count | done: 0 of 47 wanaka200 small-tool islands accepted (45 LevelNotSingleLoop, 2 NotStarShaped); run 7.1 s at 0.4 mm cell; disk controls (two disks × four cusp radii) all accepted. **Arm stops per PLAN Phase 4 step 2.** Deviations: level sets from a grid EDT + marching squares (C1's closed form is disk-only); harness `tests/spiral_finish_compact_wanaka_g3.rs` built in the worktree, copied to main and committed unbuilt there | `PHASE4_refusals.md` |
 | Phase 0 baseline pages | running (one agent, sequential on the GUI) | `phase0/` |
 | Synthesis | done (lead) | `SYNTHESIS.md` |
 
@@ -44,3 +44,18 @@ duplicate files in `target/debug/deps` under the lane lock (10:53 NZDT);
 63 GB free after. Peers were told. The next candidate is
 `.claude/worktrees/demo-build/target` (6.2 GB, commit of 2026-09-25);
 not taken without a ruling.
+
+## Findings for G0 that are not about the spiral
+
+- **`planning/multitool_2026-08-23/wanaka200_mt1.toml` does not load at HEAD.**
+  The loader refuses the Drill toolpath's retired key
+  `setups[0].toolpaths[2].operation.params.depth` (Phase 4 agent). The
+  Phase 0 wanaka200 column needs a corrected fixture file first (save-as a
+  new name; the fixture itself is not changed).
+- Lead session hit its usage limit at ~11:30 NZDT with Phase 0 still
+  running (one agent on the GUI; pages land in `phase0/`). Check
+  `phase0/PHASE0_NOTES.md` and the three pages before the operator sees them:
+  images from HEAD (gui pid 946291, binary mtime 1792706351.82), hard bars
+  pass/fail, V1–V3 marked.
+- The worktree `.claude/worktrees/adaptive-head` (own target, ~4 GB) stays
+  until Phase 0 ends; delete it with its target dir afterwards.

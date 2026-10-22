@@ -25,7 +25,7 @@ part says what the file protects. Search by claim words, not by code.
 
 - One sentry: `cargo test -p rs_cam_core -q --test <name>`. Each folder
   `CLAUDE.md` under `src/` names the sentries for that folder.
-- `heavy-tests` (twelve heavy binaries plus one table set), `research` (8)
+- `heavy-tests` (twelve heavy binaries plus one table set), `research` (9)
   and `test-support` (66 that bind a door, ten of them also heavy or
   research) gate targets in `Cargo.toml`. A test build turns `test-support`
   on by itself (the self dev-dependency in `Cargo.toml`); a named heavy or

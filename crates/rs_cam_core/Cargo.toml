@@ -207,6 +207,10 @@ name = "spiral_finish_compact_c1"
 required-features = ["research", "test-support"]
 
 [[test]]
+name = "spiral_finish_compact_wanaka_g3"
+required-features = ["research", "test-support"]
+
+[[test]]
 name = "whole_board_spiral_ledger_g1"
 required-features = ["research", "test-support"]
 
