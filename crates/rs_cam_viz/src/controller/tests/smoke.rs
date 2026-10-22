@@ -27,6 +27,12 @@ fn ui_harness_records_lane_status_overlay_and_stock_to_leave() {
         active_toolpath_index: None,
     };
 
+    // GT-1: the stock-to-leave row is an op parameter, on the Cut tab;
+    // the Geometry tab opens first.
+    if let Selection::Toolpath(tp_id) = controller.state.selection {
+        controller.state.gui.pending_toolpath_tab =
+            Some((tp_id, crate::ui::properties::ToolpathTab::Cut));
+    }
     let snapshot = render_snapshot(&mut controller);
     assert!(snapshot.widgets.contains_key("status_lane_toolpath"));
     assert!(snapshot.widgets.contains_key("status_lane_analysis"));

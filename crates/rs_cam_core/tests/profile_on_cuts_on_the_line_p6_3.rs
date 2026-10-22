@@ -510,7 +510,7 @@ fn door_session() -> ProjectSession {
 
 fn stored(s: &ProjectSession) -> (ProfileSide, Floor) {
     match &s.toolpath_configs()[0].operation {
-        OperationConfig::Profile(c) => (c.side, c.floor),
+        OperationConfig::Profile(c) => (c.side, c.floor.clone()),
         other => panic!("expected a Profile, got {:?}", other.op_type()),
     }
 }

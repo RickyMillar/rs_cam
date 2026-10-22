@@ -104,6 +104,7 @@ fn arm_of(cause: &RefusalCause) -> &'static str {
     match cause {
         RefusalCause::Empty { .. } => "empty",
         RefusalCause::LostPick => "lost_pick",
+        RefusalCause::FloorFaceLost => "floor_face_lost",
         RefusalCause::AmbiguousPick { .. } => "ambiguous_pick",
         RefusalCause::KindNotCut { .. } => "kind_not_cut",
         RefusalCause::FaceNotFlat { .. } => "face_not_flat",
@@ -123,6 +124,7 @@ fn arm_of(cause: &RefusalCause) -> &'static str {
 const ARMS: &[&str] = &[
     "empty",
     "lost_pick",
+    "floor_face_lost",
     "ambiguous_pick",
     "kind_not_cut",
     "face_not_flat",
@@ -257,6 +259,7 @@ fn every_cause_has_an_arm() {
     let samples = [
         RefusalCause::Empty { skipped: vec![] },
         RefusalCause::LostPick,
+        RefusalCause::FloorFaceLost,
         RefusalCause::AmbiguousPick { matches: 2 },
         RefusalCause::KindNotCut {
             kind: rs_cam_core::selection::ItemKind::Path,
@@ -511,6 +514,45 @@ fn lost_pick() {
     assert_names(
         &r,
         &["closed loop on layer 'CUT'", "centre X 0.000 Y 0.000"],
+    );
+}
+
+/// UX-8: the face of the floor "A picked face" is not on the model after a
+/// re-import. Generation and the status refuse with the typed cause, and
+/// the sentence names the face and the fix.
+#[test]
+fn floor_face_lost() {
+    let a = face_item(0.0, -3.0);
+    let b = face_item(GAP_X, -6.0);
+    let mut s = pocket_session(
+        drawing_model(vec![a.clone(), b.clone()]),
+        Selection::from_picks(vec![pick_of(&a)]),
+        |_| {},
+    );
+    set_floor(
+        &mut s,
+        Floor::Face {
+            key: pick_of(&b),
+            depth: 1.0,
+        },
+    );
+    let model_id = s.toolpath_configs()[0].model_id;
+    let _ = s
+        .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
+            model_id,
+            geometry: Box::new(drawing_model(vec![a])),
+            units: None,
+        }))
+        .unwrap();
+    let r = refusal_of(&mut s);
+    assert_eq!(r.cause, RefusalCause::FloorFaceLost);
+    assert_names(
+        &r,
+        &[
+            "face on layer 'FACES'",
+            "no item of the model matches that face",
+            "Use as floor",
+        ],
     );
 }
 

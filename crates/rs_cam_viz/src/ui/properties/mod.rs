@@ -1,4 +1,5 @@
 mod feeds_speeds;
+mod geometry_tab;
 pub mod head;
 mod linking_dressup;
 mod machine_panel;
@@ -178,14 +179,15 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
 }
 
 // ── Toolpath property tab system ─────────────────────────────────────────
-// The per-toolpath properties panel is chartered into five concern tabs
-// (IA cleanup W3.2, FINAL_DESIGN §4): Geometry (what to cut), Feeds & Speeds
-// (how fast — the SPEED/CUT split from W3.1), Linking (how moves connect:
-// entry/exit, move optimization, retract), Heights (Z planes), and Dressup
-// (edge work / path quality). Replaces the old [Params][Feeds][Heights][Dressups].
+// The per-toolpath properties panel has six concern tabs. Geometry (what
+// the op cuts: the selected items, the floor face; geometry selection GT-1)
+// comes first. Cut holds the tool, the input model, the start stock and
+// the op parameters (the "Geometry" tab before GT-1). Then Feeds & Speeds,
+// Linking (how moves connect), Heights (Z planes) and Dressup.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ToolpathTab {
     Geometry,
+    Cut,
     FeedsSpeeds,
     Linking,
     Heights,
@@ -195,6 +197,7 @@ pub enum ToolpathTab {
 impl ToolpathTab {
     pub const ALL: &[ToolpathTab] = &[
         ToolpathTab::Geometry,
+        ToolpathTab::Cut,
         ToolpathTab::FeedsSpeeds,
         ToolpathTab::Linking,
         ToolpathTab::Heights,
@@ -204,6 +207,7 @@ impl ToolpathTab {
     fn label(self) -> &'static str {
         match self {
             ToolpathTab::Geometry => "Geometry",
+            ToolpathTab::Cut => "Cut",
             ToolpathTab::FeedsSpeeds => "Feeds & Speeds",
             ToolpathTab::Linking => "Linking",
             ToolpathTab::Heights => "Heights",
@@ -219,6 +223,7 @@ impl ToolpathTab {
     pub fn key(self) -> &'static str {
         match self {
             ToolpathTab::Geometry => "geometry",
+            ToolpathTab::Cut => "cut",
             ToolpathTab::FeedsSpeeds => "feeds",
             ToolpathTab::Linking => "linking",
             ToolpathTab::Heights => "heights",
@@ -233,6 +238,7 @@ impl ToolpathTab {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "geometry" => Some(ToolpathTab::Geometry),
+            "cut" => Some(ToolpathTab::Cut),
             "feeds" | "feeds_speeds" => Some(ToolpathTab::FeedsSpeeds),
             "linking" => Some(ToolpathTab::Linking),
             "heights" => Some(ToolpathTab::Heights),
@@ -362,10 +368,10 @@ pub(crate) struct ToolpathPanelInputs {
     /// (`state::pick::held_kinds`). The Selection section reads it for the
     /// "pick a face" fix line (geometry selection P4.D).
     pub toolpath_model_kinds: std::collections::BTreeSet<rs_cam_core::selection::ItemKind>,
-    /// The item sources a `+ Rule` draft can name, through the
-    /// `ListItems` query. Empty while no draft of this toolpath is open:
-    /// the list is read only for the open popover.
-    pub rule_sources: Vec<RuleSource>,
+    /// The "Rule…" offers of the open row menu of the Geometry tab
+    /// (GT-3, core `ProjectSession::rule_offers`). Empty while no menu of
+    /// this toolpath is open: the offers are read only for the open menu.
+    pub rule_offers: Vec<rs_cam_core::session::RuleOffer>,
     pub tool_configs: Vec<(crate::state::job::ToolId, crate::state::job::ToolConfig)>,
     pub boundary_source_candidates: Vec<BoundaryRestCandidate>,
     /// Names of toolpaths currently consuming THIS one's rest-depth analysis
@@ -423,16 +429,6 @@ pub(crate) struct ToolpathPanelInputs {
 pub(crate) type SelectionRead =
     Result<std::sync::Arc<rs_cam_core::session::SelectionReport>, String>;
 
-/// One item source of a `+ Rule` draft: the toolpath model, another model,
-/// or the stock, with the layers and the kinds that its items carry.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct RuleSource {
-    pub source: rs_cam_core::selection::SourceRef,
-    pub name: String,
-    pub layers: Vec<String>,
-    pub kinds: std::collections::BTreeSet<rs_cam_core::selection::ItemKind>,
-}
-
 /// The `selection_status` answer for `target` of toolpath `index`, through
 /// the `SelectionStatus` query (the GUI reach of the row, P4.3).
 fn selection_read(
@@ -449,65 +445,6 @@ fn selection_read(
         Ok(other) => Err(format!("the selection_status read answered {other:?}")),
         Err(error) => Err(error.to_string()),
     }
-}
-
-/// The item sources of a `+ Rule` draft on toolpath `tc`: its own model
-/// first, then every other model with an item, then the stock. The layers
-/// and the kinds come from the `ListItems` query, so the GUI and MCP list
-/// one answer.
-fn rule_sources(
-    session: &rs_cam_core::session::ProjectSession,
-    tc: &rs_cam_core::session::ToolpathConfig,
-) -> Vec<RuleSource> {
-    use rs_cam_core::selection::{ItemKind, SourceRef};
-    use rs_cam_core::session::{ListItemsArgs, Query, QueryAnswer};
-    let listed = |model_id: rs_cam_core::ids::ModelId| -> (Vec<String>, std::collections::BTreeSet<ItemKind>) {
-        let items = match session.query(Query::ListItems(ListItemsArgs {
-            model_id,
-            layer: None,
-            kind: None,
-            near: None,
-        })) {
-            Ok(QueryAnswer::ListItems(answer)) => answer.items,
-            Ok(_) | Err(_) => Vec::new(),
-        };
-        let mut layers: Vec<String> = items.iter().filter_map(|i| i.layer.clone()).collect();
-        layers.sort();
-        layers.dedup();
-        (layers, items.iter().map(|i| i.kind).collect())
-    };
-    let mut out = Vec::new();
-    let mut models: Vec<&rs_cam_core::session::LoadedModel> = session
-        .models()
-        .iter()
-        .filter(|m| !m.items.is_empty())
-        .collect();
-    // The toolpath model leads, as "This model".
-    models.sort_by_key(|m| m.id != tc.model_id);
-    for model in models {
-        let (layers, kinds) = listed(model.id);
-        let (source, name) = if model.id == tc.model_id {
-            (
-                SourceRef::ToolpathModel,
-                format!("This model ({})", model.name),
-            )
-        } else {
-            (SourceRef::Model(model.id), model.name.clone())
-        };
-        out.push(RuleSource {
-            source,
-            name,
-            layers,
-            kinds,
-        });
-    }
-    out.push(RuleSource {
-        source: SourceRef::Stock,
-        name: "Stock".to_owned(),
-        layers: Vec::new(),
-        kinds: [ItemKind::Loop].into_iter().collect(),
-    });
-    out
 }
 
 /// H2: what the toolpath panel's dust shoe row reads. Every text comes from
@@ -606,7 +543,7 @@ pub(crate) fn toolpath_panel_inputs(
         .any(|m| m.items.has_selectable_item());
     let boundary_default = session.boundary_selection_default();
     // P4.3: the two selection reads of the section, through the query row.
-    let (selection_report, boundary_report, rule_sources) =
+    let (selection_report, boundary_report, rule_offers) =
         match session.find_toolpath_config_by_id(id) {
             Some((index, tc)) => {
                 let op = tc.operation.selection().is_some().then(|| {
@@ -620,17 +557,15 @@ pub(crate) fn toolpath_panel_inputs(
                             rs_cam_core::session::SelectionTarget::Boundary,
                         )
                     });
-                let draft_open = gui
+                // GT-3: the offers of the open "Rule…" menu only.
+                let offers = gui
                     .selection_ui
-                    .rule_draft
+                    .offers_for
                     .as_ref()
-                    .is_some_and(|d| d.toolpath_id == id);
-                let sources = if draft_open {
-                    rule_sources(session, tc)
-                } else {
-                    Vec::new()
-                };
-                (op, boundary, sources)
+                    .filter(|o| o.toolpath_id == id)
+                    .and_then(|o| session.rule_offers(tc, o.target, &o.key).ok())
+                    .unwrap_or_default();
+                (op, boundary, offers)
             }
             None => (None, None, Vec::new()),
         };
@@ -817,7 +752,7 @@ pub(crate) fn toolpath_panel_inputs(
         selection_note_items,
         boundary_note_items,
         toolpath_model_kinds,
-        rule_sources,
+        rule_offers,
         tool_configs,
         boundary_source_candidates,
         rest_region_consumers: rest_region_consumer_names,

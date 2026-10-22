@@ -33,6 +33,8 @@ fn floor_reason(refusal: FloorRefusal) -> &'static str {
             "The floor would be at or above the Top Z."
         }
         FloorRefusal::NotFinite => "The floor is not a finite number.",
+        FloorRefusal::FaceLost => "The floor face is not on the model now.",
+        FloorRefusal::NotAFloorItem { .. } => "The floor item is not a face.",
     }
 }
 
@@ -58,16 +60,21 @@ pub(super) fn floor_row(
 ) {
     let refs = inputs.map(|inputs| inputs.refs);
     label_cell(ui, FLOOR_FROM_LABEL).on_hover_text(FLOOR_FROM_HOVER);
-    let current = *floor;
+    let current = floor.clone();
     ui.add_enabled_ui(refs.is_some(), |ui| {
         egui::ComboBox::from_id_salt(("floor_from", op.name()))
             .truncate()
             .selected_text(current.reference_label())
             .show_ui(ui, |ui| {
-                for template in Floor::EACH_REFERENCE {
+                // UX-8: "A picked face" is not offered here. "Use as floor" in
+                // the Geometry tab is its one door (L-R5); a change away from it
+                // is offered.
+                for template in Floor::row_references() {
                     let selected = current.same_reference(&template);
                     let next = match refs {
-                        Some(refs) if !selected => Some(refs.re_express(current, template)),
+                        Some(refs) if !selected => {
+                            Some(refs.re_express(&current, template.clone()))
+                        }
                         Some(_) | None => None,
                     };
                     let enabled = selected || matches!(next, Some(Ok(_)));
@@ -93,8 +100,8 @@ pub(super) fn floor_row(
     .on_disabled_hover_text("The heights of the toolpath do not resolve, so no floor Z is kept.");
     ui.end_row();
 
-    let (label, mut value) = match *floor {
-        Floor::Z { z } => ("Z:", z),
+    let (label, mut value) = match &*floor {
+        Floor::Z { z } => ("Z:", *z),
         other => ("Depth:", other.value()),
     };
     let out = ValueRow::new(
@@ -107,12 +114,12 @@ pub(super) fn floor_row(
     .tooltip(Some(floor.reference_help()))
     .show(ui);
     if out.edited && floor.domain().accepts(value) {
-        *floor = floor.with_value(value);
+        *floor = floor.clone().with_value(value);
     }
 
     // The resolved floor Z, on its own row so the value row fits the
     // 240-point rail. Under "each picked face": the floor of each face.
-    let face_floors = match (*floor, inputs) {
+    let face_floors = match (&*floor, inputs) {
         (Floor::EachFace { .. }, Some(inputs)) => inputs.face_floors.as_slice(),
         _ => &[],
     };

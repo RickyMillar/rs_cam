@@ -140,6 +140,27 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
+    /// Geometry selection GT-4: write the floor of `toolpath_id` with ONE
+    /// `SetToolpathFloor` (the door of MCP `set_toolpath_floor`), so the
+    /// GUI act and the MCP call store one floor. The inspector undo
+    /// snapshot holds the op config, so the act is one undo step.
+    fn apply_floor(
+        &mut self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+        floor: rs_cam_core::compute::floor::Floor,
+    ) {
+        let Some((index, _)) = self.state.session().find_toolpath_config_by_id(toolpath_id) else {
+            return;
+        };
+        let command =
+            Command::SetToolpathFloor(rs_cam_core::session::SetToolpathFloorArgs { index, floor });
+        if self.apply_controller_command(command, "the floor") {
+            self.state.selection = Selection::Toolpath(toolpath_id);
+            self.state.gui.mark_edited();
+            self.pending_upload = true;
+        }
+    }
+
     /// Ruling L-8 revised (geometry selection P4.D): a click on the
     /// boundary of a toolpath whose boundary source is not a selection.
     /// ONE `SetBoundaryConfig` writes the new boundary, so the inspector
@@ -564,6 +585,20 @@ impl<B: ComputeBackend> AppController<B> {
                 edit,
             } => {
                 self.apply_selection_edit(toolpath_id, target, edit);
+            }
+            AppEvent::UseAsFloor { toolpath_id, key } => {
+                let floor = rs_cam_core::compute::floor::Floor::Face { key, depth: 0.0 };
+                self.apply_floor(toolpath_id, floor);
+            }
+            AppEvent::ClearFloorFace { toolpath_id } => {
+                let cleared = self
+                    .state
+                    .session()
+                    .find_toolpath_config_by_id(toolpath_id)
+                    .and_then(|(_, tc)| self.state.session().cleared_floor(tc));
+                if let Some(floor) = cleared {
+                    self.apply_floor(toolpath_id, floor);
+                }
             }
             AppEvent::EditTabs { toolpath_id, edit } => {
                 self.apply_tab_edit(toolpath_id, &edit);

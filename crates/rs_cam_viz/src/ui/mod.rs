@@ -417,6 +417,22 @@ pub enum AppEvent {
         edit: rs_cam_core::selection::SelectionEdit,
     },
 
+    // Geometry selection GT-4 (L-R5): "Use as floor" on a picked face or
+    // model ring of the Geometry tab. The controller writes ONE
+    // `SetToolpathFloor` with `Floor::Face { key, depth: 0 }`; the core door
+    // takes the face out of the picks, so the act is one undo step.
+    UseAsFloor {
+        toolpath_id: ToolpathId,
+        key: rs_cam_core::selection::MatchKey,
+    },
+
+    // Geometry selection GT-4 (L-R5): "Clear" of the floor face slot. The
+    // controller writes ONE `SetToolpathFloor` with the floor that core
+    // gives (`ProjectSession::cleared_floor`).
+    ClearFloorFace {
+        toolpath_id: ToolpathId,
+    },
+
     // Geometry selection P4.4 ("Show me"): frame the items `keys` of the
     // toolpath in the viewport and flash them. The application handles it
     // (it owns the camera); it edits nothing.

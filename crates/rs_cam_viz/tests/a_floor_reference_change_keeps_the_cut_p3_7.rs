@@ -235,9 +235,8 @@ fn a_floor_reference_change_keeps_the_cut_p3_7() {
     // stock top 5, the model top 0, the face and the auto Top Z -4, the
     // stock bottom -15), so a number carried across moves the floor.
     let refs = inputs(&s).refs;
-    let mut reference_z: Vec<f64> = Floor::EACH_REFERENCE
-        .iter()
-        .map(|f| refs.reference_z(f).unwrap())
+    let mut reference_z: Vec<f64> = Floor::row_references()
+        .map(|f| refs.reference_z(&f).unwrap())
         .collect();
     reference_z.sort_by(f64::total_cmp);
     reference_z.dedup();
@@ -249,16 +248,18 @@ fn a_floor_reference_change_keeps_the_cut_p3_7() {
 
     // Walk the references in order, then back to the start: each change
     // keeps the resolved floor Z.
-    let mut walk: Vec<Floor> = Floor::EACH_REFERENCE.to_vec();
+    // UX-8: "A picked face" is not a row reference (its door is Use as
+    // floor), so the walk takes the row references.
+    let mut walk: Vec<Floor> = Floor::row_references().collect();
     walk.push(Floor::Top { depth: 0.0 });
     for template in walk {
         let from = s.toolpath_configs()[0].operation.floor().unwrap();
         let to = inputs(&s)
             .refs
-            .re_express(from, template)
+            .re_express(&from, template.clone())
             .unwrap_or_else(|r| panic!("{} refused: {r}", template.reference_label()));
         assert!(to.same_reference(&template));
-        write(&mut s, to);
+        write(&mut s, to.clone());
         let z = floor_z(&s);
         assert!(
             (z - FLOOR_Z).abs() < 1e-9,
@@ -279,17 +280,17 @@ fn a_reference_with_no_z_is_not_offered_p3_7() {
     refs.model_top_z = None;
     refs.face_bottom_z = None;
     assert_eq!(
-        refs.re_express(from, Floor::ModelTop { depth: 0.0 }),
+        refs.re_express(&from, Floor::ModelTop { depth: 0.0 }),
         Err(FloorRefusal::NoModelMesh)
     );
     assert_eq!(
-        refs.re_express(from, Floor::EachFace { depth: 0.0 }),
+        refs.re_express(&from, Floor::EachFace { depth: 0.0 }),
         Err(FloorRefusal::NoFace)
     );
     // A Z above the Top Z is not a Top depth: the domain refuses it.
     assert!(matches!(
         refs.re_express(
-            Floor::Z {
+            &Floor::Z {
                 z: refs.top_z + 1.0
             },
             Floor::Top { depth: 0.0 }
@@ -345,7 +346,7 @@ fn each_floor_run_names_its_reference_and_faces_p3_8() {
         }))
         .unwrap();
     let each = Floor::EachFace { depth: 0.0 };
-    write(&mut s, each);
+    write(&mut s, each.clone());
     let runs = floor_runs(Some((&each, &inputs(&s))), f64::NAN);
     let hovers: Vec<&str> = runs.iter().map(|r| r.hover.as_str()).collect();
     assert_eq!(

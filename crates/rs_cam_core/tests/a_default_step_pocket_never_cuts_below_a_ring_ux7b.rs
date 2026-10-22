@@ -54,6 +54,7 @@
 //! - a ring pick not counted as an area: claim 2;
 //! - the corner radius not shrunk: claim 9;
 //! - no depth reaches the verdict: claims 3, 4, 5, 6 and 10.
+//!
 //! The Z tolerance of claim 8 (band plus CAD rounding) is a derivation: the
 //! fixture face is exactly flat, so 0.01 mm also passes.
 //!
@@ -292,7 +293,7 @@ fn a_face_or_ring_pick_at_the_stock_default_floor_sets_each_face_ux7b() {
     for kind in [ItemKind::Face, ItemKind::Loop] {
         let mut s = stepped_session();
         let _ = add_as_the_doors_do(&mut s, OperationType::Pocket);
-        set_floor(&mut s, 0, stock_default);
+        set_floor(&mut s, 0, stock_default.clone());
         assert!(
             s.toolpath_configs()[0]
                 .operation

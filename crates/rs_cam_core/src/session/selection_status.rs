@@ -65,7 +65,7 @@ use crate::ids::{ModelId, ToolpathId};
 use crate::selection::hole_fit::DrillSize;
 use crate::selection::{
     FLAT_REGION_Z_BAND_MM, FacesByFacing, Hole, HoleFit, HoleFitRule, ItemError, ItemKind, ItemRef,
-    ItemRole, ItemSet, MatchKey, MeshFaces, ModelFrame, RefusalCause, ResolveScope,
+    ItemRole, ItemSet, MatchKey, MatchedBy, MeshFaces, ModelFrame, RefusalCause, ResolveScope,
     ResolvedSelection, Selection, SelectionEdit, SelectionNote, SelectionRefusal, SetupFrame,
     Shape, SourceRef, fit_holes, hole_fit,
 };
@@ -325,6 +325,45 @@ pub struct SelectionReport {
     /// `Cut` in `item_states`. Empty for every other op and when the
     /// selection refuses. The GUI preview (P6.7) draws it.
     pub extended: Vec<Vec<P2>>,
+    /// Geometry selection GT-2: one row per item of `selected`, in the same
+    /// order: what holds the item (the default rule, a named rule, a pick)
+    /// and its plane Z in the SETUP frame. The Geometry tab groups its
+    /// list by it.
+    pub rows: Vec<SelectedRow>,
+}
+
+/// One item that a selection holds (geometry selection GT-2): a row of
+/// the selected list of the Geometry tab.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SelectedRow {
+    /// The key of the item, with the source of the drawing (as
+    /// [`SelectionReport::selected`]).
+    pub key: MatchKey,
+    /// What holds the item: the default rule, a rule that names its kinds,
+    /// or a pick (the explicit act wins, [`MatchedBy`]).
+    pub by: MatchedBy,
+    /// The index of the item in `LoadedModel::items` of the toolpath model,
+    /// or `None` for an item of another source.
+    pub own_index: Option<usize>,
+    /// The plane Z of a face, or the Z of a model edge item, in the SETUP
+    /// frame. `None` for a drawing item.
+    pub plane_z: Option<f64>,
+}
+
+impl SelectionReport {
+    /// The state of `row`: from `item_states` by its own index, else from
+    /// `foreign`. `NotSelected` when the report holds no state for it.
+    pub fn row_state(&self, row: &SelectedRow) -> ItemState {
+        match row.own_index {
+            Some(index) => self.item_states.get(index).copied(),
+            None => self
+                .foreign
+                .iter()
+                .find(|(k, _)| k.matches(&row.key))
+                .map(|(_, state)| *state),
+        }
+        .unwrap_or(ItemState::NotSelected)
+    }
 }
 
 /// One item of a model, as the `list_model_items` read gives it (geometry
@@ -418,6 +457,58 @@ impl ProjectSession {
             model: resolved,
             setup,
         })
+    }
+
+    /// UX-8: the plane Z of the face of the floor "A picked face" of `tc`,
+    /// in the setup frame of `ctx`, or `None` when the floor is not a face.
+    ///
+    /// The key resolves through THE resolution of a selection
+    /// ([`Self::resolve_spec_frames`]) as a one-pick selection, so a floor
+    /// key and a pick follow a re-import by one rule. Then [`crate::selection::view`]'s
+    /// order of refusals applies: a missing model, faces not computed, a key
+    /// that matches no item (`RefusalCause::FloorFaceLost`) or two items
+    /// (`AmbiguousPick`). A face that points down in the setup has no
+    /// plane to stand on (`FaceFacesDown`).
+    pub(crate) fn floor_face_z(
+        &self,
+        tc: &ToolpathConfig,
+        ctx: &SetupEvalContext,
+        faces: FaceAccess,
+    ) -> Option<Result<f64, SelectionRefusal>> {
+        let key = tc.operation.floor()?.face_key()?.clone();
+        let named = Some(ItemRef::new(key.clone()));
+        let spec = Selection::from_picks(vec![key]);
+        // The frame door fails only when the item breaks its shape
+        // invariants in the setup frame (`ItemError`): a face or a ring that
+        // a lateral setup turns on its side collapses. That face is not
+        // flat and horizontal in this setup.
+        let Ok(frames) = self.resolve_spec_frames(tc, &spec, ctx, faces) else {
+            return Some(Err(SelectionRefusal::new(
+                named,
+                RefusalCause::FaceNotFlat { face: None },
+            )));
+        };
+        let refusal = |cause| Some(Err(SelectionRefusal::new(named.clone(), cause)));
+        if let Some(source) = frames.model.missing_sources().first() {
+            return refusal(RefusalCause::MissingSource(*source));
+        }
+        if let Some(model) = frames.model.faces_not_ready().first() {
+            return refusal(RefusalCause::FacesNotReady { model: *model });
+        }
+        if let Some(lost) = frames.model.lost().first() {
+            return refusal(if lost.matches == 0 {
+                RefusalCause::FloorFaceLost
+            } else {
+                RefusalCause::AmbiguousPick {
+                    matches: lost.matches,
+                }
+            });
+        }
+        match frames.setup.face_top_z() {
+            Some(z) => Some(Ok(z)),
+            None if frames.setup.items().is_empty() => refusal(RefusalCause::FloorFaceLost),
+            None => refusal(RefusalCause::FaceFacesDown),
+        }
     }
 
     /// The mesh models that `spec` reads whose faces are their flat regions
@@ -571,7 +662,7 @@ impl ProjectSession {
     }
 
     /// The report itself, with no memo.
-    fn build_selection_report(
+    pub(super) fn build_selection_report(
         &self,
         tc: &ToolpathConfig,
         target: SelectionTarget,
@@ -624,7 +715,26 @@ impl ProjectSession {
                 .map(|h| (h.key.clone(), hole_fit(h.diameter, &size)))
                 .collect()
         });
+        let own_source = SourceRef::Model(tc.model_id);
+        let rows = frames
+            .model
+            .items()
+            .iter()
+            .zip(frames.setup.items())
+            .map(|(model, setup)| SelectedRow {
+                key: model.identity().clone(),
+                by: model.by(),
+                own_index: (model.item().source() == own_source).then(|| model.index()),
+                plane_z: match setup.item().shape() {
+                    Shape::Face(face) => Some(face.plane_z),
+                    Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => {
+                        setup.item().z()
+                    }
+                },
+            })
+            .collect();
         let mut report = SelectionReport {
+            rows,
             hole_fits,
             hole_items,
             selected,
@@ -635,7 +745,6 @@ impl ProjectSession {
         // P4.4: the resolution states first. An item that the selection
         // holds is `Skipped` until `view` gives it its role, so a refused
         // selection marks no item `Cut`.
-        let own_source = SourceRef::Model(tc.model_id);
         report.item_states = self.toolpath_model(tc).map_or_else(
             |_| Vec::new(),
             |m| vec![ItemState::NotSelected; m.items.len()],
@@ -719,7 +828,7 @@ impl ProjectSession {
                     Some(top_z) => crate::compute::floor::region_floors(
                         &frames.setup,
                         &mut items,
-                        floor,
+                        &floor,
                         top_z,
                     )
                     .map(|region_floors| {
@@ -754,6 +863,13 @@ impl ProjectSession {
                 })
             }
             (viewed, _) => viewed,
+        };
+        // UX-8: the face of the floor "A picked face" refuses as generation
+        // refuses it (before the prologue runs `view`), so the status and
+        // generation give one answer.
+        let viewed = match (target, self.floor_face_z(tc, ctx, FaceAccess::Peek)) {
+            (SelectionTarget::Op, Some(Err(refusal))) => Err(refusal),
+            (SelectionTarget::Op | SelectionTarget::Boundary, _) => viewed,
         };
         match viewed {
             Ok((items, notes)) => {
@@ -1114,24 +1230,7 @@ impl ProjectSession {
         let mut rule_picks: Vec<MatchKey> = Vec::new();
         let mut dropped_a_rule = false;
         for rule in current.rules() {
-            let probe = with_selection(
-                tc,
-                target,
-                Selection::from_parts(vec![rule.clone()], Vec::new(), current.excludes().to_vec()),
-            );
-            let report = self.build_selection_report(&probe, target, &ctx)?;
-            let members: Vec<MatchKey> = report
-                .selected
-                .iter()
-                .filter(|k| {
-                    rule.names_kinds()
-                        || matches!(
-                            self.item_state_in(tc, &report, k),
-                            Some(ItemState::Cut | ItemState::Island)
-                        )
-                })
-                .map(|k| k.clone().for_toolpath_model(model))
-                .collect();
+            let members = self.rule_members(tc, target, &ctx, rule, current.excludes())?;
             if !members.iter().any(&names_key) {
                 kept_rules.push(rule.clone());
                 continue;
@@ -1160,6 +1259,41 @@ impl ProjectSession {
         Ok(Some(SelectionEdit::Replace(Box::new(
             Selection::from_parts(kept_rules, picks, current.excludes().to_vec()),
         ))))
+    }
+
+    /// The members of `rule` in the selection `target` of `tc`: the items
+    /// that it gives the op on its own, with `excludes`, each key in the
+    /// toolpath form. A default rule ([`crate::selection::KindFilter::Served`])
+    /// gives the items that the op cuts (`Cut` or `Island`); a rule that
+    /// names its kinds gives every item that it matches. GT-Q8
+    /// ([`Self::rule_drop_edit`]) and the GT-3 rule offers
+    /// ([`Self::rule_offers`]) read this one rule.
+    pub(crate) fn rule_members(
+        &self,
+        tc: &ToolpathConfig,
+        target: SelectionTarget,
+        ctx: &SetupEvalContext,
+        rule: &crate::selection::Rule,
+        excludes: &[MatchKey],
+    ) -> Result<Vec<MatchKey>, SessionError> {
+        let probe = with_selection(
+            tc,
+            target,
+            Selection::from_parts(vec![rule.clone()], Vec::new(), excludes.to_vec()),
+        );
+        let report = self.build_selection_report(&probe, target, ctx)?;
+        Ok(report
+            .selected
+            .iter()
+            .filter(|k| {
+                rule.names_kinds()
+                    || matches!(
+                        self.item_state_in(tc, &report, k),
+                        Some(ItemState::Cut | ItemState::Island)
+                    )
+            })
+            .map(|k| k.clone().for_toolpath_model(tc.model_id))
+            .collect())
     }
 
     /// The state of the item `key` (a key of `report.selected`) in
@@ -1466,7 +1600,7 @@ impl ToolpathConfig {
 /// A copy of `tc` whose selection `target` is `selection` (the GT-Q8
 /// probe of one rule). A boundary that is not a selection, or an op with
 /// no selection slot, stays as it is.
-fn with_selection(
+pub(super) fn with_selection(
     tc: &ToolpathConfig,
     target: SelectionTarget,
     selection: Selection,
@@ -1556,8 +1690,9 @@ struct StatusKey {
     world_stock: [u64; 6],
     emission_stock: [u64; 6],
     /// P3.5: under the floor "each picked face", the floor and the Top Z
-    /// config: the per-area floor check reads both. Empty for every other
-    /// floor, so a heights edit does not rebuild the report.
+    /// config: the per-area floor check reads both. UX-8: under the floor
+    /// "A picked face", the floor (its key refuses or resolves). Empty for
+    /// every other floor, so a heights edit does not rebuild the report.
     each_face: Vec<u8>,
     /// P6.5: the bits of the tool diameter that the hole fit step reads
     /// (`ProjectSession::hole_fit_size`), and the bits of the size
@@ -1585,20 +1720,27 @@ impl StatusKey {
             SelectionTarget::Boundary => BOUNDARY_ITEM_USE,
         };
         let spec = tc.selection_of(target).ok()?;
-        let flat_faces = match spec {
-            Some(sel) if sel.names_faces() => session
-                .face_models_of(tc, sel)
-                .into_iter()
-                .map(|m| {
-                    let peeked = m
-                        .mesh
-                        .as_ref()
-                        .and_then(crate::maps::geom_cache::peek_flat_regions);
-                    (m.id, peeked.as_ref().map(Arc::downgrade))
-                })
-                .collect(),
-            Some(_) | None => Vec::new(),
+        // UX-8: the face key of the floor "A picked face" resolves as a
+        // one-pick selection, so its model's flat faces are a key part too.
+        let floor_spec = match (target, tc.operation.floor()) {
+            (SelectionTarget::Op, Some(Floor::Face { key, .. })) => {
+                Some(Selection::from_picks(vec![key]))
+            }
+            _ => None,
         };
+        let flat_faces = spec
+            .into_iter()
+            .chain(floor_spec.as_ref())
+            .filter(|sel| sel.names_faces())
+            .flat_map(|sel| session.face_models_of(tc, sel))
+            .map(|m| {
+                let peeked = m
+                    .mesh
+                    .as_ref()
+                    .and_then(crate::maps::geom_cache::peek_flat_regions);
+                (m.id, peeked.as_ref().map(Arc::downgrade))
+            })
+            .collect();
         Some(Self {
             target,
             selection: serde_json::to_vec(&spec).ok()?,
@@ -1616,9 +1758,10 @@ impl StatusKey {
             world_stock: box_bits(&ctx.world_stock_bbox),
             emission_stock: box_bits(&ctx.heights_stock_bbox),
             each_face: match (target, tc.operation.floor()) {
-                (SelectionTarget::Op, Some(floor @ Floor::EachFace { .. })) => {
-                    serde_json::to_vec(&(floor, &tc.heights.top_z)).ok()?
-                }
+                (
+                    SelectionTarget::Op,
+                    Some(floor @ (Floor::EachFace { .. } | Floor::Face { .. })),
+                ) => serde_json::to_vec(&(floor, &tc.heights.top_z)).ok()?,
                 _ => Vec::new(),
             },
             drill_size: match target {

@@ -631,10 +631,13 @@ impl RsCamApp {
                 .map(|key| (pick, key)),
             _ => None,
         };
-        if self
-            .hover_detector
-            .changed(hovered_item.as_ref().map(|(_, key)| key.clone()))
-        {
+        // GT-2: with no pick hover, the row of the Geometry tab list under
+        // the pointer lights its item.
+        let hovered_key = hovered_item
+            .as_ref()
+            .map(|(_, key)| key.clone())
+            .or_else(|| self.controller.state().gui.selection_ui.row_hover.clone());
+        if self.hover_detector.changed(hovered_key) {
             self.hover_upload_pending = true;
             ui.ctx().request_repaint();
         }

@@ -13,6 +13,8 @@
 //!   builds nothing;
 //! - each input builds again: a selection edit, a model re-import, a setup
 //!   change, a stock change. After each, the report answers the new state.
+//!   A selection edit builds in the edit door (the UX-7b floor probe), and
+//!   the next read reuses that build.
 //!
 //! The count comes from `ProjectSession::selection_status_builds`. The
 //! `selection_status` query row reads the same memo.
@@ -133,7 +135,10 @@ fn a_read_builds_once_and_only_a_selection_input_builds_again() {
     let (_, built) = builds_of_a_read(&s);
     assert_eq!(built, 0, "a feed edit built the selection status again");
 
-    // A selection edit.
+    // A selection edit. The edit door itself reads the report (UX-7b: the
+    // "Each picked face" probe), so count the builds of the edit and the
+    // read together: one input, one build.
+    let before_edit = s.selection_status_builds();
     let _ = s
         .apply(Command::EditSelection(EditSelectionArgs {
             index: 0,
@@ -147,8 +152,12 @@ fn a_read_builds_once_and_only_a_selection_input_builds_again() {
             }]))),
         }))
         .unwrap();
-    let (after_edit, built) = builds_of_a_read(&s);
-    assert_eq!(built, 1, "a selection edit did not build again");
+    let after_edit = status(&s);
+    let built = s.selection_status_builds() - before_edit;
+    assert_eq!(
+        built, 1,
+        "a selection edit must build once, edit and read together"
+    );
     assert_eq!(loops(&after_edit), 1, "the report does not follow the edit");
 
     // A model re-import: a third loop on layer A.

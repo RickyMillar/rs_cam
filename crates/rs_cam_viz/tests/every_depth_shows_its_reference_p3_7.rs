@@ -4,14 +4,16 @@
 //! # The claims
 //!
 //! 1. Each op that holds a floor (Pocket, Profile, Zigzag, Adaptive 2D)
-//!    draws the floor row on its Geometry tab: "Floor from:", the reference
-//!    of its floor, and the resolved floor Z.
+//!    draws the floor row on its Cut tab (the Geometry tab before GT-1):
+//!    "Floor from:", the reference of its floor, and the resolved floor Z.
 //! 2. Its Heights tab has no Bottom row (one owner, L-11). It draws one
 //!    read-only Floor line with the reference and the resolved Z, and the
 //!    Top line names its source ("auto: faces").
-//! 3. O-2 (option A): with a face picked under a floor that is not "each
-//!    picked face", one line offers that floor, and its button sets
-//!    `Floor::EachFace { depth: 0 }` through the GUI write route.
+//!
+//! GT-1 (R2.4, FR-1 F7) removed the O-2 hint and its arm: it said "Each
+//! picked face" while the floor was Top Z and no face was picked. Q2 sets
+//! that floor at the first face pick, and "Use as floor" in the Geometry
+//! tab sets a face floor (`a_face_floor_is_one_act_gt4`).
 //!
 //! Every arm drives the production `properties::draw` through a headless
 //! `Context` and reads the glyphs it painted.
@@ -19,8 +21,6 @@
 //! Red proofs:
 //! - Claim 1: draw the combo of the floor row with an empty selected text
 //!   (`.selected_text("")`): the reference is not painted, and the arm fails.
-//! - Claim 3: drop the `set_floor` of the hint button
-//!   (`draw_each_face_hint`): the floor stays `Top`, and the arm fails.
 //!
 //! ```text
 //! cargo test -p rs_cam_viz -q --test every_depth_shows_its_reference_p3_7
@@ -29,7 +29,6 @@
 #![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
     clippy::indexing_slicing,
     reason = "test code: a panic is how a test reports a failure"
 )]
@@ -245,10 +244,9 @@ fn state(operation: OperationConfig, tab: properties::ToolpathTab) -> AppState {
     state
 }
 
-/// One painted text run and its screen rect.
+/// One painted text run.
 struct Painted {
     text: String,
-    rect: egui::Rect,
 }
 
 /// Draw the production inspector for `state` over passes; `click` presses
@@ -290,7 +288,6 @@ fn draw(ctx: &egui::Context, state: &mut AppState, click: Option<egui::Pos2>) ->
             if let egui::epaint::Shape::Text(text) = &clipped.shape {
                 painted.push(Painted {
                     text: text.galley.job.text.clone(),
-                    rect: egui::Rect::from_min_size(text.pos, text.galley.size()),
                 });
             }
         }
@@ -310,9 +307,9 @@ fn every_depth_shows_its_reference_p3_7() {
         let label = operation.label();
         let reference = floor.reference_label();
 
-        // 1. The Geometry tab: the floor row names its reference and the
+        // 1. The Cut tab: the floor row names its reference and the
         // resolved Z.
-        let mut s = state(operation.clone(), properties::ToolpathTab::Geometry);
+        let mut s = state(operation.clone(), properties::ToolpathTab::Cut);
         let geometry = draw(&ctx, &mut s, None);
         let all = texts(&geometry);
         assert!(
@@ -347,43 +344,4 @@ fn every_depth_shows_its_reference_p3_7() {
             "{label}: the Top line does not name its source: {all:?}"
         );
     }
-}
-
-#[test]
-fn the_each_face_hint_sets_the_floor_p3_7() {
-    let ctx = ctx();
-    let (pocket, _) = floor_ops().remove(0);
-    let OperationConfig::Pocket(mut cfg) = pocket else {
-        unreachable!()
-    };
-    cfg.floor = Floor::Top { depth: 3.0 };
-    let mut s = state(
-        OperationConfig::Pocket(cfg),
-        properties::ToolpathTab::Geometry,
-    );
-    let painted = draw(&ctx, &mut s, None);
-    let all = texts(&painted);
-    assert!(
-        all.iter()
-            .any(|t| t.contains("To cut down to each face, choose Each picked face.")),
-        "a face is picked under the Top floor: the hint must show: {all:?}"
-    );
-    let button = painted
-        .iter()
-        .find(|p| p.text == "Each picked face")
-        .unwrap_or_else(|| panic!("the hint has no button: {all:?}"));
-    let _ = draw(&ctx, &mut s, Some(button.rect.center()));
-    assert_eq!(
-        s.session().toolpath_configs()[0].operation.floor(),
-        Some(Floor::EachFace { depth: 0.0 }),
-        "the button must set the floor to each picked face, depth 0"
-    );
-    // Under "each picked face" the hint has nothing to offer.
-    let after = draw(&ctx, &mut s, None);
-    assert!(
-        !texts(&after)
-            .iter()
-            .any(|t| t.contains("To cut down to each face")),
-        "the hint must go once the floor is each picked face"
-    );
 }

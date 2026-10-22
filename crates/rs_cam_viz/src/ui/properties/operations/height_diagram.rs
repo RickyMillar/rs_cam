@@ -796,7 +796,7 @@ pub fn draw_height_diagram(
         match (idx, owner, floor.as_mut()) {
             (BOTTOM_LINE_INDEX, FloorOwner::OpFloor, Some(f)) => {
                 if let Ok(z) = f.inputs.refs.floor_z(f.floor)
-                    && let Ok(moved) = f.inputs.refs.at_z(*f.floor, z + dz)
+                    && let Ok(moved) = f.inputs.refs.at_z(f.floor.clone(), z + dz)
                 {
                     *f.floor = moved;
                 }
@@ -820,7 +820,7 @@ pub fn draw_height_diagram(
         // as it was.
         match (drag_idx, owner, floor.as_mut()) {
             (Some(BOTTOM_LINE_INDEX), FloorOwner::OpFloor, Some(f)) => {
-                let rounded = f.floor.with_value(round_pin(f.floor.value()));
+                let rounded = f.floor.clone().with_value(round_pin(f.floor.value()));
                 if rounded.door_refusal().is_none() {
                     *f.floor = rounded;
                 }

@@ -559,7 +559,7 @@ impl RsCamApp {
                 before.index = Some(p.index);
                 before.extra = serde_json::json!({
                     "index": p.index,
-                    "floor": rs_cam_core::compute::floor::Floor::from(p.floor),
+                    "floor": rs_cam_core::compute::floor::Floor::from(p.floor.clone()),
                 });
                 CorePlan::Apply(
                     Command::SetToolpathFloor(floor::floor_args(&p)),

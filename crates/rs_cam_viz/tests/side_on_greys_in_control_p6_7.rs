@@ -51,7 +51,7 @@ fn profile(side: ProfileSide, compensation: CompensationType) -> AppState {
     let model = h::drawing_model(ItemSet::from_polygons(vec![Polygon2::rectangle(
         -10.0, -10.0, 10.0, 10.0,
     )]));
-    h::state(
+    let mut state = h::state(
         model,
         6.0,
         StockConfig::default(),
@@ -60,7 +60,10 @@ fn profile(side: ProfileSide, compensation: CompensationType) -> AppState {
             compensation,
             ..ProfileConfig::default()
         }),
-    )
+    );
+    // GT-1: the side and the compensation are op parameters, on the Cut tab.
+    h::show_tab(&mut state, rs_cam_viz::ui::properties::ToolpathTab::Cut);
+    state
 }
 
 fn stored_profile(state: &AppState) -> ProfileConfig {

@@ -12,10 +12,10 @@
 //! # What it measures
 //!
 //! The test drives the production inspector (`properties::draw`) through a
-//! headless `Context` and clicks each control of the section: `+ Rule` then
-//! `Add` (`Replace` under the default, `AddRule` after it), the rule `✕`
-//! (`RemoveRule`), `Reset`, and the picks `Clear` (`Replace` with the rules
-//! only), on the op target of a Drill and on the boundary target of a
+//! headless `Context` and clicks each control of the Geometry tab (GT-1):
+//! `Rule…` then `Add` (one `Replace` from the facts of a picked item,
+//! GT-3), the row `✕` (`RemovePick`), the rule `✕` (`RemoveRule`) and
+//! `Reset`, on the op target of a Drill and on the boundary target of a
 //! Pocket. Each click must push exactly ONE `AppEvent::EditToolpathSelection`
 //! of the expected edit, and the stored operation and boundary must not
 //! change in the draw.
@@ -291,58 +291,8 @@ fn the_selection_section_writes_edits_only_p4_3() {
     let ctx = ctx();
     let mut state = state();
 
-    // `+ Rule` opens the draft and sends nothing; `Add` under the default
-    // replaces the default with the one rule (one act, one set of items).
-    let before = stored(&state);
-    let opened = click(&ctx, &mut state, "+ Rule", 0);
-    assert!(edits(&opened).is_empty(), "+ Rule only opens the draft");
-    assert_eq!(stored(&state), before);
-    assert!(
-        state.gui.selection_ui.rule_draft.is_some(),
-        "+ Rule must open the draft"
-    );
-    let (target, edit) = one_edit(&ctx, &mut state, "Add", 0);
-    assert_eq!(target, SelectionTarget::Op);
-    let SelectionEdit::Replace(replaced) = edit else {
-        panic!("Add under the default must Replace; sent {edit:?}");
-    };
-    let [rule] = replaced.rules() else {
-        panic!("Add under the default gives one rule: {replaced:?}");
-    };
-    assert_eq!(rule.source, SourceRef::ToolpathModel);
-    assert_eq!(
-        rule.filter.kinds,
-        KindFilter::Only(vec![ItemKind::Point, ItemKind::Circle]),
-        "a Drill rule takes the kinds a drill serves"
-    );
-    assert!(
-        state.gui.selection_ui.rule_draft.is_none(),
-        "Add closes the draft"
-    );
-
-    // After a non-default selection, `Add` adds.
-    apply(
-        &mut state,
-        0,
-        SelectionTarget::Op,
-        SelectionEdit::Replace(Box::new(Selection::from_rules(vec![layer_rule("HOLES")]))),
-    );
-    let _ = click(&ctx, &mut state, "+ Rule", 0);
-    let (_, edit) = one_edit(&ctx, &mut state, "Add", 0);
-    assert!(
-        matches!(edit, SelectionEdit::AddRule(_)),
-        "Add after a non-default selection must AddRule; sent {edit:?}"
-    );
-
-    // The rule's remove button.
-    let (_, edit) = one_edit(&ctx, &mut state, "\u{2715}", 0);
-    assert_eq!(edit, SelectionEdit::RemoveRule(0));
-
-    // Reset, enabled away from the default.
-    let (_, edit) = one_edit(&ctx, &mut state, "Reset", 0);
-    assert_eq!(edit, SelectionEdit::Reset);
-
-    // The picks Clear keeps the rules.
+    // GT-1: the `+ Rule` card went; the Geometry tab offers rules from a
+    // picked item ("Rule…", L-R4). A pick replaces the default (O-PICK).
     let circle = state
         .session()
         .list_model_items(
@@ -357,23 +307,71 @@ fn the_selection_section_writes_edits_only_p4_3() {
         &mut state,
         0,
         SelectionTarget::Op,
-        SelectionEdit::AddPick(circle),
-    );
-    let (_, edit) = one_edit(&ctx, &mut state, "Clear", 0);
-    assert_eq!(
-        edit,
-        SelectionEdit::Replace(Box::new(Selection::from_rules(vec![layer_rule("HOLES")]))),
-        "Clear removes the picks and keeps the rules"
+        SelectionEdit::AddPick(circle.clone()),
     );
 
-    // The boundary target of the Pocket: its op Reset is first (disabled at
-    // the default), the boundary Reset second.
+    // "Rule…" opens the offers and sends nothing.
+    let before = stored(&state);
+    let opened = click(&ctx, &mut state, "Rule\u{2026}", 0);
+    assert!(edits(&opened).is_empty(), "Rule… only opens the offers");
+    assert_eq!(stored(&state), before);
+    assert!(
+        state.gui.selection_ui.offers_for.is_some(),
+        "Rule… must open the offers"
+    );
+    // The first offer: the circles of the picked diameter, as ONE Replace
+    // that holds the rule and no pick (the rule holds the pick).
+    let (target, edit) = one_edit(&ctx, &mut state, "Add", 0);
+    assert_eq!(target, SelectionTarget::Op);
+    let SelectionEdit::Replace(replaced) = edit else {
+        panic!("an offer must Replace; sent {edit:?}");
+    };
+    let [rule] = replaced.rules() else {
+        panic!("the offer gives one rule: {replaced:?}");
+    };
+    assert_eq!(rule.source, SourceRef::ToolpathModel);
+    assert_eq!(rule.filter.kinds, KindFilter::Only(vec![ItemKind::Circle]));
+    assert!(
+        rule.filter.diameter.is_some(),
+        "the offer names the diameter"
+    );
+    assert!(
+        replaced.picks().is_empty(),
+        "the rule replaces the pick it holds"
+    );
+    assert!(
+        state.gui.selection_ui.offers_for.is_none(),
+        "Add closes the offers"
+    );
+
+    // The row × of a pick sends RemovePick (core turns a rule member into
+    // picks, GT-Q8).
+    let (_, edit) = one_edit(&ctx, &mut state, "\u{2715}", 0);
+    assert_eq!(edit, SelectionEdit::RemovePick(circle));
+
+    // The rule's remove button.
+    apply(
+        &mut state,
+        0,
+        SelectionTarget::Op,
+        SelectionEdit::Replace(Box::new(Selection::from_rules(vec![layer_rule("HOLES")]))),
+    );
+    let (_, edit) = one_edit(&ctx, &mut state, "\u{2715}", 0);
+    assert_eq!(edit, SelectionEdit::RemoveRule(0));
+
+    // Reset, enabled away from the default.
+    let (_, edit) = one_edit(&ctx, &mut state, "Reset", 0);
+    assert_eq!(edit, SelectionEdit::Reset);
+
+    // The boundary target of the Pocket (GT-Q7: the Geometry tab holds it
+    // under Boundary): its op Reset is first (disabled at the default), the
+    // boundary Reset second. The op default row has no ×.
     select(&mut state, 1);
     let ctx = self::ctx();
     let (target, edit) = one_edit(&ctx, &mut state, "Reset", 1);
     assert_eq!(target, SelectionTarget::Boundary);
     assert_eq!(edit, SelectionEdit::Reset);
-    let (target, edit) = one_edit(&ctx, &mut state, "\u{2715}", 1);
+    let (target, edit) = one_edit(&ctx, &mut state, "\u{2715}", 0);
     assert_eq!(target, SelectionTarget::Boundary);
     assert_eq!(edit, SelectionEdit::RemoveRule(0));
 }
@@ -449,13 +447,13 @@ fn a_selection_refusal_has_one_owner_p4_3() {
     assert!(
         texts
             .iter()
-            .any(|t| t == "The selection refuses. See Selection below."),
+            .any(|t| t == "The selection refuses. See the Geometry tab."),
         "the header must say why Generate is off in one line; painted: {texts:?}"
     );
     assert!(
         texts
             .iter()
-            .any(|t| t.ends_with("the selection refuses. See Selection on the Geometry tab.")),
+            .any(|t| t.ends_with("the selection refuses. See the Geometry tab.")),
         "the footer row must name the Selection section in one line; painted: {texts:?}"
     );
 }

@@ -515,6 +515,7 @@ impl RsCamApp {
             use rs_cam_mcp::server::PropertiesTabParam;
             let parsed = match tab {
                 PropertiesTabParam::Geometry => ToolpathTab::Geometry,
+                PropertiesTabParam::Cut => ToolpathTab::Cut,
                 PropertiesTabParam::Feeds => ToolpathTab::FeedsSpeeds,
                 PropertiesTabParam::Linking => ToolpathTab::Linking,
                 PropertiesTabParam::Heights => ToolpathTab::Heights,

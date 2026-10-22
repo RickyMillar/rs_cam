@@ -47,6 +47,12 @@ const EGUI_MEMORY_ALLOWANCE: &[(&str, usize, &str)] = &[
          back out of the same context; it is not project state",
     ),
     (
+        "ui/properties/selection_section.rs",
+        2,
+        "the open and the show-all toggle of one group of the Geometry tab list (GT-2): a view \
+         toggle, as a collapsing header keeps; the filter text lives in `SelectionUi`",
+    ),
+    (
         "ui/preflight.rs",
         3,
         "a per-modal confirmation tick that dies with the modal",

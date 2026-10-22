@@ -232,8 +232,8 @@ fn each_op_floor_ladder_ends_at_the_bottom_z() {
         OperationType::Zigzag,
         OperationType::Adaptive,
     ] {
-        for (floor, want) in cases {
-            let s = session(floor_op(op_type, floor));
+        for (floor, want) in cases.clone() {
+            let s = session(floor_op(op_type, floor.clone()));
             let tc = &s.toolpath_configs()[0];
             let answer = s.toolpath_heights(tc).expect("the heights resolve");
             assert!(
@@ -309,7 +309,7 @@ fn a_floor_above_the_top_refuses_before_the_ladder() {
             depth: -STOCK_THICKNESS - 1.0,
         },
     ] {
-        let mut s = session(pocket(floor));
+        let mut s = session(pocket(floor.clone()));
         let tc = s.toolpath_configs()[0].clone();
         let answer = s.toolpath_heights(&tc).expect("the heights resolve");
         assert!(

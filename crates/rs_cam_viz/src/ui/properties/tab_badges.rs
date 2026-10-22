@@ -19,7 +19,7 @@ impl TabBadges {
             ToolpathTab::FeedsSpeeds => self.feeds_badge,
             ToolpathTab::Heights => self.heights_badge,
             ToolpathTab::Dressup => self.dressup_badge,
-            ToolpathTab::Geometry | ToolpathTab::Linking => None,
+            ToolpathTab::Geometry | ToolpathTab::Cut | ToolpathTab::Linking => None,
         }
     }
 }
@@ -269,7 +269,7 @@ pub(super) fn render_diagnostic_row(
     // the fix. The footer row names that section in one line; the hover
     // keeps the whole refusal.
     let face = if is_selection_refusal(d) {
-        format!("{prefix}the selection refuses. See Selection on the Geometry tab.")
+        format!("{prefix}the selection refuses. See the Geometry tab.")
     } else {
         format!("{prefix}{}", d.message)
     };

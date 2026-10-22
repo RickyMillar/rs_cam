@@ -1,5 +1,6 @@
 //! The view state of the selection section (geometry selection P4.3): the
-//! pick mode and the `+ Rule` draft.
+//! pick mode, and the Geometry tab state (GT-2, GT-3): the open "Rule…"
+//! menu, the hovered row and the list filter.
 //!
 //! P4.3 stored the on/off state and the target of the pick mode. P4.5 adds
 //! the kind filter that the viewport filter bar (`ui/pick_bar.rs`) edits.
@@ -16,13 +17,13 @@
 use std::collections::BTreeSet;
 
 use rs_cam_core::compute::catalog::ItemUse;
-use rs_cam_core::selection::{DiameterRange, Facing, Item, ItemKind, Shape, SourceRef, ZRange};
+use rs_cam_core::selection::{DiameterRange, Item, ItemKind, MatchKey, Shape};
 use rs_cam_core::session::{BOUNDARY_ITEM_USE, SelectionTarget, ToolpathConfig};
 
 use super::toolpath::ToolpathId;
 
-/// The circle diameter range that a new circle limit starts at (the
-/// `+ Rule` card and the pick bar): the 5 mm shelf-pin hole of the P4.5
+/// The circle diameter range that a new circle limit starts at (the pick
+/// bar): the 5 mm shelf-pin hole of the P4.5
 /// operator look, plus or minus 0.1 mm. The user edits both values.
 pub const DEFAULT_CIRCLE_RANGE: DiameterRange = DiameterRange {
     nominal_mm: 5.0,
@@ -132,26 +133,16 @@ pub fn held_kinds(model: &rs_cam_core::session::LoadedModel) -> BTreeSet<ItemKin
     held
 }
 
-/// The `+ Rule` popover draft. `Some` on [`SelectionUi::rule_draft`] means
-/// that the popover is open. A draft with content lives in `state/`, not
-/// in egui memory (UI-09).
+/// The "Rule…" offers of one row of the Geometry tab (geometry selection
+/// GT-3, L-R4). `Some` on [`SelectionUi::offers_for`] means that the menu
+/// of that row is open; the inspector reads the offers of core
+/// (`ProjectSession::rule_offers`) only while it is open.
 #[derive(Debug, Clone, PartialEq)]
-pub struct RuleDraft {
+pub struct OffersFor {
     pub toolpath_id: ToolpathId,
     pub target: SelectionTarget,
-    /// The items the rule reads: the toolpath model, another model or the
-    /// stock.
-    pub source: SourceRef,
-    /// The layers the rule admits. Empty = every layer.
-    pub layers: BTreeSet<String>,
-    /// The kinds the rule admits.
-    pub kinds: BTreeSet<ItemKind>,
-    /// The circle diameter range, when the rule limits circles.
-    pub diameter: Option<DiameterRange>,
-    /// The face facing, when the rule admits faces.
-    pub facing: Facing,
-    /// The face plane Z range, when the rule limits it.
-    pub z: Option<ZRange>,
+    /// The key of the picked item that the offers read.
+    pub key: MatchKey,
 }
 
 /// A drag of one tab in the tab editor (geometry selection P4.6). It is GUI
@@ -217,8 +208,14 @@ impl ViewportMode {
 pub struct SelectionUi {
     /// The viewport mode that is on, if any.
     pub mode: Option<ViewportMode>,
-    /// The `+ Rule` draft, while the popover is open.
-    pub rule_draft: Option<RuleDraft>,
+    /// The "Rule…" menu of one row of the Geometry tab, while it is open.
+    pub offers_for: Option<OffersFor>,
+    /// The key of the selected-list row under the pointer (GT-2): the
+    /// viewport hover buffer draws it, as it draws a pick hover.
+    pub row_hover: Option<MatchKey>,
+    /// The text of the filter box of the Geometry tab (GT-2): it filters
+    /// the rows of the list; it does not search the model.
+    pub list_filter: String,
 }
 
 impl SelectionUi {
@@ -282,15 +279,15 @@ impl SelectionUi {
         }
     }
 
-    /// The open draft of `target` on `toolpath_id`, if any.
-    pub fn draft_for(
-        &mut self,
+    /// The open "Rule…" menu of `target` on `toolpath_id`, if any.
+    pub fn offers_for(
+        &self,
         toolpath_id: ToolpathId,
         target: SelectionTarget,
-    ) -> Option<&mut RuleDraft> {
-        self.rule_draft
-            .as_mut()
-            .filter(|d| d.toolpath_id == toolpath_id && d.target == target)
+    ) -> Option<&OffersFor> {
+        self.offers_for
+            .as_ref()
+            .filter(|o| o.toolpath_id == toolpath_id && o.target == target)
     }
 
     /// Clear the state of every toolpath but `toolpath_id`. The inspector
@@ -305,11 +302,11 @@ impl SelectionUi {
             self.mode = None;
         }
         if self
-            .rule_draft
+            .offers_for
             .as_ref()
-            .is_some_and(|d| Some(d.toolpath_id) != toolpath_id)
+            .is_some_and(|o| Some(o.toolpath_id) != toolpath_id)
         {
-            self.rule_draft = None;
+            self.offers_for = None;
         }
     }
 }

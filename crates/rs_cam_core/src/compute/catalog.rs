@@ -1084,11 +1084,11 @@ impl OperationConfig {
     /// `FloorOwner::OpFloor` ops. The match names every variant.
     pub fn floor(&self) -> Option<crate::compute::floor::Floor> {
         match self {
-            OperationConfig::Pocket(c) => Some(c.floor),
-            OperationConfig::Bore(c) => Some(c.floor),
-            OperationConfig::Profile(c) => Some(c.floor),
-            OperationConfig::Adaptive(c) => Some(c.floor),
-            OperationConfig::Zigzag(c) => Some(c.floor),
+            OperationConfig::Pocket(c) => Some(c.floor.clone()),
+            OperationConfig::Bore(c) => Some(c.floor.clone()),
+            OperationConfig::Profile(c) => Some(c.floor.clone()),
+            OperationConfig::Adaptive(c) => Some(c.floor.clone()),
+            OperationConfig::Zigzag(c) => Some(c.floor.clone()),
             OperationConfig::Face(_)
             | OperationConfig::VCarve(_)
             | OperationConfig::Inlay(_)
@@ -1136,7 +1136,7 @@ impl OperationConfig {
         let Some(floor) = self.floor() else {
             return false;
         };
-        Some(floor) == self.default_floor()
+        Some(&floor) == self.default_floor().as_ref()
             || Some(floor)
                 == crate::feeds::suggest::default_operation(self.op_type(), stock).floor()
     }
@@ -1546,7 +1546,7 @@ impl OperationConfig {
             // P3.3: the floor is driver-set, so `params` leaves it out.
             floor: Self::new_default(op_type)
                 .floor()
-                .map(crate::compute::floor::floor_schema_json),
+                .map(|floor| crate::compute::floor::floor_schema_json(&floor)),
         }
     }
 }

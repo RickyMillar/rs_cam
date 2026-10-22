@@ -338,17 +338,20 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     let setup = state.session().list_setups()[0].id;
     let mut out = Vec::new();
     // The caps: the after-state of IC1 (2026-10-13) plus 3 lines. The tabs
-    // in order: Geometry, Feeds & Speeds, Linking, Heights, Dressup. Before
+    // in order: Geometry, Cut, Feeds & Speeds, Linking, Heights, Dressup. Before
     // IC1 the Feeds & Speeds tab painted 52 to 60 lines with 14 to 16
     // paragraphs. Round 2 (IC2, same day) moved the derivation into the
     // closed `Details`: Feeds & Speeds went from 32-36 to 22-25 lines.
     // Geometry selection P4.3 added the Selection section to the Pocket
     // Geometry tab (the header, Cuts, Rules, the actions and `Details`):
     // 26 lines, so the cap is 26 plus 3 by the same rule.
-    let caps: [(&str, [usize; 5]); 3] = [
-        ("Pocket", [29, 25, 22, 21, 13]),
-        ("3D Rough", [23, 25, 22, 20, 13]),
-        ("3D Finish", [21, 28, 22, 23, 15]),
+    // GT-1 (2026-10-22): the Geometry tab (the selection) comes first and
+    // the old Geometry tab is Cut. Measured: Geometry 11 / 6 / 8 lines and
+    // Cut 24 / 20 / 18 lines; each cap is the measure plus 3.
+    let caps: [(&str, [usize; 6]); 3] = [
+        ("Pocket", [14, 27, 25, 22, 21, 13]),
+        ("3D Rough", [9, 23, 25, 22, 20, 13]),
+        ("3D Finish", [11, 21, 28, 22, 23, 15]),
     ];
     for (name, tab_caps) in caps {
         let id = configs

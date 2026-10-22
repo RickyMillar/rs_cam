@@ -200,12 +200,27 @@ impl ProjectSession {
         // through `toolpath_heights`.
         // P3.5: the lowest up face of the op selection is the deepest floor
         // under "each picked face".
+        // UX-8: the face of the floor "A picked face". A key that does not
+        // resolve refuses generation with its typed cause, as a lost pick.
+        let floor_face =
+            match self.floor_face_z(tc, &ctx, super::super::selection_status::FaceAccess::Build) {
+                Some(Ok(z)) => Some(z),
+                Some(Err(refusal)) => {
+                    return Err(SessionError::Selection(Box::new(
+                        refusal.for_op(tc.operation.op_type().label()),
+                    )));
+                }
+                None => None,
+            };
         let heights = self.generation_heights(
             tc,
             &ctx,
             mesh.as_deref(),
-            face_top_z,
-            selection.face_bottom_z(),
+            crate::session::heights::FacePlanes {
+                top: face_top_z,
+                bottom: selection.face_bottom_z(),
+                floor_face,
+            },
         )?;
 
         // Build tool definition

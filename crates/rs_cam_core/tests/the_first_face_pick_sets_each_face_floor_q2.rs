@@ -261,7 +261,7 @@ fn a_hand_set_floor_stays() {
     let _ = s
         .apply(Command::SetToolpathFloor(SetToolpathFloorArgs {
             index: 0,
-            floor: hand,
+            floor: hand.clone(),
         }))
         .unwrap();
     assert!(!op(&s).floor_is_default(&stock_ctx(&s)));

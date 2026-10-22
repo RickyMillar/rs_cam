@@ -98,6 +98,11 @@ pub(super) fn draw_toolpath_panel(
     // combos the user rarely revisits after setup.
     ui.add_space(4.0);
     let validation_errors = validate_toolpath(entry, validation);
+    // F20: the first blocking finding of the stored result.
+    let blocking = crate::ui::toolpath_panel::blocking_finding(
+        entry.run.result().map(|result| &result.stats),
+        entry.id,
+    );
     let can_generate = !tools.is_empty() && validation_errors.is_empty();
     // DC5 (Pattern C): the state the "requires manual generation" sentence
     // used to carry. Read before the row so the closure holds no extra
@@ -132,6 +137,20 @@ pub(super) fn draw_toolpath_panel(
             }
             FreshnessState::Regenerating => {
                 ui.label("Computing...");
+            }
+            // F20 (SAFETY visibility): a current result with a blocking
+            // finding is not "Done": export refuses it. The header names
+            // the state, and its hover holds the finding with its fix. The
+            // footer row stays the one owner of the finding row (IC1).
+            FreshnessState::Current if let Some(finding) = blocking.as_ref() => {
+                ui.label(
+                    egui::RichText::new(crate::ui::toolpath_panel::BLOCKED_HEADER)
+                        .color(crate::ui::tokens::DANGER),
+                )
+                .on_hover_text(format!(
+                    "A blocking finding stands, so this toolpath does not go to G-code. {}",
+                    finding.message
+                ));
             }
             FreshnessState::Current => {
                 ui.label(egui::RichText::new("Done").color(crate::ui::tokens::OK));
@@ -236,7 +255,7 @@ pub(super) fn draw_toolpath_panel(
         for err in &validation_errors {
             if section_refusal.as_deref() == Some(err.as_str()) {
                 ui.add(
-                    OneLine::new("The selection refuses. See Selection below.")
+                    OneLine::new("The selection refuses. See the Geometry tab.")
                         .color(crate::ui::tokens::DANGER)
                         .detail(err.clone()),
                 );
@@ -330,8 +349,12 @@ pub(super) fn draw_toolpath_panel(
     // ── Tab content ─────────────────────────────────────────────────
 
     match active_tab {
+        // GT-1: what the op cuts. The tab writes through events only (L-1).
         ToolpathTab::Geometry => {
-            draw_geometry_tab(ui, entry, inputs, model_bbox, selection_ui, events);
+            super::geometry_tab::draw_geometry_tab(ui, entry, inputs, selection_ui, events);
+        }
+        ToolpathTab::Cut => {
+            draw_cut_tab(ui, entry, inputs, model_bbox, selection_ui, events);
         }
 
         ToolpathTab::FeedsSpeeds => draw_feeds_tab(ui, entry, inputs, model_bbox, events),
@@ -501,56 +524,11 @@ pub(super) fn draw_toolpath_panel(
 // order and no egui id changed. Each function re-binds the `inputs` fields
 // it needs under the names its body already used.
 
-/// The label of the 3D op face-pick button (geometry selection P4.D).
-pub(super) const PICK_FACES_LABEL: &str = "Pick faces";
-
-/// The hover of [`PICK_FACES_LABEL`].
-const PICK_FACES_HOVER: &str = "Click flat faces in the viewport to bound this operation. \
-    When the boundary source is not Selection, the first face sets the source to Selection \
-    with that face. Undo restores the source.";
-
-/// The "Pick faces" row of an op that holds no selection (every 3D op):
-/// the button turns Pick on for the boundary selection, for ANY boundary
-/// source (geometry selection P4.D, ruling L-8 revised). The first face
-/// click then sets the source to `Selection` with that face
-/// (`ProjectSession::face_click_edit`). An op that no boundary moves (D3)
-/// draws no row.
-fn draw_boundary_pick_row(
-    ui: &mut egui::Ui,
-    entry: &crate::state::toolpath::ToolpathEntry,
-    selection_ui: &mut crate::state::pick::SelectionUi,
-) {
-    use rs_cam_core::session::{BOUNDARY_ITEM_USE, SelectionTarget};
-    if entry.operation.selection().is_some()
-        || !entry
-            .operation
-            .capabilities()
-            .territory_xy
-            .session_clip_applies()
-    {
-        return;
-    }
-    let on = selection_ui.pick_is_on(entry.id, SelectionTarget::Boundary);
-    let button = if on {
-        crate::ui::components::Button::primary(PICK_FACES_LABEL)
-    } else {
-        crate::ui::components::Button::new(PICK_FACES_LABEL)
-    };
-    if ui.add(button).on_hover_text(PICK_FACES_HOVER).clicked() {
-        selection_ui.set_pick(if on {
-            None
-        } else {
-            Some(crate::state::pick::PickMode::new(
-                entry.id,
-                SelectionTarget::Boundary,
-                BOUNDARY_ITEM_USE,
-            ))
-        });
-    }
-}
-
-/// The Geometry tab: what to cut. `properties::tests` renders it (D3).
-pub(super) fn draw_geometry_tab(
+/// The Cut tab (geometry selection GT-1; the "Geometry" tab before it): the
+/// tool, the input model, the start stock, the op parameters and the
+/// machining boundary source. The selection is in the Geometry tab.
+/// `properties::tests` renders it (D3).
+pub(super) fn draw_cut_tab(
     ui: &mut egui::Ui,
     entry: &mut crate::state::toolpath::ToolpathEntry,
     inputs: &ToolpathPanelInputs,
@@ -577,54 +555,11 @@ pub(super) fn draw_geometry_tab(
 
     ui.add_space(4.0);
 
-    // DC5: the geometry WIRING opens this tab — Tool, Input model, the
-    // Selection section (P4.D) and the stock source. It used to sit behind a `Geometry`
-    // disclosure above the tab strip, which gave one name two homes
-    // at one level. One name, one place (Rule A).
+    // DC5: the geometry WIRING opens this tab: Tool, Input model and the
+    // stock source. GT-1: the Selection section moved to the Geometry tab,
+    // and the O-2 "Each picked face" hint went (R2.4, FR-1 F7: it named
+    // the floor while no face was picked).
     draw_geometry_wiring(ui, entry, inputs);
-    // ── Selection (geometry selection P4.3; P4.D: at the top) ─────
-    // P4.D: the section sits directly below the Input combo, so the model
-    // and what the op takes from it read as one block.
-    // The op selection of every op that holds one. The section sends
-    // `EditToolpathSelection` only (L-1); it reads the stored selection
-    // and does not write the draft entry.
-    if let Some(selection) = entry.operation.selection() {
-        let op_default = entry
-            .operation
-            .default_selection()
-            .unwrap_or_else(rs_cam_core::selection::Selection::empty);
-        super::selection_section::draw_selection_section(
-            ui,
-            &super::selection_section::SelectionSectionInputs {
-                toolpath_id: entry.id,
-                toolpath_model: entry.model_id,
-                target: rs_cam_core::session::SelectionTarget::Op,
-                selection,
-                op_default: &op_default,
-                report: inputs.selection_report.as_ref(),
-                item_use: entry.operation.capabilities().item_use,
-                models,
-                sources: &inputs.rule_sources,
-                note_items: &inputs.selection_note_items,
-                model_kinds: &inputs.toolpath_model_kinds,
-                // P6.7: the hole size rows read the tool diameter.
-                tool_diameter: tool_configs
-                    .iter()
-                    .find(|(id, _)| *id == entry.tool_id)
-                    .map(|(_, tool)| tool.diameter),
-            },
-            selection_ui,
-            events,
-        );
-    }
-
-    // P3.7 (O-2, option A): a face pick under a floor that is not "each
-    // picked face" keeps its floor; one line under the Selection section
-    // offers the choice. The button writes the draft floor, which goes
-    // back through the config as every op row does; the section itself
-    // writes `EditToolpathSelection` only (L-1).
-    draw_each_face_hint(ui, entry, toolpath_heights);
-    draw_boundary_pick_row(ui, entry, selection_ui);
     draw_start_from(ui, entry, inputs, events);
     ui.separator();
     ui.add_space(4.0);
@@ -869,29 +804,13 @@ pub(super) fn draw_geometry_tab(
                     });
             });
 
-            // P4.3: the Selection section draws the boundary selection
-            // (it replaces the "Outline model" combo). It sends edits with
-            // `target: Boundary`; Reset restores `inputs.boundary_default`.
-            if let BoundarySource::Selection { selection, holes } = &mut entry.boundary.source {
-                super::selection_section::draw_selection_section(
-                    ui,
-                    &super::selection_section::SelectionSectionInputs {
-                        toolpath_id: entry.id,
-                        toolpath_model: entry.model_id,
-                        target: rs_cam_core::session::SelectionTarget::Boundary,
-                        selection,
-                        op_default: &inputs.boundary_default,
-                        report: inputs.boundary_report.as_ref(),
-                        item_use: rs_cam_core::session::BOUNDARY_ITEM_USE,
-                        models,
-                        sources: &inputs.rule_sources,
-                        note_items: &inputs.boundary_note_items,
-                        model_kinds: &inputs.toolpath_model_kinds,
-                        tool_diameter: None,
-                    },
-                    selection_ui,
-                    events,
-                );
+            // GT-Q7: the Geometry tab draws the boundary selection, with the
+            // rows of the op selection. This tab keeps the source and the
+            // holes option.
+            if let BoundarySource::Selection { holes, .. } = &mut entry.boundary.source {
+                ui.add(OneLine::new(
+                    "Pick the boundary items in the Geometry tab, under Boundary.",
+                ));
                 // The holes option inverts the regions: the toolpath cuts
                 // inside the holes of the shapes and stays off the shapes.
                 ui.checkbox(holes, "Machine the holes").on_hover_text(
@@ -1233,50 +1152,6 @@ fn draw_feeds_tab(
     draw_vendor_lut_viewer(ui, tool_type, tool_diameter);
 }
 
-/// The text of the O-2 hint (geometry selection P3.7, design 8.1).
-pub(crate) const EACH_FACE_HINT: &str =
-    "Faces set the top. To cut down to each face, choose Each picked face.";
-
-/// The label of the button of the O-2 hint.
-pub(crate) const EACH_FACE_HINT_BUTTON: &str = "Each picked face";
-
-/// The O-2 hint (option A): when an up face is picked and the floor of the
-/// op is not "each picked face", one line offers that floor. The button
-/// sets `Floor::EachFace { depth: 0 }`: each face is cut down to its own
-/// plane. Nothing cuts differently until the operator clicks.
-fn draw_each_face_hint(
-    ui: &mut egui::Ui,
-    entry: &mut crate::state::toolpath::ToolpathEntry,
-    toolpath_heights: Option<&rs_cam_core::session::ToolpathHeights>,
-) {
-    use rs_cam_core::compute::floor::Floor;
-    let Some(floor) = entry.operation.floor() else {
-        return;
-    };
-    let face_picked = toolpath_heights
-        .and_then(|answer| answer.floor_references(&entry.heights).face_bottom_z)
-        .is_some();
-    if !face_picked || matches!(floor, Floor::EachFace { .. }) {
-        return;
-    }
-    ui.horizontal(|ui| {
-        ui.add(OneLine::new(format!(
-            "{} {EACH_FACE_HINT}",
-            crate::ui::tokens::GLYPH_DETAIL
-        )));
-    });
-    if ui
-        .add(crate::ui::components::Button::quiet(EACH_FACE_HINT_BUTTON))
-        .on_hover_text(
-            "Set the floor to Each picked face, depth 0: each face is cut down to its own \
-             plane, from the stock top.",
-        )
-        .clicked()
-    {
-        let _ = entry.operation.set_floor(Floor::EachFace { depth: 0.0 });
-    }
-}
-
 /// The Heights tab: the Z planes.
 ///
 /// P3.1: the diagram and the rows read THE heights of the session
@@ -1330,7 +1205,7 @@ fn draw_heights_tab(
             heights_refusal,
         );
         if let Some(floor) = floor
-            && entry.operation.floor() != Some(floor)
+            && entry.operation.floor().as_ref() != Some(&floor)
         {
             let _ = entry.operation.set_floor(floor);
         }

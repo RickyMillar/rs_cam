@@ -17,9 +17,11 @@
 //!    does not refuse. (Before UX-7 it refused `Empty`, "pick a face".)
 //! 3. A face click (`ProjectSession::click_edit`, the GUI click route) adds
 //!    that face. The Pocket then generates, and every cutting move lies
-//!    inside that face. (The case face is at the stock top, so operator
-//!    ruling Q2 keeps the default floor: a face at the top does not set
-//!    "Each picked face".)
+//!    inside that face. The case face is the largest up face BELOW the
+//!    stock top: since UX-7b the add door sets "Each picked face", so the
+//!    pocket cuts down to that face. A click on the face AT the stock top
+//!    refuses `FloorAboveTop`: that face has nothing above it to cut, and
+//!    a cut below it cuts into the part (the UX-7b gouge).
 //! 4. A Trace takes the same face as a closed line (a face's rings are
 //!    closed curves): it generates, and its cut stays round that face.
 //!
@@ -140,24 +142,34 @@ fn add_op(session: &mut ProjectSession, op: OperationType) -> usize {
     session.toolpath_configs().len() - 1
 }
 
-/// The largest flat up face of the model: its pick key (as a click stores
-/// it) and its rings.
-fn case_face(session: &ProjectSession) -> (MatchKey, Polygon2) {
+/// The largest flat up face of the model below (`below_top`) or at the
+/// stock top: its pick key (as a click stores it) and its rings.
+fn up_face(session: &ProjectSession, below_top: bool) -> (MatchKey, Polygon2) {
     let model = &session.models()[0];
+    let top_z = session.stock_config().origin_z + session.stock_config().z;
     let (item, face) = model
         .items
         .iter()
         .filter_map(|item| match item.shape() {
-            Shape::Face(face) if face.normal.z > 0.99 => Some((item, face)),
+            Shape::Face(face)
+                if face.normal.z > 0.99 && (face.plane_z < top_z - EPS) == below_top =>
+            {
+                Some((item, face))
+            }
             _ => None,
         })
         .max_by(|a, b| a.1.rings.area().total_cmp(&b.1.rings.area()))
-        .expect("the stepped block has a flat up face");
+        .expect("the stepped block has a flat up face below and at the top");
     let key = MatchKey {
         source: SourceRef::ToolpathModel,
         ..item.key().clone()
     };
     (key, face.rings.clone())
+}
+
+/// The case face: the largest up face below the stock top.
+fn case_face(session: &ProjectSession) -> (MatchKey, Polygon2) {
+    up_face(session, true)
 }
 
 /// One viewport click on `key` for the op selection of toolpath `index`:
@@ -277,6 +289,22 @@ fn a_pocket_cuts_inside_the_clicked_step_face_p4_d() {
         outside.len(),
         samples.len(),
         outside.first()
+    );
+}
+
+#[test]
+fn a_pocket_on_the_top_face_refuses_floor_above_top_ux7b() {
+    let mut session = step_only_session();
+    let index = add_op(&mut session, OperationType::Pocket);
+    let (key, _) = up_face(&session, false);
+    click(&mut session, index, key);
+    let cancel = AtomicBool::new(false);
+    let err = session
+        .generate_toolpath(index, &cancel)
+        .expect_err("a pocket of the top face only has nothing to cut");
+    assert!(
+        format!("{err:?}").contains("FloorAboveTop"),
+        "the refusal names the floor at the top: {err:?}"
     );
 }
 

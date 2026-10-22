@@ -327,6 +327,9 @@ pub enum RefusalCause {
     Empty { skipped: Vec<SelectionNote> },
     /// No item matches a stored pick (the drawing changed).
     LostPick,
+    /// No item matches the face key of the floor "A picked face"
+    /// (geometry selection UX-8): the model changed.
+    FloorFaceLost,
     /// Two or more items match one stored pick (a duplicate entity).
     AmbiguousPick { matches: usize },
     /// The user named an item (a pick, or a rule that names its kind) that
@@ -425,6 +428,10 @@ impl SelectionRefusal {
                  an operation that cuts the items of the drawing"
             }
             RefusalCause::LostPick => "Pick the item again, or remove the pick from the selection",
+            RefusalCause::FloorFaceLost => {
+                "Use another face as the floor (Geometry tab, Use as floor), or set the floor \
+                 from another reference"
+            }
             RefusalCause::AmbiguousPick { .. } => {
                 "Remove the duplicate entity from the drawing, or remove the \
                  pick and select the item by a rule"
@@ -500,6 +507,10 @@ impl SelectionRefusal {
                 )
             }
             RefusalCause::LostPick => "no item of the drawing matches this pick".to_owned(),
+            RefusalCause::FloorFaceLost => {
+                "the floor is \"a picked face\", and no item of the model matches that face"
+                    .to_owned()
+            }
             RefusalCause::AmbiguousPick { matches } => {
                 format!("{matches} items of the drawing match this pick")
             }

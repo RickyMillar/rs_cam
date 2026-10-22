@@ -846,7 +846,11 @@ fn w4_the_first_face_pick_sets_each_face_floor_o_pick_q2() {
     let default_floor = OperationConfig::new_default(OperationType::Pocket)
         .floor()
         .unwrap();
-    assert_eq!(op(&c).floor(), Some(default_floor), "the default floor");
+    assert_eq!(
+        op(&c).floor(),
+        Some(default_floor.clone()),
+        "the default floor"
+    );
     assert!(op(&c).selection().unwrap().is_drawing(), "the default rule");
     let key = {
         let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
@@ -901,7 +905,7 @@ fn w4_the_first_face_pick_sets_each_face_floor_o_pick_q2() {
         .apply(Command::SetToolpathFloor(
             rs_cam_core::session::SetToolpathFloorArgs {
                 index,
-                floor: hand_floor,
+                floor: hand_floor.clone(),
             },
         ))
         .unwrap();

@@ -347,12 +347,12 @@ macro_rules! for_each_command {
                  ),
              }),
             // Geometry selection P3.3 (L-17): MCP and the CLI write the
-            // floor through this row; the GUI writes the whole config.
+            // floor through this row. GT-4: the GUI "Use as floor" and the
+            // floor face "Clear" write it too; the floor row of the Cut tab
+            // still writes the whole config.
             (Command, SetToolpathFloor, "set_toolpath_floor", SetToolpathFloorArgs, Effects,
              Surfaces {
-                 gui: Reach::Skip(
-                     "the GUI inspector replaces the whole config through replace_toolpath_config",
-                 ),
+                 gui: Reach::Reached,
                  mcp: Reach::Reached,
                  cli: Reach::Reached,
              }),
@@ -589,7 +589,10 @@ macro_rules! for_each_command {
              }),
             (Query, ListItems, "list_model_items", ListItemsArgs, ListItemsAnswer,
              Surfaces {
-                 gui: Reach::Reached,
+                 gui: Reach::Skip(
+                     "GT-3: the Geometry tab lists the selected items only and offers rules \
+                      from a picked item (rule_offers); it lists no model items",
+                 ),
                  mcp: Reach::Reached,
                  cli: Reach::Skip(
                      "the batch CLI writes rules in its job file; it lists no items",

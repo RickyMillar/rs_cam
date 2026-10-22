@@ -79,6 +79,9 @@ struct RuntimeSnapshot {
     /// What a worker is doing to this row now. A SEPARATE read from
     /// `freshness`, which keeps its seven arms.
     in_flight: Option<InFlight>,
+    /// F20 (SAFETY visibility): the message of the first blocking finding of
+    /// the stored result ([`blocking_finding`]), or `None`.
+    blocking: Option<String>,
 }
 
 /// One dependency, as the connector draws it.
@@ -360,12 +363,16 @@ pub fn draw(
                         has_result,
                     },
                 );
+                let blocking =
+                    blocking_finding(state.session().result_at(tp_idx).map(|r| &r.stats), card.id)
+                        .map(|d| d.message);
                 let rt_snap = RuntimeSnapshot {
                     visible: rt.is_none_or(|r| r.visible),
                     has_result,
                     freshness: row_freshness,
                     edges_in: edges.remove(&card.id).unwrap_or_default(),
                     in_flight: flight,
+                    blocking,
                 };
                 let geometry = draw_toolpath_card(ui, state, events, &card, &rt_snap, i, local_idx);
                 row_rects.push((card.id, geometry, rt_snap.edges_in));
@@ -531,13 +538,11 @@ fn draw_toolpath_card(
     // but `FreshnessState` folds that in itself (`Disabled` is its first
     // arm) and adds the one state `ComputeStatus` cannot express —
     // generated, then edited. A card with no runtime entry at all has never
-    // been generated.
-    let freshness = &rt.freshness;
+    // been generated. The dot reads `rt.freshness` (`draw_state_dot`).
     let has_result = rt.has_result;
     // The ring's hover names what the run carves for THIS row, so it needs
     // to know whether the row takes its stock from the ops above it.
     let has_stock_edge = rt.edges_in.iter().any(|e| e.kind == EdgeKind::Stock);
-    let flight = rt.in_flight;
     let dim = !tc.enabled || !visible;
 
     // Read every session-derived value HERE. The row body borrows
@@ -616,15 +621,7 @@ fn draw_toolpath_card(
                 .horizontal(|ui| {
                     ui.set_min_height(tokens::ROW_ACTION);
                     let swatch = draw_swatch(ui, tp_id, swatch_color);
-                    draw_state_dot(
-                        ui,
-                        freshness,
-                        flight,
-                        tp_id,
-                        &tc.name,
-                        has_stock_edge,
-                        events,
-                    );
+                    draw_state_dot(ui, rt, tp_id, &tc.name, has_stock_edge, events);
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.menu_button("\u{2026}", |ui| {
@@ -721,8 +718,7 @@ fn draw_swatch(ui: &mut egui::Ui, tp_id: ToolpathId, swatch_color: egui::Color32
 /// generation.
 fn draw_state_dot(
     ui: &mut egui::Ui,
-    freshness: &FreshnessState,
-    flight: Option<InFlight>,
+    rt: &RuntimeSnapshot,
     tp_id: ToolpathId,
     name: &str,
     has_stock_edge: bool,
@@ -730,7 +726,9 @@ fn draw_state_dot(
 ) {
     // The mapping is a pure function, so the sentry can drive every state
     // without a `Ui` (F2.2).
-    let (status_text, status_role, hover) = status_chip(freshness);
+    let freshness = &rt.freshness;
+    let flight = rt.in_flight;
+    let (status_text, status_role, hover) = row_status(freshness, rt.blocking.as_deref());
     // F2.2: driven by freshness, not `ComputeStatus::needs_generation()`,
     // which answers `false` for `Done` — and an edited operation keeps
     // `Done`, so the route was closed on precisely the card whose whole
@@ -1038,6 +1036,44 @@ fn compute_drop_index(response: &egui::Response, ui: &egui::Ui, count: usize) ->
 /// generation that produced the drawn geometry really did finish — so this
 /// chip used to read a confident green `OK` over geometry the project can no
 /// longer reproduce.
+/// F20 (SAFETY visibility, flow review FR-1): the first BLOCKING finding of
+/// a stored result, through the one generation adapter that the
+/// diagnostics ribbon reads (`diagnostics_from_generation`). Today that is
+/// `safety.cuts_into_model`: export refuses on it, so the row and the
+/// inspector header must not read "OK".
+pub fn blocking_finding(
+    stats: Option<&rs_cam_core::compute::toolpath_stats::ToolpathStats>,
+    id: ToolpathId,
+) -> Option<rs_cam_core::diagnostics::Diagnostic> {
+    rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation(id, stats?)
+        .into_iter()
+        .find(|d| d.severity == rs_cam_core::diagnostics::Severity::Blocking)
+}
+
+/// The word of a row whose current result holds a blocking finding (F20).
+pub const BLOCKED_WORD: &str = "BLOCKED";
+
+/// The inspector header word of the same state (F20): the generation is
+/// done, and a blocking finding stands.
+pub const BLOCKED_HEADER: &str = "Done \u{00B7} BLOCKED";
+
+/// The state of the row dot: [`status_chip`], except that a current result
+/// with a blocking finding (`blocking`, its message) reads [`BLOCKED_WORD`]
+/// in the danger role, with the message on hover (F20).
+pub fn row_status<'a>(
+    freshness: &'a FreshnessState,
+    blocking: Option<&'a str>,
+) -> (&'static str, crate::ui::components::Role, Option<&'a str>) {
+    match (freshness, blocking) {
+        (FreshnessState::Current, Some(message)) => (
+            BLOCKED_WORD,
+            crate::ui::components::Role::Danger,
+            Some(message),
+        ),
+        _ => status_chip(freshness),
+    }
+}
+
 pub fn status_chip(
     freshness: &FreshnessState,
 ) -> (&'static str, crate::ui::components::Role, Option<&str>) {

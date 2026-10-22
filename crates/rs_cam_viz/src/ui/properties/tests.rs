@@ -349,7 +349,7 @@ fn both_drill_editors_draw_the_same_cycle_rows_ui11() {
     }
 }
 
-/// D3: the Geometry tab draws no boundary controls for an op whose
+/// D3: the Cut tab (GT-1; the Geometry tab before) draws no boundary controls for an op whose
 /// capability is `TerritoryXy::SetupMap` (Pin Drill). No boundary moves
 /// its holes, so a boundary control would claim an effect that generation
 /// never applies. A Pocket (`ClipAfter`) still draws them, which is the
@@ -379,7 +379,7 @@ fn a_setup_map_op_draws_no_boundary_controls_d3() {
         warmup.textures_delta.clear();
         let mut events = Vec::new();
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            super::toolpath_panel::draw_geometry_tab(
+            super::toolpath_panel::draw_cut_tab(
                 ui,
                 &mut entry,
                 &inputs,
@@ -424,6 +424,17 @@ fn geometry_tab_texts(
     session: &rs_cam_core::session::ProjectSession,
     op: crate::state::toolpath::OperationType,
 ) -> Vec<String> {
+    tab_texts(session, op, ToolpathTab::Geometry)
+}
+
+/// Render the Geometry or the Cut tab of an entry of `op` against the
+/// first toolpath of `session`, and give the painted texts in draw order.
+/// The entry holds the stored op config when its type is `op`.
+fn tab_texts(
+    session: &rs_cam_core::session::ProjectSession,
+    op: crate::state::toolpath::OperationType,
+    tab: ToolpathTab,
+) -> Vec<String> {
     use crate::state::toolpath::ToolpathEntry;
     let tc = &session.toolpath_configs()[0];
     let inputs = super::toolpath_panel_inputs(
@@ -437,21 +448,31 @@ fn geometry_tab_texts(
     let mut entry =
         ToolpathEntry::for_operation(tc.id, "Case".to_owned(), tc.tool_id, tc.model_id, op);
     entry.boundary = tc.boundary.clone();
+    if tc.operation.op_type() == op {
+        entry.operation = tc.operation.clone();
+    }
     let ctx = egui::Context::default();
     crate::ui::tokens::apply(&ctx);
     crate::ui::tokens::apply_fonts(&ctx);
     let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
     warmup.textures_delta.clear();
     let mut events = Vec::new();
-    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-        super::toolpath_panel::draw_geometry_tab(
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| match tab {
+        ToolpathTab::Cut => super::toolpath_panel::draw_cut_tab(
             ui,
             &mut entry,
             &inputs,
             None,
             &mut crate::state::pick::SelectionUi::default(),
             &mut events,
-        );
+        ),
+        _ => super::geometry_tab::draw_geometry_tab(
+            ui,
+            &entry,
+            &inputs,
+            &mut crate::state::pick::SelectionUi::default(),
+            &mut events,
+        ),
     });
     let mut texts = Vec::new();
     for clipped in &out.shapes {
@@ -607,38 +628,42 @@ fn the_selection_section_shows_one_pick_p4_d() {
     );
 }
 
-/// Geometry selection P4.D, fix 4: the op Selection section is at the TOP
-/// of the Geometry tab, directly below the Input combo: before "Start
-/// from" and before "Machining Boundary". A 3D op shows "Pick faces" at
-/// the same place for a Stock boundary (fix 2). Red proof: the section
-/// drawn after the op editor (the P4.3 place): "Start from" came first.
+/// Geometry selection P4.D fix 4, then GT-1: the op selection is the
+/// Geometry tab, the first tab; its summary row ("Cuts") opens the tab. The
+/// Cut tab holds Input, Start from and the Machining Boundary source, and
+/// no Pick. A 3D op shows "Pick faces" in the Geometry tab (fix 2). Red
+/// proof: the selection drawn in the Cut tab again: the Cut tab paints
+/// "Pick".
 #[test]
 fn the_selection_section_is_at_the_top_p4_d() {
     let session = step_pocket_session();
-    let texts = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Pocket);
-    let input = position_of(&texts, "Input row", |t| t.starts_with("Input"));
-    let selection = position_of(&texts, "Selection header", |t| {
-        t.eq_ignore_ascii_case("selection")
-    });
-    let start_from = position_of(&texts, "Start from row", |t| t.starts_with("Start from"));
-    let boundary = position_of(&texts, "boundary header", |t| {
+    let geometry = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Pocket);
+    let cuts = position_of(&geometry, "Cuts row", |t| t.starts_with("Cuts"));
+    let pick = position_of(&geometry, "Pick button", |t| t == "Pick");
+    assert!(cuts < pick, "the summary opens the tab: {geometry:?}");
+    let cut = tab_texts(
+        &session,
+        crate::state::toolpath::OperationType::Pocket,
+        ToolpathTab::Cut,
+    );
+    let input = position_of(&cut, "Input row", |t| t.starts_with("Input"));
+    let start_from = position_of(&cut, "Start from row", |t| t.starts_with("Start from"));
+    let boundary = position_of(&cut, "boundary header", |t| {
         t.eq_ignore_ascii_case("machining boundary")
     });
     assert!(
-        input < selection && selection < start_from && start_from < boundary,
-        "want Input < Selection < Start from < Machining Boundary; got {input}, {selection}, \
-         {start_from}, {boundary}: {texts:?}"
+        input < start_from && start_from < boundary,
+        "want Input < Start from < Machining Boundary: {cut:?}"
+    );
+    assert!(
+        !cut.iter().any(|t| t == "Pick" || t.starts_with("Cuts")),
+        "the Cut tab holds no selection: {cut:?}"
     );
 
     let rough = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Adaptive3d);
-    let pick = position_of(&rough, "Pick faces button", |t| {
-        t == super::toolpath_panel::PICK_FACES_LABEL
+    let _ = position_of(&rough, "Pick faces button", |t| {
+        t == super::geometry_tab::PICK_FACES_LABEL
     });
-    let start_from = position_of(&rough, "Start from row", |t| t.starts_with("Start from"));
-    assert!(
-        pick < start_from,
-        "a 3D op shows Pick faces at the top, for any boundary source: {rough:?}"
-    );
 }
 
 /// P3.4: the Cuts row names the down faces of the selection (setup frame),
@@ -660,5 +685,314 @@ fn the_counts_line_names_the_down_faces_p3_4() {
     assert_eq!(
         super::selection_counts_text(&report(3, 0)).as_deref(),
         Some("3 faces")
+    );
+}
+
+// ── GT-2: the selected list of the Geometry tab ─────────────────────────
+
+/// A drawing of 24 circles Ø 6 and one circle Ø 10 (layer HOLES), a 6 mm
+/// end mill, and a default Drill (toolpath 0).
+fn holes_session() -> rs_cam_core::session::ProjectSession {
+    use rs_cam_core::compute::stock_config::StockConfig;
+    use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
+    use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
+    use std::sync::Arc;
+
+    let circle = |x: f64, d: f64| {
+        Item::new(
+            SourceRef::ToolpathModel,
+            Some("HOLES".into()),
+            Shape::circle(rs_cam_core::geo::P2::new(x, 0.0), d),
+        )
+        .unwrap()
+    };
+    let mut items: Vec<Item> = (0..24).map(|i| circle(f64::from(i) * 12.0, 6.0)).collect();
+    items.push(circle(400.0, 10.0));
+    let mut tool = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+        rs_cam_core::compute::ToolId::from_raw(1),
+        rs_cam_core::compute::tool_config::ToolType::EndMill,
+    );
+    tool.diameter = 6.0;
+    let mut builder = ProjectSessionBuilder::new()
+        .stock(StockConfig::default())
+        .tool(tool);
+    let model_id = builder.add_model(LoadedModel {
+        id: rs_cam_core::ids::ModelId::from_raw(0),
+        path: std::path::PathBuf::from("synthetic://holes.dxf"),
+        name: "Holes".to_owned(),
+        kind: None,
+        mesh: None,
+        items: Arc::new(ItemSet::new(items)),
+        enriched_mesh: None,
+        units: None,
+        winding_report: None,
+        load_error: None,
+        import_options: Default::default(),
+        import_report: None,
+        drawing: Default::default(),
+    });
+    let _ = builder
+        .add_toolpath(
+            0,
+            ToolpathConfig {
+                shoe: Default::default(),
+                id: rs_cam_core::compute::ToolpathId::from_raw(0),
+                name: "Drill".to_owned(),
+                enabled: true,
+                operation: crate::state::toolpath::OperationConfig::new_default(
+                    crate::state::toolpath::OperationType::Drill,
+                ),
+                dressups: Default::default(),
+                heights: Default::default(),
+                tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+                model_id,
+                pre_gcode: None,
+                post_gcode: None,
+                boundary: Default::default(),
+                boundary_inherit: true,
+                stock_source: Default::default(),
+                coolant: Default::default(),
+                debug_options: Default::default(),
+                feeds_provenance: Default::default(),
+                rest_analysis: Default::default(),
+                planner_origin: None,
+            },
+        )
+        .unwrap();
+    builder.build()
+}
+
+fn edit_op(
+    session: &mut rs_cam_core::session::ProjectSession,
+    edit: rs_cam_core::selection::SelectionEdit,
+) {
+    let _ = session
+        .apply(rs_cam_core::session::Command::EditSelection(
+            rs_cam_core::session::EditSelectionArgs {
+                index: 0,
+                target: rs_cam_core::session::SelectionTarget::Op,
+                edit,
+            },
+        ))
+        .unwrap();
+}
+
+/// The groups of the list of toolpath 0, as the tab builds them.
+fn groups_of(
+    session: &rs_cam_core::session::ProjectSession,
+) -> (
+    Vec<super::selection_section::ListGroup>,
+    std::sync::Arc<rs_cam_core::session::SelectionReport>,
+) {
+    use rs_cam_core::session::SelectionTarget;
+    let tc = &session.toolpath_configs()[0];
+    let report = session.selection_status(tc, SelectionTarget::Op).unwrap();
+    let read: super::SelectionRead = Ok(std::sync::Arc::clone(&report));
+    let op_default = tc.operation.default_selection().unwrap();
+    let kinds = std::collections::BTreeSet::new();
+    let inputs = super::selection_section::SelectionSectionInputs {
+        toolpath_id: tc.id,
+        toolpath_model: tc.model_id,
+        target: SelectionTarget::Op,
+        selection: tc.operation.selection().unwrap(),
+        op_default: &op_default,
+        report: Some(&read),
+        item_use: tc.operation.capabilities().item_use,
+        models: &[],
+        offers: &[],
+        op_label: tc.operation.op_type().label(),
+        floor_op: tc.operation.floor().is_some(),
+        note_items: &[],
+        model_kinds: &kinds,
+        tool_diameter: Some(6.0),
+    };
+    (
+        super::selection_section::list_groups(&inputs, &report),
+        report,
+    )
+}
+
+/// GT-2 (L-R1, L-R2): every selected item is in one group only, so the
+/// rows of the groups are the report rows.
+///
+/// - The default Drill: one default row, closed, with the default rule's
+///   members.
+/// - After a pick of the Ø 10 circle and the Ø 6 rule offer: a rule group of
+///   24 rows (closed: more than 8) and a picked group of 1 row with
+///   "Rule…" and "×" (a Drill holds no floor). The filter keeps the full
+///   count on the header ("1 of 24").
+///
+/// Red proof: let a rule group also take the `Pick` rows: the row sum is
+/// more than the report rows.
+#[test]
+fn the_list_groups_hold_each_selected_item_once_gt2() {
+    use super::selection_section::{GROUP_CAP, GroupKind};
+    use rs_cam_core::selection::{ItemKind, MatchKey, SelectionEdit, SourceRef};
+
+    let mut session = holes_session();
+    let (groups, report) = groups_of(&session);
+    assert_eq!(groups.len(), 1, "the default row only: {groups:?}");
+    assert_eq!(groups[0].kind, GroupKind::Default);
+    assert!(groups[0].starts_closed(), "L-R2: the default row is closed");
+    assert!(
+        groups[0].title.starts_with("Default: every circle"),
+        "{}",
+        groups[0].title
+    );
+    assert_eq!(groups[0].rows.len(), report.rows.len());
+    assert!(groups[0].rows.iter().all(|r| r.acts == Default::default()));
+
+    let model = session.toolpath_configs()[0].model_id;
+    let key_of = |session: &rs_cam_core::session::ProjectSession, at: usize| MatchKey {
+        source: SourceRef::Model(model),
+        ..session.models()[0]
+            .items
+            .iter()
+            .nth(at)
+            .unwrap()
+            .key()
+            .clone()
+    };
+    let large = key_of(&session, 24);
+    let small = key_of(&session, 3);
+    edit_op(&mut session, SelectionEdit::AddPick(large));
+    edit_op(&mut session, SelectionEdit::AddPick(small.clone()));
+    let offers = session
+        .rule_offers(
+            &session.toolpath_configs()[0].clone(),
+            rs_cam_core::session::SelectionTarget::Op,
+            &small,
+        )
+        .unwrap();
+    edit_op(&mut session, offers[0].edit.clone().unwrap());
+
+    let (groups, report) = groups_of(&session);
+    let kinds: Vec<GroupKind> = groups.iter().map(|g| g.kind).collect();
+    assert_eq!(
+        kinds,
+        [GroupKind::Rule(0), GroupKind::Picked(ItemKind::Circle)]
+    );
+    let total: usize = groups.iter().map(|g| g.rows.len()).sum();
+    assert_eq!(total, report.rows.len(), "each item in one group only");
+    assert_eq!(groups[0].rows.len(), 24);
+    assert!(groups[0].rows.len() > GROUP_CAP && groups[0].starts_closed());
+    assert_eq!(groups[1].rows.len(), 1);
+    let picked = &groups[1].rows[0];
+    assert!(
+        picked.label.starts_with("\u{00D8} 10.00 at (400.0, 0.0)"),
+        "{}",
+        picked.label
+    );
+    assert!(picked.acts.rule && picked.acts.remove && !picked.acts.floor);
+    assert!(groups[0].rows.iter().all(|r| r.acts.remove && !r.acts.rule));
+    assert_eq!(groups[0].count_text(""), "24");
+    assert_eq!(groups[0].count_text("(36.0,"), "1 of 24");
+}
+
+/// GT-2: the tab paints the closed rule group as its header only, the open
+/// picked group with its row, and a row under the pointer lights its item
+/// in the viewport (`SelectionUi::row_hover`).
+///
+/// Red proof: drop the `row_hover` write of `draw_row`: the hover arm fails.
+#[test]
+fn the_geometry_tab_paints_the_groups_and_the_row_hover_gt2() {
+    use rs_cam_core::selection::{MatchKey, SelectionEdit, SourceRef};
+
+    let mut session = holes_session();
+    let model = session.toolpath_configs()[0].model_id;
+    let key_of = |session: &rs_cam_core::session::ProjectSession, at: usize| MatchKey {
+        source: SourceRef::Model(model),
+        ..session.models()[0]
+            .items
+            .iter()
+            .nth(at)
+            .unwrap()
+            .key()
+            .clone()
+    };
+    let large = key_of(&session, 24);
+    let small = key_of(&session, 3);
+    edit_op(&mut session, SelectionEdit::AddPick(large));
+    edit_op(&mut session, SelectionEdit::AddPick(small.clone()));
+    let offers = session
+        .rule_offers(
+            &session.toolpath_configs()[0].clone(),
+            rs_cam_core::session::SelectionTarget::Op,
+            &small,
+        )
+        .unwrap();
+    edit_op(&mut session, offers[0].edit.clone().unwrap());
+
+    let tc = session.toolpath_configs()[0].clone();
+    let inputs = super::toolpath_panel_inputs(
+        tc.id,
+        &session,
+        &crate::state::runtime::GuiState::default(),
+        None,
+        Some(ToolpathTab::Geometry),
+        false,
+    );
+    let mut entry = crate::state::toolpath::ToolpathEntry::for_operation(
+        tc.id,
+        "Drill".to_owned(),
+        tc.tool_id,
+        tc.model_id,
+        tc.operation.op_type(),
+    );
+    entry.operation = tc.operation;
+    let ctx = egui::Context::default();
+    crate::ui::tokens::apply(&ctx);
+    crate::ui::tokens::apply_fonts(&ctx);
+    let mut selection_ui = crate::state::pick::SelectionUi::default();
+    let mut row_at: Option<egui::Pos2> = None;
+    let mut texts: Vec<String> = Vec::new();
+    for pass in 0..4 {
+        let mut input = egui::RawInput::default();
+        if pass == 3
+            && let Some(pos) = row_at
+        {
+            input.events.push(egui::Event::PointerMoved(pos));
+        }
+        let mut events = Vec::new();
+        let mut out = ctx.run_ui(input, |ui| {
+            super::geometry_tab::draw_geometry_tab(
+                ui,
+                &entry,
+                &inputs,
+                &mut selection_ui,
+                &mut events,
+            );
+        });
+        if pass == 2 {
+            for clipped in &out.shapes {
+                if let egui::epaint::Shape::Text(text) = &clipped.shape {
+                    let t = text.galley.job.text.clone();
+                    if t.starts_with("\u{00D8} 10.00 at") {
+                        row_at = Some(clipped.shape.visual_bounding_rect().center());
+                    }
+                    texts.push(t);
+                }
+            }
+        }
+        out.textures_delta.clear();
+    }
+    assert!(
+        texts
+            .iter()
+            .any(|t| t.contains("\u{00D8} 6.00") && t.ends_with("(24)")),
+        "the rule header holds its count: {texts:?}"
+    );
+    assert!(
+        !texts.iter().any(|t| t.starts_with("\u{00D8} 6.00 at")),
+        "the closed group paints no row: {texts:?}"
+    );
+    assert!(
+        row_at.is_some(),
+        "the open picked group paints its row: {texts:?}"
+    );
+    assert_eq!(
+        selection_ui.row_hover.as_ref().map(|k| k.measure),
+        Some(10.0),
+        "the row under the pointer lights its item"
     );
 }

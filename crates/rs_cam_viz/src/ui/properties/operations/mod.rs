@@ -339,7 +339,7 @@ const BOTTOM_Z_TOOLTIP: &str = "Deepest cut depth. The tool stops at this Z.";
 /// ruling L-11): the reference and the value, as the op form states them.
 fn floor_text(floor: &rs_cam_core::compute::floor::Floor) -> String {
     use rs_cam_core::compute::floor::Floor;
-    match *floor {
+    match floor {
         Floor::Z { z } => format!("{} {z:.2}", floor.reference_label()),
         other => format!("{:.2} below {}", other.value(), other.reference_label()),
     }

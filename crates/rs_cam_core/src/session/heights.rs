@@ -77,6 +77,18 @@ use crate::session::{Effects, ProjectSession, SessionError, ToolpathConfig};
 use super::SetupEvalContext;
 use super::selection_status::SelectionTarget;
 
+/// The face planes that the heights rule reads, in the setup frame.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub(crate) struct FacePlanes {
+    /// The highest plane Z of the up faces of the selection (the auto top).
+    pub(crate) top: Option<f64>,
+    /// The lowest plane Z of the up faces of the selection (the floor
+    /// "each picked face").
+    pub(crate) bottom: Option<f64>,
+    /// UX-8: the plane Z of the face of the floor "A picked face".
+    pub(crate) floor_face: Option<f64>,
+}
+
 /// Where the resolved Top Z of a toolpath comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TopSource {
@@ -151,6 +163,10 @@ pub struct ToolpathHeights {
     /// The plane Z of the lowest up face of the selection, in the setup
     /// frame (the floor "each picked face" reads it).
     face_bottom_z: Option<f64>,
+    /// UX-8: the plane Z of the face of the floor "A picked face", in the
+    /// setup frame, or `None` (not that floor, or the key does not
+    /// resolve).
+    floor_face_z: Option<f64>,
     /// The floor of an `OpFloor` op resolved against [`Self::context`]
     /// (P3.2), or why it does not resolve. `None` for every other op.
     floor: Option<Result<FloorRef, FloorRefusal>>,
@@ -188,6 +204,7 @@ impl ToolpathHeights {
             stock_bottom_z: self.context.stock_bottom_z,
             model_top_z: self.context.model_top_z,
             face_bottom_z: self.face_bottom_z,
+            floor_face_z: self.floor_face_z,
         }
     }
 
@@ -345,6 +362,7 @@ impl ToolpathHeights {
             clamp: false,
             face_top_z: None,
             face_bottom_z: None,
+            floor_face_z: None,
             floor: context.floor.map(Ok),
         }
     }
@@ -489,12 +507,22 @@ impl ProjectSession {
             }
             None => None,
         };
+        // UX-8: the face of the floor "A picked face" (a `Peek`, as the
+        // report). A key that does not resolve gives no Z here; the floor
+        // then refuses (`FloorRefusal::FaceLost`), and generation names the
+        // typed cause.
+        let floor_face_z = self
+            .floor_face_z(tc, &ctx, super::selection_status::FaceAccess::Peek)
+            .and_then(Result::ok);
         Ok(self.heights_in_setup(
             tc,
             &ctx,
             setup_mesh.as_deref(),
-            face_top_z,
-            op_status.face_bottom_z,
+            FacePlanes {
+                top: face_top_z,
+                bottom: op_status.face_bottom_z,
+                floor_face: floor_face_z,
+            },
         ))
     }
 
@@ -514,7 +542,7 @@ impl ProjectSession {
         }
         let setup_mesh = self.setup_mesh(tc, ctx)?;
         Ok(Some(
-            self.heights_in_setup(tc, ctx, setup_mesh.as_deref(), None, None)
+            self.heights_in_setup(tc, ctx, setup_mesh.as_deref(), FacePlanes::default())
                 .heights
                 .top_z,
         ))
@@ -570,13 +598,41 @@ impl ProjectSession {
                     tc.name
                 )));
             };
+            // UX-8: a face key is stored in the form of a pick of this
+            // toolpath, so it follows the toolpath model as a pick does.
+            let floor = match floor {
+                Floor::Face { key, depth } => Floor::Face {
+                    key: key.for_toolpath_model(tc.model_id),
+                    depth,
+                },
+                other => other,
+            };
             // W6b: THE door check of an op config (`validate_operation`,
             // which reads `Floor::door_refusal`), on the candidate config,
             // before any write.
             let mut candidate = tc.operation.clone();
-            let _ = candidate.set_floor(floor);
+            let _ = candidate.set_floor(floor.clone());
+            // UX-8, L-R5: the face that is the floor leaves the picks, so
+            // the op does not cut it. One command, so one undo step on
+            // every surface (GUI "Use as floor", MCP, CLI).
+            if let Some(key) = floor.face_key()
+                && let Some(slot) = candidate.selection_slot()
+                && slot.picks().iter().any(|p| p.matches(key))
+            {
+                let picks = slot
+                    .picks()
+                    .iter()
+                    .filter(|p| !p.matches(key))
+                    .cloned()
+                    .collect();
+                *slot = crate::selection::Selection::from_parts(
+                    slot.rules().to_vec(),
+                    picks,
+                    slot.excludes().to_vec(),
+                );
+            }
             crate::compute::domain::validate_toolpath_operation(&tc.name, &candidate)?;
-            if before != floor {
+            if before != floor || floor.face_key().is_some() {
                 tc.operation = candidate;
                 let enabled = tc.enabled;
                 session.invalidate_result_chain(index, enabled);
@@ -634,6 +690,36 @@ impl ProjectSession {
         (candidate.set_floor(Floor::EachFace { depth: 0.0 })
             && crate::compute::domain::validate_toolpath_operation(&tc.name, &candidate).is_ok())
         .then_some(candidate)
+    }
+
+    /// The floor that "Clear" of the floor face slot writes (geometry
+    /// selection GT-4, rule L-R5): "Each picked face", depth 0, when an up
+    /// face or a model ring of the op selection remains and the op accepts
+    /// that floor; else the floor that the add doors write for this stock
+    /// (`feeds::suggest::default_operation`). `None` for an op with no
+    /// floor.
+    #[must_use]
+    pub fn cleared_floor(&self, tc: &ToolpathConfig) -> Option<Floor> {
+        tc.operation.floor()?;
+        let stock = crate::feeds::suggest::StockContext::from_stock_bbox(
+            self.stock_bbox(),
+            self.stock.padding,
+        );
+        let default = crate::feeds::suggest::default_operation(tc.operation.op_type(), &stock)
+            .floor()
+            .or_else(|| tc.operation.default_floor())?;
+        let face_left = self
+            .selection_status(tc, SelectionTarget::Op)
+            .is_ok_and(|report| report.face_bottom_z.is_some());
+        let each = Floor::EachFace { depth: 0.0 };
+        let mut candidate = tc.operation.clone();
+        let accepts_each = candidate.set_floor(each.clone())
+            && crate::compute::domain::validate_toolpath_operation(&tc.name, &candidate).is_ok();
+        Some(if face_left && accepts_each {
+            each
+        } else {
+            default
+        })
     }
 
     /// F033: the edit door of the height-plane order. `candidate` is the
@@ -711,11 +797,10 @@ impl ProjectSession {
         tc: &ToolpathConfig,
         ctx: &SetupEvalContext,
         setup_mesh: Option<&TriangleMesh>,
-        face_top_z: Option<f64>,
-        face_bottom_z: Option<f64>,
+        planes: FacePlanes,
     ) -> Result<ResolvedHeights, SessionError> {
         tc.floor_conflict()?;
-        let answer = self.heights_in_setup(tc, ctx, setup_mesh, face_top_z, face_bottom_z);
+        let answer = self.heights_in_setup(tc, ctx, setup_mesh, planes);
         let each_face = matches!(tc.operation.floor(), Some(Floor::EachFace { .. }));
         if let Some(refusal) = answer.floor_refusal(&tc.heights)
             && !(each_face
@@ -764,17 +849,20 @@ impl ProjectSession {
     }
 
     /// THE rule (see the module documentation). `setup_mesh` is the mesh
-    /// of `tc` in the setup frame; `face_top_z` and `face_bottom_z` are the
-    /// highest and the lowest plane Z of the up faces of its selection, in
-    /// the setup frame.
+    /// of `tc` in the setup frame; `planes` holds the face planes of its
+    /// selection and of its floor face, in the setup frame.
     pub(crate) fn heights_in_setup(
         &self,
         tc: &ToolpathConfig,
         ctx: &SetupEvalContext,
         setup_mesh: Option<&TriangleMesh>,
-        face_top_z: Option<f64>,
-        face_bottom_z: Option<f64>,
+        planes: FacePlanes,
     ) -> ToolpathHeights {
+        let FacePlanes {
+            top: face_top_z,
+            bottom: face_bottom_z,
+            floor_face: floor_face_z,
+        } = planes;
         // K3: the heights do not read the obstacles. The obstacle step
         // after the dressups lifts only the moves that cross one.
         let mut context = ctx.height_context(
@@ -787,7 +875,7 @@ impl ProjectSession {
         let floor = tc
             .operation
             .floor()
-            .map(|floor| floor.resolve(&context, face_bottom_z));
+            .map(|floor| floor.resolve(&context, face_bottom_z, floor_face_z));
         context.floor = floor.and_then(Result::ok);
         let clamp = clamps_face_top(&tc.operation);
         let (heights, top_from) = apply_rule(&tc.heights, &context, face_top_z, clamp);
@@ -798,6 +886,7 @@ impl ProjectSession {
             clamp,
             face_top_z,
             face_bottom_z,
+            floor_face_z,
             floor,
         }
     }

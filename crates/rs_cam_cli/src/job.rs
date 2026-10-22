@@ -1263,7 +1263,7 @@ fn execute_op_via_session(
         let _ = crate::command::apply_command(&mut session, command)
             .map_err(|e| anyhow::anyhow!("selection: {e}"))?;
     }
-    if let Some(floor) = op.floor {
+    if let Some(floor) = op.floor.clone() {
         let command = Command::SetToolpathFloor(SetToolpathFloorArgs {
             index: tp_index,
             floor,

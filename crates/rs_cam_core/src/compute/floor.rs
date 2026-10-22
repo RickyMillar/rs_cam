@@ -52,8 +52,8 @@ use serde::{Deserialize, Serialize};
 use super::catalog::{ItemUse, ParamRange};
 use super::config::HeightContext;
 use crate::selection::{
-    ItemRef, NoteCause, OpItems, RefusalCause, ResolvedSelection, SelectionNote, SelectionRefusal,
-    SetupFrame,
+    ItemKind, ItemRef, MatchKey, NoteCause, OpItems, RefusalCause, ResolvedSelection,
+    SelectionNote, SelectionRefusal, SetupFrame, SourceRef,
 };
 
 /// The floor of a Pocket, Profile, Zigzag or Adaptive 2D: one value that
@@ -62,8 +62,9 @@ use crate::selection::{
 /// frame (the emission frame).
 ///
 /// File spelling: `floor = { from = "top", depth = 6.0 }`,
-/// `floor = { from = "z", z = -20.0 }`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/// `floor = { from = "z", z = -20.0 }`,
+/// `floor = { from = "face", depth = 0.0, key = { .. } }` (UX-8).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "from", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Floor {
     /// Below the resolved Top Z of the op (auto: the stock top; else the
@@ -87,6 +88,12 @@ pub enum Floor {
     EachFace { depth: f64 },
     /// An absolute Z in the setup frame.
     Z { z: f64 },
+    /// A picked face (geometry selection UX-8, operator ruling Q4): the
+    /// plane Z of the one item that `key` names, in the setup frame, less
+    /// the depth. The item is an up `Face` or a model ring (a `Loop` with
+    /// a Z). The key follows a re-import as a pick does. A key that names
+    /// no item refuses generation ([`FloorRefusal::FaceLost`]).
+    Face { key: MatchKey, depth: f64 },
 }
 
 impl Floor {
@@ -107,6 +114,7 @@ impl Floor {
             Self::ModelTop { .. } => "Model top",
             Self::EachFace { .. } => "Each picked face",
             Self::Z { .. } => "Absolute Z",
+            Self::Face { .. } => "A picked face",
         }
     }
 
@@ -121,20 +129,57 @@ impl Floor {
             | Self::StockBottom { .. }
             | Self::ModelTop { .. }
             | Self::EachFace { .. }
-            | Self::Z { .. } => None,
+            | Self::Z { .. }
+            | Self::Face { .. } => None,
         }
     }
 
     /// One floor of each reference, in the order of the enum. The
     /// `get_operation_schema` entry lists them ([`floor_schema_json`]).
-    pub const EACH_REFERENCE: [Self; 6] = [
+    /// [`Floor::Face`] holds a placeholder key: only its reference, its
+    /// number and its domain are read.
+    pub const EACH_REFERENCE: [Self; 7] = [
         Self::Top { depth: 0.0 },
         Self::StockTop { depth: 0.0 },
         Self::StockBottom { depth: 0.0 },
         Self::ModelTop { depth: 0.0 },
         Self::EachFace { depth: 0.0 },
         Self::Z { z: 0.0 },
+        Self::Face {
+            key: MatchKey {
+                source: SourceRef::ToolpathModel,
+                kind: ItemKind::Face,
+                layer: None,
+                anchor: [0.0, 0.0],
+                measure: 0.0,
+                brep: None,
+                z: None,
+            },
+            depth: 0.0,
+        },
     ];
+
+    /// The references that the GUI floor row offers. [`Floor::Face`] is not
+    /// one: "Use as floor" in the Geometry tab is its one GUI door (L-R5).
+    pub fn row_references() -> impl Iterator<Item = Self> {
+        Self::EACH_REFERENCE
+            .into_iter()
+            .filter(|floor| !matches!(floor, Self::Face { .. }))
+    }
+
+    /// The face key of [`Floor::Face`], else `None`.
+    #[must_use]
+    pub const fn face_key(&self) -> Option<&MatchKey> {
+        match self {
+            Self::Face { key, .. } => Some(key),
+            Self::Top { .. }
+            | Self::StockTop { .. }
+            | Self::StockBottom { .. }
+            | Self::ModelTop { .. }
+            | Self::EachFace { .. }
+            | Self::Z { .. } => None,
+        }
+    }
 
     /// The `from` token of the reference: the file and wire spelling.
     #[must_use]
@@ -146,6 +191,7 @@ impl Floor {
             Self::ModelTop { .. } => "model_top",
             Self::EachFace { .. } => "each_face",
             Self::Z { .. } => "z",
+            Self::Face { .. } => "face",
         }
     }
 
@@ -158,7 +204,8 @@ impl Floor {
             | Self::StockTop { .. }
             | Self::StockBottom { .. }
             | Self::ModelTop { .. }
-            | Self::EachFace { .. } => "depth",
+            | Self::EachFace { .. }
+            | Self::Face { .. } => "depth",
             Self::Z { .. } => "z",
         }
     }
@@ -177,7 +224,8 @@ impl Floor {
             | Self::StockBottom { .. }
             | Self::ModelTop { .. }
             | Self::EachFace { .. }
-            | Self::Z { .. } => ParamRange {
+            | Self::Z { .. }
+            | Self::Face { .. } => ParamRange {
                 min: None,
                 max: None,
                 min_exclusive: false,
@@ -196,6 +244,11 @@ impl Floor {
         if !value.is_finite() {
             return Some(FloorRefusal::NotFinite);
         }
+        if let Self::Face { key, .. } = self
+            && !face_key_is_a_floor(key)
+        {
+            return Some(FloorRefusal::NotAFloorItem { kind: key.kind });
+        }
         (!self.domain().accepts(value)).then_some(FloorRefusal::OutOfDomain {
             from: self.from_token(),
             name: self.value_name(),
@@ -211,7 +264,8 @@ impl Floor {
             | Self::StockTop { depth }
             | Self::StockBottom { depth }
             | Self::ModelTop { depth }
-            | Self::EachFace { depth } => *depth,
+            | Self::EachFace { depth }
+            | Self::Face { depth, .. } => *depth,
             Self::Z { z } => *z,
         }
     }
@@ -222,16 +276,20 @@ impl Floor {
     /// follow the picked faces), so [`Floor::Top`] stays relative
     /// ([`FloorRef::BelowTop`]). [`Floor::EachFace`] reads `face_bottom_z`:
     /// the plane Z of the lowest up face of the selection, in the setup
-    /// frame (P3.5). Every other reference gives a Z.
+    /// frame (P3.5). [`Floor::Face`] reads `floor_face_z`: the plane Z of
+    /// its face, in the setup frame (UX-8; the session resolves the key).
+    /// Every other reference gives a Z.
     ///
     /// # Errors
     ///
     /// [`FloorRefusal::NotFinite`], [`FloorRefusal::NoModelMesh`] (ruling
-    /// L-4) and [`FloorRefusal::NoFace`] (each face, and no up face).
+    /// L-4), [`FloorRefusal::NoFace`] (each face, and no up face) and
+    /// [`FloorRefusal::FaceLost`] (a face key that resolves to no plane).
     pub fn resolve(
         &self,
         ctx: &HeightContext,
         face_bottom_z: Option<f64>,
+        floor_face_z: Option<f64>,
     ) -> Result<FloorRef, FloorRefusal> {
         if !self.value().is_finite() {
             return Err(FloorRefusal::NotFinite);
@@ -250,7 +308,22 @@ impl Floor {
                 })
                 .ok_or(FloorRefusal::NoFace),
             Self::Z { z } => Ok(FloorRef::At(z)),
+            Self::Face { depth, .. } => floor_face_z
+                .map(|z| FloorRef::At(z - depth))
+                .ok_or(FloorRefusal::FaceLost),
         }
+    }
+}
+
+/// UX-8: true when `key` can name a floor face: a `Face`, or a model ring
+/// (a `Loop` with a Z, UX-7). A drawing loop has no plane Z, and a path, a
+/// point or a circle is not an area.
+#[must_use]
+pub fn face_key_is_a_floor(key: &MatchKey) -> bool {
+    match key.kind {
+        ItemKind::Face => true,
+        ItemKind::Loop => key.z.is_some(),
+        ItemKind::Path | ItemKind::Point | ItemKind::Circle => false,
     }
 }
 
@@ -258,7 +331,7 @@ impl Floor {
     /// The same reference with the number `value`: the depth, or the Z of
     /// [`Floor::Z`].
     #[must_use]
-    pub const fn with_value(self, value: f64) -> Self {
+    pub fn with_value(self, value: f64) -> Self {
         match self {
             Self::Top { .. } => Self::Top { depth: value },
             Self::StockTop { .. } => Self::StockTop { depth: value },
@@ -266,6 +339,7 @@ impl Floor {
             Self::ModelTop { .. } => Self::ModelTop { depth: value },
             Self::EachFace { .. } => Self::EachFace { depth: value },
             Self::Z { .. } => Self::Z { z: value },
+            Self::Face { key, .. } => Self::Face { key, depth: value },
         }
     }
 
@@ -297,6 +371,9 @@ pub struct FloorReferences {
     /// no up face. [`Floor::EachFace`] reads it: the Bottom Z under that
     /// floor is the deepest face floor.
     pub face_bottom_z: Option<f64>,
+    /// The plane Z of the face of [`Floor::Face`] (UX-8), or `None` when
+    /// the floor is not a face or its key resolves to no plane.
+    pub floor_face_z: Option<f64>,
 }
 
 impl FloorReferences {
@@ -314,6 +391,7 @@ impl FloorReferences {
             Floor::ModelTop { .. } => self.model_top_z.ok_or(FloorRefusal::NoModelMesh),
             Floor::EachFace { .. } => self.face_bottom_z.ok_or(FloorRefusal::NoFace),
             Floor::Z { .. } => Ok(0.0),
+            Floor::Face { .. } => self.floor_face_z.ok_or(FloorRefusal::FaceLost),
         }
     }
 
@@ -331,7 +409,8 @@ impl FloorReferences {
             | Floor::StockTop { depth }
             | Floor::StockBottom { depth }
             | Floor::ModelTop { depth }
-            | Floor::EachFace { depth } => reference - depth,
+            | Floor::EachFace { depth }
+            | Floor::Face { depth, .. } => reference - depth,
         })
     }
 
@@ -345,13 +424,14 @@ impl FloorReferences {
     /// result (a floor at or above the Top Z on [`Floor::Top`]). A refused
     /// floor never reaches the config.
     pub fn at_z(&self, like: Floor, z: f64) -> Result<Floor, FloorRefusal> {
-        let value = match like {
+        let value = match &like {
             Floor::Z { .. } => z,
             Floor::Top { .. }
             | Floor::StockTop { .. }
             | Floor::StockBottom { .. }
             | Floor::ModelTop { .. }
-            | Floor::EachFace { .. } => self.reference_z(&like)? - z,
+            | Floor::EachFace { .. }
+            | Floor::Face { .. } => self.reference_z(&like)? - z,
         };
         let floor = like.with_value(value);
         match floor.door_refusal() {
@@ -368,8 +448,8 @@ impl FloorReferences {
     /// # Errors
     ///
     /// As [`Self::at_z`].
-    pub fn re_express(&self, from: Floor, to: Floor) -> Result<Floor, FloorRefusal> {
-        match self.floor_z(&from) {
+    pub fn re_express(&self, from: &Floor, to: Floor) -> Result<Floor, FloorRefusal> {
+        match self.floor_z(from) {
             Ok(z) => self.at_z(to, z),
             Err(_) => {
                 self.reference_z(&to)?;
@@ -483,10 +563,10 @@ impl RegionFloors {
 pub fn region_floors(
     resolved: &ResolvedSelection<SetupFrame>,
     items: &mut OpItems,
-    floor: Floor,
+    floor: &Floor,
     top_z: f64,
 ) -> Result<Option<RegionFloors>, SelectionRefusal> {
-    let Floor::EachFace { depth } = floor else {
+    let Floor::EachFace { depth } = *floor else {
         return Ok(None);
     };
     let Some(regions) = items.regions() else {
@@ -561,6 +641,17 @@ pub enum FloorRefusal {
     /// [`Floor::EachFace`] on a selection with no up face (P3.5). The
     /// prologue refuses the area by name (`RefusalCause::NoFaceForFloor`).
     NoFace,
+    /// [`Floor::Face`] whose key resolves to no plane (UX-8): no item of
+    /// the model matches it, two items match it, or the face points down
+    /// in the setup. Generation refuses with the typed selection refusal
+    /// of the key (`RefusalCause::FloorFaceLost` and the others).
+    FaceLost,
+    /// [`Floor::Face`] whose key names an item that is not an area with a
+    /// plane Z (UX-8): a path, a point, a circle or a drawing loop.
+    NotAFloorItem {
+        /// The kind of the item.
+        kind: ItemKind,
+    },
     /// The number is outside [`Floor::domain`] (P3.3): a depth of 0 or
     /// less below the Top Z.
     OutOfDomain {
@@ -594,6 +685,18 @@ impl std::fmt::Display for FloorRefusal {
                 f,
                 "the floor is \"each picked face\", but the selection holds no up face. Pick \
                  faces, or set the floor from the Top Z, the stock, the model or a Z value"
+            ),
+            Self::FaceLost => write!(
+                f,
+                "the floor is \"a picked face\", but that face is not on the model now (or it \
+                 points down in this setup). Use another face as the floor, or set the floor \
+                 from another reference"
+            ),
+            Self::NotAFloorItem { kind } => write!(
+                f,
+                "the floor \"a picked face\" names a {}; only a face or a model ring has a \
+                 plane Z. Use a face as the floor",
+                crate::selection::kind_noun(*kind, 1)
             ),
             Self::OutOfDomain { from, name, value } => write!(
                 f,
@@ -641,6 +744,11 @@ const fn reference_help(floor: &Floor) -> &'static str {
              must be a face"
         }
         Floor::Z { .. } => "an absolute Z in the setup frame (frame-dependent)",
+        Floor::Face { .. } => {
+            "mm below the plane Z of ONE face (`key`: the match key of an up face or a model \
+             ring, from list_model_items). The face leaves the picks of the op. A key that \
+             matches no item refuses generation"
+        }
     }
 }
 
@@ -649,7 +757,7 @@ const fn reference_help(floor: &Floor) -> &'static str {
 /// domain of its number ([`Floor::domain`]), and names the tool that writes
 /// the floor. The JSON of a floor is the file JSON.
 #[must_use]
-pub fn floor_schema_json(default: Floor) -> serde_json::Value {
+pub fn floor_schema_json(default: &Floor) -> serde_json::Value {
     let variants: Vec<serde_json::Value> = Floor::EACH_REFERENCE
         .iter()
         .map(|floor| {
@@ -657,6 +765,7 @@ pub fn floor_schema_json(default: Floor) -> serde_json::Value {
                 "from": floor.from_token(),
                 "label": floor.reference_label(),
                 "field": floor.value_name(),
+                "key": matches!(floor, Floor::Face { .. }),
                 "range": floor.domain().to_json(),
                 "frame_dependent": matches!(floor, Floor::Z { .. }),
                 "description": reference_help(floor),
@@ -714,6 +823,16 @@ mod tests {
             ),
             ("floor = { from = \"z\", z = -20.0 }", Floor::Z { z: -20.0 }),
         ];
+        let face = "floor = { from = \"face\", depth = 0.5, key = { source = \"toolpath_model\", \
+                    kind = \"face\", anchor = [1.0, 2.0], measure = 3.0, brep = 4 } }";
+        let read: Holder = toml::from_str(face).unwrap();
+        assert!(
+            matches!(&read.floor, Floor::Face { key, depth } if key.brep == Some(4) && *depth == 0.5),
+            "{:?}",
+            read.floor
+        );
+        let again: Holder = toml::from_str(&toml::to_string(&read).unwrap()).unwrap();
+        assert_eq!(again.floor, read.floor, "the face floor after a write");
         for (text, want) in cases {
             let read: Holder = toml::from_str(text).unwrap();
             assert_eq!(read.floor, want, "{text}");
@@ -746,8 +865,32 @@ mod tests {
         );
         assert_eq!(Floor::EachFace { depth: 1.0 }.door_refusal(), None);
         assert_eq!(Floor::EachFace { depth: -1.0 }.door_refusal(), None);
+        // UX-8: a face key must name an area with a plane Z.
+        let mut key = Floor::EACH_REFERENCE[6].face_key().unwrap().clone();
+        assert_eq!(
+            Floor::Face {
+                key: key.clone(),
+                depth: 0.0
+            }
+            .door_refusal(),
+            None
+        );
+        key.kind = ItemKind::Loop;
+        assert_eq!(
+            Floor::Face {
+                key: key.clone(),
+                depth: 0.0
+            }
+            .door_refusal(),
+            Some(FloorRefusal::NotAFloorItem {
+                kind: ItemKind::Loop
+            }),
+            "a drawing loop has no plane Z"
+        );
+        key.z = Some(2.0);
+        assert_eq!(Floor::Face { key, depth: 0.0 }.door_refusal(), None);
         for floor in Floor::EACH_REFERENCE {
-            let json = serde_json::to_value(floor).unwrap();
+            let json = serde_json::to_value(&floor).unwrap();
             assert_eq!(json["from"], serde_json::json!(floor.from_token()));
             assert!(json.get(floor.value_name()).is_some(), "{json}");
         }

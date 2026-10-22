@@ -15,7 +15,7 @@ use rs_cam_mcp::server::SetToolpathFloorParam;
 pub(super) fn floor_args(p: &SetToolpathFloorParam) -> SetToolpathFloorArgs {
     SetToolpathFloorArgs {
         index: p.index,
-        floor: p.floor.into(),
+        floor: p.floor.clone().into(),
     }
 }
 
@@ -46,7 +46,7 @@ pub(crate) fn toolpath_heights_json(
         "bottom_z": heights.bottom_z,
         "top_from": answer.top_from.label(),
         "floor": floor,
-        "floor_label": floor.map(|f| f.reference_label()),
+        "floor_label": floor.as_ref().map(|f| f.reference_label()),
         "floor_z": floor_z.and_then(Result::ok),
         "floor_refusal": floor_z.and_then(Result::err).map(|r| r.to_string()),
     })
@@ -159,12 +159,16 @@ mod tests {
     #[test]
     fn mcp_and_gui_give_one_floor_p3_3() {
         let floor = Floor::Z { z: FLOOR_Z };
-        let file_json = serde_json::to_value(floor).unwrap();
+        let file_json = serde_json::to_value(&floor).unwrap();
 
         // MCP: the wire request through the core door.
         let mut mcp = project();
         let before = mcp.toolpath_config_at(0).unwrap().operation.floor();
-        assert_ne!(before, Some(floor), "the default is not the test floor");
+        assert_ne!(
+            before,
+            Some(floor.clone()),
+            "the default is not the test floor"
+        );
         let effects = wire_floor(&mut mcp, &file_json).expect("the wire floor applies");
         assert!(effects.stale.contains(&0), "the floor stales the toolpath");
 
@@ -179,7 +183,7 @@ mod tests {
         )
         .expect("the toolpath has an entry");
         match &mut entry.operation {
-            OperationConfig::Pocket(c) => c.floor = floor,
+            OperationConfig::Pocket(c) => c.floor = floor.clone(),
             other => panic!("the fixture op is a Pocket, not {}", other.label()),
         }
         let _ = crate::ui::properties::write_entry_config_to_session(&entry, &mut state)
@@ -198,7 +202,7 @@ mod tests {
             serde_json::to_value(&gui_tc.heights).unwrap(),
             "the two routes store one heights config"
         );
-        assert_eq!(mcp_tc.operation.floor(), Some(floor));
+        assert_eq!(mcp_tc.operation.floor(), Some(floor.clone()));
 
         // One `toolpath_heights`.
         let mcp_heights = toolpath_heights_json(&mcp, mcp_tc);
@@ -223,10 +227,156 @@ mod tests {
             );
             assert_eq!(
                 mcp.toolpath_config_at(0).unwrap().operation.floor(),
-                Some(floor),
+                Some(floor.clone()),
                 "{refused} wrote the config"
             );
         }
+    }
+
+    /// The STEP stepped block and one Pocket that picks its two lowest up
+    /// faces. Returns the session and the keys of the two faces (the
+    /// lower first), as a click names them (source `Model(id)`).
+    fn step_pocket() -> (ProjectSession, [rs_cam_core::selection::MatchKey; 2]) {
+        use rs_cam_core::selection::{SelectionEdit, Shape};
+        use rs_cam_core::session::{EditSelectionArgs, SelectionTarget};
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/gui_step/stepped_block.step");
+        let model = rs_cam_core::io::load_model_file(
+            &path,
+            rs_cam_core::ids::ModelId::from_raw(0),
+            ModelKind::Step,
+            ModelUnits::Millimeters,
+            Default::default(),
+        )
+        .expect("the STEP fixture loads");
+        let mut s = project();
+        let id = apply(
+            &mut s,
+            Command::AddModel(AddModelArgs {
+                model: Box::new(model),
+            }),
+        );
+        let _ = id;
+        let model = s.models().last().expect("the STEP model").clone();
+        let mut faces: Vec<(f64, rs_cam_core::selection::MatchKey)> = model
+            .items
+            .iter()
+            .filter_map(|item| match item.shape() {
+                Shape::Face(face) if face.normal.z > 0.99 => {
+                    Some((face.plane_z, item.key().clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        faces.sort_by(|a, b| a.0.total_cmp(&b.0));
+        assert!(faces.len() >= 2, "fixture: two up faces");
+        let lower = faces[0].1.clone();
+        let upper = faces[1].1.clone();
+        let mut tc = s.toolpath_config_at(0).unwrap().clone();
+        tc.model_id = model.id;
+        let _ = apply(
+            &mut s,
+            Command::ReplaceToolpathConfig(rs_cam_core::session::ReplaceToolpathConfigArgs {
+                index: 0,
+                config: Box::new(tc),
+            }),
+        );
+        for key in [&lower, &upper] {
+            let _ = apply(
+                &mut s,
+                Command::EditSelection(EditSelectionArgs {
+                    index: 0,
+                    target: SelectionTarget::Op,
+                    edit: SelectionEdit::AddPick(key.clone()),
+                }),
+            );
+        }
+        (s, [lower, upper])
+    }
+
+    /// Geometry selection GT-4 (L-R5): "Use as floor" in the Geometry tab
+    /// (`AppEvent::UseAsFloor`, the controller door) and MCP
+    /// `set_toolpath_floor` with the face form store ONE floor and ONE op
+    /// config: the floor `Face { key, depth: 0 }` in the toolpath form,
+    /// and the face out of the picks. "Clear" then gives "Each picked face"
+    /// while a face pick remains, else the op default.
+    ///
+    /// Red proof: drop the pick removal of the `SetToolpathFloor` door
+    /// (`heights.rs`): the face stays in the picks on both arms, and the
+    /// pick assertion fails.
+    #[test]
+    fn use_as_floor_matches_set_toolpath_floor_gt4() {
+        use crate::app::mcp::tests::U4SilentBackend;
+        use crate::controller::AppController;
+        use crate::ui::AppEvent;
+
+        let (session, [lower, upper]) = step_pocket();
+        // MCP: the wire face form, the key as `list_model_items` gives it.
+        let mut mcp = session;
+        let model_id = mcp.toolpath_config_at(0).unwrap().model_id;
+        let wire_key = serde_json::json!({
+            "source": { "model": model_id.raw() },
+            "kind": "face",
+            "anchor": lower.anchor,
+            "measure": lower.measure,
+            "brep": lower.brep,
+        });
+        let _ = wire_floor(
+            &mut mcp,
+            &serde_json::json!({ "from": "face", "depth": 0.0, "key": wire_key }),
+        )
+        .expect("the wire face floor applies");
+
+        // GUI: the controller door of "Use as floor".
+        let (gui_session, _) = step_pocket();
+        let mut controller = AppController::with_backend(U4SilentBackend);
+        controller.state_mut().replace_session(gui_session);
+        let id = controller.state().session().toolpath_configs()[0].id;
+        controller.handle_internal_event(AppEvent::UseAsFloor {
+            toolpath_id: id,
+            key: lower.clone(),
+        });
+
+        let mcp_tc = mcp.toolpath_config_at(0).unwrap();
+        let gui_tc = controller.state().session().toolpath_config_at(0).unwrap();
+        assert_eq!(
+            serde_json::to_value(&mcp_tc.operation).unwrap(),
+            serde_json::to_value(&gui_tc.operation).unwrap(),
+            "the two routes store one operation config"
+        );
+        let Some(Floor::Face { key, depth }) = gui_tc.operation.floor() else {
+            panic!(
+                "the floor is the picked face: {:?}",
+                gui_tc.operation.floor()
+            );
+        };
+        assert_eq!(depth, 0.0);
+        assert_eq!(key.source, rs_cam_core::selection::SourceRef::ToolpathModel);
+        let picks = gui_tc.operation.selection().unwrap().picks().to_vec();
+        assert!(
+            !picks.iter().any(|p| p.names_same_geometry(&lower)),
+            "the floor face leaves the picks: {picks:?}"
+        );
+        assert!(
+            picks.iter().any(|p| p.names_same_geometry(&upper)),
+            "the other face stays: {picks:?}"
+        );
+        let heights = toolpath_heights_json(controller.state().session(), gui_tc);
+        assert!(heights["floor_refusal"].is_null(), "{heights}");
+        assert_eq!(heights["floor_label"], "A picked face");
+
+        // Clear: a face pick remains, so Each picked face, depth 0.
+        controller.handle_internal_event(AppEvent::ClearFloorFace { toolpath_id: id });
+        assert_eq!(
+            controller
+                .state()
+                .session()
+                .toolpath_config_at(0)
+                .unwrap()
+                .operation
+                .floor(),
+            Some(Floor::EachFace { depth: 0.0 })
+        );
     }
 
     /// Geometry selection P3.8 (design section 9): the two refusal rows

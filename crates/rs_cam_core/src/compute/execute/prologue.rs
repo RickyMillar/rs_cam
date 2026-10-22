@@ -370,7 +370,7 @@ fn region_ladders(
     let Some(floor) = op.floor() else {
         return Ok(None);
     };
-    let floors = region_floors(&ctx.selection.resolved, items, floor, ctx.heights.top_z).map_err(
+    let floors = region_floors(&ctx.selection.resolved, items, &floor, ctx.heights.top_z).map_err(
         |refusal| OperationError::Selection(Box::new(refusal.for_op(op.op_type().label()))),
     )?;
     Ok(floors.map(|floors| {

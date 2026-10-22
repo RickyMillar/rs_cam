@@ -473,12 +473,16 @@ pub enum WorkspaceParam {
     Readiness,
 }
 
-/// The toolpath properties tab `set_ui_view` shows.
+/// The toolpath properties tab `set_ui_view` shows. `geometry`: what the
+/// op cuts (the selected items, the floor face, the boundary selection;
+/// geometry selection GT-1). `cut`: the tool, the input model, the start
+/// stock and the op parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(inline)]
 pub enum PropertiesTabParam {
     Geometry,
+    Cut,
     Feeds,
     Linking,
     Heights,
@@ -1025,7 +1029,7 @@ pub struct SetToolpathHeightsParam {
 /// `{"from": "top", "depth": 6.0}` or `{"from": "z", "z": -20.0}`. Every Z
 /// is in the setup frame. `get_operation_schema` gives the domain of each
 /// number (`floor.variants`).
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "from", rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum FloorParam {
@@ -1062,6 +1066,16 @@ pub enum FloorParam {
         /// The floor Z.
         z: f64,
     },
+    /// UX-8: the plane Z of ONE face less `depth`. `key` is the match key
+    /// of an up face or a model ring (copy it from `list_model_items`). The
+    /// face leaves the picks of the op. A key that matches no item refuses
+    /// generation.
+    Face {
+        /// The match key of the floor face.
+        key: MatchKeyParam,
+        /// mm below the face; a negative value stands above it.
+        depth: f64,
+    },
 }
 
 impl From<FloorParam> for rs_cam_core::compute::floor::Floor {
@@ -1073,6 +1087,10 @@ impl From<FloorParam> for rs_cam_core::compute::floor::Floor {
             FloorParam::ModelTop { depth } => Self::ModelTop { depth },
             FloorParam::EachFace { depth } => Self::EachFace { depth },
             FloorParam::Z { z } => Self::Z { z },
+            FloorParam::Face { key, depth } => Self::Face {
+                key: key.into(),
+                depth,
+            },
         }
     }
 }
@@ -1087,6 +1105,10 @@ impl From<rs_cam_core::compute::floor::Floor> for FloorParam {
             Floor::ModelTop { depth } => Self::ModelTop { depth },
             Floor::EachFace { depth } => Self::EachFace { depth },
             Floor::Z { z } => Self::Z { z },
+            Floor::Face { key, depth } => Self::Face {
+                key: key.into(),
+                depth,
+            },
         }
     }
 }
@@ -1684,6 +1706,30 @@ pub enum ItemKindParam {
     Face,
 }
 
+impl From<rs_cam_core::selection::SourceRef> for SourceRefParam {
+    fn from(source: rs_cam_core::selection::SourceRef) -> Self {
+        use rs_cam_core::selection::SourceRef;
+        match source {
+            SourceRef::ToolpathModel => Self::ToolpathModel,
+            SourceRef::Model(id) => Self::Model(id.raw()),
+            SourceRef::Stock => Self::Stock,
+        }
+    }
+}
+
+impl From<rs_cam_core::selection::ItemKind> for ItemKindParam {
+    fn from(kind: rs_cam_core::selection::ItemKind) -> Self {
+        use rs_cam_core::selection::ItemKind;
+        match kind {
+            ItemKind::Loop => Self::Loop,
+            ItemKind::Path => Self::Path,
+            ItemKind::Point => Self::Point,
+            ItemKind::Circle => Self::Circle,
+            ItemKind::Face => Self::Face,
+        }
+    }
+}
+
 impl From<ItemKindParam> for rs_cam_core::selection::ItemKind {
     fn from(p: ItemKindParam) -> Self {
         match p {
@@ -1865,6 +1911,29 @@ impl From<MatchKeyParam> for rs_cam_core::selection::MatchKey {
             measure: p.measure,
             brep: p.brep,
             z: p.z,
+        }
+    }
+}
+
+impl From<rs_cam_core::selection::MatchKey> for MatchKeyParam {
+    fn from(key: rs_cam_core::selection::MatchKey) -> Self {
+        let rs_cam_core::selection::MatchKey {
+            source,
+            kind,
+            layer,
+            anchor,
+            measure,
+            brep,
+            z,
+        } = key;
+        Self {
+            source: source.into(),
+            kind: kind.into(),
+            layer,
+            anchor,
+            measure,
+            brep,
+            z,
         }
     }
 }
@@ -3532,12 +3601,26 @@ mod tests {
             Floor::ModelTop { depth: 1.0 },
             Floor::EachFace { depth: 0.0 },
             Floor::Z { z: -20.0 },
+            Floor::Face {
+                key: rs_cam_core::selection::MatchKey {
+                    source: rs_cam_core::selection::SourceRef::Model(
+                        rs_cam_core::ids::ModelId::from_wire(3),
+                    ),
+                    kind: rs_cam_core::selection::ItemKind::Loop,
+                    layer: None,
+                    anchor: [1.0, 2.0],
+                    measure: 4.0,
+                    brep: None,
+                    z: Some(12.5),
+                },
+                depth: 0.5,
+            },
         ];
         assert_eq!(cases.len(), Floor::EACH_REFERENCE.len());
         for floor in cases {
-            let file = serde_json::to_value(floor).unwrap();
+            let file = serde_json::to_value(&floor).unwrap();
             let wire: FloorParam = serde_json::from_value(file.clone()).unwrap();
-            assert_eq!(Floor::from(wire), floor, "{file}");
+            assert_eq!(Floor::from(wire.clone()), floor, "{file}");
             assert_eq!(FloorParam::from(floor), wire, "{file}");
         }
         let extra = serde_json::json!({ "from": "top", "depth": 6.0, "z": 1.0 });

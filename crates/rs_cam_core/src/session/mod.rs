@@ -32,6 +32,7 @@ mod reach;
 mod rest_fresh;
 mod rest_stock;
 mod result_provenance;
+mod rule_offers;
 mod save;
 pub(crate) mod selection_status;
 mod shoe;
@@ -96,9 +97,11 @@ pub use pin_report::{PinPreset, PinSetReport, PinStatus};
 pub use pins::{PinToolBinding, TWIST_DRILL_POINT_DEG};
 pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
 pub use result_provenance::{FeedStage, ResultProvenance};
+pub use rule_offers::RuleOffer;
 pub use selection_status::{
     BOUNDARY_ITEM_USE, BuildModelFacesHandle, ClickEdit, HoleItem, HoleSelection, ItemState,
-    ModelFacesBuilt, ModelItem, Near, SelectionReport, SelectionTarget, execute_build_model_faces,
+    ModelFacesBuilt, ModelItem, Near, SelectedRow, SelectionReport, SelectionTarget,
+    execute_build_model_faces,
 };
 pub use stock_change_report::{StockChangeRow, StockChangeVolumeAbsence, StockMaterialSwatch};
 

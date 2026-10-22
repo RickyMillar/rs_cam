@@ -361,6 +361,7 @@ impl RsCamApp {
         // Operator ruling Q2: the first face pick set the floor.
         let floor_note = effects
             .floor_set
+            .as_ref()
             .map_or_else(String::new, |_| format!(" {}", Effects::FLOOR_SET_NOTE));
         CoreReply::succeeded(self.mcp_mutation_result(
             format!("Selection of toolpath {index} edited.{floor_note} Regenerate to apply."),
