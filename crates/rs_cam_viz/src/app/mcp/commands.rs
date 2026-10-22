@@ -2326,13 +2326,18 @@ impl RsCamApp {
                 self.controller.state_mut().gui.mark_edited();
                 let label = before.extra_str("operation");
                 let feeds_refusal = before.extra_str("feeds_refusal");
-                let message = if feeds_refusal.is_empty() {
+                let mut message = if feeds_refusal.is_empty() {
                     format!("Added toolpath {index} ({label}).")
                 } else {
                     format!(
                         "Added toolpath {index} ({label}) without a feeds recipe: {feeds_refusal}"
                     )
                 };
+                // UX-7b: the add set the floor "Each picked face".
+                if effects.floor_set.is_some() {
+                    message.push(' ');
+                    message.push_str(rs_cam_core::session::Effects::FLOOR_SET_NOTE);
+                }
                 let reply = self.mcp_mutation_result(
                     message,
                     serde_json::json!({

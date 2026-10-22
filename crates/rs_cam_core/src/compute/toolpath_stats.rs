@@ -366,6 +366,14 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it. A fallback is a `Caution`.
     pub rest_levels: Option<RestLevelsFinding>,
+    /// UX-7b (SAFETY): what the model gouge guard measured on the emitted
+    /// moves. `None` = not measured (the row is exempt, the toolpath model
+    /// has no mesh, or the Profile compensates in the controller);
+    /// `Some` with `gouging == 0` = measured clean. A gouge is a blocking
+    /// diagnostic (`safety.cuts_into_model`), and export refuses on it
+    /// (`ExportRefusal::CutsIntoModel`). See
+    /// [`crate::compute::model_gouge::ModelGougeFinding`].
+    pub model_gouge: Option<crate::compute::model_gouge::ModelGougeFinding>,
     /// S-4 (G-BYTE): the identity of the machined-stock snapshot this
     /// generation consumed. See [`StockSnapshotStamp`].
     ///

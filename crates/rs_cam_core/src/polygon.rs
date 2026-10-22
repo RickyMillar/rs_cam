@@ -1752,17 +1752,22 @@ pub(crate) fn detect_containment_tagged(polygons: Vec<Polygon2>) -> Vec<(Polygon
         .enumerate()
         .map(|(index, polygon)| (polygon, index))
         .collect();
-    if polygons.len() <= 1 {
-        return polygons;
-    }
 
     // Ensure all closed rings have correct winding before containment test.
     // An open path keeps its drawn direction: its signed area is the area
     // of its chord-closed ring, which has no meaning, and the drawn
     // direction sets its start point and its side (lead ruling "fix b",
     // geometry selection P2.2).
+    //
+    // UX-7b (SAFETY): this runs for ONE ring too. The early return below
+    // used to come first, so a lone clockwise ring (a STEP face ring, a
+    // clockwise drawing loop) reached the ops unwound: a Pocket of it
+    // offset outward and cleared the stock round it.
     for (poly, _) in polygons.iter_mut().filter(|(p, _)| p.closed) {
         poly.ensure_winding();
+    }
+    if polygons.len() <= 1 {
+        return polygons;
     }
 
     // Sort by area descending (largest = outer boundaries)

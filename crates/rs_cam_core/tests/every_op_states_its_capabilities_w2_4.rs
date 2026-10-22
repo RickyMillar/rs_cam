@@ -95,6 +95,13 @@
 //! (no wall) and 3D Rough (a rough with a leave; its planner merges)
 //! state `false`; every other op states `true`. The bit is new; no
 //! earlier answer moved.
+//!
+//! UX-7b (operator rulings 2026-10-22, SAFETY) added the `model_gouge`
+//! column (a seventh table, [`frozen_ux7b`]): how the model gouge guard
+//! judges the emitted moves against the mesh of the op's own model.
+//! `Surface` for Pocket, Profile, Zigzag, Adaptive 2D and Face; `Hole` for
+//! Drill and Bore; `Exempt` for every other op. The column is new; no
+//! earlier answer moved.
 
 #![expect(
     clippy::unwrap_used,
@@ -104,8 +111,8 @@
 
 use rs_cam_core::compute::catalog::{
     AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, FaceTopRule,
-    FloorOwner, GeometryRequirement, ItemUse, LutRoute, MoveCountModel, OperationConfig,
-    OperationType, RestUse, RowCapabilities, TerritoryXy,
+    FloorOwner, GeometryRequirement, ItemUse, LutRoute, ModelGougeRule, MoveCountModel,
+    OperationConfig, OperationType, RestUse, RowCapabilities, TerritoryXy,
 };
 use rs_cam_core::compute::execute::LinkCeilingNeed;
 use rs_cam_core::ops::trace_path::TraceCompensation;
@@ -962,5 +969,69 @@ fn every_field_has_a_frozen_column() {
         item_use: _,                   // frozen_p1()
         ladder_includes_top: _,        // frozen_f033b()
         face_top: _,                   // frozen_ux1b()
+        model_gouge: _,                // frozen_ux7b()
     } = OperationType::Pocket.capabilities();
+}
+
+/// UX-7b: the `model_gouge` column, frozen per op kind by its variant (the
+/// fix sentence is the row's own text). No config overrides it.
+#[rustfmt::skip]
+fn frozen_ux7b() -> Vec<(OperationType, &'static str)> {
+    use OperationType as O;
+    let (s, h, e) = ("Surface", "Hole", "Exempt");
+    vec![
+    (O::Face, s),
+    (O::Pocket, s),
+    (O::Profile, s),
+    (O::Adaptive, s),
+    (O::VCarve, e),
+    (O::Inlay, e),
+    (O::InlayPlug, e),
+    (O::Zigzag, s),
+    (O::Trace, e),
+    (O::Drill, h),
+    (O::Bore, h),
+    (O::Chamfer, e),
+    (O::DropCutter, e),
+    (O::Adaptive3d, e),
+    (O::Waterline, e),
+    (O::Pencil, e),
+    (O::Scallop, e),
+    (O::UnifiedFinish, e),
+    (O::SteepShallow, e),
+    (O::RampFinish, e),
+    (O::SpiralFinish, e),
+    (O::RadialFinish, e),
+    (O::HorizontalFinish, e),
+    (O::ProjectCurve, e),
+    (O::AlignmentPinDrill, e),
+    ]
+}
+
+/// The variant name of a rule.
+fn gouge_variant(rule: ModelGougeRule) -> &'static str {
+    match rule {
+        ModelGougeRule::Surface { .. } => "Surface",
+        ModelGougeRule::Hole { .. } => "Hole",
+        ModelGougeRule::Exempt => "Exempt",
+    }
+}
+
+/// UX-7b: the row of each op kind and its default config give the frozen
+/// `model_gouge` rule, and a guarded rule states a fix.
+#[test]
+fn every_op_keeps_its_model_gouge_rule_ux7b() {
+    let table = frozen_ux7b();
+    let ops: Vec<OperationType> = table.iter().map(|r| r.0).collect();
+    assert_eq!(ops, OperationType::ALL.to_vec());
+    for (op, want) in table {
+        let kind = op.capabilities().model_gouge;
+        assert_eq!(gouge_variant(kind), want, "{op:?} (kind)");
+        assert_eq!(
+            OperationConfig::new_default(op).capabilities().model_gouge,
+            kind,
+            "{op:?} (config)"
+        );
+        assert_eq!(kind.fix_hint().is_empty(), want == "Exempt", "{op:?} fix");
+    }
 }

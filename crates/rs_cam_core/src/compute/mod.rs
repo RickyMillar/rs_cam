@@ -14,6 +14,7 @@ pub mod domain;
 pub mod execute;
 pub mod floor;
 pub mod generated_empty;
+pub mod model_gouge;
 pub mod obstacle;
 pub mod operation_configs;
 pub mod shoe;

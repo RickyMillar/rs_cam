@@ -110,6 +110,9 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
         // G-RESTLEVELS: same rule. A skipped level leaves no move, so a
         // finished move list cannot say that the level existed.
         rest_levels: None,
+        // UX-7b: same rule. The guard needs the model mesh, which a move
+        // list does not carry.
+        model_gouge: None,
         // A/M7 gate 1: this helper DOES see the move list, so the trip
         // TOTAL is always measured; the in/out split additionally needs
         // `spans` (see `compute_retract_trips`).
@@ -220,6 +223,7 @@ pub fn stats_with_findings(
         pencil_link: _,
         monotone_cells: _,
         rest_levels: _,
+        model_gouge: _,
         // S-4: caller-owned, like the findings — the helper's honest `None`
         // is about to be replaced by the parameter.
         stock_snapshot: _,
@@ -252,6 +256,7 @@ pub fn stats_with_findings(
         pencil_link,
         monotone_cells,
         rest_levels,
+        model_gouge,
     } = findings;
 
     // Guard 3: no `..Default::default()`.
@@ -285,6 +290,7 @@ pub fn stats_with_findings(
         pencil_link,
         monotone_cells,
         rest_levels,
+        model_gouge,
         stock_snapshot,
         source_stock,
         planned_cycle_time_s,

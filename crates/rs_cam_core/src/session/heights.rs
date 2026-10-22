@@ -585,6 +585,57 @@ impl ProjectSession {
         })
     }
 
+    /// THE "each face" default rule (operator ruling Q2, UX-7b, SAFETY):
+    /// the op config of `tc` with the floor "Each picked face", depth 0,
+    /// when the rule applies, else `None`. Two doors call it: the
+    /// `EditSelection` row, when an edit adds an area with a model Z, and
+    /// the `AddToolpath` row (every add door of the GUI, MCP and the CLI).
+    ///
+    /// The rule applies when all of these are true:
+    ///
+    /// - the op cuts closed areas (`ItemUse::Regions`,
+    ///   `ItemUse::RegionsExtendOpen`) and holds a floor;
+    /// - the floor is still a default floor
+    ///   ([`OperationConfig::floor_is_default`] for the stock of the
+    ///   session);
+    /// - an up face or a model ring of the selection lies below the stock
+    ///   top ([`ToolpathHeights::has_face_below_stock_top`]);
+    /// - the operation check accepts the new floor (a Profile with side On
+    ///   refuses it, P6.3).
+    ///
+    /// UX-7b (defect): a STEP model gives its face rings to the default
+    /// rule. A default Pocket then cut ALL rings to one floor 5 mm below
+    /// the highest ring, so it cut into the faces of the higher rings.
+    ///
+    /// [`OperationConfig::floor_is_default`]: crate::compute::catalog::OperationConfig::floor_is_default
+    pub(crate) fn each_face_floor_due(
+        &self,
+        tc: &ToolpathConfig,
+    ) -> Option<crate::compute::catalog::OperationConfig> {
+        use crate::compute::catalog::ItemUse;
+        let reads_areas = matches!(
+            tc.operation.capabilities().item_use,
+            ItemUse::Regions | ItemUse::RegionsExtendOpen { .. }
+        );
+        let stock = crate::feeds::suggest::StockContext::from_stock_bbox(
+            self.stock_bbox(),
+            self.stock.padding,
+        );
+        if !reads_areas || !tc.operation.floor_is_default(&stock) {
+            return None;
+        }
+        let below_top = self
+            .toolpath_heights(tc)
+            .is_ok_and(|h| h.has_face_below_stock_top());
+        if !below_top {
+            return None;
+        }
+        let mut candidate = tc.operation.clone();
+        (candidate.set_floor(Floor::EachFace { depth: 0.0 })
+            && crate::compute::domain::validate_toolpath_operation(&tc.name, &candidate).is_ok())
+        .then_some(candidate)
+    }
+
     /// F033: the edit door of the height-plane order. `candidate` is the
     /// config that an edit of toolpath `index` writes. The door refuses when
     /// the candidate ADDS a refusing break of the order

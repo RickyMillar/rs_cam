@@ -23,10 +23,10 @@ use crate::selection::HoleFitRule;
 use super::capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
     AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbeRule, FaceTopRule, FloorOwner,
-    ItemUse, LutRoute, MoveCountModel, RestUse, TRANSFORM_ADAPTIVE_2D, TRANSFORM_ADAPTIVE_3D,
-    TRANSFORM_BARRIERED_NODES, TRANSFORM_CONTINUOUS, TRANSFORM_DEPTH_ORDER, TRANSFORM_FACE,
-    TRANSFORM_ORDERED_LINKABLE, TRANSFORM_PROFILE, TRANSFORM_TRACE, TRANSFORM_V_WIDTH,
-    TRANSFORM_XY_INDEPENDENT, TerritoryXy,
+    ItemUse, LutRoute, ModelGougeRule, MoveCountModel, RestUse, TRANSFORM_ADAPTIVE_2D,
+    TRANSFORM_ADAPTIVE_3D, TRANSFORM_BARRIERED_NODES, TRANSFORM_CONTINUOUS, TRANSFORM_DEPTH_ORDER,
+    TRANSFORM_FACE, TRANSFORM_ORDERED_LINKABLE, TRANSFORM_PROFILE, TRANSFORM_TRACE,
+    TRANSFORM_V_WIDTH, TRANSFORM_XY_INDEPENDENT, TerritoryXy,
 };
 use super::schema::{
     DressupPolicy, Kinematics, OpParams as _, OpPolicy, OpRegistryEntry, ToolConstraintsDef,
@@ -35,6 +35,20 @@ use super::{
     FeedsHints, GeometryRequirement, OperationFamily, OperationSpec, OperationType,
     UiOperationFamily, UiProcessRole,
 };
+
+/// UX-7b: the fix sentence of the model gouge guard on a floor op that
+/// clears areas (Pocket, Zigzag, Adaptive 2D).
+const FIX_FLOOR_EACH_FACE: &str = "Set the floor to 'Each picked face' (depth 0), so each area \
+                                   cuts to its own face";
+/// UX-7b: the fix sentence of the guard on a Profile.
+const FIX_PROFILE: &str =
+    "Pick the part outline, or set the floor no lower than the material beside the ring";
+/// UX-7b: the fix sentence of the guard on a Face.
+const FIX_FACE: &str = "Set the Face depth so that the face stays above the model";
+/// UX-7b: the fix sentence of the guard on a Drill.
+const FIX_DRILL: &str = "Set the drill depth no deeper than the hole floor of the model";
+/// UX-7b: the fix sentence of the guard on a Bore.
+const FIX_BORE: &str = "Set the floor no lower than the hole floor of the model";
 
 pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
     op_type: OperationType::Face,
@@ -80,6 +94,7 @@ pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::HigherOfFaceAndStock,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::Regions,
+        model_gouge: ModelGougeRule::Surface { fix: FIX_FACE },
     },
     generate: crate::compute::execute::generate_face,
 };
@@ -128,6 +143,9 @@ pub(super) static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::HigherOfFaceAndStock,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::Regions,
+        model_gouge: ModelGougeRule::Surface {
+            fix: FIX_FLOOR_EACH_FACE,
+        },
     },
     generate: crate::compute::execute::generate_pocket,
 };
@@ -178,6 +196,7 @@ pub(super) static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
         // Sides Outside and Inside. `OperationConfig::capabilities` states
         // `Curves` for side `On` (P6.3).
         item_use: ItemUse::Regions,
+        model_gouge: ModelGougeRule::Surface { fix: FIX_PROFILE },
     },
     generate: crate::compute::execute::generate_profile,
 };
@@ -229,6 +248,9 @@ pub(super) static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::HigherOfFaceAndStock,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::Regions,
+        model_gouge: ModelGougeRule::Surface {
+            fix: FIX_FLOOR_EACH_FACE,
+        },
     },
     generate: crate::compute::execute::generate_adaptive,
 };
@@ -289,6 +311,7 @@ pub(super) static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::RefuseBuried,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::Regions,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_vcarve,
 };
@@ -347,6 +370,7 @@ pub(super) static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::RefuseBuried,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::Regions,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_inlay,
 };
@@ -405,6 +429,7 @@ pub(super) static REG_INLAY_PLUG: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::RefuseBuried,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::Regions,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_inlay_plug,
 };
@@ -453,6 +478,9 @@ pub(super) static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::HigherOfFaceAndStock,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::Regions,
+        model_gouge: ModelGougeRule::Surface {
+            fix: FIX_FLOOR_EACH_FACE,
+        },
     },
     generate: crate::compute::execute::generate_zigzag,
 };
@@ -503,6 +531,7 @@ pub(super) static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
         lut_route: LutRoute::AsStated,
         // Every compensation reads `Curves`: open paths and loops (P6.2).
         item_use: ItemUse::Curves,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_trace,
 };
@@ -558,6 +587,7 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
             may_be_empty: false,
             fit: HoleFitRule::ToolSize,
         },
+        model_gouge: ModelGougeRule::Hole { fix: FIX_DRILL },
     },
     generate: crate::compute::execute::generate_drill,
 };
@@ -630,6 +660,7 @@ pub(super) static REG_BORE: OpRegistryEntry = OpRegistryEntry {
             may_be_empty: false,
             fit: HoleFitRule::LargerThanTool,
         },
+        model_gouge: ModelGougeRule::Hole { fix: FIX_BORE },
     },
     generate: crate::compute::execute::generate_bore,
 };
@@ -681,6 +712,7 @@ pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::RefuseBuried,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::Regions,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_chamfer,
 };
@@ -735,6 +767,7 @@ pub(super) static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::Face,
         lut_route: LutRoute::FlatParallelAsRoughPocket,
         item_use: ItemUse::None,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_drop_cutter,
 };
@@ -789,6 +822,7 @@ pub(super) static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::Face,
         lut_route: LutRoute::AdaptiveAsPocket,
         item_use: ItemUse::None,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_adaptive3d,
 };
@@ -837,6 +871,7 @@ pub(super) static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::Face,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::None,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_waterline,
 };
@@ -890,6 +925,7 @@ pub(super) static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::Face,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::None,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_pencil,
 };
@@ -941,6 +977,7 @@ pub(super) static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::Face,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::None,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_scallop,
 };
@@ -1010,6 +1047,7 @@ pub(super) static REG_UNIFIED_FINISH: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::Face,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::None,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_unified_finish,
 };
@@ -1061,6 +1099,7 @@ pub(super) static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::Face,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::None,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_steep_shallow,
 };
@@ -1109,6 +1148,7 @@ pub(super) static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::Face,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::None,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_ramp_finish,
 };
@@ -1164,6 +1204,7 @@ pub(super) static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::Face,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::None,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_spiral_finish,
 };
@@ -1212,6 +1253,7 @@ pub(super) static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::Face,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::None,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_radial_finish,
 };
@@ -1267,6 +1309,7 @@ pub(super) static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::Face,
         lut_route: LutRoute::AsStated,
         item_use: ItemUse::None,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_horizontal_finish,
 };
@@ -1321,6 +1364,7 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
         face_top: FaceTopRule::Face,
         lut_route: LutRoute::ByCutter,
         item_use: ItemUse::Curves,
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_project_curve,
 };
@@ -1385,6 +1429,7 @@ pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
             may_be_empty: true,
             fit: HoleFitRule::None,
         },
+        model_gouge: ModelGougeRule::Exempt,
     },
     generate: crate::compute::execute::generate_alignment_pin_drill,
 };

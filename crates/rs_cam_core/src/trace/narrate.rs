@@ -346,6 +346,9 @@ impl<'a> ToolpathNarrationContext<'a> {
             //    moves, and a fallback is a diagnostic notice
             //    (`geom.rest_levels_fallback`).
             rest_levels: _,
+            //  - model_gouge (UX-7b): a blocking diagnostic
+            //    (`safety.cuts_into_model`) that names the deepest point.
+            model_gouge: _,
             relink,
             pencil_link,
         } = stats;

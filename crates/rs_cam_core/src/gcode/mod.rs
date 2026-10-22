@@ -136,6 +136,14 @@ pub enum ExportRefusal {
         /// One line per refusing toolpath: `session::HeightOrderRefusal`.
         rows: Vec<String>,
     },
+    /// UX-7b (SAFETY): an emitted toolpath cuts into the mesh of its own
+    /// model (`compute::model_gouge`, the blocking diagnostic
+    /// `safety.cuts_into_model`). No override: fix the floor or the
+    /// selection, and regenerate.
+    CutsIntoModel {
+        /// One line per refusing toolpath: its name and the finding.
+        rows: Vec<String>,
+    },
 }
 
 impl ExportRefusal {
@@ -147,7 +155,8 @@ impl ExportRefusal {
             Self::InchUnits
             | Self::BadFeed { .. }
             | Self::ControllerCompensation { .. }
-            | Self::HeightOrder { .. } => None,
+            | Self::HeightOrder { .. }
+            | Self::CutsIntoModel { .. } => None,
             Self::LoadExceeded { .. } => Some(LoadOverride::AcceptExceeded),
             Self::LoadUnmodeled { .. } | Self::StaleSimulation { .. } => {
                 Some(LoadOverride::AcceptUnmodeled)
@@ -219,6 +228,14 @@ impl ExportRefusal {
                 }
                 msg.trim_end().to_owned()
             }
+            Self::CutsIntoModel { rows } => {
+                let mut msg =
+                    String::from("G-code export refused: a toolpath cuts into the model:\n");
+                for line in rows {
+                    let _ = writeln!(msg, "{line}");
+                }
+                msg.trim_end().to_owned()
+            }
         }
     }
 }
@@ -230,7 +247,8 @@ impl Display for ExportRefusal {
             Self::InchUnits
             | Self::BadFeed { .. }
             | Self::ControllerCompensation { .. }
-            | Self::HeightOrder { .. } => Ok(()),
+            | Self::HeightOrder { .. }
+            | Self::CutsIntoModel { .. } => Ok(()),
             Self::LoadExceeded { .. } => write!(
                 f,
                 "\nTo override (a known-dangerous override): {}.",

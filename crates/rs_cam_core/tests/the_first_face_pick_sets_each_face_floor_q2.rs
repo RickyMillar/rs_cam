@@ -188,6 +188,15 @@ fn pick(s: &mut ProjectSession, face: u16) -> Effects {
     .expect("the pick applies")
 }
 
+/// The stock of the session as the add doors read it (UX-7b: a default
+/// floor is the registry default or the stock default of this stock).
+fn stock_ctx(s: &ProjectSession) -> rs_cam_core::feeds::suggest::StockContext {
+    rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(
+        s.stock_bbox(),
+        s.stock_config().padding,
+    )
+}
+
 fn op(s: &ProjectSession) -> OperationConfig {
     s.toolpath_configs()[0].operation.clone()
 }
@@ -201,7 +210,7 @@ fn a_face_pick_on_a_default_pocket_sets_each_face() {
         matches!(default_floor, Floor::Top { .. }),
         "non-vacuity: the Pocket default is Top Z"
     );
-    assert!(op(&s).floor_is_default());
+    assert!(op(&s).floor_is_default(&stock_ctx(&s)));
     assert!(op(&s).selection().unwrap().is_drawing());
 
     // Claim 1.
@@ -255,7 +264,7 @@ fn a_hand_set_floor_stays() {
             floor: hand,
         }))
         .unwrap();
-    assert!(!op(&s).floor_is_default());
+    assert!(!op(&s).floor_is_default(&stock_ctx(&s)));
     let effects = pick(&mut s, FACE_Z20);
     assert_eq!(effects.floor_set, None);
     assert_eq!(op(&s).floor(), Some(hand));
@@ -272,7 +281,10 @@ fn an_op_that_cannot_take_the_face_floor_keeps_its_floor() {
     }
     let mut s = session(on);
     let before = op(&s).floor();
-    assert!(op(&s).floor_is_default(), "non-vacuity: the default floor");
+    assert!(
+        op(&s).floor_is_default(&stock_ctx(&s)),
+        "non-vacuity: the default floor"
+    );
     let effects = pick(&mut s, FACE_Z20);
     assert_eq!(effects.floor_set, None);
     assert_eq!(op(&s).floor(), before);

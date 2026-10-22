@@ -286,6 +286,12 @@ pub struct GenerationFindings {
     /// did. `None` = the operation read no machined stock. See
     /// [`crate::compute::toolpath_stats::RestLevelsFinding`].
     pub rest_levels: Option<crate::compute::toolpath_stats::RestLevelsFinding>,
+    /// UX-7b (SAFETY): the model gouge guard on the emitted moves. `None` =
+    /// not measured. Written after the session stages (the moves the
+    /// machine runs), so through `&mut GenerationFindings`, as
+    /// [`Self::boundary_clip_dropped`]. See
+    /// [`crate::compute::model_gouge::ModelGougeFinding`].
+    pub model_gouge: Option<crate::compute::model_gouge::ModelGougeFinding>,
 }
 
 impl std::fmt::Display for OperationError {

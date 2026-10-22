@@ -273,15 +273,14 @@ impl ProjectSession {
     /// - GT-Q8: a `RemovePick` of an item that a rule holds turns each such
     ///   rule into picks, all its members less the item
     ///   (`ProjectSession::rule_drop_edit`), in this one command.
-    /// - Q2: when the edit adds a face pick to the op selection, the op is
-    ///   a floor op (`FloorOwner::OpFloor`), its floor is still the op
-    ///   default (`OperationConfig::floor_is_default`) and a picked face
-    ///   lies below the stock top in the setup frame
-    ///   (`ToolpathHeights::has_face_below_stock_top`, the UX-1 top), the
-    ///   floor becomes "Each picked face", depth 0, in this one command. A
-    ///   pick of a face at the stock top keeps the default floor. A floor
-    ///   that the operation check refuses (a Profile with side On) stays
-    ///   as it is. [`Effects::floor_set`] names the new floor.
+    /// - Q2 (UX-7b: a model ring is an area as a face is): when the edit
+    ///   adds an area with a model Z to the op selection (a face pick, a
+    ///   pick of a `Loop` with a Z, or a rule), THE each-face rule
+    ///   (`ProjectSession::each_face_floor_due`) sets the floor "Each
+    ///   picked face", depth 0, in this one command. A pick of a face at
+    ///   the stock top keeps the default floor. A floor that the operation
+    ///   check refuses (a Profile with side On) stays as it is.
+    ///   [`Effects::floor_set`] names the new floor.
     #[instrument(skip(self, edit))]
     pub(crate) fn edit_toolpath_selection(
         &mut self,
@@ -289,7 +288,6 @@ impl ProjectSession {
         target: crate::session::SelectionTarget,
         edit: crate::selection::SelectionEdit,
     ) -> Result<Effects, SessionError> {
-        use crate::compute::floor::Floor;
         use crate::selection::SelectionEdit;
         use crate::session::SelectionTarget;
         // GT-Q8: resolve first (the slot borrow below is mutable).
@@ -344,35 +342,27 @@ impl ProjectSession {
                     }
                 },
             };
-            let face_picks_before = slot.face_picks().count();
-            let mut next = slot.clone().for_toolpath_model(model);
+            let before = slot.clone().for_toolpath_model(model);
+            let mut next = before.clone();
             next.apply(
                 edit.for_toolpath_model(model),
                 &op_default.for_toolpath_model(model),
             )
             .map_err(|e| SessionError::Selection(Box::new(e.for_op(label))))?;
-            let added_face_pick = next.face_picks().count() > face_picks_before;
+            let added_area = adds_model_area(&before, &next);
             *slot = next;
-            // Q2: a face pick on a floor op at its default floor, when a
-            // picked face lies below the stock top (lead decision: a face at
-            // the top keeps the default floor, so it does not refuse
+            // Q2: an added area on a floor op at its default floor, when an
+            // area lies below the stock top (lead decision: a face at the
+            // top keeps the default floor, so it does not refuse
             // `FloorAboveTop`). The heights resolver reads the new
             // selection.
-            if target == SelectionTarget::Op && added_face_pick && tc.operation.floor_is_default() {
+            if target == SelectionTarget::Op && added_area {
                 let probe = tc.clone();
-                let below_top = session
-                    .toolpath_heights(&probe)
-                    .is_ok_and(|h| h.has_face_below_stock_top());
-                let each_face = Floor::EachFace { depth: 0.0 };
-                let mut candidate = probe.operation.clone();
-                if below_top
-                    && candidate.set_floor(each_face)
-                    && crate::compute::domain::validate_toolpath_operation(&probe.name, &candidate)
-                        .is_ok()
+                if let Some(candidate) = session.each_face_floor_due(&probe)
                     && let Some(tc) = session.toolpath_configs.get_mut(index)
                 {
+                    floor_set = candidate.floor();
                     tc.operation = candidate;
-                    floor_set = Some(each_face);
                 }
             }
             session.invalidate_result_chain(index, enabled);
@@ -715,4 +705,32 @@ impl ProjectSession {
             Ok(())
         })
     }
+}
+
+/// True when `next` holds a part that can name an area with a model Z and
+/// `before` does not (Q2, UX-7b): a face pick, a pick of a `Loop` with a Z
+/// (a STEP face ring), or a rule (a rule can admit model rings). O-PICK can
+/// replace the default rule in the same edit, so the test compares the
+/// parts, not their count. THE each-face rule then reads the resolved
+/// selection (`ProjectSession::each_face_floor_due`).
+fn adds_model_area(
+    before: &crate::selection::Selection,
+    next: &crate::selection::Selection,
+) -> bool {
+    use crate::selection::ItemKind;
+    let is_area = |key: &crate::selection::MatchKey| match key.kind {
+        ItemKind::Face => true,
+        ItemKind::Loop => key.z.is_some(),
+        ItemKind::Path | ItemKind::Point | ItemKind::Circle => false,
+    };
+    let new_pick = next
+        .picks()
+        .iter()
+        .filter(|key| is_area(key))
+        .any(|key| !before.picks().contains(key));
+    let new_rule = next
+        .rules()
+        .iter()
+        .any(|rule| !before.rules().contains(rule));
+    new_pick || new_rule
 }

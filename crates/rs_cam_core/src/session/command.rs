@@ -1296,11 +1296,12 @@ pub struct Effects {
     /// 3D op), so the old selection has no place to go.
     pub selection_dropped: bool,
     /// The floor that the command set by operator ruling Q2 (2026-10-22),
-    /// or `None`. Only `EditSelection` sets it: a face pick on a floor op
-    /// whose floor is still the op default, with a picked face below the
-    /// stock top, sets "Each picked face", depth 0, in the same command
-    /// (one undo step). Each surface
-    /// words it with [`Effects::FLOOR_SET_NOTE`].
+    /// or `None`. `EditSelection` and `AddToolpath` set it (UX-7b): an
+    /// area with a model Z below the stock top (a face, a STEP ring) on a
+    /// floor op whose floor is still a default floor sets "Each picked
+    /// face", depth 0, in the same command (one undo step). THE rule is
+    /// `ProjectSession::each_face_floor_due`. Each surface words it with
+    /// [`Effects::FLOOR_SET_NOTE`].
     pub floor_set: Option<crate::compute::floor::Floor>,
     /// The outcome of a multi-tool plan (F040), or `None` when the
     /// command planned nothing. Only `PlanMultitoolFinishing` sets it.

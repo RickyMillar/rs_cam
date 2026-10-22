@@ -41,6 +41,10 @@ impl ProjectSession {
     /// was safety-checked. The findings are advisory on every surface: no
     /// door refuses on them.
     ///
+    /// UX-7b: next, an emitted toolpath whose stored result cuts into its
+    /// model refuses ([`crate::gcode::ExportRefusal::CutsIntoModel`],
+    /// [`Self::model_gouge_refusal`]).
+    ///
     /// [`validate_machine_safety`]: crate::export::gcode_validator::validate_machine_safety
     /// [`emission_frame_clearance_z`]: crate::export::gcode_validator::emission_frame_clearance_z
     pub fn export_program(
@@ -70,6 +74,16 @@ impl ProjectSession {
             .collect();
         if !height_rows.is_empty() {
             return Err(crate::gcode::ExportRefusal::HeightOrder { rows: height_rows });
+        }
+        // UX-7b (SAFETY): an emitted toolpath whose stored result cuts into
+        // the mesh of its model refuses the whole export, on the same
+        // finding as the blocking diagnostic `safety.cuts_into_model`.
+        let gouge_rows: Vec<String> = emitted
+            .iter()
+            .filter_map(|idx| self.model_gouge_refusal(*idx))
+            .collect();
+        if !gouge_rows.is_empty() {
+            return Err(crate::gcode::ExportRefusal::CutsIntoModel { rows: gouge_rows });
         }
         let post_config = &self.post;
         let post = post_config.format.definition();
@@ -110,6 +124,23 @@ impl ProjectSession {
             load_outcome,
             feeds_cautions: self.feeds_cautions(emitted.iter().copied()),
         })
+    }
+
+    /// UX-7b (SAFETY): the export row of toolpath `index` when its stored
+    /// result cuts into the mesh of its model, else `None`. The row is the
+    /// toolpath name and the finding sentence of the blocking diagnostic
+    /// `safety.cuts_into_model`.
+    #[must_use]
+    pub fn model_gouge_refusal(&self, index: usize) -> Option<String> {
+        let finding = self.result_at(index)?.stats.model_gouge?;
+        if !finding.gouges() {
+            return None;
+        }
+        let name = self
+            .toolpath_configs
+            .get(index)
+            .map_or("?", |tc| tc.name.as_str());
+        Some(format!("Toolpath '{name}': {}", finding.message()))
     }
 
     /// Export every enabled toolpath that holds a session result, through

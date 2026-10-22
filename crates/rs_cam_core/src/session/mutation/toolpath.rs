@@ -22,6 +22,14 @@ impl ProjectSession {
     /// `toolpath_configs`, the value this method returned before WP4.
     /// [`Effects::revision`] is `None`: the caller names no existing
     /// index, so no revision read answers about it.
+    ///
+    /// UX-7b (SAFETY): THE each-face rule
+    /// ([`ProjectSession::each_face_floor_due`]) runs on the new toolpath.
+    /// A new area op whose selection holds a model ring or face below the
+    /// stock top (the default rule on a STEP model) takes the floor "Each
+    /// picked face", depth 0, in this one command, and
+    /// [`Effects::floor_set`] names it. Every add door (GUI, MCP, CLI)
+    /// sends this command, so one rule serves them all.
     #[instrument(skip(self, config))]
     pub(crate) fn add_toolpath(
         &mut self,
@@ -34,15 +42,28 @@ impl ProjectSession {
         // domain.
         crate::compute::domain::validate_toolpath(&config)?;
         let mut created = None;
+        let mut floor_set = None;
         // The error type is named because this call is not in tail
         // position: the `?` below leaves `E` constrained by two `From`
         // bounds alone, which the compiler cannot solve. `with_effects`
         // names `Infallible` for the same reason.
         let mut effects = self.try_with_effects(None, |session| {
-            created = Some(session.add_toolpath_impl(setup_index, config)?);
+            let index = session.add_toolpath_impl(setup_index, config)?;
+            created = Some(index);
+            let due = session
+                .toolpath_configs
+                .get(index)
+                .and_then(|tc| session.each_face_floor_due(tc));
+            if let Some(candidate) = due
+                && let Some(tc) = session.toolpath_configs.get_mut(index)
+            {
+                floor_set = candidate.floor();
+                tc.operation = candidate;
+            }
             Ok::<(), SessionError>(())
         })?;
         effects.created = created;
+        effects.floor_set = floor_set;
         Ok(effects)
     }
 

@@ -157,6 +157,45 @@ pub struct Capabilities<P = EntryProbe> {
     /// `OperationConfig::capabilities` overrides it for Trace, whose
     /// compensation decides it.
     pub item_use: ItemUse,
+    /// How the model gouge guard judges the emitted motion against the
+    /// mesh of the op's own model (UX-7b, SAFETY). The session runs the
+    /// guard after generation (`compute::model_gouge`).
+    pub model_gouge: ModelGougeRule,
+}
+
+/// How the model gouge guard judges an op (UX-7b, operator rulings
+/// 2026-10-22, SAFETY). The guard reads the emitted cutting moves and the
+/// mesh of the op's OWN model (a STEP or an STL); a drawing has no mesh,
+/// so it never judges a DXF or SVG op. The guard keeps the toolpath and
+/// records a blocking finding; export refuses while it stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelGougeRule {
+    /// The tool tip must not go below the drop-cutter surface of the model
+    /// at each sample: Pocket, Profile, Zigzag, Adaptive 2D and Face. These
+    /// ops remove stock to the shape of the part, so a cut into the part is
+    /// a defect. `fix` is the fix sentence of the row.
+    Surface { fix: &'static str },
+    /// A plunge op (Drill, Bore): a sample gouges only where the model has
+    /// a hole at that XY (the point surface is below the local top) and the
+    /// tip goes below the hole floor. A hole where the model is flat is the
+    /// intent (a dowel hole that the model does not show).
+    Hole { fix: &'static str },
+    /// No guard: the cut is the intent, and the model may not show it (an
+    /// engraving, a chamfer, an inlay, a trace, a pin hole), or the op
+    /// follows the surface itself (the 3D ops).
+    Exempt,
+}
+
+impl ModelGougeRule {
+    /// The fix sentence of the row, for the operator message. `Exempt`
+    /// has none.
+    #[must_use]
+    pub const fn fix_hint(self) -> &'static str {
+        match self {
+            Self::Surface { fix } | Self::Hole { fix } => fix,
+            Self::Exempt => "",
+        }
+    }
 }
 
 /// Which field sets the floor of an op (geometry selection P3.2, design
@@ -258,6 +297,7 @@ impl<P> Capabilities<P> {
             face_top: self.face_top,
             lut_route: self.lut_route,
             item_use: self.item_use,
+            model_gouge: self.model_gouge,
         }
     }
 }

@@ -561,7 +561,7 @@ pub fn execute_job(
         semantic_root: &semantic_root,
     };
 
-    let (annotated, findings) = match phases.run_stages(cancel, &semantic_recorder) {
+    let (annotated, mut findings) = match phases.run_stages(cancel, &semantic_recorder) {
         Ok(staged) => staged,
         Err(e) => {
             let _ = debug_recorder.finish();
@@ -570,6 +570,15 @@ pub fn execute_job(
             return Err(e);
         }
     };
+    // UX-7b (SAFETY): the model gouge guard reads the moves the machine
+    // runs, so it runs after every stage. It is not in `run_stages`: the
+    // fresh twin of a rest op needs only a cycle time.
+    if let Err(e) = phases.guard_model_gouge(&annotated, &mut findings, cancel) {
+        let _ = debug_recorder.finish();
+        let _ = semantic_recorder.finish();
+        observer.clear_phase();
+        return Err(e);
+    }
 
     // Operator ruling 2026-10-15: a rest operation keeps its planned cycle
     // time for the on-demand comparison with its fresh twin. One
@@ -711,6 +720,68 @@ impl JobPhases<'_, '_> {
         let annotated = self.apply_dressups(annotated, &mut channels);
         let annotated = self.clip_and_split_entries(annotated, &mut channels, &mut findings)?;
         Ok((annotated, findings))
+    }
+
+    /// The model gouge guard (UX-7b, SAFETY): measure the emitted moves
+    /// against the mesh of the toolpath model, by the rule of the row
+    /// (`Capabilities::model_gouge`), and record the finding. Nothing is
+    /// measured (no finding) when the row is exempt, when the model has
+    /// no mesh (a drawing), or when a Profile compensates in the
+    /// controller: its emitted path is the contour, not the tool centre.
+    ///
+    /// The probe is the tool with its diameter less twice
+    /// `compute::model_gouge::MODEL_GOUGE_TOL_MM`, so a tool tangent to a
+    /// model wall does not read a gouge.
+    ///
+    /// # Errors
+    ///
+    /// [`SessionError::Operation`] with `Cancelled` when `cancel` is set;
+    /// the reduced tool refusal of `session_cutter`.
+    fn guard_model_gouge(
+        &self,
+        annotated: &crate::compute::execute::GeneratedToolpath,
+        findings: &mut crate::compute::execute::GenerationFindings,
+        cancel: &AtomicBool,
+    ) -> Result<(), SessionError> {
+        use crate::compute::catalog::{ModelGougeRule, OperationConfig};
+        use crate::compute::model_gouge::{GougeProbe, MODEL_GOUGE_TOL_MM, measure};
+        use crate::compute::operation_configs::CompensationType;
+        let rule = self.inputs.operation.capabilities().model_gouge;
+        if matches!(rule, ModelGougeRule::Exempt) {
+            return Ok(());
+        }
+        // The one op with controller compensation emits the contour, not
+        // the tool centre (`gcode::controller_compensation_for`).
+        if let OperationConfig::Profile(cfg) = &self.inputs.operation
+            && cfg.compensation == CompensationType::InControl
+        {
+            return Ok(());
+        }
+        let (Some(mesh), Some(index)) = (self.inputs.mesh.as_deref(), self.inputs.spatial_index())
+        else {
+            return Ok(());
+        };
+        // The reduced tool stays inside the real one: the corner radius of
+        // a bull nose (or of a flat end mill) can be the full radius, so it
+        // shrinks with it (the tool check holds a corner to half the
+        // diameter).
+        let mut reduced = self.inputs.tool.clone();
+        reduced.diameter -= 2.0 * MODEL_GOUGE_TOL_MM;
+        reduced.corner_radius = reduced.corner_radius.min(reduced.diameter / 2.0);
+        reduced.corner_radius_mm = reduced.corner_radius_mm.min(reduced.diameter / 2.0);
+        let reduced_tool = crate::session::session_cutter(&reduced)?;
+        self.observer.set_phase("Check against the model");
+        let probe = GougeProbe {
+            mesh,
+            index,
+            reduced_tool: &reduced_tool,
+            tool_radius: self.inputs.tool_def.radius(),
+        };
+        // W2.2: a kernel's `Cancelled` is the operation's `Cancelled`.
+        let finding = measure(&annotated.toolpath, rule, &probe, cancel)
+            .map_err(crate::compute::execute::OperationError::from)?;
+        findings.record(&finding);
+        Ok(())
     }
 
     fn generate(

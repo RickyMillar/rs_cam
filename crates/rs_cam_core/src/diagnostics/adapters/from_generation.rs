@@ -53,7 +53,38 @@ pub fn diagnostics_from_generation(
     out.extend(inert_claims_dial(toolpath_id, stats));
     out.extend(region_cap_truncated(toolpath_id, stats));
     out.extend(rest_levels_fallback(toolpath_id, stats));
+    out.extend(cuts_into_model(toolpath_id, stats));
     out
+}
+
+/// UX-7b (SAFETY): the emitted moves cut into the mesh of the toolpath
+/// model. `Blocking`: the verdict is the guard's (`compute::model_gouge`),
+/// and export refuses on the same finding. The evidence is the move and the
+/// tip of the deepest gouge, in the setup frame. Silent when the guard did
+/// not run or measured clean.
+fn cuts_into_model(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> {
+    let Some(f) = stats.model_gouge.filter(|f| f.gouges()) else {
+        return Vec::new();
+    };
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::SAFETY_CUTS_INTO_MODEL),
+        scope: Scope::Toolpath { id: toolpath_id },
+        category: Category::Safety,
+        severity: Severity::Blocking,
+        // Measured at generation on the emitted moves against the mesh.
+        confidence: Confidence::Verified,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: f.message(),
+        evidence: Some(crate::diagnostics::DiagnosticEvidence::Move {
+            toolpath_id,
+            move_index: f.move_index,
+            position: Some(f.at),
+        }),
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
 }
 
 /// G-RESTLEVELS: a 2.5D rest operation fell back to the whole outline at

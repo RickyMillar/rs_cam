@@ -418,6 +418,14 @@ impl RecordFindings for RestLevelsFinding {
     }
 }
 
+/// UX-7b: the model gouge guard of one toolpath. One measurement per
+/// toolpath, so the record overwrites.
+impl RecordFindings for crate::compute::model_gouge::ModelGougeFinding {
+    fn record_into(&self, findings: &mut GenerationFindings) {
+        findings.model_gouge = Some(*self);
+    }
+}
+
 /// The engagement (mm) at or below which a pass is reported as removing
 /// nothing (A4) — derived from the REFERENCE's own resolution, not dialled.
 ///

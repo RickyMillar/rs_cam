@@ -2317,6 +2317,8 @@ fn fake_result_with_regions(
             monotone_cells: None,
             // Nor a rest-stock level clip (G-RESTLEVELS).
             rest_levels: None,
+            // Nor a model gouge guard (UX-7b).
+            model_gouge: None,
             // Nor did it consume any machined stock.
             stock_snapshot: None,
             source_stock: None,

@@ -32,9 +32,10 @@
 //! Report-only channels throughout: no gate consumes any of these and no
 //! verdict moves on them.
 
-use rs_cam_core::compute::catalog::ItemUse;
+use rs_cam_core::compute::catalog::{ItemUse, OperationType};
 use rs_cam_core::compute::config::BoundaryContainment;
 use rs_cam_core::compute::execute::GenerationFindings;
+use rs_cam_core::compute::model_gouge::ModelGougeFinding;
 use rs_cam_core::compute::toolpath_stats::{
     BandHeightClip, BoundaryClipDroppedFinding, BuriedCurveFinding, ClaimsReferenceFinding,
     ClippedBandFinding, DerivedStepoverFinding, DroppedBandFinding, HeightClip,
@@ -295,6 +296,17 @@ fn every_finding_recorded() -> GenerationFindings {
                 total_before_cap: 65,
             }),
         }),
+        // UX-7b. A guard that FOUND a gouge, so a dropped channel reads as
+        // `None` rather than coincidentally matching a clean one.
+        model_gouge: Some(ModelGougeFinding {
+            rule: OperationType::Pocket.capabilities().model_gouge,
+            judged: 40,
+            gouging: 3,
+            deepest_mm: 5.0,
+            at: [7.0, 30.0, 25.0],
+            surface_z: 30.0,
+            move_index: 12,
+        }),
     }
 }
 
@@ -342,6 +354,7 @@ fn every_recorded_finding_survives_the_single_join() {
         pencil_link,
         monotone_cells,
         rest_levels,
+        model_gouge,
         // NOT a finding: S-4's snapshot provenance arrives as the join's
         // fourth PARAMETER, because only the caller knows which
         // machined-stock snapshot the generator was handed. This arm passes
@@ -393,6 +406,7 @@ fn every_recorded_finding_survives_the_single_join() {
     assert_eq!(pencil_link, findings.pencil_link);
     assert_eq!(monotone_cells, findings.monotone_cells);
     assert_eq!(rest_levels, findings.rest_levels);
+    assert_eq!(model_gouge, findings.model_gouge);
 }
 
 /// (b) The join is `compute_stats_with_spans` PLUS findings — it does not
@@ -477,6 +491,10 @@ fn an_unrecorded_generation_still_reads_as_not_measured() {
     assert_eq!(
         stats.rest_levels, None,
         "G-RESTLEVELS: a generation that read no machined stock tested no level"
+    );
+    assert_eq!(
+        stats.model_gouge, None,
+        "UX-7b: a move list carries no model mesh, so nothing was measured"
     );
     assert_eq!(
         stats.pencil_link, None,

@@ -18,7 +18,7 @@ mod schema;
 pub use capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
     AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, FaceTopRule,
-    FloorOwner, ItemUse, LutRoute, MoveCountModel, RestUse, RowCapabilities,
+    FloorOwner, ItemUse, LutRoute, ModelGougeRule, MoveCountModel, RestUse, RowCapabilities,
     TRANSFORM_DISCRETE_SCALLOP, TerritoryXy,
 };
 
@@ -1112,18 +1112,33 @@ impl OperationConfig {
         }
     }
 
-    /// The floor that a new op of this kind holds
-    /// (`OperationConfig::new_default`): the op default floor that
-    /// operator ruling Q2 (2026-10-22) compares with. `None` for an op
-    /// that holds no floor.
+    /// The floor that the registry gives a new op of this kind
+    /// (`OperationConfig::new_default`). `None` for an op that holds no
+    /// floor. The add doors write the stock default on top of it
+    /// ([`Self::floor_is_default`]).
     pub fn default_floor(&self) -> Option<crate::compute::floor::Floor> {
         Self::new_default(self.op_type()).floor()
     }
 
-    /// True when the op holds a floor and that floor is still the op
-    /// default ([`Self::default_floor`]), by value.
-    pub fn floor_is_default(&self) -> bool {
-        self.floor().is_some() && self.floor() == self.default_floor()
+    /// True when the op holds a floor and that floor is still a floor that
+    /// an add door writes, by value: the registry default
+    /// ([`Self::default_floor`]) or the stock default for `stock`
+    /// (`feeds::suggest::default_operation`, which every add door of the
+    /// GUI, MCP and the CLI calls). Operator ruling Q2 (2026-10-22) and
+    /// UX-7b compare with it.
+    ///
+    /// UX-7b (defect): Q2 compared with the registry default only, so it
+    /// never fired on an op that an add door made (the Pocket stock
+    /// default is `Top Z` 5 on a 32 mm stock, the registry default 3).
+    /// A floor that the operator types equal to one of the two values
+    /// reads as the default too: the config holds no other record.
+    pub fn floor_is_default(&self, stock: &crate::feeds::suggest::StockContext) -> bool {
+        let Some(floor) = self.floor() else {
+            return false;
+        };
+        Some(floor) == self.default_floor()
+            || Some(floor)
+                == crate::feeds::suggest::default_operation(self.op_type(), stock).floor()
     }
 
     /// Write the floor of the op (geometry selection P3.3, the
