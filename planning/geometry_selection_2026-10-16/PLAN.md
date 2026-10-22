@@ -931,3 +931,13 @@ default rule that already selects every served item on every layer.
 - "After previous ops" arm of the UX-1 sentry: no cheap fixture yet.
 - The Top row reads 32 while the floor reads "Top Z - 12" = 8: the name
   "Top Z" for the depth base is now wrong. Q8 (names) owns the rename.
+- UX-1b done (155ba303): Face and Trace clamp; `FaceTopRule` on every row.
+- Operator ruling 2026-10-22 (UX-1c): Chamfer, V-Carve, Inlay and Inlay
+  Plug on a face below standing material REFUSE at generation, with the
+  cause and a fix ("The face is N mm below the stock top and no earlier op
+  clears it. Clear it first (Pocket or Face), or start from 'After
+  previous ops'."). On remaining stock the check reads the standing
+  material, not the stock box.
+- UX-1b open points: V-Carve first move 12.05 mm under the stock top but
+  the sim peak axial DOC reads 0.886 mm; 3D Rough peak DOC 9.19 mm with a
+  face boundary vs 5.5 mm without. Both unexplained; measure before trust.
