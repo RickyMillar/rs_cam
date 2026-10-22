@@ -113,8 +113,12 @@ passes) before Phase 2 candidates are judged.
 - **`planning/multitool_2026-08-23/wanaka200_mt1.toml` does not load at HEAD.**
   The loader refuses the Drill toolpath's retired key
   `setups[0].toolpaths[2].operation.params.depth` (Phase 4 agent). The
-  Phase 0 wanaka200 column needs a corrected fixture file first (save-as a
-  new name; the fixture itself is not changed).
+  geometry-selection lead confirms this is the intended break of 88d18baf
+  (Drill `depth` retired for `floor`; old study TOMLs under planning/ are
+  not migrated, no-legacy ruling). Phase 0 used a fixed copy
+  `phase0/projects/wanaka200_base.toml`; the fixture itself is unchanged.
+  `link_cuts_stock` on the default rough is not from that lead's packages;
+  it is this research's to file.
 - Lead session paused ~11:30–12:10 NZDT (usage limit); Phase 0 resumed and
   finished. The GUI restarted at 11:56 on the same binary (gui pid 84659).
 - The worktree `.claude/worktrees/adaptive-head` (own target, ~4 GB) stays
