@@ -77,6 +77,14 @@ pub enum UndoAction {
         old: ShoeSetting,
         new: ShoeSetting,
     },
+    /// "Add a Bore for these" (geometry selection P6.7): the Bore
+    /// `bore_id` that `AddBoreFromDrill` added after the Drill `drill_id`.
+    /// The undo removes the Bore; the redo adds a Bore for the Drill again
+    /// and rebinds `bore_id` to the new id (`rebind_bore`).
+    BoreAdded {
+        drill_id: ToolpathId,
+        bore_id: ToolpathId,
+    },
     /// One change of the edit ledger of a drawing (geometry selection
     /// P4.9): the whole ledger before and after. The undo writes `before`
     /// through `EditModelDrawing` (`LedgerEdit::Replace`), so the model
@@ -203,6 +211,17 @@ impl UndoHistory {
                 true
             }
             _ => false,
+        }
+    }
+
+    /// P6.7: a redo of `BoreAdded` adds a new Bore with a new id. The
+    /// newest undo step names `old`; it takes `new`, so the next undo
+    /// removes the Bore that the redo added.
+    pub fn rebind_bore(&mut self, old: ToolpathId, new: ToolpathId) {
+        if let Some(UndoAction::BoreAdded { bore_id, .. }) = self.undo_stack.last_mut()
+            && *bore_id == old
+        {
+            *bore_id = new;
         }
     }
 

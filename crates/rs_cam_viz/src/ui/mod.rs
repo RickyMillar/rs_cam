@@ -208,6 +208,9 @@ pub enum AppEvent {
     // Toolpaths
     AddToolpath(OperationType),
     DuplicateToolpath(ToolpathId),
+    /// Geometry selection P6.7: "Add a Bore for these" on a Drill hole row.
+    /// One `AddBoreFromDrill` command and one undo step.
+    AddBoreFromDrill(ToolpathId),
     RemoveToolpath(ToolpathId),
     MoveToolpathUp(ToolpathId),
     MoveToolpathDown(ToolpathId),

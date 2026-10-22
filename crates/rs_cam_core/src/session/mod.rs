@@ -42,17 +42,18 @@ pub use tab_layout::{TabEdit, TabLayoutAnswer, TabMark, apply_tab_edit};
 
 pub use builder::ProjectSessionBuilder;
 pub use command::{
-    AddAlignmentPinArgs, AddModelArgs, AddObstacleArgs, AddSetupArgs, AddStockChangeArgs,
-    AddToolArgs, AddToolpathArgs, AdoptModelGeometryArgs, AdoptRestFreshComparisonArgs,
-    AdoptResultArgs, AdoptSimulationArgs, ApplyFeedsArgs, AutoEnableRestAnalysisArgs,
-    BuildModelFacesArgs, Command, CommandId, CommandKind, EditModelDrawingArgs, EditSelectionArgs,
-    Effects, FeedModulation, ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer,
-    GetOperationSchemaArgs, ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs,
-    InvalidateStockArgs, InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer,
-    JobHandle, LedgerEdit, ListItemsAnswer, ListItemsArgs, MoveStockChangeArgs,
-    MoveToolpathToSetupArgs, PlanMultitoolFinishingArgs, PreviewTierMapArgs, Query, QueryAnswer,
-    Reach, RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveModelArgs,
-    RemoveObstacleArgs, RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
+    AddAlignmentPinArgs, AddBoreFromDrillArgs, AddModelArgs, AddObstacleArgs, AddSetupArgs,
+    AddStockChangeArgs, AddToolArgs, AddToolpathArgs, AdoptModelGeometryArgs,
+    AdoptRestFreshComparisonArgs, AdoptResultArgs, AdoptSimulationArgs, ApplyFeedsArgs,
+    AutoEnableRestAnalysisArgs, BuildModelFacesArgs, Command, CommandId, CommandKind,
+    EditModelDrawingArgs, EditSelectionArgs, Effects, FeedModulation, ForgetResultArgs,
+    GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
+    ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs,
+    InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle, LedgerEdit,
+    ListItemsAnswer, ListItemsArgs, MoveStockChangeArgs, MoveToolpathToSetupArgs,
+    PlanMultitoolFinishingArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
+    RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveModelArgs, RemoveObstacleArgs,
+    RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
     ReorderToolpathArgs, ReplaceObstacleArgs, ReplaceStockChangeArgs, ReplaceToolArgs,
     ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs,
     SelectionStatusArgs, SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs,
@@ -169,6 +170,23 @@ pub enum SessionError {
     /// Toolpath not found by stable id (R3 — distinct from the
     /// index-carrying `ToolpathNotFound` so id/index can't conflate).
     ToolpathIdNotFound(ToolpathId),
+    /// The toolpath at `index` does not carry the id the caller named: the
+    /// index is stale (geometry selection P6.7, the W13b index and id
+    /// pair).
+    ToolpathIdMismatch {
+        /// The index the caller named.
+        index: usize,
+        /// The id the caller named.
+        id: ToolpathId,
+    },
+    /// `add_bore_from_drill` names a toolpath that is not a Drill
+    /// (geometry selection P6.7). The command writes nothing.
+    NotADrill {
+        /// The index of the toolpath.
+        index: usize,
+        /// The operation label of the toolpath.
+        operation: &'static str,
+    },
     /// Tool not found by id.
     ToolNotFound(ToolId),
     /// Setup not found by index.
@@ -367,8 +385,10 @@ impl SessionError {
     /// that is not about an index never names `"index"`.
     pub fn field(&self) -> Option<&'static str> {
         match self {
-            Self::ToolpathNotFound(_) | Self::StaleCompletion { .. } => Some("index"),
-            Self::ToolpathIdNotFound(_) => Some("toolpath_id"),
+            Self::ToolpathNotFound(_) | Self::StaleCompletion { .. } | Self::NotADrill { .. } => {
+                Some("index")
+            }
+            Self::ToolpathIdNotFound(_) | Self::ToolpathIdMismatch { .. } => Some("toolpath_id"),
             Self::ToolNotFound(_) | Self::ToolInUse(_) => Some("tool_id"),
             Self::SetupNotFound(_) => Some("setup_index"),
             Self::ModelNotFound { .. } => Some("model_id"),
@@ -450,6 +470,16 @@ impl std::fmt::Display for SessionError {
             }
             Self::ToolpathNotFound(index) => write!(f, "Toolpath {index} not found"),
             Self::ToolpathIdNotFound(id) => write!(f, "Toolpath id {id} not found"),
+            Self::ToolpathIdMismatch { index, id } => write!(
+                f,
+                "Toolpath {index} does not carry id {id}: the index is stale. Read the \
+                 toolpath list again."
+            ),
+            Self::NotADrill { index, operation } => write!(
+                f,
+                "Toolpath {index} is a {operation}, not a Drill. A Bore copies the \
+                 selection of a Drill only."
+            ),
             Self::ToolNotFound(id) => write!(f, "Tool {} not found", id.raw()),
             Self::SetupNotFound(id) => write!(f, "Setup {id} not found"),
             Self::ToolInUse(id) => write!(f, "Tool {} is still referenced by toolpaths", id.raw()),

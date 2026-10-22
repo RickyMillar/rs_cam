@@ -446,8 +446,8 @@ impl ProjectSession {
                 .ok_or(SessionError::ToolpathNotFound(index))?;
             let Some(before) = tc.operation.floor() else {
                 return Err(SessionError::InvalidParam(format!(
-                    "{} '{}' has no floor field. Only Pocket, Profile, Zigzag and Adaptive 2D \
-                     take a floor; set the depth of this op with set_toolpath_param or its \
+                    "{} '{}' has no floor field. Only Pocket, Profile, Zigzag, Adaptive 2D \
+                     and Bore take a floor; set the depth of this op with set_toolpath_param or its \
                      heights",
                     tc.operation.label(),
                     tc.name

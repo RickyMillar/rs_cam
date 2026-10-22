@@ -600,6 +600,8 @@ fn nothing_left_to_cut_refuses_empty_and_names_the_skipped_items() {
     assert_eq!(skipped[0].count, 2);
     let text = refusal.to_string();
     assert!(text.contains("2 open paths on layer 'TEXT'"), "{text}");
+    // P6.8: a note ends with a full stop, and the refusal adds its own.
+    assert!(!text.contains(".."), "a double full stop: {text}");
     // A STEP model with the default selection: no face is a drawing item.
     let step = model(vec![face(5.0, 1.0, 0)]);
     let refusal = view(&resolve_on(&Selection::drawing(), &step), ItemUse::Regions).unwrap_err();

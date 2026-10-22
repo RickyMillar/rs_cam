@@ -1027,25 +1027,35 @@ impl BuriedCurveFinding {
     }
 }
 
-/// The open paths of the drawing that an op left out (P1; one type with
-/// the selection notes since P2.3a).
+/// The items of the drawing that an op left out with a note (P1; one type
+/// with the selection notes since P2.3a). The prologue records ONE finding
+/// for every note of the op.
 ///
 /// The prologue runs `selection::view` over the resolved selection of the
-/// op. The default rule leaves out the items the op cannot cut. Each
-/// skipped open path is a likely drawing defect (an outline that is not
-/// closed), so `view` gives a [`SelectionNote`](crate::selection::SelectionNote)
-/// for it, one per layer, and the prologue records them here. Other
-/// skipped kinds (a loop in a Drill, a point in a Pocket) are expected:
-/// `OpItems::skipped_by_kind` counts them, and they give no finding (lead
-/// ruling "notes", P2.2). When nothing is left to cut, the op refuses with
-/// `SelectionRefusal` `Empty`, which names every skipped item.
+/// op. The default rule leaves out the items the op cannot cut. Three
+/// kinds of item that it leaves out are a likely defect, so each gets a
+/// [`SelectionNote`](crate::selection::SelectionNote):
+///
+/// - an open path (an outline that is not closed): one note per layer,
+///   from `view` (P2.2);
+/// - a face at the top under the floor "each picked face": one note per
+///   face, from the floor step (P3.7);
+/// - a circle that does not fit the tool (`NoteCause::HoleFit`): one note
+///   per circle, from the hole fit step `selection::fit_holes` (P6.5,
+///   ruling L-18).
+///
+/// Other skipped kinds (a loop in a Drill, a point in a Pocket) are
+/// expected: `OpItems::skipped_by_kind` counts them, and they give no
+/// finding (lead ruling "notes", P2.2). When nothing is left to cut, the
+/// op refuses with `SelectionRefusal` `Empty`, which names every skipped
+/// item.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectionNoteFinding {
     /// The op label (`OperationType::label`).
     pub op: &'static str,
-    /// One note per layer for the open paths, in import order, then one
-    /// note per face at the top under "each picked face" (P3.7). Never
-    /// empty on a recorded finding.
+    /// The notes of the op, in the order of the steps: the open paths and
+    /// the misfit circles (the view, then the hole fit), then the faces at
+    /// the top. Never empty on a recorded finding.
     pub notes: Vec<crate::selection::SelectionNote>,
 }
 

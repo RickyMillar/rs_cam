@@ -111,8 +111,10 @@ impl DrillSize {
 
 /// How one hole compares with the tool (design 4.2). `d` is the circle
 /// diameter, `D` the tool diameter and `t` the tolerance of the
-/// [`DrillSize`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// [`DrillSize`]. The wire token is the snake-case name (`tool_size`,
+/// `larger`, ...): the `selection_status` item rows give it (P6.8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum HoleFit {
     /// A point: it states no size.
     NoSize,

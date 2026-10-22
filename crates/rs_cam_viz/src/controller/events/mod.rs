@@ -410,6 +410,7 @@ impl<B: ComputeBackend> AppController<B> {
                 self.handle_add_toolpath(op_type);
             }
             AppEvent::DuplicateToolpath(tp_id) => self.handle_duplicate_toolpath(tp_id),
+            AppEvent::AddBoreFromDrill(drill_id) => self.handle_add_bore_from_drill(drill_id),
             AppEvent::MoveToolpathUp(tp_id) => self.handle_move_toolpath_up(tp_id),
             AppEvent::MoveToolpathDown(tp_id) => self.handle_move_toolpath_down(tp_id),
             AppEvent::ReorderToolpath(tp_id, target_idx) => {

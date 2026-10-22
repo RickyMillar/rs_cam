@@ -1,6 +1,6 @@
 use rs_cam_core::session::{
-    AddToolpathArgs, Command, Effects, MoveToolpathToSetupArgs, RemoveToolpathArgs,
-    ReorderToolpathArgs,
+    AddBoreFromDrillArgs, AddToolpathArgs, Command, Effects, MoveToolpathToSetupArgs,
+    RemoveToolpathArgs, ReorderToolpathArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -288,6 +288,40 @@ impl<B: ComputeBackend> AppController<B> {
             }
             self.state.gui.mark_edited();
         }
+    }
+
+    /// Geometry selection P6.7 (L-17): "Add a Bore for these". One
+    /// `AddBoreFromDrill` command adds the Bore after the Drill, and one
+    /// undo step (`UndoAction::BoreAdded`) removes it. The selection stays
+    /// on the Drill: the operator reads its hole rows, and a move of the
+    /// selection would flush a parameter snapshot of the Drill into the
+    /// history before this step.
+    pub(crate) fn handle_add_bore_from_drill(&mut self, drill_id: ToolpathId) {
+        if let Some(bore_id) = self.add_bore_from_drill(drill_id) {
+            self.state
+                .history
+                .push(crate::state::history::UndoAction::BoreAdded { drill_id, bore_id });
+            self.state.gui.mark_edited();
+        }
+    }
+
+    /// Apply `AddBoreFromDrill` to the Drill `drill_id` and make the GUI
+    /// runtime entry of the Bore. Returns the id of the Bore, or `None`
+    /// when the Drill is gone or the command refused (the door logs it).
+    pub(super) fn add_bore_from_drill(&mut self, drill_id: ToolpathId) -> Option<ToolpathId> {
+        let (index, _) = self.state.session().find_toolpath_config_by_id(drill_id)?;
+        let created = self.apply_created(Command::AddBoreFromDrill(AddBoreFromDrillArgs {
+            index,
+            drill_id,
+        }))?;
+        let tc = self.state.session().toolpath_configs().get(created)?;
+        let (bore_id, auto_regen) = (tc.id, tc.operation.default_auto_regen());
+        self.state.gui.toolpath_rt.insert(
+            bore_id,
+            crate::state::runtime::ToolpathRuntime::new(auto_regen),
+        );
+        self.pending_upload = true;
+        Some(bore_id)
     }
 
     pub(crate) fn handle_move_toolpath_up(&mut self, tp_id: ToolpathId) {

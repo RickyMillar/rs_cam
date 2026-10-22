@@ -68,6 +68,9 @@ impl<B: ComputeBackend> AppController<B> {
                 } => {
                     self.apply_model_drawing_snapshot(model_id, before);
                 }
+                UndoAction::BoreAdded { bore_id, .. } => {
+                    self.handle_remove_toolpath(bore_id);
+                }
             }
             // F2.5 (G-UNDOFRESH) — EVERY arm, at the one place all of them
             // pass through.
@@ -143,6 +146,11 @@ impl<B: ComputeBackend> AppController<B> {
                     model_id, after, ..
                 } => {
                     self.apply_model_drawing_snapshot(model_id, after);
+                }
+                UndoAction::BoreAdded { drill_id, bore_id } => {
+                    if let Some(new_id) = self.add_bore_from_drill(drill_id) {
+                        self.state.history.rebind_bore(bore_id, new_id);
+                    }
                 }
             }
             // Redo carries the identical defect and takes the identical fix.

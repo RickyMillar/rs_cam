@@ -114,6 +114,96 @@ fn add_toolpath_assigns_id_and_updates_setup() {
     assert_eq!(s.list_setups()[0].toolpath_indices, vec![0, 1]);
 }
 
+/// Geometry selection P6.7 (L-17): `AddBoreFromDrill` adds one Bore
+/// directly after the Drill, with a copy of the Drill selection, its tool
+/// and model, and the floor at the Drill depth below the stock top. It
+/// refuses a toolpath that is not a Drill and a stale index, and a refusal
+/// writes nothing.
+///
+/// Red proof: write `Selection::drawing()` in place of the copy; the
+/// selection assertion fails.
+#[test]
+fn add_bore_from_drill_copies_the_drill_p6_7() {
+    use crate::compute::floor::Floor;
+    use crate::compute::operation_configs::DrillConfig;
+    use crate::selection::{Filter, Rule, Selection, SourceRef};
+    use crate::session::AddBoreFromDrillArgs;
+
+    let mut s = make_session();
+    let _ = s.add_tool(make_tool()).unwrap();
+    let tool = s.tools()[0].id.raw();
+    // A Pocket first, so the Drill is not the first op of the setup.
+    let _ = s.add_toolpath(0, make_tc(tool, 0)).unwrap();
+    let selection = Selection::from_rules(vec![Rule {
+        source: SourceRef::ToolpathModel,
+        filter: Filter {
+            layers: vec!["HOLES".into()],
+            ..Filter::default()
+        },
+    }]);
+    let mut drill = make_tc(tool, 0);
+    drill.name = "Holes".to_owned();
+    drill.operation = OperationConfig::Drill(DrillConfig {
+        depth: 7.5,
+        spindle_rpm: Some(12_000),
+        selection: selection.clone(),
+        ..DrillConfig::default()
+    });
+    let drill_index = s.add_toolpath(0, drill).unwrap().created.unwrap();
+    // A Pocket after the Drill: the Bore goes between the two.
+    let after = s
+        .add_toolpath(0, make_tc(tool, 0))
+        .unwrap()
+        .created
+        .unwrap();
+    let drill_id = s.toolpath_configs()[drill_index].id;
+
+    let effects = s
+        .apply(Command::AddBoreFromDrill(AddBoreFromDrillArgs {
+            index: drill_index,
+            drill_id,
+        }))
+        .unwrap();
+    let bore_index = effects.created.expect("the command reports the Bore");
+    assert_eq!(s.toolpath_configs().len(), 4);
+    assert_eq!(
+        s.list_setups()[0].toolpath_indices,
+        vec![0, drill_index, bore_index, after],
+        "the Bore sits directly after the Drill"
+    );
+    let bore = &s.toolpath_configs()[bore_index];
+    let OperationConfig::Bore(cfg) = &bore.operation else {
+        panic!("the new op is a Bore: {:?}", bore.operation.label());
+    };
+    assert_eq!(cfg.selection, selection, "the Bore copies the selection");
+    assert_eq!(cfg.floor, Floor::StockTop { depth: 7.5 });
+    assert_eq!(cfg.spindle_rpm, Some(12_000));
+    assert_eq!(bore.tool_id, s.toolpath_configs()[drill_index].tool_id);
+    assert_eq!(bore.model_id, s.toolpath_configs()[drill_index].model_id);
+    assert_eq!(bore.name, "Holes bore");
+
+    // A Pocket is not a Drill: the command refuses and writes nothing.
+    let pocket_id = s.toolpath_configs()[0].id;
+    let refused = s.apply(Command::AddBoreFromDrill(AddBoreFromDrillArgs {
+        index: 0,
+        drill_id: pocket_id,
+    }));
+    assert!(
+        matches!(refused, Err(SessionError::NotADrill { index: 0, .. })),
+        "{refused:?}"
+    );
+    // A stale index (the id of another toolpath) refuses.
+    let stale = s.apply(Command::AddBoreFromDrill(AddBoreFromDrillArgs {
+        index: drill_index,
+        drill_id: pocket_id,
+    }));
+    assert!(
+        matches!(stale, Err(SessionError::ToolpathIdMismatch { .. })),
+        "{stale:?}"
+    );
+    assert_eq!(s.toolpath_configs().len(), 4, "a refusal adds nothing");
+}
+
 #[test]
 fn add_toolpath_invalid_setup() {
     let mut s = make_session();

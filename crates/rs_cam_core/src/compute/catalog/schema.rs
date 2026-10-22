@@ -60,8 +60,8 @@ pub struct OperationSchema {
     /// reading the operation's own dials and `debug_enabled` is not one.
     pub toolpath_params: Vec<OperationParamSchema>,
     pub tool_constraints: ToolConstraints,
-    /// The floor of Pocket, Profile, Zigzag and Adaptive 2D (geometry
-    /// selection P3.3): each reference, the domain of its number and the
+    /// The floor of Pocket, Profile, Zigzag, Adaptive 2D (geometry
+    /// selection P3.3) and Bore (P6.6): each reference, the domain of its number and the
     /// tool that writes it (`set_toolpath_floor`). `None` for every other
     /// op. The field is driver-set, so [`Self::params`] does not list it.
     #[serde(default, skip_serializing_if = "Option::is_none")]

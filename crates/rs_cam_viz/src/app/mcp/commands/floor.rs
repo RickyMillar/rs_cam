@@ -229,7 +229,8 @@ mod tests {
     }
 
     /// Geometry selection P3.8 (design section 9): the two refusal rows
-    /// and the schema row of the floor name the floor door.
+    /// and the schema row of the floor name the floor door. P6.8 adds the
+    /// Bore row and the Bore and `open_paths` schema rows.
     ///
     /// - `set_toolpath_param depth` on a Pocket refuses and names
     ///   `set_toolpath_floor` (the four ops hold no `depth`).
@@ -263,11 +264,13 @@ mod tests {
             "the refused write keeps the floor"
         );
 
+        // P6.8: the Bore (P6.6) is an `OpFloor` op too.
         for op in [
             OperationType::Pocket,
             OperationType::Profile,
             OperationType::Zigzag,
             OperationType::Adaptive,
+            OperationType::Bore,
         ] {
             let schema = OperationConfig::schema_for_type(op);
             let floor = schema
@@ -294,5 +297,35 @@ mod tests {
                 .is_none(),
             "Face sets its depth with its own dial"
         );
+
+        // P6.8 (design section 8, the `get_operation_schema` row): the Bore
+        // publishes its dials, and the Pocket publishes `open_paths` with
+        // its three tokens (a string enum, not the object of the design).
+        let bore = OperationConfig::schema_for_type(OperationType::Bore);
+        for name in [
+            "pitch",
+            "climb",
+            "finish_allowance",
+            "feed_rate",
+            "plunge_rate",
+            "ramp_feed_rate",
+            "spindle_rpm",
+        ] {
+            assert!(
+                bore.params.iter().any(|p| p.name == name),
+                "the Bore schema gives `{name}`"
+            );
+        }
+        let pocket = OperationConfig::schema_for_type(OperationType::Pocket);
+        let open_paths = pocket
+            .params
+            .iter()
+            .find(|p| p.name == "open_paths")
+            .expect("the Pocket schema gives open_paths");
+        assert_eq!(open_paths.default, serde_json::json!("skip"));
+        let text = serde_json::to_string(open_paths).unwrap();
+        for token in ["skip", "extend_left", "extend_right"] {
+            assert!(text.contains(token), "open_paths names `{token}`: {text}");
+        }
     }
 }

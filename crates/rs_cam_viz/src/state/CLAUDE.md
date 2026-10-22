@@ -18,7 +18,7 @@ The view-side state; the core owns the project, so it is not an alternate data m
 - `pick.rs` — `SelectionUi` on `GuiState`: one `ViewportMode { Pick, Tabs }` at a time (L-3 by type) and
   the `+ Rule` draft; `PickFilter::effective_kinds` (on, served, held); `held_kinds` holds `Face` for an STL.
 - `tab_edit.rs` — the `tab_layout` read per toolpath revision and `TabMarksDetector`.
-- `history.rs`, `wizard.rs`, `multitool_planner.rs` — undo (`ModelDrawingEdits`), the export wizard, the planner.
+- `history.rs`, `wizard.rs`, `multitool_planner.rs` — undo (`ModelDrawingEdits`; P6.7 `BoreAdded`, `rebind_bore` after a redo), the export wizard, the planner.
 - `panels.rs` — panel drafts (`join_all_mm`, `drawing_popover`, `number_drafts`: the value in flight of
   `committed_number`, ui09). `app_settings.rs`; `pin_view.rs` (pin frame, C8);
   `shoe_plan.rs` (the shoe plan memo and run sheet, H2).

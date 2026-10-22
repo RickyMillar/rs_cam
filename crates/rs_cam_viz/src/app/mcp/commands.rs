@@ -41,13 +41,14 @@ use rs_cam_core::compute::config::{
 use rs_cam_core::compute::tool_config::ToolId;
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
 use rs_cam_core::session::{
-    AddAlignmentPinArgs, AddModelArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs, Command,
-    CommandId, Effects, MoveToolpathToSetupArgs, RemoveAlignmentPinArgs, RemoveToolArgs,
-    RemoveToolpathArgs, SaveProjectArgs, SessionError, SetBoundaryConfigArgs, SetDressupConfigArgs,
-    SetDressupFieldArgs, SetMachineArgs, SetMachineKinematicsArgs, SetPostConfigArgs,
-    SetRestAnalysisConfigArgs, SetSetupFaceArgs, SetSetupRotationArgs, SetSimulationResolutionArgs,
-    SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs, SetToolpathEnabledArgs,
-    SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathParamArgs, SetToolpathToolArgs,
+    AddAlignmentPinArgs, AddBoreFromDrillArgs, AddModelArgs, AddSetupArgs, AddToolArgs,
+    AddToolpathArgs, Command, CommandId, Effects, MoveToolpathToSetupArgs, RemoveAlignmentPinArgs,
+    RemoveToolArgs, RemoveToolpathArgs, SaveProjectArgs, SessionError, SetBoundaryConfigArgs,
+    SetDressupConfigArgs, SetDressupFieldArgs, SetMachineArgs, SetMachineKinematicsArgs,
+    SetPostConfigArgs, SetRestAnalysisConfigArgs, SetSetupFaceArgs, SetSetupRotationArgs,
+    SetSimulationResolutionArgs, SetStockConfigArgs, SetStockSourceArgs, SetToolParamArgs,
+    SetToolpathEnabledArgs, SetToolpathHeightsArgs, SetToolpathModelArgs, SetToolpathParamArgs,
+    SetToolpathToolArgs,
 };
 
 use rs_cam_mcp::server::{
@@ -256,6 +257,7 @@ impl RsCamApp {
             CoreRequest::SetToolpathTool(p) => self.select_toolpath_for_mcp(p.index),
             CoreRequest::SetToolpathModel(p) => self.select_toolpath_for_mcp(p.index),
             CoreRequest::EditToolpathSelection(p) => self.select_toolpath_for_mcp(p.index),
+            CoreRequest::AddBoreFromDrill(p) => self.select_toolpath_for_mcp(p.index),
             // P4.9: the model panel shows the ledger the edit writes.
             CoreRequest::EditModelDrawing(p)
                 if self
@@ -565,6 +567,32 @@ impl RsCamApp {
                 )
             }
             CoreRequest::AddToolpath(p) => self.core_add_toolpath(p, before),
+            CoreRequest::AddBoreFromDrill(p) => {
+                // The id pairs with the index (W13b): the core row refuses
+                // an index that names another toolpath.
+                let Some(drill_id) = self
+                    .controller
+                    .state()
+                    .session()
+                    .toolpath_configs()
+                    .get(p.index)
+                    .map(|tc| tc.id)
+                else {
+                    return CorePlan::Answered(CoreReply::refused(
+                        &format!("Error: Toolpath index {} not found", p.index),
+                        Some("index"),
+                    ));
+                };
+                before.index = Some(p.index);
+                before.toolpath_id = Some(drill_id);
+                CorePlan::Apply(
+                    Command::AddBoreFromDrill(AddBoreFromDrillArgs {
+                        index: p.index,
+                        drill_id,
+                    }),
+                    Box::new(before),
+                )
+            }
             CoreRequest::RemoveToolpath(p) => {
                 // The id must be read before the removal: it re-keys every
                 // index above the removed one.
@@ -1648,6 +1676,10 @@ impl RsCamApp {
                 );
                 Some(format!("MCP: Added toolpath '{display_name}'"))
             }
+            CoreRequest::AddBoreFromDrill(p) => {
+                let tp_name = self.mcp_toolpath_name(p.index);
+                Some(format!("MCP: Added a Bore for '{tp_name}'"))
+            }
             CoreRequest::RemoveToolpath(p) => {
                 let index = p.index;
                 Some(format!("MCP: Removed toolpath {index}"))
@@ -1789,6 +1821,7 @@ impl RsCamApp {
             | CommandId::SetToolpathFloor
             | CommandId::SetToolpathDebugOptions
             | CommandId::AddToolpath
+            | CommandId::AddBoreFromDrill
             | CommandId::RemoveToolpath
             | CommandId::AddTool
             | CommandId::AddToolFromLibrary
@@ -2306,6 +2339,41 @@ impl RsCamApp {
                         "feeds_refusal": before.extra("feeds_refusal"),
                     }),
                     vec![index],
+                    &before.diagnostics,
+                );
+                CoreReply::succeeded(reply)
+            }
+            CommandId::AddBoreFromDrill => {
+                let index = effects.created.unwrap_or_default();
+                // The GUI runtime entry of the new toolpath, as
+                // `AddToolpath` makes it.
+                let tp_info = self
+                    .controller
+                    .state()
+                    .session()
+                    .toolpath_configs()
+                    .get(index)
+                    .map(|tc| (tc.id, tc.operation.default_auto_regen()));
+                if let Some((id, auto_regen)) = tp_info {
+                    self.controller
+                        .state_mut()
+                        .gui
+                        .toolpath_rt
+                        .insert(id, crate::state::runtime::ToolpathRuntime::new(auto_regen));
+                    self.controller.state_mut().selection = Selection::Toolpath(id);
+                }
+                self.controller.state_mut().gui.mark_edited();
+                let stale = self.core_stale(&effects);
+                let drill_index = before.index();
+                let reply = self.mcp_mutation_result(
+                    format!("Added Bore toolpath {index} after Drill toolpath {drill_index}."),
+                    serde_json::json!({
+                        "index": index,
+                        "id": tp_info.map(|(id, _)| id.raw()),
+                        "drill_index": drill_index,
+                        "drill_id": before.toolpath_id.map(|id| id.raw()),
+                    }),
+                    stale,
                     &before.diagnostics,
                 );
                 CoreReply::succeeded(reply)

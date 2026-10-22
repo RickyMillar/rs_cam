@@ -71,7 +71,7 @@ const HELP_OVERLAP_MM: &str = "Overlap between steep and shallow regions.";
 const DRIVER_SET_SELECTION: &str =
     "the selection command writes the selection (rules and picks), not the parameter setter";
 
-/// The floor of Pocket, Profile, Zigzag and Adaptive 2D is one value with a
+/// The floor of Pocket, Profile, Zigzag, Adaptive 2D and Bore is one value with a
 /// reference (geometry selection P3.2, ruling D9), not a number. The GUI
 /// writes it through the whole config; MCP and the CLI write it through the
 /// `SetToolpathFloor` command (P3.3, the MCP tool `set_toolpath_floor`).

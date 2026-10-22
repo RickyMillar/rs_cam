@@ -882,6 +882,9 @@ declare_core_requests! {
             => SetToolpathFloor, None;
         AddToolpath(rs_cam_mcp::server::AddToolpathParam)
             => AddToolpath, Some(Workspace::Toolpaths);
+        /// Row `AddBoreFromDrill` (geometry selection P6.7).
+        AddBoreFromDrill(rs_cam_mcp::server::AddBoreFromDrillParam)
+            => AddBoreFromDrill, Some(Workspace::Toolpaths);
         RemoveToolpath(rs_cam_mcp::server::RemoveToolpathParam)
             => RemoveToolpath, None;
         AddTool(rs_cam_mcp::server::AddToolParam)

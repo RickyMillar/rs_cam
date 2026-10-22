@@ -1388,6 +1388,14 @@ pub struct AddToolpathParam {
     pub name: Option<String>,
 }
 
+/// Geometry selection P6.7: `add_bore_from_drill`, the "Add a Bore for
+/// these" action of a Drill hole row.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+pub struct AddBoreFromDrillParam {
+    /// The index of the Drill toolpath (0-based).
+    pub index: usize,
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 pub struct RemoveToolpathParam {
     /// Toolpath index (0-based)
@@ -3364,6 +3372,12 @@ pub fn build_info() -> serde_json::Value {
             // F166 (2026-10-21): every wire value with a fixed set of
             // tokens is an enum in the tool schema, with no alias spelling.
             "wire_token_enums",
+            // Geometry selection P6.7/P6.8 (2026-10-22): `add_bore_from_drill`
+            // adds a Bore after a Drill with a copy of its selection; the
+            // `selection_status` item rows carry `hole_fit`, and the reply
+            // carries `extended` (the areas of a Pocket Extend to stock).
+            "add_bore_from_drill",
+            "selection_hole_fit",
         ],
     })
 }
@@ -3458,6 +3472,8 @@ mod tests {
             "result_feed_stage",
             "obstacles",
             "geometry_selection",
+            "add_bore_from_drill",
+            "selection_hole_fit",
         ] {
             assert!(
                 features.contains(&flag),

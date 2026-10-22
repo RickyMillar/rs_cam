@@ -6,7 +6,7 @@ The egui application, its per-frame work and the GUI-side MCP requests. The serv
 
 - `../app.rs` — `RsCamApp` and the frame update loop.
 - `mcp.rs` + `mcp/` — the MCP pump (`handle_mcp_request`, export, notifications); `commands.rs` (core route);
-  `commands/`: `stock_changes.rs` (S4), `selection.rs`, `import.rs` (`import_model` options,
+  `commands/`: `stock_changes.rs` (S4), `selection.rs` (P6.8: `hole_fit` rows, `extended`), `import.rs` (`import_model` options,
   `set_model_import_options`), `drawing.rs` (`edit_model_drawing`), `floor.rs` (`set_toolpath_floor`, the `heights` JSON), `obstacles.rs` (K1 obstacle tools), each with its GUI parity tests;
   `project.rs`, `generation.rs`, `diagnostics.rs` (span-kind synonyms from core `DebugSpanKind::structural`, F017), `simulation.rs`, `view.rs` (screenshots, `set_ui_view`).
 - `export.rs` — the GUI export path. `simulation.rs` — per-frame simulation work. `input.rs` — app input. `file_dialog.rs` (F218) — every `rfd` dialog, off the frame, one at a time; `AfterPick` acts on the pick.

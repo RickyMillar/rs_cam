@@ -33,6 +33,26 @@
   {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "description": "Geometry selection P6.7: `add_bore_from_drill`, the \"Add a Bore for\nthese\" action of a Drill hole row.",
+      "properties": {
+        "index": {
+          "description": "The index of the Drill toolpath (0-based).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "AddBoreFromDrillParam",
+      "type": "object"
+    },
+    "name": "add_bore_from_drill"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "description": "`add_obstacle` (K1): add an obstacle to the END of a setup's list. An\nobstacle is a fixture or a keep-out zone (one concept): every operation\nof the setup keeps the tool (cutter, shank and holder) out of it, the\nrapids cross above it, and the simulation counts a hit as a collision.\n\nEvery value is in the SETUP frame: the frame the setup's toolpaths use,\nwith the setup's +Z up.",
       "properties": {
         "clearance": {

@@ -373,6 +373,16 @@ macro_rules! for_each_command {
                  mcp: Reach::Reached,
                  cli: Reach::Reached,
              }),
+            // Geometry selection P6.7 (L-17): the "Add a Bore for these"
+            // action of a Drill hole row, and the MCP tool of that name.
+            (Command, AddBoreFromDrill, "add_bore_from_drill", AddBoreFromDrillArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "a job file states a bore operation with type = \"bore\"",
+                 ),
+             }),
             (Command, RemoveToolpath, "remove_toolpath", RemoveToolpathArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,
@@ -1270,6 +1280,7 @@ pub struct Effects {
     /// caller already consumes:
     ///
     /// - `AddToolpath` — the new toolpath's INDEX in plan order;
+    ///   `AddBoreFromDrill` (P6.7) reports the same quantity for its Bore;
     /// - `AddTool` — the new tool's INDEX in the tools list;
     /// - `AddSetup` — the new setup's INDEX in the setups list;
     /// - `AddModel` — the new model's ID, not its index. A model is
@@ -1647,6 +1658,26 @@ pub struct AddToolpathArgs {
     pub setup_index: usize,
     /// The whole toolpath configuration.
     pub config: Box<super::ToolpathConfig>,
+}
+
+/// The arguments of the `add_bore_from_drill` command (geometry
+/// selection P6.7, L-17).
+///
+/// The command adds ONE Bore toolpath directly after the Drill, in the
+/// setup of the Drill. The Bore takes a copy of the Drill selection, its
+/// model, its tool and its spindle speed. The Drill `depth` is a depth
+/// below the stock top, so the Bore floor is `Floor::StockTop` with the
+/// same depth. Every other Bore value is the `BoreConfig` default.
+/// [`Effects::created`] reports the new toolpath's INDEX.
+///
+/// The command refuses when the toolpath at `index` does not carry the id
+/// `drill_id` (a stale index), and when it is not a Drill.
+#[derive(Debug, Clone)]
+pub struct AddBoreFromDrillArgs {
+    /// The index of the Drill toolpath.
+    pub index: usize,
+    /// The id of the Drill toolpath.
+    pub drill_id: crate::ids::ToolpathId,
 }
 
 /// The arguments of the `remove_toolpath` command.
@@ -2737,6 +2768,7 @@ impl ProjectSession {
                 self.set_toolpath_debug_options(args.index, args.debug_options)
             }
             Command::AddToolpath(args) => self.add_toolpath(args.setup_index, *args.config),
+            Command::AddBoreFromDrill(args) => self.add_bore_from_drill(args.index, args.drill_id),
             Command::RemoveToolpath(args) => self.remove_toolpath(args.index),
             Command::AddTool(args) => self.add_tool(*args.tool),
             Command::AddToolFromLibrary(args) => self.add_tool(*args.tool),

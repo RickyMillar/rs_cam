@@ -73,6 +73,113 @@ impl ProjectSession {
         Ok(tp_index)
     }
 
+    /// Add one Bore directly after the Drill at `index` (geometry selection
+    /// P6.7, L-17: "Add a Bore for these"). The door of
+    /// [`Command::AddBoreFromDrill`](crate::session::Command::AddBoreFromDrill).
+    ///
+    /// The Bore takes from the Drill:
+    ///
+    /// - the selection (a copy), so both ops split the holes by the fit
+    ///   rule (design 4.1);
+    /// - the model, because the stored selection names the toolpath model;
+    /// - the tool, because every toolpath binds a tool. The tool makes the
+    ///   two fits one rule: a circle that the Drill skips as `Larger` is a
+    ///   circle that the Bore helix cuts;
+    /// - the floor: the Drill `depth` is a depth below the stock top
+    ///   (`drill_hole_columns`), so the Bore floor is `Floor::StockTop`
+    ///   with the same depth;
+    /// - the spindle speed, the stock source and the coolant.
+    ///
+    /// The heights are the defaults: a Bore is an `OpFloor` op, so a
+    /// pinned Bottom Z of the Drill would refuse (`floor_conflict`). The
+    /// feeds, the pitch and the finish allowance are the `BoreConfig`
+    /// defaults; Suggest gives feeds for the tool.
+    ///
+    /// [`Effects::created`] carries the new toolpath's index in
+    /// `toolpath_configs`. The Bore cuts before every op after the Drill,
+    /// so the rest chain after it goes stale.
+    #[instrument(skip(self))]
+    pub(crate) fn add_bore_from_drill(
+        &mut self,
+        index: usize,
+        drill_id: crate::ids::ToolpathId,
+    ) -> Result<Effects, SessionError> {
+        let drill = self
+            .toolpath_configs
+            .get(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        if drill.id != drill_id {
+            return Err(SessionError::ToolpathIdMismatch {
+                index,
+                id: drill_id,
+            });
+        }
+        let OperationConfig::Drill(drill_op) = &drill.operation else {
+            return Err(SessionError::NotADrill {
+                index,
+                operation: drill.operation.label(),
+            });
+        };
+        let setup_index = self
+            .setups
+            .iter()
+            .position(|s| s.toolpath_indices.contains(&index))
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        let bore = crate::compute::operation_configs::BoreConfig {
+            floor: crate::compute::floor::Floor::StockTop {
+                depth: drill_op.depth,
+            },
+            spindle_rpm: drill_op.spindle_rpm,
+            selection: drill_op.selection.clone(),
+            ..crate::compute::operation_configs::BoreConfig::default()
+        };
+        let op_type = crate::compute::catalog::OperationType::Bore;
+        let config = ToolpathConfig {
+            id: crate::ids::ToolpathId::placeholder(),
+            name: format!("{} bore", drill.name),
+            enabled: drill.enabled,
+            operation: OperationConfig::Bore(bore),
+            dressups: crate::compute::config::DressupConfig::for_op(op_type),
+            heights: crate::compute::config::HeightsConfig::default(),
+            tool_id: drill.tool_id,
+            model_id: drill.model_id,
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: crate::compute::config::BoundaryConfig::default(),
+            boundary_inherit: true,
+            rest_analysis: crate::compute::config::RestAnalysisConfig::default(),
+            stock_source: drill.stock_source,
+            coolant: drill.coolant,
+            debug_options: crate::trace::debug_trace::ToolpathDebugOptions::default(),
+            feeds_provenance: crate::feeds::FeedsProvenance::default(),
+            planner_origin: None,
+            shoe: drill.shoe,
+        };
+        config.floor_conflict()?;
+        crate::compute::domain::validate_toolpath(&config)?;
+        let mut created = None;
+        let mut effects = self.try_with_effects(None, |session| {
+            let bore_index = session.add_toolpath_impl(setup_index, config)?;
+            // `add_toolpath_impl` appends to the setup. Move the Bore to
+            // the place after the Drill in the plan order of the setup.
+            // SAFETY: `setup_index` is a position in `setups` (above).
+            #[allow(clippy::indexing_slicing)]
+            let order = &mut session.setups[setup_index].toolpath_indices;
+            order.retain(|&i| i != bore_index);
+            let at = order
+                .iter()
+                .position(|&i| i == index)
+                .map_or(order.len(), |p| p + 1);
+            order.insert(at, bore_index);
+            // A rest op after the Drill now sits after a new cut.
+            session.invalidate_output_dependents(bore_index, true);
+            created = Some(bore_index);
+            Ok::<(), SessionError>(())
+        })?;
+        effects.created = created;
+        Ok(effects)
+    }
+
     /// Remove a toolpath by its index in `toolpath_configs`.
     ///
     /// Updates all setup `toolpath_indices` so that indices above the

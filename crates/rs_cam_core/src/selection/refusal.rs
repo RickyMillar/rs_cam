@@ -487,7 +487,13 @@ impl SelectionRefusal {
             }
             RefusalCause::Empty { skipped } => {
                 let notes: Vec<String> = skipped.iter().map(ToString::to_string).collect();
-                format!("nothing is left to cut. {}", notes.join(" "))
+                // Each note ends with a full stop, and the refusal adds
+                // its own before "Fix:", so the last one goes (no "..").
+                let notes = notes.join(" ");
+                format!(
+                    "nothing is left to cut. {}",
+                    notes.strip_suffix('.').unwrap_or(&notes)
+                )
             }
             RefusalCause::LostPick => "no item of the drawing matches this pick".to_owned(),
             RefusalCause::AmbiguousPick { matches } => {

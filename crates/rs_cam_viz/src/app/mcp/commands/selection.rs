@@ -29,6 +29,24 @@ fn key_json(key: &MatchKey) -> serde_json::Value {
     serde_json::to_value(key).unwrap_or(serde_json::Value::Null)
 }
 
+/// P6.8: the fit of the item `key` (a `list_model_items` key) against the
+/// tool, from `SelectionReport::hole_fits`, which the GUI Selection section
+/// reads for its hole rows. `null` for an item that is not a point or a
+/// circle, and when the op has no fit rule or no valid tool.
+pub(crate) fn hole_fit_json(
+    report: &SelectionReport,
+    model_id: rs_cam_core::ids::ModelId,
+    key: &MatchKey,
+) -> serde_json::Value {
+    let key = key.clone().for_toolpath_model(model_id);
+    report
+        .hole_fits
+        .iter()
+        .find(|(k, _)| k.matches(&key))
+        .and_then(|(_, fit)| serde_json::to_value(fit).ok())
+        .unwrap_or(serde_json::Value::Null)
+}
+
 /// The reply of the `selection_status` read: the core report, field by
 /// field. A key is its file JSON; a note, a lost pick and a refusal also
 /// carry the core text.
@@ -37,7 +55,12 @@ fn key_json(key: &MatchKey) -> serde_json::Value {
 /// model, in import order, with the key as `list_model_items` gives it
 /// (source `Model(id)`); `foreign` gives the other selected items. P3.7:
 /// each row also gives `floor_z`: the floor Z of a cut face under the floor
-/// "each picked face" (setup frame), else `null`.
+/// "each picked face" (setup frame), else `null`. P6.8: each row also gives
+/// `hole_fit`: the fit of a point or circle against the tool
+/// (`SelectionReport::hole_fits`, the rows of the GUI Selection section),
+/// else `null`; the reply gives `extended`: the outer ring of each area of
+/// a Pocket Extend to stock (`SelectionReport::extended`, model frame, the
+/// rings the GUI viewport draws).
 pub(crate) fn selection_report_json(
     session: &ProjectSession,
     tc: &rs_cam_core::session::ToolpathConfig,
@@ -55,6 +78,7 @@ pub(crate) fn selection_report_json(
                         "key": key_json(&item.key),
                         "state": state,
                         "floor_z": report.item_floor_z.get(index).copied().flatten(),
+                        "hole_fit": hole_fit_json(report, tc.model_id, &item.key),
                     })
                 })
                 .collect()
@@ -111,6 +135,12 @@ pub(crate) fn selection_report_json(
             }))
             .collect::<Vec<_>>(),
         "selected": report.selected.iter().map(key_json).collect::<Vec<_>>(),
+        // P6.8: the areas of a Pocket Extend to stock, one ring each.
+        "extended": report
+            .extended
+            .iter()
+            .map(|ring| ring.iter().map(|p| [p.x, p.y]).collect::<Vec<_>>())
+            .collect::<Vec<_>>(),
         // P4.7: the STL models whose flat faces are not computed yet
         // ("computing faces"); generation computes them itself.
         "faces_not_ready": report.faces_not_ready.iter().map(|m| m.raw()).collect::<Vec<_>>(),
@@ -1441,5 +1471,281 @@ mod tests {
             crate::ui::properties::FloorInputs::new(&answer, &tc.heights, Some(&section));
         let row_floors: Vec<f64> = floor_inputs.face_floors.iter().map(|f| f.z).collect();
         assert_eq!(row_floors, cut, "the floor row reads the MCP floors");
+    }
+
+    /// A drawing model (id 0) of `items` with a 100 x 60 mm board (top at
+    /// Z 0), an end mill of `tool_d` and one toolpath of `operation`.
+    fn synthetic_project(
+        items: Vec<rs_cam_core::selection::Item>,
+        tool_d: f64,
+        operation: OperationConfig,
+    ) -> ProjectSession {
+        use rs_cam_core::compute::stock_config::StockConfig;
+        use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder};
+        let model = LoadedModel {
+            id: rs_cam_core::ids::ModelId::from_raw(0),
+            path: std::path::PathBuf::from("synthetic://p6_8.dxf"),
+            name: "P6.8 drawing".to_owned(),
+            kind: Some(ModelKind::Dxf),
+            mesh: None,
+            items: std::sync::Arc::new(rs_cam_core::selection::ItemSet::new(items)),
+            enriched_mesh: None,
+            units: Some(ModelUnits::Millimeters),
+            winding_report: None,
+            load_error: None,
+            import_options: Default::default(),
+            import_report: None,
+            drawing: Default::default(),
+        };
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+        tool.diameter = tool_d;
+        let config = ToolpathConfig {
+            shoe: Default::default(),
+            id: rs_cam_core::ToolpathId::from_raw(0),
+            name: operation.label().to_owned(),
+            enabled: true,
+            operation,
+            dressups: DressupConfig::default(),
+            heights: HeightsConfig::default(),
+            tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+            model_id: rs_cam_core::ids::ModelId::from_raw(0),
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: BoundaryConfig::default(),
+            boundary_inherit: true,
+            rest_analysis: RestAnalysisConfig::default(),
+            stock_source: StockSource::default(),
+            coolant: Default::default(),
+            debug_options: Default::default(),
+            feeds_provenance: Default::default(),
+            planner_origin: None,
+        };
+        let mut builder = ProjectSessionBuilder::new()
+            .stock(StockConfig {
+                x: 100.0,
+                y: 60.0,
+                z: 10.0,
+                origin_x: -50.0,
+                origin_y: -30.0,
+                origin_z: -10.0,
+                auto_from_model: false,
+                ..StockConfig::default()
+            })
+            .tool(tool)
+            .model(model);
+        builder.add_toolpath(0, config).unwrap();
+        builder.build()
+    }
+
+    /// The report of the GUI Selection section of toolpath 0.
+    fn gui_report(s: &ProjectSession) -> std::sync::Arc<SelectionReport> {
+        let id = s.toolpath_config_at(0).unwrap().id;
+        crate::ui::properties::toolpath_panel_inputs(
+            id,
+            s,
+            &crate::state::runtime::GuiState::default(),
+            None,
+            None,
+            false,
+        )
+        .selection_report
+        .expect("the op holds a selection")
+        .expect("the selection resolves")
+    }
+
+    /// Geometry selection P6.8 (design section 8, the `open_paths` row):
+    /// an MCP `set_toolpath_param open_paths` and a GUI draft write
+    /// (`write_entry_config_to_session`, the Pocket "Open paths" row) give
+    /// one config, and the MCP `selection_status` `extended` rings are the
+    /// GUI report rings (the rings the viewport draws). The wire token is
+    /// the string enum of the code (`"extend_left"`), not the object of the
+    /// design table.
+    ///
+    /// The drawing is one open line drawn east along Y 10 on a 100 x 60 mm
+    /// board (the P6.4 core fixture): `Skip` (the default) gives no ring,
+    /// and `extend_left` gives one ring north of the line.
+    ///
+    /// Red proof: `selection_report_json` with an empty `extended`. The MCP
+    /// rings then differ from the GUI ring, and the test fails.
+    #[test]
+    fn mcp_and_gui_give_one_extended_pocket_p6_4() {
+        use rs_cam_core::compute::operation_configs::OpenPaths;
+        use rs_cam_core::geo::P2;
+        use rs_cam_core::polygon::Polygon2;
+        use rs_cam_core::selection::{Item, Shape};
+        use rs_cam_core::session::SetToolpathParamArgs;
+
+        let line = || {
+            vec![
+                Item::new(
+                    SourceRef::ToolpathModel,
+                    None,
+                    Shape::Path(Polygon2::open_path(vec![
+                        P2::new(-30.0, 10.0),
+                        P2::new(30.0, 10.0),
+                    ])),
+                )
+                .unwrap(),
+            ]
+        };
+        let project = || {
+            synthetic_project(
+                line(),
+                6.0,
+                OperationConfig::new_default(OperationType::Pocket),
+            )
+        };
+        let rings = |reply: &serde_json::Value| -> Vec<Vec<[f64; 2]>> {
+            serde_json::from_value(reply["extended"].clone()).expect("extended is a ring list")
+        };
+
+        // Control: Skip gives no ring on either surface.
+        let control = project();
+        assert!(rings(&selection_status_reply(&control, 0, SelectionTarget::Op)).is_empty());
+        assert!(gui_report(&control).extended.is_empty());
+
+        // MCP: the wire value through the conversion the MCP arm uses.
+        let mut mcp = project();
+        let value =
+            rs_cam_mcp::server::coerce_json_container_string(serde_json::json!("extend_left"));
+        let effects = apply(
+            &mut mcp,
+            Command::SetToolpathParam(SetToolpathParamArgs {
+                index: 0,
+                param: "open_paths".to_owned(),
+                value,
+            }),
+        );
+        assert!(effects.stale.contains(&0), "the edit stales the toolpath");
+
+        // GUI: the inspector edits the draft and writes the whole config.
+        let mut state = crate::state::AppState::new();
+        state.replace_session(project());
+        let id = state.session().toolpath_configs()[0].id;
+        let mut entry = crate::ui::properties::build_entry_from_session_and_gui(
+            id,
+            state.session(),
+            &state.gui,
+        )
+        .expect("the toolpath has an entry");
+        match &mut entry.operation {
+            OperationConfig::Pocket(c) => c.open_paths = OpenPaths::ExtendLeft,
+            other => panic!("the fixture op is a Pocket, not {}", other.label()),
+        }
+        let _ = crate::ui::properties::write_entry_config_to_session(&entry, &mut state)
+            .expect("the GUI write applies");
+
+        // One config.
+        let mcp_tc = mcp.toolpath_config_at(0).unwrap();
+        let gui_tc = state.session().toolpath_config_at(0).unwrap();
+        assert_eq!(
+            serde_json::to_value(&mcp_tc.operation).unwrap(),
+            serde_json::to_value(&gui_tc.operation).unwrap(),
+            "the two routes store one operation config"
+        );
+        assert!(
+            matches!(
+                &mcp_tc.operation,
+                OperationConfig::Pocket(c) if c.open_paths == OpenPaths::ExtendLeft
+            ),
+            "the wire token extend_left is OpenPaths::ExtendLeft"
+        );
+
+        // One `extended` report.
+        let reply = selection_status_reply(&mcp, 0, SelectionTarget::Op);
+        assert!(reply["refusal"].is_null(), "{reply}");
+        let mcp_rings = rings(&reply);
+        let gui = gui_report(state.session());
+        let gui_rings: Vec<Vec<[f64; 2]>> = gui
+            .extended
+            .iter()
+            .map(|ring| ring.iter().map(|p| [p.x, p.y]).collect())
+            .collect();
+        assert_eq!(mcp_rings.len(), 1, "one area: {reply}");
+        assert_eq!(mcp_rings, gui_rings, "MCP extended is the GUI report");
+        // The area is north of the line (Left of the drawn direction).
+        assert!(
+            mcp_rings[0].iter().all(|p| p[1] >= 10.0 - 1e-6),
+            "the area is left of the line: {:?}",
+            mcp_rings[0]
+        );
+        // The path is cut, on both surfaces.
+        let state_of_path = reply["item_states"][0]["state"].clone();
+        assert_eq!(state_of_path, serde_json::json!("cut"), "{reply}");
+        assert_eq!(gui.item_states[0], rs_cam_core::session::ItemState::Cut);
+    }
+
+    /// Geometry selection P6.8 (design section 8, the `selection_status`
+    /// row): the MCP `hole_fit` of each `item_states` row is the fit of the
+    /// GUI report (`hole_fits`, which the Selection section hole rows
+    /// read), for a Drill and for a Bore, and each fit is the design 4.2
+    /// fit of its circle against the 6 mm tool.
+    ///
+    /// Red proof: `hole_fit_json` that answers `null`. Every circle row
+    /// then differs from the GUI fit, and the test fails.
+    #[test]
+    fn mcp_hole_fit_equals_the_gui_report_p6_5() {
+        use rs_cam_core::geo::P2;
+        use rs_cam_core::selection::{HoleFit, Item, Shape};
+
+        let holes = || {
+            let circle = |x: f64, d: f64| {
+                Item::new(
+                    SourceRef::ToolpathModel,
+                    None,
+                    Shape::circle(P2::new(x, 0.0), d),
+                )
+                .unwrap()
+            };
+            vec![
+                circle(-40.0, 6.0),
+                circle(-20.0, 10.0),
+                circle(0.0, 4.0),
+                circle(20.0, 14.0),
+                Item::new(
+                    SourceRef::ToolpathModel,
+                    None,
+                    Shape::Point(P2::new(40.0, 0.0)),
+                )
+                .unwrap(),
+            ]
+        };
+        let expected = [
+            Some(HoleFit::ToolSize),
+            Some(HoleFit::Larger),
+            Some(HoleFit::Smaller),
+            Some(HoleFit::LeavesCore),
+            Some(HoleFit::NoSize),
+        ];
+        for op in [OperationType::Drill, OperationType::Bore] {
+            let s = synthetic_project(holes(), 6.0, OperationConfig::new_default(op));
+            let reply = selection_status_reply(&s, 0, SelectionTarget::Op);
+            let rows = reply["item_states"].as_array().expect("item_states");
+            assert_eq!(rows.len(), expected.len(), "{reply}");
+            let gui = gui_report(&s);
+            assert!(
+                !gui.hole_fits.is_empty(),
+                "{}: the GUI report holds fits",
+                op.label()
+            );
+            for (index, row) in rows.iter().enumerate() {
+                let key: MatchKey = serde_json::from_value(row["key"].clone()).unwrap();
+                let key = key.for_toolpath_model(rs_cam_core::ids::ModelId::from_raw(0));
+                let gui_fit = gui
+                    .hole_fits
+                    .iter()
+                    .find(|(k, _)| k.matches(&key))
+                    .map(|(_, fit)| *fit);
+                let wire_fit: Option<HoleFit> =
+                    serde_json::from_value(row["hole_fit"].clone()).unwrap();
+                assert_eq!(
+                    wire_fit,
+                    gui_fit,
+                    "{} row {index}: MCP hole_fit is the GUI fit",
+                    op.label()
+                );
+                assert_eq!(wire_fit, expected[index], "{} row {index}", op.label());
+            }
+        }
     }
 }

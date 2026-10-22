@@ -239,7 +239,7 @@ impl<'a> Territory<'a> {
     /// - the link ceiling (`shared::op_link_ceiling`, G-LINKCEIL);
     /// - the rest rules of the 2D ops: `LevelClip` and `LevelSkip`
     ///   (`layered::run_layered`), `LevelMask` (2D Adaptive), and
-    ///   `StockColumn` (Drill);
+    ///   `StockColumn` (Drill and Bore, P6.6);
     /// - the RAW seed of a `Planner` op (`volumetric::run_volumetric`);
     /// - the Pencil entry ramps (`PencilStock::remaining`);
     /// - `BuriedCurveFinding` (`curve::run_curve`).

@@ -1,17 +1,17 @@
-//! The floor of a Pocket, Profile, Zigzag or Adaptive 2D (geometry
-//! selection P3.2, ruling D9).
+//! The floor of a Pocket, Profile, Zigzag, Adaptive 2D (geometry
+//! selection P3.2, ruling D9) or Bore (P6.6).
 //!
 //! One value names the floor and its reference. Before P3.2 the op `depth`
 //! and the pinned Heights Bottom Z were two fields that could disagree, and
 //! only the depth reached the cut (G-BOTTOMPIN). Now:
 //!
-//! - [`Floor`] is the one floor field of the four ops
+//! - [`Floor`] is the one floor field of the floor ops
 //!   (`OperationConfig::floor`).
 //! - The session resolves it against the height context of the toolpath
 //!   ([`Floor::resolve`] gives a [`FloorRef`]). `HeightsConfig::auto_bottom_z`
-//!   reads the `FloorRef` first, so `ResolvedHeights::bottom_z` of the four
+//!   reads the `FloorRef` first, so `ResolvedHeights::bottom_z` of the floor
 //!   ops IS the floor.
-//! - The 2.5D ladder of the four ops runs from the top to that bottom
+//! - The 2.5D ladder of the four 2.5D ops runs from the top to that bottom
 //!   (`ops::depth::floor_ladder`).
 //! - P3.5: under [`Floor::EachFace`] each closed area of the selection is
 //!   cut to its own floor: the plane Z of its face less the depth
@@ -21,7 +21,7 @@
 //!   (`Prepared::region_ladders`); the Layered runner steps each area down
 //!   its own ladder (Pocket, Zigzag, Profile), and Adaptive 2D does the
 //!   same in its own loop (P3.6, ruling L-5).
-//! - A pinned Heights Bottom Z on the four ops refuses
+//! - A pinned Heights Bottom Z on a floor op refuses
 //!   (`ToolpathConfig::floor_conflict`).
 //!
 //! Every Z is in the setup frame (the emission frame), as `HeightMode::Manual`

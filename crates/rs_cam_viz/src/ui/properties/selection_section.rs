@@ -187,6 +187,8 @@ pub(crate) fn draw_selection_section(
     {
         show_me(inputs, events, size.keys.clone());
     }
+    // ── "Add a Bore for these" (P6.7, L-17): only with a Larger row ──
+    draw_add_bore(ui, inputs, &sizes, events);
     // ── The open paths of a Pocket Extend (P6.7) ───────────────────
     if let Some(report) = report {
         draw_extend_summary(ui, inputs, report, events);
@@ -462,6 +464,55 @@ fn hole_sizes(inputs: &SelectionSectionInputs<'_>, report: &SelectionReport) -> 
         (None, None) => std::cmp::Ordering::Equal,
     });
     sizes
+}
+
+/// The label of the action that adds a Bore for the larger holes (P6.7).
+pub(crate) const ADD_A_BORE: &str = "Add a Bore for these";
+
+/// The count of the held holes that the Drill skips as larger than the
+/// tool (P6.7): the holes of each size whose fit is `Larger` under the
+/// `ToolSize` rule. A Bore cuts them. `0` for every other op and fit.
+fn holes_to_bore(sizes: &[HoleSize]) -> usize {
+    sizes
+        .iter()
+        .filter(|size| size.rule == HoleFitRule::ToolSize && size.fit == Some(HoleFit::Larger))
+        .map(|size| size.keys.len())
+        .sum()
+}
+
+/// The one-line fix action of the Drill hole rows (P6.7, L-17; the
+/// "auto magic is a wizard" ruling allows it because it shows only with
+/// the rows it fixes): with a size larger than the tool, one line with
+/// [`ADD_A_BORE`]. A click sends one `AddBoreFromDrill`.
+fn draw_add_bore(
+    ui: &mut egui::Ui,
+    inputs: &SelectionSectionInputs<'_>,
+    sizes: &[HoleSize],
+    events: &mut Vec<AppEvent>,
+) {
+    let count = holes_to_bore(sizes);
+    if count == 0 {
+        return;
+    }
+    let text = format!(
+        "{count} {} to bore",
+        if count == 1 { "hole" } else { "holes" }
+    );
+    if line_with_action(
+        ui,
+        "",
+        &text,
+        tokens::CAUTION,
+        "The Drill leaves out each hole larger than the tool. A Bore cuts these holes with a \
+         helix of the same tool.",
+        Some((
+            ADD_A_BORE,
+            "Add a Bore after this Drill with a copy of its selection. The Bore cuts the \
+             larger holes; the Drill keeps the holes of the tool size.",
+        )),
+    ) {
+        events.push(AppEvent::AddBoreFromDrill(inputs.toolpath_id));
+    }
 }
 
 /// The one line of a Pocket with Extend to stock (P6.7, ruling O-2): how
