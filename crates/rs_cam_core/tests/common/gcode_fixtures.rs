@@ -199,7 +199,7 @@ pub fn f5_two_tool_changes(
             pre_gcode: None,
             post_gcode: None,
             tool: Some(PhaseTool {
-                id: 1,
+                id: rs_cam_core::ids::ToolId::from_raw(1),
                 number: 1,
                 label: "Tool One",
             }),
@@ -215,7 +215,7 @@ pub fn f5_two_tool_changes(
             pre_gcode: None,
             post_gcode: None,
             tool: Some(PhaseTool {
-                id: 2,
+                id: rs_cam_core::ids::ToolId::from_raw(2),
                 number: 2,
                 label: "Tool Two",
             }),
@@ -341,7 +341,7 @@ pub fn f12_tool_change_at_z_zero(
             pre_gcode: None,
             post_gcode: None,
             tool: Some(PhaseTool {
-                id: 1,
+                id: rs_cam_core::ids::ToolId::from_raw(1),
                 number: 1,
                 label: "Tool One",
             }),
@@ -357,7 +357,7 @@ pub fn f12_tool_change_at_z_zero(
             pre_gcode: None,
             post_gcode: None,
             tool: Some(PhaseTool {
-                id: 2,
+                id: rs_cam_core::ids::ToolId::from_raw(2),
                 number: 2,
                 label: "Tool Two",
             }),
@@ -402,7 +402,7 @@ pub fn f13_climb_vs_conventional(
             pre_gcode: None,
             post_gcode: None,
             tool: Some(PhaseTool {
-                id: 1,
+                id: rs_cam_core::ids::ToolId::from_raw(1),
                 number: 1,
                 label: "Tool One",
             }),
@@ -418,7 +418,7 @@ pub fn f13_climb_vs_conventional(
             pre_gcode: None,
             post_gcode: None,
             tool: Some(PhaseTool {
-                id: 1,
+                id: rs_cam_core::ids::ToolId::from_raw(1),
                 number: 1,
                 label: "Tool One",
             }),
@@ -454,7 +454,7 @@ pub fn f14_multi_line_pause_message(
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 1,
+                    id: rs_cam_core::ids::ToolId::from_raw(1),
                     number: 1,
                     label: "Tool One",
                 }),
@@ -478,7 +478,7 @@ pub fn f14_multi_line_pause_message(
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 1,
+                    id: rs_cam_core::ids::ToolId::from_raw(1),
                     number: 1,
                     label: "Tool One",
                 }),
@@ -512,7 +512,7 @@ pub fn f15_embedded_newline_snippets(
         pre_gcode: Some("(custom prep)\nM7\nG4 P0.5"),
         post_gcode: Some("M9\n(custom retract)\nG0 Z20.000"),
         tool: Some(PhaseTool {
-            id: 1,
+            id: rs_cam_core::ids::ToolId::from_raw(1),
             number: 1,
             label: "Tool One",
         }),
@@ -545,7 +545,7 @@ pub fn f16_comp_round_trip(
         pre_gcode: None,
         post_gcode: None,
         tool: Some(PhaseTool {
-            id: 3,
+            id: rs_cam_core::ids::ToolId::from_raw(3),
             number: 3,
             label: "Tool Three",
         }),
@@ -585,7 +585,7 @@ pub fn f6_two_setups(
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 1,
+                    id: rs_cam_core::ids::ToolId::from_raw(1),
                     number: 1,
                     label: "Tool One",
                 }),
@@ -605,7 +605,7 @@ pub fn f6_two_setups(
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 1,
+                    id: rs_cam_core::ids::ToolId::from_raw(1),
                     number: 1,
                     label: "Tool One",
                 }),
@@ -665,7 +665,7 @@ pub fn f17_drill_dwell_and_peck(
     let dwell_tp = drill_tp(DrillCycle::Dwell(0.5));
     let peck_tp = drill_tp(DrillCycle::Peck(2.5));
     let tool = PhaseTool {
-        id: 4,
+        id: rs_cam_core::ids::ToolId::from_raw(4),
         number: 4,
         label: "Drill 3mm",
     };
@@ -712,7 +712,7 @@ pub fn f18_grblhal_options(
     pocket.rapid_to(P3::new(0.0, 0.0, 5.0));
     pocket.feed_to(P3::new(10.0, 0.0, -2.0), 600.0);
     let drill = PhaseTool {
-        id: 4,
+        id: rs_cam_core::ids::ToolId::from_raw(4),
         number: 4,
         label: "Drill 3mm",
     };
@@ -739,7 +739,7 @@ pub fn f18_grblhal_options(
         pre_gcode: None,
         post_gcode: None,
         tool: Some(PhaseTool {
-            id: 1,
+            id: rs_cam_core::ids::ToolId::from_raw(1),
             number: 1,
             label: "End Mill 6mm",
         }),

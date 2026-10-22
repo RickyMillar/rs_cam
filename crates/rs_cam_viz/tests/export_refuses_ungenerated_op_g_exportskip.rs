@@ -49,7 +49,6 @@ use rs_cam_viz::io::export::{
     export_gcode_from_session_with_policy, export_setup_gcode_from_session_with_policy,
 };
 use rs_cam_viz::state::freshness::freshness_at;
-use rs_cam_viz::state::job::SetupId;
 use rs_cam_viz::state::runtime::ToolpathRun;
 use rs_cam_viz::state::runtime::{GuiState, StaleResultPolicy, ToolpathRuntime};
 use rs_cam_viz::state::simulation::SimulationState;
@@ -93,7 +92,7 @@ fn viz_result(path: Toolpath) -> ToolpathResult {
 fn toolpath_config(id: u32, name: &str, enabled: bool) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(id as usize),
+        id: rs_cam_core::ToolpathId::from_raw(id as usize),
         name: name.to_owned(),
         enabled,
         operation: OperationConfig::Scallop(
@@ -101,8 +100,8 @@ fn toolpath_config(id: u32, name: &str, enabled: bool) -> ToolpathConfig {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -126,14 +125,14 @@ enum SecondOp {
 }
 
 fn build_state(second: SecondOp) -> (ProjectSession, GuiState, SimulationState) {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new()
         .tool(tool)
         .name("g-exportskip sentry".to_owned());
 
     let mesh = Arc::new(make_test_flat(40.0));
     let _ = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
         kind: Some(ModelKind::Stl),
@@ -161,7 +160,7 @@ fn build_state(second: SecondOp) -> (ProjectSession, GuiState, SimulationState) 
     let first_id = session.toolpath_configs()[0].id;
     let second_id = session.toolpath_configs()[1].id;
 
-    let revision = session.toolpath_revision(0);
+    let revision = session.toolpath_revision_at(0);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,
@@ -236,7 +235,7 @@ fn export_and_write(
 
 fn awaiting_prior_stock() -> ComputeStatus {
     ComputeStatus::AwaitingPriorStock(rs_cam_core::compute::AwaitingPriorStock {
-        blocking_toolpath_id: Some(rs_cam_core::ToolpathId(0)),
+        blocking_toolpath_id: Some(rs_cam_core::ToolpathId::from_raw(0)),
         blocking_toolpath_index: Some(0),
         message: "waiting on 'Rough Pass' (index 0) to be simulated".to_owned(),
     })
@@ -344,7 +343,7 @@ fn export_refuses_an_errored_op_and_carries_the_generator_error() {
 #[test]
 fn per_setup_and_combined_exports_refuse_the_same_op() {
     let (session, gui, sim) = build_state(SecondOp::Ungenerated(awaiting_prior_stock()));
-    let setup_id = SetupId(session.list_setups()[0].id);
+    let setup_id = session.list_setups()[0].id;
 
     let per_setup = expect_export_error(
         export_setup_gcode_from_session_with_policy(

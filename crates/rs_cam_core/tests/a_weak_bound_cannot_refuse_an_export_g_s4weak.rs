@@ -41,7 +41,7 @@ use rs_cam_core::tool_load::verdict::{
 };
 use rs_cam_core::tool_load::{ChiploadVerdict, Confidence, DeflectionVerdict, UnmodeledReason};
 
-const TP: ToolpathId = ToolpathId(4);
+const TP: ToolpathId = ToolpathId::from_raw(4);
 
 /// The rule-of-thumb bound S3 will produce: the machine rigidity factor
 /// times the tool diameter. Nothing publishes it.

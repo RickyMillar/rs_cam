@@ -109,7 +109,7 @@ fn linear_cut_samples(
             cutter,
             cutter.radius(),
             StockCutDirection::FromTop,
-            ToolpathId(0),
+            ToolpathId::from_raw(0),
             18_000,
             2,
             5000.0,
@@ -482,7 +482,7 @@ fn per_kinematics_average_carries_the_corrected_engagement() {
     for sample in &samples {
         acc.observe(sample);
     }
-    let summary = acc.finish_toolpath(ToolpathId(0));
+    let summary = acc.finish_toolpath(ToolpathId::from_raw(0));
     let linear = summary
         .per_kinematics
         .get(&CutKinematics::Linear)

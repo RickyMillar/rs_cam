@@ -84,14 +84,14 @@ fn tapered_ball_tool() -> ToolConfig {
         diameter: TIP_DIAMETER_MM,
         taper_half_angle: TAPER_HALF_ANGLE_DEG,
         shaft_diameter: SHANK_DIAMETER_MM,
-        ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
     }
 }
 
 fn ball_tool() -> ToolConfig {
     ToolConfig {
         diameter: BALL_DIAMETER_MM,
-        ..ToolConfig::new_default(ToolId(0), ToolType::BallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose)
     }
 }
 
@@ -134,7 +134,7 @@ fn two_groove_plateau() -> TriangleMesh {
 
 fn mesh_model(mesh: TriangleMesh) -> LoadedModel {
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "two_groove_plateau".to_owned(),
         mesh: Some(Arc::new(mesh)),
         items: Default::default(),
@@ -171,7 +171,7 @@ fn toolpath(op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathCon
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Unified Finish".to_owned(),
         enabled: true,
         operation: op,
@@ -181,8 +181,8 @@ fn toolpath(op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathCon
             bottom_z: HeightMode::Manual(-9.0),
             ..HeightsConfig::default()
         },
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -214,10 +214,10 @@ fn stock() -> StockConfig {
 fn generate_through_session(tool: ToolConfig) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(tool);
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(mesh_model(two_groove_plateau()));
     let _ = builder
-        .add_toolpath(0, toolpath(unified_finish_op(), tool_id, model_id))
+        .add_toolpath(0, toolpath(unified_finish_op(), tool_id, model_id.raw()))
         .expect("add unified-finish toolpath");
     let mut session = builder.build();
     let cancel = AtomicBool::new(false);
@@ -236,7 +236,7 @@ fn generate_through_session(tool: ToolConfig) -> ProjectSession {
 fn the_claims_stepover_is_the_reach_policy_value_not_the_envelope_rule() {
     let session = generate_through_session(tapered_ball_tool());
     let stats = session
-        .get_result(0)
+        .result_at(0)
         .expect("a generated result")
         .stats
         .clone();
@@ -301,12 +301,12 @@ fn the_claims_stepover_is_the_reach_policy_value_not_the_envelope_rule() {
 fn the_derived_stepover_is_reported_as_a_diagnostic() {
     let session = generate_through_session(tapered_ball_tool());
     let stats = session
-        .get_result(0)
+        .result_at(0)
         .expect("a generated result")
         .stats
         .clone();
     let diags = rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation(
-        ToolpathId(0),
+        ToolpathId::from_raw(0),
         &stats,
     );
     let d = diags
@@ -358,7 +358,7 @@ fn the_per_point_fan_spaces_passes_off_the_tip_whatever_scalar_the_caller_passes
     use rs_cam_core::toolpath::MoveIntent;
 
     let finding = generate_through_session(tapered_ball_tool())
-        .get_result(0)
+        .result_at(0)
         .expect("a generated result")
         .stats
         .derived_stepovers
@@ -468,7 +468,7 @@ fn the_ball_control_does_not_move_and_reports_nothing() {
 
     let session = generate_through_session(ball_tool());
     let stats = session
-        .get_result(0)
+        .result_at(0)
         .expect("a generated result")
         .stats
         .clone();
@@ -493,7 +493,7 @@ fn the_ball_control_does_not_move_and_reports_nothing() {
         finding.envelope_rule_mm
     );
     let diags = rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation(
-        ToolpathId(0),
+        ToolpathId::from_raw(0),
         &stats,
     );
     // The reach-policy site must stay silent. A slope-derate diagnostic

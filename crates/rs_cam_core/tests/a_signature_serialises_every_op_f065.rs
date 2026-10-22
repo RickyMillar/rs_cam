@@ -43,7 +43,12 @@ fn every_op_default_signs_and_no_two_ops_sign_equal() {
         let operation_json = serde_json::to_string(&op).expect("the op serialises");
         assert!(!operation_json.is_empty(), "{op_type:?}: empty op text");
 
-        let tc = toolpath_config("f065", op.clone(), 0, 0);
+        let tc = toolpath_config(
+            "f065",
+            op.clone(),
+            rs_cam_core::ids::ToolId::from_raw(0),
+            rs_cam_core::ids::ModelId::from_raw(0),
+        );
         let signature = tc.generation_inputs_signature();
         assert!(
             signature.starts_with(&operation_json),
@@ -64,7 +69,12 @@ fn every_op_default_signs_and_no_two_ops_sign_equal() {
 #[test]
 fn a_rename_keeps_the_signature_and_a_tool_change_moves_it() {
     let op = OperationConfig::new_default(OperationType::ALL[0]);
-    let base = toolpath_config("f065", op, 0, 0);
+    let base = toolpath_config(
+        "f065",
+        op,
+        rs_cam_core::ids::ToolId::from_raw(0),
+        rs_cam_core::ids::ModelId::from_raw(0),
+    );
     let mut renamed = base.clone();
     renamed.name = "renamed".to_owned();
     renamed.boundary_inherit = !renamed.boundary_inherit;
@@ -73,7 +83,7 @@ fn a_rename_keeps_the_signature_and_a_tool_change_moves_it() {
         renamed.generation_inputs_signature()
     );
     let mut retooled = base.clone();
-    retooled.tool_id += 1;
+    retooled.tool_id = rs_cam_core::ids::ToolId::from_raw(retooled.tool_id.raw() + 1);
     assert_ne!(
         base.generation_inputs_signature(),
         retooled.generation_inputs_signature()

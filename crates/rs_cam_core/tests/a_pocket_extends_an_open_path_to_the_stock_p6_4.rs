@@ -95,7 +95,7 @@ fn pocket(open_paths: OpenPaths) -> OperationConfig {
 fn session(face_up: FaceUp, open_paths: OpenPaths) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(board());
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_D));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let line = Polygon2::open_path(LINE.iter().map(|&[x, y]| P2::new(x, y)).collect());
     let model_id = builder.add_model(polygon_model(vec![line], "p6_4_open_line"));
     let setup = if face_up == FaceUp::Top {
@@ -106,7 +106,12 @@ fn session(face_up: FaceUp, open_paths: OpenPaths) -> ProjectSession {
     let _ = builder
         .add_toolpath(
             setup,
-            toolpath_config("p6_4", pocket(open_paths), tool_id, model_id),
+            toolpath_config(
+                "p6_4",
+                pocket(open_paths),
+                rs_cam_core::ids::ToolId::from_raw(tool_id),
+                model_id,
+            ),
         )
         .expect("add the Pocket");
     builder.build()
@@ -121,7 +126,7 @@ fn fed_in_drawing(face_up: FaceUp, open_paths: OpenPaths) -> Vec<P2> {
         .unwrap_or_else(|e| panic!("{face_up:?} {open_paths:?}: the Pocket generates: {e}"));
     let info = s.setup_transform_info(face_up, ZRotation::Deg0);
     // The fed moves at the final level: the full area of the pocket.
-    let tp = s.get_result(0).expect("a result").toolpath().clone();
+    let tp = s.result_at(0).expect("a result").toolpath().clone();
     let cut_z = tp
         .moves
         .iter()

@@ -186,7 +186,7 @@ fn gate_ceiling_kw(machine: &MachineProfile, rpm: f64) -> f64 {
 /// 24.05 mm depth, and stiff enough that the deflection back-off does not
 /// fire. All four are fixture choices, not model constants.
 fn tool() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     t.diameter = DIAMETER_MM;
     t.flute_count = FLUTES;
     t.cutting_length = 40.0;

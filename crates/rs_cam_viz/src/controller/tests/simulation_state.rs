@@ -159,11 +159,11 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
     generate_all_for_test(&mut controller);
     let id = controller.state.session().toolpath_configs()[0].id;
     panel_edit(&mut controller, id, |entry| {
-        entry.tool_id = ToolId(999);
+        entry.tool_id = ToolId::from_raw(999);
     });
     assert_eq!(
         controller.state.session().toolpath_configs()[0].tool_id,
-        999,
+        rs_cam_core::ids::ToolId::from_raw(999),
         "fixture 3 precondition failed: the corrupt tool id did not reach the session"
     );
     let predicate =
@@ -288,7 +288,7 @@ fn the_gui_builder_reads_every_drill_signal_cmp19() {
             Some(drill) => rs_cam_core::ops::drill_op::OpData::DrillOp(drill, annotated),
             None => rs_cam_core::ops::drill_op::OpData::Toolpath(annotated),
         };
-        let revision = controller.state.session().toolpath_revision(0);
+        let revision = controller.state.session().toolpath_revision_at(0);
         let _ = controller
             .state
             .apply(Command::AdoptResult(AdoptResultArgs {
@@ -390,7 +390,7 @@ fn toolpath_results_persist_debug_trace_metadata() {
         .drained
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
-                toolpath_id: ToolpathId(0),
+                toolpath_id: ToolpathId::from_raw(0),
                 revision: None,
                 result: Ok(ToolpathResult {
                     annotated: Arc::clone(&annotated),
@@ -412,7 +412,7 @@ fn toolpath_results_persist_debug_trace_metadata() {
         .state
         .gui
         .toolpath_rt
-        .get(&ToolpathId(0))
+        .get(&ToolpathId::from_raw(0))
         .expect("toolpath runtime should exist");
     let result = rt.run.result().expect("result should be stored");
     let stored_trace = result
@@ -474,7 +474,7 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
         .drained
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
-                toolpath_id: ToolpathId(0),
+                toolpath_id: ToolpathId::from_raw(0),
                 revision: None,
                 result: Err(crate::compute::ComputeError::Cancelled),
                 debug_trace: Some(Arc::clone(&trace)),
@@ -489,7 +489,7 @@ fn cancelled_toolpath_preserves_debug_trace_metadata() {
         .state
         .gui
         .toolpath_rt
-        .get(&ToolpathId(0))
+        .get(&ToolpathId::from_raw(0))
         .expect("toolpath runtime should exist");
     assert!(matches!(
         rt.run,
@@ -520,15 +520,15 @@ fn the_gui_builder_carries_the_stock_changes_s2() {
     use rs_cam_core::compute::stock_change::{
         StockChange, StockChangeOp, StockChangeSource, StockGeometry,
     };
-    use rs_cam_core::ids::{ModelId, StockChangeId};
+    use rs_cam_core::ids::StockChangeId;
 
     let mut controller = sample_controller();
     for rt in controller.state.gui.toolpath_rt.values_mut() {
         rt.run = crate::state::runtime::ToolpathRun::Pending;
     }
-    let model_id = ModelId(controller.state.session().models()[0].id);
+    let model_id = controller.state.session().models()[0].id;
     let change = |id: usize, enabled: bool| StockChange {
-        id: StockChangeId(id),
+        id: StockChangeId::from_raw(id),
         name: format!("Change {id}"),
         enabled,
         op: StockChangeOp::Remove,
@@ -560,7 +560,7 @@ fn the_gui_builder_carries_the_stock_changes_s2() {
     let carried: Vec<usize> = groups[0]
         .stock_changes
         .iter()
-        .map(|c| c.change.id.0)
+        .map(|c| c.change.id.raw())
         .collect();
     assert_eq!(carried, vec![1, 3], "the enabled changes, in list order");
     let mesh = controller.state.session().models()[0]
@@ -597,7 +597,7 @@ mod stock_material_legend_s5 {
     use rs_cam_core::compute::stock_change::{StockChange, StockChangeOp, StockGeometry};
     use rs_cam_core::compute::stock_change_apply::StockChangeVolume;
     use rs_cam_core::export::material_colour::{MaterialPalette, colour_from_rgb8};
-    use rs_cam_core::ids::{ModelId, StockChangeId};
+    use rs_cam_core::ids::StockChangeId;
     use rs_cam_core::material::Material;
     use rs_cam_core::stock::material_slot::MaterialSlot;
 
@@ -618,9 +618,9 @@ mod stock_material_legend_s5 {
     /// applied it (slot 1), the Simulation workspace and the stock drawn.
     fn controller_with_an_added_material(volumes: bool) -> AppController<ScriptedBackend> {
         let mut controller = sample_controller();
-        let model_id = ModelId(controller.state.session().models()[0].id);
+        let model_id = controller.state.session().models()[0].id;
         let change = StockChange {
-            id: StockChangeId(1),
+            id: StockChangeId::from_raw(1),
             name: "Pour".to_owned(),
             enabled: true,
             op: StockChangeOp::Add,
@@ -642,7 +642,7 @@ mod stock_material_legend_s5 {
         let stock_change_volumes = if volumes {
             vec![StockChangeVolume {
                 setup_id,
-                change_id: StockChangeId(1),
+                change_id: StockChangeId::from_raw(1),
                 name: "Pour".to_owned(),
                 op: StockChangeOp::Add,
                 material_slot: Some(MaterialSlot(1)),

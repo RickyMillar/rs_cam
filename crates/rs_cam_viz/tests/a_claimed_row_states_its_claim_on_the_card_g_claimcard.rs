@@ -87,7 +87,7 @@ const ANCHOR_ID: &str = "amana-tapered-hardwood-parallel-1000-2f-zrn-v8";
 const A4_LABEL: &str = "Wood, MDF, Sign-Foam (one printed row); hardwood is not printed apart";
 
 fn tapered_ball(tip_diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::TaperedBallNose);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     tool.name = "Claim card tapered ball".to_owned();
     tool.diameter = tip_diameter;
     tool.taper_half_angle = 5.7;
@@ -102,7 +102,7 @@ fn tapered_ball(tip_diameter: f64) -> ToolConfig {
 const CAP_ANCHOR_ID: &str = "amana-ball-hardwood-scallop-6000-2f";
 
 fn ball_nose(diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
     tool.name = "Cap card ball nose".to_owned();
     tool.diameter = diameter;
     tool.shaft_diameter = diameter;
@@ -121,7 +121,7 @@ const VBIT_KEY_TEXT: &str =
     "keyed at the printed angle 60 deg (the chart prints no cutting diameter)";
 
 fn vbit_60deg(diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::VBit);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
     tool.name = "Claim card V-bit".to_owned();
     tool.diameter = diameter;
     tool.flute_count = 2;
@@ -149,14 +149,14 @@ fn state_for(tool: ToolConfig, species: WoodSpecies, operation: OperationConfig)
     };
     let config = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Claim card fixture".to_owned(),
         enabled: true,
         operation,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -169,7 +169,7 @@ fn state_for(tool: ToolConfig, species: WoodSpecies, operation: OperationConfig)
         planner_origin: None,
     };
     let model = LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         path: PathBuf::from("claim_card_fixture.svg"),
         name: "Claim card fixture".to_owned(),
         kind: Some(ModelKind::Svg),

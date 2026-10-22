@@ -36,7 +36,7 @@ mod common;
 /// top at Z0. D3 deleted the public `pocket_toolpath` and
 /// `profile_toolpath` that this file called before.
 fn op_on(polygon: &Polygon2, op: OperationConfig, tool_diameter: f64) -> Toolpath {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = tool_diameter;
     let [min_x, min_y, max_x, max_y] = polygon.bbox();
     let stock = StockConfig {

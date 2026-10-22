@@ -172,7 +172,7 @@ fn dropped_diagnostic(diags: &[Diagnostic]) -> Option<&Diagnostic> {
 #[test]
 fn a_partly_clipped_band_is_measured_and_reported_everywhere() {
     let session = session_with(partly_clipping_heights());
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
 
     // Non-vacuity first: this arm must actually CUT, or it is testing the
     // Wave-D1 total-collapse case under a different name.
@@ -347,7 +347,7 @@ fn a_partly_clipped_band_is_measured_and_reported_everywhere() {
 #[test]
 fn fully_pinned_heights_clip_nothing_and_say_so() {
     let session = session_with(pinned_heights(0.0, -9.0));
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     assert!(
         result.stats.cutting_distance > 0.0,
         "control must actually cut, or it proves nothing"
@@ -390,7 +390,7 @@ fn a_totally_collapsed_band_is_dropped_not_clipped() {
         bottom_z: HeightMode::Manual(0.0),
         ..HeightsConfig::default()
     });
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
 
     assert!(
         result.stats.dropped_band.is_some(),
@@ -430,7 +430,7 @@ fn an_operation_with_no_bands_reports_not_measured() {
     );
     common::session::generate(&mut session, 0);
 
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     assert!(
         result.stats.clipped_band.is_none(),
         "a drop-cutter raster plans no bands: {:?}",

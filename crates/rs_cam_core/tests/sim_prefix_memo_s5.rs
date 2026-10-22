@@ -85,11 +85,11 @@ fn pass(pass_index: usize) -> Arc<AnnotatedToolpath> {
 fn entry(index: usize, annotated: &Arc<AnnotatedToolpath>) -> SimToolpathEntry {
     SimToolpathEntry {
         head: Default::default(),
-        id: ToolpathId(index + 1),
+        id: ToolpathId::from_raw(index + 1),
         name: format!("Pass{index}"),
         annotated: Arc::clone(annotated),
         tool: std::sync::Arc::new(tool()),
-        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+        tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,
@@ -671,35 +671,49 @@ fn phantom_prior_stock_is_rederived_not_restored() {
     // Round 1: three generated ops, with the pending rest op's phantom
     // snapshot taken before op index 1.
     let mut round1 = request(&chain, 3);
-    round1.groups[0].phantom_prior_stock = Some((1, ToolpathId(900)));
+    round1.groups[0].phantom_prior_stock = Some((1, ToolpathId::from_raw(900)));
     let r1 = run_memo(&round1, &mut cache, true);
-    assert!(r1.prior_stocks.contains_key(&ToolpathId(900)));
+    assert!(r1.prior_stocks.contains_key(&ToolpathId::from_raw(900)));
 
     // Round 2: the phantom has moved to a different position AND a different
     // id — exactly what a fixpoint round does.
     let mut round2 = request(&chain, 4);
-    round2.groups[0].phantom_prior_stock = Some((2, ToolpathId(901)));
+    round2.groups[0].phantom_prior_stock = Some((2, ToolpathId::from_raw(901)));
     let resumed = run_memo(&round2, &mut cache, true);
     assert_eq!(cache.stats().hits, 1, "the phantom must not block the hit");
     assert!(
-        !resumed.prior_stocks.contains_key(&ToolpathId(900)),
+        !resumed
+            .prior_stocks
+            .contains_key(&ToolpathId::from_raw(900)),
         "the previous round's phantom must not survive into this result"
     );
-    assert!(resumed.prior_stocks.contains_key(&ToolpathId(901)));
+    assert!(
+        resumed
+            .prior_stocks
+            .contains_key(&ToolpathId::from_raw(901))
+    );
     assert_eq!(fingerprint(&resumed), fingerprint(&run(&round2)));
 
     // And the tail position, which is where the fixpoint ladder actually puts
     // it: after every generated op in the group.
     let mut cache = SimPrefixCache::new();
     let mut round1 = request(&chain, 2);
-    round1.groups[0].phantom_prior_stock = Some((2, ToolpathId(910)));
+    round1.groups[0].phantom_prior_stock = Some((2, ToolpathId::from_raw(910)));
     let _ = run_memo(&round1, &mut cache, true);
     let mut round2 = request(&chain, 3);
-    round2.groups[0].phantom_prior_stock = Some((3, ToolpathId(911)));
+    round2.groups[0].phantom_prior_stock = Some((3, ToolpathId::from_raw(911)));
     let resumed = run_memo(&round2, &mut cache, true);
     assert_eq!(cache.stats().hits, 1);
-    assert!(!resumed.prior_stocks.contains_key(&ToolpathId(910)));
-    assert!(resumed.prior_stocks.contains_key(&ToolpathId(911)));
+    assert!(
+        !resumed
+            .prior_stocks
+            .contains_key(&ToolpathId::from_raw(910))
+    );
+    assert!(
+        resumed
+            .prior_stocks
+            .contains_key(&ToolpathId::from_raw(911))
+    );
     assert_eq!(fingerprint(&resumed), fingerprint(&run(&round2)));
 }
 
@@ -781,7 +795,7 @@ fn a_tail_phantom_on_an_earlier_group_refuses_the_hit() {
 
     let mut cache = SimPrefixCache::new();
     let _ = run_memo(&two_groups([2, 1], None), &mut cache, true);
-    let req = two_groups([2, 2], Some((2, ToolpathId(900))));
+    let req = two_groups([2, 2], Some((2, ToolpathId::from_raw(900))));
     let resumed = run_memo(&req, &mut cache, true);
     assert_eq!(cache.stats().hits, 0);
     assert_eq!(cache.stats().phantom_refusals, 1);
@@ -791,10 +805,14 @@ fn a_tail_phantom_on_an_earlier_group_refuses_the_hit() {
     // refusal above is a rule rather than a blanket.
     let mut cache = SimPrefixCache::new();
     let _ = run_memo(&two_groups([2, 1], None), &mut cache, true);
-    let req = two_groups([2, 2], Some((1, ToolpathId(901))));
+    let req = two_groups([2, 2], Some((1, ToolpathId::from_raw(901))));
     let resumed = run_memo(&req, &mut cache, true);
     assert_eq!(cache.stats().hits, 1);
-    assert!(resumed.prior_stocks.contains_key(&ToolpathId(901)));
+    assert!(
+        resumed
+            .prior_stocks
+            .contains_key(&ToolpathId::from_raw(901))
+    );
     assert_eq!(fingerprint(&resumed), fingerprint(&run(&req)));
 }
 
@@ -970,7 +988,7 @@ fn a_session_ladder_hits_the_memo_on_its_second_round() {
     );
     // A second op, so round two's request has round one's as a PREFIX —
     // which is the shape the memo answers.
-    let tool_id = session.list_tools()[0].id.0;
+    let tool_id = session.list_tools()[0].id.raw();
     let model_id = session.models()[0].id;
     let second = common::session::toolpath_config(
         "Pocket 2",
@@ -979,7 +997,7 @@ fn a_session_ladder_hits_the_memo_on_its_second_round() {
             depth_per_pass: 1.0,
             ..PocketConfig::default()
         }),
-        tool_id,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
     );
     let _ = session

@@ -62,7 +62,7 @@ fn hardwood() -> Material {
 }
 
 fn endmill(stickout: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = D_MM;
     tool.shaft_diameter = D_MM;
     tool.shank_diameter = D_MM;
@@ -248,7 +248,7 @@ fn the_dial_scales_the_engagement_and_holds_the_chip_fm7() {
         .iter()
         .find(|w| matches!(w, SuggestWarning::EngagementReducedForAggressiveness { .. }))
         .unwrap();
-    let finding = diagnostic_from_suggest_warning(ToolpathId(0), w).unwrap();
+    let finding = diagnostic_from_suggest_warning(ToolpathId::from_raw(0), w).unwrap();
     assert_eq!(finding.id.as_str(), ids::FEEDS_AGGRESSIVENESS_ENGAGEMENT);
     assert!(ids::ALL.contains(&ids::FEEDS_AGGRESSIVENESS_ENGAGEMENT));
     assert_eq!(finding.severity, Severity::Info);
@@ -314,7 +314,7 @@ fn above_one_the_engagement_rises_inside_the_clamps_fm7() {
             .is_some_and(|t| t.contains(AGGRESSIVENESS_ABOVE_BASE_TEXT))),
         "the Caution text must be on every row: {rows:?}"
     );
-    let finding = diagnostic_from_suggest_warning(ToolpathId(0), w).unwrap();
+    let finding = diagnostic_from_suggest_warning(ToolpathId::from_raw(0), w).unwrap();
     assert_eq!(finding.severity, Severity::Caution);
     // The feed does not move above 1.0 either.
     let full = pocket(1.0, SHORT_STICKOUT_MM);
@@ -339,7 +339,7 @@ fn a_finish_and_a_drill_get_no_dial_action_fm7() {
             continue;
         }
         for &tool_type in ToolType::ALL {
-            let mut tool = ToolConfig::new_default(ToolId(0), tool_type);
+            let mut tool = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
             // Ruling B5 (G6): a drill ships only through the drill claim (a
             // 2- or 3-flute flat end mill at 3.0-12.7 mm, widened
             // 2026-09-25). The drill cells use 6.0 mm. Before B5 the
@@ -641,7 +641,7 @@ fn no_warning_carries_half_a_pair_fm7() {
     let (mut cells, mut dial_records) = (0usize, 0usize);
     for &op in OperationType::ALL {
         for &tool_type in ToolType::ALL {
-            let tool = ToolConfig::new_default(ToolId(0), tool_type);
+            let tool = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
             for material in &materials {
                 let Some(s) = suggest(op, &tool, material, &m) else {
                     continue;

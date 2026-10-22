@@ -138,7 +138,7 @@ fn peck_retracts(tp: &Toolpath) -> Vec<usize> {
 #[test]
 fn no_rapid_in_an_entry_ends_in_stock() {
     let mut s = session(true);
-    let result = s.get_result(0).expect("result");
+    let result = s.result_at(0).expect("result");
     let tp = result.toolpath().clone();
     let spans = result.annotated().spans.clone();
 
@@ -191,7 +191,7 @@ fn no_rapid_in_an_entry_ends_in_stock() {
 #[test]
 fn a_peck_ladder_retract_is_followed_by_its_next_peck() {
     let s = session(true);
-    let tp = s.get_result(0).expect("result").toolpath().clone();
+    let tp = s.result_at(0).expect("result").toolpath().clone();
     let retracts = peck_retracts(&tp);
     assert!(!retracts.is_empty(), "no peck ladder in the fixture");
     for i in retracts {
@@ -215,8 +215,8 @@ fn a_peck_ladder_retract_is_followed_by_its_next_peck() {
 fn pinning_top_z_to_the_model_top_changes_nothing_on_a_fresh_rough() {
     let pinned = session(true);
     let auto = session(false);
-    let a = pinned.get_result(0).expect("pinned").toolpath();
-    let b = auto.get_result(0).expect("auto").toolpath();
+    let a = pinned.result_at(0).expect("pinned").toolpath();
+    let b = auto.result_at(0).expect("auto").toolpath();
     assert_eq!(a.moves.len(), b.moves.len(), "move counts differ");
     for (i, (ma, mb)) in a.moves.iter().zip(&b.moves).enumerate() {
         assert!(
@@ -278,7 +278,7 @@ fn the_fresh_split_target_is_the_stock_top_not_a_pinned_top() {
         },
     );
     common::session::generate(&mut s, 0);
-    let tp = s.get_result(0).expect("result").toolpath();
+    let tp = s.result_at(0).expect("result").toolpath();
     let targets = [
         TOP + PLUNGE_CLEARANCE_MM,
         TOP + rs_cam_core::dressup::ENTRY_CONTACT_CLEARANCE,

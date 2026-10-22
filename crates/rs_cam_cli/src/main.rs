@@ -649,8 +649,10 @@ fn main() -> Result<()> {
             spindle_strategy,
             sim_artifact,
         } => {
-            let skip_ids: Vec<rs_cam_core::ToolpathId> =
-                skip.into_iter().map(rs_cam_core::ToolpathId).collect();
+            let skip_ids: Vec<rs_cam_core::ToolpathId> = skip
+                .into_iter()
+                .map(rs_cam_core::ToolpathId::from_wire)
+                .collect();
             project::run_project_command(
                 &input,
                 &output_dir,

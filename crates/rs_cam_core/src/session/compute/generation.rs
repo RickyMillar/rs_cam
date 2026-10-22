@@ -8,7 +8,6 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use crate::compute::tool_config::ToolId;
 use crate::geo::BoundingBox3;
 use crate::session::{ProjectSession, SessionError};
 use crate::trace::semantic_trace::{SemanticKey, ToolpathSemanticKind};
@@ -53,8 +52,8 @@ impl ProjectSession {
             .ok_or(SessionError::ToolpathNotFound(index))?;
 
         let tool = self
-            .find_tool_by_raw_id(tc.tool_id)
-            .ok_or(SessionError::ToolNotFound(ToolId(tc.tool_id)))?
+            .tool_by_id(tc.tool_id)
+            .ok_or(SessionError::ToolNotFound(tc.tool_id))?
             .clone();
 
         // P2.4: the model by its EXACT id. A toolpath whose model id names
@@ -665,9 +664,9 @@ impl ProjectSession {
                     continue;
                 }
                 SourceRef::ToolpathModel => tc.model_id,
-                SourceRef::Model(id) => id.0,
+                SourceRef::Model(id) => id,
             };
-            let name = match self.find_model_by_raw_id(id) {
+            let name = match self.model_by_id(id) {
                 Some(model) => match &model.load_error {
                     Some(error) => {
                         format!("model '{}' (id {id}, it did not load: {error})", model.name)

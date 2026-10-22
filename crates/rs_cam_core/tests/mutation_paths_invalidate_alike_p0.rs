@@ -154,14 +154,14 @@ fn tc(
 ) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -177,7 +177,7 @@ fn tc(
 
 fn empty_model(name: &str) -> LoadedModel {
     LoadedModel {
-        id: 0, // overwritten by `add_model`
+        id: rs_cam_core::ids::ModelId::from_raw(0), // overwritten by `add_model`
         name: name.to_owned(),
         mesh: None,
         items: Default::default(),
@@ -212,7 +212,7 @@ fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
 /// `insert_result` was the public door before WP3. A completion now
 /// carries the revision the lane started from.
 fn adopt(s: &mut ProjectSession, index: usize) {
-    let revision = s.toolpath_revision(index);
+    let revision = s.toolpath_revision_at(index);
     let _ = s
         .apply(Command::AdoptResult(AdoptResultArgs {
             index,
@@ -232,17 +232,20 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 /// Both rows carry a cached result before the caller edits anything.
 fn fixture(upstream: OperationConfig) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
     builder.add_model(empty_model("part.svg"));
-    let tool = builder.tools()[0].id.0;
+    let tool = builder.tools()[0].id.raw();
     let model = builder.models()[0].id;
-    let upstream_tc = tc("upstream", upstream, StockSource::Fresh, tool, model);
+    let upstream_tc = tc("upstream", upstream, StockSource::Fresh, tool, model.raw());
     let downstream_tc = tc(
         "downstream",
         OperationConfig::Pocket(PocketConfig::default()),
         StockSource::FromRemainingStock,
         tool,
-        model,
+        model.raw(),
     );
     let _ = builder.add_toolpath(0, upstream_tc).unwrap();
     let _ = builder.add_toolpath(0, downstream_tc).unwrap();
@@ -271,12 +274,18 @@ fn pocket() -> OperationConfig {
 /// reaches index 1.
 fn fixture_split_inputs() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    builder.add_tool(ToolConfig::new_default(ToolId(1), ToolType::BallNose));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(1),
+        ToolType::BallNose,
+    ));
     builder.add_model(empty_model("part.svg"));
     builder.add_model(empty_model("other.svg"));
-    let upstream_tool = builder.tools()[0].id.0;
-    let downstream_tool = builder.tools()[1].id.0;
+    let upstream_tool = builder.tools()[0].id.raw();
+    let downstream_tool = builder.tools()[1].id.raw();
     let upstream_model = builder.models()[0].id;
     let downstream_model = builder.models()[1].id;
     let upstream_tc = tc(
@@ -284,14 +293,14 @@ fn fixture_split_inputs() -> ProjectSession {
         pocket(),
         StockSource::Fresh,
         upstream_tool,
-        upstream_model,
+        upstream_model.raw(),
     );
     let downstream_tc = tc(
         "downstream",
         OperationConfig::Pocket(PocketConfig::default()),
         StockSource::FromRemainingStock,
         downstream_tool,
-        downstream_model,
+        downstream_model.raw(),
     );
     let _ = builder.add_toolpath(0, upstream_tc).unwrap();
     let _ = builder.add_toolpath(0, downstream_tc).unwrap();
@@ -358,11 +367,11 @@ fn arm_adopt_model() -> Observation {
 /// on the upstream one.
 fn assert_fixture_is_live(s: &ProjectSession) {
     assert!(
-        s.get_result(0).is_some(),
+        s.result_at(0).is_some(),
         "index 0 must carry a cached result before the edit"
     );
     assert!(
-        s.get_result(1).is_some(),
+        s.result_at(1).is_some(),
         "index 1 must carry a cached result before the edit"
     );
     assert!(
@@ -377,7 +386,7 @@ fn assert_fixture_is_live(s: &ProjectSession) {
         "a disabled row takes another branch in invalidate_output_dependents"
     );
     assert_eq!(
-        s.list_setups()[0].toolpath_indices,
+        s.list_setups()[0].toolpath_indices(),
         vec![0, 1],
         "FromRemainingStock carries no upstream pointer. The binding is \
          plan order inside one setup."
@@ -399,7 +408,7 @@ struct Observation {
 
 fn revisions(s: &ProjectSession) -> Vec<u64> {
     (0..s.toolpath_count())
-        .map(|i| s.toolpath_revision(i))
+        .map(|i| s.toolpath_revision_at(i))
         .collect()
 }
 
@@ -407,10 +416,10 @@ fn observe(s: &ProjectSession, before: &[u64]) -> Observation {
     let mut dropped = BTreeSet::new();
     let mut bumped = BTreeSet::new();
     for i in 0..s.toolpath_count() {
-        if s.get_result(i).is_none() {
+        if s.result_at(i).is_none() {
             dropped.insert(i);
         }
-        if before.get(i).copied() != Some(s.toolpath_revision(i)) {
+        if before.get(i).copied() != Some(s.toolpath_revision_at(i)) {
             bumped.insert(i);
         }
     }
@@ -506,7 +515,7 @@ fn arm_replace_config() -> Observation {
     let id = s.toolpath_configs()[0].id;
     let mut op = s.toolpath_configs()[0].operation.clone();
     op.set_feed_rate(EDITED_FEED_RATE);
-    let mut edited = tc("upstream", op, StockSource::Fresh, tool, model);
+    let mut edited = tc("upstream", op, StockSource::Fresh, tool.raw(), model.raw());
     edited.id = id;
     let _ = s
         .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
@@ -720,7 +729,7 @@ fn n15_apply_reports_the_set_the_setter_dropped() {
     );
     assert_eq!(
         effects.revision,
-        Some(s.toolpath_revision(0)),
+        Some(s.toolpath_revision_at(0)),
         "Effects::revision names the edited toolpath's own revision. \
          It is `Some` because the command names one toolpath that still \
          sits at that index."

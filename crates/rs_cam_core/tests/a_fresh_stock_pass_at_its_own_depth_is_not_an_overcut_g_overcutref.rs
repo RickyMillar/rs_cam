@@ -42,7 +42,7 @@ use rs_cam_core::stock::simulation_cut::{Engagement, SimulationCutSample, Simula
 use rs_cam_core::toolpath::MoveIntent;
 
 /// The toolpath of every hand-built trace here.
-const TP: ToolpathId = ToolpathId(1);
+const TP: ToolpathId = ToolpathId::from_raw(1);
 
 /// The realised step of the measured pocket: 22 mm at a requested 0.8148 mm
 /// is `22 / ceil(22 / 0.8148)` = 22 / 27.

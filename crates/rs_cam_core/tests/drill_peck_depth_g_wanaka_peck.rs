@@ -125,9 +125,14 @@ fn fed_descent_lengths(session: &mut ProjectSession, index: usize) -> Vec<f64> {
 fn drill_session(op: OperationConfig) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(plate_model());
-    let mut tc = toolpath_config("Drill", op, tool_id, model_id);
+    let mut tc = toolpath_config(
+        "Drill",
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     // ISOLATE THE VARIABLE: this sentry measures the peck schedule, and it
     // reads each descent's length off the move that parked the tool. Every
     // dressup that can insert, merge or reorder moves is therefore pinned

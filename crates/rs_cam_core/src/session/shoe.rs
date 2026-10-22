@@ -27,7 +27,7 @@ pub struct ShoePlanRow {
     /// The toolpath name.
     pub toolpath_name: String,
     /// The raw tool id of the toolpath.
-    pub tool_id: usize,
+    pub tool_id: ToolId,
     /// The first toolpath of its run: a tool change, a setup start, or a
     /// change of the shoe setting.
     pub run_start: bool,
@@ -147,8 +147,8 @@ impl ProjectSession {
                 };
                 let setting = first.shoe;
                 let tool = self
-                    .find_tool_by_raw_id(first.tool_id)
-                    .ok_or(SessionError::ToolNotFound(ToolId(first.tool_id)))?;
+                    .tool_by_id(first.tool_id)
+                    .ok_or(SessionError::ToolNotFound(first.tool_id))?;
                 let solution = match setting {
                     ShoeSetting::Raised | ShoeSetting::Off => None,
                     ShoeSetting::Auto | ShoeSetting::Gap { .. } => {

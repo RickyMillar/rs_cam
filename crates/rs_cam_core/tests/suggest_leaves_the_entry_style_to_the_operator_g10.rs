@@ -43,7 +43,7 @@ use rs_cam_core::material::{Material, WoodSpecies};
 const DPP_MM: f64 = 3.69;
 
 fn tool() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.stickout = 30.0;

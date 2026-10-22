@@ -169,7 +169,7 @@ fn cascade_session(tool: ToolConfig, rest_claims: RestArm) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
     builder = builder.stock(stock_over(HALF, STOCK_Z));
     let tool_idx = builder.add_tool(tool);
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(mesh_model(bumpy_surface(), "bumps"));
     let mut session = builder.build();
 
@@ -181,7 +181,7 @@ fn cascade_session(tool: ToolConfig, rest_claims: RestArm) -> ProjectSession {
     let mut finish = toolpath_config(
         "Finish (all-over)",
         OperationConfig::UnifiedFinish(unified_cfg(None)),
-        tool_id,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
     );
     finish.heights = heights.clone();
@@ -195,7 +195,7 @@ fn cascade_session(tool: ToolConfig, rest_claims: RestArm) -> ProjectSession {
     let mut rest = toolpath_config(
         "Rest (same tool)",
         OperationConfig::UnifiedFinish(unified_cfg(Some(rest_claims))),
-        tool_id,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
     );
     rest.heights = heights;
@@ -250,8 +250,8 @@ fn run_cascade(tool: ToolConfig, sim_resolution: f64, rest_claims: RestArm) -> C
         .expect("simulation of the finish pass");
     generate(&mut session, 1);
 
-    let finish = session.get_result(0).expect("finish result");
-    let rest = session.get_result(1).expect("rest result");
+    let finish = session.result_at(0).expect("finish result");
+    let rest = session.result_at(1).expect("rest result");
     CascadeRun {
         finish_cutting_mm: finish.stats.cutting_distance,
         rest_cutting_mm: rest.stats.cutting_distance,
@@ -493,7 +493,7 @@ fn auto_over_fresh_stock_resolves_to_self_probe_and_says_so() {
     generate(&mut session, 1);
 
     let finding = session
-        .get_result(1)
+        .result_at(1)
         .expect("rest result")
         .stats
         .claims_reference
@@ -530,7 +530,7 @@ fn an_operation_without_claims_records_no_resolution() {
     generate(&mut session, 0);
     assert!(
         session
-            .get_result(0)
+            .result_at(0)
             .expect("finish result")
             .stats
             .claims_reference
@@ -547,8 +547,8 @@ fn generation_diagnostics(
     index: usize,
 ) -> Vec<rs_cam_core::diagnostics::Diagnostic> {
     rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation(
-        rs_cam_core::ids::ToolpathId(index),
-        &session.get_result(index).expect("result").stats,
+        rs_cam_core::ids::ToolpathId::from_raw(index),
+        &session.result_at(index).expect("result").stats,
     )
 }
 
@@ -694,7 +694,7 @@ fn pinning_machined_stock_without_a_prior_is_reported_not_swallowed() {
     generate(&mut session, 1);
 
     let finding = session
-        .get_result(1)
+        .result_at(1)
         .expect("rest result")
         .stats
         .claims_reference

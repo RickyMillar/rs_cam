@@ -93,7 +93,7 @@ fn wood_materials() -> [(&'static str, MaterialFamily, Material); 4] {
 /// type a diameter that the LUT carries: Ø6.35 end mill and ball nose,
 /// Ø12.7 bull nose and V-bit, Ø3.175 tapered ball nose.
 fn tool(tool_type: ToolType) -> ToolConfig {
-    ToolConfig::new_default(ToolId(0), tool_type)
+    ToolConfig::new_default(ToolId::from_raw(0), tool_type)
 }
 
 /// One resolved cell.

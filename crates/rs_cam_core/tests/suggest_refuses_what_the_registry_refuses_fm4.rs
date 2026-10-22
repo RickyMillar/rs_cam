@@ -41,7 +41,7 @@ fn tool_of(kind: ToolType) -> ToolConfig {
         ToolType::TaperedBallNose => 3.175,
         _ => 6.35,
     };
-    let mut t = ToolConfig::new_default(ToolId(1), kind);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;
     t.flute_count = 2;
     t.cutting_length = (diameter * 3.0).max(12.0);

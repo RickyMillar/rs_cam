@@ -62,7 +62,7 @@ fn tapered_ball_tool() -> ToolConfig {
         diameter: 1.5,
         taper_half_angle: 10.0,
         shaft_diameter: 6.0,
-        ..ToolConfig::new_default(ToolId(2), ToolType::TaperedBallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(2), ToolType::TaperedBallNose)
     }
 }
 

@@ -705,7 +705,7 @@ M3 S{spindle_rpm}
                     pre_gcode: None,
                     post_gcode: None,
                     tool: Some(PhaseTool {
-                        id: 1,
+                        id: crate::ids::ToolId::from_raw(1),
                         number: 1,
                         label: "Tool One",
                     }),
@@ -725,7 +725,7 @@ M3 S{spindle_rpm}
                     pre_gcode: None,
                     post_gcode: None,
                     tool: Some(PhaseTool {
-                        id: 1,
+                        id: crate::ids::ToolId::from_raw(1),
                         number: 1,
                         label: "Tool One",
                     }),
@@ -998,7 +998,7 @@ M3 S{spindle_rpm}
             pre_gcode: None,
             post_gcode: None,
             tool: Some(PhaseTool {
-                id: 7,
+                id: crate::ids::ToolId::from_raw(7),
                 number: 3,
                 label: "End Mill 6mm",
             }),

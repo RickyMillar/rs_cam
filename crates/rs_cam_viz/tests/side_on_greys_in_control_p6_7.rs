@@ -122,7 +122,7 @@ fn on_the_line_sets_in_computer_in_one_command_p6_7() {
     let ctx = h::ctx();
     let mut state = profile(ProfileSide::Outside, CompensationType::InControl);
     let _ = h::render(&ctx, &mut state, h::RAIL_WIDTH);
-    let before = state.session().toolpath_revision(0);
+    let before = state.session().toolpath_revision_at(0);
     let _ = h::click(&ctx, &mut state, "Outside", 0);
     let _ = h::click(&ctx, &mut state, "On the line", 0);
     let cfg = stored_profile(&state);
@@ -133,7 +133,7 @@ fn on_the_line_sets_in_computer_in_one_command_p6_7() {
         "the pick of On under In Control must set In Computer, or the door refuses the pair"
     );
     assert_eq!(
-        state.session().toolpath_revision(0) - before,
+        state.session().toolpath_revision_at(0) - before,
         1,
         "the side and the compensation go in ONE command"
     );

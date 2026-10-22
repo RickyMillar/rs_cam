@@ -6,7 +6,7 @@
 
 use tracing::instrument;
 
-use crate::compute::tool_config::{ToolConfig, ToolId};
+use crate::compute::tool_config::ToolConfig;
 use crate::session::{ProjectEvidence, ProjectSession, SessionError};
 use crate::stock::simulation_cut::SimulationCutTrace;
 
@@ -142,7 +142,7 @@ impl ProjectSession {
                 if !tc.enabled {
                     return None;
                 }
-                let result = self.get_result(idx)?;
+                let result = self.result_at(idx)?;
                 let shift = crate::gcode::export_datum_shift_for_toolpath(self, idx);
                 Some((
                     idx,
@@ -164,9 +164,9 @@ impl ProjectSession {
                 let tool = self
                     .tools()
                     .iter()
-                    .find(|t| t.id.0 == tc.tool_id)
+                    .find(|t| t.id == tc.tool_id)
                     .map(|t| PhaseTool {
-                        id: t.id.0,
+                        id: t.id,
                         number: t.tool_number,
                         label: t.name.as_str(),
                     });
@@ -248,10 +248,10 @@ impl ProjectSession {
         index: usize,
     ) -> Option<crate::tool_load::LoadContextParts<'_>> {
         let tc = self.toolpath_configs.get(index)?;
-        let tool_cfg = self.get_tool(ToolId(tc.tool_id))?;
+        let tool_cfg = self.tool_by_id(tc.tool_id)?;
         let tool = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
         let (family, pass_role) = tc.operation.feeds_style();
-        let result = self.get_result(index);
+        let result = self.result_at(index);
         Some(crate::tool_load::LoadContextParts {
             toolpath_id: tc.id,
             tool,
@@ -320,8 +320,8 @@ impl ProjectSession {
             .get(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
         let tool = self
-            .find_tool_by_raw_id(tc.tool_id)
-            .ok_or(SessionError::ToolNotFound(ToolId(tc.tool_id)))?;
+            .tool_by_id(tc.tool_id)
+            .ok_or(SessionError::ToolNotFound(tc.tool_id))?;
         let stale_defaults = crate::compute::validate::validate_one_toolpath(
             tc,
             Some(tool),
@@ -658,7 +658,7 @@ impl ProjectSession {
             return false;
         }
         (0..self.toolpath_count()).all(|index| {
-            self.get_toolpath_config(index).is_none_or(|tc| !tc.enabled)
+            self.toolpath_config_at(index).is_none_or(|tc| !tc.enabled)
                 || self.sim_trace_is_fresh_for(trace, index)
         })
     }
@@ -673,7 +673,7 @@ impl ProjectSession {
     /// configuration has not moved since. A config-hash entry that is missing
     /// (a pre-PR-4 trace) reads as a match, as before.
     pub fn sim_trace_is_fresh_for(&self, trace: &SimulationCutTrace, index: usize) -> bool {
-        let Some(tc) = self.get_toolpath_config(index) else {
+        let Some(tc) = self.toolpath_config_at(index) else {
             return false;
         };
         let Some(provenance) = trace.provenance.as_ref() else {
@@ -681,7 +681,7 @@ impl ProjectSession {
         };
         // A toolpath with no core result was not simulated: the trace covers
         // fewer toolpaths than the project now holds.
-        let Some(result) = self.get_result(index) else {
+        let Some(result) = self.result_at(index) else {
             return false;
         };
         let Some(expected) = provenance.toolpath_hashes.get(&tc.id) else {

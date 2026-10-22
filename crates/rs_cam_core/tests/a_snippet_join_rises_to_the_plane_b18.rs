@@ -73,7 +73,7 @@ fn plane() -> f64 {
 fn session(clamp: bool) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock_under(HALF, DEPTH));
     let tool_idx = builder.add_tool(endmill_tool_config(6.0));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     for (name, x0, x1) in [("Left", -20.0, -10.0), ("Right", 10.0, 20.0)] {
         let model_id = builder.add_model(common::session::polygon_model(
             vec![Polygon2::rectangle(x0, -5.0, x1, 5.0)],
@@ -84,7 +84,12 @@ fn session(clamp: bool) -> ProjectSession {
             depth_per_pass: 1.0,
             ..TraceConfig::default()
         });
-        let mut cfg = toolpath_config(name, op, tool_id, model_id);
+        let mut cfg = toolpath_config(
+            name,
+            op,
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
+            model_id,
+        );
         cfg.heights = HeightsConfig {
             retract_z: HeightMode::Manual(MANUAL_RETRACT),
             clearance_z: HeightMode::Manual(MANUAL_RETRACT + 2.0),
@@ -101,7 +106,7 @@ fn session(clamp: bool) -> ProjectSession {
             .apply(Command::AddObstacle(AddObstacleArgs {
                 setup_index: 0,
                 obstacle: Box::new(Obstacle {
-                    id: ObstacleId(0),
+                    id: ObstacleId::from_raw(0),
                     name: "Middle clamp".to_owned(),
                     enabled: true,
                     clearance: CLEARANCE,

@@ -77,7 +77,7 @@ fn tapered_ball_tool() -> ToolConfig {
         diameter: 1.0,
         taper_half_angle: 7.0,
         shaft_diameter: 6.0,
-        ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
     }
 }
 
@@ -114,7 +114,7 @@ fn two_groove_plateau() -> TriangleMesh {
 
 fn mesh_model(mesh: TriangleMesh) -> LoadedModel {
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "two_groove_plateau".to_owned(),
         mesh: Some(Arc::new(mesh)),
         items: Default::default(),
@@ -162,7 +162,7 @@ fn toolpath(cfg: UnifiedFinishConfig, tool_id: usize, model_id: usize) -> Toolpa
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Unified Finish".to_owned(),
         enabled: true,
         operation: op,
@@ -172,8 +172,8 @@ fn toolpath(cfg: UnifiedFinishConfig, tool_id: usize, model_id: usize) -> Toolpa
             bottom_z: HeightMode::Manual(-9.0),
             ..HeightsConfig::default()
         },
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -190,10 +190,10 @@ fn toolpath(cfg: UnifiedFinishConfig, tool_id: usize, model_id: usize) -> Toolpa
 fn session_with(cfg: UnifiedFinishConfig) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(tapered_ball_tool());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(mesh_model(two_groove_plateau()));
     let _ = builder
-        .add_toolpath(0, toolpath(cfg, tool_id, model_id))
+        .add_toolpath(0, toolpath(cfg, tool_id, model_id.raw()))
         .expect("add unified-finish toolpath");
     let mut session = builder.build();
     let cancel = AtomicBool::new(false);
@@ -207,7 +207,7 @@ fn session_with(cfg: UnifiedFinishConfig) -> ProjectSession {
 /// arm. `Move` derives `Debug` and no `PartialEq`, so this is the available
 /// exact comparison — target, move type and intent, every move, in order.
 fn emitted_motion(session: &ProjectSession) -> String {
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     format!("{:?}", result.annotated().toolpath.moves)
 }
 
@@ -226,7 +226,7 @@ fn reports_when_the_dial_is_set_and_territory_clip_is_off() {
     });
 
     // (a) The typed channel.
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     let finding = result
         .stats
         .inert_claims_dial
@@ -281,7 +281,7 @@ fn reports_when_the_dial_is_set_and_territory_clip_is_off() {
 #[test]
 fn the_shipped_defaults_are_silent() {
     let session = session_with(base_config());
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     assert!(
         result.stats.inert_claims_dial.is_none(),
         "an untouched claims block has nothing to report: {:?}",
@@ -309,7 +309,7 @@ fn territory_clip_on_reports_nothing_inert() {
         territory_clip: true,
         ..base_config()
     });
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     assert!(
         result.stats.inert_claims_dial.is_none(),
         "with the S4 mask-AND enabled the dial is live — reporting it inert would be a lie: {:?}",
@@ -331,7 +331,7 @@ fn a_pinned_reference_is_only_inert_when_the_claims_pipeline_is_off() {
         territory_clip: false,
         ..base_config()
     });
-    let live_result = live.get_result(0).expect("generated result");
+    let live_result = live.result_at(0).expect("generated result");
     assert!(
         live_result.stats.inert_claims_dial.is_none(),
         "a running claims pipeline reads `claims_reference` — it is not inert"
@@ -344,7 +344,7 @@ fn a_pinned_reference_is_only_inert_when_the_claims_pipeline_is_off() {
         territory_clip: false,
         ..base_config()
     });
-    let dead_result = dead.get_result(0).expect("generated result");
+    let dead_result = dead.result_at(0).expect("generated result");
     let finding = dead_result
         .stats
         .inert_claims_dial
@@ -378,8 +378,8 @@ fn emission_is_untouched_by_the_dial_and_by_this_finding() {
     });
     let silent = session_with(base_config());
 
-    let a_result = reporting.get_result(0).expect("generated result");
-    let b_result = silent.get_result(0).expect("generated result");
+    let a_result = reporting.result_at(0).expect("generated result");
+    let b_result = silent.result_at(0).expect("generated result");
     assert!(
         a_result.stats.inert_claims_dial.is_some(),
         "the reporting arm must actually report, or this proves nothing"

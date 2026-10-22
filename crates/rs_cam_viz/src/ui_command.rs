@@ -87,8 +87,8 @@ pub(crate) type ToggleToolpathVisibilityArgs = ToolpathId;
 /// (geometry selection P4.D).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SetModelVisibilityArgs {
-    /// The raw model id.
-    pub model_id: usize,
+    /// The model id.
+    pub model_id: rs_cam_core::ids::ModelId,
     /// True to draw the model, false to hide it.
     pub visible: bool,
 }

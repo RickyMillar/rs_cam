@@ -218,8 +218,7 @@ fn chip_targets_for_session(
         if !tc.enabled {
             continue;
         }
-        let Some(tool_cfg) = session.get_tool(crate::compute::tool_config::ToolId(tc.tool_id))
-        else {
+        let Some(tool_cfg) = session.tool_by_id(tc.tool_id) else {
             continue;
         };
         if let Some(target) =
@@ -737,7 +736,7 @@ mod tests {
         operation_kind: OperationType,
     ) -> ToolpathLoadContext<'a> {
         ToolpathLoadContext {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             tool,
             material,
             operation_family: LutOperationFamily::Pocket,

@@ -161,7 +161,7 @@ impl ProjectSession {
             .tools
             .iter()
             .map(|t| ProjectToolSection {
-                id: Some(t.id.0),
+                id: Some(t.id),
                 name: t.name.clone(),
                 tool_type: t.tool_type.serde_token().to_owned(),
                 diameter: t.diameter,
@@ -254,7 +254,7 @@ impl ProjectSession {
                     xy_datum,
                     z_datum,
                     datum_notes,
-                    model_ids: s.model_ids.iter().map(|id| id.0).collect(),
+                    model_ids: s.model_ids.clone(),
                     obstacles: s.obstacles.clone(),
                     stock_changes: s.stock_changes.clone(),
                     toolpaths,
@@ -293,14 +293,14 @@ mod tests {
         use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
         ToolpathConfig {
             shoe: Default::default(),
-            id: ToolpathId(0),
+            id: ToolpathId::from_raw(0),
             name: "Test Op".to_owned(),
             enabled: true,
             operation: OperationConfig::Pocket(PocketConfig::default()),
             dressups: DressupConfig::default(),
             heights: HeightsConfig::default(),
-            tool_id,
-            model_id,
+            tool_id: crate::ids::ToolId::from_raw(tool_id),
+            model_id: crate::ids::ModelId::from_raw(model_id),
             pre_gcode: None,
             post_gcode: None,
             boundary: BoundaryConfig::default(),
@@ -361,7 +361,7 @@ mod tests {
     #[test]
     fn tool_round_trip() {
         let mut s = ProjectSession::new_empty();
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::BallNose);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
         tool.name = "2mm Ball".to_owned();
         tool.diameter = 2.0;
         tool.flute_count = 2;
@@ -386,7 +386,7 @@ mod tests {
     fn setup_with_obstacles_round_trips() {
         let mut s = ProjectSession::new_empty();
         let clamp = Obstacle {
-            id: ObstacleId(0),
+            id: ObstacleId::from_raw(0),
             name: "Clamp 1".to_owned(),
             enabled: true,
             clearance: 3.0,
@@ -397,7 +397,7 @@ mod tests {
         };
         let _ = s.add_obstacle(0, clamp.clone()).unwrap();
         let zone = Obstacle {
-            id: ObstacleId(1),
+            id: ObstacleId::from_raw(1),
             name: "Danger Zone".to_owned(),
             enabled: false,
             clearance: 0.0,
@@ -453,8 +453,11 @@ mod tests {
     #[test]
     fn every_retired_key_refuses_and_names_its_replacement_c1() {
         let mut s = ProjectSession::new_empty();
-        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-        let tool_id = s.tools()[0].id.0;
+        let _ = s.add_tool(ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ));
+        let tool_id = s.tools()[0].id.raw();
         let _ = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
         let path = temp_path("retired_keys_c1");
         s.save(&path).unwrap();
@@ -541,8 +544,11 @@ mod tests {
     fn the_machine_head_and_the_shoe_setting_round_trip_h1() {
         use crate::machine::head::{MachineHead, ShoeSetting, ShoeTravel};
         let mut s = ProjectSession::new_empty();
-        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-        let tool_id = s.tools()[0].id.0;
+        let _ = s.add_tool(ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ));
+        let tool_id = s.tools()[0].id.raw();
         let _ = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
         let path = temp_path("head_round_trip_h1");
         s.save(&path).unwrap();
@@ -601,8 +607,11 @@ mod tests {
     #[test]
     fn every_retired_key_in_a_file_is_named_in_one_refusal_c2() {
         let mut s = ProjectSession::new_empty();
-        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-        let tool_id = s.tools()[0].id.0;
+        let _ = s.add_tool(ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ));
+        let tool_id = s.tools()[0].id.raw();
         let _ = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
         let _ = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
         let path = temp_path("retired_keys_all_c2");
@@ -651,8 +660,11 @@ mod tests {
     #[test]
     fn a_toolpath_without_an_operation_table_refuses_c1() {
         let mut s = ProjectSession::new_empty();
-        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-        let tool_id = s.tools()[0].id.0;
+        let _ = s.add_tool(ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ));
+        let tool_id = s.tools()[0].id.raw();
         let mut tc = make_tc(tool_id, 0);
         tc.name = "Lonely".to_owned();
         let _ = s.add_toolpath(0, tc).unwrap();
@@ -684,8 +696,11 @@ mod tests {
     #[test]
     fn toolpath_round_trip() {
         let mut s = ProjectSession::new_empty();
-        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-        let tool_id = s.tools()[0].id.0;
+        let _ = s.add_tool(ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ));
+        let tool_id = s.tools()[0].id.raw();
 
         let mut tc = make_tc(tool_id, 0);
         tc.name = "My Pocket".to_owned();
@@ -731,8 +746,11 @@ mod tests {
     #[test]
     fn multi_setup_round_trip() {
         let mut s = ProjectSession::new_empty();
-        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-        let tool_id = s.tools()[0].id.0;
+        let _ = s.add_tool(ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ));
+        let tool_id = s.tools()[0].id.raw();
 
         let _ = s.add_setup("Bottom Setup".to_owned(), FaceUp::Bottom);
         assert_eq!(s.list_setups().len(), 2);
@@ -759,8 +777,11 @@ mod tests {
     #[test]
     fn setup_pause_message_round_trip() {
         let mut s = ProjectSession::new_empty();
-        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-        let tool_id = s.tools()[0].id.0;
+        let _ = s.add_tool(ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ));
+        let tool_id = s.tools()[0].id.raw();
         let _ = s.add_setup("Bottom Setup".to_owned(), FaceUp::Bottom);
         let _ = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
         let _ = s.add_toolpath(1, make_tc(tool_id, 0)).unwrap();
@@ -807,8 +828,11 @@ mod tests {
     #[test]
     fn toolpath_without_spindle_rpm_round_trip() {
         let mut s = ProjectSession::new_empty();
-        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-        let tool_id = s.tools()[0].id.0;
+        let _ = s.add_tool(ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ));
+        let tool_id = s.tools()[0].id.raw();
 
         let tc = make_tc(tool_id, 0);
         // sanity: default PocketConfig has no override
@@ -840,8 +864,11 @@ mod tests {
     #[test]
     fn toolpath_with_spindle_rpm_round_trip() {
         let mut s = ProjectSession::new_empty();
-        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-        let tool_id = s.tools()[0].id.0;
+        let _ = s.add_tool(ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ));
+        let tool_id = s.tools()[0].id.raw();
 
         let mut tc = make_tc(tool_id, 0);
         if let OperationConfig::Pocket(p) = &mut tc.operation {

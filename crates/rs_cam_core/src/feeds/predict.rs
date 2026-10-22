@@ -853,7 +853,7 @@ mod tests {
 
     fn carbide_endmill(diameter: f64, stickout: f64, cutting_length: f64) -> ToolConfig {
         ToolConfig {
-            id: ToolId(0),
+            id: ToolId::from_raw(0),
             name: "test endmill".to_owned(),
             size_units: None,
             tool_number: 1,

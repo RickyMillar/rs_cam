@@ -204,7 +204,7 @@ fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath 
     use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
     use std::sync::Arc;
 
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.35;
     let mut builder = ProjectSessionBuilder::new().stock(StockConfig {
         x: 60.0,
@@ -217,9 +217,9 @@ fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath 
         ..StockConfig::default()
     });
     let tool_idx = builder.add_tool(tool);
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "rect".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -249,7 +249,7 @@ fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath 
             0,
             ToolpathConfig {
                 shoe: Default::default(),
-                id: rs_cam_core::ToolpathId(0),
+                id: rs_cam_core::ToolpathId::from_raw(0),
                 name: "Pocket".to_owned(),
                 enabled: true,
                 operation,
@@ -257,7 +257,7 @@ fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath 
                     OperationType::Pocket,
                 ),
                 heights: rs_cam_core::compute::config::HeightsConfig::default(),
-                tool_id,
+                tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
                 model_id,
                 pre_gcode: None,
                 post_gcode: None,
@@ -277,7 +277,7 @@ fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath 
     session
         .generate_toolpath(0, &cancel)
         .expect("the pocket generates");
-    session.get_result(0).expect("a result").toolpath().clone()
+    session.result_at(0).expect("a result").toolpath().clone()
 }
 
 #[test]

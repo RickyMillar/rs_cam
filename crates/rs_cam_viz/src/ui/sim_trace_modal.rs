@@ -93,7 +93,7 @@ pub fn draw(
         .iter()
         .find(|boundary| boundary.id == toolpath_id)
         .map_or_else(
-            || format!("TP {}", toolpath_id.0 + 1),
+            || format!("TP {}", toolpath_id.raw() + 1),
             |boundary| boundary.name.clone(),
         );
     let title = format!("{} \u{00b7} {name} ({})", spec.title, spec.unit);

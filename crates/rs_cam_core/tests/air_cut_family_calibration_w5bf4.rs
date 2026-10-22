@@ -167,14 +167,14 @@ fn toolpath_config(
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::for_op(op_type),
         heights,
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -204,9 +204,7 @@ fn measure(family: &'static str, mut session: ProjectSession, cell_mm: f64) -> R
         .map_err(|e| format!("simulate: {e}"))?;
 
     let op = session.toolpath_configs()[0].operation.op_type();
-    let move_count = session
-        .get_result(0)
-        .map_or(0, |r| r.toolpath().moves.len());
+    let move_count = session.result_at(0).map_or(0, |r| r.toolpath().moves.len());
     let sim = session
         .simulation_result()
         .ok_or_else(|| "no simulation result".to_owned())?;
@@ -274,7 +272,7 @@ fn add_tool(
     diameter: f64,
     name: &str,
 ) -> usize {
-    let mut tool = ToolConfig::new_default(ToolId(0), kind);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), kind);
     tool.diameter = diameter;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -282,7 +280,7 @@ fn add_tool(
     tool.flute_count = 2;
     tool.name = name.to_owned();
     let idx = builder.add_tool(tool);
-    builder.tools()[idx].id.0
+    builder.tools()[idx].id.raw()
 }
 
 fn add_rect_polygon(builder: &mut ProjectSessionBuilder) -> usize {
@@ -292,8 +290,8 @@ fn add_rect_polygon(builder: &mut ProjectSessionBuilder) -> usize {
         P2::new(75.0, 55.0),
         P2::new(5.0, 55.0),
     ]);
-    builder.add_model(LoadedModel {
-        id: 0,
+    (builder.add_model(LoadedModel {
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "w5bf4_rect".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![poly])),
@@ -306,7 +304,8 @@ fn add_rect_polygon(builder: &mut ProjectSessionBuilder) -> usize {
         import_options: Default::default(),
         import_report: None,
         drawing: Default::default(),
-    })
+    }))
+    .raw()
 }
 
 /// A flat-stock session carrying exactly one 2D / 2.5D operation.
@@ -338,8 +337,8 @@ fn hemi_stock() -> StockConfig {
 }
 
 fn add_hemisphere(builder: &mut ProjectSessionBuilder) -> usize {
-    builder.add_model(LoadedModel {
-        id: 0,
+    (builder.add_model(LoadedModel {
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "w5bf4_hemisphere".to_owned(),
         mesh: Some(Arc::new(rs_cam_core::mesh::make_test_hemisphere(
             HEMI_RADIUS_MM,
@@ -355,7 +354,8 @@ fn add_hemisphere(builder: &mut ProjectSessionBuilder) -> usize {
         import_options: Default::default(),
         import_report: None,
         drawing: Default::default(),
-    })
+    }))
+    .raw()
 }
 
 /// A hemisphere session carrying exactly one surface operation.
@@ -406,7 +406,7 @@ fn plate_session(op: OperationConfig) -> ProjectSession {
     });
     let tool_id = add_tool(&mut builder, ToolType::BallNose, 6.0, "w5bf4 ball");
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "w5bf4_plate".to_owned(),
         mesh: Some(Arc::new(rs_cam_core::mesh::make_test_flat(PLATE_MM))),
         items: Default::default(),
@@ -427,7 +427,10 @@ fn plate_session(op: OperationConfig) -> ProjectSession {
     };
     let name = format!("{:?}", op.op_type());
     let _ = builder
-        .add_toolpath(0, toolpath_config(&name, op, tool_id, model_id, heights))
+        .add_toolpath(
+            0,
+            toolpath_config(&name, op, tool_id, model_id.raw(), heights),
+        )
         .expect("add toolpath");
     builder.build()
 }
@@ -451,7 +454,7 @@ fn project_curve_session(cell_note: &str) -> ProjectSession {
         P2::new(6.0, 3.0),
     ]);
     let curve_model_id = builder.add_model(LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         name: "w5bf4_river".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![curve])),
@@ -471,7 +474,7 @@ fn project_curve_session(cell_note: &str) -> ProjectSession {
         point_spacing: 0.4,
         feed_rate: 800.0,
         plunge_rate: 400.0,
-        surface_model_id: Some(rs_cam_core::ids::ModelId(surface_model_id)),
+        surface_model_id: Some(rs_cam_core::ids::ModelId::from_raw(surface_model_id)),
         spindle_rpm: Some(18_000),
         ..ProjectCurveConfig::default()
     });
@@ -482,7 +485,7 @@ fn project_curve_session(cell_note: &str) -> ProjectSession {
                 "ProjectCurve",
                 op,
                 tool_id,
-                curve_model_id,
+                curve_model_id.raw(),
                 HeightsConfig::default(),
             ),
         )

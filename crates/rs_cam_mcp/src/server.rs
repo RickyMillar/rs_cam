@@ -1652,7 +1652,7 @@ impl From<SourceRefParam> for rs_cam_core::selection::SourceRef {
     fn from(p: SourceRefParam) -> Self {
         match p {
             SourceRefParam::ToolpathModel => Self::ToolpathModel,
-            SourceRefParam::Model(id) => Self::Model(rs_cam_core::ids::ModelId(id)),
+            SourceRefParam::Model(id) => Self::Model(rs_cam_core::ids::ModelId::from_wire(id)),
             SourceRefParam::Stock => Self::Stock,
         }
     }
@@ -3064,7 +3064,7 @@ pub struct BuiltTool {
 pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
     let tool_type = ToolType::from(spec.tool_type);
 
-    let mut config = ToolConfig::new_default(ToolId(0), tool_type);
+    let mut config = ToolConfig::new_default(ToolId::placeholder(), tool_type);
     config.name = spec.name.clone();
     config.diameter = spec.diameter;
 
@@ -3541,7 +3541,7 @@ mod tests {
             vec![
                 rule(SourceRef::ToolpathModel, Filter::default()),
                 rule(
-                    SourceRef::Model(ModelId(3)),
+                    SourceRef::Model(ModelId::from_raw(3)),
                     Filter {
                         layers: vec!["CUT".into(), "TEXT".into()],
                         kinds: KindFilter::Only(vec![
@@ -3593,7 +3593,11 @@ mod tests {
                 ),
             ],
             vec![
-                key(SourceRef::Model(ModelId(3)), ItemKind::Circle, None),
+                key(
+                    SourceRef::Model(ModelId::from_raw(3)),
+                    ItemKind::Circle,
+                    None,
+                ),
                 key(SourceRef::ToolpathModel, ItemKind::Face, Some(7)),
             ],
             vec![key(SourceRef::Stock, ItemKind::Loop, None)],
@@ -3649,7 +3653,7 @@ mod tests {
                 path: key(SourceRef::ToolpathModel, 1.0),
             },
             DrawingEdit::MoveEndsTogether {
-                path: key(SourceRef::Model(ModelId(3)), 2.0),
+                path: key(SourceRef::Model(ModelId::from_raw(3)), 2.0),
             },
             DrawingEdit::JoinTwo {
                 a: key(SourceRef::ToolpathModel, 3.0),

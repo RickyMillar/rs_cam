@@ -105,7 +105,7 @@ fn half_engagement_sample(
     let chipload = WANAKA_FEED_PER_TOOTH_MM;
     let exposed = effective_chip_thickness_mm(cutter, WANAKA_AXIAL_DOC_MM, Some(arc), chipload, 2);
     SimulationCutSample {
-        toolpath_id: ToolpathId(tp_id),
+        toolpath_id: ToolpathId::from_raw(tp_id),
         move_index: idx,
         sample_index: idx,
         segment_time_s: 0.1,
@@ -420,7 +420,7 @@ fn gate_verdict_at(
     let tolerance = rs_cam_core::tool_load::ToleranceBands::default();
     chipload::evaluate(
         &rs_cam_core::tool_load::ToolpathLoadContext {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             tool: &wanaka_tool(),
             material: &material,
             operation_family: LutOperationFamily::Pocket,

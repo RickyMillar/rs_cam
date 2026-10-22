@@ -158,7 +158,7 @@ fn no_cascade_session() -> ProjectSession {
 
 fn measured(session: &ProjectSession) -> Option<f64> {
     session
-        .get_result(0)
+        .result_at(0)
         .expect("generated result")
         .stats
         .truncated_core_mm2
@@ -247,7 +247,7 @@ fn truncated_cascade_is_visible_on_every_surface() {
     );
     assert_eq!(d.category, rs_cam_core::diagnostics::Category::Geometry);
     assert!(
-        session.get_result(0).expect("result").stats.move_count > 0,
+        session.result_at(0).expect("result").stats.move_count > 0,
         "generation still succeeds — this is a report, not a rejection"
     );
 
@@ -256,7 +256,7 @@ fn truncated_cascade_is_visible_on_every_surface() {
     let summary = project
         .per_toolpath
         .iter()
-        .find(|t| t.toolpath_id == ToolpathId(0) || t.name == "Scallop")
+        .find(|t| t.toolpath_id == ToolpathId::from_raw(0) || t.name == "Scallop")
         .expect("per-toolpath summary");
     assert_eq!(
         summary.truncated_core_mm2,
@@ -410,7 +410,7 @@ fn the_old_key_still_loads_and_the_wire_emits_one_name() {
     let summary = project
         .per_toolpath
         .iter()
-        .find(|t| t.toolpath_id == ToolpathId(0))
+        .find(|t| t.toolpath_id == ToolpathId::from_raw(0))
         .expect("per-toolpath summary");
     let json = serde_json::to_value(summary).expect("summary serialises");
     assert_eq!(
@@ -451,7 +451,7 @@ fn the_untouched_standing_split_reaches_the_diagnostic_and_the_summary() {
     let mut session = truncated_cascade_session();
     generate(&mut session, 0);
 
-    let stats = &session.get_result(0).expect("result").stats;
+    let stats = &session.result_at(0).expect("result").stats;
     let untouched = stats
         .untouched_material_mm2
         .expect("wave 15 measured the hole-aware half on a truncated cascade");
@@ -488,7 +488,7 @@ fn the_untouched_standing_split_reaches_the_diagnostic_and_the_summary() {
     let summary = project
         .per_toolpath
         .iter()
-        .find(|t| t.toolpath_id == ToolpathId(0))
+        .find(|t| t.toolpath_id == ToolpathId::from_raw(0))
         .expect("per-toolpath summary");
     assert_eq!(
         summary.untouched_material_mm2,

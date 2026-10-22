@@ -78,7 +78,12 @@ fn pocket_with_floor(floor: Floor) -> OperationConfig {
 }
 
 fn tp(config: OperationConfig) -> ToolpathConfig {
-    toolpath_config("w6b", config, 0, 0)
+    toolpath_config(
+        "w6b",
+        config,
+        rs_cam_core::ids::ToolId::from_raw(0),
+        rs_cam_core::ids::ModelId::from_raw(0),
+    )
 }
 
 /// A session with one tool, one setup and one valid Pocket.

@@ -103,7 +103,7 @@ const DRILL_NOT_APPLICABLE: &str = "drill cycle — no continuous engagement";
 /// at a 1.2 mm cap.
 pub const DEXEL_DEPTH_RESOLUTION_MM: f64 = 1.0e-4;
 
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.0, op = ?ctx.operation_kind))]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.raw(), op = ?ctx.operation_kind))]
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> DepthVerdict {
     let &super::ToolpathLoadContext {
         toolpath_id,
@@ -327,7 +327,7 @@ mod tests {
     use crate::tool::{FlatEndmill, ToolDefinition};
     use crate::tool_load::{GateEnv, ToleranceBands, ToolpathLoadContext};
 
-    const TP: ToolpathId = ToolpathId(0);
+    const TP: ToolpathId = ToolpathId::from_raw(0);
 
     fn tool() -> ToolDefinition {
         ToolDefinition::new(

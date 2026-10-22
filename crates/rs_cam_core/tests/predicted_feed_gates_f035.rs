@@ -123,7 +123,7 @@ fn make_burn_fixture_tool() -> ToolDefinition {
 }
 
 fn make_endmill_6mm_tool_config() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -151,7 +151,7 @@ fn sample(
     radial_woc: f64,
 ) -> SimulationCutSample {
     SimulationCutSample {
-        toolpath_id: ToolpathId(toolpath_id),
+        toolpath_id: ToolpathId::from_raw(toolpath_id),
         move_index,
         sample_index: move_index,
         segment_time_s: 0.1,
@@ -209,7 +209,7 @@ fn evaluate_chipload_at(trace: &SimulationCutTrace, commanded_fpt: f64) -> Chipl
     let tolerance = ToleranceBands::default();
     chipload::evaluate(
         &rs_cam_core::tool_load::ToolpathLoadContext {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             tool: &tool,
             material: &material,
             operation_family: LutOperationFamily::Scallop,
@@ -371,11 +371,11 @@ fn build_as001_pocket_session(kinematics: Option<MachineKinematics>) -> ProjectS
     builder = builder.stock(stock);
 
     let tool_idx = builder.add_tool(make_endmill_6mm_tool_config());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     let polygon = rounded_rect_with_island();
     let model = LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "as001_pocket".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -411,13 +411,13 @@ fn build_as001_pocket_session(kinematics: Option<MachineKinematics>) -> ProjectS
     };
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(pocket),
         dressups: DressupConfig::for_op(OperationType::Pocket),
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,
@@ -588,7 +588,7 @@ fn flag_on_extends_existing_f024_test_invariants() {
     let verdict = report
         .per_toolpath
         .iter()
-        .find(|v| v.toolpath_id == ToolpathId(0))
+        .find(|v| v.toolpath_id == ToolpathId::from_raw(0))
         .expect("verdict for pocket toolpath");
     let peak_mm = match &verdict.deflection {
         DeflectionVerdict::Within { peak_mm, .. } | DeflectionVerdict::Exceeds { peak_mm, .. } => {

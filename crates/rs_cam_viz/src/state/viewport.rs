@@ -373,12 +373,12 @@ pub enum DrawingDraw {
     /// ([`vector_source_toolpath`]): it draws in the frame of that
     /// toolpath's setup, with the P4.4 state colours.
     Toolpath {
-        model_id: usize,
+        model_id: rs_cam_core::ids::ModelId,
         toolpath: ToolpathId,
     },
     /// A drawing that no drawn toolpath reads: it draws in the frame of
     /// the active setup, in the neutral colour (`colors::DRAWING_NEUTRAL`).
-    Neutral { model_id: usize },
+    Neutral { model_id: rs_cam_core::ids::ModelId },
 }
 
 /// The model drawings the viewport draws, in draw order (geometry

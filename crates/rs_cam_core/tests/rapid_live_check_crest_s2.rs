@@ -109,7 +109,7 @@ fn live_hits_metric(
             cutter,
             cutter.radius(),
             StockCutDirection::FromTop,
-            ToolpathId(0),
+            ToolpathId::from_raw(0),
             18_000,
             2,
             5000.0,

@@ -103,7 +103,7 @@ fn vbit(included_angle_deg: f64) -> ToolConfig {
     ToolConfig {
         diameter: 12.7,
         included_angle: included_angle_deg,
-        ..ToolConfig::new_default(ToolId(0), ToolType::VBit)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit)
     }
 }
 

@@ -2533,7 +2533,7 @@ impl ProjectSession {
 
         Ok(GenerateToolpathHandle {
             index,
-            revision: self.toolpath_revision(index),
+            revision: self.toolpath_revision_at(index),
             inputs,
             context,
         })

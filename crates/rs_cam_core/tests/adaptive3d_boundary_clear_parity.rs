@@ -365,7 +365,7 @@ fn measure(label: &str, strategy: ClearingStrategy3d, boundary: Option<&Polygon2
             &sim_path,
             &cutter,
             StockCutDirection::FromTop,
-            ToolpathId(0),
+            ToolpathId::from_raw(0),
             12_000,
             2,
             3000.0,

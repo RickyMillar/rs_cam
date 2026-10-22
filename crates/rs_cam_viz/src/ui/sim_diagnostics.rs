@@ -423,7 +423,7 @@ fn draw_focused_hotspot_card(
                         .color(crate::ui::tokens::CAUTION),
                 );
                 ui.label(
-                    egui::RichText::new(format!("TP {}", tp_id.0 + 1))
+                    egui::RichText::new(format!("TP {}", tp_id.raw() + 1))
                         .small()
                         .color(theme::TEXT_MUTED),
                 );
@@ -432,7 +432,7 @@ fn draw_focused_hotspot_card(
             // round 2). The move, the waste and the peak are the fields of
             // the canonical summary line (INS-004) that the Top-hotspots and
             // the Span-findings rows print.
-            DataTable::new(("hotspot_card", tp_id.0, move_start))
+            DataTable::new(("hotspot_card", tp_id.raw(), move_start))
                 .row(
                     DataRow::value("Moves", format!("{move_start}\u{2013}{move_end}"))
                         .hover(hotspot_summary_line(move_start, wasted, peak_chip)),
@@ -636,7 +636,7 @@ fn draw_warnings_tab(
             let metrics: std::collections::BTreeSet<&str> =
                 unmeasured.iter().map(|e| e.metric.label()).collect();
             let toolpaths: std::collections::BTreeSet<usize> =
-                unmeasured.iter().map(|e| e.toolpath_id.0).collect();
+                unmeasured.iter().map(|e| e.toolpath_id.raw()).collect();
             let reason = unmeasured
                 .first()
                 .and_then(|e| e.measurability.reason())
@@ -1790,7 +1790,7 @@ fn draw_cut_metrics_section(
     // all. Its cards say to regenerate it, because a re-run cannot help.
     let regenerate_first: Option<String> = session
         .find_toolpath_config_by_id(toolpath_id)
-        .filter(|(index, _)| session.get_result(*index).is_none())
+        .filter(|(index, _)| session.result_at(*index).is_none())
         .map(|(_, tc)| tc.name.clone());
     // A metric core could not measure is one row of the abstention table
     // after the charts, not a card of its own.
@@ -2798,7 +2798,7 @@ mod tests {
             UnmodeledReason::NotApplicableForOp("drill cycle — no continuous engagement".to_owned())
         };
         let verdict = ToolpathLoadVerdict {
-            toolpath_id: rs_cam_core::ToolpathId(0),
+            toolpath_id: rs_cam_core::ToolpathId::from_raw(0),
             chipload: ChiploadVerdict::Unmodeled { reason: na() },
             power: PowerVerdict::Unmodeled { reason: na() },
             deflection: DeflectionVerdict::Unmodeled { reason: na() },

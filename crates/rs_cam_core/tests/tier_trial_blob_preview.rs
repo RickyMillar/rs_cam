@@ -29,7 +29,7 @@ const R1_TOOL: usize = 6;
 const BOARD_MM2: f64 = 350.0 * 350.0;
 
 fn r3_ball() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(0), ToolType::BallNose);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
     t.name = "R3 6mm Ball Nose 2F (HYPOTHETICAL)".to_owned();
     t.diameter = 6.0;
     t.cutting_length = 25.0;
@@ -55,7 +55,7 @@ fn tier_trial_blob_preview() {
         .expect("add the R3 ball")
         .created
         .expect("the new tool index");
-    let r3 = session.tools()[created].id.0;
+    let r3 = session.tools()[created].id.raw();
     let cancel = AtomicBool::new(false);
 
     let tolerance: f64 = std::env::var("BLOB_TOLERANCE")
@@ -70,8 +70,11 @@ fn tier_trial_blob_preview() {
         for min_area in [None, Some(500.0), Some(2000.0)] {
             let mut spec = MultitoolPlanSpec {
                 setup_index: 0,
-                model_id: 1,
-                tool_ids: vec![r3, R1_TOOL],
+                model_id: rs_cam_core::ids::ModelId::from_raw(1),
+                tool_ids: vec![
+                    rs_cam_core::ids::ToolId::from_raw(r3),
+                    rs_cam_core::ids::ToolId::from_raw(R1_TOOL),
+                ],
                 tolerance_mm: tolerance,
                 cusp_height_mm: 0.03,
                 coarse_skips_fine_islands: true,

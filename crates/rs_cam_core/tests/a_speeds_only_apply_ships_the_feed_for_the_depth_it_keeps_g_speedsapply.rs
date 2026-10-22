@@ -67,7 +67,7 @@ const RIGIDITY_CAP_MM: f64 = 0.25 * 3.0;
 /// Tool 0 of the mini project: 3 mm, 2 flutes, 30 mm cut length and
 /// stick-out.
 fn mini_tool() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     tool.flute_count = 2;
     tool.cutting_length = 30.0;

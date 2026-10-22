@@ -78,7 +78,7 @@ use std::sync::atomic::AtomicBool;
 fn endmill_tool_config(diameter_mm: f64) -> ToolConfig {
     ToolConfig {
         diameter: diameter_mm,
-        ..ToolConfig::new_default(ToolId(0), ToolType::EndMill)
+        ..ToolConfig::new_default(ToolId::mint(0), ToolType::EndMill)
     }
 }
 

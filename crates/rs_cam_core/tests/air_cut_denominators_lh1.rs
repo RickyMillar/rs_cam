@@ -38,7 +38,7 @@ use rs_cam_core::stock::simulation_cut::{
 /// surface that shows one of these without saying which is lying by omission.
 fn retract_heavy_summary() -> SimulationToolpathCutSummary {
     SimulationToolpathCutSummary {
-        toolpath_id: ToolpathId(7),
+        toolpath_id: ToolpathId::from_raw(7),
         sample_count: 100,
         total_runtime_s: 100.0,
         cutting_runtime_s: 25.0,
@@ -180,9 +180,13 @@ fn narration_air_cut_line_names_its_denominators() {
         ..SimulationCutTrace::test_fixture()
     };
 
-    let tool = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill)).unwrap();
+    let tool = build_cutter(&ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ))
+    .unwrap();
     let context = ToolpathNarrationContext {
-        toolpath_id: Some(ToolpathId(7)),
+        toolpath_id: Some(ToolpathId::from_raw(7)),
         toolpath_name: Some("Back Rough"),
         operation_label: Some("adaptive3d"),
         operation_kind: Some(rs_cam_core::compute::catalog::OperationType::Adaptive3d),

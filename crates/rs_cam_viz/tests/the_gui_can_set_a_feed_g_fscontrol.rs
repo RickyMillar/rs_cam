@@ -68,7 +68,7 @@ fn ctx() -> egui::Context {
 }
 
 fn fixture() -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.flute_count = 2;
 
@@ -86,14 +86,14 @@ fn fixture() -> AppState {
     }
     let config = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Speed control fixture".to_owned(),
         enabled: true,
         operation,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -107,7 +107,7 @@ fn fixture() -> AppState {
     };
 
     let model = LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         path: PathBuf::from("speed_control_fixture.svg"),
         name: "Speed control fixture".to_owned(),
         kind: Some(ModelKind::Svg),

@@ -257,7 +257,7 @@ fn underpowered_machine() -> MachineProfile {
 }
 
 fn endmill() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = DIAMETER_MM;
     tool.flute_count = 2;
     tool

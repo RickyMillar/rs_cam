@@ -49,7 +49,7 @@ use rs_cam_core::tool_load::verdict::{
 };
 use rs_cam_core::tool_load::{GateEnv, ToleranceBands, ToolpathLoadContext};
 
-const TP: ToolpathId = ToolpathId(0);
+const TP: ToolpathId = ToolpathId::from_raw(0);
 /// The spindle speed every sample of the measured trace runs at. The
 /// power gate's ceiling is the rated curve `power_at_rpm(rpm)` (no fraction
 /// since ruling R4 Q2, 2026-09-24), so this

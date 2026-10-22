@@ -56,17 +56,20 @@ fn session_with_ladder() -> (ProjectSession, usize, usize, usize) {
     builder = builder.stock(common::session::stock_over(9.0, 12.0));
     let coarse_idx = builder.add_tool(ball_tool_config(4.0));
     let fine_idx = builder.add_tool(ball_tool_config(3.0));
-    let coarse_id = builder.tools()[coarse_idx].id.0;
-    let fine_id = builder.tools()[fine_idx].id.0;
+    let coarse_id = builder.tools()[coarse_idx].id.raw();
+    let fine_id = builder.tools()[fine_idx].id.raw();
     let model_id = builder.add_model(common::session::mesh_model(dome(), "dome"));
-    (builder.build(), coarse_id, fine_id, model_id)
+    (builder.build(), coarse_id, fine_id, model_id.raw())
 }
 
 fn spec(tool_ids: Vec<usize>, model_id: usize) -> MultitoolPlanSpec {
     MultitoolPlanSpec {
         setup_index: 0,
-        model_id,
-        tool_ids,
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
+        tool_ids: tool_ids
+            .into_iter()
+            .map(rs_cam_core::ids::ToolId::from_raw)
+            .collect(),
         ..MultitoolPlanSpec::default()
     }
 }
@@ -121,7 +124,7 @@ fn adopt_an_empty_simulation(session: &mut ProjectSession) {
 
 /// An empty generated result, adopted at the current revision.
 fn adopt_an_empty_result(session: &mut ProjectSession, index: usize) {
-    let revision = session.toolpath_revision(index);
+    let revision = session.toolpath_revision_at(index);
     let result = ToolpathComputeResult {
         op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(
             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
@@ -140,7 +143,7 @@ fn adopt_an_empty_result(session: &mut ProjectSession, index: usize) {
             result: Box::new(result),
         }))
         .expect("the adopt is at the current revision");
-    assert!(session.get_result(index).is_some());
+    assert!(session.result_at(index).is_some());
 }
 
 /// Claim 1.
@@ -193,8 +196,8 @@ fn a_re_plan_drops_the_regions_consumer_of_a_replaced_op() {
         ..common::session::toolpath_config(
             "Rest consumer",
             OperationConfig::UnifiedFinish(Default::default()),
-            fine_id,
-            model_id,
+            rs_cam_core::ids::ToolId::from_raw(fine_id),
+            rs_cam_core::ids::ModelId::from_raw(model_id),
         )
     };
     let consumer_index = session
@@ -214,7 +217,7 @@ fn a_re_plan_drops_the_regions_consumer_of_a_replaced_op() {
         .find_toolpath_config_by_id(consumer_id)
         .expect("the planner keeps a hand op");
     assert!(
-        session.get_result(consumer_index).is_none(),
+        session.result_at(consumer_index).is_none(),
         "the consumer clipped to regions of a removed op; its result must drop"
     );
     assert!(

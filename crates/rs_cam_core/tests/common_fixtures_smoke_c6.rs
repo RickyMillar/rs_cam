@@ -402,7 +402,7 @@ fn session_builders_drive_a_real_generation() {
         }),
     );
     generate(&mut session, 0);
-    let result = session.get_result(0).expect("a generated result");
+    let result = session.result_at(0).expect("a generated result");
     assert!(
         result.stats.move_count > 0,
         "the shared fixtures must produce a real toolpath, not an empty one"
@@ -437,13 +437,13 @@ fn session_builders_drive_a_real_generation() {
     );
     assert_eq!(
         pocket
-            .get_toolpath_config(0)
+            .toolpath_config_at(0)
             .expect("the tweaked config was added")
             .name,
         "Renamed By Tweak"
     );
     generate(&mut pocket, 0);
-    assert!(pocket.get_result(0).expect("result").stats.move_count > 0);
+    assert!(pocket.result_at(0).expect("result").stats.move_count > 0);
 
     // The struct-update override idiom the module documents.
     let cfg = rs_cam_core::session::ToolpathConfig {
@@ -453,8 +453,8 @@ fn session_builders_drive_a_real_generation() {
         ..toolpath_config(
             "Pinned",
             OperationConfig::Scallop(ScallopConfig::default()),
-            0,
-            0,
+            rs_cam_core::ids::ToolId::from_raw(0),
+            rs_cam_core::ids::ModelId::from_raw(0),
         )
     };
     assert!(!cfg.enabled);

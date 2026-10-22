@@ -292,7 +292,7 @@ fn probe_cell(session: &mut ProjectSession, index: usize, dpp: f64, stepover: f6
     ));
 
     let tp: Toolpath = session
-        .get_result(index)
+        .result_at(index)
         .expect("the result")
         .toolpath()
         .clone();
@@ -357,7 +357,7 @@ fn probe_cell(session: &mut ProjectSession, index: usize, dpp: f64, stepover: f6
         all.len(),
         sim.boundaries
             .iter()
-            .map(|b| (b.id.0, b.name.clone(), b.start_move, b.end_move))
+            .map(|b| (b.id.raw(), b.name.clone(), b.start_move, b.end_move))
             .collect::<Vec<_>>()
     ));
     let mine: Vec<_> = all
@@ -367,10 +367,7 @@ fn probe_cell(session: &mut ProjectSession, index: usize, dpp: f64, stepover: f6
         .collect();
     line(&format!("this toolpath's collisions: {}", mine.len()));
 
-    let tool_cfg = session
-        .get_tool(rs_cam_core::compute::ToolId(tc.tool_id))
-        .expect("the tool")
-        .clone();
+    let tool_cfg = session.tool_by_id(tc.tool_id).expect("the tool").clone();
     let cutter = build_cutter(&tool_cfg).unwrap();
     let radius = cutter.radius();
     let lut = RadialProfileLUT::from_cutter(&cutter, LUT_SAMPLES);
@@ -714,7 +711,7 @@ fn regen_with_the_simulation_standing(session: &mut ProjectSession, index: usize
         .generate_toolpath(index, &cancel)
         .expect("the toolpath regenerates");
     let tp: Toolpath = session
-        .get_result(index)
+        .result_at(index)
         .expect("the result")
         .toolpath()
         .clone();

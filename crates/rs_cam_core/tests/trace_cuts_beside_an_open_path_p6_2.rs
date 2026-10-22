@@ -104,9 +104,14 @@ fn fed_in_drawing(
 ) -> Vec<(P2, f64, MoveIntent)> {
     let mut builder = ProjectSessionBuilder::new().stock(board());
     let tool_idx = builder.add_tool(tool_for(OperationType::Trace));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(polygon_model(polygons, "p6_2_open_side"));
-    let mut cfg = toolpath_config("p6_2", trace(compensation), tool_id, model_id);
+    let mut cfg = toolpath_config(
+        "p6_2",
+        trace(compensation),
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     cfg.dressups = dressups;
     let setup = if face_up == FaceUp::Top {
         0
@@ -130,7 +135,7 @@ fn fed_in_drawing(
         }
     };
     session
-        .get_result(0)
+        .result_at(0)
         .expect("a generated op has a result")
         .toolpath()
         .moves

@@ -78,7 +78,7 @@ const STOCK_BOTTOM_Z: f64 = -18.0;
 fn flat_endmill() -> ToolConfig {
     ToolConfig {
         diameter: 6.0,
-        ..ToolConfig::new_default(ToolId(1), ToolType::EndMill)
+        ..ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill)
     }
 }
 
@@ -113,7 +113,7 @@ fn pocket(depth: f64) -> OperationConfig {
 }
 
 fn core_ids(op: &OperationConfig, h: &ResolvedHeights) -> Vec<String> {
-    diagnostics_from_static_checks(ToolpathId(1), op, &flat_endmill(), Some(h))
+    diagnostics_from_static_checks(ToolpathId::from_raw(1), op, &flat_endmill(), Some(h))
         .into_iter()
         .map(|d| d.id.as_str().to_owned())
         .collect()
@@ -279,9 +279,9 @@ fn pocket_session(depth: f64) -> ProjectSession {
         ..StockConfig::default()
     });
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "board".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -304,7 +304,7 @@ fn pocket_session(depth: f64) -> ProjectSession {
     });
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
@@ -327,7 +327,7 @@ fn pocket_session(depth: f64) -> ProjectSession {
         // Auto everywhere. The point is that the OPERATION's depth reaches
         // the caution with no Heights pin involved at all.
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,

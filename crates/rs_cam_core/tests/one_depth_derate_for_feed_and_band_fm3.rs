@@ -136,12 +136,12 @@ fn tool() -> ToolConfig {
     ToolConfig {
         diameter: D_MM,
         cutting_length: 60.0,
-        ..ToolConfig::new_default(ToolId(1), ToolType::EndMill)
+        ..ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill)
     }
 }
 
 fn beyond_table_severities(dpp: f64) -> Vec<Severity> {
-    diagnostics_from_static_checks(ToolpathId(1), &pocket(dpp), &tool(), None)
+    diagnostics_from_static_checks(ToolpathId::from_raw(1), &pocket(dpp), &tool(), None)
         .into_iter()
         .filter(|d| d.id.as_str() == ids::FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE)
         .map(|d| d.severity)

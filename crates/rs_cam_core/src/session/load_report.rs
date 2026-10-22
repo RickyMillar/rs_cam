@@ -85,7 +85,7 @@ impl LoadReportStamp {
 struct RowKey {
     id: crate::ids::ToolpathId,
     enabled: bool,
-    tool_id: usize,
+    tool_id: crate::ids::ToolId,
     operation: Vec<u8>,
     annotated: Option<Weak<AnnotatedToolpath>>,
     drill_op: Option<Weak<DrillOp>>,
@@ -100,7 +100,7 @@ struct RowKey {
 struct RowInputs<'a> {
     id: crate::ids::ToolpathId,
     enabled: bool,
-    tool_id: usize,
+    tool_id: crate::ids::ToolId,
     operation: &'a crate::compute::catalog::OperationConfig,
     annotated: Option<&'a Arc<AnnotatedToolpath>>,
     drill_op: Option<&'a Arc<DrillOp>>,
@@ -409,14 +409,14 @@ mod tests {
     fn pocket_config(tool_id: usize) -> ToolpathConfig {
         ToolpathConfig {
             shoe: Default::default(),
-            id: ToolpathId(0),
+            id: ToolpathId::from_raw(0),
             name: "memo".to_owned(),
             enabled: true,
             operation: OperationConfig::Pocket(PocketConfig::default()),
             dressups: DressupConfig::default(),
             heights: HeightsConfig::default(),
-            tool_id,
-            model_id: 0,
+            tool_id: crate::ids::ToolId::from_raw(tool_id),
+            model_id: crate::ids::ModelId::from_raw(0),
             pre_gcode: None,
             post_gcode: None,
             boundary: BoundaryConfig::default(),
@@ -461,7 +461,7 @@ mod tests {
     /// reads the row as fresh.
     fn fresh_trace(session: &ProjectSession) -> SimulationCutTrace {
         let tc = &session.toolpath_configs()[0];
-        let toolpath = session.get_result(0).unwrap().toolpath();
+        let toolpath = session.result_at(0).unwrap().toolpath();
         SimulationCutTrace {
             provenance: Some(SimulationProvenance {
                 trace_schema_version: 0,
@@ -479,8 +479,11 @@ mod tests {
 
     fn session() -> ProjectSession {
         let mut s = ProjectSession::new_empty();
-        let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-        let tool_id = s.tools()[0].id.0;
+        let _ = s.add_tool(ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ));
+        let tool_id = s.tools()[0].id.raw();
         let _ = s.add_toolpath(0, pocket_config(tool_id)).unwrap();
         s.insert_result(0, result_of(zigzag(1500.0))).unwrap();
         s
@@ -629,8 +632,8 @@ mod tests {
     fn the_triage_from_the_report_equals_the_fresh_triage() {
         let mut s = session();
         s.insert_result(0, result_of(plunges(1200.0))).unwrap();
-        for tool_id in [s.tools[0].id.0, 999] {
-            s.toolpath_configs[0].tool_id = tool_id;
+        for tool_id in [s.tools[0].id.raw(), 999] {
+            s.toolpath_configs[0].tool_id = crate::ids::ToolId::from_raw(tool_id);
             let trace = Arc::new(fresh_trace(&s));
             let evidence = crate::session::ProjectEvidence {
                 cut_trace: Some(trace.as_ref()),

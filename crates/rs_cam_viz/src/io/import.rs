@@ -19,7 +19,7 @@ use crate::state::job::LoadedModel;
 /// never resets the join tolerance to the default.
 pub fn import_model(
     path: &Path,
-    id: usize,
+    id: rs_cam_core::ids::ModelId,
     kind: ModelKind,
     units: ModelUnits,
     options: ImportOptions,

@@ -93,10 +93,15 @@ fn chain(rest_count: usize) -> ProjectSession {
         "Pocket",
         pocket_op(),
     );
-    let tool_id = session.tools()[0].id.0;
+    let tool_id = session.tools()[0].id.raw();
     let model_id = session.models()[0].id;
     for k in 0..rest_count {
-        let mut rest = toolpath_config(&format!("Rest {k}"), rest_op(k), tool_id, model_id);
+        let mut rest = toolpath_config(
+            &format!("Rest {k}"),
+            rest_op(k),
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
+            model_id,
+        );
         rest.stock_source = StockSource::FromRemainingStock;
         let _ = session
             .apply(Command::AddToolpath(AddToolpathArgs {
@@ -169,7 +174,7 @@ fn start_refusal(session: &mut ProjectSession, index: usize) -> Option<String> {
 /// half of moves. The shape M-A needs: the output moved, the revision did
 /// not.
 fn adopt_other_output(session: &mut ProjectSession, index: usize) {
-    let held = session.get_result(index).expect("a result to vary");
+    let held = session.result_at(index).expect("a result to vary");
     let mut toolpath = held.toolpath().clone();
     let keep = toolpath.moves.len() / 2;
     toolpath.moves.truncate(keep.max(2));
@@ -182,7 +187,7 @@ fn adopt_other_output(session: &mut ProjectSession, index: usize) {
         semantic_trace: None,
         provenance: rs_cam_core::session::ResultProvenance::Dressed,
     };
-    let revision = session.toolpath_revision(index);
+    let revision = session.toolpath_revision_at(index);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index,
@@ -206,7 +211,7 @@ fn a_rest_result_records_its_cell_and_drops_when_the_cell_changes() {
     let rest_id = session.toolpath_configs()[1].id;
 
     let source = session
-        .get_result(1)
+        .result_at(1)
         .expect("the rest op generated")
         .stats
         .source_stock
@@ -229,7 +234,7 @@ fn a_rest_result_records_its_cell_and_drops_when_the_cell_changes() {
     assert_eq!(simulate_steps(&session), 1);
 
     // The result itself read the stored cell, so it stays current.
-    assert!(session.get_result(1).is_some());
+    assert!(session.result_at(1).is_some());
 
     // `start` clears the slot it regenerates, then refuses the snapshot.
     let refusal = start_refusal(&mut session, 1).expect("a snapshot at another cell is refused");
@@ -238,7 +243,7 @@ fn a_rest_result_records_its_cell_and_drops_when_the_cell_changes() {
         "the refusal names the cell: {refusal}"
     );
     make_current(&mut session);
-    assert!(session.get_result(1).is_some());
+    assert!(session.result_at(1).is_some());
 
     // A new stored cell drops the simulation and the result.
     let effects = session
@@ -256,7 +261,7 @@ fn a_rest_result_records_its_cell_and_drops_when_the_cell_changes() {
         !effects.stale.contains(&0),
         "the fresh pocket read no stock"
     );
-    assert!(session.get_result(1).is_none());
+    assert!(session.result_at(1).is_none());
     assert!(session.simulation_result().is_none());
 }
 
@@ -267,7 +272,7 @@ fn a_repeat_simulation_or_an_equal_regenerate_stales_nothing() {
     make_current(&mut session);
 
     simulate(&mut session);
-    assert!(session.get_result(1).is_some());
+    assert!(session.result_at(1).is_some());
     assert_eq!(
         simulate_steps(&session),
         0,
@@ -277,7 +282,7 @@ fn a_repeat_simulation_or_an_equal_regenerate_stales_nothing() {
     // Regenerate the source: same inputs, same moves, a new `Arc`.
     generate(&mut session, 0);
     assert!(
-        session.get_result(1).is_some(),
+        session.result_at(1).is_some(),
         "an equal regenerate keeps the rest result"
     );
     assert_eq!(simulate_steps(&session), 0);
@@ -319,7 +324,7 @@ fn a_predecessor_output_change_drops_the_rest_result() {
     adopt_other_output(&mut session, 0);
 
     assert!(
-        session.get_result(1).is_none(),
+        session.result_at(1).is_none(),
         "M-A: the rest result must drop"
     );
     assert!(matches!(
@@ -335,12 +340,12 @@ fn a_predecessor_output_change_drops_the_rest_result() {
 fn a_middle_output_change_drops_the_tail() {
     let mut session = chain(2);
     make_current(&mut session);
-    assert!(session.get_result(2).is_some());
+    assert!(session.result_at(2).is_some());
 
     adopt_other_output(&mut session, 1);
 
     assert!(
-        session.get_result(2).is_none(),
+        session.result_at(2).is_none(),
         "the tail read the old middle"
     );
 }
@@ -355,7 +360,7 @@ fn a_middle_output_change_drops_the_tail() {
 fn a_disabled_consumer_does_not_keep_a_stale_result() {
     let mut session = chain(1);
     make_current(&mut session);
-    let moves_before = session.get_result(1).unwrap().toolpath().moves.len();
+    let moves_before = session.result_at(1).unwrap().toolpath().moves.len();
     assert!(moves_before > 0);
 
     let _ = session
@@ -380,7 +385,7 @@ fn a_disabled_consumer_does_not_keep_a_stale_result() {
         .unwrap();
 
     assert!(
-        session.get_result(1).is_none(),
+        session.result_at(1).is_none(),
         "M-B: the re-enabled rest op must not read Current on the old stock"
     );
 }

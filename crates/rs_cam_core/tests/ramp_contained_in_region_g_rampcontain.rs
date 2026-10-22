@@ -126,10 +126,10 @@ fn pocket_session(dressups: DressupConfig) -> ProjectSession {
     });
 
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "demo_pocket".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -148,7 +148,7 @@ fn pocket_session(dressups: DressupConfig) -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
@@ -172,7 +172,7 @@ fn pocket_session(dressups: DressupConfig) -> ProjectSession {
         }),
         dressups,
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,
@@ -196,7 +196,7 @@ fn generate(dressups: DressupConfig) -> (ProjectSession, Toolpath) {
         .generate_toolpath(0, &cancel)
         .expect("generate pocket toolpath");
     let tp = session
-        .get_result(0)
+        .result_at(0)
         .expect("pocket toolpath result")
         .toolpath()
         .clone();

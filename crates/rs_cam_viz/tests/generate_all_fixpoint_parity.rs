@@ -60,14 +60,14 @@ impl ComputeBackend for SilentBackend {
 fn toolpath(id: usize, stock_source: StockSource) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(id),
+        id: rs_cam_core::ToolpathId::from_raw(id),
         name: format!("Finish {id}"),
         enabled: true,
         operation: OperationConfig::new_default(OperationType::UnifiedFinish),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -84,7 +84,7 @@ fn toolpath(id: usize, stock_source: StockSource) -> ToolpathConfig {
 /// A project whose second op takes the remaining stock of the first.
 fn controller_with_chain(rest_ops: usize) -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder
         .add_toolpath(0, toolpath(0, StockSource::Fresh))

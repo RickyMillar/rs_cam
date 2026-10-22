@@ -88,7 +88,7 @@ fn three_setups() -> ProjectSession {
         "Pocket",
         pocket_to(3.0),
     );
-    let tool_id = session.tools()[0].id.0;
+    let tool_id = session.tools()[0].id.raw();
     let model_id = session.models()[0].id;
     for (name, depth) in [("Rest 2", 4.0), ("Rest 3", 5.0)] {
         let setup_index = session
@@ -99,7 +99,12 @@ fn three_setups() -> ProjectSession {
             .expect("the session accepts a setup")
             .created
             .expect("AddSetup reports the new setup index");
-        let mut rest = toolpath_config(name, pocket_to(depth), tool_id, model_id);
+        let mut rest = toolpath_config(
+            name,
+            pocket_to(depth),
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
+            model_id,
+        );
         rest.stock_source = StockSource::FromRemainingStock;
         let _ = session
             .apply(Command::AddToolpath(AddToolpathArgs {
@@ -117,7 +122,7 @@ fn three_setups() -> ProjectSession {
         .expect("a positive cell");
     assert_eq!(session.list_setups().len(), 3, "the fixture holds 3 setups");
     assert!(
-        (0..3).all(|index| session.get_result(index).is_none()),
+        (0..3).all(|index| session.result_at(index).is_none()),
         "the fixture starts with no result"
     );
     session
@@ -144,7 +149,7 @@ fn row(session: &ProjectSession, name: &str) -> (ToolpathId, usize) {
 }
 
 fn setup_of(session: &ProjectSession, position: usize) -> SetupId {
-    SetupId(session.list_setups()[position].id)
+    session.list_setups()[position].id
 }
 
 /// `[Generate(Pocket), Simulate(Rest 2), Generate(Rest 2), Simulate(Rest 3),
@@ -202,7 +207,7 @@ fn the_cold_plan_simulates_before_each_rest_op_w1_5b() {
     let mut session = three_setups();
     assert_eq!(plan(&session, Scope::Project), expected_plan(&session));
     assert_eq!(walk(&mut session), 2);
-    assert!((0..3).all(|index| session.get_result(index).is_some()));
+    assert!((0..3).all(|index| session.result_at(index).is_some()));
 }
 
 /// Claims 2 and 3: a snapshot that reads current only because an upstream
@@ -233,7 +238,7 @@ fn a_snapshot_taken_before_the_upstream_generates_is_not_current_for_the_plan_w1
     );
     for index in 0..3 {
         assert!(
-            session.get_result(index).is_some(),
+            session.result_at(index).is_some(),
             "one walk generates row {index}"
         );
     }

@@ -74,7 +74,7 @@ use common::session::{polygon_model, toolpath_config};
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::operation_configs::TraceConfig;
-use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
@@ -136,7 +136,12 @@ fn trace_op() -> OperationConfig {
 /// assertion compares cut geometry alone and is sharper, not weaker: identity
 /// emits 25..55 and flipped 15..45, an exact mirror about `STOCK_Y`.
 fn trace_toolpath(name: &str, tool_id: usize, model_id: usize) -> ToolpathConfig {
-    let mut tc = toolpath_config(name, trace_op(), tool_id, model_id);
+    let mut tc = toolpath_config(
+        name,
+        trace_op(),
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        rs_cam_core::ids::ModelId::from_raw(model_id),
+    );
     tc.dressups.lead_in_out = None;
     tc
 }
@@ -159,17 +164,20 @@ fn build_two_setup_session() -> ProjectSession {
     });
 
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(polygon_model(vec![square_model_polygon()], "square30"));
 
     // Setup 0 is the identity setup `new_empty` already created.
     let _ = builder
-        .add_toolpath(0, trace_toolpath(IDENTITY_LABEL, tool_id, model_id))
+        .add_toolpath(0, trace_toolpath(IDENTITY_LABEL, tool_id, model_id.raw()))
         .expect("add identity-setup trace");
 
     let flipped = builder.add_setup("Flip".to_owned(), FaceUp::Bottom);
     let _ = builder
-        .add_toolpath(flipped, trace_toolpath(FLIPPED_LABEL, tool_id, model_id))
+        .add_toolpath(
+            flipped,
+            trace_toolpath(FLIPPED_LABEL, tool_id, model_id.raw()),
+        )
         .expect("add flipped-setup trace");
     builder.build()
 }
@@ -408,10 +416,10 @@ fn zero_origin_stock_is_unchanged() {
         ..StockConfig::default()
     });
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(polygon_model(vec![square_model_polygon()], "square30"));
     let _ = builder
-        .add_toolpath(0, trace_toolpath(IDENTITY_LABEL, tool_id, model_id))
+        .add_toolpath(0, trace_toolpath(IDENTITY_LABEL, tool_id, model_id.raw()))
         .expect("add identity-setup trace");
     let session = builder.build();
 
@@ -436,20 +444,17 @@ fn stock_top_above_world_zero_shifts_z_to_the_top() {
     const TOP_Z: f64 = 7.0;
     let build = |z_method: ZDatum| -> rs_cam_core::geo::P3 {
         let mut session = ProjectSessionBuilder::new()
-            .setup(SetupData {
-                id: 0,
-                name: "Setup 1".to_owned(),
-                face_up: FaceUp::default(),
-                z_rotation: ZRotation::default(),
-                datum: DatumConfig {
+            .setup({
+                let mut setup = SetupData::new(
+                    rs_cam_core::ids::SetupId::from_raw(0),
+                    "Setup 1",
+                    FaceUp::default(),
+                );
+                setup.datum = DatumConfig {
                     z_method,
                     ..DatumConfig::default()
-                },
-                model_ids: Vec::new(),
-                obstacles: Vec::new(),
-                stock_changes: Vec::new(),
-                toolpath_indices: Vec::new(),
-                pause_message: None,
+                };
+                setup
             })
             .build();
         let stock = StockConfig {
@@ -474,7 +479,7 @@ fn stock_top_above_world_zero_shifts_z_to_the_top() {
             .expect("the tool row refuses nothing")
             .created
             .expect("add_tool reports the new tool index");
-        let tool_id = session.tools()[tool_idx].id.0;
+        let tool_id = session.tools()[tool_idx].id.raw();
         let model_id = session
             .apply(Command::AddModel(AddModelArgs {
                 model: Box::new(polygon_model(vec![square_model_polygon()], "square30")),

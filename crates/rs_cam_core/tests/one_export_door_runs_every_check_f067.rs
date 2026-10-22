@@ -67,7 +67,7 @@ fn session(high_feedrate_mode: bool) -> ProjectSession {
         OperationConfig::Pocket(PocketConfig::default()),
         |_| {},
     );
-    let revision = session.toolpath_revision(0);
+    let revision = session.toolpath_revision_at(0);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,

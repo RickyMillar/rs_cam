@@ -82,7 +82,7 @@ fn rectangle_model(id: usize, name: &str, x0: f64, y0: f64, x1: f64, y1: f64) ->
         P2::new(x0, y1),
     ]);
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         name: name.to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![poly])),
@@ -99,7 +99,7 @@ fn rectangle_model(id: usize, name: &str, x0: f64, y0: f64, x1: f64, y1: f64) ->
 }
 
 fn tool(id: usize, tool_type: ToolType, diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(id), tool_type);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(id), tool_type);
     t.diameter = diameter;
     t
 }
@@ -107,14 +107,14 @@ fn tool(id: usize, tool_type: ToolType, diameter: f64) -> ToolConfig {
 fn drill_op(tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Dowel holes, 6 mm drill".to_owned(),
         enabled: true,
         operation: OperationConfig::Drill(DrillConfig::default()),
         dressups: DressupConfig::for_op(OperationType::Drill),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -197,7 +197,10 @@ fn assert_walls(pins: &[AlignmentPin], w: f64, d: f64, obstacles: &[PinObstacle]
 #[test]
 fn a_stock_outline_model_is_not_part_by_default() {
     let session = mini_session(true);
-    assert_eq!(session.default_pin_part_models(), vec![ModelId(CAVITY)]);
+    assert_eq!(
+        session.default_pin_part_models(),
+        vec![ModelId::from_raw(CAVITY)]
+    );
     let obstacles = obstacles(&session);
     assert_eq!(obstacles.len(), 1, "{obstacles:?}");
     assert_eq!(obstacles[0].name, "back_cavity.dxf");
@@ -295,7 +298,7 @@ fn a_pin_in_the_part_or_a_keep_out_is_a_wall_finding() {
         .apply(Command::AddObstacle(AddObstacleArgs {
             setup_index: 0,
             obstacle: Box::new(Obstacle {
-                id: ObstacleId(0),
+                id: ObstacleId::from_raw(0),
                 name: "clamp pad".to_owned(),
                 enabled: true,
                 clearance: 0.0,
@@ -445,7 +448,7 @@ fn a_drawing_of_the_pin_holes_is_not_part() {
         .build();
     assert_eq!(
         session.default_pin_part_models(),
-        vec![ModelId(CAVITY), ModelId(3)],
+        vec![ModelId::from_raw(CAVITY), ModelId::from_raw(3)],
         "the 6 mm circles are pin holes; the 4 mm circle is part"
     );
     let pins = session
@@ -473,5 +476,8 @@ fn a_drawing_of_the_pin_holes_is_not_part() {
         .tool(tool(3, ToolType::VBit, 6.0))
         .toolpath(drill_op(3, 2))
         .build();
-    assert_eq!(session.default_pin_part_models(), vec![ModelId(2)]);
+    assert_eq!(
+        session.default_pin_part_models(),
+        vec![ModelId::from_raw(2)]
+    );
 }

@@ -51,18 +51,18 @@ fn ctx() -> egui::Context {
 /// One tool, one 2D model, one toolpath, and the Dust shoe head with a
 /// travel range.
 fn fixture() -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     let config = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Shoe row fixture".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(Default::default()),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -75,7 +75,7 @@ fn fixture() -> AppState {
         planner_origin: None,
     };
     let model = LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         path: PathBuf::from("shoe_row_fixture.svg"),
         name: "Shoe row fixture".to_owned(),
         kind: Some(ModelKind::Svg),

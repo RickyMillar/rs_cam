@@ -171,7 +171,7 @@ pub fn plan(session: &ProjectSession, scope: Scope) -> Vec<Step> {
             let upstream_moves = !gains_result.is_empty();
             if is_rest && (moved_since_simulate || !has_snapshot(session, tc.id)) {
                 steps.push(Step::Simulate {
-                    setup: SetupId(setup.id),
+                    setup: setup.id,
                     upto: tc.id,
                 });
                 moved_since_simulate = false;
@@ -183,7 +183,7 @@ pub fn plan(session: &ProjectSession, scope: Scope) -> Vec<Step> {
             let source_moves = all_edges.iter().any(|edge| {
                 edge.from == tc.id && edge.on.is_some_and(|on| gains_result.contains(&on))
             });
-            if session.get_result(index).is_none() || (is_rest && upstream_moves) || source_moves {
+            if session.result_at(index).is_none() || (is_rest && upstream_moves) || source_moves {
                 let _ = gains_result.insert(tc.id);
                 moved_since_simulate = true;
             }
@@ -205,7 +205,7 @@ fn has_snapshot(session: &ProjectSession, id: ToolpathId) -> bool {
 
 /// Every toolpath id in one setup.
 fn setup_toolpath_ids(session: &ProjectSession, setup_id: SetupId) -> BTreeSet<ToolpathId> {
-    let Some((_, setup)) = session.find_setup_by_id(setup_id.0) else {
+    let Some((_, setup)) = session.find_setup_by_id(setup_id) else {
         return BTreeSet::new();
     };
     setup

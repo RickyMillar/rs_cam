@@ -706,7 +706,7 @@ pub enum BoundarySource {
         /// ladder is needed even to resolve one tier: a tier label is "the
         /// coarsest tool on THIS ladder that holds this cell", which is not
         /// a statement any subset can reproduce.
-        tool_ids: Vec<usize>,
+        tool_ids: Vec<crate::ids::ToolId>,
         /// Which tier's islands bound this op (≥ 1).
         tier: u8,
         /// Tier-map planning resolution (mm). Plan at 0.3–0.6; a full-grid

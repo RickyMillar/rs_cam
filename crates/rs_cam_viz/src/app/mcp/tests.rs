@@ -15,11 +15,11 @@ use rs_cam_core::trace::toolpath_spans::{RegionSpanRole, Span, SpanKind, SpanPay
 // reintroduces the fallback, which a one-off checkout would not.
 
 fn two_tool_fixture() -> Vec<ToolConfig> {
-    let mut a = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut a = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     a.name = "Ø6 flat".to_owned();
     a.diameter = 6.0;
     a.flute_count = 2;
-    let mut b = ToolConfig::new_default(ToolId(2), ToolType::BallNose);
+    let mut b = ToolConfig::new_default(ToolId::from_raw(2), ToolType::BallNose);
     b.name = "Ø1 ball".to_owned();
     b.diameter = 1.0;
     b.flute_count = 4;
@@ -31,7 +31,7 @@ fn two_tool_fixture() -> Vec<ToolConfig> {
 fn parent_revision_tool_lookup(tools: &[ToolConfig], tool_id: usize) -> Option<&ToolConfig> {
     tools
         .iter()
-        .find(|tool| tool.id.0 == tool_id)
+        .find(|tool| tool.id.raw() == tool_id)
         .or_else(|| tools.first())
 }
 
@@ -61,7 +61,11 @@ fn narration_tool_lookup_refuses_where_the_parent_took_another_tool() {
     );
 
     assert!(
-        crate::app::RsCamApp::narration_tool_for(&tools, MISSING_ID).is_none(),
+        crate::app::RsCamApp::narration_tool_for(
+            &tools,
+            rs_cam_core::ids::ToolId::from_raw(MISSING_ID)
+        )
+        .is_none(),
         "the shipped lookup must refuse an unresolvable tool id rather than narrate \
          with another tool's geometry",
     );
@@ -73,7 +77,8 @@ fn narration_tool_lookup_refuses_where_the_parent_took_another_tool() {
 fn narration_tool_lookup_still_finds_the_toolpaths_own_tool() {
     let tools = two_tool_fixture();
     let found =
-        crate::app::RsCamApp::narration_tool_for(&tools, 2).expect("tool id 2 is configured");
+        crate::app::RsCamApp::narration_tool_for(&tools, rs_cam_core::ids::ToolId::from_raw(2))
+            .expect("tool id 2 is configured");
     assert_eq!(found.name, "Ø1 ball");
     assert!((found.diameter - 1.0).abs() < 1e-9);
 }
@@ -117,14 +122,14 @@ fn cut_trace_fixture(
             shoe: Default::default(),
             // Overwritten by `add_toolpath`, which assigns a fresh id —
             // which is precisely why ids and indices diverge.
-            id: rs_cam_core::ToolpathId(0),
+            id: rs_cam_core::ToolpathId::from_raw(0),
             name: format!("tp {t}"),
             enabled: true,
             operation,
             dressups: crate::state::toolpath::DressupConfig::for_op(op_type),
             heights: crate::state::toolpath::HeightsConfig::default(),
-            tool_id: 0,
-            model_id: 0,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(0),
+            model_id: rs_cam_core::ids::ModelId::from_raw(0),
             pre_gcode: None,
             post_gcode: None,
             boundary: crate::state::toolpath::BoundaryConfig::default(),
@@ -146,7 +151,7 @@ fn cut_trace_fixture(
             .expect("the AddToolpath row reports the new toolpath index");
         let id = state
             .session()
-            .get_toolpath_config(index)
+            .toolpath_config_at(index)
             .expect("just added")
             .id;
         ids.push(id);
@@ -289,9 +294,9 @@ fn an_unmatched_toolpath_id_is_refused_and_names_the_valid_ids() {
         .apply(Command::RemoveToolpath(RemoveToolpathArgs { index: 0 }))
         .expect("index 0 exists");
     let live: Vec<usize> = (0..state.session().toolpath_count())
-        .filter_map(|i| state.session().get_toolpath_config(i).map(|tc| tc.id.0))
+        .filter_map(|i| state.session().toolpath_config_at(i).map(|tc| tc.id.raw()))
         .collect();
-    let dead = ids[0].0;
+    let dead = ids[0].raw();
     assert!(
         !live.contains(&dead),
         "the fixture must actually orphan an id, or it proves nothing",
@@ -488,7 +493,7 @@ fn build(
     max_spans: Option<usize>,
 ) -> serde_json::Value {
     build_inspect_spans_response(
-        rs_cam_core::ToolpathId(42),
+        rs_cam_core::ToolpathId::from_raw(42),
         0,
         "tp",
         "pocket",
@@ -616,7 +621,7 @@ fn default_max_spans_is_50() {
         );
     }
     let v = build_inspect_spans_response(
-        rs_cam_core::ToolpathId(1),
+        rs_cam_core::ToolpathId::from_raw(1),
         0,
         "tp",
         "pocket",
@@ -640,7 +645,7 @@ fn default_max_spans_is_50() {
 fn invalid_kind_returns_error() {
     let spans = fixture_spans();
     let res = build_inspect_spans_response(
-        rs_cam_core::ToolpathId(1),
+        rs_cam_core::ToolpathId::from_raw(1),
         0,
         "tp",
         "pocket",
@@ -660,7 +665,7 @@ fn invalid_kind_returns_error() {
 fn invalid_parent_id_returns_error() {
     let spans = fixture_spans();
     let res = build_inspect_spans_response(
-        rs_cam_core::ToolpathId(1),
+        rs_cam_core::ToolpathId::from_raw(1),
         0,
         "tp",
         "pocket",
@@ -878,14 +883,14 @@ fn mcp_generate_all_leaves_the_saved_debug_options_unchanged_u4() {
     let op_type = operation.op_type();
     let config = rs_cam_core::session::ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation,
         dressups: crate::state::toolpath::DressupConfig::for_op(op_type),
         heights: crate::state::toolpath::HeightsConfig::default(),
-        tool_id: 0,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(0),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: crate::state::toolpath::BoundaryConfig::default(),
@@ -927,7 +932,7 @@ fn mcp_generate_all_leaves_the_saved_debug_options_unchanged_u4() {
     let tc = controller
         .state
         .session()
-        .get_toolpath_config(index)
+        .toolpath_config_at(index)
         .expect("the toolpath is still there");
     assert!(
         !tc.debug_options.enabled,

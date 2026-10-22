@@ -61,7 +61,7 @@ use rs_cam_core::tool_load::verdict::{
 };
 use rs_cam_core::tool_load::{GateEnv, ToleranceBands, ToolpathLoadContext};
 
-const TP: ToolpathId = ToolpathId(0);
+const TP: ToolpathId = ToolpathId::from_raw(0);
 
 fn tool() -> ToolDefinition {
     ToolDefinition::new(

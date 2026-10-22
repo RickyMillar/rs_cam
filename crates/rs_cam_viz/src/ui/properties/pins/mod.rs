@@ -42,11 +42,11 @@ pub struct PinDrillRow {
     /// The pin diameter of the size, in mm.
     pub diameter: f64,
     /// The tool that drills (or will drill) the holes: id and name.
-    pub tool: Option<(usize, String)>,
+    pub tool: Option<(rs_cam_core::ids::ToolId, String)>,
     /// The tool diameter, when a tool exists.
     pub tool_diameter: Option<f64>,
     /// Every tool of the size: id and name (`pin_tool_candidates`).
-    pub candidates: Vec<(usize, String)>,
+    pub candidates: Vec<(rs_cam_core::ids::ToolId, String)>,
     /// Why the door cannot create the operation, when no operation exists
     /// and the door cannot create one.
     pub block: Option<PinDrillBlock>,
@@ -78,11 +78,11 @@ impl PinDrillState {
         if pins.is_empty() {
             return Self::NoPins;
         }
-        let tool_name = |id: usize| {
+        let tool_name = |id: rs_cam_core::ids::ToolId| {
             session
                 .tools()
                 .iter()
-                .find(|t| t.id.0 == id)
+                .find(|t| t.id == id)
                 .map(|t| t.name.clone())
                 .unwrap_or_else(|| format!("tool {id}"))
         };
@@ -133,7 +133,7 @@ impl PinDrillState {
 /// One model row of the part-model chooser.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartModelRow {
-    pub id: usize,
+    pub id: rs_cam_core::ids::ModelId,
     pub name: String,
     /// The model counts as the part now.
     pub is_part: bool,
@@ -153,8 +153,8 @@ impl PartModelRow {
             .map(|m| Self {
                 id: m.id,
                 name: m.name.clone(),
-                is_part: part.contains(&rs_cam_core::ids::ModelId(m.id)),
-                default_part: default_part.contains(&rs_cam_core::ids::ModelId(m.id)),
+                is_part: part.contains(&m.id),
+                default_part: default_part.contains(&m.id),
             })
             .collect()
     }
@@ -425,9 +425,12 @@ mod command_tests {
     fn a_part_model_choice_is_its_own_row() {
         let stored = stored();
         let mut draft = stored.clone();
-        draft.pin_part_models = Some(vec![1]);
+        draft.pin_part_models = Some(vec![rs_cam_core::ids::ModelId::from_raw(1)]);
         match crate::ui::properties::stock_edit_command(&stored, draft) {
-            Some(Command::SetPinPartModels(args)) => assert_eq!(args.models, Some(vec![1])),
+            Some(Command::SetPinPartModels(args)) => assert_eq!(
+                args.models,
+                Some(vec![rs_cam_core::ids::ModelId::from_raw(1)])
+            ),
             other => panic!("expected SetPinPartModels, got {other:?}"),
         }
     }
@@ -451,7 +454,7 @@ mod split_tests {
         };
         let mut draft = stored.clone();
         draft.alignment_pins = vec![AlignmentPin::new(3.0, 2.0, 6.0)];
-        draft.pin_part_models = Some(vec![0]);
+        draft.pin_part_models = Some(vec![rs_cam_core::ids::ModelId::from_raw(0)]);
 
         let first = crate::ui::properties::part_models_first(&stored, &draft);
         assert!(
@@ -459,7 +462,7 @@ mod split_tests {
             "{first:?}"
         );
         let mut after_first = stored.clone();
-        after_first.pin_part_models = Some(vec![0]);
+        after_first.pin_part_models = Some(vec![rs_cam_core::ids::ModelId::from_raw(0)]);
         assert!(matches!(
             crate::ui::properties::stock_edit_command(&after_first, draft.clone()),
             Some(Command::SetAlignmentPins(_))

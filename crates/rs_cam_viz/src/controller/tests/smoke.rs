@@ -197,7 +197,7 @@ fn controller_save_open_and_export_smoke() {
     // viz store together). Seeding only the viz store used to export
     // through the silent fallback; it now reads as an operation edited
     // since it was generated, and the export refuses by name.
-    let revision = controller.state.session().toolpath_revision(0);
+    let revision = controller.state.session().toolpath_revision_at(0);
     let _ = controller
         .state
         .apply(Command::AdoptResult(AdoptResultArgs {
@@ -218,7 +218,7 @@ fn controller_save_open_and_export_smoke() {
         .state
         .gui
         .toolpath_rt
-        .get_mut(&ToolpathId(0))
+        .get_mut(&ToolpathId::from_raw(0))
         .unwrap()
         .run = crate::state::runtime::ToolpathRun::Done(ToolpathResult {
         annotated: Arc::new(rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(
@@ -285,14 +285,14 @@ fn simulation_results_capture_setup_boundaries() {
         .expect("the AddSetup row reports the new setup index");
     let tp2_config = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Profile".to_owned(),
         enabled: true,
         operation: OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -332,7 +332,7 @@ fn simulation_results_capture_setup_boundaries() {
                     column_deviations: None,
                     boundaries: vec![
                         crate::compute::worker::SimBoundary {
-                            id: ToolpathId(0),
+                            id: ToolpathId::from_raw(0),
                             name: "Adaptive 3D".to_owned(),
                             tool_name: "End Mill".to_owned(),
                             start_move: 0,

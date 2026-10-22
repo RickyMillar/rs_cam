@@ -333,15 +333,18 @@ fn session_with_fine_tier(mesh: TriangleMesh, half: f64) -> (ProjectSession, usi
     let mut builder = ProjectSessionBuilder::new().stock(stock_over(half, WALL_H + 2.0));
     let coarse = builder.add_tool(ball_tool_config(COARSE_DIAMETER));
     let fine = builder.add_tool(ball_tool_config(FINE_DIAMETER));
-    let coarse_id = builder.tools()[coarse].id.0;
-    let fine_id = builder.tools()[fine].id.0;
+    let coarse_id = builder.tools()[coarse].id.raw();
+    let fine_id = builder.tools()[fine].id.raw();
     let model_id = builder.add_model(mesh_model(mesh, "knolls_and_wall"));
     let mut session = builder.build();
     let outcome = plan_multitool(
         &mut session,
         &MultitoolPlanSpec {
             model_id,
-            tool_ids: vec![coarse_id, fine_id],
+            tool_ids: vec![
+                rs_cam_core::ids::ToolId::from_raw(coarse_id),
+                rs_cam_core::ids::ToolId::from_raw(fine_id),
+            ],
             ..MultitoolPlanSpec::default()
         },
     )
@@ -364,7 +367,7 @@ fn session_with_fine_tier(mesh: TriangleMesh, half: f64) -> (ProjectSession, usi
 }
 
 fn set_arcs(session: &mut ProjectSession, index: usize, arcs: Option<f64>) {
-    let mut dressups = session.get_toolpath_config(index).unwrap().dressups.clone();
+    let mut dressups = session.toolpath_config_at(index).unwrap().dressups.clone();
     dressups.arc_fitting = arcs.map(|tolerance| ArcFitParams { tolerance });
     let _ = session
         .apply(Command::SetDressupConfig(SetDressupConfigArgs {
@@ -427,7 +430,7 @@ fn an_arc_fit_buries_no_deeper_than_the_source_path_plus_its_tolerance() {
         session
             .generate_toolpath(index, &cancel)
             .expect("generates");
-        let tp = session.get_result(index).unwrap().toolpath().clone();
+        let tp = session.result_at(index).unwrap().toolpath().clone();
         let arcs_n = tp
             .moves
             .iter()
@@ -468,7 +471,7 @@ fn an_arc_fit_buries_no_deeper_than_the_source_path_plus_its_tolerance() {
 #[ignore = "instrument: generates and simulates three arms of a 40 x 40 mm finish; run with --ignored --nocapture"]
 fn arc_fit_burial_against_arcs_off_on_knolls_and_a_wall() {
     let (mut session, index) = session_with_fine_tier(mesh(), HALF);
-    let tc = session.get_toolpath_config(index).unwrap().clone();
+    let tc = session.toolpath_config_at(index).unwrap().clone();
     eprintln!(
         "fine tier '{}': emitted arcs {:?}, lead-in/out {:?}",
         tc.name, tc.dressups.arc_fitting, tc.dressups.lead_in_out
@@ -508,7 +511,7 @@ fn arc_fit_burial_against_arcs_off_on_knolls_and_a_wall() {
         session
             .generate_toolpath(index, &cancel)
             .expect("generates");
-        let tp = session.get_result(index).unwrap().toolpath().clone();
+        let tp = session.result_at(index).unwrap().toolpath().clone();
         let arcs_n = tp
             .moves
             .iter()
@@ -576,11 +579,11 @@ fn arc_fit_burial_on_the_rivmap100_fine_tier() {
             source: StockSource::Fresh,
         }))
         .unwrap();
-    let tc = session.get_toolpath_config(index).unwrap().clone();
+    let tc = session.toolpath_config_at(index).unwrap().clone();
     let tool = session
         .tools()
         .iter()
-        .find(|t| t.id.0 == tc.tool_id)
+        .find(|t| t.id == tc.tool_id)
         .unwrap()
         .clone();
     let cutter = build_cutter(&tool).unwrap();
@@ -617,7 +620,7 @@ fn arc_fit_burial_on_the_rivmap100_fine_tier() {
         session
             .generate_toolpath(index, &cancel)
             .expect("generates");
-        let tp = session.get_result(index).unwrap().toolpath().clone();
+        let tp = session.result_at(index).unwrap().toolpath().clone();
         let arcs_n = tp
             .moves
             .iter()

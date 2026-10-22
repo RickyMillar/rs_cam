@@ -89,7 +89,7 @@ const BALL_DIAMETER_MM: f64 = 3.0;
 /// "nothing to link".
 fn relink_totals(session: &ProjectSession, family: &str) -> RelinkTotals {
     session
-        .get_result(0)
+        .result_at(0)
         .unwrap_or_else(|| panic!("{family}: generation produced no result"))
         .stats
         .relink
@@ -179,7 +179,7 @@ fn the_drop_cutter_adapter_publishes_its_link_counters() {
 #[test]
 fn a_drop_cutter_with_the_stage_off_reads_not_measured() {
     let session = drop_cutter_session(0.0);
-    let stats = &session.get_result(0).expect("baseline generated").stats;
+    let stats = &session.result_at(0).expect("baseline generated").stats;
     assert_eq!(
         stats.relink, None,
         "G-LINKVISIBLE: `hookup_mm` ships at 0.0, so no stage ran and the \
@@ -258,7 +258,7 @@ fn pencil_session() -> ProjectSession {
 fn the_pencil_adapter_publishes_its_own_link_counters() {
     let session = pencil_session();
     let report: PencilLinkReport = session
-        .get_result(0)
+        .result_at(0)
         .expect("pencil generated")
         .stats
         .pencil_link
@@ -310,7 +310,7 @@ fn the_pencil_adapter_publishes_its_own_link_counters() {
 #[test]
 fn the_pencil_never_writes_the_shared_relink_slot() {
     let session = pencil_session();
-    let stats = &session.get_result(0).expect("pencil generated").stats;
+    let stats = &session.result_at(0).expect("pencil generated").stats;
     assert!(
         stats.pencil_link.is_some(),
         "the fixture must reach the pencil emitter for this arm to mean \

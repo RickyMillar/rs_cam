@@ -46,7 +46,7 @@ const MAX_LINE_CHARS: usize = 64;
 
 fn square_model(id: usize, name: &str, lo: f64, hi: f64) -> LoadedModel {
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         name: name.to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -83,7 +83,7 @@ fn state_with(back: Option<FaceUp>) -> AppState {
         ],
         ..StockConfig::default()
     };
-    let mut drill = ToolConfig::new_default(ToolId(3), ToolType::VBit);
+    let mut drill = ToolConfig::new_default(ToolId::from_raw(3), ToolType::VBit);
     drill.diameter = 6.0;
     let mut builder = ProjectSessionBuilder::new()
         .stock(stock)

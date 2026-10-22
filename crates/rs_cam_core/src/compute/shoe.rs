@@ -181,7 +181,7 @@ mod tests {
         }
         let clamp = ObstacleSet::resolve(
             &[Obstacle {
-                id: ObstacleId(0),
+                id: ObstacleId::from_raw(0),
                 name: "Tall clamp".to_owned(),
                 enabled: true,
                 clearance: 3.0,

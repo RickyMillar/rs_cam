@@ -70,14 +70,14 @@ impl ComputeBackend for RecordingBackend {
 fn toolpath(id: usize, enabled: bool) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(id),
+        id: rs_cam_core::ToolpathId::from_raw(id),
         name: format!("Op {id}"),
         enabled,
         operation: OperationConfig::new_default(OperationType::Face),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -98,7 +98,7 @@ fn controller_with_a_disabled_op() -> (AppController<RecordingBackend>, Arc<Mute
     let backend = RecordingBackend::default();
     let log = Arc::clone(&backend.submitted);
     let mut controller = AppController::with_backend(backend);
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     for (id, enabled) in [(0, true), (1, false), (2, true)] {
         let _ = builder
@@ -132,18 +132,18 @@ fn generate_all_without_a_chain_submits_only_enabled_ops() {
         .collect();
     assert_eq!(
         generates,
-        vec![ToolpathId(0), ToolpathId(2)],
+        vec![ToolpathId::from_raw(0), ToolpathId::from_raw(2)],
         "the walk holds exactly the enabled ops, in plan order"
     );
 
     let submitted = log.lock().expect("submission log").clone();
     assert!(
-        !submitted.contains(&ToolpathId(1)),
+        !submitted.contains(&ToolpathId::from_raw(1)),
         "a disabled operation must not be generated: {submitted:?}"
     );
     assert_eq!(
         submitted,
-        vec![ToolpathId(0)],
+        vec![ToolpathId::from_raw(0)],
         "the plan submits its first step and waits for the completion: \
          {submitted:?}"
     );
@@ -161,7 +161,7 @@ fn generate_all_with_nothing_enabled_tells_the_operator() {
     let backend = RecordingBackend::default();
     let log = Arc::clone(&backend.submitted);
     let mut controller = AppController::with_backend(backend);
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_toolpath(0, toolpath(0, false)).expect("add op");
     controller.state.replace_session(builder.build());

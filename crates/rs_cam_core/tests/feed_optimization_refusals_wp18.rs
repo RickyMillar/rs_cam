@@ -196,9 +196,14 @@ fn full_material_simulation(
 /// refusal of the feed-optimisation pass.
 fn rest_chain_session(feed_optimization: bool) -> ProjectSession {
     let mut session = pocket_session(feed_optimization);
-    let tool_id = session.tools()[0].id.0;
+    let tool_id = session.tools()[0].id.raw();
     let model_id = session.models()[0].id;
-    let mut rest = toolpath_config("Rest", pocket_op(), tool_id, model_id);
+    let mut rest = toolpath_config(
+        "Rest",
+        pocket_op(),
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     rest.stock_source = StockSource::FromRemainingStock;
     rest.dressups.feed_optimization = feed_optimization;
     let _ = session
@@ -455,8 +460,8 @@ fn make_snapshot_current(
     simulation: &mut SimulationResult,
     rest_id: ToolpathId,
 ) {
-    if session.get_result(0).is_none() {
-        let revision = session.toolpath_revision(0);
+    if session.result_at(0).is_none() {
+        let revision = session.toolpath_revision_at(0);
         let _ = session
             .apply(Command::AdoptResult(
                 rs_cam_core::session::AdoptResultArgs {

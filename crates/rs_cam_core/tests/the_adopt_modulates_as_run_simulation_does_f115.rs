@@ -48,7 +48,7 @@ const MODULATION: FeedModulation = FeedModulation {
 };
 
 fn end_mill_6mm() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -93,7 +93,7 @@ fn generated_pocket() -> ProjectSession {
         ..StockConfig::default()
     });
     let tool_idx = builder.add_tool(end_mill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(common::session::polygon_model(
         vec![rect_with_island()],
         "as001_pocket",
@@ -113,7 +113,7 @@ fn generated_pocket() -> ProjectSession {
     let tc = common::session::toolpath_config(
         "Pocket",
         OperationConfig::Pocket(pocket),
-        tool_id,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
     );
     let _ = builder.add_toolpath(0, tc).expect("add the pocket");
@@ -147,7 +147,7 @@ fn simulate(session: &mut ProjectSession, modulate: bool) {
 fn moves_of(session: &ProjectSession) -> String {
     format!(
         "{:?}",
-        session.get_result(0).expect("generated").toolpath().moves
+        session.result_at(0).expect("generated").toolpath().moves
     )
 }
 
@@ -194,7 +194,7 @@ fn the_adopt_writes_the_feeds_run_simulation_writes() {
         "the adopt and run_simulation must write the same moves"
     );
     assert!(matches!(
-        lane.get_result(0).expect("generated").provenance,
+        lane.result_at(0).expect("generated").provenance,
         ResultProvenance::Modulated { .. }
     ));
     let trace = lane

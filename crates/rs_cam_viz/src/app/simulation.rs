@@ -591,7 +591,7 @@ impl RsCamApp {
             .session()
             .list_setups()
             .iter()
-            .find(|s| crate::state::job::SetupId(s.id) == sb.setup_id)?;
+            .find(|s| s.id == sb.setup_id)?;
         let needs_transform = setup.face_up != crate::state::job::FaceUp::Top
             || setup.z_rotation != crate::state::job::ZRotation::Deg0;
         Some((setup.face_up, setup.z_rotation, needs_transform))
@@ -634,7 +634,7 @@ impl RsCamApp {
             let motion = tp.moves.get(local_idx)?;
             let tool_info = session
                 .find_toolpath_config_by_id(toolpath_id)
-                .and_then(|(_, tc)| session.tools().iter().find(|tool| tool.id.0 == tc.tool_id))
+                .and_then(|(_, tc)| session.tools().iter().find(|tool| tool.id == tc.tool_id))
                 .cloned()
                 // F029: a tool outside its domain draws no ghost.
                 .and_then(|tool| {
@@ -917,11 +917,11 @@ mod tests {
     fn entry(id: usize, tp: Toolpath, tool: &Arc<ToolDefinition>) -> SimToolpathEntry {
         SimToolpathEntry {
             head: Default::default(),
-            id: ToolpathId(id),
+            id: ToolpathId::from_raw(id),
             name: format!("tp{id}"),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
             tool: Arc::clone(tool),
-            tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+            tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
             flute_count: 2,
             tool_summary: "6mm Flat".into(),
             semantic_trace: None,

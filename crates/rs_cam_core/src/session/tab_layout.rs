@@ -74,10 +74,8 @@ impl ProjectSession {
             )));
         };
         let tool = self
-            .find_tool_by_raw_id(tc.tool_id)
-            .ok_or(SessionError::ToolNotFound(
-                crate::compute::tool_config::ToolId(tc.tool_id),
-            ))?;
+            .tool_by_id(tc.tool_id)
+            .ok_or(SessionError::ToolNotFound(tc.tool_id))?;
         let setup = self.find_setup_for_toolpath_id(tc.id);
         self.check_lateral_setup_support(setup, &tc.operation)?;
         let ctx = SetupEvalContext::build_for_setup(self, setup);

@@ -117,14 +117,14 @@ fn toolpath_config(
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(id),
+        id: ToolpathId::from_raw(id),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::for_op(op_type),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -147,14 +147,14 @@ fn synthetic_2d_session() -> (ProjectSession, usize, usize) {
         .tools()
         .iter()
         .find(|t| (t.diameter - 6.0).abs() < 1e-6)
-        .map(|t| t.id.0)
+        .map(|t| t.id.raw())
         .expect("ux_2d_pocket.toml must define a 6 mm end mill");
     let model_id = session
         .models()
         .first()
         .map(|m| m.id)
         .expect("ux_2d_pocket.toml must load demo_pocket.svg");
-    (session, tool_id, model_id)
+    (session, tool_id, model_id.raw())
 }
 
 // ───────────────────────────── 1. census ──────────────────────────────
@@ -242,7 +242,7 @@ fn issue_channel_census_synthetic_2d() {
         "toolpath", "samples", "cutting", "airSEG", "lowSEG", "airSAMPLE", "lowSAMPLE", "maxSeg"
     );
     for (i, (name, _)) in ops.iter().enumerate() {
-        let id = ToolpathId(i);
+        let id = ToolpathId::from_raw(i);
         let samples = ct.samples.iter().filter(|s| s.toolpath_id == id).count();
         let cutting = ct
             .samples
@@ -297,7 +297,7 @@ fn issue_channel_census_synthetic_2d() {
         .samples
         .iter()
         .filter(|s| {
-            s.toolpath_id == ToolpathId(1)
+            s.toolpath_id == ToolpathId::from_raw(1)
                 && s.is_cutting
                 && s.engagement.radial_woc_fraction < 0.02
         })
@@ -379,7 +379,7 @@ fn engagement_is_unmeasurable_below_the_fresh_material_floor() {
     let ct = sim.cut_trace.as_ref().expect("metric cut trace");
 
     let arm = |id: usize| {
-        let id = ToolpathId(id);
+        let id = ToolpathId::from_raw(id);
         let s = ct
             .toolpath_summaries
             .iter()
@@ -423,7 +423,9 @@ fn engagement_is_unmeasurable_below_the_fresh_material_floor() {
         .samples
         .iter()
         .filter(|x| {
-            x.toolpath_id == ToolpathId(0) && x.is_cutting && x.engagement.radial_woc_fraction > 0.0
+            x.toolpath_id == ToolpathId::from_raw(0)
+                && x.is_cutting
+                && x.engagement.radial_woc_fraction > 0.0
         })
         .collect();
     assert_eq!(
@@ -508,7 +510,8 @@ fn rivers_b4_probe_project_curve_on_remaining_stock() {
     const PC_ID: usize = 12;
     let mut keep: Vec<(usize, bool)> = Vec::new();
     for (index, tc) in session.toolpath_configs().iter().enumerate() {
-        let wanted = tc.id == ToolpathId(ROUGH_ID) || tc.id == ToolpathId(PC_ID);
+        let wanted =
+            tc.id == ToolpathId::from_raw(ROUGH_ID) || tc.id == ToolpathId::from_raw(PC_ID);
         keep.push((index, wanted));
     }
     for (index, enabled) in keep {
@@ -551,7 +554,7 @@ fn rivers_b4_probe_project_curve_on_remaining_stock() {
     let commanded_depth_mm = session
         .toolpath_configs()
         .iter()
-        .find(|t| t.id == ToolpathId(PC_ID))
+        .find(|t| t.id == ToolpathId::from_raw(PC_ID))
         .and_then(|t| match &t.operation {
             OperationConfig::ProjectCurve(p) => Some(p.depth.abs()),
             _ => None,
@@ -561,10 +564,10 @@ fn rivers_b4_probe_project_curve_on_remaining_stock() {
     let pc_index = session
         .toolpath_configs()
         .iter()
-        .position(|t| t.id == ToolpathId(PC_ID))
+        .position(|t| t.id == ToolpathId::from_raw(PC_ID))
         .expect("PC index");
     let intents: Vec<String> = session
-        .get_result(pc_index)
+        .result_at(pc_index)
         .map(|r| {
             r.annotated()
                 .toolpath
@@ -575,7 +578,7 @@ fn rivers_b4_probe_project_curve_on_remaining_stock() {
         })
         .unwrap_or_default();
     let span_kinds: Vec<String> = session
-        .get_result(pc_index)
+        .result_at(pc_index)
         .map(|r| {
             r.annotated()
                 .spans
@@ -587,7 +590,7 @@ fn rivers_b4_probe_project_curve_on_remaining_stock() {
 
     let sim = session.simulation_result().expect("simulation result");
     let ct = sim.cut_trace.as_ref().expect("metric cut trace");
-    let id = ToolpathId(PC_ID);
+    let id = ToolpathId::from_raw(PC_ID);
 
     let summary = ct
         .toolpath_summaries

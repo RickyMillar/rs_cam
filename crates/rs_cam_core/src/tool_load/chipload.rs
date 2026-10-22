@@ -364,7 +364,7 @@ pub(crate) fn evaluate_with_explanation(
     (verdict, explanation)
 }
 
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.0, op = ?ctx.operation_kind))]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.raw(), op = ?ctx.operation_kind))]
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> ChiploadVerdict {
     evaluate_inner(ctx, env, &mut None)
 }
@@ -1047,7 +1047,7 @@ mod tests {
     ) -> ChiploadVerdict {
         evaluate(
             &crate::tool_load::ToolpathLoadContext {
-                toolpath_id: ToolpathId(toolpath_id),
+                toolpath_id: ToolpathId::from_raw(toolpath_id),
                 tool,
                 material,
                 operation_family,
@@ -1104,7 +1104,7 @@ mod tests {
     /// that makes every verdict below unchanged across the conversion.
     fn sample(tp_id: usize, idx: usize, chipload: f64, engagement: f64) -> SimulationCutSample {
         SimulationCutSample {
-            toolpath_id: ToolpathId(tp_id),
+            toolpath_id: ToolpathId::from_raw(tp_id),
             move_index: idx,
             sample_index: idx,
             segment_time_s: 0.1,

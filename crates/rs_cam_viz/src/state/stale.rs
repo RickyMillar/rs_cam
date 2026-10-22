@@ -46,7 +46,7 @@ pub(super) fn stamp_stale(state: &mut AppState, stale: &BTreeSet<usize>) {
         .filter_map(|&index| {
             state
                 .session()
-                .get_toolpath_config(index)
+                .toolpath_config_at(index)
                 .map(|tc| (tc.id, tc.operation.default_auto_regen()))
         })
         .collect();

@@ -202,7 +202,7 @@ fn diameter_reason(kind: ToolType) -> &'static str {
 
 /// The tool builder of `chipload_thinning_magnitude_survey.rs`, copied.
 fn tool_of(kind: ToolType, diameter: f64, flutes: u32) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), kind);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;
     t.flute_count = flutes;
     t.cutting_length = (diameter * 3.0).max(12.0);
@@ -509,7 +509,7 @@ fn drill_columns(m: &rs_cam_core::feeds::vendor_lookup::LookupResult) -> [String
 
 /// The diagnostics every pre-simulation door raises on the suggested recipe.
 fn recipe_diagnostics(s: &SuggestedParams, tool: &ToolConfig) -> Vec<Diagnostic> {
-    let tp = ToolpathId(0);
+    let tp = ToolpathId::from_raw(0);
     let r = &s.feeds_result;
     let mut out = diagnostics_from_static_checks(tp, &s.operation, tool, None);
     out.extend(diagnostics_from_feeds_result(tp, r));

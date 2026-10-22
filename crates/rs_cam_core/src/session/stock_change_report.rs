@@ -42,7 +42,7 @@ pub struct StockChangeRow {
     /// The index of the setup in `ProjectSession::list_setups`.
     pub setup_index: usize,
     /// The `SetupData::id` of the setup.
-    pub setup_id: usize,
+    pub setup_id: crate::ids::SetupId,
     /// The setup name.
     pub setup_name: String,
     /// The position of the change in the setup's list (application order).
@@ -91,7 +91,7 @@ impl StockChangeRow {
             .geometry
             .model_ids()
             .iter()
-            .map(|id| id.0.to_string())
+            .map(|id| id.raw().to_string())
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -121,7 +121,7 @@ impl StockChangeRow {
             "setup {} '{}' #{} '{}': {} {} (models {}; {}), material {}{}: {}",
             self.setup_index,
             self.setup_name,
-            self.change.id.0,
+            self.change.id.raw(),
             self.change.name,
             self.change.op.label(),
             self.change.geometry.kind_label(),

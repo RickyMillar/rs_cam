@@ -96,11 +96,11 @@ fn build_pocket_session() -> ProjectSession {
     builder = builder.stock(stock);
 
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     let polygon = rounded_rect_with_island();
     let model = LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "demo_pocket".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -137,7 +137,7 @@ fn build_pocket_session() -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(pocket),
@@ -146,7 +146,7 @@ fn build_pocket_session() -> ProjectSession {
         // Ramp entry the ramp-descent bug doesn't fire.
         dressups: DressupConfig::for_op(OperationType::Pocket),
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,

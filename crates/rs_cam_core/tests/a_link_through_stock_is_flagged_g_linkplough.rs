@@ -81,7 +81,7 @@ use rs_cam_core::toolpath::{MoveIntent, Toolpath};
 
 // ── Case (a): a hand-built link through a block ─────────────────────────
 
-const TP: ToolpathId = ToolpathId(7);
+const TP: ToolpathId = ToolpathId::from_raw(7);
 /// The block: 10 mm tall, top at Z 10.
 const STOCK_TOP_Z: f64 = 10.0;
 /// The dexel cell, mm.
@@ -302,7 +302,7 @@ fn pencil() -> OperationConfig {
 fn plate_session(finish: OperationConfig, rough: bool) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock_over(HALF_MM, PLATE_STOCK_Z));
     let tool_idx = builder.add_tool(ball_tool_config(BALL_DIAMETER_MM));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(mesh_model(
         sawtooth_plate(HALF_MM, PERIOD_MM, AMPLITUDE_MM),
         "corrugated",
@@ -311,13 +311,18 @@ fn plate_session(finish: OperationConfig, rough: bool) -> ProjectSession {
         let mut cfg = toolpath_config(
             "3D Rough",
             OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
-            tool_id,
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
             model_id,
         );
         cfg.heights = pinned_heights(PLATE_STOCK_Z, -1.0);
         let _ = builder.add_toolpath(0, cfg).expect("add rough");
     }
-    let mut cfg = toolpath_config("Finish", finish, tool_id, model_id);
+    let mut cfg = toolpath_config(
+        "Finish",
+        finish,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     cfg.heights = pinned_heights(2.0, -2.0);
     if rough {
         cfg.stock_source = StockSource::FromRemainingStock;

@@ -88,7 +88,7 @@ fn model() -> LoadedModel {
     )
     .unwrap();
     LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         path: PathBuf::from("synthetic://floor_fixture.step"),
         name: "Floor fixture".to_owned(),
         kind: None,
@@ -125,7 +125,7 @@ fn face_key() -> MatchKey {
 fn toolpath() -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Floor pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
@@ -135,8 +135,8 @@ fn toolpath() -> ToolpathConfig {
         }),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -152,7 +152,7 @@ fn toolpath() -> ToolpathConfig {
 
 /// A Pocket with the face picked, under `Top { depth: 3 }`.
 fn session() -> ProjectSession {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 3.0;
     let mut builder = ProjectSessionBuilder::new()
         .stock(StockConfig {

@@ -122,7 +122,7 @@ fn tool_fields() -> Vec<&'static str> {
         vendor: _,
         product_id: _,
         size_units: _,
-    } = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    } = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     vec![
         "id",
         "name",
@@ -193,7 +193,7 @@ fn every_stock_field_is_patched_or_has_its_own_door() {
 #[test]
 fn every_tool_field_is_a_param_key_or_has_its_own_door() {
     let tool_names = tool_fields();
-    let mut probe = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut probe = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     probe.size_units = Some(rs_cam_core::compute::tool_config::SizeUnits::Metric);
     assert_names_are_serde_keys(
         &tool_names,

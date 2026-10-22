@@ -126,7 +126,7 @@ fn an_undone_stock_change_stales_every_toolpath_wp19() {
             FreshnessState::EditedSince,
             "toolpath {index} after an undone stock change"
         );
-        assert!(controller.state.session().get_result(index).is_none());
+        assert!(controller.state.session().result_at(index).is_none());
     }
 }
 

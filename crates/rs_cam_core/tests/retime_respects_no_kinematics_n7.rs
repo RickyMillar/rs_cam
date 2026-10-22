@@ -92,14 +92,14 @@ use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 /// The AS001 pocket, which produces an engagement summary.
-const POCKET: ToolpathId = ToolpathId(0);
+const POCKET: ToolpathId = ToolpathId::from_raw(0);
 /// The drill, which produces no engagement summary.
-const DRILL: ToolpathId = ToolpathId(1);
+const DRILL: ToolpathId = ToolpathId::from_raw(1);
 
 // ----- fixture (the N2 fixture, with the kinematics block as a knob) -
 
 fn make_endmill_6mm() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -140,7 +140,7 @@ fn unit_square_at(cx: f64, cy: f64) -> Polygon2 {
 
 fn pocket_model() -> LoadedModel {
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "as001_pocket".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -176,7 +176,7 @@ fn drill_model() -> LoadedModel {
         },
     ];
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "holes".to_owned(),
         mesh: None,
         items: Arc::new(common::session::drawing_items(
@@ -220,8 +220,8 @@ fn pocket_toolpath(tool_id: usize, model_id: usize) -> ToolpathConfig {
         operation: OperationConfig::Pocket(pocket),
         dressups: DressupConfig::for_op(OperationType::Pocket),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -253,8 +253,8 @@ fn drill_toolpath(tool_id: usize, model_id: usize) -> ToolpathConfig {
         operation: OperationConfig::Drill(drill),
         dressups: DressupConfig::for_op(OperationType::Drill),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -290,16 +290,16 @@ fn build_session(kinematics: Option<MachineKinematics>) -> ProjectSession {
     builder = builder.stock(stock);
 
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     let pocket_model_id = builder.add_model(pocket_model());
     let drill_model_id = builder.add_model(drill_model());
 
     let _ = builder
-        .add_toolpath(0, pocket_toolpath(tool_id, pocket_model_id))
+        .add_toolpath(0, pocket_toolpath(tool_id, pocket_model_id.raw()))
         .expect("add pocket toolpath");
     let _ = builder
-        .add_toolpath(0, drill_toolpath(tool_id, drill_model_id))
+        .add_toolpath(0, drill_toolpath(tool_id, drill_model_id.raw()))
         .expect("add drill toolpath");
     let mut session = builder.build();
 
@@ -413,12 +413,10 @@ fn modulation_really_moves_this_fixture() {
     use rs_cam_core::toolpath::MoveIntent;
 
     let session_on = run_unconfigured(true);
-    let tc = session_on
-        .get_toolpath_config(0)
-        .expect("toolpath config 0");
+    let tc = session_on.toolpath_config_at(0).expect("toolpath config 0");
     let commanded_feed = tc.operation.feed_rate();
     let result = session_on
-        .get_result(0)
+        .result_at(0)
         .expect("session result for toolpath 0");
     let moved = result
         .annotated()

@@ -33,7 +33,7 @@ const PANEL_WIDTH: f32 = 240.0;
 
 fn model() -> LoadedModel {
     LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         path: PathBuf::from("emptyadd_fixture.svg"),
         name: "Empty add fixture".to_owned(),
         kind: Some(ModelKind::Svg),
@@ -52,7 +52,7 @@ fn model() -> LoadedModel {
 }
 
 fn tool() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool
 }
@@ -73,14 +73,14 @@ fn empty_state() -> AppState {
 fn state_with_a_toolpath() -> AppState {
     let config = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(Default::default()),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),

@@ -2380,7 +2380,7 @@ mod tests {
     #[test]
     fn modeled_count_ignores_unmodeled() {
         let v = ToolpathLoadVerdict {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             chipload: ChiploadVerdict::Within {
                 approach_to_min: None,
                 approach_to_max: ChiploadMetric {
@@ -2436,7 +2436,7 @@ mod tests {
     fn report_serializes_with_string_carrying_variants() {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
-                toolpath_id: ToolpathId(0),
+                toolpath_id: ToolpathId::from_raw(0),
                 chipload: ChiploadVerdict::Within {
                     approach_to_min: None,
                     approach_to_max: ChiploadMetric {
@@ -2488,7 +2488,7 @@ mod tests {
         let r = ToolLoadReport {
             per_toolpath: vec![
                 ToolpathLoadVerdict {
-                    toolpath_id: ToolpathId(0),
+                    toolpath_id: ToolpathId::from_raw(0),
                     chipload: ChiploadVerdict::Within {
                         approach_to_min: None,
                         approach_to_max: ChiploadMetric {
@@ -2527,7 +2527,7 @@ mod tests {
                     material_split: None,
                 },
                 ToolpathLoadVerdict {
-                    toolpath_id: ToolpathId(1),
+                    toolpath_id: ToolpathId::from_raw(1),
                     chipload: ChiploadVerdict::Within {
                         approach_to_min: None,
                         approach_to_max: ChiploadMetric {
@@ -2571,7 +2571,7 @@ mod tests {
         assert!(r.any_exceeded());
         let exceeded = r.exceeded_criteria();
         assert_eq!(exceeded.len(), 1);
-        assert_eq!(exceeded[0].0, ToolpathId(0));
+        assert_eq!(exceeded[0].0, ToolpathId::from_raw(0));
         assert_eq!(exceeded[0].1.len(), 1);
         assert_eq!(exceeded[0].1[0], ExceededCriterion::deflection());
     }
@@ -2588,7 +2588,7 @@ mod tests {
         };
         let na = || UnmodeledReason::NotApplicableForOp("drill cycle".to_owned());
         let drill_verdict = |plunge: DrillGateOutcome| ToolpathLoadVerdict {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             chipload: ChiploadVerdict::Unmodeled { reason: na() },
             power: PowerVerdict::Unmodeled { reason: na() },
             deflection: DeflectionVerdict::Unmodeled { reason: na() },
@@ -2684,7 +2684,7 @@ mod tests {
             per_toolpath: vec![
                 // Drill cycle — every gate N/A.
                 ToolpathLoadVerdict {
-                    toolpath_id: ToolpathId(0),
+                    toolpath_id: ToolpathId::from_raw(0),
                     chipload: ChiploadVerdict::Unmodeled {
                         reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
                     },
@@ -2707,7 +2707,7 @@ mod tests {
                 // Sim wasn't run yet — every gate `SimulationRequired`.
                 // Operator action: run the sim.
                 ToolpathLoadVerdict {
-                    toolpath_id: ToolpathId(1),
+                    toolpath_id: ToolpathId::from_raw(1),
                     chipload: ChiploadVerdict::Unmodeled {
                         reason: UnmodeledReason::SimulationRequired,
                     },
@@ -2731,7 +2731,7 @@ mod tests {
                 // has an action item, so this rolls up as
                 // `fully_unmodeled` (not `not_applicable`).
                 ToolpathLoadVerdict {
-                    toolpath_id: ToolpathId(2),
+                    toolpath_id: ToolpathId::from_raw(2),
                     chipload: ChiploadVerdict::Unmodeled {
                         reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
                     },
@@ -2775,7 +2775,7 @@ mod tests {
     fn summary_resolves_toolpath_name_into_exceeds_breakdown() {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
-                toolpath_id: ToolpathId(42),
+                toolpath_id: ToolpathId::from_raw(42),
                 chipload: ChiploadVerdict::Exceeds {
                     side: ChipSide::High,
                     triggering: ChiploadMetric {
@@ -2814,10 +2814,12 @@ mod tests {
             }],
         };
         // Resolver hit — name flows into the entry.
-        let s = r.summary(|id| (id == ToolpathId(42)).then(|| "TP3 Adaptive Rough".to_owned()));
+        let s = r.summary(|id| {
+            (id == ToolpathId::from_raw(42)).then(|| "TP3 Adaptive Rough".to_owned())
+        });
         assert_eq!(s.exceeds_breakdown.len(), 1);
         let e = &s.exceeds_breakdown[0];
-        assert_eq!(e.toolpath_id, ToolpathId(42));
+        assert_eq!(e.toolpath_id, ToolpathId::from_raw(42));
         assert_eq!(e.toolpath_name, "TP3 Adaptive Rough");
         assert_eq!(e.gate, "chipload");
         assert_eq!(e.side.as_deref(), Some("high"));
@@ -3045,7 +3047,7 @@ mod tests {
     fn report_serializes_typed_verdict_wire_format() {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
-                toolpath_id: ToolpathId(7),
+                toolpath_id: ToolpathId::from_raw(7),
                 chipload: ChiploadVerdict::Exceeds {
                     side: ChipSide::Low,
                     triggering: ChiploadMetric {
@@ -3122,7 +3124,7 @@ mod tests {
     fn exceeded_criteria_returns_typed_labels() {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
-                toolpath_id: ToolpathId(0),
+                toolpath_id: ToolpathId::from_raw(0),
                 chipload: ChiploadVerdict::Exceeds {
                     side: ChipSide::High,
                     triggering: ChiploadMetric {
@@ -3162,7 +3164,7 @@ mod tests {
         };
         let exceeded = r.exceeded_criteria();
         assert_eq!(exceeded.len(), 1);
-        assert_eq!(exceeded[0].0, ToolpathId(0));
+        assert_eq!(exceeded[0].0, ToolpathId::from_raw(0));
         assert_eq!(exceeded[0].1.len(), 1);
         assert_eq!(exceeded[0].1[0], ExceededCriterion::chipload_breakage());
     }
@@ -3202,7 +3204,7 @@ mod tests {
     #[test]
     fn gating_tier_derives_from_criteria() {
         let v = ToolpathLoadVerdict {
-            toolpath_id: ToolpathId(7),
+            toolpath_id: ToolpathId::from_raw(7),
             chipload: ChiploadVerdict::Exceeds {
                 side: ChipSide::Low,
                 triggering: ChiploadMetric {
@@ -3266,7 +3268,7 @@ mod tests {
             "drill cycle — no continuous engagement".to_owned(),
         );
         ToolpathLoadVerdict {
-            toolpath_id: ToolpathId(id),
+            toolpath_id: ToolpathId::from_raw(id),
             chipload: ChiploadVerdict::Unmodeled {
                 reason: reason.clone(),
             },
@@ -3290,7 +3292,7 @@ mod tests {
     /// fully-unmodeled bucket where operator action *would* help.
     fn vd_all_sim_required(id: usize) -> ToolpathLoadVerdict {
         ToolpathLoadVerdict {
-            toolpath_id: ToolpathId(id),
+            toolpath_id: ToolpathId::from_raw(id),
             chipload: ChiploadVerdict::Unmodeled {
                 reason: UnmodeledReason::SimulationRequired,
             },
@@ -3358,7 +3360,7 @@ mod tests {
     fn summary_populates_exceeds_breakdown_toolpath_name() {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
-                toolpath_id: ToolpathId(42),
+                toolpath_id: ToolpathId::from_raw(42),
                 chipload: ChiploadVerdict::Within {
                     approach_to_min: None,
                     approach_to_max: ChiploadMetric {
@@ -3398,7 +3400,7 @@ mod tests {
             }],
         };
         let s = r.summary(|id| {
-            if id == ToolpathId(42) {
+            if id == ToolpathId::from_raw(42) {
                 Some("TP 5: Front pocket".to_owned())
             } else {
                 None
@@ -3406,7 +3408,7 @@ mod tests {
         });
         assert_eq!(s.exceeds_breakdown.len(), 1);
         let entry = &s.exceeds_breakdown[0];
-        assert_eq!(entry.toolpath_id, ToolpathId(42));
+        assert_eq!(entry.toolpath_id, ToolpathId::from_raw(42));
         assert_eq!(entry.gate, "deflection");
         assert_eq!(entry.toolpath_name, "TP 5: Front pocket");
     }
@@ -3417,7 +3419,7 @@ mod tests {
     fn summary_without_resolver_yields_empty_name() {
         let r = ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
-                toolpath_id: ToolpathId(0),
+                toolpath_id: ToolpathId::from_raw(0),
                 chipload: ChiploadVerdict::Exceeds {
                     side: ChipSide::High,
                     triggering: ChiploadMetric {

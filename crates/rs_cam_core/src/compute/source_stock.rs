@@ -78,7 +78,7 @@ impl PartialEq for CarvedEntry {
 #[derive(Debug, Clone, PartialEq)]
 pub struct StockChangeEntry {
     /// The `SetupData::id` of the setup that owns the change.
-    pub setup_id: usize,
+    pub setup_id: crate::ids::SetupId,
     /// The change id, unique within the setup.
     pub id: crate::ids::StockChangeId,
     /// The effect digest of the change the simulation applied.
@@ -286,7 +286,7 @@ pub struct SourceStockWire {
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct StockChangeEntryWire {
     /// The `SetupData::id` of the setup that owns the change.
-    pub setup_id: usize,
+    pub setup_id: crate::ids::SetupId,
     /// The change id, unique within the setup.
     pub id: crate::ids::StockChangeId,
     /// The effect digest of the change the simulation applied
@@ -359,14 +359,14 @@ mod tests {
 
     fn resolved(setup_id: usize, id: usize) -> ResolvedStockChange {
         ResolvedStockChange {
-            setup_id,
+            setup_id: crate::ids::SetupId::from_raw(setup_id),
             change: StockChange {
-                id: StockChangeId(id),
+                id: StockChangeId::from_raw(id),
                 name: String::new(),
                 enabled: true,
                 op: StockChangeOp::Add,
                 geometry: StockGeometry::OutlineExtrude {
-                    model_ids: vec![ModelId(1)],
+                    model_ids: vec![ModelId::from_raw(1)],
                     z_bottom: 0.0,
                     z_top: 1.0,
                 },
@@ -400,8 +400,8 @@ mod tests {
         };
         let request = SimulationRequest {
             groups: vec![
-                group(resolved(0, 1), ToolpathId(10)),
-                group(resolved(1, 2), ToolpathId(11)),
+                group(resolved(0, 1), ToolpathId::from_raw(10)),
+                group(resolved(1, 2), ToolpathId::from_raw(11)),
             ],
             stock_bbox: bbox,
             stock_top_z: 5.0,
@@ -414,28 +414,28 @@ mod tests {
         };
         let stock = Arc::new(TriDexelStock::from_bounds(&bbox, 1.0));
         let prior: HashMap<ToolpathId, Arc<TriDexelStock>> = [
-            (ToolpathId(10), Arc::clone(&stock)),
-            (ToolpathId(11), stock),
+            (ToolpathId::from_raw(10), Arc::clone(&stock)),
+            (ToolpathId::from_raw(11), stock),
         ]
         .into_iter()
         .collect();
         let sources = snapshot_sources(&request, &prior);
         let entry =
             |setup_id: usize, id: usize| SourceEntry::of_stock_change(&resolved(setup_id, id));
-        assert_eq!(sources[&ToolpathId(10)].after, vec![entry(0, 1)]);
+        assert_eq!(sources[&ToolpathId::from_raw(10)].after, vec![entry(0, 1)]);
         assert_eq!(
-            sources[&ToolpathId(11)].after,
+            sources[&ToolpathId::from_raw(11)].after,
             vec![entry(0, 1), entry(1, 2)]
         );
 
         // S4: the wire lists the two changes, in order, with their digests,
         // and lists no carved toolpath for them.
-        let wire = SourceStockWire::of(&sources[&ToolpathId(11)], None);
+        let wire = SourceStockWire::of(&sources[&ToolpathId::from_raw(11)], None);
         assert!(wire.after.is_empty());
         let listed: Vec<(usize, usize, String)> = wire
             .stock_changes
             .iter()
-            .map(|c| (c.setup_id, c.id.0, c.effect.clone()))
+            .map(|c| (c.setup_id.raw(), c.id.raw(), c.effect.clone()))
             .collect();
         assert_eq!(
             listed,

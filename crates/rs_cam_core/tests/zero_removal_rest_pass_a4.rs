@@ -149,14 +149,14 @@ fn cascade_session(finish_stepover: f64) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
     builder = builder.stock(stock_over(HALF, STOCK_Z));
     let tool_idx = builder.add_tool(ball_tool_config(3.0));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(mesh_model(bumpy_surface(), "bumps"));
     let heights = pinned_heights(STOCK_Z, STOCK_Z - RELIEF);
 
     let mut finish = toolpath_config(
         "Finish (all-over)",
         OperationConfig::UnifiedFinish(unified_cfg(finish_stepover, false)),
-        tool_id,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
     );
     finish.heights = heights.clone();
@@ -165,7 +165,7 @@ fn cascade_session(finish_stepover: f64) -> ProjectSession {
     let mut rest = toolpath_config(
         "Rest (same tool)",
         OperationConfig::UnifiedFinish(unified_cfg(REST_STEPOVER_MM, true)),
-        tool_id,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
     );
     rest.heights = heights;
@@ -211,7 +211,7 @@ fn run(finish_stepover: f64) -> RestArmResult {
         .expect("simulation of the finish pass");
     generate(&mut session, 1);
 
-    let rest = session.get_result(1).expect("rest result");
+    let rest = session.result_at(1).expect("rest result");
     // The reference has to have RESOLVED, or the arm is measuring nothing.
     assert_eq!(
         rest.stats

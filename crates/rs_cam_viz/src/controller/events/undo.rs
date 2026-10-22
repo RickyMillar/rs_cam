@@ -253,7 +253,7 @@ impl<B: ComputeBackend> AppController<B> {
         // cannot drift apart. The row is the one the tool panel's
         // `commit_tool_draft` takes (WP6).
         let command = Command::ReplaceTool(ReplaceToolArgs {
-            tool_id: tool_id.0,
+            tool_id,
             config: Box::new(tool),
         });
         self.apply_controller_command(command, "the tool");

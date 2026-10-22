@@ -127,7 +127,7 @@ fn part_model() -> LoadedModel {
     )
     .unwrap();
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "p3_4_part".to_owned(),
         mesh: Some(Arc::clone(&enriched.mesh)),
         items: Arc::new(brep_face_items(&enriched)),
@@ -167,9 +167,14 @@ fn world_stock_top() -> f64 {
 fn session_with(op: OperationConfig, boundary: BoundaryConfig, face_up: FaceUp) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_DIAMETER));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(part_model());
-    let mut cfg = toolpath_config("p3_4 op", op, tool_id, model_id);
+    let mut cfg = toolpath_config(
+        "p3_4 op",
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     cfg.boundary = boundary;
     cfg.heights.top_z = HeightMode::Auto;
     let _ = builder.add_toolpath(0, cfg).unwrap();
@@ -403,7 +408,7 @@ fn every_step_face_points_out_of_the_solid() {
             .join(name);
         let model = rs_cam_core::io::load_model_file(
             &path,
-            0,
+            rs_cam_core::ids::ModelId::from_raw(0),
             ModelKind::Step,
             ModelUnits::Millimeters,
             Default::default(),

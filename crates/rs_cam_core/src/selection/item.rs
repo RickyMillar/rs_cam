@@ -747,10 +747,12 @@ mod tests {
         let key = scaled.iter().next().unwrap().key();
         assert!((key.anchor[0] - 20.0).abs() < 1e-9);
         assert!((key.measure - 20.0).abs() < 1e-9);
-        let bound = scaled.bound_to(SourceRef::Model(ModelId(7))).unwrap();
+        let bound = scaled
+            .bound_to(SourceRef::Model(ModelId::from_raw(7)))
+            .unwrap();
         assert_eq!(
             bound.iter().next().unwrap().key().source,
-            SourceRef::Model(ModelId(7))
+            SourceRef::Model(ModelId::from_raw(7))
         );
     }
 }

@@ -217,7 +217,7 @@ fn read_power_figure(
         .session()
         .tools()
         .iter()
-        .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
+        .find(|t| t.id == tc.tool_id)?;
     let stock = state.session().stock_config();
     let recommended = preview.recommended();
     rs_cam_core::feeds::power_at_operating_point(
@@ -257,7 +257,7 @@ fn read_cut_efficiency(
         .session()
         .tools()
         .iter()
-        .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
+        .find(|t| t.id == tc.tool_id)?;
     let stock = state.session().stock_config();
     rs_cam_core::feeds::efficiency::cut_efficiency(
         &tc.operation,

@@ -94,14 +94,14 @@ fn toolpath_config(
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(id),
+        id: ToolpathId::from_raw(id),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::for_op(op_type),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -123,7 +123,7 @@ fn run_2d_matrix(matrix: &[(&str, OperationConfig)]) {
         .tools()
         .iter()
         .find(|t| (t.diameter - 6.0).abs() < 1e-6)
-        .map(|t| t.id.0)
+        .map(|t| t.id.raw())
         .expect("ux_2d_pocket.toml must define a 6 mm end mill");
     let model_id = session
         .models()
@@ -135,7 +135,13 @@ fn run_2d_matrix(matrix: &[(&str, OperationConfig)]) {
         let _ = session
             .apply(Command::AddToolpath(AddToolpathArgs {
                 setup_index: 0,
-                config: Box::new(toolpath_config(i, name, op.clone(), tool_id, model_id)),
+                config: Box::new(toolpath_config(
+                    i,
+                    name,
+                    op.clone(),
+                    tool_id,
+                    model_id.raw(),
+                )),
             }))
             .expect("add extreme toolpath");
     }
@@ -277,8 +283,8 @@ fn adaptive3d_generator_survives_search_space_floors() {
                 0,
                 "adaptive3d@floors",
                 op,
-                tool.id.0,
-                mesh_model_id,
+                tool.id.raw(),
+                mesh_model_id.raw(),
             )),
         }))
         .expect("add adaptive3d toolpath");

@@ -96,7 +96,7 @@ fn run(loops: Vec<Polygon2>, cfg: ProfileConfig) -> Toolpath {
     let cancel = AtomicBool::new(false);
     session.generate_toolpath(0, &cancel).expect("generates");
     session
-        .get_result(0)
+        .result_at(0)
         .expect("a result")
         .annotated()
         .toolpath

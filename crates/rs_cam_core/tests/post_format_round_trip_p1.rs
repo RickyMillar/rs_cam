@@ -126,7 +126,7 @@ fn build_project_with_mist(dir: &Path, format: PostFormat, mist: Option<bool>) -
         }))
         .expect("the post row refuses nothing");
 
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.name = "End Mill 6mm (P-1)".to_owned();
     let tool_idx = session
@@ -136,10 +136,10 @@ fn build_project_with_mist(dir: &Path, format: PostFormat, mist: Option<bool>) -
         .expect("the tool row refuses nothing")
         .created
         .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_id = session.tools()[tool_idx].id.raw();
 
     let model = LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "rect".to_owned(),
         mesh: None,
         items: Default::default(),
@@ -163,7 +163,7 @@ fn build_project_with_mist(dir: &Path, format: PostFormat, mist: Option<bool>) -
 
     let pocket = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
@@ -184,8 +184,8 @@ fn build_project_with_mist(dir: &Path, format: PostFormat, mist: Option<bool>) -
         }),
         dressups: DressupConfig::for_op(OperationType::Pocket),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: Some(DIALECT_PROBE_MCODE.to_owned()),
         boundary: BoundaryConfig::default(),

@@ -131,14 +131,14 @@ fn stub_result() -> ToolpathComputeResult {
 fn toolpath(name: &str, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: OperationConfig::new_default(OperationType::Pocket),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -166,7 +166,10 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, ModelId, PathBuf) {
     let mut controller = AppController::with_backend(SilentBackend);
     controller.state.replace_session(
         ProjectSessionBuilder::new()
-            .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill))
+            .tool(ToolConfig::new_default(
+                ToolId::from_raw(1),
+                ToolType::EndMill,
+            ))
             .build(),
     );
     controller.open_import_dialog(
@@ -191,17 +194,17 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, ModelId, PathBuf) {
     let _ = state
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
-            config: Box::new(toolpath("Under test", id_under_test.0)),
+            config: Box::new(toolpath("Under test", id_under_test.raw())),
         }))
         .expect("add the dependent toolpath");
     let _ = state
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
-            config: Box::new(toolpath("Bystander", id_bystander.0)),
+            config: Box::new(toolpath("Bystander", id_bystander.raw())),
         }))
         .expect("add the bystander toolpath");
     for index in [0usize, 1usize] {
-        let revision = state.session().toolpath_revision(index);
+        let revision = state.session().toolpath_revision_at(index);
         let _ = state
             .apply(Command::AdoptResult(AdoptResultArgs {
                 index,
@@ -221,15 +224,14 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, ModelId, PathBuf) {
 }
 
 fn model_id_of(controller: &AppController<SilentBackend>, path: &Path) -> ModelId {
-    let id = controller
+    controller
         .state
         .session()
         .models()
         .iter()
         .find(|m| m.path == path)
         .expect("the imported fixture must be in the session")
-        .id;
-    ModelId(id)
+        .id
 }
 
 /// Is the runtime entry for toolpath slot `idx` marked stale?
@@ -254,7 +256,7 @@ fn width_microns(controller: &AppController<SilentBackend>, id: ModelId) -> i64 
         .session()
         .models()
         .iter()
-        .find(|m| m.id == id.0)
+        .find(|m| m.id == id)
         .expect("the model must still be in the session")
         .bbox()
         .expect("the fixture must carry geometry");
@@ -271,11 +273,11 @@ fn the_fixture_caches_two_results_and_the_rescale_moves_the_geometry() {
     let (mut controller, id, _path) = seeded(&dir);
 
     assert!(
-        controller.state.session().get_result(0).is_some(),
+        controller.state.session().result_at(0).is_some(),
         "the dependent toolpath must start with a cached result"
     );
     assert!(
-        controller.state.session().get_result(1).is_some(),
+        controller.state.session().result_at(1).is_some(),
         "the bystander toolpath must start with a cached result"
     );
     assert!(
@@ -313,7 +315,7 @@ fn a_rescale_drops_the_dependent_results() {
         .expect("rescale must succeed");
 
     assert!(
-        controller.state.session().get_result(0).is_none(),
+        controller.state.session().result_at(0).is_none(),
         "the rescale replaced the geometry this result was generated \
          against, so the result must be dropped. `rescale_model` calls no \
          `invalidate_model` and runs no stale sweep, so the card stays green \
@@ -325,7 +327,7 @@ fn a_rescale_drops_the_dependent_results() {
          sweep stamps it"
     );
     assert!(
-        controller.state.session().get_result(1).is_some(),
+        controller.state.session().result_at(1).is_some(),
         "the bystander is bound to a DIFFERENT model, so its result must \
          survive — this is `invalidate_model`, not `drop_all_results`"
     );
@@ -351,12 +353,12 @@ fn a_reload_drops_the_dependent_results_control() {
     controller.reload_model(id).expect("reload must succeed");
 
     assert!(
-        controller.state.session().get_result(0).is_none(),
+        controller.state.session().result_at(0).is_none(),
         "reload already drops the dependent result"
     );
     assert!(is_stale(&controller, 0), "and stamps it stale");
     assert!(
-        controller.state.session().get_result(1).is_some(),
+        controller.state.session().result_at(1).is_some(),
         "and leaves the bystander alone"
     );
 
@@ -370,12 +372,12 @@ fn a_reload_drops_the_dependent_results_control() {
 #[test]
 fn a_step_rescale_changes_nothing_and_drops_nothing() {
     let mut controller = AppController::with_backend(SilentBackend);
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
 
     // The path is never read: the STEP arm returns before the import.
     let record = LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "step part".to_owned(),
         mesh: None,
         items: Default::default(),
@@ -391,11 +393,11 @@ fn a_step_rescale_changes_nothing_and_drops_nothing() {
     };
     let model_id = builder.add_model(record);
     let _ = builder
-        .add_toolpath(0, toolpath("On the STEP", model_id))
+        .add_toolpath(0, toolpath("On the STEP", model_id.raw()))
         .expect("add the dependent toolpath");
     controller.state.replace_session(builder.build());
     let state = &mut controller.state;
-    let revision = state.session().toolpath_revision(0);
+    let revision = state.session().toolpath_revision_at(0);
     let _ = state
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,
@@ -405,11 +407,11 @@ fn a_step_rescale_changes_nothing_and_drops_nothing() {
         .expect("cache 0");
 
     controller
-        .rescale_model(ModelId(model_id), ModelUnits::Inches)
+        .rescale_model(model_id, ModelUnits::Inches)
         .expect("a STEP rescale must not error");
 
     assert!(
-        controller.state.session().get_result(0).is_some(),
+        controller.state.session().result_at(0).is_some(),
         "the STEP arm returns before the import, so nothing moved and the \
          result must survive"
     );
@@ -438,19 +440,19 @@ fn new_import_options_drop_the_dependent_results_p4_8() {
         .expect("the options apply");
 
     let model = &controller.state.session().models()[0];
-    assert_eq!(model.id, id.0);
+    assert_eq!(model.id, id);
     assert_eq!(
         model.import_options,
         join(0.5),
         "the record takes the options"
     );
     assert!(
-        controller.state.session().get_result(0).is_none(),
+        controller.state.session().result_at(0).is_none(),
         "the join can change the items, so the dependent result goes"
     );
     assert!(is_stale(&controller, 0), "and reads stale");
     assert!(
-        controller.state.session().get_result(1).is_some(),
+        controller.state.session().result_at(1).is_some(),
         "the bystander reads another model"
     );
     assert!(!is_stale(&controller, 1));
@@ -465,7 +467,7 @@ fn unchanged_import_options_drop_nothing_p4_8() {
     controller
         .set_model_import_options(id, rs_cam_core::io::ImportOptions::default())
         .expect("a no-op applies");
-    assert!(controller.state.session().get_result(0).is_some());
+    assert!(controller.state.session().result_at(0).is_some());
     assert!(!is_stale(&controller, 0));
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -485,7 +487,7 @@ fn every_refresh_door_keeps_the_import_options_p4_8() {
             .session()
             .models()
             .iter()
-            .find(|m| m.id == id.0)
+            .find(|m| m.id == id)
             .expect("the model")
             .import_options
     };

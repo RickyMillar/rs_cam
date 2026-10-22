@@ -120,14 +120,14 @@ fn viz_result() -> ToolpathResult {
 fn toolpath() -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Rough Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::new_default(OperationType::Pocket),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -148,12 +148,14 @@ fn toolpath() -> ToolpathConfig {
 /// drop.
 fn build_controller() -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    let mut builder =
-        ProjectSessionBuilder::new().tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::new_default(
+        ToolId::from_raw(1),
+        ToolType::EndMill,
+    ));
     let _ = builder.add_toolpath(0, toolpath()).expect("add toolpath");
     controller.state.replace_session(builder.build());
 
-    let revision = controller.state.session().toolpath_revision(0);
+    let revision = controller.state.session().toolpath_revision_at(0);
     let _ = controller
         .state
         .apply(Command::AdoptResult(AdoptResultArgs {
@@ -280,7 +282,7 @@ fn apply_all_moves_the_cut_on_the_same_fixture() {
 fn the_speeds_apply_leaves_the_toolpath_stale_g_speedsonly() {
     let mut controller = build_controller();
     assert!(
-        controller.state.session().get_result(0).is_some(),
+        controller.state.session().result_at(0).is_some(),
         "fixture: the operation must hold a core result before the apply"
     );
     assert_eq!(
@@ -299,7 +301,7 @@ fn the_speeds_apply_leaves_the_toolpath_stale_g_speedsonly() {
         "the apply wrote nothing, so the staleness claim is vacuous"
     );
     assert!(
-        controller.state.session().get_result(0).is_none(),
+        controller.state.session().result_at(0).is_none(),
         "the speeds apply kept the cached core result. Export then emits the \
          feed words of the PRE-APPLY parameter set."
     );
@@ -320,8 +322,10 @@ fn the_speeds_apply_refuses_a_refused_pairing() {
     let mut controller = AppController::with_backend(SilentBackend);
     // A flat end mill on Scallop: a zero tip radius makes the scallop-stepover
     // formula undefined, and the engine refuses the pairing outright.
-    let mut builder =
-        ProjectSessionBuilder::new().tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::new_default(
+        ToolId::from_raw(1),
+        ToolType::EndMill,
+    ));
     let mut refused = toolpath();
     refused.operation = OperationConfig::new_default(OperationType::Scallop);
     let _ = builder.add_toolpath(0, refused).expect("add toolpath");

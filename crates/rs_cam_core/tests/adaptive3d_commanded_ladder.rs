@@ -66,7 +66,7 @@ fn build_as013_terrain_session() -> ProjectSession {
         .tools()
         .iter()
         .find(|t| (t.diameter - 6.0).abs() < 1e-6)
-        .map(|t| t.id.0)
+        .map(|t| t.id.raw())
         .expect("ux_3d_terrain.toml must define a 6 mm end mill");
     let model_id = session
         .models()
@@ -103,13 +103,13 @@ fn build_as013_terrain_session() -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "AS013 adaptive3d".to_owned(),
         enabled: true,
         operation: OperationConfig::Adaptive3d(adaptive3d),
         dressups: DressupConfig::for_op(OperationType::Adaptive3d),
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,
@@ -187,9 +187,7 @@ fn adaptive3d_emitted_z_ladder_honours_commanded_depth_per_pass() {
         other => panic!("fixture drift: toolpath 0 is not adaptive3d, got {other:?}"),
     };
 
-    let result = session
-        .get_result(0)
-        .expect("compute result for toolpath 0");
+    let result = session.result_at(0).expect("compute result for toolpath 0");
     let annotated = result.annotated();
     assert!(
         annotated.spans_valid,

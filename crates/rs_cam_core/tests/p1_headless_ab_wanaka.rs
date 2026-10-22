@@ -77,7 +77,7 @@ fn p1_headless_ab_full_chain_intent_decomposition() {
 
     let n = s.toolpath_count();
     let enabled: Vec<usize> = (0..n)
-        .filter(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.enabled))
+        .filter(|&i| s.toolpath_config_at(i).is_some_and(|tc| tc.enabled))
         .collect();
 
     // Pass 1: generate everything that can generate from fresh state.
@@ -138,7 +138,7 @@ fn p1_headless_ab_full_chain_intent_decomposition() {
     }
     for tp in &trace.toolpath_summaries {
         let name = (0..n)
-            .filter_map(|i| s.get_toolpath_config(i))
+            .filter_map(|i| s.toolpath_config_at(i))
             .find(|tc| tc.id == tp.toolpath_id)
             .map(|tc| tc.name.clone())
             .unwrap_or_else(|| format!("{:?}", tp.toolpath_id));

@@ -30,7 +30,7 @@ use rs_cam_core::session::{
 
 fn square_model(id: usize, name: &str, lo: f64, hi: f64) -> LoadedModel {
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         name: name.to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -130,7 +130,7 @@ fn a_keyed_set_has_no_failing_pin_and_reads_its_preset() {
 fn the_part_model_choice_moves_the_walls_and_stales_nothing() {
     let mut session = mini();
     // The default: the outline covers the stock and is not part.
-    assert_eq!(session.pin_part_models(), vec![ModelId(1)]);
+    assert_eq!(session.pin_part_models(), vec![ModelId::from_raw(1)]);
     let default_part = session.pin_set_report().wall_to_part_mm();
     assert!(default_part.is_some());
 
@@ -150,7 +150,7 @@ fn the_part_model_choice_moves_the_walls_and_stales_nothing() {
             models: None,
         }))
         .unwrap();
-    assert_eq!(session.pin_part_models(), vec![ModelId(1)]);
+    assert_eq!(session.pin_part_models(), vec![ModelId::from_raw(1)]);
     assert_eq!(session.pin_set_report().wall_to_part_mm(), default_part);
 }
 
@@ -159,7 +159,10 @@ fn the_part_model_choice_survives_a_save_and_a_load() {
     let mut session = mini();
     let _ = session
         .apply(Command::SetPinPartModels(SetPinPartModelsArgs {
-            models: Some(vec![0, 1]),
+            models: Some(vec![
+                rs_cam_core::ids::ModelId::from_raw(0),
+                rs_cam_core::ids::ModelId::from_raw(1),
+            ]),
         }))
         .unwrap();
     let dir = std::env::temp_dir().join(format!("rs_cam_pin_parts_{}", std::process::id()));
@@ -171,7 +174,10 @@ fn the_part_model_choice_survives_a_save_and_a_load() {
     let loaded = ProjectSession::load(&path).unwrap();
     assert_eq!(
         loaded.stock_config().pin_part_models,
-        Some(vec![0, 1]),
+        Some(vec![
+            rs_cam_core::ids::ModelId::from_raw(0),
+            rs_cam_core::ids::ModelId::from_raw(1),
+        ]),
         "the choice did not round-trip"
     );
     let _ = std::fs::remove_dir_all(&dir);

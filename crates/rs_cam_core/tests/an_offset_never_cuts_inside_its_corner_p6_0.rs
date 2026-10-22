@@ -151,7 +151,7 @@ fn generate(outline: Polygon2, op: OperationConfig) -> Toolpath {
         .generate_toolpath(0, &cancel)
         .expect("the op generates");
     session
-        .get_result(0)
+        .result_at(0)
         .expect("a result")
         .annotated()
         .toolpath

@@ -52,7 +52,7 @@ fn two_setup_chain() -> (AppController<RestChainBackend>, Vec<ToolpathId>) {
         .expect("the session accepts a second setup")
         .created
         .expect("the AddSetup row reports the new setup index");
-    let plain = ToolpathId(9);
+    let plain = ToolpathId::from_raw(9);
     let mut config = controller
         .state
         .session()
@@ -125,7 +125,7 @@ fn generate_all_walks_one_plan_over_the_rest_chain() {
     controller.handle_internal_event(crate::ui::AppEvent::GenerateAll);
 
     // 1. The step list, in order.
-    let setup_1 = rs_cam_core::ids::SetupId(controller.state.session().list_setups()[0].id);
+    let setup_1 = controller.state.session().list_setups()[0].id;
     assert_eq!(
         steps(&controller),
         vec![
@@ -227,9 +227,9 @@ fn generate_all_walks_one_plan_over_the_rest_chain() {
             .find_toolpath_config_by_id(*id)
             .expect("the fixture keeps every toolpath");
         assert!(
-            controller.state.session().get_result(index).is_some(),
+            controller.state.session().result_at(index).is_some(),
             "toolpath {} holds no core result",
-            id.0
+            id.raw()
         );
         assert!(
             matches!(
@@ -242,7 +242,7 @@ fn generate_all_walks_one_plan_over_the_rest_chain() {
                 Some(ComputeStatus::Done)
             ),
             "toolpath {} did not reach Done",
-            id.0
+            id.raw()
         );
     }
 
@@ -349,7 +349,7 @@ fn a_single_generate_on_the_last_rest_op_runs_the_ancestors() {
                 Some(ComputeStatus::Done)
             ),
             "toolpath {} did not reach Done",
-            id.0
+            id.raw()
         );
     }
 }

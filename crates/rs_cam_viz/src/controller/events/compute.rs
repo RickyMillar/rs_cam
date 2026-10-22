@@ -222,16 +222,10 @@ impl<B: ComputeBackend> AppController<B> {
 
         let toolpath_name = tc.name.clone();
         let stock_source = tc.stock_source;
-        let tool_id_raw = tc.tool_id;
+        let tool_id = tc.tool_id;
         let operation = tc.operation.clone();
 
-        if !self
-            .state
-            .session()
-            .tools()
-            .iter()
-            .any(|t| t.id.0 == tool_id_raw)
-        {
+        if !self.state.session().tools().iter().any(|t| t.id == tool_id) {
             self.push_notification(
                 "Cannot generate: no tool assigned to this toolpath".into(),
                 super::super::Severity::Warning,
@@ -271,7 +265,7 @@ impl<B: ComputeBackend> AppController<B> {
             let setup = session
                 .list_setups()
                 .iter()
-                .find(|s| s.toolpath_indices.contains(&tp_idx));
+                .find(|s| s.toolpath_indices().contains(&tp_idx));
             session
                 .check_lateral_setup_support(setup, &operation)
                 .err()
@@ -552,7 +546,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // pre-WP3 accept-when-unstamped arm.
                 let revision = match reply_revision {
                     Some(submitted) => submitted,
-                    None => self.state.session().toolpath_revision(tp_index),
+                    None => self.state.session().toolpath_revision_at(tp_index),
                 };
                 let adopted = self.apply(rs_cam_core::session::Command::AdoptResult(
                     rs_cam_core::session::AdoptResultArgs {
@@ -659,7 +653,7 @@ impl<B: ComputeBackend> AppController<B> {
             let Some(id) = self
                 .state
                 .session()
-                .get_toolpath_config(index)
+                .toolpath_config_at(index)
                 .map(|tc| tc.id)
             else {
                 continue;
@@ -667,7 +661,7 @@ impl<B: ComputeBackend> AppController<B> {
             let Some(annotated) = self
                 .state
                 .session()
-                .get_result(index)
+                .result_at(index)
                 .map(|result| Arc::clone(result.annotated()))
             else {
                 continue;
@@ -725,7 +719,7 @@ impl<B: ComputeBackend> AppController<B> {
                         .is_none()
                 }) {
                     tracing::info!(
-                        toolpath = missing.id.0,
+                        toolpath = missing.id.raw(),
                         "discarding simulation result: a boundary names a removed toolpath"
                     );
                     // The same closure as a cancelled run: the stamps are
@@ -788,7 +782,7 @@ impl<B: ComputeBackend> AppController<B> {
                                     .session()
                                     .list_setups()
                                     .iter()
-                                    .find(|s| s.id == setup_id.0)
+                                    .find(|s| s.id == setup_id)
                                     .map(|s| s.name.clone())
                                     .unwrap_or_default();
                                 sbs.push(crate::state::simulation::SetupBoundary {
@@ -1117,7 +1111,7 @@ impl<B: ComputeBackend> AppController<B> {
             let covers = match step {
                 PlanStep::SimulateAll => setups.len().checked_sub(1),
                 PlanStep::SimulatePrefix { setup, .. } => session
-                    .find_setup_by_id(setup.0)
+                    .find_setup_by_id(*setup)
                     .map(|(position, _)| position),
                 PlanStep::Generate(_) => None,
             };
@@ -1128,14 +1122,14 @@ impl<B: ComputeBackend> AppController<B> {
         let mut load = SimulationLoad::default();
         for setup in setups.iter().take(last_setup.saturating_add(1)) {
             let mut enabled_here = false;
-            for &index in &setup.toolpath_indices {
+            for &index in setup.toolpath_indices() {
                 if !configs.get(index).is_some_and(|config| config.enabled) {
                     continue;
                 }
                 enabled_here = true;
                 load.simulated_toolpaths = load.simulated_toolpaths.saturating_add(1);
                 let moves = session
-                    .get_result(index)
+                    .result_at(index)
                     .map_or(0, |result| result.toolpath().moves.len());
                 load.moves = load
                     .moves
@@ -1835,7 +1829,7 @@ impl<B: ComputeBackend> AppController<B> {
                 let Some((index, _)) = self.state.session().find_toolpath_config_by_id(id) else {
                     self.record_step_outcome(StepOutcome::Skipped(format!(
                         "toolpath {} is no longer in the project",
-                        id.0
+                        id.raw()
                     )));
                     return;
                 };
@@ -1848,7 +1842,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // `generate_toolpath` turns the debug trace on for exactly
                 // that run.
                 let target = self.plan.as_ref().and_then(|plan| plan.target);
-                if target != Some(id) && self.state.session().get_result(index).is_some() {
+                if target != Some(id) && self.state.session().result_at(index).is_some() {
                     if let Some(plan) = self.plan.as_mut() {
                         plan.note_already_current();
                     }
@@ -1871,11 +1865,11 @@ impl<B: ComputeBackend> AppController<B> {
                     self.record_step_outcome(StepOutcome::Skipped(format!(
                         "an earlier operation in this setup did not generate, so no \
                          simulation can unlock toolpath {}",
-                        upto.0
+                        upto.raw()
                     )));
                     return;
                 }
-                let Some((position, _)) = self.state.session().find_setup_by_id(setup.0) else {
+                let Some((position, _)) = self.state.session().find_setup_by_id(setup) else {
                     self.record_step_outcome(StepOutcome::Skipped(
                         "the setup is no longer in the project".to_owned(),
                     ));
@@ -2088,7 +2082,7 @@ impl<B: ComputeBackend> AppController<B> {
         // always found one. `usize::MAX` is deliberately implausible: it
         // reads as "no index", not as toolpath 0.
         let tp_index = located.as_ref().map_or(usize::MAX, |(index, _)| *index);
-        let tp_name = located.map_or_else(|| format!("toolpath {}", tp_id.0), |(_, name)| name);
+        let tp_name = located.map_or_else(|| format!("toolpath {}", tp_id.raw()), |(_, name)| name);
         let rt_status = self
             .state
             .gui
@@ -2100,7 +2094,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session()
             .setup_of_toolpath_id(tp_id)
             .and_then(|position| self.state.session().list_setups().get(position))
-            .map(|setup| rs_cam_core::ids::SetupId(setup.id));
+            .map(|setup| setup.id);
 
         let mut stop: Option<String> = None;
         let outcome = {
@@ -2133,7 +2127,7 @@ impl<B: ComputeBackend> AppController<B> {
                 }
                 Some((false, ComputeStatus::Error(error))) => {
                     plan.failed += 1;
-                    plan.errors.push((tp_id.0, error.clone()));
+                    plan.errors.push((tp_id.raw(), error.clone()));
                     if let Some(setup) = setup {
                         plan.blocked_setups.insert(setup);
                     }
@@ -2147,7 +2141,7 @@ impl<B: ComputeBackend> AppController<B> {
                          assignment"
                     );
                     plan.failed += 1;
-                    plan.errors.push((tp_id.0, message.clone()));
+                    plan.errors.push((tp_id.raw(), message.clone()));
                     if let Some(setup) = setup {
                         plan.blocked_setups.insert(setup);
                     }
@@ -2163,13 +2157,13 @@ impl<B: ComputeBackend> AppController<B> {
                 Some((false, status @ (ComputeStatus::Computing | ComputeStatus::Disabled))) => {
                     let message = format!("{tp_name}: no result, status={}", status.label());
                     plan.failed += 1;
-                    plan.errors.push((tp_id.0, message.clone()));
+                    plan.errors.push((tp_id.raw(), message.clone()));
                     StepOutcome::Failed(message)
                 }
                 None => {
                     let message = format!("{tp_name}: toolpath runtime not found");
                     plan.failed += 1;
-                    plan.errors.push((tp_id.0, message.clone()));
+                    plan.errors.push((tp_id.raw(), message.clone()));
                     StepOutcome::Failed(message)
                 }
             }
@@ -2224,7 +2218,7 @@ impl<B: ComputeBackend> AppController<B> {
                 let rt = self.state.gui.toolpath_rt.get(&tp_id);
                 let resp = match rt.and_then(|rt| rt.run.result()) {
                     Some(result) => json_str(serde_json::json!({
-                        "id": tp_id.0,
+                        "id": tp_id.raw(),
                         "move_count": result.stats.move_count,
                         "cutting_distance_mm": result.stats.cutting_distance,
                         "rapid_distance_mm": result.stats.rapid_distance,
@@ -2385,7 +2379,7 @@ impl<B: ComputeBackend> AppController<B> {
             let tool_name = session
                 .tools()
                 .iter()
-                .find(|t| t.id.0 == tc.tool_id)
+                .find(|t| t.id == tc.tool_id)
                 .map(|t| t.name.clone())
                 .unwrap_or_default();
             if let Some(rt) = gui.toolpath_rt.get(&tc.id) {

@@ -133,7 +133,7 @@ fn stock_for(polys: &[Polygon2]) -> StockConfig {
 }
 
 fn endmill(diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     t.diameter = diameter;
     t.cutting_length = 25.0;
     t.shank_diameter = diameter;
@@ -148,7 +148,7 @@ fn endmill(diameter: f64) -> ToolConfig {
 /// both refuse any other cutter kind (`vbit_half_angle`), and both read the
 /// half angle from the TOOL, never from the config.
 fn vbit() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(0), ToolType::VBit);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit);
     t.diameter = 12.7;
     t.cutting_length = 11.0;
     t.included_angle = 60.0;
@@ -285,10 +285,15 @@ fn build_session(fixture: &Fixture, op: OperationConfig, kind: ToolKind) -> Proj
         ToolKind::VBit => vbit(),
     };
     let tool_idx = builder.add_tool(tool);
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(model);
     let mut session = builder.build();
-    let cfg = toolpath_config(fixture.name, op, tool_id, model_id);
+    let cfg = toolpath_config(
+        fixture.name,
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     let _ = session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
@@ -386,7 +391,7 @@ fn record_row(row: &str) {
 /// recorded per cell rather than asserted on, because turning either into a
 /// failure condition is a Checkpoint decision, not this wave's.
 fn probe_row(op: &str, fixture: &str, session: &ProjectSession) -> String {
-    let Some(res) = session.get_result(0) else {
+    let Some(res) = session.result_at(0) else {
         return format!("+ | {op} | {fixture} | no result | | |");
     };
     let nan_moves = res
@@ -994,7 +999,7 @@ fn adversarial_2d_full_campaign() {
             record_row(&rec.row());
             record_row(&probe_row(&name, f.name, &session));
             if rec.moves > 0
-                && let Some(r) = session.get_result(0)
+                && let Some(r) = session.result_at(0)
                 && let Some(p) =
                     adv::write_toolpath_svg(f, r.toolpath(), &format!("{}_{}", name, f.name))
             {

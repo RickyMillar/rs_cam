@@ -42,7 +42,7 @@ fn a_simulation_after_an_edit_carves_only_what_core_holds() {
     pump_until_idle(&mut controller);
     for index in 0..ids.len() {
         assert!(
-            controller.state.session().get_result(index).is_some(),
+            controller.state.session().result_at(index).is_some(),
             "row {index} must be generated before the edit"
         );
     }
@@ -60,8 +60,8 @@ fn a_simulation_after_an_edit_carves_only_what_core_holds() {
             },
         ))
         .expect("scallop_height is a scallop parameter");
-    assert!(controller.state.session().get_result(1).is_none());
-    assert!(controller.state.session().get_result(2).is_none());
+    assert!(controller.state.session().result_at(1).is_none());
+    assert!(controller.state.session().result_at(2).is_none());
     assert!(
         controller
             .state

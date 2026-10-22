@@ -242,7 +242,7 @@ impl SimulationCutTrace {
 
 /// The toolpath id that [`SimulationCutTrace::population_view`] gives a
 /// sample outside the population. No toolpath has it.
-pub const POPULATION_EXCLUDED: ToolpathId = ToolpathId(usize::MAX);
+pub const POPULATION_EXCLUDED: ToolpathId = ToolpathId::mint(usize::MAX);
 
 /// The number of samples of one material that the gates did not judge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

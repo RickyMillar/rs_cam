@@ -213,7 +213,7 @@ pub fn group_stock_changes(
                 .model_ids()
                 .into_iter()
                 .map(|model_id| {
-                    let model = models.iter().find(|m| m.id == model_id.0);
+                    let model = models.iter().find(|m| m.id == model_id);
                     let source = if wants_mesh {
                         model
                             .and_then(|m| m.mesh.clone())
@@ -858,7 +858,7 @@ pub enum SimulationError {
     /// simulation applies no partial result.
     StockChangeRefused {
         /// The `SetupData::id` of the setup that owns the change.
-        setup_id: usize,
+        setup_id: crate::ids::SetupId,
         /// The change id.
         change_id: crate::ids::StockChangeId,
         /// The change name.
@@ -890,7 +890,7 @@ impl std::fmt::Display for SimulationError {
             } => write!(
                 f,
                 "Stock change '{change_name}' (id {}) of setup id {setup_id} refused: {reason}",
-                change_id.0
+                change_id.raw()
             ),
         }
     }
@@ -2754,11 +2754,11 @@ mod tests {
 
         let entry = SimToolpathEntry {
             head: Default::default(),
-            id: ToolpathId(1),
+            id: ToolpathId::from_raw(1),
             name: "Test".to_owned(),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
             tool: Arc::new(tool),
-            tool_id: crate::compute::tool_config::ToolId(0),
+            tool_id: crate::compute::tool_config::ToolId::from_raw(0),
             flute_count: 2,
             tool_summary: "6mm Flat".to_owned(),
             semantic_trace: None,
@@ -2859,9 +2859,9 @@ mod tests {
             assert_eq!(a.stock.z_grid.rays, b.stock.z_grid.rays);
         }
         let mut keys: Vec<_> = full.prior_stocks.keys().copied().collect();
-        keys.sort_unstable_by_key(|id| id.0);
+        keys.sort_unstable_by_key(|id| id.raw());
         let mut strided_keys: Vec<_> = strided.prior_stocks.keys().copied().collect();
-        strided_keys.sort_unstable_by_key(|id| id.0);
+        strided_keys.sort_unstable_by_key(|id| id.raw());
         assert_eq!(keys, strided_keys);
         for id in keys {
             assert_eq!(
@@ -3090,11 +3090,11 @@ mod tests {
 
         let entry = SimToolpathEntry {
             head: Default::default(),
-            id: ToolpathId(1),
+            id: ToolpathId::from_raw(1),
             name: "Pocket F-2 validation".to_owned(),
             annotated: Arc::new(AnnotatedToolpath::new(tp)),
             tool: Arc::new(tool_def),
-            tool_id: crate::compute::tool_config::ToolId(0),
+            tool_id: crate::compute::tool_config::ToolId::from_raw(0),
             flute_count: 2,
             tool_summary: "6.35mm Flat".to_owned(),
             semantic_trace: None,
@@ -3194,11 +3194,11 @@ mod tests {
         let top_group = SimGroupEntry {
             toolpaths: vec![SimToolpathEntry {
                 head: Default::default(),
-                id: ToolpathId(1),
+                id: ToolpathId::from_raw(1),
                 name: "Top Cut".into(),
                 annotated: Arc::new(AnnotatedToolpath::new(top_tp)),
                 tool: Arc::new(make_tool()),
-                tool_id: crate::compute::tool_config::ToolId(0),
+                tool_id: crate::compute::tool_config::ToolId::from_raw(0),
                 flute_count: 2,
                 tool_summary: "6mm Flat".into(),
                 semantic_trace: None,
@@ -3218,11 +3218,11 @@ mod tests {
         let bottom_group = SimGroupEntry {
             toolpaths: vec![SimToolpathEntry {
                 head: Default::default(),
-                id: ToolpathId(2),
+                id: ToolpathId::from_raw(2),
                 name: "Bottom Cut".into(),
                 annotated: Arc::new(AnnotatedToolpath::new(bottom_tp)),
                 tool: Arc::new(make_tool()),
-                tool_id: crate::compute::tool_config::ToolId(0),
+                tool_id: crate::compute::tool_config::ToolId::from_raw(0),
                 flute_count: 2,
                 tool_summary: "6mm Flat".into(),
                 semantic_trace: None,
@@ -3326,7 +3326,7 @@ mod tests {
     fn phantom_prior_stock_populates_pending_op_snapshot() {
         let mut req = simple_request();
         let generated_id = req.groups[0].toolpaths[0].id;
-        let phantom_id = ToolpathId(2);
+        let phantom_id = ToolpathId::from_raw(2);
         req.groups[0].phantom_prior_stock = Some((1, phantom_id));
 
         let cancel = AtomicBool::new(false);

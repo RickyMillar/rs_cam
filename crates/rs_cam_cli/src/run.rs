@@ -93,17 +93,30 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "model".to_owned());
-    let model = LoadedModel::from_file(0, &model_name, input, None, Some(units), &base_dir)
-        .with_context(|| format!("loading model '{}'", input.display()))?;
+    let model = LoadedModel::from_file(
+        rs_cam_core::ids::ModelId::placeholder(),
+        &model_name,
+        input,
+        None,
+        Some(units),
+        &base_dir,
+    )
+    .with_context(|| format!("loading model '{}'", input.display()))?;
     let _ = apply_command(
         &mut session,
         Command::AddModel(AddModelArgs {
             model: Box::new(model),
         }),
     )?;
+    // The add door gave the model its id; the toolpath binds that id.
+    let model_id = session
+        .models()
+        .last()
+        .map(|m| m.id)
+        .context("add_model added no model")?;
 
     let (tool_type, diameter) = parse_tool_spec(tool_spec)?;
-    let mut tool = ToolConfig::new_default(ToolId(0), tool_type);
+    let mut tool = ToolConfig::new_default(ToolId::placeholder(), tool_type);
     tool.name = format!("{} {:.3}mm", tool_type.label(), diameter);
     tool.diameter = diameter;
     let tool_idx = apply_command(
@@ -129,22 +142,21 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
         .tools()
         .get(tool_idx)
         .context("tool index out of bounds after add_tool")?
-        .id
-        .0;
+        .id;
     let tp_index = apply_command(
         &mut session,
         Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(ToolpathConfig {
                 shoe: Default::default(),
-                id: rs_cam_core::ToolpathId(0),
+                id: rs_cam_core::ToolpathId::placeholder(),
                 name: format!("{} (cli run)", op_type.label()),
                 enabled: true,
                 operation: OperationConfig::new_default(op_type),
                 dressups: DressupConfig::default(),
                 heights: HeightsConfig::default(),
                 tool_id,
-                model_id: 0,
+                model_id,
                 pre_gcode: None,
                 post_gcode: None,
                 boundary: BoundaryConfig::default(),
@@ -196,7 +208,7 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
         .generate_toolpath(tp_index, &cancel)
         .map_err(|e| anyhow::anyhow!("generating {}: {e}", op_type.kind_str()))?;
 
-    if let Some(result) = session.get_result(tp_index) {
+    if let Some(result) = session.result_at(tp_index) {
         let toolpath = result.toolpath();
         info!(
             moves = toolpath.moves.len(),

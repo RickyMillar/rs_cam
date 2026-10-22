@@ -60,7 +60,7 @@ impl ProjectSession {
             .ok_or(SessionError::SetupNotFound(setup_index))?;
 
         // Assign a fresh ID
-        config.id = crate::ids::ToolpathId(self.next_toolpath_id);
+        config.id = crate::ids::ToolpathId::mint(self.next_toolpath_id);
         self.next_toolpath_id += 1;
 
         let tp_index = self.toolpath_configs.len();
@@ -628,11 +628,11 @@ impl ProjectSession {
     pub(crate) fn set_toolpath_tool(
         &mut self,
         index: usize,
-        tool_id: usize,
+        tool_id: ToolId,
     ) -> Result<Effects, SessionError> {
         self.try_with_effects(Some(index), move |session| {
-            if !session.tools.iter().any(|t| t.id.0 == tool_id) {
-                return Err(SessionError::ToolNotFound(ToolId(tool_id)));
+            if !session.tools.iter().any(|t| t.id == tool_id) {
+                return Err(SessionError::ToolNotFound(tool_id));
             }
             let tc = session
                 .toolpath_configs
@@ -679,17 +679,13 @@ impl ProjectSession {
     pub(crate) fn set_toolpath_model(
         &mut self,
         index: usize,
-        model_id: usize,
+        model_id: crate::ids::ModelId,
     ) -> Result<Effects, SessionError> {
         self.try_with_effects(Some(index), move |session| {
             if !session.models.iter().any(|m| m.id == model_id) {
                 return Err(SessionError::ModelNotFound {
-                    id: crate::ids::ModelId(model_id),
-                    known: session
-                        .models
-                        .iter()
-                        .map(|m| crate::ids::ModelId(m.id))
-                        .collect(),
+                    id: model_id,
+                    known: session.models.iter().map(|m| m.id).collect(),
                 });
             }
             let tc = session
@@ -806,7 +802,7 @@ impl ProjectSession {
     /// same reading: `drop_result` bumps the revision whether or not a
     /// result was there, so `Effects::stale` always holds `index`. A
     /// caller that needs "was a result present" reads
-    /// [`ProjectSession::get_result`] before the call.
+    /// [`ProjectSession::result_at`] before the call.
     pub(crate) fn remove_result(&mut self, index: usize) -> Effects {
         self.with_effects(Some(index), move |session| {
             session.drop_result(index);

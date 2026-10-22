@@ -22,7 +22,7 @@ const TEST_MAX_FEED: f64 = 3000.0;
 
 fn gui_with_traces() -> GuiState {
     let mut gui = GuiState::new();
-    let toolpath_id = rs_cam_core::ToolpathId(1);
+    let toolpath_id = rs_cam_core::ToolpathId::from_raw(1);
 
     let semantic = ToolpathSemanticRecorder::new("Adaptive", "Adaptive");
     let root = semantic.root_context();
@@ -141,7 +141,7 @@ fn simulation_for_toolpath() -> SimulationState {
         }),
         total_moves: 9,
         boundaries: vec![ToolpathBoundary {
-            id: ToolpathId(1),
+            id: ToolpathId::from_raw(1),
             name: "Adaptive".to_owned(),
             tool_name: "6mm End Mill".to_owned(),
             start_move: 0,
@@ -149,7 +149,7 @@ fn simulation_for_toolpath() -> SimulationState {
             direction: StockCutDirection::FromTop,
         }],
         setup_boundaries: vec![SetupBoundary {
-            setup_id: SetupId(1),
+            setup_id: SetupId::from_raw(1),
             setup_name: "Setup 1".to_owned(),
             start_move: 0,
         }],
@@ -178,7 +178,7 @@ fn attach_cut_trace(sim: &mut SimulationState) -> Arc<SimulationCutTrace> {
             // field on `SimulationCutSample` reaches these fixtures.
             // Only what this test measures is spelled out.
             rs_cam_core::stock::simulation_cut::SimulationCutSample {
-                toolpath_id: rs_cam_core::ToolpathId(1),
+                toolpath_id: rs_cam_core::ToolpathId::from_raw(1),
                 move_index: 1,
                 position: [0.0, 0.0, -1.0],
                 cumulative_time_s: 0.2,
@@ -200,7 +200,7 @@ fn attach_cut_trace(sim: &mut SimulationState) -> Arc<SimulationCutTrace> {
                 ..rs_cam_core::stock::simulation_cut::SimulationCutSample::test_fixture()
             },
             rs_cam_core::stock::simulation_cut::SimulationCutSample {
-                toolpath_id: rs_cam_core::ToolpathId(1),
+                toolpath_id: rs_cam_core::ToolpathId::from_raw(1),
                 move_index: 7,
                 sample_index: 1,
                 position: [8.0, 8.0, -1.0],
@@ -295,7 +295,7 @@ fn current_debug_annotation_uses_local_toolpath_move() {
     let annotation = sim
         .current_debug_annotation(&gui)
         .expect("annotation for current move");
-    assert_eq!(annotation.0, ToolpathId(1));
+    assert_eq!(annotation.0, ToolpathId::from_raw(1));
     assert_eq!(annotation.1.label, "Cleanup");
 }
 
@@ -304,7 +304,7 @@ fn pinned_semantic_item_overrides_playback_resolution() {
     let gui = gui_with_traces();
     let mut sim = simulation_for_toolpath();
     sim.playback.current_move = 7;
-    sim.pin_semantic_item(ToolpathId(1), 2);
+    sim.pin_semantic_item(ToolpathId::from_raw(1), 2);
 
     let active = sim
         .active_semantic_item(&gui)
@@ -324,9 +324,9 @@ fn hotspot_target_resolves_move_and_semantic_item() {
     let mut sim = simulation_for_toolpath();
 
     let target = sim
-        .trace_target_for_hotspot(&gui, ToolpathId(1), 0)
+        .trace_target_for_hotspot(&gui, ToolpathId::from_raw(1), 0)
         .expect("hotspot target");
-    assert_eq!(target.toolpath_id, ToolpathId(1));
+    assert_eq!(target.toolpath_id, ToolpathId::from_raw(1));
     assert_eq!(target.move_index, 0);
     assert!(target.semantic_item_id.is_some());
     assert!(target.debug_span_id.is_some());
@@ -374,7 +374,7 @@ fn semantic_pick_prefers_deeper_item_then_smaller_move_span() {
             &V3::new(0.0, 0.0, -1.0),
         )
         .expect("semantic pick target");
-    assert_eq!(target.toolpath_id, ToolpathId(1));
+    assert_eq!(target.toolpath_id, ToolpathId::from_raw(1));
     assert_eq!(target.semantic_item_id, Some(2));
     assert_eq!(target.move_index, 0);
 }
@@ -548,7 +548,7 @@ fn evidence_movement_invalidates_the_cached_triage() {
         }],
         min_safe_stickout: 42.0,
     });
-    sim.checks.checked_scope.toolpath_id = Some(ToolpathId(1));
+    sim.checks.checked_scope.toolpath_id = Some(ToolpathId::from_raw(1));
     sim.checks.holder_collision_count = 1;
     assert_ne!(
         sim.cached_simulation_triage(&session).counts.samples_total,
@@ -597,7 +597,7 @@ fn span_aggregate_cache_rebuilds_after_its_trace_is_freed() {
     assert_eq!(
         sim.debug
             .span_aggregates
-            .cutting_indices_for(ToolpathId(1))
+            .cutting_indices_for(ToolpathId::from_raw(1))
             .len(),
         2,
         "fixture must have cutting samples to make the sentry non-vacuous"
@@ -619,7 +619,7 @@ fn span_aggregate_cache_rebuilds_after_its_trace_is_freed() {
     assert_eq!(
         sim.debug
             .span_aggregates
-            .cutting_indices_for(ToolpathId(1))
+            .cutting_indices_for(ToolpathId::from_raw(1))
             .len(),
         1,
         "the cache must reflect the trace it was last given"
@@ -697,7 +697,7 @@ fn adopt(
     result: rs_cam_core::session::ToolpathComputeResult,
 ) {
     use rs_cam_core::session::{AdoptResultArgs, Command};
-    let revision = session.toolpath_revision(index);
+    let revision = session.toolpath_revision_at(index);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index,
@@ -714,19 +714,21 @@ fn session_for_toolpath_one() -> rs_cam_core::session::ProjectSession {
     use rs_cam_core::compute::catalog::OperationConfig;
     use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use rs_cam_core::session::{ProjectSessionBuilder, ToolpathConfig};
-    let mut builder =
-        ProjectSessionBuilder::new().tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::new_default(
+        ToolId::from_raw(1),
+        ToolType::EndMill,
+    ));
     for name in ["Unused", "Adaptive"] {
         let config = ToolpathConfig {
             shoe: Default::default(),
-            id: rs_cam_core::ToolpathId(0),
+            id: rs_cam_core::ToolpathId::from_raw(0),
             name: name.to_owned(),
             enabled: true,
             operation: OperationConfig::Pocket(Default::default()),
             dressups: Default::default(),
             heights: Default::default(),
-            tool_id: 1,
-            model_id: 0,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+            model_id: rs_cam_core::ids::ModelId::from_raw(0),
             pre_gcode: None,
             post_gcode: None,
             boundary: Default::default(),
@@ -743,7 +745,7 @@ fn session_for_toolpath_one() -> rs_cam_core::session::ProjectSession {
     let mut session = builder.build();
     assert_eq!(
         session.toolpath_configs()[1].id,
-        rs_cam_core::ToolpathId(1),
+        rs_cam_core::ToolpathId::from_raw(1),
         "the fixture trace names toolpath 1"
     );
     adopt(&mut session, 1, plunging_result(1200.0));
@@ -795,7 +797,7 @@ fn a_result_adoption_rebuilds_the_cut_metrics_once_g_cachekeys() {
     let mut session = session_for_toolpath_one();
     let mut sim = simulation_for_toolpath();
     attach_cut_trace(&mut sim);
-    let id = rs_cam_core::ToolpathId(1);
+    let id = rs_cam_core::ToolpathId::from_raw(1);
 
     let first = sim.cached_cut_metrics(&session, id);
     assert!(
@@ -897,7 +899,7 @@ fn a_new_debug_trace_after_a_drop_misses_the_issue_list_g_cachekeys() {
     let mut gui = gui_with_traces();
     let mut sim = simulation_for_toolpath();
     let _trace = attach_cut_trace(&mut sim);
-    let id = rs_cam_core::ToolpathId(1);
+    let id = rs_cam_core::ToolpathId::from_raw(1);
     let before = sim.issues(&gui, TEST_MAX_FEED);
 
     let rt = gui.toolpath_rt.get_mut(&id).expect("fixture toolpath");
@@ -940,13 +942,13 @@ fn simulation_with_two_toolpaths() -> SimulationState {
     let a = results.boundaries[0].clone();
     results.boundaries = vec![
         ToolpathBoundary {
-            id: ToolpathId(1),
+            id: ToolpathId::from_raw(1),
             start_move: 0,
             end_move: 100,
             ..a.clone()
         },
         ToolpathBoundary {
-            id: ToolpathId(2),
+            id: ToolpathId::from_raw(2),
             start_move: 100,
             end_move: 150,
             ..a
@@ -963,7 +965,10 @@ fn each_toolpath_is_trimmed_by_its_own_move_range_f6() {
     let sim = simulation_with_two_toolpaths();
     let at = |cursor: usize| {
         let limits = sim.toolpath_move_limits(cursor);
-        (limits[&ToolpathId(1)], limits[&ToolpathId(2)])
+        (
+            limits[&ToolpathId::from_raw(1)],
+            limits[&ToolpathId::from_raw(2)],
+        )
     };
     assert_eq!(at(0), (0, 0));
     assert_eq!(

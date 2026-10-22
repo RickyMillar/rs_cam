@@ -103,7 +103,10 @@ fn island_params() -> TierIslandParams {
 
 fn recipe(tool_ids: Vec<usize>) -> BoundarySource {
     BoundarySource::PlannedTierRegions {
-        tool_ids,
+        tool_ids: tool_ids
+            .into_iter()
+            .map(rs_cam_core::ids::ToolId::from_raw)
+            .collect(),
         tier: 1,
         cell_mm: CELL_MM,
         tolerance_mm: TOLERANCE_MM,
@@ -166,8 +169,8 @@ fn a_fine_tier_op_cuts_only_inside_its_own_islands() {
     builder = builder.stock(common::session::stock_under(HALF_MM, 6.0));
     let coarse_idx = builder.add_tool(ball_tool_config(4.0));
     let fine_idx = builder.add_tool(ball_tool_config(2.0));
-    let coarse_id = builder.tools()[coarse_idx].id.0;
-    let fine_id = builder.tools()[fine_idx].id.0;
+    let coarse_id = builder.tools()[coarse_idx].id.raw();
+    let fine_id = builder.tools()[fine_idx].id.raw();
     let model_id = builder.add_model(common::session::mesh_model(plane_with_bowl(), "bowl"));
     let mut session = builder.build();
 
@@ -182,7 +185,7 @@ fn a_fine_tier_op_cuts_only_inside_its_own_islands() {
             tolerance: 0.1,
             ..UnifiedFinishConfig::default()
         }),
-        fine_id,
+        rs_cam_core::ids::ToolId::from_raw(fine_id),
         model_id,
     );
     tc.stock_source = StockSource::Fresh;
@@ -208,7 +211,7 @@ fn a_fine_tier_op_cuts_only_inside_its_own_islands() {
         .generate_toolpath(index, &cancel)
         .expect("the fine tier must generate");
 
-    let result = session.get_result(index).expect("a generated result");
+    let result = session.result_at(index).expect("a generated result");
     let cutting: Vec<P2> = result
         .toolpath()
         .moves

@@ -1060,12 +1060,12 @@ mod tests {
             0.0, 0.0, 10.0, 10.0,
         )]);
         let change = StockChange {
-            id: StockChangeId(4),
+            id: StockChangeId::from_raw(4),
             name: "Fill".to_owned(),
             enabled: true,
             op: StockChangeOp::Add,
             geometry: StockGeometry::OutlineFill {
-                model_ids: vec![ModelId(1)],
+                model_ids: vec![ModelId::from_raw(1)],
                 level_z: 5.0,
             },
             material: crate::material::Material::default(),
@@ -1080,7 +1080,7 @@ mod tests {
                 local_to_global: None,
                 phantom_prior_stock: None,
                 stock_changes: vec![ResolvedStockChange {
-                    setup_id: 0,
+                    setup_id: crate::ids::SetupId::from_raw(0),
                     change,
                     sources: vec![StockChangeSource::Outlines(Arc::clone(polys))],
                 }],
@@ -1099,7 +1099,7 @@ mod tests {
 
         let mut raised = change.clone();
         raised.geometry = StockGeometry::OutlineFill {
-            model_ids: vec![ModelId(1)],
+            model_ids: vec![ModelId::from_raw(1)],
             level_z: 6.0,
         };
         assert!(

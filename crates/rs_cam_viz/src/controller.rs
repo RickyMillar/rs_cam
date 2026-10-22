@@ -151,7 +151,7 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     /// P4.7 — the models whose `build_model_faces` job failed. The faces
     /// sweep (`process_model_faces`) does not submit them again, so a
     /// failure cannot loop.
-    pub(crate) failed_face_models: std::collections::BTreeSet<usize>,
+    pub(crate) failed_face_models: std::collections::BTreeSet<rs_cam_core::ids::ModelId>,
     /// W1 — the in-flight generation plan, from whichever surface started
     /// it. Unconditional on purpose: the GUI's Generate All walks the same
     /// plan the MCP tool does, and `pending_mcp` is `None` outside `--mcp`.
@@ -246,7 +246,7 @@ pub(crate) enum GuiJobTarget {
     MultitoolPreview,
     /// The flat faces of an STL (geometry selection P4.7): the answer is
     /// in the per-mesh cache; the section and the viewport read it.
-    ModelFaces { model_id: usize },
+    ModelFaces { model_id: rs_cam_core::ids::ModelId },
 }
 
 impl AppController<ThreadedComputeBackend> {
@@ -340,7 +340,10 @@ impl<B: ComputeBackend> AppController<B> {
                     .state
                     .session()
                     .find_toolpath_config_by_id(id)
-                    .map_or_else(|| format!("toolpath {}", id.0), |(_, tc)| tc.name.clone());
+                    .map_or_else(
+                        || format!("toolpath {}", id.raw()),
+                        |(_, tc)| tc.name.clone(),
+                    );
                 Activity::Generating(id, name)
             }
             PlanStep::SimulatePrefix { setup, .. } => {
@@ -354,9 +357,7 @@ impl<B: ComputeBackend> AppController<B> {
                     .session()
                     .list_setups()
                     .last()
-                    .map_or(rs_cam_core::ids::SetupId(0), |s| {
-                        rs_cam_core::ids::SetupId(s.id)
-                    });
+                    .map_or(rs_cam_core::ids::SetupId::placeholder(), |s| s.id);
                 Activity::Simulating(last, "All setups".to_owned())
             }
         };
@@ -370,8 +371,8 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// The name a setup draws under, or a positional fallback.
     fn setup_label(&self, setup: rs_cam_core::ids::SetupId) -> String {
-        self.state.session().find_setup_by_id(setup.0).map_or_else(
-            || format!("Setup {}", setup.0),
+        self.state.session().find_setup_by_id(setup).map_or_else(
+            || format!("Setup {}", setup.raw()),
             |(position, data)| {
                 if data.name.is_empty() {
                     format!("Setup {}", position + 1)

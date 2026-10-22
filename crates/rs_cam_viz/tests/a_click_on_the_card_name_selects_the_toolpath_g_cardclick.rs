@@ -36,7 +36,7 @@ const NAME: &str = "Pocket";
 
 fn model() -> LoadedModel {
     LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         path: PathBuf::from("cardclick_fixture.svg"),
         name: "Card click fixture".to_owned(),
         kind: Some(ModelKind::Svg),
@@ -55,7 +55,7 @@ fn model() -> LoadedModel {
 }
 
 fn tool() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool
 }
@@ -64,14 +64,14 @@ fn tool() -> ToolConfig {
 fn state_with_a_toolpath() -> AppState {
     let config = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: NAME.to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(Default::default()),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -171,7 +171,7 @@ fn click_at(pos: egui::Pos2) -> [egui::RawInput; 2] {
 fn selects_the_pocket(event: &AppEvent) -> bool {
     matches!(
         event,
-        AppEvent::Ui(UiCommand::Select(Selection::Toolpath(id))) if id.0 == 0
+        AppEvent::Ui(UiCommand::Select(Selection::Toolpath(id))) if id.raw() == 0
     )
 }
 

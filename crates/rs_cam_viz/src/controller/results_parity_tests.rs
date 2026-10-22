@@ -77,10 +77,10 @@ fn parity_controller() -> AppController<InertBackend> {
     let mut controller = AppController::with_backend(InertBackend {
         drained: Vec::new(),
     });
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: std::path::PathBuf::from("plate.svg"),
         name: "Plate".to_owned(),
         kind: Some(ModelKind::Svg),
@@ -98,14 +98,14 @@ fn parity_controller() -> AppController<InertBackend> {
     });
     let tp_config = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(Default::default()),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -174,7 +174,7 @@ fn drain_one_result(controller: &mut AppController<InertBackend>) {
         .compute
         .drained
         .push(ComputeMessage::Toolpath(Box::new(ComputeResult {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             revision: None,
             result: Ok(worker_result_with_findings()),
             debug_trace: None,
@@ -188,7 +188,7 @@ fn drain_one_result(controller: &mut AppController<InertBackend>) {
 
 /// GREEN at `65fe537`, and it must stay that way: the GUI drain writes the
 /// worker's result — findings AND spans — into `ProjectSession.results`, so
-/// every core read that goes through `get_result` (the load report's span
+/// every core read that goes through `result_at` (the load report's span
 /// lookup, its `drill_op` lookup, `diagnose_toolpath_with_trace`'s stats
 /// lookup, `sim_trace_is_fresh`) sees the same thing the CLI's does.
 ///
@@ -201,7 +201,7 @@ fn gui_drain_writes_findings_and_spans_into_session_results() {
     let result = controller
         .state
         .session()
-        .get_result(0)
+        .result_at(0)
         .expect("GUI drain must publish the worker result into session.results");
     assert_eq!(
         result.stats.truncated_core_mm2,
@@ -231,7 +231,7 @@ fn gui_mode_toolpath_diagnostics_see_generation_stats() {
     let stats_seen = controller
         .state
         .session()
-        .get_result(0)
+        .result_at(0)
         .map(|r| r.stats.untouched_material_mm2);
     assert_eq!(stats_seen, Some(Some(UNTOUCHED_MATERIAL_MM2)));
 
@@ -383,7 +383,7 @@ fn mcp_get_diagnostics_collision_count_comes_from_evidence() {
         }),
         total_moves: 3,
         boundaries: vec![crate::state::simulation::ToolpathBoundary {
-            id: ToolpathId(0),
+            id: ToolpathId::from_raw(0),
             name: "Pocket".to_owned(),
             tool_name: "End Mill".to_owned(),
             start_move: 0,
@@ -412,7 +412,7 @@ fn mcp_get_diagnostics_collision_count_comes_from_evidence() {
             min_safe_stickout: 30.0,
         });
     // The check's scope names the toolpath it walked (G-RAPIDFRAME).
-    controller.state.simulation.checks.checked_scope.toolpath_id = Some(ToolpathId(0));
+    controller.state.simulation.checks.checked_scope.toolpath_id = Some(ToolpathId::from_raw(0));
 
     let evidence = crate::app::mcp::viz_project_evidence(&controller.state);
     let core = controller

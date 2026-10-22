@@ -32,7 +32,11 @@ pub(super) fn upload(
     // When a drill op is selected, draw its model's drill targets
     // (DXF points / circle centres) as pickable markers — bright when
     // selected, dim otherwise — so the user can see and click them.
-    let active_drill: Option<(usize, rs_cam_core::session::HoleSelection, HoleMisfits)> = {
+    let active_drill: Option<(
+        rs_cam_core::ids::ModelId,
+        rs_cam_core::session::HoleSelection,
+        HoleMisfits,
+    )> = {
         use crate::state::selection::Selection;
         let st = state;
         if st.workspace == Workspace::Toolpaths
@@ -149,12 +153,7 @@ pub(super) fn upload(
                 .session()
                 .models()
                 .iter()
-                .find(|model| {
-                    model.id
-                        == cfg
-                            .surface_model_id
-                            .map_or(toolpath.model_id, |model_id| model_id.0)
-                })
+                .find(|model| model.id == cfg.surface_model_id.unwrap_or(toolpath.model_id))
                 .and_then(|model| model.mesh.as_ref())
                 .map(|mesh| {
                     let mesh = match model_setup {
@@ -344,7 +343,7 @@ pub(super) fn upload(
             .session()
             .tools()
             .iter()
-            .find(|tool| tool.id.0 == toolpath.tool_id)
+            .find(|tool| tool.id == toolpath.tool_id)
             .map_or(mark, |tool| tool.diameter / 2.0);
         let side_mark = |ring: &[rs_cam_core::geo::P2], verts: &mut Vec<LineVertex>| {
             let (Some(side), Some((middle, direction))) = (
@@ -445,7 +444,7 @@ pub(super) fn upload(
                 .session()
                 .models()
                 .iter()
-                .find(|m| m.id == other.0)?
+                .find(|m| m.id == other)?
                 .items
                 .iter()
                 .find(|i| key.names_same_geometry(i.key()))?

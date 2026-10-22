@@ -87,7 +87,7 @@ fn b3_tool() -> ToolDefinition {
 }
 
 fn trace(feed: f64) -> SimulationCutTrace {
-    let id = ToolpathId(0);
+    let id = ToolpathId::from_raw(0);
     let mut predicted_feeds = PredictedFeedMap::new();
     predicted_feeds.insert((id, 0), feed);
     SimulationCutTrace {
@@ -138,7 +138,7 @@ fn verdict_and_explanation(
     let tolerance = ToleranceBands::default();
     let full = rs_cam_core::tool_load::evaluate_toolpath(
         &ToolpathLoadContext {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             tool: &tool,
             material: &material,
             operation_family: LutOperationFamily::Scallop,
@@ -168,7 +168,7 @@ fn rendered_diagnostics(feed: f64) -> Vec<String> {
     let tolerance = ToleranceBands::default();
     let full = rs_cam_core::tool_load::evaluate_toolpath(
         &ToolpathLoadContext {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             tool: &tool,
             material: &material,
             operation_family: LutOperationFamily::Scallop,
@@ -290,7 +290,7 @@ fn a_recipe_below_the_floor_reads_below_the_floor_and_is_not_clamped() {
         band.min_mm_per_tooth
     );
 
-    let rendered: Vec<String> = diagnostics_from_feeds_result(ToolpathId(0), &result)
+    let rendered: Vec<String> = diagnostics_from_feeds_result(ToolpathId::from_raw(0), &result)
         .into_iter()
         .map(|d| format!("[{:?}] {}: {}", d.severity, d.id.as_str(), d.message))
         .collect();

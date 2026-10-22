@@ -177,8 +177,14 @@ fn flat_first_seed() -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
     controller.state.replace_session(
         ProjectSessionBuilder::new()
-            .tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill))
-            .tool(ToolConfig::new_default(ToolId(1), ToolType::BallNose))
+            .tool(ToolConfig::new_default(
+                ToolId::from_raw(0),
+                ToolType::EndMill,
+            ))
+            .tool(ToolConfig::new_default(
+                ToolId::from_raw(1),
+                ToolType::BallNose,
+            ))
             .build(),
     );
     controller
@@ -261,14 +267,15 @@ fn the_gui_binds_the_first_tool_even_when_a_compatible_one_is_second() {
 #[test]
 fn a_permitted_add_creates_one_toolpath_bound_to_the_first_tool() {
     let mut controller = flat_first_seed();
-    let first_tool_id = controller.state.session().tools()[0].id.0;
+    let first_tool_id = controller.state.session().tools()[0].id.raw();
 
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Face));
 
     let configs = controller.state.session().toolpath_configs();
     assert_eq!(configs.len(), 1, "exactly one toolpath");
     assert_eq!(
-        configs[0].tool_id, first_tool_id,
+        configs[0].tool_id,
+        rs_cam_core::ids::ToolId::from_raw(first_tool_id),
         "bound to tools().first(), not to a chosen tool"
     );
     let warnings: Vec<_> = toasts(&controller)

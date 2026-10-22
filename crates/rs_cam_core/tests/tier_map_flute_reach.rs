@@ -72,7 +72,7 @@ fn taper_config() -> ToolConfig {
         cutting_length: L_C,
         shank_diameter: SHANK_DIAMETER,
         stickout: 45.0,
-        ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
     }
 }
 
@@ -111,13 +111,16 @@ fn preview(wall_height: f64) -> MultitoolPreview {
     });
     let coarse = builder.add_tool(ball_tool_config(COARSE_DIAMETER));
     let fine = builder.add_tool(taper_config());
-    let coarse_id = builder.tools()[coarse].id.0;
-    let fine_id = builder.tools()[fine].id.0;
+    let coarse_id = builder.tools()[coarse].id.raw();
+    let fine_id = builder.tools()[fine].id.raw();
     let model_id = builder.add_model(mesh_model(canyon(wall_height), "canyon"));
     let session = builder.build();
     let spec = MultitoolPlanSpec {
         model_id,
-        tool_ids: vec![coarse_id, fine_id],
+        tool_ids: vec![
+            rs_cam_core::ids::ToolId::from_raw(coarse_id),
+            rs_cam_core::ids::ToolId::from_raw(fine_id),
+        ],
         cell_mm: CELL,
         tolerance_mm: 0.05,
         // Raw keeps the labels a pure drop-Z residual; the advisory reads

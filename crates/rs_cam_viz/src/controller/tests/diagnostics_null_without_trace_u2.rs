@@ -31,7 +31,7 @@ fn trace_less_results() -> crate::state::simulation::SimulationResults {
         // reads a boundary as "a simulation exists" (the reason is then
         // `NoTrace`, not `NoSimulation`).
         boundaries: vec![rs_cam_core::compute::simulate::SimBoundary {
-            id: ToolpathId(1),
+            id: ToolpathId::from_raw(1),
             name: "Pocket".to_owned(),
             tool_name: "EndMill".to_owned(),
             start_move: 0,

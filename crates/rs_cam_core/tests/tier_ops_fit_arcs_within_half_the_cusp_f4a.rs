@@ -54,14 +54,14 @@ fn session_with_hand_finish() -> (ProjectSession, usize, usize, usize) {
     builder = builder.stock(common::session::stock_over(9.0, 12.0));
     let coarse_idx = builder.add_tool(ball_tool_config(4.0));
     let fine_idx = builder.add_tool(ball_tool_config(3.0));
-    let coarse_id = builder.tools()[coarse_idx].id.0;
-    let fine_id = builder.tools()[fine_idx].id.0;
+    let coarse_id = builder.tools()[coarse_idx].id.raw();
+    let fine_id = builder.tools()[fine_idx].id.raw();
     let model_id = builder.add_model(common::session::mesh_model(dome(), "dome"));
     let mut session = builder.build();
     let hand = common::session::toolpath_config(
         "Operator's own finish",
         OperationConfig::UnifiedFinish(Default::default()),
-        coarse_id,
+        rs_cam_core::ids::ToolId::from_raw(coarse_id),
         model_id,
     );
     let _ = session
@@ -70,7 +70,7 @@ fn session_with_hand_finish() -> (ProjectSession, usize, usize, usize) {
             config: Box::new(hand),
         }))
         .expect("add the hand finish");
-    (session, coarse_id, fine_id, model_id)
+    (session, coarse_id, fine_id, model_id.raw())
 }
 
 fn arc_tolerance(dressups: &DressupConfig) -> f64 {
@@ -97,8 +97,11 @@ fn a_tier_op_fits_arcs_at_half_the_cusp_and_a_hand_finish_keeps_the_role_default
                 &mut session,
                 &MultitoolPlanSpec {
                     setup_index: 0,
-                    model_id,
-                    tool_ids: vec![coarse_id, fine_id],
+                    model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
+                    tool_ids: vec![
+                        rs_cam_core::ids::ToolId::from_raw(coarse_id),
+                        rs_cam_core::ids::ToolId::from_raw(fine_id),
+                    ],
                     cusp_height_mm: cusp_mm,
                     tier_strategies: vec![strategy; 2],
                     ..MultitoolPlanSpec::default()
@@ -158,8 +161,11 @@ fn a_cusp_height_with_no_tolerance_fits_no_arcs() {
         &mut session,
         &MultitoolPlanSpec {
             setup_index: 0,
-            model_id,
-            tool_ids: vec![coarse_id, fine_id],
+            model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
+            tool_ids: vec![
+                rs_cam_core::ids::ToolId::from_raw(coarse_id),
+                rs_cam_core::ids::ToolId::from_raw(fine_id),
+            ],
             cusp_height_mm: 0.0,
             ..MultitoolPlanSpec::default()
         },

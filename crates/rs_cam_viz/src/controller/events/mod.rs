@@ -298,7 +298,7 @@ impl<B: ComputeBackend> AppController<B> {
     fn set_generator_trace_capture_all(&mut self, enabled: bool) {
         let count = self.state.session().toolpath_count();
         for index in 0..count {
-            let Some(tc) = self.state.session().get_toolpath_config(index) else {
+            let Some(tc) = self.state.session().toolpath_config_at(index) else {
                 continue;
             };
             let mut debug_options = tc.debug_options;
@@ -876,7 +876,7 @@ impl<B: ComputeBackend> AppController<B> {
             .any(|tc| tc.id == toolpath_id)
         {
             self.push_notification(
-                format!("Feeds modal: toolpath id {} not found", toolpath_id.0),
+                format!("Feeds modal: toolpath id {} not found", toolpath_id.raw()),
                 crate::controller::Severity::Error,
             );
             return;
@@ -922,7 +922,7 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .position(|tc| tc.id == toolpath_id)
         else {
-            return Err(format!("toolpath {} not found", toolpath_id.0));
+            return Err(format!("toolpath {} not found", toolpath_id.raw()));
         };
         // F114: core's one funnel. `Command::ApplyFeeds` resolves the tool,
         // the machine, the material, the spindle strategy and the Suggest
@@ -945,7 +945,7 @@ impl<B: ComputeBackend> AppController<B> {
         let effects = self.apply(command).map_err(|error| match error {
             // The refusal text alone, as the preview gave it before.
             rs_cam_core::session::SessionError::FeedsRefused(refusal) => refusal.to_string(),
-            other => format!("toolpath {}: {other}", toolpath_id.0),
+            other => format!("toolpath {}: {other}", toolpath_id.raw()),
         })?;
         self.state.gui.mark_edited();
         // B19: the door's stamp is the only stamp. An Apply that changes
@@ -995,7 +995,7 @@ impl<B: ComputeBackend> AppController<B> {
             None,
         ) {
             self.push_notification(
-                format!("Feeds not applied to toolpath {}: {why}", toolpath_id.0),
+                format!("Feeds not applied to toolpath {}: {why}", toolpath_id.raw()),
                 crate::controller::Severity::Warning,
             );
         }
@@ -1022,7 +1022,7 @@ impl<B: ComputeBackend> AppController<B> {
             None,
         ) {
             self.push_notification(
-                format!("Feeds not applied to toolpath {}: {why}", toolpath_id.0),
+                format!("Feeds not applied to toolpath {}: {why}", toolpath_id.raw()),
                 crate::controller::Severity::Warning,
             );
         }
@@ -1126,7 +1126,7 @@ impl<B: ComputeBackend> AppController<B> {
                         .iter()
                         .find(|tc| tc.id == id)
                         .map(|tc| tc.name.clone())
-                        .unwrap_or_else(|| format!("toolpath {}", id.0));
+                        .unwrap_or_else(|| format!("toolpath {}", id.raw()));
                     skipped.push(format!("{name} ({why})"));
                 }
             }
@@ -1174,7 +1174,7 @@ impl<B: ComputeBackend> AppController<B> {
             self.push_notification(
                 format!(
                     "Explored values not applied to toolpath {}: {why}",
-                    toolpath_id.0
+                    toolpath_id.raw()
                 ),
                 crate::controller::Severity::Warning,
             );

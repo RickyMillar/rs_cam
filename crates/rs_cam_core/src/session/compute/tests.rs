@@ -25,7 +25,7 @@ use serde_json::json;
 
 fn make_session() -> ProjectSession {
     let mut s = ProjectSession::new_empty();
-    let tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     let _ = s.add_tool(tool);
     s
 }
@@ -33,14 +33,14 @@ fn make_session() -> ProjectSession {
 fn make_tc(tool_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "test".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig::default()),
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id: 0,
+        tool_id: crate::ids::ToolId::from_raw(tool_id),
+        model_id: crate::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -59,7 +59,7 @@ fn make_tc(tool_id: usize) -> ToolpathConfig {
 #[test]
 fn set_toolpath_param_feed_rate() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     let _ = s.set_toolpath_param(0, "feed_rate", json!(2000.0)).unwrap();
     // Verify via OperationParams trait
     match &s.toolpath_configs()[0].operation {
@@ -71,7 +71,7 @@ fn set_toolpath_param_feed_rate() {
 #[test]
 fn set_toolpath_param_plunge_rate() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     let _ = s
         .set_toolpath_param(0, "plunge_rate", json!(500.0))
         .unwrap();
@@ -84,7 +84,7 @@ fn set_toolpath_param_plunge_rate() {
 #[test]
 fn set_toolpath_param_stepover() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     let _ = s.set_toolpath_param(0, "stepover", json!(0.5)).unwrap();
     match &s.toolpath_configs()[0].operation {
         OperationConfig::Pocket(cfg) => assert!((cfg.stepover - 0.5).abs() < 1e-9),
@@ -95,7 +95,7 @@ fn set_toolpath_param_stepover() {
 #[test]
 fn set_toolpath_param_depth_per_pass() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     let _ = s
         .set_toolpath_param(0, "depth_per_pass", json!(1.5))
         .unwrap();
@@ -112,7 +112,7 @@ fn set_toolpath_param_depth_per_pass() {
 fn waterline_refuses_the_retired_depth_per_pass_alias_c1() {
     use crate::compute::catalog::OperationType;
     let mut s = make_session();
-    let mut tc = make_tc(s.tools()[0].id.0);
+    let mut tc = make_tc(s.tools()[0].id.raw());
     tc.operation = OperationConfig::new_default(OperationType::Waterline);
     let _ = s.add_toolpath(0, tc).unwrap();
     let z_step = |s: &ProjectSession| match &s.toolpath_configs()[0].operation {
@@ -134,7 +134,7 @@ fn waterline_refuses_the_retired_depth_per_pass_alias_c1() {
         .unwrap();
     assert!((z_step(&s) - (before + 0.5)).abs() < 1e-12);
 
-    let mut ramp = make_tc(s.tools()[0].id.0);
+    let mut ramp = make_tc(s.tools()[0].id.raw());
     ramp.operation = OperationConfig::new_default(OperationType::RampFinish);
     let _ = s.add_toolpath(0, ramp).unwrap();
     let stepdown = |s: &ProjectSession| match &s.toolpath_configs()[1].operation {
@@ -180,7 +180,7 @@ fn waterline_refuses_the_retired_depth_per_pass_alias_c1() {
 #[test]
 fn set_toolpath_param_refuses_a_peck_depth_the_emitter_would_refuse() {
     let mut s = make_session();
-    let mut tc = make_tc(s.tools()[0].id.0);
+    let mut tc = make_tc(s.tools()[0].id.raw());
     tc.operation = OperationConfig::Drill(DrillConfig {
         peck_depth: 3.0,
         ..DrillConfig::default()
@@ -277,7 +277,7 @@ fn set_toolpath_param_coerces_integer_to_bool() {
     // MCP clients that can only produce JSON numbers should still be
     // able to set boolean params like `climb`, `z_blend`, etc.
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     // Pocket default has climb=true; flip it via integer 0.
     let _ = s.set_toolpath_param(0, "climb", json!(0)).unwrap();
     match &s.toolpath_configs()[0].operation {
@@ -316,7 +316,9 @@ fn make_drill_tc(tool_id: usize) -> ToolpathConfig {
 #[test]
 fn set_toolpath_param_drill_plunge_rate_updates_feed_rate() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_drill_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s
+        .add_toolpath(0, make_drill_tc(s.tools()[0].id.raw()))
+        .unwrap();
     let _ = s
         .set_toolpath_param(0, "plunge_rate", json!(250.0))
         .unwrap();
@@ -330,13 +332,15 @@ fn set_toolpath_param_drill_plunge_rate_updates_feed_rate() {
 fn set_toolpath_param_reference_tool_id_accepts_int() {
     let mut s = make_session();
     let _ = s
-        .add_toolpath(0, make_pencil_tc(s.tools()[0].id.0))
+        .add_toolpath(0, make_pencil_tc(s.tools()[0].id.raw()))
         .unwrap();
     let _ = s
         .set_toolpath_param(0, "reference_tool_id", json!(1))
         .unwrap();
     match &s.toolpath_configs()[0].operation {
-        OperationConfig::Pencil(cfg) => assert_eq!(cfg.reference_tool_id, Some(ToolId(1))),
+        OperationConfig::Pencil(cfg) => {
+            assert_eq!(cfg.reference_tool_id, Some(ToolId::from_raw(1)));
+        }
         _ => panic!("expected Pencil"),
     }
 }
@@ -345,13 +349,15 @@ fn set_toolpath_param_reference_tool_id_accepts_int() {
 fn set_toolpath_param_reference_tool_id_accepts_string() {
     let mut s = make_session();
     let _ = s
-        .add_toolpath(0, make_pencil_tc(s.tools()[0].id.0))
+        .add_toolpath(0, make_pencil_tc(s.tools()[0].id.raw()))
         .unwrap();
     let _ = s
         .set_toolpath_param(0, "reference_tool_id", json!("1"))
         .unwrap();
     match &s.toolpath_configs()[0].operation {
-        OperationConfig::Pencil(cfg) => assert_eq!(cfg.reference_tool_id, Some(ToolId(1))),
+        OperationConfig::Pencil(cfg) => {
+            assert_eq!(cfg.reference_tool_id, Some(ToolId::from_raw(1)));
+        }
         _ => panic!("expected Pencil"),
     }
 }
@@ -360,13 +366,15 @@ fn set_toolpath_param_reference_tool_id_accepts_string() {
 fn set_toolpath_param_reference_tool_id_accepts_float_wire_number() {
     let mut s = make_session();
     let _ = s
-        .add_toolpath(0, make_pencil_tc(s.tools()[0].id.0))
+        .add_toolpath(0, make_pencil_tc(s.tools()[0].id.raw()))
         .unwrap();
     let _ = s
         .set_toolpath_param(0, "reference_tool_id", json!(1.0))
         .unwrap();
     match &s.toolpath_configs()[0].operation {
-        OperationConfig::Pencil(cfg) => assert_eq!(cfg.reference_tool_id, Some(ToolId(1))),
+        OperationConfig::Pencil(cfg) => {
+            assert_eq!(cfg.reference_tool_id, Some(ToolId::from_raw(1)));
+        }
         _ => panic!("expected Pencil"),
     }
 }
@@ -375,7 +383,7 @@ fn set_toolpath_param_reference_tool_id_accepts_float_wire_number() {
 fn set_toolpath_param_reference_tool_id_accepts_null_to_clear() {
     let mut s = make_session();
     let _ = s
-        .add_toolpath(0, make_pencil_tc(s.tools()[0].id.0))
+        .add_toolpath(0, make_pencil_tc(s.tools()[0].id.raw()))
         .unwrap();
     let _ = s
         .set_toolpath_param(0, "reference_tool_id", json!(1))
@@ -464,7 +472,7 @@ fn operation_schema_params_match_params_with_nulls_for_every_op() {
 fn set_toolpath_param_refuses_the_pin_drill_diameter_d9() {
     use crate::compute::catalog::OperationType;
     let mut s = make_session();
-    let mut tc = make_tc(s.tools()[0].id.0);
+    let mut tc = make_tc(s.tools()[0].id.raw());
     tc.operation = OperationConfig::new_default(OperationType::AlignmentPinDrill);
     let _ = s.add_toolpath(0, tc).unwrap();
     let before = s.toolpath_configs()[0]
@@ -493,7 +501,7 @@ fn set_toolpath_param_refuses_the_pin_drill_diameter_d9() {
 #[test]
 fn set_toolpath_param_wrong_type_errors() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     let result = s.set_toolpath_param(0, "feed_rate", json!("not a number"));
     assert!(matches!(result, Err(SessionError::InvalidParam(_))));
 }
@@ -505,7 +513,7 @@ fn set_toolpath_param_wrong_type_errors() {
 #[test]
 fn set_toolpath_param_refuses_a_value_outside_the_schema_range_w5() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     let before = format!("{:?}", s.toolpath_configs()[0].operation);
     let err = s
         .set_toolpath_param(0, "stepover", json!(60.0))
@@ -525,7 +533,7 @@ fn set_toolpath_param_refuses_a_value_outside_the_schema_range_w5() {
 #[test]
 fn set_toolpath_param_unknown_param() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     let result = s.set_toolpath_param(0, "totally_fake_param", json!(42.0));
     let err = result.unwrap_err().to_string();
     assert!(err.contains("unknown parameter 'totally_fake_param'"));
@@ -543,7 +551,7 @@ fn set_toolpath_param_invalid_index() {
 #[test]
 fn set_toolpath_param_spindle_rpm() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     // Default is None.
     assert_eq!(s.toolpath_configs()[0].operation.spindle_rpm(), None);
     let _ = s
@@ -555,7 +563,7 @@ fn set_toolpath_param_spindle_rpm() {
 #[test]
 fn set_toolpath_param_spindle_rpm_null_clears() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     let _ = s
         .set_toolpath_param(0, "spindle_rpm", json!(20_000))
         .unwrap();
@@ -572,7 +580,7 @@ fn set_toolpath_param_spindle_rpm_null_clears() {
 #[test]
 fn set_toolpath_param_spindle_rpm_invalid_type() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     let result = s.set_toolpath_param(0, "spindle_rpm", json!("not a number"));
     assert!(matches!(result, Err(SessionError::InvalidParam(_))));
     // Negative numbers fail u64 conversion.
@@ -586,7 +594,7 @@ fn set_toolpath_param_spindle_rpm_invalid_type() {
 #[test]
 fn set_toolpath_param_spindle_rpm_accepts_f64_and_string() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     // Integer-valued f64.
     let _ = s
         .set_toolpath_param(0, "spindle_rpm", json!(13500.0))
@@ -605,7 +613,7 @@ fn set_toolpath_param_spindle_rpm_accepts_f64_and_string() {
 #[test]
 fn set_toolpath_param_invalidates_result() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     s.results.insert(
         0,
         ToolpathComputeResult {
@@ -649,7 +657,7 @@ fn feed_vs_lut_high_recommended_value(s: &ProjectSession) -> f64 {
 fn suggest_output_matches_feed_vs_lut_high_diagnostic_recommendation() {
     let mut s = make_session();
     let tool = s.tools()[0].clone();
-    let mut tc = make_tc(tool.id.0);
+    let mut tc = make_tc(tool.id.raw());
     let suggested = crate::feeds::suggest::suggest_for_operation(
         crate::feeds::suggest::SuggestForOperationInput {
             operation: &tc.operation,
@@ -770,7 +778,7 @@ fn set_tool_param_wrong_type() {
 #[test]
 fn set_tool_param_invalidates_toolpath_results() {
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     s.results.insert(
         0,
         ToolpathComputeResult {
@@ -815,7 +823,7 @@ fn generate_toolpath_not_found() {
 #[test]
 fn generate_from_remaining_stock_without_sim_errors_hard() {
     let mut s = make_session();
-    let mut tc = make_tc(s.tools()[0].id.0);
+    let mut tc = make_tc(s.tools()[0].id.raw());
     tc.stock_source = crate::session::StockSource::FromRemainingStock;
     let _ = s.add_toolpath(0, tc).unwrap();
     let cancel = AtomicBool::new(false);
@@ -844,7 +852,7 @@ fn make_session_with_pocket_model() -> ProjectSession {
         crate::geo::P2::new(0.0, 30.0),
     ]);
     let model = crate::session::LoadedModel {
-        id: 0,
+        id: crate::ids::ModelId::from_raw(0),
         name: "phantom_prior_stock_fixture".to_owned(),
         mesh: None,
         items: Arc::new(crate::selection::ItemSet::from_polygons(vec![polygon])),
@@ -873,7 +881,7 @@ fn make_session_with_pocket_model() -> ProjectSession {
 #[test]
 fn phantom_prior_stock_unlocks_regeneration_after_sim() {
     let mut s = make_session_with_pocket_model();
-    let tool_id = s.tools()[0].id.0;
+    let tool_id = s.tools()[0].id.raw();
     let _ = s.add_toolpath(0, make_tc(tool_id)).unwrap();
     let mut rest_tc = make_tc(tool_id);
     rest_tc.stock_source = crate::session::StockSource::FromRemainingStock;
@@ -910,7 +918,7 @@ fn phantom_prior_stock_unlocks_regeneration_after_sim() {
 #[test]
 fn phantom_prior_stock_ladder_unlocks_only_first_pending_op() {
     let mut s = make_session_with_pocket_model();
-    let tool_id = s.tools()[0].id.0;
+    let tool_id = s.tools()[0].id.raw();
     let _ = s.add_toolpath(0, make_tc(tool_id)).unwrap();
     let mut rest_tc_1 = make_tc(tool_id);
     rest_tc_1.stock_source = crate::session::StockSource::FromRemainingStock;
@@ -951,7 +959,7 @@ fn phantom_prior_stock_ladder_unlocks_only_first_pending_op() {
 #[test]
 fn a_fresh_op_captures_no_prior_stock_b19() {
     let mut s = make_session_with_pocket_model();
-    let tool_id = s.tools()[0].id.0;
+    let tool_id = s.tools()[0].id.raw();
     let _ = s.add_toolpath(0, make_tc(tool_id)).unwrap();
     let _ = s.add_toolpath(0, make_tc(tool_id)).unwrap();
     let cancel = AtomicBool::new(false);
@@ -1006,9 +1014,9 @@ fn diagnostics_empty() {
 fn make_session_with_two_tps() -> ProjectSession {
     let mut s = make_session();
     // TP0: Pocket — exercising A4 (TP-named verdict) and C7 (empty cut).
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     // TP1: Drill — exercises A12 (op_kind tag).
-    let mut drill_tc = make_tc(s.tools()[0].id.0);
+    let mut drill_tc = make_tc(s.tools()[0].id.raw());
     drill_tc.operation =
         OperationConfig::Drill(crate::compute::operation_configs::DrillConfig::default());
     drill_tc.name = "Pin holes".to_owned();
@@ -1271,7 +1279,7 @@ fn rapid_collision_frames_agree_at_the_boundary_edge_g_rapidframe() {
 fn the_collision_sweep_builds_one_index_per_model() {
     fn mesh_model(id: usize, name: &str) -> crate::session::LoadedModel {
         crate::session::LoadedModel {
-            id,
+            id: crate::ids::ModelId::from_raw(id),
             name: name.to_owned(),
             mesh: Some(Arc::new(crate::mesh::make_test_hemisphere(10.0, 8))),
             items: Default::default(),
@@ -1290,7 +1298,7 @@ fn the_collision_sweep_builds_one_index_per_model() {
     let mut s = make_session();
     s.models.push(mesh_model(0, "one"));
     for _ in 0..3 {
-        let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+        let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     }
     for index in 0..3 {
         s.results.insert(index, empty_result());
@@ -1305,8 +1313,8 @@ fn the_collision_sweep_builds_one_index_per_model() {
     // And the hoist is per MODEL, not a blanket "build one": a second model
     // earns a second index.
     s.models.push(mesh_model(1, "two"));
-    let mut second = make_tc(s.tools()[0].id.0);
-    second.model_id = 1;
+    let mut second = make_tc(s.tools()[0].id.raw());
+    second.model_id = crate::ids::ModelId::from_raw(1);
     let _ = s.add_toolpath(0, second).unwrap();
     s.results.insert(3, empty_result());
 
@@ -1470,7 +1478,7 @@ fn diagnostics_rapid_collision_verdict_carries_evidence() {
     use crate::stock::stock_mesh::StockMesh;
 
     let mut s = make_session();
-    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.0)).unwrap();
+    let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     let mut r = empty_result();
     r.stats.cutting_distance = 100.0;
     s.results.insert(0, r);
@@ -1574,14 +1582,14 @@ use crate::stock::simulation_cut::SimulationToolpathCutSummary;
 fn make_tp(id: usize, name: &str, op: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(id),
+        id: ToolpathId::from_raw(id),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id: 0,
-        model_id: 0,
+        tool_id: crate::ids::ToolId::from_raw(0),
+        model_id: crate::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -1598,7 +1606,7 @@ fn make_tp(id: usize, name: &str, op: OperationConfig) -> ToolpathConfig {
 fn summary(id: usize, air_pct: f64) -> SimulationToolpathCutSummary {
     let total = 100.0;
     SimulationToolpathCutSummary {
-        toolpath_id: ToolpathId(id),
+        toolpath_id: ToolpathId::from_raw(id),
         sample_count: 0,
         total_runtime_s: total,
         cutting_runtime_s: total * (1.0 - air_pct / 100.0),
@@ -1719,7 +1727,7 @@ fn air_cut_offenders_carry_their_own_id_not_a_name_lookup() {
     assert_eq!(scan.offenders.len(), 1);
     assert_eq!(
         scan.offenders[0].id,
-        ToolpathId(1),
+        ToolpathId::from_raw(1),
         "the offender must be the toolpath that actually breached, not the \
          first one sharing its name"
     );
@@ -1759,7 +1767,7 @@ fn air_cut_gate_abstains_instead_of_warning_when_engagement_is_unmeasurable() {
     };
     let report = MeasurabilityReport {
         entries: vec![MetricMeasurability {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             metric: SimMetric::AirCut,
             measurability: Measurability::NotMeasurable(reason),
         }],
@@ -1797,7 +1805,7 @@ fn air_cut_gate_still_warns_when_the_metric_is_only_degraded() {
     let sums = vec![summary(0, 95.9)];
     let report = MeasurabilityReport {
         entries: vec![MetricMeasurability {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             metric: SimMetric::AirCut,
             measurability: Measurability::Degraded(MeasurabilityReason::BelowFreshMaterialFloor {
                 peak_removed_mm: 0.02,
@@ -1878,7 +1886,7 @@ fn air_cut_offenders_suppresses_drill_ops_entirely() {
 // ── P2: plunge-stress gate at session level ──────────────────
 
 fn make_tapered_ball_tool(diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
     t.diameter = diameter; // tip diameter
     t.shaft_diameter = (diameter + 2.0).max(3.0);
     t.taper_half_angle = 7.0;
@@ -2007,7 +2015,7 @@ fn terrain_adaptive3d_session(strategy: ClearingStrategy) -> ProjectSession {
         .tools()
         .iter()
         .find(|t| (t.diameter - 6.0).abs() < 1e-6)
-        .map(|t| t.id.0)
+        .map(|t| t.id.raw())
         .expect("ux_3d_terrain.toml defines a 6 mm end mill");
     let model_id = session
         .models()
@@ -2042,13 +2050,13 @@ fn terrain_adaptive3d_session(strategy: ClearingStrategy) -> ProjectSession {
     };
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "AS013 adaptive3d".to_owned(),
         enabled: true,
         operation: OperationConfig::Adaptive3d(adaptive3d),
         dressups: DressupConfig::for_op(crate::compute::catalog::OperationType::Adaptive3d),
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: crate::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,
@@ -2257,7 +2265,7 @@ fn derived_boundary(source_id: usize) -> BoundaryConfig {
     BoundaryConfig {
         enabled: true,
         source: crate::compute::config::BoundarySource::DerivedRestRegions {
-            source_toolpath_id: ToolpathId(source_id),
+            source_toolpath_id: ToolpathId::from_raw(source_id),
         },
         ..BoundaryConfig::default()
     }
@@ -2330,7 +2338,7 @@ fn expect_operation_failed(result: Result<&ToolpathComputeResult, SessionError>)
 #[test]
 fn derived_rest_regions_boundary_missing_source_errors() {
     let mut s = make_session();
-    let mut tc = make_tc(s.tools()[0].id.0);
+    let mut tc = make_tc(s.tools()[0].id.raw());
     tc.boundary = derived_boundary(999);
     let _ = s.add_toolpath(0, tc).unwrap();
 
@@ -2349,7 +2357,7 @@ fn derived_rest_regions_boundary_missing_source_errors() {
 #[test]
 fn derived_rest_regions_boundary_self_reference_errors() {
     let mut s = make_session();
-    let mut tc = make_tc(s.tools()[0].id.0);
+    let mut tc = make_tc(s.tools()[0].id.raw());
     // First add_toolpath assigns id 0, so referencing id 0 is a
     // self-reference.
     tc.boundary = derived_boundary(0);
@@ -2366,11 +2374,11 @@ fn derived_rest_regions_boundary_self_reference_errors() {
 #[test]
 fn derived_rest_regions_boundary_ungenerated_source_errors() {
     let mut s = make_session();
-    let mut source_tc = make_tc(s.tools()[0].id.0);
+    let mut source_tc = make_tc(s.tools()[0].id.raw());
     source_tc.name = "Pencil Rest".to_owned();
     let _ = s.add_toolpath(0, source_tc).unwrap(); // gets id 0
 
-    let mut tc = make_tc(s.tools()[0].id.0);
+    let mut tc = make_tc(s.tools()[0].id.raw());
     tc.boundary = derived_boundary(0);
     let _ = s.add_toolpath(0, tc).unwrap(); // gets id 1, index 1
 
@@ -2389,11 +2397,11 @@ fn derived_rest_regions_boundary_ungenerated_source_errors() {
 #[test]
 fn derived_rest_regions_boundary_source_without_regions_errors() {
     let mut s = make_session();
-    let mut source_tc = make_tc(s.tools()[0].id.0);
+    let mut source_tc = make_tc(s.tools()[0].id.raw());
     source_tc.name = "Pencil Rest".to_owned();
     let _ = s.add_toolpath(0, source_tc).unwrap(); // id 0, index 0
 
-    let mut tc = make_tc(s.tools()[0].id.0);
+    let mut tc = make_tc(s.tools()[0].id.raw());
     tc.boundary = derived_boundary(0);
     let _ = s.add_toolpath(0, tc).unwrap(); // id 1, index 1
 
@@ -2422,11 +2430,11 @@ fn derived_rest_regions_boundary_source_without_regions_errors() {
 #[test]
 fn derived_rest_regions_resolve_happy_path_returns_regions() {
     let mut s = make_session();
-    let mut source_tc = make_tc(s.tools()[0].id.0);
+    let mut source_tc = make_tc(s.tools()[0].id.raw());
     source_tc.name = "Pencil Rest".to_owned();
     let _ = s.add_toolpath(0, source_tc).unwrap(); // id 0, index 0
 
-    let mut tc = make_tc(s.tools()[0].id.0);
+    let mut tc = make_tc(s.tools()[0].id.raw());
     tc.boundary = derived_boundary(0);
     let _ = s.add_toolpath(0, tc).unwrap(); // id 1, index 1
 
@@ -2437,7 +2445,7 @@ fn derived_rest_regions_resolve_happy_path_returns_regions() {
     s.results.insert(0, fake_result_with_regions(Some(regions)));
 
     let resolved = s
-        .resolve_derived_rest_region_polys(1, ToolpathId(0))
+        .resolve_derived_rest_region_polys(1, ToolpathId::from_raw(0))
         .expect("regions present on the source result");
     assert_eq!(resolved.len(), 2, "both disjoint regions come through");
 }
@@ -2672,12 +2680,12 @@ fn the_group_rule_and_the_global_accessor_diverge_on_the_laterals() {
 /// S2: one stock change for the request tests, on model 0 (the square).
 fn s2_fill(id: usize, enabled: bool, level_z: f64) -> crate::compute::stock_change::StockChange {
     crate::compute::stock_change::StockChange {
-        id: crate::ids::StockChangeId(id),
+        id: crate::ids::StockChangeId::from_raw(id),
         name: format!("Fill {id}"),
         enabled,
         op: crate::compute::stock_change::StockChangeOp::Add,
         geometry: crate::compute::stock_change::StockGeometry::OutlineFill {
-            model_ids: vec![crate::ids::ModelId(0)],
+            model_ids: vec![crate::ids::ModelId::from_raw(0)],
             level_z,
         },
         material: crate::material::Material::Custom {
@@ -2697,7 +2705,7 @@ fn s2_fill(id: usize, enabled: bool, level_z: f64) -> crate::compute::stock_chan
 #[test]
 fn the_simulation_request_carries_the_stock_changes_s2() {
     let mut s = make_session_with_pocket_model();
-    let tool_id = s.tools()[0].id.0;
+    let tool_id = s.tools()[0].id.raw();
     let _ = s.add_toolpath(0, make_tc(tool_id)).unwrap();
     let cancel = AtomicBool::new(false);
     s.generate_toolpath(0, &cancel)
@@ -2722,7 +2730,7 @@ fn the_simulation_request_carries_the_stock_changes_s2() {
     let carried: Vec<usize> = groups[1]
         .stock_changes
         .iter()
-        .map(|c| c.change.id.0)
+        .map(|c| c.change.id.raw())
         .collect();
     assert_eq!(carried, vec![1, 3], "the enabled changes, in list order");
     let model_polys = s.models()[0].items.closed_regions();
@@ -2757,7 +2765,7 @@ fn the_simulation_request_carries_the_stock_changes_s2() {
         .iter()
         .map(|e| match e {
             crate::compute::source_stock::SourceEntry::Carved(_) => None,
-            crate::compute::source_stock::SourceEntry::StockChange(c) => Some(c.id.0),
+            crate::compute::source_stock::SourceEntry::StockChange(c) => Some(c.id.raw()),
         })
         .collect();
     assert_eq!(
@@ -2770,7 +2778,11 @@ fn the_simulation_request_carries_the_stock_changes_s2() {
 
     // An edit to change 3 makes the record out of date by name.
     let _ = s
-        .replace_stock_change(1, crate::ids::StockChangeId(3), s2_fill(3, true, 8.0))
+        .replace_stock_change(
+            1,
+            crate::ids::StockChangeId::from_raw(3),
+            s2_fill(3, true, 8.0),
+        )
         .unwrap();
     assert!(matches!(
         s.source_is_current(rest_id, &recorded),
@@ -2778,11 +2790,19 @@ fn the_simulation_request_carries_the_stock_changes_s2() {
     ));
     // Enabling change 2 adds a change the record did not apply.
     let _ = s
-        .replace_stock_change(1, crate::ids::StockChangeId(3), s2_fill(3, true, 7.0))
+        .replace_stock_change(
+            1,
+            crate::ids::StockChangeId::from_raw(3),
+            s2_fill(3, true, 7.0),
+        )
         .unwrap();
     assert_eq!(s.source_is_current(rest_id, &recorded), Ok(()));
     let _ = s
-        .replace_stock_change(1, crate::ids::StockChangeId(2), s2_fill(2, true, 6.0))
+        .replace_stock_change(
+            1,
+            crate::ids::StockChangeId::from_raw(2),
+            s2_fill(2, true, 6.0),
+        )
         .unwrap();
     assert!(matches!(
         s.source_is_current(rest_id, &recorded),

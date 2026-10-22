@@ -166,7 +166,11 @@ mod tests {
     #[test]
     fn the_buried_curve_threshold_is_the_commanded_depth_plus_the_floor() {
         let stock = block();
-        let cutter = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill)).unwrap();
+        let cutter = build_cutter(&ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ))
+        .unwrap();
         let depth = 1.0;
         assert_eq!(
             BuriedCurveFinding::measure(&cut_at(10.0 - depth), depth, Some(&stock), &cutter),

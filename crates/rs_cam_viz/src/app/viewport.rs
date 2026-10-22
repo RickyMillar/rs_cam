@@ -90,7 +90,7 @@ impl RsCamApp {
                 Some(
                     state
                         .session()
-                        .face_pick_key(tc, model_id.0, face_id)
+                        .face_pick_key(tc, model_id, face_id)
                         .map_err(|refusal| refusal.to_string()),
                 )
             }
@@ -104,7 +104,7 @@ impl RsCamApp {
                 Some(
                     state
                         .session()
-                        .face_pick_key_at(tc, model_id.0, point)
+                        .face_pick_key_at(tc, model_id, point)
                         .map_err(|refusal| refusal.to_string()),
                 )
             }
@@ -540,7 +540,7 @@ impl RsCamApp {
                                 pick_target.unwrap_or_else(|| {
                                     rs_cam_core::session::SelectionTarget::for_face_pick(tc)
                                 }),
-                                session.face_pick_key(tc, model_id.0, face_id),
+                                session.face_pick_key(tc, model_id, face_id),
                             )
                         })
                     };
@@ -1103,7 +1103,7 @@ impl RsCamApp {
             .session()
             .models()
             .iter()
-            .find(|m| m.id == popover.model_id.0)
+            .find(|m| m.id == popover.model_id)
             .and_then(|m| {
                 rs_cam_core::selection::open_shapes(&m.items)
                     .into_iter()

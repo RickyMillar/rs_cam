@@ -674,7 +674,7 @@ mod tests {
 
     #[test]
     fn only_the_own_model_is_stored_as_the_toolpath_model() {
-        let own = ModelId(3);
+        let own = ModelId::from_raw(3);
         let on = |source| MatchKey { source, ..key(1.0) };
         let edit = SelectionEdit::AddPick(on(SourceRef::Model(own)));
         assert_eq!(
@@ -682,7 +682,7 @@ mod tests {
             SelectionEdit::AddPick(on(SourceRef::ToolpathModel))
         );
         // Another model and the stock stay as they are.
-        for source in [SourceRef::Model(ModelId(4)), SourceRef::Stock] {
+        for source in [SourceRef::Model(ModelId::from_raw(4)), SourceRef::Stock] {
             let edit = SelectionEdit::RemovePick(on(source));
             assert_eq!(edit.clone().for_toolpath_model(own), edit);
         }
@@ -786,7 +786,7 @@ mod tests {
     /// replace it; after it one rule adds and two rules append in one edit.
     #[test]
     fn added_rules_replace_the_default_only_p4_5() {
-        let own = ModelId(0);
+        let own = ModelId::from_raw(0);
         let rule = |layer: &str| Rule {
             source: SourceRef::ToolpathModel,
             filter: Filter {

@@ -107,14 +107,14 @@ impl ComputeBackend for ScriptedLane {
 pub(super) fn toolpath(id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(id),
+        id: rs_cam_core::ToolpathId::from_raw(id),
         name: format!("Op {id}"),
         enabled: true,
         operation: OperationConfig::new_default(OperationType::Face),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -136,10 +136,10 @@ pub(super) fn toolpath(id: usize) -> ToolpathConfig {
 /// the obstacle-edit classes have something to move.
 pub(super) fn seeded_controller() -> AppController<ScriptedLane> {
     let mut controller = AppController::with_backend(ScriptedLane::default());
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: std::path::PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
         kind: Some(ModelKind::Stl),
@@ -157,8 +157,8 @@ pub(super) fn seeded_controller() -> AppController<ScriptedLane> {
         .add_toolpath(0, toolpath(0))
         .expect("the fixture project takes one operation");
     controller.state.replace_session(builder.build());
-    controller.handle_internal_event(AppEvent::AddObstacle(SetupId(0)));
-    land_a_result_for(&mut controller, ToolpathId(0));
+    controller.handle_internal_event(AppEvent::AddObstacle(SetupId::from_raw(0)));
+    land_a_result_for(&mut controller, ToolpathId::from_raw(0));
     controller
 }
 
@@ -293,12 +293,12 @@ fn edit_fixture_geometry(controller: &mut AppController<ScriptedLane>) {
 }
 
 fn add_another_fixture(controller: &mut AppController<ScriptedLane>) {
-    controller.handle_internal_event(AppEvent::AddObstacle(SetupId(0)));
+    controller.handle_internal_event(AppEvent::AddObstacle(SetupId::from_raw(0)));
 }
 
 fn add_a_keep_out_zone(controller: &mut AppController<ScriptedLane>) {
     // K1: a keep-out zone is an obstacle; the GUI adds one door.
-    controller.handle_internal_event(AppEvent::AddObstacle(SetupId(0)));
+    controller.handle_internal_event(AppEvent::AddObstacle(SetupId::from_raw(0)));
 }
 
 fn edit_tool_stickout(controller: &mut AppController<ScriptedLane>) {
@@ -310,7 +310,7 @@ fn edit_tool_stickout(controller: &mut AppController<ScriptedLane>) {
         .expect("the fixture project carries one tool")
         .clone();
     draft.stickout += 15.0;
-    crate::ui::properties::commit_tool_draft(&mut controller.state, ToolId(1), draft);
+    crate::ui::properties::commit_tool_draft(&mut controller.state, ToolId::from_raw(1), draft);
 }
 
 /// H1: the holder is the machine head now. A wider collet nut is the edit
@@ -332,7 +332,7 @@ fn edit_machine_head(controller: &mut AppController<ScriptedLane>) {
 }
 
 fn disable_the_operation(controller: &mut AppController<ScriptedLane>) {
-    controller.handle_internal_event(AppEvent::ToggleToolpathEnabled(ToolpathId(0)));
+    controller.handle_internal_event(AppEvent::ToggleToolpathEnabled(ToolpathId::from_raw(0)));
 }
 
 /// Every edit class that moves an input `check_collisions` reads.

@@ -213,7 +213,7 @@ fn generate(outline: &Polygon2, op: &OperationConfig, dressups: DressupConfig) -
         .generate_toolpath(0, &cancel)
         .expect("the op generates");
     session
-        .get_result(0)
+        .result_at(0)
         .expect("a result")
         .annotated()
         .toolpath
@@ -692,7 +692,7 @@ fn use_faces(session: &mut ProjectSession, index: usize, frame: Frame) {
     let _ = session
         .apply(Command::SetToolpathModel(SetToolpathModelArgs {
             index,
-            model_id,
+            model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         }))
         .expect("bind the face model");
     let _ = session

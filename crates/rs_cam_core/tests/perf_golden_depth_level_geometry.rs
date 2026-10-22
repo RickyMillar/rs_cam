@@ -109,7 +109,7 @@ fn levels(n: usize) -> Vec<f64> {
 
 /// One op over the ring, `n` levels deep, through the session.
 fn session_levels(op: OperationConfig, poly: &Polygon2) -> Toolpath {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 2.0 * TOOL_RADIUS;
     let half = RING_RADIUS + 20.0;
     let stock = StockConfig {

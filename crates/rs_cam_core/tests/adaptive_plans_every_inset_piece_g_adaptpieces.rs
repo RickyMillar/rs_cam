@@ -255,7 +255,7 @@ fn run(cleanup: CleanupStrategy, style: DressupEntryStyle) -> Run {
     );
     generate(&mut session, 0);
     let moves = session
-        .get_result(0)
+        .result_at(0)
         .expect("the op holds a result")
         .toolpath()
         .moves

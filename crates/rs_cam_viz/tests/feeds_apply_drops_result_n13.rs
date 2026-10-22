@@ -132,14 +132,14 @@ fn policy() -> rs_cam_core::gcode::ToolLoadExportPolicy {
 fn toolpath(name: &str, op_type: OperationType, stock_source: StockSource) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: OperationConfig::new_default(op_type),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -162,10 +162,10 @@ fn toolpath(name: &str, op_type: OperationType, stock_source: StockSource) -> To
 /// `invalidate_result_chain` must reach.
 fn build_controller() -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
         kind: Some(ModelKind::Stl),
@@ -197,7 +197,7 @@ fn build_controller() -> AppController<SilentBackend> {
         .expect("add the downstream toolpath");
     controller.state.replace_session(builder.build());
     let state = &mut controller.state;
-    let lead_revision = state.session().toolpath_revision(0);
+    let lead_revision = state.session().toolpath_revision_at(0);
     let _ = state
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,
@@ -205,7 +205,7 @@ fn build_controller() -> AppController<SilentBackend> {
             result: Box::new(core_result(sample_toolpath(PREVIOUS_FEED))),
         }))
         .expect("seed the lead core result");
-    let downstream_revision = state.session().toolpath_revision(1);
+    let downstream_revision = state.session().toolpath_revision_at(1);
     let _ = state
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 1,
@@ -271,11 +271,11 @@ fn f_words(gcode: &str) -> Vec<f64> {
 /// about what the Apply changed, so all three must hold FIRST.
 fn assert_fixture_is_generated(controller: &AppController<SilentBackend>) {
     assert!(
-        controller.state.session().get_result(0).is_some(),
+        controller.state.session().result_at(0).is_some(),
         "fixture: the lead operation must hold a core result"
     );
     assert!(
-        controller.state.session().get_result(1).is_some(),
+        controller.state.session().result_at(1).is_some(),
         "fixture: the downstream operation must hold a core result"
     );
     assert_eq!(
@@ -310,7 +310,7 @@ fn apply_feeds_all_drops_the_cached_result_n13() {
         "the Apply wrote nothing, so this test proves nothing about it"
     );
     assert!(
-        controller.state.session().get_result(0).is_none(),
+        controller.state.session().result_at(0).is_none(),
         "N13: the feeds Apply funnel left the core result in place. Export \
          then emits the geometry and the feed words of the PRE-APPLY \
          parameter set."
@@ -335,7 +335,7 @@ fn apply_feeds_all_drops_the_downstream_chain_n13() {
     controller.handle_internal_event(AppEvent::ApplyFeedsAll(id_at(&controller, 0)));
 
     assert!(
-        controller.state.session().get_result(1).is_none(),
+        controller.state.session().result_at(1).is_none(),
         "N13: the downstream FromRemainingStock operation kept its result. \
          Its stock came from the operation the Apply just changed."
     );
@@ -390,7 +390,7 @@ fn apply_feeds_project_drops_every_written_result_n13() {
     );
     for index in [0usize, 1usize] {
         assert!(
-            controller.state.session().get_result(index).is_none(),
+            controller.state.session().result_at(index).is_none(),
             "N13: the project rollup left toolpath {index}'s core result in \
              place after writing its operation"
         );
@@ -427,7 +427,7 @@ fn agent_apply_feeds_drops_the_cached_result_n13() {
         "the agent Apply wrote no feed, so this test proves nothing about it"
     );
     assert!(
-        controller.state.session().get_result(0).is_none(),
+        controller.state.session().result_at(0).is_none(),
         "N13: the MCP apply_feeds door left the core result in place. A \
          'speeds only' apply still changes the F word the file carries."
     );

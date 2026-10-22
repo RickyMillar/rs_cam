@@ -227,14 +227,14 @@ fn pocket_op(rpm: u32) -> OperationConfig {
 fn toolpath_config(name: &str, rpm: u32, tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: pocket_op(rpm),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -249,7 +249,7 @@ fn toolpath_config(name: &str, rpm: u32, tool_id: usize, model_id: usize) -> Too
 }
 
 fn cutter(tool_type: ToolType, name: &str, number: u32) -> ToolConfig {
-    let mut config = ToolConfig::new_default(ToolId(0), tool_type);
+    let mut config = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
     config.name = name.to_owned();
     config.tool_number = number;
     config
@@ -275,11 +275,11 @@ fn build_state(last_coolant: CoolantMode) -> (ProjectSession, GuiState, Simulati
     let finish_bit = cutter(ToolType::BallNose, FINISH_TOOL_NAME, FINISH_TOOL_NUMBER);
     let rough_idx = builder.add_tool(rough_bit);
     let finish_idx = builder.add_tool(finish_bit);
-    let rough_tool = builder.tools()[rough_idx].id.0;
-    let finish_tool = builder.tools()[finish_idx].id.0;
+    let rough_tool = builder.tools()[rough_idx].id.raw();
+    let finish_tool = builder.tools()[finish_idx].id.raw();
 
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
         kind: Some(ModelKind::Stl),
@@ -296,9 +296,9 @@ fn build_state(last_coolant: CoolantMode) -> (ProjectSession, GuiState, Simulati
 
     let flipped = builder.add_setup("Flip".to_owned(), FaceUp::Bottom);
 
-    let rough = toolpath_config(ROUGH_LABEL, ROUGH_RPM, rough_tool, model_id);
-    let finish = toolpath_config(FINISH_LABEL, FINISH_RPM, finish_tool, model_id);
-    let mut flip = toolpath_config(FLIP_LABEL, FLIP_RPM, rough_tool, model_id);
+    let rough = toolpath_config(ROUGH_LABEL, ROUGH_RPM, rough_tool, model_id.raw());
+    let finish = toolpath_config(FINISH_LABEL, FINISH_RPM, finish_tool, model_id.raw());
+    let mut flip = toolpath_config(FLIP_LABEL, FLIP_RPM, rough_tool, model_id.raw());
     flip.coolant = last_coolant;
 
     let _ = builder.add_toolpath(0, rough).expect("add rough");
@@ -309,7 +309,7 @@ fn build_state(last_coolant: CoolantMode) -> (ProjectSession, GuiState, Simulati
     let mut session = builder.build();
 
     for index in 0..LABELS.len() {
-        let revision = session.toolpath_revision(index);
+        let revision = session.toolpath_revision_at(index);
         let _ = session
             .apply(Command::AdoptResult(AdoptResultArgs {
                 index,

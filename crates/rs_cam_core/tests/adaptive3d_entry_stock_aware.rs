@@ -589,9 +589,9 @@ fn pocket_toolpath(style: Style) -> Toolpath {
         ..StockConfig::default()
     });
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "demo_pocket".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -619,7 +619,7 @@ fn pocket_toolpath(style: Style) -> Toolpath {
     dressups.arc_fitting = None;
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
@@ -640,7 +640,7 @@ fn pocket_toolpath(style: Style) -> Toolpath {
         }),
         dressups,
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,
@@ -659,7 +659,7 @@ fn pocket_toolpath(style: Style) -> Toolpath {
         .generate_toolpath(0, &AtomicBool::new(false))
         .expect("generate pocket toolpath");
     session
-        .get_result(0)
+        .result_at(0)
         .expect("pocket toolpath result")
         .toolpath()
         .clone()
@@ -749,7 +749,7 @@ fn session_terrain_rough(style: Style) -> Toolpath {
     );
     common::session::generate(&mut session, 0);
     session
-        .get_result(0)
+        .result_at(0)
         .expect("terrain rough result")
         .toolpath()
         .clone()

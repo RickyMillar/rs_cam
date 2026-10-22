@@ -51,13 +51,13 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     disabled_tool.name = "N1 Disabled Tool".to_owned();
     disabled_tool.tool_number = 17;
     let disabled_tool_idx = builder.add_tool(disabled_tool);
-    let disabled_tool_id = builder.tools()[disabled_tool_idx].id.0;
+    let disabled_tool_id = builder.tools()[disabled_tool_idx].id.raw();
 
     let mut enabled_tool = make_endmill_6mm();
     enabled_tool.name = "N1 Enabled Tool".to_owned();
     enabled_tool.tool_number = 23;
     let enabled_tool_idx = builder.add_tool(enabled_tool);
-    let enabled_tool_id = builder.tools()[enabled_tool_idx].id.0;
+    let enabled_tool_id = builder.tools()[enabled_tool_idx].id.raw();
 
     let disabled_model_id = builder.add_model(polygon_model(vec![square_at(1.0)], "n1_disabled"));
     let enabled_model_id = builder.add_model(polygon_model(vec![square_at(11.0)], "n1_enabled"));
@@ -65,7 +65,7 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     let mut disabled = toolpath_config(
         DISABLED_LABEL,
         trace_op(11_111),
-        disabled_tool_id,
+        rs_cam_core::ids::ToolId::from_raw(disabled_tool_id),
         disabled_model_id,
     );
     disabled.pre_gcode = Some(DISABLED_MARKER.to_owned());
@@ -77,7 +77,7 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     let mut enabled = toolpath_config(
         ENABLED_LABEL,
         trace_op(22_222),
-        enabled_tool_id,
+        rs_cam_core::ids::ToolId::from_raw(enabled_tool_id),
         enabled_model_id,
     );
     enabled.pre_gcode = Some(ENABLED_MARKER.to_owned());
@@ -94,7 +94,7 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
         .expect("generate enabled trace");
     assert!(
         !session
-            .get_result(0)
+            .result_at(0)
             .expect("disabled trace result exists")
             .toolpath()
             .moves
@@ -103,7 +103,7 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
     );
     assert!(
         !session
-            .get_result(1)
+            .result_at(1)
             .expect("enabled trace result exists")
             .toolpath()
             .moves
@@ -118,7 +118,7 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
         }))
         .expect("disable first trace");
     assert!(
-        session.get_result(0).is_some(),
+        session.result_at(0).is_some(),
         "disabled trace cache is intentionally retained for re-enable"
     );
 
@@ -163,13 +163,13 @@ fn disabled_cached_toolpath_is_absent_from_checked_export() {
         .expect("re-enable first trace");
     assert!(
         session
-            .get_toolpath_config(0)
+            .toolpath_config_at(0)
             .expect("first trace config exists")
             .enabled,
         "re-enabling restores the trace config enabled state"
     );
     assert!(
-        session.get_result(0).is_some(),
+        session.result_at(0).is_some(),
         "re-enabling retains the cached trace result"
     );
 

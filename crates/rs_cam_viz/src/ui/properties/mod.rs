@@ -253,7 +253,7 @@ pub struct ToolpathPanelSnapshot {
     pub preconditions: rs_cam_core::diagnostics::diagnose::PreconditionContext,
     pub model_refs: rs_cam_core::diagnostics::diagnose::ModelRefContext,
     /// Q1: the bounding box of the model this toolpath machines, read
-    /// once here through `ProjectSession::model_bbox`.
+    /// once here through `ProjectSession::model_bbox_by_id`.
     ///
     /// The panel's two Suggest sites — the Geometry-tab pill funnel and
     /// the Feeds-tab card — put it in `SuggestContext::model_bbox`,
@@ -291,8 +291,8 @@ pub fn toolpath_panel_snapshot(
         enabled: tc.enabled,
         visible: rt.visible,
         locked: rt.locked,
-        tool_id: crate::state::job::ToolId(tc.tool_id),
-        model_id: crate::state::job::ModelId(tc.model_id),
+        tool_id: tc.tool_id,
+        model_id: tc.model_id,
         operation: tc.operation.clone(),
         dressups: tc.dressups.clone(),
         heights: tc.heights.clone(),
@@ -321,11 +321,11 @@ pub fn toolpath_panel_snapshot(
         // Q1: the one place the panel's model bbox enters. The id is the
         // STORED `tc.model_id`, so the box is the box of the model this
         // toolpath machines.
-        model_bbox: session.model_bbox(tc.model_id),
+        model_bbox: session.model_bbox_by_id(tc.model_id),
         suggest_warnings: session
             .tools()
             .iter()
-            .find(|tool| tool.id.0 == tc.tool_id)
+            .find(|tool| tool.id == tc.tool_id)
             .and_then(|tool| session.suggest_warnings_for_toolpath(tc, tool)),
     })
 }
@@ -462,7 +462,7 @@ fn rule_sources(
 ) -> Vec<RuleSource> {
     use rs_cam_core::selection::{ItemKind, SourceRef};
     use rs_cam_core::session::{ListItemsArgs, Query, QueryAnswer};
-    let listed = |model_id: usize| -> (Vec<String>, std::collections::BTreeSet<ItemKind>) {
+    let listed = |model_id: rs_cam_core::ids::ModelId| -> (Vec<String>, std::collections::BTreeSet<ItemKind>) {
         let items = match session.query(Query::ListItems(ListItemsArgs {
             model_id,
             layer: None,
@@ -493,10 +493,7 @@ fn rule_sources(
                 format!("This model ({})", model.name),
             )
         } else {
-            (
-                SourceRef::Model(rs_cam_core::ids::ModelId(model.id)),
-                model.name.clone(),
-            )
+            (SourceRef::Model(model.id), model.name.clone())
         };
         out.push(RuleSource {
             source,
@@ -599,7 +596,7 @@ pub(crate) fn toolpath_panel_inputs(
     let models: Vec<_> = session
         .models()
         .iter()
-        .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
+        .map(|m| (m.id, m.name.clone()))
         .collect();
     // P4.3: the "Selection" boundary source needs an item to pick: a
     // drawing item or a face item (`ItemSet::has_selectable_item`, the one
@@ -747,10 +744,7 @@ pub(crate) fn toolpath_panel_inputs(
     let stale_default_defects = session
         .find_toolpath_config_by_id(id)
         .map(|(_, tc)| {
-            let tool = session
-                .tools()
-                .iter()
-                .find(|t| t.id == rs_cam_core::compute::tool_config::ToolId(tc.tool_id));
+            let tool = session.tools().iter().find(|t| t.id == tc.tool_id);
             let stock_bottom_z = session.stock_config().origin_z;
             rs_cam_core::compute::validate::validate_one_toolpath(
                 tc,
@@ -881,7 +875,10 @@ pub fn boundary_summary_line(
             match selection.closed_shapes_model() {
                 Some(model_id) => match models.iter().find(|(id, _)| *id == model_id) {
                     Some((_, name)) => format!("{what} of model '{name}'"),
-                    None => format!("{what} of model id {} (not in this project)", model_id.0),
+                    None => format!(
+                        "{what} of model id {} (not in this project)",
+                        model_id.raw()
+                    ),
                 },
                 None => format!(
                     "{what} of a selection ({} rules, {} picks)",
@@ -891,7 +888,7 @@ pub fn boundary_summary_line(
             }
         }
         BoundarySource::DerivedRestRegions { source_toolpath_id } => {
-            format!("rest regions of toolpath {}", source_toolpath_id.0)
+            format!("rest regions of toolpath {}", source_toolpath_id.raw())
         }
         BoundarySource::PlannedTierRegions { .. } => "planned tier regions".to_owned(),
     };
@@ -982,8 +979,8 @@ pub(crate) fn project_entry_onto(
     }
     config.name = name.clone();
     config.enabled = *enabled;
-    config.tool_id = tool_id.0;
-    config.model_id = model_id.0;
+    config.tool_id = *tool_id;
+    config.model_id = *model_id;
     config.operation = operation.clone();
     config.dressups = dressups.clone();
     config.heights = heights.clone();
@@ -1151,7 +1148,7 @@ fn draw_nothing_selected(ui: &mut egui::Ui, state: &mut AppState) {
             .session()
             .list_setups()
             .iter()
-            .all(|s| s.toolpath_indices.is_empty())
+            .all(|s| s.toolpath_indices().is_empty())
     {
         ui.label(
             egui::RichText::new("Getting started:")
@@ -1256,7 +1253,7 @@ pub(crate) fn drill_tool_diameters(session: &rs_cam_core::session::ProjectSessio
         .iter()
         // F095: the core drill-family predicate names the drilling operations.
         .filter(|tc| tc.operation.op_type().is_drill_kinematics())
-        .filter_map(|tc| session.tools().iter().find(|t| t.id.0 == tc.tool_id))
+        .filter_map(|tc| session.tools().iter().find(|t| t.id == tc.tool_id))
         .chain(
             session
                 .tools()
@@ -1385,7 +1382,7 @@ fn draw_setup_selection(
         .session()
         .models()
         .iter()
-        .map(|m| (crate::state::job::ModelId(m.id), m.name.clone()))
+        .map(|m| (m.id, m.name.clone()))
         .collect();
     // WP6: the panel writes a DRAFT. The caller compares the
     // draft against the stored setup and applies one command per
@@ -1398,7 +1395,7 @@ fn draw_setup_selection(
     // had no core door at all.
     let stored = state
         .session()
-        .find_setup_by_id(setup_id.0)
+        .find_setup_by_id(setup_id)
         .map(|(index, setup)| (index, setup.clone()));
     if let Some((setup_index, stored)) = stored {
         let mut draft = match state.history.setup_draft.take() {
@@ -1434,7 +1431,7 @@ fn model_choices(
         .models()
         .iter()
         .map(|m| {
-            let id = rs_cam_core::ids::ModelId(m.id);
+            let id = m.id;
             let facts = session.stock_change_model_facts(id);
             stock_changes::ModelChoice {
                 id,
@@ -1506,7 +1503,7 @@ fn draw_stock_changes_section(
         .session()
         .stock_change_rows()
         .into_iter()
-        .filter(|row| row.setup_id == setup_id.0)
+        .filter(|row| row.setup_id == setup_id)
         .collect();
     let models = model_choices(state.session());
     let frame =
@@ -1537,7 +1534,7 @@ fn draw_obstacle_selection(
 ) {
     let stored = state
         .session()
-        .find_setup_by_id(setup_id.0)
+        .find_setup_by_id(setup_id)
         .and_then(|(index, setup_data)| {
             setup_data
                 .obstacles
@@ -1606,14 +1603,14 @@ fn draw_face_selection(
         .session()
         .models()
         .iter()
-        .find(|m| m.id == model_id.0)
+        .find(|m| m.id == model_id)
         .map(|m| m.name.as_str())
         .unwrap_or("Unknown");
     use crate::ui::components::{DataRow, DataTable};
     let mut table = DataTable::new("face_selection")
         .row(DataRow::value("Model", model_name))
         .row(DataRow::value("Face", face_id.0.to_string()));
-    if let Some(model) = state.session().models().iter().find(|m| m.id == model_id.0)
+    if let Some(model) = state.session().models().iter().find(|m| m.id == model_id)
         && let Some(enriched) = &model.enriched_mesh
         && let Some(group) = enriched.face_group(face_id)
     {
@@ -1643,7 +1640,7 @@ fn draw_faces_selection(
         .session()
         .models()
         .iter()
-        .find(|m| m.id == model_id.0)
+        .find(|m| m.id == model_id)
         .map(|m| m.name.as_str())
         .unwrap_or("Unknown");
     use crate::ui::components::{DataRow, DataTable};

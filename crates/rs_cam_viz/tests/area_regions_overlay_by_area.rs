@@ -44,13 +44,13 @@ const MODEL: usize = 4;
 
 fn fresh_state() -> AppState {
     let mut state = AppState::new();
-    let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     state.replace_session(
         ProjectSessionBuilder::new()
             .tool(tool)
             .model(LoadedModel {
-                id: MODEL,
+                id: rs_cam_core::ids::ModelId::from_raw(MODEL),
                 path: PathBuf::from("model.stl"),
                 name: "3D".to_owned(),
                 kind: None,
@@ -73,14 +73,14 @@ fn fresh_state() -> AppState {
 fn config(operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Rough".to_owned(),
         enabled: true,
         operation,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: TOOL,
-        model_id: MODEL,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(TOOL),
+        model_id: rs_cam_core::ids::ModelId::from_raw(MODEL),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),

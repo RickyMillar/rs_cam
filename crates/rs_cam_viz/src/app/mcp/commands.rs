@@ -226,8 +226,7 @@ impl RsCamApp {
                     .get(*setup_index)
                     .map(|s| s.id);
                 if let Some(setup_id) = setup_id {
-                    self.controller.state_mut().selection =
-                        Selection::Setup(crate::state::job::SetupId(setup_id));
+                    self.controller.state_mut().selection = Selection::Setup(setup_id);
                 }
             }
             CoreRequest::SetToolpathParam(p) => {
@@ -248,10 +247,10 @@ impl RsCamApp {
                 // row's table column is `None` and only the selection
                 // moves.
                 let tools = self.controller.state().session().list_tools();
-                let tool_id = tools.get(p.index).map(|t| t.id.0);
+                let tool_id = tools.get(p.index).map(|t| t.id);
                 if let Some(tool_id) = tool_id {
                     self.mcp_highlight(format!("tool_{tool_id}_{}", p.param.token()));
-                    self.controller.state_mut().selection = Selection::Tool(ToolId(tool_id));
+                    self.controller.state_mut().selection = Selection::Tool(tool_id);
                 }
             }
             CoreRequest::SetToolpathTool(p) => self.select_toolpath_for_mcp(p.index),
@@ -265,10 +264,10 @@ impl RsCamApp {
                     .session()
                     .models()
                     .iter()
-                    .any(|m| m.id == p.model_id) =>
+                    .any(|m| m.id.raw() == p.model_id) =>
             {
                 self.controller.state_mut().selection =
-                    Selection::Model(crate::state::job::ModelId(p.model_id));
+                    Selection::Model(rs_cam_core::ids::ModelId::from_wire(p.model_id));
             }
             _ => {}
         }
@@ -355,7 +354,7 @@ impl RsCamApp {
             CoreRequest::SetModelImportOptions(p) => {
                 match import::model_import_options_args(self.controller.state().session(), &p) {
                     Ok(args) => {
-                        before.index = Some(args.model_id);
+                        before.index = Some(args.model_id.raw());
                         CorePlan::Apply(Command::AdoptModelGeometry(args), Box::new(before))
                     }
                     Err(reply) => CorePlan::Answered(reply),
@@ -493,7 +492,7 @@ impl RsCamApp {
                 CorePlan::Apply(
                     Command::SetToolpathTool(SetToolpathToolArgs {
                         index: p.index,
-                        tool_id: p.tool_id,
+                        tool_id: ToolId::from_wire(p.tool_id),
                     }),
                     Box::new(before),
                 )
@@ -504,7 +503,7 @@ impl RsCamApp {
                 CorePlan::Apply(
                     Command::SetToolpathModel(SetToolpathModelArgs {
                         index: p.index,
-                        model_id: p.model_id,
+                        model_id: rs_cam_core::ids::ModelId::from_wire(p.model_id),
                     }),
                     Box::new(before),
                 )
@@ -514,7 +513,7 @@ impl RsCamApp {
                     .controller
                     .state()
                     .session()
-                    .get_toolpath_config(p.index)
+                    .toolpath_config_at(p.index)
                     .map(|tc| tc.heights.clone())
                 else {
                     return CorePlan::Answered(CoreReply::refused(
@@ -762,8 +761,8 @@ impl RsCamApp {
 
         let session = self.controller.state().session();
         let tools = session.list_tools();
-        let tool_raw_id = match tools.get(p.tool_index) {
-            Some(info) => info.id.0,
+        let tool_id = match tools.get(p.tool_index) {
+            Some(info) => info.id,
             None => {
                 return CorePlan::Answered(CoreReply::refused(
                     &format!("Error: Tool index {} not found", p.tool_index),
@@ -785,7 +784,7 @@ impl RsCamApp {
         // Roadmap F.5 — one-shot canonical suggest call at toolpath creation.
         // New toolpaths get recommended feeds written in once; after that,
         // fields are always user-owned.
-        let Some(tool) = session.tools().iter().find(|t| t.id.0 == tool_raw_id) else {
+        let Some(tool) = session.tools().iter().find(|t| t.id == tool_id) else {
             return CorePlan::Answered(CoreReply::refused(
                 &format!("Error: Tool index {} not found", p.tool_index),
                 None,
@@ -796,7 +795,7 @@ impl RsCamApp {
         // Q1: `add_toolpath` takes `model_id` as a required parameter, so
         // the model IS known here. The bbox gates the runtime-sanity
         // stepover back-off in Suggest.
-        let model_bbox = session.model_bbox(p.model_id);
+        let model_bbox = session.model_bbox_by_id(rs_cam_core::ids::ModelId::from_wire(p.model_id));
         let (op_config, feeds_provenance, feeds_refusal) =
             match rs_cam_core::feeds::suggest::suggest_params(
                 rs_cam_core::feeds::suggest::SuggestParamsInput {
@@ -850,14 +849,14 @@ impl RsCamApp {
 
         let config = rs_cam_core::session::ToolpathConfig {
             shoe: Default::default(),
-            id: rs_cam_core::ToolpathId(0),
+            id: rs_cam_core::ToolpathId::placeholder(),
             name: tp_name,
             enabled: true,
             operation: op_config,
             dressups: DressupConfig::for_op(op_type),
             heights: crate::state::toolpath::HeightsConfig::default(),
-            tool_id: tool_raw_id,
-            model_id: p.model_id,
+            tool_id,
+            model_id: rs_cam_core::ids::ModelId::from_wire(p.model_id),
             pre_gcode: None,
             post_gcode: None,
             boundary,
@@ -963,7 +962,7 @@ impl RsCamApp {
             ));
         };
         let name = tool.name.clone();
-        tool.id = ToolId(0); // session reassigns on insert
+        tool.id = ToolId::placeholder(); // session reassigns on insert
 
         // Catalogs number their tools independently, so importing from
         // two of them (or twice from one) lands duplicate `tool_number`s
@@ -1379,9 +1378,9 @@ impl RsCamApp {
                 // as generation would.
                 let missing = selection.sources().find_map(|source| match source {
                     rs_cam_core::selection::SourceRef::Model(id)
-                        if !session.models().iter().any(|m| m.id == id.0) =>
+                        if !session.models().iter().any(|m| m.id == id) =>
                     {
-                        Some(id.0)
+                        Some(id.raw())
                     }
                     rs_cam_core::selection::SourceRef::Model(_)
                     | rs_cam_core::selection::SourceRef::ToolpathModel
@@ -1413,7 +1412,7 @@ impl RsCamApp {
                         Some("source_toolpath_id"),
                     ));
                 };
-                let source_id = rs_cam_core::ToolpathId(raw_id);
+                let source_id = rs_cam_core::ToolpathId::from_wire(raw_id);
                 if self
                     .controller
                     .state()
@@ -1465,7 +1464,7 @@ impl RsCamApp {
     ) -> CorePlan {
         let resolved_reference_tool_id = match p.reference_tool_id {
             Some(raw_id) => {
-                let tool_id = ToolId(raw_id);
+                let tool_id = ToolId::from_wire(raw_id);
                 if !self
                     .controller
                     .state()
@@ -1737,7 +1736,7 @@ impl RsCamApp {
                         .session()
                         .tools()
                         .iter()
-                        .map(|t| t.id.0)
+                        .map(|t| t.id.raw())
                         .collect();
                     CoreReply::refused(
                         &format!("Error: {error}. Tool ids in this project: {ids:?}"),
@@ -1962,7 +1961,7 @@ impl RsCamApp {
                     let models = self.controller.state().session().models();
                     let model = models.last();
                     (
-                        model.map(|m| m.id).unwrap_or(0),
+                        model.map_or(rs_cam_core::ids::ModelId::placeholder(), |m| m.id),
                         model.map(|m| m.name.clone()).unwrap_or_default(),
                         model
                             .and_then(|m| m.kind)
@@ -1974,7 +1973,7 @@ impl RsCamApp {
                 // The controller's own import door writes these three
                 // after every import; the MCP route takes the same step.
                 self.controller.state_mut().selection =
-                    Selection::Model(crate::state::job::ModelId(id));
+                    Selection::Model(id);
                 self.controller.state_mut().gui.mark_edited();
                 self.controller.set_pending_upload();
 
@@ -2034,7 +2033,7 @@ impl RsCamApp {
                 // The GUI's own add door selects the new setup; the MCP
                 // route takes the same step.
                 self.controller.state_mut().selection =
-                    Selection::Setup(crate::state::job::SetupId(setup_id));
+                    Selection::Setup(setup_id);
                 self.controller.state_mut().gui.mark_edited();
                 let reply = self.mcp_mutation_result(
                     format!("Added setup {index}"),
@@ -2186,10 +2185,10 @@ impl RsCamApp {
                     session
                         .tools()
                         .iter()
-                        .find(|t| t.id.0 == tool_id)
+                        .find(|t| t.id.raw() == tool_id)
                         .map(|t| {
                             serde_json::json!({
-                                "id": t.id.0,
+                                "id": t.id.raw(),
                                 "name": t.name,
                                 "tool_type": t.tool_type,
                                 "diameter": t.diameter,
@@ -2216,7 +2215,7 @@ impl RsCamApp {
                     session
                         .models()
                         .iter()
-                        .find(|m| m.id == model_id)
+                        .find(|m| m.id.raw() == model_id)
                         .map(|m| {
                             serde_json::json!({
                                 "id": m.id,
@@ -2254,7 +2253,7 @@ impl RsCamApp {
                 let mut applied = before.extra.clone();
                 let session = self.controller.state().session();
                 if let (Some(map), Some(tc)) =
-                    (applied.as_object_mut(), session.get_toolpath_config(index))
+                    (applied.as_object_mut(), session.toolpath_config_at(index))
                 {
                     let _ = map.insert(
                         "heights".to_owned(),
@@ -2753,7 +2752,7 @@ impl RsCamApp {
                     .session()
                     .models()
                     .iter()
-                    .find(|m| m.id == model_id)
+                    .find(|m| m.id.raw() == model_id)
                     .map(drawing_ledger_json)
                     .unwrap_or_default();
                 CoreReply::succeeded(self.mcp_mutation_result(
@@ -2774,7 +2773,7 @@ impl RsCamApp {
                     .session()
                     .models()
                     .iter()
-                    .find(|m| m.id == model_id)
+                    .find(|m| m.id.raw() == model_id)
                     .map(model_import_json)
                     .unwrap_or_default();
                 CoreReply::succeeded(self.mcp_mutation_result(
@@ -3028,7 +3027,7 @@ impl RsCamApp {
                     };
                     if let Some(object) = json.as_object_mut() {
                         if let Some(id) = toolpath_id {
-                            object.insert("toolpath_id".to_owned(), id.0.into());
+                            object.insert("toolpath_id".to_owned(), id.raw().into());
                             // `null` for a removed toolpath: it has no index now.
                             object.insert("toolpath_index".to_owned(), locate(id).into());
                         }

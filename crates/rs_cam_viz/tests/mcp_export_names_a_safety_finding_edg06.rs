@@ -95,7 +95,7 @@ fn viz_result(path: Toolpath) -> ToolpathResult {
 fn toolpath_config(id: u32, name: &str) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(id as usize),
+        id: rs_cam_core::ToolpathId::from_raw(id as usize),
         name: name.to_owned(),
         enabled: true,
         operation: OperationConfig::Scallop(
@@ -103,8 +103,8 @@ fn toolpath_config(id: u32, name: &str) -> ToolpathConfig {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -125,14 +125,14 @@ fn toolpath_config(id: u32, name: &str) -> ToolpathConfig {
 /// the stock top, here world 0, in the program frame). The rapids at Z=5
 /// sit below that plane of Z10.
 fn build_state(safe_z: f64) -> (ProjectSession, GuiState, SimulationState) {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new()
         .tool(tool)
         .name("edg06 sentry".to_owned());
 
     let mesh = Arc::new(make_test_flat(40.0));
     let _ = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
         kind: Some(ModelKind::Stl),
@@ -152,7 +152,7 @@ fn build_state(safe_z: f64) -> (ProjectSession, GuiState, SimulationState) {
     let mut session = builder.build();
 
     let tp_id = session.toolpath_configs()[0].id;
-    let revision = session.toolpath_revision(0);
+    let revision = session.toolpath_revision_at(0);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,

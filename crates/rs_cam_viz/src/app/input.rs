@@ -181,7 +181,7 @@ impl RsCamApp {
                         .session()
                         .list_setups()
                         .iter()
-                        .find(|s| crate::state::job::SetupId(s.id) == setup_id)
+                        .find(|s| s.id == setup_id)
                         .map(|s| s.name.clone())
                         .unwrap_or_default();
                     // W5: the `_reporting` door, as the combined export.

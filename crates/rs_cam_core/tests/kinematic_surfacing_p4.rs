@@ -44,7 +44,7 @@ use std::collections::BTreeMap;
 /// value, so a finding can only come from the dials.
 fn utilization(population: usize, peak_ratio: Option<f64>) -> ToolpathKinematicUtilization {
     ToolpathKinematicUtilization {
-        toolpath_id: ToolpathId(7),
+        toolpath_id: ToolpathId::from_raw(7),
         moves_total: 1200,
         fed_moves: 900,
         fed_time_s: 240.0,

@@ -61,7 +61,7 @@ fn five_point_star() -> Polygon2 {
 }
 
 fn make_vbit_12_7mm_60deg() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::VBit);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit);
     tool.diameter = 12.7;
     tool.cutting_length = 11.0;
     tool.included_angle = 60.0;
@@ -93,11 +93,11 @@ fn build_vcarve_session() -> ProjectSession {
     builder = builder.stock(stock);
 
     let tool_idx = builder.add_tool(make_vbit_12_7mm_60deg());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     let polygon = five_point_star();
     let model = LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "demo_star".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -128,7 +128,7 @@ fn build_vcarve_session() -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "VCarve".to_owned(),
         enabled: true,
         operation: OperationConfig::VCarve(vcarve),
@@ -141,7 +141,7 @@ fn build_vcarve_session() -> ProjectSession {
             ..DressupConfig::for_op(OperationType::VCarve)
         },
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,
@@ -168,7 +168,7 @@ fn vcarve_default_skeleton_emits_no_rapid_collisions() {
 
     // Sanity: the TP should have actual cut moves, otherwise "no
     // collisions" is a vacuous pass.
-    let result = session.get_result(0).expect("v_carve produced a toolpath");
+    let result = session.result_at(0).expect("v_carve produced a toolpath");
     assert!(
         result.toolpath().moves.len() > 50,
         "v_carve fixture should generate substantive toolpath (got {} moves)",

@@ -53,7 +53,7 @@ const MM_PER_IN: f64 = 25.4;
 
 /// A tapered ball with a Ø1 tip (the lookup key, ruling A1), 2 flutes.
 fn tapered_one_mm() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), ToolType::TaperedBallNose);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     t.diameter = 1.0;
     t.flute_count = 2;
     t.cutting_length = 12.0;
@@ -178,9 +178,10 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
 
         // The modulator's and the advisor's door (no simulation, so no
         // depth de-rate): the printed band.
-        let door = chip_target_for_toolpath(&material, &tool, &operation, ToolpathId(0), None)
-            .and_then(|target| target.band_range())
-            .unwrap_or_else(|| panic!("{label}: the door gave no band"));
+        let door =
+            chip_target_for_toolpath(&material, &tool, &operation, ToolpathId::from_raw(0), None)
+                .and_then(|target| target.band_range())
+                .unwrap_or_else(|| panic!("{label}: the door gave no band"));
         assert!((door.start - lo).abs() < TOL, "{label}: {door:?}");
         assert!((door.end - hi).abs() < TOL, "{label}: {door:?}");
         checked += 1;

@@ -394,7 +394,7 @@ fn gate_verdict(feed: f64, rpm: u32, flutes: u32, axial_doc_mm: f64) -> Chipload
     let material = Material::SolidWood {
         species: WoodSpecies::HardMaple,
     };
-    let id = ToolpathId(0);
+    let id = ToolpathId::from_raw(0);
     let trace = single_sample_trace(id, feed, rpm, flutes, axial_doc_mm);
     let tolerance = ToleranceBands::default();
     rs_cam_core::tool_load::chipload::evaluate(

@@ -63,14 +63,14 @@ fn ctx() -> egui::Context {
 fn toolpath(name: &str, op: OperationType) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: OperationConfig::new_default(op),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -92,13 +92,13 @@ fn state() -> (AppState, MatchKey) {
         .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf");
     let model = rs_cam_core::io::load_model_file(
         &path,
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Dxf,
         ModelUnits::Millimeters,
         Default::default(),
     )
     .expect("the drawing loads");
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 3.0;
     let mut builder = ProjectSessionBuilder::new()
         .stock(StockConfig::default())
@@ -114,7 +114,11 @@ fn state() -> (AppState, MatchKey) {
     state.replace_session(builder.build());
     let circles = state
         .session()
-        .list_model_items(0, Some("HOLES"), Some(ItemKind::Circle))
+        .list_model_items(
+            rs_cam_core::ids::ModelId::from_raw(0),
+            Some("HOLES"),
+            Some(ItemKind::Circle),
+        )
         .unwrap();
     let mut lost = circles[0].key.clone();
     lost.anchor = [500.0, 400.0];
@@ -228,7 +232,11 @@ fn show_me_frames_a_note_and_a_lost_pick_p4_4() {
     let keys = one_frame_request(&click(&ctx, &mut state, &note));
     let paths = state
         .session()
-        .list_model_items(0, Some("TEXT"), Some(ItemKind::Path))
+        .list_model_items(
+            rs_cam_core::ids::ModelId::from_raw(0),
+            Some("TEXT"),
+            Some(ItemKind::Path),
+        )
         .unwrap();
     assert_eq!(paths.len(), 1, "the fixture holds one open line");
     assert_eq!(keys.len(), 1, "the note frames its one skipped path");
@@ -344,7 +352,7 @@ fn at_the_top_state() -> (AppState, Vec<MatchKey>) {
     )
     .unwrap();
     let model = rs_cam_core::session::LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: std::path::PathBuf::from("synthetic://at_the_top.step"),
         name: "At the top".to_owned(),
         kind: None,
@@ -367,7 +375,7 @@ fn at_the_top_state() -> (AppState, Vec<MatchKey>) {
         })
         .collect();
     assert_eq!(keys.len(), 3, "the part holds three faces");
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 3.0;
     let mut pocket = toolpath("Pocket", OperationType::Pocket);
     pocket.operation = OperationConfig::Pocket(PocketConfig {

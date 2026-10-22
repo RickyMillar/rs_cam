@@ -13,7 +13,7 @@ use super::*;
 #[test]
 fn submit_toolpath_compute_missing_prior_stock_resolves_mcp_waiter() {
     let mut controller = sample_controller();
-    let tp_id = ToolpathId(0);
+    let tp_id = ToolpathId::from_raw(0);
 
     // No prior simulation has run, so `self.state.simulation` has no
     // boundaries/checkpoints — `FromRemainingStock` must fail hard.
@@ -697,7 +697,7 @@ fn a_disabled_rest_op_is_not_generated_blocked_or_failed() {
 
     assert_eq!(reply["generated"], 3, "reply: {reply}");
     assert_eq!(reply["failed"], 0);
-    let mentions_off = format!("{reply}").contains(&format!("\"toolpath_id\":{}", off.0));
+    let mentions_off = format!("{reply}").contains(&format!("\"toolpath_id\":{}", off.raw()));
     assert!(
         !mentions_off,
         "a disabled op must appear in neither the error nor the blocked list, reply: {reply}"
@@ -932,7 +932,7 @@ fn a_param_edit_mid_generate_manual_arm_keeps_the_edit_g_lateresult() {
         entry.operation.set_feed_rate(1234.0);
     });
     assert!(
-        controller.state.session().get_result(0).is_none(),
+        controller.state.session().result_at(0).is_none(),
         "the edit drops the core result (F2.1); this test is about what \
          happens when the in-flight job then lands"
     );
@@ -964,7 +964,7 @@ fn a_param_edit_mid_generate_manual_arm_keeps_the_edit_g_lateresult() {
          does not lose a long 3D generation and get told nothing"
     );
     assert!(
-        controller.state.session().get_result(0).is_none(),
+        controller.state.session().result_at(0).is_none(),
         "but NOT into the core cache — that is what `Current` is read from, \
          and this result answers the parameter set the operator just left"
     );
@@ -999,7 +999,7 @@ fn a_manual_generate_with_no_edit_is_accepted_g_lateresult() {
     controller.drain_compute_results();
 
     assert!(
-        controller.state.session().get_result(0).is_some(),
+        controller.state.session().result_at(0).is_some(),
         "an unedited generation must land in the core cache"
     );
     assert_eq!(state_of(&controller, 0), FreshnessState::Current);

@@ -639,11 +639,12 @@ impl ProjectSession {
         if let crate::compute::OperationConfig::ProjectCurve(ref cfg) = tc.operation
             && let Some(surface_id) = cfg.surface_model_id
         {
-            let surface = self.find_model_by_raw_id(surface_id.0).ok_or_else(|| {
+            let surface = self.model_by_id(surface_id).ok_or_else(|| {
                 SessionError::MissingGeometry(format!(
                     "Toolpath '{}' projects onto surface model id {}, but no model has that \
                      id. Pick a surface model, or set the surface to the input model.",
-                    tc.name, surface_id.0
+                    tc.name,
+                    surface_id.raw()
                 ))
             })?;
             if surface.mesh.is_some() {

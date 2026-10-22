@@ -77,7 +77,7 @@ fn material_with_kc() -> Material {
 
 fn endmill(stickout: f64) -> ToolConfig {
     ToolConfig {
-        id: ToolId(0),
+        id: ToolId::from_raw(0),
         name: "6 mm 2-flute flat".to_owned(),
         tool_number: 1,
         tool_type: ToolType::EndMill,

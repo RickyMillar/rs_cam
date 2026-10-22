@@ -513,7 +513,12 @@ pub(crate) fn build_cut_trace_response(
 
     // ── L-5: refuse an id that matches no toolpath ──────────────────────
     let valid_ids: Vec<usize> = (0..state.session().toolpath_count())
-        .filter_map(|idx| state.session().get_toolpath_config(idx).map(|tc| tc.id.0))
+        .filter_map(|idx| {
+            state
+                .session()
+                .toolpath_config_at(idx)
+                .map(|tc| tc.id.raw())
+        })
         .collect();
     if let Some(raw) = req.toolpath_id
         && !valid_ids.contains(&raw)
@@ -558,7 +563,7 @@ pub(crate) fn build_cut_trace_response(
         if !span_filter_active {
             return None;
         }
-        let tc = state.session().get_toolpath_config(tp_index_for_id)?;
+        let tc = state.session().toolpath_config_at(tp_index_for_id)?;
         let rt = state.gui.toolpath_rt.get(&tc.id)?;
         let result = rt.run.result()?;
         let spans = result.spans();
@@ -587,7 +592,7 @@ pub(crate) fn build_cut_trace_response(
     // Build a {toolpath_id_raw → accepted SpanId set}. Toolpath_id arg is
     // the project-level raw id (matching SimulationCutSample.toolpath_id),
     // while accepted-set lookup needs the index — translate via session.
-    let toolpath_id = req.toolpath_id.map(rs_cam_core::ToolpathId);
+    let toolpath_id = req.toolpath_id.map(rs_cam_core::ToolpathId::from_wire);
     let mut accepted_by_toolpath: std::collections::HashMap<
         rs_cam_core::ToolpathId,
         Option<std::collections::HashSet<u32>>,
@@ -595,7 +600,7 @@ pub(crate) fn build_cut_trace_response(
     if span_filter_active {
         let n = state.session().toolpath_count();
         for idx in 0..n {
-            if let Some(tc) = state.session().get_toolpath_config(idx)
+            if let Some(tc) = state.session().toolpath_config_at(idx)
                 && toolpath_id.is_none_or(|raw_id| tc.id == raw_id)
             {
                 accepted_by_toolpath.insert(tc.id, resolve_accepted(idx));
@@ -871,7 +876,7 @@ fn build_span_cut_summaries(
     budget.charge(2);
     let n = state.session().toolpath_count();
     for idx in 0..n {
-        let Some(tc) = state.session().get_toolpath_config(idx) else {
+        let Some(tc) = state.session().toolpath_config_at(idx) else {
             continue;
         };
         if toolpath_id.is_some_and(|id| tc.id != id) {
@@ -992,7 +997,7 @@ pub(super) fn build_per_depth_pass_summary(
     let mut out = serde_json::Map::<String, serde_json::Value>::new();
     let n = state.session().toolpath_count();
     for idx in 0..n {
-        let Some(tc) = state.session().get_toolpath_config(idx) else {
+        let Some(tc) = state.session().toolpath_config_at(idx) else {
             continue;
         };
         let Some(rt) = state.gui.toolpath_rt.get(&tc.id) else {
@@ -1153,7 +1158,7 @@ pub(crate) fn inspect_collisions_json(
     // located list adds the run move (`null` when the run does not hold
     // the checked toolpath).
     for hit in sim.located_holder_collisions() {
-        let tp_id = hit.toolpath_id.map_or(usize::MAX, |id| id.0);
+        let tp_id = hit.toolpath_id.map_or(usize::MAX, |id| id.raw());
         holder_by_tp
             .entry(tp_id)
             .or_default()
@@ -1168,7 +1173,7 @@ pub(crate) fn inspect_collisions_json(
     let evidence = sim.project_evidence();
     for hit in evidence.attributed_rapid_collisions() {
         let (tp_id, local_move) = match hit.toolpath {
-            Some((id, local)) => (id.0, Some(local)),
+            Some((id, local)) => (id.raw(), Some(local)),
             None => (usize::MAX, None),
         };
         let mut entry = serde_json::json!({
@@ -1202,7 +1207,7 @@ pub(crate) fn inspect_collisions_json(
             let name = sim
                 .boundaries()
                 .iter()
-                .find(|b| b.id.0 == *tp_id)
+                .find(|b| b.id.raw() == *tp_id)
                 .map(|b| b.name.clone())
                 .unwrap_or_else(|| format!("(unknown {tp_id})"));
             let holder = holder_by_tp.get(tp_id).cloned().unwrap_or_default();

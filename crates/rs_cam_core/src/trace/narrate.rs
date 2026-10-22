@@ -2239,7 +2239,11 @@ mod tests {
             }),
         ];
         let annotated = AnnotatedToolpath::with_spans(toolpath, spans);
-        let tool = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill)).unwrap();
+        let tool = build_cutter(&ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ))
+        .unwrap();
 
         let report = narrate_toolpath(&annotated, None, None, None, &tool);
         // Exactly one Z-level line should appear — at the payload z=22.000.
@@ -2259,11 +2263,18 @@ mod tests {
         toolpath.feed_to(P3::new(10.0, 0.0, 2.0), 1000.0);
         toolpath.arc_cw_to(P3::new(20.0, 0.0, 2.0), 100.0, 0.0, 1000.0);
 
-        let tool = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill)).unwrap();
-        let trace = SimulationCutTrace::from_samples(1.0, vec![sample(ToolpathId(7), 1, 8.0, 0.0)]);
+        let tool = build_cutter(&ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ))
+        .unwrap();
+        let trace = SimulationCutTrace::from_samples(
+            1.0,
+            vec![sample(ToolpathId::from_raw(7), 1, 8.0, 0.0)],
+        );
         let context = ToolpathNarrationContext {
             measurability: None,
-            toolpath_id: Some(ToolpathId(7)),
+            toolpath_id: Some(ToolpathId::from_raw(7)),
             toolpath_name: Some("Back Rough"),
             operation_label: Some("adaptive3d"),
             operation_kind: Some(crate::compute::catalog::OperationType::Adaptive3d),
@@ -2368,7 +2379,11 @@ mod tests {
         toolpath.feed_to(P3::new(5.0, 0.0, 2.0), 1000.0);
         toolpath.feed_to(P3::new(6.0, 0.0, 2.0), 1000.0);
 
-        let tool = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill)).unwrap();
+        let tool = build_cutter(&ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ))
+        .unwrap();
         let semantic_trace = one_region_semantic_trace(2.0);
         let report = narrate_toolpath(
             &AnnotatedToolpath::new(toolpath),
@@ -2395,7 +2410,11 @@ mod tests {
         toolpath.feed_to(P3::new(0.0, 0.0, 2.0), 1000.0);
         toolpath.feed_to(P3::new(1.0, 0.0, 2.0), 1000.0);
 
-        let tool = build_cutter(&ToolConfig::new_default(ToolId(0), ToolType::EndMill)).unwrap();
+        let tool = build_cutter(&ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ))
+        .unwrap();
 
         let mut counters = std::collections::BTreeMap::new();
         counters.insert("material_remaining_pre".to_owned(), 0.886);

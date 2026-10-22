@@ -158,14 +158,14 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
         auto_from_model: false,
         ..StockConfig::default()
     });
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
     tool.stickout = 45.0;
     tool.flute_count = 2;
     let tool_idx = builder.add_tool(tool);
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     let poly = Polygon2::new(vec![
         P2::new(5.0, 5.0),
@@ -174,7 +174,7 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
         P2::new(5.0, 55.0),
     ]);
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "tsp_intent_rect".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![poly])),
@@ -195,13 +195,13 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
             0,
             ToolpathConfig {
                 shoe: Default::default(),
-                id: ToolpathId(0),
+                id: ToolpathId::from_raw(0),
                 name: format!("{op_type:?}"),
                 enabled: true,
                 operation: op,
                 dressups: DressupConfig::for_op(op_type),
                 heights: HeightsConfig::default(),
-                tool_id,
+                tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
                 model_id,
                 pre_gcode: None,
                 post_gcode: None,
@@ -287,7 +287,7 @@ fn no_milling_family_emits_a_drilling_tagged_move() {
         session
             .generate_toolpath(0, &cancel)
             .unwrap_or_else(|e| panic!("{label}: generate failed: {e:?}"));
-        let tp = session.get_result(0).expect("result").toolpath();
+        let tp = session.result_at(0).expect("result").toolpath();
 
         let drilling: Vec<usize> = tp
             .moves

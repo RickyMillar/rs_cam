@@ -51,7 +51,6 @@ use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::gcode::CoolantMode;
-use rs_cam_core::ids::ModelId;
 use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::session::{
     AddToolpathArgs, AdoptResultArgs, Command, CommandId, CommandKind, LoadedModel, ProjectSession,
@@ -94,14 +93,14 @@ fn tc(
 ) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -117,7 +116,7 @@ fn tc(
 
 fn empty_model(name: &str) -> LoadedModel {
     LoadedModel {
-        id: 0, // overwritten by `add_model`
+        id: rs_cam_core::ids::ModelId::from_raw(0), // overwritten by `add_model`
         name: name.to_owned(),
         mesh: None,
         items: Default::default(),
@@ -149,7 +148,7 @@ fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
 
 /// Deliver a computed result the way the compute lane does.
 fn adopt(s: &mut ProjectSession, index: usize) {
-    let revision = s.toolpath_revision(index);
+    let revision = s.toolpath_revision_at(index);
     let _ = s
         .apply(Command::AdoptResult(AdoptResultArgs {
             index,
@@ -167,23 +166,26 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 /// leaves. Both carry a cached result.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
     builder.add_model(empty_model("part.svg"));
-    let tool = builder.tools()[0].id.0;
+    let tool = builder.tools()[0].id.raw();
     let model = builder.models()[0].id;
     let upstream = tc(
         "upstream",
         OperationConfig::Pocket(PocketConfig::default()),
         StockSource::Fresh,
         tool,
-        model,
+        model.raw(),
     );
     let downstream = tc(
         "downstream",
         OperationConfig::Pocket(PocketConfig::default()),
         StockSource::FromRemainingStock,
         tool,
-        model,
+        model.raw(),
     );
     let _ = builder.add_toolpath(0, upstream).unwrap();
     let _ = builder.add_toolpath(0, downstream).unwrap();
@@ -198,8 +200,8 @@ fn fixture() -> ProjectSession {
 /// both results exist first, and unless the downstream row really reads
 /// the stock the upstream row leaves.
 fn assert_fixture_is_live(s: &ProjectSession) {
-    assert!(s.get_result(0).is_some(), "index 0 needs a cached result");
-    assert!(s.get_result(1).is_some(), "index 1 needs a cached result");
+    assert!(s.result_at(0).is_some(), "index 0 needs a cached result");
+    assert!(s.result_at(1).is_some(), "index 1 needs a cached result");
     assert!(
         matches!(
             s.toolpath_configs()[1].stock_source,
@@ -211,7 +213,7 @@ fn assert_fixture_is_live(s: &ProjectSession) {
 
 fn revisions(s: &ProjectSession) -> Vec<u64> {
     (0..s.toolpath_count())
-        .map(|i| s.toolpath_revision(i))
+        .map(|i| s.toolpath_revision_at(i))
         .collect()
 }
 
@@ -221,10 +223,10 @@ fn observe(s: &ProjectSession, before: &[u64]) -> (BTreeSet<usize>, BTreeSet<usi
     let mut dropped = BTreeSet::new();
     let mut bumped = BTreeSet::new();
     for i in 0..s.toolpath_count() {
-        if s.get_result(i).is_none() {
+        if s.result_at(i).is_none() {
             dropped.insert(i);
         }
-        if before.get(i).copied() != Some(s.toolpath_revision(i)) {
+        if before.get(i).copied() != Some(s.toolpath_revision_at(i)) {
             bumped.insert(i);
         }
     }
@@ -340,14 +342,14 @@ fn the_machine_row_drops_no_toolpath_result() {
 fn the_add_toolpath_row_reports_the_new_index() {
     let mut s = fixture();
     let before = revisions(&s);
-    let tool = s.tools()[0].id.0;
+    let tool = s.tools()[0].id.raw();
     let model = s.models()[0].id;
     let added = tc(
         "added",
         OperationConfig::Pocket(PocketConfig::default()),
         StockSource::Fresh,
         tool,
-        model,
+        model.raw(),
     );
 
     let effects = s
@@ -370,7 +372,7 @@ fn the_add_toolpath_row_reports_the_new_index() {
          alone: the snapshot carried no revision for it."
     );
     assert!(
-        s.get_result(0).is_some() && s.get_result(1).is_some(),
+        s.result_at(0).is_some() && s.result_at(1).is_some(),
         "an append drops no existing result"
     );
 }
@@ -380,7 +382,7 @@ fn the_add_toolpath_row_reports_the_new_index() {
 fn the_setup_models_row_drops_the_setup() {
     let mut s = fixture();
     let before = revisions(&s);
-    let model = ModelId(s.models()[0].id);
+    let model = s.models()[0].id;
 
     let effects = s
         .apply(Command::SetSetupModels(SetSetupModelsArgs {

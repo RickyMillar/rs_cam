@@ -886,7 +886,7 @@ mod tests {
                     pre_gcode: Some("G55"),
                     post_gcode: Some("M9"),
                     tool: Some(PhaseTool {
-                        id: 1,
+                        id: crate::ids::ToolId::from_raw(1),
                         number: 1,
                         label: "Tool One",
                     }),
@@ -902,7 +902,7 @@ mod tests {
                     pre_gcode: None,
                     post_gcode: None,
                     tool: Some(PhaseTool {
-                        id: 2,
+                        id: crate::ids::ToolId::from_raw(2),
                         number: 2,
                         label: "Tool Two",
                     }),
@@ -924,7 +924,7 @@ mod tests {
                         pre_gcode: None,
                         post_gcode: None,
                         tool: Some(PhaseTool {
-                            id: 1,
+                            id: crate::ids::ToolId::from_raw(1),
                             number: 1,
                             label: "Tool One",
                         }),
@@ -944,7 +944,7 @@ mod tests {
                         pre_gcode: None,
                         post_gcode: None,
                         tool: Some(PhaseTool {
-                            id: 2,
+                            id: crate::ids::ToolId::from_raw(2),
                             number: 2,
                             label: "Tool Two",
                         }),
@@ -989,7 +989,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 1,
+                    id: crate::ids::ToolId::from_raw(1),
                     number: 1,
                     label: "Tool One",
                 }),
@@ -1061,7 +1061,7 @@ mod tests {
             pre_gcode: None,
             post_gcode: None,
             tool: Some(PhaseTool {
-                id: tool_id,
+                id: crate::ids::ToolId::from_raw(tool_id),
                 number: tool_id as u32,
                 label: "Tool",
             }),
@@ -1699,7 +1699,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 1,
+                    id: crate::ids::ToolId::from_raw(1),
                     number: 1,
                     label: "Tool One",
                 }),

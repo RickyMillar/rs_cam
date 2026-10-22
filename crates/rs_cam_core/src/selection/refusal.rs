@@ -529,7 +529,7 @@ impl SelectionRefusal {
             RefusalCause::MissingSource(source) => {
                 let name = match source {
                     SourceRef::ToolpathModel => "the model of the toolpath".to_owned(),
-                    SourceRef::Model(id) => format!("model {}", id.0),
+                    SourceRef::Model(id) => format!("model {}", id.raw()),
                     SourceRef::Stock => "the stock".to_owned(),
                 };
                 format!("the selection reads {name}, which does not exist")
@@ -541,7 +541,10 @@ impl SelectionRefusal {
                 format!("rule {index} does not exist (the selection holds {rules})")
             }
             RefusalCause::FacesNotReady { model } => {
-                format!("the flat faces of model {} are not computed yet", model.0)
+                format!(
+                    "the flat faces of model {} are not computed yet",
+                    model.raw()
+                )
             }
         }
     }

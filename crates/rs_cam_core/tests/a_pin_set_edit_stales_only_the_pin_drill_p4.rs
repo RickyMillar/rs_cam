@@ -40,14 +40,14 @@ use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 fn tc(name: &str, op: OperationConfig, stock_source: StockSource) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id: 0,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(0),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -63,7 +63,7 @@ fn tc(name: &str, op: OperationConfig, stock_source: StockSource) -> ToolpathCon
 
 fn empty_model(name: &str) -> LoadedModel {
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: name.to_owned(),
         mesh: None,
         items: Default::default(),
@@ -94,7 +94,7 @@ fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
 }
 
 fn adopt(s: &mut ProjectSession, index: usize) {
-    let revision = s.toolpath_revision(index);
+    let revision = s.toolpath_revision_at(index);
     let _ = s
         .apply(Command::AdoptResult(AdoptResultArgs {
             index,
@@ -108,12 +108,15 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 /// cached result. The pins start as `pins()`.
 fn session_with(ops: Vec<ToolpathConfig>) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
     builder.add_model(empty_model("part.svg"));
-    let tool = builder.tools()[0].id.0;
+    let tool = builder.tools()[0].id.raw();
     let model = builder.models()[0].id;
     for mut op in ops {
-        op.tool_id = tool;
+        op.tool_id = rs_cam_core::ids::ToolId::from_raw(tool);
         op.model_id = model;
         let _ = builder.add_toolpath(0, op).unwrap();
     }
@@ -179,8 +182,8 @@ fn set_alignment_pins_stales_the_pin_drill_and_not_the_pocket() {
         set(&[1]),
         "only the pin drill reads the pins"
     );
-    assert!(s.get_result(0).is_some(), "the pocket must stay current");
-    assert!(s.get_result(1).is_none(), "the pin drill must go stale");
+    assert!(s.result_at(0).is_some(), "the pocket must stay current");
+    assert!(s.result_at(1).is_none(), "the pin drill must go stale");
     assert!(
         s.simulation_epoch() > epoch
             && s.simulation_drop_causes_since(epoch)
@@ -207,7 +210,7 @@ fn set_alignment_pins_stales_what_depends_on_the_pin_drill() {
         .unwrap();
 
     assert_eq!(effects.stale, set(&[1, 2]));
-    assert!(s.get_result(0).is_some());
+    assert!(s.result_at(0).is_some());
 }
 
 /// The same set again changes nothing. With no pin-drill operation no
@@ -233,7 +236,7 @@ fn set_alignment_pins_stales_nothing_when_nothing_reads_the_pins() {
         .unwrap();
     assert_eq!(s.stock_config().alignment_pins, moved_pins());
     assert!(effects.stale.is_empty(), "{:?}", effects.stale);
-    assert!(s.get_result(0).is_some());
+    assert!(s.result_at(0).is_some());
     assert_eq!(s.simulation_epoch(), epoch);
 }
 
@@ -251,7 +254,7 @@ fn add_and_remove_take_the_set_rule() {
         .unwrap();
     assert_eq!(effects.stale, set(&[1]));
     assert_eq!(s.stock_config().alignment_pins.len(), 4);
-    assert!(s.get_result(0).is_some());
+    assert!(s.result_at(0).is_some());
 
     adopt(&mut s, 1);
     let effects = s
@@ -261,7 +264,7 @@ fn add_and_remove_take_the_set_rule() {
         .unwrap();
     assert_eq!(effects.stale, set(&[1]));
     assert_eq!(s.stock_config().alignment_pins, pins());
-    assert!(s.get_result(0).is_some());
+    assert!(s.result_at(0).is_some());
 
     // A duplicate add changes nothing.
     adopt(&mut s, 1);

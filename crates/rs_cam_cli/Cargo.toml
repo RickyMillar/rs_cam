@@ -19,3 +19,10 @@ serde_json = { version = "1", features = ["preserve_order"] }
 toml = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png"] }
 csv = "1.3"
+
+[dev-dependencies]
+# F004 (W13b): the tests make an id from a literal with `ToolId::from_raw`
+# and its twins, a test door behind the core `test-support` feature (F085).
+# A dev-dependency adds the feature to the test targets only; the CLI binary
+# never enables it.
+rs_cam_core = { path = "../rs_cam_core", features = ["step", "test-support"] }

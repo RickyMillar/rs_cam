@@ -100,9 +100,9 @@ fn strip_comments(text: &str) -> String {
         .join("\n")
 }
 
-const A: ToolpathId = ToolpathId(1);
-const B: ToolpathId = ToolpathId(2);
-const C: ToolpathId = ToolpathId(3);
+const A: ToolpathId = ToolpathId::from_raw(1);
+const B: ToolpathId = ToolpathId::from_raw(2);
+const C: ToolpathId = ToolpathId::from_raw(3);
 
 /// Three generated, visible toolpaths, in config order.
 fn three_rows() -> Vec<(ToolpathId, bool, bool)> {

@@ -60,7 +60,7 @@ use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 /// carries the revision the lane started from, and the door refuses one
 /// that answers a superseded parameter set.
 fn adopt(s: &mut ProjectSession, index: usize) {
-    let revision = s.toolpath_revision(index);
+    let revision = s.toolpath_revision_at(index);
     let _ = s
         .apply(Command::AdoptResult(AdoptResultArgs {
             index,
@@ -73,14 +73,14 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 fn tc(name: &str, op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -96,7 +96,7 @@ fn tc(name: &str, op: OperationConfig, tool_id: usize, model_id: usize) -> Toolp
 
 fn empty_model(name: &str) -> LoadedModel {
     LoadedModel {
-        id: 0, // overwritten by `add_model`
+        id: rs_cam_core::ids::ModelId::from_raw(0), // overwritten by `add_model`
         name: name.to_owned(),
         mesh: None,
         items: Default::default(),
@@ -116,11 +116,17 @@ fn empty_model(name: &str) -> LoadedModel {
 /// models, one Pocket toolpath bound to tool 0 / model 0.
 fn seed() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::BallNose));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::BallNose,
+    ));
     builder.add_model(empty_model("first.svg"));
     builder.add_model(empty_model("second.svg"));
-    let tool_a = builder.tools()[0].id.0;
+    let tool_a = builder.tools()[0].id.raw();
     let model_a = builder.models()[0].id;
     let _ = builder
         .add_toolpath(
@@ -129,7 +135,7 @@ fn seed() -> ProjectSession {
                 "rough",
                 OperationConfig::Pocket(PocketConfig::default()),
                 tool_a,
-                model_a,
+                model_a.raw(),
             ),
         )
         .unwrap();
@@ -141,11 +147,11 @@ fn seed() -> ProjectSession {
 #[test]
 fn set_toolpath_tool_rebinds_and_invalidates_the_cached_result() {
     let mut s = seed();
-    let tool_b = s.tools()[1].id.0;
-    assert_ne!(s.toolpath_configs()[0].tool_id, tool_b);
+    let tool_b = s.tools()[1].id.raw();
+    assert_ne!(s.toolpath_configs()[0].tool_id.raw(), tool_b);
     adopt(&mut s, 0);
     assert!(
-        s.get_result(0).is_some(),
+        s.result_at(0).is_some(),
         "a result must be cached before the rebind, or the invalidation \
          assertion below proves nothing"
     );
@@ -153,13 +159,17 @@ fn set_toolpath_tool_rebinds_and_invalidates_the_cached_result() {
     let _ = s
         .apply(Command::SetToolpathTool(SetToolpathToolArgs {
             index: 0,
-            tool_id: tool_b,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(tool_b),
         }))
         .unwrap();
 
-    assert_eq!(s.toolpath_configs()[0].tool_id, tool_b, "binding moved");
+    assert_eq!(
+        s.toolpath_configs()[0].tool_id,
+        rs_cam_core::ids::ToolId::from_raw(tool_b),
+        "binding moved"
+    );
     assert!(
-        s.get_result(0).is_none(),
+        s.result_at(0).is_none(),
         "the cached result was generated with the OLD tool and must be dropped"
     );
 }
@@ -170,7 +180,7 @@ fn set_toolpath_model_rebinds_and_invalidates_the_cached_result() {
     let model_b = s.models()[1].id;
     assert_ne!(s.toolpath_configs()[0].model_id, model_b);
     adopt(&mut s, 0);
-    assert!(s.get_result(0).is_some());
+    assert!(s.result_at(0).is_some());
 
     let _ = s
         .apply(Command::SetToolpathModel(SetToolpathModelArgs {
@@ -180,7 +190,7 @@ fn set_toolpath_model_rebinds_and_invalidates_the_cached_result() {
         .unwrap();
 
     assert_eq!(s.toolpath_configs()[0].model_id, model_b);
-    assert!(s.get_result(0).is_none());
+    assert!(s.result_at(0).is_none());
 }
 
 /// The reason a rebind uses `invalidate_result_chain` and not a bare
@@ -190,14 +200,14 @@ fn set_toolpath_model_rebinds_and_invalidates_the_cached_result() {
 #[test]
 fn a_rebind_invalidates_downstream_remaining_stock_results() {
     let mut s = seed();
-    let tool_a = s.tools()[0].id.0;
-    let tool_b = s.tools()[1].id.0;
+    let tool_a = s.tools()[0].id.raw();
+    let tool_b = s.tools()[1].id.raw();
     let model_a = s.models()[0].id;
     let mut downstream = tc(
         "rest",
         OperationConfig::Pocket(PocketConfig::default()),
         tool_b,
-        model_a,
+        model_a.raw(),
     );
     downstream.stock_source = StockSource::FromRemainingStock;
     let _ = s
@@ -214,12 +224,12 @@ fn a_rebind_invalidates_downstream_remaining_stock_results() {
     let _ = s
         .apply(Command::SetToolpathTool(SetToolpathToolArgs {
             index: 0,
-            tool_id: tool_b,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(tool_b),
         }))
         .unwrap();
-    assert!(s.get_result(0).is_none(), "the rebound op's own result");
+    assert!(s.result_at(0).is_none(), "the rebound op's own result");
     assert!(
-        s.get_result(1).is_none(),
+        s.result_at(1).is_none(),
         "the downstream FromRemainingStock op was planned against stock the \
          old tool left; it must be stale too"
     );
@@ -228,7 +238,7 @@ fn a_rebind_invalidates_downstream_remaining_stock_results() {
     let _ = s
         .apply(Command::SetToolpathTool(SetToolpathToolArgs {
             index: 0,
-            tool_id: tool_a,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(tool_a),
         }))
         .unwrap();
     let model_b = s.models()[1].id;
@@ -240,9 +250,9 @@ fn a_rebind_invalidates_downstream_remaining_stock_results() {
             model_id: model_b,
         }))
         .unwrap();
-    assert!(s.get_result(0).is_none());
+    assert!(s.result_at(0).is_none());
     assert!(
-        s.get_result(1).is_none(),
+        s.result_at(1).is_none(),
         "a changed input changes the stock the downstream op inherits"
     );
 }
@@ -250,18 +260,18 @@ fn a_rebind_invalidates_downstream_remaining_stock_results() {
 #[test]
 fn rebinding_to_the_same_id_is_a_no_op_and_keeps_the_result() {
     let mut s = seed();
-    let tool_a = s.tools()[0].id.0;
+    let tool_a = s.tools()[0].id.raw();
     let model_a = s.models()[0].id;
     adopt(&mut s, 0);
 
     let _ = s
         .apply(Command::SetToolpathTool(SetToolpathToolArgs {
             index: 0,
-            tool_id: tool_a,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(tool_a),
         }))
         .unwrap();
     assert!(
-        s.get_result(0).is_some(),
+        s.result_at(0).is_some(),
         "no binding moved, so nothing is stale"
     );
     let _ = s
@@ -270,7 +280,7 @@ fn rebinding_to_the_same_id_is_a_no_op_and_keeps_the_result() {
             model_id: model_a,
         }))
         .unwrap();
-    assert!(s.get_result(0).is_some());
+    assert!(s.result_at(0).is_some());
 }
 
 // ── refusals ─────────────────────────────────────────────────────
@@ -278,20 +288,20 @@ fn rebinding_to_the_same_id_is_a_no_op_and_keeps_the_result() {
 #[test]
 fn a_tool_id_that_resolves_to_nothing_is_refused() {
     let mut s = seed();
-    let tool_a = s.tools()[0].id.0;
+    let tool_a = s.tools()[0].id.raw();
     let err = s
         .apply(Command::SetToolpathTool(SetToolpathToolArgs {
             index: 0,
-            tool_id: 999,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(999),
         }))
         .unwrap_err();
     assert!(
-        matches!(err, SessionError::ToolNotFound(ToolId(999))),
+        matches!(err, SessionError::ToolNotFound(id) if id == ToolId::from_raw(999)),
         "expected ToolNotFound, got {err:?}"
     );
     assert_eq!(
         s.toolpath_configs()[0].tool_id,
-        tool_a,
+        rs_cam_core::ids::ToolId::from_raw(tool_a),
         "a refused rebind must not move the binding"
     );
 }
@@ -303,7 +313,7 @@ fn a_model_id_that_resolves_to_nothing_is_refused_and_names_the_valid_ids() {
     let err = s
         .apply(Command::SetToolpathModel(SetToolpathModelArgs {
             index: 0,
-            model_id: 999,
+            model_id: rs_cam_core::ids::ModelId::from_raw(999),
         }))
         .unwrap_err();
     let text = err.to_string();
@@ -317,11 +327,11 @@ fn a_model_id_that_resolves_to_nothing_is_refused_and_names_the_valid_ids() {
 #[test]
 fn an_out_of_range_toolpath_index_is_refused_by_both_setters() {
     let mut s = seed();
-    let tool_b = s.tools()[1].id.0;
+    let tool_b = s.tools()[1].id.raw();
     let model_b = s.models()[1].id;
     let tool_outcome = s.apply(Command::SetToolpathTool(SetToolpathToolArgs {
         index: 9,
-        tool_id: tool_b,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_b),
     }));
     assert!(matches!(
         tool_outcome,
@@ -345,11 +355,17 @@ fn an_out_of_range_toolpath_index_is_refused_by_both_setters() {
 #[test]
 fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_refuses() {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::BallNose));
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::BallNose,
+    ));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
     builder.add_model(empty_model("terrain.stl"));
-    let ball = builder.tools()[0].id.0;
-    let flat = builder.tools()[1].id.0;
+    let ball = builder.tools()[0].id.raw();
+    let flat = builder.tools()[1].id.raw();
     let model = builder.models()[0].id;
     let _ = builder
         .add_toolpath(
@@ -360,7 +376,7 @@ fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_r
                     rs_cam_core::compute::operation_configs::ScallopConfig::default(),
                 ),
                 ball,
-                model,
+                model.raw(),
             ),
         )
         .unwrap();
@@ -370,10 +386,13 @@ fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_r
     let _ = s
         .apply(Command::SetToolpathTool(SetToolpathToolArgs {
             index: 0,
-            tool_id: flat,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(flat),
         }))
         .unwrap();
-    assert_eq!(s.toolpath_configs()[0].tool_id, flat);
+    assert_eq!(
+        s.toolpath_configs()[0].tool_id,
+        rs_cam_core::ids::ToolId::from_raw(flat)
+    );
 
     // …and the registry predicate the generator reads still says no.
     // (`generate_scallop` refuses on exactly this call, BEFORE it asks for
@@ -389,10 +408,13 @@ fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_r
     let _ = s
         .apply(Command::SetToolpathTool(SetToolpathToolArgs {
             index: 0,
-            tool_id: ball,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(ball),
         }))
         .unwrap();
-    assert_eq!(s.toolpath_configs()[0].tool_id, ball);
+    assert_eq!(
+        s.toolpath_configs()[0].tool_id,
+        rs_cam_core::ids::ToolId::from_raw(ball)
+    );
 }
 
 // ── the param route keeps its own meaning ────────────────────────
@@ -405,8 +427,8 @@ fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_r
 #[test]
 fn rebind_is_not_reachable_through_the_param_route() {
     let mut s = seed();
-    let tool_a = s.tools()[0].id.0;
-    let tool_b = s.tools()[1].id.0;
+    let tool_a = s.tools()[0].id.raw();
+    let tool_b = s.tools()[1].id.raw();
     let model_a = s.models()[0].id;
 
     for key in ["tool_id", "model_id"] {
@@ -423,7 +445,10 @@ fn rebind_is_not_reachable_through_the_param_route() {
             "`{key}` must stay unknown to the param route: {text}"
         );
     }
-    assert_eq!(s.toolpath_configs()[0].tool_id, tool_a);
+    assert_eq!(
+        s.toolpath_configs()[0].tool_id,
+        rs_cam_core::ids::ToolId::from_raw(tool_a)
+    );
     assert_eq!(s.toolpath_configs()[0].model_id, model_a);
 
     // The near miss: `reference_tool_id` IS an operation param on Pencil,
@@ -433,7 +458,7 @@ fn rebind_is_not_reachable_through_the_param_route() {
         "pencil",
         OperationConfig::Pencil(PencilConfig::default()),
         tool_a,
-        model_a,
+        model_a.raw(),
     );
     pencil.stock_source = StockSource::Fresh;
     let _ = s
@@ -451,7 +476,7 @@ fn rebind_is_not_reachable_through_the_param_route() {
         .expect("reference_tool_id is a real Pencil param");
     assert_eq!(
         s.toolpath_configs()[1].tool_id,
-        tool_a,
+        rs_cam_core::ids::ToolId::from_raw(tool_a),
         "setting reference_tool_id must NOT move the toolpath's own tool binding"
     );
 }

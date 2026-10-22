@@ -17,6 +17,15 @@ use std::time::{Duration, Instant};
 
 use crate::state::job::{ToolId, ToolType};
 
+/// The id 3, as a pattern.
+const TP_3: ToolpathId = ToolpathId::from_raw(3);
+/// The id 7, as a pattern.
+const TP_7: ToolpathId = ToolpathId::from_raw(7);
+/// The id 88, as a pattern.
+const TP_88: ToolpathId = ToolpathId::from_raw(88);
+/// The id 92, as a pattern.
+const TP_92: ToolpathId = ToolpathId::from_raw(92);
+
 // WP11b: these fixtures state a SPEC and let `test_fixture::request` run the
 // production submit door. Two fixture facts an assertion depends on:
 //
@@ -33,7 +42,7 @@ fn pocket_spec(id: usize) -> RequestSpec {
         id,
         &format!("Pocket {id}"),
         OperationConfig::new_default(OperationType::Pocket),
-        ToolConfig::new_default(ToolId(1), ToolType::EndMill),
+        ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill),
     );
     spec.stock = board(25.0, 15.0);
     spec.dressups = DressupConfig::default();
@@ -72,7 +81,7 @@ fn heavy_dropcutter_spec(id: usize) -> RequestSpec {
         id,
         &format!("DropCutter {id}"),
         OperationConfig::DropCutter(cfg),
-        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_test_flat(120.0));
     spec.stock = stock_between(P3::new(-60.0, -60.0, -5.0), P3::new(60.0, 60.0, 10.0));
@@ -92,7 +101,7 @@ fn waterline_spec(id: usize) -> RequestSpec {
         id,
         &format!("Waterline {id}"),
         OperationConfig::Waterline(cfg),
-        ToolConfig::new_default(ToolId(1), ToolType::EndMill),
+        ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill),
     )
     .with_mesh(make_test_flat(60.0));
     spec.stock = stock_between(P3::new(-30.0, -30.0, -5.0), P3::new(30.0, 30.0, 10.0));
@@ -113,7 +122,7 @@ fn adaptive3d_spec(id: usize) -> RequestSpec {
         id,
         &format!("Adaptive3d {id}"),
         OperationConfig::Adaptive3d(cfg),
-        ToolConfig::new_default(ToolId(1), ToolType::EndMill),
+        ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill),
     )
     .with_mesh(make_test_flat(60.0));
     spec.stock = stock_between(P3::new(-30.0, -30.0, -5.0), P3::new(30.0, 30.0, 10.0));
@@ -126,7 +135,7 @@ fn drill_spec(id: usize) -> RequestSpec {
         unreachable!("default op kind mismatch");
     };
     cfg.cycle = crate::state::toolpath::DrillCycleType::Peck;
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     // P6.5 (O-3): a Drill drills a circle of the tool size only.
     let hole_diameter = tool.diameter;
     let mut spec = RequestSpec::new(
@@ -165,7 +174,7 @@ fn steep_shallow_spec(id: usize) -> RequestSpec {
         id,
         &format!("SteepShallow {id}"),
         OperationConfig::new_default(OperationType::SteepShallow),
-        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_test_hemisphere(20.0, 16));
     spec.stock = stock_between(P3::new(-20.0, -20.0, -20.0), P3::new(20.0, 20.0, 20.0));
@@ -192,7 +201,7 @@ fn pencil_spec(id: usize) -> RequestSpec {
         id,
         &format!("Pencil {id}"),
         OperationConfig::new_default(OperationType::Pencil),
-        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_v_groove_mesh(40.0, 6.0, 12.0));
     spec.stock = stock_between(P3::new(0.0, -15.0, -10.0), P3::new(40.0, 15.0, 10.0));
@@ -212,7 +221,7 @@ fn scallop_spec(id: usize) -> RequestSpec {
         id,
         &format!("Scallop {id}"),
         OperationConfig::Scallop(cfg),
-        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_test_hemisphere(20.0, 16));
     spec.stock = stock_between(P3::new(-25.0, -25.0, -5.0), P3::new(25.0, 25.0, 25.0));
@@ -233,7 +242,7 @@ fn ramp_finish_spec(id: usize) -> RequestSpec {
         id,
         &format!("Ramp finish {id}"),
         OperationConfig::RampFinish(cfg),
-        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_test_hemisphere(20.0, 16));
     spec.stock = stock_between(P3::new(-25.0, -25.0, -5.0), P3::new(25.0, 25.0, 25.0));
@@ -252,7 +261,7 @@ fn spiral_finish_spec(id: usize) -> RequestSpec {
         id,
         &format!("Spiral finish {id}"),
         OperationConfig::SpiralFinish(cfg),
-        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_test_hemisphere(20.0, 16));
     spec.stock = stock_between(P3::new(-25.0, -25.0, -5.0), P3::new(25.0, 25.0, 25.0));
@@ -272,7 +281,7 @@ fn radial_finish_spec(id: usize) -> RequestSpec {
         id,
         &format!("Radial finish {id}"),
         OperationConfig::RadialFinish(cfg),
-        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_test_flat(80.0));
     spec.stock = stock_between(P3::new(-40.0, -40.0, -5.0), P3::new(40.0, 40.0, 15.0));
@@ -291,7 +300,7 @@ fn horizontal_finish_spec(id: usize) -> RequestSpec {
         id,
         &format!("Horizontal finish {id}"),
         OperationConfig::HorizontalFinish(cfg),
-        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
     )
     .with_mesh(make_test_flat(80.0));
     spec.stock = stock_between(P3::new(-40.0, -40.0, -5.0), P3::new(40.0, 40.0, 15.0));
@@ -311,7 +320,7 @@ fn project_curve_spec(id: usize) -> RequestSpec {
         id,
         &format!("Project curve {id}"),
         OperationConfig::ProjectCurve(cfg),
-        ToolConfig::new_default(ToolId(1), ToolType::BallNose),
+        ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose),
     );
     spec.mesh = Some(make_test_hemisphere(20.0, 16));
     spec.polygons = Some(vec![
@@ -334,7 +343,7 @@ fn long_simulation_request() -> SimulationRequest {
 /// The stock bottom is at `z = -2`, so `layers` must be 10 or fewer.
 fn layered_simulation_request(layers: usize) -> SimulationRequest {
     assert!((1..=10).contains(&layers), "the stock holds 10 layers");
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut toolpath = Toolpath::new();
     toolpath.rapid_to(P3::new(0.0, 0.0, 5.0));
     for layer in 0..layers {
@@ -355,13 +364,13 @@ fn layered_simulation_request(layers: usize) -> SimulationRequest {
             groups: vec![SimGroupEntry {
                 toolpaths: vec![SimToolpathEntry {
                     head: Default::default(),
-                    id: ToolpathId(99),
+                    id: ToolpathId::from_raw(99),
                     name: "Long Sim".to_owned(),
                     annotated: Arc::new(
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(toolpath),
                     ),
                     tool: Arc::new(build_cutter(&tool).unwrap()),
-                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
                     semantic_trace: None,
@@ -392,7 +401,7 @@ fn layered_simulation_request(layers: usize) -> SimulationRequest {
 }
 
 fn small_simulation_request_with_metrics() -> SimulationRequest {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut toolpath = Toolpath::new();
     toolpath.rapid_to(P3::new(2.0, 2.0, 8.0));
     toolpath.feed_to(P3::new(2.0, 2.0, 4.0), 400.0);
@@ -408,13 +417,13 @@ fn small_simulation_request_with_metrics() -> SimulationRequest {
             groups: vec![SimGroupEntry {
                 toolpaths: vec![SimToolpathEntry {
                     head: Default::default(),
-                    id: ToolpathId(1),
+                    id: ToolpathId::from_raw(1),
                     name: "Metrics".to_owned(),
                     annotated: Arc::new(
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(toolpath),
                     ),
                     tool: Arc::new(build_cutter(&tool).unwrap()),
-                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
                     semantic_trace: None,
@@ -713,7 +722,7 @@ fn cancelled_toolpath_reports_cancelled_and_no_partial_trace() {
                 if matches!(
                     **result,
                     ComputeResult {
-                        toolpath_id: ToolpathId(88),
+                        toolpath_id: TP_88,
                         result: Err(ComputeError::Cancelled),
                         ..
                     }
@@ -781,7 +790,7 @@ fn semantic_trace_records_entry_params_and_boundary_clip() {
             DressupConfig::default()
                 .helix_radius_for(
                     &rs_cam_core::compute::cutter::build_cutter(&ToolConfig::new_default(
-                        ToolId(1),
+                        ToolId::from_raw(1),
                         ToolType::EndMill
                     ))
                     .unwrap()
@@ -1426,7 +1435,7 @@ fn toolpath_and_analysis_lanes_run_independently() {
                 if matches!(
                     **result,
                     ComputeResult {
-                        toolpath_id: ToolpathId(7),
+                        toolpath_id: TP_7,
                         result: Ok(_),
                         ..
                     }
@@ -1484,7 +1493,7 @@ fn resubmitting_active_toolpath_cancels_and_replaces_it() {
                     if matches!(
                         *result,
                         ComputeResult {
-                            toolpath_id: ToolpathId(3),
+                            toolpath_id: TP_3,
                             result: Err(ComputeError::Cancelled),
                             ..
                         }
@@ -1496,7 +1505,7 @@ fn resubmitting_active_toolpath_cancels_and_replaces_it() {
                     if matches!(
                         *result,
                         ComputeResult {
-                            toolpath_id: ToolpathId(3),
+                            toolpath_id: TP_3,
                             result: Ok(_),
                             ..
                         }
@@ -1530,7 +1539,7 @@ fn analysis_requests_replace_stale_work() {
                 toolpath
             },
         )),
-        tool: ToolConfig::new_default(ToolId(1), ToolType::EndMill),
+        tool: ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill),
         mesh: Arc::new(make_test_flat(20.0)),
         obstacles: Arc::default(),
         join: rs_cam_core::compute::obstacle::JoinStart::Unknown,
@@ -1596,7 +1605,7 @@ fn cancel_all_marks_both_lanes_cancelling() {
 fn multi_setup_top_bottom_simulation() {
     use rs_cam_core::dexel_stock::StockCutDirection;
 
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     // Tool diameter is 6.35mm (default endmill)
 
     // Stock: 50x50x20 at origin
@@ -1632,13 +1641,13 @@ fn multi_setup_top_bottom_simulation() {
                 SimGroupEntry {
                     toolpaths: vec![SimToolpathEntry {
                         head: Default::default(),
-                        id: ToolpathId(1),
+                        id: ToolpathId::from_raw(1),
                         name: "Top Cut".to_owned(),
                         annotated: Arc::new(
                             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(top_tp),
                         ),
                         tool: Arc::new(build_cutter(&tool).unwrap()),
-                        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+                        tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
                         flute_count: tool.flute_count,
                         tool_summary: tool.summary(),
                         semantic_trace: None,
@@ -1657,13 +1666,13 @@ fn multi_setup_top_bottom_simulation() {
                 SimGroupEntry {
                     toolpaths: vec![SimToolpathEntry {
                         head: Default::default(),
-                        id: ToolpathId(2),
+                        id: ToolpathId::from_raw(2),
                         name: "Bottom Cut".to_owned(),
                         annotated: Arc::new(
                             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(bottom_tp),
                         ),
                         tool: Arc::new(build_cutter(&tool).unwrap()),
-                        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+                        tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
                         flute_count: tool.flute_count,
                         tool_summary: tool.summary(),
                         semantic_trace: None,
@@ -1770,7 +1779,7 @@ fn multi_setup_top_bottom_simulation() {
 fn multi_setup_backward_scrub_uses_checkpoints() {
     use rs_cam_core::dexel_stock::StockCutDirection;
 
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let stock_bbox = BoundingBox3 {
         min: P3::new(0.0, 0.0, 0.0),
         max: P3::new(30.0, 30.0, 10.0),
@@ -1797,13 +1806,13 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                 SimGroupEntry {
                     toolpaths: vec![SimToolpathEntry {
                         head: Default::default(),
-                        id: ToolpathId(1),
+                        id: ToolpathId::from_raw(1),
                         name: "Top".to_owned(),
                         annotated: Arc::new(
                             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp1),
                         ),
                         tool: Arc::new(build_cutter(&tool).unwrap()),
-                        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+                        tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
                         flute_count: tool.flute_count,
                         tool_summary: tool.summary(),
                         semantic_trace: None,
@@ -1822,13 +1831,13 @@ fn multi_setup_backward_scrub_uses_checkpoints() {
                 SimGroupEntry {
                     toolpaths: vec![SimToolpathEntry {
                         head: Default::default(),
-                        id: ToolpathId(2),
+                        id: ToolpathId::from_raw(2),
                         name: "Bottom".to_owned(),
                         annotated: Arc::new(
                             rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp2),
                         ),
                         tool: Arc::new(build_cutter(&tool).unwrap()),
-                        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+                        tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
                         flute_count: tool.flute_count,
                         tool_summary: tool.summary(),
                         semantic_trace: None,
@@ -1946,7 +1955,7 @@ fn simulation_metrics_capture_emits_cut_trace_and_artifact() {
         trace
             .toolpath_summaries
             .iter()
-            .any(|summary| summary.toolpath_id == ToolpathId(1))
+            .any(|summary| summary.toolpath_id == ToolpathId::from_raw(1))
     );
     if let Some(path) = result.cut_trace_path.as_ref() {
         assert!(path.exists(), "expected cut trace artifact to exist");
@@ -2025,7 +2034,7 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
     use rs_cam_core::ops::drill::DrillCycle;
     use rs_cam_core::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     // The toolpath here is a placeholder — drill TPs in the analytical path
     // still emit motion (plunge+retract per hole), but the analytical kernel
     // ignores it and operates on `DrillOp.holes` directly.
@@ -2064,13 +2073,13 @@ fn playback_data_carries_drill_op_for_drill_toolpaths() {
             groups: vec![SimGroupEntry {
                 toolpaths: vec![SimToolpathEntry {
                     head: Default::default(),
-                    id: ToolpathId(42),
+                    id: ToolpathId::from_raw(42),
                     name: "Drill".to_owned(),
                     annotated: Arc::new(
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
                     tool: Arc::new(build_cutter(&tool).unwrap()),
-                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
                     semantic_trace: None,
@@ -2133,7 +2142,7 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
     use rs_cam_core::ops::drill::DrillCycle;
     use rs_cam_core::ops::drill_op::{DrillHole, DrillOp, HoleSource, ToolProfile};
 
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(5.0, 5.0, 10.0));
     tp.feed_to(P3::new(5.0, 5.0, 4.0), 300.0);
@@ -2169,13 +2178,13 @@ fn playback_data_drill_op_transforms_to_global_frame_in_flipped_setup() {
             groups: vec![SimGroupEntry {
                 toolpaths: vec![SimToolpathEntry {
                     head: Default::default(),
-                    id: ToolpathId(7),
+                    id: ToolpathId::from_raw(7),
                     name: "Drill (back)".to_owned(),
                     annotated: Arc::new(
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
                     tool: Arc::new(build_cutter(&tool).unwrap()),
-                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
                     semantic_trace: None,
@@ -2265,7 +2274,7 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
         max: P3::new(20.0, 8.0, 10.0),
     };
 
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     // A groove in the Front work plane, 2 mm down from the lateral top (10).
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(5.0, 4.0, 12.0));
@@ -2278,13 +2287,13 @@ fn a_lateral_setup_replays_in_its_own_frame_and_its_checkpoint_carries_the_cut()
             groups: vec![SimGroupEntry {
                 toolpaths: vec![SimToolpathEntry {
                     head: Default::default(),
-                    id: ToolpathId(11),
+                    id: ToolpathId::from_raw(11),
                     name: "Front groove".to_owned(),
                     annotated: Arc::new(
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
                     tool: Arc::new(build_cutter(&tool).unwrap()),
-                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
                     semantic_trace: None,
@@ -2389,7 +2398,7 @@ fn simulation_metrics_capture_emits_semantic_cut_summaries() {
     let summary = trace
         .semantic_summaries
         .iter()
-        .find(|summary| summary.toolpath_id == ToolpathId(1))
+        .find(|summary| summary.toolpath_id == ToolpathId::from_raw(1))
         .expect("semantic cut summary");
     assert_eq!(summary.label, "Pass 1");
     assert!(summary.sample_count > 0);
@@ -2430,7 +2439,7 @@ fn simulation_metrics_capture_emits_semantic_cut_summaries() {
 fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
     use rs_cam_core::stock::simulation_cut::CutKinematics;
 
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -2465,13 +2474,13 @@ fn as001_viz_path_first_pass_axial_engagement_within_commanded_doc_f024() {
             groups: vec![SimGroupEntry {
                 toolpaths: vec![SimToolpathEntry {
                     head: Default::default(),
-                    id: ToolpathId(1),
+                    id: ToolpathId::from_raw(1),
                     name: "AS001 Pocket Pass 1".to_owned(),
                     annotated: Arc::new(
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
                     tool: Arc::new(build_cutter(&tool).unwrap()),
-                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
                     semantic_trace: None,
@@ -2735,7 +2744,7 @@ fn resubmitting_the_active_toolpath_reports_a_supersede() {
     backend.cancel_lane(ComputeLane::Toolpath);
     let _ = wait_for(&mut backend, Duration::from_secs(60), |message| {
         matches!(message, ComputeMessage::Toolpath(result)
-            if matches!(result.toolpath_id, ToolpathId(92)))
+            if matches!(result.toolpath_id, TP_92))
     });
 }
 
@@ -2781,7 +2790,7 @@ fn the_lane_prologue_records_what_the_caller_states_shl06() {
         .queue
         .push_back(9);
     let taken = lane.dequeue_running(|request| {
-        RunningJob::labelled(format!("generate {request}")).generating(ToolpathId(3), 2)
+        RunningJob::labelled(format!("generate {request}")).generating(ToolpathId::from_raw(3), 2)
     });
     assert_eq!(taken, Some(9));
     let snapshot = lane.snapshot();
@@ -3313,7 +3322,7 @@ fn an_unlimited_budget_runs_the_toolpath_and_simulation_lanes_at_once() {
         matches!(
             message,
             ComputeMessage::Toolpath(result)
-                if matches!(**result, ComputeResult { toolpath_id: ToolpathId(7), result: Ok(_), .. })
+                if matches!(**result, ComputeResult { toolpath_id: TP_7, result: Ok(_), .. })
         )
     });
     assert!(result.is_some(), "the toolpath ran beside the simulation");

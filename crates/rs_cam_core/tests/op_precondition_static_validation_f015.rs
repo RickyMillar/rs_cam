@@ -49,7 +49,7 @@ fn unit_square() -> Polygon2 {
 
 fn polygon_model(id: usize) -> LoadedModel {
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         name: format!("curve_{id}"),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -91,7 +91,7 @@ fn mesh_model(id: usize) -> LoadedModel {
     // geometry isn't exercised by the diagnose path under test.
     let mesh = make_test_flat(10.0);
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         name: format!("surface_{id}"),
         mesh: Some(Arc::new(mesh)),
         items: Default::default(),
@@ -110,14 +110,14 @@ fn mesh_model(id: usize) -> LoadedModel {
 fn make_tp(name: &str, op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -141,7 +141,7 @@ fn has_id(diags: &[Diagnostic], id: &str) -> bool {
 fn project_curve_in_single_model_project_surfaces_blocking_diagnostic() {
     // Project has only a surface STL — no curve polygons anywhere.
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     let mid = builder.add_model(mesh_model(0));
@@ -150,7 +150,12 @@ fn project_curve_in_single_model_project_surfaces_blocking_diagnostic() {
     let idx = builder
         .add_toolpath(
             0,
-            make_tp("pc_no_curve", OperationConfig::ProjectCurve(cfg), 0, mid),
+            make_tp(
+                "pc_no_curve",
+                OperationConfig::ProjectCurve(cfg),
+                0,
+                mid.raw(),
+            ),
         )
         .unwrap();
     let session = builder.build();
@@ -172,7 +177,7 @@ fn project_curve_in_single_model_project_surfaces_blocking_diagnostic() {
 fn project_curve_without_any_surface_mesh_surfaces_blocking_diagnostic() {
     // Project has only a polygon model — no STL anywhere.
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     let mid = builder.add_model(polygon_model(0));
@@ -181,7 +186,12 @@ fn project_curve_without_any_surface_mesh_surfaces_blocking_diagnostic() {
     let idx = builder
         .add_toolpath(
             0,
-            make_tp("pc_no_surface", OperationConfig::ProjectCurve(cfg), 0, mid),
+            make_tp(
+                "pc_no_surface",
+                OperationConfig::ProjectCurve(cfg),
+                0,
+                mid.raw(),
+            ),
         )
         .unwrap();
     let session = builder.build();
@@ -197,7 +207,7 @@ fn project_curve_without_any_surface_mesh_surfaces_blocking_diagnostic() {
 #[test]
 fn project_curve_with_curve_and_surface_models_is_silent() {
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     let curve_id = builder.add_model(polygon_model(0));
@@ -207,7 +217,12 @@ fn project_curve_with_curve_and_surface_models_is_silent() {
     let idx = builder
         .add_toolpath(
             0,
-            make_tp("pc_happy", OperationConfig::ProjectCurve(cfg), 0, curve_id),
+            make_tp(
+                "pc_happy",
+                OperationConfig::ProjectCurve(cfg),
+                0,
+                curve_id.raw(),
+            ),
         )
         .unwrap();
     let session = builder.build();
@@ -231,7 +246,7 @@ fn drill_op_against_mesh_only_model_surfaces_blocking_diagnostic() {
     // generate time with "No hole positions found"; the precondition
     // adapter must surface that before that point.
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     let mid = builder.add_model(mesh_model(0));
@@ -243,7 +258,7 @@ fn drill_op_against_mesh_only_model_surfaces_blocking_diagnostic() {
                 "drill_no_holes",
                 OperationConfig::Drill(DrillConfig::default()),
                 0,
-                mid,
+                mid.raw(),
             ),
         )
         .unwrap();
@@ -265,7 +280,7 @@ fn drill_op_against_mesh_only_model_surfaces_blocking_diagnostic() {
 #[test]
 fn drill_op_against_target_bearing_model_is_silent() {
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     let mid = builder.add_model(target_model(0));
@@ -277,7 +292,7 @@ fn drill_op_against_target_bearing_model_is_silent() {
                 "drill_happy",
                 OperationConfig::Drill(DrillConfig::default()),
                 0,
-                mid,
+                mid.raw(),
             ),
         )
         .unwrap();
@@ -297,7 +312,7 @@ fn drill_op_against_target_bearing_model_is_silent() {
 #[test]
 fn drill_op_against_polygon_only_model_fires_no_targets() {
     let mut builder = ProjectSessionBuilder::new();
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 3.0;
     builder.add_tool(tool);
     let mid = builder.add_model(polygon_model(0));
@@ -309,7 +324,7 @@ fn drill_op_against_polygon_only_model_fires_no_targets() {
                 "drill_outline_only",
                 OperationConfig::Drill(DrillConfig::default()),
                 0,
-                mid,
+                mid.raw(),
             ),
         )
         .unwrap();

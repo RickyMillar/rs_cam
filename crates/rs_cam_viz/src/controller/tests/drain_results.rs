@@ -15,7 +15,7 @@ use super::*;
 #[test]
 fn drain_refuses_a_completion_whose_revision_moved() {
     let mut controller = sample_controller();
-    let submitted = controller.state.session().toolpath_revision(0);
+    let submitted = controller.state.session().toolpath_revision_at(0);
 
     // The edit an operator makes while the lane runs.
     let _ = controller
@@ -25,7 +25,7 @@ fn drain_refuses_a_completion_whose_revision_moved() {
         ))
         .expect("toolpath 0 exists");
     assert_ne!(
-        controller.state.session().toolpath_revision(0),
+        controller.state.session().toolpath_revision_at(0),
         submitted,
         "the fixture must move the revision, or the test proves nothing"
     );
@@ -34,12 +34,12 @@ fn drain_refuses_a_completion_whose_revision_moved() {
     controller.drain_compute_results();
 
     assert!(
-        controller.state.session().get_result(0).is_none(),
+        controller.state.session().result_at(0).is_none(),
         "a completion that answers a superseded revision must not reach \
          the core cache"
     );
     assert!(
-        controller.state.gui.toolpath_rt[&ToolpathId(0)]
+        controller.state.gui.toolpath_rt[&ToolpathId::from_raw(0)]
             .run
             .result()
             .is_some(),
@@ -61,13 +61,13 @@ fn drain_adopts_a_completion_whose_revision_is_current() {
             InvalidateToolpathInputsArgs { index: 0 },
         ))
         .expect("toolpath 0 exists");
-    let submitted = controller.state.session().toolpath_revision(0);
+    let submitted = controller.state.session().toolpath_revision_at(0);
 
     push_toolpath_completion(&mut controller, Some(submitted));
     controller.drain_compute_results();
 
     assert!(
-        controller.state.session().get_result(0).is_some(),
+        controller.state.session().result_at(0).is_some(),
         "a completion that answers the current revision is adopted"
     );
 }
@@ -80,7 +80,7 @@ fn drain_compute_results_skips_session_write_on_error() {
         .drained
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
-                toolpath_id: ToolpathId(0),
+                toolpath_id: ToolpathId::from_raw(0),
                 revision: None,
                 result: Err(crate::compute::ComputeError::Message("boom".into())),
                 debug_trace: None,
@@ -92,7 +92,7 @@ fn drain_compute_results_skips_session_write_on_error() {
     controller.drain_compute_results();
 
     assert!(
-        controller.state.session().get_result(0).is_none(),
+        controller.state.session().result_at(0).is_none(),
         "session.results must not be written on compute error"
     );
 }

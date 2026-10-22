@@ -671,7 +671,7 @@ fn rest_slower_than_fresh_finding(
         return None;
     }
     let label = name.map_or_else(
-        || format!("toolpath {}", toolpath_id.0),
+        || format!("toolpath {}", toolpath_id.raw()),
         |n| format!("'{n}'"),
     );
     Some(Finding {
@@ -1884,7 +1884,7 @@ mod tests {
 
     fn air_sample(i: usize, tp: usize) -> SimulationCutSample {
         SimulationCutSample {
-            toolpath_id: ToolpathId(tp),
+            toolpath_id: ToolpathId::from_raw(tp),
             move_index: i,
             sample_index: i,
             segment_time_s: 0.01,
@@ -1987,7 +1987,9 @@ mod tests {
         });
         let removal_warning = Diagnostic {
             id: DiagnosticId::from(ids::PROJECT_GENERATED_EMPTY),
-            scope: Scope::Toolpath { id: ToolpathId(1) },
+            scope: Scope::Toolpath {
+                id: ToolpathId::from_raw(1),
+            },
             category: Category::Geometry,
             severity: Severity::Caution,
             confidence: Confidence::Static,
@@ -2007,7 +2009,7 @@ mod tests {
             &m,
             std::slice::from_ref(&removal_warning),
             std::slice::from_ref(&rapid),
-            &[(ToolpathId(1), HolderCollisionCheck::Measured(1))],
+            &[(ToolpathId::from_raw(1), HolderCollisionCheck::Measured(1))],
             &d,
             &BTreeMap::new(),
         ));
@@ -2045,7 +2047,9 @@ mod tests {
         });
         let removal_warning = Diagnostic {
             id: DiagnosticId::from(ids::PROJECT_GENERATED_EMPTY),
-            scope: Scope::Toolpath { id: ToolpathId(1) },
+            scope: Scope::Toolpath {
+                id: ToolpathId::from_raw(1),
+            },
             category: Category::Geometry,
             severity: Severity::Caution,
             confidence: Confidence::Static,
@@ -2134,14 +2138,16 @@ mod tests {
             class: TriageClass::Advisory,
             dedup_key: DedupKey {
                 id: DiagnosticId::from(ids::PROJECT_AIR_CUT_HIGH),
-                toolpath_id: Some(ToolpathId(1)),
+                toolpath_id: Some(ToolpathId::from_raw(1)),
                 region: None,
                 semantic_item_id: None,
                 bucket: [0, 0, 0],
             },
             diagnostic: Diagnostic {
                 id: DiagnosticId::from(ids::PROJECT_AIR_CUT_HIGH),
-                scope: Scope::Toolpath { id: ToolpathId(1) },
+                scope: Scope::Toolpath {
+                    id: ToolpathId::from_raw(1),
+                },
                 category: Category::Efficiency,
                 severity: Severity::Hint,
                 confidence: Confidence::Approximate,
@@ -2178,14 +2184,16 @@ mod tests {
                     class: TriageClass::Advisory,
                     dedup_key: DedupKey {
                         id: DiagnosticId::from(ids::PROJECT_AIR_CUT_HIGH),
-                        toolpath_id: Some(ToolpathId(tp)),
+                        toolpath_id: Some(ToolpathId::from_raw(tp)),
                         region: None,
                         semantic_item_id: Some(i),
                         bucket: [i as i64, 0, 0],
                     },
                     diagnostic: Diagnostic {
                         id: DiagnosticId::from(ids::PROJECT_AIR_CUT_HIGH),
-                        scope: Scope::Toolpath { id: ToolpathId(tp) },
+                        scope: Scope::Toolpath {
+                            id: ToolpathId::from_raw(tp),
+                        },
                         category: Category::Efficiency,
                         severity: Severity::Hint,
                         confidence: Confidence::Approximate,
@@ -2211,7 +2219,7 @@ mod tests {
         for tp in [1usize, 2] {
             let n = capped
                 .iter()
-                .filter(|f| f.dedup_key.toolpath_id == Some(ToolpathId(tp)))
+                .filter(|f| f.dedup_key.toolpath_id == Some(ToolpathId::from_raw(tp)))
                 .count();
             assert_eq!(
                 n, ADVISORY_CAP_PER_TOOLPATH,
@@ -2232,7 +2240,7 @@ mod tests {
         for i in 0..200 {
             let deep = i % 20 == 0; // 5% of samples
             samples.push(SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: i,
                 sample_index: i,
                 segment_time_s: 0.01,
@@ -2267,7 +2275,7 @@ mod tests {
     fn r12_stays_quiet_on_an_even_surface_following_pass() {
         let samples: Vec<_> = (0..200)
             .map(|i| SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: i,
                 sample_index: i,
                 segment_time_s: 0.01,
@@ -2308,7 +2316,7 @@ mod tests {
     fn stepped_trace(n_odd: usize, odd: f64, transit: bool) -> SimulationCutTrace {
         let samples = (0..200)
             .map(|i| SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: i,
                 sample_index: i,
                 segment_time_s: 0.01,
@@ -2329,7 +2337,8 @@ mod tests {
             ..MeasurabilityReport::default()
         };
         let d = BTreeMap::new();
-        let steps: BTreeMap<ToolpathId, f64> = [(ToolpathId(1), STEP_MM)].into_iter().collect();
+        let steps: BTreeMap<ToolpathId, f64> =
+            [(ToolpathId::from_raw(1), STEP_MM)].into_iter().collect();
         let k = BTreeMap::new();
         let t = SimulationTriage::build(&TriageInputs {
             commanded_depth_per_pass_mm: &steps,
@@ -2458,7 +2467,7 @@ mod tests {
     fn body_samples(tp: usize) -> Vec<SimulationCutSample> {
         (0..200)
             .map(|i| SimulationCutSample {
-                toolpath_id: ToolpathId(tp),
+                toolpath_id: ToolpathId::from_raw(tp),
                 move_index: i,
                 sample_index: i,
                 segment_time_s: 0.01,
@@ -2482,7 +2491,7 @@ mod tests {
         let mut samples = body_samples(1);
         for i in 0..6 {
             samples.push(SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: 500 + i,
                 sample_index: 500 + i,
                 segment_time_s: 0.01,
@@ -2501,12 +2510,12 @@ mod tests {
         // Control: the axial-only rule stays silent on exactly this trace —
         // which is why the entry needed its own.
         assert!(
-            standing_material_finding(&trace, ToolpathId(1), None, None).is_none(),
+            standing_material_finding(&trace, ToolpathId::from_raw(1), None, None).is_none(),
             "the crosses-standing rule reads the axial axis; if it fires here \
              this sentry is no longer testing the blind spot it was written for"
         );
 
-        let obs = entry_load_observation(&trace, ToolpathId(1));
+        let obs = entry_load_observation(&trace, ToolpathId::from_raw(1));
         assert!(obs.is_measured(), "both populations are real: {obs:?}");
         assert_eq!(obs.entry_samples, 6, "the population must be stated");
         assert_eq!(obs.body_samples, 200);
@@ -2531,7 +2540,7 @@ mod tests {
             "entry_load must stay silent without rest context"
         );
 
-        let rest: BTreeSet<ToolpathId> = [ToolpathId(1)].into_iter().collect();
+        let rest: BTreeSet<ToolpathId> = [ToolpathId::from_raw(1)].into_iter().collect();
         let t = SimulationTriage::build_with_rest_context(
             &inputs(&trace, &m, &[], &[], &[], &d, &BTreeMap::new()),
             &rest,
@@ -2564,7 +2573,7 @@ mod tests {
         let mut samples = body_samples(1);
         for i in 0..40 {
             samples.push(SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: 500 + i,
                 sample_index: 500 + i,
                 segment_time_s: 0.01,
@@ -2577,12 +2586,12 @@ mod tests {
             });
         }
         let trace = SimulationCutTrace::from_samples(0.5, samples);
-        let obs = entry_load_observation(&trace, ToolpathId(1));
+        let obs = entry_load_observation(&trace, ToolpathId::from_raw(1));
         assert!(obs.is_measured(), "a clean entry is still a MEASURED entry");
         assert_eq!(obs.entry_samples, 40);
         assert_eq!(obs.over_threshold_samples, 0);
         assert!(!obs.exceeds());
-        assert!(entry_load_finding(&trace, ToolpathId(1)).is_none());
+        assert!(entry_load_finding(&trace, ToolpathId::from_raw(1)).is_none());
     }
 
     /// GATE — the empty-population trap. A pass with NO entry samples must
@@ -2592,7 +2601,7 @@ mod tests {
     #[test]
     fn g_entryload_an_op_with_no_entry_samples_is_not_measured_not_clean() {
         let trace = SimulationCutTrace::from_samples(0.5, body_samples(1));
-        let obs = entry_load_observation(&trace, ToolpathId(1));
+        let obs = entry_load_observation(&trace, ToolpathId::from_raw(1));
         assert_eq!(obs.entry_samples, 0, "the fixture must have no entries");
         assert!(
             !obs.is_measured(),
@@ -2600,7 +2609,7 @@ mod tests {
         );
         assert_eq!(obs.peak_entry_bite_mm, None, "None, never 0.0");
         assert!(!obs.exceeds());
-        assert!(entry_load_finding(&trace, ToolpathId(1)).is_none());
+        assert!(entry_load_finding(&trace, ToolpathId::from_raw(1)).is_none());
     }
 
     /// GATE — the noise floor. A fine pass whose entry is a large MULTIPLE of
@@ -2610,7 +2619,7 @@ mod tests {
     fn g_entryload_a_large_multiple_of_a_tiny_median_is_still_not_a_load_event() {
         let mut samples: Vec<_> = (0..200)
             .map(|i| SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: i,
                 sample_index: i,
                 segment_time_s: 0.01,
@@ -2623,7 +2632,7 @@ mod tests {
             .collect();
         for i in 0..5 {
             samples.push(SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: 700 + i,
                 sample_index: 700 + i,
                 segment_time_s: 0.01,
@@ -2635,7 +2644,7 @@ mod tests {
             });
         }
         let trace = SimulationCutTrace::from_samples(0.5, samples);
-        let obs = entry_load_observation(&trace, ToolpathId(1));
+        let obs = entry_load_observation(&trace, ToolpathId::from_raw(1));
         assert!(
             obs.is_measured(),
             "it WAS measured — it just is not a fault"
@@ -2645,7 +2654,7 @@ mod tests {
             !obs.exceeds(),
             "0.06 mm is under the {ENTRY_LOAD_MIN_PEAK_MM} mm floor"
         );
-        assert!(entry_load_finding(&trace, ToolpathId(1)).is_none());
+        assert!(entry_load_finding(&trace, ToolpathId::from_raw(1)).is_none());
     }
 
     /// GATE — a pass with entries but too small a body population also
@@ -2655,7 +2664,7 @@ mod tests {
     fn g_entryload_too_few_body_samples_is_not_measured() {
         let mut samples: Vec<_> = body_samples(1).into_iter().take(10).collect();
         samples.push(SimulationCutSample {
-            toolpath_id: ToolpathId(1),
+            toolpath_id: ToolpathId::from_raw(1),
             move_index: 900,
             sample_index: 900,
             segment_time_s: 0.01,
@@ -2665,12 +2674,12 @@ mod tests {
             ..SimulationCutSample::test_fixture()
         });
         let trace = SimulationCutTrace::from_samples(0.5, samples);
-        let obs = entry_load_observation(&trace, ToolpathId(1));
+        let obs = entry_load_observation(&trace, ToolpathId::from_raw(1));
         assert_eq!(obs.entry_samples, 1);
         assert_eq!(obs.body_samples, 10);
         assert_eq!(obs.median_body_bite_mm, None, "None, never 0.0");
         assert!(!obs.is_measured());
-        assert!(entry_load_finding(&trace, ToolpathId(1)).is_none());
+        assert!(entry_load_finding(&trace, ToolpathId::from_raw(1)).is_none());
     }
 
     /// GATE — entries are not in their own denominator. A pass made mostly
@@ -2681,7 +2690,7 @@ mod tests {
         let mut samples = body_samples(1);
         for i in 0..300 {
             samples.push(SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: 1000 + i,
                 sample_index: 1000 + i,
                 segment_time_s: 0.01,
@@ -2693,7 +2702,7 @@ mod tests {
             });
         }
         let trace = SimulationCutTrace::from_samples(0.5, samples);
-        let obs = entry_load_observation(&trace, ToolpathId(1));
+        let obs = entry_load_observation(&trace, ToolpathId::from_raw(1));
         assert_eq!(
             obs.median_body_bite_mm,
             Some(0.2),

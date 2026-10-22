@@ -81,11 +81,11 @@ fn build_identity_origin_session_with_heights(heights: HeightsConfig) -> Project
     builder = builder.stock(stock);
 
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     let mesh = flat_quad_mesh(-6.0);
     let model = LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "flat_plate".to_owned(),
         mesh: Some(Arc::new(mesh)),
         items: Default::default(),
@@ -109,13 +109,13 @@ fn build_identity_origin_session_with_heights(heights: HeightsConfig) -> Project
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Rough".to_owned(),
         enabled: true,
         operation: OperationConfig::Adaptive3d(adaptive),
         dressups: DressupConfig::for_op(OperationType::Adaptive3d),
         heights,
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,

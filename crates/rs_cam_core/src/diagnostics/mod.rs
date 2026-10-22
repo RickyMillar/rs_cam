@@ -67,7 +67,7 @@ pub use evidence::DiagnosticEvidence;
 pub use fix::DiagnosticFix;
 pub use supersession::apply_supersession;
 
-use crate::ids::ToolpathId;
+use crate::ids::{SetupId, ToolId, ToolpathId};
 use serde::{Deserialize, Serialize};
 
 /// Stable string identifier for a diagnostic rule. Adapters use the
@@ -105,9 +105,9 @@ impl From<String> for DiagnosticId {
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum Scope {
     Project,
-    Setup { id: usize },
+    Setup { id: SetupId },
     Toolpath { id: ToolpathId },
-    Tool { id: usize },
+    Tool { id: ToolId },
 }
 
 /// Consequence ladder. Bigger consequence → higher rank. Compare with

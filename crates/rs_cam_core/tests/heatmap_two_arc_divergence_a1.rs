@@ -120,8 +120,8 @@ const ARC_A_RAD: f64 = 0.8;
 /// `tool_load/mod.rs`'s own caveat quantifies at 1.6×.
 const ARC_B_RAD: f64 = std::f64::consts::PI;
 
-const TP_A: ToolpathId = ToolpathId(1);
-const TP_B: ToolpathId = ToolpathId(2);
+const TP_A: ToolpathId = ToolpathId::from_raw(1);
+const TP_B: ToolpathId = ToolpathId::from_raw(2);
 
 fn tool() -> ToolDefinition {
     ToolDefinition::new(

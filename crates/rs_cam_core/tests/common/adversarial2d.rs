@@ -1244,7 +1244,7 @@ pub fn run_op(
     let wall = t0.elapsed();
     let rss_after = peak_rss_kb();
     let (moves, cutting, rapid, length, runs, min_z) = session
-        .get_result(index)
+        .result_at(index)
         .map_or((0, 0, 0, 0.0, 0, 0.0), |r| summarise(r.toolpath()));
     RunRecord {
         op: op.to_owned(),

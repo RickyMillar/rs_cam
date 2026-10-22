@@ -72,7 +72,7 @@ use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 fn empty_model(name: &str) -> LoadedModel {
     LoadedModel {
-        id: 0, // overwritten by `add_model`
+        id: rs_cam_core::ids::ModelId::from_raw(0), // overwritten by `add_model`
         name: name.to_owned(),
         mesh: None,
         items: Default::default(),
@@ -91,14 +91,14 @@ fn empty_model(name: &str) -> LoadedModel {
 fn tc(name: &str, stock_source: StockSource, tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0), // overwritten by `add_toolpath`
+        id: ToolpathId::from_raw(0), // overwritten by `add_toolpath`
         name: name.to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig::default()),
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -117,15 +117,21 @@ fn tc(name: &str, stock_source: StockSource, tool_id: usize, model_id: usize) ->
 /// matter and not only a display one.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
     builder.add_model(empty_model("part.svg"));
-    let tool = builder.tools()[0].id.0;
+    let tool = builder.tools()[0].id.raw();
     let model = builder.models()[0].id;
     let _ = builder
-        .add_toolpath(0, tc("rough", StockSource::Fresh, tool, model))
+        .add_toolpath(0, tc("rough", StockSource::Fresh, tool, model.raw()))
         .unwrap();
     let _ = builder
-        .add_toolpath(0, tc("rest", StockSource::FromRemainingStock, tool, model))
+        .add_toolpath(
+            0,
+            tc("rest", StockSource::FromRemainingStock, tool, model.raw()),
+        )
         .unwrap();
     let session = builder.build();
     // The epoch is NOT zero here: `add_toolpath` clears the simulation

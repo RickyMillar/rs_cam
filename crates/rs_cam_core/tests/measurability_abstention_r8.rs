@@ -70,7 +70,7 @@ fn trace_for_depth(depth_mm: f64) -> SimulationCutTrace {
             &tp,
             &cutter,
             StockCutDirection::FromTop,
-            ToolpathId(0),
+            ToolpathId::from_raw(0),
             18_000,
             2,
             5000.0,
@@ -142,7 +142,7 @@ fn the_engagement_gates_abstain_below_the_fresh_material_floor() {
     let report = MeasurabilityReport::from_trace(&trace, Some(0.25));
 
     for metric in SimMetric::ENGAGEMENT_DERIVED {
-        let m = report.for_metric(ToolpathId(0), metric);
+        let m = report.for_metric(ToolpathId::from_raw(0), metric);
         assert!(
             m.abstains(),
             "{metric:?} must abstain under the floor; got {m:?}"
@@ -156,7 +156,7 @@ fn the_engagement_gates_abstain_below_the_fresh_material_floor() {
     }
 
     let stated = report
-        .for_metric(ToolpathId(0), SimMetric::AirCut)
+        .for_metric(ToolpathId::from_raw(0), SimMetric::AirCut)
         .reason()
         .expect("abstention carries a reason")
         .describe();
@@ -185,7 +185,7 @@ fn collision_and_removal_metrics_stay_live_while_engagement_abstains() {
         SimMetric::AxialEngagement,
     ] {
         assert_eq!(
-            report.for_metric(ToolpathId(0), metric),
+            report.for_metric(ToolpathId::from_raw(0), metric),
             Measurability::Measurable,
             "{metric:?} must remain live"
         );
@@ -219,7 +219,7 @@ fn the_deep_control_arm_stays_measurable() {
 /// One cutting sample whose chip model measured a peak of exactly `depth`.
 fn one_cutting_sample(peak_chip_thickness_mm: Option<f64>) -> SimulationCutSample {
     SimulationCutSample {
-        toolpath_id: ToolpathId(0),
+        toolpath_id: ToolpathId::from_raw(0),
         segment_time_s: 0.1,
         is_cutting: true,
         cut_kinematics: CutKinematics::Linear,
@@ -243,7 +243,7 @@ fn a_measured_zero_chip_peak_reports_some_zero_not_none() {
     // measurement as an abstention.
     let mut acc = SummaryAccumulator::default();
     acc.observe(&one_cutting_sample(Some(0.0)));
-    let measured = acc.finish_toolpath(ToolpathId(0));
+    let measured = acc.finish_toolpath(ToolpathId::from_raw(0));
     let lin = &measured.per_kinematics[&CutKinematics::Linear];
     assert_eq!(
         lin.peak_chip_thickness_mm,
@@ -254,7 +254,7 @@ fn a_measured_zero_chip_peak_reports_some_zero_not_none() {
     // The control arm: no sample carried a peak, so the class abstains.
     let mut acc = SummaryAccumulator::default();
     acc.observe(&one_cutting_sample(None));
-    let unmeasured = acc.finish_toolpath(ToolpathId(0));
+    let unmeasured = acc.finish_toolpath(ToolpathId::from_raw(0));
     let lin = &unmeasured.per_kinematics[&CutKinematics::Linear];
     assert_eq!(
         lin.peak_chip_thickness_mm, None,

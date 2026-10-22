@@ -55,7 +55,7 @@ const PANEL_WIDTH: f32 = 280.0;
 /// force line), and the generic router with the dial at 0.85. This is the
 /// `the_recommended_column_is_what_apply_writes_g_recomapplied` cell.
 fn fixture() -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.flute_count = 2;
     let mut machine = MachineProfile::generic_wood_router();
@@ -68,14 +68,14 @@ fn fixture() -> AppState {
     };
     let config = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "IC2 fixture".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(Default::default()),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -88,7 +88,7 @@ fn fixture() -> AppState {
         planner_origin: None,
     };
     let model = LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         path: PathBuf::from("ic2_fixture.svg"),
         name: "IC2 fixture".to_owned(),
         kind: Some(ModelKind::Svg),
@@ -142,7 +142,7 @@ fn apply_all(state: &mut AppState) {
     let rec = preview
         .applicable()
         .expect("the pocket pairing is applicable");
-    let model_bbox = session.model_bbox(draft.model_id);
+    let model_bbox = session.model_bbox_by_id(draft.model_id);
     let dressups = draft.dressups.clone();
     let pass_role = draft.operation.feeds_style().1;
     let _warnings = apply(

@@ -1,7 +1,6 @@
 use super::AppEvent;
 use crate::app::file_dialog::{AfterPick, FileDialogRequest};
 use crate::state::AppState;
-use crate::state::job::SetupId;
 use crate::state::selection::Selection;
 use crate::ui_command::{NoArgs, UiCommand};
 
@@ -106,7 +105,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                             let label = format!("Setup: {}", setup.name);
                             if ui.button(&label).clicked() {
                                 ui.close();
-                                events.push(AppEvent::ExportSetupGcode(SetupId(setup.id)));
+                                events.push(AppEvent::ExportSetupGcode(setup.id));
                             }
                         }
                     }

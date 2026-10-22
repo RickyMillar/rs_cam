@@ -57,9 +57,9 @@ const DROP_CUTTER: usize = 1;
 fn two_ops() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock_over(HALF_MM, 6.0));
     let end_mill = builder.add_tool(endmill_tool_config(6.0));
-    let end_mill = builder.tools()[end_mill].id.0;
+    let end_mill = builder.tools()[end_mill].id.raw();
     let ball = builder.add_tool(ball_tool_config(3.0));
-    let ball = builder.tools()[ball].id.0;
+    let ball = builder.tools()[ball].id.raw();
     let square = builder.add_model(polygon_model(vec![square_polygon(HALF_MM)], "square"));
     let plate = builder.add_model(mesh_model(sawtooth_plate(HALF_MM, 6.0, 2.0), "corrugated"));
     let pocket = toolpath_config(
@@ -70,7 +70,7 @@ fn two_ops() -> ProjectSession {
             depth_per_pass: 1.0,
             ..PocketConfig::default()
         }),
-        end_mill,
+        rs_cam_core::ids::ToolId::from_raw(end_mill),
         square,
     );
     let mut drop_cutter = toolpath_config(
@@ -82,7 +82,7 @@ fn two_ops() -> ProjectSession {
             hookup_mm: 3.0,
             ..DropCutterConfig::default()
         }),
-        ball,
+        rs_cam_core::ids::ToolId::from_raw(ball),
         plate,
     );
     drop_cutter.heights = pinned_heights(2.0, -1.0);
@@ -97,7 +97,7 @@ fn two_ops() -> ProjectSession {
 }
 
 fn both_current(session: &ProjectSession) -> bool {
-    session.get_result(POCKET).is_some() && session.get_result(DROP_CUTTER).is_some()
+    session.result_at(POCKET).is_some() && session.result_at(DROP_CUTTER).is_some()
 }
 
 /// Claim 1.
@@ -141,9 +141,9 @@ fn a_kinematics_edit_stales_the_raster_finish_and_keeps_the_pocket_b7() {
         }))
         .expect("a kinematics block");
     assert_eq!(effects.stale, BTreeSet::from([DROP_CUTTER]));
-    assert!(session.get_result(DROP_CUTTER).is_none());
+    assert!(session.result_at(DROP_CUTTER).is_none());
     assert!(
-        session.get_result(POCKET).is_some(),
+        session.result_at(POCKET).is_some(),
         "a Pocket reads the machine at simulation time only"
     );
 }
@@ -162,5 +162,5 @@ fn a_dump_that_moves_the_acceleration_stales_the_raster_finish_b7() {
         }))
         .expect("the import applies");
     assert_eq!(effects.stale, BTreeSet::from([DROP_CUTTER]));
-    assert!(session.get_result(POCKET).is_some());
+    assert!(session.result_at(POCKET).is_some());
 }

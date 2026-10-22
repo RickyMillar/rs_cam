@@ -332,7 +332,7 @@ fn the_segment_merge_still_cuts_the_move_count() {
             },
         );
         common::session::generate(&mut session, 0);
-        clearing_cuts(session.get_result(0).expect("result").toolpath())
+        clearing_cuts(session.result_at(0).expect("result").toolpath())
     };
     let on = session_fed(Some(SegmentMergeParams::default()));
     let off = session_fed(None);

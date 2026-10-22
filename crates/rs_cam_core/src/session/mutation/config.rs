@@ -282,7 +282,7 @@ impl ProjectSession {
             }
             session.drop_result(idx);
             tracing::info!(
-                source_toolpath_id = source_id.0,
+                source_toolpath_id = source_id.raw(),
                 "Auto-enabled rest analysis: a toolpath now consumes this one's \
                  derived rest regions as a machining boundary"
             );
@@ -336,7 +336,7 @@ impl ProjectSession {
     /// tool. [`Effects::stale`] carries the toolpath indices whose result
     /// was dropped, so a caller can request their regeneration.
     #[instrument(skip(self))]
-    pub(crate) fn invalidate_tool(&mut self, tool_id: usize) -> Effects {
+    pub(crate) fn invalidate_tool(&mut self, tool_id: ToolId) -> Effects {
         self.with_effects(None, move |session| session.drop_tool_results(tool_id))
     }
 
@@ -356,7 +356,7 @@ impl ProjectSession {
     /// [`Self::drop_results_and_their_dependents`], which every other wide
     /// mutation path shares. This door ran a flat `drop_result` loop
     /// before, and kept those downstream results.
-    pub(crate) fn drop_tool_results(&mut self, tool_id: usize) {
+    pub(crate) fn drop_tool_results(&mut self, tool_id: ToolId) {
         // A toolpath depends on a tool through TWO doors, not one. The
         // obvious door is `tool_id` — the cutter that machines it. The
         // second is a `PlannedTierRegions` boundary, whose islands are
@@ -390,7 +390,7 @@ impl ProjectSession {
     /// project. [`Effects::stale`] carries the toolpath indices whose
     /// result was dropped, so a caller can request their regeneration.
     #[instrument(skip(self))]
-    pub(crate) fn invalidate_model(&mut self, model_id: usize) -> Effects {
+    pub(crate) fn invalidate_model(&mut self, model_id: crate::ids::ModelId) -> Effects {
         self.with_effects(None, move |session| {
             session.drop_results_for_model(model_id);
         })
@@ -416,7 +416,7 @@ impl ProjectSession {
     /// selection (geometry selection P2.5). A reload of any of them moves
     /// the cut, so the toolpath drops. S2 adds a setup stock change whose
     /// geometry names the model. K1 adds a setup obstacle that names it.
-    pub(super) fn drop_results_for_model(&mut self, model_id: usize) {
+    pub(super) fn drop_results_for_model(&mut self, model_id: crate::ids::ModelId) {
         let affected: Vec<usize> = self
             .toolpath_configs
             .iter()
@@ -428,9 +428,10 @@ impl ProjectSession {
         // S2: an enabled stock change that reads the model changes the stock
         // in a new way. The first such setup and every later one are stale.
         let first_reader = self.setups.iter().position(|setup| {
-            setup.stock_changes.iter().any(|change| {
-                change.enabled && change.geometry.reads_model(crate::ids::ModelId(model_id))
-            })
+            setup
+                .stock_changes
+                .iter()
+                .any(|change| change.enabled && change.geometry.reads_model(model_id))
         });
         if let Some(from_setup) = first_reader {
             self.drop_stock_change_dependents(from_setup);
@@ -445,7 +446,7 @@ impl ProjectSession {
                 setup
                     .obstacles
                     .iter()
-                    .any(|o| o.enabled && o.geometry.reads_model(crate::ids::ModelId(model_id)))
+                    .any(|o| o.enabled && o.geometry.reads_model(model_id))
             })
             .map(|(index, _)| index)
             .collect();
@@ -477,19 +478,15 @@ impl ProjectSession {
     #[instrument(skip(self, geometry))]
     pub(crate) fn adopt_model_geometry(
         &mut self,
-        model_id: usize,
+        model_id: crate::ids::ModelId,
         geometry: super::LoadedModel,
         units: Option<ModelUnits>,
     ) -> Result<Effects, SessionError> {
         self.try_with_effects(None, move |session| {
             let Some(model) = session.models.iter_mut().find(|m| m.id == model_id) else {
                 return Err(SessionError::ModelNotFound {
-                    id: crate::ids::ModelId(model_id),
-                    known: session
-                        .models
-                        .iter()
-                        .map(|m| crate::ids::ModelId(m.id))
-                        .collect(),
+                    id: model_id,
+                    known: session.models.iter().map(|m| m.id).collect(),
                 });
             };
             // P4.9: the units first. The ledger replay inside the adopt
@@ -528,18 +525,18 @@ impl ProjectSession {
     #[instrument(skip(self))]
     pub(crate) fn edit_model_drawing(
         &mut self,
-        model_id: usize,
+        model_id: crate::ids::ModelId,
         edit: crate::session::LedgerEdit,
     ) -> Result<Effects, SessionError> {
         use crate::session::LedgerEdit;
         self.try_with_effects(None, move |session| {
             let Some(model) = session.models.iter_mut().find(|m| m.id == model_id) else {
                 return Err(SessionError::ModelNotFound {
-                    id: crate::ids::ModelId(model_id),
+                    id: model_id,
                     known: session
                         .models
                         .iter()
-                        .map(|m| crate::ids::ModelId(m.id))
+                        .map(|m| m.id)
                         .collect(),
                 });
             };
@@ -862,13 +859,13 @@ impl ProjectSession {
     #[instrument(skip(self, tool))]
     pub(crate) fn replace_tool(
         &mut self,
-        tool_id: usize,
+        tool_id: ToolId,
         tool: ToolConfig,
     ) -> Result<Effects, SessionError> {
         crate::session::validate_tool(&tool)?;
         self.try_with_effects(None, move |session| {
-            let Some(slot) = session.tools.iter_mut().find(|t| t.id == ToolId(tool_id)) else {
-                return Err(SessionError::ToolNotFound(ToolId(tool_id)));
+            let Some(slot) = session.tools.iter_mut().find(|t| t.id == tool_id) else {
+                return Err(SessionError::ToolNotFound(tool_id));
             };
             // A change of `size_units` alone is display only: it moves how
             // the size is SHOWN, no stored length, so no result is dropped.
@@ -903,7 +900,12 @@ impl ProjectSession {
             session.tools = tools;
             // Update the next-ID counter so newly added tools don't
             // collide.
-            session.next_tool_id = session.tools.iter().map(|t| t.id.0 + 1).max().unwrap_or(0);
+            session.next_tool_id = session
+                .tools
+                .iter()
+                .map(|t| t.id.raw() + 1)
+                .max()
+                .unwrap_or(0);
             session.drop_simulation(SimulationDropCause::Operations);
         }))
     }

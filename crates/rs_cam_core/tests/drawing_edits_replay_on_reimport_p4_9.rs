@@ -110,7 +110,7 @@ fn write_dxf(dir: &Path, with_u: bool) -> PathBuf {
 fn import(path: &Path) -> LoadedModel {
     load_model_file(
         path,
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Dxf,
         ModelUnits::Millimeters,
         ImportOptions::default(),
@@ -154,13 +154,13 @@ fn session(path: &Path) -> ProjectSession {
 }
 
 fn model_id(s: &ProjectSession) -> usize {
-    s.models()[0].id
+    s.models()[0].id.raw()
 }
 
 fn edit(s: &mut ProjectSession, edit: LedgerEdit) -> Result<Vec<usize>, String> {
     let model_id = model_id(s);
     s.apply(Command::EditModelDrawing(EditModelDrawingArgs {
-        model_id,
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         edit,
     }))
     .map(|effects| effects.stale.into_iter().collect())
@@ -186,11 +186,17 @@ fn join_and_close(s: &mut ProjectSession) {
 /// the new units (the GUI model panel scale row).
 fn rescale(s: &mut ProjectSession, path: &Path, units: ModelUnits) {
     let model_id = model_id(s);
-    let geometry =
-        load_model_file(path, 0, ModelKind::Dxf, units, ImportOptions::default()).unwrap();
+    let geometry = load_model_file(
+        path,
+        rs_cam_core::ids::ModelId::from_raw(0),
+        ModelKind::Dxf,
+        units,
+        ImportOptions::default(),
+    )
+    .unwrap();
     let _ = s
         .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
-            model_id,
+            model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
             geometry: Box::new(geometry),
             units: Some(units),
         }))
@@ -203,7 +209,7 @@ fn reload(s: &mut ProjectSession, path: &Path) {
     let model_id = model_id(s);
     let _ = s
         .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
-            model_id,
+            model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
             geometry: Box::new(import(path)),
             units: None,
         }))

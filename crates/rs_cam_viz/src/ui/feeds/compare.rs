@@ -56,7 +56,7 @@ pub(crate) fn read_current_values(
         .session()
         .tools()
         .iter()
-        .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
+        .find(|t| t.id == tc.tool_id)?;
     Some(CurrentValues {
         feed_rate_mm_min: tc.operation.feed_rate(),
         plunge_rate_mm_min: tc.operation.plunge_rate(),
@@ -133,7 +133,7 @@ pub(crate) fn compute_preview(
         .session()
         .tools()
         .iter()
-        .find(|t| t.id == rs_cam_core::compute::ToolId(tc.tool_id))?;
+        .find(|t| t.id == tc.tool_id)?;
     let stock = state.session().stock_config();
     Some(rs_cam_core::feeds::suggest::feeds_preview_for_operation(
         &tc.operation,

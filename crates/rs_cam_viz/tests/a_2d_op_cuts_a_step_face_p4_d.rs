@@ -75,7 +75,7 @@ fn fixture() -> PathBuf {
 fn step_only_session() -> ProjectSession {
     let model = rs_cam_core::io::load_model_file(
         &fixture(),
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Step,
         ModelUnits::Millimeters,
         Default::default(),
@@ -96,7 +96,7 @@ fn step_only_session() -> ProjectSession {
         auto_from_model: false,
         ..StockConfig::default()
     };
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = TOOL_DIAMETER;
     let mut builder = ProjectSessionBuilder::new().stock(stock).tool(tool);
     let _ = builder.add_model(model);
@@ -107,13 +107,13 @@ fn step_only_session() -> ProjectSession {
 fn add_op(session: &mut ProjectSession, op: OperationType) -> usize {
     let config = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: op.label().to_owned(),
         enabled: true,
         operation: OperationConfig::new_default(op),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
         model_id: session.models()[0].id,
         pre_gcode: None,
         post_gcode: None,

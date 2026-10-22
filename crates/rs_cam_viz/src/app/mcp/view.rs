@@ -621,7 +621,7 @@ impl RsCamApp {
                     .session()
                     .models()
                     .iter()
-                    .any(|m| m.id == model_id);
+                    .any(|m| m.id.raw() == model_id);
                 if !known {
                     refused.insert(
                         model_id.to_string(),
@@ -631,7 +631,7 @@ impl RsCamApp {
                 }
                 self.controller.events_mut().push(crate::ui::AppEvent::Ui(
                     UiCommand::SetModelVisibility(crate::ui_command::SetModelVisibilityArgs {
-                        model_id,
+                        model_id: rs_cam_core::ids::ModelId::from_wire(model_id),
                         visible,
                     }),
                 ));

@@ -152,7 +152,7 @@ pub fn simulated_state(cut: Cut) -> AppState {
         .tools()
         .iter()
         .find(|t| (t.diameter - 6.0).abs() < 1e-6)
-        .map(|t| t.id.0)
+        .map(|t| t.id.raw())
         .expect("the demo project defines a 6 mm end mill");
     let model_id = session
         .models()
@@ -175,13 +175,13 @@ pub fn simulated_state(cut: Cut) -> AppState {
     let op_type = operation.op_type();
     let config = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Limits fixture".to_owned(),
         enabled: true,
         operation,
         dressups: DressupConfig::for_op(op_type),
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,

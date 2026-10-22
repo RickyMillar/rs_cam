@@ -90,7 +90,7 @@ fn part() -> LoadedModel {
     )
     .unwrap();
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "p2_4_two_faces".to_owned(),
         mesh: Some(Arc::clone(&enriched.mesh)),
         items: Arc::new(brep_face_items(&enriched)),
@@ -166,7 +166,13 @@ fn stl_part() -> LoadedModel {
 #[test]
 fn a_two_face_pick_keeps_both_faces_p2_4_on_an_stl() {
     let mut s = pocket_on(stl_part());
-    let faces = s.list_model_items(0, None, Some(ItemKind::Face)).unwrap();
+    let faces = s
+        .list_model_items(
+            rs_cam_core::ids::ModelId::from_raw(0),
+            None,
+            Some(ItemKind::Face),
+        )
+        .unwrap();
     assert_eq!(faces.len(), 2, "the STL gives two flat faces");
     for face in faces {
         let _ = s

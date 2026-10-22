@@ -16,3 +16,9 @@ serde_json = "1"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# F004 (W13b): the tests make an id from a literal with `ModelId::from_raw`,
+# a test door behind the core `test-support` feature (F085). A dev-dependency
+# adds the feature to the test targets only.
+rs_cam_core = { path = "../rs_cam_core", features = ["test-support"] }

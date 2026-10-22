@@ -124,7 +124,7 @@ fn flip_writes_the_other_side_in_one_command_p6_7() {
     );
 
     // 1. Flip: one command, the other side.
-    let before = state.session().toolpath_revision(0);
+    let before = state.session().toolpath_revision_at(0);
     let _ = h::click(&ctx, &mut state, "\u{2194} Flip", 0);
     assert_eq!(
         open_paths(&h::stored(&state)),
@@ -132,7 +132,7 @@ fn flip_writes_the_other_side_in_one_command_p6_7() {
         "Flip must store the other side"
     );
     assert_eq!(
-        state.session().toolpath_revision(0) - before,
+        state.session().toolpath_revision_at(0) - before,
         1,
         "Flip writes ONE command"
     );
@@ -140,7 +140,7 @@ fn flip_writes_the_other_side_in_one_command_p6_7() {
 
 /// A Pocket over the line on a `face_up` setup, with no GUI.
 fn session(face_up: FaceUp, open_paths: OpenPaths) -> ProjectSession {
-    let mut tool = ToolConfig::new_default(ToolId(h::TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(h::TOOL), ToolType::EndMill);
     tool.diameter = TOOL_D;
     let mut builder = ProjectSessionBuilder::new()
         .stock(board())

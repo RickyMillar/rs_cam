@@ -82,7 +82,7 @@ fn session_for_instrument() -> ProjectSession {
 /// The producer of move `i`: the adaptive semantic item (one per planner
 /// marker) that covers it and opened last, named by its kind and label.
 fn producers(session: &ProjectSession) -> Vec<String> {
-    let result = session.get_result(0).expect("adaptive result");
+    let result = session.result_at(0).expect("adaptive result");
     let n = result.toolpath().moves.len();
     let trace = result
         .semantic_trace
@@ -513,7 +513,7 @@ fn print_entry_wall_gouges() {
 fn print_agent_pass_summaries() {
     use rs_cam_core::trace::semantic_trace::SemanticKey;
     let session = adaptive_session(false);
-    let result = session.get_result(0).expect("adaptive result");
+    let result = session.result_at(0).expect("adaptive result");
     let trace = result.semantic_trace.as_ref().expect("semantic trace");
     let mut reasons: BTreeMap<String, (usize, usize)> = BTreeMap::new();
     for item in trace.items.iter().filter(|i| i.kind == Kind::Pass) {

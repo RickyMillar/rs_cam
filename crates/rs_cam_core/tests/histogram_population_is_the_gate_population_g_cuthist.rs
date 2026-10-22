@@ -73,8 +73,8 @@ use rs_cam_core::tool_load::{
     GateEnv, ToleranceBands, ToolpathLoadContext, boundary, evaluate_toolpath,
 };
 
-const TP: ToolpathId = ToolpathId(0);
-const OTHER_TP: ToolpathId = ToolpathId(1);
+const TP: ToolpathId = ToolpathId::from_raw(0);
+const OTHER_TP: ToolpathId = ToolpathId::from_raw(1);
 const RPM: u32 = 18_000;
 const FLUTES: u32 = 2;
 const OP_FEED: f64 = 1000.0;

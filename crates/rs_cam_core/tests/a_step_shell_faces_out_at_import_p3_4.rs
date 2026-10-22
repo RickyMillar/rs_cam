@@ -120,7 +120,7 @@ fn a_step_shell_faces_out_at_import() {
         let name = path.file_name().unwrap().to_string_lossy().to_string();
         let model = rs_cam_core::io::load_model_file(
             &path,
-            0,
+            rs_cam_core::ids::ModelId::from_raw(0),
             ModelKind::Step,
             ModelUnits::Millimeters,
             Default::default(),

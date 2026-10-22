@@ -237,7 +237,7 @@ fn freshness_evidence(controller: &AppController) -> String {
     };
     for (idx, tc) in session.toolpath_configs().iter().enumerate() {
         let session_hash = session
-            .get_result(idx)
+            .result_at(idx)
             .map(|result| hash_toolpath(&result.annotated().toolpath));
         let gui_hash = controller
             .state
@@ -250,7 +250,7 @@ fn freshness_evidence(controller: &AppController) -> String {
         out.push_str(&format!(
             "tp {} '{}' enabled={} provenance.toolpath={:?} session.result={:?} \
              gui.rt.result={:?} provenance.config={:?} config.now={}\n",
-            tc.id.0,
+            tc.id.raw(),
             tc.name,
             tc.enabled,
             provenance.toolpath_hashes.get(&tc.id),
@@ -404,7 +404,7 @@ fn the_cards_and_the_gui_agree_on_a_simulation_that_just_landed_g_stalecards() {
     assert!(
         !runtime.auto_regen
             && runtime.run.result().is_some()
-            && controller.state.session().get_result(index).is_none(),
+            && controller.state.session().result_at(index).is_none(),
         "precondition: the core dropped the rough and the GUI kept its copy"
     );
 

@@ -147,7 +147,7 @@ fn part_model() -> LoadedModel {
     )
     .unwrap();
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "p4_2_part".to_owned(),
         mesh: Some(Arc::clone(&enriched.mesh)),
         items: Arc::new(brep_face_items(&enriched)),
@@ -166,7 +166,7 @@ fn part_model() -> LoadedModel {
 /// An STL: a mesh and no item.
 fn stl_model() -> LoadedModel {
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "p4_2.stl".to_owned(),
         mesh: Some(Arc::new(rs_cam_core::mesh::make_test_flat(40.0))),
         items: Arc::default(),
@@ -211,9 +211,14 @@ fn face_op() -> OperationConfig {
 fn session(model: Option<LoadedModel>, face_up: FaceUp) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_DIAMETER));
-    let tool_id = builder.tools()[tool_idx].id.0;
-    let model_id = model.map_or(NO_MODEL_ID, |m| builder.add_model(m));
-    let mut cfg = toolpath_config("Face", face_op(), tool_id, model_id);
+    let tool_id = builder.tools()[tool_idx].id.raw();
+    let model_id = model.map_or(NO_MODEL_ID, |m| builder.add_model(m).raw());
+    let mut cfg = toolpath_config(
+        "Face",
+        face_op(),
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        rs_cam_core::ids::ModelId::from_raw(model_id),
+    );
     cfg.dressups = no_dressups();
     let _ = builder.add_toolpath(0, cfg).unwrap();
     let mut session = builder.build();
@@ -455,7 +460,7 @@ fn a_pocket_on_the_stock_clears_round_a_drawing_loop_p4_2() {
     let (lo, hi) = (2.0, 8.0);
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_DIAMETER));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(polygon_model(
         vec![Polygon2::rectangle(lo, lo, hi, hi)],
         "p4_2_island",
@@ -466,7 +471,12 @@ fn a_pocket_on_the_stock_clears_round_a_drawing_loop_p4_2() {
         depth_per_pass: 1.0,
         ..PocketConfig::default()
     });
-    let mut cfg = toolpath_config("Pocket", op, tool_id, model_id);
+    let mut cfg = toolpath_config(
+        "Pocket",
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     cfg.dressups = no_dressups();
     let _ = builder.add_toolpath(0, cfg).unwrap();
     let mut s = builder.build();

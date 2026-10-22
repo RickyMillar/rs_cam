@@ -76,7 +76,7 @@ pub fn tapered_cutter(
 pub fn ball_tool_config(diameter_mm: f64) -> ToolConfig {
     ToolConfig {
         diameter: diameter_mm,
-        ..ToolConfig::new_default(ToolId(0), ToolType::BallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose)
     }
 }
 
@@ -92,7 +92,7 @@ pub fn tapered_ball_tool_config(
         diameter: tip_diameter_mm,
         taper_half_angle: taper_half_angle_deg,
         shaft_diameter: shaft_diameter_mm,
-        ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
     }
 }
 
@@ -104,6 +104,6 @@ pub fn tapered_ball_tool_config(
 pub fn endmill_tool_config(diameter_mm: f64) -> ToolConfig {
     ToolConfig {
         diameter: diameter_mm,
-        ..ToolConfig::new_default(ToolId(0), ToolType::EndMill)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill)
     }
 }

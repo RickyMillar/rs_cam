@@ -365,7 +365,7 @@ fn a_genuine_collapse_still_passes_through_and_now_says_so() {
         ..Default::default()
     };
     let diags = rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation(
-        rs_cam_core::ids::ToolpathId(1),
+        rs_cam_core::ids::ToolpathId::from_raw(1),
         &stats,
     );
     assert!(

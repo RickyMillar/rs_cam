@@ -119,7 +119,7 @@ fn add_region_boundary(session: &mut ProjectSession, index: usize) {
             boundary: BoundaryConfig {
                 enabled: true,
                 source: BoundarySource::Selection {
-                    selection: Selection::closed_shapes_of(ModelId(model_id)),
+                    selection: Selection::closed_shapes_of(ModelId::from_raw(model_id)),
                     holes: false,
                 },
                 containment: BoundaryContainment::Center,

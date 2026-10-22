@@ -621,7 +621,7 @@ const DIAMETER_MM: f64 = 6.0;
 const FLUTES: u32 = 2;
 
 fn endmill() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = DIAMETER_MM;
     tool.shaft_diameter = DIAMETER_MM;
     tool.shank_diameter = DIAMETER_MM;

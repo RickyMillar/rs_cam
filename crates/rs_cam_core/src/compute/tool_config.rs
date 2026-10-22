@@ -23,9 +23,8 @@ macro_rules! all_variants {
     }};
 }
 
-/// Unique identifier for a tool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ToolId(pub usize);
+/// F004: the tool id lives in `crate::ids` beside the other id types.
+pub use crate::ids::ToolId;
 
 /// Tool type matching the five cutter types in rs_cam_core.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -359,7 +358,7 @@ impl ToolConfig {
         let mut tool = Self {
             id,
             name,
-            tool_number: id.0 as u32 + 1,
+            tool_number: id.raw() as u32 + 1,
             tool_type,
             diameter,
             cutting_length: 25.0,
@@ -1505,7 +1504,7 @@ mod tests {
     #[test]
     fn geometry_hint_matches_the_built_cutter() {
         for &tool_type in ToolType::ALL {
-            let mut tool = ToolConfig::new_default(ToolId(0), tool_type);
+            let mut tool = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
             if tool_type == ToolType::TaperedBallNose {
                 tool.diameter = 1.0;
             }
@@ -1522,7 +1521,7 @@ mod tests {
     /// not another type's dead fields.
     #[test]
     fn validate_checks_the_geometry_the_type_owns() {
-        let mut vbit = ToolConfig::new_default(ToolId(0), ToolType::VBit);
+        let mut vbit = ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit);
         assert!(vbit.validate().is_ok());
         vbit.included_angle = 0.0;
         assert_eq!(
@@ -1530,7 +1529,7 @@ mod tests {
             Err(ToolDimension::IncludedAngle)
         );
         // A flat end mill carries no angle; a dead field is not checked.
-        let mut flat = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut flat = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         flat.included_angle = 0.0;
         assert!(flat.validate().is_ok());
         flat.flute_count = 0;
@@ -1636,7 +1635,7 @@ mod tests {
 
     #[test]
     fn toml_round_trip_preserves_helix_corner_radius_and_material() {
-        let mut tool = ToolConfig::new_default(ToolId(7), ToolType::EndMill);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(7), ToolType::EndMill);
         tool.helix_deg = 45.0;
         tool.corner_radius_mm = 0.1;
         tool.tool_material = ToolMaterial::Hss;
@@ -1678,7 +1677,7 @@ product_id = ""
     /// A tool carrying every geometry field at once — the shape a
     /// project saved before 4b1e6f21 has on disk, whatever its type.
     fn fully_populated(tool_type: ToolType) -> ToolConfig {
-        let mut tool = ToolConfig::new_default(ToolId(0), tool_type);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
         tool.corner_radius_mm = 0.5;
         tool.corner_radius = 2.0;
         tool.included_angle = 90.0;
@@ -1716,7 +1715,7 @@ product_id = ""
     #[test]
     fn new_default_is_complete_and_carries_no_foreign_geometry() {
         for &tool_type in ToolType::ALL {
-            let tool = ToolConfig::new_default(ToolId(3), tool_type);
+            let tool = ToolConfig::new_default(ToolId::from_raw(3), tool_type);
             let foreign = tool.cross_type_geometry();
             assert!(foreign.is_empty(), "{tool_type:?} carries {foreign:?}");
             let missing = tool.missing_defining_geometry();
@@ -1725,15 +1724,15 @@ product_id = ""
         // The specific leak: `Session::list_tools` publishes
         // `corner_radius_mm.max(corner_radius)`, which used to report a
         // 2 mm corner radius for a plain flat end mill.
-        let end_mill = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let end_mill = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         assert_eq!(end_mill.corner_radius_mm.max(end_mill.corner_radius), 0.0);
         // …while the types that are DEFINED by one of those numbers
         // keep it: a default V-bit is still a 90° V-bit.
-        let vbit = ToolConfig::new_default(ToolId(0), ToolType::VBit);
+        let vbit = ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit);
         assert_eq!(vbit.included_angle, 90.0);
-        let bull = ToolConfig::new_default(ToolId(0), ToolType::BullNose);
+        let bull = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BullNose);
         assert_eq!(bull.corner_radius, 2.0);
-        let taper = ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose);
+        let taper = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
         assert_eq!(taper.taper_half_angle, 15.0);
         assert_eq!(taper.shaft_diameter, 6.35);
     }
@@ -1743,13 +1742,13 @@ product_id = ""
     /// case a caller that flips `tool_type` in place has to check.
     #[test]
     fn missing_defining_geometry_names_the_zeroed_field() {
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.tool_type = ToolType::VBit;
         let missing = tool.missing_defining_geometry();
         assert_eq!(missing, vec![ToolGeometryField::IncludedAngle]);
         // A flat end mill with no corner radius is an ordinary flat end
         // mill, so `corner_radius_mm` is never reported missing.
-        let plain = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let plain = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         assert!(plain.missing_defining_geometry().is_empty());
     }
 
@@ -1759,7 +1758,7 @@ product_id = ""
     /// Exactly one mismatch, and it names both numbers.
     #[test]
     fn name_says_two_mm_tip_geometry_says_one() {
-        let mut tool = ToolConfig::new_default(ToolId(2), ToolType::TaperedBallNose);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(2), ToolType::TaperedBallNose);
         tool.name = "Tapered Ball 2mm tip / 7° / 6mm shank".to_owned();
         tool.diameter = 1.0;
         tool.taper_half_angle = 7.1;
@@ -1785,7 +1784,7 @@ product_id = ""
     /// is the same factor-of-two defect written the vendor's way.
     #[test]
     fn radius_prefixed_name_catches_the_same_factor_of_two() {
-        let mut tool = ToolConfig::new_default(ToolId(2), ToolType::TaperedBallNose);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(2), ToolType::TaperedBallNose);
         tool.name = "R1.0mm x 6mm x 20mm 2F Tapered Ball".to_owned();
         tool.diameter = 1.0;
         tool.shaft_diameter = 6.0;
@@ -1827,7 +1826,7 @@ product_id = ""
             ("6mm shank x 22mm LOC ball", ToolType::BallNose, 3.0),
         ];
         for &(name, tool_type, diameter) in quiet {
-            let mut tool = ToolConfig::new_default(ToolId(0), tool_type);
+            let mut tool = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
             tool.name = name.to_owned();
             tool.diameter = diameter;
             let found = tool.name_geometry_mismatches();
@@ -1838,7 +1837,7 @@ product_id = ""
     /// A lone unkeyworded millimetre figure IS the size, and is judged.
     #[test]
     fn lone_millimetre_figure_is_judged_against_the_diameter() {
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.name = "6mm 2F Carbide End Mill".to_owned();
         tool.diameter = 3.175;
         tool.cutting_length = 25.0;
@@ -1856,7 +1855,7 @@ product_id = ""
     /// degree figure is as likely to be the helix, so it is ignored.
     #[test]
     fn degrees_judged_only_where_an_angle_defines_the_tool() {
-        let mut vbit = ToolConfig::new_default(ToolId(0), ToolType::VBit);
+        let mut vbit = ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit);
         vbit.name = "60 degree V-Bit".to_owned();
         vbit.diameter = 12.7;
         let found = vbit.name_geometry_mismatches();
@@ -1866,13 +1865,13 @@ product_id = ""
         assert_eq!(found[0].config_value, 90.0);
 
         // Same figure, a type where no angle defines the geometry.
-        let mut end_mill = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut end_mill = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         end_mill.name = "60° something".to_owned();
         assert!(end_mill.name_geometry_mismatches().is_empty());
 
         // A tapered ball quoted as the full included cone (2 × the
         // half-angle) agrees — vendors write it both ways.
-        let mut taper = ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose);
+        let mut taper = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
         taper.name = "Tapered Ball 14.2 deg".to_owned();
         taper.taper_half_angle = 7.1;
         assert!(taper.name_geometry_mismatches().is_empty());
@@ -1882,7 +1881,7 @@ product_id = ""
     /// phrase holds exactly one of each — otherwise nothing binds.
     #[test]
     fn role_words_bind_within_their_phrase() {
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
         tool.name = "Tapered Ball 1mm tip / 7° / 3mm shank".to_owned();
         tool.diameter = 1.0;
         tool.taper_half_angle = 7.0;
@@ -1900,17 +1899,17 @@ product_id = ""
     /// radius, and a tapered ball says "tip".
     #[test]
     fn size_label_per_tool_type() {
-        let mut end_mill = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut end_mill = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         end_mill.diameter = 6.0;
         assert_eq!(end_mill.size_label(), "\u{00D8}6.00 mm");
         end_mill.corner_radius_mm = 0.5;
         assert_eq!(end_mill.size_label(), "\u{00D8}6.00 mm, corner R0.50");
 
-        let mut ball = ToolConfig::new_default(ToolId(0), ToolType::BallNose);
+        let mut ball = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
         ball.diameter = 6.0;
         assert_eq!(ball.size_label(), "\u{00D8}6.00 mm (R3.00)");
 
-        let mut taper = ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose);
+        let mut taper = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
         taper.diameter = 2.0;
         taper.shank_diameter = 6.0;
         taper.shaft_diameter = 6.0;
@@ -1926,13 +1925,13 @@ product_id = ""
         assert_eq!(taper.diameter_field_label(), "Tip \u{00D8}:");
         assert_eq!(taper.derived_tip_radius_text().as_deref(), Some("= R1.00"));
 
-        let mut bull = ToolConfig::new_default(ToolId(0), ToolType::BullNose);
+        let mut bull = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BullNose);
         bull.diameter = 6.0;
         bull.corner_radius = 1.0;
         assert_eq!(bull.size_label(), "\u{00D8}6.00 mm, corner R1.00");
         assert_eq!(bull.derived_tip_radius_text(), None);
 
-        let mut vbit = ToolConfig::new_default(ToolId(0), ToolType::VBit);
+        let mut vbit = ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit);
         vbit.diameter = 12.7;
         vbit.included_angle = 60.0;
         assert_eq!(vbit.size_label(), "\u{00D8}12.70 mm, 60\u{00B0}");
@@ -1968,7 +1967,7 @@ product_id = ""
             ("6mm 2F Carbide End Mill", ToolType::EndMill, 6.0, 3.0),
         ];
         for &(name, tool_type, agrees, disagrees) in cases {
-            let mut tool = ToolConfig::new_default(ToolId(0), tool_type);
+            let mut tool = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
             tool.name = name.to_owned();
             tool.diameter = agrees;
             tool.shank_diameter = 6.0;
@@ -1997,7 +1996,7 @@ product_id = ""
     /// `Ø`/`R` convention.
     #[test]
     fn caution_line_names_both_sizes() {
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
         tool.name = "R1.0mm x 6mm x 20mm 2F Tapered Ball".to_owned();
         tool.diameter = 1.0;
         tool.shaft_diameter = 6.0;
@@ -2049,7 +2048,7 @@ product_id = ""
     #[test]
     fn a_unit_crossing_warns_and_names_both_units() {
         // 1/4" name, Ø6.00 tool on a 1/4" (6.35) shank.
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.name = "1/4\" 2F Downcut".to_owned();
         tool.diameter = 6.0;
         tool.shank_diameter = 6.35;
@@ -2096,7 +2095,7 @@ product_id = ""
             "1/16 inch tapered",
         ];
         for name in imperial {
-            let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+            let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
             tool.name = name.to_owned();
             assert_eq!(tool.effective_size_units(), SizeUnits::Imperial, "{name}");
         }
@@ -2109,11 +2108,11 @@ product_id = ""
             "",
         ];
         for name in metric {
-            let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+            let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
             tool.name = name.to_owned();
             assert_eq!(tool.effective_size_units(), SizeUnits::Metric, "{name}");
         }
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.name = "1/4\" Downcut".to_owned();
         tool.size_units = Some(SizeUnits::Metric);
         assert_eq!(tool.effective_size_units(), SizeUnits::Metric);
@@ -2124,7 +2123,7 @@ product_id = ""
     #[test]
     fn imperial_size_label_per_tool_type() {
         let imperial = |tool_type: ToolType, diameter: f64| {
-            let mut tool = ToolConfig::new_default(ToolId(0), tool_type);
+            let mut tool = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
             tool.diameter = diameter;
             tool.size_units = Some(SizeUnits::Imperial);
             tool
@@ -2158,7 +2157,7 @@ product_id = ""
         assert_eq!(vbit.size_label(), "\u{00D8}1/2\" (12.70 mm), 60\u{00B0}");
 
         // Inferred from the name, with no stored unit.
-        let mut named = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut named = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         named.name = "#201 1/4\" Square".to_owned();
         named.diameter = 6.35;
         assert_eq!(named.size_label(), "\u{00D8}1/4\" (6.35 mm)");
@@ -2169,7 +2168,7 @@ product_id = ""
     /// field round-trips as its snake_case token.
     #[test]
     fn size_units_serde() {
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         let json = serde_json::to_value(&tool).unwrap();
         assert!(json.get("size_units").is_none(), "None is not written");
         tool.size_units = Some(SizeUnits::Imperial);
@@ -2199,7 +2198,7 @@ product_id = ""
     /// written, and a value of the wrong JSON type refuses.
     #[test]
     fn tool_param_key_writes_the_fields_the_old_table_missed() {
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         ToolParamKey::HelixDeg
             .write(&mut tool, &serde_json::json!(40.0))
             .unwrap();

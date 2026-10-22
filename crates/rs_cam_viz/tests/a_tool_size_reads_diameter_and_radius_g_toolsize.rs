@@ -50,7 +50,7 @@ const PANEL_WIDTH: f32 = 320.0;
 const R1_NAME: &str = "R1.0mm x 6mm x 20mm 2F Tapered Ball";
 
 fn tapered_ball(diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::TaperedBallNose);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     tool.name = R1_NAME.to_owned();
     tool.diameter = diameter;
     tool.taper_half_angle = 5.7;
@@ -72,14 +72,14 @@ fn state_for(tool: ToolConfig, select_tool: bool) -> AppState {
     };
     let config = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Tool size fixture".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(Default::default()),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -92,7 +92,7 @@ fn state_for(tool: ToolConfig, select_tool: bool) -> AppState {
         planner_origin: None,
     };
     let model = LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         path: PathBuf::from("tool_size_fixture.svg"),
         name: "Tool size fixture".to_owned(),
         kind: Some(ModelKind::Svg),
@@ -120,7 +120,7 @@ fn state_for(tool: ToolConfig, select_tool: bool) -> AppState {
     let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     if select_tool {
-        state.selection = Selection::Tool(ToolId(1));
+        state.selection = Selection::Tool(ToolId::from_raw(1));
     } else {
         state.selection = Selection::Toolpath(id);
         state.gui.pending_toolpath_tab =
@@ -268,7 +268,7 @@ fn the_feeds_card_header_names_the_tip_g_toolsize() {
 // to keep that convention") ─────────────────────────────────────────────────
 
 fn end_mill(name: &str, diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.name = name.to_owned();
     tool.diameter = diameter;
     tool.shank_diameter = 6.35;

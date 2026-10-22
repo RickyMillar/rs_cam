@@ -199,7 +199,7 @@ pub fn stock_change_effects(changes: &[StockChange]) -> Vec<(StockChangeId, u64)
 /// give a new change the same id.
 #[must_use]
 pub fn next_stock_change_id(changes: &[StockChange]) -> StockChangeId {
-    StockChangeId(changes.iter().map(|c| c.id.0 + 1).max().unwrap_or(0))
+    StockChangeId::mint(changes.iter().map(|c| c.id.raw() + 1).max().unwrap_or(0))
 }
 
 /// Why a stock change was refused. Each variant names the rule it broke.
@@ -254,18 +254,18 @@ impl std::fmt::Display for StockChangeRefusal {
             Self::UnknownModel { model_id } => write!(
                 f,
                 "the stock change names model id {}, and the project has no such model",
-                model_id.0
+                model_id.raw()
             ),
             Self::ModelIsNotAMesh { model_id, name } => write!(
                 f,
                 "a model stock change needs a mesh, and model '{name}' (id {}) has no mesh",
-                model_id.0
+                model_id.raw()
             ),
             Self::ModelHasNoClosedOutline { model_id, name } => write!(
                 f,
                 "an outline stock change needs closed 2D outlines, and model '{name}' \
                  (id {}) has no closed outline",
-                model_id.0
+                model_id.raw()
             ),
             Self::NoOutlineModels => {
                 write!(
@@ -287,7 +287,11 @@ impl std::fmt::Display for StockChangeRefusal {
                  holds no material to remove; use an outline extrude or a model"
             ),
             Self::DuplicateId { id } => {
-                write!(f, "the setup already holds a stock change with id {}", id.0)
+                write!(
+                    f,
+                    "the setup already holds a stock change with id {}",
+                    id.raw()
+                )
             }
         }
     }
@@ -434,7 +438,7 @@ pub enum StockChangeSource {
 #[derive(Debug, Clone)]
 pub struct ResolvedStockChange {
     /// The `SetupData::id` of the setup that owns the change.
-    pub setup_id: usize,
+    pub setup_id: crate::ids::SetupId,
     /// The change record.
     pub change: StockChange,
     /// One source per model in `change.geometry.model_ids()`, in order.
@@ -462,12 +466,12 @@ mod tests {
 
     fn fill(level_z: f64) -> StockChange {
         StockChange {
-            id: StockChangeId(0),
+            id: StockChangeId::from_raw(0),
             name: "Fill".to_owned(),
             enabled: true,
             op: StockChangeOp::Add,
             geometry: StockGeometry::OutlineFill {
-                model_ids: vec![ModelId(3)],
+                model_ids: vec![ModelId::from_raw(3)],
                 level_z,
             },
             material: Material::Custom {
@@ -480,7 +484,7 @@ mod tests {
     }
 
     fn outline_facts(id: ModelId) -> Option<ModelGeometryFacts<'static>> {
-        (id == ModelId(3)).then_some(ModelGeometryFacts {
+        (id == ModelId::from_raw(3)).then_some(ModelGeometryFacts {
             name: "outline",
             has_mesh: false,
             has_closed_outline: true,
@@ -496,7 +500,7 @@ mod tests {
 
         let mut moved = a.clone();
         moved.geometry = StockGeometry::OutlineFill {
-            model_ids: vec![ModelId(3)],
+            model_ids: vec![ModelId::from_raw(3)],
             level_z: 1.5,
         };
         assert_ne!(a.effect_digest(), moved.effect_digest());
@@ -531,7 +535,7 @@ mod tests {
             Err(StockChangeRefusal::RemoveCannotUseOutlineFill)
         );
         removal.geometry = StockGeometry::OutlineExtrude {
-            model_ids: vec![ModelId(3)],
+            model_ids: vec![ModelId::from_raw(3)],
             z_bottom: 0.0,
             z_top: 1.0,
         };
@@ -540,20 +544,23 @@ mod tests {
 
     #[test]
     fn the_next_id_is_one_more_than_the_largest() {
-        assert_eq!(next_stock_change_id(&[]), StockChangeId(0));
+        assert_eq!(next_stock_change_id(&[]), StockChangeId::from_raw(0));
         let mut late = fill(1.0);
-        late.id = StockChangeId(4);
-        assert_eq!(next_stock_change_id(&[fill(1.0), late]), StockChangeId(5));
+        late.id = StockChangeId::from_raw(4);
+        assert_eq!(
+            next_stock_change_id(&[fill(1.0), late]),
+            StockChangeId::from_raw(5)
+        );
     }
 
     #[test]
     fn the_effects_list_only_enabled_changes() {
         let mut off = fill(1.0);
-        off.id = StockChangeId(1);
+        off.id = StockChangeId::from_raw(1);
         off.enabled = false;
         let effects = stock_change_effects(&[fill(1.0), off]);
         assert_eq!(effects.len(), 1);
-        assert_eq!(effects[0].0, StockChangeId(0));
+        assert_eq!(effects[0].0, StockChangeId::from_raw(0));
     }
 
     #[test]
@@ -565,7 +572,7 @@ mod tests {
         );
         let mut mesh = fill(1.0);
         mesh.geometry = StockGeometry::Model {
-            model_id: ModelId(3),
+            model_id: ModelId::from_raw(3),
         };
         assert!(matches!(
             validate_stock_change(&mesh, outline_facts),
@@ -573,7 +580,7 @@ mod tests {
         ));
         let mut empty = fill(1.0);
         empty.geometry = StockGeometry::OutlineExtrude {
-            model_ids: vec![ModelId(3)],
+            model_ids: vec![ModelId::from_raw(3)],
             z_bottom: 2.0,
             z_top: 2.0,
         };
@@ -592,13 +599,13 @@ mod tests {
         );
         let mut unknown = fill(1.0);
         unknown.geometry = StockGeometry::OutlineFill {
-            model_ids: vec![ModelId(9)],
+            model_ids: vec![ModelId::from_raw(9)],
             level_z: 1.0,
         };
         assert_eq!(
             validate_stock_change(&unknown, outline_facts),
             Err(StockChangeRefusal::UnknownModel {
-                model_id: ModelId(9)
+                model_id: ModelId::from_raw(9)
             })
         );
     }

@@ -449,11 +449,11 @@ impl ProjectSession {
     /// The mesh models (faces = flat regions) that a rule, a pick or an
     /// exclude of `spec` names, each once, in model order.
     fn face_models_of(&self, tc: &ToolpathConfig, spec: &Selection) -> Vec<&LoadedModel> {
-        let named: Vec<usize> = spec
+        let named: Vec<ModelId> = spec
             .sources()
             .filter_map(|source| match source {
                 SourceRef::ToolpathModel => Some(tc.model_id),
-                SourceRef::Model(id) => Some(id.0),
+                SourceRef::Model(id) => Some(id),
                 SourceRef::Stock => None,
             })
             .collect();
@@ -490,16 +490,13 @@ impl ProjectSession {
         self.models
             .iter()
             .find(|m| m.items.has_closed_ring())
-            .map_or_else(Selection::empty, |m| {
-                Selection::closed_shapes_of(ModelId(m.id))
-            })
+            .map_or_else(Selection::empty, |m| Selection::closed_shapes_of(m.id))
     }
 
     /// The model of `tc` by its EXACT id, or the id when no model has it.
     /// No fallback to another model (geometry selection P2.4).
     pub(crate) fn toolpath_model(&self, tc: &ToolpathConfig) -> Result<&LoadedModel, ModelId> {
-        self.find_model_by_raw_id(tc.model_id)
-            .ok_or(ModelId(tc.model_id))
+        self.model_by_id(tc.model_id).ok_or(tc.model_id)
     }
 
     /// [`Self::resolve_selection_frames`] for `tc` in the setup that owns
@@ -638,7 +635,7 @@ impl ProjectSession {
         // P4.4: the resolution states first. An item that the selection
         // holds is `Skipped` until `view` gives it its role, so a refused
         // selection marks no item `Cut`.
-        let own_source = SourceRef::Model(ModelId(tc.model_id));
+        let own_source = SourceRef::Model(tc.model_id);
         report.item_states = self.toolpath_model(tc).map_or_else(
             |_| Vec::new(),
             |m| vec![ItemState::NotSelected; m.items.len()],
@@ -812,7 +809,7 @@ impl ProjectSession {
             | ItemUse::RegionsExtendOpen { .. }
             | ItemUse::Curves => return None,
         }
-        let tool = self.find_tool_by_raw_id(tc.tool_id)?;
+        let tool = self.tool_by_id(tc.tool_id)?;
         crate::compute::cutter::build_cutter(tool)
             .ok()
             .map(|cutter| {
@@ -835,7 +832,7 @@ impl ProjectSession {
                 return None;
             }
         }
-        let tool = self.find_tool_by_raw_id(tc.tool_id)?;
+        let tool = self.tool_by_id(tc.tool_id)?;
         crate::compute::cutter::build_cutter(tool)
             .ok()
             .map(|cutter| crate::tool::MillingCutter::diameter(&cutter) / 2.0)
@@ -924,19 +921,19 @@ impl ProjectSession {
     pub fn face_pick_key(
         &self,
         tc: &ToolpathConfig,
-        model_id: usize,
+        model_id: ModelId,
         face: FaceGroupId,
     ) -> Result<MatchKey, SelectionRefusal> {
-        let model = self.find_model_by_raw_id(model_id).ok_or_else(|| {
+        let model = self.model_by_id(model_id).ok_or_else(|| {
             SelectionRefusal::new(
                 None,
-                RefusalCause::MissingSource(SourceRef::Model(ModelId(model_id))),
+                RefusalCause::MissingSource(SourceRef::Model(model_id)),
             )
         })?;
         let source = if model_id == tc.model_id {
             SourceRef::ToolpathModel
         } else {
-            SourceRef::Model(ModelId(model_id))
+            SourceRef::Model(model_id)
         };
         model
             .items
@@ -968,13 +965,13 @@ impl ProjectSession {
     pub fn face_pick_key_at(
         &self,
         tc: &ToolpathConfig,
-        model_id: usize,
+        model_id: ModelId,
         hit: P3,
     ) -> Result<MatchKey, SelectionRefusal> {
-        let model = self.find_model_by_raw_id(model_id).ok_or_else(|| {
+        let model = self.model_by_id(model_id).ok_or_else(|| {
             SelectionRefusal::new(
                 None,
-                RefusalCause::MissingSource(SourceRef::Model(ModelId(model_id))),
+                RefusalCause::MissingSource(SourceRef::Model(model_id)),
             )
         })?;
         // The key takes its source below, so the unbound cached set serves
@@ -984,17 +981,12 @@ impl ProjectSession {
             _ => Some(Arc::clone(&model.items)),
         }
         .ok_or_else(|| {
-            SelectionRefusal::new(
-                None,
-                RefusalCause::FacesNotReady {
-                    model: ModelId(model_id),
-                },
-            )
+            SelectionRefusal::new(None, RefusalCause::FacesNotReady { model: model_id })
         })?;
         let source = if model_id == tc.model_id {
             SourceRef::ToolpathModel
         } else {
-            SourceRef::Model(ModelId(model_id))
+            SourceRef::Model(model_id)
         };
         let xy = P2::new(hit.x, hit.y);
         faces
@@ -1035,7 +1027,7 @@ impl ProjectSession {
         key: MatchKey,
     ) -> Result<SelectionEdit, SessionError> {
         let source = match key.source {
-            SourceRef::ToolpathModel => SourceRef::Model(ModelId(tc.model_id)),
+            SourceRef::ToolpathModel => SourceRef::Model(tc.model_id),
             other @ (SourceRef::Model(_) | SourceRef::Stock) => other,
         };
         let report = self.selection_status(tc, target)?;
@@ -1078,8 +1070,7 @@ impl ProjectSession {
             let kind = key.kind;
             let mut boundary = tc.boundary.clone();
             boundary.source = BoundarySource::Selection {
-                selection: Selection::from_picks(vec![key])
-                    .for_toolpath_model(ModelId(tc.model_id)),
+                selection: Selection::from_picks(vec![key]).for_toolpath_model(tc.model_id),
                 holes: false,
             };
             return Ok(ClickEdit::BoundaryToSelection {
@@ -1130,20 +1121,16 @@ impl ProjectSession {
             SelectionTarget::Boundary => self.boundary_selection_default(),
         };
         let rules = crate::selection::Rule::layer_rules(key.source, layer, kinds, circle);
-        SelectionEdit::add_rules(current, &op_default, ModelId(tc.model_id), rules).ok_or_else(
-            || {
-                SessionError::InvalidParam(
-                    "No kind is on, so the layer rule names no item".to_owned(),
-                )
-            },
-        )
+        SelectionEdit::add_rules(current, &op_default, tc.model_id, rules).ok_or_else(|| {
+            SessionError::InvalidParam("No kind is on, so the layer rule names no item".to_owned())
+        })
     }
 
     /// The items of the model with id `model_id`, in import order, with
     /// an optional layer and kind filter: the `list_model_items` read.
     pub fn list_model_items(
         &self,
-        model_id: usize,
+        model_id: ModelId,
         layer: Option<&str>,
         kind: Option<ItemKind>,
     ) -> Result<Vec<ModelItem>, SessionError> {
@@ -1162,13 +1149,13 @@ impl ProjectSession {
     /// read lists `LoadedModel::items`, so it lists no face of an STL.
     pub fn list_model_items_near(
         &self,
-        model_id: usize,
+        model_id: ModelId,
         layer: Option<&str>,
         kind: Option<ItemKind>,
         near: Option<Near>,
     ) -> Result<Vec<ModelItem>, SessionError> {
         let model = self
-            .find_model_by_raw_id(model_id)
+            .model_by_id(model_id)
             .ok_or_else(|| SessionError::model_not_found(model_id, self))?;
         let source: Arc<ItemSet> = if kind == Some(ItemKind::Face) && model.faces_are_flat_regions()
         {
@@ -1198,7 +1185,7 @@ impl ProjectSession {
             .into_iter()
             .map(|item| ModelItem {
                 key: MatchKey {
-                    source: SourceRef::Model(ModelId(model_id)),
+                    source: SourceRef::Model(model_id),
                     ..item.key().clone()
                 },
                 kind: item.kind(),
@@ -1214,14 +1201,14 @@ impl ProjectSession {
 /// [`execute_build_model_faces`] holds no session and runs off the frame
 /// loop.
 pub struct BuildModelFacesHandle {
-    model_id: usize,
+    model_id: ModelId,
     mesh: Arc<crate::mesh::TriangleMesh>,
 }
 
 impl BuildModelFacesHandle {
     /// The model id the job builds the faces of.
     #[must_use]
-    pub fn model_id(&self) -> usize {
+    pub fn model_id(&self) -> ModelId {
         self.model_id
     }
 }
@@ -1231,7 +1218,7 @@ impl BuildModelFacesHandle {
 /// answer only names the model and the count.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelFacesBuilt {
-    pub model_id: usize,
+    pub model_id: ModelId,
     /// The count of the flat-region faces of the mesh.
     pub faces: usize,
 }
@@ -1242,10 +1229,10 @@ impl ProjectSession {
     /// its faces are in `items` and need no build.
     pub(crate) fn capture_build_model_faces(
         &self,
-        model_id: usize,
+        model_id: ModelId,
     ) -> Result<BuildModelFacesHandle, SessionError> {
         let model = self
-            .find_model_by_raw_id(model_id)
+            .model_by_id(model_id)
             .ok_or_else(|| SessionError::model_not_found(model_id, self))?;
         match (&model.mesh, model.faces_are_flat_regions()) {
             (Some(mesh), true) => Ok(BuildModelFacesHandle {
@@ -1396,11 +1383,11 @@ struct StatusKey {
     selection: Vec<u8>,
     op_type: OperationType,
     item_use: ItemUse,
-    model_id: usize,
-    models: Vec<(usize, Weak<ItemSet>)>,
+    model_id: ModelId,
+    models: Vec<(ModelId, Weak<ItemSet>)>,
     /// P4.7: the cached flat-region set of each mesh model the selection
     /// names a face on, or `None` while it is cold.
-    flat_faces: Vec<(usize, Option<Weak<ItemSet>>)>,
+    flat_faces: Vec<(ModelId, Option<Weak<ItemSet>>)>,
     face_up: FaceUp,
     z_rotation: ZRotation,
     world_stock: [u64; 6],

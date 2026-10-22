@@ -92,7 +92,7 @@ fn read(op: &OperationConfig, field: FeedsField) -> Option<f64> {
 /// The demo pocket: Ø6 two-flute flat end mill on a fresh Pocket op.
 fn demo_pocket() -> (ProjectSession, ToolConfig, OperationConfig) {
     let session = ProjectSession::new_empty();
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     let op = OperationConfig::new_default(OperationType::Pocket);
     (session, tool, op)
@@ -132,7 +132,7 @@ const FIXTURE_VBIT_ANGLE_DEG: f64 = 90.0;
 /// drill cell in softwood refused (ruling R1). A V-bit fixture takes the
 /// fixture V-bit (ruling B4).
 fn fixture_tool(op_type: OperationType, tool_type: ToolType) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(1), tool_type);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), tool_type);
     if matches!(
         op_type,
         OperationType::Drill | OperationType::AlignmentPinDrill

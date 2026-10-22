@@ -360,8 +360,8 @@ pub fn metric_distribution(
 ) -> Option<DistributionOutcome> {
     if verdict.toolpath_id != ctx.toolpath_id {
         tracing::warn!(
-            verdict_toolpath = verdict.toolpath_id.0,
-            ctx_toolpath = ctx.toolpath_id.0,
+            verdict_toolpath = verdict.toolpath_id.raw(),
+            ctx_toolpath = ctx.toolpath_id.raw(),
             "metric_distribution: the verdict is for a different toolpath"
         );
         return None;

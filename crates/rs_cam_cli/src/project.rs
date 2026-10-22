@@ -683,7 +683,7 @@ pub(crate) fn report_export_checks(
 #[derive(Serialize)]
 struct StockChangeSummaryEntry {
     setup_index: usize,
-    setup_id: usize,
+    setup_id: rs_cam_core::ids::SetupId,
     id: usize,
     name: String,
     enabled: bool,
@@ -707,7 +707,7 @@ impl StockChangeSummaryEntry {
         Self {
             setup_index: row.setup_index,
             setup_id: row.setup_id,
-            id: row.change.id.0,
+            id: row.change.id.raw(),
             name: row.change.name.clone(),
             enabled: row.change.enabled,
             op: row.change.op.label(),
@@ -747,13 +747,13 @@ fn check_toolpath_filters(
     let unknown: Vec<String> = skip_ids
         .iter()
         .filter(|id| session.find_toolpath_config_by_id(**id).is_none())
-        .map(|id| id.0.to_string())
+        .map(|id| id.raw().to_string())
         .collect();
     if !unknown.is_empty() {
         let valid: Vec<String> = session
             .toolpath_configs()
             .iter()
-            .map(|tc| tc.id.0.to_string())
+            .map(|tc| tc.id.raw().to_string())
             .collect();
         anyhow::bail!(
             "--skip names no toolpath with id {}. The project holds the ids: {}",
@@ -863,8 +863,8 @@ pub fn run_project_command(
             let matches = setup.name == filter || setup.id.to_string() == filter;
             if !matches {
                 // Gather toolpath IDs from non-matching setups
-                for &tp_idx in &setup.toolpath_indices {
-                    if let Some(tc) = session.get_toolpath_config(tp_idx) {
+                for &tp_idx in setup.toolpath_indices() {
+                    if let Some(tc) = session.toolpath_config_at(tp_idx) {
                         combined_skip.push(tc.id);
                     }
                 }
@@ -919,15 +919,16 @@ pub fn run_project_command(
         std::collections::HashSet::new();
 
     for idx in 0..tp_count {
-        if session.get_result(idx).is_none() {
+        if session.result_at(idx).is_none() {
             continue;
         }
         let tp_id = session
-            .get_toolpath_config(idx)
+            .toolpath_config_at(idx)
             .map(|tc| tc.id)
             // Defensive fallback mirrors the project-file loader: when a
             // config is somehow absent, the position doubles as the id.
-            .unwrap_or(rs_cam_core::ToolpathId(idx));
+            // F004 (W13b): an index in an id slot (the R3 class), kept.
+            .unwrap_or(rs_cam_core::ToolpathId::from_wire(idx));
         match session.collision_check(idx, &cancel) {
             Ok(Some(check)) => {
                 if !check.collision_report.is_clear() {
@@ -956,10 +957,10 @@ pub fn run_project_command(
     let diag = session.diagnostics();
 
     for idx in 0..tp_count {
-        let Some(result) = session.get_result(idx) else {
+        let Some(result) = session.result_at(idx) else {
             continue;
         };
-        let Some(tc) = session.get_toolpath_config(idx) else {
+        let Some(tc) = session.toolpath_config_at(idx) else {
             continue;
         };
 
@@ -1020,8 +1021,8 @@ pub fn run_project_command(
         && let Some(trace) = &sim_result.cut_trace
     {
         let included_ids: Vec<rs_cam_core::ToolpathId> = (0..tp_count)
-            .filter(|idx| session.get_result(*idx).is_some())
-            .filter_map(|idx| session.get_toolpath_config(idx).map(|tc| tc.id))
+            .filter(|idx| session.result_at(*idx).is_some())
+            .filter_map(|idx| session.toolpath_config_at(idx).map(|tc| tc.id))
             .collect();
 
         let sim_artifact = SimulationCutArtifact::new(
@@ -1335,8 +1336,8 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
             Ok(_) => {}
             Err(SessionError::FeedsRefused(e)) => {
                 warn!(
-                    toolpath_id = before.id.0,
-                    tool_id = before.tool_id,
+                    toolpath_id = before.id.raw(),
+                    tool_id = before.tool_id.raw(),
                     error = %e,
                     "Suggest refused this toolpath, leaving existing values"
                 );
@@ -1344,8 +1345,8 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
             }
             Err(SessionError::ToolNotFound(_)) => {
                 warn!(
-                    toolpath_id = before.id.0,
-                    tool_id = before.tool_id,
+                    toolpath_id = before.id.raw(),
+                    tool_id = before.tool_id.raw(),
                     "Tool not found, skipping suggest"
                 );
                 continue;
@@ -1514,7 +1515,7 @@ fn print_triage_report(
             eprintln!(
                 "  NOT MEASURED  {} on toolpath {} — {reason}",
                 e.metric.label(),
-                e.toolpath_id.0
+                e.toolpath_id.raw()
             );
         }
         eprintln!();
@@ -1585,7 +1586,7 @@ mod tests {
     /// field shows up as a wrong VALUE and not just a wrong key.
     fn core_diagnostic() -> rs_cam_core::session::ToolpathDiagnostic {
         rs_cam_core::session::ToolpathDiagnostic {
-            toolpath_id: rs_cam_core::ToolpathId(7),
+            toolpath_id: rs_cam_core::ToolpathId::from_raw(7),
             name: "Finish pass".to_owned(),
             operation_type: "Waterline".to_owned(),
             op_kind: "waterline".to_owned(),
@@ -1616,7 +1617,7 @@ mod tests {
                 cell_mm: 0.25,
                 stock_digest: Some("00000000000000ab".to_owned()),
                 after: vec![rs_cam_core::compute::source_stock::SourceEntryWire {
-                    id: rs_cam_core::ToolpathId(3),
+                    id: rs_cam_core::ToolpathId::from_raw(3),
                     output: "00000000000000cd".to_owned(),
                 }],
                 stock_changes: Vec::new(),
@@ -1632,8 +1633,8 @@ mod tests {
         let mut core = core_diagnostic();
         if let Some(source) = core.source_stock.as_mut() {
             source.stock_changes = vec![rs_cam_core::compute::source_stock::StockChangeEntryWire {
-                setup_id: 1,
-                id: rs_cam_core::ids::StockChangeId(2),
+                setup_id: rs_cam_core::ids::SetupId::from_raw(1),
+                id: rs_cam_core::ids::StockChangeId::from_raw(2),
                 effect: "00000000000000ef".to_owned(),
             }];
         }
@@ -1749,9 +1750,10 @@ mod tests {
     #[test]
     fn f014_an_unknown_skip_id_or_setup_is_refused() {
         let session = rs_cam_core::session::ProjectSession::new_empty();
-        let err = super::check_toolpath_filters(&session, &[rs_cam_core::ToolpathId(7)], None)
-            .err()
-            .map(|e| e.to_string());
+        let err =
+            super::check_toolpath_filters(&session, &[rs_cam_core::ToolpathId::from_raw(7)], None)
+                .err()
+                .map(|e| e.to_string());
         assert!(
             err.as_deref().is_some_and(|e| e.contains("id 7")),
             "{err:?}"

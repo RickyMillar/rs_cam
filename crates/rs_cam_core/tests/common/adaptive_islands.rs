@@ -213,7 +213,7 @@ pub fn adaptive_session_with(
 
 pub fn toolpath_of(session: &ProjectSession) -> Toolpath {
     session
-        .get_result(0)
+        .result_at(0)
         .expect("adaptive result")
         .toolpath()
         .clone()

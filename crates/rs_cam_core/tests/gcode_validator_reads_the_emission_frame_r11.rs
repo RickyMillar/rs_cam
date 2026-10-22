@@ -89,17 +89,33 @@ fn build_session() -> ProjectSession {
     });
 
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(polygon_model(
         vec![square(5.0, 5.0, 15.0), square(35.0, 35.0, 15.0)],
         "two_squares",
     ));
 
     let _ = builder
-        .add_toolpath(0, toolpath_config("TraceA", trace_op(), tool_id, model_id))
+        .add_toolpath(
+            0,
+            toolpath_config(
+                "TraceA",
+                trace_op(),
+                rs_cam_core::ids::ToolId::from_raw(tool_id),
+                model_id,
+            ),
+        )
         .expect("add trace A");
     let _ = builder
-        .add_toolpath(0, toolpath_config("TraceB", trace_op(), tool_id, model_id))
+        .add_toolpath(
+            0,
+            toolpath_config(
+                "TraceB",
+                trace_op(),
+                rs_cam_core::ids::ToolId::from_raw(tool_id),
+                model_id,
+            ),
+        )
         .expect("add trace B");
     builder.build()
 }

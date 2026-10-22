@@ -246,7 +246,7 @@ fn hardwood() -> Material {
 /// The tool builder of `feeds_matrix_instrument_fm1.rs`, for the two tool
 /// types this file uses.
 fn tool_of(kind: ToolType, diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), kind);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;
     t.flute_count = 2;
     t.cutting_length = (diameter * 3.0).max(12.0);
@@ -313,7 +313,7 @@ fn steady_trace(cell: &PointCell, rpm: u32, feed: f64) -> SimulationCutTrace {
     let chip = feed / (f64::from(rpm) * 2.0);
     let samples: Vec<SimulationCutSample> = (0..12)
         .map(|idx| SimulationCutSample {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             move_index: idx,
             sample_index: idx,
             position: [0.0, 0.0, -cell.sample_doc_mm],
@@ -401,7 +401,7 @@ fn assert_the_cell_is_held_as_a_point(cell: &PointCell) {
     let machine = MachineProfile::default();
     let tolerance = ToleranceBands::default();
     let ctx = ToolpathLoadContext {
-        toolpath_id: ToolpathId(0),
+        toolpath_id: ToolpathId::from_raw(0),
         tool: &tool_def,
         material: &material,
         operation_family: cell.operation_family,
@@ -469,7 +469,7 @@ fn assert_the_cell_is_held_as_a_point(cell: &PointCell) {
         &material,
         &cell.tool,
         &operation,
-        ToolpathId(0),
+        ToolpathId::from_raw(0),
         Some(&trace),
     );
     let target_point = match &target {
@@ -504,7 +504,7 @@ fn assert_the_cell_is_held_as_a_point(cell: &PointCell) {
         &material,
         &cell.tool,
         &operation,
-        ToolpathId(0),
+        ToolpathId::from_raw(0),
         Some(&trace),
     )
     .and_then(|target| target.band_range());

@@ -53,7 +53,7 @@ fn the_projection_keeps_the_three_fields_the_entry_cannot_supply_wp5() {
     // A widget cannot write these two, so the entry is the wrong place to
     // read them from. Set the id to a value the session does not carry,
     // and the projection must still answer with the stored one.
-    entry.id = ToolpathId(4242);
+    entry.id = ToolpathId::from_raw(4242);
     entry.name = "renamed".to_owned();
 
     let (_, stored) = controller
@@ -111,7 +111,7 @@ fn an_open_panel_that_edits_nothing_drops_no_result_wp5() {
     }
 
     assert!(
-        controller.state.session().get_result(0).is_some(),
+        controller.state.session().result_at(0).is_some(),
         "a frame that moved no generation input must keep the cached \
          result"
     );
@@ -148,7 +148,7 @@ fn freshness_state_g_freshness_op_field_edit_is_edited_since() {
 
     assert_eq!(state_of(&controller, 0), FreshnessState::EditedSince);
     assert!(
-        controller.state.session().get_result(0).is_none(),
+        controller.state.session().result_at(0).is_none(),
         "the core must not keep a result for inputs that moved"
     );
     assert!(
@@ -212,7 +212,7 @@ fn freshness_state_g_freshness_every_inspector_input_stales() {
             "{label}: an edited input must not read Current"
         );
         assert!(
-            controller.state.session().get_result(0).is_none(),
+            controller.state.session().result_at(0).is_none(),
             "{label}: the core result must be gone"
         );
         assert!(controller.state.gui.dirty, "{label}: the project is dirty");
@@ -227,7 +227,10 @@ fn freshness_state_g_freshness_tool_and_model_reassignment_stale() {
     for row in ["tool", "model"] {
         let mut controller = sample_controller();
         let mut tools = controller.state.session().tools().to_vec();
-        tools.push(ToolConfig::new_default(ToolId(2), ToolType::EndMill));
+        tools.push(ToolConfig::new_default(
+            ToolId::from_raw(2),
+            ToolType::EndMill,
+        ));
         let _ = controller
             .state
             .apply(Command::ReplaceTools(ReplaceToolsArgs { tools }))
@@ -236,9 +239,9 @@ fn freshness_state_g_freshness_tool_and_model_reassignment_stale() {
         let id = controller.state.session().toolpath_configs()[0].id;
         panel_edit(&mut controller, id, |entry| {
             if row == "tool" {
-                entry.tool_id = crate::state::job::ToolId(2);
+                entry.tool_id = crate::state::job::ToolId::from_raw(2);
             } else {
-                entry.model_id = crate::state::job::ModelId(7);
+                entry.model_id = crate::state::job::ModelId::from_raw(7);
             }
         });
         assert_eq!(
@@ -246,7 +249,7 @@ fn freshness_state_g_freshness_tool_and_model_reassignment_stale() {
             FreshnessState::EditedSince,
             "{row} reassignment"
         );
-        assert!(controller.state.session().get_result(0).is_none());
+        assert!(controller.state.session().result_at(0).is_none());
     }
 }
 
@@ -266,7 +269,7 @@ fn name_and_gcode_edits_do_not_stale() {
     });
 
     assert_eq!(state_of(&controller, 0), FreshnessState::Current);
-    assert!(controller.state.session().get_result(0).is_some());
+    assert!(controller.state.session().result_at(0).is_some());
     assert_eq!(
         controller.state.session().toolpath_configs()[0].name,
         "Renamed",
@@ -359,7 +362,7 @@ fn freshness_stock_edit_stales_every_toolpath() {
             FreshnessState::EditedSince,
             "toolpath {index} after a stock edit"
         );
-        assert!(controller.state.session().get_result(index).is_none());
+        assert!(controller.state.session().result_at(index).is_none());
     }
     assert!(controller.state.gui.dirty);
     assert!(
@@ -385,7 +388,7 @@ fn freshness_machine_kinematics_leaves_toolpaths_current() {
         },
     ));
     assert_eq!(state_of(&controller, 0), FreshnessState::Current);
-    assert!(controller.state.session().get_result(0).is_some());
+    assert!(controller.state.session().result_at(0).is_some());
     assert!(controller.state.session().simulation_result().is_none());
 }
 
@@ -438,7 +441,7 @@ fn freshness_tool_edit_stales_its_users_and_requests_regeneration() {
 
     let mut draft = controller.state.session().tools()[0].clone();
     draft.diameter += 1.0;
-    crate::ui::properties::commit_tool_draft(&mut controller.state, ToolId(1), draft);
+    crate::ui::properties::commit_tool_draft(&mut controller.state, ToolId::from_raw(1), draft);
 
     assert_eq!(state_of(&controller, 0), FreshnessState::EditedSince);
     assert!(
@@ -454,7 +457,7 @@ fn freshness_tool_edit_stales_its_users_and_requests_regeneration() {
 fn toolpath_revision_bumps_on_every_input_drop() {
     let mut controller = sample_controller();
     generate_all_for_test(&mut controller);
-    let before = controller.state.session().toolpath_revision(0);
+    let before = controller.state.session().toolpath_revision_at(0);
 
     let _ = controller
         .state
@@ -465,7 +468,7 @@ fn toolpath_revision_bumps_on_every_input_drop() {
         }))
         .expect("index is in range");
     assert_eq!(
-        controller.state.session().toolpath_revision(0),
+        controller.state.session().toolpath_revision_at(0),
         before,
         "recording an answer is not a change of inputs"
     );
@@ -475,7 +478,7 @@ fn toolpath_revision_bumps_on_every_input_drop() {
         entry.operation.set_feed_rate(999.0);
     });
     assert!(
-        controller.state.session().toolpath_revision(0) > before,
+        controller.state.session().toolpath_revision_at(0) > before,
         "an input edit must move the revision"
     );
 }

@@ -48,7 +48,7 @@ const SMALL: AlignmentPin = AlignmentPin::new(10.0, 50.0, 6.0);
 const LARGE: AlignmentPin = AlignmentPin::new(90.0, 50.0, 8.0);
 
 fn drill(id: usize, diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(id), ToolType::VBit);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(id), ToolType::VBit);
     t.diameter = diameter;
     t
 }
@@ -56,7 +56,7 @@ fn drill(id: usize, diameter: f64) -> ToolConfig {
 fn pin_drill_op(diameter: f64, tool_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: format!("Pin Drill {diameter:.2} mm"),
         enabled: true,
         operation: OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
@@ -66,8 +66,8 @@ fn pin_drill_op(diameter: f64, tool_id: usize) -> ToolpathConfig {
         }),
         dressups: DressupConfig::for_op(OperationType::AlignmentPinDrill),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id: usize::MAX,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(usize::MAX),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -177,7 +177,7 @@ fn the_bindings_name_one_drill_per_size() {
             bindings[0].op_index,
             bindings[0].tool_id
         ),
-        (6.0, Some(0), Some(6))
+        (6.0, Some(0), Some(rs_cam_core::ids::ToolId::from_raw(6)))
     );
     assert_eq!(
         (
@@ -185,7 +185,7 @@ fn the_bindings_name_one_drill_per_size() {
             bindings[1].op_index,
             bindings[1].tool_id
         ),
-        (8.0, Some(1), Some(8))
+        (8.0, Some(1), Some(rs_cam_core::ids::ToolId::from_raw(8)))
     );
     assert!(
         s.pin_placement_findings()
@@ -211,10 +211,13 @@ fn the_bindings_name_one_drill_per_size() {
 #[test]
 fn a_size_without_an_operation_takes_a_tool_of_its_size() {
     let s = session(&[(6.0, 6)]);
-    assert_eq!(s.pin_drill_tool_for(6.0), Some(6));
+    assert_eq!(
+        s.pin_drill_tool_for(6.0),
+        Some(rs_cam_core::ids::ToolId::from_raw(6))
+    );
     assert_eq!(
         s.pin_drill_tool_for(8.0),
-        Some(8),
+        Some(rs_cam_core::ids::ToolId::from_raw(8)),
         "the 8 mm drill, never the 6 mm one"
     );
     assert_eq!(s.pin_drill_tool_for(10.0), None, "no 10 mm tool");
@@ -226,7 +229,7 @@ fn a_size_without_an_operation_takes_a_tool_of_its_size() {
 #[test]
 fn drilled_twice_is_judged_per_size() {
     let op = HoleOp {
-        toolpath_id: 7,
+        toolpath_id: rs_cam_core::ids::ToolpathId::from_raw(7),
         name: "Dowel drawing".to_owned(),
         kind: HoleOpKind::Drill,
         holes: vec![DrilledHole {

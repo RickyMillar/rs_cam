@@ -107,7 +107,7 @@ fn walk(dispatch: StampDispatch) -> (Vec<SimulationCutSample>, f64, Toolpath) {
             &cutter,
             cutter.radius(),
             StockCutDirection::FromTop,
-            ToolpathId(1),
+            ToolpathId::from_raw(1),
             18_000,
             2,
             RAPID,

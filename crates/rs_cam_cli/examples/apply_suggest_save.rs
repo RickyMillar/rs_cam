@@ -47,14 +47,14 @@ fn main() -> Result<()> {
     // whole-config row.
     let toolpath_count = session.toolpath_count();
     for index in 0..toolpath_count {
-        let Some(stored) = session.get_toolpath_config(index) else {
+        let Some(stored) = session.toolpath_config_at(index) else {
             continue;
         };
         if !stored.enabled {
             continue;
         }
         let mut tc = stored.clone();
-        let Some(tool) = tools_snapshot.iter().find(|t| t.id.0 == tc.tool_id) else {
+        let Some(tool) = tools_snapshot.iter().find(|t| t.id == tc.tool_id) else {
             eprintln!("skip {} (tool {} missing)", tc.id, tc.tool_id);
             continue;
         };

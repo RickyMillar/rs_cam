@@ -61,7 +61,7 @@ impl<B: ComputeBackend> AppController<B> {
         units: Option<ModelUnits>,
     ) -> Result<(), VizError> {
         let command = Command::AdoptModelGeometry(AdoptModelGeometryArgs {
-            model_id: model_id.0,
+            model_id,
             geometry: Box::new(geometry),
             units,
         });
@@ -75,7 +75,7 @@ impl<B: ComputeBackend> AppController<B> {
         // The id is reassigned by the session.
         let model = import::import_model(
             path,
-            0,
+            rs_cam_core::ids::ModelId::placeholder(),
             ModelKind::Stl,
             ModelUnits::Millimeters,
             ImportOptions::default(),
@@ -92,8 +92,17 @@ impl<B: ComputeBackend> AppController<B> {
             model: Box::new(model),
         });
         let assigned_id = self.apply_created(command);
-        if let Some(assigned_id) = assigned_id {
-            self.state.selection = Selection::Model(ModelId(assigned_id));
+        // `Effects::created` holds the raw id of the new model; select
+        // the model that has it.
+        if let Some(model_id) = assigned_id.and_then(|raw| {
+            self.state
+                .session()
+                .models()
+                .iter()
+                .find(|m| m.id.raw() == raw)
+                .map(|m| m.id)
+        }) {
+            self.state.selection = Selection::Model(model_id);
         }
         self.state.gui.mark_edited();
         self.pending_upload = true;
@@ -112,8 +121,17 @@ impl<B: ComputeBackend> AppController<B> {
             model: Box::new(model),
         });
         let assigned_id = self.apply_created(command);
-        if let Some(assigned_id) = assigned_id {
-            self.state.selection = Selection::Model(ModelId(assigned_id));
+        // `Effects::created` holds the raw id of the new model; select
+        // the model that has it.
+        if let Some(model_id) = assigned_id.and_then(|raw| {
+            self.state
+                .session()
+                .models()
+                .iter()
+                .find(|m| m.id.raw() == raw)
+                .map(|m| m.id)
+        }) {
+            self.state.selection = Selection::Model(model_id);
         }
         self.state.gui.mark_edited();
         self.pending_upload = true;
@@ -168,7 +186,7 @@ impl<B: ComputeBackend> AppController<B> {
     pub fn import_step_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {
         let model = import::import_model(
             path,
-            0,
+            rs_cam_core::ids::ModelId::placeholder(),
             ModelKind::Step,
             ModelUnits::Millimeters,
             ImportOptions::default(),
@@ -185,8 +203,17 @@ impl<B: ComputeBackend> AppController<B> {
             model: Box::new(model),
         });
         let assigned_id = self.apply_created(command);
-        if let Some(assigned_id) = assigned_id {
-            self.state.selection = Selection::Model(ModelId(assigned_id));
+        // `Effects::created` holds the raw id of the new model; select
+        // the model that has it.
+        if let Some(model_id) = assigned_id.and_then(|raw| {
+            self.state
+                .session()
+                .models()
+                .iter()
+                .find(|m| m.id.raw() == raw)
+                .map(|m| m.id)
+        }) {
+            self.state.selection = Selection::Model(model_id);
         }
         self.state.gui.mark_edited();
         self.pending_upload = true;
@@ -203,7 +230,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session()
             .models()
             .iter()
-            .find(|m| m.id == model_id.0)
+            .find(|m| m.id == model_id)
         else {
             return Ok(None);
         };
@@ -214,7 +241,7 @@ impl<B: ComputeBackend> AppController<B> {
         let kind = model.kind.unwrap_or(ModelKind::Stl);
         // P4.8: a rescale keeps the record's import options.
         let options = model.import_options;
-        let new_model = import::import_model(&path, model_id.0, kind, new_units, options)?;
+        let new_model = import::import_model(&path, model_id, kind, new_units, options)?;
         let bbox = new_model.bbox();
         let auto_stock = self.state.session().stock_config().auto_from_model;
 
@@ -241,7 +268,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session()
             .models()
             .iter()
-            .find(|m| m.id == model_id.0)
+            .find(|m| m.id == model_id)
             .and_then(|m| m.mesh.as_ref())
             .map(|mesh| mesh.bbox);
         if let Some(mesh_bbox) = mesh_bbox
@@ -271,7 +298,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session()
             .models()
             .iter()
-            .find(|m| m.id == model_id.0)
+            .find(|m| m.id == model_id)
         else {
             return Err(VizError::Other(format!("Model {model_id:?} not found")));
         };
@@ -281,7 +308,7 @@ impl<B: ComputeBackend> AppController<B> {
         }
         let path = model.path.clone();
         let units = model.units.unwrap_or(ModelUnits::Millimeters);
-        let fresh = import::import_model(&path, model_id.0, kind, units, options)?;
+        let fresh = import::import_model(&path, model_id, kind, units, options)?;
         self.adopt_model_geometry(model_id, fresh, None)?;
         self.pending_upload = true;
         self.state.gui.mark_edited();
@@ -315,15 +342,12 @@ impl<B: ComputeBackend> AppController<B> {
                 .session()
                 .models()
                 .iter()
-                .find(|m| m.id == model_id.0)
+                .find(|m| m.id == model_id)
                 .map(|m| m.drawing.edits().to_vec())
         };
         let before = ledger(&self.state).unwrap_or_default();
         let _mirrored = self.apply(Command::EditModelDrawing(
-            rs_cam_core::session::EditModelDrawingArgs {
-                model_id: model_id.0,
-                edit,
-            },
+            rs_cam_core::session::EditModelDrawingArgs { model_id, edit },
         ))?;
         let after = ledger(&self.state).unwrap_or_default();
         if record_undo && before != after {
@@ -347,7 +371,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session()
             .models()
             .iter()
-            .find(|m| m.id == model_id.0)
+            .find(|m| m.id == model_id)
         else {
             return Err(VizError::Other(format!("Model {model_id:?} not found")));
         };
@@ -358,7 +382,7 @@ impl<B: ComputeBackend> AppController<B> {
         // P4.8: a reload reads the file with the record's import options.
         let options = model.import_options;
 
-        let reloaded = import::import_model(&path, model_id.0, kind, units, options)?;
+        let reloaded = import::import_model(&path, model_id, kind, units, options)?;
 
         // G-RELOADTARGETS (F4.4). This door used to assign five fields
         // by hand and never `drill_targets` or `layers`, so the previous
@@ -405,7 +429,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session()
             .models()
             .iter()
-            .find(|m| m.id == model_id.0)
+            .find(|m| m.id == model_id)
         else {
             return Err(VizError::Other(format!("Model {model_id:?} not found")));
         };
@@ -441,7 +465,7 @@ impl<B: ComputeBackend> AppController<B> {
         // The interactive door, as Import and Reload use — the door the
         // `model_units_survive_reload_g_unitsreload` sentry pins against the
         // project door.
-        let relinked = import::import_model(new_path, model_id.0, kind, units, options)?;
+        let relinked = import::import_model(new_path, model_id, kind, units, options)?;
 
         // Moved, not cloned: `relinked` is this function's own import and
         // is dropped here. The field split this door wrote by hand is now
@@ -639,5 +663,12 @@ fn import_preview(
     units: ModelUnits,
     options: ImportOptions,
 ) -> Result<rs_cam_core::session::LoadedModel, String> {
-    import::import_model(path, 0, kind, units, options).map_err(|e| e.to_string())
+    import::import_model(
+        path,
+        rs_cam_core::ids::ModelId::placeholder(),
+        kind,
+        units,
+        options,
+    )
+    .map_err(|e| e.to_string())
 }

@@ -70,7 +70,7 @@ pub fn run_fixpoint_ladder(label: &str, s: &mut ProjectSession) {
     let cancel = AtomicBool::new(false);
     let n = s.toolpath_count();
     let enabled: Vec<usize> = (0..n)
-        .filter(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.enabled))
+        .filter(|&i| s.toolpath_config_at(i).is_some_and(|tc| tc.enabled))
         .collect();
 
     // Pass 1: rest ops fail hard from fresh state by design (F.4).

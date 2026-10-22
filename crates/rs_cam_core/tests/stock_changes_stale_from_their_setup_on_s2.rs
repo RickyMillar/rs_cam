@@ -69,14 +69,14 @@ fn tc(
 ) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -92,7 +92,7 @@ fn tc(
 
 fn model(name: &str) -> LoadedModel {
     LoadedModel {
-        id: 0, // overwritten by `add_model`
+        id: rs_cam_core::ids::ModelId::from_raw(0), // overwritten by `add_model`
         name: name.to_owned(),
         mesh: None,
         items: Default::default(),
@@ -161,7 +161,7 @@ fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
 }
 
 fn adopt(s: &mut ProjectSession, index: usize) {
-    let revision = s.toolpath_revision(index);
+    let revision = s.toolpath_revision_at(index);
     let _ = s
         .apply(Command::AdoptResult(AdoptResultArgs {
             index,
@@ -184,16 +184,19 @@ struct Models {
 /// the rest operation.
 fn fixture() -> (ProjectSession, Models) {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
     // The toolpaths name this model, so a refresh of the other three
     // reaches the toolpaths only through a stock change.
     let part = builder.add_model(model("part.svg"));
-    let outline = ModelId(builder.add_model(outline_model()));
-    let open_path = ModelId(builder.add_model(open_path_model()));
-    let mesh = ModelId(builder.add_model(mesh_model()));
+    let outline = builder.add_model(outline_model());
+    let open_path = builder.add_model(open_path_model());
+    let mesh = builder.add_model(mesh_model());
     let _ = builder.add_setup("Setup 2".to_owned(), FaceUp::Bottom);
     let _ = builder.add_setup("Setup 3".to_owned(), FaceUp::Top);
-    let tool = builder.tools()[0].id.0;
+    let tool = builder.tools()[0].id.raw();
     for setup in 0..3 {
         let _ = builder
             .add_toolpath(
@@ -203,7 +206,7 @@ fn fixture() -> (ProjectSession, Models) {
                     OperationConfig::Pocket(PocketConfig::default()),
                     StockSource::Fresh,
                     tool,
-                    part,
+                    part.raw(),
                 ),
             )
             .unwrap();
@@ -215,7 +218,7 @@ fn fixture() -> (ProjectSession, Models) {
                     OperationConfig::Pocket(PocketConfig::default()),
                     StockSource::FromRemainingStock,
                     tool,
-                    part,
+                    part.raw(),
                 ),
             )
             .unwrap();
@@ -239,13 +242,13 @@ fn fixture() -> (ProjectSession, Models) {
 
 fn live(s: &ProjectSession) -> BTreeSet<usize> {
     (0..s.toolpath_count())
-        .filter(|&i| s.get_result(i).is_some())
+        .filter(|&i| s.result_at(i).is_some())
         .collect()
 }
 
 fn fill(id: usize, model: ModelId, level_z: f64) -> StockChange {
     StockChange {
-        id: StockChangeId(id),
+        id: StockChangeId::from_raw(id),
         name: format!("Fill {id}"),
         enabled: true,
         op: StockChangeOp::Add,
@@ -266,7 +269,7 @@ fn fill(id: usize, model: ModelId, level_z: f64) -> StockChange {
 /// `Remove` cannot use an outline fill: the command doors refuse it.
 fn cut(id: usize, model: ModelId, z_bottom: f64, z_top: f64) -> StockChange {
     StockChange {
-        id: StockChangeId(id),
+        id: StockChangeId::from_raw(id),
         name: format!("Cut {id}"),
         enabled: true,
         op: StockChangeOp::Remove,
@@ -313,7 +316,7 @@ fn ids(s: &ProjectSession, setup_index: usize) -> Vec<usize> {
     s.list_setups()[setup_index]
         .stock_changes
         .iter()
-        .map(|c| c.id.0)
+        .map(|c| c.id.raw())
         .collect()
 }
 
@@ -324,7 +327,7 @@ fn the_four_rows_add_edit_move_and_remove() {
     let (mut s, m) = fixture();
     add(&mut s, 1, fill(1, m.outline, 5.0)).unwrap();
     let extrude = StockChange {
-        id: StockChangeId(2),
+        id: StockChangeId::from_raw(2),
         name: "Riser".to_owned(),
         enabled: true,
         op: StockChangeOp::Add,
@@ -339,7 +342,7 @@ fn the_four_rows_add_edit_move_and_remove() {
     };
     add(&mut s, 1, extrude).unwrap();
     let cut_free = StockChange {
-        id: StockChangeId(3),
+        id: StockChangeId::from_raw(3),
         name: "Cut free".to_owned(),
         enabled: true,
         op: StockChangeOp::Remove,
@@ -369,7 +372,7 @@ fn the_four_rows_add_edit_move_and_remove() {
     let _ = s
         .apply(Command::MoveStockChange(MoveStockChangeArgs {
             setup_index: 1,
-            change_id: StockChangeId(3),
+            change_id: StockChangeId::from_raw(3),
             to_position: 0,
         }))
         .unwrap();
@@ -379,7 +382,7 @@ fn the_four_rows_add_edit_move_and_remove() {
     let _ = s
         .apply(Command::RemoveStockChange(RemoveStockChangeArgs {
             setup_index: 1,
-            change_id: StockChangeId(1),
+            change_id: StockChangeId::from_raw(1),
         }))
         .unwrap();
     assert_eq!(ids(&s, 1), vec![3, 2]);
@@ -404,9 +407,9 @@ fn each_rule_refuses_by_name_and_writes_nothing() {
 
     // An unknown model id.
     assert_eq!(
-        refused(add(&mut s, 0, fill(1, ModelId(99), 1.0))),
+        refused(add(&mut s, 0, fill(1, ModelId::from_raw(99), 1.0))),
         StockChangeRefusal::UnknownModel {
-            model_id: ModelId(99)
+            model_id: ModelId::from_raw(99)
         }
     );
     // A `Model` geometry needs a mesh.
@@ -496,7 +499,7 @@ fn each_rule_refuses_by_name_and_writes_nothing() {
     assert_eq!(
         refused(add(&mut s, 0, fill(1, m.outline, 2.0))),
         StockChangeRefusal::DuplicateId {
-            id: StockChangeId(1)
+            id: StockChangeId::from_raw(1)
         }
     );
     assert_eq!(ids(&s, 0), vec![1]);
@@ -516,7 +519,7 @@ fn each_rule_refuses_by_name_and_writes_nothing() {
     assert!(matches!(
         s.apply(Command::ReplaceStockChange(ReplaceStockChangeArgs {
             setup_index: 0,
-            change_id: StockChangeId(1),
+            change_id: StockChangeId::from_raw(1),
             change: Box::new(fill(2, m.outline, 1.0)),
         })),
         Err(SessionError::InvalidParam(_))
@@ -524,7 +527,7 @@ fn each_rule_refuses_by_name_and_writes_nothing() {
     assert!(matches!(
         s.apply(Command::MoveStockChange(MoveStockChangeArgs {
             setup_index: 0,
-            change_id: StockChangeId(1),
+            change_id: StockChangeId::from_raw(1),
             to_position: 1,
         })),
         Err(SessionError::InvalidParam(_))
@@ -532,7 +535,7 @@ fn each_rule_refuses_by_name_and_writes_nothing() {
     assert!(matches!(
         s.apply(Command::RemoveStockChange(RemoveStockChangeArgs {
             setup_index: 0,
-            change_id: StockChangeId(7),
+            change_id: StockChangeId::from_raw(7),
         })),
         Err(SessionError::InvalidParam(_))
     ));
@@ -675,7 +678,7 @@ fn only_an_edit_that_moves_the_effect_drops() {
             &mut s,
             Command::MoveStockChange(MoveStockChangeArgs {
                 setup_index: 1,
-                change_id: StockChangeId(2),
+                change_id: StockChangeId::from_raw(2),
                 to_position: 0,
             })
         ),
@@ -692,7 +695,7 @@ fn only_an_edit_that_moves_the_effect_drops() {
             &mut s,
             Command::MoveStockChange(MoveStockChangeArgs {
                 setup_index: 1,
-                change_id: StockChangeId(2),
+                change_id: StockChangeId::from_raw(2),
                 to_position: 1,
             })
         ),
@@ -705,7 +708,7 @@ fn only_an_edit_that_moves_the_effect_drops() {
             &mut s,
             Command::RemoveStockChange(RemoveStockChangeArgs {
                 setup_index: 1,
-                change_id: StockChangeId(1),
+                change_id: StockChangeId::from_raw(1),
             })
         ),
         "a removal drops"
@@ -726,9 +729,9 @@ fn a_disabled_rest_op_loses_its_result_too() {
         ))
         .unwrap();
     adopt(&mut s, 5);
-    assert!(s.get_result(5).is_some());
+    assert!(s.result_at(5).is_some());
     add(&mut s, 1, fill(1, m.outline, 5.0)).unwrap();
-    assert!(s.get_result(5).is_none());
+    assert!(s.result_at(5).is_none());
 }
 
 // ── 4. a model refresh under a stock change ──────────────────────
@@ -743,7 +746,7 @@ fn a_model_refresh_under_a_stock_change_stales_from_that_setup_on() {
     assert!(
         s.toolpath_configs()
             .iter()
-            .all(|tc| tc.model_id != m.outline.0),
+            .all(|tc| tc.model_id != m.outline),
         "no toolpath reads the outline model itself"
     );
     let epoch = s.simulation_epoch();
@@ -753,7 +756,7 @@ fn a_model_refresh_under_a_stock_change_stales_from_that_setup_on() {
     ]));
     let _ = s
         .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
-            model_id: m.outline.0,
+            model_id: m.outline,
             geometry: Box::new(geometry),
             units: None,
         }))
@@ -775,7 +778,7 @@ fn a_model_refresh_under_a_stock_change_spares_the_earlier_setups() {
     assert_eq!(live(&s).len(), 6);
     let _ = s
         .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
-            model_id: m.mesh.0,
+            model_id: m.mesh,
             geometry: Box::new(mesh_model()),
             units: None,
         }))

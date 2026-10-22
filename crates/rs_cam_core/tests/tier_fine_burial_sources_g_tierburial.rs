@@ -207,7 +207,7 @@ fn load() -> (ProjectSession, usize, Option<ArcFitParams>) {
             source: StockSource::Fresh,
         }))
         .unwrap();
-    let mut dressups = session.get_toolpath_config(index).unwrap().dressups.clone();
+    let mut dressups = session.toolpath_config_at(index).unwrap().dressups.clone();
     let emitted = dressups.arc_fitting.take();
     let _ = session
         .apply(Command::SetDressupConfig(SetDressupConfigArgs {
@@ -223,11 +223,11 @@ fn load() -> (ProjectSession, usize, Option<ArcFitParams>) {
 fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
     let arms = std::env::var("ARMS").unwrap_or_else(|_| "base".into());
     let (mut session, index, _) = load();
-    let tc = session.get_toolpath_config(index).unwrap().clone();
+    let tc = session.toolpath_config_at(index).unwrap().clone();
     let tool = session
         .tools()
         .iter()
-        .find(|t| t.id.0 == tc.tool_id)
+        .find(|t| t.id == tc.tool_id)
         .unwrap()
         .clone();
     let cutter = build_cutter(&tool).unwrap();
@@ -288,7 +288,7 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
         } else {
             i2
         };
-        let tc = s.get_toolpath_config(index).unwrap().clone();
+        let tc = s.toolpath_config_at(index).unwrap().clone();
         // An arm is `_`-separated flags: `nohookup` (intra_region_hookup_mm
         // 0), `norapid` (rapid order off), `nofeedopt` (feed optimisation
         // off), `nodressups` (both), `arcs` (the fixture's own arc fitting,
@@ -328,7 +328,7 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
         }
         let t0 = std::time::Instant::now();
         s.generate_toolpath(index, &cancel).unwrap();
-        let tp = s.get_result(index).unwrap().toolpath().clone();
+        let tp = s.result_at(index).unwrap().toolpath().clone();
         let samples = buried_samples(&tp, &probe, 0.1);
         let max = samples.iter().map(|x| x.depth).fold(0.0, f64::max);
         let machine = s.machine();
@@ -371,7 +371,7 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
         }) {
             let m = x.move_index;
             let region = s
-                .get_result(index)
+                .result_at(index)
                 .unwrap()
                 .annotated()
                 .spans_at(m)
@@ -390,7 +390,7 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
             }
         }
         {
-            let ann = std::sync::Arc::clone(s.get_result(index).unwrap().annotated());
+            let ann = std::sync::Arc::clone(s.result_at(index).unwrap().annotated());
             let mut by: std::collections::BTreeMap<String, (usize, f64)> = Default::default();
             for x in samples
                 .iter()
@@ -656,7 +656,7 @@ fn burial_classes_stages_and_sim_on_the_rivmap100_fine_tier() {
                 m.target
             );
             let region = s
-                .get_result(index)
+                .result_at(index)
                 .unwrap()
                 .annotated()
                 .spans_at(i)

@@ -117,14 +117,14 @@ fn tapered_ball_tool() -> ToolConfig {
         diameter: TIP_DIAMETER_MM,
         taper_half_angle: TAPER_HALF_ANGLE_DEG,
         shaft_diameter: SHANK_DIAMETER_MM,
-        ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
     }
 }
 
 fn ball_tool() -> ToolConfig {
     ToolConfig {
         diameter: BALL_DIAMETER_MM,
-        ..ToolConfig::new_default(ToolId(0), ToolType::BallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose)
     }
 }
 
@@ -182,7 +182,7 @@ fn two_groove_plateau() -> TriangleMesh {
 
 fn mesh_model(mesh: TriangleMesh) -> LoadedModel {
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "two_groove_plateau".to_owned(),
         mesh: Some(Arc::new(mesh)),
         items: Default::default(),
@@ -231,7 +231,7 @@ fn toolpath(op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathCon
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Unified Finish".to_owned(),
         enabled: true,
         operation: op,
@@ -245,8 +245,8 @@ fn toolpath(op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathCon
             bottom_z: HeightMode::Manual(-9.0),
             ..HeightsConfig::default()
         },
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -279,10 +279,10 @@ fn stock() -> StockConfig {
 fn generate_through_session(tool: ToolConfig) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(tool);
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(mesh_model(two_groove_plateau()));
     let _ = builder
-        .add_toolpath(0, toolpath(unified_finish_op(), tool_id, model_id))
+        .add_toolpath(0, toolpath(unified_finish_op(), tool_id, model_id.raw()))
         .expect("add unified-finish toolpath");
     let mut session = builder.build();
     let cancel = AtomicBool::new(false);
@@ -313,7 +313,7 @@ struct SemanticNode {
 }
 
 fn semantic_nodes(session: &ProjectSession) -> Vec<SemanticNode> {
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     let trace = result
         .semantic_trace
         .as_ref()
@@ -363,7 +363,7 @@ fn node_from_item(item: &ToolpathSemanticItem) -> SemanticNode {
 /// LABEL STRING; a label is free text and no producer was obliged to keep
 /// it, so a rename would have emptied this list silently.
 fn structural_nodes(session: &ProjectSession) -> Vec<(usize, usize, String)> {
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     let mut nodes: Vec<(usize, usize, String)> = result
         .annotated()
         .spans
@@ -383,7 +383,7 @@ fn structural_nodes(session: &ProjectSession) -> Vec<(usize, usize, String)> {
 }
 
 fn finishing_cuts_in(session: &ProjectSession, range: (usize, usize)) -> usize {
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     result.toolpath().moves[range.0..range.1]
         .iter()
         .filter(|mv| mv.move_type.is_cutting() && mv.intent == MoveIntent::FinishingCut)
@@ -419,7 +419,7 @@ fn paired_nodes(session: &ProjectSession) -> Vec<(SemanticNode, (usize, usize, S
 }
 
 fn describe(label: &str, session: &ProjectSession) -> Vec<SemanticNode> {
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     let nodes = semantic_nodes(session);
     println!(
         "[{label}] {} moves, spans_valid {}, {} region nodes",
@@ -453,7 +453,7 @@ fn describe(label: &str, session: &ProjectSession) -> Vec<SemanticNode> {
 
 /// Per-move flag: is this move inside some structural region node?
 fn covered_moves(session: &ProjectSession) -> Vec<bool> {
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     let mut covered = vec![false; result.toolpath().moves.len()];
     for (start, end, _) in structural_nodes(session) {
         for flag in covered.iter_mut().take(end).skip(start) {
@@ -468,7 +468,7 @@ fn covered_moves(session: &ProjectSession) -> Vec<bool> {
 /// The M2.1 acceptance gate. Non-vacuity first: moves, then nodes, then
 /// the property.
 fn assert_a_non_shallow_band_cuts(session: &ProjectSession, label: &str) -> Vec<SemanticNode> {
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     assert!(
         !result.toolpath().moves.is_empty(),
         "[{label}] the fixture must generate a toolpath — every assertion \
@@ -568,7 +568,7 @@ fn ball_unified_finish_cuts_non_shallow_bands_end_to_end() {
 /// unattributed machining, and the mix table would under-report the
 /// strategy that paid for it.
 fn assert_spans_and_annotations_stay_valid(session: &ProjectSession, label: &str) {
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     let move_count = result.toolpath().moves.len();
     assert!(move_count > 0, "[{label}] non-vacuity");
     assert!(
@@ -707,7 +707,7 @@ fn ball_unified_finish_spans_and_annotations_stay_valid() {
 /// That last clause is the direct pin — pre-fix it read 1357 against 1437
 /// shipped moves on this fixture.
 fn assert_semantic_links_survive_transforms(session: &ProjectSession, label: &str) {
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     let move_count = result.toolpath().moves.len();
     assert!(move_count > 0, "[{label}] non-vacuity");
     let trace = result

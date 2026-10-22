@@ -305,7 +305,7 @@ const SAMPLE_ARC_A_RAD: f64 = 1.5;
 const SAMPLE_ARC_B_RAD: f64 = 0.4;
 
 const SAMPLE_COUNT: usize = 9;
-const TOOLPATH: ToolpathId = ToolpathId(0);
+const TOOLPATH: ToolpathId = ToolpathId::from_raw(0);
 
 // ── The premise (re-premised 2026-10-01, see the module header) ─────────
 

@@ -53,7 +53,7 @@ fn wanaka_deep_region_localization() {
         .expect("gen back rough");
 
     let tp_id = session.list_toolpaths()[1].id;
-    let tp_result = session.get_result(1).expect("back rough result");
+    let tp_result = session.result_at(1).expect("back rough result");
     let moves = &tp_result.toolpath().moves;
 
     // Setup-local mesh for drop-cutter.
@@ -250,7 +250,7 @@ fn wanaka_final_surface_vs_mesh() {
         .generate_toolpath(1, &cancel)
         .expect("gen back rough");
     let tp_id = session.list_toolpaths()[1].id;
-    let tp_result = session.get_result(1).expect("back rough result");
+    let tp_result = session.result_at(1).expect("back rough result");
 
     // Setup-local mesh for drop-cutter.
     let tp_setup_idx = session
@@ -601,7 +601,7 @@ fn wanaka_back_rough_axial_doc() {
     }
 
     // Get the actual toolpath move at peak.move_index.
-    let tp_result = session.get_result(1).expect("back rough result");
+    let tp_result = session.result_at(1).expect("back rough result");
     let mv = &tp_result.toolpath().moves[peak.move_index];
     let prev = &tp_result.toolpath().moves[peak.move_index.saturating_sub(1)];
     println!(

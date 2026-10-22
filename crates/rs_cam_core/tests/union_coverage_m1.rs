@@ -95,7 +95,7 @@ fn run_arm(label: &str, project: &Path) -> UnionCoverageReport {
         let pending: Vec<usize> = enabled
             .iter()
             .copied()
-            .filter(|&i| session.get_result(i).is_none())
+            .filter(|&i| session.result_at(i).is_none())
             .collect();
         eprintln!(
             "  round {round}: {} of {} enabled generated ({:.0} s)",

@@ -233,7 +233,7 @@ fn feeds_fixture_machine() -> MachineProfile {
 ///   "Advance per tooth below the rubbing floor". The engine does not lift
 ///   the feed (ruling R4 WP2a).
 fn feeds_fixture() -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 3.175;
     tool.flute_count = 2;
     tool.cutting_length = 12.0;
@@ -258,14 +258,14 @@ fn feeds_fixture() -> AppState {
     }
     let config = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Hardwood profile width fixture".to_owned(),
         enabled: true,
         operation,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -279,7 +279,7 @@ fn feeds_fixture() -> AppState {
     };
 
     let model = LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         path: PathBuf::from("hardwood_profile_width_fixture.svg"),
         name: "Hardwood profile width fixture".to_owned(),
         kind: Some(ModelKind::Svg),

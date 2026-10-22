@@ -61,18 +61,21 @@ fn session_with_ladder() -> (ProjectSession, usize, usize, usize) {
     builder = builder.stock(common::session::stock_over(9.0, 12.0));
     let coarse_idx = builder.add_tool(ball_tool_config(4.0));
     let fine_idx = builder.add_tool(ball_tool_config(3.0));
-    let coarse_id = builder.tools()[coarse_idx].id.0;
-    let fine_id = builder.tools()[fine_idx].id.0;
+    let coarse_id = builder.tools()[coarse_idx].id.raw();
+    let fine_id = builder.tools()[fine_idx].id.raw();
     let model_id = builder.add_model(common::session::mesh_model(dome(), "dome"));
     let session = builder.build();
-    (session, coarse_id, fine_id, model_id)
+    (session, coarse_id, fine_id, model_id.raw())
 }
 
 fn spec(tool_ids: Vec<usize>, model_id: usize) -> MultitoolPlanSpec {
     MultitoolPlanSpec {
         setup_index: 0,
-        model_id,
-        tool_ids,
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
+        tool_ids: tool_ids
+            .into_iter()
+            .map(rs_cam_core::ids::ToolId::from_raw)
+            .collect(),
         cusp_height_mm: CUSP_MM,
         treatment: ResidualTreatment::SlopeCompensated,
         ..MultitoolPlanSpec::default()
@@ -111,8 +114,12 @@ fn the_plan_emits_a_coarse_to_fine_chain_with_provenance() {
         "coarse -> fine, one plan id, ladder length carried on each"
     );
 
-    assert_eq!(tcs[0].tool_id, coarse_id, "tier 0 is the COARSE tool");
-    assert_eq!(tcs[1].tool_id, fine_id);
+    assert_eq!(
+        tcs[0].tool_id,
+        rs_cam_core::ids::ToolId::from_raw(coarse_id),
+        "tier 0 is the COARSE tool"
+    );
+    assert_eq!(tcs[1].tool_id, rs_cam_core::ids::ToolId::from_raw(fine_id));
     assert_eq!(tcs[0].name, "Finish tier 0 (R2.0)");
     assert_eq!(tcs[1].name, "Finish tier 1 (R1.5)");
 
@@ -153,7 +160,10 @@ fn only_fine_tiers_carry_a_tier_region_boundary() {
         } => {
             assert_eq!(
                 tool_ids,
-                &vec![coarse_id, fine_id],
+                &vec![
+                    rs_cam_core::ids::ToolId::from_raw(coarse_id),
+                    rs_cam_core::ids::ToolId::from_raw(fine_id)
+                ],
                 "the FULL ladder: a tier label is 'the coarsest tool on THIS \
                  ladder that holds this cell', which no subset reproduces"
             );
@@ -205,8 +215,8 @@ fn a_re_plan_leaves_hand_built_ops_alone() {
     let hand = common::session::toolpath_config(
         "Operator's own pass",
         OperationConfig::UnifiedFinish(Default::default()),
-        coarse_id,
-        model_id,
+        rs_cam_core::ids::ToolId::from_raw(coarse_id),
+        rs_cam_core::ids::ModelId::from_raw(model_id),
     );
     let _ = session
         .apply(Command::AddToolpath(AddToolpathArgs {
@@ -287,7 +297,7 @@ fn a_one_tool_ladder_and_a_missing_model_are_refused_by_name() {
     let err = plan_multitool(&mut session, &spec(vec![coarse_id, fine_id], model_id + 99))
         .expect_err("an absent model must refuse, not plan against nothing");
     assert!(
-        matches!(err, SessionError::ModelNotFound { id, .. } if id.0 == model_id + 99),
+        matches!(err, SessionError::ModelNotFound { id, .. } if id.raw() == model_id + 99),
         "{err}"
     );
 

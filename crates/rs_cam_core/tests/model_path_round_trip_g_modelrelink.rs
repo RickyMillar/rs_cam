@@ -239,14 +239,14 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
     ) -> ToolpathConfig {
         ToolpathConfig {
             shoe: Default::default(),
-            id: rs_cam_core::ToolpathId(id),
+            id: rs_cam_core::ToolpathId::from_raw(id),
             name: format!("Op {id}"),
             enabled: true,
             operation: OperationConfig::new_default(OperationType::Face),
             dressups: Default::default(),
             heights: Default::default(),
-            tool_id: 0,
-            model_id,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(0),
+            model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
             pre_gcode: None,
             post_gcode: None,
             boundary: Default::default(),
@@ -275,7 +275,10 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
     }
 
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
     let _ = builder
         .add_toolpath(
             0,
@@ -300,7 +303,7 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
         .unwrap();
     let mut session = builder.build();
     for index in 0..3 {
-        let revision = session.toolpath_revision(index);
+        let revision = session.toolpath_revision_at(index);
         let _ = session
             .apply(rs_cam_core::session::Command::AdoptResult(
                 rs_cam_core::session::AdoptResultArgs {
@@ -314,7 +317,7 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
 
     let effects = session
         .apply(Command::InvalidateModel(InvalidateModelArgs {
-            model_id: 0,
+            model_id: rs_cam_core::ids::ModelId::from_raw(0),
         }))
         .expect("the model-invalidation row refuses nothing");
 
@@ -325,14 +328,14 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
             .collect::<std::collections::BTreeSet<_>>(),
         "both operations on model 0"
     );
-    assert!(session.get_result(0).is_none());
+    assert!(session.result_at(0).is_none());
     assert!(
-        session.get_result(1).is_none(),
+        session.result_at(1).is_none(),
         "including the one downstream of it — its stock comes from geometry \
          that has just been replaced"
     );
     assert!(
-        session.get_result(2).is_some(),
+        session.result_at(2).is_some(),
         "an operation on another model is untouched"
     );
     assert!(session.simulation_result().is_none());

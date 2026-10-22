@@ -112,7 +112,7 @@ fn part_model() -> LoadedModel {
     )
     .unwrap();
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "p2_3_part".to_owned(),
         mesh: Some(Arc::clone(&enriched.mesh)),
         items: Arc::new(brep_face_items(&enriched)),
@@ -146,14 +146,19 @@ fn stock() -> StockConfig {
 fn session(face: u16, face_up: FaceUp) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_DIAMETER));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(part_model());
     let op = OperationConfig::Pocket(PocketConfig {
         floor: rs_cam_core::compute::floor::Floor::top(POCKET_DEPTH),
         depth_per_pass: POCKET_DEPTH,
         ..PocketConfig::default()
     });
-    let cfg = toolpath_config("face pocket", op, tool_id, model_id);
+    let cfg = toolpath_config(
+        "face pocket",
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     let _ = builder.add_toolpath(0, cfg).unwrap();
     let mut session = builder.build();
     pick_faces(&mut session, 0, &[face]).unwrap();

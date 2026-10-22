@@ -95,7 +95,7 @@ const COMMANDED_FEED_MM_MIN: f64 = 0.0714 * RPM as f64 * FLUTES as f64;
 const PREDICTED_FEED_FRACTION: f64 = 0.128_2;
 const SAMPLE_AXIAL_DOC_MM: f64 = 0.30;
 const SAMPLE_ARC_RAD: f64 = 1.2;
-const TOOLPATH: ToolpathId = ToolpathId(0);
+const TOOLPATH: ToolpathId = ToolpathId::from_raw(0);
 
 fn tool() -> ToolDefinition {
     ToolDefinition::new(

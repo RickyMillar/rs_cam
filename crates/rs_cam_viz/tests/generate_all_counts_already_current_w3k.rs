@@ -25,7 +25,7 @@ use rs_cam_viz::controller::generate_all::{
 /// project-scope plan builds it.
 fn seven_op_plan() -> GenerationPlan {
     let mut steps: Vec<PlanStep> = (1..=7)
-        .map(|id| PlanStep::Generate(ToolpathId(id)))
+        .map(|id| PlanStep::Generate(ToolpathId::from_raw(id)))
         .collect();
     steps.push(PlanStep::SimulateAll);
     GenerationPlan::new(steps, GenerateAllSink::Gui)

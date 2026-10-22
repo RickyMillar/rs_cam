@@ -208,7 +208,7 @@ impl ProjectSession {
             .iter()
             .filter(|tc| tc.enabled && tc.stock_source == StockSource::FromRemainingStock)
         {
-            let Some(tool) = self.tools.iter().find(|t| t.id.0 == tc.tool_id) else {
+            let Some(tool) = self.tools.iter().find(|t| t.id == tc.tool_id) else {
                 continue;
             };
             let needed = ((tool.diameter / 2.0) / 5.0).max(RESOLUTION_FLOOR_MM);
@@ -220,7 +220,7 @@ impl ProjectSession {
     /// The tool rule of [`Self::simulation_resolution_mm`], over the tools
     /// of every enabled operation.
     fn auto_tool_rule_mm(&self) -> f64 {
-        let used: HashSet<usize> = self
+        let used: HashSet<crate::ids::ToolId> = self
             .toolpath_configs
             .iter()
             .filter(|tc| tc.enabled)
@@ -229,7 +229,7 @@ impl ProjectSession {
         let min_radius = self
             .tools
             .iter()
-            .filter(|t| used.contains(&t.id.0))
+            .filter(|t| used.contains(&t.id))
             .map(|t| t.diameter / 2.0)
             .fold(f64::INFINITY, f64::min);
         auto_tool_rule_for_radius(min_radius, &self.stock_bbox())
@@ -271,7 +271,7 @@ impl ProjectSession {
         }
         // (2) every carved toolpath and every applied stock change is
         // unchanged.
-        let mut applied: HashSet<(usize, crate::ids::StockChangeId)> = HashSet::new();
+        let mut applied: HashSet<(crate::ids::SetupId, crate::ids::StockChangeId)> = HashSet::new();
         for entry in &source.after {
             let entry = match entry {
                 SourceEntry::Carved(carved) => carved,
@@ -284,7 +284,7 @@ impl ProjectSession {
             let moved = || SnapshotMiss::SourceMoved {
                 toolpath: self
                     .find_toolpath_config_by_id(entry.id)
-                    .map_or_else(|| format!("#{}", entry.id.0), |(_, tc)| tc.name.clone()),
+                    .map_or_else(|| format!("#{}", entry.id.raw()), |(_, tc)| tc.name.clone()),
             };
             let Some((index, tc)) = self.find_toolpath_config_by_id(entry.id) else {
                 return Err(moved());
@@ -451,7 +451,7 @@ impl ProjectSession {
         let Some(setup) = self.setups.iter().find(|s| s.id == applied.setup_id) else {
             return Err(SnapshotMiss::StockChangeMoved {
                 setup: format!("#{}", applied.setup_id),
-                change: format!("#{}", applied.id.0),
+                change: format!("#{}", applied.id.raw()),
             });
         };
         let change = setup.stock_changes.iter().find(|c| c.id == applied.id);
@@ -640,7 +640,7 @@ fn stock_change_moved(
     let name = change
         .map(|c| c.name.clone())
         .filter(|n| !n.is_empty())
-        .unwrap_or_else(|| format!("#{}", id.0));
+        .unwrap_or_else(|| format!("#{}", id.raw()));
     SnapshotMiss::StockChangeMoved {
         setup: setup.name.clone(),
         change: name,

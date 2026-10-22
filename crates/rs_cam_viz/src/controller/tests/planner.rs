@@ -217,7 +217,7 @@ fn active_setup_index_follows_the_selection() {
 
     // Selecting the second setup moves the display frame with it.
     let second_id = controller.state.session().list_setups()[second].id;
-    controller.state.selection = Selection::Setup(crate::state::job::SetupId(second_id));
+    controller.state.selection = Selection::Setup(second_id);
     assert_eq!(controller.state.active_setup_index(), Some(second));
 
     // A toolpath selection resolves through its owning setup.

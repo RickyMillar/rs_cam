@@ -204,7 +204,7 @@ fn opt_int(mode: &str, scope: &str, metric: &str, value: Option<usize>) {
 }
 
 fn tp_scope(id: ToolpathId) -> String {
-    format!("tp{}", id.0)
+    format!("tp{}", id.raw())
 }
 
 /// Whether the F-036b adaptive feed-modulation post-pass runs. `true` is the
@@ -282,14 +282,14 @@ fn swept_wanaka_ab_s1() {
 
     let n = s.toolpath_count();
     let enabled: Vec<usize> = (0..n)
-        .filter(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.enabled))
+        .filter(|&i| s.toolpath_config_at(i).is_some_and(|tc| tc.enabled))
         .collect();
 
     // Index → id/name map, captured before any mutable borrow so the printing
     // pass below never needs the session back.
     let names: Vec<(usize, ToolpathId, String)> = (0..n)
         .filter_map(|i| {
-            s.get_toolpath_config(i)
+            s.toolpath_config_at(i)
                 .map(|tc| (i, tc.id, tc.name.clone()))
         })
         .collect();

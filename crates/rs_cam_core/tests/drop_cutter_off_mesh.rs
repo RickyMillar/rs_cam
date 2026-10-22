@@ -78,7 +78,7 @@ fn drop_cutter_does_not_cut_outside_mesh_footprint() {
         .toolpath_configs()
         .iter()
         .enumerate()
-        .find(|(_, tc)| tc.id == ToolpathId(17))
+        .find(|(_, tc)| tc.id == ToolpathId::from_raw(17))
         .expect("3D Finish 8 exists");
 
     let cancel = AtomicBool::new(false);
@@ -148,7 +148,7 @@ fn rapids_should_be_at_safe_z() {
         .toolpath_configs()
         .iter()
         .enumerate()
-        .find(|(_, tc)| tc.id == ToolpathId(17))
+        .find(|(_, tc)| tc.id == ToolpathId::from_raw(17))
         .expect("3D Finish 8 exists");
     let cancel = AtomicBool::new(false);
     let result = session
@@ -238,7 +238,7 @@ fn drop_cutter_toolpath_stamp_dives_only_at_the_residual_columns() {
         .toolpath_configs()
         .iter()
         .enumerate()
-        .find(|(_, tc)| tc.id == ToolpathId(17))
+        .find(|(_, tc)| tc.id == ToolpathId::from_raw(17))
         .expect("3D Finish 8 exists");
 
     // DressupConfig::normalize_for_op runs on load for DropCutter and
@@ -268,7 +268,7 @@ fn drop_cutter_toolpath_stamp_dives_only_at_the_residual_columns() {
     let setup = session
         .list_setups()
         .iter()
-        .find(|s| s.toolpath_indices.contains(&finish_idx))
+        .find(|s| s.toolpath_indices().contains(&finish_idx))
         .expect("setup found")
         .clone();
     let xform = session.setup_transform_info(setup.face_up, setup.z_rotation);

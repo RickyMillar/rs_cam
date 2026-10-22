@@ -58,7 +58,12 @@ fn on_in_computer() -> OperationConfig {
 }
 
 fn tp(config: OperationConfig) -> ToolpathConfig {
-    toolpath_config("p6_1", config, 0, 0)
+    toolpath_config(
+        "p6_1",
+        config,
+        rs_cam_core::ids::ToolId::from_raw(0),
+        rs_cam_core::ids::ModelId::from_raw(0),
+    )
 }
 
 /// A session with one tool, one setup and one valid Profile (side
@@ -260,7 +265,7 @@ fn the_profile_generator_cuts_side_on_p6_3() {
     let cancel = AtomicBool::new(false);
     s.generate_toolpath(0, &cancel)
         .unwrap_or_else(|e| panic!("side On generates (P6.3): {e}"));
-    let result = s.get_result(0).expect("a result");
+    let result = s.result_at(0).expect("a result");
     let cuts: Vec<_> = result
         .toolpath()
         .moves

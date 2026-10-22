@@ -272,7 +272,7 @@ fn every_cause_has_an_arm() {
         RefusalCause::UnknownLayer(String::new()),
         RefusalCause::NoSuchRule { index: 0, rules: 0 },
         RefusalCause::FacesNotReady {
-            model: rs_cam_core::ids::ModelId(0),
+            model: rs_cam_core::ids::ModelId::from_raw(0),
         },
         RefusalCause::HoleDoesNotFit {
             fit: rs_cam_core::selection::HoleFit::Larger,
@@ -648,12 +648,14 @@ fn missing_source() {
     let mut s = pocket_session(
         drawing_model(vec![loop_item("CUT", 0.0)]),
         Selection::drawing(),
-        |tc| tc.model_id = NO_SUCH_MODEL,
+        |tc| tc.model_id = rs_cam_core::ids::ModelId::from_raw(NO_SUCH_MODEL),
     );
     let r = refusal_of(&mut s);
     assert_eq!(
         r.cause,
-        RefusalCause::MissingSource(SourceRef::Model(rs_cam_core::ids::ModelId(NO_SUCH_MODEL)))
+        RefusalCause::MissingSource(SourceRef::Model(rs_cam_core::ids::ModelId::from_raw(
+            NO_SUCH_MODEL
+        )))
     );
     assert_names(&r, &[&format!("model {NO_SUCH_MODEL}"), "does not exist"]);
 }
@@ -731,7 +733,7 @@ fn step_part() -> LoadedModel {
     };
     let enriched = build_enriched_mesh(vec![flat, wall], Vec::new(), Vec::new()).unwrap();
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "p2_4_part".to_owned(),
         mesh: Some(Arc::clone(&enriched.mesh)),
         items: Arc::new(brep_face_items(&enriched)),
@@ -1047,14 +1049,14 @@ fn faces_not_ready() {
     let report = s
         .selection_status(&tc, rs_cam_core::session::SelectionTarget::Op)
         .unwrap();
-    assert_eq!(report.faces_not_ready, vec![ModelId(0)]);
+    assert_eq!(report.faces_not_ready, vec![ModelId::from_raw(0)]);
     assert_eq!(report.refusal, None);
 
     // `view` over a cold face set refuses by the model.
     let model = &s.models()[0];
     let stock = s.stock_config().bbox();
     let cold = [MeshFaces {
-        model: 0,
+        model: rs_cam_core::ids::ModelId::from_raw(0),
         items: None,
     }];
     let resolved = resolve(
@@ -1070,7 +1072,12 @@ fn faces_not_ready() {
     let r = view(&resolved, ItemUse::Regions)
         .unwrap_err()
         .for_op("Pocket");
-    assert_eq!(r.cause, RefusalCause::FacesNotReady { model: ModelId(0) });
+    assert_eq!(
+        r.cause,
+        RefusalCause::FacesNotReady {
+            model: ModelId::from_raw(0)
+        }
+    );
     assert_names(&r, &["model 0", "not computed yet"]);
 
     // Generation builds the faces and does not refuse.

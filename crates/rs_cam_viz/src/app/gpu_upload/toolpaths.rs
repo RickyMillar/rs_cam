@@ -25,7 +25,7 @@ use crate::render::RenderResources;
 use crate::render::toolpath_render::{self, EntryPreviewConfig, ToolpathGpuData};
 use crate::render::upload_cache::{self, SlotInputs};
 use crate::state::AppState;
-use crate::state::job::{SetupId, ToolConfig};
+use crate::state::job::ToolConfig;
 use crate::state::selection::Selection;
 use crate::state::viewport::{SpanKindFilter, ToolpathColorMode};
 
@@ -200,7 +200,7 @@ fn inputs<'a>(
         let tp_setup_id = session
             .setup_of_toolpath_id(tc.id)
             .and_then(|idx| session.list_setups().get(idx))
-            .map(|sd| SetupId(sd.id));
+            .map(|sd| sd.id);
         if tp_setup_id != frame.setup_id() {
             continue;
         }
@@ -244,7 +244,7 @@ fn inputs<'a>(
                     helix_radius: session
                         .tools()
                         .iter()
-                        .find(|t| t.id.0 == tc.tool_id)
+                        .find(|t| t.id == tc.tool_id)
                         // F029: a tool outside its domain builds no
                         // cutter, so the preview has no rule radius.
                         .and_then(|t| rs_cam_core::compute::cutter::build_cutter(t).ok())
@@ -261,7 +261,7 @@ fn inputs<'a>(
                 }
             });
         let profile_tool = (selected && state.viewport.show_tool_profile_preview)
-            .then(|| session.tools().iter().find(|t| t.id.0 == tc.tool_id))
+            .then(|| session.tools().iter().find(|t| t.id == tc.tool_id))
             .flatten();
 
         out.push(ToolpathInputs {

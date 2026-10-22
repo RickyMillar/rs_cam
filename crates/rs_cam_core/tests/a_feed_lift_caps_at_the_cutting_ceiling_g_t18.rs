@@ -95,7 +95,7 @@ fn white_oak() -> Material {
 
 /// A 6 mm two-flute flat end mill.
 fn flat_endmill_6mm() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shaft_diameter = 6.0;
@@ -109,7 +109,7 @@ fn flat_endmill_6mm() -> ToolConfig {
 /// envelope floor above the commanded cutting ceiling of the fixture, which
 /// is what makes the Step 9c cap observable.
 fn drill_12mm() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(2), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(2), ToolType::EndMill);
     tool.diameter = 12.0;
     tool.cutting_length = 60.0;
     tool.shaft_diameter = 12.0;

@@ -154,7 +154,7 @@ fn session(op: OperationConfig) -> ProjectSession {
 fn generated(op: OperationConfig) -> Toolpath {
     let mut s = session(op);
     generate(&mut s, 0);
-    s.get_result(0).expect("a result").toolpath().clone()
+    s.result_at(0).expect("a result").toolpath().clone()
 }
 
 /// Claim 1: region-first is the Pocket of commit 68226ec5.
@@ -196,7 +196,7 @@ fn run(pattern: PocketPattern, ordering: RegionOrdering) -> Arm {
             &cancel,
         )
         .expect("simulation");
-    let result = s.get_result(0).expect("a result");
+    let result = s.result_at(0).expect("a result");
     let final_stock = s
         .simulation_result()
         .and_then(|sim| sim.checkpoints.last().map(|c| Arc::clone(&c.mesh_stock)))
@@ -342,7 +342,7 @@ fn the_region_ordering_dial_is_written_through_the_command_door() {
         let name = op.label();
         let mut s = session(op);
         let ordering =
-            |s: &ProjectSession| match &s.get_toolpath_config(0).expect("a config").operation {
+            |s: &ProjectSession| match &s.toolpath_config_at(0).expect("a config").operation {
                 OperationConfig::Pocket(cfg) => cfg.region_ordering,
                 OperationConfig::Zigzag(cfg) => cfg.region_ordering,
                 OperationConfig::Trace(cfg) => cfg.region_ordering,
@@ -490,7 +490,7 @@ fn region_first_keeps_zigzag_trace_and_profile_of_before_w3_2() {
 fn generated_with_passes(op: OperationConfig) -> (Vec<Move>, usize) {
     let mut s = session(op);
     generate(&mut s, 0);
-    let result = s.get_result(0).expect("a result");
+    let result = s.result_at(0).expect("a result");
     (
         result.toolpath().moves.clone(),
         result
@@ -688,7 +688,7 @@ fn trace_keeps_its_one_region_and_its_chains() {
     let mut s = session(trace_op(RegionOrdering::ByArea));
     generate(&mut s, 0);
     let trace = s
-        .get_result(0)
+        .result_at(0)
         .expect("a result")
         .semantic_trace
         .clone()

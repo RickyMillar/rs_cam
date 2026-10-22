@@ -77,10 +77,10 @@ fn build_adaptive3d_session() -> ProjectSession {
     builder = builder.stock(stock);
 
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     let model = LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "hemisphere".to_owned(),
         mesh: Some(Arc::new(mesh)),
         items: Default::default(),
@@ -112,13 +112,13 @@ fn build_adaptive3d_session() -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Adaptive3d".to_owned(),
         enabled: true,
         operation: OperationConfig::Adaptive3d(cfg),
         dressups: DressupConfig::for_op(OperationType::Adaptive3d),
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,
@@ -146,7 +146,7 @@ fn adaptive3d_default_skeleton_emits_no_rapid_collisions() {
         .expect("generate adaptive3d toolpath");
 
     let result = session
-        .get_result(0)
+        .result_at(0)
         .expect("adaptive3d produced a toolpath");
     assert!(
         result.toolpath().moves.len() > 200,

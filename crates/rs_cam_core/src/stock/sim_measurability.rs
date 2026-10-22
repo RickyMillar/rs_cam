@@ -460,7 +460,7 @@ mod tests {
 
     fn sample(id: usize, removed_mm3: f64, radial: f64, axial_mm: f64) -> SimulationCutSample {
         SimulationCutSample {
-            toolpath_id: ToolpathId(id),
+            toolpath_id: ToolpathId::from_raw(id),
             is_cutting: true,
             segment_time_s: 0.01,
             removed_volume_est_mm3: removed_mm3,
@@ -480,7 +480,7 @@ mod tests {
         let report = MeasurabilityReport::from_trace(&trace, Some(0.5));
 
         for metric in SimMetric::ENGAGEMENT_DERIVED {
-            let m = report.for_metric(ToolpathId(1), metric);
+            let m = report.for_metric(ToolpathId::from_raw(1), metric);
             assert!(m.abstains(), "{metric:?} should abstain, got {m:?}");
             assert!(matches!(
                 m.reason(),
@@ -502,7 +502,7 @@ mod tests {
             SimMetric::AxialEngagement,
         ] {
             assert_eq!(
-                report.for_metric(ToolpathId(1), metric),
+                report.for_metric(ToolpathId::from_raw(1), metric),
                 Measurability::Measurable,
                 "{metric:?} must stay live — the ruling says collision detection always does"
             );
@@ -525,7 +525,7 @@ mod tests {
         let trace = SimulationCutTrace::from_samples(0.5, samples);
         let report = MeasurabilityReport::from_trace(&trace, Some(0.5));
         assert_eq!(
-            report.for_metric(ToolpathId(1), SimMetric::AirCut),
+            report.for_metric(ToolpathId::from_raw(1), SimMetric::AirCut),
             Measurability::Measurable
         );
     }
@@ -537,7 +537,7 @@ mod tests {
         let samples: Vec<_> = (0..20).map(|_| sample(1, 2.0, 0.0, 0.4)).collect();
         let trace = SimulationCutTrace::from_samples(0.5, samples);
         let report = MeasurabilityReport::from_trace(&trace, Some(0.5));
-        let m = report.for_metric(ToolpathId(1), SimMetric::RadialEngagement);
+        let m = report.for_metric(ToolpathId::from_raw(1), SimMetric::RadialEngagement);
         assert!(matches!(
             m.reason(),
             Some(MeasurabilityReason::CellTooCoarseForTipContact {
@@ -555,7 +555,7 @@ mod tests {
         samples.extend((0..4).map(|_| sample(1, 0.4, 0.0, 0.02)));
         let trace = SimulationCutTrace::from_samples(0.5, samples);
         let report = MeasurabilityReport::from_trace(&trace, Some(0.5));
-        let m = report.for_metric(ToolpathId(1), SimMetric::AirCut);
+        let m = report.for_metric(ToolpathId::from_raw(1), SimMetric::AirCut);
         assert!(matches!(m, Measurability::Degraded(_)), "got {m:?}");
         assert!(!m.abstains(), "Degraded must NOT abstain");
     }
@@ -563,6 +563,6 @@ mod tests {
     #[test]
     fn an_unknown_toolpath_does_not_abstain_by_default() {
         let report = MeasurabilityReport::default();
-        assert!(!report.abstains(ToolpathId(99), SimMetric::AirCut));
+        assert!(!report.abstains(ToolpathId::from_raw(99), SimMetric::AirCut));
     }
 }

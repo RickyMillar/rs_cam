@@ -68,7 +68,7 @@ fn selection_boundary(model_id: usize) -> BoundaryConfig {
     BoundaryConfig {
         enabled: true,
         source: BoundarySource::Selection {
-            selection: Selection::closed_shapes_of(ModelId(model_id)),
+            selection: Selection::closed_shapes_of(ModelId::from_raw(model_id)),
             holes: true,
         },
         containment: BoundaryContainment::Inside,
@@ -81,10 +81,10 @@ fn selection_boundary(model_id: usize) -> BoundaryConfig {
 fn saved_project_text() -> (String, usize) {
     let mut builder = ProjectSessionBuilder::new();
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(polygon_model(vec![square_polygon(10.0)], "square"));
     for (name, boundary) in [
-        ("Selection", selection_boundary(model_id)),
+        ("Selection", selection_boundary(model_id.raw())),
         (
             "Silhouette",
             BoundaryConfig {
@@ -97,7 +97,7 @@ fn saved_project_text() -> (String, usize) {
         let mut tc = toolpath_config(
             name,
             OperationConfig::new_default(OperationType::Pocket),
-            tool_id,
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
             model_id,
         );
         tc.boundary = boundary;
@@ -111,7 +111,7 @@ fn saved_project_text() -> (String, usize) {
     if let Some(dir) = path.parent() {
         let _ = std::fs::remove_dir(dir);
     }
-    (text, model_id)
+    (text, model_id.raw())
 }
 
 #[test]

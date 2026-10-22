@@ -235,7 +235,7 @@ fn collisions_at(session: &mut ProjectSession, resolution: f64) -> usize {
         .diagnostics()
         .per_toolpath
         .iter()
-        .find(|d| d.toolpath_id == ToolpathId(0))
+        .find(|d| d.toolpath_id == ToolpathId::from_raw(0))
         .map_or(0, |d| d.rapid_collision_count)
 }
 
@@ -251,8 +251,8 @@ fn the_relink_loses_no_cut_position() {
     let off = corrugated_session_with(0.0, Some(dressups_without_relabelling()));
     let on = corrugated_session_with(candidate_hookup_mm(), Some(dressups_without_relabelling()));
 
-    let off_tp = off.get_result(0).expect("baseline generated");
-    let on_tp = on.get_result(0).expect("relinked generated");
+    let off_tp = off.result_at(0).expect("baseline generated");
+    let on_tp = on.result_at(0).expect("relinked generated");
     let off_cut = ring_moves(&off_tp.toolpath().moves);
     let on_cut = fed_moves(&on_tp.toolpath().moves);
     let lost = positions_lost(&off_cut, &on_cut);
@@ -319,11 +319,9 @@ fn the_relink_removes_no_cut_position_and_the_labels_are_honest() {
         }),
     );
 
-    let off_tp = off.get_result(0).expect("baseline generated");
-    let on_tp = on.get_result(0).expect("relinked generated");
-    let raw_tp = unfitted
-        .get_result(0)
-        .expect("un-fitted baseline generated");
+    let off_tp = off.result_at(0).expect("baseline generated");
+    let on_tp = on.result_at(0).expect("relinked generated");
+    let raw_tp = unfitted.result_at(0).expect("un-fitted baseline generated");
 
     let off_cut = ring_moves(&off_tp.toolpath().moves);
     let on_cut = fed_moves(&on_tp.toolpath().moves);
@@ -431,8 +429,8 @@ fn the_ab_that_justifies_the_default() {
     let on = corrugated_session(candidate_hookup_mm());
 
     let (off_trips, on_trips, off_area, on_area, off_s, on_s) = {
-        let o = off.get_result(0).expect("baseline generated");
-        let n = on.get_result(0).expect("relinked generated");
+        let o = off.result_at(0).expect("baseline generated");
+        let n = on.result_at(0).expect("relinked generated");
         let (oa, prov) = swept_footprint_area(
             &o.toolpath().moves,
             BALL_DIAMETER_MM * 0.5,
@@ -557,7 +555,7 @@ fn pct(from: f64, to: f64) -> f64 {
 #[test]
 fn the_scallop_adapter_hands_the_link_stage_in() {
     let on = corrugated_session(candidate_hookup_mm());
-    let stats = &on.get_result(0).expect("relinked generated").stats;
+    let stats = &on.result_at(0).expect("relinked generated").stats;
 
     let totals = stats.relink.as_ref().expect(
         "A/M7 wiring: the scallop published no relink totals at all, so the \

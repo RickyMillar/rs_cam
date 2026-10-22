@@ -352,8 +352,11 @@ fn wanaka_owned_versus_machining_area_at_three_tolerances() {
     let cancel = AtomicBool::new(false);
     let plan = |tolerance_mm: f64, islands: TierIslandParams| MultitoolPlanSpec {
         setup_index: 0,
-        model_id: 0,
-        tool_ids: vec![4, 2],
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
+        tool_ids: vec![
+            rs_cam_core::ids::ToolId::from_raw(4),
+            rs_cam_core::ids::ToolId::from_raw(2),
+        ],
         cell_mm: 0.4,
         tolerance_mm,
         margin_mm: 0.5,
@@ -501,8 +504,10 @@ fn write_rivmap100_tiered_finish_fixture() {
     let mut session = ProjectSession::load(&path).expect("load the rivmap100 tiered project");
     let spec = MultitoolPlanSpec {
         setup_index: 0,
-        model_id: 1,
-        tool_ids: RIVMAP_LADDER.to_vec(),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
+        tool_ids: RIVMAP_LADDER
+            .map(rs_cam_core::ids::ToolId::from_raw)
+            .to_vec(),
         tolerance_mm: RIVMAP_TOLERANCE_MM,
         ..MultitoolPlanSpec::default()
     };
@@ -565,7 +570,7 @@ fn rivmap100_tiered_finish_step0() {
     };
     let spec = |islands| MultitoolPlanSpec {
         setup_index: 0,
-        model_id: 1,
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         tool_ids: tool_ids.clone(),
         cell_mm,
         tolerance_mm,
@@ -629,12 +634,12 @@ fn rivmap100_tiered_finish_step0() {
         "── fine tier generated in {:.1} s ──",
         t0.elapsed().as_secs_f64()
     );
-    let tp = session.get_result(fine_index).unwrap().toolpath().clone();
-    let tc = session.get_toolpath_config(fine_index).unwrap().clone();
+    let tp = session.result_at(fine_index).unwrap().toolpath().clone();
+    let tc = session.toolpath_config_at(fine_index).unwrap().clone();
     let tool = session
         .tools()
         .iter()
-        .find(|t| t.id.0 == tc.tool_id)
+        .find(|t| t.id == tc.tool_id)
         .unwrap()
         .clone();
     let def = build_cutter(&tool).unwrap();
@@ -813,7 +818,7 @@ fn rivmap350_tiered_finish_step0_preview() {
     let coarse = donor
         .tools()
         .iter()
-        .find(|t| t.id.0 == RIVMAP_LADDER[0])
+        .find(|t| t.id.raw() == RIVMAP_LADDER[0])
         .expect("the R2.0 taper")
         .clone();
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -826,13 +831,16 @@ fn rivmap350_tiered_finish_step0_preview() {
         .expect("add the R2.0 taper")
         .created
         .expect("add_tool reports the new index");
-    let coarse_id = session.tools()[created].id.0;
+    let coarse_id = session.tools()[created].id.raw();
 
     let cancel = AtomicBool::new(false);
     let spec = |islands: TierIslandParams| MultitoolPlanSpec {
         setup_index: 0,
-        model_id: 1,
-        tool_ids: vec![coarse_id, RIVMAP_LADDER[1]],
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
+        tool_ids: vec![
+            rs_cam_core::ids::ToolId::from_raw(coarse_id),
+            rs_cam_core::ids::ToolId::from_raw(RIVMAP_LADDER[1]),
+        ],
         tolerance_mm: RIVMAP_TOLERANCE_MM,
         islands,
         ..MultitoolPlanSpec::default()
@@ -884,7 +892,7 @@ fn rivmap350_tiered_finish_step0_preview() {
     let mut short = session
         .tools()
         .iter()
-        .find(|t| t.id.0 == RIVMAP_LADDER[1])
+        .find(|t| t.id.raw() == RIVMAP_LADDER[1])
         .expect("the R1.0 taper")
         .clone();
     short.cutting_length = 15.0;
@@ -896,11 +904,14 @@ fn rivmap350_tiered_finish_step0_preview() {
         .expect("add the 15 mm flute copy")
         .created
         .expect("add_tool reports the new index");
-    let short_id = session.tools()[created].id.0;
+    let short_id = session.tools()[created].id.raw();
     let lc15 = session
         .preview_multitool_plan(
             &MultitoolPlanSpec {
-                tool_ids: vec![coarse_id, short_id],
+                tool_ids: vec![
+                    rs_cam_core::ids::ToolId::from_raw(coarse_id),
+                    rs_cam_core::ids::ToolId::from_raw(short_id),
+                ],
                 ..spec(TierIslandParams::default())
             },
             &cancel,

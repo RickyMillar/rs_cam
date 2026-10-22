@@ -78,7 +78,7 @@ fn corrugated_session(hookup_mm: f64) -> ProjectSession {
 /// A stable digest of every emitted move target, in order. The fix touches
 /// the annotation reconcile only, so this must not move.
 fn move_digest(session: &ProjectSession) -> u64 {
-    let tp = session.get_result(0).expect("generated").toolpath();
+    let tp = session.result_at(0).expect("generated").toolpath();
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for m in &tp.moves {
         for v in [m.target.x, m.target.y, m.target.z] {
@@ -92,7 +92,7 @@ fn move_digest(session: &ProjectSession) -> u64 {
 }
 
 fn report(session: &ProjectSession, arm: &str) {
-    let result = session.get_result(0).expect("generated");
+    let result = session.result_at(0).expect("generated");
     let items = result
         .semantic_trace
         .as_ref()
@@ -141,7 +141,7 @@ fn the_link_stage_keeps_the_scallop_trace_and_moves_no_motion() {
     let on = corrugated_session(3.0);
     report(&on, "stage ON ");
 
-    let result = on.get_result(0).expect("generated");
+    let result = on.result_at(0).expect("generated");
 
     // Population FIRST, from upstream of the thing under test. `ring_count`
     // is computed after the reconcile and reads 0 on the broken binary, so
@@ -199,7 +199,7 @@ fn the_legacy_path_keeps_its_trace() {
     let off = corrugated_session(0.0);
     report(&off, "stage OFF");
     let items = off
-        .get_result(0)
+        .result_at(0)
         .expect("generated")
         .semantic_trace
         .as_ref()

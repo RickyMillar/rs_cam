@@ -120,7 +120,7 @@ fn dxf_model(rings: usize) -> LoadedModel {
         })
         .collect();
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "holes".to_owned(),
         mesh: None,
         // P2.1: each CIRCLE entity is one item, ring and hole in one.
@@ -195,9 +195,14 @@ fn session_with(dressups: fn(DressupConfig) -> DressupConfig, rings: usize) -> P
         diameter: HOLE_DIAMETER,
         ..make_endmill_6mm()
     });
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(dxf_model(rings));
-    let mut tc = toolpath_config("Drill", drill_op(), tool_id, model_id);
+    let mut tc = toolpath_config(
+        "Drill",
+        drill_op(),
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     tc.dressups = dressups(tc.dressups);
     let _ = builder.add_toolpath(0, tc).expect("add drill toolpath");
     builder.build()

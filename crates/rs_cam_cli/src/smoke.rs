@@ -473,7 +473,7 @@ fn materialize_case_toolpath(
 
     let stock_ctx =
         StockContext::from_stock_bbox(session.stock_bbox(), session.stock_config().padding);
-    let tool = match session.tools().iter().find(|t| t.id.0 == tool_id) {
+    let tool = match session.tools().iter().find(|t| t.id == tool_id) {
         Some(t) => t.clone(),
         None => {
             return Err(BaselineRow::failure(
@@ -490,8 +490,11 @@ fn materialize_case_toolpath(
     // below binds. Reading it BEFORE the Suggest call is the whole fix —
     // `SuggestContext::model_bbox` gates the runtime-sanity stepover
     // back-off, and this harness used to pass `None`.
-    let model_id = session.models().first().map(|m| m.id).unwrap_or(0);
-    let model_bbox = session.model_bbox(model_id);
+    let model_id = session
+        .models()
+        .first()
+        .map_or(rs_cam_core::ids::ModelId::placeholder(), |m| m.id);
+    let model_bbox = session.model_bbox_by_id(model_id);
     let operation = match suggest_params(SuggestParamsInput {
         op_type,
         tool: &tool,
@@ -523,7 +526,7 @@ fn materialize_case_toolpath(
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::placeholder(),
         name: format!("{} {name_suffix}", op_type.kind_str()),
         enabled: true,
         operation,
@@ -851,7 +854,7 @@ fn run_single_case_inner(
 
     // Confirm non-empty toolpath
     let move_count = session
-        .get_result(tp_idx)
+        .result_at(tp_idx)
         .map(|r| r.annotated().toolpath.moves.len())
         .unwrap_or(0);
     if move_count < 2 {
@@ -882,9 +885,9 @@ fn run_single_case_inner(
     // Extract verdicts.
     let report = session.tool_load_report();
     let toolpath_id_after_add = session
-        .get_toolpath_config(tp_idx)
+        .toolpath_config_at(tp_idx)
         .map(|tc| tc.id)
-        .unwrap_or(rs_cam_core::ToolpathId(0));
+        .unwrap_or(rs_cam_core::ToolpathId::placeholder());
     let verdict = report
         .per_toolpath
         .iter()
@@ -1105,13 +1108,13 @@ fn parse_op_type(kind: &str) -> Option<OperationType> {
     None
 }
 
-fn pick_tool(session: &ProjectSession, tool_name: &str) -> Option<usize> {
+fn pick_tool(session: &ProjectSession, tool_name: &str) -> Option<rs_cam_core::ids::ToolId> {
     if !tool_name.is_empty()
         && let Some(t) = session.tools().iter().find(|t| t.name == tool_name)
     {
-        return Some(t.id.0);
+        return Some(t.id);
     }
-    session.tools().first().map(|t| t.id.0)
+    session.tools().first().map(|t| t.id)
 }
 
 /// Route any `stock_*` prefixed params in `baseline_params` to

@@ -26,7 +26,7 @@ use super::*;
 #[test]
 fn cancelled_drain_resolves_pending_mcp_generate_toolpath_waiter() {
     let mut controller = sample_controller();
-    let tp_id = ToolpathId(0);
+    let tp_id = ToolpathId::from_raw(0);
 
     controller.pending_mcp = Some(crate::mcp_bridge::PendingMcpCompute::new());
     let (tx, mut rx) = tokio::sync::oneshot::channel();
@@ -101,7 +101,7 @@ fn drain_compute_results_repopulates_session_results() {
     // sample_controller pre-seeds rt.result but leaves session.results
     // empty — exactly the post-Apply pre-fix divergence state.
     assert!(
-        controller.state.session().get_result(0).is_none(),
+        controller.state.session().result_at(0).is_none(),
         "fixture should start with empty session.results[0]"
     );
 
@@ -114,7 +114,7 @@ fn drain_compute_results_repopulates_session_results() {
         .drained
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
-                toolpath_id: ToolpathId(0),
+                toolpath_id: ToolpathId::from_raw(0),
                 revision: None,
                 result: Ok(ToolpathResult {
                     annotated: Arc::clone(&annotated),
@@ -136,7 +136,7 @@ fn drain_compute_results_repopulates_session_results() {
     let session_result = controller
         .state
         .session()
-        .get_result(0)
+        .result_at(0)
         .expect("session.results[0] should be populated after drain");
     // Both caches share the same Arc (no duplicated allocation).
     assert!(Arc::ptr_eq(session_result.annotated(), &annotated));

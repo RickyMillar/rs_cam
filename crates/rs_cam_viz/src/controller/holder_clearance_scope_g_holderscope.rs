@@ -81,7 +81,7 @@ use super::holder_clearance_staleness_g_holderstale::{
 fn two_operation_job() -> AppController<ScriptedLane> {
     let mut controller = seeded_controller();
 
-    let mut second_tool = ToolConfig::new_default(ToolId(2), ToolType::EndMill);
+    let mut second_tool = ToolConfig::new_default(ToolId::from_raw(2), ToolType::EndMill);
     second_tool.stickout += 20.0;
     let mut tools = controller.state.session().tools().to_vec();
     tools.push(second_tool);
@@ -91,7 +91,7 @@ fn two_operation_job() -> AppController<ScriptedLane> {
         .expect("the session takes the tool list");
 
     let mut second_op = toolpath(1);
-    second_op.tool_id = 2;
+    second_op.tool_id = rs_cam_core::ids::ToolId::from_raw(2);
     let _ = controller
         .state
         .apply(Command::AddToolpath(AddToolpathArgs {
@@ -99,7 +99,7 @@ fn two_operation_job() -> AppController<ScriptedLane> {
             config: Box::new(second_op),
         }))
         .expect("the fixture project takes a second operation");
-    land_a_result_for(&mut controller, ToolpathId(1));
+    land_a_result_for(&mut controller, ToolpathId::from_raw(1));
 
     controller
 }
@@ -147,8 +147,8 @@ fn a_two_operation_job_does_not_read_clear_off_one_operation_g_holderscope() {
          overstate"
     );
 
-    let first = motion_of(&controller, ToolpathId(0));
-    let second = motion_of(&controller, ToolpathId(1));
+    let first = motion_of(&controller, ToolpathId::from_raw(0));
+    let second = motion_of(&controller, ToolpathId::from_raw(1));
     assert!(
         !Arc::ptr_eq(&first, &second),
         "the two operations must carry distinct motion, or the check below \
@@ -243,7 +243,7 @@ fn a_single_operation_job_still_reads_clear_g_holderscope() {
 #[test]
 fn a_disabled_operation_is_not_a_verdict_about_the_job_g_holderscope() {
     let mut controller = two_operation_job();
-    controller.handle_internal_event(AppEvent::ToggleToolpathEnabled(ToolpathId(0)));
+    controller.handle_internal_event(AppEvent::ToggleToolpathEnabled(ToolpathId::from_raw(0)));
 
     assert_eq!(
         enabled_operations(&controller),
@@ -252,7 +252,7 @@ fn a_disabled_operation_is_not_a_verdict_about_the_job_g_holderscope() {
     );
     // `expect` inside: the toggle must LEAVE the result, or the check would
     // not reach this operation at all and the test would prove nothing.
-    let disabled_motion = motion_of(&controller, ToolpathId(0));
+    let disabled_motion = motion_of(&controller, ToolpathId::from_raw(0));
 
     run_collision_check(&mut controller, Verdict::Clear);
 

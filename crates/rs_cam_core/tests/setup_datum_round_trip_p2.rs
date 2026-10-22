@@ -53,7 +53,7 @@
 
 use std::path::PathBuf;
 
-use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::session::{
     Corner, DatumConfig, ProjectSession, ProjectSessionBuilder, SetupData, XYDatum, ZDatum,
@@ -150,7 +150,10 @@ fn the_datum_reaches_the_session() {
     );
     assert_eq!(setup.datum.z_method, ZDatum::FixedOffset(-3.5));
     assert_eq!(setup.datum.notes, "Probe the fixture pin, not the stock");
-    assert_eq!(setup.model_ids, vec![ModelId(0), ModelId(2)]);
+    assert_eq!(
+        setup.model_ids,
+        vec![ModelId::from_raw(0), ModelId::from_raw(2)]
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -209,21 +212,19 @@ fn a_datum_set_on_the_session_survives_save_and_load() {
     let path = dir.join("project.toml");
 
     let session = ProjectSessionBuilder::new()
-        .setup(SetupData {
-            id: 0,
-            name: "Setup 1".to_owned(),
-            face_up: FaceUp::default(),
-            z_rotation: ZRotation::default(),
-            datum: DatumConfig {
+        .setup({
+            let mut setup = SetupData::new(
+                rs_cam_core::ids::SetupId::from_raw(0),
+                "Setup 1",
+                FaceUp::default(),
+            );
+            setup.datum = DatumConfig {
                 xy_method: XYDatum::AlignmentPins,
                 z_method: ZDatum::MachineTable,
                 notes: "Run the Z probe macro, then Resume".to_owned(),
-            },
-            model_ids: vec![ModelId(3)],
-            obstacles: Vec::new(),
-            stock_changes: Vec::new(),
-            toolpath_indices: Vec::new(),
-            pause_message: None,
+            };
+            setup.model_ids = vec![ModelId::from_raw(3)];
+            setup
         })
         .build();
     session.save(&path).expect("save project");
@@ -233,6 +234,6 @@ fn a_datum_set_on_the_session_survives_save_and_load() {
     assert_eq!(setup.datum.xy_method, XYDatum::AlignmentPins);
     assert_eq!(setup.datum.z_method, ZDatum::MachineTable);
     assert_eq!(setup.datum.notes, "Run the Z probe macro, then Resume");
-    assert_eq!(setup.model_ids, vec![ModelId(3)]);
+    assert_eq!(setup.model_ids, vec![ModelId::from_raw(3)]);
     let _ = std::fs::remove_dir_all(&dir);
 }

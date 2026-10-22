@@ -79,7 +79,7 @@ const BALL_DIAMETER_MM: f64 = 3.0;
 fn ball_tool() -> ToolConfig {
     ToolConfig {
         diameter: BALL_DIAMETER_MM,
-        ..ToolConfig::new_default(ToolId(0), ToolType::BallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose)
     }
 }
 
@@ -160,7 +160,7 @@ fn reachable_groove() -> TriangleMesh {
 
 fn mesh_model(mesh: TriangleMesh, name: &str) -> LoadedModel {
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: name.to_owned(),
         mesh: Some(Arc::new(mesh)),
         items: Default::default(),
@@ -226,14 +226,14 @@ fn toolpath(op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathCon
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pencil".to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::for_op(op_type),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -263,10 +263,10 @@ fn stock() -> StockConfig {
 fn session_with(mesh: TriangleMesh, name: &str, op: OperationConfig) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(ball_tool());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(mesh_model(mesh, name));
     let _ = builder
-        .add_toolpath(0, toolpath(op, tool_id, model_id))
+        .add_toolpath(0, toolpath(op, tool_id, model_id.raw()))
         .expect("add toolpath");
     let mut session = builder.build();
     let cancel = AtomicBool::new(false);
@@ -298,7 +298,7 @@ fn float_diagnostic(diags: &[Diagnostic]) -> Option<&Diagnostic> {
 #[test]
 fn the_rest_depth_arm_refuses_a_valley_the_cutter_cannot_enter() {
     let session = session_with(unreachable_groove(), "unreachable", pencil_op());
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     println!(
         "D1/PR-5: rest-depth arm on the unreachable groove emitted {:.1} mm of \
          cutting (pre-PR-5: a full floating centreline)",
@@ -325,7 +325,7 @@ fn the_rest_depth_arm_refuses_a_valley_the_cutter_cannot_enter() {
 #[test]
 fn an_unreachable_valley_reports_its_float_on_every_surface() {
     let session = session_with(unreachable_groove(), "unreachable", dihedral_pencil_op());
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
 
     // Non-vacuity: the pass must actually have emitted cutting, or "float"
     // would just be describing an empty toolpath.
@@ -401,7 +401,7 @@ fn an_unreachable_valley_reports_its_float_on_every_surface() {
     let row = project
         .per_toolpath
         .iter()
-        .find(|r| r.toolpath_id == ToolpathId(0))
+        .find(|r| r.toolpath_id == ToolpathId::from_raw(0))
         .expect("per-toolpath diagnostic row");
     assert_eq!(row.tip_float_points, Some(float.floating_points));
     assert_eq!(row.max_tip_float_mm, Some(float.max_float_mm));
@@ -413,7 +413,7 @@ fn an_unreachable_valley_reports_its_float_on_every_surface() {
 #[test]
 fn a_reachable_valley_measures_zero_float_rather_than_staying_silent() {
     let session = session_with(reachable_groove(), "reachable", pencil_op());
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     assert!(
         result.stats.cutting_distance > 0.0,
         "the control must actually cut, or it proves nothing"
@@ -451,7 +451,7 @@ fn a_reachable_valley_measures_zero_float_rather_than_staying_silent() {
     let row = project
         .per_toolpath
         .iter()
-        .find(|r| r.toolpath_id == ToolpathId(0))
+        .find(|r| r.toolpath_id == ToolpathId::from_raw(0))
         .expect("per-toolpath diagnostic row");
     assert_eq!(
         row.tip_float_points,
@@ -469,7 +469,7 @@ fn an_operation_without_centrelines_reports_not_measured() {
         "unreachable",
         OperationConfig::Waterline(WaterlineConfig::default()),
     );
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     assert!(
         result.stats.tip_float.is_none(),
         "waterline traces no valley centreline — nothing was measured"
@@ -489,7 +489,7 @@ fn an_operation_without_centrelines_reports_not_measured() {
     let row = project
         .per_toolpath
         .iter()
-        .find(|r| r.toolpath_id == ToolpathId(0))
+        .find(|r| r.toolpath_id == ToolpathId::from_raw(0))
         .expect("per-toolpath diagnostic row");
     assert_eq!(row.tip_float_points, None, "null, never 0");
     assert_eq!(row.max_tip_float_mm, None, "null, never 0.0");

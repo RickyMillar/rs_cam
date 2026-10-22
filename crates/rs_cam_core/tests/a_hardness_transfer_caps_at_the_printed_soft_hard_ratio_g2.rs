@@ -106,7 +106,7 @@ fn softwood() -> Material {
 }
 
 fn ball(diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
     t.diameter = diameter;
     t.flute_count = 2;
     t.cutting_length = (diameter * 3.0).max(6.0);
@@ -262,7 +262,7 @@ fn assert_one_capped_band(op: OperationType, tool: &ToolConfig, band: (f64, f64)
         &material,
         tool,
         &OperationConfig::new_default(op),
-        ToolpathId(0),
+        ToolpathId::from_raw(0),
         None,
     )
     .and_then(|target| target.band_range())

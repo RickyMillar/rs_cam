@@ -146,7 +146,7 @@ fn run(
     session
         .generate_toolpath(0, &cancel)
         .map_err(|e| e.to_string())?;
-    let result = session.get_result(0).expect("a result");
+    let result = session.result_at(0).expect("a result");
     Ok((
         result.annotated().toolpath.clone(),
         result.stats.tab_placement.clone(),
@@ -499,8 +499,8 @@ fn door_session() -> ProjectSession {
             toolpath_config(
                 "p6_3_door",
                 profile_with(ProfileSide::Outside, Floor::top(DEPTH)),
-                0,
-                0,
+                rs_cam_core::ids::ToolId::from_raw(0),
+                rs_cam_core::ids::ModelId::from_raw(0),
             ),
         )
         .unwrap();
@@ -524,7 +524,12 @@ fn side_on_with_each_face_refuses_at_the_config_doors_p6_3() {
     let add = |s: &mut ProjectSession, operation: OperationConfig| {
         s.apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
-            config: Box::new(toolpath_config("p6_3_add", operation, 0, 0)),
+            config: Box::new(toolpath_config(
+                "p6_3_add",
+                operation,
+                rs_cam_core::ids::ToolId::from_raw(0),
+                rs_cam_core::ids::ModelId::from_raw(0),
+            )),
         }))
         .map(|_| ())
     };
@@ -553,8 +558,8 @@ fn side_on_with_each_face_refuses_at_the_config_doors_p6_3() {
             config: Box::new(toolpath_config(
                 "p6_3_door",
                 profile_with(ProfileSide::On, each_face()),
-                0,
-                0,
+                rs_cam_core::ids::ToolId::from_raw(0),
+                rs_cam_core::ids::ModelId::from_raw(0),
             )),
         }))
         .map(|_| ());
@@ -624,8 +629,8 @@ fn side_on_with_each_face_refuses_at_load_p6_3() {
             toolpath_config(
                 "p6_3_load",
                 profile_with(ProfileSide::On, each_face()),
-                0,
-                0,
+                rs_cam_core::ids::ToolId::from_raw(0),
+                rs_cam_core::ids::ModelId::from_raw(0),
             ),
         )
         .unwrap();

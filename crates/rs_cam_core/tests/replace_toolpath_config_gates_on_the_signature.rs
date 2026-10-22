@@ -73,14 +73,14 @@ fn tc(
 ) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -96,7 +96,7 @@ fn tc(
 
 fn empty_model(name: &str) -> LoadedModel {
     LoadedModel {
-        id: 0, // overwritten by `add_model`
+        id: rs_cam_core::ids::ModelId::from_raw(0), // overwritten by `add_model`
         name: name.to_owned(),
         mesh: None,
         items: Default::default(),
@@ -128,7 +128,7 @@ fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
 
 /// Deliver a computed result the way the compute lane does.
 fn adopt(s: &mut ProjectSession, index: usize) {
-    let revision = s.toolpath_revision(index);
+    let revision = s.toolpath_revision_at(index);
     let _ = s
         .apply(Command::AdoptResult(AdoptResultArgs {
             index,
@@ -148,23 +148,26 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 /// Both rows carry a cached result before the caller replaces anything.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
     builder.add_model(empty_model("part.svg"));
-    let tool = builder.tools()[0].id.0;
+    let tool = builder.tools()[0].id.raw();
     let model = builder.models()[0].id;
     let upstream = tc(
         "upstream",
         OperationConfig::Pocket(PocketConfig::default()),
         StockSource::Fresh,
         tool,
-        model,
+        model.raw(),
     );
     let downstream = tc(
         "downstream",
         OperationConfig::Pocket(PocketConfig::default()),
         StockSource::FromRemainingStock,
         tool,
-        model,
+        model.raw(),
     );
     let _ = builder.add_toolpath(0, upstream).unwrap();
     let _ = builder.add_toolpath(0, downstream).unwrap();
@@ -180,11 +183,11 @@ fn fixture() -> ProjectSession {
 /// unless the downstream row really depends on the upstream one.
 fn assert_fixture_is_live(s: &ProjectSession) {
     assert!(
-        s.get_result(0).is_some(),
+        s.result_at(0).is_some(),
         "index 0 must carry a cached result before the replacement"
     );
     assert!(
-        s.get_result(1).is_some(),
+        s.result_at(1).is_some(),
         "index 1 must carry a cached result before the replacement"
     );
     assert!(
@@ -199,7 +202,7 @@ fn assert_fixture_is_live(s: &ProjectSession) {
         "a disabled row takes another branch in invalidate_output_dependents"
     );
     assert_eq!(
-        s.list_setups()[0].toolpath_indices,
+        s.list_setups()[0].toolpath_indices(),
         vec![0, 1],
         "FromRemainingStock carries no upstream pointer. The binding is \
          plan order inside one setup."
@@ -230,7 +233,7 @@ fn replace(s: &mut ProjectSession, config: ToolpathConfig) -> rs_cam_core::sessi
 #[test]
 fn a_replacement_outside_the_signature_lands_and_drops_nothing() {
     let mut s = fixture();
-    let revision_before = s.toolpath_revision(0);
+    let revision_before = s.toolpath_revision_at(0);
     let signature_before = s.toolpath_configs()[0].generation_inputs_signature();
 
     let mut edited = s.toolpath_configs()[0].clone();
@@ -254,11 +257,11 @@ fn a_replacement_outside_the_signature_lands_and_drops_nothing() {
          the command must drop nothing"
     );
     assert!(
-        s.get_result(0).is_some(),
+        s.result_at(0).is_some(),
         "the replaced row keeps the geometry its inputs still answer for"
     );
     assert!(
-        s.get_result(1).is_some(),
+        s.result_at(1).is_some(),
         "the downstream row keeps its result too. A chain walk here would \
          cost a full regeneration for a rename."
     );
@@ -310,12 +313,12 @@ fn a_replacement_that_moves_the_signature_drops_the_chain() {
          FromRemainingStock row both go stale"
     );
     assert!(
-        s.get_result(0).is_none(),
+        s.result_at(0).is_none(),
         "the core must not keep geometry the moved inputs no longer \
          answer for"
     );
     assert!(
-        s.get_result(1).is_none(),
+        s.result_at(1).is_none(),
         "the downstream row reads the stock the edited row leaves"
     );
     let feed = s.toolpath_configs()[0].operation.feed_rate();
@@ -355,7 +358,7 @@ fn the_command_writes_the_three_unsupplied_fields_verbatim() {
         tier_count: 2,
     };
     let mut edited = s.toolpath_configs()[0].clone();
-    edited.id = ToolpathId(4242);
+    edited.id = ToolpathId::from_raw(4242);
     edited.boundary_inherit = false;
     edited.planner_origin = Some(origin.clone());
 
@@ -364,7 +367,7 @@ fn the_command_writes_the_three_unsupplied_fields_verbatim() {
     let stored = &s.toolpath_configs()[0];
     assert_eq!(
         stored.id,
-        ToolpathId(4242),
+        ToolpathId::from_raw(4242),
         "the command writes the id the caller passed. It protects \
          nothing; the projection does."
     );

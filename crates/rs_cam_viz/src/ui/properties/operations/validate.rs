@@ -48,7 +48,7 @@ impl ToolpathValidationContext {
                 .models()
                 .iter()
                 .map(|model| ValidationModel {
-                    id: crate::state::job::ModelId(model.id),
+                    id: model.id,
                     // P4.D: a drawing item or a face item (a STEP face),
                     // the rule of the Add toolpath menu.
                     has_polygons: model.items.has_selectable_item(),
@@ -75,8 +75,8 @@ pub fn validate_toolpath_config(
 ) -> Vec<String> {
     let mut errs = Vec::new();
 
-    let tool_id = crate::state::job::ToolId(tc.tool_id);
-    let model_id = crate::state::job::ModelId(tc.model_id);
+    let tool_id = tc.tool_id;
+    let model_id = tc.model_id;
 
     let Some(tool) = ctx.tools.iter().find(|t| t.id == tool_id) else {
         errs.push("No tool selected".into());

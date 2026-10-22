@@ -46,10 +46,15 @@ fn session_on(tool_id: Option<usize>) -> ProjectSession {
     let first = builder.add_tool(endmill_tool_config(6.0));
     let second = builder.add_tool(endmill_tool_config(3.0));
     assert_ne!(first, second);
-    let second_id = builder.tools()[second].id.0;
+    let second_id = builder.tools()[second].id.raw();
     let model_id = builder.add_model(polygon_model(vec![square_polygon(10.0)], "square"));
     let op = OperationConfig::new_default(OperationType::Pocket);
-    let cfg = toolpath_config("Pocket", op, tool_id.unwrap_or(second_id), model_id);
+    let cfg = toolpath_config(
+        "Pocket",
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id.unwrap_or(second_id)),
+        model_id,
+    );
     builder.add_toolpath(0, cfg).expect("add the toolpath");
     builder.build()
 }
@@ -58,7 +63,10 @@ fn session_on(tool_id: Option<usize>) -> ProjectSession {
 fn a_missing_tool_id_refuses_p2_5() {
     let mut session = session_on(Some(MISSING_TOOL_ID));
     assert!(
-        session.tools().iter().all(|t| t.id.0 != MISSING_TOOL_ID),
+        session
+            .tools()
+            .iter()
+            .all(|t| t.id.raw() != MISSING_TOOL_ID),
         "the fixture must not hold the missing id"
     );
     let cancel = AtomicBool::new(false);
@@ -72,7 +80,7 @@ fn a_missing_tool_id_refuses_p2_5() {
         "the refusal must name the missing tool id: {err}"
     );
     assert!(
-        session.get_result(0).is_none(),
+        session.result_at(0).is_none(),
         "a refused generation must store no result"
     );
 

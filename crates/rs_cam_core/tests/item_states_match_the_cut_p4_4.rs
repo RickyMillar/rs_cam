@@ -71,7 +71,6 @@ use common::tools::endmill_tool_config;
 use rs_cam_core::compute::catalog::{ItemUse, OperationConfig, OperationType};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use rs_cam_core::geo::P2;
-use rs_cam_core::ids::ModelId;
 use rs_cam_core::selection::{
     Filter, HoleFit, ItemKind, MatchKey, NoteCause, Rule, Selection, SelectionEdit, Shape,
     SourceRef, fit_holes, view,
@@ -86,7 +85,7 @@ fn load() -> LoadedModel {
         .join("tests/fixtures/selection_p4_4/states.dxf");
     rs_cam_core::io::load_model_file(
         &path,
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Dxf,
         ModelUnits::Millimeters,
         Default::default(),
@@ -213,7 +212,7 @@ fn check_states(s: &ProjectSession, r: &SelectionReport, what: &str) {
         .selection()
         .unwrap()
         .clone();
-    let own = SourceRef::Model(ModelId(m.id));
+    let own = SourceRef::Model(m.id);
     for (item, state) in m.items.iter().zip(&r.item_states) {
         let key = item.key();
         let held = r.selected.iter().any(|k| k.matches(key));

@@ -59,7 +59,6 @@ use rs_cam_core::compute::operation_configs::{
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::geo::{P2, P3};
-use rs_cam_core::ids::ModelId;
 use rs_cam_core::ops::inlay::{
     InlayPlugParams, InlayPocketParams, floor_inset, inlay_plug_toolpath_with_cancel,
     inlay_pocket_toolpath_with_cancel, mirror_design, plug_start_depth,
@@ -109,7 +108,7 @@ fn vbit(included_angle_deg: f64) -> ToolConfig {
     ToolConfig {
         diameter: 12.7,
         included_angle: included_angle_deg,
-        ..ToolConfig::new_default(ToolId(0), ToolType::VBit)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit)
     }
 }
 
@@ -499,12 +498,12 @@ fn e_inlay_plus_the_clipped_floor_pocket_make_the_whole_pocket() {
 
     let mut builder = ProjectSessionBuilder::new().stock(board());
     let vbit_idx = builder.add_tool(vbit(90.0));
-    let vbit_id = builder.tools()[vbit_idx].id.0;
+    let vbit_id = builder.tools()[vbit_idx].id.raw();
     let mill_idx = builder.add_tool(ToolConfig {
         diameter: 4.0,
-        ..ToolConfig::new_default(ToolId(1), ToolType::EndMill)
+        ..ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill)
     });
-    let mill_id = builder.tools()[mill_idx].id.0;
+    let mill_id = builder.tools()[mill_idx].id.raw();
     let model_id = builder.add_model(polygon_model(vec![l_design()], "l"));
 
     // The floor Pocket, as the Inlay help text says.
@@ -514,12 +513,17 @@ fn e_inlay_plus_the_clipped_floor_pocket_make_the_whole_pocket() {
         stepover: 1.6,
         ..PocketConfig::default()
     };
-    let mut floor = toolpath_config("floor", OperationConfig::Pocket(pocket), mill_id, model_id);
+    let mut floor = toolpath_config(
+        "floor",
+        OperationConfig::Pocket(pocket),
+        rs_cam_core::ids::ToolId::from_raw(mill_id),
+        model_id,
+    );
     floor.boundary_inherit = false;
     floor.boundary = BoundaryConfig {
         enabled: true,
         source: BoundarySource::Selection {
-            selection: Selection::closed_shapes_of(ModelId(model_id)),
+            selection: Selection::closed_shapes_of(model_id),
             holes: false,
         },
         containment: BoundaryContainment::Inside,
@@ -531,7 +535,7 @@ fn e_inlay_plus_the_clipped_floor_pocket_make_the_whole_pocket() {
     let walls = toolpath_config(
         "walls",
         OperationConfig::Inlay(inlay.clone()),
-        vbit_id,
+        rs_cam_core::ids::ToolId::from_raw(vbit_id),
         model_id,
     );
     let _ = builder.add_toolpath(0, walls).expect("add the inlay");

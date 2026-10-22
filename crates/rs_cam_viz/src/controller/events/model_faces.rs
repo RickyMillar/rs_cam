@@ -46,11 +46,14 @@ impl<B: ComputeBackend> AppController<B> {
     }
 
     /// The first model the toolpath `id` needs the faces of now, or `None`.
-    fn model_needing_faces(&self, id: crate::state::toolpath::ToolpathId) -> Option<usize> {
+    fn model_needing_faces(
+        &self,
+        id: crate::state::toolpath::ToolpathId,
+    ) -> Option<rs_cam_core::ids::ModelId> {
         use rs_cam_core::session::SelectionTarget;
         let session = self.state.session();
         let (_, tc) = session.find_toolpath_config_by_id(id)?;
-        let failed = |m: &usize| self.failed_face_models.contains(m);
+        let failed = |m: &rs_cam_core::ids::ModelId| self.failed_face_models.contains(m);
         for target in [SelectionTarget::Op, SelectionTarget::Boundary] {
             // Ask the status only of a selection that names a face: a
             // boundary that is not a selection would miss the memo and
@@ -66,12 +69,7 @@ impl<B: ComputeBackend> AppController<B> {
             let Ok(report) = session.selection_status(tc, target) else {
                 continue;
             };
-            if let Some(model) = report
-                .faces_not_ready
-                .iter()
-                .map(|m| m.0)
-                .find(|m| !failed(m))
-            {
+            if let Some(model) = report.faces_not_ready.iter().copied().find(|m| !failed(m)) {
                 return Some(model);
             }
         }
@@ -82,7 +80,7 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Submit the `build_model_faces` job for `model_id` on the Job lane.
     /// A refusal at step (i) marks the model failed and says why.
-    pub(crate) fn request_model_faces(&mut self, model_id: usize) {
+    pub(crate) fn request_model_faces(&mut self, model_id: rs_cam_core::ids::ModelId) {
         if self.state.is_job_running() {
             return;
         }
@@ -108,7 +106,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// marks the model and says why.
     pub(crate) fn handle_model_faces_result(
         &mut self,
-        model_id: usize,
+        model_id: rs_cam_core::ids::ModelId,
         result: Result<(), String>,
     ) {
         match result {
@@ -117,7 +115,7 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    fn model_faces_failed(&mut self, model_id: usize, error: &str) {
+    fn model_faces_failed(&mut self, model_id: rs_cam_core::ids::ModelId, error: &str) {
         let _ = self.failed_face_models.insert(model_id);
         self.push_notification(
             format!("Could not compute the flat faces of model {model_id}: {error}"),

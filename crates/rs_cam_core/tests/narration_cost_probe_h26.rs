@@ -83,7 +83,7 @@ fn narrate_toolpath_on_an_idle_lane_is_timed() {
     let gen_s = gen_started.elapsed().as_secs_f64();
 
     let move_count = session
-        .get_result(0)
+        .result_at(0)
         .expect("a generated result")
         .toolpath()
         .moves

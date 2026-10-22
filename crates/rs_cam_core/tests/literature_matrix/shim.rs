@@ -224,7 +224,7 @@ fn resolve_tool_type(cell: &LiteratureCell) -> Result<ToolType, ShimError> {
 /// matrix tracks (R4 C_tapered_scallop).
 fn build_tool(cell: &LiteratureCell, tool_type: ToolType) -> ToolConfig {
     let i = &cell.inputs;
-    let mut t = ToolConfig::new_default(ToolId(0), tool_type);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
     let tip_d = match tool_type {
         ToolType::TaperedBallNose => i
             .tip_diameter_mm

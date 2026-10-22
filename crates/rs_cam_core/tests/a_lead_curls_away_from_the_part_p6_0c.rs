@@ -177,7 +177,7 @@ fn vbit() -> ToolConfig {
     ToolConfig {
         diameter: 12.7,
         included_angle: 90.0,
-        ..ToolConfig::new_default(ToolId(0), ToolType::VBit)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit)
     }
 }
 
@@ -203,7 +203,7 @@ fn generate(outline: &Polygon2, op: &OperationConfig, tool: ToolConfig) -> Toolp
         .generate_toolpath(0, &cancel)
         .expect("the op generates");
     session
-        .get_result(0)
+        .result_at(0)
         .expect("a result")
         .annotated()
         .toolpath

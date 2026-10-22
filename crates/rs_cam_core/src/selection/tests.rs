@@ -58,7 +58,7 @@ fn face(plane_z: f64, normal_z: f64, brep: u16) -> Item {
 /// A model of `items`, bound to `Model(MODEL_ID)` as the session binds it.
 fn model(items: Vec<Item>) -> LoadedModel {
     let mut m = LoadedModel {
-        id: MODEL_ID,
+        id: crate::ids::ModelId::from_raw(MODEL_ID),
         name: "p2_2".to_owned(),
         mesh: None,
         items: Arc::new(ItemSet::new(items)),
@@ -267,14 +267,17 @@ fn a_face_filter_reads_the_facing_and_the_z_in_the_setup_frame() {
 fn a_pick_matches_the_bound_item_of_its_source() {
     let m = mixed();
     let circle = m.items.iter().nth(3).unwrap().clone();
-    assert_eq!(circle.source(), SourceRef::Model(ModelId(MODEL_ID)));
+    assert_eq!(
+        circle.source(),
+        SourceRef::Model(ModelId::from_raw(MODEL_ID))
+    );
     let r = resolve_on(&Selection::from_picks(vec![pick_key(&circle)]), &m);
     assert!(r.lost().is_empty());
     assert_eq!(kinds(&r), [ItemKind::Circle]);
     assert_eq!(r.items()[0].by(), MatchedBy::Pick);
     // A pick that names the model by id matches too.
     let by_id = MatchKey {
-        source: SourceRef::Model(ModelId(MODEL_ID)),
+        source: SourceRef::Model(ModelId::from_raw(MODEL_ID)),
         ..pick_key(&circle)
     };
     let r = resolve_on(&Selection::from_picks(vec![by_id]), &m);
@@ -364,14 +367,17 @@ fn a_rule_and_a_pick_of_one_item_give_it_once_as_the_pick() {
 fn a_missing_model_and_an_unknown_layer_refuse() {
     let m = mixed();
     let gone = Selection::from_rules(vec![Rule {
-        source: SourceRef::Model(ModelId(99)),
+        source: SourceRef::Model(ModelId::from_raw(99)),
         filter: Filter::default(),
     }]);
     let r = resolve_on(&gone, &m);
-    assert_eq!(r.missing_sources(), [SourceRef::Model(ModelId(99))]);
+    assert_eq!(
+        r.missing_sources(),
+        [SourceRef::Model(ModelId::from_raw(99))]
+    );
     assert_eq!(
         view(&r, ItemUse::Regions).unwrap_err().cause,
-        RefusalCause::MissingSource(SourceRef::Model(ModelId(99)))
+        RefusalCause::MissingSource(SourceRef::Model(ModelId::from_raw(99)))
     );
     let typo = rule(Filter {
         layers: vec!["A".into(), "CUTT".into()],

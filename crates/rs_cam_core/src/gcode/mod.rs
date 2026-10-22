@@ -423,7 +423,7 @@ pub fn emit_gcode(toolpath: &Toolpath, post: &PostDefinition, spindle_rpm: u32) 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PhaseTool<'a> {
     /// Tool config id — the identity used for change detection.
-    pub id: usize,
+    pub id: crate::ids::ToolId,
     /// Display T-number, substituted into the post's `tool_change`
     /// template (`M6 T{n}` / operator message).
     pub number: u32,
@@ -554,7 +554,7 @@ fn prepend_t_collision_warnings<'a>(
         return;
     }
     // number → distinct tool config ids seen under that number.
-    let mut by_number: std::collections::BTreeMap<u32, Vec<usize>> =
+    let mut by_number: std::collections::BTreeMap<u32, Vec<crate::ids::ToolId>> =
         std::collections::BTreeMap::new();
     for phase in phases {
         if let Some(tool) = phase.tool {
@@ -717,7 +717,7 @@ pub fn arrange_phases_by_setup<'a>(
         .list_setups()
         .iter()
         .filter(|s| {
-            s.toolpath_indices
+            s.toolpath_indices()
                 .iter()
                 .any(|i| taken.get(*i).is_some_and(Option::is_some))
         })
@@ -728,7 +728,7 @@ pub fn arrange_phases_by_setup<'a>(
     let mut groups: Vec<GcodeSetupPhase<'a>> = Vec::new();
     for setup in session.list_setups() {
         let phases: Vec<GcodePhase<'a>> = setup
-            .toolpath_indices
+            .toolpath_indices()
             .iter()
             .filter_map(|i| taken.get_mut(*i).and_then(Option::take))
             .collect();
@@ -1578,14 +1578,14 @@ mod tests {
     ) -> crate::session::ToolpathConfig {
         crate::session::ToolpathConfig {
             shoe: Default::default(),
-            id: ToolpathId(0),
+            id: ToolpathId::from_raw(0),
             name: "Test Op".to_owned(),
             enabled: true,
             operation,
             dressups: crate::compute::config::DressupConfig::default(),
             heights: crate::compute::config::HeightsConfig::default(),
-            tool_id: 0,
-            model_id: 0,
+            tool_id: crate::ids::ToolId::from_raw(0),
+            model_id: crate::ids::ModelId::from_raw(0),
             pre_gcode: None,
             post_gcode: None,
             boundary: crate::compute::config::BoundaryConfig::default(),
@@ -1713,7 +1713,7 @@ mod tests {
                 pre_gcode: Some("M8"),
                 post_gcode: Some("M9"),
                 tool: Some(PhaseTool {
-                    id: 1,
+                    id: crate::ids::ToolId::from_raw(1),
                     number: 1,
                     label: "Tool One",
                 }),
@@ -1729,7 +1729,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 2,
+                    id: crate::ids::ToolId::from_raw(2),
                     number: 2,
                     label: "Tool Two",
                 }),
@@ -1773,7 +1773,7 @@ mod tests {
                     pre_gcode: None,
                     post_gcode: None,
                     tool: Some(PhaseTool {
-                        id: 1,
+                        id: crate::ids::ToolId::from_raw(1),
                         number: 1,
                         label: "Tool One",
                     }),
@@ -1793,7 +1793,7 @@ mod tests {
                     pre_gcode: None,
                     post_gcode: None,
                     tool: Some(PhaseTool {
-                        id: 2,
+                        id: crate::ids::ToolId::from_raw(2),
                         number: 2,
                         label: "Tool Two",
                     }),
@@ -2275,7 +2275,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 1,
+                    id: crate::ids::ToolId::from_raw(1),
                     number: 1,
                     label: "Tool One",
                 }),
@@ -2291,7 +2291,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 2,
+                    id: crate::ids::ToolId::from_raw(2),
                     number: 2,
                     label: "Tool Two",
                 }),
@@ -2347,7 +2347,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 1,
+                    id: crate::ids::ToolId::from_raw(1),
                     number: 1,
                     label: "End Mill",
                 }),
@@ -2363,7 +2363,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 2,
+                    id: crate::ids::ToolId::from_raw(2),
                     number: 2,
                     label: "Tapered Ball 2mm",
                 }),
@@ -2408,7 +2408,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 1,
+                    id: crate::ids::ToolId::from_raw(1),
                     number: 1,
                     label: "Tool One",
                 }),
@@ -2424,7 +2424,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 1,
+                    id: crate::ids::ToolId::from_raw(1),
                     number: 1,
                     label: "Tool One",
                 }),
@@ -2460,7 +2460,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 1,
+                    id: crate::ids::ToolId::from_raw(1),
                     number: 1,
                     label: "End Mill",
                 }),
@@ -2476,7 +2476,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 2,
+                    id: crate::ids::ToolId::from_raw(2),
                     number: 1, // SAME display number, different tool
                     label: "Tapered Ball 2mm",
                 }),
@@ -2621,7 +2621,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 1,
+                    id: crate::ids::ToolId::from_raw(1),
                     number: 1,
                     label: "Tool One",
                 }),
@@ -2637,7 +2637,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 2,
+                    id: crate::ids::ToolId::from_raw(2),
                     number: 2,
                     label: "Tool Two",
                 }),
@@ -2682,7 +2682,7 @@ mod tests {
     ) -> ToolLoadReport {
         ToolLoadReport {
             per_toolpath: vec![ToolpathLoadVerdict {
-                toolpath_id: ToolpathId(4),
+                toolpath_id: ToolpathId::from_raw(4),
                 chipload,
                 power,
                 deflection,
@@ -3119,7 +3119,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 1,
+                    id: crate::ids::ToolId::from_raw(1),
                     number: 1,
                     label: "End Mill",
                 }),
@@ -3135,7 +3135,7 @@ mod tests {
                 pre_gcode: None,
                 post_gcode: None,
                 tool: Some(PhaseTool {
-                    id: 2,
+                    id: crate::ids::ToolId::from_raw(2),
                     number: 1, // SAME display number, different tool
                     label: "Tapered Ball 2mm",
                 }),

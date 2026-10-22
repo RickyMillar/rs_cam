@@ -62,7 +62,7 @@ fn production_samples_carry_populated_engagement_vector() {
             &tp,
             &cutter,
             StockCutDirection::FromTop,
-            ToolpathId(0),
+            ToolpathId::from_raw(0),
             18_000,
             2,
             5000.0,
@@ -110,7 +110,7 @@ fn mk_sample(
     arc: Option<f64>,
 ) -> SimulationCutSample {
     SimulationCutSample {
-        toolpath_id: ToolpathId(toolpath_id),
+        toolpath_id: ToolpathId::from_raw(toolpath_id),
         move_index: sample_index,
         sample_index,
         position: [sample_index as f64, 0.0, 0.0],
@@ -170,7 +170,7 @@ fn summary_accumulator_separates_kinematics() {
     ));
     acc.observe(&mk_sample(1, 2, CutKinematics::Plunge, 1.0, 4.0, None));
 
-    let summary = acc.finish_toolpath(ToolpathId(1));
+    let summary = acc.finish_toolpath(ToolpathId::from_raw(1));
     let lin = summary
         .per_kinematics
         .get(&CutKinematics::Linear)
@@ -267,7 +267,7 @@ fn legacy_scalar_matches_engagement_radial_woc_for_all_samples() {
             &tp,
             &cutter,
             StockCutDirection::FromTop,
-            ToolpathId(0),
+            ToolpathId::from_raw(0),
             18_000,
             2,
             5000.0,
@@ -326,7 +326,7 @@ fn the_engagement_wire_carries_only_the_axes_it_measures() {
 
     let mut acc = SummaryAccumulator::default();
     acc.observe(&mk_sample(1, 0, CutKinematics::Linear, 0.5, 1.5, Some(0.8)));
-    let summary = acc.finish_toolpath(ToolpathId(1));
+    let summary = acc.finish_toolpath(ToolpathId::from_raw(1));
     assert!(
         summary.per_kinematics.contains_key(&CutKinematics::Linear),
         "the assertion below reads a populated kinematics block, not an empty map"

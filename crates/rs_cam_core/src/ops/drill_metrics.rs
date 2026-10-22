@@ -465,9 +465,9 @@ mod tests {
     #[test]
     fn simple_cycle_emits_one_peck_per_hole() {
         let op = op_with(DrillCycle::Simple, 4.0, 12.0, Material::default());
-        let samples = emit_drill_samples(ToolpathId(7), &op);
+        let samples = emit_drill_samples(ToolpathId::from_raw(7), &op);
         assert_eq!(samples.len(), 1);
-        assert_eq!(samples[0].toolpath_id, ToolpathId(7));
+        assert_eq!(samples[0].toolpath_id, ToolpathId::from_raw(7));
         assert_eq!(samples[0].hole_id, 0);
         assert_eq!(samples[0].peck_index, 0);
         assert!((samples[0].descent_mm - 12.0).abs() < 1e-9);
@@ -487,7 +487,7 @@ mod tests {
     #[test]
     fn peck_cycle_emits_one_per_peck_with_final_clamp() {
         let op = op_with(DrillCycle::Peck(5.0), 4.0, 12.0, Material::default());
-        let samples = emit_drill_samples(ToolpathId(0), &op);
+        let samples = emit_drill_samples(ToolpathId::from_raw(0), &op);
         assert_eq!(samples.len(), 3);
         // Fed distance, including the re-cut re-entry clearance.
         assert!((samples[0].descent_mm - 5.0).abs() < 1e-9);
@@ -534,8 +534,8 @@ mod tests {
         // Ø4 × 40 mm: total D/d = 10 (Critical for softwood threshold 8
         // when Simple), but Peck(2) credits to per-peck 0.5 → Low.
         let op = op_with(DrillCycle::Peck(2.0), 4.0, 40.0, Material::default());
-        let samples = emit_drill_samples(ToolpathId(0), &op);
-        let s = build_drill_toolpath_summary(ToolpathId(0), &op, &samples);
+        let samples = emit_drill_samples(ToolpathId::from_raw(0), &op);
+        let s = build_drill_toolpath_summary(ToolpathId::from_raw(0), &op, &samples);
         assert_eq!(s.max_depth_to_diameter, 10.0, "total ratio preserved");
         assert!(
             (s.chip_welding_dtd - 0.5).abs() < 1e-9,
@@ -555,7 +555,7 @@ mod tests {
     #[test]
     fn peck_cycle_chip_evacuation_is_high_but_not_free() {
         let op = op_with(DrillCycle::Peck(2.0), 4.0, 16.0, Material::default());
-        let samples = emit_drill_samples(ToolpathId(0), &op);
+        let samples = emit_drill_samples(ToolpathId::from_raw(0), &op);
         for s in &samples {
             assert!(
                 s.chip_evacuation_score >= 0.9,
@@ -566,7 +566,7 @@ mod tests {
         // A peck an order of magnitude deeper must score materially
         // worse on the same hole.
         let deep = op_with(DrillCycle::Peck(16.0), 4.0, 16.0, Material::default());
-        let deep_samples = emit_drill_samples(ToolpathId(0), &deep);
+        let deep_samples = emit_drill_samples(ToolpathId::from_raw(0), &deep);
         let worst = deep_samples
             .iter()
             .map(|s| s.chip_evacuation_score)
@@ -581,8 +581,8 @@ mod tests {
     fn simple_cycle_evacuation_falls_off_with_depth() {
         let shallow = op_with(DrillCycle::Simple, 4.0, 4.0, Material::default());
         let deep = op_with(DrillCycle::Simple, 4.0, 40.0, Material::default());
-        let s1 = &emit_drill_samples(ToolpathId(0), &shallow)[0];
-        let s2 = &emit_drill_samples(ToolpathId(0), &deep)[0];
+        let s1 = &emit_drill_samples(ToolpathId::from_raw(0), &shallow)[0];
+        let s2 = &emit_drill_samples(ToolpathId::from_raw(0), &deep)[0];
         assert!(
             s2.chip_evacuation_score < s1.chip_evacuation_score,
             "deeper hole should evacuate worse: shallow={} deep={}",
@@ -594,13 +594,13 @@ mod tests {
     #[test]
     fn dwell_only_on_final_peck() {
         let op = op_with(DrillCycle::Dwell(0.5), 4.0, 12.0, Material::default());
-        let samples = emit_drill_samples(ToolpathId(0), &op);
+        let samples = emit_drill_samples(ToolpathId::from_raw(0), &op);
         assert_eq!(samples.len(), 1);
         assert!((samples[0].dwell_s - 0.5).abs() < 1e-9);
 
         // Peck cycles never dwell.
         let peck_op = op_with(DrillCycle::Peck(5.0), 4.0, 12.0, Material::default());
-        for s in emit_drill_samples(ToolpathId(0), &peck_op) {
+        for s in emit_drill_samples(ToolpathId::from_raw(0), &peck_op) {
             assert_eq!(s.dwell_s, 0.0);
         }
     }
@@ -616,9 +616,9 @@ mod tests {
     #[test]
     fn summary_aggregates_pecks_and_classifies_risk() {
         let op = op_with(DrillCycle::Peck(3.0), 4.0, 12.0, Material::default());
-        let samples = emit_drill_samples(ToolpathId(0), &op);
-        let summary = build_drill_toolpath_summary(ToolpathId(0), &op, &samples);
-        assert_eq!(summary.toolpath_id, ToolpathId(0));
+        let samples = emit_drill_samples(ToolpathId::from_raw(0), &op);
+        let summary = build_drill_toolpath_summary(ToolpathId::from_raw(0), &op, &samples);
+        assert_eq!(summary.toolpath_id, ToolpathId::from_raw(0));
         assert_eq!(summary.hole_count, 1);
         assert_eq!(summary.peck_count, 4);
         assert!((summary.deepest_hole_mm - 12.0).abs() < 1e-9);
@@ -633,8 +633,8 @@ mod tests {
     fn simple_cycle_at_deep_hole_flags_high_welding_risk() {
         // 32 mm depth in Ø4 softwood (d/D = 8.0; threshold = 8 → exactly at edge).
         let op = op_with(DrillCycle::Simple, 4.0, 36.0, Material::default());
-        let samples = emit_drill_samples(ToolpathId(0), &op);
-        let summary = build_drill_toolpath_summary(ToolpathId(0), &op, &samples);
+        let samples = emit_drill_samples(ToolpathId::from_raw(0), &op);
+        let summary = build_drill_toolpath_summary(ToolpathId::from_raw(0), &op, &samples);
         assert_eq!(summary.chip_welding_risk, ChipWeldingRisk::High);
     }
 
@@ -643,8 +643,8 @@ mod tests {
         // Ø2 tool, single peck depth 14 mm → d/D = 7.0, softwood
         // threshold = 6.0 (Janka-banded, 2026-06-03) → inadequate.
         let op = op_with(DrillCycle::Peck(14.0), 2.0, 14.0, Material::default());
-        let samples = emit_drill_samples(ToolpathId(0), &op);
-        let summary = build_drill_toolpath_summary(ToolpathId(0), &op, &samples);
+        let samples = emit_drill_samples(ToolpathId::from_raw(0), &op);
+        let summary = build_drill_toolpath_summary(ToolpathId::from_raw(0), &op, &samples);
         assert!(
             !summary.peck_pattern_adequate,
             "single peck of d/D = 7.0 should be flagged inadequate vs softwood 6.0 threshold"

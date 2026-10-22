@@ -49,12 +49,17 @@ fn temp_path() -> PathBuf {
 fn saved_project_text() -> String {
     let mut builder = ProjectSessionBuilder::new();
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     for (name, kind) in [
         ("Drill", OperationType::Drill),
         ("Pin Drill", OperationType::AlignmentPinDrill),
     ] {
-        let tc = toolpath_config(name, OperationConfig::new_default(kind), tool_id, 0);
+        let tc = toolpath_config(
+            name,
+            OperationConfig::new_default(kind),
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
+            rs_cam_core::ids::ModelId::from_raw(0),
+        );
         let _ = builder.add_toolpath(0, tc).expect("add toolpath");
     }
     let session = builder.build();

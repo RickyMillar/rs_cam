@@ -409,8 +409,8 @@ fn request_for(mesh: &Arc<TriangleMesh>, diameter: f64, tolerance_mm: f64) -> Re
         // the tolerance classifies on it (F5, 2026-09-08).
         params: ReachMapParams::for_cutter(cutter.as_ref(), tolerance_mm),
         cutter,
-        tool_id: 7,
-        model_id: 3,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(7),
+        model_id: rs_cam_core::ids::ModelId::from_raw(3),
         tolerance_source: ReachToleranceSource::CallerOverride,
     }
 }
@@ -446,8 +446,8 @@ fn the_memo_hits_on_the_same_key_and_rebuilds_after_a_radius_edit() {
 
     // The ids ride on the answer, and they are in the key, so a map is never
     // served under another toolpath's name.
-    assert_eq!(first.tool_id, Some(7));
-    assert_eq!(first.model_id, Some(3));
+    assert_eq!(first.tool_id, Some(rs_cam_core::ids::ToolId::from_raw(7)));
+    assert_eq!(first.model_id, Some(rs_cam_core::ids::ModelId::from_raw(3)));
 
     reach_map_cache::clear();
     reach_map_cache::reset_stats();

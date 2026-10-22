@@ -51,7 +51,6 @@ use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::export::fingerprint::ToolpathFingerprint;
 use rs_cam_core::gcode::post::{Decimals, grbl, grblhal, linuxcnc, mach3};
 use rs_cam_core::geo::{P2, P3, V3};
-use rs_cam_core::ids::ModelId;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::ops::face::FaceDirection;
 use rs_cam_core::polygon::Polygon2;
@@ -126,7 +125,7 @@ pub fn tool_for(op: OperationType) -> ToolConfig {
         .required_kinds
         .first()
         .map_or(ToolType::EndMill, |k| k.tool_type());
-    ToolConfig::new_default(ToolId(0), kind)
+    ToolConfig::new_default(ToolId::from_raw(0), kind)
 }
 
 /// True when the op runs on the mesh fixture.
@@ -547,7 +546,7 @@ pub fn case_session(spec: CaseSpec<'_>) -> (ProjectSession, usize) {
     };
 
     let tool_idx = builder.add_tool(spec.tool.unwrap_or_else(|| tool_for(op_type)));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     let mut op = spec.op;
     let (model_id, heights) = if mesh {
@@ -555,7 +554,7 @@ pub fn case_session(spec: CaseSpec<'_>) -> (ProjectSession, usize) {
         let cap_id = builder.add_model(place(surface));
         let model_id = if geometry == GeometryRequirement::ItemsAndMesh {
             if let OperationConfig::ProjectCurve(cfg) = &mut op {
-                cfg.surface_model_id = Some(ModelId(cap_id));
+                cfg.surface_model_id = Some(cap_id);
             }
             builder.add_model(place(curve_model()))
         } else {
@@ -572,9 +571,11 @@ pub fn case_session(spec: CaseSpec<'_>) -> (ProjectSession, usize) {
 
     if spec.prior == Prior::RestPrior {
         // The prior op: a flat end mill, which every fixture admits.
-        let prior_tool_idx =
-            builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-        let prior_tool_id = builder.tools()[prior_tool_idx].id.0;
+        let prior_tool_idx = builder.add_tool(ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ));
+        let prior_tool_id = builder.tools()[prior_tool_idx].id.raw();
         let prior: ToolpathConfig = if mesh {
             ToolpathConfig {
                 shoe: Default::default(),
@@ -582,20 +583,30 @@ pub fn case_session(spec: CaseSpec<'_>) -> (ProjectSession, usize) {
                 ..toolpath_config(
                     "prior",
                     OperationConfig::new_default(OperationType::Adaptive3d),
-                    prior_tool_id,
+                    rs_cam_core::ids::ToolId::from_raw(prior_tool_id),
                     builder.models()[0].id,
                 )
             }
         } else {
             let prior_model = builder.add_model(place(flat_prior_model()));
-            toolpath_config("prior", flat_prior_op(), prior_tool_id, prior_model)
+            toolpath_config(
+                "prior",
+                flat_prior_op(),
+                rs_cam_core::ids::ToolId::from_raw(prior_tool_id),
+                prior_model,
+            )
         };
         let _ = builder
             .add_toolpath(setup, prior)
             .expect("add the prior op");
     }
 
-    let mut config = toolpath_config(spec.name, op, tool_id, model_id);
+    let mut config = toolpath_config(
+        spec.name,
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     if let Some(h) = heights {
         config.heights = h;
     }
@@ -676,7 +687,7 @@ pub fn generated_op(
     let mut session = super::session::single_op_session_with(stock, tool, model, "op", op, tweak);
     super::session::generate(&mut session, 0);
     let annotated = session
-        .get_result(0)
+        .result_at(0)
         .expect("the generated op has a result")
         .annotated();
     AnnotatedToolpath::clone(annotated)
@@ -691,7 +702,7 @@ pub fn generated_op(
 /// stages. Before D3 these files called the deleted `face_toolpath` with
 /// the same dials.
 pub fn dressup_face(depth: f64) -> Toolpath {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
         x: 40.0,

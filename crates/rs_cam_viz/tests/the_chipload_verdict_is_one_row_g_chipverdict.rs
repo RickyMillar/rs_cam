@@ -237,7 +237,7 @@ fn no_kc() -> Fixture {
 }
 
 fn state_for(fixture: Fixture) -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId(1), fixture.tool_type);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), fixture.tool_type);
     tool.diameter = fixture.diameter_mm;
     tool.flute_count = 2;
     tool.stickout = fixture.stickout_mm;
@@ -281,14 +281,14 @@ fn state_for_recipe(
 
     let config = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Chip verdict fixture".to_owned(),
         enabled: true,
         operation,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -302,7 +302,7 @@ fn state_for_recipe(
     };
 
     let model = LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         path: PathBuf::from("chip_verdict_fixture.svg"),
         name: "Chip verdict fixture".to_owned(),
         kind: Some(ModelKind::Svg),
@@ -618,7 +618,7 @@ fn door_figure(fixture: Fixture) -> Result<PowerFigure, PowerUnmodeled> {
         state.session().post_config().spindle_strategy,
     );
     let recommended = preview.recommended();
-    let model_bbox = state.session().model_bbox(tc.model_id);
+    let model_bbox = state.session().model_bbox_by_id(tc.model_id);
     let previews = feeds::suggest::preview_field_applies(
         &tc.operation,
         recommended,
@@ -866,7 +866,7 @@ fn shipped_recipe(
         material: Material::SolidWood { species },
         ..Default::default()
     };
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = diameter;
     tool.flute_count = 2;
     tool.stickout = 3.0 * diameter;

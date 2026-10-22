@@ -135,7 +135,7 @@ impl ProjectSession {
                     // (P2.5). Generation refuses a missing tool by its id,
                     // and `remove_tool` refuses a tool in use, so no
                     // production result reaches this arm.
-                    let Some(tool) = self.find_tool_by_raw_id(tc.tool_id) else {
+                    let Some(tool) = self.tool_by_id(tc.tool_id) else {
                         continue;
                     };
                     let (tool_def, flute_count, tool_summary) =
@@ -155,7 +155,7 @@ impl ProjectSession {
                         name: tc.name.clone(),
                         annotated: Arc::clone(result.annotated()),
                         tool: tool_def,
-                        tool_id: crate::compute::tool_config::ToolId(tc.tool_id),
+                        tool_id: tc.tool_id,
                         flute_count,
                         tool_summary,
                         semantic_trace: result.semantic_trace.clone(),
@@ -560,7 +560,7 @@ impl ProjectSession {
             let Some(tc) = self.toolpath_configs.get(idx) else {
                 continue;
             };
-            let Some(tool_cfg) = self.find_tool_by_raw_id(tc.tool_id) else {
+            let Some(tool_cfg) = self.tool_by_id(tc.tool_id) else {
                 continue;
             };
             let Some(result) = self.results.get(&idx) else {

@@ -108,7 +108,6 @@
 use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 
-use rs_cam_core::compute::tool_config::ToolId;
 use rs_cam_core::feeds::{
     FeedsError, embedded_vendor_lut,
     suggest::{
@@ -310,7 +309,7 @@ fn wanaka_suggest_baseline() {
 
     // ── Toolpath 4: Back Rough (Adaptive3D, 6 mm carbide endmill, HardMaple)
     {
-        let (_id, name, suggested) = find_case(&cases, ToolpathId(4));
+        let (_id, name, suggested) = find_case(&cases, ToolpathId::from_raw(4));
         let ctx = format!("Back Rough (tp {_id} / {name})");
 
         // Unified-load-model re-baseline (2026-07-06): the axial-DOC
@@ -665,7 +664,7 @@ fn wanaka_suggest_baseline() {
 
     // ── Toolpath 10: 3D Rough 6 — same op family + tool as Back Rough.
     {
-        let (_id, name, suggested) = find_case(&cases, ToolpathId(10));
+        let (_id, name, suggested) = find_case(&cases, ToolpathId::from_raw(10));
         let ctx = format!("3D Rough 6 (tp {_id} / {name})");
 
         // Same unified-load-model re-baseline as Back Rough above: the
@@ -750,7 +749,7 @@ fn wanaka_suggest_baseline() {
     // row and is not re-pinned here; `StepoverRaisedForRuntime` stays an
     // allowed variant in the catch-all below.
     {
-        let (_id, name, suggested) = find_case(&cases, ToolpathId(11));
+        let (_id, name, suggested) = find_case(&cases, ToolpathId::from_raw(11));
         let ctx = format!("3D Finish 6 (tp {_id} / {name})");
         assert_eq!(
             suggested.feeds_result.support,
@@ -813,7 +812,7 @@ fn wanaka_suggest_baseline() {
     // 2)). The chart's 18 000 RPM is clamped to the 14 000 drill cap, so the
     // feed is 14 000 x 0.0635 x 2 = 1778 mm/min (float rounding and the
     // round-down on apply decide 1777 or 1778), 0.78x the printed 2286.
-    for id in [ToolpathId(14), ToolpathId(7)] {
+    for id in [ToolpathId::from_raw(14), ToolpathId::from_raw(7)] {
         let (_id, name, suggested) = find_case(&cases, id);
         let ctx = format!("drill (tp {_id} / {name})");
         assert_no_feed_raised(&suggested.warnings, &ctx);
@@ -863,14 +862,14 @@ fn wanaka_suggest_baseline() {
 
     // ── Toolpath 5: Rivers (back) — Project Curve, 60° V-bit (chipload NotApplicable)
     {
-        let (_id, name, suggested) = find_case(&cases, ToolpathId(5));
+        let (_id, name, suggested) = find_case(&cases, ToolpathId::from_raw(5));
         let ctx = format!("Rivers (tp {_id} / {name})");
         assert_no_feed_raised(&suggested.warnings, &ctx);
     }
 
     // ── Toolpath 6: Lakes (back, inside) — Project Curve, 60° V-bit
     {
-        let (_id, name, suggested) = find_case(&cases, ToolpathId(6));
+        let (_id, name, suggested) = find_case(&cases, ToolpathId::from_raw(6));
         let ctx = format!("Lakes (tp {_id} / {name})");
         assert_no_feed_raised(&suggested.warnings, &ctx);
     }
@@ -1100,10 +1099,10 @@ fn wanaka_suggest_idempotent_on_second_run() {
     let tc = session
         .toolpath_configs()
         .iter()
-        .find(|t| t.id == ToolpathId(4))
+        .find(|t| t.id == ToolpathId::from_raw(4))
         .expect("Wanaka Back Rough (tp 4) missing");
     let tool = session
-        .get_tool(ToolId(tc.tool_id))
+        .tool_by_id(tc.tool_id)
         .expect("Back Rough tool missing");
     let model_bbox = model_bboxes
         .iter()
@@ -1189,7 +1188,7 @@ fn session_cutter_op_profile_matches_gui_rationale_assembly() {
             continue;
         }
         let tool = session
-            .get_tool(ToolId(tc.tool_id))
+            .tool_by_id(tc.tool_id)
             .unwrap_or_else(|| panic!("Tool {} missing for toolpath {}", tc.tool_id, tc.id));
 
         // The exact context the GUI modal / MCP rationale path built

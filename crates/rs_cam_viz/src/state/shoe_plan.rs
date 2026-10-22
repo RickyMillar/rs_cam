@@ -87,10 +87,10 @@ fn plan_key(session: &ProjectSession) -> u64 {
     )
     .hash(&mut hasher);
     for (index, tc) in session.toolpath_configs().iter().enumerate() {
-        (tc.id.0, tc.enabled, tc.tool_id, &tc.name).hash(&mut hasher);
+        (tc.id.raw(), tc.enabled, tc.tool_id, &tc.name).hash(&mut hasher);
         format!("{:?}", tc.shoe).hash(&mut hasher);
         session
-            .get_result(index)
+            .result_at(index)
             .map(|result| Arc::as_ptr(result.annotated()) as usize)
             .hash(&mut hasher);
     }
@@ -112,8 +112,8 @@ fn plan_key(session: &ProjectSession) -> u64 {
 pub struct RunLine {
     /// The setup name.
     pub setup: String,
-    /// The raw tool id.
-    pub tool_id: usize,
+    /// The tool id.
+    pub tool_id: rs_cam_core::ids::ToolId,
     /// The tool name.
     pub tool: String,
     /// The toolpath names of the run, in order.
@@ -138,12 +138,12 @@ pub fn run_lines(session: &ProjectSession, rows: &[ShoePlanRow]) -> Vec<RunLine>
             let setup = session
                 .list_setups()
                 .iter()
-                .find(|setup| setup.toolpath_indices.contains(&row.toolpath_index))
+                .find(|setup| setup.toolpath_indices().contains(&row.toolpath_index))
                 .map_or_else(String::new, |setup| setup.name.clone());
             let tool = session
                 .tools()
                 .iter()
-                .find(|tool| tool.id.0 == row.tool_id)
+                .find(|tool| tool.id == row.tool_id)
                 .map_or_else(|| format!("tool {}", row.tool_id), |tool| tool.name.clone());
             lines.push(RunLine {
                 setup,
@@ -214,9 +214,9 @@ mod tests {
     fn row(index: usize, tool: usize, run_start: bool, resolved: ResolvedShoe) -> ShoePlanRow {
         ShoePlanRow {
             toolpath_index: index,
-            toolpath_id: ToolpathId(index),
+            toolpath_id: ToolpathId::from_raw(index),
             toolpath_name: format!("op {index}"),
-            tool_id: tool,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(tool),
             run_start,
             setting: ShoeSetting::Auto,
             resolved,

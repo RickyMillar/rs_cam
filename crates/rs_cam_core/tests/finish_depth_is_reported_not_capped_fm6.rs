@@ -52,7 +52,7 @@ use rs_cam_core::tool::{FlatEndmill, MillingCutter, ToolDefinition};
 use rs_cam_core::tool_load::verdict::{DepthVerdict, LoadState};
 use rs_cam_core::tool_load::{GateEnv, ToleranceBands, ToolpathLoadContext};
 
-const TP: ToolpathId = ToolpathId(0);
+const TP: ToolpathId = ToolpathId::from_raw(0);
 
 // ── fixtures (the FM1 instrument's cell shapes) ─────────────────────────
 
@@ -78,7 +78,7 @@ fn stock() -> StockContext {
 /// The FM1 instrument's tool builder: a tapered ball at 7 deg with a
 /// shank 3 mm over the tip (at least 6 mm).
 fn tool_of(kind: ToolType, diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), kind);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;
     t.flute_count = 2;
     t.cutting_length = (diameter * 3.0).max(12.0);

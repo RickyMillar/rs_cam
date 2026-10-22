@@ -93,7 +93,7 @@ fn seed_generated_result(
         .iter()
         .position(|tc| tc.id == tp_id)
         .expect("toolpath id is in the session");
-    let revision = session.toolpath_revision(index);
+    let revision = session.toolpath_revision_at(index);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index,
@@ -123,7 +123,7 @@ fn seed_generated_result(
 
 fn build_session() -> (ProjectSession, GuiState, SimulationState) {
     // Tool 1
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new()
         .tool(tool)
         .name("wizard e2e".to_owned());
@@ -131,7 +131,7 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
     // Flat mesh as a model
     let mesh = Arc::new(make_test_flat(40.0));
     let _ = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
         kind: Some(ModelKind::Stl),
@@ -151,7 +151,7 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
     // pre/post-amble, which still yields valid g-code).
     let tp = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Sample Path".to_owned(),
         enabled: true,
         operation: OperationConfig::Scallop(
@@ -159,8 +159,8 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -228,11 +228,7 @@ fn wizard_per_setup_save_writes_one_file_per_setup() {
     gui.wizard.output_layout = OutputLayout::PerSetup;
     gui.wizard.filename_template = "{job}_{setup}.nc".to_owned();
 
-    let setup_ids: Vec<SetupId> = session
-        .list_setups()
-        .iter()
-        .map(|s| SetupId(s.id))
-        .collect();
+    let setup_ids: Vec<SetupId> = session.list_setups().iter().map(|s| s.id).collect();
     let dir = temp_dir("setup");
     let mut written = 0usize;
     for sid in setup_ids {
@@ -242,7 +238,7 @@ fn wizard_per_setup_save_writes_one_file_per_setup() {
                 let setup_name = session
                     .list_setups()
                     .iter()
-                    .find(|s| s.id == sid.0)
+                    .find(|s| s.id == sid)
                     .map(|s| s.name.clone())
                     .unwrap_or_default();
                 let name = format!("wizard_e2e_{}.nc", setup_name.replace(' ', "_"));
@@ -401,9 +397,9 @@ fn default_wizard_state_does_not_mutate_export() {
                 tool: session
                     .tools()
                     .iter()
-                    .find(|t| t.id.0 == tc.tool_id)
+                    .find(|t| t.id == tc.tool_id)
                     .map(|t| PhaseTool {
-                        id: t.id.0,
+                        id: t.id,
                         number: t.tool_number,
                         label: t.name.as_str(),
                     }),
@@ -458,14 +454,14 @@ fn viz_phase_assembly_uses_per_op_spindle_rpm() {
     op.set_spindle_rpm(Some(12_345));
     let tp2 = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(1),
+        id: rs_cam_core::ToolpathId::from_raw(1),
         name: "Override Path".to_owned(),
         enabled: true,
         operation: op,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -627,7 +623,7 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
 
     let tp_bottom = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(99),
+        id: rs_cam_core::ToolpathId::from_raw(99),
         name: "Bottom Op".to_owned(),
         enabled: true,
         operation: OperationConfig::Scallop(
@@ -635,8 +631,8 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -655,7 +651,7 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
         }))
         .expect("add bottom toolpath");
     let bottom_tp_id = session.list_setups()[bottom_idx]
-        .toolpath_indices
+        .toolpath_indices()
         .first()
         .map(|&i| session.toolpath_configs()[i].id)
         .expect("bottom setup has a toolpath");
@@ -769,7 +765,7 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
         }))
         .expect("the stock edit applies");
 
-    let top_id = SetupId(session.list_setups()[0].id);
+    let top_id = session.list_setups()[0].id;
 
     let bottom_idx = session
         .apply(Command::AddSetup(AddSetupArgs {
@@ -779,10 +775,10 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
         .expect("the session accepts a second setup")
         .created
         .expect("the AddSetup row reports the new setup index");
-    let bottom_id = SetupId(session.list_setups()[bottom_idx].id);
+    let bottom_id = session.list_setups()[bottom_idx].id;
     let tp_bottom = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(99),
+        id: rs_cam_core::ToolpathId::from_raw(99),
         name: "Bottom Op".to_owned(),
         enabled: true,
         operation: OperationConfig::Scallop(
@@ -790,8 +786,8 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -810,7 +806,7 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
         }))
         .expect("add bottom toolpath");
     let bottom_tp_id = session.list_setups()[bottom_idx]
-        .toolpath_indices
+        .toolpath_indices()
         .first()
         .map(|&i| session.toolpath_configs()[i].id)
         .expect("bottom setup has a toolpath");
@@ -891,7 +887,7 @@ fn two_setup_session() -> (ProjectSession, GuiState, SimulationState) {
         .expect("the AddSetup row reports the new setup index");
     let tp_bottom = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(99),
+        id: rs_cam_core::ToolpathId::from_raw(99),
         name: "Bottom Op".to_owned(),
         enabled: true,
         operation: OperationConfig::Scallop(
@@ -899,8 +895,8 @@ fn two_setup_session() -> (ProjectSession, GuiState, SimulationState) {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -919,7 +915,7 @@ fn two_setup_session() -> (ProjectSession, GuiState, SimulationState) {
         }))
         .expect("add bottom toolpath");
     let bottom_tp_id = session.list_setups()[bottom_idx]
-        .toolpath_indices
+        .toolpath_indices()
         .first()
         .map(|&i| session.toolpath_configs()[i].id)
         .expect("bottom setup has a toolpath");
@@ -1013,7 +1009,7 @@ fn a_same_orientation_setup_says_same_position_not_turn() {
     // The face change stales the toolpath; seed it again so the export has
     // a current result.
     let tp_id = session.list_setups()[1]
-        .toolpath_indices
+        .toolpath_indices()
         .first()
         .map(|&i| session.toolpath_configs()[i].id)
         .expect("setup 2 has a toolpath");

@@ -41,7 +41,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
     };
     let session = ProjectSessionBuilder::new().stock(stock).build();
 
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -71,13 +71,13 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
             groups: vec![SimGroupEntry {
                 toolpaths: vec![SimToolpathEntry {
                     head: Default::default(),
-                    id: ToolpathId(1),
+                    id: ToolpathId::from_raw(1),
                     name: "AS001 Pocket Pass 1".to_owned(),
                     annotated: Arc::new(
                         rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
                     ),
                     tool: Arc::new(build_cutter(&tool).unwrap()),
-                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
                     flute_count: tool.flute_count,
                     tool_summary: tool.summary(),
                     semantic_trace: None,
@@ -173,7 +173,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     let mut controller = AppController::with_backend(CapturingBackend::default());
 
     // 6 mm endmill matching the AS001 fixture.
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -210,7 +210,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         .state
         .apply(Command::AddModel(AddModelArgs {
             model: Box::new(LoadedModel {
-                id: 0,
+                id: rs_cam_core::ids::ModelId::from_raw(0),
                 path: std::path::PathBuf::from("demo_pocket.svg"),
                 name: "demo_pocket".to_owned(),
                 kind: Some(ModelKind::Svg),
@@ -251,14 +251,14 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
 
     let tp_config = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket (AS001)".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(pocket),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -382,7 +382,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
 #[test]
 fn submit_toolpath_compute_self_referential_boundary_resolves_mcp_waiter() {
     let mut controller = sample_controller();
-    let source_id = ToolpathId(0);
+    let source_id = ToolpathId::from_raw(0);
     let dependent_id = add_derived_rest_dependent(&mut controller, source_id);
 
     // Rewrite the dependent's boundary to reference itself — the

@@ -34,7 +34,7 @@ use crate::state::toolpath::{
 };
 
 /// The stable id of the source toolpath a `DerivedRestRegions` fixture adds.
-const REST_SOURCE_ID: ToolpathId = ToolpathId(9000);
+const REST_SOURCE_ID: ToolpathId = ToolpathId::from_raw(9000);
 
 /// A board of `2·half` mm square and `height` mm thick whose TOP face is at
 /// `z = 0`.
@@ -210,8 +210,8 @@ fn toolpath_config(
         operation,
         dressups: spec.dressups.clone(),
         heights: Default::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary,
@@ -248,7 +248,7 @@ pub(super) fn request(spec: RequestSpec) -> ComputeRequest {
         ModelKind::Dxf
     };
     builder = builder.model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: std::path::PathBuf::from("fixture"),
         name: "Fixture".to_owned(),
         kind: Some(kind),
@@ -276,7 +276,7 @@ pub(super) fn request(spec: RequestSpec) -> ComputeRequest {
                 REST_SOURCE_ID,
                 "Rest source",
                 OperationConfig::new_default(crate::state::toolpath::OperationType::Pocket),
-                spec.tool.id.0,
+                spec.tool.id.raw(),
                 0,
                 &spec,
                 BoundaryConfig::default(),
@@ -288,12 +288,12 @@ pub(super) fn request(spec: RequestSpec) -> ComputeRequest {
         index = 1;
     }
 
-    let id = ToolpathId(spec.id);
+    let id = ToolpathId::from_raw(spec.id);
     builder = builder.toolpath(toolpath_config(
         id,
         &spec.name,
         spec.operation.clone(),
-        spec.tool.id.0,
+        spec.tool.id.raw(),
         0,
         &spec,
         boundary,

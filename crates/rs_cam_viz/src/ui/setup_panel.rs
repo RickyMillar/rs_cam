@@ -28,7 +28,7 @@
 
 use super::{AppEvent, MODEL_FILE_EXTENSIONS};
 use crate::state::AppState;
-use crate::state::job::{FaceUp, ModelId, SetupId};
+use crate::state::job::FaceUp;
 use crate::state::selection::Selection;
 use crate::ui::components::{Card, Role};
 use crate::ui::tokens;
@@ -146,9 +146,7 @@ fn draw_models_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEven
         if open {
             events.push(AppEvent::Ui(UiCommand::Select(Selection::None)));
         } else if let Some(first) = models.first() {
-            events.push(AppEvent::Ui(UiCommand::Select(Selection::Model(ModelId(
-                first.id,
-            )))));
+            events.push(AppEvent::Ui(UiCommand::Select(Selection::Model(first.id))));
         } else {
             import_model_from_disk(events);
         }
@@ -159,7 +157,7 @@ fn draw_models_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEven
     }
     ui.indent("setup_rail_models", |ui| {
         for model in models {
-            let mid = ModelId(model.id);
+            let mid = model.id;
             let selected = state.selection == Selection::Model(mid);
             let response = ui
                 .horizontal(|ui| {
@@ -193,7 +191,12 @@ pub const MODEL_EYE_HIDDEN: &str = "\u{2298}";
 
 /// The eye of one model row (geometry selection P4.D): a click shows or
 /// hides the model in the viewport, through `UiCommand::SetModelVisibility`.
-fn model_eye(ui: &mut egui::Ui, state: &AppState, model_id: usize, events: &mut Vec<AppEvent>) {
+fn model_eye(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    model_id: rs_cam_core::ids::ModelId,
+    events: &mut Vec<AppEvent>,
+) {
     let visible = state.overlays.model_visibility.is_visible(model_id);
     let (glyph, hover) = if visible {
         (
@@ -417,15 +420,15 @@ fn draw_setup_card(
     state: &AppState,
     events: &mut Vec<AppEvent>,
 ) {
-    let setup_id = SetupId(setup.id);
+    let setup_id = setup.id;
     let is_selected = state.selection == Selection::Setup(setup_id);
 
     // F2.2 — `is_current()`, not `ComputeStatus::Done`. An edited operation
     // keeps `Done`, so a header that read `n/n` disagreed with a card that
     // said STALE about the same operation.
-    let total = setup.toolpath_indices.len();
+    let total = setup.toolpath_indices().len();
     let ready = setup
-        .toolpath_indices
+        .toolpath_indices()
         .iter()
         .filter(|&&idx| {
             crate::state::freshness::freshness_at(state.session(), &state.gui, idx)
@@ -557,11 +560,11 @@ fn active_setup(state: &AppState) -> Option<&SetupData> {
             .session()
             .setup_of_toolpath_id(*tp_id)
             .and_then(|idx| setups.get(idx))
-            .map(|s| SetupId(s.id)),
+            .map(|s| s.id),
         _ => None,
     };
     if let Some(sid) = setup_id {
-        setups.iter().find(|s| s.id == sid.0)
+        setups.iter().find(|s| s.id == sid)
     } else {
         setups.first()
     }

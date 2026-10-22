@@ -99,11 +99,11 @@ fn entry(
 ) -> SimToolpathEntry {
     SimToolpathEntry {
         head: Default::default(),
-        id: ToolpathId(id),
+        id: ToolpathId::from_raw(id),
         name: format!("tp{id}"),
         annotated: Arc::clone(annotated),
         tool: Arc::clone(tool),
-        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+        tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
         flute_count: 2,
         tool_summary: "6mm Flat".into(),
         semantic_trace: None,
@@ -254,7 +254,7 @@ fn a_pocket_from_the_top_is_in_the_bottom_setup_stock_at_the_mirrored_cells() {
         other => panic!("setup 2 must carry, got {other:?}"),
     }
 
-    let start = &result.prior_stocks[&ToolpathId(2)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(2)];
     // Bottom: local (x, D - y, H - z). The pocket floor at global z = 15 is
     // local z = 5; the material below it in local Z is gone.
     let mirrored = ray_at(start, POCKET_X, D - POCKET_Y);
@@ -316,7 +316,7 @@ fn an_identity_setup_with_a_stock_origin_carries_into_a_zero_rooted_setup() {
     );
     let result = run(&req);
 
-    let start = &result.prior_stocks[&ToolpathId(2)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(2)];
     assert_eq!(
         (start.stock_bbox.min, start.stock_bbox.max),
         (P3::origin(), P3::new(W, D, H)),
@@ -369,7 +369,7 @@ fn a_z_rotation_of_90_degrees_transposes_the_carried_stock() {
         }
         other => panic!("{other:?}"),
     }
-    let start = &result.prior_stocks[&ToolpathId(2)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(2)];
     assert_eq!(
         (start.stock_bbox.min, start.stock_bbox.max),
         (P3::origin(), P3::new(D, W, H))
@@ -423,7 +423,7 @@ fn a_stock_depth_off_the_cell_grid_takes_the_nearest_node_and_records_the_offset
         }
         other => panic!("{other:?}"),
     }
-    let start = &result.prior_stocks[&ToolpathId(2)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(2)];
     let mirrored = ray_at(start, POCKET_X, d - POCKET_Y);
     assert_close(
         mirrored[0].0,
@@ -459,7 +459,7 @@ fn a_lateral_setup_starts_fresh_and_the_next_z_setup_carries_past_it() {
     let result = run(&req);
 
     assert_eq!(result.group_starts[1].carry, StockCarry::FreshLateral);
-    let lateral_start = &result.prior_stocks[&ToolpathId(2)];
+    let lateral_start = &result.prior_stocks[&ToolpathId::from_raw(2)];
     let full = (0.0_f32, D as f32);
     assert!(
         lateral_start
@@ -479,7 +479,7 @@ fn a_lateral_setup_starts_fresh_and_the_next_z_setup_carries_past_it() {
         }
         other => panic!("{other:?}"),
     }
-    let start = &result.prior_stocks[&ToolpathId(3)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(3)];
     assert_close(
         ray_at(start, POCKET_X, D - POCKET_Y)[0].0,
         POCKET_DEPTH,
@@ -488,13 +488,17 @@ fn a_lateral_setup_starts_fresh_and_the_next_z_setup_carries_past_it() {
 
     // The rest record follows the same rule: the Bottom setup's snapshot was
     // made after the Top entry, not after the lateral entry.
-    let after: Vec<ToolpathId> = result.prior_stock_sources[&ToolpathId(3)]
+    let after: Vec<ToolpathId> = result.prior_stock_sources[&ToolpathId::from_raw(3)]
         .after
         .iter()
         .filter_map(|e: &SourceEntry| e.toolpath_id())
         .collect();
-    assert_eq!(after, vec![ToolpathId(1)]);
-    assert!(result.prior_stock_sources[&ToolpathId(2)].after.is_empty());
+    assert_eq!(after, vec![ToolpathId::from_raw(1)]);
+    assert!(
+        result.prior_stock_sources[&ToolpathId::from_raw(2)]
+            .after
+            .is_empty()
+    );
 }
 
 // ── 6. The composite is one solid ───────────────────────────────────────
@@ -614,24 +618,29 @@ fn a_change_in_setup_one_stales_the_start_stock_of_setup_two() {
         0,
         "an edit in setup 1 must miss the memo"
     );
-    let start = &after.prior_stocks[&ToolpathId(2)];
+    let start = &after.prior_stocks[&ToolpathId::from_raw(2)];
     assert_close(
         ray_at(start, POCKET_X, D - POCKET_Y)[0].0,
         8.0,
         "setup 2 starts from the edited setup 1",
     );
     assert_ne!(
-        rays(&before.prior_stocks[&ToolpathId(2)]),
+        rays(&before.prior_stocks[&ToolpathId::from_raw(2)]),
         rays(start),
         "the start stock of setup 2 moved with setup 1"
     );
     // G-RESTRES: the rest record of setup 2 names setup 1's carved output,
     // so a rest result generated on the old stock no longer matches.
     assert_ne!(
-        before.prior_stock_sources[&ToolpathId(2)],
-        after.prior_stock_sources[&ToolpathId(2)],
+        before.prior_stock_sources[&ToolpathId::from_raw(2)],
+        after.prior_stock_sources[&ToolpathId::from_raw(2)],
     );
-    assert_eq!(after.prior_stock_sources[&ToolpathId(2)].after.len(), 1);
+    assert_eq!(
+        after.prior_stock_sources[&ToolpathId::from_raw(2)]
+            .after
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -659,10 +668,10 @@ fn a_memo_resume_after_a_lateral_setup_carries_as_a_full_replay_does() {
     // LATERAL group. Round 2 resumes there, and the Bottom setup must carry
     // from the Top setup, which the resume does not replay.
     let mut pending = groups(Vec::new());
-    pending[2].phantom_prior_stock = Some((0, ToolpathId(3)));
+    pending[2].phantom_prior_stock = Some((0, ToolpathId::from_raw(3)));
     let mut cache = SimPrefixCache::new();
     let first = run_memo(&request(pending, zero_bbox(W, D, H)), &mut cache);
-    assert!(first.prior_stocks.contains_key(&ToolpathId(3)));
+    assert!(first.prior_stocks.contains_key(&ToolpathId::from_raw(3)));
     let three_req = request(
         groups(vec![entry(3, &bottom_tp, &tool)]),
         zero_bbox(W, D, H),
@@ -673,8 +682,8 @@ fn a_memo_resume_after_a_lateral_setup_carries_as_a_full_replay_does() {
     let full = run(&three_req);
     assert_eq!(resumed.group_starts, full.group_starts);
     assert_eq!(
-        rays(&resumed.prior_stocks[&ToolpathId(3)]),
-        rays(&full.prior_stocks[&ToolpathId(3)]),
+        rays(&resumed.prior_stocks[&ToolpathId::from_raw(3)]),
+        rays(&full.prior_stocks[&ToolpathId::from_raw(3)]),
         "the resumed carry must be bit-identical to a full replay"
     );
     assert_eq!(resumed.mesh.vertices, full.mesh.vertices);
@@ -717,7 +726,7 @@ fn the_carried_start_stock_maps_back_onto_the_final_stock_of_setup_one() {
     // so that frame is setup 1's world frame, and the map must give setup
     // 1's final stock back, bit for bit.
     let carried_global = map_stock_to_global(
-        &result.prior_stocks[&ToolpathId(2)],
+        &result.prior_stocks[&ToolpathId::from_raw(2)],
         &Some(bottom),
         &zero_bbox(W, D, H),
     );

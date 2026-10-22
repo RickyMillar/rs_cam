@@ -482,9 +482,9 @@ fn build_session(fx: &Fixture) -> ProjectSession {
     });
 
     let rt = builder.add_tool(fx.rough_tool.clone());
-    let rough_id = builder.tools()[rt].id.0;
+    let rough_id = builder.tools()[rt].id.raw();
     let mt = builder.add_tool(fx.tool.clone());
-    let meas_id = builder.tools()[mt].id.0;
+    let meas_id = builder.tools()[mt].id.raw();
     let model_id = builder.add_model(mesh_model(bumpy_surface(), "a5_bumps"));
 
     let heights = pinned_heights(STOCK_Z, STOCK_Z - RELIEF);
@@ -496,13 +496,18 @@ fn build_session(fx: &Fixture) -> ProjectSession {
     let mut rough = toolpath_config(
         "Rough (upstream, fresh stock)",
         rough_op,
-        rough_id,
+        rs_cam_core::ids::ToolId::from_raw(rough_id),
         model_id,
     );
     rough.heights = heights.clone();
     let _ = builder.add_toolpath(0, rough).expect("add rough op");
 
-    let mut measured = toolpath_config(fx.label, fx.op.clone(), meas_id, model_id);
+    let mut measured = toolpath_config(
+        fx.label,
+        fx.op.clone(),
+        rs_cam_core::ids::ToolId::from_raw(meas_id),
+        model_id,
+    );
     measured.heights = heights;
     measured.stock_source = StockSource::FromRemainingStock;
     let _ = builder.add_toolpath(0, measured).expect("add measured op");
@@ -863,7 +868,7 @@ fn simulate(session: &mut ProjectSession, modulation: bool) {
 fn run_arm(session: &mut ProjectSession, feed: f64, rpm: u32, modulation: bool) -> ArmRead {
     {
         let mut config = session
-            .get_toolpath_config(1)
+            .toolpath_config_at(1)
             .expect("measured op present")
             .clone();
         config.operation.set_feed_rate(feed);
@@ -882,7 +887,7 @@ fn run_arm(session: &mut ProjectSession, feed: f64, rpm: u32, modulation: bool) 
         .expect("measured op generates");
 
     let stamp = session
-        .get_result(1)
+        .result_at(1)
         .expect("measured op result")
         .stats
         .stock_snapshot;
@@ -1005,7 +1010,7 @@ fn modulation_default_is_on_and_closes_the_two_dropcutter_residuals() {
         // result, so the row drops nothing.
         {
             let mut config = session
-                .get_toolpath_config(1)
+                .toolpath_config_at(1)
                 .expect("measured op present")
                 .clone();
             config.operation.set_feed_rate(r.shipped_feed);
@@ -1371,7 +1376,7 @@ fn arc_fit_arms_gate_observation() {
                 .generate_toolpath(1, &cancel)
                 .expect("regenerate against the moved snapshot");
             let moved = session
-                .get_result(1)
+                .result_at(1)
                 .expect("measured op result")
                 .stats
                 .stock_snapshot

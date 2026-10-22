@@ -97,14 +97,14 @@ fn kinematics_histogram_wanaka() {
 
     // Adaptive3d targets: index 1 (Back Rough) and index 6 (3D Rough 6).
     for tp_index in [1usize, 6] {
-        let Some(tc) = session.get_toolpath_config(tp_index) else {
+        let Some(tc) = session.toolpath_config_at(tp_index) else {
             eprintln!("skip: tp_index {} not found", tp_index);
             continue;
         };
         let tp_id = tc.id;
         let tp_name = tc.name.clone();
         let op_label = tc.operation.label().to_owned();
-        let Some(tp_result) = session.get_result(tp_index) else {
+        let Some(tp_result) = session.result_at(tp_index) else {
             eprintln!("skip: tp_index {} has no compute result", tp_index);
             continue;
         };

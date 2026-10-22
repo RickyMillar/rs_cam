@@ -139,14 +139,15 @@ fn flat_drop_cutter_resolves_the_same_row_as_the_adaptive3d_rough() {
     // The modulator's target on a flat drop_cutter toolpath is the same
     // point. With no simulation trace the peak axial DOC is 0, so no DOC
     // de-rate applies and the target is the resolved point itself.
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.flute_count = 2;
     let material = Material::Plywood {
         grade: PlywoodGrade::BalticBirch,
     };
     let operation = OperationConfig::DropCutter(DropCutterConfig::default());
-    let target = chip_target_for_toolpath(&material, &tool, &operation, ToolpathId(0), None);
+    let target =
+        chip_target_for_toolpath(&material, &tool, &operation, ToolpathId::from_raw(0), None);
     assert_eq!(
         target,
         Some(ChipTarget::Point(value_mm)),

@@ -241,12 +241,12 @@ pub(crate) fn score_session(
                     .toolpath_configs()
                     .get(i)
                     .is_some_and(|tc| tc.enabled)
-                    && session.get_result(i).is_some()
+                    && session.result_at(i).is_some()
             })
             .collect(),
     };
     if let Some((index, _)) = target
-        && session.get_result(index).is_none()
+        && session.result_at(index).is_none()
     {
         bail!(
             "toolpath {index} has no result after the generation plan. Read the log and \
@@ -271,7 +271,7 @@ pub(crate) fn score_session(
     for index in indices {
         let (Some(tc), Some(result)) = (
             session.toolpath_configs().get(index),
-            session.get_result(index),
+            session.result_at(index),
         ) else {
             continue;
         };
@@ -385,7 +385,7 @@ fn split_set(spec: &str) -> Result<(usize, &str, &str)> {
 /// Find a toolpath by id, then by exact name. Returns its index and id.
 fn find_toolpath(session: &ProjectSession, key: &str) -> Result<(usize, ToolpathId)> {
     if let Ok(raw) = key.trim().parse::<usize>()
-        && let Some((index, tc)) = session.find_toolpath_config_by_id(ToolpathId(raw))
+        && let Some((index, tc)) = session.find_toolpath_config_by_id(ToolpathId::from_wire(raw))
     {
         return Ok((index, tc.id));
     }
@@ -525,7 +525,7 @@ mod tests {
             }),
         )
         .expect("set the machine kinematics");
-        let tool_id = session.tools()[0].id.0;
+        let tool_id = session.tools()[0].id.raw();
         let model_id = session.models()[0].id;
         let _ = apply_command(
             &mut session,
@@ -533,7 +533,7 @@ mod tests {
                 setup_index: 0,
                 config: Box::new(ToolpathConfig {
                     shoe: Default::default(),
-                    id: ToolpathId(0),
+                    id: ToolpathId::from_raw(0),
                     name: "Pocket (rough-score test)".to_owned(),
                     enabled: true,
                     operation: rs_cam_core::compute::catalog::OperationConfig::new_default(
@@ -541,7 +541,7 @@ mod tests {
                     ),
                     dressups: rs_cam_core::compute::config::DressupConfig::default(),
                     heights: rs_cam_core::compute::config::HeightsConfig::default(),
-                    tool_id,
+                    tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
                     model_id,
                     pre_gcode: None,
                     post_gcode: None,

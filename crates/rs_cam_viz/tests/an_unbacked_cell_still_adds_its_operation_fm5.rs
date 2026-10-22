@@ -56,7 +56,7 @@ fn controller_with_end_mill() -> AppController<SilentBackend> {
     // 15.875 mm sits outside the G6 drill claim's 3.0-12.7 mm range, so
     // AlignmentPinDrill still refuses (the default 6.35 mm end mill no
     // longer does, since the range widened 2026-09-25).
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 15.875;
     controller
         .state

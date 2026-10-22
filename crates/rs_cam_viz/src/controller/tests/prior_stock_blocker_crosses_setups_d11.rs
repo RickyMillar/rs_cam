@@ -43,14 +43,14 @@ fn three_setups(
 
     for (id, name, setup_name, face_up, source) in [
         (
-            ToolpathId(9),
+            ToolpathId::from_raw(9),
             "Middle",
             "2 Middle",
             FaceUp::Top,
             crate::state::toolpath::StockSource::Fresh,
         ),
         (
-            ToolpathId(10),
+            ToolpathId::from_raw(10),
             "Front rest",
             "3 Front",
             face_up_3,
@@ -81,12 +81,12 @@ fn three_setups(
 
     if stock_change_on_2 {
         let change = rs_cam_core::compute::stock_change::StockChange {
-            id: rs_cam_core::ids::StockChangeId(0),
+            id: rs_cam_core::ids::StockChangeId::from_raw(0),
             name: "pour".to_owned(),
             enabled: true,
             op: rs_cam_core::compute::stock_change::StockChangeOp::Add,
             geometry: rs_cam_core::compute::stock_change::StockGeometry::Model {
-                model_id: rs_cam_core::ids::ModelId(0),
+                model_id: rs_cam_core::ids::ModelId::from_raw(0),
             },
             material: Default::default(),
             display_colour: None,
@@ -259,7 +259,7 @@ fn a_retry_after_an_upstream_failure_resimulates_before_the_rest_op_d11() {
     let mut result = controller
         .state
         .session()
-        .get_result(rest_index)
+        .result_at(rest_index)
         .cloned()
         .expect("the rest op generated in the first run");
     result.stats.source_stock = controller
@@ -268,7 +268,7 @@ fn a_retry_after_an_upstream_failure_resimulates_before_the_rest_op_d11() {
         .simulation_result()
         .and_then(|sim| sim.prior_stock_sources.get(&rest).cloned());
     assert!(result.stats.source_stock.is_some());
-    let revision = controller.state.session().toolpath_revision(rest_index);
+    let revision = controller.state.session().toolpath_revision_at(rest_index);
     let _ = controller
         .state
         .apply(Command::AdoptResult(AdoptResultArgs {

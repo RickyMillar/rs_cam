@@ -197,7 +197,7 @@ fn wanaka_front_rough_plunge_guard_ab() {
         .expect("simulate the front rough");
 
     let op = session
-        .get_toolpath_params(index)
+        .toolpath_params_at(index)
         .expect("front rough params");
     let plunge_rate = op.plunge_rate();
     let commanded_feed = op.feed_rate();
@@ -210,7 +210,7 @@ fn wanaka_front_rough_plunge_guard_ab() {
     // rebuild is kept because it also proves the modulator fired.
     let sim = session.simulation_result().expect("simulation result");
     let trace = sim.cut_trace.as_ref().expect("cut trace");
-    let result = session.get_result(index).expect("front rough result");
+    let result = session.result_at(index).expect("front rough result");
     let mut emitted = result.toolpath().clone();
     for (i, m) in emitted.moves.iter_mut().enumerate() {
         if let Some((feed, _binding)) = trace.modulated_feeds.get(&(front_id, i)) {

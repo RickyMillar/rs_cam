@@ -284,7 +284,7 @@ fn session_tool() -> ToolConfig {
         diameter: TIP_DIAMETER_MM,
         taper_half_angle: TAPER_HALF_ANGLE_DEG,
         shaft_diameter: SHANK_DIAMETER_MM,
-        ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
     }
 }
 
@@ -649,7 +649,7 @@ fn measure_op(
     runtime_s: f64,
 ) -> OpReport {
     let result = session
-        .get_result(index)
+        .result_at(index)
         .unwrap_or_else(|| panic!("{label}: no generated result at index {index}"));
     let moves = &result.toolpath().moves;
 
@@ -775,13 +775,13 @@ fn run_cascade_arm(
 ) -> ArmResult {
     let mut builder = ProjectSessionBuilder::new().stock(stock);
     let tool_idx = builder.add_tool(session_tool());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(model);
 
     let mut op0 = toolpath_config(
         &format!("{label} op0 (all-over)"),
         OperationConfig::UnifiedFinish(cascade_op0_config()),
-        tool_id,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
     );
     op0.heights = heights.clone();
@@ -790,7 +790,7 @@ fn run_cascade_arm(
     let mut op1 = toolpath_config(
         &format!("{label} op1 (rest)"),
         OperationConfig::UnifiedFinish(cascade_op1_config()),
-        tool_id,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
     );
     op1.heights = heights;
@@ -1405,7 +1405,7 @@ fn h4_harness_arithmetic_sentry() {
     let heights = pinned_heights(0.0, -2.0);
     let tool = ToolConfig {
         diameter: 2.0,
-        ..ToolConfig::new_default(ToolId(0), ToolType::BallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose)
     };
 
     let cfg = UnifiedFinishConfig {
@@ -1436,7 +1436,7 @@ fn h4_harness_arithmetic_sentry() {
         .generate_toolpath(0, &cancel)
         .expect("sentry generation must succeed");
 
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     let moves = &result.toolpath().moves;
 
     // (1) swept_footprint_area is non-zero on a real toolpath.
@@ -1684,7 +1684,7 @@ fn nearest_region_to(
     x: f64,
     y: f64,
 ) -> Option<(String, String, f64, usize)> {
-    let result = session.get_result(0)?;
+    let result = session.result_at(0)?;
     let moves = &result.toolpath().moves;
     let trace = result.semantic_trace.as_ref()?;
 
@@ -2243,7 +2243,7 @@ fn d16_1_single_column_contact_probe() {
     session
         .generate_toolpath(0, &cancel)
         .unwrap_or_else(|e| panic!("B unified: generation failed: {e:?}"));
-    let result = session.get_result(0).expect("arm B produced no result");
+    let result = session.result_at(0).expect("arm B produced no result");
     let moves = result.toolpath().moves.clone();
     eprintln!(
         "  arm B emitted {} moves (generation only, no simulation)",

@@ -66,7 +66,7 @@ fn every_emitted_sample_carries_its_moves_source_intent() {
             &tp,
             &cutter,
             StockCutDirection::FromTop,
-            ToolpathId(0),
+            ToolpathId::from_raw(0),
             18_000,
             2,
             5000.0,

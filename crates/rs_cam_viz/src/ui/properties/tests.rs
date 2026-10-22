@@ -66,7 +66,7 @@ fn stateful_diag(
     dx::Diagnostic {
         id: dx::DiagnosticId::new("test.gate"),
         scope: dx::Scope::Toolpath {
-            id: rs_cam_core::ToolpathId(0),
+            id: rs_cam_core::ToolpathId::from_raw(0),
         },
         category: dx::Category::State,
         severity: dx::Severity::Info,
@@ -137,7 +137,7 @@ fn stateful_gate_rows_merge_groups_by_exact_status_text() {
 /// MCP recommendation for the same toolpath. Both now read this field,
 /// so the assembly is the thing to pin: the snapshot reports the box of
 /// the model the STORED `tc.model_id` names, and it agrees with
-/// `ProjectSession::model_bbox`.
+/// `ProjectSession::model_bbox_by_id`.
 /// One pocket over one flat STL model, with one end mill.
 ///
 /// UI-01 gave this fixture a second reader, so it is a function rather than
@@ -151,13 +151,13 @@ fn one_pocket_session() -> (
     use std::sync::Arc;
 
     let tool = rs_cam_core::compute::tool_config::ToolConfig::new_default(
-        rs_cam_core::compute::ToolId(1),
+        rs_cam_core::compute::ToolId::from_raw(1),
         rs_cam_core::compute::tool_config::ToolType::EndMill,
     );
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let mesh = Arc::new(rs_cam_core::mesh::make_test_flat(40.0));
     let _ = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: std::path::PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
         kind: Some(ModelKind::Stl),
@@ -176,7 +176,7 @@ fn one_pocket_session() -> (
             0,
             ToolpathConfig {
                 shoe: Default::default(),
-                id: rs_cam_core::compute::ToolpathId(0),
+                id: rs_cam_core::compute::ToolpathId::from_raw(0),
                 name: "Pocket".to_owned(),
                 enabled: true,
                 operation: crate::state::toolpath::OperationConfig::new_default(
@@ -184,8 +184,8 @@ fn one_pocket_session() -> (
                 ),
                 dressups: Default::default(),
                 heights: Default::default(),
-                tool_id: 1,
-                model_id: 0,
+                tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+                model_id: rs_cam_core::ids::ModelId::from_raw(0),
                 pre_gcode: None,
                 post_gcode: None,
                 boundary: Default::default(),
@@ -216,7 +216,7 @@ fn the_panel_snapshot_carries_the_model_bbox() {
     .expect("the toolpath resolves for the properties panel");
 
     let expected = session
-        .model_bbox(tc.model_id)
+        .model_bbox_by_id(tc.model_id)
         .expect("the fixture model carries a finite bbox");
     let carried = snapshot
         .model_bbox
@@ -224,7 +224,7 @@ fn the_panel_snapshot_carries_the_model_bbox() {
     assert_eq!(
         format!("{carried:?}"),
         format!("{expected:?}"),
-        "the snapshot bbox must be `ProjectSession::model_bbox` of the stored model id"
+        "the snapshot bbox must be `ProjectSession::model_bbox_by_id` of the stored model id"
     );
     assert_eq!(
         format!("{:?}", carried.min),
@@ -369,13 +369,8 @@ fn a_setup_map_op_draws_no_boundary_controls_d3() {
             Some(ToolpathTab::Geometry),
             false,
         );
-        let mut entry = ToolpathEntry::for_operation(
-            tc.id,
-            "Case".to_owned(),
-            crate::state::job::ToolId(tc.tool_id),
-            crate::state::job::ModelId(tc.model_id),
-            op,
-        );
+        let mut entry =
+            ToolpathEntry::for_operation(tc.id, "Case".to_owned(), tc.tool_id, tc.model_id, op);
         let ctx = egui::Context::default();
         crate::ui::tokens::apply(&ctx);
         crate::ui::tokens::apply_fonts(&ctx);
@@ -438,13 +433,8 @@ fn geometry_tab_texts(
         Some(ToolpathTab::Geometry),
         false,
     );
-    let mut entry = ToolpathEntry::for_operation(
-        tc.id,
-        "Case".to_owned(),
-        crate::state::job::ToolId(tc.tool_id),
-        crate::state::job::ModelId(tc.model_id),
-        op,
-    );
+    let mut entry =
+        ToolpathEntry::for_operation(tc.id, "Case".to_owned(), tc.tool_id, tc.model_id, op);
     entry.boundary = tc.boundary.clone();
     let ctx = egui::Context::default();
     crate::ui::tokens::apply(&ctx);
@@ -482,14 +472,14 @@ fn step_pocket_session() -> rs_cam_core::session::ProjectSession {
         .join("../../fixtures/gui_step/stepped_block.step");
     let model = rs_cam_core::io::load_model_file(
         &path,
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Step,
         ModelUnits::Millimeters,
         Default::default(),
     )
     .expect("the STEP fixture loads");
     let tool = rs_cam_core::compute::tool_config::ToolConfig::new_default(
-        rs_cam_core::compute::ToolId(1),
+        rs_cam_core::compute::ToolId::from_raw(1),
         rs_cam_core::compute::tool_config::ToolType::EndMill,
     );
     let mut builder = ProjectSessionBuilder::new().tool(tool);
@@ -499,7 +489,7 @@ fn step_pocket_session() -> rs_cam_core::session::ProjectSession {
             0,
             ToolpathConfig {
                 shoe: Default::default(),
-                id: rs_cam_core::compute::ToolpathId(0),
+                id: rs_cam_core::compute::ToolpathId::from_raw(0),
                 name: "Pocket".to_owned(),
                 enabled: true,
                 operation: crate::state::toolpath::OperationConfig::new_default(
@@ -507,7 +497,7 @@ fn step_pocket_session() -> rs_cam_core::session::ProjectSession {
                 ),
                 dressups: Default::default(),
                 heights: Default::default(),
-                tool_id: 1,
+                tool_id: rs_cam_core::ids::ToolId::from_raw(1),
                 model_id,
                 pre_gcode: None,
                 post_gcode: None,

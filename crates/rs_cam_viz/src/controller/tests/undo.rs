@@ -82,10 +82,10 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
             "ObstacleChange",
             Box::new(
                 |c: &AppController<ScriptedBackend>| UndoAction::ObstacleChange {
-                    setup_id: crate::state::job::SetupId(c.state.session().list_setups()[0].id),
-                    obstacle_id: crate::state::job::ObstacleId(0),
+                    setup_id: c.state.session().list_setups()[0].id,
+                    obstacle_id: crate::state::job::ObstacleId::from_raw(0),
                     old: Some(rs_cam_core::session::Obstacle::new_default_box(
-                        crate::state::job::ObstacleId(0),
+                        crate::state::job::ObstacleId::from_raw(0),
                     )),
                     new: None,
                 },
@@ -120,7 +120,7 @@ fn every_undo_arm_marks_the_project_edited_g_undofresh() {
             "ModelDrawingEdits",
             Box::new(
                 |c: &AppController<ScriptedBackend>| UndoAction::ModelDrawingEdits {
-                    model_id: crate::state::job::ModelId(c.state.session().models()[0].id),
+                    model_id: c.state.session().models()[0].id,
                     before: Vec::new(),
                     after: Vec::new(),
                 },
@@ -225,7 +225,7 @@ fn a_tool_undo_stales_the_operations_that_tool_machines_g_undofresh() {
          result was generated with the OTHER tool's geometry"
     );
     assert!(
-        controller.state.session().get_result(0).is_none(),
+        controller.state.session().result_at(0).is_none(),
         "which means the core result is gone, not merely flagged"
     );
     assert!(
@@ -382,7 +382,7 @@ fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
     // Regenerate, so the undo has something to invalidate on BOTH rows.
     generate_all_for_test(&mut controller);
     assert!(
-        controller.state.session().get_result(1).is_some()
+        controller.state.session().result_at(1).is_some()
             && controller.state.gui.toolpath_rt[&rest_id]
                 .stale_since
                 .is_none(),
@@ -405,7 +405,7 @@ fn an_undo_stales_the_downstream_row_and_restores_the_provenance_n14() {
         "and the provenance the edit stamped"
     );
     assert!(
-        controller.state.session().get_result(1).is_none(),
+        controller.state.session().result_at(1).is_none(),
         "the downstream row reads the stock index 0 leaves, so its \
          result goes with the undo"
     );
@@ -582,7 +582,7 @@ fn generated_with_fixed_stock() -> AppController<ScriptedBackend> {
     assert!(count > 0, "non-vacuity: the fixture has toolpaths");
     for index in 0..count {
         assert!(
-            controller.state.session().get_result(index).is_some(),
+            controller.state.session().result_at(index).is_some(),
             "the fixture generated toolpath {index}"
         );
     }
@@ -591,7 +591,7 @@ fn generated_with_fixed_stock() -> AppController<ScriptedBackend> {
 
 fn all_results_present(controller: &AppController<ScriptedBackend>) -> bool {
     (0..controller.state.session().toolpath_configs().len())
-        .all(|index| controller.state.session().get_result(index).is_some())
+        .all(|index| controller.state.session().result_at(index).is_some())
 }
 
 #[test]
@@ -684,8 +684,10 @@ mod pin_edit_one_door_p5 {
     /// the project names the tool that drills the 6 mm pin holes (P6, R1:
     /// the door reads `pin_drill_tool_for`, never `tools[0]`).
     fn add_drill_op(controller: &mut AppController<ScriptedBackend>, setup_index: usize) {
-        let mut drill =
-            rs_cam_core::compute::tool_config::ToolConfig::new_default(ToolId(0), ToolType::VBit);
+        let mut drill = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::VBit,
+        );
         drill.diameter = 6.0;
         let created = controller
             .state
@@ -695,7 +697,7 @@ mod pin_edit_one_door_p5 {
             .expect("a tool can be added")
             .created
             .expect("the add reports the index");
-        let drill_id = controller.state.session().tools()[created].id.0;
+        let drill_id = controller.state.session().tools()[created].id.raw();
         let session = controller.state.session();
         let mut config = session
             .toolpath_configs()
@@ -705,12 +707,12 @@ mod pin_edit_one_door_p5 {
         let next = session
             .toolpath_configs()
             .iter()
-            .map(|tc| tc.id.0)
+            .map(|tc| tc.id.raw())
             .max()
             .map_or(0, |m| m + 1);
-        config.id = ToolpathId(next);
+        config.id = ToolpathId::from_raw(next);
         config.name = "Dowel holes".to_owned();
-        config.tool_id = drill_id;
+        config.tool_id = rs_cam_core::ids::ToolId::from_raw(drill_id);
         config.operation =
             OperationConfig::Drill(rs_cam_core::compute::operation_configs::DrillConfig::default());
         let _ = controller
@@ -762,7 +764,7 @@ mod pin_edit_one_door_p5 {
                 let setup = session
                     .list_setups()
                     .iter()
-                    .position(|s| s.toolpath_indices.contains(&index));
+                    .position(|s| s.toolpath_indices().contains(&index));
                 let diameter = match &tc.operation {
                     OperationConfig::AlignmentPinDrill(c) => Some(c.diameter),
                     _ => None,
@@ -1037,7 +1039,7 @@ mod pin_edit_one_door_p5 {
                     let tool = session
                         .tools()
                         .iter()
-                        .find(|t| t.id.0 == tc.tool_id)
+                        .find(|t| t.id == tc.tool_id)
                         .map_or(0.0, |t| t.diameter);
                     Some((c.diameter, tool))
                 }
@@ -1135,7 +1137,7 @@ mod pin_edit_one_door_p5 {
         let mut controller = flipped_first_controller();
         let _ = set_pins(&mut controller, vec![AlignmentPin::new(10.0, 20.0, 6.0)]);
         let mut second = rs_cam_core::compute::tool_config::ToolConfig::new_default(
-            ToolId(0),
+            ToolId::from_raw(0),
             ToolType::EndMill,
         );
         second.diameter = 6.0;
@@ -1147,7 +1149,7 @@ mod pin_edit_one_door_p5 {
             .expect("a tool can be added")
             .created
             .expect("an index");
-        let second_id = controller.state.session().tools()[index].id.0;
+        let second_id = controller.state.session().tools()[index].id.raw();
         assert_eq!(controller.state.session().pin_tool_candidates(6.0).len(), 2);
         let op = controller
             .state
@@ -1155,7 +1157,9 @@ mod pin_edit_one_door_p5 {
             .pin_drill_op_for(6.0)
             .expect("the op");
         assert_ne!(
-            controller.state.session().toolpath_configs()[op].tool_id,
+            controller.state.session().toolpath_configs()[op]
+                .tool_id
+                .raw(),
             second_id,
             "non-vacuity: the door chose the first tool"
         );
@@ -1166,7 +1170,11 @@ mod pin_edit_one_door_p5 {
             .alignment_pins
             .clone();
         let _ = controller
-            .apply_pin_wizard(pins, &[], &[(6.0, second_id)])
+            .apply_pin_wizard(
+                pins,
+                &[],
+                &[(6.0, rs_cam_core::ids::ToolId::from_raw(second_id))],
+            )
             .expect("the wizard's pins are taken");
         let op = controller
             .state
@@ -1175,7 +1183,7 @@ mod pin_edit_one_door_p5 {
             .expect("the op");
         assert_eq!(
             controller.state.session().toolpath_configs()[op].tool_id,
-            second_id
+            rs_cam_core::ids::ToolId::from_raw(second_id)
         );
     }
 
@@ -1434,8 +1442,8 @@ fn an_obstacle_add_edit_remove_each_undo_and_redo_k2() {
     use rs_cam_core::session::Obstacle;
 
     let (mut controller, tp_id) = controller_ready_for_undo();
-    let setup = SetupId(controller.state.session().list_setups()[0].id);
-    let id = ObstacleId(0);
+    let setup = controller.state.session().list_setups()[0].id;
+    let id = ObstacleId::from_raw(0);
     let stored = |c: &AppController<ScriptedBackend>| -> Option<Obstacle> {
         c.state.session().list_setups()[0]
             .obstacles
@@ -1536,7 +1544,7 @@ fn each_drawing_act_is_one_undo_step_p4_9() {
     let mut c = AppController::with_backend(ScriptedBackend::new());
     c.open_import_dialog(&drawing_svg(), ModelKind::Svg);
     c.confirm_import_dialog().unwrap();
-    let id = crate::state::job::ModelId(model(&c).id);
+    let id = model(&c).id;
     let door = keys(&model(&c));
     let undo_len = |c: &AppController<_>| c.state().history.undo_len();
     let start = undo_len(&c);

@@ -261,7 +261,11 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// The operation exists: a `SetToolpathTool` row rebinds it. It does
     /// not exist: the door creates it with that tool.
-    pub(crate) fn bind_pin_drill_tool(&mut self, diameter: f64, tool_id: usize) -> PinDrillSync {
+    pub(crate) fn bind_pin_drill_tool(
+        &mut self,
+        diameter: f64,
+        tool_id: rs_cam_core::ids::ToolId,
+    ) -> PinDrillSync {
         let outcome = match self.state.session().pin_drill_op_for(diameter) {
             Some(index) => {
                 let toolpath_id = self
@@ -318,17 +322,17 @@ impl<B: ComputeBackend> AppController<B> {
         &mut self,
         pins: Vec<crate::state::job::AlignmentPin>,
         add_drills: &[f64],
-        use_tools: &[(f64, usize)],
+        use_tools: &[(f64, rs_cam_core::ids::ToolId)],
     ) -> Result<PinEdit, SessionError> {
         let old = self.state.session().stock_config().clone();
-        let mut added: Vec<(f64, usize)> = Vec::new();
+        let mut added: Vec<(f64, rs_cam_core::ids::ToolId)> = Vec::new();
         for &d in add_drills {
             let tool = self.state.session().pin_drill_tool_template(d);
             if let Some(index) = self.apply_created(Command::AddTool(AddToolArgs {
                 tool: Box::new(tool),
             })) && let Some(t) = self.state.session().tools().get(index)
             {
-                added.push((d, t.id.0));
+                added.push((d, t.id));
             }
         }
         let edit = self.apply_pin_edit(Command::SetAlignmentPins(
@@ -383,7 +387,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// Apply the pin wizard's part-model choice (`None`: the default rule)
     /// as one `SetPinPartModels` row, with one undo step. The row stales
     /// nothing.
-    pub(crate) fn set_pin_part_models(&mut self, models: Option<Vec<usize>>) {
+    pub(crate) fn set_pin_part_models(&mut self, models: Option<Vec<rs_cam_core::ids::ModelId>>) {
         let old = self.state.session().stock_config().clone();
         let command =
             Command::SetPinPartModels(rs_cam_core::session::SetPinPartModelsArgs { models });
@@ -501,7 +505,11 @@ impl<B: ComputeBackend> AppController<B> {
     /// (the spoilboard penetration, the cycle, the peck and the retract),
     /// so every dowel hole goes to the same depth. The feeds come from the
     /// suggest funnel of the new tool.
-    fn create_pin_drill(&mut self, diameter: f64, tool: Option<usize>) -> PinDrillSync {
+    fn create_pin_drill(
+        &mut self,
+        diameter: f64,
+        tool: Option<rs_cam_core::ids::ToolId>,
+    ) -> PinDrillSync {
         use crate::state::toolpath::{AlignmentPinDrillConfig, OperationConfig};
 
         let Some(setup_idx) = pin_drill_setup(self.state.session()) else {
@@ -525,8 +533,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session()
             .models()
             .first()
-            .map(|m| m.id)
-            .unwrap_or(0);
+            .map_or(rs_cam_core::ids::ModelId::placeholder(), |m| m.id);
         // F1 (2026-06-10): run the suggest funnel instead of raw
         // defaults — `..Default::default()` shipped the hardcoded
         // 300 mm/min feed, which on a Ø6 pin drill is exactly the
@@ -538,13 +545,13 @@ impl<B: ComputeBackend> AppController<B> {
         let stock_padding = self.state.session().stock_config().padding;
         let stock_ctx =
             rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(stock_bbox, stock_padding);
-        let model_bbox = self.state.session().model_bbox(model_id);
+        let model_bbox = self.state.session().model_bbox_by_id(model_id);
         let suggested = self
             .state
             .session()
             .tools()
             .iter()
-            .find(|t| t.id.0 == tool_id)
+            .find(|t| t.id == tool_id)
             .and_then(|tool| {
                 rs_cam_core::feeds::suggest::suggest_params(
                     rs_cam_core::feeds::suggest::SuggestParamsInput {
@@ -603,7 +610,7 @@ impl<B: ComputeBackend> AppController<B> {
         };
         let tc = rs_cam_core::session::ToolpathConfig {
             shoe: Default::default(),
-            id: rs_cam_core::ToolpathId(0), // will be assigned by session
+            id: rs_cam_core::ToolpathId::placeholder(), // will be assigned by session
             name,
             enabled: true,
             operation: OperationConfig::AlignmentPinDrill(cfg),

@@ -66,8 +66,8 @@ struct ReachMapKey {
     cell_mm: u64,
     tolerance_mm: u64,
     margin_mm: u64,
-    tool_id: usize,
-    model_id: usize,
+    tool_id: crate::ids::ToolId,
+    model_id: crate::ids::ModelId,
 }
 
 impl ReachMapKey {
@@ -275,8 +275,8 @@ mod tests {
             index: Arc::new(SpatialIndex::build_auto(mesh.as_ref())),
             params: ReachMapParams::for_cutter(cutter.as_ref(), tolerance_mm),
             cutter,
-            tool_id: 1,
-            model_id: 2,
+            tool_id: crate::ids::ToolId::from_raw(1),
+            model_id: crate::ids::ModelId::from_raw(2),
             tolerance_source: ReachToleranceSource::Default,
         }
     }

@@ -109,14 +109,14 @@ fn clean_up(path: &std::path::Path) {
 fn toolpath(id: usize, name: &str, model_id: usize, operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(id),
+        id: rs_cam_core::ToolpathId::from_raw(id),
         name: name.to_owned(),
         enabled: true,
         operation,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -134,7 +134,7 @@ fn toolpath(id: usize, name: &str, model_id: usize, operation: OperationConfig) 
 /// one Scallop (3D, `default_auto_regen` false) through the real save
 /// path, so the file shape is whatever the loader actually accepts.
 fn write_two_op_project() -> PathBuf {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     // Two models, because the two operations need different geometry: the
     // pocket is 2.5D and wants polygons, the scallop is 3D and wants a
@@ -145,7 +145,7 @@ fn write_two_op_project() -> PathBuf {
         (1usize, "flat_plate.stl", ModelKind::Stl),
     ] {
         let _ = builder.add_model(LoadedModel {
-            id,
+            id: rs_cam_core::ids::ModelId::from_raw(id),
             path: fixtures_dir().join(file),
             name: file.to_owned(),
             kind: Some(kind),

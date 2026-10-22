@@ -146,7 +146,7 @@ fn the_rpm_anchor_disclosure_renders_as_operator_text() {
     });
     let rendered: Vec<String> =
         rs_cam_core::diagnostics::adapters::from_feeds::diagnostics_from_feeds_result(
-            rs_cam_core::ids::ToolpathId(0),
+            rs_cam_core::ids::ToolpathId::from_raw(0),
             &result,
         )
         .into_iter()

@@ -87,7 +87,7 @@ const ORDER_IDS: &[&str] = &[
 
 fn polygon_model(id: usize) -> LoadedModel {
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         path: PathBuf::from(format!("model_{id}.svg")),
         name: format!("2D {id}"),
         kind: Some(ModelKind::Svg),
@@ -106,7 +106,7 @@ fn polygon_model(id: usize) -> LoadedModel {
 }
 
 fn session() -> ProjectSession {
-    let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
         z: STOCK_THICKNESS_MM,
@@ -127,14 +127,14 @@ fn pocket_config(heights: HeightsConfig) -> ToolpathConfig {
     }
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: op,
         dressups: Default::default(),
         heights,
-        tool_id: TOOL,
-        model_id: MODEL_2D,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(TOOL),
+        model_id: rs_cam_core::ids::ModelId::from_raw(MODEL_2D),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -307,7 +307,7 @@ fn the_export_door_refuses_an_inverted_stack_f033() {
     let mut path = Toolpath::new();
     path.rapid_to(P3::new(0.0, 0.0, 25.0));
     path.feed_to(P3::new(5.0, 0.0, 12.0), 600.0);
-    let revision = s.toolpath_revision(idx);
+    let revision = s.toolpath_revision_at(idx);
     let _ = s
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: idx,

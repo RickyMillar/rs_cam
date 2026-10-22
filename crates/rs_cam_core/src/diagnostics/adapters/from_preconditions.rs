@@ -257,7 +257,7 @@ mod tests {
             selection_refusal: Some("Drill: nothing to cut".to_owned()),
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &drill_op(), &ctx);
+        let diags = diagnostics_from_preconditions(ToolpathId::from_raw(0), &drill_op(), &ctx);
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].id.as_str(), ids::PRECOND_DRILL_NO_HOLES);
         assert_eq!(diags[0].severity, Severity::Blocking);
@@ -274,14 +274,18 @@ mod tests {
             selection_holes: 2,
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &drill_op(), &ctx);
+        let diags = diagnostics_from_preconditions(ToolpathId::from_raw(0), &drill_op(), &ctx);
         assert!(diags.is_empty());
     }
 
     #[test]
     fn alignment_pin_drill_no_holes_fires_without_stock_pins_or_picks() {
         let ctx = PreconditionContext::default();
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &alignment_pin_drill_op(), &ctx);
+        let diags = diagnostics_from_preconditions(
+            ToolpathId::from_raw(0),
+            &alignment_pin_drill_op(),
+            &ctx,
+        );
         assert_eq!(diags.len(), 1);
         assert_eq!(
             diags[0].id.as_str(),
@@ -298,7 +302,11 @@ mod tests {
             stock_alignment_pin_diameters: vec![6.0, 6.0],
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &alignment_pin_drill_op(), &ctx);
+        let diags = diagnostics_from_preconditions(
+            ToolpathId::from_raw(0),
+            &alignment_pin_drill_op(),
+            &ctx,
+        );
         assert!(diags.is_empty(), "got {diags:?}");
     }
 
@@ -308,7 +316,11 @@ mod tests {
             selection_holes: 1,
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &alignment_pin_drill_op(), &ctx);
+        let diags = diagnostics_from_preconditions(
+            ToolpathId::from_raw(0),
+            &alignment_pin_drill_op(),
+            &ctx,
+        );
         assert!(diags.is_empty(), "got {diags:?}");
     }
 
@@ -320,7 +332,11 @@ mod tests {
             selection_refusal: Some("Alignment Pin Drill: a pick is lost".to_owned()),
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &alignment_pin_drill_op(), &ctx);
+        let diags = diagnostics_from_preconditions(
+            ToolpathId::from_raw(0),
+            &alignment_pin_drill_op(),
+            &ctx,
+        );
         assert_eq!(diags.len(), 1, "got {diags:?}");
         assert!(diags[0].message.contains("a pick is lost"));
     }
@@ -336,7 +352,8 @@ mod tests {
             any_loaded_model_has_mesh: true,
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &project_curve_op(), &ctx);
+        let diags =
+            diagnostics_from_preconditions(ToolpathId::from_raw(0), &project_curve_op(), &ctx);
         assert!(
             diags
                 .iter()
@@ -357,7 +374,8 @@ mod tests {
             any_loaded_model_has_mesh: false,
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &project_curve_op(), &ctx);
+        let diags =
+            diagnostics_from_preconditions(ToolpathId::from_raw(0), &project_curve_op(), &ctx);
         assert!(
             diags
                 .iter()
@@ -377,7 +395,8 @@ mod tests {
             any_loaded_model_has_mesh: true,
             ..Default::default()
         };
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &project_curve_op(), &ctx);
+        let diags =
+            diagnostics_from_preconditions(ToolpathId::from_raw(0), &project_curve_op(), &ctx);
         assert!(diags.is_empty(), "got {:?}", diags);
     }
 
@@ -385,7 +404,7 @@ mod tests {
     fn non_precondition_ops_emit_nothing() {
         let ctx = PreconditionContext::default();
         let pocket = OperationConfig::new_default(crate::compute::catalog::OperationType::Pocket);
-        let diags = diagnostics_from_preconditions(ToolpathId(0), &pocket, &ctx);
+        let diags = diagnostics_from_preconditions(ToolpathId::from_raw(0), &pocket, &ctx);
         assert!(diags.is_empty());
     }
 }

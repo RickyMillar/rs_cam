@@ -29,7 +29,7 @@ use common::session::{mesh_model, polygon_model, stock_over};
 
 use rs_cam_core::compute::config::SAFE_Z_CLEARANCE_MM;
 use rs_cam_core::compute::transform::FaceUp;
-use rs_cam_core::ids::{ModelId, ObstacleId};
+use rs_cam_core::ids::ObstacleId;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
     AddObstacleArgs, Command, Obstacle, ObstacleGeometry, ProjectSession, ProjectSessionBuilder,
@@ -58,21 +58,19 @@ fn flipped_with(outline: bool) -> ProjectSession {
     };
     let geometry = if outline {
         ObstacleGeometry::OutlineExtrude {
-            model_ids: vec![ModelId(model_id)],
+            model_ids: vec![model_id],
             z_bottom: 0.0,
             z_top: 15.0,
         }
     } else {
-        ObstacleGeometry::Model {
-            model_id: ModelId(model_id),
-        }
+        ObstacleGeometry::Model { model_id }
     };
     let mut session = builder.build();
     let _ = session
         .apply(Command::AddObstacle(AddObstacleArgs {
             setup_index: setup,
             obstacle: Box::new(Obstacle {
-                id: ObstacleId(0),
+                id: ObstacleId::from_raw(0),
                 name: "Clamp".to_owned(),
                 enabled: true,
                 clearance: 0.0,

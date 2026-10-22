@@ -39,14 +39,28 @@ fn session(controller: Option<ControllerSettings>) -> ProjectSession {
             controller,
             ..MachineProfile::default()
         });
-    let t1 = builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    let t1 = builder.tools()[t1].id.0;
-    let t2 = builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    let t2 = builder.tools()[t2].id.0;
+    let t1 = builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
+    let t1 = builder.tools()[t1].id.raw();
+    let t2 = builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
+    let t2 = builder.tools()[t2].id.raw();
     let model = builder.add_model(polygon_model(vec![square_polygon(10.0)], "square"));
     for (name, tool) in [("a", t1), ("b", t1), ("c", t2)] {
         let _ = builder
-            .add_toolpath(0, toolpath_config(name, pocket(18_000), tool, model))
+            .add_toolpath(
+                0,
+                toolpath_config(
+                    name,
+                    pocket(18_000),
+                    rs_cam_core::ids::ToolId::from_raw(tool),
+                    model,
+                ),
+            )
             .expect("add toolpath");
     }
     builder.build()

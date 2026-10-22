@@ -90,7 +90,7 @@ use rs_cam_core::tool_load::verdict::UnmodeledReason;
 /// A stubby carbide end mill: 6 mm, four flutes, 45 mm stickout. The
 /// operating point a wood router runs every day.
 fn carbide_endmill() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shaft_diameter = 6.0;
@@ -103,7 +103,7 @@ fn carbide_endmill() -> ToolConfig {
 /// The same tool as a V-bit. Diameter and stickout match
 /// [`carbide_endmill`] so the two differ only in cutter shape.
 fn carbide_vbit() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(2), ToolType::VBit);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(2), ToolType::VBit);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shaft_diameter = 6.0;

@@ -104,10 +104,15 @@ fn pocket() -> OperationConfig {
 fn two_fresh_pockets() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_D));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model = builder.add_model(polygon_model(vec![square_polygon(HALF)], "square"));
     for name in ["A", "B"] {
-        let mut cfg = toolpath_config(name, pocket(), tool_id, model);
+        let mut cfg = toolpath_config(
+            name,
+            pocket(),
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
+            model,
+        );
         cfg.stock_source = StockSource::Fresh;
         let _ = builder.add_toolpath(0, cfg).expect("add a pocket");
     }
@@ -137,7 +142,7 @@ fn simulate(session: &mut ProjectSession) {
 
 /// The move count and the move fingerprint of the result at `index`.
 fn capture(session: &ProjectSession, index: usize) -> (usize, u64) {
-    let result = session.get_result(index).expect("the op holds a result");
+    let result = session.result_at(index).expect("the op holds a result");
     move_fingerprint(result.toolpath())
 }
 
@@ -182,7 +187,7 @@ fn a_fresh_op_generates_the_same_moves_before_and_after_a_simulation_b19() {
 
     // Claim 3.
     let stamp = session
-        .get_result(1)
+        .result_at(1)
         .expect("B holds a result")
         .stats
         .stock_snapshot;

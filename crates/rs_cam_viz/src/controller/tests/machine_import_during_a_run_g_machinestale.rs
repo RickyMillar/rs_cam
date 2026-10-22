@@ -56,7 +56,7 @@ fn inject_a_run_with_a_trace(controller: &mut AppController<ScriptedBackend>) {
     });
     let trace = SimulationCutTrace {
         toolpath_runtimes: vec![ToolpathKinematicRuntime {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             breakdown: CycleTimeBreakdown {
                 total_s: TRACE_SECONDS,
                 cutting_s: TRACE_SECONDS,
@@ -75,7 +75,7 @@ fn inject_a_run_with_a_trace(controller: &mut AppController<ScriptedBackend>) {
                 deviations: None,
                 column_deviations: None,
                 boundaries: vec![crate::compute::worker::SimBoundary {
-                    id: ToolpathId(0),
+                    id: ToolpathId::from_raw(0),
                     name: "Op 1".to_owned(),
                     tool_name: "EndMill".to_owned(),
                     start_move: 0,

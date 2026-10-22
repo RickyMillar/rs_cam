@@ -60,7 +60,7 @@ pub(crate) fn stock_change_json(row: &StockChangeRow) -> serde_json::Value {
         "setup_index": row.setup_index,
         "setup_id": row.setup_id,
         "position": row.position,
-        "id": row.change.id.0,
+        "id": row.change.id.raw(),
         "name": row.change.name,
         "enabled": row.change.enabled,
         "op": row.change.op.label(),
@@ -103,7 +103,7 @@ fn geometry_of(
     z_bottom: Option<f64>,
     z_top: Option<f64>,
 ) -> Result<StockGeometry, WireRefusal> {
-    let ids: Vec<ModelId> = model_ids.iter().map(|&id| ModelId(id)).collect();
+    let ids: Vec<ModelId> = model_ids.iter().map(|&id| ModelId::from_wire(id)).collect();
     let stray = |field: &'static str, kind: &str| -> WireRefusal {
         (
             format!("Error: {field} does not apply to kind '{kind}'"),
@@ -172,7 +172,7 @@ fn patch_geometry(
 ) -> Result<StockGeometry, WireRefusal> {
     match current {
         StockGeometry::Model { model_id } => {
-            let ids = model_ids.map_or_else(|| vec![model_id.0], <[usize]>::to_vec);
+            let ids = model_ids.map_or_else(|| vec![model_id.raw()], <[usize]>::to_vec);
             geometry_of(
                 StockGeometryKindParam::Model,
                 &ids,
@@ -185,8 +185,10 @@ fn patch_geometry(
             model_ids: ids,
             level_z: level,
         } => {
-            let ids =
-                model_ids.map_or_else(|| ids.iter().map(|id| id.0).collect(), <[usize]>::to_vec);
+            let ids = model_ids.map_or_else(
+                || ids.iter().map(|id| id.raw()).collect(),
+                <[usize]>::to_vec,
+            );
             geometry_of(
                 StockGeometryKindParam::OutlineFill,
                 &ids,
@@ -200,8 +202,10 @@ fn patch_geometry(
             z_bottom: bottom,
             z_top: top,
         } => {
-            let ids =
-                model_ids.map_or_else(|| ids.iter().map(|id| id.0).collect(), <[usize]>::to_vec);
+            let ids = model_ids.map_or_else(
+                || ids.iter().map(|id| id.raw()).collect(),
+                <[usize]>::to_vec,
+            );
             geometry_of(
                 StockGeometryKindParam::OutlineExtrude,
                 &ids,
@@ -302,7 +306,7 @@ impl RsCamApp {
             name: p
                 .name
                 .clone()
-                .unwrap_or_else(|| format!("Change {}", id.0 + 1)),
+                .unwrap_or_else(|| format!("Change {}", id.raw() + 1)),
             enabled: p.enabled.unwrap_or(true),
             op: op_of(p.op),
             geometry,
@@ -311,7 +315,7 @@ impl RsCamApp {
             cut_as: cut_as_of(p.cut_as),
         };
         before.index = Some(p.setup_index);
-        before.extra = serde_json::json!({ "change_id": id.0 });
+        before.extra = serde_json::json!({ "change_id": id.raw() });
         CorePlan::Apply(
             Command::AddStockChange(AddStockChangeArgs {
                 setup_index: p.setup_index,
@@ -332,7 +336,7 @@ impl RsCamApp {
             Ok(changes) => changes,
             Err(reply) => return CorePlan::Answered(reply),
         };
-        let change_id = StockChangeId(p.change_id);
+        let change_id = StockChangeId::from_wire(p.change_id);
         let Some(stored) = stock_changes.iter().find(|c| c.id == change_id) else {
             return CorePlan::Answered(CoreReply::refused(
                 &format!(
@@ -354,10 +358,14 @@ impl RsCamApp {
         }
         let geometry = match p.kind {
             Some(kind) => {
-                let ids = p
-                    .model_ids
-                    .clone()
-                    .unwrap_or_else(|| change.geometry.model_ids().iter().map(|id| id.0).collect());
+                let ids = p.model_ids.clone().unwrap_or_else(|| {
+                    change
+                        .geometry
+                        .model_ids()
+                        .iter()
+                        .map(|id| id.raw())
+                        .collect()
+                });
                 geometry_of(kind, &ids, p.level_z, p.z_bottom, p.z_top)
             }
             None => patch_geometry(
@@ -413,7 +421,7 @@ impl RsCamApp {
         CorePlan::Apply(
             Command::MoveStockChange(MoveStockChangeArgs {
                 setup_index: p.setup_index,
-                change_id: StockChangeId(p.change_id),
+                change_id: StockChangeId::from_wire(p.change_id),
                 to_position: p.to_position,
             }),
             Box::new(before),
@@ -435,7 +443,7 @@ impl RsCamApp {
         CorePlan::Apply(
             Command::RemoveStockChange(RemoveStockChangeArgs {
                 setup_index: p.setup_index,
-                change_id: StockChangeId(p.change_id),
+                change_id: StockChangeId::from_wire(p.change_id),
             }),
             Box::new(before),
         )
@@ -463,7 +471,7 @@ impl RsCamApp {
             let removed = verb == "Removed";
             if removed
                 && state.panels.stock_change_editor.as_ref().is_some_and(|e| {
-                    !e.is_new && u64::try_from(e.draft.id.0).is_ok_and(|id| id == change_id)
+                    !e.is_new && u64::try_from(e.draft.id.raw()).is_ok_and(|id| id == change_id)
                 })
             {
                 state.panels.stock_change_editor = None;
@@ -515,7 +523,7 @@ mod tests {
                 None
             ),
             Ok(StockGeometry::OutlineFill {
-                model_ids: vec![ModelId(3)],
+                model_ids: vec![ModelId::from_raw(3)],
                 level_z: 2.0
             })
         );
@@ -552,7 +560,7 @@ mod tests {
                 Some(4.0)
             ),
             Ok(StockGeometry::OutlineExtrude {
-                model_ids: vec![ModelId(3)],
+                model_ids: vec![ModelId::from_raw(3)],
                 z_bottom: -1.0,
                 z_top: 4.0
             })
@@ -562,14 +570,14 @@ mod tests {
     #[test]
     fn a_patch_keeps_what_the_request_does_not_give() {
         let current = StockGeometry::OutlineExtrude {
-            model_ids: vec![ModelId(3)],
+            model_ids: vec![ModelId::from_raw(3)],
             z_bottom: -1.0,
             z_top: 4.0,
         };
         assert_eq!(
             patch_geometry(&current, None, None, None, Some(6.0)),
             Ok(StockGeometry::OutlineExtrude {
-                model_ids: vec![ModelId(3)],
+                model_ids: vec![ModelId::from_raw(3)],
                 z_bottom: -1.0,
                 z_top: 6.0
             })
@@ -681,8 +689,7 @@ mod tests {
         let setup_id = rows[0].setup_id;
         let mut state = crate::state::AppState::new();
         state.replace_session(session);
-        state.selection =
-            crate::state::selection::Selection::Setup(crate::state::job::SetupId(setup_id));
+        state.selection = crate::state::selection::Selection::Setup(setup_id);
         let texts = painted_setup_panel(&mut state);
         assert!(
             texts.iter().any(|t| t == "Stock changes"),
@@ -741,8 +748,7 @@ mod tests {
         assert!(summary.ends_with("(own material)"), "{summary}");
         let mut state = crate::state::AppState::new();
         state.replace_session(session);
-        state.selection =
-            crate::state::selection::Selection::Setup(crate::state::job::SetupId(setup_id));
+        state.selection = crate::state::selection::Selection::Setup(setup_id);
         let texts = painted_setup_panel(&mut state);
         assert!(
             texts.contains(&summary),

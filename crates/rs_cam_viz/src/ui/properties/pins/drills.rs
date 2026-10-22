@@ -21,7 +21,7 @@ pub struct DrillQueue<'a> {
     /// The pin sizes that Apply adds a drill for.
     pub add_drills: &'a mut Vec<f64>,
     /// The tool that Apply binds to the pin-drill operation of a size.
-    pub use_tools: &'a mut Vec<(f64, usize)>,
+    pub use_tools: &'a mut Vec<(f64, rs_cam_core::ids::ToolId)>,
 }
 
 /// The words and the role of the chip of one pin size. `queued` says that
@@ -122,7 +122,7 @@ fn drill_row(
             queue.add_drills.push(d);
         }
     });
-    let mut pick: Option<usize> = None;
+    let mut pick: Option<rs_cam_core::ids::ToolId> = None;
     if row.tool_mismatch() && chosen.is_none() {
         // The operation drills with a tool of another size: one button
         // for each tool of the size.
@@ -135,7 +135,7 @@ fn drill_row(
         });
     } else if row.candidates.len() > 1 {
         // The tool chooser: more than one tool of the size.
-        let options: Vec<(usize, &str)> = row
+        let options: Vec<(rs_cam_core::ids::ToolId, &str)> = row
             .candidates
             .iter()
             .map(|(id, name)| (*id, name.as_str()))
@@ -187,7 +187,10 @@ mod tests {
     #[test]
     fn a_tool_of_another_size_is_danger() {
         let mut r = row();
-        r.tool = Some((3, "6 mm drill".to_owned()));
+        r.tool = Some((
+            rs_cam_core::ids::ToolId::from_raw(3),
+            "6 mm drill".to_owned(),
+        ));
         r.tool_diameter = Some(6.0);
         r.block = None;
         let (word, role) = drill_chip(&r, false, None);

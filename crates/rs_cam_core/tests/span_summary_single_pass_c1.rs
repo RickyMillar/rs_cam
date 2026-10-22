@@ -72,7 +72,7 @@ fn fixture() -> Vec<SimulationCutSample> {
         // ones must come back with `sample_count == 0`, not be missing.
         let region = 1 + (i % 31) as u32;
         out.push(SimulationCutSample {
-            toolpath_id: ToolpathId(7),
+            toolpath_id: ToolpathId::from_raw(7),
             move_index: i,
             sample_index: i,
             segment_time_s: 0.01 + (i % 5) as f64 * 0.001,
@@ -88,7 +88,7 @@ fn fixture() -> Vec<SimulationCutSample> {
     // to filter by toolpath these leak into every accumulator.
     for i in 0..50 {
         out.push(SimulationCutSample {
-            toolpath_id: ToolpathId(9),
+            toolpath_id: ToolpathId::from_raw(9),
             move_index: i,
             sample_index: i,
             segment_time_s: 5.0,
@@ -157,12 +157,17 @@ fn the_single_pass_scatter_agrees_with_the_parent_revisions_quadratic_walk() {
         let mut visits = 0usize;
         let old = parent_revision_quadratic_walk(
             &samples,
-            ToolpathId(7),
+            ToolpathId::from_raw(7),
             SPAN_COUNT,
             accept.as_ref(),
             &mut visits,
         );
-        let new = accumulate_by_span(&samples, ToolpathId(7), SPAN_COUNT, accept.as_ref());
+        let new = accumulate_by_span(
+            &samples,
+            ToolpathId::from_raw(7),
+            SPAN_COUNT,
+            accept.as_ref(),
+        );
 
         assert_eq!(old.len(), new.len(), "same number of span slots");
         for (span_id, (o, n)) in old.iter().zip(new.iter()).enumerate() {
@@ -191,7 +196,7 @@ fn the_single_pass_scatter_agrees_with_the_parent_revisions_quadratic_walk() {
 #[test]
 fn the_fixture_populates_spans_and_keeps_the_two_toolpaths_apart() {
     let samples = fixture();
-    let accs = accumulate_by_span(&samples, ToolpathId(7), SPAN_COUNT, None);
+    let accs = accumulate_by_span(&samples, ToolpathId::from_raw(7), SPAN_COUNT, None);
 
     assert_eq!(
         accs[0].sample_count, SAMPLES,
@@ -227,7 +232,7 @@ fn the_scatter_visits_each_sample_once_per_span_it_belongs_to() {
     let mut parent_visits = 0usize;
     let _ = parent_revision_quadratic_walk(
         &samples,
-        ToolpathId(7),
+        ToolpathId::from_raw(7),
         SPAN_COUNT,
         None,
         &mut parent_visits,
@@ -238,7 +243,7 @@ fn the_scatter_visits_each_sample_once_per_span_it_belongs_to() {
     // touched at all.
     let scatter_visits: usize = samples
         .iter()
-        .filter(|s| s.toolpath_id == ToolpathId(7))
+        .filter(|s| s.toolpath_id == ToolpathId::from_raw(7))
         .map(|s| s.span_path.len())
         .sum();
 

@@ -305,10 +305,10 @@ mod tests {
     #[test]
     fn new_toolpath_uses_operation_defaults() {
         let entry = ToolpathEntry::for_operation(
-            ToolpathId(1),
+            ToolpathId::from_raw(1),
             "Pocket".to_owned(),
-            ToolId(1),
-            ModelId(1),
+            ToolId::from_raw(1),
+            ModelId::from_raw(1),
             OperationType::Pocket,
         );
         assert!(entry.auto_regen);
@@ -318,10 +318,10 @@ mod tests {
     #[test]
     fn duplicate_preserves_editable_state_but_not_runtime() {
         let mut source = ToolpathEntry::for_operation(
-            ToolpathId(1),
+            ToolpathId::from_raw(1),
             "Adaptive 3D".to_owned(),
-            ToolId(1),
-            ModelId(2),
+            ToolId::from_raw(1),
+            ModelId::from_raw(2),
             OperationType::Adaptive3d,
         );
         source.enabled = false;
@@ -335,8 +335,8 @@ mod tests {
             drill_op: None,
         });
 
-        let duplicate = source.duplicate_as(ToolpathId(9), "Adaptive 3D Copy".to_owned());
-        assert_eq!(duplicate.id, ToolpathId(9));
+        let duplicate = source.duplicate_as(ToolpathId::from_raw(9), "Adaptive 3D Copy".to_owned());
+        assert_eq!(duplicate.id, ToolpathId::from_raw(9));
         assert!(!duplicate.enabled);
         assert_eq!(duplicate.stock_source, StockSource::FromRemainingStock);
         assert!(matches!(
@@ -349,10 +349,10 @@ mod tests {
     #[test]
     fn loaded_init_can_override_auto_regen_and_runtime_reset() {
         let mut init = ToolpathEntryInit::from_loaded_state(
-            ToolpathId(4),
+            ToolpathId::from_raw(4),
             "Loaded".to_owned(),
-            ToolId(2),
-            ModelId(3),
+            ToolId::from_raw(2),
+            ModelId::from_raw(3),
             OperationConfig::new_default(OperationType::DropCutter),
         );
         init.auto_regen = Some(true);

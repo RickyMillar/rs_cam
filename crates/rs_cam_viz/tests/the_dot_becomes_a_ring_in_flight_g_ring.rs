@@ -34,7 +34,7 @@ use rs_cam_viz::state::freshness::FreshnessState;
 use rs_cam_viz::ui::tokens;
 use rs_cam_viz::ui::toolpath_panel::{InFlight, PlanFocus, RowFacts, draw_state_glyph, in_flight};
 
-const ROW: ToolpathId = ToolpathId(7);
+const ROW: ToolpathId = ToolpathId::from_raw(7);
 
 fn row() -> RowFacts {
     RowFacts {
@@ -160,7 +160,7 @@ fn generating_outranks_simulating_g_ring() {
         "the plan naming this row as its Generate step wins too"
     );
     let other = PlanFocus {
-        generating: Some(ToolpathId(99)),
+        generating: Some(ToolpathId::from_raw(99)),
         simulating_upto: None,
     };
     assert_eq!(

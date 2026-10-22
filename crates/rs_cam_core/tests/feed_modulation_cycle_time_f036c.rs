@@ -67,13 +67,13 @@ const WANAKA_TOML: &str = concat!(
 /// Setup-1 toolpath IDs other than Back Rough (id 4) — skipped so we
 /// time only that one toolpath. Setup 2 toolpaths (10, 11) too.
 const SKIP_IDS: &[ToolpathId] = &[
-    ToolpathId(14),
-    ToolpathId(5),
-    ToolpathId(6),
-    ToolpathId(7),
-    ToolpathId(10),
-    ToolpathId(11),
-    ToolpathId(12),
+    ToolpathId::from_raw(14),
+    ToolpathId::from_raw(5),
+    ToolpathId::from_raw(6),
+    ToolpathId::from_raw(7),
+    ToolpathId::from_raw(10),
+    ToolpathId::from_raw(11),
+    ToolpathId::from_raw(12),
 ];
 
 /// Wall-clock seconds Back Rough takes on the user's tuned Shapeoko XXL
@@ -132,7 +132,7 @@ fn run_back_rough(modulate: bool) -> f64 {
     };
     let n_toolpaths = session.toolpath_configs().len();
     for i in 0..n_toolpaths {
-        let Some(tc) = session.get_toolpath_config(i) else {
+        let Some(tc) = session.toolpath_config_at(i) else {
             continue;
         };
         if SKIP_IDS.contains(&tc.id) {

@@ -204,7 +204,7 @@ impl Obstacle {
     #[must_use]
     pub fn new_default_box(id: ObstacleId) -> Self {
         Self {
-            name: format!("Obstacle {}", id.0 + 1),
+            name: format!("Obstacle {}", id.raw() + 1),
             id,
             enabled: true,
             clearance: DEFAULT_OBSTACLE_CLEARANCE_MM,
@@ -231,7 +231,7 @@ impl Obstacle {
 /// setup holds, or 0 for an empty list. The GUI and MCP both call it.
 #[must_use]
 pub fn next_obstacle_id(obstacles: &[Obstacle]) -> ObstacleId {
-    ObstacleId(obstacles.iter().map(|o| o.id.0 + 1).max().unwrap_or(0))
+    ObstacleId::mint(obstacles.iter().map(|o| o.id.raw() + 1).max().unwrap_or(0))
 }
 
 /// Why an obstacle was refused. Each variant names the rule it broke.
@@ -276,7 +276,11 @@ impl std::fmt::Display for ObstacleRefusal {
                 "an obstacle clearance must be a finite value of 0 or more, and it is {clearance}"
             ),
             Self::DuplicateId { id } => {
-                write!(f, "the setup already holds an obstacle with id {}", id.0)
+                write!(
+                    f,
+                    "the setup already holds an obstacle with id {}",
+                    id.raw()
+                )
             }
         }
     }
@@ -328,7 +332,7 @@ pub fn model_geometry_facts(
 ) -> Option<ModelGeometryFacts<'_>> {
     models
         .iter()
-        .find(|m| m.id == model_id.0)
+        .find(|m| m.id == model_id)
         .map(|m| ModelGeometryFacts {
             name: &m.name,
             has_mesh: m.mesh.is_some(),
@@ -456,7 +460,7 @@ fn geometry_z_range(
         ObstacleGeometry::Model { model_id } => {
             let mesh = models
                 .iter()
-                .find(|m| m.id == model_id.0)
+                .find(|m| m.id == *model_id)
                 .and_then(|m| m.mesh.as_ref())?;
             Some((mesh.bbox.min.z, mesh.bbox.max.z))
         }
@@ -502,11 +506,11 @@ impl ObstacleSet {
                     for model_id in model_ids {
                         let polygons = models
                             .iter()
-                            .find(|m| m.id == model_id.0)
+                            .find(|m| m.id == *model_id)
                             .filter(|m| m.items.has_drawing())
                             .map(|m| m.items.closed_regions())
                             .ok_or_else(|| {
-                                refuse(format!("model id {} holds no 2D outline", model_id.0))
+                                refuse(format!("model id {} holds no 2D outline", model_id.raw()))
                             })?;
                         closed.extend(polygons.iter().filter(|p| is_closed_outline(p)).cloned());
                     }
@@ -521,9 +525,11 @@ impl ObstacleSet {
                 ObstacleGeometry::Model { model_id } => {
                     let mesh = models
                         .iter()
-                        .find(|m| m.id == model_id.0)
+                        .find(|m| m.id == *model_id)
                         .and_then(|m| m.mesh.clone())
-                        .ok_or_else(|| refuse(format!("model id {} holds no mesh", model_id.0)))?;
+                        .ok_or_else(|| {
+                            refuse(format!("model id {} holds no mesh", model_id.raw()))
+                        })?;
                     // The per-mesh memo: the pin panel resolves every
                     // setup each frame, and the raster is the cost (K2).
                     let silhouette = crate::maps::geom_cache::cached_silhouette(&mesh);
@@ -531,8 +537,10 @@ impl ObstacleSet {
                         return Err(refuse("the mesh has an empty silhouette".to_owned()));
                     }
                     let silhouette = grow(&silhouette, SILHOUETTE_CELL_MM, &obstacle.name)?;
-                    let (bottom, top) = geometry_z_range(&obstacle.geometry, models)
-                        .ok_or_else(|| refuse(format!("model id {} holds no mesh", model_id.0)))?;
+                    let (bottom, top) =
+                        geometry_z_range(&obstacle.geometry, models).ok_or_else(|| {
+                            refuse(format!("model id {} holds no mesh", model_id.raw()))
+                        })?;
                     (silhouette, bottom, top)
                 }
             };
@@ -1477,7 +1485,7 @@ mod tests {
     fn clamp(top: f64) -> ObstacleSet {
         ObstacleSet::resolve(
             &[Obstacle {
-                id: ObstacleId(0),
+                id: ObstacleId::from_raw(0),
                 name: "Clamp".to_owned(),
                 enabled: true,
                 clearance: 1.0,
@@ -1498,7 +1506,7 @@ mod tests {
     fn a_resolved_obstacle_keeps_its_outline_before_the_clearance_k2() {
         let set = ObstacleSet::resolve(
             &[Obstacle {
-                id: ObstacleId(0),
+                id: ObstacleId::from_raw(0),
                 name: "Clamp".to_owned(),
                 enabled: true,
                 clearance: 3.0,
@@ -1532,7 +1540,7 @@ mod tests {
     #[test]
     fn a_mesh_obstacle_resolves_to_the_same_outline_twice_k2() {
         let model = crate::session::LoadedModel {
-            id: 4,
+            id: crate::ids::ModelId::from_raw(4),
             name: "clamp.stl".to_owned(),
             mesh: Some(std::sync::Arc::new(crate::mesh::make_test_hemisphere(
                 8.0, 12,
@@ -1549,12 +1557,12 @@ mod tests {
             drawing: Default::default(),
         };
         let obstacle = Obstacle {
-            id: ObstacleId(0),
+            id: ObstacleId::from_raw(0),
             name: "Clamp".to_owned(),
             enabled: true,
             clearance: 2.0,
             geometry: ObstacleGeometry::Model {
-                model_id: ModelId(4),
+                model_id: ModelId::from_raw(4),
             },
         };
         let models = [model];
@@ -1722,12 +1730,12 @@ mod tests {
     fn a_missing_model_refuses_by_name() {
         let err = ObstacleSet::resolve(
             &[Obstacle {
-                id: ObstacleId(0),
+                id: ObstacleId::from_raw(0),
                 name: "Vise".to_owned(),
                 enabled: true,
                 clearance: 0.0,
                 geometry: ObstacleGeometry::Model {
-                    model_id: ModelId(9),
+                    model_id: ModelId::from_raw(9),
                 },
             }],
             &[],
@@ -1737,12 +1745,12 @@ mod tests {
         // A disabled obstacle is not read.
         let ok = ObstacleSet::resolve(
             &[Obstacle {
-                id: ObstacleId(0),
+                id: ObstacleId::from_raw(0),
                 name: "Vise".to_owned(),
                 enabled: false,
                 clearance: 0.0,
                 geometry: ObstacleGeometry::Model {
-                    model_id: ModelId(9),
+                    model_id: ModelId::from_raw(9),
                 },
             }],
             &[],

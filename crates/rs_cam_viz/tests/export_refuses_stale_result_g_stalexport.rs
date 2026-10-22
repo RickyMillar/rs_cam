@@ -105,10 +105,10 @@ fn policy() -> rs_cam_core::gcode::ToolLoadExportPolicy {
 /// core cache and a drawable copy in the viz store, exactly as
 /// `drain_compute_results` leaves it.
 fn build_state() -> (ProjectSession, GuiState, SimulationState) {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
         kind: Some(ModelKind::Stl),
@@ -125,7 +125,7 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: OP_NAME.to_owned(),
         enabled: true,
         operation: OperationConfig::Scallop(
@@ -133,8 +133,8 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -149,7 +149,7 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
     let id = tc.id;
     let _ = builder.add_toolpath(0, tc).expect("add toolpath");
     let mut session = builder.build();
-    let revision = session.toolpath_revision(0);
+    let revision = session.toolpath_revision_at(0);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,
@@ -177,7 +177,7 @@ fn edit_the_operation(session: &mut ProjectSession) {
         ))
         .expect("toolpath 0 exists");
     assert!(
-        session.get_result(0).is_none(),
+        session.result_at(0).is_none(),
         "the edit must drop the core result — otherwise this file is not \
          exercising the gate"
     );
@@ -273,14 +273,19 @@ fn every_export_entry_point_refuses_the_edited_operation() {
             &session,
             &gui,
             &sim,
-            SetupId(0),
+            SetupId::from_raw(0),
             policy(),
             StaleResultPolicy::Refuse,
         ),
         "export_setup_gcode_from_session_with_policy",
     );
     let single = expect_export_error(
-        export_single_toolpath_from_session(&session, &gui, &sim, rs_cam_core::ToolpathId(0)),
+        export_single_toolpath_from_session(
+            &session,
+            &gui,
+            &sim,
+            rs_cam_core::ToolpathId::from_raw(0),
+        ),
         "export_single_toolpath_from_session",
     );
 
@@ -329,7 +334,10 @@ fn the_acceptance_does_not_waive_a_missing_result() {
     let _ = session
         .apply(Command::ForgetResult(ForgetResultArgs { index: 0 }))
         .expect("toolpath 0 exists");
-    if let Some(rt) = gui.toolpath_rt.get_mut(&rs_cam_core::ToolpathId(0)) {
+    if let Some(rt) = gui
+        .toolpath_rt
+        .get_mut(&rs_cam_core::ToolpathId::from_raw(0))
+    {
         rt.run = rs_cam_viz::state::runtime::ToolpathRun::Pending;
     }
     assert_eq!(
@@ -372,7 +380,10 @@ fn the_acceptance_does_not_waive_a_missing_result() {
 #[test]
 fn export_refuses_an_operation_that_is_still_generating() {
     let (session, mut gui, sim) = build_state();
-    if let Some(rt) = gui.toolpath_rt.get_mut(&rs_cam_core::ToolpathId(0)) {
+    if let Some(rt) = gui
+        .toolpath_rt
+        .get_mut(&rs_cam_core::ToolpathId::from_raw(0))
+    {
         rt.run = rs_cam_viz::state::runtime::ToolpathRun::Computing;
     }
     assert_eq!(

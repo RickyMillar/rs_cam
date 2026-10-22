@@ -221,7 +221,7 @@ fn live_project_pc6_has_no_phantom_cuts() {
         .toolpath_configs()
         .iter()
         .enumerate()
-        .find(|(_, tc)| tc.id == ToolpathId(12))
+        .find(|(_, tc)| tc.id == ToolpathId::from_raw(12))
         .expect("PC6 exists in fixture");
 
     let cancel = std::sync::atomic::AtomicBool::new(false);

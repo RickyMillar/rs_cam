@@ -303,7 +303,7 @@ fn the_holdable_bottom_follows_the_cutter_profile() {
 
 fn diagnostics(clamp: Option<RampReachClamp>) -> Vec<rs_cam_core::diagnostics::Diagnostic> {
     rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation(
-        ToolpathId(3),
+        ToolpathId::from_raw(3),
         &ToolpathStats {
             ramp_reach_clamp: clamp.map(Box::new),
             ..ToolpathStats::default()

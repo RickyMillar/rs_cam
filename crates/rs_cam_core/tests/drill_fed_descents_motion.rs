@@ -116,7 +116,7 @@ fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
         ..StockConfig::default()
     });
 
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -124,7 +124,7 @@ fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
     tool.flute_count = 2;
     tool.name = "drill sentry tool".to_owned();
     let tool_idx = builder.add_tool(tool);
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     let poly = Polygon2::new(vec![
         P2::new(5.0, 5.0),
@@ -133,7 +133,7 @@ fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
         P2::new(5.0, 55.0),
     ]);
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "drill_sentry_rect".to_owned(),
         mesh: None,
         // P2.3c: the two holes are points of the drawing, the default
@@ -164,13 +164,13 @@ fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
             0,
             ToolpathConfig {
                 shoe: Default::default(),
-                id: ToolpathId(0),
+                id: ToolpathId::from_raw(0),
                 name: "drill sentry".to_owned(),
                 enabled: true,
                 operation: op,
                 dressups,
                 heights: HeightsConfig::default(),
-                tool_id,
+                tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
                 model_id,
                 pre_gcode: None,
                 post_gcode: None,
@@ -242,7 +242,7 @@ fn assert_motion_matches_schedule(case: &str, cfg: DrillConfig) {
     session
         .generate_toolpath(0, &cancel)
         .unwrap_or_else(|e| panic!("{case}: generate failed: {e:?}"));
-    let result = session.get_result(0).expect("result");
+    let result = session.result_at(0).expect("result");
     let toolpath = result.toolpath();
 
     // Stock top is world Z = 0 for this fixture; the R-plane is the drill

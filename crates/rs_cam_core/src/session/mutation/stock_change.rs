@@ -27,7 +27,7 @@ pub(crate) fn loaded_model_facts(
 ) -> Option<ModelGeometryFacts<'_>> {
     models
         .iter()
-        .find(|m| m.id == model_id.0)
+        .find(|m| m.id == model_id)
         .map(|m| ModelGeometryFacts {
             name: &m.name,
             has_mesh: m.mesh.is_some(),
@@ -104,7 +104,8 @@ impl ProjectSession {
         if change.id != change_id {
             return Err(SessionError::InvalidParam(format!(
                 "the replacement stock change carries id {}, and the command names id {}",
-                change.id.0, change_id.0
+                change.id.raw(),
+                change_id.raw()
             )));
         }
         self.validate_stock_change(&change)?;
@@ -195,6 +196,6 @@ impl ProjectSession {
 fn unknown_change(setup_index: usize, change_id: StockChangeId) -> SessionError {
     SessionError::InvalidParam(format!(
         "setup {setup_index} carries no stock change with id {}",
-        change_id.0
+        change_id.raw()
     ))
 }

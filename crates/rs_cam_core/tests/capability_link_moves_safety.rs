@@ -1938,7 +1938,7 @@ fn steep_shallow_split_barriers_allow_intra_half_reorder_and_pin_depth() {
     // which no production path called, and dressed the kernel output.
     let (mesh, _index) = scallop_island_mesh();
     let (top, bottom) = (mesh.bbox.max.z, mesh.bbox.min.z);
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::BallNose);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
     tool.diameter = 3.0;
     let stock = rs_cam_core::compute::StockConfig {
         auto_from_model: true,

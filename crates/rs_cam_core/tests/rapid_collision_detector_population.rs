@@ -150,10 +150,10 @@ fn build_session(heights: HeightsConfig) -> ProjectSession {
     });
 
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "demo_pocket".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -172,7 +172,7 @@ fn build_session(heights: HeightsConfig) -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Collision population pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
@@ -194,7 +194,7 @@ fn build_session(heights: HeightsConfig) -> ProjectSession {
         // Shipped roughing dressups, identical on both arms.
         dressups: DressupConfig::for_op(OperationType::Pocket),
         heights,
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,
@@ -221,7 +221,7 @@ fn measure(heights: HeightsConfig) -> (u32, usize, usize) {
         .expect("generate pocket toolpath");
 
     let move_count = session
-        .get_result(0)
+        .result_at(0)
         .map(|r| r.toolpath().moves.len())
         .unwrap_or(0);
     // Non-vacuity: both arms must actually cut something. The forced arm

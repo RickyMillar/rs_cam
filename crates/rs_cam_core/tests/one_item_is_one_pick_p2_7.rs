@@ -214,20 +214,25 @@ fn add_plain_model(s: &mut ProjectSession) {
         P2::new(-20.0, 20.0),
     ]);
     let mut model = polygon_model(vec![plate], "p2_7_plain");
-    model.id = 1;
+    model.id = rs_cam_core::ids::ModelId::from_raw(1);
     let _ = s
         .apply(Command::AddModel(AddModelArgs {
             model: Box::new(model),
         }))
         .expect("the model is added");
-    assert!(s.models().iter().any(|m| m.id == 1), "the model keeps id 1");
+    assert!(
+        s.models()
+            .iter()
+            .any(|m| m.id == rs_cam_core::ids::ModelId::from_raw(1)),
+        "the model keeps id 1"
+    );
 }
 
 fn retarget(s: &mut ProjectSession, model_id: usize) {
     let _ = s
         .apply(Command::SetToolpathModel(SetToolpathModelArgs {
             index: 0,
-            model_id,
+            model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         }))
         .expect("the toolpath takes the model");
 }

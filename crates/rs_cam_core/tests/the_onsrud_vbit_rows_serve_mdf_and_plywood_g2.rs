@@ -249,7 +249,7 @@ fn a_one_flute_60_degree_vbit_gets_the_37_00_row_unscaled_g2() {
 
 /// A 60 deg 2-flute V-bit of `diameter` mm for a Trace in MDF.
 fn vbit_tool(diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::VBit);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
     tool.diameter = diameter;
     tool.flute_count = 2;
     tool.included_angle = 60.0;

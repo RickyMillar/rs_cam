@@ -119,7 +119,7 @@ const MODEL_IDENTITY_TOLERANCE: f64 = 1.0e-9;
 /// (0.8 × 50 = 40 mm) nor the cutting-length clamp (50 mm) reaches the
 /// requested 36 mm depth. All fixture choices, not model constants.
 fn tool() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     t.diameter = DIAMETER_MM;
     t.flute_count = FLUTES;
     t.cutting_length = 50.0;

@@ -57,12 +57,12 @@ fn two_setups_each_with_rest() -> (AppController<RestChainBackend>, Vec<Toolpath
         .expect("the fixture has a first toolpath");
     for (id, name, source) in [
         (
-            ToolpathId(9),
+            ToolpathId::from_raw(9),
             "Plain",
             crate::state::toolpath::StockSource::Fresh,
         ),
         (
-            ToolpathId(10),
+            ToolpathId::from_raw(10),
             "Rest C",
             crate::state::toolpath::StockSource::FromRemainingStock,
         ),
@@ -114,14 +114,15 @@ fn steps(controller: &AppController<RestChainBackend>) -> Vec<PlanStep> {
 }
 
 fn setup_id(controller: &AppController<RestChainBackend>, position: usize) -> SetupId {
-    SetupId(
-        controller
+    SetupId::from_raw(
+        (controller
             .state
             .session()
             .list_setups()
             .get(position)
             .expect("the fixture holds that setup")
-            .id,
+            .id)
+            .raw(),
     )
 }
 

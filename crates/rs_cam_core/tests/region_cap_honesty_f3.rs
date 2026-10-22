@@ -147,12 +147,17 @@ fn a_truncated_extraction_renders_a_diagnostic_carrying_the_true_count() {
         }),
         ..ToolpathStats::default()
     };
-    let out = diagnostics_from_generation(ToolpathId(7), &stats);
+    let out = diagnostics_from_generation(ToolpathId::from_raw(7), &stats);
     let d = out
         .iter()
         .find(|d| d.id == DiagnosticId::from(ids::GEOM_REGION_CAP_TRUNCATED))
         .expect("a truncated extraction must surface a diagnostic");
-    assert_eq!(d.scope, Scope::Toolpath { id: ToolpathId(7) });
+    assert_eq!(
+        d.scope,
+        Scope::Toolpath {
+            id: ToolpathId::from_raw(7)
+        }
+    );
     assert!(
         d.message.contains("312"),
         "the pre-cap count is the actionable number: {}",
@@ -179,7 +184,7 @@ fn a_clean_or_unmeasured_extraction_says_nothing() {
         ..ToolpathStats::default()
     };
     assert!(
-        !diagnostics_from_generation(ToolpathId(1), &clean)
+        !diagnostics_from_generation(ToolpathId::from_raw(1), &clean)
             .iter()
             .any(|d| d.id == DiagnosticId::from(ids::GEOM_REGION_CAP_TRUNCATED)),
         "a notice on every healthy rest pass is a notice nobody reads"
@@ -191,7 +196,7 @@ fn a_clean_or_unmeasured_extraction_says_nothing() {
         "the default must read as NOT MEASURED, never as a clean extraction"
     );
     assert!(
-        diagnostics_from_generation(ToolpathId(1), &unmeasured).is_empty(),
+        diagnostics_from_generation(ToolpathId::from_raw(1), &unmeasured).is_empty(),
         "an absent measurement is not a claim"
     );
 }

@@ -169,7 +169,7 @@ const FLIPPED_PIN: usize = 3;
 fn two_setup_session() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(polygon_model_with_points(
         vec![plate_polygon()],
         &[PICK],
@@ -184,7 +184,12 @@ fn two_setup_session() -> ProjectSession {
     // these same ops (G-WANAKA-DRILL-RAMP) and would smear each hole into
     // a 19 mm oval.
     let add = |session: &mut ProjectSession, setup: usize, name: &str, op: OperationConfig| {
-        let mut tc = toolpath_config(name, op, tool_id, model_id);
+        let mut tc = toolpath_config(
+            name,
+            op,
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
+            model_id,
+        );
         tc.dressups.entry_style = DressupEntryStyle::None;
         tc.dressups.optimize_rapid_order = false;
         tc.dressups.link_moves = None;

@@ -84,7 +84,7 @@ pub(super) fn plan_edit_model_drawing(
     before.field = Some("edit".to_owned());
     CorePlan::Apply(
         Command::EditModelDrawing(EditModelDrawingArgs {
-            model_id: p.model_id,
+            model_id: rs_cam_core::ids::ModelId::from_wire(p.model_id),
             edit: p.edit.into(),
         }),
         Box::new(before),
@@ -111,7 +111,7 @@ mod tests {
     use super::*;
     use crate::app::mcp::tests::U4SilentBackend;
     use crate::controller::AppController;
-    use crate::state::job::ModelId;
+
     use rs_cam_core::compute::stock_config::ModelKind;
     use rs_cam_core::session::{AddModelArgs, LedgerEdit, ProjectSession};
     use rs_cam_mcp::server::ImportModelParam;
@@ -151,7 +151,7 @@ mod tests {
             }),
         ];
         for act in gui_acts {
-            controller.edit_drawing_ledger(ModelId(id), act).unwrap();
+            controller.edit_drawing_ledger(id, act).unwrap();
         }
         let gui = controller.state().session().models()[0].clone();
         assert_eq!(gui.drawing.edits().len(), 2);
@@ -187,7 +187,7 @@ mod tests {
                 serde_json::from_value(serde_json::json!({"model_id": id, "edit": edit})).unwrap();
             let _ = session
                 .apply(Command::EditModelDrawing(EditModelDrawingArgs {
-                    model_id: p.model_id,
+                    model_id: rs_cam_core::ids::ModelId::from_raw(p.model_id),
                     edit: p.edit.into(),
                 }))
                 .unwrap();
@@ -205,7 +205,7 @@ mod tests {
         // A refusal: a remove past the end changes nothing on either side.
         assert!(
             controller
-                .edit_drawing_ledger(ModelId(id), LedgerEdit::Remove(9))
+                .edit_drawing_ledger(id, LedgerEdit::Remove(9))
                 .is_err()
         );
         assert!(

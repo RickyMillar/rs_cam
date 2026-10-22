@@ -118,7 +118,7 @@ fn generate(session: &mut ProjectSession) -> Result<Toolpath, String> {
         .generate_toolpath(0, &cancel)
         .map_err(|e| e.to_string())?;
     Ok(session
-        .get_result(0)
+        .result_at(0)
         .expect("a result")
         .annotated()
         .toolpath

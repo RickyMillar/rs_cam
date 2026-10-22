@@ -107,7 +107,7 @@ fn drawing() -> ItemSet {
 fn toolpath(tab_points: Vec<[f64; 2]>) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Profile".to_owned(),
         enabled: true,
         operation: OperationConfig::Profile(ProfileConfig {
@@ -117,8 +117,8 @@ fn toolpath(tab_points: Vec<[f64; 2]>) -> ToolpathConfig {
         }),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -149,11 +149,11 @@ fn controller(
         auto_from_model: false,
         ..StockConfig::default()
     };
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     let mut builder = ProjectSessionBuilder::new().stock(stock).tool(tool);
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "rect.dxf".to_owned(),
         mesh: None,
         items: Arc::new(drawing()),

@@ -82,7 +82,7 @@ fn tapered_ball_tool() -> ToolConfig {
         diameter: TIP_DIAMETER_MM,
         taper_half_angle: TAPER_HALF_ANGLE_DEG,
         shaft_diameter: SHANK_DIAMETER_MM,
-        ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
     }
 }
 
@@ -119,7 +119,7 @@ fn two_groove_plateau() -> TriangleMesh {
 
 fn mesh_model(mesh: TriangleMesh) -> LoadedModel {
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "two_groove_plateau".to_owned(),
         mesh: Some(Arc::new(mesh)),
         items: Default::default(),
@@ -154,14 +154,14 @@ fn toolpath(heights: HeightsConfig, tool_id: usize, model_id: usize) -> Toolpath
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Unified Finish".to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::for_op(op_type),
         heights,
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -191,10 +191,10 @@ fn stock() -> StockConfig {
 fn session_with(heights: HeightsConfig) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(tapered_ball_tool());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(mesh_model(two_groove_plateau()));
     let _ = builder
-        .add_toolpath(0, toolpath(heights, tool_id, model_id))
+        .add_toolpath(0, toolpath(heights, tool_id, model_id.raw()))
         .expect("add unified-finish toolpath");
     let mut session = builder.build();
     let cancel = AtomicBool::new(false);
@@ -239,7 +239,7 @@ fn rim_pinned_heights_drop_the_very_steep_band_and_every_surface_reports_it() {
 
     // (a) The typed channel. `Some` = measured; the band, its area and the
     //     clipping height all travel with it.
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     let dropped = result
         .stats
         .dropped_band
@@ -303,7 +303,7 @@ fn rim_pinned_heights_drop_the_very_steep_band_and_every_surface_reports_it() {
     let row = project
         .per_toolpath
         .iter()
-        .find(|r| r.toolpath_id == ToolpathId(0))
+        .find(|r| r.toolpath_id == ToolpathId::from_raw(0))
         .expect("per-toolpath diagnostic row");
     assert!(
         row.unmachined_band_area_mm2.is_some_and(|a| a > 1.0),
@@ -318,7 +318,7 @@ fn rim_pinned_heights_drop_the_very_steep_band_and_every_surface_reports_it() {
 #[test]
 fn pinned_heights_machine_the_band_and_report_nothing_dropped() {
     let session = session_with(pinned_heights());
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     assert!(
         result.stats.dropped_band.is_none(),
         "pinned heights machine the band — nothing may be reported dropped: {:?}",
@@ -356,9 +356,9 @@ fn pinned_heights_machine_the_band_and_report_nothing_dropped() {
 fn an_operation_with_no_bands_reports_not_measured() {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(tapered_ball_tool());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(mesh_model(two_groove_plateau()));
-    let mut tc = toolpath(pinned_heights(), tool_id, model_id);
+    let mut tc = toolpath(pinned_heights(), tool_id, model_id.raw());
     tc.operation = OperationConfig::Waterline(
         rs_cam_core::compute::operation_configs::WaterlineConfig::default(),
     );
@@ -370,7 +370,7 @@ fn an_operation_with_no_bands_reports_not_measured() {
         .generate_toolpath(0, &cancel)
         .expect("waterline must generate");
 
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     assert!(
         result.stats.dropped_band.is_none(),
         "a non-banded op measures nothing"

@@ -948,7 +948,7 @@ pub struct SetToolpathParamArgs {
 /// A generation runs off the frame loop, so the configuration can move
 /// while it runs. `revision` is the generation-input revision the lane
 /// started from, read with
-/// [`ProjectSession::toolpath_revision`](super::ProjectSession::toolpath_revision).
+/// [`ProjectSession::toolpath_revision_at`](super::ProjectSession::toolpath_revision_at).
 /// [`ProjectSession::apply`] compares it against the revision the
 /// toolpath carries now and refuses a mismatch with
 /// [`SessionError::StaleCompletion`], inserting nothing.
@@ -1220,7 +1220,7 @@ pub struct PreviewTierMapArgs {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildModelFacesArgs {
     /// The model id (`LoadedModel::id`).
-    pub model_id: usize,
+    pub model_id: crate::ids::ModelId,
 }
 
 /// What a command changed.
@@ -1247,7 +1247,7 @@ pub struct Effects {
     /// The generation-input revision of the toolpath the command names,
     /// read after the mutation.
     ///
-    /// This is [`ProjectSession::toolpath_revision`], never
+    /// This is [`ProjectSession::toolpath_revision_at`], never
     /// `next_revision`. `next_revision` is a session-global counter that
     /// any index bumps.
     ///
@@ -1345,7 +1345,7 @@ pub struct SetAlignmentPinsArgs {
 #[derive(Debug, Clone)]
 pub struct SetPinPartModelsArgs {
     /// The model ids, or `None` for the default rule.
-    pub models: Option<Vec<usize>>,
+    pub models: Option<Vec<crate::ids::ModelId>>,
 }
 
 /// The arguments of the `add_alignment_pin` command.
@@ -1412,7 +1412,7 @@ pub struct AddModelArgs {
 #[derive(Debug, Clone)]
 pub struct AdoptModelGeometryArgs {
     /// The id of the model to refresh.
-    pub model_id: usize,
+    pub model_id: crate::ids::ModelId,
     /// The freshly imported model whose geometry the record adopts.
     pub geometry: Box<super::LoadedModel>,
     /// The unit declaration to write, or `None` to keep the current one.
@@ -1443,7 +1443,7 @@ pub enum LedgerEdit {
 #[derive(Debug, Clone)]
 pub struct EditModelDrawingArgs {
     /// The id of the model.
-    pub model_id: usize,
+    pub model_id: crate::ids::ModelId,
     /// The change.
     pub edit: LedgerEdit,
 }
@@ -1584,7 +1584,7 @@ pub struct SetToolParamArgs {
 #[derive(Debug, Clone)]
 pub struct ReplaceToolArgs {
     /// The id of the tool to replace.
-    pub tool_id: usize,
+    pub tool_id: crate::ids::ToolId,
     /// The configuration to install.
     pub config: Box<crate::compute::tool_config::ToolConfig>,
 }
@@ -1598,7 +1598,7 @@ pub struct SetToolpathToolArgs {
     /// The index of the toolpath to rebind.
     pub index: usize,
     /// The id of the tool to bind.
-    pub tool_id: usize,
+    pub tool_id: crate::ids::ToolId,
 }
 
 /// The arguments of the `set_toolpath_model` command.
@@ -1611,7 +1611,7 @@ pub struct SetToolpathModelArgs {
     /// The index of the toolpath to rebind.
     pub index: usize,
     /// The id of the model to bind.
-    pub model_id: usize,
+    pub model_id: crate::ids::ModelId,
 }
 
 /// The arguments of the `set_toolpath_heights` command.
@@ -1899,7 +1899,7 @@ pub struct SelectionStatusArgs {
 #[derive(Debug, Clone)]
 pub struct ListItemsArgs {
     /// The project id of the model (`LoadedModel::id`), not an index.
-    pub model_id: usize,
+    pub model_id: crate::ids::ModelId,
     /// Only the items on this layer. `None` = every layer.
     pub layer: Option<String>,
     /// Only the items of this kind. `None` = every kind.
@@ -2154,7 +2154,7 @@ pub struct InvalidateMachineArgs;
 #[derive(Debug, Clone)]
 pub struct InvalidateToolArgs {
     /// The id of the tool whose dependants the command drops.
-    pub tool_id: usize,
+    pub tool_id: crate::ids::ToolId,
 }
 
 /// The arguments of the `invalidate_model` command.
@@ -2166,7 +2166,7 @@ pub struct InvalidateToolArgs {
 #[derive(Debug, Clone)]
 pub struct InvalidateModelArgs {
     /// The id of the model whose dependants the command drops.
-    pub model_id: usize,
+    pub model_id: crate::ids::ModelId,
 }
 
 /// The arguments of the `invalidate_toolpath_inputs` command.
@@ -2555,7 +2555,7 @@ impl ProjectSession {
                 if index >= self.toolpath_count() {
                     return Err(SessionError::ToolpathNotFound(index));
                 }
-                let current = self.toolpath_revision(index);
+                let current = self.toolpath_revision_at(index);
                 if current != revision {
                     return Err(SessionError::StaleCompletion {
                         index,
@@ -2596,7 +2596,7 @@ impl ProjectSession {
                     .get(index)
                     .ok_or(SessionError::ToolpathNotFound(index))?
                     .id;
-                let current = self.toolpath_revision(index);
+                let current = self.toolpath_revision_at(index);
                 if current != revision {
                     return Err(SessionError::StaleCompletion {
                         index,
@@ -2865,8 +2865,8 @@ impl ProjectSession {
                 let Some(mut draft) = self.toolpath_configs.get(index).cloned() else {
                     return Err(SessionError::ToolpathNotFound(index));
                 };
-                let tool_id = crate::compute::ToolId(draft.tool_id);
-                let Some(tool) = self.get_tool(tool_id) else {
+                let tool_id = draft.tool_id;
+                let Some(tool) = self.tool_by_id(tool_id) else {
                     return Err(SessionError::ToolNotFound(tool_id));
                 };
                 let slots = self.suggest_slots(&draft);
@@ -3092,6 +3092,7 @@ impl ProjectSession {
         let simulation_before = self.simulation.is_some();
         let revisions_before = self.revision_snapshot();
         mutate(self)?;
+        self.debug_check_toolpath_partition();
         // G-RESTRES / G-RESTSTALE: one stale rule after every command. A
         // rest result whose recorded source stock no longer matches the
         // project drops here, inside the measured window, so `stale`
@@ -3102,7 +3103,7 @@ impl ProjectSession {
             simulation_cleared: simulation_before && self.simulation.is_none(),
             revision: index
                 .filter(|i| *i < self.toolpath_count())
-                .map(|i| self.toolpath_revision(i)),
+                .map(|i| self.toolpath_revision_at(i)),
             created: None,
             selection_dropped: false,
             planned: None,
@@ -3132,7 +3133,7 @@ impl ProjectSession {
     /// Read every toolpath's generation-input revision, in index order.
     fn revision_snapshot(&self) -> Vec<u64> {
         (0..self.toolpath_count())
-            .map(|index| self.toolpath_revision(index))
+            .map(|index| self.toolpath_revision_at(index))
             .collect()
     }
 
@@ -3145,7 +3146,7 @@ impl ProjectSession {
         let count = self.toolpath_count().max(before.len());
         let mut moved = BTreeSet::new();
         for index in 0..count {
-            if before.get(index).copied() != Some(self.toolpath_revision(index)) {
+            if before.get(index).copied() != Some(self.toolpath_revision_at(index)) {
                 moved.insert(index);
             }
         }

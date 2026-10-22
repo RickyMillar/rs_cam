@@ -77,7 +77,7 @@ const REST2: usize = 3;
 
 fn empty_model(name: &str) -> LoadedModel {
     LoadedModel {
-        id: 0, // overwritten by `add_model`
+        id: rs_cam_core::ids::ModelId::from_raw(0), // overwritten by `add_model`
         name: name.to_owned(),
         mesh: None,
         items: Default::default(),
@@ -96,14 +96,14 @@ fn empty_model(name: &str) -> LoadedModel {
 fn tc(name: &str, stock_source: StockSource, tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0), // overwritten by `add_toolpath`
+        id: ToolpathId::from_raw(0), // overwritten by `add_toolpath`
         name: name.to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig::default()),
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -122,7 +122,7 @@ fn id_of(session: &ProjectSession, index: usize) -> ToolpathId {
 }
 
 fn setup_id_of(session: &ProjectSession, position: usize) -> SetupId {
-    SetupId(session.list_setups()[position].id)
+    session.list_setups()[position].id
 }
 
 /// Two setups, four rows, one tool, one model.
@@ -136,23 +136,32 @@ fn setup_id_of(session: &ProjectSession, position: usize) -> SetupId {
 /// the non-vacuity of the ordering rule.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
     builder.add_model(empty_model("part.svg"));
-    let tool = builder.tools()[0].id.0;
+    let tool = builder.tools()[0].id.raw();
     let model = builder.models()[0].id;
     let setup_2 = builder.add_setup("Setup 2".to_owned(), FaceUp::Bottom);
 
     let _ = builder
-        .add_toolpath(0, tc("rough", StockSource::Fresh, tool, model))
+        .add_toolpath(0, tc("rough", StockSource::Fresh, tool, model.raw()))
         .unwrap();
     let _ = builder
-        .add_toolpath(0, tc("rest1", StockSource::FromRemainingStock, tool, model))
+        .add_toolpath(
+            0,
+            tc("rest1", StockSource::FromRemainingStock, tool, model.raw()),
+        )
         .unwrap();
     let _ = builder
-        .add_toolpath(setup_2, tc("back", StockSource::Fresh, tool, model))
+        .add_toolpath(setup_2, tc("back", StockSource::Fresh, tool, model.raw()))
         .unwrap();
     let _ = builder
-        .add_toolpath(0, tc("rest2", StockSource::FromRemainingStock, tool, model))
+        .add_toolpath(
+            0,
+            tc("rest2", StockSource::FromRemainingStock, tool, model.raw()),
+        )
         .unwrap();
 
     let session = builder.build();
@@ -163,12 +172,12 @@ fn fixture() -> ProjectSession {
 fn assert_fixture_is_live(session: &ProjectSession) {
     assert_eq!(session.toolpath_count(), 4, "the fixture holds four rows");
     assert_eq!(
-        session.list_setups()[0].toolpath_indices,
+        session.list_setups()[0].toolpath_indices(),
         vec![ROUGH, REST1, REST2],
         "setup 1's plan order is not its numeric order, or the test is vacuous"
     );
     assert_eq!(
-        session.list_setups()[1].toolpath_indices,
+        session.list_setups()[1].toolpath_indices(),
         vec![BACK],
         "setup 2 owns the row between the two rest rows"
     );
@@ -194,8 +203,8 @@ fn a_stock() -> Arc<TriDexelStock> {
 /// snapshot takes the record the rule itself derives.
 fn adopt_simulation(session: &mut ProjectSession, covered: &[usize]) {
     for index in [ROUGH, REST1] {
-        if session.get_result(index).is_none() {
-            let revision = session.toolpath_revision(index);
+        if session.result_at(index).is_none() {
+            let revision = session.toolpath_revision_at(index);
             let _ = session
                 .apply(Command::AdoptResult(
                     rs_cam_core::session::AdoptResultArgs {

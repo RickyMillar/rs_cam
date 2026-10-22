@@ -3,7 +3,7 @@
 //!
 //! The editor reads the `tab_layout` query (core: the tabs that generation
 //! cuts). It reads the query again only when the input revision of the
-//! toolpath moves (`ProjectSession::toolpath_revision`), never per frame.
+//! toolpath moves (`ProjectSession::toolpath_revision_at`), never per frame.
 //! The marks upload on a change of the layout or of the drag only
 //! ([`TabMarksDetector`], the `HoverDetector` pattern).
 
@@ -24,7 +24,7 @@ pub fn refresh_layout(state: &mut AppState) -> bool {
     let Some((index, _)) = state.session().find_toolpath_config_by_id(id) else {
         return false;
     };
-    let revision = state.session().toolpath_revision(index);
+    let revision = state.session().toolpath_revision_at(index);
     let Some(mode) = state.gui.selection_ui.tab_edit(id) else {
         return false;
     };

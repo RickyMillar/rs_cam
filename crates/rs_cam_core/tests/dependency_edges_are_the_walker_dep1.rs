@@ -83,7 +83,7 @@ const EDITED_FEED_RATE: f64 = 4321.0;
 
 fn empty_model(name: &str) -> LoadedModel {
     LoadedModel {
-        id: 0, // overwritten by `add_model`
+        id: rs_cam_core::ids::ModelId::from_raw(0), // overwritten by `add_model`
         name: name.to_owned(),
         mesh: None,
         items: Default::default(),
@@ -109,14 +109,14 @@ fn tc(
 ) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0), // overwritten by `add_toolpath`
+        id: ToolpathId::from_raw(0), // overwritten by `add_toolpath`
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary,
@@ -162,7 +162,7 @@ fn result_with_regions(
 /// Seed strictly in index order: since D1 an adopt of an EARLIER index
 /// drops a LATER consumer's result.
 fn adopt(session: &mut ProjectSession, index: usize, regions: Option<Vec<Polygon2>>) {
-    let revision = session.toolpath_revision(index);
+    let revision = session.toolpath_revision_at(index);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index,
@@ -247,11 +247,17 @@ fn id_of(session: &ProjectSession, index: usize) -> ToolpathId {
 /// Setup 2 is the non-vacuity of the setup scope.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    builder.add_tool(ToolConfig::new_default(ToolId(1), ToolType::BallNose));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(1),
+        ToolType::BallNose,
+    ));
     builder.add_model(empty_model("part.svg"));
-    let rough_tool = builder.tools()[0].id.0;
-    let fine_tool = builder.tools()[1].id.0;
+    let rough_tool = builder.tools()[0].id.raw();
+    let fine_tool = builder.tools()[1].id.raw();
     let model = builder.models()[0].id;
     let setup_2 = builder.add_setup("Setup 2".to_owned(), FaceUp::Bottom);
 
@@ -264,7 +270,7 @@ fn fixture() -> ProjectSession {
                 pocket(),
                 StockSource::Fresh,
                 rough_tool,
-                model,
+                model.raw(),
                 plain.clone(),
             ),
         )
@@ -277,7 +283,7 @@ fn fixture() -> ProjectSession {
                 pocket(),
                 StockSource::Fresh,
                 fine_tool,
-                model,
+                model.raw(),
                 plain.clone(),
             ),
         )
@@ -290,7 +296,7 @@ fn fixture() -> ProjectSession {
                 pocket(),
                 StockSource::FromRemainingStock,
                 fine_tool,
-                model,
+                model.raw(),
                 plain.clone(),
             ),
         )
@@ -303,7 +309,7 @@ fn fixture() -> ProjectSession {
                 pocket(),
                 StockSource::Fresh,
                 fine_tool,
-                model,
+                model.raw(),
                 plain.clone(),
             ),
         )
@@ -316,7 +322,7 @@ fn fixture() -> ProjectSession {
                 pocket(),
                 StockSource::Fresh,
                 rough_tool,
-                model,
+                model.raw(),
                 plain.clone(),
             ),
         )
@@ -329,7 +335,7 @@ fn fixture() -> ProjectSession {
                 pocket(),
                 StockSource::FromRemainingStock,
                 fine_tool,
-                model,
+                model.raw(),
                 plain,
             ),
         )
@@ -368,13 +374,13 @@ fn assert_fixture_is_live(session: &ProjectSession) {
     );
     for index in 0..6 {
         assert!(
-            session.get_result(index).is_some(),
+            session.result_at(index).is_some(),
             "row {index} starts with a cached result"
         );
     }
     assert!(
         session
-            .get_result(ROUGH)
+            .result_at(ROUGH)
             .and_then(|r| r.annotated().produced.rest_regions.as_deref())
             .is_some_and(|regions| !regions.is_empty()),
         "the Regions source carries regions, or claim 5 reads Broken for the wrong reason"
@@ -510,7 +516,7 @@ fn disable_rough(session: &mut ProjectSession) -> BTreeSet<usize> {
 }
 
 fn adopt_rough_again(session: &mut ProjectSession) -> BTreeSet<usize> {
-    let revision = session.toolpath_revision(ROUGH);
+    let revision = session.toolpath_revision_at(ROUGH);
     session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: ROUGH,
@@ -682,9 +688,12 @@ fn the_arms_drop_the_named_rows() {
 /// correctly from Setup 1's simulated stock.
 fn cross_setup_fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
     builder.add_model(empty_model("part.svg"));
-    let tool = builder.tools()[0].id.0;
+    let tool = builder.tools()[0].id.raw();
     let model = builder.models()[0].id;
     let setup_2 = builder.add_setup("Setup 2".to_owned(), FaceUp::Bottom);
     let plain = BoundaryConfig::default();
@@ -696,7 +705,7 @@ fn cross_setup_fixture() -> ProjectSession {
                 pocket(),
                 StockSource::Fresh,
                 tool,
-                model,
+                model.raw(),
                 plain.clone(),
             ),
         )
@@ -709,7 +718,7 @@ fn cross_setup_fixture() -> ProjectSession {
                 pocket(),
                 StockSource::Fresh,
                 tool,
-                model,
+                model.raw(),
                 plain.clone(),
             ),
         )
@@ -722,7 +731,7 @@ fn cross_setup_fixture() -> ProjectSession {
                 pocket(),
                 StockSource::FromRemainingStock,
                 tool,
-                model,
+                model.raw(),
                 plain,
             ),
         )
@@ -732,7 +741,7 @@ fn cross_setup_fixture() -> ProjectSession {
         adopt(&mut session, index, None);
     }
     assert_eq!(
-        session.list_setups()[1].toolpath_indices,
+        session.list_setups()[1].toolpath_indices(),
         vec![2],
         "setup 2 holds one row, and it is first in its setup"
     );
@@ -801,7 +810,7 @@ fn a_first_in_setup_rest_op_reads_the_previous_setup() {
 fn a_setup_one_edit_drops_setup_twos_rest_chain() {
     let mut session = cross_setup_fixture();
     assert!(
-        session.get_result(2).is_some(),
+        session.result_at(2).is_some(),
         "the precondition is a cached result on the cross-setup consumer"
     );
 
@@ -814,7 +823,7 @@ fn a_setup_one_edit_drops_setup_twos_rest_chain() {
          built on stock the edit moved. Stale set: {stale:?}"
     );
     assert!(
-        session.get_result(2).is_none(),
+        session.result_at(2).is_none(),
         "the walker dropped the cross-setup consumer's cached result"
     );
 }
@@ -832,19 +841,19 @@ fn regenerating_a_source_drops_its_consumers() {
         "an adopt stales the Regions consumers, and nothing else"
     );
     assert!(
-        session.get_result(LAKES).is_none(),
+        session.result_at(LAKES).is_none(),
         "the Regions consumer's result is gone"
     );
     assert!(
-        session.get_result(ROUGH).is_some(),
+        session.result_at(ROUGH).is_some(),
         "the adopted result itself stays"
     );
     assert!(
-        session.get_result(FINISH).is_some(),
+        session.result_at(FINISH).is_some(),
         "rule (a) does not fire on an adopt: recording an answer removes no material"
     );
     assert!(
-        session.get_result(BACK_FINISH).is_some(),
+        session.result_at(BACK_FINISH).is_some(),
         "the other setup's Stock consumer stays"
     );
     let simulation = session
@@ -927,7 +936,7 @@ fn edge_state_reads_the_session() {
 
     // A Regions source with no regions is Broken, not Pending.
     let mut no_regions = fixture();
-    let revision = no_regions.toolpath_revision(ROUGH);
+    let revision = no_regions.toolpath_revision_at(ROUGH);
     let _ = no_regions
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: ROUGH,

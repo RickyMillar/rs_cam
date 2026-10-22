@@ -10,7 +10,7 @@
 //! anyway, and core then held a result that answers a superseded
 //! parameter set. `Command::AdoptResult` carries the revision the lane
 //! computed from. `apply` compares it against
-//! `ProjectSession::toolpath_revision` and refuses a mismatch.
+//! `ProjectSession::toolpath_revision_at` and refuses a mismatch.
 //!
 //! The third test measures the other half of WP3: every mutation reports
 //! the set it dropped through `Effects::stale`, from ONE construction
@@ -61,14 +61,14 @@ fn tc(
 ) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -84,7 +84,7 @@ fn tc(
 
 fn empty_model(name: &str) -> LoadedModel {
     LoadedModel {
-        id: 0, // overwritten by `add_model`
+        id: rs_cam_core::ids::ModelId::from_raw(0), // overwritten by `add_model`
         name: name.to_owned(),
         mesh: None,
         items: Default::default(),
@@ -123,23 +123,26 @@ fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
 /// file adopts results through the door under test.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
     builder.add_model(empty_model("part.svg"));
-    let tool = builder.tools()[0].id.0;
+    let tool = builder.tools()[0].id.raw();
     let model = builder.models()[0].id;
     let upstream = tc(
         "upstream",
         OperationConfig::Pocket(PocketConfig::default()),
         StockSource::Fresh,
         tool,
-        model,
+        model.raw(),
     );
     let downstream = tc(
         "downstream",
         OperationConfig::Pocket(PocketConfig::default()),
         StockSource::FromRemainingStock,
         tool,
-        model,
+        model.raw(),
     );
     let _ = builder.add_toolpath(0, upstream).unwrap();
     let _ = builder.add_toolpath(0, downstream).unwrap();
@@ -153,7 +156,7 @@ fn fixture() -> ProjectSession {
 /// upstream row leaves.
 fn assert_fixture_is_live(s: &ProjectSession) {
     assert!(
-        s.get_result(0).is_none() && s.get_result(1).is_none(),
+        s.result_at(0).is_none() && s.result_at(1).is_none(),
         "the fixture must start with an empty result cache, or an \
          is_none assertion after a refusal measures nothing"
     );
@@ -175,7 +178,7 @@ fn assert_fixture_is_live(s: &ProjectSession) {
 /// This is the door `insert_result` used to be. It is the only way this
 /// file writes the result cache.
 fn adopt_at_current_revision(s: &mut ProjectSession, index: usize) {
-    let revision = s.toolpath_revision(index);
+    let revision = s.toolpath_revision_at(index);
     let effects = s
         .apply(Command::AdoptResult(AdoptResultArgs {
             index,
@@ -202,7 +205,7 @@ fn edit_feed(s: &mut ProjectSession, index: usize, feed: f64) {
 
 fn revisions(s: &ProjectSession) -> Vec<u64> {
     (0..s.toolpath_count())
-        .map(|i| s.toolpath_revision(i))
+        .map(|i| s.toolpath_revision_at(i))
         .collect()
 }
 
@@ -210,7 +213,7 @@ fn revisions(s: &ProjectSession) -> Vec<u64> {
 fn dropped(s: &ProjectSession, before: &[bool]) -> BTreeSet<usize> {
     let mut gone = BTreeSet::new();
     for i in 0..s.toolpath_count() {
-        if before.get(i).copied() == Some(true) && s.get_result(i).is_none() {
+        if before.get(i).copied() == Some(true) && s.result_at(i).is_none() {
             gone.insert(i);
         }
     }
@@ -219,7 +222,7 @@ fn dropped(s: &ProjectSession, before: &[bool]) -> BTreeSet<usize> {
 
 fn cached(s: &ProjectSession) -> Vec<bool> {
     (0..s.toolpath_count())
-        .map(|i| s.get_result(i).is_some())
+        .map(|i| s.result_at(i).is_some())
         .collect()
 }
 
@@ -234,12 +237,12 @@ fn set(indices: &[usize]) -> BTreeSet<usize> {
 #[test]
 fn a_completion_for_a_superseded_parameter_set_is_refused() {
     let mut s = fixture();
-    let submitted = s.toolpath_revision(0);
+    let submitted = s.toolpath_revision_at(0);
 
     // The lane is now computing from `submitted`. The operator edits the
     // SAME toolpath, which moves its revision.
     edit_feed(&mut s, 0, EDITED_FEED_RATE);
-    let current = s.toolpath_revision(0);
+    let current = s.toolpath_revision_at(0);
     assert_ne!(
         submitted, current,
         "the edit must move the revision, or this arm measures nothing"
@@ -264,7 +267,7 @@ fn a_completion_for_a_superseded_parameter_set_is_refused() {
          parameter set, and name both revisions"
     );
     assert!(
-        s.get_result(0).is_none(),
+        s.result_at(0).is_none(),
         "a refused completion inserts nothing"
     );
 
@@ -272,7 +275,7 @@ fn a_completion_for_a_superseded_parameter_set_is_refused() {
     // the refusal above is the revision check, not a broken door.
     adopt_at_current_revision(&mut s, 0);
     assert!(
-        s.get_result(0).is_some(),
+        s.result_at(0).is_some(),
         "a completion that answers the current inputs is adopted"
     );
 }
@@ -286,13 +289,13 @@ fn a_completion_for_a_superseded_parameter_set_is_refused() {
 #[test]
 fn an_edit_to_another_toolpath_does_not_refuse_this_completion() {
     let mut s = fixture();
-    let submitted = s.toolpath_revision(0);
+    let submitted = s.toolpath_revision_at(0);
 
     // The operator edits the DOWNSTREAM row. Index 1 is later in plan
     // order, so the chain walk never reaches index 0.
     edit_feed(&mut s, 1, EDITED_FEED_RATE);
     assert_eq!(
-        s.toolpath_revision(0),
+        s.toolpath_revision_at(0),
         submitted,
         "an edit to a later row leaves the upstream row's inputs alone"
     );
@@ -306,7 +309,7 @@ fn an_edit_to_another_toolpath_does_not_refuse_this_completion() {
         .expect("index 0's inputs did not move, so its completion stands");
 
     assert!(
-        s.get_result(0).is_some(),
+        s.result_at(0).is_some(),
         "the completion answers the current inputs and is adopted"
     );
     assert!(
@@ -350,17 +353,20 @@ fn every_producer_reports_the_dropped_set() {
     let mut s = fixture();
     let _ = s
         .apply(Command::AddTool(AddToolArgs {
-            tool: Box::new(ToolConfig::new_default(ToolId(0), ToolType::BallNose)),
+            tool: Box::new(ToolConfig::new_default(
+                ToolId::from_raw(0),
+                ToolType::BallNose,
+            )),
         }))
         .expect("the tool row refuses nothing");
-    let tool_b = s.tools()[1].id.0;
+    let tool_b = s.tools()[1].id.raw();
     adopt_at_current_revision(&mut s, 0);
     adopt_at_current_revision(&mut s, 1);
     let before = cached(&s);
     let effects = s
         .apply(Command::SetToolpathTool(SetToolpathToolArgs {
             index: 0,
-            tool_id: tool_b,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(tool_b),
         }))
         .expect("tool_b exists");
     assert_eq!(
@@ -430,7 +436,7 @@ fn the_enable_toggle_excludes_its_own_index() {
         "the reported set is the set whose result went away"
     );
     assert!(
-        s.get_result(0).is_some(),
+        s.result_at(0).is_some(),
         "N1: the toggled op keeps its own result for a re-enable"
     );
     assert_eq!(

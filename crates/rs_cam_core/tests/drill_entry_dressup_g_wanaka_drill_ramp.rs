@@ -148,10 +148,15 @@ fn pin_drill_op() -> OperationConfig {
 fn drill_moves(op: OperationConfig, entry: Option<DressupEntryStyle>) -> Vec<(i64, i64, i64)> {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(plate_model());
 
-    let mut tc = toolpath_config("Drill", op, tool_id, model_id);
+    let mut tc = toolpath_config(
+        "Drill",
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     if let Some(style) = entry {
         tc.dressups.entry_style = style;
     }

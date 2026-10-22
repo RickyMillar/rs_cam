@@ -127,7 +127,7 @@ fn pocket_session() -> ProjectSession {
 /// fingerprint, the span count, and whether the spans survived.
 fn geometry(session: &ProjectSession, index: usize) -> (usize, u64, usize, bool) {
     let result = session
-        .get_result(index)
+        .result_at(index)
         .expect("the fixture must hold a cached result to compare");
     let annotated = result.annotated();
     let (moves, hash) = move_fingerprint(&annotated.toolpath);
@@ -241,7 +241,7 @@ fn an_edit_after_start_refuses_the_handles_result() {
         }))
         .expect("feed_rate is a Pocket parameter");
     assert_ne!(
-        session.toolpath_revision(0),
+        session.toolpath_revision_at(0),
         captured,
         "the edit must move the revision, or the refusal below cannot \
          fire and this arm measures nothing"
@@ -260,7 +260,7 @@ fn an_edit_after_start_refuses_the_handles_result() {
          adopt must refuse with StaleCompletion; got {outcome:?}"
     );
     assert!(
-        session.get_result(0).is_none(),
+        session.result_at(0).is_none(),
         "a refused adopt inserts nothing"
     );
 }

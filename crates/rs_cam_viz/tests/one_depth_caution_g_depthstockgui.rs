@@ -63,7 +63,7 @@ const STOCK_THICKNESS_MM: f64 = 18.0;
 
 fn polygon_model(id: usize) -> LoadedModel {
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         path: PathBuf::from(format!("model_{id}.svg")),
         name: format!("2D {id}"),
         kind: Some(ModelKind::Svg),
@@ -83,7 +83,7 @@ fn polygon_model(id: usize) -> LoadedModel {
 
 fn mesh_model(id: usize) -> LoadedModel {
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         path: PathBuf::from(format!("model_{id}.stl")),
         name: format!("3D {id}"),
         kind: Some(ModelKind::Stl),
@@ -102,14 +102,14 @@ fn mesh_model(id: usize) -> LoadedModel {
 fn toolpath(name: &str, model_id: usize, op: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0), // assigned by session.add_toolpath
+        id: ToolpathId::from_raw(0), // assigned by session.add_toolpath
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: TOOL,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(TOOL),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -136,7 +136,7 @@ fn pocket(depth: f64) -> OperationConfig {
 /// The builder is returned unbuilt, so the caller adds its toolpath through
 /// the same door.
 fn session() -> ProjectSessionBuilder {
-    let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
         z: STOCK_THICKNESS_MM,
@@ -232,7 +232,7 @@ fn read_case(case: &Case) -> (Option<String>, Vec<Diagnostic>) {
     let tool = session
         .tools()
         .iter()
-        .find(|t| t.id.0 == tc.tool_id)
+        .find(|t| t.id == tc.tool_id)
         .cloned()
         .expect("the tool is in the session");
     let header = collect_diagnostics(

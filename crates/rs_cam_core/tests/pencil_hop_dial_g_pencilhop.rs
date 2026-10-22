@@ -97,7 +97,7 @@ fn pencil_session(hop_cap: Option<f64>) -> ProjectSession {
 
 fn move_targets(session: &ProjectSession, arm: &str) -> Vec<(f64, f64, f64)> {
     session
-        .get_result(0)
+        .result_at(0)
         .unwrap_or_else(|| panic!("{arm}: the pencil produced no result"))
         .toolpath()
         .moves

@@ -81,7 +81,7 @@ use rs_cam_core::tool_load::verdict::{
     UnmodeledReason,
 };
 
-const TP: ToolpathId = ToolpathId(15);
+const TP: ToolpathId = ToolpathId::from_raw(15);
 
 /// A verdict whose chipload gate abstained for the stated reason, with the
 /// other gates abstaining too so nothing else contributes a `Current` row.

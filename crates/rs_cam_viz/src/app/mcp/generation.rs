@@ -207,7 +207,7 @@ impl RsCamApp {
     /// `set_toolpath_param`.
     pub(super) fn mcp_get_suggest_rationale(&self, index: usize) -> String {
         let state = self.controller.state();
-        let Some(tc) = state.session().get_toolpath_config(index) else {
+        let Some(tc) = state.session().toolpath_config_at(index) else {
             return json_str(serde_json::json!({
                 "error": format!("Toolpath index {index} not found")
             }));
@@ -368,7 +368,7 @@ impl RsCamApp {
                     Some("setup_index"),
                 );
             };
-            let setup_id = crate::state::job::SetupId(setup.id);
+            let setup_id = setup.id;
             self.controller.state_mut().selection = Selection::Setup(setup_id);
         }
 
@@ -413,7 +413,7 @@ impl RsCamApp {
                 let tool_name = session
                     .tools()
                     .iter()
-                    .find(|t| t.id.0 == tc.tool_id)
+                    .find(|t| t.id == tc.tool_id)
                     .map(|t| t.name.clone());
                 let model_name = session
                     .models()
@@ -423,10 +423,10 @@ impl RsCamApp {
                 let setup_index = session
                     .list_setups()
                     .iter()
-                    .position(|s| s.toolpath_indices.contains(&index));
+                    .position(|s| s.toolpath_indices().contains(&index));
                 serde_json::json!({
                     "index": index,
-                    "id": tc.id.0,
+                    "id": tc.id.raw(),
                     "name": tc.name,
                     "operation": tc.operation.op_type().kind_str(),
                     "setup_index": setup_index,
@@ -539,14 +539,14 @@ impl RsCamApp {
             .map(|(index, tc, id)| {
                 serde_json::json!({
                     "index": index,
-                    "id": id.0,
+                    "id": id.raw(),
                     "name": tc.name,
                     "tier": tc.planner_origin.as_ref().map(|o| o.tier),
                     "tool_id": tc.tool_id,
                 })
             })
             .collect();
-        let replaced: Vec<usize> = outcome.replaced.iter().map(|id| id.0).collect();
+        let replaced: Vec<usize> = outcome.replaced.iter().map(|id| id.raw()).collect();
 
         // Three-valued, and the wire says which: `null` = not measured (no
         // cached tier map for this ladder and these dials — planning builds
@@ -615,7 +615,7 @@ impl RsCamApp {
                     .to_owned(),
             );
         }
-        let known: Vec<usize> = session.tools().iter().map(|t| t.id.0).collect();
+        let known: Vec<usize> = session.tools().iter().map(|t| t.id.raw()).collect();
         if let Some(missing) = tool_ids.iter().copied().find(|id| !known.contains(id)) {
             return Err(format!(
                 "tool_id {missing} does not match any tool in this project (have {known:?}). \
@@ -628,13 +628,14 @@ impl RsCamApp {
         // refused rather than resolved by position.
         let model_id = match model_id {
             Some(id) => {
-                if !session.models().iter().any(|m| m.id == id) {
-                    let available: Vec<usize> = session.models().iter().map(|m| m.id).collect();
+                let Some(model) = session.models().iter().find(|m| m.id.raw() == id) else {
+                    let available: Vec<usize> =
+                        session.models().iter().map(|m| m.id.raw()).collect();
                     return Err(format!(
                         "model_id {id} does not exist — the project has {available:?}."
                     ));
-                }
-                id
+                };
+                model.id
             }
             None => match session.models() {
                 [] => {
@@ -644,7 +645,7 @@ impl RsCamApp {
                 }
                 [only] => only.id,
                 models => {
-                    let available: Vec<usize> = models.iter().map(|m| m.id).collect();
+                    let available: Vec<usize> = models.iter().map(|m| m.id.raw()).collect();
                     return Err(format!(
                         "this project has {} models ({available:?}), so `model_id` is required \
                          — it is not guessed.",
@@ -673,7 +674,10 @@ impl RsCamApp {
         Ok(rs_cam_core::session::MultitoolPlanSpec {
             setup_index,
             model_id,
-            tool_ids: tool_ids.to_vec(),
+            tool_ids: tool_ids
+                .iter()
+                .map(|&id| rs_cam_core::ids::ToolId::from_wire(id))
+                .collect(),
             cell_mm: dials.cell_mm.unwrap_or(plan_defaults.cell_mm),
             tolerance_mm: dials.tolerance_mm.unwrap_or(plan_defaults.tolerance_mm),
             margin_mm: dials.margin_mm.unwrap_or(plan_defaults.margin_mm),
@@ -789,7 +793,7 @@ impl RsCamApp {
             cancel,
             crate::mcp_bridge::McpJobRender::TierMapPreview {
                 setup_index,
-                model_id,
+                model_id: model_id.raw(),
                 svg_path: spec.svg_path.clone(),
             },
             response_tx,

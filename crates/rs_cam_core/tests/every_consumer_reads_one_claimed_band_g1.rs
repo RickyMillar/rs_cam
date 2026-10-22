@@ -98,7 +98,7 @@ use rs_cam_core::tool_load::{GateEnv, ToleranceBands, ToolpathLoadContext};
 const TOL: f64 = 1e-9;
 
 fn tool_of(kind: ToolType, diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), kind);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;
     t.flute_count = 2;
     t.cutting_length = (diameter * 3.0).max(6.0);
@@ -238,7 +238,7 @@ fn assert_one_claimed_band(
         material,
         tool,
         &OperationConfig::new_default(op),
-        ToolpathId(0),
+        ToolpathId::from_raw(0),
         None,
     )
     .and_then(|target| target.band_range());
@@ -320,7 +320,7 @@ fn the_gate_holds_the_form_a_point_with_no_minimum_g1() {
     let material = softwood();
     let samples: Vec<SimulationCutSample> = (0..12)
         .map(|idx| SimulationCutSample {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             move_index: idx,
             sample_index: idx,
             position: [0.0, 0.0, -0.5],
@@ -351,7 +351,7 @@ fn the_gate_holds_the_form_a_point_with_no_minimum_g1() {
     let machine = MachineProfile::default();
     let tolerance = ToleranceBands::default();
     let ctx = ToolpathLoadContext {
-        toolpath_id: ToolpathId(0),
+        toolpath_id: ToolpathId::from_raw(0),
         tool: &tool,
         material: &material,
         operation_family: LutOperationFamily::Pocket,
@@ -482,7 +482,7 @@ fn a_refused_cell_has_no_band_anywhere_g1() {
             &material,
             &tool,
             &OperationConfig::new_default(op),
-            ToolpathId(0),
+            ToolpathId::from_raw(0),
             None,
         )
         .and_then(|target| target.band_range())
@@ -533,7 +533,7 @@ fn a_refused_cell_has_no_band_anywhere_g1() {
 #[test]
 fn a_refused_cell_is_not_reported_within_g1() {
     let verdict = ToolpathLoadVerdict {
-        toolpath_id: ToolpathId(3),
+        toolpath_id: ToolpathId::from_raw(3),
         chipload: ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NoVendorData,
         },

@@ -209,7 +209,7 @@ fn census(
         .generate_toolpath(0, &cancel)
         .map_err(|e| format!("generate: {e}"))?;
     let result = session
-        .get_result(0)
+        .result_at(0)
         .ok_or_else(|| "generation reported success but stored no result".to_owned())?;
     let tp = result.toolpath();
 
@@ -269,14 +269,14 @@ fn toolpath_config(
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: format!("{op_type:?}"),
         enabled: true,
         operation: op,
         dressups: profile.build(op_type),
         heights,
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -296,7 +296,7 @@ fn add_tool(
     diameter: f64,
     name: &str,
 ) -> usize {
-    let mut tool = ToolConfig::new_default(ToolId(0), kind);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), kind);
     tool.diameter = diameter;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -304,7 +304,7 @@ fn add_tool(
     tool.flute_count = 2;
     tool.name = name.to_owned();
     let idx = builder.add_tool(tool);
-    builder.tools()[idx].id.0
+    builder.tools()[idx].id.raw()
 }
 
 fn flat_stock() -> StockConfig {
@@ -342,8 +342,8 @@ fn add_rect_polygon(builder: &mut ProjectSessionBuilder) -> usize {
         P2::new(75.0, 55.0),
         P2::new(5.0, 55.0),
     ]);
-    builder.add_model(LoadedModel {
-        id: 0,
+    (builder.add_model(LoadedModel {
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "w6_census_rect".to_owned(),
         mesh: None,
         items: Arc::new(rect_items(poly)),
@@ -356,7 +356,8 @@ fn add_rect_polygon(builder: &mut ProjectSessionBuilder) -> usize {
         import_options: Default::default(),
         import_report: None,
         drawing: Default::default(),
-    })
+    }))
+    .raw()
 }
 
 /// A flat-stock session carrying exactly one 2D / 2.5D operation.
@@ -392,8 +393,8 @@ fn hemi_stock() -> StockConfig {
 }
 
 fn add_hemisphere(builder: &mut ProjectSessionBuilder, id: usize) -> usize {
-    builder.add_model(LoadedModel {
-        id,
+    (builder.add_model(LoadedModel {
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         name: "w6_census_hemisphere".to_owned(),
         mesh: Some(Arc::new(rs_cam_core::mesh::make_test_hemisphere(
             HEMI_RADIUS_MM,
@@ -409,7 +410,8 @@ fn add_hemisphere(builder: &mut ProjectSessionBuilder, id: usize) -> usize {
         import_options: Default::default(),
         import_report: None,
         drawing: Default::default(),
-    })
+    }))
+    .raw()
 }
 
 /// A hemisphere session carrying exactly one surface operation.
@@ -454,7 +456,7 @@ fn plate_session(op: OperationConfig, profile: DressupProfile) -> ProjectSession
     });
     let tool_id = add_tool(&mut builder, ToolType::BallNose, 6.0, "w6 census ball");
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "w6_census_plate".to_owned(),
         mesh: Some(Arc::new(rs_cam_core::mesh::make_test_flat(PLATE_MM))),
         items: Default::default(),
@@ -474,7 +476,10 @@ fn plate_session(op: OperationConfig, profile: DressupProfile) -> ProjectSession
         ..HeightsConfig::default()
     };
     let _ = builder
-        .add_toolpath(0, toolpath_config(op, profile, tool_id, model_id, heights))
+        .add_toolpath(
+            0,
+            toolpath_config(op, profile, tool_id, model_id.raw(), heights),
+        )
         .expect("add toolpath");
     builder.build()
 }
@@ -493,7 +498,7 @@ fn project_curve_session(profile: DressupProfile) -> ProjectSession {
         P2::new(6.0, 3.0),
     ]);
     let curve_model_id = builder.add_model(LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         name: "w6_census_river".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![curve])),
@@ -512,7 +517,7 @@ fn project_curve_session(profile: DressupProfile) -> ProjectSession {
         point_spacing: 0.4,
         feed_rate: 800.0,
         plunge_rate: 400.0,
-        surface_model_id: Some(ModelId(surface_model_id)),
+        surface_model_id: Some(ModelId::from_raw(surface_model_id)),
         spindle_rpm: Some(18_000),
         ..ProjectCurveConfig::default()
     });
@@ -523,7 +528,7 @@ fn project_curve_session(profile: DressupProfile) -> ProjectSession {
                 op,
                 profile,
                 tool_id,
-                curve_model_id,
+                curve_model_id.raw(),
                 HeightsConfig::default(),
             ),
         )

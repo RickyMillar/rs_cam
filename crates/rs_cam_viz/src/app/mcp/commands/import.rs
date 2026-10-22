@@ -78,12 +78,18 @@ pub(crate) fn import_request_model(
         .map_or_else(ImportOptions::default, |join_tolerance_mm| ImportOptions {
             join_tolerance_mm,
         });
-    crate::io::import::import_model(file_path, 0, kind, units, options)
-        .map(|model| (model, ext))
-        .map_err(|e| {
-            let error = format!("{e}");
-            CoreReply::refused_with(json_str(serde_json::json!({ "error": error })), error)
-        })
+    crate::io::import::import_model(
+        file_path,
+        rs_cam_core::ids::ModelId::placeholder(),
+        kind,
+        units,
+        options,
+    )
+    .map(|model| (model, ext))
+    .map_err(|e| {
+        let error = format!("{e}");
+        CoreReply::refused_with(json_str(serde_json::json!({ "error": error })), error)
+    })
 }
 
 /// The `AdoptModelGeometry` payload of a `set_model_import_options`
@@ -94,8 +100,8 @@ pub(crate) fn model_import_options_args(
     session: &ProjectSession,
     p: &SetModelImportOptionsParam,
 ) -> Result<AdoptModelGeometryArgs, CoreReply> {
-    let Some(model) = session.models().iter().find(|m| m.id == p.model_id) else {
-        let ids: Vec<usize> = session.models().iter().map(|m| m.id).collect();
+    let Some(model) = session.models().iter().find(|m| m.id.raw() == p.model_id) else {
+        let ids: Vec<usize> = session.models().iter().map(|m| m.id.raw()).collect();
         return Err(CoreReply::refused(
             &format!(
                 "Error: Model id {} not found; project model ids: {ids:?}",
@@ -152,7 +158,7 @@ mod tests {
     use super::*;
     use crate::app::mcp::tests::U4SilentBackend;
     use crate::controller::AppController;
-    use crate::state::job::ModelId;
+
     use rs_cam_core::session::{AddModelArgs, Command};
     use rs_cam_mcp::server::ModelUnitsParam;
 
@@ -275,9 +281,7 @@ mod tests {
         let options = ImportOptions {
             join_tolerance_mm: 0.5,
         };
-        controller
-            .set_model_import_options(ModelId(id), options)
-            .unwrap();
+        controller.set_model_import_options(id, options).unwrap();
         let gui = controller.state().session().models()[0].clone();
         assert_eq!(gui.import_options, options);
 
@@ -297,7 +301,7 @@ mod tests {
         let args = model_import_options_args(
             &session,
             &SetModelImportOptionsParam {
-                model_id: id,
+                model_id: id.raw(),
                 units: None,
                 join_tolerance_mm: Some(0.5),
             },

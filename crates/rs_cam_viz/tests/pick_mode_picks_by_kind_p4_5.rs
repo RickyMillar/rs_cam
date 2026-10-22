@@ -103,14 +103,14 @@ impl ComputeBackend for SilentBackend {
 fn toolpath(operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Op".to_owned(),
         enabled: true,
         operation,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -185,9 +185,12 @@ fn controller(
     };
     let mut builder = ProjectSessionBuilder::new()
         .stock(stock)
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+        .tool(ToolConfig::new_default(
+            ToolId::from_raw(1),
+            ToolType::EndMill,
+        ));
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "drawing.dxf".to_owned(),
         mesh: None,
         items: Arc::new(drawing()),
@@ -625,19 +628,22 @@ fn open_path_at(
         vh: VIEW_H,
         visibility: &state.overlays.model_visibility,
     };
-    pick_open_path(&ctx, state.session(), ModelId(0))
+    pick_open_path(&ctx, state.session(), ModelId::from_raw(0))
 }
 
 /// Show or hide model 0 through the eye of its row.
 fn set_visible(c: &mut AppController<SilentBackend>, visible: bool) {
     c.handle_internal_event(AppEvent::Ui(UiCommand::SetModelVisibility(
         SetModelVisibilityArgs {
-            model_id: 0,
+            model_id: rs_cam_core::ids::ModelId::from_raw(0),
             visible,
         },
     )));
     assert_eq!(
-        c.state().overlays.model_visibility.is_visible(0),
+        c.state()
+            .overlays
+            .model_visibility
+            .is_visible(rs_cam_core::ids::ModelId::from_raw(0)),
         visible,
         "the eye command did not set the visibility"
     );

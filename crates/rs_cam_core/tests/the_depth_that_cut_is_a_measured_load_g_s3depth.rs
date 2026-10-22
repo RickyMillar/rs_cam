@@ -65,7 +65,7 @@ use rs_cam_core::tool_load::verdict::{
 };
 use rs_cam_core::tool_load::{GateEnv, ToleranceBands, ToolpathLoadContext};
 
-const TP: ToolpathId = ToolpathId(0);
+const TP: ToolpathId = ToolpathId::from_raw(0);
 const SAMPLE_RPM: u32 = 18_000;
 
 /// The cutter every measured arm uses. Ø6.35 flat, two flutes.
@@ -672,7 +672,7 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
         species: WoodSpecies::GenericHardwood,
     };
 
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = CLAMP_DIAMETER_MM;
     tool.flute_count = 2;
     tool.cutting_length = 50.0;

@@ -28,7 +28,7 @@ use rs_cam_core::tool::{
 };
 
 fn vbit(id: usize) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(id), ToolType::VBit);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(id), ToolType::VBit);
     tool.name = "60 V".to_owned();
     tool.included_angle = 60.0;
     tool
@@ -104,7 +104,7 @@ fn add_tool_and_add_from_library_refuse() {
 fn replace_tool_and_replace_tools_refuse() {
     let mut session = session_with_vbit();
     assert_refused_angle(session.apply(Command::ReplaceTool(ReplaceToolArgs {
-        tool_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(0),
         config: Box::new(flat_vbit(0)),
     })));
     assert_refused_angle(session.apply(Command::ReplaceTools(ReplaceToolsArgs {

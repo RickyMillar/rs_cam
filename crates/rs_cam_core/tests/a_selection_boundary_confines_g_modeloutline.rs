@@ -151,7 +151,7 @@ fn face_pick(session: &ProjectSession, face_id: usize) -> Selection {
     let model = session
         .models()
         .iter()
-        .find(|m| m.id == face_id)
+        .find(|m| m.id == rs_cam_core::ids::ModelId::from_raw(face_id))
         .expect("the face model");
     let key = model
         .items
@@ -170,7 +170,7 @@ fn face_pick(session: &ProjectSession, face_id: usize) -> Selection {
 fn fixture(source: impl FnOnce(Ids) -> Option<BoundarySource>) -> Fixture {
     let mut builder = ProjectSessionBuilder::new().stock(stock_over(PLATE_HALF, 5.0));
     let tool_idx = builder.add_tool(ball_tool_config(3.0));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let mesh_id = builder.add_model(mesh_model(
         height_field(PLATE_HALF, 5.0, |_, _| 1.0),
         "terrain",
@@ -192,12 +192,17 @@ fn fixture(source: impl FnOnce(Ids) -> Option<BoundarySource>) -> Fixture {
         stepover: 1.0,
         ..DropCutterConfig::default()
     });
-    let mut cfg = toolpath_config("Rough", op, tool_id, mesh_id);
+    let mut cfg = toolpath_config(
+        "Rough",
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        mesh_id,
+    );
     let ids = Ids {
-        mesh: mesh_id,
-        ring: ring_id,
-        open: open_id,
-        solid: solid_id,
+        mesh: mesh_id.raw(),
+        ring: ring_id.raw(),
+        open: open_id.raw(),
+        solid: solid_id.raw(),
     };
     if let Some(source) = source(ids) {
         cfg.boundary = BoundaryConfig {
@@ -212,18 +217,18 @@ fn fixture(source: impl FnOnce(Ids) -> Option<BoundarySource>) -> Fixture {
         .expect("add toolpath to a fresh session");
     Fixture {
         session: builder.build(),
-        mesh_id,
-        ring_id,
-        open_id,
-        solid_id,
-        face_id,
+        mesh_id: mesh_id.raw(),
+        ring_id: ring_id.raw(),
+        open_id: open_id.raw(),
+        solid_id: solid_id.raw(),
+        face_id: face_id.raw(),
     }
 }
 
 /// XY samples along every cutting move, ends included.
 fn cutting_samples(session: &ProjectSession) -> Vec<P2> {
     let moves = &session
-        .get_result(0)
+        .result_at(0)
         .expect("a generated result")
         .toolpath()
         .moves;
@@ -262,7 +267,7 @@ fn generate(session: &mut ProjectSession) -> Result<(), String> {
 fn every_cutting_move_lies_inside_the_ring_g_modeloutline() {
     let mut fx = fixture(|ids| {
         Some(BoundarySource::Selection {
-            selection: Selection::closed_shapes_of(ModelId(ids.ring)),
+            selection: Selection::closed_shapes_of(ModelId::from_raw(ids.ring)),
             holes: false,
         })
     });
@@ -312,7 +317,7 @@ fn without_the_boundary_the_op_cuts_the_hole_and_the_margin_g_modeloutline() {
 fn a_missing_model_refuses_and_names_the_id_g_modeloutline() {
     let mut fx = fixture(|_| {
         Some(BoundarySource::Selection {
-            selection: Selection::closed_shapes_of(ModelId(999)),
+            selection: Selection::closed_shapes_of(ModelId::from_raw(999)),
             holes: false,
         })
     });
@@ -322,7 +327,7 @@ fn a_missing_model_refuses_and_names_the_id_g_modeloutline() {
         "the refusal must name the missing model id: {err}"
     );
     assert!(
-        fx.session.get_result(0).is_none(),
+        fx.session.result_at(0).is_none(),
         "a refused generation must cache no result"
     );
     // The ids the operator can pick are listed.
@@ -337,7 +342,7 @@ fn a_model_with_no_closed_polygon_refuses_and_names_it_g_modeloutline() {
     // A mesh has no 2D geometry at all.
     let mut fx = fixture(|ids| {
         Some(BoundarySource::Selection {
-            selection: Selection::closed_shapes_of(ModelId(ids.mesh)),
+            selection: Selection::closed_shapes_of(ModelId::from_raw(ids.mesh)),
             holes: false,
         })
     });
@@ -346,12 +351,12 @@ fn a_model_with_no_closed_polygon_refuses_and_names_it_g_modeloutline() {
         err.contains("terrain") && err.contains(&fx.mesh_id.to_string()),
         "the refusal must name the model: {err}"
     );
-    assert!(fx.session.get_result(0).is_none());
+    assert!(fx.session.result_at(0).is_none());
 
     // A drawing with only an open path has no closed polygon.
     let mut fx = fixture(|ids| {
         Some(BoundarySource::Selection {
-            selection: Selection::closed_shapes_of(ModelId(ids.open)),
+            selection: Selection::closed_shapes_of(ModelId::from_raw(ids.open)),
             holes: false,
         })
     });
@@ -360,7 +365,7 @@ fn a_model_with_no_closed_polygon_refuses_and_names_it_g_modeloutline() {
         err.contains("rivers") && err.contains(&fx.open_id.to_string()),
         "the refusal must name the model: {err}"
     );
-    assert!(fx.session.get_result(0).is_none());
+    assert!(fx.session.result_at(0).is_none());
 }
 
 /// The edge-band case: `holes: true` on the ring. Every cutting sample
@@ -369,7 +374,7 @@ fn a_model_with_no_closed_polygon_refuses_and_names_it_g_modeloutline() {
 fn the_holes_option_cuts_only_inside_the_hole_g_modeloutline() {
     let mut fx = fixture(|ids| {
         Some(BoundarySource::Selection {
-            selection: Selection::closed_shapes_of(ModelId(ids.ring)),
+            selection: Selection::closed_shapes_of(ModelId::from_raw(ids.ring)),
             holes: true,
         })
     });
@@ -424,7 +429,7 @@ fn the_holes_option_cuts_only_inside_the_hole_g_modeloutline() {
 fn the_holes_option_on_a_model_with_no_hole_refuses_and_names_it_g_modeloutline() {
     let mut fx = fixture(|ids| {
         Some(BoundarySource::Selection {
-            selection: Selection::closed_shapes_of(ModelId(ids.solid)),
+            selection: Selection::closed_shapes_of(ModelId::from_raw(ids.solid)),
             holes: true,
         })
     });
@@ -438,7 +443,7 @@ fn the_holes_option_on_a_model_with_no_hole_refuses_and_names_it_g_modeloutline(
         "the refusal must say that the shapes have no hole: {err}"
     );
     assert!(
-        fx.session.get_result(0).is_none(),
+        fx.session.result_at(0).is_none(),
         "a refused generation must cache no result"
     );
 }

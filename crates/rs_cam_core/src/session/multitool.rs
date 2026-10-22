@@ -143,13 +143,13 @@ pub struct MultitoolPlanSpec {
     /// Setup the chain is emitted into.
     pub setup_index: usize,
     /// Model every emitted op targets. Must carry a 3D mesh.
-    pub model_id: usize,
+    pub model_id: crate::ids::ModelId,
     /// Session tool ids taking part. Order is irrelevant — the ladder sorts
     /// coarse → fine on [`MillingCutter::cusp_radius_mm`] itself, which is
     /// the tip-sphere feature scale, never `radius()` (on a tapered ball
     /// that is the shank, and it would call a Ø1-tip finisher the coarsest
     /// tool on the ladder).
-    pub tool_ids: Vec<usize>,
+    pub tool_ids: Vec<crate::ids::ToolId>,
     /// Tier-map planning resolution (mm). See [`DEFAULT_PLAN_CELL_MM`].
     pub cell_mm: f64,
     /// Residual tolerance (mm).
@@ -225,7 +225,7 @@ impl Default for MultitoolPlanSpec {
         Self {
             tier_strategies: Vec::new(),
             setup_index: 0,
-            model_id: 0,
+            model_id: crate::ids::ModelId::placeholder(),
             tool_ids: Vec::new(),
             cell_mm: DEFAULT_PLAN_CELL_MM,
             tolerance_mm: DEFAULT_PLAN_TOLERANCE_MM,
@@ -290,7 +290,7 @@ pub struct MultitoolPreview {
     /// Session tool ids in the same order — the ladder
     /// [`Command::PlanMultitoolFinishing`](super::Command::PlanMultitoolFinishing) will emit with, already
     /// sorted, so a caller that applies this preview gets the tiers it saw.
-    pub tool_ids: Vec<usize>,
+    pub tool_ids: Vec<crate::ids::ToolId>,
     /// Tiered-finish F3c: per fine tier, the owned territory the tier's tool
     /// reaches only with the body above its flutes. Same order as
     /// [`TierIslands::per_tier`]. ADVISORY: the territory is unchanged. See
@@ -311,7 +311,7 @@ struct MultitoolPlanContext {
     tier_count: u8,
     /// The same tools' session ids, in the same order — what a tier
     /// boundary stores.
-    ordered_ids: Vec<usize>,
+    ordered_ids: Vec<crate::ids::ToolId>,
     /// Tip-sphere radii (mm), in the same order.
     cusp_radii: Vec<f64>,
     /// The heights every tier shares, with `bottom_z` pinned below the
@@ -423,7 +423,7 @@ impl ProjectSession {
                 ladder_tools.len()
             ))
         })?;
-        let ordered_ids: Vec<usize> = ladder_tools.iter().map(|t| t.id.0).collect();
+        let ordered_ids: Vec<crate::ids::ToolId> = ladder_tools.iter().map(|t| t.id).collect();
         let cusp_radii: Vec<f64> = cutters.iter().map(MillingCutter::cusp_radius_mm).collect();
 
         // Pinned bottom_z, derived once for the whole ladder. Unified's
@@ -453,7 +453,7 @@ impl ProjectSession {
         // Q1: the bbox the Suggest funnel reads for the runtime-sanity
         // stepover back-off. One read for the whole ladder — every tier
         // machines `spec.model_id`.
-        let model_bbox = self.model_bbox(spec.model_id);
+        let model_bbox = self.model_bbox_by_id(spec.model_id);
 
         Ok(MultitoolPlanContext {
             ladder_tools,
@@ -507,12 +507,12 @@ impl ProjectSession {
         };
         ToolpathConfig {
             shoe: Default::default(),
-            id: ToolpathId(0),
+            id: ToolpathId::placeholder(),
             name: format!("Finish tier {tier}{strategy_tag} (R{cusp:.1})"),
             enabled: true,
             dressups,
             heights: ctx.heights.clone(),
-            tool_id: tool.id.0,
+            tool_id: tool.id,
             model_id: spec.model_id,
             pre_gcode: None,
             post_gcode: None,
@@ -617,7 +617,11 @@ impl ProjectSession {
     /// object generation resolves against. No spatial index: emission-time
     /// callers (pinned heights) need only the bbox, and a cold index build
     /// on a large mesh would make the "planning is CHEAP" contract a lie.
-    fn plan_mesh(&self, model_id: usize, setup_index: usize) -> Option<Arc<TriangleMesh>> {
+    fn plan_mesh(
+        &self,
+        model_id: crate::ids::ModelId,
+        setup_index: usize,
+    ) -> Option<Arc<TriangleMesh>> {
         let mut mesh = self
             .models
             .iter()
@@ -635,7 +639,7 @@ impl ProjectSession {
 
     fn plan_geometry(
         &self,
-        model_id: usize,
+        model_id: crate::ids::ModelId,
         setup_index: usize,
     ) -> (Option<Arc<TriangleMesh>>, Option<Arc<SpatialIndex>>) {
         let Some(mesh) = self.plan_mesh(model_id, setup_index) else {
@@ -785,10 +789,13 @@ impl ProjectSession {
     /// Resolve `tool_ids` to real tools, ordered coarse → fine on cusp
     /// radius with a total tie-break on the id so two equal-radius tools
     /// order the same way on every run.
-    fn resolve_ladder_tools(&self, tool_ids: &[usize]) -> Result<Vec<ToolConfig>, SessionError> {
+    fn resolve_ladder_tools(
+        &self,
+        tool_ids: &[crate::ids::ToolId],
+    ) -> Result<Vec<ToolConfig>, SessionError> {
         let mut tools = Vec::with_capacity(tool_ids.len());
         for &id in tool_ids {
-            let Some(tool) = self.tools.iter().find(|t| t.id.0 == id) else {
+            let Some(tool) = self.tools.iter().find(|t| t.id == id) else {
                 return Err(SessionError::InvalidParam(format!(
                     "multi-tool finishing: no tool with id {id} in this project"
                 )));
@@ -801,7 +808,8 @@ impl ProjectSession {
             .into_iter()
             .map(|t| Ok((crate::session::session_cutter(&t)?.cusp_radius_mm(), t)))
             .collect::<Result<_, SessionError>>()?;
-        keyed.sort_by(|(ra, a), (rb, b)| rb.total_cmp(ra).then_with(|| a.id.0.cmp(&b.id.0)));
+        keyed
+            .sort_by(|(ra, a), (rb, b)| rb.total_cmp(ra).then_with(|| a.id.raw().cmp(&b.id.raw())));
         Ok(keyed.into_iter().map(|(_, t)| t).collect())
     }
 
@@ -1112,7 +1120,11 @@ const fn tier_is_per_island(tier: u8, spec: &MultitoolPlanSpec) -> bool {
 /// SAME variant with `tier: 0`, which the resolver reads as the COMPLEMENT
 /// of every fine tier's owned islands (see
 /// `resolve_planned_tier_region_polys`).
-fn tier_boundary(tier: u8, ordered_ids: &[usize], spec: &MultitoolPlanSpec) -> BoundaryConfig {
+fn tier_boundary(
+    tier: u8,
+    ordered_ids: &[crate::ids::ToolId],
+    spec: &MultitoolPlanSpec,
+) -> BoundaryConfig {
     if !tier_is_per_island(tier, spec) {
         return BoundaryConfig::default();
     }
@@ -1144,7 +1156,7 @@ fn tier_boundary(tier: u8, ordered_ids: &[usize], spec: &MultitoolPlanSpec) -> B
 /// `session::compute` destructure the same variant, and a positional
 /// signature is how `cell_mm` and `tolerance_mm` end up swapped.
 pub(crate) struct PlannedTierRecipe<'a> {
-    pub tool_ids: &'a [usize],
+    pub tool_ids: &'a [crate::ids::ToolId],
     pub tier: u8,
     pub cell_mm: f64,
     pub tolerance_mm: f64,
@@ -1528,7 +1540,7 @@ pub fn execute_preview_tier_map(
         islands: resolved.islands,
         cusp_radii_mm: resolved.cusp_radii_mm,
         tool_names: resolved.tools.iter().map(|t| t.name.clone()).collect(),
-        tool_ids: resolved.tools.iter().map(|t| t.id.0).collect(),
+        tool_ids: resolved.tools.iter().map(|t| t.id).collect(),
         flute_reach,
     })
 }
@@ -1613,21 +1625,45 @@ mod tests {
     #[test]
     fn tier_zero_carries_no_boundary_and_fine_tiers_do() {
         let spec = MultitoolPlanSpec {
-            tool_ids: vec![0, 1],
+            tool_ids: vec![
+                crate::ids::ToolId::from_raw(0),
+                crate::ids::ToolId::from_raw(1),
+            ],
             ..MultitoolPlanSpec::default()
         };
-        let coarse = tier_boundary(0, &[0, 1], &spec);
+        let coarse = tier_boundary(
+            0,
+            &[
+                crate::ids::ToolId::from_raw(0),
+                crate::ids::ToolId::from_raw(1),
+            ],
+            &spec,
+        );
         assert!(!coarse.enabled);
         assert_eq!(coarse.source, BoundarySource::Stock);
 
-        let fine = tier_boundary(1, &[0, 1], &spec);
+        let fine = tier_boundary(
+            1,
+            &[
+                crate::ids::ToolId::from_raw(0),
+                crate::ids::ToolId::from_raw(1),
+            ],
+            &spec,
+        );
         assert!(fine.enabled);
         assert_eq!(fine.containment, BoundaryContainment::Center);
         match fine.source {
             BoundarySource::PlannedTierRegions {
                 ref tool_ids, tier, ..
             } => {
-                assert_eq!(tool_ids, &vec![0, 1], "the FULL ladder, not just this tier");
+                assert_eq!(
+                    tool_ids,
+                    &vec![
+                        crate::ids::ToolId::from_raw(0),
+                        crate::ids::ToolId::from_raw(1)
+                    ],
+                    "the FULL ladder, not just this tier"
+                );
                 assert_eq!(tier, 1);
             }
             ref other => panic!("expected PlannedTierRegions, got {other:?}"),
@@ -1640,23 +1676,46 @@ mod tests {
     #[test]
     fn the_skip_dial_gives_tier_zero_an_inverted_boundary() {
         let spec = MultitoolPlanSpec {
-            tool_ids: vec![0, 1],
+            tool_ids: vec![
+                crate::ids::ToolId::from_raw(0),
+                crate::ids::ToolId::from_raw(1),
+            ],
             coarse_skips_fine_islands: true,
             ..MultitoolPlanSpec::default()
         };
-        let coarse = tier_boundary(0, &[0, 1], &spec);
+        let coarse = tier_boundary(
+            0,
+            &[
+                crate::ids::ToolId::from_raw(0),
+                crate::ids::ToolId::from_raw(1),
+            ],
+            &spec,
+        );
         assert!(coarse.enabled);
         match coarse.source {
             BoundarySource::PlannedTierRegions {
                 ref tool_ids, tier, ..
             } => {
-                assert_eq!(tool_ids, &vec![0, 1]);
+                assert_eq!(
+                    tool_ids,
+                    &vec![
+                        crate::ids::ToolId::from_raw(0),
+                        crate::ids::ToolId::from_raw(1)
+                    ]
+                );
                 assert_eq!(tier, 0, "tier 0 IS the complement arm's address");
             }
             ref other => panic!("expected PlannedTierRegions, got {other:?}"),
         }
         // The fine tier is unchanged by the dial.
-        let fine = tier_boundary(1, &[0, 1], &spec);
+        let fine = tier_boundary(
+            1,
+            &[
+                crate::ids::ToolId::from_raw(0),
+                crate::ids::ToolId::from_raw(1),
+            ],
+            &spec,
+        );
         assert!(fine.enabled);
         assert!(matches!(
             fine.source,
@@ -1735,7 +1794,15 @@ mod tests {
                 "the whole-board tier keeps the S1 continuous spiral"
             );
             assert!(
-                !tier_boundary(0, &[0, 1], &spec).enabled,
+                !tier_boundary(
+                    0,
+                    &[
+                        crate::ids::ToolId::from_raw(0),
+                        crate::ids::ToolId::from_raw(1)
+                    ],
+                    &spec
+                )
+                .enabled,
                 "the same tier carries no island boundary"
             );
 
@@ -1754,7 +1821,15 @@ mod tests {
                 cfg.intra_pass_hookup_mm
             );
             assert!(
-                tier_boundary(1, &[0, 1], &spec).enabled,
+                tier_boundary(
+                    1,
+                    &[
+                        crate::ids::ToolId::from_raw(0),
+                        crate::ids::ToolId::from_raw(1)
+                    ],
+                    &spec
+                )
+                .enabled,
                 "the same tier carries an island boundary"
             );
         }
@@ -1773,7 +1848,17 @@ mod tests {
             !cfg.continuous,
             "coarse_skips_fine_islands makes tier 0 per-island too"
         );
-        assert!(tier_boundary(0, &[0, 1], &skipping).enabled);
+        assert!(
+            tier_boundary(
+                0,
+                &[
+                    crate::ids::ToolId::from_raw(0),
+                    crate::ids::ToolId::from_raw(1)
+                ],
+                &skipping
+            )
+            .enabled
+        );
     }
 
     /// Suggest rebuilds the operation from the config type's defaults, so

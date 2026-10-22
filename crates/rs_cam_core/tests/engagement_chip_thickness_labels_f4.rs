@@ -92,7 +92,7 @@ fn production_cutting_samples() -> Vec<SimulationCutSample> {
             &tp,
             &cutter,
             StockCutDirection::FromTop,
-            ToolpathId(0),
+            ToolpathId::from_raw(0),
             RPM,
             FLUTES,
             5000.0,

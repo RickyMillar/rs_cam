@@ -186,7 +186,7 @@ impl<B: ComputeBackend> AppController<B> {
             // generated yet?" is session/GUI-runtime state, independent
             // of this particular request's scope.
             let mut phantom_scan = rs_cam_core::compute::simulate::PhantomPriorStockScan::default();
-            for &tp_idx in &setup.toolpath_indices {
+            for &tp_idx in setup.toolpath_indices() {
                 let Some(tc) = self.state.session().toolpath_configs().get(tp_idx) else {
                     continue;
                 };
@@ -196,7 +196,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // viewport keeps drawing it), so carving it put a superseded
                 // toolpath into the rest snapshot while core held another.
                 let rt = self.state.gui.toolpath_rt.get(&tc.id);
-                let result = self.state.session().get_result(tp_idx);
+                let result = self.state.session().result_at(tp_idx);
                 // G-STICKYEMPTY / G-RESTLEVELS: "a result exists" is the
                 // answer of BOTH builders. Each carves every enabled result,
                 // an empty one included (with no change), so an empty op gets
@@ -240,7 +240,7 @@ impl<B: ComputeBackend> AppController<B> {
                     .session()
                     .tools()
                     .iter()
-                    .find(|t| t.id.0 == tc.tool_id)
+                    .find(|t| t.id == tc.tool_id)
                 else {
                     continue;
                 };
@@ -268,7 +268,7 @@ impl<B: ComputeBackend> AppController<B> {
                     name: tc.name.clone(),
                     annotated: Arc::clone(result.annotated()),
                     tool: tool_def,
-                    tool_id: rs_cam_core::compute::tool_config::ToolId(tc.tool_id),
+                    tool_id: tc.tool_id,
                     flute_count,
                     tool_summary,
                     semantic_trace,
@@ -524,7 +524,7 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub(crate) fn run_simulation_with_ids(&mut self, ids: &[ToolpathId]) {
         let target_setup_idx = self.state.session().list_setups().iter().position(|s| {
-            s.toolpath_indices.iter().any(|&tp_idx| {
+            s.toolpath_indices().iter().any(|&tp_idx| {
                 self.state
                     .session()
                     .toolpath_configs()
@@ -577,7 +577,7 @@ impl<B: ComputeBackend> AppController<B> {
             .state
             .session()
             .find_toolpath_config_by_id(tp_id)
-            .ok_or_else(|| format!("no toolpath with id {}", tp_id.0))?;
+            .ok_or_else(|| format!("no toolpath with id {}", tp_id.raw()))?;
         let cancel = std::sync::atomic::AtomicBool::new(false);
         let args = self
             .state
@@ -636,7 +636,7 @@ impl<B: ComputeBackend> AppController<B> {
                     .session()
                     .tools()
                     .iter()
-                    .find(|t| t.id.0 == tc.tool_id)?
+                    .find(|t| t.id == tc.tool_id)?
                     .clone();
                 let mesh = self
                     .state
@@ -771,7 +771,7 @@ mod release_for_new_run_m1 {
     use crate::state::simulation::{SimulationResults, SimulationRunMeta};
 
     /// The id of the one prior stock the core simulation holds.
-    const REST_OP: ToolpathId = ToolpathId(7);
+    const REST_OP: ToolpathId = ToolpathId::from_raw(7);
 
     /// A backend that counts simulation submits and hands back the
     /// messages a test queues.

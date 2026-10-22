@@ -939,17 +939,20 @@ fn coarse_steps_is_gone_from_the_wire() {
     );
 
     let mut s = ProjectSession::new_empty();
-    let _ = s.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    let _ = s.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: crate::ToolpathId(0),
+        id: crate::ToolpathId::from_raw(0),
         name: "rough".to_owned(),
         enabled: true,
         operation: OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: s.tools()[0].id.0,
-        model_id: 0,
+        tool_id: s.tools()[0].id,
+        model_id: crate::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),

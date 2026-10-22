@@ -49,7 +49,7 @@ use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
 /// The id of the pending rest operation the tail phantom stands for.
-const PHANTOM_ID: ToolpathId = ToolpathId(99);
+const PHANTOM_ID: ToolpathId = ToolpathId::from_raw(99);
 
 /// Number of carved toolpaths in the one group.
 const PASSES: usize = 3;
@@ -98,11 +98,11 @@ fn pass(pass_index: usize) -> Arc<AnnotatedToolpath> {
 fn entry(index: usize) -> SimToolpathEntry {
     SimToolpathEntry {
         head: Default::default(),
-        id: ToolpathId(index + 1),
+        id: ToolpathId::from_raw(index + 1),
         name: format!("Pass{index}"),
         annotated: pass(index),
         tool: Arc::new(tool()),
-        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+        tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,
@@ -161,7 +161,7 @@ fn a_checkpoint_shares_its_stock_with_the_next_prior_stock_m3() {
     for k in 0..PASSES - 1 {
         let next_prior = result
             .prior_stocks
-            .get(&ToolpathId(k + 2))
+            .get(&ToolpathId::from_raw(k + 2))
             .expect("every carved toolpath keeps a prior stock");
         assert!(
             Arc::ptr_eq(&result.checkpoints[k].mesh_stock, next_prior),
@@ -172,7 +172,7 @@ fn a_checkpoint_shares_its_stock_with_the_next_prior_stock_m3() {
     }
     // The first toolpath has no checkpoint before it: a fresh clone.
     assert!(
-        result.prior_stocks.contains_key(&ToolpathId(1)),
+        result.prior_stocks.contains_key(&ToolpathId::from_raw(1)),
         "the first toolpath keeps its prior stock too"
     );
 }
@@ -204,7 +204,7 @@ fn a_checkpoint_mesh_is_built_from_the_local_stock_m2() {
             !built.indices.is_empty(),
             "checkpoint {k} must have a mesh, or the comparison is vacuous"
         );
-        let local = &result.prior_stocks[&ToolpathId(k + 2)];
+        let local = &result.prior_stocks[&ToolpathId::from_raw(k + 2)];
         let expected = transform_stock_mesh_to_global(&dexel_stock_to_mesh(local), &None, origin);
         assert!(
             same_bits(&built, &expected),

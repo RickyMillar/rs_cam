@@ -26,7 +26,7 @@ pub(super) struct ModalState {
     pub current_rpm: Rpm,
     /// Identity of the loaded tool: the tool *config id*
     /// (`PhaseTool::id`), not the display T-number.
-    pub current_tool: Option<usize>,
+    pub current_tool: Option<crate::ids::ToolId>,
     pub current_coolant: CoolantMode,
     /// Target of the previous move (any type), used to sequence rapids
     /// safely. `None` = machine position unknown.
@@ -34,7 +34,7 @@ pub(super) struct ModalState {
 }
 
 impl ModalState {
-    pub fn new(rpm: Rpm, tool: Option<usize>, coolant: CoolantMode) -> Self {
+    pub fn new(rpm: Rpm, tool: Option<crate::ids::ToolId>, coolant: CoolantMode) -> Self {
         Self {
             last_feed: None,
             current_rpm: rpm,

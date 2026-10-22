@@ -168,7 +168,7 @@ impl Point {
 }
 
 fn tool_of(kind: ToolType, diameter: f64, flutes: u32) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), kind);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;
     t.flute_count = flutes;
     t.cutting_length = (diameter * 3.0).max(12.0);

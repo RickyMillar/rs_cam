@@ -80,8 +80,11 @@ fn island_params() -> TierIslandParams {
 fn spec(coarse_id: usize, fine_id: usize, model_id: usize) -> MultitoolPlanSpec {
     MultitoolPlanSpec {
         setup_index: 0,
-        model_id,
-        tool_ids: vec![coarse_id, fine_id],
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
+        tool_ids: vec![
+            rs_cam_core::ids::ToolId::from_raw(coarse_id),
+            rs_cam_core::ids::ToolId::from_raw(fine_id),
+        ],
         cell_mm: CELL_MM,
         tolerance_mm: TOLERANCE_MM,
         margin_mm: MARGIN_MM,
@@ -98,11 +101,11 @@ fn session_with_ladder() -> (ProjectSession, usize, usize, usize) {
     builder = builder.stock(common::session::stock_under(HALF_MM, 6.0));
     let coarse_idx = builder.add_tool(ball_tool_config(4.0));
     let fine_idx = builder.add_tool(ball_tool_config(2.0));
-    let coarse_id = builder.tools()[coarse_idx].id.0;
-    let fine_id = builder.tools()[fine_idx].id.0;
+    let coarse_id = builder.tools()[coarse_idx].id.raw();
+    let fine_id = builder.tools()[fine_idx].id.raw();
     let model_id = builder.add_model(common::session::mesh_model(plane_with_bowl(), "bowl"));
     let session = builder.build();
-    (session, coarse_id, fine_id, model_id)
+    (session, coarse_id, fine_id, model_id.raw())
 }
 
 fn temp_path(name: &str) -> PathBuf {
@@ -185,7 +188,13 @@ fn the_preview_reproduces_the_hand_run_tier_islands() {
 
     // The ladder the preview reports is the ladder the plan will emit with:
     // coarse -> fine, index-aligned with the labels.
-    assert_eq!(preview.tool_ids, vec![coarse_id, fine_id]);
+    assert_eq!(
+        preview.tool_ids,
+        vec![
+            rs_cam_core::ids::ToolId::from_raw(coarse_id),
+            rs_cam_core::ids::ToolId::from_raw(fine_id)
+        ]
+    );
     assert_eq!(preview.cusp_radii_mm, vec![2.0, 1.0]);
     assert_eq!(preview.tool_names.len(), 2);
 }
@@ -198,13 +207,22 @@ fn the_preview_sorts_the_ladder_coarse_to_fine_like_the_plan() {
     let (session, coarse_id, fine_id, model_id) = session_with_ladder();
     let cancel = AtomicBool::new(false);
     let reversed = MultitoolPlanSpec {
-        tool_ids: vec![fine_id, coarse_id],
+        tool_ids: vec![
+            rs_cam_core::ids::ToolId::from_raw(fine_id),
+            rs_cam_core::ids::ToolId::from_raw(coarse_id),
+        ],
         ..spec(coarse_id, fine_id, model_id)
     };
     let preview = session
         .preview_multitool_plan(&reversed, &cancel)
         .expect("preview");
-    assert_eq!(preview.tool_ids, vec![coarse_id, fine_id]);
+    assert_eq!(
+        preview.tool_ids,
+        vec![
+            rs_cam_core::ids::ToolId::from_raw(coarse_id),
+            rs_cam_core::ids::ToolId::from_raw(fine_id)
+        ]
+    );
     assert_eq!(preview.cusp_radii_mm, vec![2.0, 1.0]);
 }
 
@@ -218,8 +236,8 @@ fn a_preview_leaves_the_project_byte_identical() {
     let tc = common::session::toolpath_config(
         "Operator's own finish",
         OperationConfig::UnifiedFinish(UnifiedFinishConfig::default()),
-        fine_id,
-        model_id,
+        rs_cam_core::ids::ToolId::from_raw(fine_id),
+        rs_cam_core::ids::ModelId::from_raw(model_id),
     );
     let _ = session
         .apply(Command::AddToolpath(AddToolpathArgs {
@@ -270,7 +288,7 @@ fn the_preview_refuses_what_the_plan_refuses() {
     let cancel = AtomicBool::new(false);
 
     let one_tool = MultitoolPlanSpec {
-        tool_ids: vec![coarse_id],
+        tool_ids: vec![rs_cam_core::ids::ToolId::from_raw(coarse_id)],
         ..spec(coarse_id, fine_id, model_id)
     };
     assert!(session.preview_multitool_plan(&one_tool, &cancel).is_err());
@@ -282,7 +300,7 @@ fn the_preview_refuses_what_the_plan_refuses() {
     assert!(session.preview_multitool_plan(&bad_setup, &cancel).is_err());
 
     let bad_model = MultitoolPlanSpec {
-        model_id: 404,
+        model_id: rs_cam_core::ids::ModelId::from_raw(404),
         ..spec(coarse_id, fine_id, model_id)
     };
     assert!(session.preview_multitool_plan(&bad_model, &cancel).is_err());

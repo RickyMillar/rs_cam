@@ -962,7 +962,7 @@ impl<Request> LaneQueue<Request> {
             current_job: inner.current_job.clone(),
             current_phase: inner.current_phase.clone(),
             started_at: inner.started_at,
-            active_toolpath_id: inner.active_toolpath_id.map(|id| id.0),
+            active_toolpath_id: inner.active_toolpath_id.map(|id| id.raw()),
             active_toolpath_index: inner.active_toolpath_index,
         }
     }
@@ -995,7 +995,7 @@ impl LaneControl for LaneQueue<ComputeRequest> {
             current_job: inner.current_job.clone(),
             current_phase: inner.current_phase.clone(),
             started_at: inner.started_at,
-            active_toolpath_id: inner.active_toolpath_id.map(|id| id.0),
+            active_toolpath_id: inner.active_toolpath_id.map(|id| id.raw()),
             active_toolpath_index: inner.active_toolpath_index,
         };
         CancelOutcome { was_busy, snapshot }
@@ -1447,7 +1447,7 @@ fn analysis_job_label(request: &AnalysisRequest) -> String {
 }
 
 fn reach_job_label(request: &ReachRequest) -> String {
-    format!("Reach map (toolpath #{})", request.toolpath_id.0)
+    format!("Reach map (toolpath #{})", request.toolpath_id.raw())
 }
 
 /// The status-bar label of one `Job` submit.

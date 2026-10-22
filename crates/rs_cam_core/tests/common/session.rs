@@ -61,7 +61,7 @@ use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 /// file ever touches disk, and the path makes that obvious in any dump.
 pub fn mesh_model(mesh: TriangleMesh, name: &str) -> LoadedModel {
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: name.to_owned(),
         mesh: Some(Arc::new(mesh)),
         items: Default::default(),
@@ -81,7 +81,7 @@ pub fn mesh_model(mesh: TriangleMesh, name: &str) -> LoadedModel {
 /// (pocket, profile, adaptive) take.
 pub fn polygon_model(polygons: Vec<Polygon2>, name: &str) -> LoadedModel {
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: name.to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(polygons)),
@@ -250,13 +250,13 @@ pub fn stock_under(half: f64, height: f64) -> StockConfig {
 pub fn toolpath_config(
     name: &str,
     op: OperationConfig,
-    tool_id: usize,
-    model_id: usize,
+    tool_id: rs_cam_core::ids::ToolId,
+    model_id: rs_cam_core::ids::ModelId,
 ) -> ToolpathConfig {
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,
@@ -325,9 +325,14 @@ pub fn single_op_session_with(
 ) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock);
     let tool_idx = builder.add_tool(tool);
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(model);
-    let mut cfg = toolpath_config(name, op, tool_id, model_id);
+    let mut cfg = toolpath_config(
+        name,
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     tweak(&mut cfg);
     let _ = builder
         .add_toolpath(0, cfg)

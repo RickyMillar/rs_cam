@@ -172,7 +172,7 @@ pub struct TabEditMode {
     /// The drag in progress, if any.
     pub drag: Option<TabDrag>,
     /// The tab layout the editor shows, and the input revision of the
-    /// toolpath it was read at (`ProjectSession::toolpath_revision`). The
+    /// toolpath it was read at (`ProjectSession::toolpath_revision_at`). The
     /// frame reads the query again only when the revision moves
     /// ([`super::tab_edit::refresh_layout`]).
     pub layout: Option<(u64, Result<rs_cam_core::session::TabLayoutAnswer, String>)>,

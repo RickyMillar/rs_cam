@@ -21,19 +21,19 @@ use super::toolpath::ToolpathId;
 /// project, generation and the simulation do not change.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModelVisibility {
-    /// The raw ids of the hidden models.
-    hidden: BTreeSet<usize>,
+    /// The ids of the hidden models.
+    hidden: BTreeSet<rs_cam_core::ids::ModelId>,
 }
 
 impl ModelVisibility {
     /// True when the viewport draws the model `model_id`.
-    pub fn is_visible(&self, model_id: usize) -> bool {
+    pub fn is_visible(&self, model_id: rs_cam_core::ids::ModelId) -> bool {
         !self.hidden.contains(&model_id)
     }
 
     /// Show or hide the model `model_id`. Returns true when the value
     /// changed, so the caller asks for an upload on a change only.
-    pub fn set_visible(&mut self, model_id: usize, visible: bool) -> bool {
+    pub fn set_visible(&mut self, model_id: rs_cam_core::ids::ModelId, visible: bool) -> bool {
         if visible {
             self.hidden.remove(&model_id)
         } else {

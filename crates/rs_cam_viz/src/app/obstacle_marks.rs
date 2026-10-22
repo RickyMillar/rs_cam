@@ -14,7 +14,7 @@ use crate::render::LineVertex;
 use crate::render::colors::{OBSTACLE, OBSTACLE_CLEARANCE, OBSTACLE_PLANE, OBSTACLE_SELECTED};
 use crate::render::fixture_render::{push_prism_lines, push_ring_lines};
 use crate::state::AppState;
-use crate::state::job::{SetupFrame, SetupId};
+use crate::state::job::SetupFrame;
 use crate::state::selection::Selection;
 
 /// The margin (mm) of the obstacle plane rectangle round the stock and the
@@ -40,7 +40,7 @@ pub(super) fn push_obstacle_lines(
     let models = state.session().models();
     let shift_p = frame.emission_to_display_shift(stock);
     let shift = [shift_p.x, shift_p.y, shift_p.z];
-    let setup_id = SetupId(sd.id);
+    let setup_id = sd.id;
 
     let mut resolved: Vec<ResolvedObstacle> = Vec::new();
     for obstacle in sd.obstacles.iter().filter(|o| o.enabled) {
@@ -146,14 +146,14 @@ mod tests {
 
     #[test]
     fn a_box_obstacle_draws_its_prism_its_clearance_and_a_plane_on_focus_k2() {
-        let mut state = state_with(vec![Obstacle::new_default_box(ObstacleId(0))]);
+        let mut state = state_with(vec![Obstacle::new_default_box(ObstacleId::from_raw(0))]);
         state.selection = Selection::None;
         let out = lines(&state);
         assert_eq!(count(&out, OBSTACLE), 24, "the box prism");
         assert!(count(&out, OBSTACLE_CLEARANCE) >= 8, "the clearance ring");
         assert_eq!(count(&out, OBSTACLE_PLANE), 0, "no plane without focus");
 
-        let setup = SetupId(state.session().list_setups()[0].id);
+        let setup = state.session().list_setups()[0].id;
         state.selection = Selection::Setup(setup);
         let out = lines(&state);
         let plane: Vec<&LineVertex> = out.iter().filter(|v| v.color == OBSTACLE_PLANE).collect();
@@ -170,7 +170,7 @@ mod tests {
             assert!((f64::from(v.position[2]) - (plane_z + shift_z)).abs() < 1e-3);
         }
 
-        state.selection = Selection::Obstacle(setup, ObstacleId(0));
+        state.selection = Selection::Obstacle(setup, ObstacleId::from_raw(0));
         let out = lines(&state);
         assert_eq!(count(&out, OBSTACLE_SELECTED), 24, "the selected prism");
         assert_eq!(count(&out, OBSTACLE), 0);
@@ -184,13 +184,13 @@ mod tests {
 
     #[test]
     fn a_broken_obstacle_does_not_blank_the_others_k2() {
-        let good = Obstacle::new_default_box(ObstacleId(0));
+        let good = Obstacle::new_default_box(ObstacleId::from_raw(0));
         let mut state = state_with(vec![good]);
         // The core refuses a missing model on add, so the broken record
         // goes into a COPY of the setup that the test hands to the builder.
-        let mut broken = Obstacle::new_default_box(ObstacleId(1));
+        let mut broken = Obstacle::new_default_box(ObstacleId::from_raw(1));
         broken.geometry = ObstacleGeometry::Model {
-            model_id: ModelId(42),
+            model_id: ModelId::from_raw(42),
         };
         assert!(
             ObstacleSet::resolve(std::slice::from_ref(&broken), state.session().models()).is_err(),

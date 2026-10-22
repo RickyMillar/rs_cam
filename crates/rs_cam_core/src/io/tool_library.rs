@@ -407,7 +407,7 @@ mod tests {
     }
 
     fn tool(name: &str, dia: f64) -> ToolConfig {
-        let mut t = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         t.name = name.to_owned();
         t.diameter = dia;
         t
@@ -590,7 +590,7 @@ mod tests {
         b.vendor = "Amana".to_owned();
         b.product_id = "46200".to_owned();
         b.size_units = Some(crate::compute::tool_config::SizeUnits::Imperial);
-        b.id = ToolId(7);
+        b.id = ToolId::from_raw(7);
         assert_eq!(dedupe_key(&a), dedupe_key(&b));
     }
 

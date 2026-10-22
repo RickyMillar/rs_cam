@@ -60,7 +60,7 @@ const HALF: f64 = 12.0;
 /// Count semantic items of one kind.
 fn count_kind(session: &ProjectSession, kind: &ToolpathSemanticKind) -> usize {
     session
-        .get_result(0)
+        .result_at(0)
         .expect("generated result")
         .semantic_trace
         .as_ref()
@@ -86,7 +86,7 @@ fn structure_line(session: &ProjectSession) -> String {
 /// and that count is exactly the number of semantic `Region` items — so the
 /// narration cannot drift from the trace it claims to summarise (A/M8 gate 2).
 fn assert_regions_reported(session: &ProjectSession, label: &str) -> usize {
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     assert!(
         result.stats.cutting_distance > 0.0,
         "[{label}] the fixture must actually cut, or the region count proves nothing"
@@ -143,7 +143,7 @@ fn scallop_narration_reports_its_regions() {
     let rings = count_kind(&session, &ToolpathSemanticKind::Ring);
     assert!(rings > 0, "scallop must emit rings");
     let trace = session
-        .get_result(0)
+        .result_at(0)
         .unwrap()
         .semantic_trace
         .clone()
@@ -285,7 +285,7 @@ fn scallop_inside_unified_finish_does_not_add_a_second_region_population() {
     common::session::generate(&mut session, 0);
 
     let trace = session
-        .get_result(0)
+        .result_at(0)
         .expect("generated result")
         .semantic_trace
         .clone()

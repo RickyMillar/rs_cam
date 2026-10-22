@@ -971,7 +971,7 @@ mod tests {
             min: P3::new(-20.0, -10.0, -10.0),
             max: P3::new(20.0, 10.0, 0.0),
         };
-        let tool_cfg = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let tool_cfg = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         let tool_def = build_cutter(&tool_cfg).unwrap();
         let polys = vec![square(-10.0), square(10.0)];
         // L-16: the runner reads the catalogue ladder; an empty one refuses.

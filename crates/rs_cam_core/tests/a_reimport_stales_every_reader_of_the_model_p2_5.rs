@@ -45,15 +45,15 @@ use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, Boundary
 use rs_cam_core::compute::operation_configs::{PocketConfig, ProjectCurveConfig};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::toolpath_stats::ToolpathStats;
-use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::ops::drill_op::OpData;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::selection::{ItemKind, MatchKey, Selection, SelectionEdit, SourceRef};
 use rs_cam_core::session::{
-    AdoptModelGeometryArgs, Command, DatumConfig, LoadedModel, ProjectSession,
-    ProjectSessionBuilder, SetupData, ToolpathComputeResult, ToolpathConfig,
+    AdoptModelGeometryArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder, SetupData,
+    ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
@@ -73,7 +73,7 @@ fn square_model(id: usize, name: &str, side_mm: f64) -> LoadedModel {
         P2::new(0.0, side_mm),
     ]);
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         name: name.to_owned(),
         mesh: None,
         items: Arc::new(drawing_items(vec![square], &[])),
@@ -90,18 +90,11 @@ fn square_model(id: usize, name: &str, side_mm: f64) -> LoadedModel {
 }
 
 fn setup() -> SetupData {
-    SetupData {
-        id: 1,
-        name: "Setup 1".to_owned(),
-        face_up: FaceUp::Top,
-        z_rotation: ZRotation::default(),
-        datum: DatumConfig::default(),
-        model_ids: Vec::new(),
-        obstacles: Vec::new(),
-        stock_changes: Vec::new(),
-        toolpath_indices: Vec::new(),
-        pause_message: None,
-    }
+    SetupData::new(
+        rs_cam_core::ids::SetupId::from_raw(1),
+        "Setup 1",
+        FaceUp::Top,
+    )
 }
 
 fn fake_result() -> ToolpathComputeResult {
@@ -121,8 +114,8 @@ fn pocket(name: &str, model_id: usize, selection: Selection) -> ToolpathConfig {
             selection,
             ..PocketConfig::default()
         }),
-        TOOL,
-        model_id,
+        rs_cam_core::ids::ToolId::from_raw(TOOL),
+        rs_cam_core::ids::ModelId::from_raw(model_id),
     )
 }
 
@@ -130,7 +123,7 @@ fn with_boundary(mut tc: ToolpathConfig, enabled: bool) -> ToolpathConfig {
     tc.boundary = BoundaryConfig {
         enabled,
         source: BoundarySource::Selection {
-            selection: Selection::closed_shapes_of(ModelId(MODEL_B)),
+            selection: Selection::closed_shapes_of(ModelId::from_raw(MODEL_B)),
             holes: false,
         },
         containment: BoundaryContainment::Center,
@@ -143,7 +136,7 @@ fn with_boundary(mut tc: ToolpathConfig, enabled: bool) -> ToolpathConfig {
 fn excludes_b() -> Selection {
     let mut selection = Selection::drawing();
     let key = MatchKey {
-        source: SourceRef::Model(ModelId(MODEL_B)),
+        source: SourceRef::Model(ModelId::from_raw(MODEL_B)),
         kind: ItemKind::Loop,
         layer: None,
         anchor: [10.0, 10.0],
@@ -168,28 +161,31 @@ fn fixture() -> ProjectSession {
         pocket(
             "op rule",
             MODEL_A,
-            Selection::closed_shapes_of(ModelId(MODEL_B)),
+            Selection::closed_shapes_of(ModelId::from_raw(MODEL_B)),
         ),
         toolpath_config(
             "surface",
             OperationConfig::ProjectCurve(ProjectCurveConfig {
-                surface_model_id: Some(ModelId(MODEL_B)),
+                surface_model_id: Some(ModelId::from_raw(MODEL_B)),
                 ..ProjectCurveConfig::default()
             }),
-            TOOL,
-            MODEL_A,
+            rs_cam_core::ids::ToolId::from_raw(TOOL),
+            rs_cam_core::ids::ModelId::from_raw(MODEL_A),
         ),
         pocket("op exclude", MODEL_A, excludes_b()),
         pocket("control", MODEL_A, Selection::drawing()),
     ];
     let mut builder = ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill))
+        .tool(ToolConfig::new_default(
+            ToolId::from_raw(TOOL),
+            ToolType::EndMill,
+        ))
         .model(square_model(MODEL_A, "a.svg", 40.0))
         .model(square_model(MODEL_B, "b.svg", 20.0))
         .setup(setup());
     let count = readers.len();
     for (index, mut tc) in readers.into_iter().enumerate() {
-        tc.id = ToolpathId(10 + index);
+        tc.id = ToolpathId::from_raw(10 + index);
         builder = builder.toolpath(tc);
     }
     for index in 0..count {
@@ -204,7 +200,7 @@ fn a_reimport_stales_every_reader_of_the_model_p2_5() {
     let read: Vec<bool> = session
         .toolpath_configs()
         .iter()
-        .map(|tc| tc.models_read().contains(&MODEL_B))
+        .map(|tc| tc.models_read().contains(&ModelId::from_raw(MODEL_B)))
         .collect();
     assert_eq!(
         read,
@@ -214,7 +210,7 @@ fn a_reimport_stales_every_reader_of_the_model_p2_5() {
 
     let effects = session
         .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
-            model_id: MODEL_B,
+            model_id: rs_cam_core::ids::ModelId::from_raw(MODEL_B),
             geometry: Box::new(square_model(MODEL_B, "b.svg", 30.0)),
             units: None,
         }))
@@ -228,7 +224,7 @@ fn a_reimport_stales_every_reader_of_the_model_p2_5() {
     );
     for index in [2, 6] {
         assert!(
-            session.get_result(index).is_some(),
+            session.result_at(index).is_some(),
             "toolpath {index} does not read model B; it keeps its result"
         );
     }
@@ -249,7 +245,7 @@ fn a_model_removal_stales_every_reader_p2_6() {
     let index_of_b = session
         .models()
         .iter()
-        .position(|m| m.id == MODEL_B)
+        .position(|m| m.id == rs_cam_core::ids::ModelId::from_raw(MODEL_B))
         .unwrap();
     let effects = session
         .apply(Command::RemoveModel(
@@ -265,13 +261,13 @@ fn a_model_removal_stales_every_reader_p2_6() {
     );
     for index in [0, 1, 3, 4, 5] {
         assert!(
-            session.get_result(index).is_none(),
+            session.result_at(index).is_none(),
             "toolpath {index} reads the removed model; its result must drop"
         );
     }
     for index in [2, 6] {
         assert!(
-            session.get_result(index).is_some(),
+            session.result_at(index).is_some(),
             "toolpath {index} does not read model B; it keeps its result"
         );
     }
@@ -285,7 +281,9 @@ fn a_model_removal_stales_every_reader_p2_6() {
         .expect("the own-model reader refuses");
     assert_eq!(
         refusal.cause,
-        rs_cam_core::selection::RefusalCause::MissingSource(SourceRef::Model(ModelId(MODEL_B))),
+        rs_cam_core::selection::RefusalCause::MissingSource(SourceRef::Model(ModelId::from_raw(
+            MODEL_B
+        ))),
         "the refusal names the removed model: {refusal}"
     );
 }

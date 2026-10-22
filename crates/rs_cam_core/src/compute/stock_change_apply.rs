@@ -47,7 +47,7 @@ use crate::stock::material_slot::MaterialSlot;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StockChangeVolume {
     /// The `SetupData::id` of the setup that owns the change.
-    pub setup_id: usize,
+    pub setup_id: crate::ids::SetupId,
     /// The change id, unique within the setup.
     pub change_id: StockChangeId,
     /// The change name, for a surface to print.
@@ -114,7 +114,7 @@ fn setup_outlines(
                 closed.extend(polygons.iter().filter(|p| is_closed_outline(p)).cloned());
             }
             StockChangeSource::Missing(model_id) => {
-                return Err(missing(resolved, model_id.0));
+                return Err(missing(resolved, model_id.raw()));
             }
             StockChangeSource::Mesh(_) => {
                 return Err(refuse(
@@ -187,8 +187,8 @@ fn change_edits(
         StockGeometry::Model { model_id } => {
             let mesh = match resolved.sources.first() {
                 Some(StockChangeSource::Mesh(mesh)) => mesh,
-                Some(StockChangeSource::Missing(id)) => return Err(missing(resolved, id.0)),
-                _ => return Err(missing(resolved, model_id.0)),
+                Some(StockChangeSource::Missing(id)) => return Err(missing(resolved, id.raw())),
+                _ => return Err(missing(resolved, model_id.raw())),
             };
             let local;
             let mesh_in_setup = match &group.local_to_global {
@@ -206,7 +206,7 @@ fn change_edits(
                         "model id {} is not a closed mesh: {} of the {} columns that \
                          cross it cross it an odd number of times ({:.1} %, the limit is \
                          {:.1} %)",
-                        model_id.0,
+                        model_id.raw(),
                         cast.odd_cells,
                         cast.hit_cells,
                         cast.odd_share() * 100.0,

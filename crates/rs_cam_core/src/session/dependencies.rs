@@ -233,13 +233,13 @@ pub fn state(edge: &Edge, session: &ProjectSession) -> EdgeState {
             // CURRENT (G-RESTRES: at the project's cell, over the results
             // the project holds now), and has the source generated.
             let snapshot = session.snapshot_is_current(edge.from).is_ok();
-            if snapshot && session.get_result(source_index).is_some() {
+            if snapshot && session.result_at(source_index).is_some() {
                 EdgeState::Ready
             } else {
                 EdgeState::Pending
             }
         }
-        EdgeKind::Regions => match session.get_result(source_index) {
+        EdgeKind::Regions => match session.result_at(source_index) {
             None => EdgeState::Pending,
             Some(result) => match result.annotated().produced.rest_regions.as_deref() {
                 Some(regions) if !regions.is_empty() => EdgeState::Ready,

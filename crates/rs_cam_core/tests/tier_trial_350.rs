@@ -324,7 +324,7 @@ fn h1_diameter() -> f64 {
 }
 
 fn h1_tool() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(0), ToolType::BallNose);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
     let d = h1_diameter();
     t.name = format!("H1 {d}mm Ball Nose 2F (HYPOTHETICAL)");
     t.diameter = d;
@@ -350,7 +350,7 @@ fn h1_tool() -> ToolConfig {
 
 fn index_of(session: &ProjectSession, id: usize) -> usize {
     session
-        .find_toolpath_config_by_id(rs_cam_core::ToolpathId(id))
+        .find_toolpath_config_by_id(rs_cam_core::ToolpathId::from_raw(id))
         .unwrap_or_else(|| panic!("toolpath id {id} is in the project"))
         .0
 }
@@ -363,7 +363,7 @@ fn add_tool(session: &mut ProjectSession, tool: ToolConfig) -> usize {
         .expect("add a tool")
         .created
         .expect("add_tool reports the new index");
-    session.tools()[created].id.0
+    session.tools()[created].id.raw()
 }
 
 fn set_param(session: &mut ProjectSession, index: usize, param: &str, value: Value) {
@@ -384,7 +384,11 @@ fn planner_dressups(session: &mut ProjectSession) -> String {
     let mut done = Vec::new();
     for index in 0..session.toolpath_configs().len() {
         let tc = &session.toolpath_configs()[index];
-        if !tc.enabled || tc.id.0 == FACE_ID || tc.id.0 == ROUGH_ID || tc.planner_origin.is_some() {
+        if !tc.enabled
+            || tc.id.raw() == FACE_ID
+            || tc.id.raw() == ROUGH_ID
+            || tc.planner_origin.is_some()
+        {
             continue;
         }
         let cusp = match &tc.operation {
@@ -398,7 +402,7 @@ fn planner_dressups(session: &mut ProjectSession) -> String {
         dressups.arc_fitting = dressups
             .arc_fitting
             .and_then(|_| tier_arc_tolerance_mm(cusp).map(|tolerance| ArcFitParams { tolerance }));
-        let id = tc.id.0;
+        let id = tc.id.raw();
         let _ = session
             .apply(Command::SetDressupConfig(SetDressupConfigArgs {
                 index,
@@ -417,7 +421,7 @@ fn override_arc_fitting(session: &mut ProjectSession, arc: &str) -> String {
         .toolpath_configs()
         .iter()
         .enumerate()
-        .filter(|(_, tc)| tc.enabled && tc.id.0 != FACE_ID && tc.id.0 != ROUGH_ID)
+        .filter(|(_, tc)| tc.enabled && tc.id.raw() != FACE_ID && tc.id.raw() != ROUGH_ID)
         .map(|(i, _)| i)
         .collect();
     let field = |session: &mut ProjectSession, index: usize, key: &str, value: Value| {
@@ -454,7 +458,7 @@ fn set_tool(session: &mut ProjectSession, index: usize, tool_id: usize) {
     let _ = session
         .apply(Command::SetToolpathTool(SetToolpathToolArgs {
             index,
-            tool_id,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         }))
         .expect("set tool");
 }
@@ -572,19 +576,23 @@ fn apply_suggest(session: &mut ProjectSession) -> Result<Vec<Value>, String> {
         let Some(profile) = session.cutter_op_profile(tc) else {
             return Err(format!(
                 "toolpath {} ({}): tool {} not found",
-                tc.id.0, tc.name, tc.tool_id
+                tc.id.raw(),
+                tc.name,
+                tc.tool_id
             ));
         };
         if let Err(e) = &profile.feasibility {
             return Err(format!(
                 "toolpath {} ({}): Suggest refused: {e}",
-                tc.id.0, tc.name
+                tc.id.raw(),
+                tc.name
             ));
         }
         let (Some(operation), Some(feeds)) = (profile.suggested_operation, profile.feeds) else {
             return Err(format!(
                 "toolpath {} ({}): Suggest gave no feeds",
-                tc.id.0, tc.name
+                tc.id.raw(),
+                tc.name
             ));
         };
         let rpm_written = feeds.rpm.is_finite() && feeds.rpm > 0.0;
@@ -635,7 +643,7 @@ fn apply_suggest(session: &mut ProjectSession) -> Result<Vec<Value>, String> {
             "rpm": draft.operation.spindle_rpm(),
         });
         record.push(json!({
-            "id": draft.id.0,
+            "id": draft.id.raw(),
             "name": draft.name,
             "before": before,
             "after": after,
@@ -702,7 +710,7 @@ fn configure_arm(
             }
             cfg.operation = op;
             cfg.name = format!("Parallel raster R1 s {stepover:.4}");
-            cfg.tool_id = R1_TOOL;
+            cfg.tool_id = rs_cam_core::ids::ToolId::from_raw(R1_TOOL);
             let _ = session
                 .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
                     index: scallop,
@@ -772,8 +780,12 @@ fn configure_arm(
             };
             let spec = MultitoolPlanSpec {
                 setup_index: 0,
-                model_id: 1,
-                tool_ids: ids.clone(),
+                model_id: rs_cam_core::ids::ModelId::from_raw(1),
+                tool_ids: ids
+                    .iter()
+                    .copied()
+                    .map(rs_cam_core::ids::ToolId::from_raw)
+                    .collect(),
                 tolerance_mm: *tolerance,
                 cusp_height_mm: CUSP_MM,
                 tier_strategies: strategies,
@@ -791,11 +803,15 @@ fn configure_arm(
                 "op {SCALLOP_ID} disabled; planner emitted {:?} (coarse -> fine), tools {ids:?}, \
                  tolerance {tolerance}, cusp {CUSP_MM}, strategy {:?}, \
                  coarse_skips_fine_islands {coarse_skips_fine_islands}",
-                outcome.toolpath_ids.iter().map(|t| t.0).collect::<Vec<_>>(),
+                outcome
+                    .toolpath_ids
+                    .iter()
+                    .map(|t| t.raw())
+                    .collect::<Vec<_>>(),
                 strategy.unwrap_or_default()
             ));
             if let Some(h) = tier0_cusp {
-                let first = index_of(session, outcome.toolpath_ids[0].0);
+                let first = index_of(session, outcome.toolpath_ids[0].raw());
                 set_param(session, first, "scallop_height", json!(*h));
                 let (got, _) = scallop_of(session, first);
                 assert!((got - h).abs() < 1e-12, "tier 0 cusp did not take");
@@ -809,12 +825,12 @@ fn configure_arm(
             // R1 tip radius 1.0 mm (tool 6), the arm's cusp.
             let offset_stepover = equal_cusp_stepover_mm(1.0, CUSP_MM);
             let r2_diameter = session
-                .get_tool(ToolId(r2))
+                .tool_by_id(ToolId::from_raw(r2))
                 .expect("the R2 was added")
                 .diameter;
             let pencil = PencilConfig {
                 detector: PencilDetector::RestDepth,
-                reference_tool_id: Some(ToolId(r2)),
+                reference_tool_id: Some(ToolId::from_raw(r2)),
                 // Read only when the id does not resolve; kept equal to it.
                 reference_tool_diameter: r2_diameter,
                 // Keep a valley where the R2 leaves more than the arm's cusp
@@ -835,7 +851,7 @@ fn configure_arm(
             // simulated stock.
             let mut cfg = session.toolpath_configs()[scallop].clone();
             cfg.name = format!("Pencil rest_depth R1 after R2, passes {passes}");
-            cfg.tool_id = R1_TOOL;
+            cfg.tool_id = rs_cam_core::ids::ToolId::from_raw(R1_TOOL);
             cfg.operation = OperationConfig::Pencil(pencil.clone());
             cfg.dressups = DressupConfig::for_op(OperationType::Pencil);
             cfg.stock_source = StockSource::Fresh;
@@ -864,8 +880,11 @@ fn configure_arm(
         } => {
             let spec = MultitoolPlanSpec {
                 setup_index: 0,
-                model_id: 1,
-                tool_ids: vec![r2, R1_TOOL],
+                model_id: rs_cam_core::ids::ModelId::from_raw(1),
+                tool_ids: vec![
+                    rs_cam_core::ids::ToolId::from_raw(r2),
+                    rs_cam_core::ids::ToolId::from_raw(R1_TOOL),
+                ],
                 tolerance_mm: *tolerance,
                 cusp_height_mm: CUSP_MM,
                 tier_strategies: vec![TierStrategy::IsoScallop; 2],
@@ -877,11 +896,15 @@ fn configure_arm(
                 "the fixture holds no planner op"
             );
             assert_eq!(outcome.toolpath_ids.len(), 2, "two tiers");
-            let tier0 = index_of(session, outcome.toolpath_ids[0].0);
-            let tier1 = index_of(session, outcome.toolpath_ids[1].0);
+            let tier0 = index_of(session, outcome.toolpath_ids[0].raw());
+            let tier1 = index_of(session, outcome.toolpath_ids[1].raw());
             {
                 let t1 = &session.toolpath_configs()[tier1];
-                assert_eq!(t1.tool_id, R1_TOOL, "tier 1 is the R1");
+                assert_eq!(
+                    t1.tool_id,
+                    rs_cam_core::ids::ToolId::from_raw(R1_TOOL),
+                    "tier 1 is the R1"
+                );
                 assert!(
                     t1.boundary.enabled
                         && matches!(
@@ -892,7 +915,7 @@ fn configure_arm(
                 );
                 assert_eq!(
                     session.toolpath_configs()[tier0].tool_id,
-                    r2,
+                    rs_cam_core::ids::ToolId::from_raw(r2),
                     "tier 0 is the R2"
                 );
             }
@@ -904,9 +927,13 @@ fn configure_arm(
                  {CUSP_MM}: emitted {:?}; tier-0 op {} DISABLED; op {SCALLOP_ID} = R2 iso h \
                  {coarse_cusp} whole board (model silhouette, Fresh) in its place; R1 cleanup = \
                  tier-1 op {} (iso scallop, PlannedTierRegions tier 1, FromRemainingStock)",
-                outcome.toolpath_ids.iter().map(|t| t.0).collect::<Vec<_>>(),
-                outcome.toolpath_ids[0].0,
-                outcome.toolpath_ids[1].0
+                outcome
+                    .toolpath_ids
+                    .iter()
+                    .map(|t| t.raw())
+                    .collect::<Vec<_>>(),
+                outcome.toolpath_ids[0].raw(),
+                outcome.toolpath_ids[1].raw()
             ));
         }
     }
@@ -954,7 +981,7 @@ fn pencil_summary(op: &OperationConfig) -> Value {
     match op {
         OperationConfig::Pencil(p) => json!({
             "detector": format!("{:?}", p.detector),
-            "reference_tool_id": p.reference_tool_id.map(|t| t.0),
+            "reference_tool_id": p.reference_tool_id.map(|t| t.raw()),
             "reference_tool_diameter": p.reference_tool_diameter,
             "min_valley_depth": p.min_valley_depth,
             "num_offset_passes": p.num_offset_passes,
@@ -1173,7 +1200,7 @@ impl EntryParts {
             name: self.name.clone(),
             annotated: Arc::clone(&self.annotated),
             tool: Arc::clone(&self.tool),
-            tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+            tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
             flute_count: self.flute_count,
             tool_summary: self.tool_summary.clone(),
             semantic_trace: self.semantic_trace.clone(),
@@ -1188,9 +1215,9 @@ impl EntryParts {
 fn collect_entries(session: &ProjectSession) -> Vec<EntryParts> {
     let mut out = Vec::new();
     for setup in session.list_setups() {
-        for &idx in &setup.toolpath_indices {
+        for &idx in setup.toolpath_indices() {
             let tc = &session.toolpath_configs()[idx];
-            let Some(result) = session.get_result(idx) else {
+            let Some(result) = session.result_at(idx) else {
                 continue;
             };
             if !tc.enabled || !contributes_simulated_motion(result.annotated().toolpath.moves.len())
@@ -1198,7 +1225,7 @@ fn collect_entries(session: &ProjectSession) -> Vec<EntryParts> {
                 continue;
             }
             let tool = session
-                .get_tool(ToolId(tc.tool_id))
+                .tool_by_id(tc.tool_id)
                 .expect("every arm tool resolves");
             let (tool_def, flute_count, tool_summary) = entry_tool_fields(tool).unwrap();
             out.push(EntryParts {
@@ -1362,7 +1389,7 @@ fn tier_trial_350() {
     let r2_cfg = donor
         .tools()
         .iter()
-        .find(|t| t.id.0 == DONOR_R2_TOOL)
+        .find(|t| t.id.raw() == DONOR_R2_TOOL)
         .expect("the donor's R2.0 taper")
         .clone();
     drop(donor);
@@ -1374,7 +1401,7 @@ fn tier_trial_350() {
     let model_mesh = session
         .models()
         .iter()
-        .find(|m| m.id == 1)
+        .find(|m| m.id == rs_cam_core::ids::ModelId::from_raw(1))
         .and_then(|m| m.mesh.clone())
         .expect("model 1 carries the terrain mesh");
     let mbb = model_mesh.bbox;
@@ -1456,11 +1483,11 @@ fn tier_trial_350() {
                 let t = Instant::now();
                 session
                     .generate_toolpath(index, &cancel)
-                    .unwrap_or_else(|e| panic!("generate toolpath {}: {e}", toolpath.0));
-                gen_secs.push((toolpath.0, t.elapsed().as_secs_f64()));
+                    .unwrap_or_else(|e| panic!("generate toolpath {}: {e}", toolpath.raw()));
+                gen_secs.push((toolpath.raw(), t.elapsed().as_secs_f64()));
                 eprintln!(
                     "   generated {} in {:.1} s",
-                    toolpath.0,
+                    toolpath.raw(),
                     t.elapsed().as_secs_f64()
                 );
             }
@@ -1495,36 +1522,36 @@ fn tier_trial_350() {
     let mut collisions_by_id = std::collections::BTreeMap::<usize, usize>::new();
     for &g in &sim.rapid_collision_move_indices {
         if let Some(loc) = locate_global_move(ranges.iter().copied(), g) {
-            *collisions_by_id.entry(loc.toolpath_id.0).or_default() += 1;
+            *collisions_by_id.entry(loc.toolpath_id.raw()).or_default() += 1;
         }
     }
     let mut ops = Vec::new();
     let finish_ids: Vec<usize> = session
         .toolpath_configs()
         .iter()
-        .filter(|tc| tc.enabled && tc.id.0 != FACE_ID && tc.id.0 != ROUGH_ID)
-        .map(|tc| tc.id.0)
+        .filter(|tc| tc.enabled && tc.id.raw() != FACE_ID && tc.id.raw() != ROUGH_ID)
+        .map(|tc| tc.id.raw())
         .collect();
     let (mut rough_s, mut finish_s) = (0.0, 0.0);
     for setup in session.list_setups() {
-        for &idx in &setup.toolpath_indices {
+        for &idx in setup.toolpath_indices() {
             let tc = &session.toolpath_configs()[idx];
             if !tc.enabled {
                 continue;
             }
-            let result = session.get_result(idx).expect("every enabled op generated");
+            let result = session.result_at(idx).expect("every enabled op generated");
             let rt = trace
                 .toolpath_runtimes
                 .iter()
                 .find(|r| r.toolpath_id == tc.id)
                 .map(|r| r.breakdown)
                 .expect("the kinematics integrator walked every toolpath");
-            if finish_ids.contains(&tc.id.0) {
+            if finish_ids.contains(&tc.id.raw()) {
                 finish_s += rt.total_s;
             } else {
                 rough_s += rt.total_s;
             }
-            let tool = session.get_tool(ToolId(tc.tool_id)).expect("tool");
+            let tool = session.tool_by_id(tc.tool_id).expect("tool");
             let (cusp, iso) = match &tc.operation {
                 OperationConfig::Scallop(s) => (Some(s.scallop_height), Some(s.iso_field)),
                 OperationConfig::UnifiedFinish(u) => (Some(u.scallop_height), None),
@@ -1532,13 +1559,13 @@ fn tier_trial_350() {
                 _ => (None, None),
             };
             ops.push(json!({
-                "id": tc.id.0,
+                "id": tc.id.raw(),
                 "name": tc.name,
                 "kind": tc.operation.op_type().kind_str(),
-                "role": if finish_ids.contains(&tc.id.0) { "finish" } else { "face_rough" },
+                "role": if finish_ids.contains(&tc.id.raw()) { "finish" } else { "face_rough" },
                 "tool_id": tc.tool_id,
                 "tool_name": tool.name,
-                "hypothetical_tool": Some(tc.tool_id) == h1,
+                "hypothetical_tool": Some(tc.tool_id.raw()) == h1,
                 "stock_source": format!("{:?}", tc.stock_source),
                 "arc_fitting": serde_json::to_value(tc.dressups.arc_fitting).unwrap(),
                 "planner_tier": tc.planner_origin.as_ref().map(|p| p.tier),
@@ -1565,8 +1592,8 @@ fn tier_trial_350() {
                 "move_count": result.stats.move_count,
                 "retract_trips": result.stats.retract_trips.as_ref().map(|r| r.total),
                 "counts": toolpath_counts(result.toolpath()),
-                "rapid_collision_count": collisions_by_id.get(&tc.id.0).copied().unwrap_or(0),
-                "generation_s": gen_secs.iter().find(|(id, _)| *id == tc.id.0).map(|g| g.1),
+                "rapid_collision_count": collisions_by_id.get(&tc.id.raw()).copied().unwrap_or(0),
+                "generation_s": gen_secs.iter().find(|(id, _)| *id == tc.id.raw()).map(|g| g.1),
             }));
         }
     }
@@ -1626,13 +1653,13 @@ fn tier_trial_350() {
     );
     drop(board_paint);
     drop(board_devs);
-    let board_order: Vec<usize> = sim.boundaries.iter().map(|b| b.id.0).collect();
+    let board_order: Vec<usize> = sim.boundaries.iter().map(|b| b.id.raw()).collect();
 
     // Keep what the windows need; drop the session (prior stocks, the
     // checkpoints, the cut trace).
     let parts = collect_entries(&session);
     assert_eq!(
-        parts.iter().map(|p| p.id.0).collect::<Vec<_>>(),
+        parts.iter().map(|p| p.id.raw()).collect::<Vec<_>>(),
         board_order,
         "the window entries are the closing run's toolpaths, in order"
     );
@@ -1703,7 +1730,7 @@ fn tier_trial_350() {
                 "gouge_columns_by_first_op": parts
                     .iter()
                     .zip(&gouge_by_op)
-                    .map(|(p, n)| json!({ "id": p.id.0, "name": p.name, "columns": n }))
+                    .map(|(p, n)| json!({ "id": p.id.raw(), "name": p.name, "columns": n }))
                     .collect::<Vec<_>>(),
                 "map": map,
             }));
@@ -1792,7 +1819,7 @@ fn tier_trial_350() {
             "pooled_gouge_columns_by_first_op": parts
                 .iter()
                 .zip(&pooled_gouge_by_op)
-                .map(|(p, n)| json!({ "id": p.id.0, "name": p.name, "columns": n }))
+                .map(|(p, n)| json!({ "id": p.id.raw(), "name": p.name, "columns": n }))
                 .collect::<Vec<_>>(),
             "gouge_attribution_rule": "a column with dev < -0.02 is charged to the first toolpath after which its top was already > 0.02 mm under the model (per-toolpath checkpoints of the window run)",
             "per_window": windows,
@@ -1839,7 +1866,7 @@ fn tier_trial_350_config_only() {
     let r2_cfg = donor
         .tools()
         .iter()
-        .find(|t| t.id.0 == DONOR_R2_TOOL)
+        .find(|t| t.id.raw() == DONOR_R2_TOOL)
         .expect("the donor's R2.0 taper")
         .clone();
     drop(donor);
@@ -1867,7 +1894,7 @@ fn tier_trial_350_config_only() {
             }
         }
         for setup in session.list_setups() {
-            for &idx in &setup.toolpath_indices {
+            for &idx in setup.toolpath_indices() {
                 let tc = &session.toolpath_configs()[idx];
                 let (cusp, iso) = match &tc.operation {
                     OperationConfig::Scallop(s) => (Some(s.scallop_height), Some(s.iso_field)),
@@ -1876,7 +1903,7 @@ fn tier_trial_350_config_only() {
                 eprintln!(
                     "   op {:>3} {:<5} {:<14} tool {:>2} h {:?} iso {:?} feed {:?} rpm {:?} \
                      stock {:?} tier {:?} arc {:?}\n        boundary {}\n        pencil {}",
-                    tc.id.0,
+                    tc.id.raw(),
                     if tc.enabled { "ON" } else { "off" },
                     tc.operation.op_type().kind_str(),
                     tc.tool_id,

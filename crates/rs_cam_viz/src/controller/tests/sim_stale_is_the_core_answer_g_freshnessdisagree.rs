@@ -84,7 +84,7 @@ fn edit_the_tool(controller: &mut AppController<ScriptedBackend>) {
         .expect("the fixture project carries one tool")
         .clone();
     draft.stickout += 15.0;
-    crate::ui::properties::commit_tool_draft(&mut controller.state, ToolId(1), draft);
+    crate::ui::properties::commit_tool_draft(&mut controller.state, ToolId::from_raw(1), draft);
     controller.discharge_panel_side_effects();
 }
 
@@ -96,16 +96,16 @@ fn edit_the_stock(controller: &mut AppController<ScriptedBackend>) {
 }
 
 fn add_a_fixture(controller: &mut AppController<ScriptedBackend>) {
-    controller.handle_internal_event(AppEvent::AddObstacle(SetupId(0)));
+    controller.handle_internal_event(AppEvent::AddObstacle(SetupId::from_raw(0)));
 }
 
 fn add_a_keep_out_zone(controller: &mut AppController<ScriptedBackend>) {
     // K1: a keep-out zone is an obstacle; the GUI adds one door.
-    controller.handle_internal_event(AppEvent::AddObstacle(SetupId(0)));
+    controller.handle_internal_event(AppEvent::AddObstacle(SetupId::from_raw(0)));
 }
 
 fn toggle_the_operation_off(controller: &mut AppController<ScriptedBackend>) {
-    controller.handle_internal_event(AppEvent::ToggleToolpathEnabled(ToolpathId(0)));
+    controller.handle_internal_event(AppEvent::ToggleToolpathEnabled(ToolpathId::from_raw(0)));
 }
 
 fn reorder_the_operations(controller: &mut AppController<ScriptedBackend>) {

@@ -125,7 +125,7 @@ fn simulate(tp: &Toolpath, stock: &mut TriDexelStock) -> Vec<SimulationCutSample
             tp,
             &cutter,
             StockCutDirection::FromTop,
-            ToolpathId(0),
+            ToolpathId::from_raw(0),
             18_000,
             2,
             5000.0,

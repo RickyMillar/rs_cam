@@ -67,14 +67,14 @@ fn op(cycle: DrillCycle, diameter: f64, depth: f64, feed: f64) -> DrillOp {
 }
 
 fn gates(d: &DrillOp) -> DrillGatesVerdict {
-    let samples = emit_drill_samples(ToolpathId(0), d);
-    let summary = build_drill_toolpath_summary(ToolpathId(0), d, &samples);
+    let samples = emit_drill_samples(ToolpathId::from_raw(0), d);
+    let summary = build_drill_toolpath_summary(ToolpathId::from_raw(0), d, &samples);
     rs_cam_core::tool_load::drill_gates::evaluate(d, &summary)
 }
 
 fn verdict_with(drill: DrillGatesVerdict) -> ToolpathLoadVerdict {
     ToolpathLoadVerdict {
-        toolpath_id: ToolpathId(0),
+        toolpath_id: ToolpathId::from_raw(0),
         chipload: ChiploadVerdict::Unmodeled {
             reason: UnmodeledReason::NotApplicableForOp("drill cycle".to_owned()),
         },
@@ -322,8 +322,8 @@ fn chip_welding_remedy_must_not_tell_a_pecking_op_to_start_pecking() {
 #[test]
 fn summary_exposes_the_per_peck_ratio_the_gate_decides_on() {
     let d = op(DrillCycle::Peck(22.0), 3.0, 25.0, 300.0);
-    let samples = emit_drill_samples(ToolpathId(0), &d);
-    let summary = build_drill_toolpath_summary(ToolpathId(0), &d, &samples);
+    let samples = emit_drill_samples(ToolpathId::from_raw(0), &d);
+    let summary = build_drill_toolpath_summary(ToolpathId::from_raw(0), &d, &samples);
     let gate_observed = gates(&d).peck_adequacy.observed();
     assert!(
         (summary.per_peck_max_dtd - gate_observed).abs() < 1e-9,
@@ -387,8 +387,8 @@ fn drill_exceedance_evidence_must_not_point_at_sample_zero() {
 #[test]
 fn evacuation_score_must_not_read_fully_cleared_on_an_inadequate_peck() {
     let d = op(DrillCycle::Peck(22.0), 3.0, 25.0, 300.0);
-    let samples = emit_drill_samples(ToolpathId(0), &d);
-    let summary = build_drill_toolpath_summary(ToolpathId(0), &d, &samples);
+    let samples = emit_drill_samples(ToolpathId::from_raw(0), &d);
+    let summary = build_drill_toolpath_summary(ToolpathId::from_raw(0), &d, &samples);
     assert!(
         !summary.peck_pattern_adequate,
         "fixture must be the inadequate one"
@@ -403,8 +403,9 @@ fn evacuation_score_must_not_read_fully_cleared_on_an_inadequate_peck() {
     // A genuinely shallow peck still scores high — the arm must fall
     // off with per-peck D/d, not be flattened.
     let shallow = op(DrillCycle::Peck(1.0), 6.0, 18.0, 300.0);
-    let shallow_samples = emit_drill_samples(ToolpathId(0), &shallow);
-    let shallow_summary = build_drill_toolpath_summary(ToolpathId(0), &shallow, &shallow_samples);
+    let shallow_samples = emit_drill_samples(ToolpathId::from_raw(0), &shallow);
+    let shallow_summary =
+        build_drill_toolpath_summary(ToolpathId::from_raw(0), &shallow, &shallow_samples);
     assert!(
         shallow_summary.avg_chip_evacuation_score > 0.8,
         "a 0.17×D peck evacuates well and must keep a high score; got {:.2}",
@@ -461,8 +462,8 @@ fn summary_peck_count_matches_the_emitted_drill_peck_spans() {
         .count();
 
     let d = op(DrillCycle::Peck(peck), 6.0, depth, feed);
-    let samples = emit_drill_samples(ToolpathId(0), &d);
-    let summary = build_drill_toolpath_summary(ToolpathId(0), &d, &samples);
+    let samples = emit_drill_samples(ToolpathId::from_raw(0), &d);
+    let summary = build_drill_toolpath_summary(ToolpathId::from_raw(0), &d, &samples);
 
     assert_eq!(
         summary.peck_count, emitted_pecks,
@@ -510,8 +511,8 @@ fn summary_feed_time_matches_the_emitted_feed_distance() {
     let emitted_feed_time_s = fed_mm / feed * 60.0;
 
     let d = op(DrillCycle::Peck(peck), 6.0, depth, feed);
-    let samples = emit_drill_samples(ToolpathId(0), &d);
-    let summary = build_drill_toolpath_summary(ToolpathId(0), &d, &samples);
+    let samples = emit_drill_samples(ToolpathId::from_raw(0), &d);
+    let summary = build_drill_toolpath_summary(ToolpathId::from_raw(0), &d, &samples);
 
     assert!(
         (summary.feed_time_s - emitted_feed_time_s).abs() < 1e-6,
@@ -537,8 +538,8 @@ fn r_plane_rooting_moves_no_gate_number() {
     ] {
         let d = op(cycle, dia, depth, 300.0);
         let g = gates(&d);
-        let samples = emit_drill_samples(ToolpathId(0), &d);
-        let summary = build_drill_toolpath_summary(ToolpathId(0), &d, &samples);
+        let samples = emit_drill_samples(ToolpathId::from_raw(0), &d);
+        let summary = build_drill_toolpath_summary(ToolpathId::from_raw(0), &d, &samples);
 
         // Total-hole D/d is a pure config ratio and must be exact.
         assert!(

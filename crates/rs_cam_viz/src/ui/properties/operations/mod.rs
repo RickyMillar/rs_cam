@@ -645,7 +645,7 @@ mod tests {
 
     fn session_polygon_model(id: usize) -> rs_cam_core::session::LoadedModel {
         rs_cam_core::session::LoadedModel {
-            id,
+            id: rs_cam_core::ids::ModelId::from_raw(id),
             path: PathBuf::from("demo.svg"),
             name: "2D".to_owned(),
             kind: Some(ModelKind::Svg),
@@ -665,7 +665,7 @@ mod tests {
 
     fn session_mesh_model(id: usize) -> rs_cam_core::session::LoadedModel {
         rs_cam_core::session::LoadedModel {
-            id,
+            id: rs_cam_core::ids::ModelId::from_raw(id),
             path: PathBuf::from("demo.stl"),
             name: "3D".to_owned(),
             kind: Some(ModelKind::Stl),
@@ -695,14 +695,14 @@ mod tests {
     ) -> rs_cam_core::session::ToolpathConfig {
         rs_cam_core::session::ToolpathConfig {
             shoe: Default::default(),
-            id: rs_cam_core::ToolpathId(0), // assigned by session.add_toolpath
+            id: rs_cam_core::ToolpathId::from_raw(0), // assigned by session.add_toolpath
             name: name.to_owned(),
             enabled: true,
             operation: op,
             dressups: Default::default(),
             heights: Default::default(),
-            tool_id,
-            model_id,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+            model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
             pre_gcode: None,
             post_gcode: None,
             boundary: Default::default(),
@@ -721,15 +721,15 @@ mod tests {
         // The builder keeps the ids this fixture chose. `add_tool` and
         // `add_model` overwrite them.
         let session = ProjectSessionBuilder::new()
-            .tool(sample_tool(ToolId(1), ToolType::EndMill, 6.0))
+            .tool(sample_tool(ToolId::from_raw(1), ToolType::EndMill, 6.0))
             .model(session_mesh_model(2))
             .build();
 
         let entry = ToolpathEntry::for_operation(
-            ToolpathId(3),
+            ToolpathId::from_raw(3),
             "Pocket".to_owned(),
-            ToolId(1),
-            ModelId(2),
+            ToolId::from_raw(1),
+            ModelId::from_raw(2),
             OperationType::Pocket,
         );
 
@@ -751,7 +751,7 @@ mod tests {
         use rs_cam_core::diagnostics::ids::GEOM_STEPOVER_EXCEEDS_DIAMETER;
 
         const DIAMETER: f64 = 6.0;
-        let tool = sample_tool(ToolId(1), ToolType::EndMill, DIAMETER);
+        let tool = sample_tool(ToolId::from_raw(1), ToolType::EndMill, DIAMETER);
         let session = ProjectSessionBuilder::new()
             .tool(tool.clone())
             .model(session_mesh_model(2))
@@ -806,10 +806,10 @@ mod tests {
 
     fn drill_entry(model: usize) -> ToolpathEntry {
         ToolpathEntry::for_operation(
-            ToolpathId(3),
+            ToolpathId::from_raw(3),
             "Drill".to_owned(),
-            ToolId(1),
-            ModelId(model),
+            ToolId::from_raw(1),
+            ModelId::from_raw(model),
             OperationType::Drill,
         )
     }
@@ -840,15 +840,19 @@ mod tests {
         let mut tc = make_session_toolpath_config(
             "Drill",
             1,
-            model.id,
+            model.id.raw(),
             OperationConfig::Drill(crate::state::toolpath::DrillConfig {
                 selection,
                 ..Default::default()
             }),
         );
-        tc.id = ToolpathId(3);
+        tc.id = ToolpathId::from_raw(3);
         let session = ProjectSessionBuilder::new()
-            .tool(sample_tool(ToolId(1), ToolType::EndMill, tool_diameter))
+            .tool(sample_tool(
+                ToolId::from_raw(1),
+                ToolType::EndMill,
+                tool_diameter,
+            ))
             .model(model)
             .toolpath(tc.clone())
             .build();

@@ -347,8 +347,8 @@ fn compute_stock_bottom_z(session: &ProjectSession) -> f64 {
     session.stock_config().origin_z
 }
 
-fn find_tool_for(session: &ProjectSession, raw_id: usize) -> Option<&ToolConfig> {
-    session.tools().iter().find(|t| t.id == ToolId(raw_id))
+fn find_tool_for(session: &ProjectSession, id: ToolId) -> Option<&ToolConfig> {
+    session.tools().iter().find(|t| t.id == id)
 }
 
 #[cfg(test)]
@@ -376,14 +376,14 @@ mod tests {
     fn make_tp(id: usize, name: &str, op: OperationConfig, tool_id: usize) -> ToolpathConfig {
         ToolpathConfig {
             shoe: Default::default(),
-            id: crate::ids::ToolpathId(id),
+            id: crate::ids::ToolpathId::from_raw(id),
             name: name.to_owned(),
             enabled: true,
             operation: op,
             dressups: DressupConfig::default(),
             heights: HeightsConfig::default(),
-            tool_id,
-            model_id: 0,
+            tool_id: crate::ids::ToolId::from_raw(tool_id),
+            model_id: crate::ids::ModelId::from_raw(0),
             pre_gcode: None,
             post_gcode: None,
             boundary: BoundaryConfig::default(),
@@ -398,13 +398,13 @@ mod tests {
     }
 
     fn flat_em(diameter: f64) -> ToolConfig {
-        let mut t = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         t.diameter = diameter;
         t
     }
 
     fn tapered_ball(tip_d: f64) -> ToolConfig {
-        let mut t = ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose);
+        let mut t = ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose);
         t.diameter = tip_d;
         t.shaft_diameter = (tip_d + 2.0).max(3.0);
         t.taper_half_angle = 7.0;

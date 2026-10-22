@@ -411,7 +411,7 @@ pub fn spindle_starts(session: &super::ProjectSession) -> usize {
     for setup in session.list_setups() {
         // A setup pause stops the spindle (M5), so the first op of each
         // setup starts it again.
-        let mut last: Option<(usize, u32)> = None;
+        let mut last: Option<(crate::ids::ToolId, u32)> = None;
         for idx in &setup.toolpath_indices {
             let Some(tc) = session.toolpath_configs().get(*idx) else {
                 continue;
@@ -452,7 +452,7 @@ pub fn controller_spindle_wait_s(session: &super::ProjectSession) -> f64 {
 mod tests {
     use super::*;
 
-    const TP: ToolpathId = ToolpathId(7);
+    const TP: ToolpathId = ToolpathId::from_raw(7);
 
     fn evidence(sim: bool, trace: bool, kin: bool) -> CycleTimeEvidence {
         CycleTimeEvidence {

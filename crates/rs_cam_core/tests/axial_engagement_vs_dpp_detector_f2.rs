@@ -102,7 +102,7 @@ fn steady_state_axial_engagement_stays_within_commanded_dpp() {
         .tools()
         .iter()
         .find(|t| (t.diameter - 6.0).abs() < 1e-6)
-        .map(|t| t.id.0)
+        .map(|t| t.id.raw())
         .expect("ux_2d_pocket.toml must define a 6 mm end mill");
     let model_id = session
         .models()
@@ -115,13 +115,13 @@ fn steady_state_axial_engagement_stays_within_commanded_dpp() {
         let op_type = op.op_type();
         let tc = ToolpathConfig {
             shoe: Default::default(),
-            id: ToolpathId(i),
+            id: ToolpathId::from_raw(i),
             name: format!("detector {name}"),
             enabled: true,
             operation: op.clone(),
             dressups: DressupConfig::for_op(op_type),
             heights: HeightsConfig::default(),
-            tool_id,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
             model_id,
             pre_gcode: None,
             post_gcode: None,
@@ -177,7 +177,7 @@ fn steady_state_axial_engagement_stays_within_commanded_dpp() {
         let mut over = 0usize;
         let mut steady = 0usize;
         for s in &cut_trace.samples {
-            if s.toolpath_id != ToolpathId(i)
+            if s.toolpath_id != ToolpathId::from_raw(i)
                 || !s.is_cutting
                 || s.cut_kinematics == CutKinematics::Plunge
                 || s.in_transit_span

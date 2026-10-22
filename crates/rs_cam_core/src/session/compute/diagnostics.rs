@@ -11,7 +11,6 @@ use tracing::instrument;
 use crate::compute::collision_check::{
     CollisionCheckRequest, CollisionCheckResult, run_collision_check,
 };
-use crate::compute::tool_config::ToolId;
 use crate::ids::ToolpathId;
 use crate::session::diagnostics_types::CutMetricsNotMeasured;
 use crate::session::{
@@ -144,7 +143,6 @@ pub(super) fn air_cut_offenders_for_toolpaths(
 pub(super) fn plunge_stress_offenders_for_session(
     session: &ProjectSession,
 ) -> Vec<(String, f64, f64)> {
-    use crate::compute::tool_config::ToolId;
     use crate::tool::MillingCutter;
     use crate::tool_load::plunge_stress::check_plunge_stress;
 
@@ -153,7 +151,7 @@ pub(super) fn plunge_stress_offenders_for_session(
         if !tc.enabled {
             continue;
         }
-        let Some(tool_cfg) = session.get_tool(ToolId(tc.tool_id)) else {
+        let Some(tool_cfg) = session.tool_by_id(tc.tool_id) else {
             continue;
         };
         // F029: a tool outside its domain is skipped, as a missing tool is.
@@ -259,7 +257,7 @@ impl<'a> TriageView<'a> {
                 id: *id,
                 name,
                 stock_source: *stock_source,
-                tool: tools.iter().find(|t| t.id == ToolId(*tool_id)),
+                tool: tools.iter().find(|t| t.id == *tool_id),
                 operation,
             }
         })
@@ -520,7 +518,7 @@ impl ProjectSession {
             .get(&index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
         let model = self
-            .find_model_by_raw_id(tc.model_id)
+            .model_by_id(tc.model_id)
             .and_then(|m| m.mesh.as_deref());
         let obstacles = self.obstacle_set_for_toolpath(index)?;
         // CMP-14 follow-up: the two halves of the check need different
@@ -540,8 +538,8 @@ impl ProjectSession {
         }
 
         let tool = self
-            .find_tool_by_raw_id(tc.tool_id)
-            .ok_or(SessionError::ToolNotFound(ToolId(tc.tool_id)))?;
+            .tool_by_id(tc.tool_id)
+            .ok_or(SessionError::ToolNotFound(tc.tool_id))?;
         let tool_def = crate::session::session_cutter(tool)?;
 
         let request = CollisionCheckRequest {
@@ -599,10 +597,9 @@ impl ProjectSession {
             .filter_map(|&i| {
                 let prev = self.toolpath_configs.get(i)?;
                 let result = self.results.get(&i)?;
-                prev.enabled
-                    .then(|| (ToolId(prev.tool_id), result.toolpath()))
+                prev.enabled.then(|| (prev.tool_id, result.toolpath()))
             });
-        JoinStart::after_previous(before.collect::<Vec<_>>().into_iter(), &ToolId(tc.tool_id))
+        JoinStart::after_previous(before.collect::<Vec<_>>().into_iter(), &tc.tool_id)
     }
 
     /// K1: the obstacles of `setup`, resolved into its frame.
@@ -630,8 +627,8 @@ impl ProjectSession {
             .get(&index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
         let tool = self
-            .find_tool_by_raw_id(tc.tool_id)
-            .ok_or(SessionError::ToolNotFound(ToolId(tc.tool_id)))?;
+            .tool_by_id(tc.tool_id)
+            .ok_or(SessionError::ToolNotFound(tc.tool_id))?;
         let tool_def = crate::session::session_cutter(tool)?;
         let cut_trace = self
             .simulation
@@ -748,16 +745,13 @@ impl ProjectSession {
     /// enabled fixture either.
     pub(crate) fn holder_collision_indices(
         &self,
-    ) -> std::collections::BTreeMap<usize, crate::mesh::SpatialIndex> {
+    ) -> std::collections::BTreeMap<crate::ids::ModelId, crate::mesh::SpatialIndex> {
         let mut indices = std::collections::BTreeMap::new();
         for (idx, tc) in self.toolpath_configs.iter().enumerate() {
             if !self.results.contains_key(&idx) || indices.contains_key(&tc.model_id) {
                 continue;
             }
-            let Some(mesh) = self
-                .find_model_by_raw_id(tc.model_id)
-                .and_then(|m| m.mesh.as_ref())
-            else {
+            let Some(mesh) = self.model_by_id(tc.model_id).and_then(|m| m.mesh.as_ref()) else {
                 continue;
             };
             indices.insert(tc.model_id, crate::mesh::SpatialIndex::build_auto(mesh));
@@ -1216,9 +1210,9 @@ impl ProjectSession {
                 }
 
                 let tool_name = self
-                    .find_tool_by_raw_id(tc.tool_id)
+                    .tool_by_id(tc.tool_id)
                     .map(|t| t.name.clone())
-                    .unwrap_or_else(|| SessionError::ToolNotFound(ToolId(tc.tool_id)).to_string());
+                    .unwrap_or_else(|| SessionError::ToolNotFound(tc.tool_id).to_string());
 
                 per_toolpath.push(ToolpathDiagnostic {
                     toolpath_id: tc.id,
@@ -1437,7 +1431,7 @@ impl ProjectSession {
                 severity: VerdictSeverity::Important,
                 kind,
                 headline: finding.text,
-                offender_toolpath_ids: vec![ToolpathId(finding.toolpath_id)],
+                offender_toolpath_ids: vec![finding.toolpath_id],
                 fix_hint: finding.kind.fix_hint().to_owned(),
                 evidence: VerdictEvidence {
                     move_index: None,
@@ -1853,7 +1847,7 @@ impl ProjectSession {
                 _ => continue,
             };
             ops.push(HoleOp {
-                toolpath_id: tc.id.0,
+                toolpath_id: tc.id,
                 name: tc.name.clone(),
                 kind,
                 holes,

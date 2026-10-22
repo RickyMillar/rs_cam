@@ -30,7 +30,9 @@ pub fn verdict_to_diagnostic(v: &Verdict) -> Diagnostic {
         v.evidence
             .move_index
             .map(|move_index| DiagnosticEvidence::Move {
-                toolpath_id: crate::ids::ToolpathId(0),
+                // F004 (W13b): a project verdict names no toolpath, so this
+                // evidence names the placeholder id 0, as it did before.
+                toolpath_id: crate::ids::ToolpathId::placeholder(),
                 move_index,
                 position: None,
             })

@@ -100,7 +100,7 @@ pub struct PinWizardState {
     /// The drill sizes that Apply adds as tools.
     pub add_drills: Vec<f64>,
     /// The tool that Apply binds to the pin-drill operation of a size.
-    pub use_tools: Vec<(f64, usize)>,
+    pub use_tools: Vec<(f64, rs_cam_core::ids::ToolId)>,
     /// The pin marked on the plan view.
     pub selected: Option<usize>,
     /// The refusal of the last placement, until the next one.
@@ -587,7 +587,8 @@ fn part_models(ui: &mut egui::Ui, session: &ProjectSession, events: &mut Vec<App
     let chosen = session.stock_config().pin_part_models.is_some();
     let title = format!("Part models: {count} of {}", models.len());
     ui.disclosure("pin_wizard_part_models", &title, false, |ui| {
-        let mut picked: Vec<usize> = models.iter().filter(|m| m.is_part).map(|m| m.id).collect();
+        let mut picked: Vec<rs_cam_core::ids::ModelId> =
+            models.iter().filter(|m| m.is_part).map(|m| m.id).collect();
         let mut changed = false;
         for m in &models {
             let mut on = m.is_part;

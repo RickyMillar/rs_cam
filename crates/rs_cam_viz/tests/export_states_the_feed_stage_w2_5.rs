@@ -76,7 +76,7 @@ const PERMISSIVE: ToolLoadExportPolicy = ToolLoadExportPolicy {
 };
 
 fn end_mill_6mm() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -121,9 +121,9 @@ fn pocket_session() -> ProjectSession {
         ..StockConfig::default()
     });
     let tool_idx = builder.add_tool(end_mill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "as001_pocket".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -157,13 +157,13 @@ fn pocket_session() -> ProjectSession {
     };
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(pocket),
         dressups: DressupConfig::for_op(OperationType::Pocket),
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,
@@ -206,7 +206,7 @@ fn simulate(session: &mut ProjectSession, modulate: bool) {
 /// The GUI store after `drain_compute_results`: the worker copy of the
 /// generated result, the same `Arc` the session slot took.
 fn gui_for(session: &ProjectSession) -> GuiState {
-    let result = session.get_result(0).expect("generated");
+    let result = session.result_at(0).expect("generated");
     let mut gui = GuiState::new();
     let mut rt = ToolpathRuntime::new(true);
     rt.run = rs_cam_viz::state::runtime::ToolpathRun::Done(ToolpathResult {
@@ -303,7 +303,7 @@ fn every_export_states_the_feed_stage_it_emits() {
             },
         ))
         .expect("a positive cell");
-    assert!(session.get_result(0).is_some(), "the edit keeps the result");
+    assert!(session.result_at(0).is_some(), "the edit keeps the result");
     assert_eq!(session.simulation_run(), None);
     assert_eq!(feeds_line(&core_gcode(&session)), NO_SIMULATION);
     assert_eq!(
@@ -354,17 +354,19 @@ fn every_export_states_the_feed_stage_it_emits() {
         }))
         .expect("the machine row refuses nothing");
     assert!(effects.stale.is_empty(), "no result goes stale");
-    assert!(session.get_result(0).is_some(), "the edit keeps the result");
+    assert!(session.result_at(0).is_some(), "the edit keeps the result");
     assert_eq!(session.simulation_run(), None);
     assert_eq!(feeds_line(&core_gcode(&session)), NO_SIMULATION);
 
     // 7. A tool edit drops the result. The accepted previous geometry is
     // the worker copy, which no modulation wrote.
-    let tool_id = session.tools()[0].id.0;
+    let tool_id = session.tools()[0].id.raw();
     let _ = session
-        .apply(Command::InvalidateTool(InvalidateToolArgs { tool_id }))
+        .apply(Command::InvalidateTool(InvalidateToolArgs {
+            tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        }))
         .expect("the tool is in the session");
-    assert!(session.get_result(0).is_none());
+    assert!(session.result_at(0).is_none());
     let exported = viz_export(&session, &gui, StaleResultPolicy::AcceptPreviousGeometry);
     assert_eq!(feeds_line(&exported.gcode), PLANNED);
     assert!(exported.feeds_cautions.is_empty());

@@ -93,8 +93,8 @@ use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 const STOCK_X: f64 = 100.0;
 const STOCK_Y: f64 = 80.0;
 const STOCK_Z: f64 = 20.0;
-const MILL: ToolpathId = ToolpathId(4);
-const DRILL: ToolpathId = ToolpathId(7);
+const MILL: ToolpathId = ToolpathId::from_raw(4);
+const DRILL: ToolpathId = ToolpathId::from_raw(7);
 
 fn endmill_6mm() -> ToolDefinition {
     ToolDefinition::new(
@@ -127,7 +127,7 @@ fn mill_entry() -> SimToolpathEntry {
         name: "Groove".to_owned(),
         annotated: Arc::new(AnnotatedToolpath::new(tp)),
         tool: std::sync::Arc::new(endmill_6mm()),
-        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+        tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,
@@ -183,7 +183,7 @@ fn drill_entry() -> SimToolpathEntry {
         name: "Holes".to_owned(),
         annotated: Arc::new(AnnotatedToolpath::new(tp)),
         tool: std::sync::Arc::new(endmill_6mm()),
-        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+        tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,

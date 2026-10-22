@@ -80,7 +80,7 @@ fn add_clamp(session: &mut ProjectSession, min: [f64; 3], max: [f64; 3]) {
         .apply(Command::AddObstacle(AddObstacleArgs {
             setup_index: 0,
             obstacle: Box::new(Obstacle {
-                id: ObstacleId(0),
+                id: ObstacleId::from_raw(0),
                 name: "Clamp".to_owned(),
                 enabled: true,
                 clearance: CLEARANCE,
@@ -95,7 +95,7 @@ fn generate(session: &mut ProjectSession) -> Toolpath {
     session
         .generate_toolpath(0, &cancel)
         .expect("generation must succeed");
-    session.get_result(0).expect("a result").toolpath().clone()
+    session.result_at(0).expect("a result").toolpath().clone()
 }
 
 /// A lift: a rapid that rises.

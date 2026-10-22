@@ -37,14 +37,14 @@ impl RsCamApp {
     /// `narration_tool_lookup_refuses_where_the_parent_took_another_tool`.
     pub(super) fn narration_tool_for(
         tools: &[rs_cam_core::compute::tool_config::ToolConfig],
-        tool_id: usize,
+        tool_id: rs_cam_core::ids::ToolId,
     ) -> Option<&rs_cam_core::compute::tool_config::ToolConfig> {
-        tools.iter().find(|tool| tool.id.0 == tool_id)
+        tools.iter().find(|tool| tool.id == tool_id)
     }
 
     pub(super) fn mcp_narrate_toolpath(&self, index: usize) -> String {
         let state = self.controller.state();
-        let Some(tc) = state.session().get_toolpath_config(index) else {
+        let Some(tc) = state.session().toolpath_config_at(index) else {
             return format!("Error: Toolpath index {index} not found");
         };
         let Some(rt) = state.gui.toolpath_rt.get(&tc.id) else {
@@ -147,7 +147,7 @@ impl RsCamApp {
         // narrates the worker copy; the modulation pass writes only the
         // session slot, so that copy carries the planned feeds unless it is
         // the slot's own list.
-        let stored = state.session().get_result(index);
+        let stored = state.session().result_at(index);
         let narrated_is_stored = stored
             .is_some_and(|stored| std::sync::Arc::ptr_eq(stored.annotated(), &result.annotated));
         let stored_stage =
@@ -287,7 +287,7 @@ impl RsCamApp {
         max_spans: Option<usize>,
     ) -> String {
         let state = self.controller.state();
-        let Some(tc) = state.session().get_toolpath_config(index) else {
+        let Some(tc) = state.session().toolpath_config_at(index) else {
             return json_str(
                 serde_json::json!({"error": format!("Toolpath index {index} not found")}),
             );

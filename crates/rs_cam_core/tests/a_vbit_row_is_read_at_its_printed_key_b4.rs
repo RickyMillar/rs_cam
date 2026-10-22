@@ -139,7 +139,7 @@ const VBIT_HARDWOOD: &str = "No published figure backs the formula for a V-bit o
 
 /// A 60 deg 2-flute pointed V-bit of `diameter` mm.
 fn vbit(diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), ToolType::VBit);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
     t.diameter = diameter;
     t.flute_count = 2;
     t.included_angle = 60.0;
@@ -256,7 +256,7 @@ fn steady_trace(doc: f64) -> SimulationCutTrace {
     let chip = feed / (18_000.0 * 2.0);
     let samples: Vec<SimulationCutSample> = (0..12)
         .map(|idx| SimulationCutSample {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             move_index: idx,
             sample_index: idx,
             position: [0.0, 0.0, -doc],
@@ -298,7 +298,7 @@ fn gate_bounds(
     let machine = open_machine();
     let tolerance = ToleranceBands::default();
     let ctx = ToolpathLoadContext {
-        toolpath_id: ToolpathId(0),
+        toolpath_id: ToolpathId::from_raw(0),
         tool: &tool_def,
         material,
         operation_family: LutOperationFamily::Trace,

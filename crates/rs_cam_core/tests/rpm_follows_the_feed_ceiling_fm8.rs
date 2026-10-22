@@ -197,7 +197,7 @@ fn a_bound_ceiling_lowers_the_rpm_and_holds_the_chip_fm8() {
         SpindleScaleReason::FeedCeiling
     );
 
-    let finding = diagnostics_from_feeds_result(ToolpathId(0), &r)
+    let finding = diagnostics_from_feeds_result(ToolpathId::from_raw(0), &r)
         .into_iter()
         .find(|d| d.id.as_str() == ids::FEEDS_RPM_LOWERED_FOR_CEILING)
         .expect("the finding");
@@ -241,7 +241,7 @@ fn a_row_rpm_min_stops_the_descent_fm8() {
     assert!(clamped(&r), "the rest is cut from the feed at the ceiling");
     assert!((r.feed_rate_mm_min - ceiling).abs() < 1e-9);
     assert!(fpt(&r) < fpt(&base), "the chip thins below the row minimum");
-    let text = diagnostics_from_feeds_result(ToolpathId(0), &r)
+    let text = diagnostics_from_feeds_result(ToolpathId::from_raw(0), &r)
         .into_iter()
         .find(|d| d.id.as_str() == ids::FEEDS_RPM_LOWERED_FOR_CEILING)
         .expect("the finding")
@@ -252,7 +252,7 @@ fn a_row_rpm_min_stops_the_descent_fm8() {
 /// (d) through Suggest on the generic router's 4000 mm/min ceiling.
 #[test]
 fn suggest_ships_the_lowered_rpm_with_a_rationale_row_fm8() {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.shank_diameter = 6.0;
     tool.shaft_diameter = 6.0;

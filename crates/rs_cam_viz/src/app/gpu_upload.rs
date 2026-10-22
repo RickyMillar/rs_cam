@@ -664,7 +664,7 @@ mod tests {
             .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf");
         let model = rs_cam_core::io::load_model_file(
             &path,
-            0,
+            rs_cam_core::ids::ModelId::from_raw(0),
             rs_cam_core::compute::stock_config::ModelKind::Dxf,
             rs_cam_core::compute::stock_config::ModelUnits::Millimeters,
             Default::default(),

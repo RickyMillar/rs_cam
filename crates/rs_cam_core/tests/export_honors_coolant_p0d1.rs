@@ -125,7 +125,7 @@ fn session_with_coolant(coolant: CoolantMode) -> ProjectSession {
         OperationConfig::Pocket(PocketConfig::default()),
         |tc| tc.coolant = coolant,
     );
-    let revision = session.toolpath_revision(0);
+    let revision = session.toolpath_revision_at(0);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,

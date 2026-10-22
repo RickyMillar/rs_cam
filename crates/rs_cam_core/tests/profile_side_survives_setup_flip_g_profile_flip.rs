@@ -105,13 +105,18 @@ fn generated_profile(face_up: FaceUp, side: ProfileSide) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
     builder = builder.stock(stock_under(STOCK_HALF, STOCK_HEIGHT));
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(polygon_model(
         vec![square_polygon(PART_HALF)],
         "profile_square",
     ));
 
-    let mut cfg = toolpath_config("Profile", op, tool_id, model_id);
+    let mut cfg = toolpath_config(
+        "Profile",
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     cfg.dressups.entry_style = DressupEntryStyle::None;
     cfg.dressups.lead_in_out = None;
     cfg.dressups.arc_fitting = None;
@@ -140,7 +145,7 @@ fn generated_profile(face_up: FaceUp, side: ProfileSide) -> ProjectSession {
 /// sits on the contour start, so it neither widens nor narrows the box.
 fn cutting_extent(session: &ProjectSession) -> [f64; 4] {
     let tp = session
-        .get_result(0)
+        .result_at(0)
         .expect("profile produced a compute result")
         .toolpath();
     let pts: Vec<P2> = tp

@@ -177,7 +177,17 @@ fn two_loads_of_one_stl_give_equal_keys() {
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("stepped.stl");
     write_stl(&stepped_top(), &path);
-    let load = || LoadedModel::from_file(0, "stepped", &path, None, None, &dir).unwrap();
+    let load = || {
+        LoadedModel::from_file(
+            rs_cam_core::ids::ModelId::from_raw(0),
+            "stepped",
+            &path,
+            None,
+            None,
+            &dir,
+        )
+        .unwrap()
+    };
     let (a, b) = (load(), load());
     let _ = std::fs::remove_dir_all(&dir);
     assert!(a.faces_are_flat_regions() && b.faces_are_flat_regions());
@@ -191,7 +201,8 @@ fn two_loads_of_one_stl_give_equal_keys() {
     assert_eq!(ka.len(), 2, "the STL door gives the two faces");
     assert_eq!(ka, kb, "two loads of one STL give different keys");
     assert!(
-        ka.iter().all(|k| k.source == SourceRef::Model(ModelId(0))),
+        ka.iter()
+            .all(|k| k.source == SourceRef::Model(ModelId::from_raw(0))),
         "the faces are bound to the model"
     );
 }
@@ -226,7 +237,7 @@ fn generation_with_a_cold_cache_cuts_the_face() {
     let report = session.selection_status(&tc, SelectionTarget::Op).unwrap();
     assert_eq!(
         report.faces_not_ready,
-        vec![ModelId(0)],
+        vec![ModelId::from_raw(0)],
         "the status read on a cold cache says computing faces"
     );
     assert_eq!(report.refusal, None, "computing faces is not a refusal");
@@ -288,16 +299,24 @@ fn a_hit_names_the_flat_region_under_it() {
     let mut session = stl_pocket();
     let tc = session.toolpath_configs()[0].clone();
     let cold = session
-        .face_pick_key_at(&tc, 0, P3::new(2.0, 2.0, 5.0))
+        .face_pick_key_at(
+            &tc,
+            rs_cam_core::ids::ModelId::from_raw(0),
+            P3::new(2.0, 2.0, 5.0),
+        )
         .unwrap_err();
     assert_eq!(
         cold.cause,
-        RefusalCause::FacesNotReady { model: ModelId(0) }
+        RefusalCause::FacesNotReady {
+            model: ModelId::from_raw(0)
+        }
     );
 
     let JobHandle::BuildModelFaces(handle) = session
         .start(
-            Job::BuildModelFaces(BuildModelFacesArgs { model_id: 0 }),
+            Job::BuildModelFaces(BuildModelFacesArgs {
+                model_id: rs_cam_core::ids::ModelId::from_raw(0),
+            }),
             &AtomicBool::new(false),
         )
         .unwrap()
@@ -308,15 +327,27 @@ fn a_hit_names_the_flat_region_under_it() {
     assert_eq!(built.faces, 2);
 
     let floor = session
-        .face_pick_key_at(&tc, 0, P3::new(2.0, 2.0, 5.0))
+        .face_pick_key_at(
+            &tc,
+            rs_cam_core::ids::ModelId::from_raw(0),
+            P3::new(2.0, 2.0, 5.0),
+        )
         .unwrap();
     assert_eq!(floor, z5_face_key(), "the hit names the Z 5 face");
     let boss = session
-        .face_pick_key_at(&tc, 0, P3::new(10.0, 5.0, 8.0))
+        .face_pick_key_at(
+            &tc,
+            rs_cam_core::ids::ModelId::from_raw(0),
+            P3::new(10.0, 5.0, 8.0),
+        )
         .unwrap();
     assert!((boss.measure - 4.0).abs() < 1e-9, "the hit names the boss");
     let wall = session
-        .face_pick_key_at(&tc, 0, P3::new(10.0, 3.0, 6.5))
+        .face_pick_key_at(
+            &tc,
+            rs_cam_core::ids::ModelId::from_raw(0),
+            P3::new(10.0, 3.0, 6.5),
+        )
         .unwrap_err();
     assert_eq!(wall.cause, RefusalCause::FaceNotFlat { face: None });
 }
@@ -326,16 +357,23 @@ fn list_model_items_lists_stl_faces_for_kind_face_only() {
     let _guard = cache_lock();
     let session = stl_pocket();
     assert!(
-        session.list_model_items(0, None, None).unwrap().is_empty(),
+        session
+            .list_model_items(rs_cam_core::ids::ModelId::from_raw(0), None, None)
+            .unwrap()
+            .is_empty(),
         "an STL lists no item without kind face"
     );
     let faces = session
-        .list_model_items(0, None, Some(ItemKind::Face))
+        .list_model_items(
+            rs_cam_core::ids::ModelId::from_raw(0),
+            None,
+            Some(ItemKind::Face),
+        )
         .unwrap();
     assert_eq!(faces.len(), 2);
     assert!(
         faces
             .iter()
-            .all(|f| f.key.source == SourceRef::Model(ModelId(0)))
+            .all(|f| f.key.source == SourceRef::Model(ModelId::from_raw(0)))
     );
 }

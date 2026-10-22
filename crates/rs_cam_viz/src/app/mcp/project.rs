@@ -236,7 +236,7 @@ impl RsCamApp {
                     "id": s.id,
                     "name": s.name,
                     "face_up": s.face_up.label(),
-                    "toolpath_indices": s.toolpath_indices,
+                    "toolpath_indices": s.toolpath_indices(),
                     // K1: the setup's obstacles, in the setup frame.
                     "obstacles": s
                         .obstacles
@@ -252,7 +252,7 @@ impl RsCamApp {
 
     pub(super) fn mcp_get_toolpath_params(&self, index: usize) -> String {
         let session = self.controller.state().session();
-        match session.get_toolpath_config(index) {
+        match session.toolpath_config_at(index) {
             Some(tc) => {
                 let mut op_value =
                     serde_json::to_value(&tc.operation).unwrap_or_else(|_| serde_json::json!({}));
@@ -691,7 +691,7 @@ impl RsCamApp {
     pub(super) fn mcp_inspect_brep_faces(&self, model_id: usize) -> String {
         let session = self.controller.state().session();
         let models = session.models();
-        let model = models.iter().find(|m| m.id == model_id);
+        let model = models.iter().find(|m| m.id.raw() == model_id);
         let Some(model) = model else {
             return json_str(serde_json::json!({"error": format!("Model {model_id} not found")}));
         };
@@ -933,11 +933,7 @@ pub(crate) fn pin_report_json(session: &rs_cam_core::session::ProjectSession) ->
     let part_model_names: Vec<&str> = session
         .models()
         .iter()
-        .filter(|m| {
-            report
-                .part_models
-                .contains(&rs_cam_core::ids::ModelId(m.id))
-        })
+        .filter(|m| report.part_models.contains(&m.id))
         .map(|m| m.name.as_str())
         .collect();
     let preset = report.preset.map(|preset| match preset {

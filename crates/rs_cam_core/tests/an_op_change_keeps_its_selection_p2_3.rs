@@ -48,13 +48,21 @@ fn layer_rule(layer: &str) -> Selection {
 fn pocket_session(selection: Selection) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
     let tool_idx = builder.add_tool(endmill_tool_config(3.0));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let op = OperationConfig::Pocket(PocketConfig {
         selection,
         ..PocketConfig::default()
     });
     let _ = builder
-        .add_toolpath(0, toolpath_config("pocket", op, tool_id, 0))
+        .add_toolpath(
+            0,
+            toolpath_config(
+                "pocket",
+                op,
+                rs_cam_core::ids::ToolId::from_raw(tool_id),
+                rs_cam_core::ids::ModelId::from_raw(0),
+            ),
+        )
         .unwrap();
     builder.build()
 }

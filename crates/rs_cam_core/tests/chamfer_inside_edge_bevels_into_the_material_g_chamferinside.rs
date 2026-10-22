@@ -178,14 +178,14 @@ fn vbit(included_angle_deg: f64) -> ToolConfig {
     ToolConfig {
         diameter: 12.7,
         included_angle: included_angle_deg,
-        ..ToolConfig::new_default(ToolId(0), ToolType::VBit)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit)
     }
 }
 
 fn end_mill() -> ToolConfig {
     ToolConfig {
         diameter: END_MILL_D,
-        ..ToolConfig::new_default(ToolId(0), ToolType::EndMill)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill)
     }
 }
 
@@ -223,21 +223,31 @@ fn session(fixture: Fixture, side: ChamferSide, included_angle_deg: f64) -> Proj
     };
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let mill_idx = builder.add_tool(end_mill());
-    let mill_id = builder.tools()[mill_idx].id.0;
+    let mill_id = builder.tools()[mill_idx].id.raw();
     let vbit_idx = builder.add_tool(vbit(included_angle_deg));
-    let vbit_id = builder.tools()[vbit_idx].id.0;
+    let vbit_id = builder.tools()[vbit_idx].id.raw();
     let cavity_model = builder.add_model(polygon_model(vec![cavity], "cavity"));
     let part_model = builder.add_model(polygon_model(vec![part], "part"));
     let _ = builder
         .add_toolpath(
             0,
-            toolpath_config("pocket", pocket_op(), mill_id, cavity_model),
+            toolpath_config(
+                "pocket",
+                pocket_op(),
+                rs_cam_core::ids::ToolId::from_raw(mill_id),
+                cavity_model,
+            ),
         )
         .expect("add the pocket");
     let _ = builder
         .add_toolpath(
             0,
-            toolpath_config("chamfer", chamfer_op(side), vbit_id, part_model),
+            toolpath_config(
+                "chamfer",
+                chamfer_op(side),
+                rs_cam_core::ids::ToolId::from_raw(vbit_id),
+                part_model,
+            ),
         )
         .expect("add the chamfer");
     builder.build()

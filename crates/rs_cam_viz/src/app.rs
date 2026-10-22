@@ -377,7 +377,7 @@ impl RsCamApp {
             && let Ok(idx) = setup_str.parse::<usize>()
             && let Some(setup) = controller.state().session().list_setups().get(idx)
         {
-            let setup_id = crate::state::job::SetupId(setup.id);
+            let setup_id = setup.id;
             controller.state_mut().selection = crate::state::selection::Selection::Setup(setup_id);
         }
 

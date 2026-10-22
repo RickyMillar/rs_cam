@@ -73,7 +73,10 @@ fn cleanup(path: &Path) {
 /// rather than coincidentally matching.
 fn recipe(tool_ids: Vec<usize>) -> BoundarySource {
     BoundarySource::PlannedTierRegions {
-        tool_ids,
+        tool_ids: tool_ids
+            .into_iter()
+            .map(rs_cam_core::ids::ToolId::from_raw)
+            .collect(),
         tier: 1,
         cell_mm: 0.37,
         tolerance_mm: 0.041,
@@ -98,13 +101,16 @@ fn session_with_a_planned_op() -> (ProjectSession, usize, usize) {
     let coarse = builder.add_tool(ball_tool_config(4.0));
     let fine = builder.add_tool(ball_tool_config(3.0));
     let mut session = builder.build();
-    let (coarse_id, fine_id) = (session.tools()[coarse].id.0, session.tools()[fine].id.0);
+    let (coarse_id, fine_id) = (
+        session.tools()[coarse].id.raw(),
+        session.tools()[fine].id.raw(),
+    );
 
     let plain = common::session::toolpath_config(
         "Hand pass",
         OperationConfig::UnifiedFinish(Default::default()),
-        coarse_id,
-        0,
+        rs_cam_core::ids::ToolId::from_raw(coarse_id),
+        rs_cam_core::ids::ModelId::from_raw(0),
     );
     let _ = session
         .apply(Command::AddToolpath(AddToolpathArgs {
@@ -116,8 +122,8 @@ fn session_with_a_planned_op() -> (ProjectSession, usize, usize) {
     let mut planned = common::session::toolpath_config(
         "Finish tier 1 (R1.5)",
         OperationConfig::UnifiedFinish(Default::default()),
-        fine_id,
-        0,
+        rs_cam_core::ids::ToolId::from_raw(fine_id),
+        rs_cam_core::ids::ModelId::from_raw(0),
     );
     planned.stock_source = StockSource::FromRemainingStock;
     planned.boundary_inherit = false;
@@ -220,12 +226,12 @@ fn a_pre_phase_o_project_loads_with_no_provenance() {
     let mut builder = ProjectSessionBuilder::new();
     builder.add_tool(ball_tool_config(3.0));
     let mut session = builder.build();
-    let tool_id = session.tools()[0].id.0;
+    let tool_id = session.tools()[0].id.raw();
     let plain = common::session::toolpath_config(
         "Hand pass",
         OperationConfig::UnifiedFinish(Default::default()),
-        tool_id,
-        0,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        rs_cam_core::ids::ModelId::from_raw(0),
     );
     let _ = session
         .apply(Command::AddToolpath(AddToolpathArgs {

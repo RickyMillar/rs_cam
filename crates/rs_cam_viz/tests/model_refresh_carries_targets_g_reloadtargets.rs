@@ -141,8 +141,14 @@ fn write(path: &Path, body: &str) {
 
 /// What a fresh import of `path` at `units` reports.
 fn fresh(path: &Path, units: ModelUnits) -> LoadedModel {
-    load_model_file(path, 0, ModelKind::Svg, units, Default::default())
-        .expect("the interactive door must import")
+    load_model_file(
+        path,
+        rs_cam_core::ids::ModelId::from_raw(0),
+        ModelKind::Svg,
+        units,
+        Default::default(),
+    )
+    .expect("the interactive door must import")
 }
 
 /// One drill hole of a model: a point or a circle item (geometry selection
@@ -216,7 +222,7 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, PathBuf, ModelId) {
         .find(|m| m.path == path)
         .expect("the imported fixture must be in the session")
         .id;
-    (controller, path, ModelId(id))
+    (controller, path, id)
 }
 
 /// The record the session holds for `id`.
@@ -226,7 +232,7 @@ fn record(controller: &AppController<SilentBackend>, id: ModelId) -> &LoadedMode
         .session()
         .models()
         .iter()
-        .find(|m| m.id == id.0)
+        .find(|m| m.id == id)
         .expect("the model must still be in the session")
 }
 

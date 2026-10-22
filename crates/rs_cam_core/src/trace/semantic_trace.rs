@@ -1589,7 +1589,7 @@ mod tests {
     #[test]
     fn combined_artifact_writer_creates_json_file() {
         let artifact = ToolpathTraceArtifact::new(
-            ToolpathId(1),
+            ToolpathId::from_raw(1),
             "Pocket 1",
             "Pocket",
             "6.35mm End Mill",

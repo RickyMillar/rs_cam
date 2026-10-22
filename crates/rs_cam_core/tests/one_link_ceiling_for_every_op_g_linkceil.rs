@@ -55,7 +55,6 @@ use rs_cam_core::compute::execute::{LinkCeilingNeed, link_ceiling_for};
 use rs_cam_core::compute::operation_configs::ProjectCurveConfig;
 use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
 use rs_cam_core::geo::{P2, P3};
-use rs_cam_core::ids::ModelId;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::ProjectSessionBuilder;
 use rs_cam_core::stock::radial_profile::{LUT_SAMPLES, RadialProfileLUT};
@@ -100,7 +99,7 @@ fn curves() -> Vec<Polygon2> {
 fn project_curve_on_fresh_stock(chain_distance_mm: f64) -> Vec<Move> {
     let mut builder = ProjectSessionBuilder::new().stock(stock_over(HALF, STOCK_Z));
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_DIAMETER_MM));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let plate =
         common::session::mesh_model(height_field(HALF, 1.0, |_, _| PLATE_Z), "g_linkceil_plate");
     let plate_id = builder.add_model(plate);
@@ -109,10 +108,15 @@ fn project_curve_on_fresh_stock(chain_distance_mm: f64) -> Vec<Move> {
         depth: CUT_DEPTH_MM,
         point_spacing: POINT_SPACING_MM,
         chain_distance_mm,
-        surface_model_id: Some(ModelId(plate_id)),
+        surface_model_id: Some(plate_id),
         ..ProjectCurveConfig::default()
     });
-    let mut config = toolpath_config("Project Curve", op, tool_id, curve_id);
+    let mut config = toolpath_config(
+        "Project Curve",
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        curve_id,
+    );
     config.heights = HeightsConfig {
         clearance_z: HeightMode::Manual(RETRACT_Z + 5.0),
         retract_z: HeightMode::Manual(RETRACT_Z),

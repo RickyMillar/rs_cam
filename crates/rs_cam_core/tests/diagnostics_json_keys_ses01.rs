@@ -58,7 +58,7 @@ fn populated() -> ProjectDiagnostics {
         collision_checks_failed: 16,
         rapid_collision_count: 17,
         per_toolpath: vec![ToolpathDiagnostic {
-            toolpath_id: ToolpathId(21),
+            toolpath_id: ToolpathId::from_raw(21),
             name: "Rough".to_owned(),
             operation_type: "Adaptive".to_owned(),
             op_kind: "adaptive".to_owned(),
@@ -89,7 +89,7 @@ fn populated() -> ProjectDiagnostics {
             severity: VerdictSeverity::Important,
             kind: VerdictKind::AirCut,
             headline: "Air cut is high".to_owned(),
-            offender_toolpath_ids: vec![ToolpathId(41)],
+            offender_toolpath_ids: vec![ToolpathId::from_raw(41)],
             fix_hint: "Set a boundary".to_owned(),
             evidence: VerdictEvidence {
                 move_index: Some(42),

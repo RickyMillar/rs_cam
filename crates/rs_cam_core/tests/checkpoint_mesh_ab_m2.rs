@@ -79,11 +79,11 @@ fn pass(pass_index: usize, x0: f64, x1: f64, y_base: f64) -> Arc<AnnotatedToolpa
 fn entry(id: usize, annotated: Arc<AnnotatedToolpath>) -> SimToolpathEntry {
     SimToolpathEntry {
         head: Default::default(),
-        id: ToolpathId(id),
+        id: ToolpathId::from_raw(id),
         name: format!("Pass{id}"),
         annotated,
         tool: Arc::new(tool()),
-        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+        tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,

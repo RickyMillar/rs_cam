@@ -67,7 +67,7 @@ impl Run {
         let pour: StockChange = session.list_setups()[0]
             .stock_changes
             .iter()
-            .find(|c| c.id == StockChangeId(1))
+            .find(|c| c.id == StockChangeId::from_raw(1))
             .cloned()
             .expect("the fixture holds the fill");
         let mut change = pour;
@@ -76,7 +76,7 @@ impl Run {
         let _ = session
             .apply(Command::ReplaceStockChange(ReplaceStockChangeArgs {
                 setup_index: 0,
-                change_id: StockChangeId(1),
+                change_id: StockChangeId::from_raw(1),
                 change: Box::new(change),
             }))
             .expect("the fill edit applies");
@@ -165,7 +165,7 @@ fn toolpaths_cutting_the_fill(trace: &SimulationCutTrace) -> Vec<ToolpathId> {
         .filter(|s| s.is_cutting && !s.material_slot.is_stock())
         .map(|s| s.toolpath_id)
         .collect();
-    ids.sort_by_key(|id| id.0);
+    ids.sort_by_key(|id| id.raw());
     ids.dedup();
     ids
 }
@@ -293,12 +293,9 @@ fn own_material_with_force_data_uses_it_s6() {
             .iter()
             .find(|tc| tc.id == *id)
             .unwrap();
-        let tool = rs_cam_core::compute::cutter::build_cutter(
-            run.session
-                .get_tool(rs_cam_core::compute::tool_config::ToolId(tc.tool_id))
-                .unwrap(),
-        )
-        .unwrap();
+        let tool =
+            rs_cam_core::compute::cutter::build_cutter(run.session.tool_by_id(tc.tool_id).unwrap())
+                .unwrap();
         let maple = maple();
         // The spans the report reads (`gcode::project_load_report`).
         let index = run
@@ -309,7 +306,7 @@ fn own_material_with_force_data_uses_it_s6() {
             .unwrap();
         let spans = run
             .session
-            .get_result(index)
+            .result_at(index)
             .filter(|r| r.annotated().spans_valid)
             .map(|r| r.annotated().spans.as_slice());
         let ctx_for = |material| rs_cam_core::tool_load::ToolpathLoadContext {
@@ -366,7 +363,7 @@ fn own_material_without_force_data_is_not_judged_and_named_s6() {
     let cutting = toolpaths_cutting_the_fill(trace);
     assert!(!cutting.is_empty());
 
-    let summary = report.summary(|id| Some(format!("tp{}", id.0)));
+    let summary = report.summary(|id| Some(format!("tp{}", id.raw())));
     for id in &cutting {
         let v = verdict_for(&report, *id);
         let fill_samples = trace
@@ -433,7 +430,7 @@ fn cut_as_is_part_of_the_change_and_the_file_s6() {
     let pour = session.list_setups()[0]
         .stock_changes
         .iter()
-        .find(|c| c.id == StockChangeId(1))
+        .find(|c| c.id == StockChangeId::from_raw(1))
         .cloned()
         .unwrap();
     assert_eq!(
@@ -444,7 +441,7 @@ fn cut_as_is_part_of_the_change_and_the_file_s6() {
     let slab = session.list_setups()[0]
         .stock_changes
         .iter()
-        .find(|c| c.id == StockChangeId(0))
+        .find(|c| c.id == StockChangeId::from_raw(0))
         .cloned()
         .unwrap();
     assert_eq!(

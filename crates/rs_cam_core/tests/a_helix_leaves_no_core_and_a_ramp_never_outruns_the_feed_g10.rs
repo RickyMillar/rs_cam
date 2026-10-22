@@ -77,7 +77,7 @@ const POCKET_HALF: f64 = 20.0;
 const POCKET_DEPTH: f64 = 3.0;
 
 fn tool(kind: ToolType, diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(0), kind);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(0), kind);
     t.diameter = diameter;
     t.cutting_length = 25.0;
     t.flute_count = 2;
@@ -130,7 +130,7 @@ fn pocket_toolpath(
         },
     );
     common::session::generate(&mut session, 0);
-    session.get_result(0).unwrap().toolpath().clone()
+    session.result_at(0).unwrap().toolpath().clone()
 }
 
 /// The first contiguous run of `EntryHelix` moves.
@@ -380,7 +380,7 @@ fn adaptive3d_toolpath(style: Adaptive3dEntryStyle, helix_radius_factor: f64) ->
         },
     );
     common::session::generate(&mut session, 0);
-    session.get_result(0).unwrap().toolpath().clone()
+    session.result_at(0).unwrap().toolpath().clone()
 }
 
 /// G-RAMPCLAMP on Adaptive3d, and Q6 on its helix: a 6 mm flat at factor

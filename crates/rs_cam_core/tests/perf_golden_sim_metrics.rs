@@ -372,7 +372,7 @@ fn fixture_session_2d() -> ProjectSession {
         ..StockConfig::default()
     });
 
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -380,7 +380,7 @@ fn fixture_session_2d() -> ProjectSession {
     tool.flute_count = 2;
     tool.name = "End Mill 6mm".to_owned();
     let tool_idx = builder.add_tool(tool);
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     let poly = Polygon2::new(vec![
         P2::new(5.0, 5.0),
@@ -389,7 +389,7 @@ fn fixture_session_2d() -> ProjectSession {
         P2::new(5.0, 55.0),
     ]);
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "perf_rect".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![poly])),
@@ -464,7 +464,7 @@ fn fixture_session_2d() -> ProjectSession {
 
     for (name, op) in ops {
         let _ = builder
-            .add_toolpath(0, toolpath_config(name, op, tool_id, model_id))
+            .add_toolpath(0, toolpath_config(name, op, tool_id, model_id.raw()))
             .expect("add toolpath");
     }
     builder.build()
@@ -480,14 +480,14 @@ fn toolpath_config(
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::for_op(op_type),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -540,7 +540,7 @@ fn fixture_session_3d() -> ProjectSession {
         ..StockConfig::default()
     });
 
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::BallNose);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -548,13 +548,13 @@ fn fixture_session_3d() -> ProjectSession {
     tool.flute_count = 2;
     tool.name = "Ball Nose 6mm".to_owned();
     let tool_idx = builder.add_tool(tool);
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     // 8 divisions → 32 vertices per ring, 8 rings: 992 triangles. Small
     // enough to simulate twice per test run, curved enough that the
     // waterline contours fit arcs.
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "perf_hemisphere".to_owned(),
         mesh: Some(Arc::new(rs_cam_core::mesh::make_test_hemisphere(
             HEMI_RADIUS_MM,
@@ -595,11 +595,11 @@ fn fixture_session_3d() -> ProjectSession {
         hookup_mm: 0.0,
     });
 
-    let mut dc = toolpath_config("DropCutter", drop_cutter, tool_id, model_id);
+    let mut dc = toolpath_config("DropCutter", drop_cutter, tool_id, model_id.raw());
     dc.dressups.arc_fitting = Some(ArcFitParams::default());
     let _ = builder.add_toolpath(0, dc).expect("add drop cutter");
 
-    let mut wl = toolpath_config("Waterline", waterline, tool_id, model_id);
+    let mut wl = toolpath_config("Waterline", waterline, tool_id, model_id.raw());
     wl.dressups.arc_fitting = Some(ArcFitParams::default());
     wl.heights = HeightsConfig {
         top_z: HeightMode::Manual(HEMI_RADIUS_MM),

@@ -109,14 +109,14 @@ fn viz_result(path: Toolpath) -> ToolpathResult {
 /// (the F1_RCA sync in `controller/events/compute.rs` writes
 /// `session.results` and `gui.toolpath_rt` from the same worker output).
 fn build_state() -> (ProjectSession, GuiState, SimulationState) {
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new()
         .tool(tool)
         .name("g-modexport sentry".to_owned());
 
     let mesh = Arc::new(make_test_flat(40.0));
     let _ = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
         kind: Some(ModelKind::Stl),
@@ -133,7 +133,7 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
 
     let tp = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Sample Path".to_owned(),
         enabled: true,
         operation: OperationConfig::Scallop(
@@ -141,8 +141,8 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -158,7 +158,7 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
     let mut session = builder.build();
     let tp_id = session.toolpath_configs()[0].id;
 
-    let revision = session.toolpath_revision(0);
+    let revision = session.toolpath_revision_at(0);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,
@@ -246,7 +246,7 @@ fn viz_export_emits_the_modulated_feed_schedule() {
 
     // What `apply_adaptive_feed_modulation` does: swap the modulated
     // annotated toolpath into `session.results` — and nowhere else.
-    let revision = session.toolpath_revision(0);
+    let revision = session.toolpath_revision_at(0);
     let _ = session
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,
@@ -275,10 +275,12 @@ fn viz_export_refuses_the_worker_result_when_the_session_slot_is_invalidated() {
     // entries. The viz store keeps its result (that's what the stale
     // display is drawn from).
     let _ = session
-        .apply(Command::InvalidateTool(InvalidateToolArgs { tool_id: 1 }))
+        .apply(Command::InvalidateTool(InvalidateToolArgs {
+            tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        }))
         .expect("the tool is in the session");
     assert!(
-        session.get_result(0).is_none(),
+        session.result_at(0).is_none(),
         "invalidate_tool must clear the session result — otherwise this \
          test is not exercising the fallback"
     );

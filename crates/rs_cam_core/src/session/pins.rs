@@ -47,7 +47,7 @@ impl ProjectSession {
                     && b.max.y >= stock.max.y - PIN_MATCH_TOL_MM;
                 !covers
             })
-            .map(|(id, _)| ModelId(id))
+            .map(|(id, _)| id)
             .collect()
     }
 
@@ -65,7 +65,7 @@ impl ProjectSession {
                 .models
                 .iter()
                 .filter(|m| chosen.contains(&m.id))
-                .map(|m| ModelId(m.id))
+                .map(|m| m.id)
                 .collect(),
             None => self.default_pin_part_models(),
         }
@@ -122,11 +122,7 @@ impl ProjectSession {
     #[must_use]
     pub fn pin_obstacles(&self, part_models: &[ModelId]) -> Vec<PinObstacle> {
         let mut out = Vec::new();
-        for model in self
-            .models
-            .iter()
-            .filter(|m| part_models.contains(&ModelId(m.id)))
-        {
+        for model in self.models.iter().filter(|m| part_models.contains(&m.id)) {
             // P2.5: the drawn rings, nested, open paths too (the old
             // nested list of the import, from the items).
             let curves = model
@@ -257,10 +253,10 @@ impl ProjectSession {
 
     /// The diameter of the tool `tool_id`, or `None` when no tool has the
     /// id or its diameter is not positive.
-    fn tool_diameter(&self, tool_id: usize) -> Option<f64> {
+    fn tool_diameter(&self, tool_id: crate::ids::ToolId) -> Option<f64> {
         self.tools
             .iter()
-            .find(|t| t.id.0 == tool_id)
+            .find(|t| t.id == tool_id)
             .map(|t| t.diameter)
             .filter(|d| *d > 0.0)
     }
@@ -278,7 +274,7 @@ impl ProjectSession {
     /// 3 mm end mill. The pin door reads this id when it creates the
     /// operation of a size, so the plan and the hole agree.
     #[must_use]
-    pub fn pin_drill_tool_for(&self, diameter: f64) -> Option<usize> {
+    pub fn pin_drill_tool_for(&self, diameter: f64) -> Option<crate::ids::ToolId> {
         if let Some(index) = self.pin_drill_op_for(diameter) {
             return self.toolpath_configs.get(index).map(|tc| tc.tool_id);
         }
@@ -298,7 +294,7 @@ impl ProjectSession {
     /// drill), else the first tool of the size. The tool that "Add a <d>
     /// mm drill" or the MCP `add_tool` adds is such a tool, so the door
     /// finds it.
-    fn pin_tool_of_size(&self, diameter: f64) -> Option<usize> {
+    fn pin_tool_of_size(&self, diameter: f64) -> Option<crate::ids::ToolId> {
         use crate::compute::tool_config::ToolType;
         let of_size = || {
             self.tools
@@ -308,7 +304,7 @@ impl ProjectSession {
         of_size()
             .find(|t| t.tool_type == ToolType::VBit)
             .or_else(|| of_size().next())
-            .map(|t| t.id.0)
+            .map(|t| t.id)
     }
 
     /// The ids of every tool whose diameter is `diameter` (within
@@ -316,12 +312,12 @@ impl ProjectSession {
     /// offers for one pin size (R2). The tool that
     /// [`Self::pin_drill_tool_for`] names is first.
     #[must_use]
-    pub fn pin_tool_candidates(&self, diameter: f64) -> Vec<usize> {
-        let mut out: Vec<usize> = self
+    pub fn pin_tool_candidates(&self, diameter: f64) -> Vec<crate::ids::ToolId> {
+        let mut out: Vec<crate::ids::ToolId> = self
             .tools
             .iter()
             .filter(|t| t.diameter > 0.0 && same_pin_diameter(t.diameter, diameter))
-            .map(|t| t.id.0)
+            .map(|t| t.id)
             .collect();
         if let Some(first) = self.pin_drill_tool_for(diameter)
             && let Some(at) = out.iter().position(|id| *id == first)
@@ -425,7 +421,7 @@ impl ProjectSession {
     /// when no setup has the id. The pins register a flip; without one,
     /// the notes do not help the operator.
     #[must_use]
-    pub fn pin_setup_notes(&self, setup_id: usize) -> Option<PinSetupNotes> {
+    pub fn pin_setup_notes(&self, setup_id: crate::ids::SetupId) -> Option<PinSetupNotes> {
         let pins = &self.stock.alignment_pins;
         if pins.is_empty() {
             return None;
@@ -449,11 +445,11 @@ impl ProjectSession {
     /// [`PIN_MATCH_TOL_MM`] of the pin (a drawing of the dowel holes, as
     /// in the mini test piece).
     fn setup_drills_dowel_holes(&self, setup: &super::SetupData) -> bool {
-        let in_setup = |id: usize| {
+        let in_setup = |id: crate::ids::ToolpathId| {
             setup.toolpath_indices.iter().any(|&i| {
                 self.toolpath_configs
                     .get(i)
-                    .is_some_and(|tc| tc.enabled && tc.id.0 == id)
+                    .is_some_and(|tc| tc.enabled && tc.id == id)
             })
         };
         let pin_drill_sizes: Vec<f64> = setup
@@ -500,7 +496,7 @@ pub struct PinToolBinding {
     /// The tool that drills the holes of the size
     /// ([`ProjectSession::pin_drill_tool_for`]), or `None` when no tool
     /// of the size drills holes.
-    pub tool_id: Option<usize>,
+    pub tool_id: Option<crate::ids::ToolId>,
     /// The diameter of that tool.
     pub tool_diameter: Option<f64>,
 }
@@ -538,11 +534,11 @@ impl ProjectSession {
             .toolpath_configs
             .iter()
             .filter(|tc| tc.operation.op_type().is_drill_kinematics())
-            .find_map(|tc| self.tools.iter().find(|t| t.id.0 == tc.tool_id));
+            .find_map(|tc| self.tools.iter().find(|t| t.id == tc.tool_id));
         let mut tool = match source {
             Some(t) => t.clone(),
             None => {
-                let mut t = ToolConfig::new_default(ToolId(0), ToolType::VBit);
+                let mut t = ToolConfig::new_default(ToolId::placeholder(), ToolType::VBit);
                 t.included_angle = TWIST_DRILL_POINT_DEG;
                 t
             }
@@ -559,7 +555,7 @@ impl ProjectSession {
                     .spoilboard_penetration
             });
         let reach = self.stock.z + penetration;
-        tool.id = ToolId(0);
+        tool.id = ToolId::placeholder();
         tool.diameter = diameter;
         tool.shaft_diameter = diameter;
         tool.shank_diameter = diameter;

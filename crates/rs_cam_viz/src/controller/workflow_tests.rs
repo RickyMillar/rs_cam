@@ -105,7 +105,7 @@ fn step_model() -> LoadedModel {
     // names that item by its key (P2.6).
     let items = Arc::new(rs_cam_core::io::brep_face_items(&enriched));
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: fixtures_dir().join("occt-cube.step"),
         name: "occt-cube.step".to_owned(),
         kind: Some(ModelKind::Step),
@@ -123,7 +123,7 @@ fn step_model() -> LoadedModel {
 
 fn stl_model() -> LoadedModel {
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: PathBuf::from("test.stl"),
         name: "test.stl".to_owned(),
         kind: Some(ModelKind::Stl),
@@ -142,7 +142,7 @@ fn stl_model() -> LoadedModel {
 /// Build a controller with a STEP model and one tool, ready for toolpath creation.
 fn step_controller() -> AppController<ScriptedBackend> {
     let mut c = AppController::with_backend(ScriptedBackend::new());
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let model_id = builder.add_model(step_model());
     // model_id is the raw usize assigned by session
@@ -154,7 +154,7 @@ fn step_controller() -> AppController<ScriptedBackend> {
 /// Build a controller with an STL model and one tool.
 fn stl_controller() -> AppController<ScriptedBackend> {
     let mut c = AppController::with_backend(ScriptedBackend::new());
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_model(stl_model());
     c.state.replace_session(builder.build());
@@ -189,7 +189,7 @@ fn click_face(
             rs_cam_core::session::SelectionTarget::for_face_pick(tc),
             c.state
                 .session()
-                .face_pick_key(tc, model_id.0, face)
+                .face_pick_key(tc, model_id, face)
                 .expect("a flat face has a Face item"),
         )
     };
@@ -232,14 +232,14 @@ fn add_op(controller: &mut AppController<ScriptedBackend>, op_type: OperationTyp
     use rs_cam_core::compute::catalog::OperationConfig;
     let tp_config = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: op_type.label().to_owned(),
         enabled: true,
         operation: OperationConfig::new_default(op_type),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -311,7 +311,7 @@ fn w3_step_import_populates_enriched_mesh() {
 fn w3_face_toggle_adds_and_removes() {
     let mut c = step_controller();
     let tp_id = add_pocket(&mut c);
-    let model_id = ModelId(c.state.session().models()[0].id);
+    let model_id = c.state.session().models()[0].id;
     let enriched = c.state.session().models()[0]
         .enriched_mesh
         .as_ref()
@@ -423,7 +423,7 @@ fn w3_non_horizontal_face_produces_no_polygon() {
 fn w3_multi_face_toggle() {
     let mut c = step_controller();
     let tp_id = add_pocket(&mut c);
-    let model_id = ModelId(c.state.session().models()[0].id);
+    let model_id = c.state.session().models()[0].id;
     let enriched = c.state.session().models()[0]
         .enriched_mesh
         .as_ref()
@@ -508,7 +508,7 @@ fn flush_snapshot(c: &mut AppController<ScriptedBackend>) {
 fn w4_a_face_pick_undoes_through_the_op_snapshot_p2_6() {
     let mut c = step_controller();
     let tp_id = add_pocket(&mut c);
-    let model_id = ModelId(c.state.session().models()[0].id);
+    let model_id = c.state.session().models()[0].id;
     let enriched = c.state.session().models()[0]
         .enriched_mesh
         .as_ref()
@@ -562,7 +562,7 @@ fn w4_a_boundary_selection_edit_undoes_d11() {
 
     let mut c = step_controller();
     let tp_id = add_pocket(&mut c);
-    let model_id = ModelId(c.state.session().models()[0].id);
+    let model_id = c.state.session().models()[0].id;
     let enriched = c.state.session().models()[0]
         .enriched_mesh
         .as_ref()
@@ -576,7 +576,7 @@ fn w4_a_boundary_selection_edit_undoes_d11() {
         let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
         c.state
             .session()
-            .face_pick_key(tc, model_id.0, face_a)
+            .face_pick_key(tc, model_id, face_a)
             .unwrap()
     };
     let picked = BoundaryConfig {
@@ -675,7 +675,7 @@ fn w4_a_3d_op_face_click_writes_its_boundary_p4_1() {
         offset: 0.0,
     };
     let tp_id = add_3d_rough(&mut c, empty.clone());
-    let model_id = ModelId(c.state.session().models()[0].id);
+    let model_id = c.state.session().models()[0].id;
     let enriched = c.state.session().models()[0]
         .enriched_mesh
         .as_ref()
@@ -734,7 +734,7 @@ fn w4_a_face_click_on_a_face_op_replaces_the_stock_rule_p4_2() {
 
     let mut c = step_controller();
     let tp_id = add_op(&mut c, OperationType::Face);
-    let model_id = ModelId(c.state.session().models()[0].id);
+    let model_id = c.state.session().models()[0].id;
     let enriched = c.state.session().models()[0]
         .enriched_mesh
         .as_ref()
@@ -760,7 +760,7 @@ fn w4_a_face_click_on_a_face_op_replaces_the_stock_rule_p4_2() {
         );
         c.state
             .session()
-            .face_pick_key(tc, model_id.0, face_a)
+            .face_pick_key(tc, model_id, face_a)
             .expect("a flat face has a Face item")
     };
 
@@ -798,7 +798,7 @@ fn w4_a_3d_op_face_click_switches_the_boundary_to_selection_p4_d() {
         ..BoundaryConfig::default()
     };
     let tp_id = add_3d_rough(&mut c, stock_boundary.clone());
-    let model_id = ModelId(c.state.session().models()[0].id);
+    let model_id = c.state.session().models()[0].id;
     let enriched = c.state.session().models()[0]
         .enriched_mesh
         .as_ref()
@@ -863,7 +863,7 @@ fn a_dxf_draws_on_import_and_its_eye_hides_it_p4_d() {
         .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf");
     let model = rs_cam_core::io::load_model_file(
         &path,
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Dxf,
         ModelUnits::Millimeters,
         Default::default(),
@@ -871,7 +871,7 @@ fn a_dxf_draws_on_import_and_its_eye_hides_it_p4_d() {
     .expect("the DXF fixture loads");
     assert!(model.items.has_drawing(), "the case is a drawing");
     let mut c = AppController::with_backend(ScriptedBackend::new());
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let model_id = builder.add_model(model);
     c.state.replace_session(builder.build());
@@ -937,20 +937,20 @@ fn w5_project_round_trip_preserves_step_face_selection() {
     // Build a session with STEP model + face selection
     let model = step_model();
     let enriched = model.enriched_mesh.as_ref().unwrap().clone();
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let model_id = builder.add_model(model);
 
     let face_id = find_horizontal_face(&enriched);
     let tp_config = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::new_default(OperationType::Pocket),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
         model_id,
         pre_gcode: None,
         post_gcode: None,
@@ -1134,7 +1134,7 @@ fn w6_height_ordering_with_various_depths() {
 #[test]
 fn w10_model_removal_clears_face_selection() {
     let mut c = step_controller();
-    let model_id = ModelId(c.state.session().models()[0].id);
+    let model_id = c.state.session().models()[0].id;
 
     // Set selection to a face
     c.state.selection = Selection::Face(model_id, FaceGroupId(0));
@@ -1159,7 +1159,7 @@ fn w10_model_removal_clears_face_selection() {
 #[test]
 fn w10_model_removal_blocked_when_toolpath_references_it() {
     let mut c = step_controller();
-    let model_id = ModelId(c.state.session().models()[0].id);
+    let model_id = c.state.session().models()[0].id;
     let _tp_id = add_pocket(&mut c);
 
     c.state.selection = Selection::Face(model_id, FaceGroupId(0));

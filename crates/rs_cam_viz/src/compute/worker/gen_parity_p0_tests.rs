@@ -144,10 +144,10 @@ fn fixture(feed_optimization: bool) -> Fixture {
     let mut controller = AppController::with_backend(RecordingBackend {
         submitted: Arc::clone(&submitted),
     });
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: std::path::PathBuf::from("plate.svg"),
         name: "Plate".to_owned(),
         kind: Some(ModelKind::Svg),
@@ -165,7 +165,7 @@ fn fixture(feed_optimization: bool) -> Fixture {
     });
     let tp_config = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(Default::default()),
@@ -174,8 +174,8 @@ fn fixture(feed_optimization: bool) -> Fixture {
             ..Default::default()
         },
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),

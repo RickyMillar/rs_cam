@@ -77,7 +77,6 @@ use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, Boundary
 use rs_cam_core::compute::operation_configs::{
     Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy, RegionOrdering,
 };
-use rs_cam_core::ids::ModelId;
 use rs_cam_core::polygon::detect_containment;
 use rs_cam_core::selection::Selection;
 use rs_cam_core::session::{ProjectSession, ProjectSessionBuilder, SimulationOptions};
@@ -118,7 +117,7 @@ const ARMS: [Arm; 2] = [
 fn session(arm: Arm) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock_over(PLATE_HALF, STOCK_HEIGHT));
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_D));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let mesh_id = builder.add_model(mesh_model(
         height_field(PLATE_HALF, 1.0, terrain),
         "terrain",
@@ -140,11 +139,16 @@ fn session(arm: Arm) -> ProjectSession {
         clearing_strategy: ClearingStrategy::ContourParallel,
         ..Adaptive3dConfig::default()
     });
-    let mut cfg = toolpath_config("3D Rough", op, tool_id, mesh_id);
+    let mut cfg = toolpath_config(
+        "3D Rough",
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        mesh_id,
+    );
     cfg.boundary = BoundaryConfig {
         enabled: true,
         source: BoundarySource::Selection {
-            selection: Selection::closed_shapes_of(ModelId(band_id)),
+            selection: Selection::closed_shapes_of(band_id),
             holes: true,
         },
         containment: BoundaryContainment::Inside,
@@ -189,7 +193,7 @@ fn check_arm(arm: Arm) {
 
     // (2) The path stays inside the containment square and reaches it.
     let limit = arm.band_inner_half - TOOL_D / 2.0;
-    let moves = &s.get_result(0).expect("a result").toolpath().moves;
+    let moves = &s.result_at(0).expect("a result").toolpath().moves;
     let mut nearest_gap = f64::INFINITY;
     for m in moves {
         if matches!(m.move_type, MoveType::Rapid) {

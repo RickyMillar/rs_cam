@@ -308,7 +308,7 @@ pub fn sample_power_kw(
     ))
 }
 
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.0, op = ?ctx.operation_kind))]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.raw(), op = ?ctx.operation_kind))]
 pub fn evaluate(ctx: &super::ToolpathLoadContext<'_>, env: &super::GateEnv<'_>) -> PowerVerdict {
     let &super::ToolpathLoadContext {
         toolpath_id,
@@ -635,7 +635,7 @@ mod tests {
     ) -> PowerVerdict {
         evaluate(
             &crate::tool_load::ToolpathLoadContext {
-                toolpath_id: ToolpathId(toolpath_id),
+                toolpath_id: ToolpathId::from_raw(toolpath_id),
                 tool,
                 material,
                 operation_family: crate::feeds::vendor_lut::LutOperationFamily::Pocket,

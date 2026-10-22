@@ -106,7 +106,7 @@ fn vbit() -> ToolConfig {
     ToolConfig {
         diameter: 12.7,
         included_angle: 90.0,
-        ..ToolConfig::new_default(ToolId(0), ToolType::VBit)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit)
     }
 }
 
@@ -224,7 +224,7 @@ fn b_every_cut_point_keeps_the_cone_inside_the_outline() {
     let inset = cfg.tolerance.min(0.05);
 
     let toolpath = session
-        .get_result(0)
+        .result_at(0)
         .expect("the op generated")
         .toolpath()
         .clone();

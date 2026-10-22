@@ -461,7 +461,7 @@ mod tests {
         };
         let mesh = make_test_hemisphere(25.0, 16);
         let index = SpatialIndex::build_auto(&mesh);
-        let tool_cfg = ToolConfig::new_default(ToolId(0), ToolType::BallNose);
+        let tool_cfg = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
         let tool_def = build_cutter(&tool_cfg).unwrap();
         let cancel = AtomicBool::new(false);
         let findings = RefCell::new(GenerationFindings::default());

@@ -59,7 +59,7 @@ pub struct ResolveScope<'a> {
 #[derive(Debug, Clone)]
 pub struct MeshFaces {
     /// The model id (`LoadedModel::id`).
-    pub model: usize,
+    pub model: ModelId,
     /// The face items, bound to `SourceRef::Model(model)`. `None`: the
     /// flat regions are not computed yet. A rule or a pick on the model
     /// then matches nothing and is not lost; the resolution reports the
@@ -514,7 +514,7 @@ pub fn face_in_setup_frame(face: &FaceItem, info: Option<&SetupTransformInfo>) -
 /// the items.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Slot {
-    Model(usize),
+    Model(ModelId),
     Stock,
 }
 
@@ -532,7 +532,7 @@ fn locate<'a>(
             Some((Slot::Model(m.id), model_items(scope, m)?))
         }
         SourceRef::Model(id) => {
-            let m = scope.models.iter().find(|m| m.id == id.0)?;
+            let m = scope.models.iter().find(|m| m.id == id)?;
             Some((Slot::Model(m.id), model_items(scope, m)?))
         }
         SourceRef::Stock => Some((Slot::Stock, stock?)),
@@ -553,14 +553,14 @@ fn model_items<'a>(scope: &ResolveScope<'a>, m: &'a LoadedModel) -> Option<&'a I
 fn not_ready_model(scope: &ResolveScope<'_>, source: SourceRef) -> Option<ModelId> {
     let id = match source {
         SourceRef::ToolpathModel => scope.toolpath_model.ok()?.id,
-        SourceRef::Model(id) => scope.models.iter().find(|m| m.id == id.0)?.id,
+        SourceRef::Model(id) => scope.models.iter().find(|m| m.id == id)?.id,
         SourceRef::Stock => return None,
     };
     scope
         .mesh_faces
         .iter()
         .any(|f| f.model == id && f.items.is_none())
-        .then_some(ModelId(id))
+        .then_some(id)
 }
 
 /// The source that a missing `source` names in a refusal: the toolpath

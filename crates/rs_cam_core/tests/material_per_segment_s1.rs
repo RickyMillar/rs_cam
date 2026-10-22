@@ -95,7 +95,7 @@ fn simulate(stock: &mut TriDexelStock) -> Vec<SimulationCutSample> {
             &pass_and_plunge(),
             &cutter,
             StockCutDirection::FromTop,
-            ToolpathId(0),
+            ToolpathId::from_raw(0),
             12_000,
             2,
             3000.0,

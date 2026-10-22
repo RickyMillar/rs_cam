@@ -36,13 +36,13 @@ use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::stock_config::StockConfig;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::toolpath_stats::ToolpathStats;
-use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::ops::drill_op::OpData;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
-    AddModelArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs, Command, DatumConfig, LoadedModel,
+    AddModelArgs, AddSetupArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel,
     ProjectSessionBuilder, SetupData, ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
@@ -70,7 +70,7 @@ fn polygon_model(id: usize, name: &str) -> LoadedModel {
         P2::new(0.0, MODEL_SIDE_MM),
     ]);
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         name: name.to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![square])),
@@ -89,14 +89,14 @@ fn polygon_model(id: usize, name: &str) -> LoadedModel {
 fn toolpath(id: usize, name: &str, tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(id),
+        id: ToolpathId::from_raw(id),
         name: name.to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig::default()),
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -111,18 +111,7 @@ fn toolpath(id: usize, name: &str, tool_id: usize, model_id: usize) -> ToolpathC
 }
 
 fn setup(id: usize, name: &str, face_up: FaceUp) -> SetupData {
-    SetupData {
-        id,
-        name: name.to_owned(),
-        face_up,
-        z_rotation: ZRotation::default(),
-        datum: DatumConfig::default(),
-        model_ids: Vec::new(),
-        obstacles: Vec::new(),
-        stock_changes: Vec::new(),
-        toolpath_indices: Vec::new(),
-        pause_message: None,
-    }
+    SetupData::new(rs_cam_core::ids::SetupId::from_raw(id), name, face_up)
 }
 
 fn fake_result() -> ToolpathComputeResult {
@@ -154,8 +143,14 @@ fn stock() -> StockConfig {
 fn built() -> rs_cam_core::session::ProjectSession {
     ProjectSessionBuilder::new()
         .stock(stock())
-        .tool(ToolConfig::new_default(ToolId(TOOL_A), ToolType::EndMill))
-        .tool(ToolConfig::new_default(ToolId(TOOL_B), ToolType::BallNose))
+        .tool(ToolConfig::new_default(
+            ToolId::from_raw(TOOL_A),
+            ToolType::EndMill,
+        ))
+        .tool(ToolConfig::new_default(
+            ToolId::from_raw(TOOL_B),
+            ToolType::BallNose,
+        ))
         .model(polygon_model(MODEL_A, "a.svg"))
         .model(polygon_model(MODEL_B, "b.svg"))
         .setup(setup(4, "Setup A", FaceUp::Top))
@@ -170,7 +165,7 @@ fn built() -> rs_cam_core::session::ProjectSession {
 #[test]
 fn builder_keeps_tool_ids_and_order() {
     let session = built();
-    let ids: Vec<usize> = session.tools().iter().map(|tool| tool.id.0).collect();
+    let ids: Vec<usize> = session.tools().iter().map(|tool| tool.id.raw()).collect();
     assert_eq!(
         ids,
         vec![TOOL_A, TOOL_B],
@@ -183,7 +178,11 @@ fn builder_keeps_tool_ids_and_order() {
 #[test]
 fn builder_keeps_model_ids_and_order() {
     let session = built();
-    let ids: Vec<usize> = session.models().iter().map(|model| model.id).collect();
+    let ids: Vec<usize> = session
+        .models()
+        .iter()
+        .map(|model| model.id.raw())
+        .collect();
     assert_eq!(
         ids,
         vec![MODEL_A, MODEL_B],
@@ -204,12 +203,21 @@ fn builder_keeps_toolpath_order_and_bindings() {
     let ids: Vec<usize> = session
         .toolpath_configs()
         .iter()
-        .map(|config| config.id.0)
+        .map(|config| config.id.raw())
         .collect();
     assert_eq!(ids, vec![10, 11, 12], "the toolpath ids moved");
-    assert_eq!(session.toolpath_configs()[0].tool_id, TOOL_A);
-    assert_eq!(session.toolpath_configs()[1].tool_id, TOOL_B);
-    assert_eq!(session.toolpath_configs()[2].model_id, MODEL_B);
+    assert_eq!(
+        session.toolpath_configs()[0].tool_id,
+        rs_cam_core::ids::ToolId::from_raw(TOOL_A)
+    );
+    assert_eq!(
+        session.toolpath_configs()[1].tool_id,
+        rs_cam_core::ids::ToolId::from_raw(TOOL_B)
+    );
+    assert_eq!(
+        session.toolpath_configs()[2].model_id,
+        rs_cam_core::ids::ModelId::from_raw(MODEL_B)
+    );
 }
 
 #[test]
@@ -218,11 +226,11 @@ fn builder_replaces_the_seeded_setup_then_appends() {
     assert_eq!(session.setup_count(), 2, "the seeded setup survived");
     let setups = session.list_setups();
     assert_eq!(setups[0].name, "Setup A");
-    assert_eq!(setups[0].id, 4);
+    assert_eq!(setups[0].id, rs_cam_core::ids::SetupId::from_raw(4));
     assert_eq!(setups[1].name, "Setup B");
     assert_eq!(setups[1].face_up, FaceUp::Bottom);
-    assert_eq!(setups[0].toolpath_indices, vec![0, 1]);
-    assert_eq!(setups[1].toolpath_indices, vec![2]);
+    assert_eq!(setups[0].toolpath_indices(), vec![0, 1]);
+    assert_eq!(setups[1].toolpath_indices(), vec![2]);
 }
 
 #[test]
@@ -238,12 +246,12 @@ fn builder_leaves_the_stock_alone() {
 #[test]
 fn builder_stores_the_result_and_no_revision() {
     let session = built();
-    assert!(session.get_result(0).is_none(), "index 0 took a result");
-    assert!(session.get_result(1).is_some(), "index 1 lost its result");
-    assert!(session.get_result(2).is_none(), "index 2 took a result");
+    assert!(session.result_at(0).is_none(), "index 0 took a result");
+    assert!(session.result_at(1).is_some(), "index 1 lost its result");
+    assert!(session.result_at(2).is_none(), "index 2 took a result");
     for index in 0..session.toolpath_count() {
         assert_eq!(
-            session.toolpath_revision(index),
+            session.toolpath_revision_at(index),
             0,
             "the builder bumped the revision of index {index}"
         );
@@ -258,12 +266,15 @@ fn builder_raises_the_id_counters_above_every_supplied_id() {
     // INDEX, `add_model` reports the new model ID.
     let tool_index = session
         .apply(Command::AddTool(AddToolArgs {
-            tool: Box::new(ToolConfig::new_default(ToolId(0), ToolType::EndMill)),
+            tool: Box::new(ToolConfig::new_default(
+                ToolId::from_raw(0),
+                ToolType::EndMill,
+            )),
         }))
         .expect("the tool row refuses nothing")
         .created
         .expect("add_tool reports the new tool index");
-    let fresh_tool = session.tools()[tool_index].id.0;
+    let fresh_tool = session.tools()[tool_index].id.raw();
     assert!(
         fresh_tool > TOOL_A,
         "a later add_tool collided: {fresh_tool}"
@@ -288,7 +299,7 @@ fn builder_raises_the_id_counters_above_every_supplied_id() {
         .created
         .expect("add_toolpath reports the new toolpath index");
     assert!(
-        session.toolpath_configs()[index].id.0 > 12,
+        session.toolpath_configs()[index].id.raw() > 12,
         "a later add_toolpath collided"
     );
     let setup_index = session
@@ -300,7 +311,7 @@ fn builder_raises_the_id_counters_above_every_supplied_id() {
         .created
         .expect("add_setup reports the new setup index");
     assert!(
-        session.list_setups()[setup_index].id > 9,
+        session.list_setups()[setup_index].id > rs_cam_core::ids::SetupId::from_raw(9),
         "a later add_setup collided"
     );
 }

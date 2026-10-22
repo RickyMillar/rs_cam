@@ -328,7 +328,7 @@ impl<B: ComputeBackend> AppController<B> {
             // cusp radius and no row. The tool doors refuse such a tool.
             .filter_map(|tool| {
                 Some(PlannerToolRow {
-                    tool_id: tool.id.0,
+                    tool_id: tool.id,
                     name: tool.name.clone(),
                     cusp_radius_mm: build_cutter(tool).ok()?.cusp_radius_mm(),
                     selected: false,
@@ -351,8 +351,8 @@ impl<B: ComputeBackend> AppController<B> {
     /// toolpath — a plan whose setup came from the selection and whose model
     /// came from the project's first entry is a plan for a pairing the
     /// operator never chose.
-    fn planner_model(&self) -> Option<(usize, String)> {
-        let mesh_model = |id: usize| {
+    fn planner_model(&self) -> Option<(rs_cam_core::ids::ModelId, String)> {
+        let mesh_model = |id: rs_cam_core::ids::ModelId| {
             self.state
                 .session()
                 .models()
@@ -387,7 +387,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session()
             .list_setups()
             .iter()
-            .position(|s| s.toolpath_indices.contains(&index))
+            .position(|s| s.toolpath_indices().contains(&index))
             .unwrap_or(0)
     }
 }

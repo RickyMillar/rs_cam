@@ -870,7 +870,7 @@ mod tests {
 
     #[test]
     fn silent_when_nothing_is_left_standing() {
-        assert!(diagnostics_from_generation(ToolpathId(1), &stats(0.0)).is_empty());
+        assert!(diagnostics_from_generation(ToolpathId::from_raw(1), &stats(0.0)).is_empty());
     }
 
     /// A/M9: "no cascade ran" is a different state from "a cascade measured
@@ -879,7 +879,8 @@ mod tests {
     #[test]
     fn silent_when_nothing_was_measured() {
         assert!(
-            diagnostics_from_generation(ToolpathId(1), &ToolpathStats::default()).is_empty(),
+            diagnostics_from_generation(ToolpathId::from_raw(1), &ToolpathStats::default())
+                .is_empty(),
             "default stats carry `None` — not measured"
         );
     }
@@ -887,25 +888,30 @@ mod tests {
     /// A sliver of un-collapsed polygon is not a raised island.
     #[test]
     fn silent_below_the_floor() {
-        assert!(diagnostics_from_generation(ToolpathId(1), &stats(0.5)).is_empty());
+        assert!(diagnostics_from_generation(ToolpathId::from_raw(1), &stats(0.5)).is_empty());
     }
 
     /// NaN is "not measured", not "defect" — an unmeasured cascade must not
     /// manufacture a scrap warning.
     #[test]
     fn silent_on_nan() {
-        assert!(diagnostics_from_generation(ToolpathId(1), &stats(f64::NAN)).is_empty());
+        assert!(diagnostics_from_generation(ToolpathId::from_raw(1), &stats(f64::NAN)).is_empty());
     }
 
     /// The wanaka case that motivated the whole channel: 837 mm² of
     /// standing material that only a `tracing::warn!` ever mentioned.
     #[test]
     fn reports_a_real_uncut_island() {
-        let out = diagnostics_from_generation(ToolpathId(7), &stats(837.0));
+        let out = diagnostics_from_generation(ToolpathId::from_raw(7), &stats(837.0));
         assert_eq!(out.len(), 1);
         let d = &out[0];
         assert_eq!(d.id, DiagnosticId::from(ids::GEOM_STANDING_MATERIAL));
-        assert_eq!(d.scope, Scope::Toolpath { id: ToolpathId(7) });
+        assert_eq!(
+            d.scope,
+            Scope::Toolpath {
+                id: ToolpathId::from_raw(7)
+            }
+        );
         assert_eq!(d.category, Category::Geometry);
         assert_eq!(d.severity, Severity::Caution);
         assert!(

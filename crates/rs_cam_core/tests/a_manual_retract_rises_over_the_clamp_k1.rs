@@ -59,7 +59,7 @@ const MANUAL_RETRACT: f64 = 10.0;
 /// A clamp across the stock, between the two traces.
 fn clamp() -> Obstacle {
     Obstacle {
-        id: ObstacleId(0),
+        id: ObstacleId::from_raw(0),
         name: "Middle clamp".to_owned(),
         enabled: true,
         clearance: CLEARANCE,
@@ -75,7 +75,7 @@ fn clamp() -> Obstacle {
 fn two_traces_across_the_clamp() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock_under(HALF, DEPTH));
     let tool_idx = builder.add_tool(endmill_tool_config(6.0));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     for (name, x0, x1) in [("Left", -20.0, -10.0), ("Right", 10.0, 20.0)] {
         let model_id = builder.add_model(common::session::polygon_model(
             vec![Polygon2::rectangle(x0, -5.0, x1, 5.0)],
@@ -86,7 +86,12 @@ fn two_traces_across_the_clamp() -> ProjectSession {
             depth_per_pass: 1.0,
             ..TraceConfig::default()
         });
-        let mut cfg = toolpath_config(name, op, tool_id, model_id);
+        let mut cfg = toolpath_config(
+            name,
+            op,
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
+            model_id,
+        );
         cfg.heights = HeightsConfig {
             retract_z: HeightMode::Manual(MANUAL_RETRACT),
             clearance_z: HeightMode::Manual(MANUAL_RETRACT + 2.0),
@@ -133,7 +138,7 @@ fn a_manual_retract_below_the_clamp_never_crosses_it_k1() {
             "TP{index}: the Manual retract must stay {MANUAL_RETRACT}, got {}",
             resolved.retract_z
         );
-        let toolpath = session.get_result(index).expect("a result").toolpath();
+        let toolpath = session.result_at(index).expect("a result").toolpath();
         // The toolpath starts at the plane, so the join into it rises first.
         assert!(
             toolpath.moves[0].target.z >= plane() - 1e-9,
@@ -170,7 +175,7 @@ fn the_join_between_the_traces_is_clear_k1() {
     // The join into the second trace starts at the end of the first.
     let join = session.obstacle_join_for_toolpath(1);
     let last = session
-        .get_result(0)
+        .result_at(0)
         .expect("a result")
         .toolpath()
         .moves

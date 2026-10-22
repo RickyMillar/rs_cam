@@ -68,7 +68,7 @@ pub(crate) fn commit_tool_draft(
     // geometry.
     use rs_cam_core::session::{Command, ReplaceToolArgs};
     let command = Command::ReplaceTool(ReplaceToolArgs {
-        tool_id: tool_id.0,
+        tool_id,
         config: Box::new(draft),
     });
     if apply_panel_command(state, command) {
@@ -312,12 +312,7 @@ pub(crate) fn apply_obstacle_draft(
     if obstacle == *stored {
         return Ok(());
     }
-    let Some(setup_id) = state
-        .session()
-        .list_setups()
-        .get(setup_index)
-        .map(|s| crate::state::job::SetupId(s.id))
-    else {
+    let Some(setup_id) = state.session().list_setups().get(setup_index).map(|s| s.id) else {
         return Err(format!("no setup at index {setup_index}"));
     };
     let command = Command::ReplaceObstacle(ReplaceObstacleArgs {

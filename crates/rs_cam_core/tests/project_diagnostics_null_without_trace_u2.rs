@@ -66,7 +66,7 @@ fn no_simulation_publishes_null_and_names_the_reason() {
 fn a_trace_less_simulation_publishes_null_and_names_the_missing_trace() {
     let session = ProjectSessionBuilder::new().build();
     let evidence = ProjectEvidence {
-        boundaries: vec![(ToolpathId(1), 0, 12)],
+        boundaries: vec![(ToolpathId::from_raw(1), 0, 12)],
         ..ProjectEvidence::default()
     };
     let diag = session.diagnostics_with_evidence(&evidence);
@@ -99,7 +99,7 @@ fn a_traced_simulation_measures_every_figure() {
     let mut trace = SimulationCutTrace::test_fixture();
     trace.summary.total_runtime_s = 100.0;
     let evidence = ProjectEvidence {
-        boundaries: vec![(ToolpathId(1), 0, 12)],
+        boundaries: vec![(ToolpathId::from_raw(1), 0, 12)],
         cut_trace: Some(&trace),
         ..ProjectEvidence::default()
     };

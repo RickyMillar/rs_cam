@@ -166,8 +166,14 @@ fn both_load_paths_return_geometry() {
     ];
     for (path, kind) in cases {
         assert!(path.exists(), "fixture missing: {}", path.display());
-        let direct = load_model_file(&path, 0, kind, ModelUnits::Millimeters, Default::default())
-            .expect("interactive import must succeed");
+        let direct = load_model_file(
+            &path,
+            rs_cam_core::ids::ModelId::from_raw(0),
+            kind,
+            ModelUnits::Millimeters,
+            Default::default(),
+        )
+        .expect("interactive import must succeed");
         let direct_outlines = direct.outlines_pre_selection().expect("polygons");
         let direct_polys = direct_outlines.as_ref();
         assert!(
@@ -193,8 +199,14 @@ fn the_two_load_paths_agree_on_scale() {
     ];
     for (path, kind) in cases {
         for units in [ModelUnits::Millimeters, ModelUnits::Inches] {
-            let direct = load_model_file(&path, 0, kind, units, Default::default())
-                .expect("interactive import must succeed");
+            let direct = load_model_file(
+                &path,
+                rs_cam_core::ids::ModelId::from_raw(0),
+                kind,
+                units,
+                Default::default(),
+            )
+            .expect("interactive import must succeed");
             let direct_outlines = direct.outlines_pre_selection().expect("polygons");
             let direct_polys = direct_outlines.as_ref();
             let loaded = via_project_file(&path, kind, units);
@@ -226,7 +238,7 @@ fn the_units_dial_actually_scales() {
     let path = dxf_fixture();
     let mm = load_model_file(
         &path,
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Dxf,
         ModelUnits::Millimeters,
         Default::default(),
@@ -234,7 +246,7 @@ fn the_units_dial_actually_scales() {
     .expect("mm load");
     let inch = load_model_file(
         &path,
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Dxf,
         ModelUnits::Inches,
         Default::default(),
@@ -267,9 +279,22 @@ fn the_two_load_paths_agree_on_the_join_tolerance() {
         join_tolerance_mm: 50.0,
     };
     for units in [ModelUnits::Millimeters, ModelUnits::Inches] {
-        let default = load_model_file(&path, 0, ModelKind::Dxf, units, ImportOptions::default())
-            .expect("default load");
-        let direct = load_model_file(&path, 0, ModelKind::Dxf, units, wide).expect("wide load");
+        let default = load_model_file(
+            &path,
+            rs_cam_core::ids::ModelId::from_raw(0),
+            ModelKind::Dxf,
+            units,
+            ImportOptions::default(),
+        )
+        .expect("default load");
+        let direct = load_model_file(
+            &path,
+            rs_cam_core::ids::ModelId::from_raw(0),
+            ModelKind::Dxf,
+            units,
+            wide,
+        )
+        .expect("wide load");
         assert!(
             paths(&direct) < paths(&default),
             "the wide tolerance must join pieces ({} vs {})",

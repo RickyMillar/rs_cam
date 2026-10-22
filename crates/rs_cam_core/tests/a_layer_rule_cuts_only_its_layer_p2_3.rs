@@ -144,5 +144,5 @@ fn a_rule_on_an_absent_layer_refuses_and_names_it() {
         text.contains("NO_SUCH_LAYER"),
         "the refusal must name the layer: {text}"
     );
-    assert!(s.get_result(0).is_none(), "the refusal stored a result");
+    assert!(s.result_at(0).is_none(), "the refusal stored a result");
 }

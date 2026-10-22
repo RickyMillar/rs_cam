@@ -621,7 +621,8 @@ pub fn run_job_command(
                 &phase.toolpath,
                 &phase.cutter,
                 StockCutDirection::FromTop,
-                rs_cam_core::ToolpathId(idx),
+                // The job runner numbers its phases: the phase index is the id.
+                rs_cam_core::ToolpathId::from_wire(idx),
                 phase.spindle_speed,
                 phase.flute_count,
                 rapid_feed,
@@ -654,7 +655,7 @@ pub fn run_job_command(
                 [sim_bbox.min.x, sim_bbox.min.y, sim_bbox.min.z],
                 [sim_bbox.max.x, sim_bbox.max.y, sim_bbox.max.z],
                 (0..job_result.phases.len())
-                    .map(rs_cam_core::ToolpathId)
+                    .map(rs_cam_core::ToolpathId::from_wire)
                     .collect(),
                 serde_json::json!({"source": "cli_diagnostics"}),
                 trace,
@@ -682,7 +683,7 @@ fn print_diagnostics_report(trace: &SimulationCutTrace, toolpath_labels: &[Strin
         // Job-pipeline toolpath ids are minted from the phase index
         // (see the simulate loop), so indexing labels by id.0 is sound here.
         let label = toolpath_labels
-            .get(ts.toolpath_id.0)
+            .get(ts.toolpath_id.raw())
             .map(|s| s.as_str())
             .unwrap_or("unknown");
         let air_runtime = trace.summary.total_runtime_s - ts.cutting_runtime_s - ts.rapid_runtime_s;
@@ -858,7 +859,7 @@ pub(crate) struct OpResult {
     /// Stable tool identity within the job: index of first appearance
     /// of the tool's `[tools]` key. Distinct tools always get distinct
     /// ids even when their display `tool_number`s collide.
-    pub tool_id: Option<usize>,
+    pub tool_id: Option<rs_cam_core::ids::ToolId>,
     pub tool_number: Option<u32>,
     /// The tool's `[tools]` key — used as the operator-facing label in
     /// tool-change messages.
@@ -982,7 +983,10 @@ pub fn execute_job(job: &JobFile, job_dir: &Path, debug_trace: bool) -> Result<J
             })
         }));
         let next_tool_id = tool_ids.len();
-        let tool_id = Some(*tool_ids.entry(op.tool.clone()).or_insert(next_tool_id));
+        // The job runner numbers its tools: a job-file name becomes an id here.
+        let tool_id = Some(rs_cam_core::ids::ToolId::from_wire(
+            *tool_ids.entry(op.tool.clone()).or_insert(next_tool_id),
+        ));
         debug!(tool = %op.tool, diameter_mm = tool_def.diameter, tool_type = tool_def.tool_type.serde_token(), "Tool");
 
         let output = execute_op_via_session(job, job_dir, i, op, tool_def, debug_trace)
@@ -1083,7 +1087,7 @@ fn tool_config_from_def(def: &ToolDef, name: &str) -> Result<ToolConfig> {
             missing.join(", ")
         );
     }
-    let mut tc = ToolConfig::new_default(ToolId(0), def.tool_type);
+    let mut tc = ToolConfig::new_default(ToolId::placeholder(), def.tool_type);
     tc.name = name.to_owned();
     tc.diameter = def.diameter;
     tc.cutting_length = def.diameter * DEFAULT_CUTTING_LENGTH_FACTOR;
@@ -1132,14 +1136,27 @@ fn execute_op_via_session(
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| format!("op_{i}_model"));
     let units = op.scale.map(ModelUnits::Custom);
-    let model = LoadedModel::from_file(0, &model_name, &op.input, None, units, job_dir)
-        .map_err(|e| anyhow::anyhow!("loading input '{}': {e}", op.input.display()))?;
+    let model = LoadedModel::from_file(
+        rs_cam_core::ids::ModelId::placeholder(),
+        &model_name,
+        &op.input,
+        None,
+        units,
+        job_dir,
+    )
+    .map_err(|e| anyhow::anyhow!("loading input '{}': {e}", op.input.display()))?;
     let _ = crate::command::apply_command(
         &mut session,
         Command::AddModel(AddModelArgs {
             model: Box::new(model),
         }),
     )?;
+    // The add door gave the model its id; the toolpath binds that id.
+    let model_id = session
+        .models()
+        .last()
+        .map(|m| m.id)
+        .context("add_model added no model")?;
 
     // \u{2500}\u{2500} Stock: a set top only; the session sizes the rest \u{2500}\u{2500}
     if let Some(top) = op.stock_top_z {
@@ -1177,22 +1194,21 @@ fn execute_op_via_session(
         .tools()
         .get(tool_idx)
         .context("tool index out of bounds after add_tool")?
-        .id
-        .0;
+        .id;
     let tp_index = crate::command::apply_command(
         &mut session,
         Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(ToolpathConfig {
                 shoe: Default::default(),
-                id: rs_cam_core::ToolpathId(0),
+                id: rs_cam_core::ToolpathId::placeholder(),
                 name: format!("op_{}_{}", i, op_type.kind_str()),
                 enabled: true,
                 operation: OperationConfig::new_default(op_type),
                 dressups: DressupConfig::default(),
                 heights: HeightsConfig::default(),
                 tool_id,
-                model_id: 0,
+                model_id,
                 pre_gcode: None,
                 post_gcode: None,
                 boundary: BoundaryConfig::default(),
@@ -1273,7 +1289,7 @@ fn execute_op_via_session(
         .generate_toolpath(tp_index, &cancel)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     let result = session
-        .get_result(tp_index)
+        .result_at(tp_index)
         .context("generation produced no result")?;
     let toolpath = result.toolpath().clone();
 
@@ -1284,7 +1300,7 @@ fn execute_op_via_session(
         // every surface; see `ToolConfig::size_label`.
         let tool_summary = tool_config_from_def(tool_def, &op.tool)?.summary();
         let operation_json = session
-            .get_toolpath_config(tp_index)
+            .toolpath_config_at(tp_index)
             .map(|tc| serde_json::to_value(&tc.operation).unwrap_or_default())
             .unwrap_or_default();
         let request_snapshot = serde_json::json!({
@@ -1296,7 +1312,8 @@ fn execute_op_via_session(
             "operation": operation_json,
         });
         Some(ToolpathTraceArtifact::new(
-            rs_cam_core::ToolpathId(i),
+            // The job runner numbers its operations: the index is the id.
+            rs_cam_core::ToolpathId::from_wire(i),
             &tp_name,
             &op_label,
             &tool_summary,
@@ -1308,7 +1325,7 @@ fn execute_op_via_session(
         None
     };
 
-    let config = session.get_toolpath_config(tp_index);
+    let config = session.toolpath_config_at(tp_index);
     let drill = config.and_then(rs_cam_core::gcode::phase_drill_for);
     let spindle_rpm = config.and_then(|tc| tc.operation.spindle_rpm());
     Ok(SessionOpOutput {

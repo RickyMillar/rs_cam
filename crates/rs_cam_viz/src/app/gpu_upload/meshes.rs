@@ -102,18 +102,18 @@ pub(super) fn inputs<'a>(
     selected_faces: Vec<FaceGroupId>,
     hovered_face: Option<FaceGroupId>,
 ) -> (MeshInputs<'a>, EnrichedInputs<'a>) {
-    let obstacle_model_ids: Vec<usize> = frame
+    let obstacle_model_ids: Vec<rs_cam_core::ids::ModelId> = frame
         .setup_id()
         .and_then(|sid| {
             state
                 .session()
-                .find_setup_by_id(sid.0)
+                .find_setup_by_id(sid)
                 .map(|(_, sd)| sd.obstacles.clone())
         })
         .unwrap_or_default()
         .iter()
         .filter_map(|o| match o.geometry {
-            rs_cam_core::session::ObstacleGeometry::Model { model_id } => Some(model_id.0),
+            rs_cam_core::session::ObstacleGeometry::Model { model_id } => Some(model_id),
             _ => None,
         })
         .collect();

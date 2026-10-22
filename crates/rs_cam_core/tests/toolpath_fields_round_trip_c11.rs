@@ -91,14 +91,14 @@ fn run(session: &mut ProjectSession, command: Command) {
 fn default_config(tool_id: usize, name: &str, operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -174,16 +174,22 @@ fn every_editable_toolpath_field_survives_a_save_and_a_load() {
     run(
         &mut session,
         Command::AddTool(AddToolArgs {
-            tool: Box::new(ToolConfig::new_default(ToolId(0), ToolType::EndMill)),
+            tool: Box::new(ToolConfig::new_default(
+                ToolId::from_raw(0),
+                ToolType::EndMill,
+            )),
         }),
     );
     run(
         &mut session,
         Command::AddTool(AddToolArgs {
-            tool: Box::new(ToolConfig::new_default(ToolId(0), ToolType::BallNose)),
+            tool: Box::new(ToolConfig::new_default(
+                ToolId::from_raw(0),
+                ToolType::BallNose,
+            )),
         }),
     );
-    let cutter_id = session.tools()[0].id.0;
+    let cutter_id = session.tools()[0].id.raw();
     let reference_id = session.tools()[1].id;
 
     // The rough operation. Its Adaptive3d block pins that an operation's

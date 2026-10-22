@@ -24,14 +24,16 @@ fn finding(class: TriageClass, id: &str, message: &str) -> Finding {
         class,
         dedup_key: DedupKey {
             id: DiagnosticId::from(id),
-            toolpath_id: Some(ToolpathId(1)),
+            toolpath_id: Some(ToolpathId::from_raw(1)),
             region: None,
             semantic_item_id: None,
             bucket: [0, 0, 0],
         },
         diagnostic: Diagnostic {
             id: DiagnosticId::from(id),
-            scope: Scope::Toolpath { id: ToolpathId(1) },
+            scope: Scope::Toolpath {
+                id: ToolpathId::from_raw(1),
+            },
             category: Category::Efficiency,
             severity: Severity::Hint,
             confidence: Confidence::Approximate,

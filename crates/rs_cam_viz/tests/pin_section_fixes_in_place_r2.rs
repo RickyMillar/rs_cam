@@ -60,7 +60,7 @@ const GO_ELSEWHERE: [&str; 6] = [
 
 fn square_model(id: usize, name: &str, lo: f64, hi: f64) -> LoadedModel {
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         name: name.to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -84,7 +84,7 @@ fn square_model(id: usize, name: &str, lo: f64, hi: f64) -> LoadedModel {
 }
 
 fn tool(id: usize, tool_type: ToolType, diameter: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(id), tool_type);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(id), tool_type);
     t.diameter = diameter;
     t
 }
@@ -98,14 +98,14 @@ fn drill_op(tool_id: usize, model_id: usize) -> rs_cam_core::session::ToolpathCo
 
     rs_cam_core::session::ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ids::ToolpathId(0),
+        id: rs_cam_core::ids::ToolpathId::from_raw(0),
         name: "Dowel holes, 6 mm drill".to_owned(),
         enabled: true,
         operation: OperationConfig::Drill(DrillConfig::default()),
         dressups: DressupConfig::for_op(OperationType::Drill),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),

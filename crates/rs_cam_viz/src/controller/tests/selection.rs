@@ -5,7 +5,7 @@ use super::*;
 #[test]
 fn delete_selected_toolpath_clears_selection() {
     let mut controller = sample_controller();
-    let tp_id = ToolpathId(0);
+    let tp_id = ToolpathId::from_raw(0);
     controller.state.selection = Selection::Toolpath(tp_id);
 
     // Remove the selected toolpath
@@ -31,14 +31,14 @@ fn delete_unselected_toolpath_preserves_selection() {
     };
 
     // Select back to the original toolpath
-    controller.state.selection = Selection::Toolpath(ToolpathId(0));
+    controller.state.selection = Selection::Toolpath(ToolpathId::from_raw(0));
 
     // Delete the other toolpath
     controller.handle_internal_event(crate::ui::AppEvent::RemoveToolpath(new_tp_id));
 
     assert_eq!(
         controller.state.selection,
-        Selection::Toolpath(ToolpathId(0)),
+        Selection::Toolpath(ToolpathId::from_raw(0)),
         "Selection should be preserved when a different toolpath is deleted"
     );
 }
@@ -137,25 +137,27 @@ fn selection_controller() -> AppController<ScriptedBackend> {
         .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf");
     let model = rs_cam_core::io::load_model_file(
         &path,
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Dxf,
         ModelUnits::Millimeters,
         Default::default(),
     )
     .expect("the drawing loads");
-    let mut builder =
-        ProjectSessionBuilder::new().tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::new_default(
+        ToolId::from_raw(1),
+        ToolType::EndMill,
+    ));
     let _ = builder.add_model(model);
     let config = |op: crate::state::toolpath::OperationType| ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: op.label().to_owned(),
         enabled: true,
         operation: OperationConfig::new_default(op),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -390,9 +392,12 @@ mod an_stl_face_click_p4_7 {
         };
         let mut builder = ProjectSessionBuilder::new()
             .stock(stock)
-            .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+            .tool(ToolConfig::new_default(
+                ToolId::from_raw(1),
+                ToolType::EndMill,
+            ));
         let model_id = builder.add_model(LoadedModel {
-            id: 0,
+            id: rs_cam_core::ids::ModelId::from_raw(0),
             name: "stepped.stl".to_owned(),
             mesh: Some(Arc::new(stepped_top())),
             items: Default::default(),
@@ -408,13 +413,13 @@ mod an_stl_face_click_p4_7 {
         });
         let tc = ToolpathConfig {
             shoe: Default::default(),
-            id: ToolpathId(0),
+            id: ToolpathId::from_raw(0),
             name: "Pocket".to_owned(),
             enabled: true,
             operation: OperationConfig::new_default(crate::state::toolpath::OperationType::Pocket),
             dressups: Default::default(),
             heights: Default::default(),
-            tool_id: 1,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(1),
             model_id,
             pre_gcode: None,
             post_gcode: None,
@@ -509,12 +514,12 @@ mod an_stl_face_click_p4_7 {
         let cold = controller
             .state
             .session()
-            .face_pick_key_at(&tc, model_id.0, point)
+            .face_pick_key_at(&tc, model_id, point)
             .unwrap_err();
         assert_eq!(
             cold.cause,
             RefusalCause::FacesNotReady {
-                model: rs_cam_core::ids::ModelId(0)
+                model: rs_cam_core::ids::ModelId::from_raw(0)
             }
         );
 
@@ -551,7 +556,7 @@ mod an_stl_face_click_p4_7 {
         let key = controller
             .state
             .session()
-            .face_pick_key_at(&tc, model_id.0, point)
+            .face_pick_key_at(&tc, model_id, point)
             .expect("the hit names a face");
         controller.handle_internal_event(crate::ui::AppEvent::TogglePick {
             toolpath_id: id,

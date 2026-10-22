@@ -85,7 +85,7 @@ mod tests {
             .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf");
         let model = rs_cam_core::io::load_model_file(
             &path,
-            0,
+            rs_cam_core::ids::ModelId::from_raw(0),
             ModelKind::Dxf,
             ModelUnits::Millimeters,
             Default::default(),
@@ -98,7 +98,7 @@ mod tests {
                 model: Box::new(model),
             }),
         );
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.diameter = 3.0;
         let tool_index = apply(
             &mut s,
@@ -108,17 +108,17 @@ mod tests {
         )
         .created
         .expect("the tool is created");
-        let tool_id = s.tools()[tool_index].id.0;
+        let tool_id = s.tools()[tool_index].id.raw();
         let config = ToolpathConfig {
             shoe: Default::default(),
-            id: rs_cam_core::ToolpathId(0),
+            id: rs_cam_core::ToolpathId::from_raw(0),
             name: "Pocket".to_owned(),
             enabled: true,
             operation: OperationConfig::new_default(OperationType::Pocket),
             dressups: DressupConfig::default(),
             heights: HeightsConfig::default(),
-            tool_id,
-            model_id: 0,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+            model_id: rs_cam_core::ids::ModelId::from_raw(0),
             pre_gcode: None,
             post_gcode: None,
             boundary: BoundaryConfig::default(),
@@ -162,7 +162,7 @@ mod tests {
 
         // MCP: the wire request through the core door.
         let mut mcp = project();
-        let before = mcp.get_toolpath_config(0).unwrap().operation.floor();
+        let before = mcp.toolpath_config_at(0).unwrap().operation.floor();
         assert_ne!(before, Some(floor), "the default is not the test floor");
         let effects = wire_floor(&mut mcp, &file_json).expect("the wire floor applies");
         assert!(effects.stale.contains(&0), "the floor stales the toolpath");
@@ -185,8 +185,8 @@ mod tests {
             .expect("the GUI write applies");
 
         // One config.
-        let mcp_tc = mcp.get_toolpath_config(0).unwrap();
-        let gui_tc = state.session().get_toolpath_config(0).unwrap();
+        let mcp_tc = mcp.toolpath_config_at(0).unwrap();
+        let gui_tc = state.session().toolpath_config_at(0).unwrap();
         assert_eq!(
             serde_json::to_value(&mcp_tc.operation).unwrap(),
             serde_json::to_value(&gui_tc.operation).unwrap(),
@@ -221,7 +221,7 @@ mod tests {
                 "the refusal names the toolpath: {error}"
             );
             assert_eq!(
-                mcp.get_toolpath_config(0).unwrap().operation.floor(),
+                mcp.toolpath_config_at(0).unwrap().operation.floor(),
                 Some(floor),
                 "{refused} wrote the config"
             );
@@ -244,7 +244,7 @@ mod tests {
     fn the_floor_wire_rows_name_the_floor_door_p3_8() {
         use rs_cam_core::session::SetToolpathParamArgs;
         let mut s = project();
-        let before = s.get_toolpath_config(0).unwrap().operation.floor();
+        let before = s.toolpath_config_at(0).unwrap().operation.floor();
         let error = s
             .apply(Command::SetToolpathParam(SetToolpathParamArgs {
                 index: 0,
@@ -258,7 +258,7 @@ mod tests {
             "the refusal names the floor door: {text}"
         );
         assert_eq!(
-            s.get_toolpath_config(0).unwrap().operation.floor(),
+            s.toolpath_config_at(0).unwrap().operation.floor(),
             before,
             "the refused write keeps the floor"
         );

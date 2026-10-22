@@ -78,7 +78,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
 use rs_cam_core::compute::operation_configs::{DrillConfig, DrillCycleType, PocketConfig};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
-use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ObstacleId;
@@ -86,9 +86,9 @@ use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
-    AddModelArgs, AddObstacleArgs, AddToolArgs, AddToolpathArgs, Command, DatumConfig, LoadedModel,
-    Obstacle, ObstacleGeometry, ProjectSession, ProjectSessionBuilder, SessionError,
-    SetStockConfigArgs, SetupData, ToolpathConfig,
+    AddModelArgs, AddObstacleArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, Obstacle,
+    ObstacleGeometry, ProjectSession, ProjectSessionBuilder, SessionError, SetStockConfigArgs,
+    SetupData, ToolpathConfig,
 };
 use rs_cam_core::toolpath::{Move, MoveType};
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
@@ -149,7 +149,7 @@ fn box_mesh() -> TriangleMesh {
 
 fn drawing_model(id: usize) -> LoadedModel {
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         name: "front_face_drawing".to_owned(),
         mesh: None,
         // The pocket outline, then the drill hole as a point (P2.3c: the
@@ -189,7 +189,7 @@ fn drawing_model(id: usize) -> LoadedModel {
 
 fn part_model(id: usize) -> LoadedModel {
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         name: "block".to_owned(),
         mesh: Some(Arc::new(box_mesh())),
         items: Default::default(),
@@ -214,14 +214,14 @@ fn toolpath_config(
     let op_type = operation.op_type();
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation,
         dressups: DressupConfig::for_op(op_type),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -263,18 +263,11 @@ fn drill_op() -> OperationConfig {
 /// refusal cannot be confused with a broken fixture.
 fn build_session(with_mesh: bool, with_fixture: bool) -> ProjectSession {
     let mut session = ProjectSessionBuilder::new()
-        .setup(SetupData {
-            id: 0,
-            name: "Setup 1".to_owned(),
-            face_up: FaceUp::Front,
-            z_rotation: ZRotation::default(),
-            datum: DatumConfig::default(),
-            model_ids: Vec::new(),
-            obstacles: Vec::new(),
-            stock_changes: Vec::new(),
-            toolpath_indices: Vec::new(),
-            pause_message: None,
-        })
+        .setup(SetupData::new(
+            rs_cam_core::ids::SetupId::from_raw(0),
+            "Setup 1",
+            FaceUp::Front,
+        ))
         .build();
     let stock = StockConfig {
         x: STOCK_X,
@@ -299,7 +292,7 @@ fn build_session(with_mesh: bool, with_fixture: bool) -> ProjectSession {
         .expect("the tool row refuses nothing")
         .created
         .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_id = session.tools()[tool_idx].id.raw();
 
     if with_mesh {
         let _ = session
@@ -320,7 +313,7 @@ fn build_session(with_mesh: bool, with_fixture: bool) -> ProjectSession {
         // In the lateral setup frame: a clamp over the low-X end of the
         // face, from below the stock to above its top.
         let clamp = Obstacle {
-            id: ObstacleId(0),
+            id: ObstacleId::from_raw(0),
             name: "Clamp".to_owned(),
             enabled: true,
             clearance: 2.0,
@@ -550,7 +543,7 @@ fn a_lateral_setup_keeps_the_tool_out_of_its_obstacle() {
     session
         .generate_toolpath(0, &cancel)
         .expect("an obstacle no longer refuses a lateral setup");
-    let toolpath = session.get_result(0).expect("a result").toolpath().clone();
+    let toolpath = session.result_at(0).expect("a result").toolpath().clone();
     assert!(!toolpath.moves.is_empty());
     let set = session
         .obstacle_set_for_toolpath(0)

@@ -312,7 +312,7 @@ pub(super) fn draw_toolpath_panel(
     // ── Tab bar ─────────────────────────────────────────────────────
 
     ui.add_space(8.0);
-    let tab_id = ui.id().with("tp_tab").with(entry.id.0);
+    let tab_id = ui.id().with("tp_tab").with(entry.id.raw());
     let mut active_tab: ToolpathTab = tab_override.unwrap_or_else(|| {
         ui.memory(|mem| mem.data.get_temp(tab_id))
             .unwrap_or(ToolpathTab::Geometry)
@@ -597,7 +597,7 @@ pub(super) fn draw_geometry_tab(
             ui,
             &super::selection_section::SelectionSectionInputs {
                 toolpath_id: entry.id,
-                toolpath_model: rs_cam_core::ids::ModelId(entry.model_id.0),
+                toolpath_model: entry.model_id,
                 target: rs_cam_core::session::SelectionTarget::Op,
                 selection,
                 op_default: &op_default,
@@ -877,7 +877,7 @@ pub(super) fn draw_geometry_tab(
                     ui,
                     &super::selection_section::SelectionSectionInputs {
                         toolpath_id: entry.id,
-                        toolpath_model: rs_cam_core::ids::ModelId(entry.model_id.0),
+                        toolpath_model: entry.model_id,
                         target: rs_cam_core::session::SelectionTarget::Boundary,
                         selection,
                         op_default: &inputs.boundary_default,

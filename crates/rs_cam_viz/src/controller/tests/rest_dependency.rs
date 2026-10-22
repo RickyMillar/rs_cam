@@ -6,7 +6,7 @@ use super::*;
 #[test]
 fn drain_compute_results_marks_derived_rest_dependents_stale() {
     let mut controller = sample_controller();
-    let source_id = ToolpathId(0);
+    let source_id = ToolpathId::from_raw(0);
     let dependent_id = add_derived_rest_dependent(&mut controller, source_id);
 
     assert!(
@@ -75,7 +75,7 @@ fn drain_compute_results_marks_derived_rest_dependents_stale() {
 #[test]
 fn set_boundary_config_auto_enables_source_rest_analysis() {
     let mut controller = sample_controller();
-    let source_id = ToolpathId(0);
+    let source_id = ToolpathId::from_raw(0);
     assert!(
         !controller
             .state
@@ -94,7 +94,7 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
     // setter itself).
     let consumer_config = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0), // placeholder — add_toolpath assigns the real id
+        id: ToolpathId::from_raw(0), // placeholder — add_toolpath assigns the real id
         name: "Consumer".to_owned(),
         enabled: true,
         operation: OperationConfig::Scallop(
@@ -102,8 +102,8 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -155,7 +155,7 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
 #[test]
 fn handle_remove_toolpath_marks_derived_rest_dependents_stale() {
     let mut controller = sample_controller();
-    let source_id = ToolpathId(0);
+    let source_id = ToolpathId::from_raw(0);
     let dependent_id = add_derived_rest_dependent(&mut controller, source_id);
 
     controller.handle_internal_event(crate::ui::AppEvent::RemoveToolpath(source_id));
@@ -184,7 +184,7 @@ fn remove_tool_blocked_when_toolpath_references_it() {
     assert_eq!(tool_count_before, 1);
 
     // ToolId(1) is referenced by the sample toolpath — deletion must be blocked.
-    controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(ToolId(1)));
+    controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(ToolId::from_raw(1)));
     assert_eq!(
         controller.state.session().tools().len(),
         tool_count_before,

@@ -235,14 +235,14 @@ fn tc(
 ) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -258,7 +258,7 @@ fn tc(
 
 fn empty_model(name: &str) -> LoadedModel {
     LoadedModel {
-        id: 0, // overwritten by `add_model`
+        id: rs_cam_core::ids::ModelId::from_raw(0), // overwritten by `add_model`
         name: name.to_owned(),
         mesh: None,
         items: Default::default(),
@@ -293,7 +293,7 @@ fn fake_result() -> rs_cam_core::session::ToolpathComputeResult {
 /// `insert_result` was the public door before WP3. A completion now
 /// carries the revision the lane started from.
 fn adopt(s: &mut ProjectSession, index: usize) {
-    let revision = s.toolpath_revision(index);
+    let revision = s.toolpath_revision_at(index);
     let _ = s
         .apply(Command::AdoptResult(AdoptResultArgs {
             index,
@@ -310,23 +310,26 @@ fn adopt(s: &mut ProjectSession, index: usize) {
 /// `mutation_paths_invalidate_alike_p0.rs` uses.
 fn fixture() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
     builder.add_model(empty_model("part.svg"));
-    let tool = builder.tools()[0].id.0;
+    let tool = builder.tools()[0].id.raw();
     let model = builder.models()[0].id;
     let upstream = tc(
         "upstream",
         OperationConfig::Pocket(PocketConfig::default()),
         StockSource::Fresh,
         tool,
-        model,
+        model.raw(),
     );
     let downstream = tc(
         "downstream",
         OperationConfig::Pocket(PocketConfig::default()),
         StockSource::FromRemainingStock,
         tool,
-        model,
+        model.raw(),
     );
     let _ = builder.add_toolpath(0, upstream).unwrap();
     let _ = builder.add_toolpath(0, downstream).unwrap();
@@ -341,8 +344,8 @@ fn fixture() -> ProjectSession {
 /// both results exist first, and unless the downstream row really reads
 /// the stock the upstream row leaves.
 fn assert_fixture_is_live(s: &ProjectSession) {
-    assert!(s.get_result(0).is_some(), "index 0 needs a cached result");
-    assert!(s.get_result(1).is_some(), "index 1 needs a cached result");
+    assert!(s.result_at(0).is_some(), "index 0 needs a cached result");
+    assert!(s.result_at(1).is_some(), "index 1 needs a cached result");
     assert!(
         matches!(
             s.toolpath_configs()[1].stock_source,
@@ -358,7 +361,7 @@ fn assert_fixture_is_live(s: &ProjectSession) {
 
 fn revisions(s: &ProjectSession) -> Vec<u64> {
     (0..s.toolpath_count())
-        .map(|i| s.toolpath_revision(i))
+        .map(|i| s.toolpath_revision_at(i))
         .collect()
 }
 
@@ -368,10 +371,10 @@ fn observe(s: &ProjectSession, before: &[u64]) -> (BTreeSet<usize>, BTreeSet<usi
     let mut dropped = BTreeSet::new();
     let mut bumped = BTreeSet::new();
     for i in 0..s.toolpath_count() {
-        if s.get_result(i).is_none() {
+        if s.result_at(i).is_none() {
             dropped.insert(i);
         }
-        if before.get(i).copied() != Some(s.toolpath_revision(i)) {
+        if before.get(i).copied() != Some(s.toolpath_revision_at(i)) {
             bumped.insert(i);
         }
     }
@@ -423,7 +426,7 @@ fn apply_reports_the_set_the_setter_dropped() {
     );
     assert_eq!(
         effects.revision,
-        Some(s.toolpath_revision(0)),
+        Some(s.toolpath_revision_at(0)),
         "Effects::revision is the named toolpath's own revision, never \
          the session-global next_revision. It is `Some` because the \
          command names one toolpath that still sits at that index."
@@ -512,7 +515,7 @@ fn a_refused_command_returns_an_error() {
         "index 99 names no toolpath, so the command must refuse"
     );
     assert!(
-        s.get_result(0).is_some() && s.get_result(1).is_some(),
+        s.result_at(0).is_some() && s.result_at(1).is_some(),
         "a refusal drops no result"
     );
 }

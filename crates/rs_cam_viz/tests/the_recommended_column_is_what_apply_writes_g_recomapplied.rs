@@ -91,7 +91,7 @@ impl ComputeBackend for SilentBackend {
 /// The default stickout is 45 mm, L/D 7.5, so the long-tool share is 0.75
 /// and the dial's load target is 0.85 × 0.75 = 64 % of the base engagement.
 fn controller() -> AppController<SilentBackend> {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.flute_count = 2;
 
@@ -107,14 +107,14 @@ fn controller() -> AppController<SilentBackend> {
 
     let config = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Recommended column fixture".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(Default::default()),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -128,7 +128,7 @@ fn controller() -> AppController<SilentBackend> {
     };
 
     let model = LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         path: PathBuf::from("recommended_column_fixture.svg"),
         name: "Recommended column fixture".to_owned(),
         kind: Some(ModelKind::Svg),

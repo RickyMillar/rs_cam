@@ -32,14 +32,14 @@ use rs_cam_core::session::{
 fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: OperationConfig::new_default(OperationType::Pocket),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -57,8 +57,11 @@ fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
 /// global index of the op in setup 0.
 fn two_setups() -> (ProjectSession, usize) {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    let tool_id = builder.tools()[0].id.0;
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
+    let tool_id = builder.tools()[0].id.raw();
     builder.add_setup("Setup 2".to_owned(), FaceUp::Bottom);
 
     let travelling = builder
@@ -73,7 +76,7 @@ fn two_setups() -> (ProjectSession, usize) {
 
 fn names_in_setup(s: &ProjectSession, setup: usize) -> Vec<String> {
     s.list_setups()[setup]
-        .toolpath_indices
+        .toolpath_indices()
         .iter()
         .map(|&i| s.toolpath_configs()[i].name.clone())
         .collect()
@@ -100,7 +103,7 @@ fn a_cross_setup_drop_lands_at_the_dropped_position() {
             .unwrap();
 
         assert!(
-            s.list_setups()[0].toolpath_indices.is_empty(),
+            s.list_setups()[0].toolpath_indices().is_empty(),
             "position {position}: the op must leave its old setup"
         );
         assert_eq!(

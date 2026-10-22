@@ -423,7 +423,7 @@ fn state_for(case: &Case) -> AppState {
     };
     let config = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Visible-stage fixture".to_owned(),
         enabled: true,
         operation: case.operation.clone(),
@@ -431,8 +431,8 @@ fn state_for(case: &Case) -> AppState {
         // gets the 3° ramp that the G6 ramp line reads.
         dressups: DressupConfig::for_op(case.operation.op_type()),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -445,7 +445,7 @@ fn state_for(case: &Case) -> AppState {
         planner_origin: None,
     };
     let model = LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         path: PathBuf::from("visible_stage_fixture.svg"),
         name: "Visible-stage fixture".to_owned(),
         kind: Some(ModelKind::Svg),
@@ -601,7 +601,7 @@ fn check(case: &Case) -> Vec<&'static str> {
 /// The whyrow cell: a Ø6 flat 2F `Adaptive3d` in Baltic birch, on the
 /// default stickout 45 mm (7.5 x D).
 fn adaptive_tool() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.flute_count = 2;
     tool
@@ -650,7 +650,7 @@ fn first_skip_cell(
                 continue;
             }
             for &tool_type in ToolType::ALL {
-                let mut tool = ToolConfig::new_default(ToolId(1), tool_type);
+                let mut tool = ToolConfig::new_default(ToolId::from_raw(1), tool_type);
                 // Ruling B5 (G6): the drill claim covers a flat end mill at
                 // 3.0-12.7 mm (widened 2026-09-25); the default end mill is
                 // 6.35 mm, already inside the range, but 6.0 mm keeps this
@@ -712,7 +712,7 @@ fn cases() -> Vec<Case> {
     let mut short_flute = adaptive_tool();
     short_flute.cutting_length = 2.0;
 
-    let mut profile_tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut profile_tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     profile_tool.diameter = 3.175;
     profile_tool.flute_count = 2;
     profile_tool.cutting_length = 12.0;
@@ -738,7 +738,7 @@ fn cases() -> Vec<Case> {
     let (drill_material, drill_op, drill_tool) =
         first_skip_cell(&[softwood_plywood, hdf], AggressivenessSkip::Drill);
 
-    let mut pocket_tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut pocket_tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     pocket_tool.diameter = 6.0;
 
     vec![

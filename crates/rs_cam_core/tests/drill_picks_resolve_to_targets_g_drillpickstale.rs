@@ -105,7 +105,7 @@ fn target_at(xy: [f64; 2]) -> TestHole {
 fn plate_model(hole: Option<[f64; 2]>) -> LoadedModel {
     let targets: Vec<TestHole> = hole.into_iter().map(target_at).collect();
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "plate".to_owned(),
         mesh: None,
         items: Arc::new(common::session::drawing_items(
@@ -181,9 +181,14 @@ fn pin_drill_op(at: &[[f64; 2]]) -> OperationConfig {
 fn session_with(model: LoadedModel, op: OperationConfig) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(model);
-    let mut tc = toolpath_config("Drill", op, tool_id, model_id);
+    let mut tc = toolpath_config(
+        "Drill",
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     tc.dressups.entry_style = DressupEntryStyle::None;
     tc.dressups.optimize_rapid_order = false;
     let _ = builder.add_toolpath(0, tc).expect("add drill toolpath");

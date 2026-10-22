@@ -321,12 +321,16 @@ fn write_trace_artifact(
         tracing::warn!(
             "No artifact folder resolves for the toolpath debug trace of {}; \
              set one in File > Preferences > Diagnostics",
-            req.viz.toolpath_id.0
+            req.viz.toolpath_id.raw()
         );
         return None;
     };
     let artifact = build_trace_artifact(req, debug_trace.cloned(), semantic_trace.cloned());
-    let file_stem = format!("{}-{}", req.viz.toolpath_id.0, req.handle.toolpath_name());
+    let file_stem = format!(
+        "{}-{}",
+        req.viz.toolpath_id.raw(),
+        req.handle.toolpath_name()
+    );
     match rs_cam_core::trace::semantic_trace::write_toolpath_trace_artifact(
         &dir, &file_stem, &artifact,
     ) {
@@ -334,7 +338,7 @@ fn write_trace_artifact(
         Err(error) => {
             tracing::warn!(
                 "Failed to write toolpath debug artifact for {}: {error}",
-                req.viz.toolpath_id.0
+                req.viz.toolpath_id.raw()
             );
             None
         }
@@ -374,7 +378,7 @@ mod tests {
             1,
             "Test",
             operation,
-            ToolConfig::new_default(ToolId(1), tool_type),
+            ToolConfig::new_default(ToolId::from_raw(1), tool_type),
         )
     }
 

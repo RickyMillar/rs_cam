@@ -15,7 +15,7 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
         }),
         total_moves: 12,
         boundaries: vec![crate::state::simulation::ToolpathBoundary {
-            id: ToolpathId(0),
+            id: ToolpathId::from_raw(0),
             name: "Adaptive 3D".to_owned(),
             tool_name: "Tool".to_owned(),
             start_move: 4,
@@ -23,7 +23,7 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
             direction: rs_cam_core::dexel_stock::StockCutDirection::FromTop,
         }],
         setup_boundaries: vec![crate::state::simulation::SetupBoundary {
-            setup_id: crate::state::job::SetupId(1),
+            setup_id: crate::state::job::SetupId::from_raw(1),
             setup_name: "Setup 1".to_owned(),
             start_move: 0,
         }],
@@ -41,7 +41,7 @@ fn inspect_toolpath_in_simulation_queues_workspace_switch_and_jump_when_results_
     });
 
     controller.handle_internal_event(crate::ui::AppEvent::Ui(
-        UiCommand::InspectToolpathInSimulation(ToolpathId(0)),
+        UiCommand::InspectToolpathInSimulation(ToolpathId::from_raw(0)),
     ));
     let events = controller.drain_events();
 
@@ -72,7 +72,7 @@ fn inspect_toolpath_in_simulation_queues_targeted_run_when_results_missing() {
     let mut controller = sample_controller();
 
     controller.handle_internal_event(crate::ui::AppEvent::Ui(
-        UiCommand::InspectToolpathInSimulation(ToolpathId(0)),
+        UiCommand::InspectToolpathInSimulation(ToolpathId::from_raw(0)),
     ));
     let events = controller.drain_events();
 
@@ -84,18 +84,18 @@ fn inspect_toolpath_in_simulation_queues_targeted_run_when_results_missing() {
     )));
     assert!(events.iter().any(|event| matches!(
         event,
-        crate::ui::AppEvent::RunSimulationWith(ids) if ids == &vec![ToolpathId(0)]
+        crate::ui::AppEvent::RunSimulationWith(ids) if ids == &vec![ToolpathId::from_raw(0)]
     )));
     assert_eq!(
         controller.state.simulation.debug.pending_inspect_toolpath,
-        Some(ToolpathId(0))
+        Some(ToolpathId::from_raw(0))
     );
 }
 
 #[test]
 fn simulation_results_land_on_pending_inspect_toolpath_start() {
     let mut controller = sample_controller();
-    controller.state.simulation.debug.pending_inspect_toolpath = Some(ToolpathId(0));
+    controller.state.simulation.debug.pending_inspect_toolpath = Some(ToolpathId::from_raw(0));
     controller
         .compute
         .drained
@@ -111,7 +111,7 @@ fn simulation_results_land_on_pending_inspect_toolpath_start() {
                 deviations: None,
                 column_deviations: None,
                 boundaries: vec![crate::compute::worker::SimBoundary {
-                    id: ToolpathId(0),
+                    id: ToolpathId::from_raw(0),
                     name: "Adaptive 3D".to_owned(),
                     tool_name: "Tool".to_owned(),
                     start_move: 2,

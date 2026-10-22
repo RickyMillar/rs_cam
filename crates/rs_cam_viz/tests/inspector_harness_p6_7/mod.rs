@@ -34,7 +34,7 @@ pub const MODEL: usize = 1;
 /// A drawing model of `items`.
 pub fn drawing_model(items: ItemSet) -> LoadedModel {
     LoadedModel {
-        id: MODEL,
+        id: rs_cam_core::ids::ModelId::from_raw(MODEL),
         path: PathBuf::from("synthetic://p6_7.dxf"),
         name: "P6.7 drawing".to_owned(),
         kind: Some(ModelKind::Dxf),
@@ -54,14 +54,14 @@ pub fn drawing_model(items: ItemSet) -> LoadedModel {
 pub fn toolpath(name: &str, operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: TOOL,
-        model_id: MODEL,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(TOOL),
+        model_id: rs_cam_core::ids::ModelId::from_raw(MODEL),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -83,7 +83,7 @@ pub fn state(
     stock: StockConfig,
     operation: OperationConfig,
 ) -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = tool_diameter;
     let mut builder = ProjectSessionBuilder::new()
         .stock(stock)

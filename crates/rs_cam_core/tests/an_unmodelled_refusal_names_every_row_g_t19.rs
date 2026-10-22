@@ -57,7 +57,7 @@ use rs_cam_core::tool_load::verdict::{
     SampleEvidence, ToolLoadReport, ToolpathLoadVerdict, UnmodeledReason,
 };
 
-const TP: ToolpathId = ToolpathId(4);
+const TP: ToolpathId = ToolpathId::from_raw(4);
 
 /// The depth gate's own refusal when the tool states no diameter the
 /// rigidity cap can multiply. The string is the fixture's, not a

@@ -110,7 +110,7 @@ fn the_report_counts_the_join_per_layer() {
     let path = repo().join("crates/rs_cam_core/tests/fixtures/selection_p2_1/mix.dxf");
     let model = load_model_file(
         &path,
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Dxf,
         ModelUnits::Millimeters,
         ImportOptions::default(),
@@ -153,7 +153,7 @@ fn a_mesh_has_no_report() {
     let path = repo().join("crates/rs_cam_core/tests/fixtures/terrain.stl");
     let model = load_model_file(
         &path,
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Stl,
         ModelUnits::Millimeters,
         ImportOptions::default(),
@@ -171,7 +171,7 @@ fn a_wider_tolerance_joins_a_dxf_gap() {
     let load = |tol: f64| {
         load_model_file(
             &path,
-            0,
+            rs_cam_core::ids::ModelId::from_raw(0),
             ModelKind::Dxf,
             ModelUnits::Millimeters,
             options(tol),
@@ -202,7 +202,7 @@ fn a_wider_tolerance_joins_a_dxf_gap() {
     // A tolerance no import can use refuses.
     let refused = load_model_file(
         &path,
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Dxf,
         ModelUnits::Millimeters,
         options(0.0),
@@ -309,7 +309,7 @@ fn the_import_options_round_trip_through_the_project_file() {
     // The import door and the project door agree.
     let direct = load_model_file(
         &dir.join("gap.dxf"),
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Dxf,
         ModelUnits::Millimeters,
         options(0.5),

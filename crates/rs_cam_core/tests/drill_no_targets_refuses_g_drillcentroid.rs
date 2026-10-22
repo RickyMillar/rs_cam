@@ -76,7 +76,7 @@ fn star_model() -> LoadedModel {
     let path = repo_root().join("fixtures/demo_star.svg");
     let model = load_model_file(
         &path,
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Svg,
         ModelUnits::Millimeters,
         Default::default(),
@@ -106,7 +106,7 @@ fn pocket_model() -> LoadedModel {
     let path = repo_root().join("fixtures/demo_pocket.svg");
     load_model_file(
         &path,
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Svg,
         ModelUnits::Millimeters,
         Default::default(),
@@ -166,9 +166,14 @@ fn session_with(model: LoadedModel, op: OperationConfig) -> ProjectSession {
 fn session_with_tool(model: LoadedModel, op: OperationConfig, tool: ToolConfig) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(tool);
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(model);
-    let mut tc = toolpath_config("Drill", op, tool_id, model_id);
+    let mut tc = toolpath_config(
+        "Drill",
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     tc.dressups.entry_style = DressupEntryStyle::None;
     tc.dressups.optimize_rapid_order = false;
     let _ = builder.add_toolpath(0, tc).expect("add drill toolpath");
@@ -226,7 +231,7 @@ fn a_drawing_with_no_targets_refuses_instead_of_drilling_the_centroid() {
         "the refusal must name the missing input; got: {err}"
     );
     assert!(
-        session.get_result(0).is_none(),
+        session.result_at(0).is_none(),
         "a refused generation must store no toolpath"
     );
 }
@@ -269,7 +274,7 @@ fn an_svg_circle_drills_at_its_centre_and_the_outline_does_not() {
     // pin the count (one hole) rather than the position for that half.
     assert!(
         !session
-            .get_result(0)
+            .result_at(0)
             .unwrap()
             .op_data
             .annotated()

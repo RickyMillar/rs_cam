@@ -126,11 +126,11 @@ fn endmill() -> ToolDefinition {
 fn entry(id: usize, name: &str, tp: Toolpath) -> SimToolpathEntry {
     SimToolpathEntry {
         head: Default::default(),
-        id: ToolpathId(id),
+        id: ToolpathId::from_raw(id),
         name: name.to_owned(),
         annotated: Arc::new(AnnotatedToolpath::new(tp)),
         tool: std::sync::Arc::new(endmill()),
-        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+        tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,
@@ -248,7 +248,7 @@ fn expected_groove_mm3() -> f64 {
 fn local_route_removed(result: &SimulationResult) -> f64 {
     let prior = result
         .prior_stocks
-        .get(&ToolpathId(1))
+        .get(&ToolpathId::from_raw(1))
         .expect("toolpath 1 has a prior-stock snapshot of the local stock");
     removed_mm3(prior)
 }

@@ -406,7 +406,7 @@ impl SimulationState {
         let mut boundary_hasher = std::collections::hash_map::DefaultHasher::new();
         let mut toolpath_traces = Vec::with_capacity(self.boundaries().len());
         for boundary in self.boundaries() {
-            boundary.id.0.hash(&mut boundary_hasher);
+            boundary.id.raw().hash(&mut boundary_hasher);
             boundary.start_move.hash(&mut boundary_hasher);
             boundary.end_move.hash(&mut boundary_hasher);
             let rt = gui.toolpath_rt.get(&boundary.id);

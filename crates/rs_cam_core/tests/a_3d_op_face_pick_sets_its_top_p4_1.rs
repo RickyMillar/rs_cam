@@ -147,7 +147,7 @@ fn part_model() -> LoadedModel {
     )
     .unwrap();
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "p4_1_part".to_owned(),
         mesh: Some(Arc::clone(&enriched.mesh)),
         items: Arc::new(brep_face_items(&enriched)),
@@ -201,13 +201,18 @@ fn empty_selection_boundary() -> BoundaryConfig {
 fn session(boundary: BoundaryConfig, top: HeightMode, face_up: FaceUp) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_DIAMETER));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(part_model());
     let op = OperationConfig::DropCutter(DropCutterConfig {
         stepover: 1.0,
         ..DropCutterConfig::default()
     });
-    let mut cfg = toolpath_config("3D face pick", op, tool_id, model_id);
+    let mut cfg = toolpath_config(
+        "3D face pick",
+        op,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id,
+    );
     cfg.boundary = boundary;
     cfg.heights.top_z = top;
     let _ = builder.add_toolpath(0, cfg).unwrap();

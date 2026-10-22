@@ -7,7 +7,7 @@ use super::AppEvent;
 use crate::render::toolpath_render::palette_color;
 use crate::state::AppState;
 use crate::state::freshness::{FreshnessState, freshness};
-use crate::state::job::{SetupId, ToolId};
+use crate::state::job::SetupId;
 use crate::state::selection::Selection;
 use crate::state::toolpath::{OperationType, ToolpathId};
 use crate::state::viewport::ViewportState;
@@ -55,7 +55,7 @@ struct CardInfo {
     id: rs_cam_core::ToolpathId,
     name: String,
     enabled: bool,
-    tool_id: usize,
+    tool_id: rs_cam_core::ids::ToolId,
 }
 
 /// Minimal snapshot of `ToolpathRuntime` fields the card needs.
@@ -205,7 +205,7 @@ fn plan_focus(
         },
         Activity::Simulating(setup, _) => PlanFocus {
             generating: None,
-            simulating_upto: session.find_setup_by_id(setup.0).map(|(at, _)| at),
+            simulating_upto: session.find_setup_by_id(*setup).map(|(at, _)| at),
         },
     }
 }
@@ -249,7 +249,7 @@ pub fn draw(
         .session()
         .list_setups()
         .iter()
-        .map(|s| (SetupId(s.id), s.name.clone(), s.toolpath_indices.clone()))
+        .map(|s| (s.id, s.name.clone(), s.toolpath_indices().to_vec()))
         .collect();
     let multi_setup = setups_data.len() > 1;
     let mut global_idx = 0usize;
@@ -336,7 +336,7 @@ pub fn draw(
                 global_idx += 1;
                 // Snapshot just the fields the card reads, releasing the
                 // session/gui borrow before we re-enter `state` for viewport.
-                let Some(tc_src) = state.session().get_toolpath_config(tp_idx) else {
+                let Some(tc_src) = state.session().toolpath_config_at(tp_idx) else {
                     continue;
                 };
                 let card = CardInfo {
@@ -347,7 +347,7 @@ pub fn draw(
                 };
                 let rt = state.gui.toolpath_rt.get(&card.id);
                 let row_freshness =
-                    freshness(tc_src, rt, state.session().get_result(tp_idx).is_some());
+                    freshness(tc_src, rt, state.session().result_at(tp_idx).is_some());
                 let has_result = rt.is_some_and(|r| r.run.result().is_some());
                 let flight = in_flight(
                     &row_freshness,
@@ -383,7 +383,7 @@ pub fn draw(
                 .map(|idx| {
                     // SAFETY: setup_of_toolpath_id returns a valid index into list_setups
                     #[allow(clippy::indexing_slicing)]
-                    SetupId(state.session().list_setups()[idx].id)
+                    state.session().list_setups()[idx].id
                 });
 
             // Determine drop index from pointer position
@@ -420,9 +420,9 @@ pub fn draw(
     // offers one way in, not two.
     if !multi_setup
         && let Some(setup) = state.session().list_setups().first()
-        && !setup.toolpath_indices.is_empty()
+        && !setup.toolpath_indices().is_empty()
     {
-        let sid = SetupId(setup.id);
+        let sid = setup.id;
         ui.add_space(tokens::SPACE_2);
         add_toolpath_menu(ui, sid, state, events);
     }
@@ -543,7 +543,7 @@ fn draw_toolpath_card(
         .session()
         .tools()
         .iter()
-        .find(|t| t.id == ToolId(tc.tool_id))
+        .find(|t| t.id == tc.tool_id)
         .map(|tool| tool.summary());
     let pc = palette_color(global_idx);
     let swatch_color = tokens::from_linear_rgb(pc);
@@ -1299,7 +1299,7 @@ fn stock_notes(session: &rs_cam_core::session::ProjectSession) -> HashMap<Toolpa
             continue;
         }
         let read = session
-            .get_result(index)
+            .result_at(index)
             .and_then(|result| result.stats.source_stock.as_ref())
             .map(|source| format!("Stock read at {:.3} mm cells.", source.cell_mm));
         let note = read.or_else(|| match session.snapshot_is_current(tc.id) {
@@ -1617,7 +1617,7 @@ fn draw_connectors(
             let response = ui
                 .interact(
                     hit,
-                    egui::Id::new("tp_edge").with(row_id.0).with(index),
+                    egui::Id::new("tp_edge").with(row_id.raw()).with(index),
                     egui::Sense::click(),
                 )
                 .on_hover_text(hover.clone());

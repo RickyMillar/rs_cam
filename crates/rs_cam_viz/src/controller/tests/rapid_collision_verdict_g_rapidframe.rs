@@ -239,7 +239,7 @@ fn every_surface_gives_the_edge_move_to_the_later_toolpath_g_rapidframe() {
         let json = crate::app::mcp::inspect_collisions_json(sim);
         let rows = json["by_toolpath"].as_array().expect("rows");
         assert_eq!(rows.len(), 1, "{json:#}");
-        assert_eq!(rows[0]["toolpath_id"].as_u64(), Some(second.0 as u64));
+        assert_eq!(rows[0]["toolpath_id"].as_u64(), Some(second.raw() as u64));
         let hits = rows[0]["rapid_collisions"].as_array().expect("hits");
         assert_eq!(hits[0]["global_move"].as_u64(), Some(SECOND_START as u64));
         assert_eq!(hits[0]["local_move"].as_u64(), Some(0));
@@ -336,7 +336,7 @@ fn a_holder_hit_on_the_second_toolpath_stays_on_it_g_rapidframe() {
         let json = crate::app::mcp::inspect_collisions_json(sim);
         let rows = json["by_toolpath"].as_array().expect("rows");
         assert_eq!(rows.len(), 1, "{json:#}");
-        assert_eq!(rows[0]["toolpath_id"].as_u64(), Some(second.0 as u64));
+        assert_eq!(rows[0]["toolpath_id"].as_u64(), Some(second.raw() as u64));
         let hits = rows[0]["holder_collisions"].as_array().expect("hits");
         assert_eq!(
             hits[0]["global_move"].as_u64(),

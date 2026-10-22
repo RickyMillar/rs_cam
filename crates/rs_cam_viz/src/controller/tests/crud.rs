@@ -8,7 +8,7 @@ fn remove_tool_succeeds_when_no_toolpath_references_it() {
     let mut controller = sample_controller();
 
     // Add a second tool that is not referenced by any toolpath.
-    let unreferenced_id = ToolId(99);
+    let unreferenced_id = ToolId::from_raw(99);
     let extra_tool = ToolConfig::new_default(unreferenced_id, ToolType::EndMill);
     let mut tools = controller.state.session().tools().to_vec();
     tools.push(extra_tool);
@@ -92,15 +92,15 @@ fn add_setup_appends_a_second_setup() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
     // Starts with one default setup
     assert_eq!(controller.state.session().list_setups().len(), 1);
-    let original_setup_id = SetupId(controller.state.session().list_setups()[0].id);
+    let original_setup_id = controller.state.session().list_setups()[0].id;
 
     // Add a second setup
     controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
     assert_eq!(controller.state.session().list_setups().len(), 2);
-    let new_setup_id = SetupId(controller.state.session().list_setups()[1].id);
+    let new_setup_id = controller.state.session().list_setups()[1].id;
     assert_ne!(original_setup_id, new_setup_id);
     assert_eq!(
-        SetupId(controller.state.session().list_setups()[0].id),
+        controller.state.session().list_setups()[0].id,
         original_setup_id,
         "the add appends; it never re-keys the setup that stood first"
     );
@@ -111,9 +111,9 @@ fn remove_setup_selects_previous_then_next_and_cancels_generation() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
     controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
     controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
-    let first = SetupId(controller.state.session().list_setups()[0].id);
-    let second = SetupId(controller.state.session().list_setups()[1].id);
-    let third = SetupId(controller.state.session().list_setups()[2].id);
+    let first = controller.state.session().list_setups()[0].id;
+    let second = controller.state.session().list_setups()[1].id;
+    let third = controller.state.session().list_setups()[2].id;
 
     controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(second));
 
@@ -133,7 +133,7 @@ fn remove_setup_selects_previous_then_next_and_cancels_generation() {
 #[test]
 fn remove_final_setup_is_refused_without_cancelling_or_editing() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
-    let only = SetupId(controller.state.session().list_setups()[0].id);
+    let only = controller.state.session().list_setups()[0].id;
     let epoch = controller.state.session().simulation_epoch();
     let edits = controller.state.gui.edit_counter;
 
@@ -149,7 +149,7 @@ fn remove_final_setup_is_refused_without_cancelling_or_editing() {
 fn remove_setup_cleans_runtime_and_ignores_a_queued_late_completion() {
     let mut controller = sample_controller();
     controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
-    let removed_setup = SetupId(controller.state.session().list_setups()[1].id);
+    let removed_setup = controller.state.session().list_setups()[1].id;
     let retained_id = controller.state.session().toolpath_configs()[0].id;
     let mut config = controller.state.session().toolpath_configs()[0].clone();
     config.name = "Removed setup operation".to_owned();
@@ -241,7 +241,7 @@ fn remove_setup_cleans_runtime_and_ignores_a_queued_late_completion() {
             .is_none()
     );
     assert!(!controller.state.gui.toolpath_rt.contains_key(&removed_id));
-    assert!(controller.state.session().get_result(0).is_none());
+    assert!(controller.state.session().result_at(0).is_none());
     assert!(
         controller.plan.is_none(),
         "the deleted target's terminal message must close the cancelled plan"
@@ -315,7 +315,7 @@ fn add_second_setup_with_a_toolpath(
     controller: &mut AppController<ScriptedBackend>,
 ) -> (SetupId, ToolpathId) {
     controller.handle_internal_event(crate::ui::AppEvent::AddSetup);
-    let setup = SetupId(controller.state.session().list_setups()[1].id);
+    let setup = controller.state.session().list_setups()[1].id;
     let mut config = controller.state.session().toolpath_configs()[0].clone();
     config.name = "Removed setup operation".to_owned();
     let index = controller
@@ -391,7 +391,7 @@ fn remove_setup_stores_a_queued_simulation_of_retained_toolpaths_as_stale() {
 /// back-off, and every surface used to pass `SuggestContext::default()`,
 /// so the back-off read "no constraint signal" on every add. The GUI
 /// door resolved `model_id` AFTER the Suggest call; it now resolves it
-/// before, and passes `ProjectSession::model_bbox` of that id.
+/// before, and passes `ProjectSession::model_bbox_by_id` of that id.
 ///
 /// What this pins is the plumbing precondition: the id the door writes
 /// onto the toolpath resolves to a real bbox at the moment Suggest runs.
@@ -413,7 +413,7 @@ fn the_add_door_holds_a_model_bbox_for_the_toolpath_it_writes() {
     let bbox = controller
         .state
         .session()
-        .model_bbox(added.model_id)
+        .model_bbox_by_id(added.model_id)
         .expect("the model the door named must carry a bbox");
     let model = controller
         .state
@@ -555,7 +555,7 @@ fn duplicate_tool_creates_independent_copy() {
 #[test]
 fn rename_setup_updates_name() {
     let mut controller = AppController::with_backend(ScriptedBackend::new());
-    let setup_id = SetupId(controller.state.session().list_setups()[0].id);
+    let setup_id = controller.state.session().list_setups()[0].id;
 
     controller.handle_internal_event(crate::ui::AppEvent::RenameSetup(
         setup_id,
@@ -611,7 +611,7 @@ mod stock_change_panel_s4 {
 
     fn change(id: usize, model_id: ModelId) -> StockChange {
         StockChange {
-            id: StockChangeId(id),
+            id: StockChangeId::from_raw(id),
             name: format!("Change {}", id + 1),
             enabled: true,
             op: StockChangeOp::Add,
@@ -629,7 +629,7 @@ mod stock_change_panel_s4 {
         controller.state.session().list_setups()[0]
             .stock_changes
             .iter()
-            .map(|c| (c.id.0, c.enabled))
+            .map(|c| (c.id.raw(), c.enabled))
             .collect()
     }
 
@@ -652,8 +652,8 @@ mod stock_change_panel_s4 {
     #[test]
     fn every_panel_action_is_one_s2_command_s4() {
         let mut controller = sample_controller();
-        let setup = SetupId(controller.state.session().list_setups()[0].id);
-        let mesh = ModelId(controller.state.session().models()[0].id);
+        let setup = controller.state.session().list_setups()[0].id;
+        let mesh = controller.state.session().models()[0].id;
 
         // Add, twice. A saved draft closes the editor and dirties the project.
         save(&mut controller, setup, change(0, mesh));
@@ -669,7 +669,7 @@ mod stock_change_panel_s4 {
         controller.handle_internal_event(AppEvent::EditStockChanges(
             setup,
             StockChangeIntent::SetEnabled {
-                change_id: StockChangeId(0),
+                change_id: StockChangeId::from_raw(0),
                 enabled: false,
             },
         ));
@@ -699,7 +699,7 @@ mod stock_change_panel_s4 {
         controller.handle_internal_event(AppEvent::EditStockChanges(
             setup,
             StockChangeIntent::Move {
-                change_id: StockChangeId(1),
+                change_id: StockChangeId::from_raw(1),
                 to_position: 0,
             },
         ));
@@ -714,7 +714,7 @@ mod stock_change_panel_s4 {
         });
         controller.handle_internal_event(AppEvent::EditStockChanges(
             setup,
-            StockChangeIntent::Remove(StockChangeId(1)),
+            StockChangeIntent::Remove(StockChangeId::from_raw(1)),
         ));
         assert_eq!(ids(&controller), vec![(0, false)]);
         assert!(controller.state.panels.stock_change_editor.is_none());
@@ -723,8 +723,8 @@ mod stock_change_panel_s4 {
     #[test]
     fn a_refusal_reaches_the_editor_in_the_core_words_s4() {
         let mut controller = sample_controller();
-        let setup = SetupId(controller.state.session().list_setups()[0].id);
-        let mesh = ModelId(controller.state.session().models()[0].id);
+        let setup = controller.state.session().list_setups()[0].id;
+        let mesh = controller.state.session().models()[0].id;
 
         // A remove cannot use a fill: the S2 door refuses it by name.
         let mut removal = change(0, mesh);
@@ -800,7 +800,7 @@ mod obstacle_panel_k2 {
             .state
             .apply(Command::AddModel(AddModelArgs {
                 model: Box::new(LoadedModel {
-                    id: 0,
+                    id: rs_cam_core::ids::ModelId::from_raw(0),
                     path: std::path::PathBuf::from("jaws.svg"),
                     name: "jaws".to_owned(),
                     kind: Some(ModelKind::Svg),
@@ -820,7 +820,7 @@ mod obstacle_panel_k2 {
             .expect("the session takes the model")
             .created
             .expect("the AddModel row reports the new model id");
-        ModelId(id)
+        ModelId::from_raw(id)
     }
 
     fn stored(controller: &AppController<ScriptedBackend>, id: ObstacleId) -> Option<Obstacle> {
@@ -834,14 +834,14 @@ mod obstacle_panel_k2 {
     #[test]
     fn every_obstacle_action_is_one_command_k2() {
         let mut controller = sample_controller();
-        let setup = SetupId(controller.state.session().list_setups()[0].id);
-        let mesh = ModelId(controller.state.session().models()[0].id);
+        let setup = controller.state.session().list_setups()[0].id;
+        let mesh = controller.state.session().models()[0].id;
         let outline = add_outline_model(&mut controller);
 
         // Add: one default box, selected, editor open on it.
         controller.state.gui.dirty = false;
         controller.handle_internal_event(AppEvent::AddObstacle(setup));
-        let id = ObstacleId(0);
+        let id = ObstacleId::from_raw(0);
         let added = stored(&controller, id).expect("the add applies");
         assert!(matches!(added.geometry, ObstacleGeometry::Box { .. }));
         assert_eq!(controller.state.selection, Selection::Obstacle(setup, id));
@@ -907,10 +907,10 @@ mod obstacle_panel_k2 {
     #[test]
     fn a_refusal_reaches_the_obstacle_editor_in_the_core_words_k2() {
         let mut controller = sample_controller();
-        let setup = SetupId(controller.state.session().list_setups()[0].id);
+        let setup = controller.state.session().list_setups()[0].id;
         let outline = add_outline_model(&mut controller);
         controller.handle_internal_event(AppEvent::AddObstacle(setup));
-        let id = ObstacleId(0);
+        let id = ObstacleId::from_raw(0);
         let before = stored(&controller, id).expect("added");
         controller.state.gui.dirty = false;
 
@@ -944,9 +944,9 @@ mod obstacle_panel_k2 {
     #[test]
     fn an_unchanged_draft_applies_nothing_k2() {
         let mut controller = sample_controller();
-        let setup = SetupId(controller.state.session().list_setups()[0].id);
+        let setup = controller.state.session().list_setups()[0].id;
         controller.handle_internal_event(AppEvent::AddObstacle(setup));
-        let before = stored(&controller, ObstacleId(0)).expect("added");
+        let before = stored(&controller, ObstacleId::from_raw(0)).expect("added");
         generate_all_for_test(&mut controller);
         let tp_id = controller.state.session().toolpath_configs()[0].id;
         // Drop the add's undo entry, so the history reads only this apply.
@@ -994,7 +994,7 @@ mod machine_head_h2 {
     /// toolpath has a result.
     fn shoe_controller() -> AppController<ScriptedBackend> {
         let mut controller = sample_controller();
-        let mut second = ToolConfig::new_default(ToolId(2), ToolType::BallNose);
+        let mut second = ToolConfig::new_default(ToolId::from_raw(2), ToolType::BallNose);
         second.name = "Second tool".to_owned();
         let mut tools = controller.state.session().tools().to_vec();
         tools.push(second);
@@ -1008,7 +1008,7 @@ mod machine_head_h2 {
             .state
             .apply(Command::SetToolpathTool(SetToolpathToolArgs {
                 index: 2,
-                tool_id: 2,
+                tool_id: rs_cam_core::ids::ToolId::from_raw(2),
             }))
             .unwrap();
         let _ = controller

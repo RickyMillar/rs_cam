@@ -106,7 +106,7 @@ impl ProjectSession {
             .filter_map(|(index, tc)| {
                 let record = self.rest_fresh_comparisons.get(&tc.id)?;
                 let planned = self.results.get(&index)?.stats.planned_cycle_time_s?;
-                (record.revision == self.toolpath_revision(index)
+                (record.revision == self.toolpath_revision_at(index)
                     && planned.to_bits() == record.times.rest_s.to_bits())
                 .then_some((tc.id, record.times))
             })

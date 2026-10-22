@@ -110,14 +110,14 @@ fn the_param_kind_agrees_with_the_wire_type() {
 fn all_ops_session() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock_under(20.0, 4.0));
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model = polygon_model(vec![square_polygon(2.0)], "f185_all_ops");
     let model_id = builder.add_model(model);
     for op in OperationType::ALL {
         let cfg = toolpath_config(
             op.label(),
             OperationConfig::new_default(*op),
-            tool_id,
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
             model_id,
         );
         let _ = builder.add_toolpath(0, cfg).expect("add one op per type");

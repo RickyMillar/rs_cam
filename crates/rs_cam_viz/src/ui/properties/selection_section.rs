@@ -528,8 +528,11 @@ fn rule_text(rule: &Rule, models: &[(crate::state::job::ModelId, String)]) -> St
         SourceRef::ToolpathModel => "This model".to_owned(),
         SourceRef::Model(id) => models
             .iter()
-            .find(|(m, _)| m.0 == id.0)
-            .map_or_else(|| format!("model id {}", id.0), |(_, name)| name.clone()),
+            .find(|(m, _)| m.raw() == id.raw())
+            .map_or_else(
+                || format!("model id {}", id.raw()),
+                |(_, name)| name.clone(),
+            ),
         SourceRef::Stock => "Stock".to_owned(),
     };
     let filter = &rule.filter;

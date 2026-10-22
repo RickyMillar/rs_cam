@@ -16,7 +16,7 @@ pub(super) fn draw_model_properties(
     // written, so the two borrow as disjoint parts (F096).
     let parts = state.split_mut();
     let panels = parts.panels;
-    let Some(model) = parts.session.models().iter().find(|m| m.id == id.0) else {
+    let Some(model) = parts.session.models().iter().find(|m| m.id == id) else {
         return;
     };
 

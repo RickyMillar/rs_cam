@@ -41,7 +41,7 @@ fn wanaka_back_rough_cuts_outside_silhouette() {
     let model = session
         .models()
         .iter()
-        .find(|m| m.id == 1)
+        .find(|m| m.id == rs_cam_core::ids::ModelId::from_raw(1))
         .expect("model id 1 (terrain.stl)");
     let mesh = model.mesh.as_ref().expect("terrain.stl has mesh");
     let silhouettes = rs_cam_core::geometry::boundary::model_silhouette(mesh.as_ref(), None);
@@ -67,7 +67,7 @@ fn wanaka_back_rough_cuts_outside_silhouette() {
     );
 
     // Walk Back Rough's moves
-    let tp_result = session.get_result(1).expect("back rough result");
+    let tp_result = session.result_at(1).expect("back rough result");
     let toolpath = &tp_result.toolpath();
     let mut total_cut_moves = 0_usize;
     let mut outside_count = 0_usize;
@@ -139,7 +139,9 @@ fn wanaka_back_rough_cuts_outside_silhouette() {
     for (i, s) in setups.iter().enumerate() {
         println!(
             "setup {i}: name={:?} face_up={:?} tp_indices={:?}",
-            s.name, s.face_up, s.toolpath_indices
+            s.name,
+            s.face_up,
+            s.toolpath_indices()
         );
     }
     println!("stock bbox (project file): x=[-20..120], y=[-25..125], z=[-20..5] (140x150x25)");

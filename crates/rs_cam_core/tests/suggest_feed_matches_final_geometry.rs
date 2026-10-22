@@ -74,7 +74,7 @@
 use std::path::PathBuf;
 
 use rs_cam_core::compute::cutter::build_cutter;
-use rs_cam_core::compute::tool_config::{ToolConfig, ToolId};
+use rs_cam_core::compute::tool_config::ToolConfig;
 use rs_cam_core::feeds::suggest::{SuggestWarning, SuggestedParams};
 use rs_cam_core::feeds::{FeedsResult, ToolGeometryHint, geometry};
 use rs_cam_core::ids::ToolpathId;
@@ -146,7 +146,7 @@ fn try_suggest_case(
             )
         });
     let tool = session
-        .get_tool(ToolId(tc.tool_id))
+        .tool_by_id(tc.tool_id)
         .unwrap_or_else(|| panic!("Tool {} missing for toolpath {id}", tc.tool_id))
         .clone();
     let profile = session
@@ -314,7 +314,7 @@ fn a_raised_stepover_does_not_move_the_feed_at_all() {
     // The refusal is asserted to BE the size rule, so any other refusal still
     // fails. The feed-consistency arms on the toolpaths that ship (tp 4 in
     // this file) keep their own non-vacuity.
-    let case = match try_suggest_case(&session, ToolpathId(11)) {
+    let case = match try_suggest_case(&session, ToolpathId::from_raw(11)) {
         Ok(case) => case,
         Err(rs_cam_core::feeds::FeedsError::Unbacked { reason, .. })
             if reason.starts_with("no published figure for a ") =>
@@ -435,7 +435,7 @@ fn dpp_clamp_does_not_leave_a_stale_depth_tier_derate_in_the_feed() {
     // 4.2 mm ceiling. 9.0 mm on Ø6 is depth tier 0.75; 4.2 mm is tier 1.0.
     // The mirror of the finish case — this one is under-fed by 1.333×
     // against the engine's own model.
-    let case = suggest_case(&session, ToolpathId(4));
+    let case = suggest_case(&session, ToolpathId::from_raw(4));
     dump(&case);
 
     let clamped = case

@@ -89,7 +89,7 @@ fn acrylic() -> Material {
 }
 
 fn tool_of(kind: ToolType, diameter: f64, flutes: u32) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), kind);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;
     t.flute_count = flutes;
     t.cutting_length = (diameter * 4.0).max(12.0);
@@ -122,7 +122,7 @@ fn vbit(diameter: f64, angle_deg: f64) -> ToolConfig {
 
 /// A tapered ball: `diameter` is the tip, on a 6 mm shank.
 fn tapered(tip_mm: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), ToolType::TaperedBallNose);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     t.diameter = tip_mm;
     t.taper_half_angle = 5.7;
     t.shaft_diameter = 6.0;

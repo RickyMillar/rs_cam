@@ -47,7 +47,7 @@ const FINISH_FEED: f64 = 925.0;
 /// against.
 const PLUNGE_RATE: f64 = 512.0;
 
-const TP: ToolpathId = ToolpathId(7);
+const TP: ToolpathId = ToolpathId::from_raw(7);
 
 /// The user's tuned Shapeoko XXL, per-axis rates INCLUDED.
 fn tuned() -> MachineKinematics {
@@ -581,7 +581,7 @@ fn wanaka_front_rough_reports_the_plunge_class_peak() {
         .expect("simulate the front rough");
 
     let plunge_rate = session
-        .get_toolpath_params(index)
+        .toolpath_params_at(index)
         .expect("front rough params")
         .plunge_rate();
     let kinematics = session.machine().effective_kinematics();
@@ -592,7 +592,7 @@ fn wanaka_front_rough_reports_the_plunge_class_peak() {
     // rebuild is kept because it is also the proof the modulator fired.
     let sim = session.simulation_result().expect("simulation result");
     let trace = sim.cut_trace.as_ref().expect("cut trace");
-    let result = session.get_result(index).expect("front rough result");
+    let result = session.result_at(index).expect("front rough result");
     let mut emitted = result.toolpath().clone();
     for (i, m) in emitted.moves.iter_mut().enumerate() {
         if let Some((feed, _binding)) = trace.modulated_feeds.get(&(front_id, i)) {

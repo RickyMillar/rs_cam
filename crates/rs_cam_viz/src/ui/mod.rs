@@ -172,7 +172,7 @@ pub enum AppEvent {
     PinAddSetup(crate::state::job::FaceUp),
     /// The pin wizard's part-model choice (`None`: the default rule).
     /// Through the pin door, at once.
-    PinPartModels(Option<Vec<usize>>),
+    PinPartModels(Option<Vec<rs_cam_core::ids::ModelId>>),
     /// R4: the pin wizard's Apply. The pin door adds the drills of
     /// `add_drills`, applies `pins` as one `SetAlignmentPins` (one undo
     /// step), binds the tools of `use_tools` and synchronises the pin-drill
@@ -180,7 +180,7 @@ pub enum AppEvent {
     PinWizardApply {
         pins: Vec<crate::state::job::AlignmentPin>,
         add_drills: Vec<f64>,
-        use_tools: Vec<(f64, usize)>,
+        use_tools: Vec<(f64, rs_cam_core::ids::ToolId)>,
     },
 
     // Obstacles (K1: fixtures and keep-out zones are one concept)
@@ -285,7 +285,7 @@ pub enum AppEvent {
     /// instruct the operator to run a sender macro (Z probe, corner
     /// probe, home) before pressing Resume.
     WizardSetSetupPauseMessage {
-        setup_id: usize,
+        setup_id: rs_cam_core::ids::SetupId,
         message: Option<String>,
     },
     /// Step 5: toggle the "I understand the risks, allow save with

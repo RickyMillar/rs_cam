@@ -84,7 +84,7 @@ const DEPTH: f64 = 10.0;
 fn two_toolpaths_one_model() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock_under(HALF, DEPTH));
     let tool_idx = builder.add_tool(ball_tool_config(3.0));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(mesh_model(plateau(2.0 * HALF, DEPTH), "plateau"));
 
     for name in ["Finish A", "Finish B"] {
@@ -95,7 +95,12 @@ fn two_toolpaths_one_model() -> ProjectSession {
             min_z: -DEPTH,
             ..DropCutterConfig::default()
         });
-        let mut cfg = toolpath_config(name, op, tool_id, model_id);
+        let mut cfg = toolpath_config(
+            name,
+            op,
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
+            model_id,
+        );
         cfg.heights = pinned_heights(0.0, -DEPTH);
         builder
             .add_toolpath(0, cfg)
@@ -117,7 +122,7 @@ fn two_toolpaths_one_model() -> ProjectSession {
 /// a result to measure.
 fn clamp_over_the_cut() -> Obstacle {
     Obstacle {
-        id: ObstacleId(1),
+        id: ObstacleId::from_raw(1),
         name: "G-COLFAIL clamp".to_owned(),
         enabled: true,
         clearance: 0.0,
@@ -135,7 +140,7 @@ fn clamp_over_the_cut() -> Obstacle {
 fn one_2d_toolpath(fixture: Option<Obstacle>) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock_under(HALF, DEPTH));
     let tool_idx = builder.add_tool(ball_tool_config(3.0));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(polygon_model(vec![square_polygon(5.0)], "square"));
 
     let op = OperationConfig::Trace(TraceConfig {
@@ -144,7 +149,15 @@ fn one_2d_toolpath(fixture: Option<Obstacle>) -> ProjectSession {
         ..TraceConfig::default()
     });
     builder
-        .add_toolpath(0, toolpath_config("2D trace", op, tool_id, model_id))
+        .add_toolpath(
+            0,
+            toolpath_config(
+                "2D trace",
+                op,
+                rs_cam_core::ids::ToolId::from_raw(tool_id),
+                model_id,
+            ),
+        )
         .expect("add toolpath to a fresh session");
 
     let mut session = builder.build();

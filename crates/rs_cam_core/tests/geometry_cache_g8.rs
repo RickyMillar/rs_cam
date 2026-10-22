@@ -349,13 +349,13 @@ fn eight_toolpaths_over_one_model_build_one_index() {
         OperationConfig::DropCutter(DropCutterConfig::default()),
         |cfg| cfg.heights = pinned_heights(0.0, -6.0),
     );
-    let tool_id = session.tools()[0].id.0;
+    let tool_id = session.tools()[0].id.raw();
     let model_id = session.models()[0].id;
     for i in 1..N {
         let mut cfg = toolpath_config(
             &format!("DropCutter {i}"),
             OperationConfig::DropCutter(DropCutterConfig::default()),
-            tool_id,
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
             model_id,
         );
         cfg.heights = pinned_heights(0.0, -6.0);
@@ -395,20 +395,18 @@ fn eight_toolpaths_over_one_model_build_one_index() {
 #[test]
 fn a_mesh_obstacle_rasterises_its_silhouette_once_k2() {
     use rs_cam_core::compute::obstacle::{Obstacle, ObstacleGeometry, ObstacleSet};
-    use rs_cam_core::ids::{ModelId, ObstacleId};
+    use rs_cam_core::ids::ObstacleId;
 
     let _guard = counter_lock();
     rs_cam_core::maps::geom_cache::reset_stats();
     // A FRESH mesh `Arc`: no earlier test can have warmed its entry.
     let model = common::session::mesh_model(make_test_hemisphere(9.0, 14), "clamp");
     let obstacle = Obstacle {
-        id: ObstacleId(0),
+        id: ObstacleId::from_raw(0),
         name: "Clamp".to_owned(),
         enabled: true,
         clearance: 1.0,
-        geometry: ObstacleGeometry::Model {
-            model_id: ModelId(model.id),
-        },
+        geometry: ObstacleGeometry::Model { model_id: model.id },
     };
     let models = [model];
     for _ in 0..3 {

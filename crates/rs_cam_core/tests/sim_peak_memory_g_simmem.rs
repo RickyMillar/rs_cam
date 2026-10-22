@@ -88,7 +88,7 @@ fn rapid_heavy_entry() -> SimToolpathEntry {
     tp.feed_to(P3::new(30.0, 1.0, -1.0), 600.0);
     SimToolpathEntry {
         head: Default::default(),
-        id: ToolpathId(1),
+        id: ToolpathId::from_raw(1),
         name: "rapids".to_owned(),
         annotated: Arc::new(AnnotatedToolpath::new(tp)),
         tool: Arc::new(ToolDefinition::new(
@@ -98,7 +98,7 @@ fn rapid_heavy_entry() -> SimToolpathEntry {
             2,
             ToolMaterial::Carbide,
         )),
-        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+        tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,
@@ -185,7 +185,7 @@ fn a_simulation_and_its_artifact_hold_the_trace_once() {
         trace.sample_step_mm,
         [0.0; 3],
         [40.0, 24.0, 6.0],
-        vec![ToolpathId(1)],
+        vec![ToolpathId::from_raw(1)],
         serde_json::json!({ "fixture": "g_simmem" }),
         Arc::clone(trace),
     );

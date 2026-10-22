@@ -68,7 +68,7 @@ use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 // ── AS001 pocket fixture (the F-024 / F-035 / F-036b fixture) ───────────
 
 fn make_endmill_6mm() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -115,10 +115,10 @@ fn build_as001_pocket_session(feed_rate: f64) -> ProjectSession {
     });
 
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     let model_id = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "as001_pocket".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -137,7 +137,7 @@ fn build_as001_pocket_session(feed_rate: f64) -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig {
@@ -158,7 +158,7 @@ fn build_as001_pocket_session(feed_rate: f64) -> ProjectSession {
         }),
         dressups: DressupConfig::for_op(OperationType::Pocket),
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,
@@ -445,7 +445,7 @@ fn recovered_air_seconds_agree_and_the_clock_closes() {
 /// make the difference arithmetic rather than incidental.
 #[test]
 fn the_rebase_is_per_sample_not_one_factor_per_toolpath() {
-    let tp = ToolpathId(0);
+    let tp = ToolpathId::from_raw(0);
     let air_sample = SimulationCutSample {
         toolpath_id: tp,
         move_index: 0,
@@ -517,7 +517,7 @@ fn the_rebase_is_per_sample_not_one_factor_per_toolpath() {
 /// value. Absent is not zero (CLAUDE.md).
 #[test]
 fn a_toolpath_with_no_cutting_samples_is_not_rebased() {
-    let tp = ToolpathId(0);
+    let tp = ToolpathId::from_raw(0);
     let rapid_only = vec![SimulationCutSample {
         toolpath_id: tp,
         move_index: 0,

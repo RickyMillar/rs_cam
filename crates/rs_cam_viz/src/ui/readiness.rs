@@ -111,7 +111,7 @@ pub fn operations_check(state: &AppState) -> (CheckStatus, usize, usize) {
         .filter(|index| {
             state
                 .session()
-                .get_toolpath_config(*index)
+                .toolpath_config_at(*index)
                 .is_some_and(|tc| tc.enabled)
                 && crate::state::freshness::freshness_at(state.session(), &state.gui, *index)
                     .is_some_and(|f| f.is_current())
@@ -141,20 +141,20 @@ pub fn simulation_request_is_buildable(session: &ProjectSession) -> bool {
     for setup in session.list_setups() {
         let mut phantom_scan = rs_cam_core::compute::simulate::PhantomPriorStockScan::default();
         let mut admissible = 0_usize;
-        for &tp_idx in &setup.toolpath_indices {
+        for &tp_idx in setup.toolpath_indices() {
             let Some(tc) = session.toolpath_configs().get(tp_idx) else {
                 continue;
             };
             // G-RESTSTALE (M-C) / G-STALECARDS: the builder carves CORE
             // results only; the GUI copy is display-only.
-            let generated = session.get_result(tp_idx).is_some();
+            let generated = session.result_at(tp_idx).is_some();
             phantom_scan.visit(admissible, tc.enabled, generated, tc.id, tc.stock_source);
             if !tc.enabled || !generated {
                 continue;
             }
             // The builder drops a config whose `tool_id` names no tool, so
             // the predicate must not admit it either.
-            if session.tools().iter().any(|t| t.id.0 == tc.tool_id) {
+            if session.tools().iter().any(|t| t.id == tc.tool_id) {
                 admissible += 1;
             }
         }
@@ -328,7 +328,7 @@ fn examined_operation(state: &AppState, scope: HolderCheckScope) -> String {
     let named = scope
         .position
         .and_then(|position| position.checked_sub(1))
-        .and_then(|index| state.session().get_toolpath_config(index))
+        .and_then(|index| state.session().toolpath_config_at(index))
         .map(|tc| tc.name.clone());
     match named {
         Some(name) => name,
@@ -620,7 +620,7 @@ pub fn format_cycle_time(seconds: f64) -> String {
 /// Number of tool changes across the enabled toolpath sequence.
 pub fn count_tool_changes(state: &AppState) -> usize {
     let mut count = 0;
-    let mut last_tool: Option<usize> = None;
+    let mut last_tool: Option<rs_cam_core::ids::ToolId> = None;
     for tc in state.session().toolpath_configs() {
         if !tc.enabled {
             continue;

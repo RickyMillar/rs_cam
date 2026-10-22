@@ -163,7 +163,7 @@ pub fn deflection_feed_per_tooth_mm(
     }
 }
 
-#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.0, op = ?ctx.operation_kind))]
+#[tracing::instrument(level = "debug", skip_all, fields(toolpath_id = ctx.toolpath_id.raw(), op = ?ctx.operation_kind))]
 pub fn evaluate(
     ctx: &super::ToolpathLoadContext<'_>,
     env: &super::GateEnv<'_>,
@@ -430,7 +430,7 @@ mod tests {
     ) -> DeflectionVerdict {
         evaluate(
             &crate::tool_load::ToolpathLoadContext {
-                toolpath_id: ToolpathId(toolpath_id),
+                toolpath_id: ToolpathId::from_raw(toolpath_id),
                 tool,
                 material,
                 operation_family: crate::feeds::vendor_lut::LutOperationFamily::Pocket,
@@ -489,7 +489,7 @@ mod tests {
         radial_eng: f64,
     ) -> SimulationCutSample {
         SimulationCutSample {
-            toolpath_id: ToolpathId(toolpath_id),
+            toolpath_id: ToolpathId::from_raw(toolpath_id),
             move_index: idx,
             sample_index: idx,
             position: [0.0, 0.0, -axial],
@@ -653,7 +653,7 @@ mod tests {
         let mut trace_safe = trace_with(vec![sample.clone()]);
         trace_safe
             .predicted_feeds
-            .insert((ToolpathId(0), sample.move_index), safe_feed);
+            .insert((ToolpathId::from_raw(0), sample.move_index), safe_feed);
         let v_safe = evaluate_args(
             0,
             &tool,

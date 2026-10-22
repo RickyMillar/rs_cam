@@ -442,8 +442,8 @@ mod tests {
     }
 
     fn evaluate_one(d: &DrillOp) -> DrillGatesVerdict {
-        let samples = emit_drill_samples(ToolpathId(0), d);
-        let summary = build_drill_toolpath_summary(ToolpathId(0), d, &samples);
+        let samples = emit_drill_samples(ToolpathId::from_raw(0), d);
+        let summary = build_drill_toolpath_summary(ToolpathId::from_raw(0), d, &samples);
         evaluate(d, &summary)
     }
 

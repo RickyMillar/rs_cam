@@ -42,14 +42,14 @@ fn three_pins() -> Vec<AlignmentPin> {
 fn pin_drill_toolpath() -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(7),
+        id: rs_cam_core::ToolpathId::from_raw(7),
         name: "Pin Drill".to_owned(),
         enabled: true,
         operation: OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default()),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 0,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(0),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -101,10 +101,24 @@ fn session_with(pins: Vec<AlignmentPin>, flip: bool) -> ProjectSession {
 /// The two headers (setup 1, setup 2) of `session` on `format`.
 fn headers(session: &ProjectSession, format: PostFormat) -> (String, String) {
     let post = format.definition();
-    let ids: Vec<usize> = session.list_setups().iter().map(|s| s.id).collect();
+    let ids: Vec<usize> = session.list_setups().iter().map(|s| s.id.raw()).collect();
     (
-        setup_file_header(session, post, ids[0], None, 0, 2),
-        setup_file_header(session, post, ids[1], Some(ids[0]), 1, 2),
+        setup_file_header(
+            session,
+            post,
+            rs_cam_core::ids::SetupId::from_raw(ids[0]),
+            None,
+            0,
+            2,
+        ),
+        setup_file_header(
+            session,
+            post,
+            rs_cam_core::ids::SetupId::from_raw(ids[1]),
+            Some(rs_cam_core::ids::SetupId::from_raw(ids[0])),
+            1,
+            2,
+        ),
     )
 }
 

@@ -110,7 +110,7 @@ fn run(
     session
         .generate_toolpath(0, &cancel)
         .map_err(|e| e.to_string())?;
-    let result = session.get_result(0).expect("a result");
+    let result = session.result_at(0).expect("a result");
     Ok((
         result.annotated().toolpath.clone(),
         result.stats.tab_placement.clone(),
@@ -482,7 +482,7 @@ fn tabs_hand_points_round_trip_through_the_param_setter_p5() {
     );
     let read = |session: &rs_cam_core::session::ProjectSession| {
         session
-            .get_toolpath_params(0)
+            .toolpath_params_at(0)
             .expect("the op")
             .params_value_including_nulls()
             .get("tab_points")

@@ -46,8 +46,8 @@ use rs_cam_core::stock::simulation_cut::{
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_viz::ui::readiness::{CycleTimeBasisExt, format_cycle_time};
 
-const TP: ToolpathId = ToolpathId(7);
-const OTHER_TP: ToolpathId = ToolpathId(9);
+const TP: ToolpathId = ToolpathId::from_raw(7);
+const OTHER_TP: ToolpathId = ToolpathId::from_raw(9);
 
 /// A per-toolpath trace summary claiming `total_runtime_s` seconds.
 ///
@@ -138,7 +138,7 @@ fn trace_with_runtimes(
 /// engagement summary — the drill case.
 #[test]
 fn an_integrated_toolpath_without_an_engagement_summary_is_machine_model() {
-    let drill = ToolpathId(7);
+    let drill = ToolpathId::from_raw(7);
     let t = trace_with_runtimes(Vec::new(), vec![(drill, 46.8)]);
 
     let ct = toolpath_cycle_time(Some(&t), drill, 234.0, 300.0);
@@ -168,8 +168,8 @@ fn an_integrated_toolpath_without_an_engagement_summary_is_machine_model() {
 /// fully-modelled project to the weakest label.
 #[test]
 fn drill_ops_no_longer_degrade_the_project_basis() {
-    let mill = ToolpathId(4);
-    let drill = ToolpathId(7);
+    let mill = ToolpathId::from_raw(4);
+    let drill = ToolpathId::from_raw(7);
     let t = trace_with_runtimes(
         vec![summary(mill, 7292.0, true)],
         vec![(mill, 7292.0), (drill, 61.66)],
@@ -195,8 +195,8 @@ fn drill_ops_no_longer_degrade_the_project_basis() {
 /// the test above is measuring the fix and not the absence of a fold.
 #[test]
 fn without_integration_a_drill_still_degrades_the_basis() {
-    let mill = ToolpathId(4);
-    let drill = ToolpathId(7);
+    let mill = ToolpathId::from_raw(4);
+    let drill = ToolpathId::from_raw(7);
     let t = trace(vec![summary(mill, 7292.0, true)]);
 
     let mut total = CycleTime::NONE;

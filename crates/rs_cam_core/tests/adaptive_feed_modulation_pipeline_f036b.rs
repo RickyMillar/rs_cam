@@ -76,7 +76,7 @@ use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 // ----- AS001 pocket fixture (matches F-024 / F-035) -----------------
 
 fn make_endmill_6mm() -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -126,11 +126,11 @@ fn build_as001_pocket_session(attach_kinematics: bool) -> ProjectSession {
     builder = builder.stock(stock);
 
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
 
     let polygon = rounded_rect_with_island();
     let model = LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "as001_pocket".to_owned(),
         mesh: None,
         items: Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![
@@ -166,13 +166,13 @@ fn build_as001_pocket_session(attach_kinematics: bool) -> ProjectSession {
     };
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(pocket),
         dressups: DressupConfig::for_op(OperationType::Pocket),
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,
@@ -362,9 +362,7 @@ fn cutting_feed_words(session: &ProjectSession) -> CuttingFeedWords {
         format!("{clamped:.dp$}")
     };
 
-    let result = session
-        .get_result(0)
-        .expect("session result for toolpath 0");
+    let result = session.result_at(0).expect("session result for toolpath 0");
     let mut cutting: BTreeSet<String> = BTreeSet::new();
     let mut linking: BTreeSet<String> = BTreeSet::new();
     for mv in &result.annotated().toolpath.moves {
@@ -601,7 +599,7 @@ fn modulation_caps_cutting_chipload_at_the_point() {
     let v_off = report_off
         .per_toolpath
         .iter()
-        .find(|v| v.toolpath_id == ToolpathId(0))
+        .find(|v| v.toolpath_id == ToolpathId::from_raw(0))
         .expect("tool-load verdict for pocket toolpath");
     let ChiploadVerdict::Within {
         approach_to_min,
@@ -649,7 +647,7 @@ fn modulation_caps_cutting_chipload_at_the_point() {
         .generate_toolpath(0, &cancel)
         .expect("generate pocket toolpath");
     let pre_feeds: Vec<Option<f64>> = session_on
-        .get_result(0)
+        .result_at(0)
         .expect("session result before the simulation")
         .annotated()
         .toolpath
@@ -667,7 +665,7 @@ fn modulation_caps_cutting_chipload_at_the_point() {
     let bands_on =
         rs_cam_core::tool_load::modulation_bands_for_session(&session_on, Some(trace_on));
     let band_on = bands_on
-        .get(&ToolpathId(0))
+        .get(&ToolpathId::from_raw(0))
         .expect("A2: the modulator has a target for AS001's pocket");
     assert!(
         band_on.is_point(),
@@ -698,7 +696,7 @@ fn modulation_caps_cutting_chipload_at_the_point() {
 
     // 3 and 4: read the moves the modulator wrote.
     let toolpath = &session_on
-        .get_result(0)
+        .result_at(0)
         .expect("session result for toolpath 0")
         .annotated()
         .toolpath;
@@ -856,7 +854,7 @@ fn modulated_path_never_emits_below_min_chipload() {
         .generate_toolpath(0, &cancel)
         .expect("generate pocket toolpath");
     let pre_feeds: Vec<Option<f64>> = session
-        .get_result(0)
+        .result_at(0)
         .expect("session result before the simulation")
         .annotated()
         .toolpath
@@ -874,7 +872,7 @@ fn modulated_path_never_emits_below_min_chipload() {
         .expect("cut trace flag-on");
 
     let envelopes = rs_cam_core::tool_load::chipload_envelopes_for_session(&session, Some(trace));
-    let Some(band) = envelopes.get(&ToolpathId(0)) else {
+    let Some(band) = envelopes.get(&ToolpathId::from_raw(0)) else {
         // No two-limit band → no floor to check. Vacuously satisfied.
         // Since R5 AS001 resolves a printed point (A2): the modulator
         // runs, capped at the point with no floor, and AB3 pins that cap.
@@ -886,13 +884,11 @@ fn modulated_path_never_emits_below_min_chipload() {
         return;
     };
 
-    let result = session
-        .get_result(0)
-        .expect("session result for toolpath 0");
+    let result = session.result_at(0).expect("session result for toolpath 0");
     let toolpath = &result.annotated().toolpath;
-    let tc = session.get_toolpath_config(0).expect("toolpath config 0");
+    let tc = session.toolpath_config_at(0).expect("toolpath config 0");
     let tool = session
-        .get_tool(rs_cam_core::compute::tool_config::ToolId(tc.tool_id))
+        .tool_by_id(tc.tool_id)
         .expect("tool referenced by toolpath");
     let rpm = tc
         .operation
@@ -946,7 +942,7 @@ fn modulated_path_never_emits_below_min_chipload() {
         // plunge rate, which sits below the band floor by construction.
         let binding = trace
             .modulated_feeds
-            .get(&(ToolpathId(0), i))
+            .get(&(ToolpathId::from_raw(0), i))
             .map(|(_, constraint)| *constraint);
         if matches!(binding, Some(BindingConstraint::PlungeRate)) {
             continue;
@@ -1077,7 +1073,7 @@ fn fixture_sanity_lut_band_resolves_for_as001() {
         .and_then(|s| s.cut_trace.as_ref())
         .expect("cut trace");
     let bands = rs_cam_core::tool_load::modulation_bands_for_session(&session, Some(trace));
-    let band = bands.get(&ToolpathId(0)).unwrap_or_else(|| {
+    let band = bands.get(&ToolpathId::from_raw(0)).unwrap_or_else(|| {
         panic!(
             "F-036b sanity: AS001 pocket must resolve a vendor LUT chipload target so the \
              flag-ON tests actually exercise modulation. Got modulation bands = {bands:?}"
@@ -1088,9 +1084,9 @@ fn fixture_sanity_lut_band_resolves_for_as001() {
         "A2: AS001's row prints one value, so the modulator target is a point; got {band:?}"
     );
 
-    let tc = session.get_toolpath_config(0).expect("toolpath config 0");
+    let tc = session.toolpath_config_at(0).expect("toolpath config 0");
     let tool = session
-        .get_tool(ToolId(tc.tool_id))
+        .tool_by_id(tc.tool_id)
         .expect("tool referenced by toolpath");
     let target = rs_cam_core::tool_load::chip_target_for_toolpath(
         &session.stock_config().material,
@@ -1109,7 +1105,7 @@ fn fixture_sanity_lut_band_resolves_for_as001() {
 
     let envelopes = rs_cam_core::tool_load::chipload_envelopes_for_session(&session, Some(trace));
     assert!(
-        !envelopes.contains_key(&ToolpathId(0)),
+        !envelopes.contains_key(&ToolpathId::from_raw(0)),
         "A2 Q3: the band-only envelope map must not carry a point; got {envelopes:?}"
     );
 }

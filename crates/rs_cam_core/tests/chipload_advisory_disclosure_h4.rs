@@ -108,7 +108,7 @@ fn metric(observed: f64, source: ChipBoundsSource) -> ChiploadMetric {
 
 fn verdict_with(chipload: ChiploadVerdict) -> ToolpathLoadVerdict {
     ToolpathLoadVerdict {
-        toolpath_id: ToolpathId(8),
+        toolpath_id: ToolpathId::from_raw(8),
         chipload,
         power: PowerVerdict::Unmodeled {
             reason: UnmodeledReason::SimulationRequired,

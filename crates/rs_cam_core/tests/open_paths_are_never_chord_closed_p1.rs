@@ -159,7 +159,7 @@ fn generate(session: &mut ProjectSession) -> Result<Toolpath, String> {
         .generate_toolpath(0, &cancel)
         .map_err(|e| e.to_string())?;
     Ok(session
-        .get_result(0)
+        .result_at(0)
         .expect("a generated op has a result")
         .annotated()
         .toolpath
@@ -187,7 +187,7 @@ fn a_region_op_cuts_only_the_closed_loops_and_names_the_open_paths_p1() {
             format!("{:?}", alone.moves),
             "{label}: the open paths change nothing it cuts"
         );
-        let stats = &mixed.get_result(0).expect("the result").stats;
+        let stats = &mixed.result_at(0).expect("the result").stats;
         let finding: &SelectionNoteFinding = stats
             .selection_note
             .as_ref()
@@ -220,11 +220,7 @@ fn the_note_reaches_the_diagnostics_p1() {
     let mut alone = session(&op, vec![square()], |_| {});
     let _ = generate(&mut alone).expect("the square generates");
     assert_eq!(
-        alone
-            .get_result(0)
-            .expect("the result")
-            .stats
-            .selection_note,
+        alone.result_at(0).expect("the result").stats.selection_note,
         None,
         "nothing left out, nothing named"
     );
@@ -300,7 +296,7 @@ fn trace_cuts_an_open_path_on_the_line_with_no_chord_p1() {
         let fed = fed_segments(&tp);
         assert!(!fed.is_empty(), "{what}: non-vacuity, Trace cuts");
         assert_eq!(
-            s.get_result(0).expect("the result").stats.selection_note,
+            s.result_at(0).expect("the result").stats.selection_note,
             None,
             "{what}: Trace on the line leaves nothing out"
         );
@@ -355,7 +351,7 @@ fn trace_left_cuts_the_open_paths_beside_their_line_p6_2() {
     });
     let tp = generate(&mut s).expect("Trace Left generates");
     assert_eq!(
-        s.get_result(0).expect("the result").stats.selection_note,
+        s.result_at(0).expect("the result").stats.selection_note,
         None,
         "Trace Left leaves nothing out"
     );

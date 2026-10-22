@@ -64,7 +64,7 @@ const ROW_ID: &str = "amana-tapered-hardwood-parallel-1000-2f-zrn-v8";
 const ROW_MAX_MM: f64 = 0.0508;
 
 fn tool_config() -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), ToolType::TaperedBallNose);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     t.diameter = TIP_MM;
     t.flute_count = FLUTES;
     t.taper_half_angle = 7.0;
@@ -83,7 +83,7 @@ fn hardwood() -> Material {
 
 /// One steady-state cutting sample at `DEPTH_MM`.
 fn trace(feed_mm_min: f64) -> SimulationCutTrace {
-    let id = ToolpathId(0);
+    let id = ToolpathId::from_raw(0);
     let mut predicted_feeds = PredictedFeedMap::new();
     predicted_feeds.insert((id, 0), feed_mm_min);
     let sample = SimulationCutSample {
@@ -179,7 +179,7 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
     let t = trace(feed);
     let verdict = evaluate_toolpath(
         &ToolpathLoadContext {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             tool: &cutter,
             material: &material,
             operation_family: LutOperationFamily::Parallel,

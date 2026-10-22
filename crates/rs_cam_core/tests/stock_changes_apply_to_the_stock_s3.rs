@@ -72,11 +72,11 @@ fn tool() -> Arc<ToolDefinition> {
 fn entry(id: usize, toolpath: Toolpath) -> SimToolpathEntry {
     SimToolpathEntry {
         head: Default::default(),
-        id: ToolpathId(id),
+        id: ToolpathId::from_raw(id),
         name: format!("tp{id}"),
         annotated: Arc::new(AnnotatedToolpath::new(toolpath)),
         tool: tool(),
-        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+        tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
         flute_count: 2,
         tool_summary: "6mm Flat".into(),
         semantic_trace: None,
@@ -178,7 +178,7 @@ fn filler() -> Material {
 
 fn change(id: usize, op: StockChangeOp, geometry: StockGeometry) -> StockChange {
     StockChange {
-        id: StockChangeId(id),
+        id: StockChangeId::from_raw(id),
         name: format!("change {id}"),
         enabled: true,
         op,
@@ -196,7 +196,7 @@ fn outline_change(
     polygon: Polygon2,
 ) -> ResolvedStockChange {
     ResolvedStockChange {
-        setup_id: 0,
+        setup_id: rs_cam_core::ids::SetupId::from_raw(0),
         change: change(id, op, geometry),
         sources: vec![StockChangeSource::Outlines(Arc::new(vec![polygon]))],
     }
@@ -207,7 +207,7 @@ fn fill(id: usize, level_z: f64) -> ResolvedStockChange {
         id,
         StockChangeOp::Add,
         StockGeometry::OutlineFill {
-            model_ids: vec![ModelId(1)],
+            model_ids: vec![ModelId::from_raw(1)],
             level_z,
         },
         rect(RX0, RY0, RX1, RY1),
@@ -219,7 +219,7 @@ fn extrude(id: usize, op: StockChangeOp, z_bottom: f64, z_top: f64) -> ResolvedS
         id,
         op,
         StockGeometry::OutlineExtrude {
-            model_ids: vec![ModelId(1)],
+            model_ids: vec![ModelId::from_raw(1)],
             z_bottom,
             z_top,
         },
@@ -229,12 +229,12 @@ fn extrude(id: usize, op: StockChangeOp, z_bottom: f64, z_top: f64) -> ResolvedS
 
 fn mesh_change(id: usize, op: StockChangeOp, mesh: TriangleMesh) -> ResolvedStockChange {
     ResolvedStockChange {
-        setup_id: 0,
+        setup_id: rs_cam_core::ids::SetupId::from_raw(0),
         change: change(
             id,
             op,
             StockGeometry::Model {
-                model_id: ModelId(2),
+                model_id: ModelId::from_raw(2),
             },
         ),
         sources: vec![StockChangeSource::Mesh(Arc::new(mesh))],
@@ -331,7 +331,7 @@ fn an_outline_fill_into_a_pocket_gives_the_pocket_volume() {
     assert!((filled.added_ml() - filled.added_mm3 / 1000.0).abs() < 1e-12);
     assert_eq!(filled.removed_mm3, 0.0);
     // The column is whole again: stock to the floor, the fill above it.
-    let start = &result.prior_stocks[&ToolpathId(2)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(2)];
     assert_eq!(
         ray_at(start, IN_X, IN_Y),
         vec![(0.0, 15.0, 0), (15.0, 20.0, 1)]
@@ -373,7 +373,7 @@ fn the_fill_follows_an_overcut() {
 
     // The expected volume: the empty length under H of every outline
     // column of the stock before the fill.
-    let start_before = &before.prior_stocks[&ToolpathId(2)];
+    let start_before = &before.prior_stocks[&ToolpathId::from_raw(2)];
     let grid = &start_before.z_grid;
     let mut expected = 0.0;
     let mut cut_columns = 0;
@@ -400,7 +400,7 @@ fn the_fill_follows_an_overcut() {
         "the fill of the real cut",
     );
 
-    let start = &after.prior_stocks[&ToolpathId(2)];
+    let start = &after.prior_stocks[&ToolpathId::from_raw(2)];
     let overcut = ray_at(start, IN_X, IN_Y);
     assert_eq!(
         overcut.last().unwrap().2,
@@ -425,7 +425,7 @@ fn there_is_no_fill_under_a_bridge() {
     )]);
     let result = run(&req);
     assert_eq!(result.stock_change_volumes[1].added_mm3, 0.0);
-    let start = &result.prior_stocks[&ToolpathId(2)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(2)];
     assert_eq!(
         ray_at(start, IN_X, IN_Y),
         vec![(0.0, 10.0, 0), (14.0, 20.0, 0)],
@@ -442,7 +442,7 @@ fn a_fill_above_the_top_raises_the_top() {
         R_AREA * 2.0,
         "the overfill",
     );
-    let start = &result.prior_stocks[&ToolpathId(2)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(2)];
     assert_eq!(
         ray_at(start, IN_X, IN_Y),
         vec![(0.0, 20.0, 0), (20.0, 22.0, 1)]
@@ -469,7 +469,7 @@ fn a_fill_into_a_through_hole_starts_at_the_stock_bottom() {
         R_AREA * H,
         "the through-hole fill",
     );
-    let start = &result.prior_stocks[&ToolpathId(2)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(2)];
     assert_eq!(ray_at(start, IN_X, IN_Y), vec![(0.0, 20.0, 1)]);
 }
 
@@ -496,7 +496,7 @@ fn an_extrude_adds_its_prism_and_only_the_empty_part_of_it() {
         R_AREA * 2.0,
         "the empty part",
     );
-    let start = &result.prior_stocks[&ToolpathId(3)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(3)];
     assert_eq!(
         ray_at(start, IN_X, IN_Y),
         vec![(0.0, 20.0, 0), (20.0, 25.0, 1)]
@@ -518,7 +518,7 @@ fn a_closed_box_mesh_adds_its_volume() {
         R_AREA * 3.0,
         "the box",
     );
-    let start = &result.prior_stocks[&ToolpathId(2)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(2)];
     let ray = ray_at(start, IN_X, IN_Y);
     assert_eq!(ray.len(), 2, "{ray:?}");
     assert_eq!(ray[1].2, 1);
@@ -551,7 +551,7 @@ fn a_box_mesh_with_a_hole_adds_two_intervals_per_column_through_the_hole() {
         R_AREA * 6.0 - 36.0 * 2.0,
         "the box minus its void",
     );
-    let start = &result.prior_stocks[&ToolpathId(2)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(2)];
     let ray = ray_at(start, IN_X, IN_Y);
     assert_eq!(
         ray.len(),
@@ -580,7 +580,7 @@ fn a_mesh_that_is_not_closed_is_refused_by_name() {
         SimulationError::StockChangeRefused {
             change_id, reason, ..
         } => {
-            assert_eq!(*change_id, StockChangeId(7));
+            assert_eq!(*change_id, StockChangeId::from_raw(7));
             assert!(reason.contains("not a closed mesh"), "{reason}");
         }
         other => panic!("expected a stock change refusal, got {other}"),
@@ -591,7 +591,7 @@ fn a_mesh_that_is_not_closed_is_refused_by_name() {
 #[test]
 fn a_missing_model_is_refused_by_name() {
     let mut missing = fill(4, H);
-    missing.sources = vec![StockChangeSource::Missing(ModelId(9))];
+    missing.sources = vec![StockChangeSource::Missing(ModelId::from_raw(9))];
     let req = request(vec![top_group(vec![spot(2)], vec![missing])]);
     let error = run_simulation(&req, &AtomicBool::new(false))
         .err()
@@ -626,7 +626,7 @@ fn a_remove_takes_material_of_every_kind() {
         R_AREA * 3.0,
         "1 mm of stock + 2 mm added",
     );
-    let start = &result.prior_stocks[&ToolpathId(3)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(3)];
     assert_eq!(ray_at(start, IN_X, IN_Y), vec![(0.0, 19.0, 0)]);
 }
 
@@ -645,7 +645,7 @@ fn the_playback_stock_receives_the_fill_through_the_group_map() {
             vec![extrude(1, StockChangeOp::Add, H, H + 2.0)],
         ),
     ]));
-    let local = &result.prior_stocks[&ToolpathId(2)];
+    let local = &result.prior_stocks[&ToolpathId::from_raw(2)];
     assert_eq!(
         ray_at(local, IN_X, D - IN_Y),
         vec![(0.0, 20.0, 0), (20.0, 22.0, 1)]
@@ -686,7 +686,7 @@ fn a_group_with_only_a_change_carries_it_to_the_next_group() {
         R_AREA * 5.0,
         "the change-only removal",
     );
-    let start = &result.prior_stocks[&ToolpathId(3)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(3)];
     assert_eq!(
         ray_at(start, IN_X, IN_Y),
         vec![(5.0, 20.0, 0)],
@@ -727,7 +727,7 @@ fn added_segments_carry_the_slot_of_their_material() {
         ],
         "one slot per material, reused for an equal material"
     );
-    let start = &result.prior_stocks[&ToolpathId(4)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(4)];
     assert_eq!(
         ray_at(start, IN_X, IN_Y),
         vec![(0.0, 20.0, 0), (20.0, 23.0, 1), (24.0, 26.0, 2)]
@@ -759,7 +759,7 @@ fn a_full_slot_table_is_refused_by_name() {
     .expect("the eighth added material has no slot");
     assert!(
         matches!(&error, SimulationError::StockChangeRefused { change_id, reason, .. }
-            if *change_id == StockChangeId(7) && reason.contains("M7")),
+            if *change_id == StockChangeId::from_raw(7) && reason.contains("M7")),
         "{error}"
     );
 }
@@ -771,7 +771,7 @@ fn a_run_with_no_change_touches_no_stock() {
         top_group(vec![spot(2)], vec![]),
     ]));
     assert!(result.stock_change_volumes.is_empty());
-    let start = &result.prior_stocks[&ToolpathId(2)];
+    let start = &result.prior_stocks[&ToolpathId::from_raw(2)];
     assert!(start.materials.is_empty());
     assert!(!start.z_grid.has_added_material);
     assert_eq!(ray_at(start, IN_X, IN_Y), vec![(0.0, 20.0, 0)]);

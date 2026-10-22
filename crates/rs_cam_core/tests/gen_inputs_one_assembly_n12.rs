@@ -149,7 +149,7 @@ fn run_three_steps(session: &mut ProjectSession, index: usize) {
 /// The cached move list of toolpath `index`.
 fn cached_moves(session: &ProjectSession, index: usize) -> Toolpath {
     session
-        .get_result(index)
+        .result_at(index)
         .expect("the fixture must hold a cached result")
         .annotated()
         .toolpath

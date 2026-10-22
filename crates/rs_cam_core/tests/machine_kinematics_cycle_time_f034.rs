@@ -79,7 +79,7 @@ fn build_pocket_session() -> ProjectSession {
         .tools()
         .iter()
         .next()
-        .map(|t| t.id.0)
+        .map(|t| t.id.raw())
         .expect("ux_2d_pocket ships at least one tool");
     let model_id = session
         .models()
@@ -104,13 +104,13 @@ fn build_pocket_session() -> ProjectSession {
     };
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pocket (F-034 test)".to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(pocket),
         dressups: DressupConfig::for_op(OperationType::Pocket),
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,
@@ -273,13 +273,13 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
     /// Back Rough is the only Setup 1 toolpath we keep; the others get
     /// skipped by id.
     const SKIP_IDS: &[ToolpathId] = &[
-        ToolpathId(14),
-        ToolpathId(5),
-        ToolpathId(6),
-        ToolpathId(7),
-        ToolpathId(10),
-        ToolpathId(11),
-        ToolpathId(12),
+        ToolpathId::from_raw(14),
+        ToolpathId::from_raw(5),
+        ToolpathId::from_raw(6),
+        ToolpathId::from_raw(7),
+        ToolpathId::from_raw(10),
+        ToolpathId::from_raw(11),
+        ToolpathId::from_raw(12),
     ];
 
     let toml_path = common::require_fixture(Path::new(WANAKA_TOML));
@@ -307,7 +307,7 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
     };
     let n_toolpaths = session.toolpath_configs().len();
     for i in 0..n_toolpaths {
-        let Some(tc) = session.get_toolpath_config(i) else {
+        let Some(tc) = session.toolpath_config_at(i) else {
             continue;
         };
         if SKIP_IDS.contains(&tc.id) {

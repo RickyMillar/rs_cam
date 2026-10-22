@@ -88,7 +88,7 @@ const HEIGHT_IDS: &[&str] = &[
 
 fn polygon_model(id: usize) -> LoadedModel {
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         path: PathBuf::from(format!("model_{id}.svg")),
         name: format!("2D {id}"),
         kind: Some(ModelKind::Svg),
@@ -131,14 +131,14 @@ fn toolpath(
 ) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0), // assigned by session.add_toolpath
+        id: ToolpathId::from_raw(0), // assigned by session.add_toolpath
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: Default::default(),
         heights,
-        tool_id: TOOL,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(TOOL),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -166,7 +166,7 @@ fn pinned(reference: HeightReference, offset: f64) -> HeightMode {
 
 /// One tool, one 2D model, an 18 mm board, one setup.
 fn session() -> ProjectSession {
-    let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
         z: STOCK_THICKNESS_MM,
@@ -237,7 +237,7 @@ fn ribbon_diagnostics(session: &ProjectSession, idx: usize) -> Vec<Diagnostic> {
     let tool = session
         .tools()
         .iter()
-        .find(|t| t.id.0 == tc.tool_id)
+        .find(|t| t.id == tc.tool_id)
         .cloned()
         .expect("the tool is in the session");
     let height_ctx = session.toolpath_heights(tc).expect("the heights resolve");

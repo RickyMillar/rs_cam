@@ -1333,7 +1333,7 @@ mod tests {
     /// air-cut / low-engagement emission tallies never reach the row.
     #[test]
     fn toolpath_status_flags_sort_worst_first_and_suppress_emission_noise() {
-        let tp = ToolpathId(7);
+        let tp = ToolpathId::from_raw(7);
         let issues = vec![
             issue(SimulationIssueKind::AirCut, tp),
             issue(SimulationIssueKind::Hotspot, tp),
@@ -1362,8 +1362,11 @@ mod tests {
     /// Issues scoped to another toolpath must not leak into this row.
     #[test]
     fn toolpath_status_flags_scope_to_toolpath() {
-        let issues = vec![issue(SimulationIssueKind::RapidCollision, ToolpathId(1))];
-        let flags = toolpath_status_flags(ToolpathId(2), &issues, None);
+        let issues = vec![issue(
+            SimulationIssueKind::RapidCollision,
+            ToolpathId::from_raw(1),
+        )];
+        let flags = toolpath_status_flags(ToolpathId::from_raw(2), &issues, None);
         assert!(!flags.iter().any(|f| f.label.contains("rapid")));
     }
 }

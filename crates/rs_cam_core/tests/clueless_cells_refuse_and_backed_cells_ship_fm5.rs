@@ -48,7 +48,7 @@ use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{AluminumAlloy, Material, PlywoodGrade, SheetGoodKind, WoodSpecies};
 
 fn tool_of(kind: ToolType) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), kind);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = 6.35;
     t.flute_count = 2;
     t.cutting_length = 19.05;
@@ -251,7 +251,7 @@ fn the_vbit_mdf_and_plywood_cells_refuse_with_the_g2_texts_fm5() {
 
 /// A tapered ball with the tip `tip_mm` and a shank wider than the tip.
 fn tapered(tip_mm: f64) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), ToolType::TaperedBallNose);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), ToolType::TaperedBallNose);
     t.diameter = tip_mm;
     t.flute_count = 2;
     t.cutting_length = (tip_mm * 3.0).max(12.0);

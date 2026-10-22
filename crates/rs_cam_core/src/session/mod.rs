@@ -125,7 +125,7 @@ use crate::compute::transform::{FaceUp, ZRotation};
 use crate::gcode::CoolantMode;
 use crate::geo::{BoundingBox3, P3};
 use crate::geometry::enriched_mesh::EnrichedMesh;
-use crate::ids::ModelId;
+use crate::ids::{ModelId, SetupId};
 use crate::mesh::TriangleMesh;
 use crate::polygon::Polygon2;
 use crate::selection::{ItemSet, SourceRef};
@@ -406,10 +406,10 @@ impl SessionError {
 
     /// F055: the [`Self::ModelNotFound`] refusal for `id`, with the model
     /// ids of `session` in project order.
-    pub(crate) fn model_not_found(id: usize, session: &ProjectSession) -> Self {
+    pub(crate) fn model_not_found(id: ModelId, session: &ProjectSession) -> Self {
         Self::ModelNotFound {
-            id: ModelId(id),
-            known: session.models.iter().map(|m| ModelId(m.id)).collect(),
+            id,
+            known: session.models.iter().map(|m| m.id).collect(),
         }
     }
 
@@ -450,16 +450,16 @@ impl std::fmt::Display for SessionError {
             }
             Self::ToolpathNotFound(index) => write!(f, "Toolpath {index} not found"),
             Self::ToolpathIdNotFound(id) => write!(f, "Toolpath id {id} not found"),
-            Self::ToolNotFound(id) => write!(f, "Tool {} not found", id.0),
+            Self::ToolNotFound(id) => write!(f, "Tool {} not found", id.raw()),
             Self::SetupNotFound(id) => write!(f, "Setup {id} not found"),
-            Self::ToolInUse(id) => write!(f, "Tool {} is still referenced by toolpaths", id.0),
+            Self::ToolInUse(id) => write!(f, "Tool {} is still referenced by toolpaths", id.raw()),
             Self::MissingGeometry(msg) => write!(f, "Missing geometry: {msg}"),
             Self::ModelNotFound { id, known } => {
-                let known: Vec<String> = known.iter().map(|m| m.0.to_string()).collect();
+                let known: Vec<String> = known.iter().map(|m| m.raw().to_string()).collect();
                 write!(
                     f,
                     "Model id {} not found; project model ids: [{}]",
-                    id.0,
+                    id.raw(),
                     known.join(", ")
                 )
             }
@@ -586,7 +586,7 @@ pub(crate) enum LoadedGeometry {
 /// the geometry behind it.
 #[derive(Debug, Clone)]
 pub struct LoadedModel {
-    pub id: usize,
+    pub id: ModelId,
     pub name: String,
     pub mesh: Option<Arc<TriangleMesh>>,
     /// The pickable 2D items of the source (P2.1): DXF and SVG drawing
@@ -633,7 +633,7 @@ impl LoadedModel {
     /// options are the defaults (P4.8): the batch CLI sets none. Relative
     /// paths resolve against `base_dir`.
     pub fn from_file(
-        id: usize,
+        id: ModelId,
         name: &str,
         path: &std::path::Path,
         kind: Option<ModelKind>,
@@ -669,7 +669,7 @@ impl LoadedModel {
     /// The path, name, kind, units and import options are preserved so the
     /// broken reference can round-trip through save/load.
     pub fn placeholder(
-        id: usize,
+        id: ModelId,
         path: std::path::PathBuf,
         name: String,
         kind: ModelKind,
@@ -830,7 +830,7 @@ impl LoadedModel {
 
     /// The cached flat-region faces bound to `SourceRef::Model(self.id)`.
     fn bind_faces(&self, set: &ItemSet) -> Arc<ItemSet> {
-        let source = SourceRef::Model(ModelId(self.id));
+        let source = SourceRef::Model(self.id);
         Arc::new(set.bound_to(source).unwrap_or_else(|error| {
             // A rebuild of a valid item set with a new source cannot break
             // a shape invariant.
@@ -879,7 +879,7 @@ impl LoadedModel {
     }
 
     pub(crate) fn bind_items(&mut self) {
-        let source = SourceRef::Model(ModelId(self.id));
+        let source = SourceRef::Model(self.id);
         match self.items.bound_to(source) {
             Ok(bound) => self.items = Arc::new(bound),
             // A rebuild of a valid item set with a new source cannot break
@@ -1094,7 +1094,7 @@ impl DatumConfig {
 /// `SetSetupModels` command rows (WP6).
 #[derive(Debug, Clone)]
 pub struct SetupData {
-    pub id: usize,
+    pub id: SetupId,
     pub name: String,
     pub face_up: FaceUp,
     /// Rotation of the stock about the vertical (Z) axis.
@@ -1120,12 +1120,45 @@ pub struct SetupData {
     /// `MoveStockChange` and `RemoveStockChange` command rows.
     pub stock_changes: Vec<crate::compute::stock_change::StockChange>,
     /// Indices into the session's `toolpath_configs` vec.
-    pub toolpath_indices: Vec<usize>,
+    ///
+    /// F038: the field is private to `session`. Every index of the
+    /// toolpath list is in exactly one setup's list; read it with
+    /// [`Self::toolpath_indices`]. The structural doors keep the rule, and
+    /// [`ProjectSession::toolpath_partition_holds`] checks it in a debug
+    /// build after each command, each load and each builder build.
+    toolpath_indices: Vec<usize>,
     /// Optional override for the M0 pause message emitted before this setup.
     /// `None` falls back to the default `Setup change: <name>` text. Used to
     /// instruct the operator (e.g. "Run Z Probe macro then Resume") between
     /// setups; the actual probe / home gcode lives in the sender's macro.
     pub pause_message: Option<String>,
+}
+
+impl SetupData {
+    /// A setup with no toolpath, no model scope, no obstacle and no stock
+    /// change. The other fields take their defaults.
+    #[must_use]
+    pub fn new(id: SetupId, name: impl Into<String>, face_up: FaceUp) -> Self {
+        Self {
+            id,
+            name: name.into(),
+            face_up,
+            z_rotation: ZRotation::default(),
+            datum: DatumConfig::default(),
+            model_ids: Vec::new(),
+            obstacles: Vec::new(),
+            stock_changes: Vec::new(),
+            toolpath_indices: Vec::new(),
+            pause_message: None,
+        }
+    }
+
+    /// The indices into the session's toolpath list that this setup owns,
+    /// in run order.
+    #[must_use]
+    pub fn toolpath_indices(&self) -> &[usize] {
+        &self.toolpath_indices
+    }
 }
 
 /// Provenance stamp for a toolpath the multi-tool finishing planner emitted
@@ -1166,8 +1199,8 @@ pub struct ToolpathConfig {
     pub operation: OperationConfig,
     pub dressups: DressupConfig,
     pub heights: HeightsConfig,
-    pub tool_id: usize,
-    pub model_id: usize,
+    pub tool_id: ToolId,
+    pub model_id: ModelId,
     /// Raw G-code to emit before this toolpath's moves.
     pub pre_gcode: Option<String>,
     /// Raw G-code to emit after this toolpath's moves.
@@ -1214,12 +1247,12 @@ impl ToolpathConfig {
     /// `SourceRef::ToolpathModel` is the own model, which is always in the
     /// set. `SourceRef::Stock` reads no model. A re-import of any model in
     /// the set stales the toolpath (`drop_results_for_model`).
-    pub fn models_read(&self) -> std::collections::BTreeSet<usize> {
+    pub fn models_read(&self) -> std::collections::BTreeSet<ModelId> {
         use crate::selection::SourceRef;
         let mut out = std::collections::BTreeSet::new();
         out.insert(self.model_id);
         let named = |source: SourceRef| match source {
-            SourceRef::Model(id) => Some(id.0),
+            SourceRef::Model(id) => Some(id),
             SourceRef::ToolpathModel | SourceRef::Stock => None,
         };
         if let Some(selection) = self.operation.selection() {
@@ -1228,7 +1261,7 @@ impl ToolpathConfig {
         if let crate::compute::OperationConfig::ProjectCurve(cfg) = &self.operation
             && let Some(surface) = cfg.surface_model_id
         {
-            out.insert(surface.0);
+            out.insert(surface);
         }
         if self.boundary.enabled
             && let crate::compute::config::BoundarySource::Selection { selection, .. } =
@@ -1735,7 +1768,7 @@ pub struct ProjectSession {
     /// whole session, so an index shift (a removal, a bulk replace) can
     /// invalidate every in-flight comparison by bumping each index.
     pub(crate) toolpath_revision: HashMap<usize, u64>,
-    /// Monotonic source of [`Self::toolpath_revision`] values. Never reset.
+    /// Monotonic source of [`Self::toolpath_revision_at`] values. Never reset.
     pub(crate) next_revision: u64,
     pub(crate) simulation: Option<SimulationResult>,
     /// How many times an edit has dropped the simulation.
@@ -1794,7 +1827,8 @@ impl ProjectSession {
             models: Vec::new(),
             tools: Vec::new(),
             setups: vec![SetupData {
-                id: 0,
+                // The allocator's first setup id; `next_setup_id` starts at 1.
+                id: SetupId::mint(0),
                 name: "Setup 1".to_owned(),
                 face_up: FaceUp::default(),
                 z_rotation: ZRotation::default(),
@@ -1871,6 +1905,7 @@ impl ProjectSession {
     ) -> Result<(Self, Vec<ProjectLoadWarning>), SessionError> {
         let mut warnings = Vec::new();
         let session = project_file::build_session_from_project(project, base_dir, &mut warnings)?;
+        session.debug_check_toolpath_partition();
         Ok((session, warnings))
     }
 
@@ -1898,9 +1933,9 @@ impl ProjectSession {
             .enumerate()
             .map(|(idx, tc)| {
                 let tool_name = self
-                    .find_tool_by_raw_id(tc.tool_id)
+                    .tool_by_id(tc.tool_id)
                     .map(|t| t.name.clone())
-                    .unwrap_or_else(|| SessionError::ToolNotFound(ToolId(tc.tool_id)).to_string());
+                    .unwrap_or_else(|| SessionError::ToolNotFound(tc.tool_id).to_string());
                 ToolpathSummary {
                     index: idx,
                     id: tc.id,
@@ -1934,17 +1969,27 @@ impl ProjectSession {
     }
 
     /// Get the operation config for a toolpath by index.
-    pub fn get_toolpath_params(&self, index: usize) -> Option<&OperationConfig> {
+    pub fn toolpath_params_at(&self, index: usize) -> Option<&OperationConfig> {
         self.toolpath_configs.get(index).map(|tc| &tc.operation)
     }
 
-    /// Get a tool by its `ToolId`.
-    pub fn get_tool(&self, id: ToolId) -> Option<&ToolConfig> {
+    /// The tool with the EXACT id `id`. There is no fallback to
+    /// another tool (geometry selection P2.5): a wrong tool is a wrong cut,
+    /// so a toolpath that names a missing tool refuses by its id.
+    pub fn tool_by_id(&self, id: ToolId) -> Option<&ToolConfig> {
         self.tools.iter().find(|t| t.id == id)
     }
 
+    /// The model with the EXACT id `id`. There is no fallback to
+    /// another model (geometry selection P2.4): a toolpath that names a
+    /// removed model refuses by its id, and never reads the wrong
+    /// geometry.
+    pub fn model_by_id(&self, id: ModelId) -> Option<&LoadedModel> {
+        self.models.iter().find(|m| m.id == id)
+    }
+
     /// Get a computed toolpath result by index.
-    pub fn get_result(&self, index: usize) -> Option<&ToolpathComputeResult> {
+    pub fn result_at(&self, index: usize) -> Option<&ToolpathComputeResult> {
         self.results.get(&index)
     }
 
@@ -1954,9 +1999,9 @@ impl ProjectSession {
     /// Read it beside a generation request and compare it when the answer
     /// arrives: an unequal revision means the config moved while the
     /// worker ran, so the answer describes inputs the project no longer
-    /// has. See [`Self::toolpath_revision`] for why an absent result
+    /// has. See [`Self::toolpath_revision_at`] for why an absent result
     /// cannot answer that question.
-    pub fn toolpath_revision(&self, index: usize) -> u64 {
+    pub fn toolpath_revision_at(&self, index: usize) -> u64 {
         self.toolpath_revision.get(&index).copied().unwrap_or(0)
     }
 
@@ -2011,7 +2056,7 @@ impl ProjectSession {
     }
 
     /// Get a toolpath config by index.
-    pub fn get_toolpath_config(&self, index: usize) -> Option<&ToolpathConfig> {
+    pub fn toolpath_config_at(&self, index: usize) -> Option<&ToolpathConfig> {
         self.toolpath_configs.get(index)
     }
 
@@ -2039,7 +2084,7 @@ impl ProjectSession {
     /// to build a `SuggestContext::model_bbox` per toolpath without
     /// re-walking the model list each iteration. Skips models with no
     /// finite bbox (placeholder rows).
-    pub fn collect_model_bboxes(&self) -> Vec<(usize, BoundingBox3)> {
+    pub fn collect_model_bboxes(&self) -> Vec<(ModelId, BoundingBox3)> {
         self.models
             .iter()
             .filter_map(|m| m.bbox().map(|b| (m.id, b)))
@@ -2053,7 +2098,7 @@ impl ProjectSession {
     /// bbox. `None` means the id names no model, or the model carries
     /// no finite geometry (a placeholder row).
     #[must_use]
-    pub fn model_bbox(&self, model_id: usize) -> Option<BoundingBox3> {
+    pub fn model_bbox_by_id(&self, model_id: ModelId) -> Option<BoundingBox3> {
         self.models.iter().find(|m| m.id == model_id)?.bbox()
     }
 
@@ -2074,7 +2119,7 @@ impl ProjectSession {
                 self.stock_bbox(),
                 self.stock_config().padding,
             ),
-            model_bbox: self.model_bbox(tc.model_id),
+            model_bbox: self.model_bbox_by_id(tc.model_id),
         }
     }
 
@@ -2103,7 +2148,7 @@ impl ProjectSession {
     ) -> Option<crate::feeds::profile::CutterOpProfile<'a>> {
         use crate::feeds::profile::{CutterOpProfile, CutterOpProfileInput};
 
-        let tool = self.get_tool(ToolId(tc.tool_id))?;
+        let tool = self.tool_by_id(tc.tool_id)?;
         let stock = self.stock_config();
         // F114: the one context assembly. The dressups carry the G6 entry
         // θ, so MCP and the CLI report the ramp feed the card shows.
@@ -2197,7 +2242,7 @@ impl ProjectSession {
     }
 
     /// Find a setup by its semantic ID (not vec index).
-    pub fn find_setup_by_id(&self, id: usize) -> Option<(usize, &SetupData)> {
+    pub fn find_setup_by_id(&self, id: SetupId) -> Option<(usize, &SetupData)> {
         self.setups.iter().enumerate().find(|(_, s)| s.id == id)
     }
 
@@ -2232,19 +2277,28 @@ impl ProjectSession {
 
     // ── Internal helpers ───────────────────────────────────────────
 
-    /// The tool with the EXACT id `raw_id`. There is no fallback to
-    /// another tool (geometry selection P2.5): a wrong tool is a wrong cut,
-    /// so a toolpath that names a missing tool refuses by its id.
-    pub(crate) fn find_tool_by_raw_id(&self, raw_id: usize) -> Option<&ToolConfig> {
-        self.tools.iter().find(|t| t.id.0 == raw_id)
+    /// F038: true when every index of the toolpath list is in exactly one
+    /// setup's `toolpath_indices`, and no list names an index outside the
+    /// toolpath list.
+    #[must_use]
+    pub fn toolpath_partition_holds(&self) -> bool {
+        let mut seen = vec![false; self.toolpath_configs.len()];
+        for &index in self.setups.iter().flat_map(|s| s.toolpath_indices.iter()) {
+            match seen.get_mut(index) {
+                Some(slot) if !*slot => *slot = true,
+                _ => return false,
+            }
+        }
+        seen.iter().all(|&slot| slot)
     }
 
-    /// The model with the EXACT id `raw_id`. There is no fallback to
-    /// another model (geometry selection P2.4): a toolpath that names a
-    /// removed model refuses by its id, and never reads the wrong
-    /// geometry.
-    pub(crate) fn find_model_by_raw_id(&self, raw_id: usize) -> Option<&LoadedModel> {
-        self.models.iter().find(|m| m.id == raw_id)
+    /// F038: the partition check that a debug build runs after each
+    /// structural write. A release build runs nothing.
+    pub(crate) fn debug_check_toolpath_partition(&self) {
+        debug_assert!(
+            self.toolpath_partition_holds(),
+            "F038: the setup toolpath lists are not a partition of the toolpath list"
+        );
     }
 
     pub(crate) fn find_setup_for_toolpath_index(&self, tp_index: usize) -> Option<&SetupData> {
@@ -2454,7 +2508,7 @@ mod tests {
             tools: Vec::new(),
             models: Vec::new(),
             setups: vec![ProjectSetupSection {
-                id: Some(0),
+                id: Some(crate::ids::SetupId::from_raw(0)),
                 name: "Setup 1".to_owned(),
                 face_up: "top".to_owned(),
                 z_rotation: String::new(),
@@ -2467,12 +2521,12 @@ mod tests {
                 stock_changes: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
                     shoe: Default::default(),
-                    id: Some(ToolpathId(0)),
+                    id: Some(ToolpathId::from_raw(0)),
                     name: "Bare".to_owned(),
                     operation: None,
                     enabled: true,
-                    tool_id: 0,
-                    model_id: 0,
+                    tool_id: crate::ids::ToolId::from_raw(0),
+                    model_id: crate::ids::ModelId::from_raw(0),
                     dressups: crate::compute::config::DressupConfig::default(),
                     heights: crate::compute::config::HeightsConfig::default(),
                     pre_gcode: None,
@@ -2658,7 +2712,7 @@ mod tests {
     fn the_session_answers_for_one_model_bbox() {
         let session = ProjectSessionBuilder::new()
             .model(LoadedModel {
-                id: 7,
+                id: crate::ids::ModelId::from_raw(7),
                 name: "Placeholder".to_owned(),
                 mesh: None,
                 items: Default::default(),
@@ -2675,11 +2729,15 @@ mod tests {
             .build();
 
         assert!(
-            session.model_bbox(7).is_none(),
+            session
+                .model_bbox_by_id(crate::ids::ModelId::from_raw(7))
+                .is_none(),
             "a model with no geometry has no bbox to report"
         );
         assert!(
-            session.model_bbox(99).is_none(),
+            session
+                .model_bbox_by_id(crate::ids::ModelId::from_raw(99))
+                .is_none(),
             "an id the session does not hold reads None"
         );
     }
@@ -2735,7 +2793,7 @@ mod tests {
             format_version: 3,
             job: ProjectJobSection::default(),
             tools: vec![ProjectToolSection {
-                id: Some(0),
+                id: Some(crate::ids::ToolId::from_raw(0)),
                 name: "Test EndMill".to_owned(),
                 tool_type: "end_mill".to_owned(),
                 diameter: 6.35,
@@ -2758,7 +2816,7 @@ mod tests {
             }],
             models: Vec::new(),
             setups: vec![ProjectSetupSection {
-                id: Some(0),
+                id: Some(crate::ids::SetupId::from_raw(0)),
                 name: "Setup 1".to_owned(),
                 face_up: "top".to_owned(),
                 z_rotation: String::new(),
@@ -2771,14 +2829,14 @@ mod tests {
                 stock_changes: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
                     shoe: Default::default(),
-                    id: Some(ToolpathId(0)),
+                    id: Some(ToolpathId::from_raw(0)),
                     name: "Test Pocket".to_owned(),
                     operation: Some(OperationConfig::new_default(
                         crate::compute::catalog::OperationType::Pocket,
                     )),
                     enabled: true,
-                    tool_id: 0,
-                    model_id: 0,
+                    tool_id: crate::ids::ToolId::from_raw(0),
+                    model_id: crate::ids::ModelId::from_raw(0),
                     dressups: crate::compute::config::DressupConfig::default(),
                     heights: crate::compute::config::HeightsConfig::default(),
                     pre_gcode: None,
@@ -2909,14 +2967,14 @@ mod tests {
 
         let new_tp = ToolpathConfig {
             shoe: Default::default(),
-            id: ToolpathId(0), // will be overwritten by add_toolpath
+            id: ToolpathId::from_raw(0), // will be overwritten by add_toolpath
             name: "New Profile".to_owned(),
             enabled: true,
             operation: OperationConfig::new_default(OperationType::Profile),
             dressups: crate::compute::config::DressupConfig::default(),
             heights: crate::compute::config::HeightsConfig::default(),
-            tool_id: 0,
-            model_id: 0,
+            tool_id: crate::ids::ToolId::from_raw(0),
+            model_id: crate::ids::ModelId::from_raw(0),
             pre_gcode: None,
             post_gcode: None,
             boundary: crate::compute::config::BoundaryConfig::default(),

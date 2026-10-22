@@ -45,14 +45,14 @@ const DOWEL_D: f64 = 6.0;
 fn tc(name: &str, op: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id: 0,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(0),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -68,7 +68,7 @@ fn tc(name: &str, op: OperationConfig) -> ToolpathConfig {
 
 fn dowel_drawing() -> LoadedModel {
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "dowel_through.dxf".to_owned(),
         mesh: None,
         // P2.1: each CIRCLE entity is one item, ring and hole in one.
@@ -113,10 +113,10 @@ fn mini(with_pin_drill: bool) -> ProjectSession {
     // tool size only.
     builder.add_tool(ToolConfig {
         diameter: DOWEL_D,
-        ..ToolConfig::new_default(ToolId(0), ToolType::EndMill)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill)
     });
     builder.add_model(dowel_drawing());
-    let tool = builder.tools()[0].id.0;
+    let tool = builder.tools()[0].id.raw();
     let model = builder.models()[0].id;
     let mut ops = vec![tc(
         "Dowel holes, 6 mm drill, peck",
@@ -131,7 +131,7 @@ fn mini(with_pin_drill: bool) -> ProjectSession {
         ));
     }
     for mut op in ops {
-        op.tool_id = tool;
+        op.tool_id = rs_cam_core::ids::ToolId::from_raw(tool);
         op.model_id = model;
         let _ = builder.add_toolpath(0, op).unwrap();
     }

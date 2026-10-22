@@ -82,7 +82,7 @@ fn both_doors_apply_a_step_models_declared_units() {
     // pass because neither door scales anything.
     let as_mm = rs_cam_core::io::load_model_file(
         &step_path,
-        1,
+        rs_cam_core::ids::ModelId::from_raw(1),
         ModelKind::Step,
         ModelUnits::Millimeters,
         Default::default(),
@@ -90,7 +90,7 @@ fn both_doors_apply_a_step_models_declared_units() {
     .expect("interactive load, mm");
     let as_inches = rs_cam_core::io::load_model_file(
         &step_path,
-        1,
+        rs_cam_core::ids::ModelId::from_raw(1),
         ModelKind::Step,
         ModelUnits::Inches,
         Default::default(),

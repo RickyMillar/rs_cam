@@ -34,12 +34,12 @@ use crate::ids::ToolpathId;
 /// so the two adapters can evolve independently — the precondition
 /// adapter cares about geometry kind on the *resolved* model, while
 /// this adapter cares about *whether the reference resolves at all*.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ModelRefContext {
     /// The toolpath's `model_id` as stored on the [`crate::session::ToolpathConfig`].
     /// Surfaced in the diagnostic message so agents can match it
     /// against `inspect_model` output.
-    pub model_id: usize,
+    pub model_id: crate::ids::ModelId,
     /// `true` when the session has a loaded model with `id == model_id`.
     /// `false` covers both "no model with that id" and "no models
     /// loaded at all" — the diagnostic message disambiguates if needed.
@@ -102,10 +102,10 @@ mod tests {
     #[test]
     fn missing_model_fires_blocking_with_id_in_message() {
         let ctx = ModelRefContext {
-            model_id: 999,
+            model_id: crate::ids::ModelId::from_raw(999),
             model_resolved: false,
         };
-        let diags = diagnostics_from_model_refs(ToolpathId(0), &pocket_op(), &ctx);
+        let diags = diagnostics_from_model_refs(ToolpathId::from_raw(0), &pocket_op(), &ctx);
         assert_eq!(diags.len(), 1);
         let d = &diags[0];
         assert_eq!(d.id.as_str(), ids::REF_MODEL_MISSING);
@@ -122,10 +122,10 @@ mod tests {
     #[test]
     fn resolved_model_silences_adapter() {
         let ctx = ModelRefContext {
-            model_id: 1,
+            model_id: crate::ids::ModelId::from_raw(1),
             model_resolved: true,
         };
-        let diags = diagnostics_from_model_refs(ToolpathId(0), &pocket_op(), &ctx);
+        let diags = diagnostics_from_model_refs(ToolpathId::from_raw(0), &pocket_op(), &ctx);
         assert!(diags.is_empty(), "got {:?}", diags);
     }
 
@@ -134,11 +134,11 @@ mod tests {
         // A face op against an undefined model_id is fine — face is
         // stock-driven and doesn't need a model.
         let ctx = ModelRefContext {
-            model_id: 999,
+            model_id: crate::ids::ModelId::from_raw(999),
             model_resolved: false,
         };
         let face = OperationConfig::new_default(OperationType::Face);
-        let diags = diagnostics_from_model_refs(ToolpathId(0), &face, &ctx);
+        let diags = diagnostics_from_model_refs(ToolpathId::from_raw(0), &face, &ctx);
         assert!(diags.is_empty(), "stock-based op should skip: {:?}", diags);
     }
 }

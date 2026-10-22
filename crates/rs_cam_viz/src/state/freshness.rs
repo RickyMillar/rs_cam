@@ -69,7 +69,7 @@ impl FreshnessState {
 
 /// Derive the state for one toolpath.
 ///
-/// `core_has_result` is `session.get_result(index).is_some()` — the core
+/// `core_has_result` is `session.result_at(index).is_some()` — the core
 /// cache is the truth about result validity, and every mutating path in
 /// `ProjectSession` drops the entry through `drop_result`.
 ///
@@ -104,9 +104,9 @@ pub fn freshness_at(
     gui: &GuiState,
     index: usize,
 ) -> Option<FreshnessState> {
-    let tc = session.get_toolpath_config(index)?;
+    let tc = session.toolpath_config_at(index)?;
     let rt = gui.toolpath_rt.get(&tc.id);
-    Some(freshness(tc, rt, session.get_result(index).is_some()))
+    Some(freshness(tc, rt, session.result_at(index).is_some()))
 }
 
 /// Where the SIMULATION stands, as every surface should read it.
@@ -282,9 +282,9 @@ pub fn simulation_freshness(
 /// The first enabled operation, in plan order, with no core result.
 fn first_ungenerated(session: &ProjectSession) -> Option<ToolpathId> {
     session.list_setups().iter().find_map(|setup| {
-        setup.toolpath_indices.iter().find_map(|&index| {
-            let tc = session.get_toolpath_config(index)?;
-            (tc.enabled && session.get_result(index).is_none()).then_some(tc.id)
+        setup.toolpath_indices().iter().find_map(|&index| {
+            let tc = session.toolpath_config_at(index)?;
+            (tc.enabled && session.result_at(index).is_none()).then_some(tc.id)
         })
     })
 }

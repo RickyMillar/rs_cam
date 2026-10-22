@@ -69,11 +69,13 @@ impl ComputeBackend for SilentBackend {
 /// arm fire; the end mill is a tool every 3D roughing op accepts.
 fn mesh_seed() -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    let mut builder =
-        ProjectSessionBuilder::new().tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
+    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
     let mesh = Arc::new(make_test_flat(40.0));
     let _ = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: std::path::PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
         kind: Some(ModelKind::Stl),

@@ -144,20 +144,20 @@ fn tapered_ball_tool(id: usize) -> ToolConfig {
         diameter: 1.0,
         taper_half_angle: 7.0,
         shaft_diameter: 6.0,
-        ..ToolConfig::new_default(ToolId(id), ToolType::TaperedBallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(id), ToolType::TaperedBallNose)
     }
 }
 
 fn ball_tool(id: usize, diameter: f64) -> ToolConfig {
     ToolConfig {
         diameter,
-        ..ToolConfig::new_default(ToolId(id), ToolType::BallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(id), ToolType::BallNose)
     }
 }
 
 fn mesh_model(mesh: TriangleMesh) -> LoadedModel {
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "grooved_block".to_owned(),
         mesh: Some(Arc::new(mesh)),
         items: Default::default(),
@@ -181,7 +181,7 @@ fn toolpath(tool_id: usize, model_id: usize, rest_analysis: RestAnalysisConfig) 
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Scallop".to_owned(),
         enabled: true,
         operation: op,
@@ -191,8 +191,8 @@ fn toolpath(tool_id: usize, model_id: usize, rest_analysis: RestAnalysisConfig) 
             bottom_z: HeightMode::Manual(-8.0),
             ..HeightsConfig::default()
         },
-        tool_id,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -227,14 +227,14 @@ fn generate_with_rest_analysis(
         ..StockConfig::default()
     });
     let fine_idx = builder.add_tool(finisher);
-    let fine_id = builder.tools()[fine_idx].id.0;
+    let fine_id = builder.tools()[fine_idx].id.raw();
     let ref_idx = builder.add_tool(ball_tool(1, 12.0));
     let ref_id = builder.tools()[ref_idx].id;
     let model_id = builder.add_model(mesh_model(grooved_block(8.0, 50.0, 5.0, 1.0)));
     let mut ra = rest_analysis;
     ra.reference_tool_id = Some(ref_id);
     let _ = builder
-        .add_toolpath(0, toolpath(fine_id, model_id, ra))
+        .add_toolpath(0, toolpath(fine_id, model_id.raw(), ra))
         .expect("add scallop toolpath");
     let mut session = builder.build();
     let cancel = AtomicBool::new(false);
@@ -262,7 +262,7 @@ fn routing_rest_analysis() -> RestAnalysisConfig {
 fn the_generic_pass_routes_on_the_policy_stepover_and_reports_it() {
     let session = generate_with_rest_analysis(tapered_ball_tool(0), routing_rest_analysis());
     let stats = session
-        .get_result(0)
+        .result_at(0)
         .expect("a generated result")
         .stats
         .clone();
@@ -292,7 +292,7 @@ fn the_generic_pass_routes_on_the_policy_stepover_and_reports_it() {
     assert!((finding.envelope_rule_mm - 1.5).abs() < 1e-9);
 
     let diags = rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation(
-        ToolpathId(0),
+        ToolpathId::from_raw(0),
         &stats,
     );
     let d = diags
@@ -317,7 +317,7 @@ fn an_explicitly_pinned_stepover_is_honoured_and_silent() {
     };
     let session = generate_with_rest_analysis(tapered_ball_tool(0), cfg);
     let stats = session
-        .get_result(0)
+        .result_at(0)
         .expect("a generated result")
         .stats
         .clone();
@@ -432,7 +432,7 @@ fn the_attached_artifacts_do_not_move_with_the_routing_verdict() {
             ..routing_rest_analysis()
         };
         let session = generate_with_rest_analysis(tapered_ball_tool(0), cfg);
-        let result = session.get_result(0).expect("a generated result");
+        let result = session.result_at(0).expect("a generated result");
         let annotated = result.annotated();
         let regions = annotated
             .produced
@@ -522,7 +522,7 @@ fn the_new_dials_are_serde_additive() {
 fn the_ball_control_derives_the_same_number_and_reports_nothing() {
     let session = generate_with_rest_analysis(ball_tool(0, 3.0), routing_rest_analysis());
     let stats = session
-        .get_result(0)
+        .result_at(0)
         .expect("a generated result")
         .stats
         .clone();
@@ -537,7 +537,7 @@ fn the_ball_control_derives_the_same_number_and_reports_nothing() {
     );
     assert!(finding.matches_the_envelope_rule());
     let diags = rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation(
-        ToolpathId(0),
+        ToolpathId::from_raw(0),
         &stats,
     );
     assert!(

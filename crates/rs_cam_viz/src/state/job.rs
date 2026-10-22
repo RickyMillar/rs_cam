@@ -175,7 +175,7 @@ pub fn obstacle_display_extent(
     if !o.enabled {
         return None;
     }
-    let find = |id: rs_cam_core::ids::ModelId| models.iter().find(|m| m.id == id.0);
+    let find = |id: rs_cam_core::ids::ModelId| models.iter().find(|m| m.id == id);
     let (xy, z0, z1, grow) = match &o.geometry {
         ObstacleGeometry::Box { min, max } => {
             ([min[0], min[1], max[0], max[1]], min[2], max[2], 0.0)

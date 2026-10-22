@@ -325,7 +325,7 @@ fn height_order_refusal(heights: HeightsConfig) -> HeightOrderRefusal {
 #[test]
 fn an_auto_waterline_ladders_the_model_and_records_a_clean_finding() {
     let session = waterline_session(HeightsConfig::default());
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     let f = result
         .stats
         .waterline_ladder
@@ -416,7 +416,7 @@ fn a_top_pinned_below_the_stock_bottom_gives_an_empty_ladder_and_the_finding() {
         bottom_z: HeightMode::Manual(-2.37),
         ..HeightsConfig::default()
     });
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     let f = result.stats.waterline_ladder.expect("recorded");
     assert!(f.planned_levels >= 1, "{f:?}");
     assert_eq!(f.dropped_below_stock, f.planned_levels, "{f:?}");
@@ -448,7 +448,7 @@ fn a_top_pinned_below_the_stock_bottom_gives_an_empty_ladder_and_the_finding() {
         bottom_z: HeightMode::Manual(-1.37),
         ..HeightsConfig::default()
     });
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     let f = result.stats.waterline_ladder.expect("recorded");
     assert_eq!(f.planned_levels, 1, "top = bottom is one level: {f:?}");
     assert_eq!(f.dropped_below_stock, 1, "{f:?}");
@@ -517,7 +517,7 @@ fn a_top_equal_to_the_bottom_cuts_one_contour_f033b() {
 
     // Generation cuts one contour at the level.
     generate(&mut session, 0);
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     let f = result.stats.waterline_ladder.expect("recorded");
     assert_eq!(f.planned_levels, 1, "{f:?}");
     assert_eq!(f.delivered_levels, 1, "{f:?}");

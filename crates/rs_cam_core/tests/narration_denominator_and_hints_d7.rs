@@ -43,7 +43,7 @@ fn split_denominator_trace() -> SimulationCutTrace {
     let mut samples = Vec::new();
     let mut push = |idx: usize, cutting: bool, radial: f64| {
         samples.push(SimulationCutSample {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             move_index: 1,
             sample_index: idx,
             segment_time_s: 1.0,
@@ -110,7 +110,7 @@ fn air_cut_line(text: &str) -> String {
 #[test]
 fn the_air_cut_marker_follows_the_total_runtime_denominator() {
     let context = ToolpathNarrationContext {
-        toolpath_id: Some(ToolpathId(0)),
+        toolpath_id: Some(ToolpathId::from_raw(0)),
         operation_kind: Some(OperationType::Pocket),
         ..Default::default()
     };
@@ -137,7 +137,7 @@ fn a_genuinely_high_total_runtime_reading_still_warns() {
     let mut samples = Vec::new();
     for i in 0..100 {
         samples.push(SimulationCutSample {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             move_index: 1,
             sample_index: i,
             segment_time_s: 1.0,
@@ -150,7 +150,7 @@ fn a_genuinely_high_total_runtime_reading_still_warns() {
     }
     let trace = SimulationCutTrace::from_samples(0.5, samples);
     let context = ToolpathNarrationContext {
-        toolpath_id: Some(ToolpathId(0)),
+        toolpath_id: Some(ToolpathId::from_raw(0)),
         operation_kind: Some(OperationType::Pocket),
         ..Default::default()
     };
@@ -173,7 +173,7 @@ fn narration_withholds_the_air_cut_percentage_when_it_is_not_a_measurement() {
     let mut samples = Vec::new();
     for i in 0..60 {
         samples.push(SimulationCutSample {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             move_index: 1,
             sample_index: i,
             segment_time_s: 1.0,
@@ -189,12 +189,12 @@ fn narration_withholds_the_air_cut_percentage_when_it_is_not_a_measurement() {
     let trace = SimulationCutTrace::from_samples(0.5, samples);
     let report = MeasurabilityReport::from_trace(&trace, Some(0.25));
     assert!(
-        report.abstains(ToolpathId(0), SimMetric::AirCut),
+        report.abstains(ToolpathId::from_raw(0), SimMetric::AirCut),
         "fixture must actually be unmeasurable"
     );
 
     let context = ToolpathNarrationContext {
-        toolpath_id: Some(ToolpathId(0)),
+        toolpath_id: Some(ToolpathId::from_raw(0)),
         operation_kind: Some(OperationType::Scallop),
         measurability: Some(&report),
         ..Default::default()
@@ -227,7 +227,7 @@ fn narration_withholds_the_air_cut_percentage_when_it_is_not_a_measurement() {
 fn narration_still_publishes_the_percentage_when_it_is_measured() {
     // The control: without an abstention the line is unchanged.
     let context = ToolpathNarrationContext {
-        toolpath_id: Some(ToolpathId(0)),
+        toolpath_id: Some(ToolpathId::from_raw(0)),
         operation_kind: Some(OperationType::Pocket),
         measurability: None,
         ..Default::default()
@@ -246,7 +246,7 @@ fn total_runtime_air_pct_trace(air_samples: usize) -> SimulationCutTrace {
     let mut samples = Vec::new();
     for i in 0..100 {
         samples.push(SimulationCutSample {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::from_raw(0),
             move_index: 1,
             sample_index: i,
             segment_time_s: 1.0,
@@ -263,7 +263,7 @@ fn total_runtime_air_pct_trace(air_samples: usize) -> SimulationCutTrace {
 fn air_cut_line_for(op: Option<OperationType>, air_samples: usize) -> String {
     let trace = total_runtime_air_pct_trace(air_samples);
     let context = ToolpathNarrationContext {
-        toolpath_id: Some(ToolpathId(0)),
+        toolpath_id: Some(ToolpathId::from_raw(0)),
         operation_kind: op,
         ..Default::default()
     };
@@ -327,7 +327,7 @@ fn a_caller_with_no_operation_kind_falls_back_to_the_flat_bar() {
 #[test]
 fn unified_finish_gets_the_finish_op_air_cut_hint() {
     let context = ToolpathNarrationContext {
-        toolpath_id: Some(ToolpathId(0)),
+        toolpath_id: Some(ToolpathId::from_raw(0)),
         operation_kind: Some(OperationType::UnifiedFinish),
         ..Default::default()
     };
@@ -345,7 +345,7 @@ fn an_op_with_no_commanded_step_is_not_invited_to_form_a_ratio() {
     // dividing a removed height by it is what produced the "20.4x commanded"
     // reading in census §6.4.
     let context = ToolpathNarrationContext {
-        toolpath_id: Some(ToolpathId(0)),
+        toolpath_id: Some(ToolpathId::from_raw(0)),
         operation_kind: Some(OperationType::ProjectCurve),
         depth_per_pass_mm: None,
         ..Default::default()
@@ -374,7 +374,7 @@ fn an_op_with_no_commanded_step_is_not_invited_to_form_a_ratio() {
 #[test]
 fn an_op_with_a_commanded_step_keeps_the_multiple_advice() {
     let context = ToolpathNarrationContext {
-        toolpath_id: Some(ToolpathId(0)),
+        toolpath_id: Some(ToolpathId::from_raw(0)),
         operation_kind: Some(OperationType::Pocket),
         depth_per_pass_mm: Some(2.0),
         ..Default::default()

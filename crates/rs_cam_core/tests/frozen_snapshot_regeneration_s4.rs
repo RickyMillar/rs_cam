@@ -199,14 +199,14 @@ fn cascade_session_with(rest_claims: bool) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
     builder = builder.stock(stock_over(HALF, STOCK_Z));
     let tool_idx = builder.add_tool(ball_tool_config(3.0));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(mesh_model(bumpy_surface(), "bumps"));
     let heights = pinned_heights(STOCK_Z, STOCK_Z - RELIEF);
 
     let mut finish = toolpath_config(
         "Finish (all-over)",
         OperationConfig::UnifiedFinish(unified_cfg(FINISH_STEPOVER_MM, false)),
-        tool_id,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
     );
     finish.heights = heights.clone();
@@ -215,7 +215,7 @@ fn cascade_session_with(rest_claims: bool) -> ProjectSession {
     let mut rest = toolpath_config(
         "Rest (same tool)",
         OperationConfig::UnifiedFinish(unified_cfg(REST_STEPOVER_MM, rest_claims)),
-        tool_id,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
     );
     rest.heights = heights;
@@ -337,7 +337,7 @@ fn gcode_of(session: &ProjectSession) -> String {
 fn capture(session: &mut ProjectSession, index: usize) -> Capture {
     let snapshot_id = snapshot_id(session, index);
     generate(session, index);
-    let result = session.get_result(index).expect("rest result");
+    let result = session.result_at(index).expect("rest result");
     let annotated = result.annotated();
     let stamp = result.stats.stock_snapshot;
     Capture {
@@ -612,7 +612,7 @@ fn arm_a_two_generations_against_one_frozen_snapshot_are_byte_identical() {
 fn a_fresh_stock_generation_records_no_snapshot_stamp() {
     let mut session = cascade_session();
     generate(&mut session, 0);
-    let stats = &session.get_result(0).expect("finish result").stats;
+    let stats = &session.result_at(0).expect("finish result").stats;
     assert_eq!(
         stats.stock_snapshot, None,
         "op 0 is StockSource::Fresh with no prior simulation — no machined \

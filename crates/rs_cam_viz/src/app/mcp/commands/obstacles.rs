@@ -24,7 +24,7 @@ use crate::app::RsCamApp;
 /// setup frame.
 pub(crate) fn obstacle_json(obstacle: &Obstacle) -> serde_json::Value {
     serde_json::json!({
-        "id": obstacle.id.0,
+        "id": obstacle.id.raw(),
         "name": obstacle.name,
         "enabled": obstacle.enabled,
         "clearance": obstacle.clearance,
@@ -62,7 +62,11 @@ fn geometry_of(
     let missing = |field: &'static str, kind: &str| -> WireRefusal {
         (format!("Error: kind '{kind}' needs {field}"), field)
     };
-    let ids: Vec<ModelId> = f.model_ids.iter().map(|&id| ModelId(id)).collect();
+    let ids: Vec<ModelId> = f
+        .model_ids
+        .iter()
+        .map(|&id| ModelId::from_wire(id))
+        .collect();
     match kind {
         ObstacleGeometryKindParam::Box => {
             if !ids.is_empty() {
@@ -144,7 +148,7 @@ fn patch_geometry(
             let ids: Vec<usize> = p
                 .model_ids
                 .clone()
-                .unwrap_or_else(|| model_ids.iter().map(|id| id.0).collect());
+                .unwrap_or_else(|| model_ids.iter().map(|id| id.raw()).collect());
             geometry_of(
                 ObstacleGeometryKindParam::OutlineExtrude,
                 &GeometryFields {
@@ -157,7 +161,7 @@ fn patch_geometry(
             )
         }
         ObstacleGeometry::Model { model_id } => {
-            let ids: Vec<usize> = p.model_ids.clone().unwrap_or_else(|| vec![model_id.0]);
+            let ids: Vec<usize> = p.model_ids.clone().unwrap_or_else(|| vec![model_id.raw()]);
             geometry_of(
                 ObstacleGeometryKindParam::Model,
                 &GeometryFields {
@@ -223,13 +227,13 @@ impl RsCamApp {
             name: p
                 .name
                 .clone()
-                .unwrap_or_else(|| format!("Obstacle {}", id.0 + 1)),
+                .unwrap_or_else(|| format!("Obstacle {}", id.raw() + 1)),
             enabled: p.enabled.unwrap_or(true),
             clearance: p.clearance.unwrap_or(DEFAULT_OBSTACLE_CLEARANCE_MM),
             geometry,
         };
         before.index = Some(p.setup_index);
-        before.extra = serde_json::json!({ "obstacle_id": id.0 });
+        before.extra = serde_json::json!({ "obstacle_id": id.raw() });
         CorePlan::Apply(
             Command::AddObstacle(AddObstacleArgs {
                 setup_index: p.setup_index,
@@ -250,7 +254,7 @@ impl RsCamApp {
             Ok(obstacles) => obstacles,
             Err(reply) => return CorePlan::Answered(reply),
         };
-        let obstacle_id = ObstacleId(p.obstacle_id);
+        let obstacle_id = ObstacleId::from_wire(p.obstacle_id);
         let Some(stored) = obstacles.iter().find(|o| o.id == obstacle_id) else {
             return CorePlan::Answered(CoreReply::refused(
                 &format!(
@@ -277,7 +281,7 @@ impl RsCamApp {
                         .geometry
                         .model_ids()
                         .iter()
-                        .map(|id| id.0)
+                        .map(|id| id.raw())
                         .collect()
                 });
                 geometry_of(
@@ -324,7 +328,7 @@ impl RsCamApp {
         CorePlan::Apply(
             Command::RemoveObstacle(RemoveObstacleArgs {
                 setup_index: p.setup_index,
-                obstacle_id: ObstacleId(p.obstacle_id),
+                obstacle_id: ObstacleId::from_wire(p.obstacle_id),
             }),
             Box::new(before),
         )
@@ -356,12 +360,12 @@ impl RsCamApp {
             .session()
             .list_setups()
             .get(setup_index)
-            .map(|setup| crate::state::job::SetupId(setup.id));
+            .map(|setup| setup.id);
         if let Some(setup_id) = setup_id
             && let Ok(raw) = usize::try_from(obstacle_id)
         {
             let state = self.controller.state_mut();
-            let id = ObstacleId(raw);
+            let id = ObstacleId::from_wire(raw);
             if verb == "Removed" {
                 crate::state::panels::forget_obstacle(
                     &mut state.panels,
@@ -416,9 +420,9 @@ mod tests {
     /// equals the `add_obstacle` input spelling.
     #[test]
     fn the_obstacle_json_names_the_kind_once_k2() {
-        let mut obstacle = Obstacle::new_default_box(ObstacleId(0));
+        let mut obstacle = Obstacle::new_default_box(ObstacleId::from_raw(0));
         obstacle.geometry = ObstacleGeometry::OutlineExtrude {
-            model_ids: vec![ModelId(1)],
+            model_ids: vec![ModelId::from_raw(1)],
             z_bottom: -5.0,
             z_top: 5.0,
         };

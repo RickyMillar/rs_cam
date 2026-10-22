@@ -69,8 +69,8 @@ pub const PREVIEW_DEBOUNCE: Duration = Duration::from_millis(150);
 /// One row of the tool list — a drawer tool the ladder may include.
 #[derive(Debug, Clone)]
 pub struct PlannerToolRow {
-    /// Session tool id (`ToolConfig::id.0`).
-    pub tool_id: usize,
+    /// Session tool id (`ToolConfig::id`).
+    pub tool_id: rs_cam_core::ids::ToolId,
     pub name: String,
     /// Tip-sphere radius (mm), from
     /// [`rs_cam_core::tool::MillingCutter::cusp_radius_mm`] — **never**
@@ -111,7 +111,7 @@ pub enum MultitoolPreviewStatus {
 /// decision.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TierMapKeyEcho {
-    tool_ids: Vec<usize>,
+    tool_ids: Vec<rs_cam_core::ids::ToolId>,
     cell_mm: u64,
     tolerance_mm: u64,
     margin_mm: u64,
@@ -128,7 +128,7 @@ pub struct MultitoolPlannerState {
     /// Drawer snapshot; see the module doc.
     pub tools: Vec<PlannerToolRow>,
     pub setup_index: usize,
-    pub model_id: usize,
+    pub model_id: rs_cam_core::ids::ModelId,
     pub model_name: String,
 
     // ── Main dials ──────────────────────────────────────────────────
@@ -196,7 +196,7 @@ impl MultitoolPlannerState {
     pub fn new(
         tools: Vec<PlannerToolRow>,
         setup_index: usize,
-        model_id: usize,
+        model_id: rs_cam_core::ids::ModelId,
         model_name: String,
     ) -> Self {
         let defaults = MultitoolPlanSpec::default();
@@ -235,7 +235,7 @@ impl MultitoolPlannerState {
     /// the same way purely so the operator reads the ladder in the order it
     /// will run.
     #[must_use]
-    pub fn selected_tool_ids(&self) -> Vec<usize> {
+    pub fn selected_tool_ids(&self) -> Vec<rs_cam_core::ids::ToolId> {
         self.tools
             .iter()
             .filter(|t| t.selected)
@@ -393,7 +393,7 @@ mod tests {
 
     fn row(tool_id: usize, cusp_radius_mm: f64, selected: bool) -> PlannerToolRow {
         PlannerToolRow {
-            tool_id,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
             name: format!("tool {tool_id}"),
             cusp_radius_mm,
             selected,
@@ -405,7 +405,7 @@ mod tests {
         MultitoolPlannerState::new(
             vec![row(7, 2.0, true), row(9, 1.0, true), row(11, 0.5, false)],
             3,
-            5,
+            rs_cam_core::ids::ModelId::from_raw(5),
             "terrain".to_owned(),
         )
     }
@@ -430,10 +430,13 @@ mod tests {
 
         let spec = s.to_spec();
         assert_eq!(spec.setup_index, 3);
-        assert_eq!(spec.model_id, 5);
+        assert_eq!(spec.model_id, rs_cam_core::ids::ModelId::from_raw(5));
         assert_eq!(
             spec.tool_ids,
-            vec![7, 9],
+            vec![
+                rs_cam_core::ids::ToolId::from_raw(7),
+                rs_cam_core::ids::ToolId::from_raw(9)
+            ],
             "unticked rows stay off the ladder"
         );
         assert!((spec.cell_mm - 0.55).abs() < 1e-12);
@@ -533,13 +536,13 @@ mod tests {
         let a = MultitoolPlannerState::new(
             vec![row(7, 2.0, true), row(9, 1.0, true)],
             0,
-            0,
+            rs_cam_core::ids::ModelId::from_raw(0),
             String::new(),
         );
         let b = MultitoolPlannerState::new(
             vec![row(9, 1.0, true), row(7, 2.0, true)],
             0,
-            0,
+            rs_cam_core::ids::ModelId::from_raw(0),
             String::new(),
         );
         assert_eq!(a.map_key(), b.map_key());

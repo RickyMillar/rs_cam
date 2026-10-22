@@ -158,9 +158,12 @@ fn long_session(op: OperationConfig, source: StockSource) -> (ProjectSession, us
         ..StockConfig::default()
     });
     let tool = builder.add_tool(tool_for(OperationType::SteepShallow));
-    let tool_id = builder.tools()[tool].id.0;
-    let rough_tool = builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    let rough_tool_id = builder.tools()[rough_tool].id.0;
+    let tool_id = builder.tools()[tool].id.raw();
+    let rough_tool = builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
+    let rough_tool_id = builder.tools()[rough_tool].id.raw();
     let model_id = builder.add_model(mesh_model(mesh, "w6_4_6_long_plate"));
     let heights = || pinned_heights(MESH_STOCK_Z, 0.0);
     let configs = [
@@ -170,20 +173,30 @@ fn long_session(op: OperationConfig, source: StockSource) -> (ProjectSession, us
             ..toolpath_config(
                 "rough",
                 OperationConfig::new_default(OperationType::Adaptive3d),
-                rough_tool_id,
+                rs_cam_core::ids::ToolId::from_raw(rough_tool_id),
                 model_id,
             )
         },
         ToolpathConfig {
             shoe: Default::default(),
             heights: heights(),
-            ..toolpath_config("finish", steep_shallow(0.0), tool_id, model_id)
+            ..toolpath_config(
+                "finish",
+                steep_shallow(0.0),
+                rs_cam_core::ids::ToolId::from_raw(tool_id),
+                model_id,
+            )
         },
         ToolpathConfig {
             shoe: Default::default(),
             heights: heights(),
             stock_source: source,
-            ..toolpath_config("steep_shallow_w6_4_6", op, tool_id, model_id)
+            ..toolpath_config(
+                "steep_shallow_w6_4_6",
+                op,
+                rs_cam_core::ids::ToolId::from_raw(tool_id),
+                model_id,
+            )
         },
     ];
     let mut index = 0;
@@ -236,7 +249,7 @@ fn add_region_boundary(session: &mut ProjectSession, index: usize) {
             boundary: BoundaryConfig {
                 enabled: true,
                 source: BoundarySource::Selection {
-                    selection: Selection::closed_shapes_of(ModelId(model_id)),
+                    selection: Selection::closed_shapes_of(ModelId::from_raw(model_id)),
                     holes: false,
                 },
                 containment: BoundaryContainment::Center,

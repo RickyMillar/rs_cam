@@ -84,7 +84,7 @@ fn chain() -> ProjectSession {
         "Pocket",
         pocket_to(3.0),
     );
-    let tool_id = session.tools()[0].id.0;
+    let tool_id = session.tools()[0].id.raw();
     let model_id = session.models()[0].id;
     let mut setup_index = 0;
     for (name, depth, source) in [
@@ -102,7 +102,12 @@ fn chain() -> ProjectSession {
                 .created
                 .expect("AddSetup reports the new setup index");
         }
-        let mut config = toolpath_config(name, pocket_to(depth), tool_id, model_id);
+        let mut config = toolpath_config(
+            name,
+            pocket_to(depth),
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
+            model_id,
+        );
         config.stock_source = source;
         let _ = session
             .apply(Command::AddToolpath(AddToolpathArgs {
@@ -226,7 +231,7 @@ fn an_upstream_change_supersedes_the_downstream_modulation_b5() {
         .generate_toolpath(pocket, &AtomicBool::new(false))
         .expect("regenerate the pocket");
     assert!(
-        session.get_result(finish).is_some(),
+        session.result_at(finish).is_some(),
         "'Finish' takes the fresh stock, so the edit keeps its result"
     );
 

@@ -47,14 +47,14 @@ use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::stock_config::ModelUnits;
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::toolpath_stats::ToolpathStats;
-use rs_cam_core::compute::transform::{FaceUp, ZRotation};
+use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::geo::P2;
 use rs_cam_core::ops::drill_op::OpData;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{
-    AdoptModelGeometryArgs, Command, DatumConfig, LoadedModel, ProjectSession,
-    ProjectSessionBuilder, SessionError, SetupData, ToolpathComputeResult, ToolpathConfig,
+    AdoptModelGeometryArgs, Command, LoadedModel, ProjectSession, ProjectSessionBuilder,
+    SessionError, SetupData, ToolpathComputeResult, ToolpathConfig,
 };
 use rs_cam_core::toolpath::Toolpath;
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
@@ -81,7 +81,7 @@ fn square_model(id: usize, name: &str, side_mm: f64, targets: &[TestHole]) -> Lo
         P2::new(0.0, side_mm),
     ]);
     LoadedModel {
-        id,
+        id: rs_cam_core::ids::ModelId::from_raw(id),
         name: name.to_owned(),
         mesh: None,
         items: Arc::new(common::session::drawing_items(vec![square], targets)),
@@ -100,14 +100,14 @@ fn square_model(id: usize, name: &str, side_mm: f64, targets: &[TestHole]) -> Lo
 fn toolpath(id: usize, name: &str, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(id),
+        id: ToolpathId::from_raw(id),
         name: name.to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(PocketConfig::default()),
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id: TOOL,
-        model_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(TOOL),
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -122,18 +122,11 @@ fn toolpath(id: usize, name: &str, model_id: usize) -> ToolpathConfig {
 }
 
 fn setup() -> SetupData {
-    SetupData {
-        id: 1,
-        name: "Setup 1".to_owned(),
-        face_up: FaceUp::Top,
-        z_rotation: ZRotation::default(),
-        datum: DatumConfig::default(),
-        model_ids: Vec::new(),
-        obstacles: Vec::new(),
-        stock_changes: Vec::new(),
-        toolpath_indices: Vec::new(),
-        pause_message: None,
-    }
+    SetupData::new(
+        rs_cam_core::ids::SetupId::from_raw(1),
+        "Setup 1",
+        FaceUp::Top,
+    )
 }
 
 fn fake_result() -> ToolpathComputeResult {
@@ -150,7 +143,10 @@ fn fake_result() -> ToolpathComputeResult {
 /// index 1 binds `MODEL_B`. Every index holds a result.
 fn fixture() -> ProjectSession {
     ProjectSessionBuilder::new()
-        .tool(ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill))
+        .tool(ToolConfig::new_default(
+            ToolId::from_raw(TOOL),
+            ToolType::EndMill,
+        ))
         .model(square_model(MODEL_A, "a.svg", SIDE_BEFORE_MM, &[]))
         .model(square_model(MODEL_B, "b.svg", SIDE_BEFORE_MM, &[]))
         .setup(setup())
@@ -168,7 +164,7 @@ fn side_of(session: &ProjectSession, model_id: usize) -> f64 {
     let model = session
         .models()
         .iter()
-        .find(|model| model.id == model_id)
+        .find(|model| model.id == rs_cam_core::ids::ModelId::from_raw(model_id))
         .expect("the fixture carries the model");
     let polygons = model
         .outlines_pre_selection()
@@ -198,7 +194,7 @@ fn the_row_adopts_the_new_geometry_and_its_drill_targets() {
     );
     let _ = session
         .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
-            model_id: MODEL_A,
+            model_id: rs_cam_core::ids::ModelId::from_raw(MODEL_A),
             geometry: Box::new(fresh),
             units: None,
         }))
@@ -211,7 +207,7 @@ fn the_row_adopts_the_new_geometry_and_its_drill_targets() {
     let model = session
         .models()
         .iter()
-        .find(|model| model.id == MODEL_A)
+        .find(|model| model.id == rs_cam_core::ids::ModelId::from_raw(MODEL_A))
         .expect("the model survives");
     assert_eq!(
         model
@@ -238,7 +234,7 @@ fn a_supplied_unit_declaration_is_written() {
     let fresh = square_model(MODEL_A, "a.svg", SIDE_AFTER_MM, &[]);
     let _ = session
         .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
-            model_id: MODEL_A,
+            model_id: rs_cam_core::ids::ModelId::from_raw(MODEL_A),
             geometry: Box::new(fresh),
             units: Some(ModelUnits::Inches),
         }))
@@ -246,7 +242,7 @@ fn a_supplied_unit_declaration_is_written() {
     let model = session
         .models()
         .iter()
-        .find(|model| model.id == MODEL_A)
+        .find(|model| model.id == rs_cam_core::ids::ModelId::from_raw(MODEL_A))
         .expect("the model survives");
     assert_eq!(
         model.units,
@@ -262,7 +258,7 @@ fn the_row_drops_the_bound_results_and_only_those() {
     let fresh = square_model(MODEL_A, "a.svg", SIDE_AFTER_MM, &[]);
     let effects = session
         .apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
-            model_id: MODEL_A,
+            model_id: rs_cam_core::ids::ModelId::from_raw(MODEL_A),
             geometry: Box::new(fresh),
             units: None,
         }))
@@ -274,16 +270,16 @@ fn the_row_drops_the_bound_results_and_only_those() {
         "the row must report every toolpath bound to the model, and no other"
     );
     assert!(
-        session.get_result(0).is_none(),
+        session.result_at(0).is_none(),
         "index 0 binds the refreshed model, so its cached geometry answers \
          a file that is gone"
     );
     assert!(
-        session.get_result(2).is_none(),
+        session.result_at(2).is_none(),
         "index 2 binds the refreshed model too"
     );
     assert!(
-        session.get_result(1).is_some(),
+        session.result_at(1).is_some(),
         "index 1 binds another model; a refresh of one model must not drop \
          the whole project"
     );
@@ -295,7 +291,7 @@ fn an_absent_model_id_is_refused_and_nothing_moves() {
     let mut session = fixture();
     let fresh = square_model(MODEL_ABSENT, "gone.svg", SIDE_AFTER_MM, &[]);
     let outcome = session.apply(Command::AdoptModelGeometry(AdoptModelGeometryArgs {
-        model_id: MODEL_ABSENT,
+        model_id: rs_cam_core::ids::ModelId::from_raw(MODEL_ABSENT),
         geometry: Box::new(fresh),
         units: None,
     }));
@@ -306,7 +302,7 @@ fn an_absent_model_id_is_refused_and_nothing_moves() {
     assert_eq!(session.models().len(), 2, "the refusal added no model");
     for index in 0..3 {
         assert!(
-            session.get_result(index).is_some(),
+            session.result_at(index).is_some(),
             "the refusal dropped result {index}"
         );
     }

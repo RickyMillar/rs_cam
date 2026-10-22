@@ -35,14 +35,14 @@ use rs_cam_core::session::{
 fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: OperationConfig::new_default(OperationType::Pocket),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -59,8 +59,11 @@ fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
 /// One setup holding A B C D E, each op's global index equal to its position.
 fn five_ops() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
-    builder.add_tool(ToolConfig::new_default(ToolId(0), ToolType::EndMill));
-    let tool_id = builder.tools()[0].id.0;
+    builder.add_tool(ToolConfig::new_default(
+        ToolId::from_raw(0),
+        ToolType::EndMill,
+    ));
+    let tool_id = builder.tools()[0].id.raw();
     for name in ["A", "B", "C", "D", "E"] {
         let _ = builder.add_toolpath(0, toolpath(name, tool_id)).unwrap();
     }
@@ -69,7 +72,7 @@ fn five_ops() -> ProjectSession {
 
 fn plan_order(s: &ProjectSession) -> Vec<String> {
     s.list_setups()[0]
-        .toolpath_indices
+        .toolpath_indices()
         .iter()
         .map(|&i| s.toolpath_configs()[i].name.clone())
         .collect()

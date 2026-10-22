@@ -193,7 +193,7 @@ fn tool_d(s: &ProjectSession) -> f64 {
 
 /// The `HoleFit` notes of the last generation, as (circle XY, fit).
 fn fit_notes(s: &ProjectSession) -> Vec<([i64; 2], HoleFit, usize)> {
-    let stats = &s.get_result(0).expect("the result").stats;
+    let stats = &s.result_at(0).expect("the result").stats;
     stats
         .selection_note
         .as_ref()
@@ -228,7 +228,7 @@ fn the_default_rule_drills_the_points_and_the_tool_size_circle() {
         "the toolpath drills the two points and the circle of the tool size"
     );
     let op_holes: BTreeSet<[i64; 2]> = s
-        .get_result(0)
+        .result_at(0)
         .unwrap()
         .drill_op()
         .expect("a drill op")
@@ -247,7 +247,7 @@ fn the_default_rule_drills_the_points_and_the_tool_size_circle() {
     expected.sort_by_key(|n| n.0);
     assert_eq!(notes, expected, "one note for each circle left out");
     let text = s
-        .get_result(0)
+        .result_at(0)
         .unwrap()
         .stats
         .selection_note
@@ -446,7 +446,7 @@ fn tolerance_session(tolerance: Option<f64>) -> ProjectSession {
 
 /// The selection-note text of the last generation.
 fn note_text(s: &ProjectSession) -> String {
-    s.get_result(0)
+    s.result_at(0)
         .unwrap()
         .stats
         .selection_note

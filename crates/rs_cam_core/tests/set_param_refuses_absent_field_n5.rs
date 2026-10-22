@@ -123,14 +123,14 @@ fn accepts_depth_per_pass(op: OperationType) -> bool {
 fn all_ops_session() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock_under(20.0, 4.0));
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model = polygon_model(vec![square_polygon(2.0)], "n5_all_ops");
     let model_id = builder.add_model(model);
     for op in OperationType::ALL {
         let cfg = toolpath_config(
             op.label(),
             OperationConfig::new_default(*op),
-            tool_id,
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
             model_id,
         );
         let _ = builder.add_toolpath(0, cfg).expect("add one op per type");
@@ -242,12 +242,12 @@ fn a_refused_write_keeps_the_cached_result_and_the_provenance() {
     let mut session = single_op("N5 trace", trace_op());
     generate(&mut session, 0);
     assert!(
-        session.get_result(0).is_some(),
+        session.result_at(0).is_some(),
         "fixture: the Trace must generate a cached result"
     );
 
     let before = session
-        .get_toolpath_config(0)
+        .toolpath_config_at(0)
         .expect("trace config exists")
         .feeds_provenance
         .clone();
@@ -270,11 +270,11 @@ fn a_refused_write_keeps_the_cached_result_and_the_provenance() {
     );
 
     assert!(
-        session.get_result(0).is_some(),
+        session.result_at(0).is_some(),
         "a refused write must not invalidate the cached result"
     );
     let after = &session
-        .get_toolpath_config(0)
+        .toolpath_config_at(0)
         .expect("trace config still exists")
         .feeds_provenance;
     assert_eq!(
@@ -331,7 +331,7 @@ fn alias_refuses_and_name_writes(
             .contains(&format!("unknown parameter '{alias}'")),
         "{op:?}: the refusal must reuse the generic arm's wording: {err}"
     );
-    let tc = session.get_toolpath_config(0).expect("config exists");
+    let tc = session.toolpath_config_at(0).expect("config exists");
     assert!(
         (read(&tc.operation) - before).abs() < 1e-12,
         "{op:?}: the refused `{alias}` moved the field"
@@ -340,7 +340,7 @@ fn alias_refuses_and_name_writes(
     if let Err(e) = write(&mut session, name) {
         panic!("{op:?} must accept its published `{name}`: {e}");
     }
-    let tc = session.get_toolpath_config(0).expect("config exists");
+    let tc = session.toolpath_config_at(0).expect("config exists");
     let after = read(&tc.operation);
     assert!(
         (after - value).abs() < 1e-12,
@@ -482,9 +482,7 @@ fn pocket_still_takes_a_stepover_and_stamps_manual_provenance() {
         }))
         .expect("Pocket carries a stepover field");
 
-    let tc = session
-        .get_toolpath_config(0)
-        .expect("pocket config exists");
+    let tc = session.toolpath_config_at(0).expect("pocket config exists");
     let OperationConfig::Pocket(cfg) = &tc.operation else {
         panic!("expected Pocket");
     };

@@ -194,7 +194,7 @@ fn tapered_ball_tool() -> ToolConfig {
         diameter: TIP_DIAMETER_MM,
         taper_half_angle: TAPER_HALF_ANGLE_DEG,
         shaft_diameter: SHANK_DIAMETER_MM,
-        ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
     }
 }
 
@@ -401,7 +401,7 @@ fn run_branch(
 /// check on the cropped fixture: a mix that has collapsed to one strategy
 /// would make the classifier switch unobservable by construction.
 fn region_mix(session: &ProjectSession) -> Vec<(String, String, usize, usize, f64)> {
-    let Some(result) = session.get_result(0) else {
+    let Some(result) = session.result_at(0) else {
         return Vec::new();
     };
     let Some(trace) = result.semantic_trace.as_ref() else {

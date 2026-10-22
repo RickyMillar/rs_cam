@@ -642,7 +642,7 @@ fn use_curve(session: &mut ProjectSession, index: usize, model: rs_cam_core::ses
     let _ = session
         .apply(Command::SetToolpathModel(SetToolpathModelArgs {
             index,
-            model_id,
+            model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         }))
         .expect("bind the curve model");
 }
@@ -954,7 +954,7 @@ fn add_region_boundary(session: &mut ProjectSession, index: usize) {
             boundary: BoundaryConfig {
                 enabled: true,
                 source: BoundarySource::Selection {
-                    selection: Selection::closed_shapes_of(ModelId(model_id)),
+                    selection: Selection::closed_shapes_of(ModelId::from_raw(model_id)),
                     holes: false,
                 },
                 containment: BoundaryContainment::Center,

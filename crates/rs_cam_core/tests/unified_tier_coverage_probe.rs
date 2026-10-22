@@ -67,7 +67,7 @@ fn unified_tier_coverage_probe() {
     let mesh = session
         .models()
         .iter()
-        .find(|m| m.id == 1)
+        .find(|m| m.id == rs_cam_core::ids::ModelId::from_raw(1))
         .and_then(|m| m.mesh.clone())
         .expect("model 1 mesh");
     eprintln!("   model bbox {:?} .. {:?}", mesh.bbox.min, mesh.bbox.max);
@@ -104,7 +104,7 @@ fn unified_tier_coverage_probe() {
                 session.generate_toolpath(index, &cancel).unwrap();
                 eprintln!(
                     "   generated {} in {:.1} s",
-                    toolpath.0,
+                    toolpath.raw(),
                     t.elapsed().as_secs_f64()
                 );
             }
@@ -134,11 +134,11 @@ fn unified_tier_coverage_probe() {
         if !tc.enabled {
             continue;
         }
-        let r = session.get_result(idx).expect("result");
+        let r = session.result_at(idx).expect("result");
         let s = &r.stats;
         eprintln!(
             "   op {} '{}' cut {:.0} mm  truncated_core {:?} untouched {:?} reached_uncut_est {:?} monotone {:?} dropped_band {:?} clipped_band {:?}",
-            tc.id.0,
+            tc.id.raw(),
             tc.name,
             s.cutting_distance,
             s.truncated_core_mm2,
@@ -152,7 +152,7 @@ fn unified_tier_coverage_probe() {
             let tool = session
                 .tools()
                 .iter()
-                .find(|t| t.id.0 == tc.tool_id)
+                .find(|t| t.id == tc.tool_id)
                 .expect("tool")
                 .clone();
             let cutter = build_cutter(&tool).unwrap();
@@ -176,7 +176,7 @@ fn unified_tier_coverage_probe() {
             let planned = decompose(&surface.slope_map, &covered, &[], &planner);
             eprintln!(
                 "   op {} classification cell {:.3} mm, {} regions; steep {} waterline {} overlap {} z_step {:.3} raster_so {:.3} tol {}",
-                tc.id.0,
+                tc.id.raw(),
                 surface.cell_size(),
                 planned.regions.len(),
                 planner.steep_threshold_deg,
@@ -225,11 +225,11 @@ fn unified_tier_coverage_probe() {
                         out.push_str(&format!("{:.3},{:.3},{:.3}\n", q[0], q[1], q[2]));
                     }
                 }
-                std::fs::write(format!("{dir}/op{}_feed.csv", tc.id.0), out).unwrap();
+                std::fs::write(format!("{dir}/op{}_feed.csv", tc.id.raw()), out).unwrap();
             }
             uf_ops.push(UfOp {
                 samples,
-                id: tc.id.0,
+                id: tc.id.raw(),
                 regions: planned
                     .regions
                     .iter()

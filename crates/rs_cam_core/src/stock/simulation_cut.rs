@@ -302,7 +302,7 @@ impl SimulationCutSample {
     /// syntax. Not for production paths.
     pub fn test_fixture() -> Self {
         Self {
-            toolpath_id: ToolpathId(0),
+            toolpath_id: ToolpathId::placeholder(),
             move_index: 0,
             sample_index: 0,
             position: [0.0, 0.0, 0.0],

@@ -114,7 +114,7 @@ fn the_funnel_reports_a_depth_it_could_not_hold_g_notheld() {
     let mut refused = 0;
 
     for (op_type, tool_type) in fixtures() {
-        let tool = ToolConfig::new_default(ToolId(1), tool_type);
+        let tool = ToolConfig::new_default(ToolId::from_raw(1), tool_type);
         let op = OperationConfig::new_default(op_type);
         let Some(result) = try_recipe(&session, &tool, &op) else {
             continue;
@@ -175,7 +175,7 @@ fn a_speeds_only_apply_does_not_report_a_dropped_geometry_g_notheld() {
     let mut checked = 0;
 
     for (op_type, tool_type) in fixtures() {
-        let tool = ToolConfig::new_default(ToolId(1), tool_type);
+        let tool = ToolConfig::new_default(ToolId::from_raw(1), tool_type);
         let op = OperationConfig::new_default(op_type);
         let Some(result) = try_recipe(&session, &tool, &op) else {
             continue;

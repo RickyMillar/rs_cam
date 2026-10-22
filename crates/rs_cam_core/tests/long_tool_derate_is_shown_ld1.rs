@@ -150,7 +150,7 @@ fn the_diagnostic_is_an_info_finding_with_its_own_id_ld1() {
     assert_eq!(ids::FEEDS_LONG_TOOL_DERATE, "feeds.long_tool_derate");
 
     let result = pocket(Some(45.0));
-    let diags = diagnostics_from_feeds_result(rs_cam_core::ids::ToolpathId(0), &result);
+    let diags = diagnostics_from_feeds_result(rs_cam_core::ids::ToolpathId::from_raw(0), &result);
     let finding = diags
         .iter()
         .find(|d| d.id.as_str() == ids::FEEDS_LONG_TOOL_DERATE)
@@ -169,7 +169,7 @@ fn the_diagnostic_is_an_info_finding_with_its_own_id_ld1() {
 
     let short = pocket(Some(18.0));
     assert!(
-        diagnostics_from_feeds_result(rs_cam_core::ids::ToolpathId(0), &short)
+        diagnostics_from_feeds_result(rs_cam_core::ids::ToolpathId::from_raw(0), &short)
             .iter()
             .all(|d| d.id.as_str() != ids::FEEDS_LONG_TOOL_DERATE),
         "a 3 x D tool takes no de-rate and must raise no finding"

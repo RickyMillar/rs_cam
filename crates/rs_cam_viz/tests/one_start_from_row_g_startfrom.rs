@@ -57,7 +57,7 @@ fn ctx() -> egui::Context {
 
 fn model() -> LoadedModel {
     LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         path: PathBuf::from("start_from_fixture.svg"),
         name: "Start-from fixture".to_owned(),
         kind: Some(ModelKind::Svg),
@@ -78,14 +78,14 @@ fn model() -> LoadedModel {
 fn toolpath(id: usize, name: &str, operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(id),
+        id: rs_cam_core::ToolpathId::from_raw(id),
         name: name.to_owned(),
         enabled: true,
         operation,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -101,7 +101,7 @@ fn toolpath(id: usize, name: &str, operation: OperationConfig) -> ToolpathConfig
 
 /// An `AppState` whose selection is the first toolpath of `configs`.
 fn state_from(configs: Vec<ToolpathConfig>) -> AppState {
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
     tool.diameter = 6.0;
     tool.flute_count = 2;
     let mut builder = ProjectSessionBuilder::new()
@@ -142,7 +142,7 @@ fn producer_with_consumer() -> AppState {
     consumer.boundary = BoundaryConfig {
         enabled: true,
         source: BoundarySource::DerivedRestRegions {
-            source_toolpath_id: rs_cam_core::ToolpathId(0),
+            source_toolpath_id: rs_cam_core::ToolpathId::from_raw(0),
         },
         ..Default::default()
     };

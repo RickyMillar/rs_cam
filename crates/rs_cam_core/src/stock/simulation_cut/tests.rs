@@ -21,7 +21,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[test]
 fn unmeasured_axial_doc_fraction_is_none_not_a_zero_in_the_mean() {
     let sample = |axial: Option<f64>, dt: f64, idx: usize| SimulationCutSample {
-        toolpath_id: ToolpathId(1),
+        toolpath_id: ToolpathId::from_raw(1),
         move_index: idx,
         sample_index: idx,
         position: [idx as f64, 0.0, -1.0],
@@ -90,7 +90,7 @@ fn trace_from_samples_accumulates_summary_and_issues() {
         0.5,
         vec![
             SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: 4,
                 position: [1.0, 2.0, -1.0],
                 cumulative_time_s: 0.2,
@@ -111,7 +111,7 @@ fn trace_from_samples_accumulates_summary_and_issues() {
                 ..SimulationCutSample::test_fixture()
             },
             SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: 5,
                 sample_index: 1,
                 position: [2.0, 2.0, -1.0],
@@ -133,7 +133,7 @@ fn trace_from_samples_accumulates_summary_and_issues() {
                 ..SimulationCutSample::test_fixture()
             },
             SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: 6,
                 sample_index: 2,
                 position: [3.0, 2.0, 5.0],
@@ -178,7 +178,7 @@ fn trace_from_samples_with_semantics_emits_per_item_summaries() {
         0.5,
         vec![
             SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: 1,
                 position: [0.0, 0.0, -1.0],
                 cumulative_time_s: 0.2,
@@ -199,7 +199,7 @@ fn trace_from_samples_with_semantics_emits_per_item_summaries() {
                 ..SimulationCutSample::test_fixture()
             },
             SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: 2,
                 sample_index: 1,
                 position: [5.0, 0.0, -1.0],
@@ -221,7 +221,7 @@ fn trace_from_samples_with_semantics_emits_per_item_summaries() {
                 ..SimulationCutSample::test_fixture()
             },
         ],
-        [(ToolpathId(1), &trace)],
+        [(ToolpathId::from_raw(1), &trace)],
     );
 
     let summary = cut_trace
@@ -246,7 +246,7 @@ fn issues_and_hotspots_inherit_span_path_from_first_sample() {
         0.5,
         vec![
             SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: 4,
                 position: [1.0, 2.0, -1.0],
                 cumulative_time_s: 0.2,
@@ -268,7 +268,7 @@ fn issues_and_hotspots_inherit_span_path_from_first_sample() {
                 ..SimulationCutSample::test_fixture()
             },
             SimulationCutSample {
-                toolpath_id: ToolpathId(1),
+                toolpath_id: ToolpathId::from_raw(1),
                 move_index: 4,
                 sample_index: 1,
                 position: [1.5, 2.0, -1.0],
@@ -305,7 +305,7 @@ fn simulation_cut_artifact_writer_creates_json() {
         0.25,
         [0.0, 0.0, 0.0],
         [10.0, 10.0, 10.0],
-        vec![ToolpathId(1), ToolpathId(2)],
+        vec![ToolpathId::from_raw(1), ToolpathId::from_raw(2)],
         serde_json::json!({"resolution": 0.25}),
         SimulationCutTrace::from_samples(0.25, Vec::new()),
     );
@@ -713,7 +713,7 @@ fn trace_tracks_open_segments_per_toolpath() {
             ..SimulationCutSample::test_fixture()
         },
         SimulationCutSample {
-            toolpath_id: ToolpathId(1),
+            toolpath_id: ToolpathId::from_raw(1),
             position: [10.0, 0.0, -1.0],
             cumulative_time_s: 0.15,
             segment_time_s: 0.1,
@@ -756,12 +756,12 @@ fn trace_tracks_open_segments_per_toolpath() {
     let tp0_segs: Vec<_> = trace
         .issues
         .iter()
-        .filter(|i| i.toolpath_id == ToolpathId(0))
+        .filter(|i| i.toolpath_id == ToolpathId::from_raw(0))
         .collect();
     let tp1_segs: Vec<_> = trace
         .issues
         .iter()
-        .filter(|i| i.toolpath_id == ToolpathId(1))
+        .filter(|i| i.toolpath_id == ToolpathId::from_raw(1))
         .collect();
     assert_eq!(tp0_segs.len(), 1);
     assert_eq!(tp1_segs.len(), 1);
@@ -857,7 +857,7 @@ fn trace_multiple_toolpaths_produce_separate_summaries() {
             ..SimulationCutSample::test_fixture()
         },
         SimulationCutSample {
-            toolpath_id: ToolpathId(1),
+            toolpath_id: ToolpathId::from_raw(1),
             sample_index: 1,
             position: [10.0, 0.0, -2.0],
             cumulative_time_s: 0.3,
@@ -887,12 +887,12 @@ fn trace_multiple_toolpaths_produce_separate_summaries() {
     let tp0 = trace
         .toolpath_summaries
         .iter()
-        .find(|s| s.toolpath_id == ToolpathId(0))
+        .find(|s| s.toolpath_id == ToolpathId::from_raw(0))
         .expect("should have toolpath 0");
     let tp1 = trace
         .toolpath_summaries
         .iter()
-        .find(|s| s.toolpath_id == ToolpathId(1))
+        .find(|s| s.toolpath_id == ToolpathId::from_raw(1))
         .expect("should have toolpath 1");
 
     assert_eq!(tp0.sample_count, 1);
@@ -1178,7 +1178,7 @@ fn make_drill_sample(toolpath_id: usize, sample_index: usize) -> SimulationCutSa
     // Drill kinematics: is_cutting=true, radial_engagement=0 (dexel can't
     // see Z-only moves).
     let mut s = make_sample(sample_index, 1.0, false);
-    s.toolpath_id = ToolpathId(toolpath_id);
+    s.toolpath_id = ToolpathId::from_raw(toolpath_id);
     s.engagement.radial_woc_fraction = 0.0;
     s
 }
@@ -1189,7 +1189,7 @@ fn drill_samples_dont_emit_air_cut_issues() {
     // coalesced air-cut issue. With the gate, zero.
     let samples: Vec<_> = (0..100).map(|i| make_drill_sample(7, i)).collect();
     let drill_ids: std::collections::BTreeSet<ToolpathId> =
-        std::iter::once(ToolpathId(7)).collect();
+        std::iter::once(ToolpathId::from_raw(7)).collect();
     let trace = SimulationCutTrace::from_samples_with_context(
         0.5,
         samples,
@@ -1207,7 +1207,7 @@ fn drill_samples_dont_emit_air_cut_issues() {
 fn drill_toolpath_summary_is_marked_not_applicable() {
     let samples = vec![make_drill_sample(7, 0), make_drill_sample(7, 1)];
     let drill_ids: std::collections::BTreeSet<ToolpathId> =
-        std::iter::once(ToolpathId(7)).collect();
+        std::iter::once(ToolpathId::from_raw(7)).collect();
     let trace = SimulationCutTrace::from_samples_with_context(
         0.5,
         samples,
@@ -1217,7 +1217,7 @@ fn drill_toolpath_summary_is_marked_not_applicable() {
     let tp = trace
         .toolpath_summaries
         .iter()
-        .find(|s| s.toolpath_id == ToolpathId(7))
+        .find(|s| s.toolpath_id == ToolpathId::from_raw(7))
         .expect("toolpath 7 should have a summary");
     assert!(
         tp.metrics_not_applicable,
@@ -1231,7 +1231,7 @@ fn non_drill_toolpath_still_emits_issues() {
     let mut samples = Vec::new();
     for i in 0..100 {
         let mut s = make_sample(i, 1.0, false);
-        s.toolpath_id = ToolpathId(1);
+        s.toolpath_id = ToolpathId::from_raw(1);
         s.engagement.radial_woc_fraction = 0.0;
         samples.push(s);
     }
@@ -1251,7 +1251,7 @@ fn non_drill_toolpath_still_emits_issues() {
     let tp = trace
         .toolpath_summaries
         .iter()
-        .find(|s| s.toolpath_id == ToolpathId(1))
+        .find(|s| s.toolpath_id == ToolpathId::from_raw(1))
         .unwrap();
     assert!(!tp.metrics_not_applicable);
 }
@@ -1263,12 +1263,12 @@ fn mixed_drill_and_non_drill_isolates_suppression() {
     let mut samples: Vec<_> = (0..50).map(|i| make_drill_sample(7, i)).collect();
     for i in 50..100 {
         let mut s = make_sample(i, 1.0, false);
-        s.toolpath_id = ToolpathId(1);
+        s.toolpath_id = ToolpathId::from_raw(1);
         s.engagement.radial_woc_fraction = 0.0;
         samples.push(s);
     }
     let drill_ids: std::collections::BTreeSet<ToolpathId> =
-        std::iter::once(ToolpathId(7)).collect();
+        std::iter::once(ToolpathId::from_raw(7)).collect();
     let trace = SimulationCutTrace::from_samples_with_context(
         0.5,
         samples,
@@ -1279,12 +1279,12 @@ fn mixed_drill_and_non_drill_isolates_suppression() {
     let drill_summary = trace
         .toolpath_summaries
         .iter()
-        .find(|s| s.toolpath_id == ToolpathId(7))
+        .find(|s| s.toolpath_id == ToolpathId::from_raw(7))
         .unwrap();
     let mill_summary = trace
         .toolpath_summaries
         .iter()
-        .find(|s| s.toolpath_id == ToolpathId(1))
+        .find(|s| s.toolpath_id == ToolpathId::from_raw(1))
         .unwrap();
     assert!(drill_summary.metrics_not_applicable);
     assert!(!mill_summary.metrics_not_applicable);
@@ -1300,7 +1300,7 @@ fn per_toolpath_peak_doc_respects_transit_flag() {
     let tp = trace
         .toolpath_summaries
         .iter()
-        .find(|s| s.toolpath_id == ToolpathId(0))
+        .find(|s| s.toolpath_id == ToolpathId::from_raw(0))
         .expect("toolpath 0 should have a summary");
     assert!(
         (tp.peak_axial_doc_mm - 3.0).abs() < 1e-9,

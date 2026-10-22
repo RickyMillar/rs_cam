@@ -39,7 +39,7 @@ pub enum HoleOpKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct HoleOp {
     /// The toolpath id.
-    pub toolpath_id: usize,
+    pub toolpath_id: crate::ids::ToolpathId,
     /// The toolpath name, for the sentence only.
     pub name: String,
     pub kind: HoleOpKind,
@@ -81,7 +81,7 @@ impl HoleSourceKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct HoleSourceFinding {
     pub kind: HoleSourceKind,
-    pub toolpath_id: usize,
+    pub toolpath_id: crate::ids::ToolpathId,
     pub text: String,
 }
 
@@ -214,7 +214,7 @@ mod tests {
 
     fn drill(holes: &[(f64, f64, Option<f64>)]) -> HoleOp {
         HoleOp {
-            toolpath_id: 4,
+            toolpath_id: crate::ids::ToolpathId::from_raw(4),
             name: "Dowel holes".to_owned(),
             kind: HoleOpKind::Drill,
             holes: holes

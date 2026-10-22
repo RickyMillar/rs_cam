@@ -130,6 +130,7 @@ use serde::{Deserialize, Serialize};
 use rayon::prelude::*;
 
 use crate::geo::P3;
+use crate::ids::{ModelId, ToolId};
 use crate::interrupt::{CancelCheck, Cancelled};
 use crate::maps::grid::{GridSpec, walk_rows};
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -324,8 +325,8 @@ pub struct ReachMapRequest {
     pub index: Arc<SpatialIndex>,
     pub cutter: Arc<ToolDefinition>,
     pub params: ReachMapParams,
-    pub tool_id: usize,
-    pub model_id: usize,
+    pub tool_id: ToolId,
+    pub model_id: ModelId,
     /// Where `params.tolerance_mm` came from. Not part of the memo key — it
     /// is derived from the tolerance, which is keyed — but it rides the
     /// request so a surface that reports the answer can name the bar's
@@ -477,9 +478,9 @@ pub struct ReachMap {
     pub cell_floor_mm: Vec<f32>,
     /// The library tool the map was built for. `None` when the map was built
     /// outside a session (a fixture, a probe) and no id exists.
-    pub tool_id: Option<usize>,
+    pub tool_id: Option<ToolId>,
     /// The model the map was built over. `None` for the same reason.
-    pub model_id: Option<usize>,
+    pub model_id: Option<ModelId>,
 }
 
 impl ReachMap {
@@ -725,7 +726,7 @@ impl ReachMap {
 
     /// Stamp the session identities onto a map the walk built without them.
     #[must_use]
-    pub fn with_ids(mut self, tool_id: usize, model_id: usize) -> Self {
+    pub fn with_ids(mut self, tool_id: ToolId, model_id: ModelId) -> Self {
         self.tool_id = Some(tool_id);
         self.model_id = Some(model_id);
         self

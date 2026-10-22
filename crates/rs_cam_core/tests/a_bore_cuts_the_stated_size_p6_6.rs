@@ -302,7 +302,7 @@ fn the_default_rule_leaves_out_each_misfit_circle_with_a_note() {
         });
         assert!(near, "a fed move off the bored circles: {:?}", m.target);
     }
-    let finding = s.get_result(0).unwrap().stats.selection_note.clone();
+    let finding = s.result_at(0).unwrap().stats.selection_note.clone();
     let notes = finding
         .as_ref()
         .map(|f| f.notes.clone())
@@ -389,7 +389,7 @@ fn a_bore_on_remaining_stock_starts_at_the_column_top() {
     const PRIOR_DEPTH: f64 = 2.0;
     let mut builder = ProjectSessionBuilder::new().stock(stock_under(STOCK_HALF, STOCK_HEIGHT));
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_D));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     // The prior pocket covers the 10 mm circle and the column reach (the
     // hole radius plus a cell) round it, and not the 12 mm circle.
     let [cx, cy] = BORED[0].0;
@@ -408,9 +408,22 @@ fn a_bore_on_remaining_stock_starts_at_the_column_top() {
         ..PocketConfig::default()
     });
     let _ = builder
-        .add_toolpath(0, toolpath_config("prior", prior, tool_id, pocket_model))
+        .add_toolpath(
+            0,
+            toolpath_config(
+                "prior",
+                prior,
+                rs_cam_core::ids::ToolId::from_raw(tool_id),
+                pocket_model,
+            ),
+        )
         .unwrap();
-    let mut cfg = toolpath_config("bore", bore(Floor::top(DEPTH)), tool_id, holes);
+    let mut cfg = toolpath_config(
+        "bore",
+        bore(Floor::top(DEPTH)),
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        holes,
+    );
     cfg.stock_source = StockSource::FromRemainingStock;
     let _ = builder.add_toolpath(0, cfg).unwrap();
     let mut s = builder.build();

@@ -170,7 +170,7 @@ pub fn validate_export(session: &ProjectSession, gui: &GuiState, gcode: &str) ->
 
 fn phase_tool_for_export(tool: &ToolConfig) -> PhaseTool<'_> {
     PhaseTool {
-        id: tool.id.0,
+        id: tool.id,
         number: tool.tool_number,
         label: tool.name.as_str(),
     }
@@ -299,7 +299,7 @@ fn emitted_result_toolpath<'a>(
     tc: &rs_cam_core::session::ToolpathConfig,
     stale: StaleResultPolicy,
 ) -> Option<(&'a rs_cam_core::toolpath::Toolpath, FeedStage)> {
-    if let Some(result) = session.get_result(idx) {
+    if let Some(result) = session.result_at(idx) {
         return Some((
             result.toolpath(),
             session.feed_stage_of(idx, &result.provenance),
@@ -428,7 +428,7 @@ fn gcode_phase_for_session_toolpath<'a>(
     toolpath: &'a rs_cam_core::toolpath::Toolpath,
     feeds: FeedStage,
 ) -> GcodePhase<'a> {
-    let tool = session.tools().iter().find(|t| t.id.0 == tc.tool_id);
+    let tool = session.tools().iter().find(|t| t.id == tc.tool_id);
 
     GcodePhase {
         toolpath,
@@ -577,7 +577,7 @@ pub fn setups_with_enabled_ops(session: &ProjectSession) -> usize {
         .list_setups()
         .iter()
         .filter(|s| {
-            s.toolpath_indices.iter().any(|i| {
+            s.toolpath_indices().iter().any(|i| {
                 session
                     .toolpath_configs()
                     .get(*i)
@@ -589,7 +589,7 @@ pub fn setups_with_enabled_ops(session: &ProjectSession) -> usize {
 
 /// One file of a "one file per setup" export.
 pub struct SetupFile {
-    pub setup_id: usize,
+    pub setup_id: rs_cam_core::ids::SetupId,
     pub name: String,
     /// The header ([`setup_file_header`]) and the program.
     pub gcode: String,
@@ -616,9 +616,9 @@ pub fn export_per_setup_files(
     policy: ToolLoadExportPolicy,
     stale: StaleResultPolicy,
 ) -> Result<Vec<SetupFile>, crate::error::VizError> {
-    let mut files: Vec<(usize, String, ExportedGcode)> = Vec::new();
+    let mut files: Vec<(rs_cam_core::ids::SetupId, String, ExportedGcode)> = Vec::new();
     for setup in session.list_setups() {
-        let has_enabled = setup.toolpath_indices.iter().any(|i| {
+        let has_enabled = setup.toolpath_indices().iter().any(|i| {
             session
                 .toolpath_configs()
                 .get(*i)
@@ -628,12 +628,7 @@ pub fn export_per_setup_files(
             continue;
         }
         let exported = export_setup_gcode_from_session_reporting(
-            session,
-            gui,
-            sim,
-            crate::state::job::SetupId(setup.id),
-            policy,
-            stale,
+            session, gui, sim, setup.id, policy, stale,
         )
         .map_err(|e| crate::error::VizError::Export(format!("setup '{}': {e}", setup.name)))?;
         files.push((setup.id, setup.name.clone(), exported));
@@ -643,7 +638,7 @@ pub fn export_per_setup_files(
     // The setup of the file before each file: its header compares the two
     // orientations, so a reminder to turn the part appears only when the
     // part turns.
-    let previous_ids: Vec<Option<usize>> = (0..total)
+    let previous_ids: Vec<Option<rs_cam_core::ids::SetupId>> = (0..total)
         .map(|i| {
             i.checked_sub(1)
                 .and_then(|p| files.get(p))
@@ -711,8 +706,8 @@ pub fn export_per_setup_files(
 pub fn setup_file_header(
     session: &ProjectSession,
     post: &rs_cam_core::gcode::PostDefinition,
-    setup_id: usize,
-    previous_setup_id: Option<usize>,
+    setup_id: rs_cam_core::ids::SetupId,
+    previous_setup_id: Option<rs_cam_core::ids::SetupId>,
     index: usize,
     total: usize,
 ) -> String {
@@ -900,10 +895,15 @@ pub fn export_setup_gcode_from_session_reporting(
     let setup = session
         .list_setups()
         .iter()
-        .find(|s| s.id == setup_id.0)
+        .find(|s| s.id == setup_id)
         .ok_or_else(|| crate::error::VizError::Export(format!("Setup {setup_id:?} not found")))?;
 
-    let emitted = emitted_toolpaths(session, gui, setup.toolpath_indices.iter().copied(), stale)?;
+    let emitted = emitted_toolpaths(
+        session,
+        gui,
+        setup.toolpath_indices().iter().copied(),
+        stale,
+    )?;
     let phases: Vec<GcodePhase<'_>> = emitted
         .iter()
         .filter_map(|e| {

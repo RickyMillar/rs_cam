@@ -214,7 +214,7 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
     // on an end mill with the core registry's tool refusal.
     // The name keeps the "Ball " prefix free for the planner ladder that
     // `planner_controller` adds and `tick_ball_tools` ticks.
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::BallNose);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
     tool.name = "Sample tool".to_owned();
     // Every caller hands in a controller straight from `with_backend`, so the
     // builder replaces an empty session.
@@ -222,7 +222,7 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
 
     let mesh = Arc::new(make_test_flat(40.0));
     let _ = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: std::path::PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
         kind: Some(ModelKind::Stl),
@@ -239,7 +239,7 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
 
     let tp_config = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Scallop".to_owned(),
         enabled: true,
         operation: OperationConfig::Scallop(
@@ -247,8 +247,8 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -300,12 +300,12 @@ fn push_toolpath<B: ComputeBackend>(controller: &mut AppController<B>, name: &st
         .session()
         .toolpath_configs()
         .iter()
-        .map(|tc| tc.id.0 + 1)
+        .map(|tc| tc.id.raw() + 1)
         .max()
         .unwrap_or(0);
     let cfg = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(next),
+        id: ToolpathId::from_raw(next),
         name: name.to_owned(),
         enabled: true,
         operation: OperationConfig::Scallop(
@@ -313,8 +313,8 @@ fn push_toolpath<B: ComputeBackend>(controller: &mut AppController<B>, name: &st
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -333,7 +333,7 @@ fn push_toolpath<B: ComputeBackend>(controller: &mut AppController<B>, name: &st
             config: Box::new(cfg),
         }))
         .unwrap();
-    ToolpathId(next)
+    ToolpathId::from_raw(next)
 }
 
 fn render_snapshot(
@@ -407,7 +407,7 @@ fn inject_sim_results(controller: &mut AppController<ScriptedBackend>, num_setup
     let mut boundaries = Vec::new();
     for i in 0..num_setups {
         boundaries.push(crate::compute::worker::SimBoundary {
-            id: ToolpathId(0),
+            id: ToolpathId::from_raw(0),
             name: format!("Op {}", i + 1),
             tool_name: "EndMill".to_owned(),
             start_move: i * 10,
@@ -458,7 +458,7 @@ fn push_toolpath_completion(
         .drained
         .push(ComputeMessage::Toolpath(Box::new(
             crate::compute::worker::ComputeResult {
-                toolpath_id: ToolpathId(0),
+                toolpath_id: ToolpathId::from_raw(0),
                 revision,
                 result: Ok(ToolpathResult {
                     annotated: Arc::new(
@@ -491,7 +491,7 @@ fn add_derived_rest_dependent(
 ) -> ToolpathId {
     let dependent_config = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0), // placeholder — add_toolpath assigns the real id
+        id: ToolpathId::from_raw(0), // placeholder — add_toolpath assigns the real id
         name: "Rest scallop".to_owned(),
         enabled: true,
         operation: OperationConfig::Scallop(
@@ -499,8 +499,8 @@ fn add_derived_rest_dependent(
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: crate::state::toolpath::BoundaryConfig {
@@ -1029,7 +1029,7 @@ fn planner_controller() -> AppController<ScriptedBackend> {
     let mut controller = sample_controller();
     let mut tools = controller.state.session().tools().to_vec();
     for (raw_id, diameter) in [(2usize, 4.0f64), (3, 2.0)] {
-        let mut tool = ToolConfig::new_default(ToolId(raw_id), ToolType::BallNose);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(raw_id), ToolType::BallNose);
         tool.name = format!("Ball {diameter}");
         tool.diameter = diameter;
         tools.push(tool);
@@ -1113,7 +1113,7 @@ fn generate_all_for_test<B: ComputeBackend>(controller: &mut AppController<B>) {
         .map(|(idx, tc)| (idx, tc.id))
         .collect();
     for (index, id) in ids {
-        let revision = controller.state.session().toolpath_revision(index);
+        let revision = controller.state.session().toolpath_revision_at(index);
         let _ = controller
             .state
             .apply(Command::AdoptResult(AdoptResultArgs {
@@ -1311,7 +1311,7 @@ fn controller_holding_a_simulation() -> AppController<RestChainBackend> {
 fn an_unedited_panel_frame_sends_no_command_f217() {
     let mut controller = sample_controller();
     let id = controller.state.session().toolpath_configs()[0].id;
-    let revision = controller.state.session().toolpath_revision(0);
+    let revision = controller.state.session().toolpath_revision_at(0);
     let mut entry = crate::ui::properties::build_entry_from_session_and_gui(
         id,
         controller.state.session(),
@@ -1322,7 +1322,7 @@ fn an_unedited_panel_frame_sends_no_command_f217() {
     let idle = crate::ui::properties::write_entry_config_to_session(&entry, &mut controller.state);
     assert!(idle.is_none(), "an unedited entry must send no command");
     assert_eq!(
-        controller.state.session().toolpath_revision(0),
+        controller.state.session().toolpath_revision_at(0),
         revision,
         "an idle frame must not move the revision"
     );

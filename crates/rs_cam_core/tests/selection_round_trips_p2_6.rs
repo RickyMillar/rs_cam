@@ -83,7 +83,7 @@ fn op_selection() -> Selection {
             },
         },
         Rule {
-            source: SourceRef::Model(ModelId(7)),
+            source: SourceRef::Model(ModelId::from_raw(7)),
             filter: Filter {
                 layers: Vec::new(),
                 kinds: KindFilter::Only(vec![ItemKind::Circle, ItemKind::Face]),
@@ -143,7 +143,7 @@ fn boundary() -> BoundaryConfig {
         enabled: true,
         source: BoundarySource::Selection {
             selection: Selection::from_picks(vec![key(
-                SourceRef::Model(ModelId(7)),
+                SourceRef::Model(ModelId::from_raw(7)),
                 ItemKind::Face,
                 None,
                 30.0,
@@ -172,23 +172,23 @@ fn saved(session: &ProjectSession) -> (String, ProjectSession) {
 fn selection_round_trips_p2_6() {
     let mut builder = ProjectSessionBuilder::new();
     let tool_idx = builder.add_tool(make_endmill_6mm());
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let mut picked = toolpath_config(
         "picked",
         OperationConfig::Pocket(PocketConfig {
             selection: op_selection(),
             ..PocketConfig::default()
         }),
-        tool_id,
-        0,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        rs_cam_core::ids::ModelId::from_raw(0),
     );
     picked.boundary = boundary();
     picked.boundary_inherit = false;
     let plain = toolpath_config(
         "plain",
         OperationConfig::Pocket(PocketConfig::default()),
-        tool_id,
-        0,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
+        rs_cam_core::ids::ModelId::from_raw(0),
     );
     let _ = builder.add_toolpath(0, picked).unwrap();
     let _ = builder.add_toolpath(0, plain).unwrap();

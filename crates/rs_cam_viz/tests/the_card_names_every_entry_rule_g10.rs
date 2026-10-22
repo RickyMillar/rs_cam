@@ -57,7 +57,7 @@ use rs_cam_viz::ui::{properties, tokens};
 const PANEL_WIDTH: f32 = 280.0;
 
 fn tool_of(kind: ToolType, diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(1), kind);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), kind);
     tool.name = "G10 card fixture".to_owned();
     tool.diameter = diameter;
     tool.flute_count = 2;
@@ -107,14 +107,14 @@ fn state_for(
     };
     let config = ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "G10 card fixture".to_owned(),
         enabled: true,
         operation,
         dressups,
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 1,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(1),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -127,7 +127,7 @@ fn state_for(
         planner_origin: None,
     };
     let model = LoadedModel {
-        id: 1,
+        id: rs_cam_core::ids::ModelId::from_raw(1),
         path: PathBuf::from("g10_card_fixture.svg"),
         name: "G10 card fixture".to_owned(),
         kind: Some(ModelKind::Svg),

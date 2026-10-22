@@ -361,7 +361,7 @@ tr:nth-child(even) {{ background: #24242e; }}
         let tool_name = session
             .tools()
             .iter()
-            .find(|t| t.id.0 == tc.tool_id)
+            .find(|t| t.id == tc.tool_id)
             .map(|t| t.name.as_str())
             .unwrap_or("(unknown)");
         let feed = feed_rate_of(&tc.operation);

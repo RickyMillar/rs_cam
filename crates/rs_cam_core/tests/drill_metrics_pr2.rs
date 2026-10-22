@@ -32,7 +32,7 @@ use rs_cam_core::session::{
 use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 fn make_drill_tool(diameter: f64) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = diameter;
     tool.flute_count = 2;
     tool.name = "Test Drill".to_owned();
@@ -42,7 +42,7 @@ fn make_drill_tool(diameter: f64) -> ToolConfig {
 fn make_drill_toolpath(tool_id: usize, peck_depth: f64) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "Pin Drill".to_owned(),
         enabled: true,
         operation: OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
@@ -57,8 +57,8 @@ fn make_drill_toolpath(tool_id: usize, peck_depth: f64) -> ToolpathConfig {
         }),
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: BoundaryConfig::default(),
@@ -94,7 +94,7 @@ fn build_drill_session(peck_depth: f64, tool_diameter: f64) -> ProjectSession {
     builder = builder.stock(stock);
 
     let tool_idx = builder.add_tool(make_drill_tool(tool_diameter));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let tc = make_drill_toolpath(tool_id, peck_depth);
     let _ = builder.add_toolpath(0, tc).expect("add drill toolpath");
     builder.build()
@@ -113,7 +113,7 @@ fn drill_session_produces_drill_summary_with_pecks() {
 
     // Pre-sim assertion: the compute result carries the DrillOp variant
     // (PR1 invariant).
-    let result = session.get_result(0).expect("result exists");
+    let result = session.result_at(0).expect("result exists");
     assert!(
         result.is_drill_op(),
         "AlignmentPinDrill toolpath should carry OpData::DrillOp"
@@ -139,9 +139,9 @@ fn drill_session_produces_drill_summary_with_pecks() {
 
     // PR2 assertion 1: drill_summaries is populated for the drill toolpath.
     let summary = trace
-        .drill_summary_for(ToolpathId(0))
+        .drill_summary_for(ToolpathId::from_raw(0))
         .expect("drill summary for TP0 must be present");
-    assert_eq!(summary.toolpath_id, ToolpathId(0));
+    assert_eq!(summary.toolpath_id, ToolpathId::from_raw(0));
     assert_eq!(summary.hole_count, 2);
     assert!(
         summary.peck_count >= 2,
@@ -162,7 +162,7 @@ fn drill_session_produces_drill_summary_with_pecks() {
     let drill_samples_for_tp: Vec<_> = trace
         .drill_samples
         .iter()
-        .filter(|s| s.toolpath_id == ToolpathId(0))
+        .filter(|s| s.toolpath_id == ToolpathId::from_raw(0))
         .collect();
     assert_eq!(
         drill_samples_for_tp.len(),
@@ -193,7 +193,7 @@ fn drill_session_produces_drill_summary_with_pecks() {
     let verdict = report
         .per_toolpath
         .iter()
-        .find(|v| v.toolpath_id == ToolpathId(0))
+        .find(|v| v.toolpath_id == ToolpathId::from_raw(0))
         .expect("tool-load verdict for drill TP");
     let drill_gates = verdict
         .drill_gates
@@ -252,7 +252,7 @@ fn drill_session_oversize_peck_trips_peck_adequacy_gate() {
         .and_then(|s| s.cut_trace.as_ref())
         .expect("cut trace");
     let summary = trace
-        .drill_summary_for(ToolpathId(0))
+        .drill_summary_for(ToolpathId::from_raw(0))
         .expect("drill summary");
     assert!(
         !summary.peck_pattern_adequate,
@@ -263,7 +263,7 @@ fn drill_session_oversize_peck_trips_peck_adequacy_gate() {
     let verdict = report
         .per_toolpath
         .iter()
-        .find(|v| v.toolpath_id == ToolpathId(0))
+        .find(|v| v.toolpath_id == ToolpathId::from_raw(0))
         .expect("verdict for TP0");
     let drill_gates = verdict.drill_gates.as_ref().expect("drill_gates populated");
     assert!(

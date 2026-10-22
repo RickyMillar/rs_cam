@@ -34,7 +34,7 @@ const KEYS: [&str; 3] = ["blocking_toolpath_id", "blocking_toolpath_index", "mes
 #[test]
 fn the_serialised_block_carries_exactly_three_keys() {
     let block = AwaitingPriorStock {
-        blocking_toolpath_id: Some(rs_cam_core::ToolpathId(7)),
+        blocking_toolpath_id: Some(rs_cam_core::ToolpathId::from_raw(7)),
         blocking_toolpath_index: Some(2),
         message: "waiting on 'Rough' to generate and be simulated".to_owned(),
     };
@@ -153,11 +153,11 @@ fn the_generate_all_reply_renders_the_one_row_shape() {
         failed: 0,
         errors: Vec::new(),
         blocked: vec![BlockedRow {
-            toolpath_id: rs_cam_core::ToolpathId(4),
+            toolpath_id: rs_cam_core::ToolpathId::from_raw(4),
             toolpath_index: 3,
             name: "Rest B".to_owned(),
             block: AwaitingPriorStock {
-                blocking_toolpath_id: Some(rs_cam_core::ToolpathId(7)),
+                blocking_toolpath_id: Some(rs_cam_core::ToolpathId::from_raw(7)),
                 blocking_toolpath_index: Some(2),
                 message: "waiting on 'Rough' to generate and be simulated".to_owned(),
             },

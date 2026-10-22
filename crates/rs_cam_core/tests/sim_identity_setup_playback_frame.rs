@@ -99,11 +99,11 @@ fn endmill_6mm() -> ToolDefinition {
 fn entry(id: usize, name: &str, tp: Toolpath) -> SimToolpathEntry {
     SimToolpathEntry {
         head: Default::default(),
-        id: ToolpathId(id),
+        id: ToolpathId::from_raw(id),
         name: name.to_owned(),
         annotated: Arc::new(AnnotatedToolpath::new(tp)),
         tool: std::sync::Arc::new(endmill_6mm()),
-        tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+        tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
         flute_count: 2,
         tool_summary: "6mm Flat".to_owned(),
         semantic_trace: None,

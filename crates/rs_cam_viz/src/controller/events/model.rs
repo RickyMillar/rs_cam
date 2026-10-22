@@ -55,12 +55,12 @@ impl<B: ComputeBackend> AppController<B> {
             .session()
             .list_setups()
             .iter()
-            .find(|s| s.toolpath_indices.contains(&tp_index))
-            .map(|s| SetupId(s.id))
+            .find(|s| s.toolpath_indices().contains(&tp_index))
+            .map(|s| s.id)
     }
 
     pub(crate) fn handle_add_tool(&mut self, tool_type: crate::state::job::ToolType) {
-        let tool = ToolConfig::new_default(crate::state::job::ToolId(0), tool_type);
+        let tool = ToolConfig::new_default(crate::state::job::ToolId::placeholder(), tool_type);
         let command = Command::AddTool(AddToolArgs {
             tool: Box::new(tool),
         });
@@ -75,7 +75,7 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn handle_add_tool_from_library(&mut self, mut tool: ToolConfig) {
         // The catalog tool's id is project-irrelevant; the session
         // reassigns it on insert. Reset to a sentinel first.
-        tool.id = crate::state::job::ToolId(0);
+        tool.id = crate::state::job::ToolId::placeholder();
         let command = Command::AddToolFromLibrary(AddToolArgs {
             tool: Box::new(tool),
         });
@@ -291,7 +291,7 @@ impl<B: ComputeBackend> AppController<B> {
         });
         let created = self.apply_created(command);
         if let Some(setup) = created.and_then(|idx| self.state.session().list_setups().get(idx)) {
-            self.state.selection = Selection::Setup(SetupId(setup.id));
+            self.state.selection = Selection::Setup(setup.id);
         }
         self.state.gui.mark_edited();
     }
@@ -302,7 +302,7 @@ impl<B: ComputeBackend> AppController<B> {
         if setups.len() <= 1 {
             return;
         }
-        let Some(setup) = setups.iter().find(|setup| setup.id == setup_id.0) else {
+        let Some(setup) = setups.iter().find(|setup| setup.id == setup_id) else {
             return;
         };
         self.state.panels.pending_setup_removal =
@@ -320,7 +320,7 @@ impl<B: ComputeBackend> AppController<B> {
         let Some((index, setup)) = setups
             .iter()
             .enumerate()
-            .find(|(_, setup)| setup.id == setup_id.0)
+            .find(|(_, setup)| setup.id == setup_id)
         else {
             return;
         };
@@ -332,9 +332,9 @@ impl<B: ComputeBackend> AppController<B> {
 
         let replacement = setups
             .get(if index > 0 { index - 1 } else { 1 })
-            .map(|setup| SetupId(setup.id));
+            .map(|setup| setup.id);
         let removed_ids: Vec<_> = setup
-            .toolpath_indices
+            .toolpath_indices()
             .iter()
             .filter_map(|&tp| {
                 self.state
@@ -498,7 +498,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session()
             .list_setups()
             .iter()
-            .position(|s| s.id == setup_id.0)
+            .position(|s| s.id == setup_id)
         {
             let command = Command::SetSetupName(SetSetupNameArgs { setup_index, name });
             if self.apply_controller_command(command, "the setup name") {
@@ -513,7 +513,11 @@ impl<B: ComputeBackend> AppController<B> {
     /// an index like every other setup row, so this door resolves the
     /// one to the other. The row drops no result: the message reaches the
     /// export alone, beside the `M0` the post emits.
-    pub(crate) fn set_setup_pause_message(&mut self, setup_id: usize, message: Option<String>) {
+    pub(crate) fn set_setup_pause_message(
+        &mut self,
+        setup_id: rs_cam_core::ids::SetupId,
+        message: Option<String>,
+    ) {
         let Some(setup_index) = self
             .state
             .session()
@@ -542,7 +546,7 @@ impl<B: ComputeBackend> AppController<B> {
         let Some((idx, obstacle_id)) =
             self.state
                 .session()
-                .find_setup_by_id(setup_id.0)
+                .find_setup_by_id(setup_id)
                 .map(|(idx, s)| {
                     (
                         idx,
@@ -589,7 +593,7 @@ impl<B: ComputeBackend> AppController<B> {
         let Some(stored) = self.stored_obstacle(setup_id, obstacle_id) else {
             return;
         };
-        let Some((idx, _)) = self.state.session().find_setup_by_id(setup_id.0) else {
+        let Some((idx, _)) = self.state.session().find_setup_by_id(setup_id) else {
             return;
         };
         let command = Command::RemoveObstacle(RemoveObstacleArgs {
@@ -627,7 +631,7 @@ impl<B: ComputeBackend> AppController<B> {
         if stored.enabled == enabled {
             return;
         }
-        let Some((idx, _)) = self.state.session().find_setup_by_id(setup_id.0) else {
+        let Some((idx, _)) = self.state.session().find_setup_by_id(setup_id) else {
             return;
         };
         let mut record = stored.clone();
@@ -673,7 +677,7 @@ impl<B: ComputeBackend> AppController<B> {
         obstacle_id: crate::state::job::ObstacleId,
         target: Option<Obstacle>,
     ) {
-        let Some((setup_index, _)) = self.state.session().find_setup_by_id(setup_id.0) else {
+        let Some((setup_index, _)) = self.state.session().find_setup_by_id(setup_id) else {
             return;
         };
         let present = self.stored_obstacle(setup_id, obstacle_id);
@@ -715,7 +719,7 @@ impl<B: ComputeBackend> AppController<B> {
     ) -> Option<Obstacle> {
         self.state
             .session()
-            .find_setup_by_id(setup_id.0)
+            .find_setup_by_id(setup_id)
             .and_then(|(_, setup)| setup.obstacles.iter().find(|o| o.id == obstacle_id))
             .cloned()
     }
@@ -751,7 +755,7 @@ impl<B: ComputeBackend> AppController<B> {
         use rs_cam_core::session::{
             AddStockChangeArgs, MoveStockChangeArgs, RemoveStockChangeArgs, ReplaceStockChangeArgs,
         };
-        let Some((setup_index, setup)) = self.state.session().find_setup_by_id(setup_id.0) else {
+        let Some((setup_index, setup)) = self.state.session().find_setup_by_id(setup_id) else {
             return;
         };
         let (command, from_editor) = match intent {
@@ -847,7 +851,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session()
             .toolpath_configs()
             .iter()
-            .any(|tc| tc.model_id == model_id.0);
+            .any(|tc| tc.model_id == model_id);
         if in_use {
             tracing::warn!(
                 "Cannot remove model {:?}: still referenced by one or more toolpaths",
@@ -862,7 +866,7 @@ impl<B: ComputeBackend> AppController<B> {
             .session()
             .models()
             .iter()
-            .position(|m| m.id == model_id.0)
+            .position(|m| m.id == model_id)
         {
             let command = Command::RemoveModel(RemoveModelArgs { index: idx });
             // F056: a refused removal keeps the model, the selection and

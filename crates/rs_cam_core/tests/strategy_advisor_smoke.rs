@@ -47,7 +47,7 @@ fn build_terrain_adaptive3d_session() -> ProjectSession {
         .tools()
         .iter()
         .find(|t| (t.diameter - 6.0).abs() < 1e-6)
-        .map(|t| t.id.0)
+        .map(|t| t.id.raw())
         .expect("ux_3d_terrain.toml must define a 6 mm end mill");
 
     let model_id = session
@@ -85,13 +85,13 @@ fn build_terrain_adaptive3d_session() -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: "AS013 adaptive3d".to_owned(),
         enabled: true,
         operation: OperationConfig::Adaptive3d(adaptive3d),
         dressups: DressupConfig::for_op(OperationType::Adaptive3d),
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,

@@ -36,14 +36,14 @@ pub fn active_display_setup(
         Selection::Toolpath(tp_id) => session
             .setup_of_toolpath_id(*tp_id)
             .and_then(|idx| session.list_setups().get(idx))
-            .map(|sd| SetupId(sd.id)),
+            .map(|sd| sd.id),
         _ => None,
     };
     let setup = match setup_id {
-        Some(sid) => session.list_setups().iter().find(|s| SetupId(s.id) == sid),
+        Some(sid) => session.list_setups().iter().find(|s| s.id == sid),
         None => session.list_setups().first(),
     }?;
-    Some((SetupFrame::of(setup), SetupId(setup.id)))
+    Some((SetupFrame::of(setup), setup.id))
 }
 
 /// Where the stock-local point `(x, y)` shows in the display frame of

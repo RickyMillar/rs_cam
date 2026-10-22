@@ -61,8 +61,14 @@ const SELECTION_FIXTURES: &str = "crates/rs_cam_core/tests/fixtures/selection_p2
 fn load(rel: &str, units: ModelUnits) -> LoadedModel {
     let path = repo().join(rel);
     let kind = infer_kind_from_path(&path).expect("a model extension");
-    load_model_file(&path, 0, kind, units, Default::default())
-        .unwrap_or_else(|e| panic!("{rel} loads: {e}"))
+    load_model_file(
+        &path,
+        rs_cam_core::ids::ModelId::from_raw(0),
+        kind,
+        units,
+        Default::default(),
+    )
+    .unwrap_or_else(|e| panic!("{rel} loads: {e}"))
 }
 
 fn count(model: &LoadedModel, kind: ItemKind) -> usize {

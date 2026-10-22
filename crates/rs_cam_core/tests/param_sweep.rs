@@ -70,7 +70,7 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 /// through the real op. The stock is `stock_bounds_2d`, the model is
 /// `rect_polygon`, and the tool is a flat end mill of `tool_diameter`.
 fn via_session(op: OperationConfig, tool_diameter: f64) -> Toolpath {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = tool_diameter;
     let b = stock_bounds_2d();
     let stock = rs_cam_core::compute::StockConfig {

@@ -166,7 +166,7 @@ pub fn default_import_units(kind: ModelKind) -> ModelUnits {
 /// re-imported the source 25.4 times too small.
 pub fn load_model_file(
     path: &Path,
-    id: usize,
+    id: crate::ids::ModelId,
     kind: ModelKind,
     units: ModelUnits,
     options: ImportOptions,
@@ -199,7 +199,7 @@ pub fn load_model_file(
 /// inconsistency figure the import door had shown (I01 drift 9).
 pub(crate) fn model_from_geometry(
     geometry: LoadedGeometry,
-    id: usize,
+    id: crate::ids::ModelId,
     name: String,
     path: &Path,
     kind: Option<ModelKind>,

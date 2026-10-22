@@ -162,7 +162,7 @@ pub fn diagnostics_from_tool_name(tool: &ToolConfig) -> Vec<Diagnostic> {
     };
     vec![Diagnostic {
         id: DiagnosticId::from(ids::TOOL_NAME_SIZE_MISMATCH),
-        scope: Scope::Tool { id: tool.id.0 },
+        scope: Scope::Tool { id: tool.id },
         category: Category::Geometry,
         severity: Severity::Info,
         confidence: Confidence::Static,

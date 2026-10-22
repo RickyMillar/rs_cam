@@ -69,14 +69,14 @@ fn ctx() -> egui::Context {
 fn toolpath(name: &str, operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -109,13 +109,13 @@ fn state() -> AppState {
         .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf");
     let model = rs_cam_core::io::load_model_file(
         &path,
-        0,
+        rs_cam_core::ids::ModelId::from_raw(0),
         ModelKind::Dxf,
         ModelUnits::Millimeters,
         Default::default(),
     )
     .expect("the drawing loads");
-    let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     tool.diameter = 3.0;
     let mut builder = ProjectSessionBuilder::new()
         .stock(StockConfig::default())
@@ -344,7 +344,11 @@ fn the_selection_section_writes_edits_only_p4_3() {
     // The picks Clear keeps the rules.
     let circle = state
         .session()
-        .list_model_items(0, Some("HOLES"), Some(ItemKind::Circle))
+        .list_model_items(
+            rs_cam_core::ids::ModelId::from_raw(0),
+            Some("HOLES"),
+            Some(ItemKind::Circle),
+        )
         .unwrap()[0]
         .key
         .clone();

@@ -48,7 +48,7 @@ use rs_cam_core::session::{ProjectSession, SimulationOptions};
 use rs_cam_core::toolpath::MoveType;
 
 /// "3D Rough 6" in the pinned fixture.
-const ROUGH6_ID: ToolpathId = ToolpathId(10);
+const ROUGH6_ID: ToolpathId = ToolpathId::from_raw(10);
 /// The strike's entry XY (the rapid at move 1406 before the fix).
 const STRIKE_XY: (f64, f64) = (89.640, 78.874);
 /// The level-2 floor the column stood at, plus the emitter's rapid descent
@@ -75,7 +75,7 @@ fn built_chain() -> ProjectSession {
         .expect("a positive cell");
     let n = s.toolpath_count();
     let enabled: Vec<usize> = (0..n)
-        .filter(|&i| s.get_toolpath_config(i).is_some_and(|tc| tc.enabled))
+        .filter(|&i| s.toolpath_config_at(i).is_some_and(|tc| tc.enabled))
         .collect();
     let mut pending: Vec<usize> = Vec::new();
     for &i in &enabled {
@@ -98,10 +98,7 @@ fn built_chain() -> ProjectSession {
 
 fn rough6_index(s: &ProjectSession) -> usize {
     (0..s.toolpath_count())
-        .find(|&i| {
-            s.get_toolpath_config(i)
-                .is_some_and(|tc| tc.id == ROUGH6_ID)
-        })
+        .find(|&i| s.toolpath_config_at(i).is_some_and(|tc| tc.id == ROUGH6_ID))
         .expect("3D Rough 6 in the fixture")
 }
 
@@ -110,7 +107,7 @@ fn rough6_index(s: &ProjectSession) -> usize {
 fn rough6_rapid_collisions(s: &mut ProjectSession, cell_mm: f64) -> usize {
     let cancel = AtomicBool::new(false);
     let later: Vec<ToolpathId> = (rough6_index(s) + 1..s.toolpath_count())
-        .filter_map(|i| s.get_toolpath_config(i).map(|tc| tc.id))
+        .filter_map(|i| s.toolpath_config_at(i).map(|tc| tc.id))
         .collect();
     let opts = SimulationOptions {
         resolution: rs_cam_core::session::SimulationResolution::Fixed(cell_mm),
@@ -154,7 +151,7 @@ fn wanaka_rough6_rapids_into_no_stock_g_phantomstamp() {
     // (2) The strike entry: every rapid ending at its XY stops at or above
     // the level-2 floor plus the descent buffer.
     let idx = rough6_index(&s);
-    let tp = s.get_result(idx).expect("3D Rough 6 generated").toolpath();
+    let tp = s.result_at(idx).expect("3D Rough 6 generated").toolpath();
     let at_strike: Vec<(usize, f64)> = tp
         .moves
         .iter()

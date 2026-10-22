@@ -78,7 +78,7 @@ fn commanded_depth() -> f64 {
 #[test]
 fn fresh_stock_names_nothing() {
     let (session, index) = generate(false);
-    let stats = &session.get_result(index).expect("the result").stats;
+    let stats = &session.result_at(index).expect("the result").stats;
     assert_eq!(
         stats.buried_curve, None,
         "fresh stock: nothing was measured, so nothing is claimed"
@@ -88,7 +88,7 @@ fn fresh_stock_names_nothing() {
 #[test]
 fn a_curve_under_the_rough_allowance_is_named() {
     let (session, index) = generate(true);
-    let stats = &session.get_result(index).expect("the result").stats;
+    let stats = &session.result_at(index).expect("the result").stats;
     let f = stats
         .buried_curve
         .expect("the rest arm cuts below the rough allowance, so the finding fires");

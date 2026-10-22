@@ -126,7 +126,7 @@ pub fn row_summary(obstacle: &Obstacle, models: &[ModelChoice]) -> String {
         }
         ObstacleGeometry::Model { model_id } => {
             let name = models.iter().find(|m| m.id == *model_id).map_or_else(
-                || format!("missing model {}", model_id.0),
+                || format!("missing model {}", model_id.raw()),
                 |m| m.name.clone(),
             );
             format!("model · {name}")
@@ -182,7 +182,7 @@ pub fn set_obstacle_kind(
                 .copied()
                 .find(|id| models.iter().any(|m| m.id == *id && m.has_mesh))
                 .or_else(|| models.iter().find(|m| m.has_mesh).map(|m| m.id))
-                .unwrap_or(ModelId(0)),
+                .unwrap_or(ModelId::placeholder()),
         },
     };
 }
@@ -230,7 +230,7 @@ fn draw_row(
             events.push(AppEvent::SetObstacleEnabled(setup_id, obstacle_id, enabled));
         }
         let name = if obstacle.name.is_empty() {
-            format!("Obstacle {}", obstacle_id.0 + 1)
+            format!("Obstacle {}", obstacle_id.raw() + 1)
         } else {
             obstacle.name.clone()
         };
@@ -405,13 +405,13 @@ mod tests {
     fn models() -> Vec<ModelChoice> {
         vec![
             ModelChoice {
-                id: ModelId(1),
+                id: ModelId::from_raw(1),
                 name: "clamp.stl".to_owned(),
                 has_mesh: true,
                 has_closed_outline: false,
             },
             ModelChoice {
-                id: ModelId(2),
+                id: ModelId::from_raw(2),
                 name: "jaws.dxf".to_owned(),
                 has_mesh: false,
                 has_closed_outline: true,
@@ -445,7 +445,7 @@ mod tests {
         assert_eq!(
             geometry,
             ObstacleGeometry::Model {
-                model_id: ModelId(1)
+                model_id: ModelId::from_raw(1)
             },
             "extrude to model picks the first mesh model"
         );
@@ -465,7 +465,7 @@ mod tests {
             "model to extrude keeps no model without a closed outline"
         );
         if let ObstacleGeometry::OutlineExtrude { model_ids, .. } = &mut geometry {
-            model_ids.push(ModelId(2));
+            model_ids.push(ModelId::from_raw(2));
         }
         set_obstacle_kind(&mut geometry, ObstacleKind::Box, &models, (-20.0, 0.0));
         assert_eq!(
@@ -485,10 +485,10 @@ mod tests {
     #[test]
     fn the_row_summary_names_the_kind_and_its_facts_k2() {
         let models = models();
-        let mut obstacle = Obstacle::new_default_box(ObstacleId(0));
+        let mut obstacle = Obstacle::new_default_box(ObstacleId::from_raw(0));
         assert_eq!(row_summary(&obstacle, &models), "box · clearance 3.0 mm");
         obstacle.geometry = ObstacleGeometry::OutlineExtrude {
-            model_ids: vec![ModelId(2), ModelId(3)],
+            model_ids: vec![ModelId::from_raw(2), ModelId::from_raw(3)],
             z_bottom: -20.0,
             z_top: 0.0,
         };
@@ -497,11 +497,11 @@ mod tests {
             "extrude · 2 outlines · Z -20.0 to 0.0"
         );
         obstacle.geometry = ObstacleGeometry::Model {
-            model_id: ModelId(1),
+            model_id: ModelId::from_raw(1),
         };
         assert_eq!(row_summary(&obstacle, &models), "model · clamp.stl");
         obstacle.geometry = ObstacleGeometry::Model {
-            model_id: ModelId(9),
+            model_id: ModelId::from_raw(9),
         };
         assert_eq!(row_summary(&obstacle, &models), "model · missing model 9");
     }

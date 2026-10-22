@@ -168,14 +168,14 @@ fn a_shelf_is_a_z_floor_under_the_highest_top_h1() {
 fn the_shoe_plate_strikes_only_below_the_solver_gap_h1() {
     let mut plain = session();
     generate(&mut plain, 0);
-    let plain_tp = plain.get_result(0).unwrap().toolpath().clone();
+    let plain_tp = plain.result_at(0).unwrap().toolpath().clone();
 
     let mut s = session();
     set_head(&mut s, MachineHead::dust_shoe());
     generate(&mut s, 0);
     // (b) The shoe moves no toolpath.
     assert_eq!(
-        format!("{:?}", s.get_result(0).unwrap().toolpath().moves),
+        format!("{:?}", s.result_at(0).unwrap().toolpath().moves),
         format!("{:?}", plain_tp.moves)
     );
 
@@ -202,7 +202,7 @@ fn the_shoe_plate_strikes_only_below_the_solver_gap_h1() {
     // simulation reports the plate in the stock.
     set_shoe(&mut s, ShoeSetting::Gap { gap_mm: 25.0 });
     assert!(
-        s.get_result(0).is_some(),
+        s.result_at(0).is_some(),
         "the shoe setting moves no toolpath"
     );
     let verdict = s

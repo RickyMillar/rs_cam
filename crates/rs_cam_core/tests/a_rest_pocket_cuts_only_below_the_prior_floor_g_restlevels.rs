@@ -225,11 +225,11 @@ fn run_ops_with_tool(
 ) -> Arm {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_D));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let b_tool_id = match b_tool {
         Some(tool) => {
             let idx = builder.add_tool(tool);
-            builder.tools()[idx].id.0
+            builder.tools()[idx].id.raw()
         }
         None => tool_id,
     };
@@ -250,9 +250,17 @@ fn run_ops_with_tool(
     ));
     let model_b = builder.add_model(b_model);
     let _ = builder
-        .add_toolpath(0, toolpath_config("A", a, tool_id, model_a))
+        .add_toolpath(
+            0,
+            toolpath_config("A", a, rs_cam_core::ids::ToolId::from_raw(tool_id), model_a),
+        )
         .expect("add A");
-    let mut b = toolpath_config("B", b, b_tool_id, model_b);
+    let mut b = toolpath_config(
+        "B",
+        b,
+        rs_cam_core::ids::ToolId::from_raw(b_tool_id),
+        model_b,
+    );
     b.stock_source = b_source;
     let _ = builder.add_toolpath(0, b).expect("add B");
     let mut session = builder.build();
@@ -269,7 +277,7 @@ fn run_ops_with_tool(
     generate(&mut session, 1);
     simulate(&mut session);
 
-    let result = session.get_result(1).expect("B holds a result");
+    let result = session.result_at(1).expect("B holds a result");
     let final_stock = session
         .simulation_result()
         .and_then(|sim| sim.checkpoints.last().map(|c| Arc::clone(&c.mesh_stock)))
@@ -617,17 +625,30 @@ fn an_empty_rest_pocket_last_in_a_setup_does_not_block_the_next_setup() {
 fn chain_cuts_only_below_the_floor(rests: &[(usize, f64)], second_setup: bool) {
     let mut builder = ProjectSessionBuilder::new().stock(stock());
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_D));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let model = builder.add_model(polygon_model(vec![square_polygon(HALF)], "a"));
     if second_setup {
         let _ = builder.add_setup("Setup 2".to_owned(), FaceUp::Top);
     }
     let _ = builder
-        .add_toolpath(0, toolpath_config("A", pocket(A_DEPTH), tool_id, model))
+        .add_toolpath(
+            0,
+            toolpath_config(
+                "A",
+                pocket(A_DEPTH),
+                rs_cam_core::ids::ToolId::from_raw(tool_id),
+                model,
+            ),
+        )
         .expect("add A");
     let mut indices = Vec::new();
     for (k, &(setup, depth)) in rests.iter().enumerate() {
-        let mut rest = toolpath_config(&format!("Rest {k}"), pocket(depth), tool_id, model);
+        let mut rest = toolpath_config(
+            &format!("Rest {k}"),
+            pocket(depth),
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
+            model,
+        );
         rest.stock_source = StockSource::FromRemainingStock;
         indices.push(
             builder
@@ -654,7 +675,7 @@ fn chain_cuts_only_below_the_floor(rests: &[(usize, f64)], second_setup: bool) {
             "rest pocket {k} must generate after the empty rest pockets before it; got: {:?}",
             outcome.err().map(|e| e.to_string())
         );
-        let result = session.get_result(index).expect("a rest result");
+        let result = session.result_at(index).expect("a rest result");
         let cuts = cutting_moves(&result.toolpath().moves);
         if k < last {
             assert!(
@@ -1110,7 +1131,7 @@ fn vbit() -> ToolConfig {
     ToolConfig {
         diameter: 12.7,
         included_angle: VBIT_ANGLE_DEG,
-        ..ToolConfig::new_default(ToolId(0), ToolType::VBit)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::VBit)
     }
 }
 
@@ -1689,7 +1710,7 @@ fn waterline_after_pocket(source: StockSource, feed_rate: f64) -> WaterlineArm {
         .stock(waterline_stock())
         .machine(machine);
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_D));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let cap = builder.add_model(common::session::mesh_model(cap_mesh(), "w6_cap"));
     // The half past the stock on three sides, so the tool clears every
     // cell of the stock with x >= 0.
@@ -1709,7 +1730,15 @@ fn waterline_after_pocket(source: StockSource, feed_rate: f64) -> WaterlineArm {
         ..PocketConfig::default()
     });
     let _ = builder
-        .add_toolpath(0, toolpath_config("pocket", pocket, tool_id, half))
+        .add_toolpath(
+            0,
+            toolpath_config(
+                "pocket",
+                pocket,
+                rs_cam_core::ids::ToolId::from_raw(tool_id),
+                half,
+            ),
+        )
         .expect("add the pocket");
     let mut waterline = toolpath_config(
         "waterline",
@@ -1717,7 +1746,7 @@ fn waterline_after_pocket(source: StockSource, feed_rate: f64) -> WaterlineArm {
             feed_rate,
             ..WaterlineConfig::default()
         }),
-        tool_id,
+        rs_cam_core::ids::ToolId::from_raw(tool_id),
         cap,
     );
     waterline.heights = common::session::pinned_heights(WL_STOCK_Z, 0.0);
@@ -1746,7 +1775,7 @@ fn waterline_after_pocket(source: StockSource, feed_rate: f64) -> WaterlineArm {
     generate(&mut session, 1);
     simulate(&mut session);
 
-    let result = session.get_result(1).expect("the waterline holds a result");
+    let result = session.result_at(1).expect("the waterline holds a result");
     let sim = session.simulation_result().expect("a simulation");
     let final_stock = sim
         .checkpoints

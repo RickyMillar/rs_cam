@@ -180,7 +180,7 @@ fn simulate(annotated: &AnnotatedToolpath) -> Vec<SimulationCutSample> {
             &annotated.toolpath,
             &cutter,
             StockCutDirection::FromTop,
-            ToolpathId(0),
+            ToolpathId::from_raw(0),
             18_000,
             2,
             5000.0,
@@ -525,7 +525,7 @@ fn modelled_gate_verdicts_across_the_two_classifications() {
     );
     let material = Material::default();
     let ctx = ToolpathLoadContext {
-        toolpath_id: ToolpathId(0),
+        toolpath_id: ToolpathId::from_raw(0),
         tool: &tool,
         material: &material,
         operation_family: LutOperationFamily::Contour,
@@ -549,11 +549,11 @@ fn modelled_gate_verdicts_across_the_two_classifications() {
     let sp = trace_parent
         .toolpath_summaries
         .iter()
-        .find(|s| s.toolpath_id == ToolpathId(0));
+        .find(|s| s.toolpath_id == ToolpathId::from_raw(0));
     let sf = trace_fixed
         .toolpath_summaries
         .iter()
-        .find(|s| s.toolpath_id == ToolpathId(0));
+        .find(|s| s.toolpath_id == ToolpathId::from_raw(0));
 
     println!("\n=== D-4 MODELLED verdict delta — synthetic arc-fitted pass ===");
     println!("samples re-marked transit for the parent arm: {flipped}");
@@ -717,7 +717,7 @@ fn verdict_delta_probe_on_the_committed_fixture() {
     let mut arc_spans_by_id: HashMap<ToolpathId, usize> = HashMap::new();
     let mut arcs_nested_in_entry = 0_usize;
     for (index, tc) in session.toolpath_configs().iter().enumerate() {
-        let Some(result) = session.get_result(index) else {
+        let Some(result) = session.result_at(index) else {
             continue;
         };
         let annotated = result.annotated();
@@ -769,7 +769,7 @@ fn verdict_delta_probe_on_the_committed_fixture() {
     // generatable. Disable exactly those, symmetrically for both arms; they
     // contributed no samples to either trace.
     let ungenerated: Vec<usize> = (0..session.toolpath_configs().len())
-        .filter(|i| session.get_result(*i).is_none())
+        .filter(|i| session.result_at(*i).is_none())
         .collect();
     // WP7: the write is a command row now. The row is
     // `ReplaceToolpathConfig`, not `SetToolpathEnabled`, because this is
@@ -784,7 +784,7 @@ fn verdict_delta_probe_on_the_committed_fixture() {
     // arc fitting. The `sim_trace_is_fresh` line printed below is the
     // tell either way.
     for i in &ungenerated {
-        let Some(stored) = session.get_toolpath_config(*i) else {
+        let Some(stored) = session.toolpath_config_at(*i) else {
             continue;
         };
         let mut config = stored.clone();
@@ -820,7 +820,7 @@ fn verdict_delta_probe_on_the_committed_fixture() {
     let mut changed_rows = 0_usize;
     for (index, tc) in session.toolpath_configs().iter().enumerate() {
         let id = tc.id;
-        let Some(result) = session.get_result(index) else {
+        let Some(result) = session.result_at(index) else {
             continue;
         };
         let annotated = result.annotated();

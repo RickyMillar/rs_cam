@@ -107,14 +107,14 @@ fn viz_result() -> ToolpathResult {
 fn pocket() -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
         operation: OperationConfig::new_default(OperationType::Pocket),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -132,7 +132,7 @@ fn pocket() -> ToolpathConfig {
 /// the view, with no stale stamp.
 fn seed_generated(controller: &mut AppController<CountingBackend>) {
     let state = &mut controller.state;
-    let revision = state.session().toolpath_revision(0);
+    let revision = state.session().toolpath_revision_at(0);
     let _ = state
         .apply(Command::AdoptResult(AdoptResultArgs {
             index: 0,
@@ -148,10 +148,10 @@ fn seed_generated(controller: &mut AppController<CountingBackend>) {
 
 fn build_controller(submits: Arc<AtomicUsize>) -> AppController<CountingBackend> {
     let mut controller = AppController::with_backend(CountingBackend { submits });
-    let tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
     let mut builder = ProjectSessionBuilder::new().tool(tool);
     let _ = builder.add_model(LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         path: PathBuf::from("flat.stl"),
         name: "Flat".to_owned(),
         kind: Some(ModelKind::Stl),
@@ -218,7 +218,7 @@ fn a_feeds_apply_that_changes_nothing_stales_nothing_b19() {
         second.stale
     );
     assert!(
-        controller.state.session().get_result(0).is_some(),
+        controller.state.session().result_at(0).is_some(),
         "fixture: core keeps the result of an unchanged config"
     );
 

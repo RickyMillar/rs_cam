@@ -97,7 +97,7 @@ fn the_diagnostic_adapter_reports_each_derivation_separately() {
         .push(stepover_finding("loud site", 0.35));
 
     let out = crate::diagnostics::adapters::from_generation::diagnostics_from_generation(
-        crate::ids::ToolpathId(0),
+        crate::ids::ToolpathId::from_raw(0),
         &stats,
     );
     let stepover_diags: Vec<_> = out
@@ -266,7 +266,7 @@ fn rectangle_and_a_point(polygons: &[Polygon2]) -> SelectionInputs<'static> {
 }
 
 fn make_tool(tool_type: ToolType) -> (crate::tool::ToolDefinition, ToolConfig) {
-    let cfg = ToolConfig::new_default(ToolId(0), tool_type);
+    let cfg = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
     let def = build_cutter(&cfg).unwrap();
     (def, cfg)
 }
@@ -1271,7 +1271,7 @@ fn the_static_check_and_the_generator_refuse_the_same_tools() {
             let (tool_def, tool_cfg) = make_tool(kind.tool_type());
             let diagnostic: Vec<String> =
                 crate::diagnostics::adapters::from_static_checks::diagnostics_from_static_checks(
-                    crate::ids::ToolpathId(0),
+                    crate::ids::ToolpathId::from_raw(0),
                     &op,
                     &tool_cfg,
                     None,
@@ -1813,7 +1813,7 @@ mod each_face_p3_5 {
     /// the session. The heights are those the session gives under that
     /// floor: the stock top, and the deepest face floor as the Bottom Z.
     pub fn run(op: &OperationConfig, items: Vec<Item>) -> Result<Toolpath, OperationError> {
-        let tool_cfg = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let tool_cfg = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         let tool_def = build_cutter(&tool_cfg).unwrap();
         let heights = ResolvedHeights {
             clearance_z: 40.0,

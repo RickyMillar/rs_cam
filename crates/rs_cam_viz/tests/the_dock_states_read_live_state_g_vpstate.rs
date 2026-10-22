@@ -116,13 +116,13 @@ fn state_of(state: &AppState, id: &str) -> RowState {
 /// A Toolpaths state with one tool and one 2D model, and no toolpath.
 fn fresh_state() -> AppState {
     let mut state = AppState::new();
-    let mut tool = ToolConfig::new_default(ToolId(TOOL), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     state.replace_session(
         ProjectSessionBuilder::new()
             .tool(tool)
             .model(LoadedModel {
-                id: MODEL,
+                id: rs_cam_core::ids::ModelId::from_raw(MODEL),
                 path: PathBuf::from("model.svg"),
                 name: "2D".to_owned(),
                 kind: Some(ModelKind::Svg),
@@ -147,14 +147,14 @@ fn fresh_state() -> AppState {
 fn config(name: &str) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: ToolpathId(0),
+        id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: OperationConfig::Pocket(Default::default()),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: TOOL,
-        model_id: MODEL,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(TOOL),
+        model_id: rs_cam_core::ids::ModelId::from_raw(MODEL),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -232,7 +232,7 @@ fn add_selected(state: &mut AppState, with_grid: bool, generated: bool) -> Toolp
     });
     state.gui.toolpath_rt.insert(id, rt);
     if generated {
-        let revision = state.session().toolpath_revision(index);
+        let revision = state.session().toolpath_revision_at(index);
         let _effects = state
             .apply(Command::AdoptResult(AdoptResultArgs {
                 index,
@@ -344,7 +344,7 @@ fn every_row_state_arm_is_reachable_from_live_state_g_vpstate() {
 
     // Reach: Computing and Failed for the selection.
     let mut state = fresh_state();
-    let id = ToolpathId(7);
+    let id = ToolpathId::from_raw(7);
     state.selection = Selection::Toolpath(id);
     state.gui.reach_overlay.toolpath = Some(id);
     state.gui.reach_overlay.status = ReachStatus::Computing;
@@ -450,7 +450,7 @@ fn the_rest_row_reads_toolpath_freshness_g_vpstate() {
 #[test]
 fn a_result_for_an_old_target_does_not_take_over_g_vpstate() {
     let mut state = fresh_state();
-    state.selection = Selection::Toolpath(ToolpathId(1));
+    state.selection = Selection::Toolpath(ToolpathId::from_raw(1));
     assert!(!state.viewport.show_collisions, "fixture precondition");
     let mut events = Vec::new();
     assert!(panel::request_compute(
@@ -464,11 +464,11 @@ fn a_result_for_an_old_target_does_not_take_over_g_vpstate() {
         .pending_show
         .clone()
         .expect("the request is tagged");
-    assert_eq!(request.target, Some(ToolpathId(1)));
+    assert_eq!(request.target, Some(ToolpathId::from_raw(1)));
     assert_eq!(request.preferred, None);
 
     // The operator moves on while the check runs.
-    state.selection = Selection::Toolpath(ToolpathId(2));
+    state.selection = Selection::Toolpath(ToolpathId::from_raw(2));
     state.simulation.submitted_collision_epoch = Some(state.session().simulation_epoch());
     land_collision_check(&mut state, 3);
     assert_eq!(panel::settle_pending_show(&mut state), ShowSettle::Dropped);
@@ -481,7 +481,7 @@ fn a_result_for_an_old_target_does_not_take_over_g_vpstate() {
     // The mode tag: the operator chose Off for the model while the rest
     // grid computed.
     let mut state = fresh_state();
-    let id = ToolpathId(9);
+    let id = ToolpathId::from_raw(9);
     state.selection = Selection::Toolpath(id);
     assert!(
         state.viewport.show_reach_map,
@@ -974,7 +974,7 @@ fn escape_closes_one_surface_at_a_time_g_vpstate() {
     let mut overlays = OverlayPanelState::new();
     overlays.open = true;
     overlays.open_section = Some(DockSection::Inspect);
-    overlays.rest_confirm = Some(ToolpathId(3));
+    overlays.rest_confirm = Some(ToolpathId::from_raw(3));
     assert!(overlays.takes_escape_first());
     assert!(overlays.close_one_for_escape());
     assert_eq!(overlays.rest_confirm, None, "the confirm closes first");

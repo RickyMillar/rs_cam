@@ -86,7 +86,7 @@ pub struct StockConfig {
     /// chooses in the stock panel; `ProjectSession::pin_part_models` is
     /// the one reader.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pin_part_models: Option<Vec<usize>>,
+    pub pin_part_models: Option<Vec<crate::ids::ModelId>>,
     // P3 (2026-10-12): `flip_axis` is gone. It was a cache of the setups,
     // and a stale cache drew the wrong axis line. Every reader derives the
     // axis from the setups through [`Self::pin_flip_map`].

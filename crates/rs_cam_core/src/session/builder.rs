@@ -49,7 +49,7 @@ use super::{
 /// - They never call `StockConfig::update_from_bbox`, so a model never moves
 ///   the stock.
 /// - [`Self::result`] stores a pre-inserted result as given and leaves the
-///   revision map empty, so [`ProjectSession::toolpath_revision`] reads `0`.
+///   revision map empty, so [`ProjectSession::toolpath_revision_at`] reads `0`.
 /// - They validate no index and no reference. A toolpath that names an
 ///   absent tool reaches [`Self::build`] unchanged.
 ///
@@ -145,7 +145,9 @@ impl ProjectSessionBuilder {
     }
 
     /// Add a setup. The first call replaces the seeded setup. A later call
-    /// appends. The builder keeps `setup.toolpath_indices` as given.
+    /// appends. A setup from outside the session has no toolpath (F038:
+    /// the list is private); [`Self::toolpath`] and [`Self::add_toolpath`]
+    /// list them.
     pub fn setup(mut self, setup: SetupData) -> Self {
         if self.setup_written {
             self.session.setups.push(setup);
@@ -195,7 +197,7 @@ impl ProjectSessionBuilder {
     /// [`Self::model`] does not. `auto_from_model` DEFAULTS to true, so a
     /// fixture on a default stock must use this method and not
     /// [`Self::model`], or the stock silently keeps its default size.
-    pub fn add_model(&mut self, model: LoadedModel) -> usize {
+    pub fn add_model(&mut self, model: LoadedModel) -> crate::ids::ModelId {
         self.session.add_model_impl(model)
     }
 
@@ -255,27 +257,28 @@ impl ProjectSessionBuilder {
     pub fn build(mut self) -> ProjectSession {
         let next_tool_id = next_above(
             self.session.next_tool_id,
-            self.session.tools.iter().map(|tool| tool.id.0),
+            self.session.tools.iter().map(|tool| tool.id.raw()),
         );
         let next_model_id = next_above(
             self.session.next_model_id,
-            self.session.models.iter().map(|model| model.id),
+            self.session.models.iter().map(|model| model.id.raw()),
         );
         let next_setup_id = next_above(
             self.session.next_setup_id,
-            self.session.setups.iter().map(|setup| setup.id),
+            self.session.setups.iter().map(|setup| setup.id.raw()),
         );
         let next_toolpath_id = next_above(
             self.session.next_toolpath_id,
             self.session
                 .toolpath_configs
                 .iter()
-                .map(|config| config.id.0),
+                .map(|config| config.id.raw()),
         );
         self.session.next_tool_id = next_tool_id;
         self.session.next_model_id = next_model_id;
         self.session.next_setup_id = next_setup_id;
         self.session.next_toolpath_id = next_toolpath_id;
+        self.session.debug_check_toolpath_partition();
         self.session
     }
 }

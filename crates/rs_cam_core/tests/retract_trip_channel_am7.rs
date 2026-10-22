@@ -200,7 +200,7 @@ fn tapered_ball_tool() -> ToolConfig {
         diameter: 1.0,
         taper_half_angle: 7.0,
         shaft_diameter: 6.0,
-        ..ToolConfig::new_default(ToolId(0), ToolType::TaperedBallNose)
+        ..ToolConfig::new_default(ToolId::from_raw(0), ToolType::TaperedBallNose)
     }
 }
 
@@ -283,7 +283,7 @@ fn multi_node_op_reports_nonzero_trips_with_a_trustworthy_split() {
     let mut session = multi_node_session();
     generate(&mut session, 0);
 
-    let result = session.get_result(0).expect("generated result");
+    let result = session.result_at(0).expect("generated result");
     let annotated = result.annotated();
 
     // Fixture sanity: the split assertions below are vacuous if this
@@ -398,8 +398,8 @@ fn intra_region_hookup_ships_on_by_operator_ruling() {
         s
     };
 
-    let o = off.get_result(0).expect("hookup-off generated");
-    let n = on.get_result(0).expect("hookup-on generated");
+    let o = off.result_at(0).expect("hookup-off generated");
+    let n = on.result_at(0).expect("hookup-on generated");
     let (o_moves, n_moves) = (&o.toolpath().moves, &n.toolpath().moves);
 
     let o_trips = compute_retract_trips(o.toolpath(), None).total;

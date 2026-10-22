@@ -246,7 +246,7 @@ fn pocket_merge_tree_census_on_the_rough() {
 
     // 2. The current detector.
     let area = session
-        .get_result(rough_index)
+        .result_at(rough_index)
         .expect("the rough generated")
         .annotated()
         .produced
@@ -257,7 +257,7 @@ fn pocket_merge_tree_census_on_the_rough() {
     let tool = session
         .tools()
         .iter()
-        .find(|t| t.id.0 == tc.tool_id)
+        .find(|t| t.id == tc.tool_id)
         .expect("the rough's tool");
     let cutter = build_cutter(tool).unwrap();
     let mesh = session

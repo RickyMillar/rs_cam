@@ -200,7 +200,7 @@ fn side_row_id(material: &str, d: f64, z: u32) -> String {
 }
 
 fn tool_of(kind: ToolType, diameter: f64, flutes: u32) -> ToolConfig {
-    let mut t = ToolConfig::new_default(ToolId(1), kind);
+    let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;
     t.flute_count = flutes;
     t.cutting_length = (diameter * 4.0).max(12.0);
@@ -406,7 +406,7 @@ fn every_other_cutter_refuses_and_a_bull_never_reads_spektra_g6() {
         // 6 mm shank has no taper.
         let tool = match kind {
             ToolType::TaperedBallNose | ToolType::VBit => {
-                let mut t = ToolConfig::new_default(ToolId(1), kind);
+                let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
                 t.flute_count = 2;
                 t
             }

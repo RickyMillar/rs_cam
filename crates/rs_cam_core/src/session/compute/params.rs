@@ -12,7 +12,6 @@ use std::sync::atomic::AtomicBool;
 
 use tracing::instrument;
 
-use crate::compute::tool_config::ToolId;
 use crate::session::{Command, Effects, ProjectSession, SessionError, SetToolpathParamArgs};
 
 use super::{AdvisorContext, RecommendClearingStrategyHandle, execute_recommend_clearing_strategy};
@@ -562,11 +561,11 @@ impl ProjectSession {
             .write(&mut draft, value)
             .map_err(SessionError::InvalidParam)?;
 
-        let tool_raw_id = draft.id.0;
+        let tool_id = draft.id;
         self.write_checked_tool(index, draft)?;
         if param.changes_the_cut() {
             // Invalidate cached results for all toolpaths that use this tool.
-            self.drop_tool_results(tool_raw_id);
+            self.drop_tool_results(tool_id);
         }
 
         Ok(())
@@ -657,9 +656,9 @@ impl ProjectSession {
             toolpath_name: tc.name.clone(),
             toolpath_enabled: tc.enabled,
             stored_operation: tc.operation.clone(),
-            stored_tool: self.get_tool(ToolId(tc.tool_id)).cloned(),
+            stored_tool: self.tool_by_id(tc.tool_id).cloned(),
             stock_bbox: self.stock_bbox(),
-            model_bbox: self.model_bbox(tc.model_id),
+            model_bbox: self.model_bbox_by_id(tc.model_id),
             setup_ctx: super::SetupEvalContext::build_for_setup(self, setup),
         };
         Ok(RecommendClearingStrategyHandle {

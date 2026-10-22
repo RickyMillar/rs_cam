@@ -9,7 +9,7 @@ use crate::compute::catalog::OperationConfig;
 use crate::compute::obstacle::{Obstacle, validate_obstacle};
 use crate::compute::tool_config::{ToolConfig, ToolId};
 use crate::compute::transform::{FaceUp, ZRotation};
-use crate::ids::ObstacleId;
+use crate::ids::{ModelId, ObstacleId, SetupId};
 use crate::session::{Effects, ProjectSession, SessionError, SetupData, SimulationDropCause};
 
 use super::obstacle_effects;
@@ -36,7 +36,9 @@ impl ProjectSession {
     pub(crate) fn add_model(&mut self, model: super::LoadedModel) -> Effects {
         let mut created = None;
         let mut effects = self.with_effects(None, |session| {
-            created = Some(session.add_model_impl(model));
+            // `Effects::created` is a bare number for every row (an index for
+            // most); the AddModel row puts the id there.
+            created = Some(session.add_model_impl(model).raw());
         });
         effects.created = created;
         effects
@@ -44,8 +46,8 @@ impl ProjectSession {
 
     /// Append the model and report its ID. The raw half of
     /// [`Self::add_model`].
-    pub(crate) fn add_model_impl(&mut self, mut model: super::LoadedModel) -> usize {
-        model.id = self.next_model_id;
+    pub(crate) fn add_model_impl(&mut self, mut model: super::LoadedModel) -> ModelId {
+        model.id = ModelId::mint(self.next_model_id);
         self.next_model_id += 1;
         let id = model.id;
         model.bind_items();
@@ -117,7 +119,7 @@ impl ProjectSession {
     /// Append the tool and report its index. The raw half of
     /// [`Self::add_tool`].
     pub(crate) fn add_tool_impl(&mut self, mut config: ToolConfig) -> usize {
-        config.id = ToolId(self.next_tool_id);
+        config.id = ToolId::mint(self.next_tool_id);
         self.next_tool_id += 1;
         let idx = self.tools.len();
         self.tools.push(config);
@@ -131,16 +133,18 @@ impl ProjectSession {
             let tool = session
                 .tools
                 .get(index)
-                .ok_or(SessionError::ToolNotFound(ToolId(index)))?;
-            let tool_raw_id = tool.id.0;
+                // F004 (W13b): this refusal names the INDEX in an id slot
+                // (the R3 class). The behaviour stays; the lead decides.
+                .ok_or(SessionError::ToolNotFound(ToolId::mint(index)))?;
+            let tool_id = tool.id;
 
             // Check no toolpaths reference this tool
             let in_use = session
                 .toolpath_configs
                 .iter()
-                .any(|tc| tc.tool_id == tool_raw_id);
+                .any(|tc| tc.tool_id == tool_id);
             if in_use {
-                return Err(SessionError::ToolInUse(ToolId(tool_raw_id)));
+                return Err(SessionError::ToolInUse(tool_id));
             }
 
             session.tools.remove(index);
@@ -227,7 +231,7 @@ impl ProjectSession {
     /// Append the setup and report its index. The raw half of
     /// [`Self::add_setup`].
     pub(crate) fn add_setup_impl(&mut self, name: String, face_up: FaceUp) -> usize {
-        let id = self.next_setup_id;
+        let id = SetupId::mint(self.next_setup_id);
         self.next_setup_id += 1;
         let idx = self.setups.len();
         self.setups.push(SetupData {
@@ -281,7 +285,7 @@ impl ProjectSession {
             // edit AND in the selection it edits, so a `list_model_items`
             // key and a viewport pick of one item are one pick. The
             // boundary selection takes the same rule (P4.1).
-            let model = crate::ids::ModelId(tc.model_id);
+            let model = tc.model_id;
             let (slot, op_default, label) = match target {
                 SelectionTarget::Op => {
                     let no_selection = || {
@@ -474,7 +478,8 @@ impl ProjectSession {
         if obstacle.id != obstacle_id {
             return Err(SessionError::InvalidParam(format!(
                 "the replacement obstacle carries id {}, and the command names id {}",
-                obstacle.id.0, obstacle_id.0
+                obstacle.id.raw(),
+                obstacle_id.raw()
             )));
         }
         self.check_obstacle(&obstacle)?;
@@ -487,7 +492,7 @@ impl ProjectSession {
             let Some(slot) = setup.obstacles.iter_mut().find(|o| o.id == obstacle_id) else {
                 return Err(SessionError::InvalidParam(format!(
                     "setup {setup_index} carries no obstacle with id {}",
-                    obstacle_id.0
+                    obstacle_id.raw()
                 )));
             };
             *slot = obstacle;
@@ -515,7 +520,7 @@ impl ProjectSession {
             let Some(position) = setup.obstacles.iter().position(|o| o.id == obstacle_id) else {
                 return Err(SessionError::InvalidParam(format!(
                     "setup {setup_index} carries no obstacle with id {}",
-                    obstacle_id.0
+                    obstacle_id.raw()
                 )));
             };
             let removed = setup.obstacles.remove(position);
@@ -568,7 +573,7 @@ impl ProjectSession {
     /// Store which models count as the part for the pins (P7). `None` is
     /// the default rule. The choice moves no pin and no toolpath, so the
     /// stale set is empty.
-    pub(crate) fn set_pin_part_models(&mut self, models: Option<Vec<usize>>) -> Effects {
+    pub(crate) fn set_pin_part_models(&mut self, models: Option<Vec<ModelId>>) -> Effects {
         self.with_effects(None, move |session| {
             session.stock.pin_part_models = models;
         })

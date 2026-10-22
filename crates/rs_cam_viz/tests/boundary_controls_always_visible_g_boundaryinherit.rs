@@ -108,7 +108,7 @@ fn summary_line_names_the_stored_source() {
     );
     // A selection that is not the closed shapes of one model (P2.5) is
     // counted, not named.
-    let mut picks = Selection::closed_shapes_of(ModelId(3));
+    let mut picks = Selection::closed_shapes_of(ModelId::from_raw(3));
     picks
         .apply(
             rs_cam_core::selection::SelectionEdit::RemoveRule(0),
@@ -129,7 +129,7 @@ fn summary_line_names_the_stored_source() {
     assert_eq!(
         boundary_summary_line(
             &with(BoundarySource::DerivedRestRegions {
-                source_toolpath_id: ToolpathId(7),
+                source_toolpath_id: ToolpathId::from_raw(7),
             }),
             false,
             &[]
@@ -137,11 +137,11 @@ fn summary_line_names_the_stored_source() {
         "Boundary: rest regions of toolpath 7"
     );
     // A model outline names its model, or says the id names none.
-    let models = [(ModelId(3), "machinable_edge_band".to_owned())];
+    let models = [(ModelId::from_raw(3), "machinable_edge_band".to_owned())];
     assert_eq!(
         boundary_summary_line(
             &with(BoundarySource::Selection {
-                selection: Selection::closed_shapes_of(ModelId(3)),
+                selection: Selection::closed_shapes_of(ModelId::from_raw(3)),
                 holes: false,
             }),
             false,
@@ -152,7 +152,7 @@ fn summary_line_names_the_stored_source() {
     assert_eq!(
         boundary_summary_line(
             &with(BoundarySource::Selection {
-                selection: Selection::closed_shapes_of(ModelId(9)),
+                selection: Selection::closed_shapes_of(ModelId::from_raw(9)),
                 holes: false,
             }),
             false,
@@ -164,7 +164,7 @@ fn summary_line_names_the_stored_source() {
     assert_eq!(
         boundary_summary_line(
             &with(BoundarySource::Selection {
-                selection: Selection::closed_shapes_of(ModelId(3)),
+                selection: Selection::closed_shapes_of(ModelId::from_raw(3)),
                 holes: true,
             }),
             false,
@@ -175,7 +175,7 @@ fn summary_line_names_the_stored_source() {
     assert_eq!(
         boundary_summary_line(
             &with(BoundarySource::Selection {
-                selection: Selection::closed_shapes_of(ModelId(9)),
+                selection: Selection::closed_shapes_of(ModelId::from_raw(9)),
                 holes: true,
             }),
             false,

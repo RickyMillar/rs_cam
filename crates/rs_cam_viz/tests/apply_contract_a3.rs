@@ -76,14 +76,14 @@ impl ComputeBackend for SilentBackend {
 fn toolpath(id: usize, op_type: OperationType) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(id),
+        id: rs_cam_core::ToolpathId::from_raw(id),
         name: format!("{op_type:?} fixture"),
         enabled: true,
         operation: OperationConfig::new_default(op_type),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -111,8 +111,10 @@ fn controller_with(op_type: OperationType) -> AppController<SilentBackend> {
 /// file, so the arrangement must not run through it.
 fn controller_with_config(config: ToolpathConfig) -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
-    let mut builder =
-        ProjectSessionBuilder::new().tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::new_default(
+        ToolId::from_raw(1),
+        ToolType::EndMill,
+    ));
     let _ = builder.add_toolpath(0, config).expect("add toolpath");
     controller.state.replace_session(builder.build());
     controller

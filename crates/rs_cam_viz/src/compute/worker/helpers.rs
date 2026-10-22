@@ -115,7 +115,7 @@ pub(super) fn build_simulation_cut_artifact(
                 ),
                 "toolpaths": group.toolpaths.iter().map(|toolpath| {
                     json!({
-                        "toolpath_id": toolpath.id.0,
+                        "toolpath_id": toolpath.id.raw(),
                         "name": toolpath.name,
                         "tool": toolpath.tool_summary,
                     })

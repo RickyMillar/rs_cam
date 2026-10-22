@@ -578,8 +578,7 @@ impl AppState {
     /// back-setup stock.
     pub fn active_setup_index(&self) -> Option<usize> {
         let setups = self.session.list_setups();
-        let by_id =
-            |id: job::SetupId| -> Option<usize> { setups.iter().position(|s| s.id == id.0) };
+        let by_id = |id: job::SetupId| -> Option<usize> { setups.iter().position(|s| s.id == id) };
         match &self.selection {
             Selection::Setup(id) | Selection::Obstacle(id, _) => by_id(*id),
             Selection::Toolpath(tp_id) => self.session.setup_of_toolpath_id(*tp_id),
@@ -680,7 +679,7 @@ mod tests {
 
     fn feeds_modal_fixture() -> FeedsModalState {
         FeedsModalState {
-            toolpath_id: rs_cam_core::ToolpathId(0),
+            toolpath_id: rs_cam_core::ToolpathId::from_raw(0),
             explore: None,
         }
     }

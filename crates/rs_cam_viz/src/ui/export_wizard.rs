@@ -481,8 +481,10 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
             .small(),
     );
     ui.add_space(4.0);
-    let mut by_tool: std::collections::BTreeMap<usize, Vec<&rs_cam_core::session::ToolpathConfig>> =
-        std::collections::BTreeMap::new();
+    let mut by_tool: std::collections::BTreeMap<
+        rs_cam_core::ids::ToolId,
+        Vec<&rs_cam_core::session::ToolpathConfig>,
+    > = std::collections::BTreeMap::new();
     for tc in &enabled_tcs {
         by_tool.entry(tc.tool_id).or_default().push(*tc);
     }
@@ -502,7 +504,7 @@ fn step_tool_change(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
                 let tool_name = session
                     .tools()
                     .iter()
-                    .find(|t| t.id.0 == *tool_id)
+                    .find(|t| t.id == *tool_id)
                     .map_or_else(|| format!("tool {tool_id}"), |t| t.name.clone());
                 ui.label(tool_name);
                 ui.label(format!("{}", tcs.len()));
@@ -1027,7 +1029,7 @@ fn step_save(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 
     let mut total_moves = 0usize;
     let mut cutting_dist = 0.0f64;
-    let mut tool_set: Vec<usize> = Vec::new();
+    let mut tool_set: Vec<rs_cam_core::ids::ToolId> = Vec::new();
     let mut longest_cut = 0.0f64;
     for tc in session.toolpath_configs() {
         if !tc.enabled {

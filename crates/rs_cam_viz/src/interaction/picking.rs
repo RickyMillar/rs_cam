@@ -76,7 +76,7 @@ pub struct PickContext<'a> {
 impl PickContext<'_> {
     /// True when the viewport draws the model `model_id`, so a pick may
     /// hit it.
-    fn shows(&self, model_id: usize) -> bool {
+    fn shows(&self, model_id: rs_cam_core::ids::ModelId) -> bool {
         self.visibility.is_visible(model_id)
     }
 }
@@ -151,7 +151,7 @@ pub fn pick(
     // that frame moved by the setup's emission-to-display shift.
     if workspace == Workspace::Setup
         && let Some((frame, setup_id)) = display_setup
-        && let Some((_, setup)) = session.find_setup_by_id(setup_id.0)
+        && let Some((_, setup)) = session.find_setup_by_id(*setup_id)
     {
         let shift = frame.emission_to_display_shift(stock);
         for obstacle in &setup.obstacles {
@@ -261,7 +261,7 @@ fn pick_model_face(
                 best = Some((
                     t,
                     PickHit::ModelFace {
-                        model_id: ModelId(model.id),
+                        model_id: model.id,
                         face_id,
                     },
                 ));
@@ -276,7 +276,7 @@ fn pick_model_face(
             best = Some((
                 t,
                 PickHit::MeshFace {
-                    model_id: ModelId(model.id),
+                    model_id: model.id,
                     point: model_origin + model_dir * t,
                 },
             ));
@@ -542,7 +542,7 @@ pub fn selection_frame_bounds(
     for key in keys {
         let model_id = match key.source {
             SourceRef::ToolpathModel => Some(tc.model_id),
-            SourceRef::Model(m) => Some(m.0),
+            SourceRef::Model(m) => Some(m),
             SourceRef::Stock => None,
         };
         let Some(model_id) = model_id else {
@@ -623,7 +623,7 @@ pub fn model_items_bounds(
     model_id: ModelId,
     keys: &[rs_cam_core::selection::MatchKey],
 ) -> Option<BoundingBox3> {
-    let model = session.models().iter().find(|m| m.id == model_id.0)?;
+    let model = session.models().iter().find(|m| m.id == model_id)?;
     let stock = session.stock_config();
     let frame = model_display_frame(session, model_id);
     let z = drawing_display_z(frame.as_ref(), stock);
@@ -666,7 +666,7 @@ pub fn pick_open_path(
     let model = session
         .models()
         .iter()
-        .find(|m| m.id == model_id.0 && ctx.shows(m.id))?;
+        .find(|m| m.id == model_id && ctx.shows(m.id))?;
     let stock = session.stock_config();
     let frame = model_display_frame(session, model_id);
     let z = drawing_display_z(frame.as_ref(), stock);
@@ -1020,7 +1020,7 @@ pub fn tab_scene(
     let frame = toolpath_setup_frame(session, id);
     let z = drawing_plane_z(session, tc, frame.as_ref());
     let half_bar = session
-        .get_tool(rs_cam_core::compute::tool_config::ToolId(tc.tool_id))
+        .tool_by_id(tc.tool_id)
         .map_or(POINT_MARK_RADIUS_MM, |t| t.diameter / 2.0);
     let tabs = answer
         .marks

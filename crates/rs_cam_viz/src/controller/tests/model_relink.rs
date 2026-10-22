@@ -34,7 +34,7 @@ fn missing_model_relink_g_modelrelink() {
 
     // Make the toolpath look generated, so the invalidation assertion below
     // is not comparing two empty caches.
-    let revision = controller.state.session().toolpath_revision(0);
+    let revision = controller.state.session().toolpath_revision_at(0);
     let _ = controller
         .state
         .apply(Command::AdoptResult(AdoptResultArgs {
@@ -66,7 +66,7 @@ fn missing_model_relink_g_modelrelink() {
     let located = dir.join("models/plate.stl");
     std::fs::copy(fixture_path("flat_plate.stl"), &located).expect("stage the located file");
     controller.handle_internal_event(AppEvent::RelinkModel(
-        crate::state::job::ModelId(1),
+        crate::state::job::ModelId::from_raw(1),
         located.clone(),
     ));
 
@@ -74,7 +74,11 @@ fn missing_model_relink_g_modelrelink() {
     assert!(model.mesh.is_some(), "the geometry loaded");
     assert!(model.load_error.is_none(), "and the complaint is gone");
     assert_eq!(model.path, located, "the model now points at the new file");
-    assert_eq!(model.id, 1, "IDENTITY IS KEPT — this is the whole point");
+    assert_eq!(
+        model.id,
+        rs_cam_core::ids::ModelId::from_raw(1),
+        "IDENTITY IS KEPT — this is the whole point"
+    );
     assert_eq!(
         model.name, "Plate",
         "and so is the name the operator gave it"
@@ -85,7 +89,7 @@ fn missing_model_relink_g_modelrelink() {
     // `invalidate_model` keys on the id, which is why it is the right
     // instrument for a relink.
     assert!(
-        controller.state.session().get_result(0).is_none(),
+        controller.state.session().result_at(0).is_none(),
         "every result built on the old geometry is dropped"
     );
     assert_eq!(
@@ -134,7 +138,7 @@ fn a_model_outside_the_project_directory_saves_absolute_g_modelrelink() {
 
     let outside = fixture_path("flat_plate.stl");
     controller.handle_internal_event(AppEvent::RelinkModel(
-        crate::state::job::ModelId(1),
+        crate::state::job::ModelId::from_raw(1),
         outside.clone(),
     ));
     assert!(controller.state.session().models()[0].mesh.is_some());
@@ -161,7 +165,7 @@ fn a_relink_to_another_kind_is_refused_g_modelrelink() {
     let before = controller.state.session().models()[0].path.clone();
 
     controller.handle_internal_event(AppEvent::RelinkModel(
-        crate::state::job::ModelId(1),
+        crate::state::job::ModelId::from_raw(1),
         fixture_path("square.svg"),
     ));
 

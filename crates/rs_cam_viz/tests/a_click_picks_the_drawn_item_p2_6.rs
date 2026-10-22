@@ -95,14 +95,14 @@ impl ComputeBackend for SilentBackend {
 fn toolpath(name: &str, operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
-        id: rs_cam_core::ToolpathId(0),
+        id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: 1,
-        model_id: 0,
+        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
         boundary: Default::default(),
@@ -118,7 +118,7 @@ fn toolpath(name: &str, operation: OperationConfig) -> ToolpathConfig {
 
 fn model(name: &str, items: ItemSet) -> LoadedModel {
     LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: name.to_owned(),
         mesh: None,
         items: Arc::new(items),
@@ -163,7 +163,10 @@ fn drill_controller(face_up: FaceUp, turn: ZRotation) -> AppController<SilentBac
     };
     let mut builder = ProjectSessionBuilder::new()
         .stock(stock)
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+        .tool(ToolConfig::new_default(
+            ToolId::from_raw(1),
+            ToolType::EndMill,
+        ));
     let model_id = builder.add_model(model("holes.dxf", items));
     let mut tc = toolpath("Drill", OperationConfig::Drill(Default::default()));
     tc.model_id = model_id;
@@ -348,9 +351,13 @@ fn a_click_on_a_drawn_face_picks_it_on_a_flipped_setup() {
         auto_from_model: false,
         ..StockConfig::default()
     };
-    let mut builder = ProjectSessionBuilder::new()
-        .stock(stock.clone())
-        .tool(ToolConfig::new_default(ToolId(1), ToolType::EndMill));
+    let mut builder =
+        ProjectSessionBuilder::new()
+            .stock(stock.clone())
+            .tool(ToolConfig::new_default(
+                ToolId::from_raw(1),
+                ToolType::EndMill,
+            ));
     let model_id = builder.add_model(part);
     let mut tc = toolpath("Pocket", OperationConfig::Pocket(Default::default()));
     tc.model_id = model_id;
@@ -423,7 +430,7 @@ fn a_click_on_a_drawn_face_picks_it_on_a_flipped_setup() {
     // P4.D follow-up: a hidden model draws no mesh, so the click hits no
     // face of it. Red proof: the `ctx.shows` filter in `pick_model_face`
     // removed; the click hit the hidden face.
-    hide(&mut c, model_id);
+    hide(&mut c, model_id.raw());
     let hit = click(&c, &camera, screen(&camera, drawn), None);
     assert!(
         !matches!(hit, Some(PickHit::ModelFace { .. })),
@@ -435,11 +442,16 @@ fn a_click_on_a_drawn_face_picks_it_on_a_flipped_setup() {
 fn hide(c: &mut AppController<SilentBackend>, model_id: usize) {
     c.handle_internal_event(AppEvent::Ui(UiCommand::SetModelVisibility(
         SetModelVisibilityArgs {
-            model_id,
+            model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
             visible: false,
         },
     )));
-    assert!(!c.state().overlays.model_visibility.is_visible(model_id));
+    assert!(
+        !c.state()
+            .overlays
+            .model_visibility
+            .is_visible(rs_cam_core::ids::ModelId::from_raw(model_id))
+    );
 }
 
 /// Geometry selection P4.D follow-up: a hidden model draws no hole marker,
@@ -471,7 +483,7 @@ fn a_hidden_model_takes_no_click_p4_d() {
         "fixture: the click hits the visible hole: {hit:?}"
     );
 
-    hide(&mut c, tc.model_id);
+    hide(&mut c, tc.model_id.raw());
     let hit = click(&c, &camera, at, Some(tc.id));
     assert!(
         !matches!(hit, Some(PickHit::Item { .. })),

@@ -185,7 +185,7 @@ pub fn new_draft(
         is_new: true,
         draft: StockChange {
             id,
-            name: format!("Change {}", id.0 + 1),
+            name: format!("Change {}", id.raw() + 1),
             enabled: true,
             op: StockChangeOp::Add,
             geometry: StockGeometry::OutlineFill {
@@ -229,7 +229,7 @@ pub fn set_geometry_kind(
                 .copied()
                 .find(|id| models.iter().any(|m| m.id == *id && m.has_mesh))
                 .or_else(|| models.iter().find(|m| m.has_mesh).map(|m| m.id))
-                .unwrap_or(ModelId(0)),
+                .unwrap_or(ModelId::placeholder()),
         },
         GeometryKind::OutlineFill => StockGeometry::OutlineFill {
             model_ids: outline_ids,
@@ -322,7 +322,7 @@ fn draw_row(
             .as_ref()
             .is_some_and(|e| e.setup_id == setup_id && !e.is_new && e.draft.id == change_id);
         let name = if row.change.name.is_empty() {
-            format!("Change {}", change_id.0 + 1)
+            format!("Change {}", change_id.raw() + 1)
         } else {
             row.change.name.clone()
         };
@@ -631,13 +631,13 @@ mod tests {
     fn models() -> Vec<ModelChoice> {
         vec![
             ModelChoice {
-                id: ModelId(1),
+                id: ModelId::from_raw(1),
                 name: "part.stl".to_owned(),
                 has_mesh: true,
                 has_closed_outline: false,
             },
             ModelChoice {
-                id: ModelId(2),
+                id: ModelId::from_raw(2),
                 name: "channels.dxf".to_owned(),
                 has_mesh: false,
                 has_closed_outline: true,
@@ -648,7 +648,7 @@ mod tests {
     fn row(change: StockChange) -> StockChangeRow {
         StockChangeRow {
             setup_index: 0,
-            setup_id: 0,
+            setup_id: rs_cam_core::ids::SetupId::from_raw(0),
             setup_name: "Setup 1".to_owned(),
             position: 0,
             change,
@@ -662,9 +662,9 @@ mod tests {
             name: "Resin".to_owned(),
             feed_scale_factor: 1.0,
         };
-        let first = new_draft(SetupId(0), &[], (-20.0, 0.0), &material);
+        let first = new_draft(SetupId::from_raw(0), &[], (-20.0, 0.0), &material);
         assert!(first.is_new);
-        assert_eq!(first.draft.id, StockChangeId(0));
+        assert_eq!(first.draft.id, StockChangeId::from_raw(0));
         assert_eq!(first.draft.material, material);
         assert_eq!(
             first.draft.geometry,
@@ -674,16 +674,16 @@ mod tests {
             }
         );
         let mut held = first.draft;
-        held.id = StockChangeId(3);
-        let second = new_draft(SetupId(0), &[row(held)], (-20.0, 0.0), &material);
-        assert_eq!(second.draft.id, StockChangeId(4));
+        held.id = StockChangeId::from_raw(3);
+        let second = new_draft(SetupId::from_raw(0), &[row(held)], (-20.0, 0.0), &material);
+        assert_eq!(second.draft.id, StockChangeId::from_raw(4));
     }
 
     #[test]
     fn a_kind_switch_keeps_the_models_the_new_kind_can_use() {
         let models = models();
         let mut geometry = StockGeometry::OutlineFill {
-            model_ids: vec![ModelId(2)],
+            model_ids: vec![ModelId::from_raw(2)],
             level_z: 3.0,
         };
         set_geometry_kind(
@@ -695,7 +695,7 @@ mod tests {
         assert_eq!(
             geometry,
             StockGeometry::OutlineExtrude {
-                model_ids: vec![ModelId(2)],
+                model_ids: vec![ModelId::from_raw(2)],
                 z_bottom: -20.0,
                 z_top: 3.0
             }
@@ -704,7 +704,7 @@ mod tests {
         assert_eq!(
             geometry,
             StockGeometry::Model {
-                model_id: ModelId(1)
+                model_id: ModelId::from_raw(1)
             },
             "the outline model is no mesh, so the first mesh model is picked"
         );
@@ -730,7 +730,7 @@ mod tests {
             name: "Resin".to_owned(),
             feed_scale_factor: 1.0,
         };
-        let mut change = new_draft(SetupId(0), &[], (0.0, 10.0), &material).draft;
+        let mut change = new_draft(SetupId::from_raw(0), &[], (0.0, 10.0), &material).draft;
         assert_eq!(
             change.cut_as,
             CutAs::StockMaterial,
@@ -747,7 +747,7 @@ mod tests {
         );
         change.op = StockChangeOp::Remove;
         change.geometry = StockGeometry::Model {
-            model_id: ModelId(1),
+            model_id: ModelId::from_raw(1),
         };
         assert_eq!(row_summary(&row(change)), "Remove · model");
     }

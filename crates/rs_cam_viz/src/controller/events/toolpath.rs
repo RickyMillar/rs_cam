@@ -40,25 +40,25 @@ impl<B: ComputeBackend> AppController<B> {
                     .session()
                     .list_setups()
                     .iter()
-                    .position(|s| s.id == sid.0)
+                    .position(|s| s.id == sid)
             }),
             Selection::Setup(setup_id) => self
                 .state
                 .session()
                 .list_setups()
                 .iter()
-                .position(|s| s.id == setup_id.0),
+                .position(|s| s.id == setup_id),
             Selection::Obstacle(setup_id, _) => self
                 .state
                 .session()
                 .list_setups()
                 .iter()
-                .position(|s| s.id == setup_id.0),
+                .position(|s| s.id == setup_id),
             _ => None,
         }
         .or(Some(0)); // default to first setup
 
-        let Some(tool_id) = self.state.session().tools().first().map(|t| t.id.0) else {
+        let Some(tool_id) = self.state.session().tools().first().map(|t| t.id) else {
             tracing::warn!("Cannot add toolpath: no tools defined");
             self.push_notification(
                 "Cannot add toolpath: no tools defined".into(),
@@ -83,15 +83,14 @@ impl<B: ComputeBackend> AppController<B> {
             .session()
             .models()
             .first()
-            .map(|m| m.id)
-            .unwrap_or(0);
-        let model_bbox = self.state.session().model_bbox(model_id);
+            .map_or(rs_cam_core::ids::ModelId::placeholder(), |m| m.id);
+        let model_bbox = self.state.session().model_bbox_by_id(model_id);
         let Some(tool) = self
             .state
             .session()
             .tools()
             .iter()
-            .find(|t| t.id.0 == tool_id)
+            .find(|t| t.id == tool_id)
         else {
             tracing::warn!("Cannot add toolpath: selected tool not found");
             self.push_notification(
@@ -162,7 +161,7 @@ impl<B: ComputeBackend> AppController<B> {
         }
         let tc = rs_cam_core::session::ToolpathConfig {
             shoe: Default::default(),
-            id: rs_cam_core::ToolpathId(0), // will be assigned by session
+            id: rs_cam_core::ToolpathId::placeholder(), // will be assigned by session
             name: format!(
                 "{} {}",
                 op_type.label(),
@@ -235,7 +234,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .session()
                 .list_setups()
                 .iter()
-                .position(|s| s.id == sid.0)
+                .position(|s| s.id == sid)
         });
 
         // Build a new ToolpathConfig by reading fields from the source
@@ -246,7 +245,7 @@ impl<B: ComputeBackend> AppController<B> {
             .map(|(_, src)| {
                 rs_cam_core::session::ToolpathConfig {
                     shoe: src.shoe,
-                    id: rs_cam_core::ToolpathId(0), // will be assigned by session
+                    id: rs_cam_core::ToolpathId::placeholder(), // will be assigned by session
                     name: format!("{} (copy)", src.name),
                     enabled: src.enabled,
                     operation: src.operation.clone(),
@@ -299,13 +298,13 @@ impl<B: ComputeBackend> AppController<B> {
                 .session()
                 .list_setups()
                 .iter()
-                .find(|s| s.toolpath_indices.contains(&tp_idx))
-            && let Some(local_pos) = setup.toolpath_indices.iter().position(|&i| i == tp_idx)
+                .find(|s| s.toolpath_indices().contains(&tp_idx))
+            && let Some(local_pos) = setup.toolpath_indices().iter().position(|&i| i == tp_idx)
             && local_pos > 0
         {
             // SAFETY: local_pos - 1 is valid since local_pos > 0
             #[allow(clippy::indexing_slicing)]
-            let swap_with = setup.toolpath_indices[local_pos - 1];
+            let swap_with = setup.toolpath_indices()[local_pos - 1];
             let command = Command::ReorderToolpath(ReorderToolpathArgs {
                 from_index: tp_idx,
                 to_index: swap_with,
@@ -322,10 +321,10 @@ impl<B: ComputeBackend> AppController<B> {
                 .session()
                 .list_setups()
                 .iter()
-                .find(|s| s.toolpath_indices.contains(&tp_idx))
-            && let Some(local_pos) = setup.toolpath_indices.iter().position(|&i| i == tp_idx)
-            && local_pos + 1 < setup.toolpath_indices.len()
-            && let Some(&swap_with) = setup.toolpath_indices.get(local_pos + 1)
+                .find(|s| s.toolpath_indices().contains(&tp_idx))
+            && let Some(local_pos) = setup.toolpath_indices().iter().position(|&i| i == tp_idx)
+            && local_pos + 1 < setup.toolpath_indices().len()
+            && let Some(&swap_with) = setup.toolpath_indices().get(local_pos + 1)
         {
             let command = Command::ReorderToolpath(ReorderToolpathArgs {
                 from_index: tp_idx,
@@ -356,12 +355,12 @@ impl<B: ComputeBackend> AppController<B> {
                 .session()
                 .list_setups()
                 .iter()
-                .find(|s| s.toolpath_indices.contains(&tp_idx))
-            && let Some(local_pos) = setup.toolpath_indices.iter().position(|&i| i == tp_idx)
+                .find(|s| s.toolpath_indices().contains(&tp_idx))
+            && let Some(local_pos) = setup.toolpath_indices().iter().position(|&i| i == tp_idx)
         {
-            let gap = target_idx.min(setup.toolpath_indices.len());
+            let gap = target_idx.min(setup.toolpath_indices().len());
             let clamped = if gap > local_pos { gap - 1 } else { gap };
-            if let Some(&target_global_idx) = setup.toolpath_indices.get(clamped)
+            if let Some(&target_global_idx) = setup.toolpath_indices().get(clamped)
                 && tp_idx != target_global_idx
             {
                 let command = Command::ReorderToolpath(ReorderToolpathArgs {
@@ -395,7 +394,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .session()
                 .list_setups()
                 .iter()
-                .position(|s| s.id == setup_id.0);
+                .position(|s| s.id == setup_id);
             if let Some(target_setup_idx) = target_idx {
                 let command = Command::MoveToolpathToSetup(MoveToolpathToSetupArgs {
                     toolpath_index: tp_idx,

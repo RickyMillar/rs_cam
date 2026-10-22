@@ -114,7 +114,7 @@ fn generate(session: &mut ProjectSession, index: usize) -> Result<(), SessionErr
 
 /// Moves that actually cut — the same population the gate counts.
 fn cutting_moves(session: &ProjectSession, index: usize) -> usize {
-    session.get_result(index).map_or(0, |r| {
+    session.result_at(index).map_or(0, |r| {
         r.toolpath()
             .moves
             .iter()
@@ -184,7 +184,7 @@ fn a_refused_generation_leaves_no_cached_result() {
     let mut session = pocket_session(OVERSIZE_TOOL_D);
     let _ = generate(&mut session, 0);
     assert!(
-        session.get_result(0).is_none(),
+        session.result_at(0).is_none(),
         "a refused generation must cache nothing — a 0-move result left in \
          `session.results` is exportable, simulatable, and counts as \
          'generated' to the phantom-prior-stock scan"
@@ -260,18 +260,28 @@ fn an_empty_rest_pass_keeps_its_prior_stock_snapshot() {
     let mut builder = ProjectSessionBuilder::new();
     builder = builder.stock(stock_under(HALF, STOCK_Z));
     let rough_idx = builder.add_tool(endmill_tool_config(FITTING_TOOL_D));
-    let rough_tool = builder.tools()[rough_idx].id.0;
+    let rough_tool = builder.tools()[rough_idx].id.raw();
     let rest_idx = builder.add_tool(endmill_tool_config(OVERSIZE_TOOL_D));
-    let rest_tool = builder.tools()[rest_idx].id.0;
+    let rest_tool = builder.tools()[rest_idx].id.raw();
     let model_id = builder.add_model(polygon_model(vec![square_polygon(HALF)], "square"));
 
     let _ = builder
         .add_toolpath(
             0,
-            toolpath_config("Rough", pocket_op(), rough_tool, model_id),
+            toolpath_config(
+                "Rough",
+                pocket_op(),
+                rs_cam_core::ids::ToolId::from_raw(rough_tool),
+                model_id,
+            ),
         )
         .expect("add rough");
-    let mut rest_cfg = toolpath_config("Rest pocket", pocket_op(), rest_tool, model_id);
+    let mut rest_cfg = toolpath_config(
+        "Rest pocket",
+        pocket_op(),
+        rs_cam_core::ids::ToolId::from_raw(rest_tool),
+        model_id,
+    );
     rest_cfg.stock_source = StockSource::FromRemainingStock;
     let _ = builder.add_toolpath(0, rest_cfg).expect("add rest pocket");
     let mut session = builder.build();

@@ -113,7 +113,7 @@ pub(crate) fn selection_report_json(
         "selected": report.selected.iter().map(key_json).collect::<Vec<_>>(),
         // P4.7: the STL models whose flat faces are not computed yet
         // ("computing faces"); generation computes them itself.
-        "faces_not_ready": report.faces_not_ready.iter().map(|m| m.0).collect::<Vec<_>>(),
+        "faces_not_ready": report.faces_not_ready.iter().map(|m| m.raw()).collect::<Vec<_>>(),
     })
 }
 
@@ -134,7 +134,7 @@ pub(crate) fn list_model_items_reply(
     p: &ListModelItemsParam,
 ) -> serde_json::Value {
     let query = Query::ListItems(ListItemsArgs {
-        model_id: p.model_id,
+        model_id: rs_cam_core::ids::ModelId::from_wire(p.model_id),
         layer: p.layer.clone(),
         kind: p.kind.map(Into::into),
         near: p.near.map(Into::into),
@@ -171,7 +171,7 @@ pub(crate) fn selection_status_reply(
     index: usize,
     target: SelectionTarget,
 ) -> serde_json::Value {
-    let Some(tc) = session.get_toolpath_config(index) else {
+    let Some(tc) = session.toolpath_config_at(index) else {
         return serde_json::json!({
             "error": format!("Toolpath index {index} not found"),
         });
@@ -229,7 +229,7 @@ pub(crate) fn tab_layout_json(answer: &TabLayoutAnswer) -> serde_json::Value {
 /// The `tab_layout` reply for the toolpath at `index`: the answer of the
 /// core query row, with the toolpath's name and its `tab_points`.
 pub(crate) fn tab_layout_reply(session: &ProjectSession, index: usize) -> serde_json::Value {
-    let Some(tc) = session.get_toolpath_config(index) else {
+    let Some(tc) = session.toolpath_config_at(index) else {
         return serde_json::json!({
             "error": format!("Toolpath index {index} not found"),
         });
@@ -314,7 +314,7 @@ impl RsCamApp {
         let applied = {
             let session = self.controller.state().session();
             session
-                .get_toolpath_config(index)
+                .toolpath_config_at(index)
                 .map_or(serde_json::Value::Null, |tc| {
                     let status = session
                         .selection_status(tc, target)
@@ -371,14 +371,14 @@ mod tests {
     fn add_op(s: &mut ProjectSession, op: OperationType, tool_id: usize) -> usize {
         let config = ToolpathConfig {
             shoe: Default::default(),
-            id: rs_cam_core::ToolpathId(0),
+            id: rs_cam_core::ToolpathId::from_raw(0),
             name: op.kind_str().to_owned(),
             enabled: true,
             operation: OperationConfig::new_default(op),
             dressups: DressupConfig::default(),
             heights: HeightsConfig::default(),
-            tool_id,
-            model_id: 0,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+            model_id: rs_cam_core::ids::ModelId::from_raw(0),
             pre_gcode: None,
             post_gcode: None,
             boundary: BoundaryConfig::default(),
@@ -420,7 +420,7 @@ mod tests {
             .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf");
         let model = rs_cam_core::io::load_model_file(
             &path,
-            0,
+            rs_cam_core::ids::ModelId::from_raw(0),
             ModelKind::Dxf,
             ModelUnits::Millimeters,
             Default::default(),
@@ -433,7 +433,7 @@ mod tests {
                 model: Box::new(model),
             }),
         );
-        let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         tool.diameter = 3.0;
         let tool_index = apply(
             &mut s,
@@ -443,7 +443,7 @@ mod tests {
         )
         .created
         .expect("the tool is created");
-        let tool_id = s.tools()[tool_index].id.0;
+        let tool_id = s.tools()[tool_index].id.raw();
 
         let pocket = add_op(&mut s, OperationType::Pocket, tool_id);
         edit(
@@ -459,12 +459,16 @@ mod tests {
         );
 
         let circles = s
-            .list_model_items(0, Some("HOLES"), Some(ItemKind::Circle))
+            .list_model_items(
+                rs_cam_core::ids::ModelId::from_raw(0),
+                Some("HOLES"),
+                Some(ItemKind::Circle),
+            )
             .expect("the model exists");
         assert_eq!(circles.len(), 2, "the drawing holds two circles");
         // P6.5 (O-3): a Drill drills a circle of the tool size only, so the
         // drills get a tool of the picked circle size.
-        let mut drill_tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+        let mut drill_tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
         drill_tool.diameter = circles[0].key.measure;
         let drill_tool_index = apply(
             &mut s,
@@ -474,7 +478,7 @@ mod tests {
         )
         .created
         .expect("the drill tool is created");
-        let drill_tool_id = s.tools()[drill_tool_index].id.0;
+        let drill_tool_id = s.tools()[drill_tool_index].id.raw();
         let drill = add_op(&mut s, OperationType::Drill, drill_tool_id);
         edit(
             &mut s,
@@ -520,7 +524,7 @@ mod tests {
         );
         assert_eq!(s.toolpath_count(), 5);
         for index in 0..5 {
-            let tc = s.get_toolpath_config(index).unwrap().clone();
+            let tc = s.toolpath_config_at(index).unwrap().clone();
             let memo = s
                 .selection_status(&tc, SelectionTarget::Op)
                 .expect("the selection resolves");
@@ -700,7 +704,11 @@ mod tests {
 
         let mut s = project();
         let circles = s
-            .list_model_items(0, Some("HOLES"), Some(ItemKind::Circle))
+            .list_model_items(
+                rs_cam_core::ids::ModelId::from_raw(0),
+                Some("HOLES"),
+                Some(ItemKind::Circle),
+            )
             .unwrap();
         // Toolpath 3 (a default Pocket) gets a selection boundary with no
         // item, then one circle through the wire edit.
@@ -734,7 +742,7 @@ mod tests {
             }),
         );
 
-        let tc = s.get_toolpath_config(3).unwrap().clone();
+        let tc = s.toolpath_config_at(3).unwrap().clone();
         let memo = s.selection_status(&tc, SelectionTarget::Boundary).unwrap();
         let QueryAnswer::SelectionStatus(query) = s
             .query(Query::SelectionStatus(SelectionStatusArgs {
@@ -777,7 +785,9 @@ mod tests {
     #[test]
     fn the_item_rows_carry_keys_an_agent_can_pick_with() {
         let s = project();
-        let items = s.list_model_items(0, None, None).unwrap();
+        let items = s
+            .list_model_items(rs_cam_core::ids::ModelId::from_raw(0), None, None)
+            .unwrap();
         let rows: Vec<serde_json::Value> = items.iter().map(model_item_json).collect();
         // The key of each row parses as the wire key and names its model.
         for row in &rows {
@@ -795,7 +805,7 @@ mod tests {
     }
     /// The stored selection of op `index`.
     fn stored(s: &ProjectSession, index: usize) -> Selection {
-        s.get_toolpath_config(index)
+        s.toolpath_config_at(index)
             .unwrap()
             .operation
             .selection()
@@ -829,14 +839,18 @@ mod tests {
     fn an_mcp_near_pick_and_a_gui_click_give_one_pick_p4_5() {
         // Toolpath 1 is a Drill with one picked circle; pick the other.
         let circles = project()
-            .list_model_items(0, Some("HOLES"), Some(ItemKind::Circle))
+            .list_model_items(
+                rs_cam_core::ids::ModelId::from_raw(0),
+                Some("HOLES"),
+                Some(ItemKind::Circle),
+            )
             .unwrap();
         let other = circles[1].key.clone();
 
         // GUI: the click on the drawn circle sends `TogglePick` of the item
         // key; the controller asks `pick_edit`.
         let mut gui = project();
-        let tc = gui.get_toolpath_config(1).unwrap().clone();
+        let tc = gui.toolpath_config_at(1).unwrap().clone();
         let item_key = gui.models()[0]
             .items
             .iter()
@@ -869,7 +883,7 @@ mod tests {
         // Shift-click on a HOLES circle of the default Pocket (toolpath 3),
         // loops and circles on, Ø range on.
         let mut gui = project();
-        let tc = gui.get_toolpath_config(3).unwrap().clone();
+        let tc = gui.toolpath_config_at(3).unwrap().clone();
         let range = rs_cam_core::selection::DiameterRange {
             nominal_mm: circles[0].measure,
             tolerance_mm: 0.1,
@@ -945,7 +959,7 @@ mod tests {
             quad(p(8., 3., 8.), p(12., 3., 8.), p(12., 7., 8.), p(8., 7., 8.));
             let mesh = rs_cam_core::mesh::TriangleMesh::from_raw(vertices, triangles);
             let model = rs_cam_core::session::LoadedModel {
-                id: 0,
+                id: rs_cam_core::ids::ModelId::from_raw(0),
                 name: "stepped.stl".to_owned(),
                 mesh: Some(std::sync::Arc::new(mesh)),
                 items: Default::default(),
@@ -969,12 +983,15 @@ mod tests {
             let tool_index = apply(
                 &mut s,
                 Command::AddTool(AddToolArgs {
-                    tool: Box::new(ToolConfig::new_default(ToolId(0), ToolType::EndMill)),
+                    tool: Box::new(ToolConfig::new_default(
+                        ToolId::from_raw(0),
+                        ToolType::EndMill,
+                    )),
                 }),
             )
             .created
             .unwrap();
-            let tool_id = s.tools()[tool_index].id.0;
+            let tool_id = s.tools()[tool_index].id.raw();
             let _ = add_op(&mut s, OperationType::Pocket, tool_id);
             s
         }
@@ -1022,16 +1039,22 @@ mod tests {
         // The job fills the cache; the click rule names the face.
         let cancel = std::sync::atomic::AtomicBool::new(false);
         let Ok(JobHandle::BuildModelFaces(handle)) = gui.start(
-            Job::BuildModelFaces(BuildModelFacesArgs { model_id: 0 }),
+            Job::BuildModelFaces(BuildModelFacesArgs {
+                model_id: rs_cam_core::ids::ModelId::from_raw(0),
+            }),
             &cancel,
         ) else {
             panic!("the build_model_faces row starts");
         };
         let built = rs_cam_core::session::execute_build_model_faces(&handle, &cancel).unwrap();
         assert_eq!(built.faces, 2);
-        let tc = gui.get_toolpath_config(0).unwrap().clone();
+        let tc = gui.toolpath_config_at(0).unwrap().clone();
         let click = gui
-            .face_pick_key_at(&tc, 0, P3::new(2.0, 2.0, 5.0))
+            .face_pick_key_at(
+                &tc,
+                rs_cam_core::ids::ModelId::from_raw(0),
+                P3::new(2.0, 2.0, 5.0),
+            )
             .expect("the click names the Z 5 face");
         let edit_of_click = gui.pick_edit(&tc, SelectionTarget::Op, click).unwrap();
         edit(&mut gui, 0, edit_of_click);
@@ -1060,7 +1083,7 @@ mod tests {
                 .join("../../fixtures/gui_step/stepped_block.step");
             let model = rs_cam_core::io::load_model_file(
                 &path,
-                0,
+                rs_cam_core::ids::ModelId::from_raw(0),
                 ModelKind::Step,
                 ModelUnits::Millimeters,
                 Default::default(),
@@ -1076,12 +1099,15 @@ mod tests {
             let tool_index = apply(
                 &mut s,
                 Command::AddTool(AddToolArgs {
-                    tool: Box::new(ToolConfig::new_default(ToolId(0), ToolType::EndMill)),
+                    tool: Box::new(ToolConfig::new_default(
+                        ToolId::from_raw(0),
+                        ToolType::EndMill,
+                    )),
                 }),
             )
             .created
             .unwrap();
-            let tool_id = s.tools()[tool_index].id.0;
+            let tool_id = s.tools()[tool_index].id.raw();
             let _ = add_op(&mut s, OperationType::Pocket, tool_id);
             s
         }
@@ -1096,7 +1122,7 @@ mod tests {
                 .as_ref()
                 .expect("a STEP model has BREP faces"),
         );
-        let tc = gui.get_toolpath_config(0).unwrap().clone();
+        let tc = gui.toolpath_config_at(0).unwrap().clone();
         let (face_id, click) = enriched
             .face_groups
             .iter()
@@ -1151,7 +1177,7 @@ mod tests {
         use rs_cam_core::session::{SetSetupFaceArgs, SetSetupRotationArgs, SetToolpathParamArgs};
         for flipped in [false, true] {
             let mut s = project();
-            let tool_id = s.tools()[0].id.0;
+            let tool_id = s.tools()[0].id.raw();
             let profile = add_op(&mut s, OperationType::Profile, tool_id);
             let _ = apply(
                 &mut s,
@@ -1279,7 +1305,7 @@ mod tests {
         )
         .unwrap();
         let model = LoadedModel {
-            id: 0,
+            id: rs_cam_core::ids::ModelId::from_raw(0),
             path: std::path::PathBuf::from("synthetic://each_face.step"),
             name: "Each face".to_owned(),
             kind: None,
@@ -1318,11 +1344,11 @@ mod tests {
             .collect();
         assert_eq!(picks.len(), 2, "the faces at Z 0 and Z -4");
 
-        let mut tool = ToolConfig::new_default(ToolId(1), ToolType::EndMill);
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
         tool.diameter = 3.0;
         let config = ToolpathConfig {
             shoe: Default::default(),
-            id: rs_cam_core::ToolpathId(0),
+            id: rs_cam_core::ToolpathId::from_raw(0),
             name: "Each face pocket".to_owned(),
             enabled: true,
             operation: OperationConfig::Pocket(PocketConfig {
@@ -1332,8 +1358,8 @@ mod tests {
             }),
             dressups: DressupConfig::default(),
             heights: HeightsConfig::default(),
-            tool_id: 1,
-            model_id: 0,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+            model_id: rs_cam_core::ids::ModelId::from_raw(0),
             pre_gcode: None,
             post_gcode: None,
             boundary: BoundaryConfig::default(),
@@ -1371,7 +1397,7 @@ mod tests {
         assert_eq!(rows.len(), 3, "{reply}");
 
         // GUI: the report of the Selection section and the floor row.
-        let tc = s.get_toolpath_config(0).unwrap().clone();
+        let tc = s.toolpath_config_at(0).unwrap().clone();
         let inputs = crate::ui::properties::toolpath_panel_inputs(
             tc.id,
             &s,

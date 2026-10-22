@@ -150,7 +150,7 @@ fn run_metric_sim_with(
             cutter,
             radius,
             StockCutDirection::FromTop,
-            ToolpathId(0),
+            ToolpathId::from_raw(0),
             18_000,
             2,
             5000.0,
@@ -369,7 +369,7 @@ fn run_metric_sim(
             cutter,
             radius,
             StockCutDirection::FromTop,
-            ToolpathId(0),
+            ToolpathId::from_raw(0),
             18_000,
             2,
             5000.0,
@@ -734,7 +734,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
         }))
         .expect("the stock row refuses nothing");
 
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::EndMill);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     tool.diameter = 6.0;
     tool.cutting_length = 25.0;
     tool.shank_diameter = 6.35;
@@ -748,7 +748,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
         .expect("the tool row refuses nothing")
         .created
         .expect("add_tool reports the new tool index");
-    let tool_id = session.tools()[tool_idx].id.0;
+    let tool_id = session.tools()[tool_idx].id.raw();
 
     let poly = Polygon2::new(vec![
         P2::new(5.0, 5.0),
@@ -757,7 +757,7 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
         P2::new(5.0, 55.0),
     ]);
     let model = LoadedModel {
-        id: 0,
+        id: rs_cam_core::ids::ModelId::from_raw(0),
         name: "perf_rect".to_owned(),
         mesh: None,
         items: std::sync::Arc::new(rs_cam_core::selection::ItemSet::from_polygons(vec![poly])),
@@ -783,14 +783,14 @@ fn three_op_session() -> rs_cam_core::session::ProjectSession {
         let op_type = op.op_type();
         let cfg = ToolpathConfig {
             shoe: Default::default(),
-            id: ToolpathId(0),
+            id: ToolpathId::from_raw(0),
             name: name.to_owned(),
             enabled: true,
             operation: op,
             dressups: DressupConfig::for_op(op_type),
             heights: HeightsConfig::default(),
-            tool_id,
-            model_id,
+            tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+            model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
             pre_gcode: None,
             post_gcode: None,
             boundary: BoundaryConfig::default(),
@@ -952,11 +952,11 @@ fn ladder_request(
                 .enumerate()
                 .map(|(i, tp)| SimToolpathEntry {
                     head: Default::default(),
-                    id: ToolpathId(i + 1),
+                    id: ToolpathId::from_raw(i + 1),
                     name: format!("Pass{i}"),
                     annotated: std::sync::Arc::clone(tp),
                     tool: std::sync::Arc::new(tool()),
-                    tool_id: rs_cam_core::compute::tool_config::ToolId(0),
+                    tool_id: rs_cam_core::compute::tool_config::ToolId::from_raw(0),
                     flute_count: 2,
                     tool_summary: "6mm Flat".to_owned(),
                     semantic_trace: None,
@@ -1054,7 +1054,7 @@ fn synthetic_samples(n_samples: usize, toolpath_count: usize) -> Vec<SimulationC
             let radial = if i % 17 == 0 { 0.01 } else { 0.35 };
             let segment_time_s = 0.01;
             SimulationCutSample {
-                toolpath_id: ToolpathId(toolpath_id),
+                toolpath_id: ToolpathId::from_raw(toolpath_id),
                 move_index: i / toolpath_count.max(1),
                 sample_index: i,
                 position: [
@@ -1109,7 +1109,7 @@ fn bench_viz_triage_build(c: &mut Criterion) {
     for n_samples in [100_000_usize, 600_000] {
         let trace = SimulationCutTrace::from_samples(0.25, synthetic_samples(n_samples, 8));
         let tool_diameters_mm: BTreeMap<ToolpathId, f64> =
-            (0..8).map(|i| (ToolpathId(i), 6.0)).collect();
+            (0..8).map(|i| (ToolpathId::from_raw(i), 6.0)).collect();
 
         group.bench_function(BenchmarkId::new("measurability", n_samples), |b| {
             b.iter(|| {

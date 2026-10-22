@@ -336,7 +336,7 @@ fn check1_a_preset_cancel_reaches_the_session_door_before_a_tool_refusal() {
         if refused.is_some() {
             with_refused_tool += 1;
         }
-        let tool = refused.map(|k| ToolConfig::new_default(ToolId(0), k.tool_type()));
+        let tool = refused.map(|k| ToolConfig::new_default(ToolId::from_raw(0), k.tool_type()));
         let (mut session, index) = case_session(CaseSpec {
             tool,
             ..spec(key, op)
@@ -351,7 +351,7 @@ fn check1_a_preset_cancel_reaches_the_session_door_before_a_tool_refusal() {
             ),
         }
         assert!(
-            session.get_result(index).is_none(),
+            session.result_at(index).is_none(),
             "{key}/cancel: a cancelled generation adopted a result"
         );
 
@@ -1107,11 +1107,16 @@ fn check5_two_runs_and_one_thread_give_the_same_toolpath() {
 fn default_op_session(op: OperationType) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
     let tool_idx = builder.add_tool(tool_for(op));
-    let tool_id = builder.tools()[tool_idx].id.0;
+    let tool_id = builder.tools()[tool_idx].id.raw();
     let _ = builder
         .add_toolpath(
             0,
-            toolpath_config(op.kind_str(), OperationConfig::new_default(op), tool_id, 0),
+            toolpath_config(
+                op.kind_str(),
+                OperationConfig::new_default(op),
+                rs_cam_core::ids::ToolId::from_raw(tool_id),
+                rs_cam_core::ids::ModelId::from_raw(0),
+            ),
         )
         .expect("add the op");
     builder.build()
@@ -1391,7 +1396,7 @@ fn strip_session(op: OperationType, frame: Frame) -> (ProjectSession, usize, [[f
     let setup_index = session
         .list_setups()
         .iter()
-        .position(|s| s.toolpath_indices.contains(&index))
+        .position(|s| s.toolpath_indices().contains(&index))
         .expect("the case op has a setup");
     let world = strip_world(session.stock_config());
     let setup = &session.list_setups()[setup_index];
@@ -1424,7 +1429,7 @@ fn strip_session(op: OperationType, frame: Frame) -> (ProjectSession, usize, [[f
         .apply(Command::AddObstacle(AddObstacleArgs {
             setup_index,
             obstacle: Box::new(Obstacle {
-                id: rs_cam_core::ids::ObstacleId(0),
+                id: rs_cam_core::ids::ObstacleId::from_raw(0),
                 name: "W4 strip".to_owned(),
                 enabled: true,
                 clearance: STRIP_CLEARANCE_MM,
@@ -1474,11 +1479,11 @@ fn check8_no_op_puts_the_tool_inside_an_obstacle() {
             if cutting_moves(&tp).next().is_none() {
                 defects.push(format!("{label}/obstacle: no cut move is left (vacuous)"));
             }
-            let tc = session.get_toolpath_config(index).expect("the case op");
+            let tc = session.toolpath_config_at(index).expect("the case op");
             let tool_cfg = session
                 .tools()
                 .iter()
-                .find(|t| t.id.0 == tc.tool_id)
+                .find(|t| t.id == tc.tool_id)
                 .expect("the case tool")
                 .clone();
             let tool = rs_cam_core::compute::cutter::build_cutter(&tool_cfg).unwrap();

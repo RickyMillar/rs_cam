@@ -15,6 +15,7 @@ use crate::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
 use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use crate::compute::transform::{FaceUp, ZRotation};
 use crate::gcode::CoolantMode;
+use crate::ids::{ModelId, SetupId};
 use crate::trace::debug_trace::ToolpathDebugOptions;
 
 // ── Project file types (TOML deserialization) ──────────────────────────
@@ -446,9 +447,9 @@ pub enum ProjectLoadWarning {
     /// [`Self::UnknownFaceUp`].
     UnknownZRotation { setup: String, token: String },
     /// A toolpath names a tool id no `[[tools]]` section defines.
-    MissingToolReference { toolpath: String, tool_id: usize },
+    MissingToolReference { toolpath: String, tool_id: ToolId },
     /// A toolpath names a model id no `[[models]]` section defines.
-    MissingModelReference { toolpath: String, model_id: usize },
+    MissingModelReference { toolpath: String, model_id: ModelId },
     /// The stock's alignment pins do not key the flip a setup is
     /// programmed for.
     ///
@@ -636,7 +637,7 @@ pub struct ProjectStockConfig {
     /// The models that count as the part for the pins (P7). Absent means
     /// the default rule.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pin_part_models: Option<Vec<usize>>,
+    pub pin_part_models: Option<Vec<ModelId>>,
     // P3 (2026-10-12): `flip_axis` is gone. The flip axis is derived from
     // the setups. The loader refuses an old file's key (`RETIRED_KEYS`).
 }
@@ -680,7 +681,7 @@ fn default_stock_padding() -> f64 {
 #[serde(deny_unknown_fields)]
 pub struct ProjectToolSection {
     #[serde(default)]
-    pub id: Option<usize>,
+    pub id: Option<ToolId>,
     #[serde(default = "default_tool_name")]
     pub name: String,
     #[serde(rename = "type", default = "default_tool_type_str")]
@@ -771,7 +772,7 @@ fn default_cut_direction() -> String {
 #[serde(deny_unknown_fields)]
 pub struct ProjectModelSection {
     #[serde(default)]
-    pub id: Option<usize>,
+    pub id: Option<ModelId>,
     #[serde(default)]
     pub path: String,
     #[serde(default)]
@@ -803,7 +804,7 @@ pub struct ProjectModelSection {
 #[serde(deny_unknown_fields)]
 pub struct ProjectSetupSection {
     #[serde(default)]
-    pub id: Option<usize>,
+    pub id: Option<SetupId>,
     #[serde(default = "default_setup_name")]
     pub name: String,
     #[serde(default = "default_face_up")]
@@ -827,7 +828,7 @@ pub struct ProjectSetupSection {
     pub datum_notes: String,
     /// Models in scope for this setup; empty = all (W9 / P-2).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub model_ids: Vec<usize>,
+    pub model_ids: Vec<ModelId>,
     /// K1: `[[setups.obstacles]]`, the setup's obstacles (fixtures and
     /// keep-out zones are one concept). Every value is in the setup frame.
     /// An empty list writes no key.
@@ -863,9 +864,9 @@ pub struct ProjectToolpathSection {
     pub enabled: bool,
     /// F053: required. A toolpath with no tool id used to bind to tool 0
     /// with no word; the ids are EXACT (P2.4/P2.5).
-    pub tool_id: usize,
+    pub tool_id: ToolId,
     /// F053: required, as `tool_id`.
-    pub model_id: usize,
+    pub model_id: ModelId,
     #[serde(default)]
     pub dressups: DressupConfig,
     #[serde(default)]
@@ -1020,10 +1021,11 @@ pub(crate) fn tool_from_project_section(
     idx: usize,
     warnings: &mut Vec<ProjectLoadWarning>,
 ) -> ToolConfig {
-    let tool_id = ts.id.unwrap_or(idx);
-    let tool_number = ts.tool_number.unwrap_or(tool_id + 1) as u32;
+    // A section with no id takes its position: the loader is the allocator.
+    let tool_id = ts.id.unwrap_or(ToolId::mint(idx));
+    let tool_number = ts.tool_number.unwrap_or(tool_id.raw() + 1) as u32;
     ToolConfig {
-        id: ToolId(tool_id),
+        id: tool_id,
         name: ts.name.clone(),
         tool_number,
         tool_type: parse_tool_type(&ts.tool_type, &ts.name, warnings),
@@ -1332,14 +1334,14 @@ pub(super) fn build_session_from_project(
     for tool in &tools {
         super::validate_tool(tool)?;
     }
-    refuse_duplicate_ids("tools", tools.iter().map(|t| t.id.0))?;
+    refuse_duplicate_ids("tools", tools.iter().map(|t| t.id.raw()))?;
     refuse_duplicate_ids(
         "models",
         project
             .models
             .iter()
             .enumerate()
-            .map(|(idx, m)| m.id.unwrap_or(idx)),
+            .map(|(idx, m)| m.id.map_or(idx, ModelId::raw)),
     )?;
     refuse_duplicate_ids(
         "setups",
@@ -1347,13 +1349,13 @@ pub(super) fn build_session_from_project(
             .setups
             .iter()
             .enumerate()
-            .map(|(idx, s)| s.id.unwrap_or(idx)),
+            .map(|(idx, s)| s.id.map_or(idx, SetupId::raw)),
     )?;
 
     // Load models
     let mut models = Vec::new();
     for (idx, model_section) in project.models.iter().enumerate() {
-        let model_id = model_section.id.unwrap_or(idx);
+        let model_id = model_section.id.unwrap_or(ModelId::mint(idx));
         // G-MODELRELINK: the RESOLVED path, not the raw string — see
         // `resolve_model_path`. All four arms below (mesh, polygons, step,
         // and the error placeholder) share this binding, so a model that
@@ -1491,14 +1493,16 @@ pub(super) fn build_session_from_project(
     let mut toolpath_configs = Vec::new();
 
     for (setup_idx, setup_section) in project.setups.iter().enumerate() {
-        let setup_id = setup_section.id.unwrap_or(setup_idx);
+        let setup_id = setup_section.id.unwrap_or(SetupId::mint(setup_idx));
         let face_up = parse_face_up(&setup_section.face_up, &setup_section.name, warnings);
         let z_rotation = parse_z_rotation(&setup_section.z_rotation, &setup_section.name, warnings);
         let mut tp_indices = Vec::new();
 
         for tp_section in &setup_section.toolpaths {
             let tp_idx = toolpath_configs.len();
-            let tp_id = tp_section.id.unwrap_or(crate::ids::ToolpathId(tp_idx));
+            let tp_id = tp_section
+                .id
+                .unwrap_or(crate::ids::ToolpathId::mint(tp_idx));
             // A toolpath with no `[setups.toolpaths.operation]` table has no
             // parameters. The loader refuses it: a default operation would
             // cut with values the operator never set.
@@ -1522,11 +1526,7 @@ pub(super) fn build_session_from_project(
             face_up,
             z_rotation,
             datum: datum_from_section(setup_section)?,
-            model_ids: setup_section
-                .model_ids
-                .iter()
-                .map(|&id| crate::ids::ModelId(id))
-                .collect(),
+            model_ids: setup_section.model_ids.clone(),
             obstacles: setup_section.obstacles.clone(),
             stock_changes: setup_section.stock_changes.clone(),
             toolpath_indices: tp_indices,
@@ -1534,13 +1534,13 @@ pub(super) fn build_session_from_project(
         });
     }
 
-    refuse_duplicate_ids("toolpaths", toolpath_configs.iter().map(|tc| tc.id.0))?;
+    refuse_duplicate_ids("toolpaths", toolpath_configs.iter().map(|tc| tc.id.raw()))?;
 
     // A toolpath that names a tool or a model the file does not define
     // cannot generate. The GUI used to re-derive these two sentences from
     // the loaded session; the loader knows the same fact first.
     for tc in &toolpath_configs {
-        if !tools.iter().any(|t| t.id.0 == tc.tool_id) {
+        if !tools.iter().any(|t| t.id == tc.tool_id) {
             warnings.push(ProjectLoadWarning::MissingToolReference {
                 toolpath: tc.name.clone(),
                 tool_id: tc.tool_id,
@@ -1588,12 +1588,12 @@ pub(super) fn build_session_from_project(
     // Compute next IDs by scanning existing maximums
     let next_toolpath_id = toolpath_configs
         .iter()
-        .map(|tc| tc.id.0)
+        .map(|tc| tc.id.raw())
         .max()
         .map_or(0, |m| m + 1);
-    let next_tool_id = tools.iter().map(|t| t.id.0).max().map_or(0, |m| m + 1);
-    let next_setup_id = setups.iter().map(|s| s.id).max().map_or(0, |m| m + 1);
-    let next_model_id = models.iter().map(|m| m.id).max().map_or(0, |m| m + 1);
+    let next_tool_id = tools.iter().map(|t| t.id.raw()).max().map_or(0, |m| m + 1);
+    let next_setup_id = setups.iter().map(|s| s.id.raw()).max().map_or(0, |m| m + 1);
+    let next_model_id = models.iter().map(|m| m.id.raw()).max().map_or(0, |m| m + 1);
 
     // Machines use snapshot semantics (like `[[tools]]`): the inline
     // `[job.machine]` copy is authoritative. L6 deleted the pre-snapshot

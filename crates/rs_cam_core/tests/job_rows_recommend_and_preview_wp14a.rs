@@ -126,7 +126,7 @@ fn advisor_session() -> ProjectSession {
 
 /// A ball-nose cutter record at the given diameter.
 fn ball_tool(diameter_mm: f64, name: &str) -> ToolConfig {
-    let mut tool = ToolConfig::new_default(ToolId(0), ToolType::BallNose);
+    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BallNose);
     tool.diameter = diameter_mm;
     tool.stickout = 25.0;
     tool.flute_count = 2;
@@ -147,7 +147,7 @@ fn preview_session() -> (ProjectSession, MultitoolPlanSpec) {
         .expect("the tool row refuses nothing")
         .created
         .expect("add_tool reports the new tool index");
-    let coarse_id = session.tools()[coarse_index].id.0;
+    let coarse_id = session.tools()[coarse_index].id.raw();
     let fine_index = session
         .apply(Command::AddTool(AddToolArgs {
             tool: Box::new(ball_tool(2.0, "Ball 2mm")),
@@ -155,12 +155,15 @@ fn preview_session() -> (ProjectSession, MultitoolPlanSpec) {
         .expect("the tool row refuses nothing")
         .created
         .expect("add_tool reports the new tool index");
-    let fine_id = session.tools()[fine_index].id.0;
+    let fine_id = session.tools()[fine_index].id.raw();
     let model_id = session.models()[0].id;
     let spec = MultitoolPlanSpec {
         setup_index: 0,
         model_id,
-        tool_ids: vec![coarse_id, fine_id],
+        tool_ids: vec![
+            rs_cam_core::ids::ToolId::from_raw(coarse_id),
+            rs_cam_core::ids::ToolId::from_raw(fine_id),
+        ],
         // A coarse cell keeps the walk in the normal gate's budget. The
         // shipped planning band is 0.3-0.6 mm; this fixture is 40 mm
         // wide, so 0.6 mm is about 5 000 cells.
