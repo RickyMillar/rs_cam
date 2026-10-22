@@ -71,7 +71,7 @@ pub fn highlight_refusal(state: &AppState) -> Option<&'static str> {
         .models()
         .iter()
         .find(|m| m.id == tc.model_id)
-        .is_some_and(|m| m.items.has_drawing());
+        .is_some_and(|m| m.items.has_drawing() || m.items.has_model_edges());
     if !has_drawing {
         return Some("the selected toolpath reads no drawing");
     }
@@ -173,7 +173,7 @@ pub fn note_item_keys(
         .iter()
         .map(|note| match note.cause {
             NoteCause::AtTheTop { .. } | NoteCause::HoleFit { .. } => {
-                vec![note.first.key.clone()]
+                vec![(*note.first.key).clone()]
             }
             NoteCause::KindNotServed => {
                 let own = model.into_iter().flat_map(|m| {

@@ -21,14 +21,18 @@ use super::key::MatchKey;
 /// the source, the kind, the layer, the anchor and the measure. It is the
 /// key of the item before the frame door, so it names the item as the
 /// drawing holds it (and as a viewport highlight finds it).
+///
+/// The key is boxed: since UX-7 a key holds a Z, and an unboxed key makes
+/// `SelectionRefusal` larger than the `clippy::result_large_err` limit of
+/// every `Result<_, SelectionRefusal>`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ItemRef {
-    pub key: MatchKey,
+    pub key: Box<MatchKey>,
 }
 
 impl ItemRef {
     pub fn new(key: MatchKey) -> Self {
-        Self { key }
+        Self { key: Box::new(key) }
     }
 }
 

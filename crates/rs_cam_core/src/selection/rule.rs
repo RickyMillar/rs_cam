@@ -25,8 +25,9 @@ pub enum KindFilter {
     /// The kinds that the op's `ItemUse` serves for its current config,
     /// among the drawing kinds (loop, path, point, circle). A face is not a
     /// drawing kind: it enters a selection only by a pick or by a rule that
-    /// names it (`Only([Face])`), so a STEP model with the default
-    /// selection has nothing to cut, as before P2.
+    /// names it (`Only([Face])`). On a STEP model the default rule selects
+    /// the loops only (the face rings, UX-7 / ruling Q3,
+    /// [`served_by_default`]), so a Drill there has nothing to cut.
     ///
     /// `resolve` does not know the op, so it matches every drawing kind
     /// here and marks the match [`super::MatchedBy::Default`]. `view` then
@@ -138,20 +139,27 @@ pub struct Filter {
     /// Faces only: a filter with a face filter admits no other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub face: Option<FaceFilter>,
+    /// Model edge items only (geometry selection GT-0b): the item Z
+    /// ([`Item::z`]) in the SETUP frame, in this range. A filter with a Z
+    /// range admits no drawing item, no stock item and no face (a face
+    /// takes `FaceFilter::z`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z: Option<ZRange>,
 }
 
 impl Filter {
     /// True when the filter admits `item`. `face_frame` gives the plane Z
-    /// and the normal of a face in the setup frame
-    /// (`resolve::face_in_setup_frame`).
-    pub(super) fn admits(&self, item: &Item, face_frame: impl Fn(&Shape) -> (f64, f64)) -> bool {
+    /// and the normal Z part of a face, and the Z of a model edge item, in
+    /// the setup frame (`resolve::face_in_setup_frame`,
+    /// `resolve::item_z_in_setup_frame`).
+    pub(super) fn admits(&self, item: &Item, face_frame: impl Fn(&Item) -> (f64, f64)) -> bool {
         let layer_ok = self.layers.is_empty()
             || item
                 .layer()
                 .is_some_and(|l| self.layers.iter().any(|want| want == l));
         let kind = item.kind();
         let kind_ok = match &self.kinds {
-            KindFilter::Served => is_drawing_kind(kind),
+            KindFilter::Served => served_by_default(kind, item.z().is_some()),
             KindFilter::Only(kinds) => kinds.contains(&kind),
         };
         let diameter_ok = match (&self.diameter, item.shape()) {
@@ -161,13 +169,36 @@ impl Filter {
         };
         let face_ok = match (&self.face, item.shape()) {
             (None, _) => true,
-            (Some(filter), shape @ Shape::Face(_)) => {
-                let (plane_z, normal_z) = face_frame(shape);
+            (Some(filter), Shape::Face(_)) => {
+                let (plane_z, normal_z) = face_frame(item);
                 filter.facing.admits(normal_z) && filter.z.is_none_or(|z| z.contains(plane_z))
             }
             (Some(_), _) => false,
         };
-        layer_ok && kind_ok && diameter_ok && face_ok
+        let z_ok = match (&self.z, item.z()) {
+            (None, _) => true,
+            (Some(range), Some(_)) => range.contains(face_frame(item).0),
+            (Some(_), None) => false,
+        };
+        layer_ok && kind_ok && diameter_ok && face_ok && z_ok
+    }
+}
+
+/// The kinds that the default rule (`KindFilter::Served`) selects.
+///
+/// - A drawing item (no Z): every drawing kind ([`is_drawing_kind`]).
+/// - A model edge item of a STEP model (`edge_item`, geometry selection
+///   UX-7, operator ruling Q3 "default to face rings (loops) unless there
+///   is a selection for edges"): the loops only. A face ring and a closed
+///   edge chain that is not a ring are loops; an open edge chain, a
+///   circular edge and a vertex enter by a pick or a rule that names them.
+pub(super) fn served_by_default(kind: ItemKind, edge_item: bool) -> bool {
+    if !edge_item {
+        return is_drawing_kind(kind);
+    }
+    match kind {
+        ItemKind::Loop => true,
+        ItemKind::Path | ItemKind::Point | ItemKind::Circle | ItemKind::Face => false,
     }
 }
 
@@ -221,6 +252,7 @@ impl Rule {
                 kinds: KindFilter::Only(kinds),
                 diameter,
                 face: None,
+                z: None,
             },
         };
         if kinds.is_empty() {
@@ -648,6 +680,7 @@ mod tests {
             anchor: [x, 0.0],
             measure: 5.0,
             brep: None,
+            z: None,
         }
     }
 

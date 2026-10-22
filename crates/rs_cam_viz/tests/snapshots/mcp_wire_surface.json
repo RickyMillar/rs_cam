@@ -755,7 +755,7 @@
                         "close_with_line": {
                           "properties": {
                             "path": {
-                              "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+                              "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                               "properties": {
                                 "anchor": {
                                   "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -848,6 +848,15 @@
                                       "description": "The stock outline of the setup.",
                                       "type": "string"
                                     }
+                                  ]
+                                },
+                                "z": {
+                                  "default": null,
+                                  "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                                  "format": "double",
+                                  "type": [
+                                    "number",
+                                    "null"
                                   ]
                                 }
                               },
@@ -878,7 +887,7 @@
                         "move_ends_together": {
                           "properties": {
                             "path": {
-                              "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+                              "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                               "properties": {
                                 "anchor": {
                                   "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -971,6 +980,15 @@
                                       "description": "The stock outline of the setup.",
                                       "type": "string"
                                     }
+                                  ]
+                                },
+                                "z": {
+                                  "default": null,
+                                  "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                                  "format": "double",
+                                  "type": [
+                                    "number",
+                                    "null"
                                   ]
                                 }
                               },
@@ -1001,7 +1019,7 @@
                         "join_two": {
                           "properties": {
                             "a": {
-                              "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+                              "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                               "properties": {
                                 "anchor": {
                                   "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -1094,6 +1112,15 @@
                                       "description": "The stock outline of the setup.",
                                       "type": "string"
                                     }
+                                  ]
+                                },
+                                "z": {
+                                  "default": null,
+                                  "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                                  "format": "double",
+                                  "type": [
+                                    "number",
+                                    "null"
                                   ]
                                 }
                               },
@@ -1106,7 +1133,7 @@
                               "type": "object"
                             },
                             "b": {
-                              "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+                              "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                               "properties": {
                                 "anchor": {
                                   "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -1199,6 +1226,15 @@
                                       "description": "The stock outline of the setup.",
                                       "type": "string"
                                     }
+                                  ]
+                                },
+                                "z": {
+                                  "default": null,
+                                  "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                                  "format": "double",
+                                  "type": [
+                                    "number",
+                                    "null"
                                   ]
                                 }
                               },
@@ -1290,7 +1326,7 @@
                           "close_with_line": {
                             "properties": {
                               "path": {
-                                "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+                                "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                                 "properties": {
                                   "anchor": {
                                     "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -1383,6 +1419,15 @@
                                         "description": "The stock outline of the setup.",
                                         "type": "string"
                                       }
+                                    ]
+                                  },
+                                  "z": {
+                                    "default": null,
+                                    "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                                    "format": "double",
+                                    "type": [
+                                      "number",
+                                      "null"
                                     ]
                                   }
                                 },
@@ -1413,7 +1458,7 @@
                           "move_ends_together": {
                             "properties": {
                               "path": {
-                                "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+                                "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                                 "properties": {
                                   "anchor": {
                                     "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -1506,6 +1551,15 @@
                                         "description": "The stock outline of the setup.",
                                         "type": "string"
                                       }
+                                    ]
+                                  },
+                                  "z": {
+                                    "default": null,
+                                    "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                                    "format": "double",
+                                    "type": [
+                                      "number",
+                                      "null"
                                     ]
                                   }
                                 },
@@ -1536,7 +1590,7 @@
                           "join_two": {
                             "properties": {
                               "a": {
-                                "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+                                "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                                 "properties": {
                                   "anchor": {
                                     "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -1629,6 +1683,15 @@
                                         "description": "The stock outline of the setup.",
                                         "type": "string"
                                       }
+                                    ]
+                                  },
+                                  "z": {
+                                    "default": null,
+                                    "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                                    "format": "double",
+                                    "type": [
+                                      "number",
+                                      "null"
                                     ]
                                   }
                                 },
@@ -1641,7 +1704,7 @@
                                 "type": "object"
                               },
                               "b": {
-                                "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+                                "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                                 "properties": {
                                   "anchor": {
                                     "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -1734,6 +1797,15 @@
                                         "description": "The stock outline of the setup.",
                                         "type": "string"
                                       }
+                                    ]
+                                  },
+                                  "z": {
+                                    "default": null,
+                                    "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                                    "format": "double",
+                                    "type": [
+                                      "number",
+                                      "null"
                                     ]
                                   }
                                 },
@@ -2117,7 +2189,7 @@
                     "excludes": {
                       "description": "Items removed by hand from the rule matches (match keys).",
                       "items": {
-                        "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+                        "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                         "properties": {
                           "anchor": {
                             "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -2210,6 +2282,15 @@
                                 "description": "The stock outline of the setup.",
                                 "type": "string"
                               }
+                            ]
+                          },
+                          "z": {
+                            "default": null,
+                            "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                            "format": "double",
+                            "type": [
+                              "number",
+                              "null"
                             ]
                           }
                         },
@@ -2226,7 +2307,7 @@
                     "picks": {
                       "description": "Items added by hand (match keys).",
                       "items": {
-                        "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+                        "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                         "properties": {
                           "anchor": {
                             "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -2319,6 +2400,15 @@
                                 "description": "The stock outline of the setup.",
                                 "type": "string"
                               }
+                            ]
+                          },
+                          "z": {
+                            "default": null,
+                            "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                            "format": "double",
+                            "type": [
+                              "number",
+                              "null"
                             ]
                           }
                         },
@@ -2462,6 +2552,27 @@
                                   "type": "string"
                                 },
                                 "type": "array"
+                              },
+                              "z": {
+                                "description": "STEP rings, edges, circles and points only (items with a key `z`),\nby their Z in the setup frame.",
+                                "properties": {
+                                  "max": {
+                                    "format": "double",
+                                    "type": "number"
+                                  },
+                                  "min": {
+                                    "format": "double",
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "min",
+                                  "max"
+                                ],
+                                "type": [
+                                  "object",
+                                  "null"
+                                ]
                               }
                             },
                             "type": "object"
@@ -2646,6 +2757,27 @@
                             "type": "string"
                           },
                           "type": "array"
+                        },
+                        "z": {
+                          "description": "STEP rings, edges, circles and points only (items with a key `z`),\nby their Z in the setup frame.",
+                          "properties": {
+                            "max": {
+                              "format": "double",
+                              "type": "number"
+                            },
+                            "min": {
+                              "format": "double",
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "min",
+                            "max"
+                          ],
+                          "type": [
+                            "object",
+                            "null"
+                          ]
                         }
                       },
                       "type": "object"
@@ -2712,7 +2844,7 @@
               "description": "Pick an item. It also removes an exclude of that item.",
               "properties": {
                 "add_pick": {
-                  "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+                  "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                   "properties": {
                     "anchor": {
                       "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -2805,6 +2937,15 @@
                           "description": "The stock outline of the setup.",
                           "type": "string"
                         }
+                      ]
+                    },
+                    "z": {
+                      "default": null,
+                      "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                      "format": "double",
+                      "type": [
+                        "number",
+                        "null"
                       ]
                     }
                   },
@@ -2827,7 +2968,7 @@
               "description": "Remove the pick of an item. With no pick of it, exclude the item\nfrom the rule matches.",
               "properties": {
                 "remove_pick": {
-                  "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+                  "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                   "properties": {
                     "anchor": {
                       "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -2920,6 +3061,15 @@
                           "description": "The stock outline of the setup.",
                           "type": "string"
                         }
+                      ]
+                    },
+                    "z": {
+                      "default": null,
+                      "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                      "format": "double",
+                      "type": [
+                        "number",
+                        "null"
                       ]
                     }
                   },
@@ -4890,7 +5040,7 @@
             "excludes": {
               "description": "Items removed by hand from the rule matches (match keys).",
               "items": {
-                "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+                "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                 "properties": {
                   "anchor": {
                     "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -4983,6 +5133,15 @@
                         "description": "The stock outline of the setup.",
                         "type": "string"
                       }
+                    ]
+                  },
+                  "z": {
+                    "default": null,
+                    "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                    "format": "double",
+                    "type": [
+                      "number",
+                      "null"
                     ]
                   }
                 },
@@ -4999,7 +5158,7 @@
             "picks": {
               "description": "Items added by hand (match keys).",
               "items": {
-                "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+                "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
                 "properties": {
                   "anchor": {
                     "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -5092,6 +5251,15 @@
                         "description": "The stock outline of the setup.",
                         "type": "string"
                       }
+                    ]
+                  },
+                  "z": {
+                    "default": null,
+                    "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                    "format": "double",
+                    "type": [
+                      "number",
+                      "null"
                     ]
                   }
                 },
@@ -5235,6 +5403,27 @@
                           "type": "string"
                         },
                         "type": "array"
+                      },
+                      "z": {
+                        "description": "STEP rings, edges, circles and points only (items with a key `z`),\nby their Z in the setup frame.",
+                        "properties": {
+                          "max": {
+                            "format": "double",
+                            "type": "number"
+                          },
+                          "min": {
+                            "format": "double",
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "min",
+                          "max"
+                        ],
+                        "type": [
+                          "object",
+                          "null"
+                        ]
                       }
                     },
                     "type": "object"
@@ -6558,7 +6747,7 @@
         "frame_items": {
           "description": "Geometry selection P4.4 (\"Show me\"): match keys of items of the\nselected toolpath (copy them from `selection_status` or\n`list_model_items`). The camera frames them and the viewport flashes\nthem. A key that names no item (a lost pick) frames its stored\nposition. Needs a selected toolpath (`toolpath_index` in the same\ncall, or a selection already made).",
           "items": {
-            "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer and BREP id are equal and the anchor and measure\nagree within 1e-6 mm.",
+            "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
             "properties": {
               "anchor": {
                 "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
@@ -6651,6 +6840,15 @@
                     "description": "The stock outline of the setup.",
                     "type": "string"
                   }
+                ]
+              },
+              "z": {
+                "default": null,
+                "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
                 ]
               }
             },

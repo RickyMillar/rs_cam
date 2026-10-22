@@ -850,6 +850,7 @@ fn a_face_pick_edit_invalidates() {
         anchor: [10.0, 20.0],
         measure: 5.0,
         brep: Some(3),
+        z: None,
     };
     let _ = s
         .edit_toolpath_selection(

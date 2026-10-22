@@ -514,6 +514,7 @@ fn a_served_kind_filter_blocks_a_refusing_pick_p4_5() {
             kinds: KindFilter::Only(kinds),
             diameter,
             face: None,
+            z: None,
         },
     };
     let stored = |c: &AppController<SilentBackend>| {

@@ -3716,6 +3716,7 @@ mod tests {
                 anchor: [1.0, 2.0],
                 measure: 5.0,
                 brep: None,
+                z: None,
             }]),
             ..DrillConfig::default()
         };

@@ -142,6 +142,7 @@ fn excludes_b() -> Selection {
         anchor: [10.0, 10.0],
         measure: 20.0,
         brep: None,
+        z: None,
     };
     selection
         .apply(SelectionEdit::RemovePick(key), &Selection::drawing())

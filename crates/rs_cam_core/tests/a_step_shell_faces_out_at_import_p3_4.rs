@@ -53,6 +53,8 @@ const FIXTURES: &[&str] = &[
     "tests/fixtures/step/occt-cylinder.step",
     "tests/fixtures/step/occt-cone.step",
     "tests/fixtures/step/occt-sphere.step",
+    // UX-7: a block with a blind hole (`gen_block_with_blind_hole.py`).
+    "tests/fixtures/step/block_with_blind_hole.step",
 ];
 
 /// The two fixtures that the source file triangulates inward.

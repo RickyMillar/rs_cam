@@ -68,6 +68,7 @@ fn key(
         anchor: [x, 12.5],
         measure: 6.0,
         brep,
+        z: None,
     }
 }
 
@@ -97,6 +98,7 @@ fn op_selection() -> Selection {
                         max: 0.0,
                     }),
                 }),
+                z: None,
             },
         },
     ]);

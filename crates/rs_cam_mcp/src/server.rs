@@ -1785,6 +1785,10 @@ pub struct FilterParam {
     /// Faces only, by facing and plane Z.
     #[serde(default)]
     pub face: Option<FaceFilterParam>,
+    /// STEP rings, edges, circles and points only (items with a key `z`),
+    /// by their Z in the setup frame.
+    #[serde(default)]
+    pub z: Option<ZRangeParam>,
 }
 
 impl From<FilterParam> for rs_cam_core::selection::Filter {
@@ -1797,6 +1801,10 @@ impl From<FilterParam> for rs_cam_core::selection::Filter {
                 tolerance_mm: d.tolerance_mm,
             }),
             face: p.face.map(Into::into),
+            z: p.z.map(|z| rs_cam_core::selection::ZRange {
+                min: z.min,
+                max: z.max,
+            }),
         }
     }
 }
@@ -1823,7 +1831,7 @@ impl From<RuleParam> for rs_cam_core::selection::Rule {
 
 /// The match key of one item. Copy it from a `list_model_items` row (or a
 /// `selection_status` key); do not type it. A key matches an item when the
-/// source, kind, layer and BREP id are equal and the anchor and measure
+/// source, kind, layer, BREP id and Z are equal and the anchor and measure
 /// agree within 1e-6 mm.
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, schemars::JsonSchema)]
 #[schemars(inline)]
@@ -1841,6 +1849,10 @@ pub struct MatchKeyParam {
     /// Face only: the BREP face id.
     #[serde(default)]
     pub brep: Option<u16>,
+    /// A STEP ring, edge, circle or point: its Z (model frame). Absent for
+    /// a drawing item, a stock item and a face.
+    #[serde(default)]
+    pub z: Option<f64>,
 }
 
 impl From<MatchKeyParam> for rs_cam_core::selection::MatchKey {
@@ -1852,6 +1864,7 @@ impl From<MatchKeyParam> for rs_cam_core::selection::MatchKey {
             anchor: p.anchor,
             measure: p.measure,
             brep: p.brep,
+            z: p.z,
         }
     }
 }
@@ -3555,6 +3568,7 @@ mod tests {
             anchor: [12.5, -3.25],
             measure: 6.0,
             brep,
+            z: None,
         };
         let rule = |source, filter| Rule { source, filter };
         let selection = Selection::from_parts(
@@ -3576,6 +3590,7 @@ mod tests {
                             tolerance_mm: 0.1,
                         }),
                         face: None,
+                        z: None,
                     },
                 ),
                 rule(
@@ -3659,6 +3674,7 @@ mod tests {
             anchor: [x, -3.25],
             measure: 86.2,
             brep: None,
+            z: None,
         };
         let edits = [
             DrawingEdit::JoinWithin {

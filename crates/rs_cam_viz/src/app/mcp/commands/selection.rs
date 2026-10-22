@@ -1831,4 +1831,187 @@ mod tests {
             }
         }
     }
+
+    /// Geometry selection UX-7: a STEP circle. The blind hole of
+    /// `block_with_blind_hole.step` has two rim circles at one XY (Z 20 and
+    /// Z 12); from the orthographic top view they lie on one screen line. A
+    /// GUI click just outside the rim (the model surface under it is the
+    /// top face, Z 20) and the MCP `near` read at the same point name the
+    /// Z 20 circle, and both doors store one pick. A click just inside the
+    /// rim (the surface under it is the hole floor, Z 12) names the floor
+    /// circle. The `selection_status` reply gives the circle with its Z, as
+    /// the GUI report does.
+    ///
+    /// Red proof: `choose_item` with the lowest Z in place of the surface
+    /// rule picks the Z 12 circle for the first click.
+    #[test]
+    fn mcp_and_gui_pick_one_step_circle_ux7() {
+        use crate::interaction::picking::{PickContext, PickHit, pick_items};
+        use crate::render::camera::{OrbitCamera, ViewPreset};
+        use crate::state::job::SetupFrame;
+        use crate::state::pick::{PickMode, held_kinds, target_item_use};
+        use rs_cam_core::compute::operation_configs::DrillConfig;
+        use rs_cam_core::compute::stock_config::StockConfig;
+        use rs_cam_core::geo::P3;
+        use rs_cam_core::session::ProjectSessionBuilder;
+
+        const VIEW_W: f32 = 800.0;
+        const VIEW_H: f32 = 600.0;
+        let project = || {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../rs_cam_core/tests/fixtures/step/block_with_blind_hole.step");
+            let model = rs_cam_core::io::load_model_file(
+                &path,
+                rs_cam_core::ids::ModelId::from_raw(0),
+                ModelKind::Step,
+                ModelUnits::Millimeters,
+                Default::default(),
+            )
+            .unwrap();
+            let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+            tool.diameter = 6.0;
+            let mut builder = ProjectSessionBuilder::new()
+                .stock(StockConfig {
+                    x: 40.0,
+                    y: 30.0,
+                    z: 20.0,
+                    origin_x: 0.0,
+                    origin_y: 0.0,
+                    origin_z: 0.0,
+                    auto_from_model: false,
+                    ..StockConfig::default()
+                })
+                .tool(tool)
+                .model(model);
+            let op = OperationConfig::Drill(DrillConfig {
+                selection: Selection::empty(),
+                ..DrillConfig::default()
+            });
+            let config = ToolpathConfig {
+                shoe: Default::default(),
+                id: rs_cam_core::ToolpathId::from_raw(0),
+                name: "Drill".to_owned(),
+                enabled: true,
+                operation: op,
+                dressups: DressupConfig::default(),
+                heights: HeightsConfig::default(),
+                tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+                model_id: rs_cam_core::ids::ModelId::from_raw(0),
+                pre_gcode: None,
+                post_gcode: None,
+                boundary: BoundaryConfig::default(),
+                boundary_inherit: true,
+                rest_analysis: RestAnalysisConfig::default(),
+                stock_source: StockSource::default(),
+                coolant: Default::default(),
+                debug_options: Default::default(),
+                feeds_provenance: Default::default(),
+                planner_origin: None,
+            };
+            builder.add_toolpath(0, config).unwrap();
+            builder.build()
+        };
+        // Just outside the rim (radius 3), on the top face; just inside it,
+        // over the hole floor.
+        let at = [11.6, 15.0];
+        let inside = [12.4, 15.0];
+
+        // GUI: the pick-mode click from the top view.
+        let mut gui = project();
+        let tc = gui.toolpath_config_at(0).unwrap().clone();
+        let mode = PickMode::new(
+            tc.id,
+            SelectionTarget::Op,
+            target_item_use(&tc, SelectionTarget::Op),
+        );
+        let held = held_kinds(&gui.models()[0]);
+        assert!(
+            held.contains(&ItemKind::Circle) && held.contains(&ItemKind::Point),
+            "{held:?}"
+        );
+        let kinds = mode
+            .filter
+            .effective_kinds(target_item_use(&tc, SelectionTarget::Op), &held);
+        assert_eq!(
+            kinds,
+            vec![ItemKind::Circle, ItemKind::Point],
+            "the Drill chips"
+        );
+        let frame = SetupFrame::of(&gui.list_setups()[0]);
+        let stock = gui.stock_config().clone();
+        let (w, d, h) = frame.effective_stock(&stock);
+        let mut camera = OrbitCamera::new();
+        camera.fit_to_bounds([0.0, 0.0, 0.0], [w as f32, d as f32, h as f32]);
+        camera.set_preset(ViewPreset::Top);
+        camera.toggle_projection();
+        let visibility = crate::state::overlays::ModelVisibility::default();
+        let click_at = |xy: [f64; 2], z: f64| {
+            let q = frame.transform_point(P3::new(xy[0], xy[1], z), &stock);
+            let screen = camera
+                .project_to_screen(
+                    [q.x as f32, q.y as f32, q.z as f32],
+                    VIEW_W / VIEW_H,
+                    VIEW_W,
+                    VIEW_H,
+                )
+                .unwrap();
+            let ctx = PickContext {
+                camera: &camera,
+                screen_x: screen[0],
+                screen_y: screen[1],
+                aspect: VIEW_W / VIEW_H,
+                vw: VIEW_W,
+                vh: VIEW_H,
+                visibility: &visibility,
+            };
+            match pick_items(&ctx, &gui, tc.id, &mode.filter, &kinds) {
+                Some(PickHit::Item { key, .. }) => key,
+                other => panic!("the click picks an item: {other:?}"),
+            }
+        };
+        let floor = click_at(inside, 12.0);
+        assert_eq!(
+            floor.z,
+            Some(12.0),
+            "over the floor: the floor circle: {floor:?}"
+        );
+        let key = click_at(at, 20.0);
+        assert_eq!(key.kind, ItemKind::Circle);
+        assert_eq!(
+            key.z,
+            Some(20.0),
+            "the rim at the top, not the floor circle: {key:?}"
+        );
+        let click = gui.pick_edit(&tc, SelectionTarget::Op, key).unwrap();
+        edit(&mut gui, 0, click);
+
+        // MCP: `near` at the same point, circles only, lists the Z 20 rim
+        // first; its key goes into `add_pick`.
+        let mut mcp = project();
+        let p: ListModelItemsParam = serde_json::from_value(serde_json::json!({
+            "model_id": 0,
+            "kind": "circle",
+            "near": { "xy": at, "radius_mm": 1.0 },
+        }))
+        .unwrap();
+        let reply = list_model_items_reply(&mcp, &p);
+        assert_eq!(reply["count"], 2, "both rims are near: {reply}");
+        let first = &reply["items"][0];
+        assert_eq!(first["key"]["z"], serde_json::json!(20.0), "{reply}");
+        wire_edit(
+            &mut mcp,
+            0,
+            &serde_json::json!({ "add_pick": first["key"] }),
+        );
+        assert_eq!(stored(&mcp, 0), stored(&gui, 0), "one item is one pick");
+        assert_eq!(stored(&gui, 0).picks().len(), 1);
+
+        // The status reply names the circle with its Z, as the GUI report.
+        let tc = mcp.toolpath_config_at(0).unwrap().clone();
+        let report = mcp.selection_status(&tc, SelectionTarget::Op).unwrap();
+        let wire = selection_report_json(&mcp, &tc, &report);
+        let gui_report = gui_report(&gui);
+        assert_eq!(report.item_states, gui_report.item_states, "one report");
+        assert!(wire.to_string().contains("\"z\":20.0"), "{wire}");
+    }
 }

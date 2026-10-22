@@ -321,11 +321,11 @@ pub fn pick_items(
     // A hidden model draws no drawing, so none of its items is picked.
     let shown = ctx.shows(model.id);
     let items = model.items.iter().filter(|_| shown);
-    let screen = |p: &P2| -> Option<[f64; 2]> {
-        let q = item_display_xy(frame.as_ref(), stock, *p);
+    let screen = |item: &rs_cam_core::selection::Item, p: &P2| -> Option<[f64; 2]> {
+        let q = item_display_point(frame.as_ref(), stock, item, *p, z);
         ctx.camera
             .project_to_screen(
-                [q.x as f32, q.y as f32, z as f32],
+                [q.x as f32, q.y as f32, q.z as f32],
                 ctx.aspect,
                 ctx.vw,
                 ctx.vh,
@@ -333,7 +333,8 @@ pub fn pick_items(
             .map(|s| [f64::from(s[0]), f64::from(s[1])])
     };
     let pointer = [f64::from(ctx.screen_x), f64::from(ctx.screen_y)];
-    let mut best: Option<(f64, &rs_cam_core::selection::MatchKey)> = None;
+    // Every item within its threshold: (screen distance, display Z, item).
+    let mut hits: Vec<(f64, f64, &rs_cam_core::selection::Item)> = Vec::new();
     for item in items {
         // A face is a surface, not a drawn line: the ray arm below.
         if item.kind() == ItemKind::Face || !filter.admits(kinds, item) {
@@ -350,15 +351,26 @@ pub fn pick_items(
             .pick_lines()
             .into_iter()
             .map(|(pts, closed)| {
-                let projected: Vec<[f64; 2]> = pts.iter().filter_map(&screen).collect();
+                let projected: Vec<[f64; 2]> = pts.iter().filter_map(|p| screen(item, p)).collect();
                 rs_cam_core::selection::polyline_distance(pointer, projected, closed)
             })
             .fold(f64::INFINITY, f64::min);
-        if distance <= f64::from(threshold) && best.is_none_or(|(b, _)| distance < b) {
-            best = Some((distance, item.key()));
+        if distance <= f64::from(threshold) {
+            let [ax, ay] = item.key().anchor;
+            let display_z = item_display_point(frame.as_ref(), stock, item, P2::new(ax, ay), z).z;
+            hits.push((distance, display_z, item));
         }
     }
-    if let Some((_, key)) = best {
+    let surface_z = || {
+        let (o, d) =
+            ctx.camera
+                .unproject_ray(ctx.screen_x, ctx.screen_y, ctx.aspect, ctx.vw, ctx.vh)?;
+        let origin = P3::new(f64::from(o.x), f64::from(o.y), f64::from(o.z));
+        let dir = V3::new(f64::from(d.x), f64::from(d.y), f64::from(d.z));
+        pick_model_face(ctx, session, frame.as_ref(), origin, dir, false)
+            .map(|(t, _)| (origin + dir * t).z)
+    };
+    if let Some(key) = choose_item(&hits, surface_z) {
         return Some(PickHit::Item {
             toolpath_id,
             key: key.clone(),
@@ -377,6 +389,38 @@ pub fn pick_items(
     );
     let dir = V3::new(ray_dir.x as f64, ray_dir.y as f64, ray_dir.z as f64);
     pick_model_face(ctx, session, frame.as_ref(), origin, dir, true).map(|(_, hit)| hit)
+}
+
+/// The item a click picks among `hits` (screen distance, display Z, item;
+/// in import order). The nearest on the screen wins. Two or more within
+/// [`PICK_TIE_PX`] of the nearest coincide to the eye (a STEP ring at Z 32
+/// over a ring at Z 24, UX-7): the one whose Z is nearest the model
+/// surface under the pointer (`surface_z`) wins; with no surface hit, the
+/// highest. Equal Z keeps the import order, so the choice is fixed.
+fn choose_item<'a>(
+    hits: &[(f64, f64, &'a rs_cam_core::selection::Item)],
+    surface_z: impl FnOnce() -> Option<f64>,
+) -> Option<&'a rs_cam_core::selection::MatchKey> {
+    let nearest = hits.iter().map(|h| h.0).fold(f64::INFINITY, f64::min);
+    let tied: Vec<&(f64, f64, &rs_cam_core::selection::Item)> = hits
+        .iter()
+        .filter(|h| h.0 <= nearest + PICK_TIE_PX)
+        .collect();
+    let first = *tied.first()?;
+    if tied.len() == 1 || tied.iter().all(|h| h.1 == first.1) {
+        // One candidate, or all on one plane: the nearest on the screen.
+        return tied
+            .iter()
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|h| h.2.key());
+    }
+    let score = match surface_z() {
+        Some(at) => tied
+            .iter()
+            .min_by(|a, b| (a.1 - at).abs().total_cmp(&(b.1 - at).abs())),
+        None => tied.iter().min_by(|a, b| b.1.total_cmp(&a.1)),
+    };
+    score.map(|h| h.2.key())
 }
 
 /// The Z (display frame) at which the drawing of `tc` draws, and at which a
@@ -501,6 +545,38 @@ pub fn item_display_xy(frame: Option<&SetupFrame>, stock: &StockConfig, p: P2) -
         None => p,
     }
 }
+
+/// Where the viewport draws the point `p` of `item`, in the display
+/// frame (geometry selection UX-7). A face draws at its plane Z and a STEP
+/// ring, edge, circle or point at its own Z ([`Item::plane_z`]), moved as
+/// the model mesh is moved (`SetupFrame::transform_point`). A drawing item
+/// and a stock item draw on `plane` (the [`drawing_plane_z`] plane).
+///
+/// [`Item::plane_z`]: rs_cam_core::selection::Item::plane_z
+#[must_use]
+pub fn item_display_point(
+    frame: Option<&SetupFrame>,
+    stock: &StockConfig,
+    item: &rs_cam_core::selection::Item,
+    p: P2,
+    plane: f64,
+) -> P3 {
+    match item.plane_z() {
+        Some(z) => {
+            let q = P3::new(p.x, p.y, z);
+            frame.map_or(q, |f| f.transform_point(q, stock))
+        }
+        None => {
+            let q = item_display_xy(frame, stock, p);
+            P3::new(q.x, q.y, plane)
+        }
+    }
+}
+
+/// Two pick candidates closer than this on the screen (pixels) are one
+/// line to the eye: the pick then prefers the item nearest in Z to the
+/// model surface under the pointer (UX-7, coincident STEP items).
+const PICK_TIE_PX: f64 = 2.0;
 
 /// The displayed stock top plus [`HOLE_MARK_LIFT_MM`]: the plane the
 /// drawing lines and the item marks draw on (no projection).

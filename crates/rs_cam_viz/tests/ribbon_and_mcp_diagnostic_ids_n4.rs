@@ -219,6 +219,7 @@ fn drill_with_a_pick() -> OperationConfig {
             anchor: HOLE,
             measure: 0.0,
             brep: None,
+            z: None,
         }]);
     }
     op

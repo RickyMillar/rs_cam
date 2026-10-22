@@ -154,8 +154,11 @@ pub fn old_drill_targets(m: &LoadedModel) -> Vec<(f64, f64, String, Option<f64>)
             })
             .unwrap_or_default();
     }
+    // The old door drilled drawing items only; a STEP circle (UX-7) is
+    // not one.
     m.items
         .iter()
+        .filter(|item| item.is_plane_drawing())
         .filter_map(|item| {
             let layer = item.layer().unwrap_or_default().to_owned();
             match item.shape() {

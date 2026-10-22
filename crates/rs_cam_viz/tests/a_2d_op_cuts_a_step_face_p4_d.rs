@@ -11,8 +11,10 @@
 //! 1. The add menu offers Pocket, Profile and Trace
 //!    (`ui::toolpath_panel::add_menu_offers`), and the Geometry check of a
 //!    new Pocket gives no geometry error.
-//! 2. A new Pocket starts with the default rule, which takes no face (D2),
-//!    so its selection refuses `Empty` ("pick a face").
+//! 2. A new Pocket starts with the default rule, which takes no face (D2).
+//!    Since UX-7 (operator ruling Q3, 2026-10-22) it takes the face rings
+//!    of the STEP model (loops at their Z), so it has areas to cut and
+//!    does not refuse. (Before UX-7 it refused `Empty`, "pick a face".)
 //! 3. A face click (`ProjectSession::click_edit`, the GUI click route) adds
 //!    that face. The Pocket then generates, and every cutting move lies
 //!    inside that face. (The case face is at the stock top, so operator
@@ -54,10 +56,10 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::geo::P2;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::selection::{MatchKey, RefusalCause, SelectionEdit, Shape, SourceRef};
+use rs_cam_core::selection::{ItemKind, MatchKey, SelectionEdit, Shape, SourceRef};
 use rs_cam_core::session::{
-    AddToolpathArgs, ClickEdit, Command, EditSelectionArgs, ProjectSession, ProjectSessionBuilder,
-    SelectionTarget, ToolpathConfig,
+    AddToolpathArgs, ClickEdit, Command, EditSelectionArgs, ItemState, ProjectSession,
+    ProjectSessionBuilder, SelectionTarget, ToolpathConfig,
 };
 use rs_cam_core::toolpath::MoveType;
 use rs_cam_viz::ui::properties::{ToolpathValidationContext, validate_toolpath_config};
@@ -227,22 +229,29 @@ fn the_add_menu_offers_2d_ops_on_a_step_only_project_p4_d() {
 }
 
 #[test]
-fn a_new_pocket_on_a_step_model_asks_for_a_face_p4_d() {
+fn a_new_pocket_on_a_step_model_takes_the_face_rings_ux7() {
     let mut session = step_only_session();
     let index = add_op(&mut session, OperationType::Pocket);
     let tc = session.toolpath_configs()[index].clone();
     let report = session
         .selection_status(&tc, SelectionTarget::Op)
         .expect("the op selection resolves");
-    let refusal = report
-        .refusal
-        .as_ref()
-        .expect("the default rule takes no face (D2): nothing to cut");
     assert!(
-        matches!(refusal.cause, RefusalCause::Empty { .. }),
-        "the refusal is Empty, which the Selection section answers with \
-         \"pick a face\": {refusal}"
+        report.refusal.is_none(),
+        "the default rule takes the face rings (Q3): {:?}",
+        report.refusal
     );
+    let items = &session.models()[0].items;
+    for (item, state) in items.iter().zip(&report.item_states) {
+        let ring = item.kind() == ItemKind::Loop && item.z().is_some();
+        assert_eq!(
+            *state != ItemState::NotSelected,
+            ring,
+            "{:?} at Z {:?}: {state:?}",
+            item.kind(),
+            item.z()
+        );
+    }
 }
 
 #[test]

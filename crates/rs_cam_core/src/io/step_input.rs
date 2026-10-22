@@ -370,11 +370,15 @@ fn extract_boundary_loops(vertices: &[P3], triangles: &[[u32; 3]]) -> Vec<Vec<P3
         }
     }
 
-    let boundary_edges: Vec<(u32, u32)> = edge_count
+    // UX-7: the walk is in a fixed order (sorted edges), so a re-import of
+    // the same file gives the same loops, from the same start, in the same
+    // order. The HashMap order changed with each process.
+    let mut boundary_edges: Vec<(u32, u32)> = edge_count
         .into_iter()
         .filter(|&(_, count)| count == 1)
         .map(|(edge, _)| edge)
         .collect();
+    boundary_edges.sort_unstable();
 
     if boundary_edges.is_empty() {
         return Vec::new();
@@ -439,7 +443,24 @@ fn extract_boundary_loops(vertices: &[P3], triangles: &[[u32; 3]]) -> Vec<Vec<P3
         }
     }
 
+    // The outer loop first (the readers take the first loop as the outer
+    // ring of the face): the largest loop by its vector area. A stable
+    // sort keeps the walk order of two equal loops.
+    loops.sort_by(|a, b| loop_area(b).total_cmp(&loop_area(a)));
     loops
+}
+
+/// The vector area of a closed 3D loop (half the norm of the Newell sum):
+/// the area of a planar loop in its own plane.
+fn loop_area(pts: &[P3]) -> f64 {
+    let n = pts.len();
+    let mut sum = V3::zeros();
+    for (i, a) in pts.iter().enumerate() {
+        if let Some(b) = pts.get((i + 1) % n) {
+            sum += a.coords.cross(&b.coords);
+        }
+    }
+    sum.norm() / 2.0
 }
 
 /// Find shared vertices between two face tessellations.

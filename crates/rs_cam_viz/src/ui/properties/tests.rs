@@ -464,7 +464,9 @@ fn geometry_tab_texts(
 }
 
 /// A STEP-only project (`fixtures/gui_step/stepped_block.step`) with one
-/// Pocket on the default rule.
+/// Pocket on an empty selection. Since UX-7 (ruling Q3) the default rule of
+/// a STEP Pocket holds the face rings, so the empty selection stands in
+/// for "nothing to cut".
 fn step_pocket_session() -> rs_cam_core::session::ProjectSession {
     use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
     use rs_cam_core::session::{ProjectSessionBuilder, ToolpathConfig};
@@ -493,9 +495,15 @@ fn step_pocket_session() -> rs_cam_core::session::ProjectSession {
                 id: rs_cam_core::compute::ToolpathId::from_raw(0),
                 name: "Pocket".to_owned(),
                 enabled: true,
-                operation: crate::state::toolpath::OperationConfig::new_default(
-                    crate::state::toolpath::OperationType::Pocket,
-                ),
+                operation: {
+                    let mut op = crate::state::toolpath::OperationConfig::new_default(
+                        crate::state::toolpath::OperationType::Pocket,
+                    );
+                    if let crate::state::toolpath::OperationConfig::Pocket(pocket) = &mut op {
+                        pocket.selection = rs_cam_core::selection::Selection::empty();
+                    }
+                    op
+                },
                 dressups: Default::default(),
                 heights: Default::default(),
                 tool_id: rs_cam_core::ids::ToolId::from_raw(1),
@@ -524,9 +532,9 @@ fn position_of(texts: &[String], what: &str, pred: impl Fn(&str) -> bool) -> usi
         .unwrap_or_else(|| panic!("the Geometry tab paints no {what}: {texts:?}"))
 }
 
-/// Geometry selection P4.D, fix 1: a new Pocket on a STEP-only project has
-/// nothing to cut (the default rule takes no face, D2), and the Selection
-/// section names the fix: pick a face. Red proof: `wants_a_face_pick`
+/// Geometry selection P4.D, fix 1: a Pocket on a STEP-only project with
+/// nothing to cut (an empty selection; since UX-7 the default rule takes
+/// the face rings) names the fix: pick a face. Red proof: `wants_a_face_pick`
 /// returning false: the line was not painted.
 #[test]
 fn a_step_pocket_names_the_face_pick_fix_p4_d() {

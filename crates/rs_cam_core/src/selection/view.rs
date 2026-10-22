@@ -624,7 +624,8 @@ struct RegionParts {
     /// For each area, the position in `served` of the item whose ring is
     /// its exterior (P4.6).
     exteriors: Vec<usize>,
-    /// For each area, the plane Z of its exterior face, or `None` (P3.5).
+    /// For each area, the plane Z of its exterior face or STEP ring (UX-7),
+    /// or `None` for a drawing ring (P3.5).
     plane_z: Vec<Option<f64>>,
     /// The positions in `served` of the rings that became holes (P4.4).
     islands: BTreeSet<usize>,
@@ -650,7 +651,8 @@ fn regions_of(served: &[&Item]) -> RegionParts {
         parts.polygons.push(polygon);
         parts.stock.push(from_stock);
         parts.exteriors.push(at);
-        parts.plane_z.push(None);
+        // UX-7: a STEP ring holds its Z; a drawing ring has none.
+        parts.plane_z.push(served.get(at).and_then(|i| i.z()));
     }
     for (at, face) in served
         .iter()
@@ -757,7 +759,7 @@ fn extended_regions<F: SelectionFrame>(
                 .stock
                 .push(item.source() == SourceRef::Stock && !extended.contains(&pos));
             parts.exteriors.push(pos);
-            parts.plane_z.push(None);
+            parts.plane_z.push(item.z());
             exterior_set.insert(pos);
         }
         parts.islands.extend(

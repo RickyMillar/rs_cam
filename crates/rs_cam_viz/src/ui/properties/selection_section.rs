@@ -65,8 +65,8 @@ const PICK_HOVER: &str = "Click items in the viewport to add them to this select
 pub(crate) const PICK_A_FACE_FIX: &str = "Fix: pick a face of the model.";
 
 /// The hover of [`PICK_A_FACE_FIX`].
-const PICK_A_FACE_HOVER: &str = "The default rule takes the items of a drawing, and this model \
-    holds faces only. Click Pick below, then click a flat face in the viewport.";
+const PICK_A_FACE_HOVER: &str = "The selection holds nothing that this operation cuts, and this \
+    model holds faces. Click Pick below, then click a flat face in the viewport.";
 
 /// True when the selection refuses with nothing to cut (`Empty`) and a
 /// face pick is a fix: the toolpath model holds faces, and the reader cuts
@@ -569,7 +569,7 @@ fn draw_extend_summary(
         action,
     ) && let Some(key) = key
     {
-        show_me(inputs, events, vec![key]);
+        show_me(inputs, events, vec![*key]);
     }
 }
 
@@ -830,21 +830,21 @@ fn draw_findings(
             ],
         );
         if clicked == Some(0) {
-            show_me(inputs, events, vec![lost.key.clone()]);
+            show_me(inputs, events, vec![(*lost.key).clone()]);
         }
         if clicked == Some(1) {
             let picks = inputs
                 .selection
                 .picks()
                 .iter()
-                .filter(|k| !k.matches(&lost.key) && **k != lost.key)
+                .filter(|k| !k.matches(&lost.key) && **k != *lost.key)
                 .cloned()
                 .collect();
             let excludes = inputs
                 .selection
                 .excludes()
                 .iter()
-                .filter(|k| !k.matches(&lost.key) && **k != lost.key)
+                .filter(|k| !k.matches(&lost.key) && **k != *lost.key)
                 .cloned()
                 .collect();
             let rules = inputs.selection.rules().to_vec();
@@ -917,6 +917,7 @@ pub(crate) fn draft_rule(draft: &RuleDraft) -> Rule {
                 facing: draft.facing,
                 z: draft.z,
             }),
+            z: None,
         },
     }
 }

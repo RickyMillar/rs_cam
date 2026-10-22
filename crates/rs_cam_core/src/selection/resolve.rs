@@ -18,7 +18,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::compute::transform::{Pt, SetupTransformInfo};
-use crate::geo::{BoundingBox3, P3, V3};
+use crate::geo::{BoundingBox3, P2, P3, V3};
 use crate::polygon::Polygon2;
 use crate::session::LoadedModel;
 
@@ -325,17 +325,18 @@ impl ResolvedSelection<SetupFrame> {
         self.up_face_planes().reduce(f64::min)
     }
 
-    /// The finite plane Z of each UP face, in item order.
+    /// The finite plane Z of each UP face and of each model edge item (a
+    /// STEP ring, edge chain, circular edge or vertex, UX-7: it lies on
+    /// the top of its material, as an up face does), in item order.
     fn up_face_planes(&self) -> impl Iterator<Item = f64> + '_ {
         self.items
             .iter()
             .filter_map(|r| match r.item.shape() {
                 Shape::Face(face) if Facing::Up.admits(face.normal.z) => Some(face.plane_z),
-                Shape::Face(_)
-                | Shape::Loop(_)
-                | Shape::Path(_)
-                | Shape::Point(_)
-                | Shape::Circle { .. } => None,
+                Shape::Face(_) => None,
+                Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => {
+                    r.item.z()
+                }
             })
             .filter(|z| z.is_finite())
     }
@@ -427,8 +428,9 @@ impl ResolvedSelection<ModelFrame> {
                     return Ok(r);
                 }
                 let shape = shape_in_setup_frame(r.item.shape(), info);
+                let z = item_z_in_setup_frame(&r.item, Some(info));
                 Ok(ResolvedItem {
-                    item: r.item.with_shape(shape)?,
+                    item: r.item.with_shape_at(shape, z)?,
                     by: r.by,
                     identity: r.identity,
                     index: r.index,
@@ -508,6 +510,34 @@ pub fn face_in_setup_frame(face: &FaceItem, info: Option<&SetupTransformInfo>) -
         .into_inner();
     let normal = (tip - base).normalize();
     (base.z, normal)
+}
+
+/// The Z of a model edge item (UX-7) in the setup frame: the 3D setup map
+/// (`world_to_local`) of its first point at its Z, as
+/// [`face_in_setup_frame`] maps a face plane. `None` for an item with no
+/// Z. An identity setup gives the item's own Z.
+///
+/// A lateral setup turns a horizontal edge vertical; this map then gives
+/// the depth of its first point only (open: the item holds no normal to
+/// refuse with, as a face does with `FaceNotFlat`).
+pub fn item_z_in_setup_frame(item: &Item, info: Option<&SetupTransformInfo>) -> Option<f64> {
+    let z = item.z()?;
+    let Some(info) = info.filter(|i| i.needs_transform()) else {
+        return Some(z);
+    };
+    let [x, y] = item.key().anchor;
+    let first = match item.shape() {
+        Shape::Loop(p) | Shape::Path(p) => p.exterior.first().copied(),
+        Shape::Circle { ring, .. } => ring.exterior.first().copied(),
+        Shape::Point(p) => Some(*p),
+        Shape::Face(_) => None,
+    }
+    .unwrap_or(P2::new(x, y));
+    Some(
+        info.world_to_local(Pt::new(P3::new(first.x, first.y, z)))
+            .into_inner()
+            .z,
+    )
 }
 
 /// The item set of one source: the slot that names it for the dedup, and
@@ -611,12 +641,14 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection<M
         None
     };
     let stock = stock_set.as_ref();
-    let face_frame = |shape: &Shape| match shape {
+    let face_frame = |item: &Item| match item.shape() {
         Shape::Face(face) => {
             let (z, n) = face_in_setup_frame(face, scope.setup);
             (z, n.z)
         }
-        Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => (0.0, 0.0),
+        Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => {
+            (item_z_in_setup_frame(item, scope.setup).unwrap_or(0.0), 0.0)
+        }
     };
 
     let mut slots: Vec<(Slot, Vec<&Item>)> = Vec::new();

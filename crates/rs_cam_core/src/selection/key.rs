@@ -51,15 +51,27 @@ pub struct MatchKey {
     /// inner loops). Path: the length. Circle: the diameter. Point: 0.
     pub measure: f64,
     /// Face only: the BREP id, a tie-break when two faces share anchor and
-    /// measure. The key has no Z: a face that moves in Z still matches.
+    /// measure. A face key has no Z: a face that moves in Z still matches.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub brep: Option<u16>,
+    /// The Z of a model edge item (geometry selection UX-7, GT-0): a STEP
+    /// ring, edge chain, circular edge or vertex, in the model frame.
+    /// `None` for a drawing item, a stock item and a face, so their keys
+    /// and their stored form do not change. Two items that coincide in XY
+    /// at two Z (a step wall's top and bottom edge) get two keys.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z: Option<f64>,
 }
 
 impl MatchKey {
     /// The key of `shape`. Only `Item::new` calls this, so a key always
     /// matches its shape.
-    pub(super) fn of(source: SourceRef, layer: Option<&str>, shape: &Shape) -> Self {
+    pub(super) fn of(
+        source: SourceRef,
+        layer: Option<&str>,
+        shape: &Shape,
+        z: Option<f64>,
+    ) -> Self {
         let (anchor, measure, brep) = match shape {
             Shape::Loop(p) => (area_centroid(&p.exterior), p.area().abs().sqrt(), None),
             Shape::Path(p) => (
@@ -84,6 +96,7 @@ impl MatchKey {
             anchor,
             measure,
             brep,
+            z,
         }
     }
 
@@ -104,8 +117,9 @@ impl MatchKey {
     }
 
     /// True when the two keys name one item of ONE source: kind, layer and
-    /// the BREP id are equal, and anchor and measure agree within
-    /// [`KEY_MATCH_EPS_MM`]. The source is not compared. A stored pick
+    /// the BREP id are equal, anchor and measure agree within
+    /// [`KEY_MATCH_EPS_MM`], and the Z agrees (both `None`, or both set
+    /// and within [`KEY_MATCH_EPS_MM`]). The source is not compared. A stored pick
     /// names its source as [`SourceRef::ToolpathModel`], but the session
     /// binds the items to [`SourceRef::Model`]; the resolver finds the
     /// item set of the pick's source first and then calls this.
@@ -116,6 +130,11 @@ impl MatchKey {
             && (self.anchor[0] - other.anchor[0]).abs() < KEY_MATCH_EPS_MM
             && (self.anchor[1] - other.anchor[1]).abs() < KEY_MATCH_EPS_MM
             && (self.measure - other.measure).abs() < KEY_MATCH_EPS_MM
+            && match (self.z, other.z) {
+                (None, None) => true,
+                (Some(a), Some(b)) => (a - b).abs() < KEY_MATCH_EPS_MM,
+                (Some(_), None) | (None, Some(_)) => false,
+            }
     }
 }
 

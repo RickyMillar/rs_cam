@@ -3,15 +3,15 @@
 Every door that reads a file. The entry point is `io::load_model_file`.
 
 ## Files
-- `mod.rs` — import helpers, size guard, `brep_face_items` (STEP faces; signed normal from the triangles), `default_import_units`.
+- `mod.rs` — import helpers, size guard, `brep_items` (the STEP door: `brep_face_items` faces first, signed normal from the triangles, then
+  `brep_items.rs` `brep_edge_items`: up-face rings, horizontal edge runs, round rims, corners, each `Item::at_z`, UX-7), `default_import_units`.
   `import_options.rs` — `ImportOptions` (saved), `ImportReport` (not saved), `DrawingImport`.
 - `dxf_input.rs` — DXF entities to items, one per entity with its layer (a circle is ONE item); the
   open pieces join through `selection::join`. `svg_input.rs` — SVG paths to items; layer = id of the
   nearest `<g>`; subpaths join; `SVG_DEFAULT_UNITS`, `svg_declared_size`.
-- `step_input.rs` — STEP import through the `truck` crate. A closed shell (BREP topology) that winds inward
-  is reversed once at import (`orient_shell_outward`), so every reader sees outward triangles.
-- `tool_library.rs`, `machine_library.rs` — the two TOML catalogues (folder:
-  `crate::settings::paths`); `named_toml_library.rs` — their directory code.
+- `step_input.rs` — STEP import through the `truck` crate. A closed shell that winds inward is reversed once (`orient_shell_outward`).
+  Face loops walk in a fixed order, the largest first (the outer ring), so a re-import gives the same keys (UX-7).
+- `tool_library.rs`, `machine_library.rs` — the TOML catalogues (`crate::settings::paths`); `named_toml_library.rs` — their directory code.
 
 ## Invariants
 - An import states its units and its `ImportOptions`. A reload, rescale and relink pass both.

@@ -592,10 +592,9 @@ pub(crate) fn hover_vertices(
     key: &rs_cam_core::selection::MatchKey,
 ) -> Vec<crate::render::LineVertex> {
     use crate::interaction::picking::{
-        POINT_MARK_RADIUS_MM, drawing_plane_z, item_display_xy, toolpath_setup_frame,
+        POINT_MARK_RADIUS_MM, drawing_plane_z, item_display_point, toolpath_setup_frame,
     };
     use crate::render::{LineVertex, colors};
-    use rs_cam_core::selection::Shape;
     let color = colors::SELECTION_HOVER;
     let Some(item) = session
         .models()
@@ -608,18 +607,11 @@ pub(crate) fn hover_vertices(
     let stock = session.stock_config();
     let frame = toolpath_setup_frame(session, tc.id);
     let plane = drawing_plane_z(session, tc, frame.as_ref());
+    // A face and a STEP edge item (UX-7) draw at their own Z; a drawing
+    // item on the drawing plane.
     let at = |p: &rs_cam_core::geo::P2| -> [f32; 3] {
-        match item.shape() {
-            Shape::Face(face) => {
-                let q = rs_cam_core::geo::P3::new(p.x, p.y, face.plane_z);
-                let q = frame.as_ref().map_or(q, |f| f.transform_point(q, stock));
-                [q.x as f32, q.y as f32, q.z as f32]
-            }
-            Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => {
-                let q = item_display_xy(frame.as_ref(), stock, *p);
-                [q.x as f32, q.y as f32, plane as f32]
-            }
-        }
+        let q = item_display_point(frame.as_ref(), stock, item, *p, plane);
+        [q.x as f32, q.y as f32, q.z as f32]
     };
     let mut verts = Vec::new();
     for (pts, closed) in item.shape().pick_lines() {

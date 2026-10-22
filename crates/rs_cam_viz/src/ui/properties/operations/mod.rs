@@ -948,6 +948,7 @@ mod tests {
             anchor: [50.0, 50.0],
             measure: 6.0,
             brep: None,
+            z: None,
         };
         let (session, _) =
             drill_session(session_target_model(2), Selection::from_picks(vec![lost]));

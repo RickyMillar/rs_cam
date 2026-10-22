@@ -8,6 +8,7 @@
 //! The folder holds every door that reads a file from disk: the three
 //! importers and the two on-disk TOML libraries.
 
+pub mod brep_items;
 pub mod dxf_input;
 mod import_options;
 pub mod machine_library;
@@ -232,7 +233,7 @@ pub(crate) fn model_from_geometry(
             model.import_report = Some(report);
         }
         LoadedGeometry::Enriched(enriched) => {
-            model.items = Arc::new(brep_face_items(&enriched));
+            model.items = Arc::new(brep_items(&enriched));
             model.mesh = Some(Arc::clone(&enriched.mesh));
             model.enriched_mesh = Some(Arc::new(enriched));
         }
@@ -306,6 +307,25 @@ pub fn brep_face_items(enriched: &crate::geometry::enriched_mesh::EnrichedMesh) 
             items.push(item);
         }
     }
+    ItemSet::new(items)
+}
+
+/// The items of a STEP model (the door, geometry selection UX-7): the face
+/// items ([`brep_face_items`]) first, so a face keeps its index, then the
+/// model edge items ([`brep_items::brep_edge_items`]: face rings, edge
+/// chains, circular edges and vertices, each at its own Z). The count of
+/// the edges that are not at one Z goes to the log.
+pub fn brep_items(enriched: &crate::geometry::enriched_mesh::EnrichedMesh) -> ItemSet {
+    let faces = brep_face_items(enriched);
+    let edges = brep_items::brep_edge_items(enriched, &faces);
+    tracing::info!(
+        faces = faces.len(),
+        edge_items = edges.items.len(),
+        skipped_edges = edges.skipped,
+        "STEP model edge items (vertical and sloped edges give no item)"
+    );
+    let mut items: Vec<crate::selection::Item> = faces.iter().cloned().collect();
+    items.extend(edges.items);
     ItemSet::new(items)
 }
 

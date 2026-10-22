@@ -48,7 +48,9 @@ use rs_cam_core::compute::transform::{FaceUp, SetupTransformInfo, ZRotation};
 use rs_cam_core::geo::{BoundingBox3, P2, P3};
 use rs_cam_core::io::{infer_kind_from_path, load_model_file};
 use rs_cam_core::polygon::Polygon2;
-use rs_cam_core::selection::{HoleFitRule, RefusalCause, ResolveScope, Selection, resolve, view};
+use rs_cam_core::selection::{
+    HoleFitRule, ItemKind, RefusalCause, ResolveScope, Selection, resolve, view,
+};
 use rs_cam_core::session::LoadedModel;
 
 use common::op_fixtures::{self as f, CaseSpec, Fixture, Frame, Prior, case_session};
@@ -291,6 +293,29 @@ const FIXTURE_FILE_DIFFERENCES: &[&str] = &[
     "crates/rs_cam_core/tests/fixtures/selection_p2_1/groups.svg Inches [flipped] holes",
 ];
 
+/// UX-7 (operator ruling Q3, by design): on a STEP model the default rule
+/// serves the face rings (loops at their Z). The old door gave a STEP model
+/// no drawing ring, so on each STEP file with an up face ring the curves
+/// and the regions views are new, in both frames. A STEP file with no ring
+/// (the sphere) still equals the old lists.
+fn step_ring_differences(files: &[(String, LoadedModel)]) -> Vec<String> {
+    files
+        .iter()
+        .filter(|(_, m)| {
+            m.items
+                .iter()
+                .any(|i| i.kind() == ItemKind::Loop && i.z().is_some())
+        })
+        .flat_map(|(label, _)| {
+            ["model", "flipped"].into_iter().flat_map(move |frame| {
+                ["curves", "regions"]
+                    .into_iter()
+                    .map(move |view| format!("{label} [{frame}] {view}"))
+            })
+        })
+        .collect()
+}
+
 /// The views that differ on the hand-built drawings: none. Every
 /// G-OPGOLDEN drawing is equal in both frames. The P1 drawing is equal
 /// too since P2.3a: `view` nests the clockwise V and keeps its drawn
@@ -343,7 +368,13 @@ fn the_default_selection_gives_the_old_lists_on_every_fixture_file() {
         .iter()
         .flat_map(|(label, model)| both_frames(label, model))
         .collect();
-    assert_differences(&diffs, FIXTURE_FILE_DIFFERENCES);
+    let step = step_ring_differences(&files);
+    if cfg!(feature = "step") {
+        assert!(!step.is_empty(), "non-vacuity: a STEP file gives rings");
+    }
+    let mut expected: Vec<&str> = FIXTURE_FILE_DIFFERENCES.to_vec();
+    expected.extend(step.iter().map(String::as_str));
+    assert_differences(&diffs, &expected);
 }
 
 /// The P1 sentry drawing: a square, a clockwise V and a 2-point line

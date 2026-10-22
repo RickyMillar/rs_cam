@@ -142,7 +142,7 @@ pub(super) fn upload(
         else {
             break 'polygon_upload;
         };
-        if !model.items.has_drawing() {
+        if !model.items.has_drawing() && !model.items.has_model_edges() {
             break 'polygon_upload;
         }
         let setup_ref = model_setup.as_ref();
@@ -368,6 +368,26 @@ pub(super) fn upload(
                 .as_ref()
                 .and_then(|report| report.item_states.get(index).copied());
             let is_flashed = flashed(item.key());
+            // UX-7: a STEP ring, edge, circle or point draws only when
+            // the selection names it (or it flashes), at its own Z.
+            if item.z().is_some() {
+                let named =
+                    item_state.is_some_and(|s| s != rs_cam_core::session::ItemState::NotSelected);
+                if !(named || is_flashed) {
+                    continue;
+                }
+                let color = match item_state {
+                    Some(s) if !is_flashed => colors::selection_state_color(s),
+                    _ => colors::SELECTION_HOVER,
+                };
+                let out = if is_flashed {
+                    &mut flash_verts
+                } else {
+                    &mut verts
+                };
+                edge_item_lines(item, setup_ref, stock, planar_z, color, mark, out);
+                continue;
+            }
             let color = if is_flashed {
                 colors::SELECTION_HOVER
             } else if let Some(item_state) = item_state {
@@ -672,4 +692,55 @@ fn hole_misfits(state: &AppState, tc: &rs_cam_core::session::ToolpathConfig) -> 
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// The lines of a STEP ring, edge, circle or point (geometry selection
+/// UX-7) at its own Z, in the display frame
+/// (`picking::item_display_point`, the one point rule of the draw and the
+/// pick). A point draws as a ring of radius `mark`.
+fn edge_item_lines(
+    item: &rs_cam_core::selection::Item,
+    frame: Option<&SetupFrame>,
+    stock: &crate::state::job::StockConfig,
+    plane: f32,
+    color: [f32; 3],
+    mark: f64,
+    out: &mut Vec<crate::render::LineVertex>,
+) {
+    use crate::render::LineVertex;
+    let at = |p: &rs_cam_core::geo::P2| -> [f32; 3] {
+        let q = crate::interaction::picking::item_display_point(
+            frame,
+            stock,
+            item,
+            *p,
+            f64::from(plane),
+        );
+        [q.x as f32, q.y as f32, q.z as f32]
+    };
+    for (pts, closed) in item.shape().pick_lines() {
+        match pts {
+            [] => {}
+            [single] => {
+                let c = at(single);
+                crate::app::push_circle_vertices(out, c[0], c[1], c[2], mark as f32, color, 24);
+            }
+            _ => {
+                let ends = if closed { pts.len() } else { pts.len() - 1 };
+                for i in 0..ends {
+                    let (Some(a), Some(b)) = (pts.get(i), pts.get((i + 1) % pts.len())) else {
+                        continue;
+                    };
+                    out.push(LineVertex {
+                        position: at(a),
+                        color,
+                    });
+                    out.push(LineVertex {
+                        position: at(b),
+                        color,
+                    });
+                }
+            }
+        }
+    }
 }

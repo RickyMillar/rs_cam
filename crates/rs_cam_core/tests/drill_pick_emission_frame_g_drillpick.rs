@@ -132,6 +132,7 @@ fn pick() -> Selection {
         anchor: PICK,
         measure: 0.0,
         brep: None,
+        z: None,
     }])
 }
 

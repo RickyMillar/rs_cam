@@ -352,6 +352,7 @@ fn a_drill_pick_drops_the_chain_n6() {
                 anchor: [1.0, 2.0],
                 measure: 0.0,
                 brep: None,
+                z: None,
             }),
         }))
         .expect("index 0 is a Drill operation");

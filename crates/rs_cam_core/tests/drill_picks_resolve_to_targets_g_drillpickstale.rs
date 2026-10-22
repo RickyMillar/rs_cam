@@ -148,6 +148,7 @@ fn pick_at(xy: [f64; 2]) -> MatchKey {
         anchor: xy,
         measure: HOLE_DIAMETER,
         brep: None,
+        z: None,
     }
 }
 

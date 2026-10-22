@@ -411,7 +411,9 @@ pub fn drawing_draws(state: &super::AppState) -> Vec<DrawingDraw> {
             .session()
             .models()
             .iter()
-            .any(|m| m.id == model_id && m.items.has_drawing())
+            // UX-7: a STEP model draws the edge items its toolpath
+            // selects, at their Z (no neutral drawing).
+            .any(|m| m.id == model_id && (m.items.has_drawing() || m.items.has_model_edges()))
     {
         draws.push(DrawingDraw::Toolpath { model_id, toolpath });
     }

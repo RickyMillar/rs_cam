@@ -438,7 +438,7 @@ fn show_me_frames_only_the_face_of_an_at_the_top_note_p3_8() {
         .expect("the selection resolves");
     assert!(report.refusal.is_none(), "{:?}", report.refusal);
     assert_eq!(report.notes.len(), 2, "two faces are at the top");
-    let note_faces: Vec<&MatchKey> = report.notes.iter().map(|n| &n.first.key).collect();
+    let note_faces: Vec<&MatchKey> = report.notes.iter().map(|n| &*n.first.key).collect();
     assert!(
         !note_faces[0].names_same_geometry(note_faces[1]),
         "the two notes name two faces"

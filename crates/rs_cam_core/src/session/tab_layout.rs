@@ -325,6 +325,7 @@ mod tests {
             anchor: [x, 0.0],
             measure: 10.0,
             brep: None,
+            z: None,
         }
     }
 

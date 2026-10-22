@@ -3,15 +3,15 @@
 The items of every source and the selection of an op. Plan: `planning/geometry_selection_2026-10-16/`.
 
 ## Files
-- `mod.rs` facade; `tests.rs` P2.2 lib sentries; `stock.rs` `stock_items`; `key.rs` `MatchKey`, `matches`, `CAD_ROUNDING_MM` (L-13); `item.rs`
-  `Item`, `Shape`, `FaceItem`, `ItemKind`, `SourceRef`, `ItemSet` (`has_selectable_item`: the 2D gate).
+- `mod.rs` facade; `tests.rs` P2.2 lib sentries; `stock.rs` `stock_items`; `key.rs` `MatchKey`, `matches`, `CAD_ROUNDING_MM` (L-13); `item.rs` `Item`, `Shape`, `FaceItem`, `ItemKind`, `SourceRef`, `ItemSet` (`has_selectable_item`: the 2D gate).
 - `rule.rs` — `Selection` (private fields, NO `Default`), `Rule` (`layer_rules`), `Filter`, `KindFilter`,
   `SelectionEdit`; `Selection::apply` holds THE replace-under-default rule (O-PICK: `AddPick`/`AddRule` on `is_default_of` replace it; an empty default never counts; `add_rules` reuses `holds_default`); `near.rs` — THE pick rule (`polyline_distance`).
 - `join.rs` — THE join (`CLOSE_TOL_MM`); `drawing_edit.rs` — the ledger; `flat_regions.rs` — STL flat regions as faces (`FLAT_REGION_Z_BAND_MM`, L-7; Z order, then lowest triangle).
 - `resolve.rs` — `resolve` (pure; reports, never refuses), `face_top_z`, `to_setup_frame` (THE frame door; F013: `ResolvedSelection<ModelFrame | SetupFrame>`, `to_setup_frame(Option<&SetupTransformInfo>)` gives `<SetupFrame>`, `face_top_z`/`face_bottom_z` exist only on `<SetupFrame>`); `view.rs` — `view`, `view_boundary`, `OpItems`, `Regions` (`is_stock`, `exterior_item`), `Curves`, `Holes`; `refusal.rs` — `RefusalCause`; `hole_fit.rs` — `hole_fit`, `fit_holes` (P6.5); `extend.rs` — `extend_to_stock` = `extend_ends` (L-3 reuse) + `close_to_stock`, `PathSide`, `StockXy`, `CannotExtend` (P6.4).
 
 ## Invariants
-- `Item::new` is the only item constructor; it checks the shape and computes the key. A circle is ONE item. Items keep import order. Two items with equal keys stay two; a pick on them is ambiguous.
+- `Item::new`/`Item::at_z` (one checked body) build every item and its key. A circle is ONE item. Items keep import order. Equal keys stay two items; a pick on them is ambiguous.
+- UX-7: a STEP ring/edge/circle/point holds `z` (key `z`, `None` for drawing, stock, face keys: stored keys unchanged). `ItemSet` drawing readers read `is_plane_drawing` only; `served_by_default`: Served on a Z item = Loop only (Q3); `Filter::z`; `plane_z()` feeds `face_top_z`, `Regions::plane_z`.
 - The session binds items to `SourceRef::Model(id)`; `resolve` compares geometry only (`KEY_MATCH_EPS_MM`).
   The command stores `Model(own id)` as `ToolpathModel`: a key and a click are one pick. Read no file here.
 - `view` nests the selected rings only (`ItemSet::closed_regions`, `drawing_curves` share it). A face keeps its
@@ -37,4 +37,4 @@ The items of every source and the selection of an op. Plan: `planning/geometry_s
   `drill_picks_resolve_to_targets_g_drillpickstale`, `selection_refusals_name_the_item_p2_4` (status = generation, except `NoSuchRule`, `FacesNotReady`),
   `a_two_face_pick_keeps_both_faces_p2_4`, `a_selection_boundary_confines_g_modeloutline`, `selection_round_trips_p2_6`, `one_item_is_one_pick_p2_7`,
   `a_retired_selection_key_is_named_p2_6`, `a_down_face_gives_no_top_and_no_floor_p3_4`, `a_3d_op_face_pick_sets_its_top_p4_1`, `a_face_op_reads_its_selection_p4_2`, `item_states_match_the_cut_p4_4`,
-  `import_reports_joins_and_open_shapes_p4_8`, `drawing_edits_replay_on_reimport_p4_9`, `stl_flat_regions_are_face_items_p4_7` (`--features test-support`), `a_drill_drills_only_the_tool_size_p6_5`, `a_bore_cuts_the_stated_size_p6_6`, `a_pocket_extends_an_open_path_to_the_stock_p6_4` (`--lib selection::extend`), `a_pick_replaces_the_default_rule_o_pick` (O-PICK, GT-Q8)
+  `import_reports_joins_and_open_shapes_p4_8`, `drawing_edits_replay_on_reimport_p4_9`, `stl_flat_regions_are_face_items_p4_7` (`--features test-support`), `a_drill_drills_only_the_tool_size_p6_5`, `a_bore_cuts_the_stated_size_p6_6`, `a_pocket_extends_an_open_path_to_the_stock_p6_4` (`--lib selection::extend`), `a_pick_replaces_the_default_rule_o_pick` (O-PICK, GT-Q8), `a_step_model_gives_edges_circles_and_points_ux7` (`--features step`)

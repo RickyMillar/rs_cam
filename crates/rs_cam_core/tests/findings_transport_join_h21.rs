@@ -191,6 +191,7 @@ fn every_finding_recorded() -> GenerationFindings {
                     anchor: [12.0, 40.5],
                     measure: 86.2,
                     brep: None,
+                    z: None,
                 }),
                 item_use: ItemUse::Regions,
                 cause: NoteCause::KindNotServed,

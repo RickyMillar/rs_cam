@@ -241,6 +241,10 @@ pub enum ItemError {
     HasHoles { kind: ItemKind },
     #[error("a face item needs a unit normal")]
     FaceNormal,
+    #[error("a face item holds its plane Z, not an item Z")]
+    FaceWithZ,
+    #[error("an item Z must be finite")]
+    ZNotFinite,
 }
 
 /// One pickable piece of 2D geometry.
@@ -252,6 +256,10 @@ pub struct Item {
     layer: Option<Arc<str>>,
     key: MatchKey,
     shape: Shape,
+    /// The Z of a model edge item (UX-7): a STEP ring, edge chain,
+    /// circular edge or vertex. `None` for a drawing item (it lies in the
+    /// drawing plane), a stock item and a face (a face holds `plane_z`).
+    z: Option<f64>,
 }
 
 /// A ring check shared by the closed shapes.
@@ -280,6 +288,37 @@ impl Item {
         layer: Option<Arc<str>>,
         shape: Shape,
     ) -> Result<Self, ItemError> {
+        Self::build(source, layer, shape, None)
+    }
+
+    /// Build a model edge item at `z` (geometry selection UX-7): a ring, an
+    /// edge chain, a circular edge or a vertex of a STEP model. The key
+    /// holds the Z, so two items at one XY and two Z get two keys. A face
+    /// refuses (`FaceWithZ`): it holds its own plane Z.
+    pub fn at_z(
+        source: SourceRef,
+        layer: Option<Arc<str>>,
+        shape: Shape,
+        z: f64,
+    ) -> Result<Self, ItemError> {
+        Self::build(source, layer, shape, Some(z))
+    }
+
+    /// The one checked body of [`Self::new`] and [`Self::at_z`].
+    fn build(
+        source: SourceRef,
+        layer: Option<Arc<str>>,
+        shape: Shape,
+        z: Option<f64>,
+    ) -> Result<Self, ItemError> {
+        if let Some(z) = z {
+            if !z.is_finite() {
+                return Err(ItemError::ZNotFinite);
+            }
+            if matches!(shape, Shape::Face(_)) {
+                return Err(ItemError::FaceWithZ);
+            }
+        }
         match &shape {
             Shape::Loop(p) => check_ring(ItemKind::Loop, p, false)?,
             Shape::Path(p) => {
@@ -308,12 +347,13 @@ impl Item {
                 }
             }
         }
-        let key = MatchKey::of(source, layer.as_deref(), &shape);
+        let key = MatchKey::of(source, layer.as_deref(), &shape, z);
         Ok(Self {
             source,
             layer,
             key,
             shape,
+            z,
         })
     }
 
@@ -339,16 +379,47 @@ impl Item {
         self.shape.kind()
     }
 
-    /// The same item (source and layer) with `shape` in place of its shape.
-    /// The key is computed again, so it matches the new shape. The frame
-    /// door (`ResolvedSelection::to_setup_frame`) calls this.
+    /// The Z of a model edge item (UX-7), in the frame of its owner.
+    /// `None` for a drawing item, a stock item and a face.
+    pub fn z(&self) -> Option<f64> {
+        self.z
+    }
+
+    /// The Z plane of the item: a face's `plane_z`, a model edge item's Z
+    /// ([`Self::z`]). `None` for a drawing item and a stock item: they
+    /// lie in the drawing plane.
+    pub fn plane_z(&self) -> Option<f64> {
+        match &self.shape {
+            Shape::Face(face) => Some(face.plane_z),
+            Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => self.z,
+        }
+    }
+
+    /// True for a drawing item in the drawing plane: a loop, a path, a
+    /// point or a circle with no Z. A model edge item (UX-7) and a face
+    /// are not. THE test of every "is a 2D drawing" reader of
+    /// [`ItemSet`].
+    pub fn is_plane_drawing(&self) -> bool {
+        self.z.is_none() && !matches!(self.shape, Shape::Face(_))
+    }
+
+    /// The same item (source, layer and Z) with `shape` in place of its
+    /// shape. The key is computed again, so it matches the new shape. The
+    /// frame door (`ResolvedSelection::to_setup_frame`) calls
+    /// [`Self::with_shape_at`].
     pub(crate) fn with_shape(&self, shape: Shape) -> Result<Self, ItemError> {
-        Self::new(self.source, self.layer.clone(), shape)
+        Self::build(self.source, self.layer.clone(), shape, self.z)
+    }
+
+    /// [`Self::with_shape`] with `z` in place of the item Z (the frame
+    /// door moves the Z of a model edge item, UX-7).
+    pub(crate) fn with_shape_at(&self, shape: Shape, z: Option<f64>) -> Result<Self, ItemError> {
+        Self::build(self.source, self.layer.clone(), shape, z)
     }
 
     /// The same item with a different source. The key is computed again.
     fn rebuilt(&self, source: SourceRef, shape: Shape) -> Result<Self, ItemError> {
-        Self::new(source, self.layer.clone(), shape)
+        Self::build(source, self.layer.clone(), shape, self.z)
     }
 }
 
@@ -448,12 +519,18 @@ impl ItemSet {
     }
 
     /// True when the set holds a drawing item (loop, path, point or
-    /// circle). A STEP model holds faces only, and a mesh holds no item.
+    /// circle) in the drawing plane ([`Item::is_plane_drawing`]). A STEP
+    /// model holds faces and model edge items at their own Z (UX-7), so it
+    /// is not a drawing; a mesh holds no item.
     /// This is the "is a 2D drawing" test of every reader.
     pub fn has_drawing(&self) -> bool {
-        self.items
-            .iter()
-            .any(|i| !matches!(i.shape, Shape::Face(_)))
+        self.items.iter().any(Item::is_plane_drawing)
+    }
+
+    /// True when the set holds a model edge item (UX-7): a STEP ring,
+    /// edge chain, circular edge or vertex, each at its own Z.
+    pub fn has_model_edges(&self) -> bool {
+        self.items.iter().any(|i| i.z.is_some())
     }
 
     /// True when the set holds an item that a selection can name: a
@@ -471,10 +548,13 @@ impl ItemSet {
     /// is not a drawing ring. Each such item holds a closed ring of 3 or
     /// more points (the `Item::new` invariant).
     pub fn has_closed_ring(&self) -> bool {
-        self.items.iter().any(|i| match i.shape {
-            Shape::Loop(_) | Shape::Circle { .. } => true,
-            Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => false,
-        })
+        self.items
+            .iter()
+            .filter(|i| i.is_plane_drawing())
+            .any(|i| match i.shape {
+                Shape::Loop(_) | Shape::Circle { .. } => true,
+                Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => false,
+            })
     }
 
     /// The closed drawing regions: every loop and circle ring, in import
@@ -483,10 +563,11 @@ impl ItemSet {
     /// and an outline obstacle read it (P2.5); the `Arc` is the memo, so
     /// two reads give one allocation.
     pub fn closed_regions(&self) -> Arc<Vec<Polygon2>> {
-        Arc::clone(
-            self.closed
-                .get_or_init(|| Arc::new(super::view::nest_closed_rings(self.items.iter()))),
-        )
+        Arc::clone(self.closed.get_or_init(|| {
+            Arc::new(super::view::nest_closed_rings(
+                self.items.iter().filter(|i| i.is_plane_drawing()),
+            ))
+        }))
     }
 
     /// Every drawn ring (loops, circle rings and open paths), in import
@@ -495,10 +576,11 @@ impl ItemSet {
     /// The pin walls and the model summaries read it (P2.5): a pin keeps
     /// its wall to an open path too. The `Arc` is the memo.
     pub fn drawing_curves(&self) -> Arc<Vec<Polygon2>> {
-        Arc::clone(
-            self.curves
-                .get_or_init(|| Arc::new(super::view::nest_drawing_rings(self.items.iter()))),
-        )
+        Arc::clone(self.curves.get_or_init(|| {
+            Arc::new(super::view::nest_drawing_rings(
+                self.items.iter().filter(|i| i.is_plane_drawing()),
+            ))
+        }))
     }
 
     /// The count of the drawn rings: loops, open paths and circle rings
@@ -506,7 +588,7 @@ impl ItemSet {
     pub fn ring_count(&self) -> usize {
         self.items
             .iter()
-            .filter(|i| i.shape.drawing_ring().is_some())
+            .filter(|i| i.is_plane_drawing() && i.shape.drawing_ring().is_some())
             .count()
     }
 
@@ -549,7 +631,12 @@ impl ItemSet {
             f64::NEG_INFINITY,
             f64::NEG_INFINITY,
         ];
-        for ring in self.items.iter().filter_map(|i| i.shape.drawing_ring()) {
+        for ring in self
+            .items
+            .iter()
+            .filter(|i| i.is_plane_drawing())
+            .filter_map(|i| i.shape.drawing_ring())
+        {
             for p in &ring.exterior {
                 b[0] = b[0].min(p.x);
                 b[1] = b[1].min(p.y);
@@ -579,9 +666,19 @@ impl ItemSet {
         let items = self
             .items
             .iter()
-            .map(|i| i.rebuilt(i.source, i.shape.scaled(scale)))
+            .map(|i| Self::scaled_item(i, scale))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self::with_outlines(items, Arc::new(outlines)))
+    }
+
+    /// One item of [`Self::scaled`]: the shape and the Z scale together.
+    fn scaled_item(i: &Item, scale: f64) -> Result<Item, ItemError> {
+        Item::build(
+            i.source,
+            i.layer.clone(),
+            i.shape.scaled(scale),
+            i.z.map(|z| z * scale),
+        )
     }
 
     /// The same items with `source` as their source.
@@ -655,6 +752,7 @@ impl ItemSet {
             let rings: Vec<Polygon2> = self
                 .items
                 .iter()
+                .filter(|i| i.is_plane_drawing())
                 .filter_map(|i| i.shape.drawing_ring().cloned())
                 .collect();
             Arc::new(crate::polygon::detect_containment(rings))
