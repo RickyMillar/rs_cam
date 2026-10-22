@@ -90,3 +90,25 @@ Fix in progress (editor):
 - R-D, open edges: a Pocket on a ring may cross the ring edges that lie on
   the part outline, out to the stock edge.
 - R-E: show one hole as one row ("Ø6 hole, 8 deep"), not as 2 circles.
+
+## After UX-7b (6d5a5423), live on a release GUI built from HEAD
+
+- F1: The default Pocket now gets Each picked face at the add (the toast
+  says so). It cuts each ring to its own Z. It has no gouge diagnostic.
+- F3: The default Profile gives `safety.cuts_into_model` (Blocking: 1008 of
+  2361 samples; the deepest is 10 mm at X 38.9, Y −2.8). The export refuses
+  and names the op.
+- F9: The Drill (depth 32) on the blind hole gives `safety.cuts_into_model`
+  (12 mm below the hole floor Z 12).
+- F19: The Drill tip stops at Z 0 (the stock bottom), but the static check
+  says "Depth exceeds stock thickness by 12.00 mm". The two numbers do not
+  agree.
+- F20 (SAFETY visibility): The Profile that the guard blocks shows a GREEN
+  dot in the list and "Done ✓ OK" in the panel. Only the export refuses.
+  This is in the GT editor brief.
+- F21: The Chamfer on the default rings cuts every ring at the highest
+  ring's Z. The lower rings get air passes at Z 29. A Chamfer must cut each
+  item at its own Z. R-C (convex edges only) needs this too.
+- F8 confirmed in the sim: the step Pocket leaves the 5 mm stock frame
+  round the part. With no outline item (R-A), the user has no
+  one-op way to remove it.
