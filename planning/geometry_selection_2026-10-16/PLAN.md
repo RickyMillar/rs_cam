@@ -384,7 +384,7 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
 | P3 depth refs | COMPLETE (P3.1-P3.8; D9 one floor field with its reference) | 6026eb37, 86265095, 6d403ac1, 272238d8, 1f814929, 294875be, 5236e6c2, 83df571f | pushed to 0346862f up to P3.6; P3.7-P3.8 local |
 | P4 UI + sources | P4.0 probe, P4.1-P4.9 and P4.D done (P4.8 without the SVG scale default); operator demo seen 2026-10-20 | 1ca93935, 229eb719, c223d7c4, 9bdfac8e, 3373d8d2, 099d946b, 22cb38fa, 8f5723e3, a53e0cf5, 30e9a146, 0458a586 (SVG O-2), a83d7236 (P4.10); P4 COMPLETE; pushed to ca18398c | next: P3 (D9) after the tech-debt W4 |
 | P5 tabs | done (operator look pending) | e76f82c8, P5b | GUI viewport tab editor -> P4. Lead ruling P5b: tab_width = the material bridge (today bridge = width - D: default leaves none); tab_height holds on every level |
-| P6 open paths, holes | P6.0-P6.6 done (P6.5b, R-ARC done); next P6.7 GUI, P6.8 parity | e1dfa30e, b0a13361, 5d4e2a6c, 5410a90a, f8cdfd70, 65c949d9, 0b4348e6, f27d2634, b2f1b9cc, 13abac43, 070d32bc | push by the tech-debt session after its full gate; follow-ups P6.0d, P6.2b, P6.4 list |
+| P6 open paths, holes | P6.0-P6.6, P6.7a done (P6.5b, R-ARC done); next P6.7b (after W13b), P6.8 parity | e1dfa30e, b0a13361, 5d4e2a6c, 5410a90a, f8cdfd70, 65c949d9, 0b4348e6, f27d2634, b2f1b9cc, 13abac43, 070d32bc, a2887ceb, bd613c8e | pushed a2887ceb (tech-debt session, full gate); P6.7a not pushed; follow-ups P6.0d, P6.2b, P6.4 list |
 | P7 templates | not started (P4 done) | | |
 | P8 recognition | not started (P4 done) | | |
 
@@ -744,6 +744,26 @@ Defects found by the design:
     holes") and a new role; it changes `Capabilities` and the frozen W2.4
     table. A lib test in `selection/tests.rs` (`..._known_red`) pins the
     present role and fails when the fix lands. Do it before P7.4.
+
+- Gate reds at 7d606800 judged (a2887ceb). Lead ruling: Unified Finish
+  is `ladder_includes_top: true` (its VerySteep band ladders from the
+  top), so top = bottom generates and drops the band with a finding; F033
+  refused that legal input. The other reds: one fixture, two P6.0 pins,
+  one P6.0c pin.
+- P6.7 split: P6.7a (GUI, bd613c8e) before W13b; P6.7b
+  (`Command::AddBoreFromDrill`, its button, MCP) after W13b, on the typed ids.
+  P6.7a deviations accepted: the hole rows and the Open paths line sit in
+  the Selection section (the editors have no fits and no Show me events);
+  Flip is "↔" on its own row; a pick of On under In Control also sets In
+  Computer in one command. P6.7a gaps:
+  - `floor_row` offers Each picked face under side On; the door refuses
+    with no message.
+  - The HoleFit notes (one per circle) and the size rows both show.
+  - "helix r" reads `ToolConfig.diameter`; the fit reads the built cutter.
+  - No test for the refused Open paths line; core refuses at the first
+    path, so "M refused" is at most 1.
+  - Trace Left/Right on a closed loop has no side mark; the side ring
+    shows only with the selection-states overlay on.
 
 ## P7 operator rulings (2026-10-22)
 
