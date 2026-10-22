@@ -831,3 +831,20 @@ the role or delete the `..._known_red` test.
 
 Open question for the operator: a pick of one square adds it on top of a
 default rule that already selects every served item on every layer.
+
+## Operator rulings 2026-10-22 (review of fixture A)
+
+- O-PICK: "Pick replaces default". On an op whose selection is still the
+  default rule, the first pick clears that rule, so the op cuts only the
+  picked items. Later clicks add or remove; shift-click or `+ Rule` adds a
+  layer; Reset brings the default rule back. The same rule holds on every
+  surface (GUI click, MCP pick, CLI). The operator's report: "because I
+  didnt select the circle in the op. it would not have been considered".
+- Corner note (operator: "it missed a corner"). Profile Inside on region
+  A skips the walls near (0,0) by about 6.6 mm. The Ø 4 hole at (5,5)
+  plus the tool radius keeps the tool centre 5 mm away, and the 5.1 mm
+  gap is narrower than the 6 mm tool. Staying out of the hole is correct;
+  the defect is that nothing says so. Add a finding with Show me: "Material is left at N
+  corner(s): the tool does not fit between the wall and <item>".
+  Measure it at generation (the cut ring against the region boundary
+  with a tolerance). Do not run a simulation for it.
