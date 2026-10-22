@@ -224,6 +224,19 @@ fn fixture() -> (ProjectSession, Models) {
             .unwrap();
     }
     let mut s = builder.build();
+    // F31: an auto stock fits every model, so a refresh that grows a
+    // model would move the stock and drop every result. These claims are
+    // about a stock CHANGE, so the fixture keeps the fitted numbers and
+    // clears the flag before the results exist.
+    let mut stock = s.stock_config().clone();
+    stock.auto_from_model = false;
+    let _ = s
+        .apply(Command::SetStockConfig(
+            rs_cam_core::session::SetStockConfigArgs {
+                stock: Box::new(stock),
+            },
+        ))
+        .expect("the fitted stock is in its domain");
     assert_eq!(s.setup_count(), 3);
     assert_eq!(s.toolpath_count(), 6);
     for index in 0..6 {

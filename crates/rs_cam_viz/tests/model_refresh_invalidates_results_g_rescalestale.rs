@@ -35,11 +35,12 @@
 //!
 //! # Why the fixture is an SVG
 //!
-//! An STL would let `rescale_model`'s `auto_from_model` branch call
-//! `stock_mut().update_from_bbox`. That is a different mechanism, and a
-//! mesh fixture could make this file pass for a reason it is not testing.
-//! An SVG carries no mesh, so `stock_bbox_update` stays `None` and the only
-//! thing under test is the door's own invalidation.
+//! Under an auto stock, a refresh that moves the model boxes refits the
+//! stock (F31, core `session::fit_auto_stock`), and a moved stock drops
+//! every result. That is a different mechanism, and it reads a drawing as
+//! well as a mesh. The fixture therefore sets a user stock
+//! (`auto_from_model` false). The only thing under test is the door's own
+//! invalidation.
 //!
 //! Source: `planning/ui_fix_2026-09-09/reports/F4.4.md` §7 row F4.7, and
 //! `research/R0.7.md` §3.3 (the "Reload / Rescale" row).
@@ -164,7 +165,15 @@ fn seeded(dir: &Path) -> (AppController<SilentBackend>, ModelId, PathBuf) {
 
     let mut controller = AppController::with_backend(SilentBackend);
     controller.state.replace_session(
+        // F31: a refresh door fits an auto stock to every model, a
+        // drawing too, so a rescale that grows the drawing would move the
+        // stock and drop every result. The stock is user-set here, so the
+        // file measures the door's own invalidation.
         ProjectSessionBuilder::new()
+            .stock(rs_cam_core::compute::StockConfig {
+                auto_from_model: false,
+                ..rs_cam_core::compute::StockConfig::default()
+            })
             .tool(ToolConfig::new_default(
                 ToolId::from_raw(1),
                 ToolType::EndMill,

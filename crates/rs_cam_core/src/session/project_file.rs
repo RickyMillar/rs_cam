@@ -1456,37 +1456,10 @@ pub(super) fn build_session_from_project(
     //
     // Fix: at load time, if `auto_from_model = true` and any loaded
     // model has a finite bbox, re-derive stock from the union of all
-    // model bboxes (mirrors what `add_model` does at runtime). This
-    // restores the documented invariant — `auto_from_model = true`
-    // means the stock bounds track the model bbox at the time the
-    // session is in memory, regardless of whether the dimensions on
-    // disk match.
-    if stock.auto_from_model {
-        let mut combined: Option<crate::geo::BoundingBox3> = None;
-        for model in &models {
-            let model_bbox = model.bbox();
-            if let Some(bb) = model_bbox {
-                combined = Some(match combined {
-                    None => bb,
-                    Some(existing) => crate::geo::BoundingBox3 {
-                        min: crate::geo::P3::new(
-                            existing.min.x.min(bb.min.x),
-                            existing.min.y.min(bb.min.y),
-                            existing.min.z.min(bb.min.z),
-                        ),
-                        max: crate::geo::P3::new(
-                            existing.max.x.max(bb.max.x),
-                            existing.max.y.max(bb.max.y),
-                            existing.max.z.max(bb.max.z),
-                        ),
-                    },
-                });
-            }
-        }
-        if let Some(bb) = combined {
-            stock.update_from_bbox(&bb);
-        }
-    }
+    // model bboxes. F31: this is the one rule every model-set door
+    // runs (`session::fit_auto_stock`). No result exists yet, so the
+    // answer needs no drop.
+    let _refit = crate::session::fit_auto_stock(&mut stock, &models);
 
     // Collect toolpaths from setups
     let mut setups = Vec::new();

@@ -5,7 +5,6 @@ use rs_cam_core::geo::BoundingBox3;
 use rs_cam_core::io::ImportOptions;
 use rs_cam_core::session::{
     AddModelArgs, AdoptModelGeometryArgs, Command, ProjectLoadWarning, ProjectSession,
-    SetStockConfigArgs,
 };
 
 use crate::compute::ComputeBackend;
@@ -19,25 +18,6 @@ use crate::state::simulation::SimulationState;
 use super::AppController;
 
 impl<B: ComputeBackend> AppController<B> {
-    /// Fit the stock around a bounding box, through the command door.
-    ///
-    /// **This is a behaviour change** (§19 ruling 7). The hatch call
-    /// `stock_mut().update_from_bbox(..)` wrote the stock and dropped
-    /// nothing, so every cached result survived a stock that had just
-    /// changed size. `Command::SetStockConfig` drops every result, which
-    /// is the rule every other stock edit follows (G-FRESHSTATE).
-    fn fit_stock_to_bbox(&mut self, bbox: &BoundingBox3) {
-        let mut stock = self.state.session().stock_config().clone();
-        stock.update_from_bbox(bbox);
-        let command = Command::SetStockConfig(SetStockConfigArgs {
-            stock: Box::new(stock),
-        });
-        // WP19: the stock row drops every result and the session's
-        // simulation with them. `AppController::apply` mirrors both, and
-        // the state door logs a refusal (F096, F056).
-        let _refused = self.apply(command).is_err();
-    }
-
     /// Replace one model's geometry, through the command door.
     ///
     /// The one door of the three refresh routes — rescale, reload and
@@ -81,13 +61,8 @@ impl<B: ComputeBackend> AppController<B> {
             ImportOptions::default(),
         )?;
         let bbox = model.bbox();
-        let auto_stock = self.state.session().stock_config().auto_from_model;
-        let mesh_bbox = model.mesh.as_ref().map(|mesh| mesh.bbox);
-        if let Some(mesh_bbox) = mesh_bbox
-            && auto_stock
-        {
-            self.fit_stock_to_bbox(&mesh_bbox);
-        }
+        // F31: `AddModel` fits an auto stock to every model and drops
+        // the results when the stock changes; this door adds no fit.
         let command = Command::AddModel(AddModelArgs {
             model: Box::new(model),
         });
@@ -192,13 +167,8 @@ impl<B: ComputeBackend> AppController<B> {
             ImportOptions::default(),
         )?;
         let bbox = model.bbox();
-        let auto_stock = self.state.session().stock_config().auto_from_model;
-        let mesh_bbox = model.mesh.as_ref().map(|mesh| mesh.bbox);
-        if let Some(mesh_bbox) = mesh_bbox
-            && auto_stock
-        {
-            self.fit_stock_to_bbox(&mesh_bbox);
-        }
+        // F31: `AddModel` fits an auto stock to every model and drops
+        // the results when the stock changes; this door adds no fit.
         let command = Command::AddModel(AddModelArgs {
             model: Box::new(model),
         });
@@ -243,7 +213,6 @@ impl<B: ComputeBackend> AppController<B> {
         let options = model.import_options;
         let new_model = import::import_model(&path, model_id, kind, new_units, options)?;
         let bbox = new_model.bbox();
-        let auto_stock = self.state.session().stock_config().auto_from_model;
 
         // G-RELOADTARGETS (F4.4): one shared field split, so this door
         // cannot skip `drill_targets` and `layers` again. Pre-fix a
@@ -261,21 +230,9 @@ impl<B: ComputeBackend> AppController<B> {
         //
         // A rescale IS the declared-units change, so this door supplies
         // the new units; `adopt_geometry` keeps the ones on the record.
+        //
+        // F31: the row also fits an auto stock to every model.
         self.adopt_model_geometry(model_id, new_model, Some(new_units))?;
-
-        let mesh_bbox = self
-            .state
-            .session()
-            .models()
-            .iter()
-            .find(|m| m.id == model_id)
-            .and_then(|m| m.mesh.as_ref())
-            .map(|mesh| mesh.bbox);
-        if let Some(mesh_bbox) = mesh_bbox
-            && auto_stock
-        {
-            self.fit_stock_to_bbox(&mesh_bbox);
-        }
 
         self.pending_upload = true;
         self.state.gui.mark_edited();

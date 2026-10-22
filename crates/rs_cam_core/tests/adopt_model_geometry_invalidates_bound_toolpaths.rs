@@ -140,8 +140,16 @@ fn fake_result() -> ToolpathComputeResult {
 
 /// Two models and three toolpaths. Index 0 and index 2 bind `MODEL_A`;
 /// index 1 binds `MODEL_B`. Every index holds a result.
+///
+/// F31: the stock is user-set. An auto stock fits every model, so a
+/// refresh that grows a model moves it and drops every result; these
+/// properties are about the results bound to the model.
 fn fixture() -> ProjectSession {
     ProjectSessionBuilder::new()
+        .stock(rs_cam_core::compute::StockConfig {
+            auto_from_model: false,
+            ..rs_cam_core::compute::StockConfig::default()
+        })
         .tool(ToolConfig::new_default(
             ToolId::from_raw(TOOL),
             ToolType::EndMill,

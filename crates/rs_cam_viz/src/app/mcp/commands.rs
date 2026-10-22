@@ -2562,8 +2562,8 @@ impl RsCamApp {
                 } else if auto_after && geometry_was_set {
                     Some(
                         "auto_from_model is TRUE and you set stock geometry explicitly: the next \
-                         import_model will re-derive size and origin from that model's bounding \
-                         box and overwrite the values just written."
+                         import_model or model change will re-derive size and origin from the \
+                         union of every model's bounding box and overwrite the values just written."
                             .to_owned(),
                     )
                 } else {

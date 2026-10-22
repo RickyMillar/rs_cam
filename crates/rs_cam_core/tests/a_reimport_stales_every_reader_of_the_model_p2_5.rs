@@ -176,13 +176,28 @@ fn fixture() -> ProjectSession {
         pocket("op exclude", MODEL_A, excludes_b()),
         pocket("control", MODEL_A, Selection::drawing()),
     ];
+    // F31: the default stock is `auto_from_model`, and a model door
+    // fits it to the union of every model. `.model()` fits nothing, so
+    // the fixture states the fitted stock. Model A (40 mm) holds model B
+    // before and after each act, so the stock does not move and drops no
+    // result of its own.
+    let models = [
+        square_model(MODEL_A, "a.svg", 40.0),
+        square_model(MODEL_B, "b.svg", 20.0),
+    ];
+    let mut stock = rs_cam_core::compute::StockConfig::default();
+    stock.update_from_bbox(
+        &rs_cam_core::session::auto_stock_bbox(&models).expect("both models have geometry"),
+    );
+    let [model_a, model_b] = models;
     let mut builder = ProjectSessionBuilder::new()
+        .stock(stock)
         .tool(ToolConfig::new_default(
             ToolId::from_raw(TOOL),
             ToolType::EndMill,
         ))
-        .model(square_model(MODEL_A, "a.svg", 40.0))
-        .model(square_model(MODEL_B, "b.svg", 20.0))
+        .model(model_a)
+        .model(model_b)
         .setup(setup());
     let count = readers.len();
     for (index, mut tc) in readers.into_iter().enumerate() {

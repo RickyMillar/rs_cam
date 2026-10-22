@@ -500,6 +500,10 @@ impl ProjectSession {
             // the id is what a refresh keeps. Dropping by id is therefore
             // the only instrument that answers.
             session.drop_results_for_model(model_id);
+            // F31: a new geometry can move the box of the model set.
+            if crate::session::fit_auto_stock(&mut session.stock, &session.models) {
+                session.drop_all_results();
+            }
             Ok(())
         })
     }
@@ -584,6 +588,10 @@ impl ProjectSession {
             }
             model.replay_drawing_edits(door, edits);
             session.drop_results_for_model(model_id);
+            // F31: an edit can change the items, so the box can move.
+            if crate::session::fit_auto_stock(&mut session.stock, &session.models) {
+                session.drop_all_results();
+            }
             Ok(())
         })
     }

@@ -19,11 +19,10 @@ impl ProjectSession {
 
     /// Add a model and return its ID.
     ///
-    /// When `stock.auto_from_model` is enabled, the stock dimensions are
-    /// auto-updated from the new model's bounding box — mesh bbox for
-    /// STL/STEP models, polygon bbox for SVG/DXF. Without this, MCP
-    /// users who called `import_model` after loading a project saw the
-    /// stock stay at its pre-import size (see F-13 in the April review).
+    /// When `stock.auto_from_model` is enabled, the stock fits the union
+    /// of the boxes of ALL models (F31, `session::fit_auto_stock`), not
+    /// the new model alone. A stock that changes drops every result
+    /// (G-FRESHSTATE).
     ///
     /// For 2D polygon models (zero Z extent), `update_from_bbox`
     /// preserves the existing stock Z dimension rather than collapsing
@@ -52,14 +51,11 @@ impl ProjectSession {
         let id = model.id;
         model.bind_items();
 
-        // Compute bbox before moving the model into self.models.
-        let auto_from_model = self.stock.auto_from_model;
-        let model_bbox = if auto_from_model { model.bbox() } else { None };
-
         self.models.push(model);
 
-        if let Some(bbox) = model_bbox {
-            self.stock.update_from_bbox(&bbox);
+        // F31: the auto stock fits every model, not the new one alone.
+        if crate::session::fit_auto_stock(&mut self.stock, &self.models) {
+            self.drop_all_results();
         }
 
         id
@@ -90,6 +86,10 @@ impl ProjectSession {
                 session.drop_results_for_model(model_id);
             }
             session.models.remove(index);
+            // F31: the auto stock fits the models that remain.
+            if crate::session::fit_auto_stock(&mut session.stock, &session.models) {
+                session.drop_all_results();
+            }
             Ok(())
         })
     }

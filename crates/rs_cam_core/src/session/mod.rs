@@ -13,6 +13,7 @@
 //! let diag = session.diagnostics();
 //! ```
 
+mod auto_stock;
 mod builder;
 mod command;
 mod compute;
@@ -41,6 +42,8 @@ mod stock_change_report;
 mod tab_layout;
 pub use tab_layout::{TabEdit, TabLayoutAnswer, TabMark, apply_tab_edit};
 
+pub use auto_stock::auto_stock_bbox;
+pub(crate) use auto_stock::fit_auto_stock;
 pub use builder::ProjectSessionBuilder;
 pub use command::{
     AddAlignmentPinArgs, AddBoreFromDrillArgs, AddModelArgs, AddObstacleArgs, AddSetupArgs,

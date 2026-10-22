@@ -16,7 +16,7 @@
   `post.rs`, `pills.rs`, `head.rs` (H2: the Machine panel's Head section), `shoe_row.rs` (H2: the dust shoe row).
 
 ## Invariants
-- Every edit writes through the core command path. Helix r: None = rule. The inspector nests ONCE.
+- Every edit writes through the core command path. Helix r: None = rule. The stock refit (`panel_apply.rs`) reads core `session::auto_stock_bbox` (F31, every model). The inspector nests ONCE.
 - The toolpath panel takes `ToolpathPanelSnapshot` and `ToolpathPanelInputs`. Add a field there, not a
   parameter. Width: not from tab or content (F22); "Done · BLOCKED" never truncates (figures drop). Header refusal: `REFUSED_SEE_GEOMETRY`.
   A tab dot comes from `tab_badges::OWNER_TAB`, THE id-to-tab map (F24); an id with no tab gives no dot.

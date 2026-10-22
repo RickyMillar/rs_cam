@@ -76,17 +76,10 @@ pub(crate) fn commit_tool_draft(
     }
 }
 
-/// The bounding box of the first model that carries geometry.
-///
-/// WP6. `AppController::first_model_bbox` answers the same question, and
-/// a draw site cannot reach the controller. The two read the same two
-/// sources in the same order.
-fn first_model_bbox(state: &AppState) -> Option<rs_cam_core::geo::BoundingBox3> {
-    state
-        .session()
-        .models()
-        .iter()
-        .find_map(rs_cam_core::session::LoadedModel::bbox)
+/// The box an auto stock fits: the union of the boxes of every model
+/// (F31, core `session::auto_stock_bbox`, the rule of every model door).
+fn auto_stock_bbox(state: &AppState) -> Option<rs_cam_core::geo::BoundingBox3> {
+    rs_cam_core::session::auto_stock_bbox(state.session().models())
 }
 
 /// Apply the stock panel's draft through the one command door.
@@ -103,7 +96,7 @@ fn first_model_bbox(state: &AppState) -> Option<rs_cam_core::geo::BoundingBox3> 
 /// Two things the deleted `StockChanged` handler did are NOT core rules,
 /// so they stay here:
 ///
-/// - `auto_from_model` re-sizes the stock around the first model. The
+/// - `auto_from_model` re-sizes the stock around every model (F31). The
 ///   handler did it before invalidating; this does it before the write,
 ///   so one command carries the finished record. R12: the refit runs
 ///   ONLY when no dimension or origin row moved; a moved row clears the
@@ -115,7 +108,7 @@ pub(crate) fn apply_stock_draft(state: &mut AppState, draft: crate::state::job::
     let draft = super::stock::reconcile_auto_from_model(
         state.session().stock_config(),
         draft,
-        first_model_bbox(state).as_ref(),
+        auto_stock_bbox(state).as_ref(),
     );
     // A finished edit is not the same as a CHANGED one. A `DragValue`
     // reports `lost_focus` when the operator clicks into the field and

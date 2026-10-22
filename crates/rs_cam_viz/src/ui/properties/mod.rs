@@ -1130,7 +1130,7 @@ fn draw_stock_selection(ui: &mut egui::Ui, state: &mut AppState) {
     };
     // R12: the caption under the checkbox offers a refit only when a
     // model with geometry exists. It reads the two sources
-    // `first_model_bbox` reads; an empty polygon set counts here and
+    // `auto_stock_bbox` reads; an empty polygon set counts here and
     // yields no bbox there.
     let has_model = state
         .session()
