@@ -897,3 +897,21 @@ default rule that already selects every served item on every layer.
   refused add shows a toast. Correction to the earlier note: the Bore
   refusal had a 6 s toast; the silent path was `apply_quietly` (add,
   Duplicate, Add a Bore).
+
+## Operator rulings 2026-10-22 on the Geometry tab study
+
+- GT-Q5: the geometry editor is a tab of the toolpath inspector, not a
+  workspace. Operator: "it should be its own tab in the toolpath menu, not
+  in the workspace".
+- GT-Q6 / list scope: the tab lists the selected items only, not every
+  item of the model. Operator: "just selected ones. Just because some
+  models will blow this out really quickly." The operator picks in the
+  viewport (pick bar, chooser for coincident items); the list shows what
+  the op names, grouped (rules, then picks), with the state of each item.
+- Lead decision on the name (GT-Q2): the new inspector tab is
+  "Geometry" (what the op cuts: the selection, the floor face, the
+  states). The present "Geometry" tab keeps the tool, input and op
+  parameters and is renamed "Cut". Pick moves to the Geometry tab (GT-Q3).
+- Concept: B (op editor) in the inspector, with C's group-by-facts rows
+  as the way to add a rule from a picked item ("all circles Ø 6"). A
+  (named sets) waits.
