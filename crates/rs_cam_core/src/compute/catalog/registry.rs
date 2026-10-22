@@ -208,7 +208,7 @@ pub(super) static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
 pub(super) static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
     op_type: OperationType::Adaptive,
     spec: OperationSpec {
-        label: "Adaptive",
+        label: "2D Adaptive",
         description: "Constant-engagement rough clearing",
         family: OperationFamily::TwoPointFiveD,
         geometry: GeometryRequirement::Items,
@@ -734,7 +734,7 @@ pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
 pub(super) static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
     op_type: OperationType::DropCutter,
     spec: OperationSpec {
-        label: "3D Finish",
+        label: "Parallel finish",
         description: "Parallel raster passes following the surface",
         family: OperationFamily::ThreeD,
         geometry: GeometryRequirement::Mesh,
@@ -752,7 +752,7 @@ pub(super) static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
     // 3D finish, covering the stock in angled trenches. Lead-in/out add
     // arc transitions that produce more diagonals on a zigzag raster.
     dressup_policy: DressupPolicy::strip_all(
-        "Incompatible with 3D Finish: each raster segment's ramp entry would carve a diagonal trench across the stock.",
+        "Incompatible with Parallel finish: each raster segment's ramp entry would carve a diagonal trench across the stock.",
     ),
     policy: OpPolicy::LATERAL_RASTER,
     capabilities: Capabilities {
@@ -789,7 +789,7 @@ pub(super) static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
 pub(super) static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
     op_type: OperationType::Adaptive3d,
     spec: OperationSpec {
-        label: "3D Rough",
+        label: "3D Adaptive",
         description: "Load-limiting rough mill on a 3D surface",
         family: OperationFamily::ThreeD,
         geometry: GeometryRequirement::Mesh,

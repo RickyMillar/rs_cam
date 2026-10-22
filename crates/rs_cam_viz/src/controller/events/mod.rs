@@ -516,6 +516,36 @@ impl<B: ComputeBackend> AppController<B> {
             }
 
             // --- Geometry selection (P2.6) ---
+            AppEvent::AddPick {
+                toolpath_id,
+                target,
+                key,
+            } => {
+                // Geometry selection P3: the same resolution as a click
+                // (`click_edit`), but an item that is already selected
+                // stays selected: a `RemovePick` answer gives no edit.
+                let edit = self
+                    .state
+                    .session()
+                    .find_toolpath_config_by_id(toolpath_id)
+                    .map(|(_, tc)| self.state.session().click_edit(tc, target, key));
+                match edit {
+                    Some(Ok(rs_cam_core::session::ClickEdit::Selection(
+                        rs_cam_core::selection::SelectionEdit::RemovePick(_),
+                    )))
+                    | None => {}
+                    Some(Ok(rs_cam_core::session::ClickEdit::Selection(edit))) => {
+                        self.apply_selection_edit(toolpath_id, target, edit);
+                    }
+                    Some(Ok(
+                        click @ rs_cam_core::session::ClickEdit::BoundaryToSelection { .. },
+                    )) => self.apply_boundary_switch(toolpath_id, &click),
+                    Some(Err(error)) => self.push_notification(
+                        format!("Could not read the selection: {error}"),
+                        super::Severity::Warning,
+                    ),
+                }
+            }
             AppEvent::TogglePick {
                 toolpath_id,
                 target,

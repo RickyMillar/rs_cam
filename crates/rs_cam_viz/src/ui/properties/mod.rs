@@ -33,7 +33,7 @@ pub(crate) use panel_apply::{
     apply_obstacle_draft, apply_stock_draft, commit_tool_draft, part_models_first,
     stock_edit_command,
 };
-pub use tab_badges::height_order_badge;
+pub use tab_badges::{REST_MACHINING_LABEL, height_order_badge, rest_machining_row};
 
 // The children of this module. Every name below is a private re-export: it
 // keeps the item's path at `ui::properties::<name>`, which is what a
@@ -182,25 +182,28 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
 // The per-toolpath properties panel has six concern tabs. Geometry (what
 // the op cuts: the selected items, the floor face; geometry selection GT-1)
 // comes first. Cut holds the tool, the input model, the start stock and
-// the op parameters (the "Geometry" tab before GT-1). Then Feeds & Speeds,
-// Linking (how moves connect), Heights (Z planes) and Dressup.
+// the op parameters (the "Geometry" tab before GT-1). Then Heights (Z
+// planes), Feeds & Speeds, Linking (how moves connect) and Dressup.
+// D7 (reference audit 2026-10-23): Heights is third, after Cut, as in
+// FreeCAD and Fusion.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ToolpathTab {
     Geometry,
     Cut,
+    Heights,
     FeedsSpeeds,
     Linking,
-    Heights,
     Dressup,
 }
 
 impl ToolpathTab {
+    /// The tabs in strip order (D7).
     pub const ALL: &[ToolpathTab] = &[
         ToolpathTab::Geometry,
         ToolpathTab::Cut,
+        ToolpathTab::Heights,
         ToolpathTab::FeedsSpeeds,
         ToolpathTab::Linking,
-        ToolpathTab::Heights,
         ToolpathTab::Dressup,
     ];
 

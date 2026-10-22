@@ -12,9 +12,14 @@ struct ActivePick {
     toolpath_id: crate::state::toolpath::ToolpathId,
     target: rs_cam_core::session::SelectionTarget,
     filter: crate::state::pick::PickFilter,
-    /// The kinds the click picks: the chips that are on, served and held
-    /// (`PickFilter::effective_kinds`).
+    /// The kinds the click tries first: the chips that are on, served and
+    /// held (`PickFilter::effective_kinds`).
     kinds: Vec<rs_cam_core::selection::ItemKind>,
+    /// The kinds the op can cut on the model, whatever the chips
+    /// (`PickFilter::cut_kinds`, P4).
+    cut_kinds: Vec<rs_cam_core::selection::ItemKind>,
+    item_use: rs_cam_core::compute::catalog::ItemUse,
+    held: std::collections::BTreeSet<rs_cam_core::selection::ItemKind>,
 }
 
 impl RsCamApp {
@@ -60,27 +65,49 @@ impl RsCamApp {
             toolpath_id: id,
             target: mode.target,
             kinds: mode.filter.effective_kinds(item_use, &held),
+            cut_kinds: crate::state::pick::PickFilter::cut_kinds(item_use, &held),
             filter: mode.filter.clone(),
+            item_use,
+            held,
         })
     }
 
-    /// The key of the item under `pos` in pick mode (P4.5), or `None`. A
-    /// face that is not flat has no item: `Err` names it.
+    /// The key of the item under `pos` in pick mode (P4.5), or `None`,
+    /// with the kind whose chip is off when the item is of that kind (P4).
+    /// A face that is not flat has no item: `Err` names it. The click and
+    /// the hover both read it (`pick_mode_item`), so the hover predicts the
+    /// click.
     fn pick_mode_key(
         &self,
         pick: &ActivePick,
         pos: egui::Pos2,
-    ) -> Option<Result<rs_cam_core::selection::MatchKey, String>> {
-        use crate::interaction::PickHit;
+    ) -> Option<(
+        Result<rs_cam_core::selection::MatchKey, String>,
+        Option<rs_cam_core::selection::ItemKind>,
+    )> {
         let state = self.controller.state();
         let ctx = self.pick_context(pos);
-        let hit = crate::interaction::picking::pick_items(
+        let found = crate::interaction::picking::pick_mode_item(
             &ctx,
             state.session(),
             pick.toolpath_id,
             &pick.filter,
             &pick.kinds,
+            &pick.cut_kinds,
         )?;
+        let key = self.pick_hit_key(pick, found.hit)?;
+        Some((key, found.chip_off))
+    }
+
+    /// The match key of a pick-mode hit, or `None` for a hit that is not
+    /// an item. A face that is not flat has no item: `Err` names it.
+    fn pick_hit_key(
+        &self,
+        pick: &ActivePick,
+        hit: crate::interaction::PickHit,
+    ) -> Option<Result<rs_cam_core::selection::MatchKey, String>> {
+        use crate::interaction::PickHit;
+        let state = self.controller.state();
         match hit {
             PickHit::Item { key, .. } => Some(Ok(key)),
             PickHit::ModelFace { model_id, face_id } => {
@@ -117,32 +144,41 @@ impl RsCamApp {
     }
 
     /// A click in pick mode (P4.5). It wins over every other pick: `true`
-    /// when a pick mode is on, also when the click hits no item. A click
-    /// sends `TogglePick`; a shift-click sends `PickLayer`.
-    fn handle_pick_mode_click(&mut self, click_pos: egui::Pos2, shift: bool) -> bool {
+    /// when a pick mode is on, also when the click hits no item. The event
+    /// comes from `pick_bar::click_event` (P3: a click toggles, a
+    /// shift-click adds one item, a right-click adds the layer; P4: a click
+    /// on an item whose chip is off turns the chip on and adds the item).
+    fn handle_pick_mode_click(
+        &mut self,
+        click_pos: egui::Pos2,
+        click: crate::ui::pick_bar::PickClick,
+    ) -> bool {
         let Some(pick) = self.active_pick() else {
             return false;
         };
         match self.pick_mode_key(&pick, click_pos) {
-            Some(Ok(key)) => {
-                let event = if shift {
-                    AppEvent::PickLayer {
-                        toolpath_id: pick.toolpath_id,
-                        target: pick.target,
-                        key,
-                        kinds: pick.kinds,
-                        circle: pick.filter.circle,
-                    }
-                } else {
-                    AppEvent::TogglePick {
-                        toolpath_id: pick.toolpath_id,
-                        target: pick.target,
-                        key,
-                    }
-                };
-                self.controller.events_mut().push(event);
+            Some((Ok(key), chip_off)) => {
+                let event = self
+                    .controller
+                    .state_mut()
+                    .gui
+                    .selection_ui
+                    .pick_mut()
+                    .map(|mode| {
+                        crate::ui::pick_bar::click_event(
+                            mode,
+                            pick.item_use,
+                            &pick.held,
+                            key,
+                            chip_off,
+                            click,
+                        )
+                    });
+                if let Some(event) = event {
+                    self.controller.events_mut().push(event);
+                }
             }
-            Some(Err(refusal)) => self.controller.push_notification(
+            Some((Err(refusal), _)) => self.controller.push_notification(
                 format!("Could not pick the face: {refusal}"),
                 crate::controller::Severity::Warning,
             ),
@@ -327,7 +363,12 @@ impl RsCamApp {
         if self.handle_tab_click(click_pos) {
             return;
         }
-        if self.handle_pick_mode_click(click_pos, shift) {
+        let click = if shift {
+            crate::ui::pick_bar::PickClick::Shift
+        } else {
+            crate::ui::pick_bar::PickClick::Plain
+        };
+        if self.handle_pick_mode_click(click_pos, click) {
             return;
         }
         // P4.9: a click closes an open popover; a click on an open path of
@@ -627,24 +668,29 @@ impl RsCamApp {
         let hovered_item = match (&pick, ui.input(|i| i.pointer.hover_pos())) {
             (Some(pick), Some(pos)) if response.hovered() => self
                 .pick_mode_key(pick, pos)
-                .and_then(Result::ok)
-                .map(|key| (pick, key)),
+                .and_then(|(key, chip_off)| key.ok().map(|key| (pick, key, chip_off))),
             _ => None,
         };
         // GT-2: with no pick hover, the row of the Geometry tab list under
         // the pointer lights its item.
         let hovered_key = hovered_item
             .as_ref()
-            .map(|(_, key)| key.clone())
+            .map(|(_, key, _)| key.clone())
             .or_else(|| self.controller.state().gui.selection_ui.row_hover.clone());
         if self.hover_detector.changed(hovered_key) {
             self.hover_upload_pending = true;
             ui.ctx().request_repaint();
         }
-        if let Some((pick, key)) = &hovered_item {
+        if let Some((pick, key, chip_off)) = &hovered_item {
             let state = self.controller.state();
             if let Some((_, tc)) = state.session().find_toolpath_config_by_id(pick.toolpath_id) {
-                let tip = crate::ui::pick_bar::hover_text(state.session(), tc, pick.target, key);
+                let tip = crate::ui::pick_bar::hover_text(
+                    state.session(),
+                    tc,
+                    pick.target,
+                    key,
+                    *chip_off,
+                );
                 egui::Tooltip::always_open(
                     ui.ctx().clone(),
                     response.layer_id,
@@ -774,10 +820,12 @@ impl RsCamApp {
 
         // P4.6: a right-click on a tab deletes it; a drag that starts on a
         // tab moves it, and the camera does not orbit during that drag.
+        // P3: in pick mode, a right-click on an item adds its layer.
         if response.secondary_clicked()
             && let Some(pos) = response.interact_pointer_pos()
+            && !self.handle_tab_secondary_click(pos)
         {
-            let _ = self.handle_tab_secondary_click(pos);
+            let _ = self.handle_pick_mode_click(pos, crate::ui::pick_bar::PickClick::Secondary);
         }
         let tab_drag = self.handle_tab_drag(ui, &response);
         if !tab_drag

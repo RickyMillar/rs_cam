@@ -293,6 +293,60 @@ fn the_panel_inputs_carry_the_session_lists_ui01() {
         "one toolpath has no other toolpath to derive a rest boundary from"
     );
 }
+/// D7 (reference audit 2026-10-23, operator approved): the tab strip
+/// draws Geometry, Cut, Heights, Feeds & Speeds, Linking, Dressup, from
+/// left to right. The test renders the strip and reads the x of each
+/// label, so a change of `ALL` or of the strip order turns it red.
+///
+/// Red proof: with the old `ALL` order (Heights fifth), the drawn order
+/// was Geometry, Cut, Feeds & Speeds, Linking, Heights, Dressup.
+#[test]
+fn the_tab_strip_puts_heights_after_cut_d7() {
+    const WANT: [&str; 6] = [
+        "Geometry",
+        "Cut",
+        "Heights",
+        "Feeds & Speeds",
+        "Linking",
+        "Dressup",
+    ];
+    let ctx = egui::Context::default();
+    crate::ui::tokens::apply(&ctx);
+    crate::ui::tokens::apply_fonts(&ctx);
+    let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
+    warmup.textures_delta.clear();
+    let mut active = ToolpathTab::Geometry;
+    let badges = super::tab_badges::TabBadges::none();
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        // Wide enough for one row: the order is then the x order.
+        ui.set_min_width(1200.0);
+        super::tab_badges::draw_toolpath_tabs(ui, &mut active, &badges);
+    });
+    let mut drawn: Vec<(f32, f32, String)> = Vec::new();
+    for clipped in &out.shapes {
+        if let egui::epaint::Shape::Text(text) = &clipped.shape {
+            let word = text.galley.job.text.clone();
+            if WANT.contains(&word.as_str()) {
+                drawn.push((text.pos.y, text.pos.x, word));
+            }
+        }
+    }
+    out.textures_delta.clear();
+    assert_eq!(
+        drawn.len(),
+        WANT.len(),
+        "non-vacuity: the strip must draw each tab label once: {drawn:?}"
+    );
+    let first_y = drawn[0].0;
+    assert!(
+        drawn.iter().all(|d| (d.0 - first_y).abs() < 1.0),
+        "fixture: the strip must draw one row: {drawn:?}"
+    );
+    drawn.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let order: Vec<&str> = drawn.iter().map(|d| d.2.as_str()).collect();
+    assert_eq!(order, WANT, "the tab strip order");
+}
+
 /// UI-11: both drill editors draw the SAME cycle rows.
 ///
 /// The four-way cycle combo and the peck row were written out twice,
@@ -647,13 +701,15 @@ fn the_selection_section_is_at_the_top_p4_d() {
         ToolpathTab::Cut,
     );
     let input = position_of(&cut, "Input row", |t| t.starts_with("Input"));
-    let start_from = position_of(&cut, "Start from row", |t| t.starts_with("Start from"));
+    let start_from = position_of(&cut, "Rest machining row", |t| {
+        t == super::REST_MACHINING_LABEL
+    });
     let boundary = position_of(&cut, "boundary header", |t| {
         t.eq_ignore_ascii_case("machining boundary")
     });
     assert!(
         input < start_from && start_from < boundary,
-        "want Input < Start from < Machining Boundary: {cut:?}"
+        "want Input < Rest machining < Machining Boundary: {cut:?}"
     );
     assert!(
         !cut.iter().any(|t| t == "Pick" || t.starts_with("Cuts")),

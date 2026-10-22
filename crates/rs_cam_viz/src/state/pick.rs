@@ -40,8 +40,11 @@ pub const PICK_KINDS: [ItemKind; 5] = [
 ];
 
 /// The kind filter of a pick mode (geometry selection P4.5): the kinds a
-/// click picks and a shift-click names in its layer rule, and the circle
-/// diameter range.
+/// click picks first and a right-click names in its layer rule, and the
+/// circle diameter range. P4 (reference audit 2026-10-23): the chips are a
+/// view filter. A click on an item that the op can cut, of a kind whose
+/// chip is off, turns that chip on and picks the item
+/// ([`Self::cut_kinds`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct PickFilter {
     /// The kinds whose chip is on. A kind that the reader does not serve or
@@ -66,14 +69,24 @@ impl PickFilter {
         }
     }
 
-    /// The kinds the click and the shift-click use: the chips that are on,
-    /// that `item_use` serves and that `held` (the kinds of the model)
-    /// holds, in bar order. A disabled chip never counts, so the GUI cannot
-    /// make a `KindNotCut` pick.
+    /// The kinds the click tries first and the right-click layer rule
+    /// uses: the chips that are on, that `item_use` serves and that `held`
+    /// (the kinds of the model) holds, in bar order. A disabled chip never
+    /// counts, so the GUI cannot make a `KindNotCut` pick.
     pub fn effective_kinds(&self, item_use: ItemUse, held: &BTreeSet<ItemKind>) -> Vec<ItemKind> {
         PICK_KINDS
             .into_iter()
             .filter(|k| self.kinds.contains(k) && k.serves(item_use) && held.contains(k))
+            .collect()
+    }
+
+    /// The kinds that the op can cut on this model, whatever the chip
+    /// state (P4): the kinds that `item_use` serves and that `held` holds,
+    /// in bar order. A click that hits no item of an on chip tries these.
+    pub fn cut_kinds(item_use: ItemUse, held: &BTreeSet<ItemKind>) -> Vec<ItemKind> {
+        PICK_KINDS
+            .into_iter()
+            .filter(|k| k.serves(item_use) && held.contains(k))
             .collect()
     }
 

@@ -802,7 +802,7 @@ fn draw_unified_finish_claims(
         table = table.row(
             DataRow::note(Role::Caution, "\u{26A0} Fresh stock: no machined prior").hover(
                 "This operation cuts fresh stock, so the machined-stock reference \
-                 cannot be used. Set Start from to After previous ops, then generate \
+                 cannot be used. Turn on Rest machining: from previous ops, then generate \
                  and simulate the upstream operation.",
             ),
         );

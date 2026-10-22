@@ -886,7 +886,7 @@ pub(super) fn draw_cut_tab(
             }
             if entry.stock_source == StockSource::Fresh {
                 // `RestReferenceChoice::resolve` prefers the machined stock
-                // whenever it overlaps, so under "After previous ops"
+                // whenever it overlaps, so under "Rest machining: from previous ops"
                 // this combo is inert and naming it would be a lie.
                 ui.horizontal(|ui| {
                     ui.label("Reference:");

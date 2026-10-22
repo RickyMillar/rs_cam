@@ -1,5 +1,7 @@
 //! Geometry selection P4.5 — pick mode, the filter bar, the hover and the
-//! shift-click layer rule.
+//! right-click layer rule; P3 and P4 of the reference audit (2026-10-23):
+//! a shift-click adds one item, and a click on an item whose chip is off
+//! turns the chip on and picks the item.
 //!
 //! # The claims
 //!
@@ -13,10 +15,12 @@
 //! 2. `a_chip_off_skips_its_kind_p4_5`: a click on a circle ring that is
 //!    also near a loop edge picks the circle with every chip on, and the
 //!    loop with the circle chip off or with a circle range that leaves the
-//!    circle out. With both chips off it picks nothing.
+//!    circle out. With both chips off `pick_items` picks nothing; the
+//!    click then tries the kinds whose chip is off (`pick_mode_item`,
+//!    claim 6).
 //! 3. `a_served_kind_filter_blocks_a_refusing_pick_p4_5`: the Pocket bar has
-//!    no enabled `Open` or `Points` chip, and each disabled chip names the
-//!    core reason (`kind_not_cut_reason`). A shift-click on a layer that
+//!    no enabled `Open contours` or `Points` chip, and each disabled chip names the
+//!    core reason (`kind_not_cut_reason`). A right-click on a layer that
 //!    holds loops and paths adds ONE rule `Only([Loop, Circle])`; under
 //!    the default it replaces the default; the selection then resolves
 //!    with no refusal. A circle range gives the circles their own rule.
@@ -27,6 +31,15 @@
 //!    row hides (`SetModelVisibility`) draws no drawing, so a pick-mode
 //!    click on its loop and a popover click on its open path pick nothing.
 //!    When the eye shows the model again, both clicks pick again.
+//! 6. `a_click_on_an_item_whose_chip_is_off_picks_it_p4click`: with the
+//!    loop chip off, a click on a loop (and nothing of an on chip near it)
+//!    picks the loop, turns the loop chip on and adds the loop. An item of
+//!    an on chip under the pointer still wins. An open path, which a Pocket
+//!    cannot cut, never picks.
+//! 7. `a_shift_click_adds_one_item_p3shift`: a shift-click sends
+//!    `AddPick`, never `PickLayer`. Two shift-clicks give two picks and no
+//!    rule; a shift-click on a picked item keeps it. A right-click sends
+//!    `PickLayer`.
 //!
 //! ```text
 //! cargo test -p rs_cam_viz -q --test pick_mode_picks_by_kind_p4_5
@@ -64,7 +77,7 @@ use rs_cam_viz::compute::{
 };
 use rs_cam_viz::controller::AppController;
 use rs_cam_viz::interaction::picking::{
-    PickContext, PickHit, drawing_plane_z, pick_items, pick_open_path,
+    PickContext, PickHit, drawing_plane_z, pick_items, pick_mode_item, pick_open_path,
 };
 use rs_cam_viz::render::camera::OrbitCamera;
 use rs_cam_viz::state::Workspace;
@@ -73,7 +86,7 @@ use rs_cam_viz::state::pick::{PickFilter, PickMode, held_kinds};
 use rs_cam_viz::state::selection::Selection as UiSelection;
 use rs_cam_viz::state::selection_highlight::HoverDetector;
 use rs_cam_viz::ui::AppEvent;
-use rs_cam_viz::ui::pick_bar::kind_chips;
+use rs_cam_viz::ui::pick_bar::{PickClick, click_event, kind_chips};
 use rs_cam_viz::ui_command::{SetModelVisibilityArgs, UiCommand};
 
 /// The pick threshold of a line (`picking::PICK_THRESHOLD_TOOLPATH`).
@@ -493,7 +506,7 @@ fn a_served_kind_filter_blocks_a_refusing_pick_p4_5() {
     let kinds = mode.filter.effective_kinds(ItemUse::Regions, &held);
     assert_eq!(kinds, vec![ItemKind::Loop, ItemKind::Circle]);
 
-    // Shift-click on the TEXT loop: the layer holds a loop and a path.
+    // Right-click on the TEXT loop: the layer holds a loop and a path.
     let items: Vec<Item> = c.state().session().models()[0]
         .items
         .iter()
@@ -551,7 +564,7 @@ fn a_served_kind_filter_blocks_a_refusing_pick_p4_5() {
         "the path is not named"
     );
 
-    // A second shift-click, with a circle range: the circles get their own
+    // A second right-click, with a circle range: the circles get their own
     // rule, in one edit after the first rule.
     let range = DiameterRange {
         nominal_mm: 6.0,
@@ -709,4 +722,219 @@ fn a_hidden_model_takes_no_pick_p4_d() {
     set_visible(&mut c, true);
     assert!(pick_at(&c, &camera, &mode.filter, on_loop).is_some());
     assert!(open_path_at(&c, &camera, on_path).is_some());
+}
+
+/// The pick-mode hit of the pointer at `at`, as the viewport click and
+/// hover run it (`pick_mode_item`, P4), with the pick mode stored in the
+/// controller: the key and the kind whose chip is off.
+fn pick_mode_at(
+    c: &AppController<SilentBackend>,
+    camera: &OrbitCamera,
+    at: [f32; 2],
+) -> Option<(MatchKey, Option<ItemKind>)> {
+    let state = c.state();
+    let tc = &state.session().toolpath_configs()[0];
+    let mode = state
+        .gui
+        .selection_ui
+        .pick_mode(tc.id)
+        .expect("pick mode on");
+    let item_use = tc.operation.capabilities().item_use;
+    let held = held(c);
+    let on = mode.filter.effective_kinds(item_use, &held);
+    let cut = PickFilter::cut_kinds(item_use, &held);
+    let ctx = PickContext {
+        camera,
+        screen_x: at[0],
+        screen_y: at[1],
+        aspect: VIEW_W / VIEW_H,
+        vw: VIEW_W,
+        vh: VIEW_H,
+        visibility: &state.overlays.model_visibility,
+    };
+    let found = pick_mode_item(&ctx, state.session(), tc.id, &mode.filter, &on, &cut)?;
+    match found.hit {
+        PickHit::Item { key, .. } => Some((key, found.chip_off)),
+        other => panic!("pick mode gave a hit that is not an item: {other:?}"),
+    }
+}
+
+/// Send the event of a pick-mode click on `key`, as the viewport does
+/// (`pick_bar::click_event` on the stored mode), and return its name.
+fn click(
+    c: &mut AppController<SilentBackend>,
+    key: MatchKey,
+    chip_off: Option<ItemKind>,
+    button: PickClick,
+) -> &'static str {
+    let tc = c.state().session().toolpath_configs()[0].clone();
+    let item_use = tc.operation.capabilities().item_use;
+    let held = held(c);
+    let mode = c
+        .state_mut()
+        .gui
+        .selection_ui
+        .pick_mut()
+        .expect("pick mode on");
+    let event = click_event(mode, item_use, &held, key, chip_off, button);
+    let name = match &event {
+        AppEvent::TogglePick { .. } => "TogglePick",
+        AppEvent::AddPick { .. } => "AddPick",
+        AppEvent::PickLayer { .. } => "PickLayer",
+        other => panic!("a pick-mode click sent {other:?}"),
+    };
+    c.handle_internal_event(event);
+    name
+}
+
+/// P4 (reference audit 2026-10-23, operator approved). Red proof: with the
+/// second pass of `pick_mode_item` removed (`return None` for an empty
+/// first pass), the click on the TEXT loop with the loop chip off picked
+/// nothing.
+#[test]
+fn a_click_on_an_item_whose_chip_is_off_picks_it_p4click() {
+    let mut c = controller(
+        OperationConfig::Pocket(Default::default()),
+        FaceUp::Top,
+        ZRotation::Deg0,
+    );
+    let _ = pick_on(&mut c);
+    let camera = camera(&c);
+    let items: Vec<Item> = c.state().session().models()[0]
+        .items
+        .iter()
+        .cloned()
+        .collect();
+    let set_chip = |c: &mut AppController<SilentBackend>, kind: ItemKind, on: bool| {
+        let mode = c.state_mut().gui.selection_ui.pick_mut().unwrap();
+        if on {
+            let _ = mode.filter.kinds.insert(kind);
+        } else {
+            let _ = mode.filter.kinds.remove(&kind);
+        }
+    };
+    let chip_on = |c: &AppController<SilentBackend>, kind: ItemKind| {
+        let tc = &c.state().session().toolpath_configs()[0];
+        c.state()
+            .gui
+            .selection_ui
+            .pick_mode(tc.id)
+            .unwrap()
+            .filter
+            .kinds
+            .contains(&kind)
+    };
+
+    // An item of an on chip still wins: circle chip on, loop chip off, on
+    // the circle ring 1 mm from the loop edge.
+    set_chip(&mut c, ItemKind::Loop, false);
+    let near_both = drawn(&c, &camera, P2::new(11.0, 20.0));
+    let (key, chip_off) = pick_mode_at(&c, &camera, near_both).expect("a hit");
+    assert!(key.names_same_geometry(items[1].key()), "the circle wins");
+    assert_eq!(chip_off, None, "the circle chip is on");
+
+    // Circle chip on, loop chip off: a click on the TEXT loop, far from
+    // every circle, picks the loop and names its chip.
+    let Shape::Loop(text) = items[3].shape() else {
+        unreachable!("fixture: item 3 is a loop");
+    };
+    let on_text = drawn(&c, &camera, mid(text.exterior[0], text.exterior[1]));
+    let (key, chip_off) = pick_mode_at(&c, &camera, on_text)
+        .expect("a click on a loop with the loop chip off must pick it (P4)");
+    assert!(key.names_same_geometry(items[3].key()), "the TEXT loop");
+    assert_eq!(chip_off, Some(ItemKind::Loop));
+    assert!(!chip_on(&c, ItemKind::Loop), "fixture: the chip is off");
+
+    // The click turns the chip on and adds the loop.
+    let event = click(&mut c, key, chip_off, PickClick::Plain);
+    assert!(
+        event == "AddPick",
+        "a click on a chip-off item adds it: {event:?}"
+    );
+    assert!(
+        chip_on(&c, ItemKind::Loop),
+        "the click turns the loop chip on"
+    );
+    assert_eq!(state_of(&c, 3), ItemState::Cut, "the TEXT loop is picked");
+    // The pointer now hits an on chip: no chip to turn on.
+    assert_eq!(pick_mode_at(&c, &camera, on_text).unwrap().1, None);
+
+    // A Pocket cannot cut an open path: with every chip off, a click on
+    // the path picks nothing.
+    set_chip(&mut c, ItemKind::Loop, false);
+    set_chip(&mut c, ItemKind::Circle, false);
+    let Shape::Path(path) = items[2].shape() else {
+        unreachable!("fixture: item 2 is an open path");
+    };
+    let on_path = drawn(&c, &camera, mid(path.exterior[0], path.exterior[1]));
+    assert_eq!(
+        pick_mode_at(&c, &camera, on_path),
+        None,
+        "an open path is not a kind that a Pocket cuts"
+    );
+}
+
+/// P3 (reference audit 2026-10-23, operator approved). Red proof: with
+/// `PickClick::Shift` mapped to `PickLayer` in `click_event` (the old
+/// shift-click), the first shift-click stored a TEXT layer rule.
+#[test]
+fn a_shift_click_adds_one_item_p3shift() {
+    let mut c = controller(
+        OperationConfig::Pocket(Default::default()),
+        FaceUp::Top,
+        ZRotation::Deg0,
+    );
+    let _ = pick_on(&mut c);
+    let items: Vec<Item> = c.state().session().models()[0]
+        .items
+        .iter()
+        .cloned()
+        .collect();
+    let stored = |c: &AppController<SilentBackend>| {
+        c.state().session().toolpath_configs()[0]
+            .operation
+            .selection()
+            .unwrap()
+            .clone()
+    };
+
+    // Shift-click on the TEXT loop: one pick, no rule.
+    let event = click(&mut c, items[3].key().clone(), None, PickClick::Shift);
+    assert!(
+        event == "AddPick",
+        "a shift-click adds one item, never a layer: {event:?}"
+    );
+    assert!(
+        stored(&c).rules().is_empty(),
+        "no layer rule: {:?}",
+        stored(&c)
+    );
+    assert_eq!(stored(&c).picks().len(), 1);
+    assert_eq!(state_of(&c, 3), ItemState::Cut);
+    assert_eq!(state_of(&c, 2), ItemState::NotSelected, "the TEXT path");
+
+    // A second shift-click on the CUT loop: two picks.
+    let _ = click(&mut c, items[0].key().clone(), None, PickClick::Shift);
+    assert_eq!(stored(&c).picks().len(), 2);
+    assert_eq!(state_of(&c, 0), ItemState::Cut);
+    assert_eq!(state_of(&c, 3), ItemState::Cut);
+
+    // A shift-click on a picked item keeps it (add, not toggle).
+    let _ = click(&mut c, items[3].key().clone(), None, PickClick::Shift);
+    assert_eq!(stored(&c).picks().len(), 2);
+    assert_eq!(state_of(&c, 3), ItemState::Cut);
+
+    // A plain click still toggles: it removes the picked loop.
+    let event = click(&mut c, items[3].key().clone(), None, PickClick::Plain);
+    assert!(event == "TogglePick");
+    assert_eq!(state_of(&c, 3), ItemState::NotSelected);
+
+    // A right-click adds the layer of the item as a rule.
+    let event = click(&mut c, items[3].key().clone(), None, PickClick::Secondary);
+    assert!(
+        event == "PickLayer",
+        "a right-click adds the layer: {event:?}"
+    );
+    assert_eq!(stored(&c).rules().len(), 1, "the TEXT layer rule");
+    assert_eq!(state_of(&c, 3), ItemState::Cut);
 }

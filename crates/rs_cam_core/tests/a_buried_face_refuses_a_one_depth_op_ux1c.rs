@@ -16,16 +16,16 @@
 //! 1. Fresh stock, the Z 20 face picked, stock top Z 32: generation refuses
 //!    with `OperationError::BuriedFace` and the ruling text ("The face is
 //!    12.0 mm below the stock top and no earlier op clears it. Clear it
-//!    first (Pocket or Face), or start from "After previous ops"."). The
+//!    first (Pocket or Face), or turn on "Rest machining: from previous ops"."). The
 //!    diagnostics state the same text before generation
 //!    (`precondition.buried_face`, `Blocking`).
 //! 2. Fresh stock, the Z 30 face picked, stock top Z 30 (the face AT the
 //!    stock top): the op generates, and the diagnostics hold no
 //!    `precondition.buried_face`.
-//! 3. "After previous ops": a Pocket on the Z 20 face first clears it to
+//! 3. "Rest machining: from previous ops": a Pocket on the Z 20 face first clears it to
 //!    0.5 mm below the face, then the op on the Z 20 face generates. The
 //!    check reads the standing material over the face, not the stock box.
-//! 4. The same op on "After previous ops" after a Pocket that stops 6 mm
+//! 4. The same op on "Rest machining: from previous ops" after a Pocket that stops 6 mm
 //!    above the face (absolute floor Z 26) refuses with the
 //!    standing-material text.
 //!
@@ -287,7 +287,7 @@ fn a_buried_face_refuses_on_fresh_stock_ux1c() {
         let text = expect_buried(generate(&mut session, 0), name, BuriedUnder::StockTop);
         let want = format!(
             "{name}: the face is 12.0 mm below the stock top and no earlier op clears it. \
-             Clear it first (Pocket or Face), or start from \"After previous ops\"."
+             Clear it first (Pocket or Face), or turn on \"Rest machining: from previous ops\"."
         );
         assert_eq!(text, want, "{name}: the refusal text");
         assert_eq!(
@@ -325,7 +325,7 @@ fn a_pinned_top_does_not_refuse_ux1c() {
 }
 
 /// A Pocket of the Z 20 face to `pocket_depth` below it on fresh stock,
-/// then `op` on the same face on "After previous ops". The Pocket is
+/// then `op` on the same face on "Rest machining: from previous ops". The Pocket is
 /// generated and simulated; the op is not generated.
 fn cascade(op: &OperationConfig, pocket_depth: f64) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stock(32.0));
@@ -350,7 +350,7 @@ fn cascade(op: &OperationConfig, pocket_depth: f64) -> ProjectSession {
 }
 
 /// Claim 3: after a Pocket that clears the face, the op generates on
-/// "After previous ops", and the diagnostics hold no buried-face row (the
+/// "Rest machining: from previous ops", and the diagnostics hold no buried-face row (the
 /// static check is the fresh-stock rule).
 #[test]
 fn a_cleared_face_generates_on_the_remaining_stock_ux1c() {
@@ -375,7 +375,7 @@ fn a_cleared_face_generates_on_the_remaining_stock_ux1c() {
 }
 
 /// Claim 4: a Pocket that stops 6 mm above the face leaves material over
-/// it, and the op on "After previous ops" refuses on the standing material.
+/// it, and the op on "Rest machining: from previous ops" refuses on the standing material.
 #[test]
 fn a_face_under_standing_material_refuses_on_the_remaining_stock_ux1c() {
     for (name, op) in one_depth_ops() {

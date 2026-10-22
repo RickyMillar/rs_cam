@@ -3,7 +3,13 @@
 //! While a `Pick` button of the Selection section is on, this bar floats at
 //! the top centre of the viewport, over the 3D view, and takes no width of
 //! its own (lead ruling L-4, the overlays invariant). It sets the kinds a
-//! click picks and the circle diameter range, and it ends the pick mode.
+//! click picks first and the circle diameter range, and it ends the pick
+//! mode. P4 (reference audit 2026-10-23): the chips are a view filter. A
+//! click on an item of a kind whose chip is off, but that the op can cut,
+//! turns the chip on and picks the item. P3: a shift-click adds one item;
+//! a right-click adds the layer of the item as a rule.
+//!
+//! [`click_event`] is THE map from a pick-mode click to its event.
 //!
 //! A chip for a kind that the selection cannot cut is disabled. Its hover
 //! gives the reason in the core text (`selection::kind_not_cut_reason`),
@@ -27,7 +33,62 @@ use crate::ui::tokens;
 const PICK_BAR_AREA_ID: &str = "pick_filter_bar";
 
 /// The help line of the bar.
-const PICK_HELP: &str = "Click: add or remove the item. Shift-click: add its layer.";
+pub const PICK_HELP: &str =
+    "Click: add or remove the item. Shift-click: add the item. Right-click: add its layer.";
+
+/// The button of a pick-mode click (P3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PickClick {
+    /// A primary click with no modifier: add or remove the item.
+    Plain,
+    /// A primary click with Shift: add the item (CAD convention).
+    Shift,
+    /// A secondary click: add the layer of the item as a rule.
+    Secondary,
+}
+
+/// THE event of a pick-mode click on the item `key` (P3, P4). When
+/// `chip_off` names a kind (`PickModeHit::chip_off`), the click turns that
+/// chip of `mode` on first, so the item it picks shows. Then:
+///
+/// - [`PickClick::Plain`]: `TogglePick`; on an item whose chip was off,
+///   `AddPick` (the click picks the item and never removes it).
+/// - [`PickClick::Shift`]: `AddPick`, one item.
+/// - [`PickClick::Secondary`]: `PickLayer` with the kinds of the chips
+///   that are on and the circle range.
+pub fn click_event(
+    mode: &mut crate::state::pick::PickMode,
+    item_use: ItemUse,
+    held: &BTreeSet<ItemKind>,
+    key: rs_cam_core::selection::MatchKey,
+    chip_off: Option<ItemKind>,
+    click: PickClick,
+) -> crate::ui::AppEvent {
+    use crate::ui::AppEvent;
+    if let Some(kind) = chip_off {
+        let _ = mode.filter.kinds.insert(kind);
+    }
+    let (toolpath_id, target) = (mode.toolpath_id, mode.target);
+    match click {
+        PickClick::Plain if chip_off.is_none() => AppEvent::TogglePick {
+            toolpath_id,
+            target,
+            key,
+        },
+        PickClick::Plain | PickClick::Shift => AppEvent::AddPick {
+            toolpath_id,
+            target,
+            key,
+        },
+        PickClick::Secondary => AppEvent::PickLayer {
+            toolpath_id,
+            target,
+            key,
+            kinds: mode.filter.effective_kinds(item_use, held),
+            circle: mode.filter.circle,
+        },
+    }
+}
 
 /// One kind chip of the bar.
 #[derive(Debug, Clone, PartialEq)]
@@ -72,8 +133,8 @@ pub fn kind_chips(
 /// The text of the chip of `kind`.
 fn chip_label(kind: ItemKind) -> &'static str {
     match kind {
-        ItemKind::Loop => "Loops",
-        ItemKind::Path => "Open",
+        ItemKind::Loop => "Closed contours",
+        ItemKind::Path => "Open contours",
         ItemKind::Circle => "Circles",
         ItemKind::Face => "Faces",
         ItemKind::Point => "Points",
@@ -269,7 +330,7 @@ fn draw_chip(ui: &mut egui::Ui, chip: &KindChip, filter: &mut PickFilter) {
     let response = match &chip.disabled_reason {
         Some(reason) => response.on_disabled_hover_text(reason.as_str()),
         None => response.on_hover_text(format!(
-            "Pick {} with a click; a shift-click names them in the layer rule.",
+            "On: a click picks {} first. Off: a click on one turns this chip on.",
             kind_noun(chip.kind, 2)
         )),
     };
@@ -291,7 +352,7 @@ fn draw_circle_range(ui: &mut egui::Ui, on: &[ItemKind], filter: &mut PickFilter
     if ui
         .checkbox(&mut limit, "Limit the circle diameter")
         .on_hover_text(
-            "A click picks only the circles in this range, and a shift-click \
+            "A click picks only the circles in this range, and a right-click \
              adds a rule for them.",
         )
         .changed()
@@ -322,7 +383,8 @@ fn draw_circle_range(ui: &mut egui::Ui, on: &[ItemKind], filter: &mut PickFilter
 
 /// The tooltip of the item `key` under the pointer in pick mode, for the
 /// selection `target` of `tc`: the kind, the layer and the size of the item
-/// (`ItemRef`, the text of a refusal), and what a click does. The click
+/// (`ItemRef`, the text of a refusal), and what a click does. `chip_off`
+/// names the kind whose chip the click turns on (P4). The click
 /// result comes from `ProjectSession::click_edit`, the function the click
 /// itself sends through, so the tooltip and the click agree (P4.D: a click
 /// on a boundary that is not a selection sets the source to Selection).
@@ -331,19 +393,27 @@ pub fn hover_text(
     tc: &rs_cam_core::session::ToolpathConfig,
     target: SelectionTarget,
     key: &rs_cam_core::selection::MatchKey,
+    chip_off: Option<ItemKind>,
 ) -> String {
     use rs_cam_core::selection::{ItemRef, SelectionEdit};
     use rs_cam_core::session::ClickEdit;
-    let click = match session.click_edit(tc, target, key.clone()) {
-        Ok(ClickEdit::Selection(SelectionEdit::RemovePick(_))) => "click to remove",
-        Ok(ClickEdit::Selection(_)) => "click to add",
-        Ok(ClickEdit::BoundaryToSelection { .. }) => "click to set the boundary to Selection",
-        Err(_) => "the selection does not resolve",
+    let click = match (session.click_edit(tc, target, key.clone()), chip_off) {
+        (Ok(ClickEdit::Selection(SelectionEdit::RemovePick(_))), None) => "click to remove",
+        (Ok(ClickEdit::Selection(SelectionEdit::RemovePick(_))), Some(_)) => "selected",
+        (Ok(ClickEdit::Selection(_)), _) => "click to add",
+        (Ok(ClickEdit::BoundaryToSelection { .. }), _) => "click to set the boundary to Selection",
+        (Err(_), _) => "the selection does not resolve",
     };
-    let shift = if key.layer.is_some() {
-        "Shift-click: add its layer."
+    let chip = chip_off
+        .map(|kind| format!(" The click turns the {} chip on.", chip_label(kind)))
+        .unwrap_or_default();
+    let layer = if key.layer.is_some() {
+        "Right-click: add its layer."
     } else {
-        "Shift-click: the item is on no layer."
+        "Right-click: the item is on no layer."
     };
-    format!("{} \u{2014} {click}.\n{shift}", ItemRef::new(key.clone()))
+    format!(
+        "{} \u{2014} {click}.{chip}\nShift-click: add the item. {layer}",
+        ItemRef::new(key.clone())
+    )
 }

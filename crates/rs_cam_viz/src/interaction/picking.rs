@@ -296,9 +296,9 @@ fn pick_model_face(
 ///   [`drawing_plane_z`] plane) pass nearest the pointer on the screen,
 ///   within [`PICK_THRESHOLD_TOOLPATH`] pixels ([`PICK_THRESHOLD_POINT`]
 ///   for a point). The distance is [`polyline_distance`], the rule of
-///   MCP `list_model_items { near }`. So with the loop chip off, a click
-///   on a loop picks nothing of it and the next item under the pointer
-///   wins.
+///   MCP `list_model_items { near }`. So with the loop chip off, this
+///   pass picks nothing of a loop and the next item under the pointer
+///   wins; [`pick_mode_item`] then tries the kinds whose chip is off.
 /// - With no such item and the face chip on: the BREP face under the ray
 ///   (a STEP face; `ProjectSession::face_pick_key` names its item), or the
 ///   mesh point under the ray (an STL, P4.7;
@@ -389,6 +389,65 @@ pub fn pick_items(
     );
     let dir = V3::new(ray_dir.x as f64, ray_dir.y as f64, ray_dir.z as f64);
     pick_model_face(ctx, session, frame.as_ref(), origin, dir, true).map(|(_, hit)| hit)
+}
+
+/// A pick-mode hit (P4, reference audit 2026-10-23), and the kind whose
+/// chip is off when the hit came from the second pass.
+#[derive(Debug, Clone)]
+pub struct PickModeHit {
+    pub hit: PickHit,
+    /// `Some(kind)` when the chip of the hit kind is off: the click turns
+    /// that chip on and picks the item.
+    pub chip_off: Option<ItemKind>,
+}
+
+/// THE pick of a pick-mode click and of the pick-mode hover (P4). The
+/// chips are a view filter, not a gate:
+///
+/// 1. [`pick_items`] over `on_kinds` (the chips that are on, served and
+///    held: `PickFilter::effective_kinds`). An item of an on chip wins.
+/// 2. With no hit, [`pick_items`] over the kinds of `cut_kinds`
+///    (`PickFilter::cut_kinds`) whose chip is off. A hit there names its
+///    kind in [`PickModeHit::chip_off`].
+///
+/// The circle range of `filter` applies in both passes. A kind that the op
+/// cannot cut is in neither list, so no pick refuses `KindNotCut`.
+pub fn pick_mode_item(
+    ctx: &PickContext<'_>,
+    session: &ProjectSession,
+    toolpath_id: ToolpathId,
+    filter: &PickFilter,
+    on_kinds: &[ItemKind],
+    cut_kinds: &[ItemKind],
+) -> Option<PickModeHit> {
+    if let Some(hit) = pick_items(ctx, session, toolpath_id, filter, on_kinds) {
+        return Some(PickModeHit {
+            hit,
+            chip_off: None,
+        });
+    }
+    let off: Vec<ItemKind> = cut_kinds
+        .iter()
+        .copied()
+        .filter(|k| !on_kinds.contains(k))
+        .collect();
+    if off.is_empty() {
+        return None;
+    }
+    let hit = pick_items(ctx, session, toolpath_id, filter, &off)?;
+    let kind = match &hit {
+        PickHit::Item { key, .. } => key.kind,
+        PickHit::ModelFace { .. } | PickHit::MeshFace { .. } => ItemKind::Face,
+        PickHit::CollisionMarker { .. }
+        | PickHit::AlignmentPin { .. }
+        | PickHit::Obstacle { .. }
+        | PickHit::StockFace { .. }
+        | PickHit::Toolpath { .. } => return None,
+    };
+    Some(PickModeHit {
+        hit,
+        chip_off: Some(kind),
+    })
 }
 
 /// The item a click picks among `hits` (screen distance, display Z, item;

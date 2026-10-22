@@ -10,8 +10,10 @@
 //! rendered it WROTE `rest_analysis.enabled` when a consumer existed (D5) —
 //! a paint pass that edits the project.
 //!
-//! W2 leaves one row, `Start from`, for every operation, and one
-//! demand-titled disclosure for the rest dials. This file pins that shape.
+//! W2 leaves one row for every operation, and one demand-titled disclosure
+//! for the rest dials. L5 (operator ruling 2026-10-23) makes that row the
+//! checkbox "Rest machining: from previous ops" (the Fusion form). This
+//! file pins that shape.
 //!
 //! # Why painted text, not source text
 //!
@@ -40,7 +42,7 @@ use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
 use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::runtime::ToolpathRuntime;
 use rs_cam_viz::state::selection::Selection;
-use rs_cam_viz::ui::components::ChoiceRow;
+use rs_cam_viz::ui::properties::{REST_MACHINING_LABEL, rest_machining_row};
 use rs_cam_viz::ui::{properties, tokens};
 
 /// The inspector's own width in the Toolpaths workspace (`app.rs`).
@@ -201,14 +203,20 @@ fn the_geometry_tab_names_rest_once_g_startfrom() {
 
     // Non-vacuity: the tab really rendered, and the new row is on it.
     assert!(
-        texts.iter().any(|text| text == "Start from"),
-        "the Geometry tab painted no Start from row; painted: {texts:?}"
+        texts.iter().any(|text| text == REST_MACHINING_LABEL),
+        "the inspector painted no rest machining row; painted: {texts:?}"
     );
 
+    // L5 (operator ruling 2026-10-23): the one stock source row is the
+    // "Rest machining" checkbox, so it names rest. The rest dials name it
+    // once more, in the demand-titled disclosure. Nothing else may.
     let found = rest_strings(&texts);
-    let expected: BTreeSet<String> = ["Rest regions \u{2192} Lakes".to_owned()]
-        .into_iter()
-        .collect();
+    let expected: BTreeSet<String> = [
+        REST_MACHINING_LABEL.to_owned(),
+        "Rest regions \u{2192} Lakes".to_owned(),
+    ]
+    .into_iter()
+    .collect();
     assert_eq!(
         found, expected,
         "the producer's Geometry tab must name rest exactly once, in the demand-titled \
@@ -248,19 +256,19 @@ fn pencil_hides_its_reference_under_prior_stock_g_startfrom() {
     let mut state = pencil(PencilDetector::RestDepth, StockSource::FromRemainingStock);
     let texts = painted(&ctx, &mut state);
     assert!(
-        texts.iter().any(|text| text == "Start from"),
-        "non-vacuity: the pencil Geometry tab painted no Start from row; painted: {texts:?}"
+        texts.iter().any(|text| text == REST_MACHINING_LABEL),
+        "non-vacuity: the pencil inspector painted no rest machining row; painted: {texts:?}"
     );
     assert!(
         !texts.iter().any(|text| text == "Reference:"),
-        "a rest-depth pencil under After previous ops read the machined stock, so its \
+        "a rest-depth pencil under Rest machining: from previous ops read the machined stock, so its \
          analytic reference is not a choice; painted: {texts:?}"
     );
     assert!(
         !texts
             .iter()
             .any(|text| text.contains("Machined stock (requires simulation)")),
-        "the pencil rest-reference pair is deleted; the Start from row is the one writer"
+        "the pencil rest-reference pair is deleted; the rest machining row is the one writer"
     );
 
     // The flip makes the arm non-vacuous: the same fixture under Stock DOES
@@ -282,35 +290,34 @@ fn a_crease_detector_keeps_its_reference_g_startfrom() {
     assert!(
         texts.iter().any(|text| text == "Reference:"),
         "the dihedral arm never reads the machined stock: it always resolves a reference \
-         cutter. Hiding its picker under After previous ops hides a live control; \
+         cutter. Hiding its picker under Rest machining: from previous ops hides a live control; \
          painted: {texts:?}"
     );
 }
 
+/// The production row (`rest_machining_row`) is one checkbox: a click on
+/// it turns `Fresh` into `FromRemainingStock` and reports `changed`, and a
+/// second click turns it back.
 #[test]
-fn the_start_from_row_is_the_kit_row_g_startfrom() {
+fn the_rest_machining_row_is_one_checkbox_g_startfrom() {
     let ctx = ctx();
-    let options = [
-        (StockSource::Fresh, "Stock"),
-        (StockSource::FromRemainingStock, "After previous ops"),
-    ];
     let mut value = StockSource::Fresh;
     let mut target = egui::Pos2::ZERO;
-    let mut changed = false;
+    let mut changes = 0;
     let mut painted_labels: Vec<String> = Vec::new();
+    let mut seen = Vec::new();
 
-    // Pass 0-2 settle the layout and name the option's rect. Pass 3 presses
-    // on it and pass 4 releases: egui resolves a click from the widget rects
-    // the PREVIOUS pass recorded, so a press and a release in one pass is
-    // not the shape the real pointer makes.
-    for pass in 0..5 {
+    // Pass 0-2 settle the layout and name the label rect. Passes 3/4 and
+    // 5/6 each press and release on it: egui resolves a click from the
+    // widget rects the PREVIOUS pass recorded.
+    for pass in 0..7 {
         let mut events = Vec::new();
         if pass >= 3 {
             events.push(egui::Event::PointerMoved(target));
             events.push(egui::Event::PointerButton {
                 pos: target,
                 button: egui::PointerButton::Primary,
-                pressed: pass == 3,
+                pressed: pass == 3 || pass == 5,
                 modifiers: egui::Modifiers::default(),
             });
         }
@@ -324,11 +331,8 @@ fn the_start_from_row_is_the_kit_row_g_startfrom() {
         };
         let mut out = ctx.run_ui(input, |ui| {
             ui.set_max_width(PANEL_WIDTH);
-            let response = ui.add(
-                ChoiceRow::new("Start from", &mut value, &options).hover("Two ways to start."),
-            );
-            if response.changed() {
-                changed = true;
+            if rest_machining_row(ui, &mut value).changed() {
+                changes += 1;
             }
         });
         if pass == 2 {
@@ -337,7 +341,7 @@ fn the_start_from_row_is_the_kit_row_g_startfrom() {
                 .iter()
                 .filter_map(|clipped| match &clipped.shape {
                     egui::epaint::Shape::Text(text) => {
-                        if text.galley.job.text == "After previous ops" {
+                        if text.galley.job.text == REST_MACHINING_LABEL {
                             target = clipped.shape.visual_bounding_rect().center();
                         }
                         Some(text.galley.job.text.clone())
@@ -346,23 +350,32 @@ fn the_start_from_row_is_the_kit_row_g_startfrom() {
                 })
                 .collect();
         }
+        if pass == 4 || pass == 6 {
+            seen.push(value);
+        }
         out.textures_delta.clear();
     }
 
-    for label in ["Start from", "Stock", "After previous ops"] {
-        assert!(
-            painted_labels.iter().any(|text| text == label),
-            "ChoiceRow must paint {label}; painted: {painted_labels:?}"
-        );
-    }
     assert!(
-        changed,
-        "a click on the other option must report Response::changed; the caller stamps the \
-         toolpath stale on that report alone"
+        painted_labels
+            .iter()
+            .any(|text| text == REST_MACHINING_LABEL),
+        "the row must paint its label; painted: {painted_labels:?}"
+    );
+    assert!(
+        !painted_labels
+            .iter()
+            .any(|text| text == "Start from" || text == "Stock"),
+        "the two-option row is gone; painted: {painted_labels:?}"
     );
     assert_eq!(
-        value,
-        StockSource::FromRemainingStock,
-        "the click must write the option it named"
+        changes, 2,
+        "each click must report Response::changed; the caller stamps the toolpath \
+         stale on that report alone"
+    );
+    assert_eq!(
+        seen,
+        [StockSource::FromRemainingStock, StockSource::Fresh],
+        "checked = from_remaining_stock, unchecked = fresh stock"
     );
 }

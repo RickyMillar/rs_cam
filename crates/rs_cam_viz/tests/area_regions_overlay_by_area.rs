@@ -221,7 +221,7 @@ fn the_row_toggles_and_draws_for_the_selected_toolpath_only() {
     state.selection = Selection::None;
     assert!(!(row().precondition)(&state).is_ready());
     assert!(
-        reason(&state).contains("select a 3D Rough"),
+        reason(&state).contains("select a 3D Adaptive"),
         "{}",
         reason(&state)
     );
@@ -271,7 +271,7 @@ fn global_ordering_and_other_operations_say_why_nothing_draws() {
     );
     state.selection = Selection::Toolpath(pocket);
     assert!(
-        reason(&state).contains("not a 3D Rough"),
+        reason(&state).contains("not a 3D Adaptive"),
         "{}",
         reason(&state)
     );

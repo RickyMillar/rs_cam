@@ -994,7 +994,7 @@ mod tests {
     /// Geometry selection P4.5, MCP parity of a click: an MCP
     /// `list_model_items { near }` at a circle centre, then the edit its
     /// key gives, stores the same pick as the GUI click on that circle
-    /// (`pick_edit`, the `TogglePick` path). Parity of a shift-click: the
+    /// (`pick_edit`, the `TogglePick` path). Parity of a right-click: the
     /// layer rule of `layer_rule_edit` (kinds and a circle range) is one
     /// wire `replace` with the same rules.
     #[test]

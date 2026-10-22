@@ -77,7 +77,7 @@ pub enum BuriedUnder {
     /// The stock top in the setup frame: the op starts from fresh stock.
     StockTop,
     /// The material that stands over the area of the op on the remaining
-    /// stock ("After previous ops").
+    /// stock ("Rest machining: from previous ops").
     StandingMaterial,
 }
 
@@ -111,7 +111,7 @@ impl std::fmt::Display for BuriedFaceRefusal {
             BuriedUnder::StockTop => write!(
                 f,
                 "{}: the face is {depth:.1} mm below the stock top and no earlier op clears \
-                 it. Clear it first (Pocket or Face), or start from \"After previous ops\".",
+                 it. Clear it first (Pocket or Face), or turn on \"Rest machining: from previous ops\".",
                 self.op
             ),
             BuriedUnder::StandingMaterial => write!(

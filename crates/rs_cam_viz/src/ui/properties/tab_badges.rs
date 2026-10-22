@@ -19,6 +19,14 @@ impl TabBadges {
             .and_then(|at| self.dots.get(at).copied().flatten())
     }
 
+    /// No dot on any tab (the D7 strip test).
+    #[cfg(test)]
+    pub(super) fn none() -> Self {
+        Self {
+            dots: [None; ToolpathTab::ALL.len()],
+        }
+    }
+
     /// Raise the dot of `tab` to `color` when `color` ranks higher.
     fn raise(&mut self, tab: ToolpathTab, color: egui::Color32) {
         if let Some(at) = ToolpathTab::ALL.iter().position(|t| *t == tab)
@@ -618,8 +626,8 @@ pub(super) fn rest_region_pathology_line(
                 part_footprint_fraction * 100.0
             ),
             "The percentage is of the part footprint. The regions barely restrict \
-             the fine pass. Raise Min Valley Depth, or set Start from to After \
-             previous ops for a true rest picture."
+             the fine pass. Raise Min Valley Depth, or turn on \
+             Rest machining: from previous ops for a true rest picture."
                 .to_owned(),
         ),
     };
@@ -628,18 +636,40 @@ pub(super) fn rest_region_pathology_line(
         .detail(detail)
 }
 
-/// The two ways an operation can start, in the order an operator meets
-/// them. `Fresh` is the default, so it reads first.
-const STOCK_SOURCES: &[(StockSource, &str)] = &[
-    (StockSource::Fresh, "Stock"),
-    (StockSource::FromRemainingStock, "After previous ops"),
-];
+/// The label of the rest machining row (L5, operator ruling 2026-10-23:
+/// the Fusion form, one checkbox). On = `StockSource::FromRemainingStock`,
+/// off = `StockSource::Fresh`. `StockSource` has these two values only.
+pub const REST_MACHINING_LABEL: &str = "Rest machining: from previous ops";
+
+/// The rest machining row: ONE checkbox that writes `source` (G-STARTFROM:
+/// the one writer of `stock_source`). The response reports `changed` on a
+/// click; the caller stamps the toolpath stale on that report. IC1: the
+/// row is one line; in a narrow rail the label truncates, and the hover
+/// gives the full text.
+pub fn rest_machining_row(ui: &mut egui::Ui, source: &mut StockSource) -> egui::Response {
+    let mut on = *source == StockSource::FromRemainingStock;
+    let response = ui
+        .scope(|ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+            ui.checkbox(&mut on, REST_MACHINING_LABEL)
+        })
+        .inner
+        .on_hover_text(START_FROM_HOVER);
+    if response.changed() {
+        *source = if on {
+            StockSource::FromRemainingStock
+        } else {
+            StockSource::Fresh
+        };
+    }
+    response
+}
 
 /// One hover for the row. It names what each option does, because the
 /// difference between them is the whole question.
 const START_FROM_HOVER: &str = concat!(
     "Stock: the toolpath starts from the raw stock. ",
-    "After previous ops: the toolpath starts from the material the earlier ",
+    "Rest machining: the toolpath starts from the material the earlier ",
     "operations in this setup leave, and needs their simulation first."
 );
 
@@ -715,7 +745,7 @@ pub(super) fn draw_geometry_wiring(
     // combo, and then calls [`draw_start_from`].
 }
 
-/// The Geometry tab's "Start from" row and its rest comparison: the end of
+/// The Cut tab's rest machining row and its rest comparison: the end of
 /// the wiring rows, below the Selection section (geometry selection P4.D).
 pub(super) fn draw_start_from(
     ui: &mut egui::Ui,
@@ -739,10 +769,7 @@ pub(super) fn draw_start_from(
     // the config, so it belongs on this row as a hover read from the
     // generation result once `rest_reference_mode` reaches `ToolpathStats`.
     ui.add_space(8.0);
-    let resp = ui.add(
-        crate::ui::components::ChoiceRow::new("Start from", &mut entry.stock_source, STOCK_SOURCES)
-            .hover(START_FROM_HOVER),
-    );
+    let resp = rest_machining_row(ui, &mut entry.stock_source);
     if resp.changed() {
         entry.stale_since = Some(std::time::Instant::now());
     }

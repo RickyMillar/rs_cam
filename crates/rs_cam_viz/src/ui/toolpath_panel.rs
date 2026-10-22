@@ -1208,7 +1208,7 @@ fn add_menu_items(
         add_op_menu_item(ui, op, setup_id, state.session(), events);
     }
     ui.separator();
-    ui.label(egui::RichText::new("3D (from STL)").strong());
+    ui.label(egui::RichText::new("3D (from a mesh: STL or STEP)").strong());
     for &op in OperationType::ALL_3D {
         add_op_menu_item(ui, op, setup_id, state.session(), events);
     }

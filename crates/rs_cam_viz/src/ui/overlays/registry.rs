@@ -423,7 +423,7 @@ fn area_regions_precondition(state: &AppState) -> Precondition {
         return Precondition::Ready;
     }
     let Some(tp_id) = selected_toolpath(state) else {
-        return Precondition::no("select a 3D Rough with By Area ordering");
+        return Precondition::no("select a 3D Adaptive with By Area ordering");
     };
     let ordering = state
         .session()
@@ -433,9 +433,9 @@ fn area_regions_precondition(state: &AppState) -> Precondition {
             _ => None,
         });
     match ordering {
-        None => Precondition::no("this operation is not a 3D Rough"),
+        None => Precondition::no("this operation is not a 3D Adaptive"),
         Some(RegionOrdering::Global) => {
-            Precondition::no("this 3D Rough uses Global ordering \u{2014} it detects no regions")
+            Precondition::no("this 3D Adaptive uses Global ordering \u{2014} it detects no regions")
         }
         Some(RegionOrdering::ByArea) => Precondition::no_with(
             "generate this toolpath to see its regions".to_owned(),
@@ -1086,7 +1086,7 @@ pub const ROWS: &[OverlayRow] = &[
         set: |s, on| s.viewport.show_area_regions = on,
         precondition: area_regions_precondition,
         default_for: no_default,
-        hover: "The regions that the selected 3D Rough detected with By Area \
+        hover: "The regions that the selected 3D Adaptive detected with By Area \
                 ordering. Each region has one colour and one order number. \
                 The thin box is the filter the planner cuts the region by. \
                 The planner detects the regions once, before the first level. \

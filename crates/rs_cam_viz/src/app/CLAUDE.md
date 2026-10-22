@@ -18,7 +18,7 @@ The egui application, its per-frame work and the GUI-side MCP requests. The serv
     `PickContext::visibility`: a hidden model takes no face, item, open path, hole or tab-loop pick.
   - A click goes to the tab editor, then pick mode, then the drawing popover, then the plain pick.
     The tab editor also wins the right-click and a drag that starts on a tab (no orbit).
-  - Pick mode: shift = `PickLayer`; the ray also hits an STL mesh (`PickHit::MeshFace`); a plain click does not.
+  - Pick mode: `pick_bar::click_event` maps a click (P3: shift = `AddPick`, right = `PickLayer`); `pick_mode_item` (P4) picks a chip-off kind second; the ray hits an STL mesh.
   - The hover ring (`upload_hover_lines`) and the tab marks (`upload_tab_lines`) are their own buffers.
   - `set_ui_view`: `model_visibility` sends `SetModelVisibility`; `frame_items` calls `frame_selection_items`.
 

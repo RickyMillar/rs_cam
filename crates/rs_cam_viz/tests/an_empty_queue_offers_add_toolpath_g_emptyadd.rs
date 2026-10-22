@@ -194,7 +194,7 @@ fn an_empty_queue_paints_an_add_toolpath_button_that_opens_the_add_menu_g_emptya
     let open_texts: Vec<&str> = open.iter().map(|p| p.text.as_str()).collect();
     assert!(
         open_texts.contains(&rs_cam_viz::ui::toolpath_panel::MENU_2D_HEADER)
-            && open_texts.contains(&"3D (from STL)"),
+            && open_texts.contains(&"3D (from a mesh: STL or STEP)"),
         "a click on Add toolpath opens the add menu: {open_texts:?}"
     );
 }

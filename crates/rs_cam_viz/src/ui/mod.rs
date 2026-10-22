@@ -386,9 +386,20 @@ pub enum AppEvent {
         key: rs_cam_core::selection::MatchKey,
     },
 
-    // Geometry selection P4.5: one viewport shift-click on an item in pick
-    // mode. The layer of the item becomes a rule for the kinds `kinds` (the
-    // chips that are on) and, for the circles, the diameter range
+    // Geometry selection P3 (reference audit 2026-10-23): one viewport
+    // shift-click on an item in pick mode, or a click on an item whose chip
+    // is off (P4). It adds the item and never removes it. The controller
+    // asks core `click_edit`, as for `TogglePick`; a `RemovePick` answer
+    // (the item is already selected) gives no edit.
+    AddPick {
+        toolpath_id: ToolpathId,
+        target: rs_cam_core::session::SelectionTarget,
+        key: rs_cam_core::selection::MatchKey,
+    },
+
+    // Geometry selection P4.5, P3: one viewport right-click on an item in
+    // pick mode. The layer of the item becomes a rule for the kinds `kinds`
+    // (the chips that are on) and, for the circles, the diameter range
     // `circle`. The controller asks core for the edit
     // (`ProjectSession::layer_rule_edit`: under the default the rule
     // replaces it), then applies it.

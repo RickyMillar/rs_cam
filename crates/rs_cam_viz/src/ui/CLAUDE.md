@@ -19,7 +19,7 @@ Every panel, modal and workspace. `../app.rs` calls the `draw` of each surface o
   the file again on commit only (`committed_number`; its draft is in `state.panels.number_drafts`).
 - `viewport_overlay.rs`, `automation.rs`, `shortcuts_window.rs`, `preferences.rs` — dock (legend: `overlays/`), automation, shortcuts, prefs.
 - `pick_bar.rs` — the pick-mode filter bar and the tab editor bar, top centre, no width (L-4). A disabled
-  chip names the core reason. `COMPUTING_FACES` shows while the faces of an STL are cold.
+  chip names the core reason; a chip is a view filter (P4). `click_event` is THE click map (P3). `COMPUTING_FACES`.
 
 ## Invariants
 
