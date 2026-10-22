@@ -20,9 +20,9 @@
 //!    `AppController::handle_internal_event` — on the flat-first terrain
 //!    seed, asserting the three R0.3 §2.2 behaviours the tool exists to
 //!    expose: the A1 Suggest refusal creates NOTHING and reports itself
-//!    only as a toast; the binding is `tools().first()` even when a
-//!    compatible tool sits second; and a permitted add creates one
-//!    toolpath and pushes no warning.
+//!    only as a toast; the binding is the first tool that the operation
+//!    accepts, so a compatible tool second in the list is bound; and a
+//!    permitted add creates one toolpath and pushes no warning.
 //!
 //! `RsCamApp` needs an `eframe::CreationContext`, so the dispatch arm
 //! cannot be constructed in a test — the same limit F1.1 recorded. What
@@ -171,7 +171,7 @@ impl ComputeBackend for SilentBackend {
 
 /// The flat-first terrain seed of R0.3 §5.2: tools `[Ø6 end mill, Ø3 ball
 /// nose]` in that order. The order is the whole point — `handle_add_toolpath`
-/// binds `tools().first()` and never looks for a compatible one.
+/// binds the first tool that the operation accepts.
 fn flat_first_seed() -> AppController<SilentBackend> {
     let mut controller = AppController::with_backend(SilentBackend);
     controller.state.replace_session(
@@ -189,6 +189,20 @@ fn flat_first_seed() -> AppController<SilentBackend> {
     controller
 }
 
+/// A project whose only tool is a flat end mill: Scallop accepts no tool.
+fn flat_only_seed() -> AppController<SilentBackend> {
+    let mut controller = AppController::with_backend(SilentBackend);
+    controller.state.replace_session(
+        ProjectSessionBuilder::new()
+            .tool(ToolConfig::new_default(
+                ToolId::from_raw(0),
+                ToolType::EndMill,
+            ))
+            .build(),
+    );
+    controller
+}
+
 fn toasts(controller: &AppController<SilentBackend>) -> Vec<(String, Severity)> {
     controller
         .notifications()
@@ -197,14 +211,14 @@ fn toasts(controller: &AppController<SilentBackend>) -> Vec<(String, Severity)> 
         .collect()
 }
 
-/// R0.3 §2.2 row A1, the standing example. Scallop with a flat first tool
-/// is refused by the add-time Suggest door: nothing is created, and the
+/// R0.3 §2.2 row A1, the standing example. Scallop with a flat end mill as
+/// the only tool is refused by the add-time Suggest door: nothing is created, and the
 /// ONLY report is a Warning toast. That last clause is why F3.1 and F3.5
 /// are one task — without the stack there is nothing for the tool to
 /// return.
 #[test]
 fn a_refused_add_creates_nothing_and_reports_itself_only_as_a_toast() {
-    let mut controller = flat_first_seed();
+    let mut controller = flat_only_seed();
     assert!(controller.notifications().is_empty());
 
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Scallop));
@@ -229,12 +243,13 @@ fn a_refused_add_creates_nothing_and_reports_itself_only_as_a_toast() {
     );
 }
 
-/// The binding rule R0.3 §4.3 proposes to CHANGE, pinned as it stands
-/// today so F4.2 can show the change. A compatible ball nose is present
-/// and second; the GUI binds the end mill anyway and refuses. This is the
-/// live parity case §5's closing line asks for.
+/// The binding rule of R0.3 §4.3 step 2, now landed: a compatible ball
+/// nose second in the list passes the tool rule, and the end mill before
+/// it is skipped without a toast. The seed has no model, so the add then
+/// stops at the geometry rule; that refusal proves the tool rule passed.
+/// `a_new_op_takes_the_first_tool_it_accepts.rs` covers a completed add.
 #[test]
-fn the_gui_binds_the_first_tool_even_when_a_compatible_one_is_second() {
+fn the_gui_binds_the_first_compatible_tool_when_it_is_second() {
     let mut controller = flat_first_seed();
     let kinds: Vec<ToolType> = controller
         .state
@@ -251,11 +266,19 @@ fn the_gui_binds_the_first_tool_even_when_a_compatible_one_is_second() {
 
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Scallop));
 
+    // A "no feeds recipe" notice can come first: it says the ball nose
+    // fits. The last toast is the geometry rule, and no toast names a
+    // refused tool.
+    let shown = toasts(&controller);
     assert!(
-        controller.state.session().toolpath_configs().is_empty(),
-        "R0.3 §4.3 step 2 (\"first tool that accepts_tool\") is NOT what \
-         the code does today; if this now creates a toolpath the binding \
-         rule has landed and F4.2's contract test owns this case"
+        shown
+            .last()
+            .is_some_and(|(m, _)| m.ends_with("import geometry first")),
+        "the ball nose fits, so the geometry rule refuses last: {shown:?}"
+    );
+    assert!(
+        shown.iter().all(|(m, _)| !m.contains("this tool is")),
+        "no tool refusal: {shown:?}"
     );
 }
 
@@ -309,7 +332,7 @@ fn an_add_with_no_tools_refuses_with_the_no_tools_text() {
 /// attribute an older toast to a newer request.
 #[test]
 fn the_stack_only_grows_so_the_tail_belongs_to_the_latest_add() {
-    let mut controller = flat_first_seed();
+    let mut controller = flat_only_seed();
 
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Scallop));
     let after_first = controller.notifications().len();

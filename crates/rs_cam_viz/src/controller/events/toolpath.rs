@@ -18,8 +18,11 @@ impl<B: ComputeBackend> AppController<B> {
     /// Add one toolpath the way the operator's Add menu does, and report
     /// the command's own [`Effects`].
     ///
+    /// The operation takes the first tool in tool-list order that it
+    /// accepts. The add-time Suggest door is the acceptance rule.
+    ///
     /// `None` means nothing was created: no tool, no geometry, or the
-    /// add-time Suggest door refused the operation and tool pairing. The
+    /// add-time Suggest door refused every tool of the project. The
     /// refusal reaches the operator as a toast and nothing else carries
     /// it (G-GUIADD).
     ///
@@ -58,14 +61,14 @@ impl<B: ComputeBackend> AppController<B> {
         }
         .or(Some(0)); // default to first setup
 
-        let Some(tool_id) = self.state.session().tools().first().map(|t| t.id) else {
+        if self.state.session().tools().is_empty() {
             tracing::warn!("Cannot add toolpath: no tools defined");
             self.push_notification(
                 "Cannot add toolpath: no tools defined".into(),
                 super::super::Severity::Warning,
             );
             return None;
-        };
+        }
         // Roadmap B.1–B.3 — pull stock-aware depth defaults so e.g.
         // a fresh DropCutter starts with `min_z = stock_bottom_z`
         // instead of the hard-coded `-50.0` that clipped any stock
@@ -85,68 +88,98 @@ impl<B: ComputeBackend> AppController<B> {
             .first()
             .map_or(rs_cam_core::ids::ModelId::placeholder(), |m| m.id);
         let model_bbox = self.state.session().model_bbox_by_id(model_id);
-        let Some(tool) = self
-            .state
-            .session()
-            .tools()
-            .iter()
-            .find(|t| t.id == tool_id)
-        else {
-            tracing::warn!("Cannot add toolpath: selected tool not found");
-            self.push_notification(
-                "Cannot add toolpath: selected tool not found".into(),
-                super::super::Severity::Warning,
+        // The new operation takes the FIRST tool in tool-list order that
+        // the operation accepts. The add-time Suggest door is the rule:
+        // it refuses a tool that the operation does not accept (the
+        // registry's tool rule, or a scallop-height stepover on a tool
+        // with no tip radius). A V-bit first in the list no longer
+        // blocks a Bore when an end mill follows it.
+        let mut chosen: Option<AddPick> = None;
+        let mut first_refusal: Option<rs_cam_core::feeds::FeedsError> = None;
+        for tool in self.state.session().tools() {
+            let suggested = rs_cam_core::feeds::suggest::suggest_params(
+                rs_cam_core::feeds::suggest::SuggestParamsInput {
+                    op_type,
+                    tool,
+                    machine: self.state.session().machine(),
+                    material: &self.state.session().stock_config().material,
+                    lut: rs_cam_core::feeds::embedded_vendor_lut(),
+                    stock_ctx: &stock_ctx,
+                    spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
+                    // Q1: the bbox the runtime-sanity back-off reads. The
+                    // stock reaches Suggest through `stock_ctx` above, so
+                    // `SuggestContext::stock` stays empty rather than
+                    // carrying the same value twice.
+                    // `upstream_leftover_stock_mm` stays `None`: no lookup
+                    // here gives it, and v1 does not read it.
+                    context: rs_cam_core::feeds::suggest::SuggestContext {
+                        model_bbox: model_bbox.as_ref(),
+                        ..rs_cam_core::feeds::suggest::SuggestContext::default()
+                    },
+                },
             );
+            match suggested {
+                Ok(s) => {
+                    chosen = Some(AddPick {
+                        tool_id: tool.id,
+                        tool_diameter_mm: tool.diameter,
+                        operation: s.operation,
+                        feeds_provenance: s.provenance,
+                        unbacked: None,
+                    });
+                    break;
+                }
+                Err(e @ rs_cam_core::feeds::FeedsError::Unbacked { .. }) => {
+                    // Ruling R1 (2026-09-23): the engine has no checked
+                    // basis for a recipe on this cell. The tool still
+                    // fits, so the operation is added with the registry
+                    // and stock defaults and no recipe; the refusal is
+                    // shown, and the Feeds tab repeats it.
+                    chosen = Some(AddPick {
+                        tool_id: tool.id,
+                        tool_diameter_mm: tool.diameter,
+                        operation: rs_cam_core::feeds::suggest::default_operation(
+                            op_type, &stock_ctx,
+                        ),
+                        feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+                        unbacked: Some(format!("Added without a feeds recipe: {e}")),
+                    });
+                    break;
+                }
+                Err(e) => {
+                    first_refusal.get_or_insert(e);
+                }
+            }
+        }
+        let Some(AddPick {
+            tool_id,
+            tool_diameter_mm,
+            operation,
+            feeds_provenance,
+            unbacked,
+        }) = chosen
+        else {
+            // No tool of the project fits the operation. The refusal
+            // text of the first tool names the tool kinds the operation
+            // needs. The toast is the operator's only record.
+            let tool_count = self.state.session().tools().len();
+            let reason = first_refusal.map_or_else(String::new, |e| e.to_string());
+            let msg = if tool_count == 1 {
+                format!("Cannot add toolpath: {reason}")
+            } else {
+                format!(
+                    "Cannot add toolpath: none of the {tool_count} project tools fits. \
+                     First tool: {reason}"
+                )
+            };
+            tracing::warn!("{msg}");
+            self.push_notification(msg, super::super::Severity::Warning);
             return None;
         };
-        // R2: the creation-time boundary copies this diameter as its offset.
-        let tool_diameter_mm = tool.diameter;
-        let (operation, feeds_provenance) = match rs_cam_core::feeds::suggest::suggest_params(
-            rs_cam_core::feeds::suggest::SuggestParamsInput {
-                op_type,
-                tool,
-                machine: self.state.session().machine(),
-                material: &self.state.session().stock_config().material,
-                lut: rs_cam_core::feeds::embedded_vendor_lut(),
-                stock_ctx: &stock_ctx,
-                spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-                // Q1: the bbox the runtime-sanity back-off reads. The
-                // stock reaches Suggest through `stock_ctx` above, so
-                // `SuggestContext::stock` stays empty rather than
-                // carrying the same value twice.
-                // `upstream_leftover_stock_mm` stays `None`: no lookup
-                // here gives it, and v1 does not read it.
-                context: rs_cam_core::feeds::suggest::SuggestContext {
-                    model_bbox: model_bbox.as_ref(),
-                    ..rs_cam_core::feeds::suggest::SuggestContext::default()
-                },
-            },
-        ) {
-            Ok(s) => (s.operation, s.provenance),
-            Err(e @ rs_cam_core::feeds::FeedsError::Unbacked { .. }) => {
-                // Ruling R1 (2026-09-23): the engine has no checked basis
-                // for a recipe on this cell. The operation is still added,
-                // with the registry and stock defaults and no recipe; the
-                // refusal is shown, and the Feeds tab repeats it.
-                let msg = format!("Added without a feeds recipe: {e}");
-                tracing::warn!("{msg}");
-                self.push_notification(msg, super::super::Severity::Warning);
-                (
-                    rs_cam_core::feeds::suggest::default_operation(op_type, &stock_ctx),
-                    rs_cam_core::feeds::FeedsProvenance::default(),
-                )
-            }
-            Err(e) => {
-                // The tool cannot run the operation (the registry's tool
-                // rule, or a scallop-height stepover on a tool with no tip
-                // radius). Surface the refusal and bail; the toolpath is
-                // not added.
-                let msg = format!("Cannot add toolpath: {e}");
-                tracing::warn!("{msg}");
-                self.push_notification(msg, super::super::Severity::Warning);
-                return None;
-            }
-        };
+        if let Some(msg) = unbacked {
+            tracing::warn!("{msg}");
+            self.push_notification(msg, super::super::Severity::Warning);
+        }
         // Capture is_3d before `operation` moves into the toolpath
         // config below — used by the boundary auto-enable (B.7).
         let op_is_3d = operation.is_3d();
@@ -210,7 +243,7 @@ impl<B: ComputeBackend> AppController<B> {
                 setup_index: setup_idx,
                 config: Box::new(tc),
             });
-            self.apply_quietly(command)
+            self.apply_add_or_toast(command)
         });
         let created = effects.as_ref().and_then(|effects| effects.created);
         if let Some(tp_idx) = created
@@ -226,6 +259,21 @@ impl<B: ComputeBackend> AppController<B> {
         }
         self.state.gui.mark_edited();
         effects
+    }
+
+    /// Apply one add command. A refusal shows as a Warning toast, so a
+    /// refused add is never silent: the toast is the only record that
+    /// the operator sees.
+    fn apply_add_or_toast(&mut self, command: Command) -> Option<Effects> {
+        match self.apply(command) {
+            Ok(effects) => Some(effects),
+            Err(error) => {
+                let msg = format!("Cannot add toolpath: {error}");
+                tracing::warn!("{msg}");
+                self.push_notification(msg, super::super::Severity::Warning);
+                None
+            }
+        }
     }
 
     pub(crate) fn handle_duplicate_toolpath(&mut self, tp_id: ToolpathId) {
@@ -272,7 +320,8 @@ impl<B: ComputeBackend> AppController<B> {
                     setup_index: setup_idx,
                     config: Box::new(tc),
                 });
-                self.apply_created(command)
+                self.apply_add_or_toast(command)
+                    .and_then(|effects| effects.created)
             });
             if let Some(tp_idx) = created
                 && let Some(new_tc) = self.state.session().toolpath_configs().get(tp_idx)
@@ -307,13 +356,16 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Apply `AddBoreFromDrill` to the Drill `drill_id` and make the GUI
     /// runtime entry of the Bore. Returns the id of the Bore, or `None`
-    /// when the Drill is gone or the command refused (the door logs it).
+    /// when the Drill is gone or the command refused. A refusal shows as
+    /// a toast.
     pub(super) fn add_bore_from_drill(&mut self, drill_id: ToolpathId) -> Option<ToolpathId> {
         let (index, _) = self.state.session().find_toolpath_config_by_id(drill_id)?;
-        let created = self.apply_created(Command::AddBoreFromDrill(AddBoreFromDrillArgs {
-            index,
-            drill_id,
-        }))?;
+        let created = self
+            .apply_add_or_toast(Command::AddBoreFromDrill(AddBoreFromDrillArgs {
+                index,
+                drill_id,
+            }))?
+            .created?;
         let tc = self.state.session().toolpath_configs().get(created)?;
         let (bore_id, auto_regen) = (tc.id, tc.operation.default_auto_regen());
         self.state.gui.toolpath_rt.insert(
@@ -743,4 +795,15 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
     }
+}
+
+/// The tool and the Suggest answer that [`AppController::handle_add_toolpath`]
+/// chose for a new operation.
+struct AddPick {
+    tool_id: rs_cam_core::ids::ToolId,
+    tool_diameter_mm: f64,
+    operation: rs_cam_core::compute::catalog::OperationConfig,
+    feeds_provenance: rs_cam_core::feeds::FeedsProvenance,
+    /// The R1 "no feeds recipe" text, when Suggest had no basis.
+    unbacked: Option<String>,
 }
