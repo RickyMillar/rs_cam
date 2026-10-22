@@ -7,6 +7,16 @@ use super::DepthBeyondStock;
 use crate::ui::components::UiExt as _;
 use rs_cam_core::compute::catalog::OperationType;
 
+/// The label of a Trace compensation (P6.7, O-1): the tool on the line,
+/// or on one side of the drawn direction.
+pub(super) fn trace_compensation_label(compensation: TraceCompensation) -> &'static str {
+    match compensation {
+        TraceCompensation::None => "On the line",
+        TraceCompensation::Left => "Left of the drawn direction",
+        TraceCompensation::Right => "Right of the drawn direction",
+    }
+}
+
 pub(in crate::ui::properties) fn draw_trace_params(
     ui: &mut egui::Ui,
     cfg: &mut TraceConfig,
@@ -17,18 +27,24 @@ pub(in crate::ui::properties) fn draw_trace_params(
     // axial/radial recommendations don't speak to single-line tracing).
     // Feed/plunge are edited on the Feeds & Speeds tab (W3.2).
     ui.param_grid("trace_p", |ui| {
+        // P6.7 (O-1): Left and Right are relative to the drawn direction
+        // of each line, closed loops included.
         ui.label("Compensation:");
         egui::ComboBox::from_id_salt("trace_comp")
             .truncate()
-            .selected_text(match cfg.compensation {
-                TraceCompensation::None => "None",
-                TraceCompensation::Left => "Left",
-                TraceCompensation::Right => "Right",
-            })
+            .selected_text(trace_compensation_label(cfg.compensation))
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut cfg.compensation, TraceCompensation::None, "None");
-                ui.selectable_value(&mut cfg.compensation, TraceCompensation::Left, "Left");
-                ui.selectable_value(&mut cfg.compensation, TraceCompensation::Right, "Right");
+                for compensation in [
+                    TraceCompensation::None,
+                    TraceCompensation::Left,
+                    TraceCompensation::Right,
+                ] {
+                    ui.selectable_value(
+                        &mut cfg.compensation,
+                        compensation,
+                        trace_compensation_label(compensation),
+                    );
+                }
             });
         ui.end_row();
         dv(

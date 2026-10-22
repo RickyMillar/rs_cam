@@ -14,7 +14,7 @@ The view-side state; the core owns the project, so it is not an alternate data m
 - `simulation/` — `playback_state.rs`, `issue_triage.rs`, `semantic_trace.rs`.
 - `viewport.rs` — `drawing_draws`: every visible drawing draws; the selected op's model draws its states.
 - `selection.rs` — the selection. `overlays.rs` — the dock and catalogue; `ModelVisibility` (view state).
-- `selection_highlight.rs` — the report the viewport colours, `ReportDetector`, `HoverDetector`, the note keys.
+- `selection_highlight.rs` — the report the viewport colours, `ReportDetector`, `HoverDetector`, the note keys; P6.7 open path marks: `open_path_side`, `path_middle`, `side_point` (drawing frame).
 - `pick.rs` — `SelectionUi` on `GuiState`: one `ViewportMode { Pick, Tabs }` at a time (L-3 by type) and
   the `+ Rule` draft; `PickFilter::effective_kinds` (on, served, held); `held_kinds` holds `Face` for an STL.
 - `tab_edit.rs` — the `tab_layout` read per toolpath revision and `TabMarksDetector`.

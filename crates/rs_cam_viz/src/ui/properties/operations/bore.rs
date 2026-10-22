@@ -13,7 +13,7 @@ use rs_cam_core::session::HoleSelection;
 use super::super::{depth_caution_row, dv, p};
 use super::boundary_2d::floor_row;
 use super::{DepthBeyondStock, FloorInputs};
-use crate::ui::components::UiExt as _;
+use crate::ui::components::{OneLine, UiExt as _};
 
 /// What a Bore cuts, printed on the panel so the operator knows which
 /// circles the op takes (L-12).
@@ -49,9 +49,8 @@ pub(in crate::ui::properties) fn draw_bore_params(
         );
     });
     let bored = holes.map_or(0, |h| h.holes.len());
-    ui.label(
-        egui::RichText::new(format!("{BORE_SCOPE_NOTE} {bored} circle(s) bored."))
-            .small()
-            .weak(),
-    );
+    // P6.7 (IC1): one row, the count first; the hover gives the scope.
+    // The hole size rows of the Selection section give each size, its
+    // fit and its helix radius.
+    ui.add(OneLine::new(format!("{bored} circle(s) bored")).detail(BORE_SCOPE_NOTE));
 }

@@ -382,7 +382,7 @@ fn dia_profile(op: &OperationConfig, ui: &mut egui::Ui) {
         let (label, offset) = match cfg.side {
             ProfileSide::Outside => ("Outside", Some("Outside")),
             ProfileSide::Inside => ("Inside", Some("Inside")),
-            ProfileSide::On => ("On", None),
+            ProfileSide::On => ("On the line", None),
         };
         draw_outline_diagram(ui, &format!("Profile ({label})"), offset);
     }
@@ -398,14 +398,20 @@ fn dia_chamfer(op: &OperationConfig, ui: &mut egui::Ui) {
     }
 }
 
+/// P6.7 (O-1): Left and Right are sides of the drawn direction, not inside
+/// and outside of a loop, so the Trace diagram draws an open line, its
+/// direction and the tool on its side.
 fn dia_trace(op: &OperationConfig, ui: &mut egui::Ui) {
+    use super::shape_diagrams::{TraceDiagramSide, draw_trace_diagram};
+    use crate::state::toolpath::TraceCompensation;
     if let OperationConfig::Trace(cfg) = op {
-        let comp = match cfg.compensation {
-            crate::state::toolpath::TraceCompensation::None => None,
-            crate::state::toolpath::TraceCompensation::Left => Some("Inside"),
-            crate::state::toolpath::TraceCompensation::Right => Some("Outside"),
+        let side = match cfg.compensation {
+            TraceCompensation::None => TraceDiagramSide::On,
+            TraceCompensation::Left => TraceDiagramSide::Left,
+            TraceCompensation::Right => TraceDiagramSide::Right,
         };
-        draw_outline_diagram(ui, "Trace", comp);
+        let label = super::engrave::trace_compensation_label(cfg.compensation);
+        draw_trace_diagram(ui, &format!("Trace ({label})"), side);
     }
 }
 

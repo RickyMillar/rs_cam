@@ -607,6 +607,11 @@ pub(super) fn draw_geometry_tab(
                 sources: &inputs.rule_sources,
                 note_items: &inputs.selection_note_items,
                 model_kinds: &inputs.toolpath_model_kinds,
+                // P6.7: the hole size rows read the tool diameter.
+                tool_diameter: tool_configs
+                    .iter()
+                    .find(|(id, _)| *id == entry.tool_id)
+                    .map(|(_, tool)| tool.diameter),
             },
             selection_ui,
             events,
@@ -882,6 +887,7 @@ pub(super) fn draw_geometry_tab(
                         sources: &inputs.rule_sources,
                         note_items: &inputs.boundary_note_items,
                         model_kinds: &inputs.toolpath_model_kinds,
+                        tool_diameter: None,
                     },
                     selection_ui,
                     events,

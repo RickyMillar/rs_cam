@@ -11,7 +11,7 @@ The egui application, its per-frame work and the GUI-side MCP requests. The serv
   `project.rs`, `generation.rs`, `diagnostics.rs` (span-kind synonyms from core `DebugSpanKind::structural`, F017), `simulation.rs`, `view.rs` (screenshots, `set_ui_view`).
 - `export.rs` — the GUI export path. `simulation.rs` — per-frame simulation work. `input.rs` — app input. `file_dialog.rs` (F218) — every `rfd` dialog, off the frame, one at a time; `AfterPick` acts on the pick.
 - `viewport.rs`, `gpu_upload.rs` + `gpu_upload/` (F132: a file per slot, key and build read one `SlotInputs`), `pin_marks.rs` (P7), `obstacle_marks.rs` (K2) — the frame and the upload.
-  - The drawing takes the item state colours, open path ends, lost-pick ghosts and the boundary outline.
+  - The drawing takes the item state colours, open path ends, lost-pick ghosts and the boundary outline. P6.7: a mid-path arrow, the tool side mark of a Cut path (drawing frame, then `display`), each report `extended` ring (no rays), a `HOLE_MISFIT` drill marker.
     It uploads on a change of the report `Arc` (`ReportDetector`), never per frame.
   - A drawing that no drawn toolpath reads uploads as `neutral_drawing_vertices` (active setup frame).
   - A hidden model (`ModelVisibility`) uploads no mesh and no drawing. Every pick reads

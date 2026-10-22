@@ -201,3 +201,80 @@ pub fn note_item_keys(
         })
         .collect()
 }
+
+/// The side of the drawn direction that the op of `operation` cuts beside
+/// an open path (geometry selection P6.7), or `None` when it cuts on the
+/// line or does not read open paths. Trace Left and Right (P6.2, O-1: the
+/// tool on that side of travel) and a Pocket with Extend to stock (P6.4)
+/// have a side. The side is in the DRAWING frame, as core reads it.
+pub fn open_path_side(
+    operation: &rs_cam_core::compute::catalog::OperationConfig,
+) -> Option<rs_cam_core::selection::PathSide> {
+    use rs_cam_core::compute::catalog::OperationConfig;
+    use rs_cam_core::ops::trace_path::TraceCompensation;
+    use rs_cam_core::selection::PathSide;
+    match operation {
+        OperationConfig::Trace(cfg) => match cfg.compensation {
+            TraceCompensation::None => None,
+            TraceCompensation::Left => Some(PathSide::Left),
+            TraceCompensation::Right => Some(PathSide::Right),
+        },
+        OperationConfig::Pocket(cfg) => cfg.open_paths.side(),
+        _ => None,
+    }
+}
+
+/// The middle of an open path by length, and the unit direction of travel
+/// there, in the frame of `ring` (geometry selection P6.7: the direction
+/// arrow and the side mark). `None` for a path with no length.
+pub fn path_middle(ring: &[rs_cam_core::geo::P2]) -> Option<(rs_cam_core::geo::P2, [f64; 2])> {
+    let lengths: Vec<f64> = ring
+        .windows(2)
+        .map(|pair| match pair {
+            [a, b] => (b.x - a.x).hypot(b.y - a.y),
+            _ => 0.0,
+        })
+        .collect();
+    let total: f64 = lengths.iter().sum();
+    if total <= f64::EPSILON {
+        return None;
+    }
+    let mut left = total / 2.0;
+    for (pair, length) in ring.windows(2).zip(&lengths) {
+        let [a, b] = pair else { continue };
+        if *length <= f64::EPSILON {
+            continue;
+        }
+        if left <= *length {
+            let t = left / length;
+            let direction = [(b.x - a.x) / length, (b.y - a.y) / length];
+            let middle = rs_cam_core::geo::P2::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+            return Some((middle, direction));
+        }
+        left -= length;
+    }
+    None
+}
+
+/// The point at `distance` from `middle` on `side` of the direction of
+/// travel `direction` (a unit vector), in the same frame (geometry
+/// selection P6.7). Left is the direction turned a quarter turn
+/// counter-clockwise. The viewport computes it in the drawing frame and
+/// then moves it to the display frame, so a setup that mirrors the drawing
+/// (a Bottom setup) shows the mark on the side the tool cuts.
+pub fn side_point(
+    middle: rs_cam_core::geo::P2,
+    direction: [f64; 2],
+    side: rs_cam_core::selection::PathSide,
+    distance: f64,
+) -> rs_cam_core::geo::P2 {
+    let [dx, dy] = direction;
+    let sign = match side {
+        rs_cam_core::selection::PathSide::Left => 1.0,
+        rs_cam_core::selection::PathSide::Right => -1.0,
+    };
+    rs_cam_core::geo::P2::new(
+        middle.x - dy * distance * sign,
+        middle.y + dx * distance * sign,
+    )
+}

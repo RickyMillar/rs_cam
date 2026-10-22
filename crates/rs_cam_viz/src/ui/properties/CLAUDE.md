@@ -7,7 +7,7 @@
 - `selection_section.rs` — one section per selection: the op target at the TOP of the Geometry tab (below
   Input, above `tab_badges::draw_start_from`), the boundary target under Machining Boundary. ONE Pick, in
   the action row (`PICK_A_FACE_FIX` has none). An op with no op selection draws `Pick faces` (the boundary
-  target, any source). The Cuts row reads "Computing faces…" while `faces_not_ready`. Rows have "Show me".
+  target, any source). The Cuts row reads "Computing faces…" while `faces_not_ready`. Rows have "Show me". P6.7: a Drill or Bore gets one row per hole size (`hole_sizes`: report `hole_fits`, `tool_diameter`); a Pocket Extend one "Open paths" line.
 - `model_sim_panels.rs` — a drawing gets "Import" (scale, join tolerance, report) and "Open shapes" (core
   `open_shapes`, Show me, the two close acts, Join all within, a lost edit in DANGER, the ledger in `Details`).
 - `operations/` — an editor per op family, `registry.rs`, `shape_diagrams.rs`, `height_diagram.rs`, `validate.rs`;
@@ -37,4 +37,4 @@
 - `--test the_inspector_nests_once_dc5 --test inspector_width_is_tab_independent_up4 --test the_inspector_text_is_bounded_ic1 --test tabular_data_reads_one_table_ic2`
 - `--test the_head_and_shoe_rows_fit_the_rail_h2 --test the_help_key_is_the_param_name_ui04 --test operations_registry_ui05 --test one_start_from_row_g_startfrom`
 - `--test keyed_pin_panel_reads_the_real_strips_g_pinpanel --test pin_editor_and_viewport_p7 --test the_selection_section_writes_edits_only_p4_3`
-- `--test show_me_frames_the_items_p4_4 --test a_2d_op_cuts_a_step_face_p4_d --test the_panel_feeds_run_once_per_input_f216`; `--lib p4_d` (one Pick: `the_selection_section_shows_one_pick_p4_d`)
+- `--test show_me_frames_the_items_p4_4 --test a_2d_op_cuts_a_step_face_p4_d --test the_panel_feeds_run_once_per_input_f216`; `--lib p4_d` (one Pick: `the_selection_section_shows_one_pick_p4_d`); P6.7: `--test side_on_greys_in_control_p6_7 --test the_hole_rows_show_each_fit_p6_7 --test the_pocket_open_paths_row_p6_7` (Profile On: core `domain::side_on_*` predicates)

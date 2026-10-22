@@ -32,7 +32,7 @@ pub(super) fn upload(
     // When a drill op is selected, draw its model's drill targets
     // (DXF points / circle centres) as pickable markers — bright when
     // selected, dim otherwise — so the user can see and click them.
-    let active_drill: Option<(usize, rs_cam_core::session::HoleSelection)> = {
+    let active_drill: Option<(usize, rs_cam_core::session::HoleSelection, HoleMisfits)> = {
         use crate::state::selection::Selection;
         let st = state;
         if st.workspace == Workspace::Toolpaths
@@ -46,7 +46,8 @@ pub(super) fn upload(
                     // Geometry selection P2.3c: the items the
                     // generator resolves, each marked selected
                     // or not (`ProjectSession::hole_selection`).
-                    Some((tc.model_id, st.session().hole_selection(tc)?))
+                    let holes = st.session().hole_selection(tc)?;
+                    Some((tc.model_id, holes, hole_misfits(st, tc)))
                 })
         } else {
             None
@@ -301,6 +302,63 @@ pub(super) fn upload(
             }
         };
 
+        // P6.7: the direction arrow at the middle of an open path (the
+        // start rule of P2.2 on screen), a chevron that points along the
+        // drawn direction.
+        let path_arrow = |ring: &[rs_cam_core::geo::P2], verts: &mut Vec<LineVertex>| {
+            let Some((middle, [dx, dy])) = crate::state::selection_highlight::path_middle(ring)
+            else {
+                return;
+            };
+            // The direction in the display frame: a setup may mirror or
+            // turn the drawing.
+            let a = display(middle);
+            let b = display(rs_cam_core::geo::P2::new(middle.x + dx, middle.y + dy));
+            let len = (b.0 - a.0).hypot(b.1 - a.1);
+            if len <= f64::EPSILON {
+                return;
+            }
+            let d = ((b.0 - a.0) / len, (b.1 - a.1) / len);
+            let n = (-d.1, d.0);
+            let tip = (a.0 + d.0 * mark, a.1 + d.1 * mark);
+            let back = (a.0 - d.0 * mark, a.1 - d.1 * mark);
+            line(
+                (back.0 + n.0 * mark, back.1 + n.1 * mark),
+                tip,
+                colors::PATH_START,
+                verts,
+            );
+            line(
+                (back.0 - n.0 * mark, back.1 - n.1 * mark),
+                tip,
+                colors::PATH_START,
+                verts,
+            );
+        };
+        // P6.7: the side that a Trace Left/Right or a Pocket Extend cuts,
+        // as the tool on that side at the middle of a cut path. The point
+        // is found in the drawing frame (core reads the side there) and
+        // then moved to the display frame, so a Bottom setup mirrors it.
+        let path_side = crate::state::selection_highlight::open_path_side(&toolpath.operation);
+        let tool_radius = state
+            .session()
+            .tools()
+            .iter()
+            .find(|tool| tool.id.0 == toolpath.tool_id)
+            .map_or(mark, |tool| tool.diameter / 2.0);
+        let side_mark = |ring: &[rs_cam_core::geo::P2], verts: &mut Vec<LineVertex>| {
+            let (Some(side), Some((middle, direction))) = (
+                path_side,
+                crate::state::selection_highlight::path_middle(ring),
+            ) else {
+                return;
+            };
+            let centre =
+                crate::state::selection_highlight::side_point(middle, direction, side, tool_radius);
+            line(display(middle), display(centre), colors::PATH_SIDE, verts);
+            ring_mark(display(centre), tool_radius, colors::PATH_SIDE, verts);
+        };
+
         let mut verts = Vec::new();
         // The flashed items draw last, over the rest.
         let mut flash_verts = Vec::new();
@@ -336,6 +394,12 @@ pub(super) fn upload(
                     );
                     if item.kind() == ItemKind::Path && state.viewport.show_open_path_ends {
                         path_ends(&ring.exterior, out);
+                        path_arrow(&ring.exterior, out);
+                    }
+                    if item.kind() == ItemKind::Path
+                        && item_state == Some(rs_cam_core::session::ItemState::Cut)
+                    {
+                        side_mark(&ring.exterior, out);
                     }
                 }
                 // A point has no line. With a state it gets a ring
@@ -409,6 +473,21 @@ pub(super) fn upload(
                         &mut verts,
                     );
                 }
+            }
+            // P6.7: the area that a Pocket Extend cuts beside each open
+            // path, in the cut colour. The report holds the outer ring
+            // in the drawing frame; it does not hold the extension rays,
+            // so the outline is the whole mark.
+            for ring in &report.extended {
+                ring_to_lines(
+                    ring,
+                    true,
+                    setup_ref,
+                    &point_z,
+                    segment_spacing,
+                    colors::SELECTION_CUT,
+                    &mut verts,
+                );
             }
             // A lost pick has no item: a ghost at its stored key
             // position, a ring of diameter `measure` for a loop, a
@@ -485,7 +564,7 @@ pub(super) fn upload(
         // the selection states on, the item states colour the holes
         // (one colour source at a time, P4.4).
         if highlight.is_none()
-            && let Some((mid, holes)) = active_drill.as_ref()
+            && let Some((mid, holes, misfits)) = active_drill.as_ref()
             && model.id == *mid
         {
             for item in &holes.items {
@@ -494,7 +573,11 @@ pub(super) fn upload(
                 // G-DRILLPICKSTALE: the loop is over the ITEMS of
                 // the model. A pick that names no item is drawn
                 // nowhere; the panel prints its refusal instead.
-                let marker_color = if item.selected {
+                // P6.7: a selected hole that the op does not cut for its
+                // size (the fit of the report) draws in the skipped colour.
+                let marker_color = if item.selected && misfits.contains(&item.key) {
+                    crate::render::colors::HOLE_MISFIT
+                } else if item.selected {
                     crate::render::colors::HOLE_SELECTED
                 } else {
                     crate::render::colors::HOLE_FREE
@@ -561,4 +644,31 @@ pub(super) fn upload(
             vertex_count: neutral_verts.len() as u32,
         });
     }
+}
+
+/// The keys of the holes that the op does not cut for their size
+/// (geometry selection P6.7).
+type HoleMisfits = Vec<rs_cam_core::selection::MatchKey>;
+
+/// The hole items of `tc` whose fit its fit rule does not keep: the fit
+/// of the `selection_status` report (`hole_fits`, the fit step that
+/// generation runs) against the rule of the op row (`ItemUse::Holes`).
+/// Empty for an op with no fit, and when the report does not resolve.
+fn hole_misfits(state: &AppState, tc: &rs_cam_core::session::ToolpathConfig) -> HoleMisfits {
+    use rs_cam_core::compute::catalog::ItemUse;
+    let ItemUse::Holes { fit: rule, .. } = tc.operation.capabilities().item_use else {
+        return Vec::new();
+    };
+    state
+        .session()
+        .selection_status(tc, rs_cam_core::session::SelectionTarget::Op)
+        .map(|report| {
+            report
+                .hole_fits
+                .iter()
+                .filter(|(_, fit)| !rule.keeps(*fit))
+                .map(|(key, _)| key.clone())
+                .collect()
+        })
+        .unwrap_or_default()
 }

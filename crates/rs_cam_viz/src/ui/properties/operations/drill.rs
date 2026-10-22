@@ -5,7 +5,7 @@ use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleTyp
 
 use super::super::{depth_caution_row, dv, dv_pill, p};
 use super::DepthBeyondStock;
-use crate::ui::components::UiExt as _;
+use crate::ui::components::{OneLine, UiExt as _};
 use rs_cam_core::compute::catalog::OperationType;
 
 /// What the hole sources are, printed on every drill panel so the operator
@@ -36,7 +36,9 @@ fn draw_hole_legend(ui: &mut egui::Ui, holes: Option<&HoleSelection>, needs_hole
     } else {
         HOLE_SOURCES_NOTE.to_owned()
     };
-    ui.label(egui::RichText::new(legend).small().weak());
+    // P6.7 (IC1): one row; the hover gives the whole text. The hole size
+    // rows of the Selection section give each size and its fit.
+    ui.add(OneLine::new(legend));
 }
 
 /// The four-way drill-cycle combo, one renderer for both editors.

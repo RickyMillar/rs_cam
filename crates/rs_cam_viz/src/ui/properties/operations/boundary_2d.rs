@@ -6,12 +6,15 @@ use crate::state::toolpath::{
     ZigzagConfig,
 };
 
-use super::super::{advanced, depth_caution_row, dv, dv_pill, p, schema_range, through_cut_row};
+use super::super::{
+    advanced, depth_caution_row, dv, dv_pill, help_for, p, schema_range, through_cut_row,
+};
 use super::{DepthBeyondStock, FloorInputs, ThroughCut, draw_tab_diagram};
 use crate::ui::components::value_row::label_cell;
 use crate::ui::components::{Button, OneLine, UiExt as _, ValueRow};
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::floor::{Floor, FloorRefusal};
+use rs_cam_core::compute::operation_configs::OpenPaths;
 
 /// The label of the reference combo of the floor row.
 const FLOOR_FROM_LABEL: &str = "Floor from:";
@@ -239,6 +242,7 @@ pub(in crate::ui::properties) fn draw_pocket_params(
         ui.checkbox(&mut cfg.climb, "");
         ui.end_row();
         region_ordering_row(ui, "pocket_ord", &mut cfg.region_ordering);
+        open_paths_rows(ui, &mut cfg.open_paths);
         if cfg.pattern == PocketPattern::Zigzag {
             dv(
                 ui,
@@ -252,6 +256,87 @@ pub(in crate::ui::properties) fn draw_pocket_params(
     advanced(ui, "pocket_adv", |ui| {
         finishing_passes_row(ui, OperationType::Pocket, &mut cfg.finishing_passes);
     });
+}
+
+/// The text of the Flip button of the Pocket open paths side (P6.7). The
+/// sketch shows U+21C4; the inspector fonts do not hold that glyph, so the
+/// button uses U+2194.
+const FLIP_LABEL: &str = "\u{2194} Flip";
+
+/// The hover of [`FLIP_LABEL`].
+const FLIP_HOVER: &str = "Cut the area on the other side of each open path.";
+
+/// The side of an open path that Extend to stock cuts, the other side
+/// (P6.7: the Flip button). `Skip` has no side and stays `Skip`.
+fn flipped(open_paths: OpenPaths) -> OpenPaths {
+    match open_paths {
+        OpenPaths::Skip => OpenPaths::Skip,
+        OpenPaths::ExtendLeft => OpenPaths::ExtendRight,
+        OpenPaths::ExtendRight => OpenPaths::ExtendLeft,
+    }
+}
+
+/// The "Open paths" rows of Pocket (geometry selection P6.7, ruling O-2):
+/// Skip or Extend to stock; under Extend, the side of the drawn direction
+/// and the Flip button. The rows write the draft; the panel sends one
+/// `ReplaceToolpathConfig`. The counts and a refusal are in the Selection
+/// section, which owns the report.
+fn open_paths_rows(ui: &mut egui::Ui, open_paths: &mut OpenPaths) {
+    let help = help_for(OperationType::Pocket, "open_paths");
+    let label = ui.label("Open paths:");
+    if let Some(help) = help {
+        label.on_hover_text(help);
+    }
+    let extend = *open_paths != OpenPaths::Skip;
+    egui::ComboBox::from_id_salt("pocket_open_paths")
+        .truncate()
+        .selected_text(if extend { "Extend to stock" } else { "Skip" })
+        .show_ui(ui, |ui| {
+            if ui.selectable_label(!extend, "Skip").clicked() {
+                *open_paths = OpenPaths::Skip;
+            }
+            // O-2: the area on the left of the drawn direction first; Flip
+            // gives the right.
+            if ui.selectable_label(extend, "Extend to stock").clicked() && !extend {
+                *open_paths = OpenPaths::ExtendLeft;
+            }
+        })
+        .response
+        .on_hover_text(open_paths.label());
+    ui.end_row();
+    if *open_paths == OpenPaths::Skip {
+        return;
+    }
+    ui.label("Side:");
+    egui::ComboBox::from_id_salt("pocket_open_side")
+        .truncate()
+        .selected_text(open_side_label(*open_paths))
+        .show_ui(ui, |ui| {
+            for side in [OpenPaths::ExtendLeft, OpenPaths::ExtendRight] {
+                ui.selectable_value(open_paths, side, open_side_label(side));
+            }
+        });
+    ui.end_row();
+    // The Flip button has its own row: beside the combo it does not fit
+    // the 240-point rail.
+    ui.label("");
+    if ui
+        .add(Button::quiet(FLIP_LABEL))
+        .on_hover_text(FLIP_HOVER)
+        .clicked()
+    {
+        *open_paths = flipped(*open_paths);
+    }
+    ui.end_row();
+}
+
+/// The Side label of an Extend choice (P6.7).
+fn open_side_label(open_paths: OpenPaths) -> &'static str {
+    match open_paths {
+        OpenPaths::Skip => "Skip",
+        OpenPaths::ExtendLeft => "Left of the drawn direction",
+        OpenPaths::ExtendRight => "Right of the drawn direction",
+    }
 }
 
 /// The "Finishing Passes" row of Pocket and Profile.
@@ -298,6 +383,95 @@ pub(in crate::ui::properties) fn region_ordering_row(
     ui.end_row();
 }
 
+/// The hover of the greyed "In Control" entry under side On (P6.7).
+const IN_CONTROL_UNDER_ON: &str = "side On has no side for G41/G42";
+
+/// The hint beside Climb under side On (P6.7, design 2.2).
+const CLIMB_ON_HINT: &str = "open paths cut in drawn direction";
+
+/// The hover of [`CLIMB_ON_HINT`].
+const CLIMB_ON_DETAIL: &str = "An open path is cut from its first point to its last point. \
+    Climb sets the direction of the closed loops only.";
+
+/// The Tabs header under side On (P6.7, design 2.5, L-8).
+const TABS_ON_HEADER: &str = "Tabs \u{00B7} closed loops only";
+
+/// The hover of the "On the line" side (P6.7).
+const SIDE_ON_HOVER: &str = "The tool centre follows the line: closed loops and open paths. \
+    Compensation In Control changes to In Computer, because side On has no side for G41/G42.";
+
+/// True when `cfg` with compensation In Control is refused: the core
+/// predicate of the door (`domain::side_on_in_control`).
+fn in_control_refused(cfg: &ProfileConfig) -> bool {
+    let candidate = ProfileConfig {
+        compensation: CompensationType::InControl,
+        ..cfg.clone()
+    };
+    rs_cam_core::compute::domain::side_on_in_control(
+        &rs_cam_core::compute::catalog::OperationConfig::Profile(candidate),
+    )
+}
+
+/// The refusal text when `cfg` with side On is refused for its floor (the
+/// core predicate `domain::side_on_each_face`), or `None`.
+fn side_on_refusal(cfg: &ProfileConfig) -> Option<String> {
+    let candidate = rs_cam_core::compute::catalog::OperationConfig::Profile(ProfileConfig {
+        side: ProfileSide::On,
+        ..cfg.clone()
+    });
+    rs_cam_core::compute::domain::side_on_each_face(&candidate).then(|| {
+        rs_cam_core::compute::domain::OpDomainRefusal::SideOnEachFace {
+            op: candidate.label(),
+        }
+        .to_string()
+    })
+}
+
+/// The Side row of Profile (P6.7): Outside, Inside, On the line.
+///
+/// A pick of "On the line" under In Control sets In Computer in the same
+/// draft, so the one write passes the door (`domain::side_on_in_control`).
+/// "On the line" is greyed while the floor is Each picked face
+/// (`domain::side_on_each_face`), with the core refusal as the hover.
+fn profile_side_row(ui: &mut egui::Ui, cfg: &mut ProfileConfig) {
+    ui.label("Side:");
+    let on_refusal = side_on_refusal(cfg);
+    let before = cfg.side;
+    egui::ComboBox::from_id_salt("prof_side")
+        .truncate()
+        .selected_text(profile_side_label(cfg.side))
+        .show_ui(ui, |ui| {
+            for side in [ProfileSide::Outside, ProfileSide::Inside] {
+                ui.selectable_value(&mut cfg.side, side, profile_side_label(side));
+            }
+            ui.add_enabled_ui(on_refusal.is_none(), |ui| {
+                ui.selectable_value(
+                    &mut cfg.side,
+                    ProfileSide::On,
+                    profile_side_label(ProfileSide::On),
+                )
+                .on_hover_text(SIDE_ON_HOVER)
+                .on_disabled_hover_text(on_refusal.as_deref().unwrap_or_default());
+            });
+        });
+    if cfg.side == ProfileSide::On
+        && before != ProfileSide::On
+        && cfg.compensation == CompensationType::InControl
+    {
+        cfg.compensation = CompensationType::InComputer;
+    }
+    ui.end_row();
+}
+
+/// The label of a Profile side (P6.7).
+fn profile_side_label(side: ProfileSide) -> &'static str {
+    match side {
+        ProfileSide::Outside => "Outside",
+        ProfileSide::Inside => "Inside",
+        ProfileSide::On => "On the line",
+    }
+}
+
 /// `through_cut` is the G-THROUGHCUT (UX-R03-006) reading for this Profile:
 /// `Some` when the cut bottom reaches the stock bottom. It draws the
 /// informational line under Depth (before the G-DEPTHSTOCK caution, which
@@ -319,20 +493,7 @@ pub(in crate::ui::properties) fn draw_profile_params(
 ) {
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     ui.param_grid("profile_p", |ui| {
-        ui.label("Side:");
-        egui::ComboBox::from_id_salt("prof_side")
-            .truncate()
-            .selected_text(match cfg.side {
-                ProfileSide::Outside => "Outside",
-                ProfileSide::Inside => "Inside",
-                ProfileSide::On => "On",
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut cfg.side, ProfileSide::Outside, "Outside");
-                ui.selectable_value(&mut cfg.side, ProfileSide::Inside, "Inside");
-                ui.selectable_value(&mut cfg.side, ProfileSide::On, "On");
-            });
-        ui.end_row();
+        profile_side_row(ui, cfg);
         floor_row(ui, OperationType::Profile, &mut cfg.floor, floor);
         through_cut_row(ui, through_cut);
         depth_caution_row(ui, depth_caution);
@@ -345,7 +506,13 @@ pub(in crate::ui::properties) fn draw_profile_params(
             dpp_sugg,
         );
         ui.label("Climb:");
-        ui.checkbox(&mut cfg.climb, "");
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut cfg.climb, "");
+            // P6.7 (design 2.2): Climb does not act on an open path.
+            if cfg.side == ProfileSide::On {
+                ui.add(OneLine::new(CLIMB_ON_HINT).detail(CLIMB_ON_DETAIL));
+            }
+        });
         ui.end_row();
         region_ordering_row(ui, "prof_ord", &mut cfg.region_ordering);
     });
@@ -359,6 +526,10 @@ pub(in crate::ui::properties) fn draw_profile_params(
     draw_profile_tabs(ui, cfg, through_cut, tab_editor);
     advanced(ui, "profile_adv", |ui| {
         ui.label("Compensation:");
+        // P6.7: under side On, In Control is greyed. Core refuses the pair
+        // at every door (`domain::side_on_in_control`), so the combo reads
+        // that predicate and does not state a second rule.
+        let in_control_refused = in_control_refused(cfg);
         egui::ComboBox::from_id_salt("prof_comp")
             .truncate()
             .selected_text(match cfg.compensation {
@@ -371,11 +542,14 @@ pub(in crate::ui::properties) fn draw_profile_params(
                     CompensationType::InComputer,
                     "In Computer",
                 );
-                ui.selectable_value(
-                    &mut cfg.compensation,
-                    CompensationType::InControl,
-                    "In Control",
-                );
+                ui.add_enabled_ui(!in_control_refused, |ui| {
+                    ui.selectable_value(
+                        &mut cfg.compensation,
+                        CompensationType::InControl,
+                        "In Control",
+                    )
+                    .on_disabled_hover_text(IN_CONTROL_UNDER_ON);
+                });
             });
         ui.end_row();
         finishing_passes_row(ui, OperationType::Profile, &mut cfg.finishing_passes);
@@ -403,7 +577,15 @@ fn draw_profile_tabs(
     let tabs_seen_open: Option<bool> = ui.data(|d| d.get_temp(tabs_seen_id));
     ui.data_mut(|d| d.insert_temp(tabs_seen_id, tabs_default_open));
     let tabs_force_open = (tabs_default_open && tabs_seen_open != Some(true)).then_some(true);
-    egui::CollapsingHeader::new("Tabs")
+    // P6.7 (L-8): under side On the tabs act on the closed loops only.
+    // The id salt keeps the header id of the plain "Tabs" header.
+    let header = if cfg.side == ProfileSide::On {
+        TABS_ON_HEADER
+    } else {
+        "Tabs"
+    };
+    egui::CollapsingHeader::new(header)
+        .id_salt("Tabs")
         .default_open(tabs_default_open)
         .open(tabs_force_open)
         .show(ui, |ui| {

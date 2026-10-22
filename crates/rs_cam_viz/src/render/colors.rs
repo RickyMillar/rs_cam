@@ -131,6 +131,13 @@ pub const OPEN_PATH: [f32; 3] = token_rgb(tokens::PATH_OPEN);
 pub const PATH_START: [f32; 3] = token_rgb(tokens::OK);
 /// The mark at the end of an open path (a square).
 pub const PATH_END: [f32; 3] = token_rgb(tokens::DANGER);
+/// The side mark of an open path (geometry selection P6.7): the tool on the
+/// side that a Trace Left/Right or a Pocket Extend cuts. It is the preview
+/// colour of the offset line in the op diagrams (`SPAN_SCALE` step 4).
+pub const PATH_SIDE: [f32; 3] = token_rgb(tokens::SPAN_SCALE[4]);
+/// A drill marker of a hole that the op does not cut for its size (P6.7):
+/// the skipped colour, so the marker and the item state agree.
+pub const HOLE_MISFIT: [f32; 3] = SELECTION_SKIPPED;
 /// The boundary regions of the selected toolpath (`boundary_outline`).
 pub const BOUNDARY_OUTLINE: [f32; 3] = token_rgb(tokens::TEXT_BODY);
 /// The drawing of a model that no drawn toolpath reads (geometry selection

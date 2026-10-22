@@ -640,6 +640,92 @@ pub(in crate::ui::properties) fn draw_outline_diagram(
     );
 }
 
+// ── Trace Diagram (geometry selection P6.7) ─────────────────────────────
+
+/// The side of the drawn direction that the Trace diagram puts the tool on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::ui::properties) enum TraceDiagramSide {
+    /// The tool centre on the line.
+    On,
+    /// The tool on the left of the direction of travel.
+    Left,
+    /// The tool on the right of the direction of travel.
+    Right,
+}
+
+/// Draw the Trace diagram (P6.7, O-1): an open line in its drawn
+/// direction, an arrow at its middle, and the tool on its side. Under
+/// Left or Right a second line shows the tool-centre path beside the line.
+pub(in crate::ui::properties) fn draw_trace_diagram(
+    ui: &mut egui::Ui,
+    label: &str,
+    side: TraceDiagramSide,
+) {
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 90.0);
+    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
+
+    let path_color = crate::ui::tokens::DIAGRAM_INK;
+    let dim_color = crate::ui::tokens::DIAGRAM_DIM;
+    let tool_color = crate::ui::tokens::DIAGRAM_TOOL;
+    // The tool-centre line is a second KIND of line beside the path, so it
+    // takes the data-scale step of the outline diagram (section 2.9).
+    let [.., offset_color, _] = crate::ui::tokens::SPAN_SCALE;
+
+    // The drawn line runs from left to right across the middle of the
+    // canvas, so "left of travel" is up on the screen.
+    let y = rect.center().y + 6.0;
+    let start = egui::pos2(rect.left() + 22.0, y);
+    let end = egui::pos2(rect.right() - 22.0, y);
+    painter.line_segment([start, end], egui::Stroke::new(2.0_f32, path_color));
+    // The start dot and the direction arrow at the middle.
+    painter.circle_filled(start, 3.0, path_color);
+    let mid = egui::pos2((start.x + end.x) / 2.0, y);
+    let arrow = 5.0;
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            egui::pos2(mid.x + arrow, y),
+            egui::pos2(mid.x - arrow, y - arrow),
+            egui::pos2(mid.x - arrow, y + arrow),
+        ],
+        path_color,
+        egui::Stroke::NONE,
+    ));
+
+    // The tool: a circle whose centre is on the line or one radius beside it.
+    let radius = 9.0;
+    let offset = match side {
+        TraceDiagramSide::On => 0.0,
+        TraceDiagramSide::Left => -radius,
+        TraceDiagramSide::Right => radius,
+    };
+    let tool_x = start.x + (end.x - start.x) * 0.75;
+    if side != TraceDiagramSide::On {
+        painter.line_segment(
+            [
+                egui::pos2(start.x, y + offset),
+                egui::pos2(end.x, y + offset),
+            ],
+            egui::Stroke::new(1.0_f32, offset_color),
+        );
+    }
+    painter.circle_stroke(
+        egui::pos2(tool_x, y + offset),
+        radius,
+        egui::Stroke::new(1.5_f32, tool_color),
+    );
+    painter.circle_filled(egui::pos2(tool_x, y + offset), 1.5, tool_color);
+
+    painter.text(
+        egui::pos2(rect.left() + 6.0, rect.top() + 4.0),
+        egui::Align2::LEFT_TOP,
+        label,
+        egui::FontId::proportional(9.0),
+        dim_color,
+    );
+}
+
 // ── Spiral Diagram (Adaptive, Adaptive3D, SpiralFinish) ─────────────────
 
 /// Draw an Archimedean spiral pattern.

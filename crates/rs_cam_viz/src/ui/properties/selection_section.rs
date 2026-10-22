@@ -25,8 +25,8 @@ use std::collections::BTreeSet;
 use rs_cam_core::compute::catalog::ItemUse;
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::selection::{
-    FaceFilter, Facing, Filter, ItemKind, KindFilter, MatchKey, RefusalCause, Rule, Selection,
-    SelectionEdit, SourceRef, ZRange, kind_noun,
+    FaceFilter, Facing, Filter, HoleFit, HoleFitRule, ItemKind, KindFilter, MatchKey, RefusalCause,
+    Rule, Selection, SelectionEdit, SourceRef, ZRange, kind_noun,
 };
 use rs_cam_core::session::{SelectionReport, SelectionTarget};
 
@@ -111,6 +111,10 @@ pub(crate) struct SelectionSectionInputs<'a> {
     /// The item kinds that the toolpath model holds
     /// (`state::pick::held_kinds`): the "pick a face" fix reads it (P4.D).
     pub model_kinds: &'a BTreeSet<ItemKind>,
+    /// The diameter of the tool of the toolpath (`ToolConfig::diameter`),
+    /// for the hole size rows (P6.7): "drilled at" a diameter and the Bore
+    /// helix radius. `None` with no tool, and for the boundary.
+    pub tool_diameter: Option<f64>,
 }
 
 impl SelectionSectionInputs<'_> {
@@ -171,8 +175,23 @@ pub(crate) fn draw_selection_section(
     // ── The counts row ─────────────────────────────────────────────
     let mut table = DataTable::new(inputs.salt("selection_counts"));
     table = table.row(cuts_row(report));
+    // ── The hole sizes (P6.7): one row per size, after the counts ──
+    let sizes = report.map_or_else(Vec::new, |report| hole_sizes(inputs, report));
+    for size in &sizes {
+        table = table.row(size.row(inputs.tool_diameter));
+    }
+    // The rows after the Cuts row answer a click: Show me frames the
+    // holes of that size.
+    if let Some(clicked) = table.show(ui).clicked
+        && let Some(size) = clicked.checked_sub(1).and_then(|at| sizes.get(at))
+    {
+        show_me(inputs, events, size.keys.clone());
+    }
+    // ── The open paths of a Pocket Extend (P6.7) ───────────────────
+    if let Some(report) = report {
+        draw_extend_summary(ui, inputs, report, events);
+    }
     // ── The rules ──────────────────────────────────────────────────
-    table.show(ui);
     draw_rules(ui, inputs, events);
     // ── The picks ──────────────────────────────────────────────────
     draw_picks(ui, inputs, events);
@@ -314,6 +333,192 @@ fn cuts_row(report: Option<&SelectionReport>) -> DataRow {
         row.status(Role::Caution, findings.to_string())
     } else {
         row.status(Role::Ok, "OK")
+    }
+}
+
+/// One hole size of the selection of a Drill or a Bore (geometry selection
+/// P6.7): the held holes of one diameter, or the points, with their fit.
+struct HoleSize {
+    /// The circle diameter; `None` for the points.
+    diameter: Option<f64>,
+    /// The fit of the size (`SelectionReport::hole_fits`); `None` when the
+    /// report holds no fit (no valid tool).
+    fit: Option<HoleFit>,
+    /// The fit rule of the op.
+    rule: HoleFitRule,
+    /// The keys of the holes, for Show me.
+    keys: Vec<MatchKey>,
+}
+
+impl HoleSize {
+    /// The row: the diameter, the count, the fit word and its role.
+    fn row(&self, tool_diameter: Option<f64>) -> DataRow {
+        let name = self
+            .diameter
+            .map_or_else(|| "points".to_owned(), |d| format!("\u{00D8} {d:.3}"));
+        let (role, word) = self.status(tool_diameter);
+        let tool = tool_diameter.map_or_else(
+            || "the tool".to_owned(),
+            |d| format!("the tool \u{00D8} {d:.3}"),
+        );
+        let hover = format!(
+            "{word}. The fit compares the hole with {tool}, within the size tolerance of \
+             the op. Click to show these holes in the viewport."
+        );
+        DataRow::value(name, format!("\u{00D7} {}", self.keys.len()))
+            .status(role, word)
+            .hover(hover)
+            .clickable()
+    }
+
+    /// The role and the fit word of the size, for the rule of the op
+    /// (design section 7). A size that the op cuts is `Ok`. A size that
+    /// it leaves out is `Caution`; a Bore circle that leaves a core is
+    /// `Danger`.
+    fn status(&self, tool_diameter: Option<f64>) -> (Role, String) {
+        let Some(fit) = self.fit else {
+            return (Role::Unknown, "no tool to compare".to_owned());
+        };
+        match (self.rule, fit) {
+            (HoleFitRule::ToolSize, HoleFit::NoSize) => (
+                Role::Ok,
+                tool_diameter.map_or_else(
+                    || "drilled at the tool size".to_owned(),
+                    |d| format!("drilled at \u{00D8} {d:.3}"),
+                ),
+            ),
+            (HoleFitRule::ToolSize | HoleFitRule::None, HoleFit::ToolSize)
+            | (HoleFitRule::None, HoleFit::NoSize) => (Role::Ok, "drilled".to_owned()),
+            (HoleFitRule::LargerThanTool, HoleFit::Larger) => (
+                Role::Ok,
+                match (self.diameter, tool_diameter) {
+                    (Some(d), Some(t)) => {
+                        format!("helix r {:.3}", rs_cam_core::ops::bore::centre_radius(d, t))
+                    }
+                    _ => "bored".to_owned(),
+                },
+            ),
+            (HoleFitRule::LargerThanTool, HoleFit::LeavesCore) => {
+                (Role::Danger, "leaves a core".to_owned())
+            }
+            (HoleFitRule::LargerThanTool, HoleFit::NoSize) => {
+                (Role::Caution, "no size: not bored".to_owned())
+            }
+            (HoleFitRule::LargerThanTool, HoleFit::ToolSize) => {
+                (Role::Caution, "the tool size: not bored".to_owned())
+            }
+            (HoleFitRule::ToolSize | HoleFitRule::None, HoleFit::Larger) => {
+                (Role::Caution, "larger than the tool".to_owned())
+            }
+            (HoleFitRule::ToolSize | HoleFitRule::None, HoleFit::LeavesCore) => {
+                (Role::Caution, "leaves a core".to_owned())
+            }
+            (_, HoleFit::Smaller) => (Role::Caution, "smaller than the tool".to_owned()),
+        }
+    }
+}
+
+/// The hole sizes of the selection (P6.7): the held holes of the report
+/// (`hole_items`), grouped by diameter, each with the fit that the report
+/// gives (`hole_fits`, the fit step of generation). The circles come first,
+/// the smallest first, then the points. Empty for an op with no fit rule
+/// (Pin Drill drills every hole) and for the boundary target.
+fn hole_sizes(inputs: &SelectionSectionInputs<'_>, report: &SelectionReport) -> Vec<HoleSize> {
+    let ItemUse::Holes { fit: rule, .. } = inputs.item_use else {
+        return Vec::new();
+    };
+    if rule == HoleFitRule::None || inputs.target != SelectionTarget::Op {
+        return Vec::new();
+    }
+    let fit_of = |key: &MatchKey| {
+        report
+            .hole_fits
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, fit)| *fit)
+    };
+    let mut sizes: Vec<HoleSize> = Vec::new();
+    for item in report.hole_items.iter().filter(|i| i.selected) {
+        // Two diameters that print the same at three decimals are one row.
+        let same = |size: &HoleSize| match (size.diameter, item.diameter) {
+            (Some(a), Some(b)) => format!("{a:.3}") == format!("{b:.3}"),
+            (None, None) => true,
+            (Some(_), None) | (None, Some(_)) => false,
+        };
+        match sizes.iter_mut().find(|size| same(size)) {
+            Some(size) => size.keys.push(item.key.clone()),
+            None => sizes.push(HoleSize {
+                diameter: item.diameter,
+                fit: fit_of(&item.key),
+                rule,
+                keys: vec![item.key.clone()],
+            }),
+        }
+    }
+    sizes.sort_by(|a, b| match (a.diameter, b.diameter) {
+        (Some(a), Some(b)) => a.total_cmp(&b),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
+    sizes
+}
+
+/// The one line of a Pocket with Extend to stock (P6.7, ruling O-2): how
+/// many open paths the op extends, and the path that cannot extend, with
+/// Show me. Core refuses the whole selection for the first path that
+/// cannot extend (`RefusalCause::CannotExtend`), so at most one path is
+/// refused. The full refusal and its fix stay in the section refusal.
+fn draw_extend_summary(
+    ui: &mut egui::Ui,
+    inputs: &SelectionSectionInputs<'_>,
+    report: &SelectionReport,
+    events: &mut Vec<AppEvent>,
+) {
+    if !matches!(inputs.item_use, ItemUse::RegionsExtendOpen { .. })
+        || inputs.target != SelectionTarget::Op
+    {
+        return;
+    }
+    let extended = report.extended.len();
+    let paths = format!(
+        "{extended} path{} extended",
+        if extended == 1 { "" } else { "s" }
+    );
+    let refused = report
+        .refusal
+        .as_ref()
+        .filter(|refusal| matches!(refusal.cause, RefusalCause::CannotExtend { .. }));
+    let Some(refusal) = refused else {
+        line_with_action(
+            ui,
+            "Open paths",
+            &paths,
+            tokens::TEXT_BODY,
+            "The area beside each open path, out to the stock edge, is cut. The viewport \
+             draws each area in the cut colour.",
+            None,
+        );
+        return;
+    };
+    // The cause with no op and no item: the face starts with the reason.
+    let why =
+        rs_cam_core::selection::SelectionRefusal::new(None, refusal.cause.clone()).to_string();
+    let text = format!("{paths} \u{00B7} 1 refused: {why}");
+    let key = refusal.item.as_ref().map(|item| item.key.clone());
+    let action = key
+        .as_ref()
+        .map(|_| (SHOW_ME, "Frame the path that cannot extend."));
+    if line_with_action(
+        ui,
+        "Open paths",
+        &text,
+        tokens::CAUTION,
+        &refusal.to_string(),
+        action,
+    ) && let Some(key) = key
+    {
+        show_me(inputs, events, vec![key]);
     }
 }
 
