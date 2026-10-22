@@ -77,3 +77,18 @@ mechanism. Held grows one continuous wave on the medial axis (R3, Source 1).
   rough wrapped by Dan Heeks in 2009 (R3 Source 4).
 - `finish/scallop_isofield.rs` module header says "nothing here is on a
   production path"; the `iso_field` dial reaches it (R3 L7).
+
+## 6. Phase 0 update (after the baseline pages, 2026-10-23 13:00)
+
+The pages change what V1 and V2 look like on HEAD. V1 is no longer only
+corner mop loops: on rivmap100 it is entry circles (helix plus 2–3
+concentric loops, one plunge each) at every residue spot, inside and in
+corners. V2 is no longer corner-blend arcs: it is overlapping entry
+circles that cut mostly air, and N1 bead chains of helix entries 1–1.5 mm
+apart. Entries are 72 % (ContourParallel) to 86 % (ContourSpiral) of the
+rivmap100 op time. This strengthens §3.2: the defects to fix first are
+entries and links, and no field alone fixes them. Two items no source
+addresses: N5 standing spurs (AgentSearch only; thin slivers stack at the
+same XY on every level and reach 15–16 mm) and the stock-side bar 3b
+failures (`link_cuts_stock` on the default ContourParallel on Corne and
+wanaka200). Both are safety items, not look items.
