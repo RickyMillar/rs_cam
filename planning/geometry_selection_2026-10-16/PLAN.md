@@ -941,3 +941,21 @@ default rule that already selects every served item on every layer.
 - UX-1b open points: V-Carve first move 12.05 mm under the stock top but
   the sim peak axial DOC reads 0.886 mm; 3D Rough peak DOC 9.19 mm with a
   face boundary vs 5.5 mm without. Both unexplained; measure before trust.
+
+## Operator rulings 2026-10-22 (Geometry tab open points) and the build order
+
+- Tab order: Geometry first, then Cut, Feeds & Speeds, Linking, Heights,
+  Dressup.
+- GT-Q9: a round hole edge on a STEP model is a circle item (Drill and
+  Bore serve it).
+- GT-Q8: to drop one item from a rule, the rule turns into picks (all its
+  members less the dropped one), in one undo step.
+- GT-Q7: the Geometry tab also holds the machining boundary selection.
+- Build order (serial editors, each tested and committed before the next):
+  1. UX-O: O-PICK + Q2 (core selection edit + floor default).
+  2. UX-7: STEP items (item Z in keys; edge chains, circles, points;
+     default rule serves face rings only).
+  3. UX-8: floor reference "A picked face".
+  4. GT: the Geometry inspector tab (rename the old tab to Cut).
+  5. UX-C: the uncut-corner finding.
+  6. P7.
