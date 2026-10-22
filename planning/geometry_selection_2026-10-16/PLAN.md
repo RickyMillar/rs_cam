@@ -811,3 +811,23 @@ allowed. P7_DESIGN.md L-16 already follows this; P8 must.
 P8 (recognition and tool advice) does not start, not even its design,
 until the operator has reviewed P0–P7 on screen. P8 then runs in its own
 session.
+
+## Operator review 2026-10-22: Profile "2 passes on the larger square"
+
+Fixture A (`selection_p4_4/states.dxf`), Profile Inside, rule "every
+layer, served kinds", V-bit Ø 6, Top Z depth 12, 2 mm per pass. Measured
+(narrate_toolpath, inspect_spans, screenshot): 4 regions x 6 levels = 24
+depth passes. Region A (the 0..60 ring with the 10..50 ring and the Ø 4
+circle as holes) is a 10 mm band; Inside at r = 3 gives two walls, 3..57
+and 7..53, which the circle joins into one C ring. So the second pass is
+the wall round the hole: correct machining, not a defect.
+
+Consequence: the Island label of the 10..50 ring ("the op cuts round
+it") is true for this generation. The P6.4 item-9 finding ("Profile cuts
+its outer ring only") came from a kernel call in a lib test, not from a
+generation. HOLD the Profile Island role fix: first a generation test that
+measures Outside and Inside with a near hole and a far hole. Then fix
+the role or delete the `..._known_red` test.
+
+Open question for the operator: a pick of one square adds it on top of a
+default rule that already selects every served item on every layer.
