@@ -1,17 +1,254 @@
 # A Geometry tab: design study (2026-10-22)
 
 Owner: the lead session. Reader: the operator. Status: planning only. No code
-changes come from this file until the operator rules the questions GT-Q1 to
-GT-Q6 (section 7.2). A plain "Q1" to "Q4" in this file is a UX_REVIEW.md
-question, ruled on 2026-10-22.
+changes come from this file until the operator approves revision 2 and rules
+the open questions GT-Q7 to GT-Q9 (section R2.9). A plain "Q1" to "Q4" in this
+file is a UX_REVIEW.md question, ruled on 2026-10-22.
 
-Mockup: `geom_tab/mockup.html` (open it in a browser; no build step). It
-shows the three concepts on one small stepped block.
+Mockup: `geom_tab/mockup.html` (open it in a browser; no build step). Revision
+2 shows the Geometry tab in the toolpath inspector. The three-concept switcher
+of revision 1 is gone.
 
 File references use two short roots: **V** = `crates/rs_cam_viz/src/`,
-**C** = `crates/rs_cam_core/src/`. Line numbers are at HEAD 669a3b56.
+**C** = `crates/rs_cam_core/src/`. Revision 2 line numbers are at HEAD
+bd7d5caa. Revision 1 line numbers (sections 1 to 7) are at HEAD 669a3b56.
 
 ---
+
+## Revision 2 (operator direction 2026-10-22)
+
+### R2.1 The operator's words
+
+> "I meant it should be its own tab in the toolpath menu, not in the
+> workspace. but. great look. I dont think we should list all available
+> things, just selected ones. Just because some models will blow this out
+> really quickly."
+
+### R2.2 Rulings and lead decisions
+
+PLAN.md "Operator rulings 2026-10-22 on the Geometry tab study" holds these.
+
+| Question | Revision 1 recommendation | Revision 2 (ruled or decided) |
+|---|---|---|
+| GT-Q5 Placement | A fifth workspace (W) | **Operator:** a tab of the toolpath inspector. The workspace bar stays Setup / Toolpaths / Simulation / Readiness. |
+| GT-Q6 Browse | Browse every item with no op selected | **Operator:** the tab lists the selected items only. No browse view. |
+| GT-Q2 Name | Workspace "Geometry"; inspector tab "Cut" | **Lead:** the new inspector tab is "Geometry". The present "Geometry" tab keeps the tool, input and op parameters and is renamed "Cut". |
+| GT-Q1 Concept | B with C's tree, sets later | **Lead:** B (op editor). C's group-by-facts becomes "make a rule from this picked item". A (named sets) waits. |
+| GT-Q3 One door | Pick only in the tab | **Lead:** Pick moves to the Geometry tab. |
+| GT-Q4 Named sets | Decide after a real job | Waits with A. |
+
+The rulings of the same day still bind: O-PICK (the first pick replaces the
+default rule), Q2 (the first face pick sets "Each picked face", depth 0), Q3
+(the STEP default takes the face rings; on a DXF the default takes the kinds
+that the op cuts), Q4 (the floor reference "A picked face"), and "auto magic
+is a wizard".
+
+**The wizard ruling.** The "Rule…" offers (R2.6, L-R4) are not recognition.
+They read the facts of one item that the operator picked: its kind, its
+diameter, its face Z. Each offer is one `Filter` (`C/selection/rule.rs:121`).
+Nothing proposes an item that the operator did not pick. So the tab obeys
+the ruling and gets no wizard button.
+
+### R2.3 Layout
+
+The Toolpaths workspace does not change. The inspector gets six tabs.
+
+```
+ Setup | Toolpaths | Simulation | Readiness            (no new workspace)
+┌ TOOLPATHS ─────┬─────────────── viewport ──────────────┬ DRILL 1      [Generate] ─┐
+│ Setup 1        │ Pick for Drill 1: (Faces)(Rings)(Edges)│ Cut | Geometry | Feeds & │
+│  ● Pocket 1  4 │   [Circles] [Points] [Done]            │ Speeds | Linking |       │
+│  ● Profile 1 4 │ ┌──────────┬──────────────────┐        │ Heights | Dressup        │
+│  ● Drill 1  25 │ │  ┌────┐  │ ○ ○ ○ ○          │        │ Cuts      25 circles ✓   │
+│  ● Chamfer 1 4 │ │  │    │  │ ○ ○ ○ ○     ◯    │        │ Selected  25 items       │
+│                │ │  └────┘  │ ○ ○ ○ ○  (24 Ø6, │        │ [Pick] [Reset]           │
+│                │ │          │ ○ ○ ○ ○   1 Ø10) │        │ [Filter the selected…  ] │
+│                │ └──────────┴──────────────────┘        │ SELECTED ITEMS (25)      │
+│                │                                        │ ▸ All circles Ø 6.00  24×│
+│                │  "2 items are here. Choose one."       │ ▾ Picked circles       1 │
+│                │                                        │   Ø 10.00 at (106, 40)   │
+│                │                                        │     Cut [Rule…] [×]      │
+│                │                                        │ NOTES                    │
+│                │                                        │ Rule added … (24).       │
+└────────────────┴────────────────────────────────────────┴──────────────────────────┘
+```
+
+Tab order: **Cut | Geometry | Feeds & Speeds | Linking | Heights | Dressup**.
+Cut stays first because a new op needs a tool before it can cut. Question: the
+operator may want Geometry first (one click less). The mockup keeps Cut
+first and opens Geometry.
+
+### R2.4 What moves between the two tabs
+
+Today's tab is `draw_geometry_tab` (`V/ui/properties/toolpath_panel.rs:553`).
+
+| Part today | Function | Revision 2 tab |
+|---|---|---|
+| Tool, input model, stock source | `draw_geometry_wiring` (`V/ui/properties/tab_badges.rs:487`) | Cut |
+| Start from (rest stock) | `draw_start_from` (`tab_badges.rs:553`) | Cut |
+| Op parameters and the ⚡ Suggest pills | the per-op draw after the Selection section | Cut |
+| The op Selection section | `draw_selection_section` (`V/ui/properties/selection_section.rs:151`) | Geometry (rebuilt as R2.5) |
+| "Each picked face" hint | `draw_each_face_hint` (`toolpath_panel.rs:1247`) | Goes. Q2 sets the floor at the first face pick. |
+| Boundary pick row | `draw_boundary_pick_row` (`toolpath_panel.rs:518`) | Open: GT-Q7 |
+| Floor reference (P3.7) | Heights tab, the height diagram (`draw_heights_tab`, `toolpath_panel.rs:1312`; `V/ui/properties/operations/height_diagram.rs`) | Heights. The Geometry tab shows the floor face only. |
+
+### R2.5 The Geometry tab, top to bottom
+
+1. **Summary.** "Cuts" (the `counts_text` line of today, with ✓ or the fix),
+   "Selected N items", and "Floor" on an op that has a floor.
+2. **Actions.** "Pick" turns the pick bar on in the viewport. "Reset" brings
+   the default rule back. The `+ Rule` card goes (R2.6, L-R4 replaces it).
+3. **Filter box.** It filters the rows of the list. It does not search the
+   model.
+4. **The selected list**, in this order:
+   - the default row, while the op holds its default rule;
+   - one row per rule, with its match count and "×";
+   - one group per picked kind ("Picked circles 3").
+   An item row shows the item label, its state word (Cut, Island) and its
+   acts: "Rule…", "Use as floor" (a face on a floor op), "×".
+5. **Floor face.** On a floor op only: the face that "Use as floor" set, with
+   "Clear".
+6. **Notes.** The findings of today (`draw_findings`), the hole size rows,
+   the lost picks and the refusal of the last act. A one-line fix action such
+   as "Add a Bore for these" stays (the wizard ruling allows it).
+
+### R2.6 Behaviour rules (proposed, new in revision 2)
+
+- **L-R1 Selected items only.** The list never shows an item that the op does
+  not name. The list has one header row per group. A group with more than 8
+  rows starts collapsed. An open group shows 8 rows, then "Show N more". The
+  GUI draws the rows with `egui::ScrollArea::show_rows`, so it lays out only
+  the visible rows. The filter keeps the full count on the group row ("6 of
+  24").
+- **L-R2 The default row.** It is one collapsed row: "Default: every face
+  ring (4)". N is the count of the default rule's members. On a DXF the row
+  names the kinds that the op cuts. On Drill with a STEP model the row reads
+  "Default: nothing that Drill 1 cuts (0)". The first pick replaces the row
+  (O-PICK). Reset brings it back.
+- **L-R3 A pick inside a rule.** A click on an item that a rule holds changes
+  nothing. The note names the rule. To drop one item of a rule, remove the
+  rule (GT-Q8 asks about an exclusion).
+- **L-R4 Make a rule from a pick.** "Rule…" on a picked row offers rules from
+  the facts of that item:
+
+  | Picked item | Offers | Filter |
+  |---|---|---|
+  | Circle Ø 6 | "All circles Ø 6.00 on this model"; "All circles on this model" | `diameter` range; `kinds` |
+  | Face at Z 20 | "All up faces at Z 20" | `FaceFilter { facing, z }` |
+  | Ring, edge, point at Z 32 | "All edges at Z 32"; "All edges on this model" | Z: needs GT-0; `kinds` |
+
+  Each offer shows its match count. The new rule replaces the picks that it
+  holds and every rule whose members it holds. An offer that an existing rule
+  already holds changes nothing. The act is one `SelectionEdit::Replace`
+  (`C/selection/rule.rs:286`), so it is one undo step.
+- **L-R5 Use as floor.** It shows on a picked face row of a floor op. A row
+  in the default row or in a rule row has no acts (L-R3 gives the reason). "Use as floor" sets
+  the Q4 floor reference "A picked face" with that face key. The face leaves
+  the picks, so the op does not cut it (the revision 1 journey "cut round the
+  top face down to the step face"). The floor face slot shows it with
+  "Clear". Clear sets "Each picked face" when face picks remain, else the op
+  default. This is the one door for a floor face; it replaces the floor-row
+  Pick of UX_REVIEW.md 2.4.
+- **L-R6 Refusal.** A click on an item of a kind that the op cannot cut
+  changes nothing. The Notes block shows the core reason
+  (`kind_not_cut_reason`, `C/selection/refusal.rs:162`) until the next act.
+  The pick bar greys that kind's chip and gives the same reason as hover.
+  The click stays possible, so the operator sees why.
+- **L-R7 Coincident items.** A click on a line that holds more than one item
+  opens the chooser ("4 items are here. Choose one."). Section 1.3 gives the
+  key requirement (GT-0).
+- **L-R8 The first face pick.** Q2: on a floor op whose floor is the op
+  default, the first face pick sets "Each picked face", depth 0, and writes a
+  one-line note.
+
+### R2.7 Core, MCP and CLI
+
+- **Core.** No new selection state. The tab sends `EditToolpathSelection`
+  only (L-1). It needs UX-3 (O-PICK in core), UX-6 (Q2), UX-7 with GT-0 (the
+  Z on BREP ring, edge, circle and point keys) and UX-8 (the floor reference
+  "A picked face"). A Z rule on a ring, an edge or a point needs a Z range in
+  `Filter` for those kinds (GT-0b).
+- **The tab key break.** `ToolpathTab` (`V/ui/properties/mod.rs:187`) gains
+  `Cut`; `Geometry` now means the new tab. The MCP `set_ui_view
+  properties_tab` wire type (`PropertiesTabParam`,
+  `crates/rs_cam_mcp/src/server.rs:914`) gains `"cut"`, and `"geometry"` opens
+  the new tab. No alias stays: the operator ruling of 2026-09-16 ("no legacy,
+  breaking OK") covers the break. The commit names it.
+- **MCP and CLI parity.** The selection tools do not change:
+  `list_model_items`, `edit_toolpath_selection` (`add_rule` with the offer's
+  filter, `replace`), `selection_status`. The CLI goes through core as today.
+
+### R2.8 The mockup (revision 2)
+
+- The app frame: the workspace bar, the Toolpaths list, the viewport, the
+  inspector with six tabs. The Geometry tab opens first. Cut shows
+  placeholder values. The other four tabs are inert.
+- The model: the stepped block of revision 1, with a grid of 24 holes Ø 6
+  and one hole Ø 10 on the step face (44 items). Drill 1 shows how a rule row
+  keeps 24 holes in one row.
+- Acts: switch ops; click items in the view to pick and unpick; the chooser;
+  the kind chips; "Rule…"; "Use as floor"; "Clear"; Reset; the filter box; a
+  refusal (for example a face click on Drill 1).
+- The self-check footer asserts:
+  1. every model item has one view element;
+  2. the keys without Z collide for the pairs of section 1.3;
+  3. every default rule takes kinds that its op cuts;
+  4. the list length equals the selected count (each member is in one group
+     only), the default row count equals the default rule's members, and a
+     rule row's count equals its matches, for every op;
+  5. the drawn list agrees with the list model;
+  6. a scripted session of 11 acts (picks, two rules, a pick inside a rule,
+     Q2, Use as floor, a refusal, a pick of one of two coincident edges,
+     Reset) keeps claim 4 true
+     and gives the named results.
+- Simplifications: a hole boundary is a circle item only, not also a face
+  ring (GT-Q9). The holes have no bottom circle. One model only.
+- Headless Chrome 2026-10-22: the footer reads `data-result="pass"` at load
+  and after scripted clicks (a Ø 6 pick and its rule, a Ø 10 pick, Use as
+  floor, a refusal, the filter "(66"). At 500 px width the page has no
+  horizontal scroll.
+
+### R2.9 Open questions for the operator
+
+1. **GT-Q7 — The boundary selection.** A Pocket boundary can come from a
+   selection (`SelectionTarget::Boundary`, `draw_boundary_pick_row`). Does
+   the Geometry tab hold it too?
+   - **Recommendation:** yes, as a second block "Boundary" under the
+     selected list, with the same rows. One tab owns every pick.
+2. **GT-Q8 — Drop one item of a rule.** For example, drill 23 of 24 holes.
+   (a) An exclusion list in `Selection` (core change). (b) "Rule → picks":
+   turn the rule into 24 picks, then remove one.
+   - **Recommendation:** (b) now; (a) only if a real job asks.
+3. **GT-Q9 — Hole boundaries on a STEP.** Is a round hole edge a face ring,
+   a circle, or both (two coincident items)? UX-7 decides. The mockup uses a
+   circle only.
+4. **Tab order.** Cut first (the mockup) or Geometry first?
+
+### R2.10 Packages (revision 2; replaces section 7.3)
+
+| WP | Content | Needs | Waits for |
+|---|---|---|---|
+| GT-0 | UX-7 key requirement: BREP ring, edge, circle and point keys carry Z or a topology id | core | nothing |
+| GT-0b | A Z range in `Filter` for rings, edges and points | core | GT-0 |
+| GT-1 | The tab split: `ToolpathTab::Cut`, the new Geometry tab, the moves of R2.4, the MCP key `"cut"` | GUI + MCP wire | approval of revision 2 |
+| GT-2 | The selected list: groups, default row, cap and "Show N more", `show_rows`, filter box, row-viewport hover, the chooser | GUI | GT-0, GT-1 |
+| GT-3 | "Rule…" offers (L-R4), one `Replace` per act | GUI | GT-2 (GT-0b for Z offers) |
+| GT-4 | "Use as floor" and the floor face slot (L-R5) | GUI | UX-8 |
+| GT-5 | Named sets (A) | core + GUI + MCP | GT-Q4, after a real job |
+
+Each package follows the PLAN.md per-item flow: an editor, a sentry with a
+red proof, the lead review, then the operator look on a release GUI built
+from HEAD.
+
+---
+
+# History: revision 1 (2026-10-22, before the operator direction)
+
+The sections below are the first study. **Superseded:** the workspace
+placement (W and M in section 2), concept A as the build target (section 3),
+the browse view, and the recommendations of section 7. They stay as the
+record of the options. Concept B (section 4) and the facts of concept C
+(section 5) feed revision 2.
 
 ## 1. The problem
 
@@ -56,7 +293,7 @@ and UX-7 land. It then fixes these frictions:
 | 2.F7 | No place to pick "a face as the floor" | A face row has "Use as floor" (the Q4 reference "A picked face"). It replaces the floor-row Pick of UX-8, so one door sets a floor face. |
 | 3.F3 | An STL flat face has no highlight after a pick | A tree row is the highlight: the row and the face light together. |
 | NEW | Coincident items (section 1.3) | The tree shows two rows where the top view shows one line. |
-| NEW | "What does this model hold?" | Today the operator learns the items only through an op. The tab lists them with no op. |
+| NEW | "What does this model hold?" | *(Withdrawn by GT-Q6: the tab lists the selected items only.)* |
 
 ### 1.3 A new problem that UX-7 brings: coincident items
 
@@ -103,112 +340,26 @@ reason for a list-based tab.
   "Geometry" (`ToolpathTab::Geometry`, `V/ui/properties/mod.rs:187`; MCP
   `set_ui_view properties_tab: "geometry"`). A workspace with the same name
   repeats friction 1.F9. Question GT-Q2 (section 7.2) asks which one changes.
-- **Placement.** Two placements exist:
-  - **(W) A fifth workspace.** Touch points: `Workspace::ALL` is
-    `[Workspace; 4]` and `order()` is exhaustive (`V/state/mod.rs:31-71`,
-    the G-WSMENU sentry); the layout dispatch `V/app.rs:1100`; the shortcut
-    dispatch `V/app.rs:1065`; the MCP workspace key `V/app.rs:392`; the badge
-    arm in `V/ui/workspace_bar.rs`. GUI only, six places.
-  - **(M) A mode inside Toolpaths.** The pick bar draws only in Toolpaths
-    (`V/ui/pick_bar.rs`, `draw`: `state.workspace != Workspace::Toolpaths`
-    returns). A mode keeps that gate. A workspace must lift it or host its
-    own bar.
+- **Placement.** *(Superseded by GT-Q5: the tab is in the inspector.)*
+  Revision 1 weighed (W) a fifth workspace, with six GUI touch points
+  (`Workspace::ALL`, the layout and shortcut dispatch, the MCP workspace key,
+  the badge arm), and (M) a mode inside Toolpaths, which keeps the pick bar
+  gate (`V/ui/pick_bar.rs`).
 - **Layout today.** Setup and Toolpaths both draw a left rail of 240 px, a
   right inspector of 280 px and the viewport between (`V/app.rs:510-651`).
 
 ---
 
-## 3. Concept A: an item browser with named geometry sets
+## 3. Concept A: an item browser with named geometry sets (superseded, waits)
 
-### 3.1 Idea
-
-The Geometry workspace lists the items of each model in a tree. The operator
-picks items (in the tree or the viewport) and saves them as a **named set**:
-"Outline", "Step floor", "Ø6 holes". An op then names ONE set in its Geometry
-row, or "New from the current pick". One set can feed many ops.
-
-### 3.2 Layout (W: a fifth workspace)
-
-```
- Setup | Geometry | Toolpaths | Simulation | Readiness
-┌ ITEMS ──────────────┬──────────── viewport ───────────┬ SET ─────────────────┐
-│ stepped_block.step  │                                 │ Ø6 holes        [✎]  │
-│ ▾ Faces       4     │   ┌──────────┬─────────────┐    │ 2 circles · Z 20     │
-│   Z 32 top    ●     │   │  ┌────┐  │   ○      ◯  │    │ Rule: circles Ø6.00  │
-│   Z 24 floor        │   │  └────┘  │   ○         │    │ Used by: Drill 1     │
-│   Z 20 step   ●     │   └──────────┴─────────────┘    │ [Show me] [Delete]   │
-│ ▸ Face rings  5     │                                 │──────────────────────│
-│ ▸ Edges       8     │  [pick bar: kinds · Done]       │ SETS                 │
-│ ▸ Circles     3     │                                 │ Outline      Profile │
-│ ▸ Points      8     │                                 │ Step floor   Pocket  │
-│ CURRENT PICK  2     │                                 │ Ø6 holes     Drill 1 │
-│ [Save as set…]      │                                 │ + New set            │
-└─────────────────────┴─────────────────────────────────┴──────────────────────┘
- Toolpaths inspector, Geometry row:  Geometry  [ Ø6 holes ▾ ]  2 circles · Cut
-```
-
-### 3.3 Journeys
-
-- **DXF sign.** Open Geometry. The tree shows the layers CUT, TEXT, BORDER.
-  Click the layer row TEXT: the current pick is "layer TEXT, every served
-  kind" (a rule). Save as "Letters". Add VCarve; its Geometry row names
-  "Letters". Add Profile; name "Border". The default rule never shows,
-  because an op that names a set holds no default.
-- **STEP part (after UX-7).** Open the Faces group. Click "Z 20 step": the
-  face lights. Save as "Step floor". Open Circles: "Ø 6.00 × 2" is a group
-  row; click it and save "Ø6 holes". Open Edges; the row "Step edge · Z 20"
-  and the row "Step edge · Z 32" are two rows at one XY (section 1.3). Pick
-  the Z 32 row; save "Step rim" for a Chamfer.
-- **Two-faced Profile.** Save the faces Z 32 and Z 20 as "Two tops". A
-  Profile names it. Q2 sets "Each picked face", depth 0 (one undo step), so
-  each face cuts to its own plane. To cut round the top face down to the step
-  face: name the set "Top face", and on the floor row choose "A picked face"
-  (Q4). The floor row lists the faces of the project; the operator chooses
-  "Z 20 step".
-
-### 3.4 Core model
-
-Two forms; the operator chooses (GT-Q4, section 7.2):
-
-- **A-ref (by reference).** NEW `GeometrySet { id: SetId, name, selection:
-  Selection }` in the project, and NEW `sets: Vec<SetId>` in `Selection`
-  (a union with the rules and picks). `resolve` expands a set. NEW commands
-  `AddGeometrySet`, `EditGeometrySet(SetId, SelectionEdit)`, `RenameGeometrySet`,
-  `RemoveGeometrySet` (refuses while an op names the set, and names the ops).
-  `ToolpathConfig::models_read` reads the set models; an edit of a set stales
-  every op that names it (`invalidate_result_chain` per op). File:
-  `[[geometry_sets]]`. Edit once, every op follows (S27 bulk edit).
-- **A-copy (by value).** The sets live in the project, but "use a set"
-  writes `SelectionEdit::Replace(set.selection)` into the op. No resolver
-  change. The op does not follow a later set edit. Storage is still core
-  (GUI state is not a data model, viz CLAUDE.md).
-
-A-ref adds state outside the op config. R1 says "one Selection type per op";
-A-ref keeps one type, but the op no longer holds all its own geometry. That
-is a real break with the P2 design (DESIGN.md §3.1).
-
-**The click question.** With a set bound to an op, what does a viewport
-click on that op do? (a) It edits the set, so every op that names it moves.
-(b) It detaches the op to its own copy. Question GT-Q4 (section 7.2) asks.
-
-**Item keys and re-import.** A set holds rules and picks as the op does. A
-rule follows the file (S17); a pick that misses is a lost pick of the SET,
-shown once, on every op that names it.
-
-**Templates (P7).** `TemplateSelection` refuses a pick and a `Model(id)`
-source (P7_DESIGN.md §2.2). So a set of rules only can travel in a template;
-a template names it the way it names a layer, and the draft maps it (the
-layer map, §3.3). A set with picks binds only inside its own project.
-
-### 3.5 Risks
-
-- Two places hold geometry: the set and the op. The operator must know which
-  one a click edits.
-- A delete or rename of a set touches many ops; the refusal text must name
-  them.
-- Browse colours with no op selected are NEW GUI state (a browse pick per
-  model, a hover). viz CLAUDE.md asks for an audit of the setup sheet, project
-  IO, controller fixtures and MCP/UI initialisers for each new field.
+The Geometry workspace listed every item of each model in a tree. The
+operator saved picks as **named sets** ("Outline", "Ø6 holes"), and an op
+named one set. Two core forms existed: A-ref (`GeometrySet` in the project,
+`Selection.sets`, four commands, a file key; an edit of a set stales every op
+that names it) and A-copy (a set writes `SelectionEdit::Replace` into the op).
+The risks: two homes for geometry, a delete that touches many ops, and new
+browse state. A rule-only set can travel in a P7 template; a pick set cannot.
+Revision 2 drops the browse tree (GT-Q6). Sets wait for GT-Q4.
 
 ---
 
@@ -221,7 +372,7 @@ inspector keeps one summary line and an "Edit geometry" button. The tab shows
 the op's item states (Cut, Island, Skipped, Excluded, Not selected) in the
 tree and the viewport at once. No new core state.
 
-### 4.2 Layout (M: a mode of Toolpaths, or W with the op list on the left)
+### 4.2 Layout (M: a mode of Toolpaths, or W with the op list on the left) (superseded by R2.3)
 
 ```
  Setup | Geometry | Toolpaths | Simulation | Readiness
@@ -279,15 +430,14 @@ face. The tree reads `list_model_items` data
 
 ### 4.5 Risks
 
-- The tab means nothing with no op selected. It then shows "Select an op",
-  or it browses the items with neutral colours (the A browse state, without
-  sets).
-- Two doors edit one selection (the tab and the inspector Pick). Question GT-Q3 (section 7.2)
-  asks whether Pick leaves the inspector.
+- The tab means nothing with no op selected. *(Resolved: an inspector tab
+  shows only with an op selected.)*
+- Two doors edit one selection (the tab and the inspector Pick). *(Resolved:
+  Pick moves to the Geometry tab.)*
 
 ---
 
-## 5. Concept C: a facts browser; recognition stays in a wizard
+## 5. Concept C: a facts browser; recognition stays in a wizard (its facts feed L-R4)
 
 ### 5.1 Idea
 
@@ -352,7 +502,7 @@ waits for the operator review (P8 ruling).
 
 ---
 
-## 6. The concepts side by side
+## 6. The concepts side by side (revision 1)
 
 | Facet | A: sets | B: op editor | C: facts browser |
 |---|---|---|---|
@@ -376,7 +526,7 @@ coincident line in the viewport opens a small chooser ("2 items here").
 
 ## 7. Recommendation and open questions
 
-### 7.1 Recommendation
+### 7.1 Recommendation (superseded by R2.2)
 
 1. **Order of work.** Land UX-1, UX-3, UX-6, UX-7 (with the key requirement
    of 1.3) and UX-8 first. The tab has little to show before UX-7.
@@ -394,7 +544,7 @@ coincident line in the viewport opens a small chooser ("2 items here").
    it moves geometry out of the op.
 5. **Recognition** stays in a P8 wizard. The tab gets no button for it.
 
-### 7.2 Open questions for the operator
+### 7.2 Open questions for the operator (ruled or decided; see R2.2)
 
 1. **GT-Q1 — Which concept?** (A) sets, (B) op editor, (C) facts browser, or
    the recommendation (B with C's tree, sets later).
@@ -419,7 +569,7 @@ coincident line in the viewport opens a small chooser ("2 items here").
    - **Recommendation:** browse. "What does this model hold?" is a real
      question before the first op.
 
-### 7.3 Proposed packages (after the rulings)
+### 7.3 Proposed packages (superseded by R2.10)
 
 | WP | Content | Needs | Waits for |
 |---|---|---|---|

@@ -62,17 +62,11 @@ body { display: flex; flex-direction: column; height: 100vh; min-height: 640px; 
 header { display: flex; align-items: center; gap: 16px; padding: 10px 16px;
   border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
 header h1 { font-size: 15px; margin: 0; color: var(--strong); font-weight: 600; }
-.concepts { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.concepts button { background: transparent; color: var(--text); border: 0; padding: 6px 14px;
-  cursor: pointer; font: inherit; border-right: 1px solid var(--line); }
-.concepts button:last-child { border-right: 0; }
-.concepts button.on { background: var(--accent); color: #fff; }
 .blurb { color: var(--muted); flex: 1 1 300px; min-width: 0; }
 .wsbar { display: flex; gap: 0; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .wsbar span { padding: 6px 14px; color: var(--muted); border-bottom: 2px solid transparent; }
 .wsbar span.on { color: var(--strong); border-bottom-color: var(--accent); }
-.wsbar span.new::after { content: " new"; color: var(--accent); font-size: 11px; }
-main { display: grid; grid-template-columns: 300px minmax(0,1fr) 340px; flex: 1; min-height: 0; }
+main { display: grid; grid-template-columns: 220px minmax(0,1fr) 380px; flex: 1; min-height: 0; }
 aside, section.view { min-width: 0; overflow: auto; }
 aside { background: var(--panel); padding: 10px 12px; }
 aside.left { border-right: 1px solid var(--line); }
@@ -81,44 +75,56 @@ h2 { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: v
   margin: 12px 0 6px; font-weight: 600; }
 h2:first-child { margin-top: 2px; }
 .row { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 4px; cursor: pointer;
-  user-select: none; }
+  user-select: none; min-height: 24px; }
 .row:hover, .row.hover { background: var(--panel-2); }
 .row.sel { background: var(--accent-tint); }
-.row.dis { color: var(--off); cursor: not-allowed; }
 .row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .tag { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .row .st { font-size: 11px; white-space: nowrap; }
+.row.more { color: var(--accent); font-size: 12px; }
 .grp { font-weight: 600; color: var(--strong); }
-.ind { padding-left: 20px; }
-.ind2 { padding-left: 34px; }
+.grp .caret { width: 10px; color: var(--muted); }
+.ind { padding-left: 22px; }
+.offers { margin: 2px 0 4px 22px; padding: 4px; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); }
+.offers .row { font-size: 12px; }
 .sw { width: 10px; height: 10px; border-radius: 2px; flex: none; border: 1px solid var(--line); }
-.k-face .sw { background: var(--face); }
 .btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 4px;
   padding: 3px 9px; font: inherit; cursor: pointer; }
 .btn:hover { border-color: var(--accent); }
 .btn.pri { background: var(--accent); border-color: var(--accent); color: #fff; }
-.btn.mini { padding: 0 6px; font-size: 11px; }
+.btn.mini { padding: 0 6px; font-size: 11px; line-height: 18px; }
+.btn.x { padding: 0 5px; font-size: 11px; line-height: 18px; color: var(--muted); }
 .card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 6px 0; }
-.kv { display: grid; grid-template-columns: 64px 1fr; gap: 2px 8px; }
+.kv { display: grid; grid-template-columns: 76px 1fr; gap: 2px 8px; }
 .kv b { color: var(--muted); font-weight: 500; }
 .note { color: var(--muted); font-size: 12px; }
+.notes div { margin: 2px 0; }
 .ok { color: var(--ok); } .cau { color: var(--caution); } .dan { color: var(--danger); } .acc { color: var(--accent); }
+.actions { display: flex; gap: 6px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+.tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--line); margin: 8px 0 6px; }
+.tabs button { background: transparent; color: var(--muted); border: 0; border-bottom: 2px solid transparent;
+  padding: 5px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+.tabs button.on { color: var(--strong); border-bottom-color: var(--accent); }
+.tabs button.new::after { content: " new"; color: var(--accent); font-size: 10px; }
+.ophead { display: flex; align-items: center; gap: 8px; }
+.ophead b { color: var(--strong); font-size: 14px; flex: 1; }
 section.view { position: relative; background: var(--sunken); display: flex; flex-direction: column; }
-.pickbar { display: flex; gap: 6px; align-items: center; justify-content: center; padding: 8px; flex-wrap: wrap; }
+.pickbar { display: flex; gap: 6px; align-items: center; justify-content: center; padding: 8px; flex-wrap: wrap; min-height: 40px; }
 .chip { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 12px;
   padding: 2px 10px; cursor: pointer; font: inherit; font-size: 12px; }
 .chip.on { border-color: var(--accent); color: var(--strong); background: var(--accent-tint); }
-.chip:disabled { color: var(--off); cursor: not-allowed; }
+.chip.dis { color: var(--off); border-style: dashed; cursor: not-allowed; }
 svg { flex: 1; width: 100%; min-height: 0; display: block; }
 .status { padding: 6px 12px; border-top: 1px solid var(--line); background: var(--panel); min-height: 30px; }
 .legend { display: flex; gap: 12px; flex-wrap: wrap; padding: 4px 12px 8px; font-size: 12px; color: var(--muted); }
 .legend i { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 4px; }
 footer { padding: 4px 16px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); background: var(--panel); }
+footer .bad { color: var(--danger); }
 .chooser { position: absolute; background: var(--panel); border: 1px solid var(--accent); border-radius: 6px;
-  padding: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.35); z-index: 5; min-width: 220px; }
+  padding: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.35); z-index: 5; min-width: 240px; }
 .chooser .row { padding: 4px 6px; }
-input[type=text] { background: var(--sunken); color: var(--text); border: 1px solid var(--line); border-radius: 4px;
-  padding: 3px 6px; font: inherit; width: 140px; }
+input[type=search] { background: var(--sunken); color: var(--text); border: 1px solid var(--line); border-radius: 4px;
+  padding: 3px 6px; font: inherit; width: 100%; }
 @media (max-width: 900px) {
   body { height: auto; }
   main { grid-template-columns: minmax(0,1fr); }
@@ -127,46 +133,37 @@ input[type=text] { background: var(--sunken); color: var(--text); border: 1px so
   .wsbar { overflow-x: auto; padding: 0 16px; }
   header { padding: 10px 16px; }
 }
-select { background: var(--sunken); color: var(--text); border: 1px solid var(--line); border-radius: 4px; font: inherit; padding: 2px 4px; }
 
 /* viewport item styles */
 g.it .vis { vector-effect: non-scaling-stroke; }
 g.it .hit { fill: none; stroke: transparent; stroke-width: 2.4; pointer-events: stroke; cursor: pointer; }
 g.it.k-face .hit { fill: transparent; stroke: none; pointer-events: fill; }
+g.it.k-circle .hit { fill: transparent; pointer-events: all; }
 g.it.nopick .hit { pointer-events: none; cursor: default; }
 g.it.k-face .vis { fill: var(--face); fill-opacity: .16; stroke: none; }
-g.it.k-ring .vis, g.it.k-edge .vis, g.it.k-circle .vis { fill: none; stroke: var(--idle); stroke-width: 1.6; }
+g.it.k-ring .vis, g.it.k-edge .vis, g.it.k-circle .vis { fill: none; stroke: var(--idle); stroke-width: 1.4; }
 g.it.k-edge .vis { stroke-width: 2.4; stroke-dasharray: 6 3; }
 g.it.k-point .vis { fill: var(--idle); stroke: none; }
 g.it.s-off .vis { opacity: .35; }
 g.it.k-face.s-cut .vis { fill: var(--ok); fill-opacity: .32; }
 g.it.k-face.s-floor .vis { fill: var(--floor); fill-opacity: .30; }
-g.it.k-face.s-pick .vis { fill: var(--pick); fill-opacity: .30; }
-g.it.k-face.s-set .vis { fill: var(--ok); fill-opacity: .32; }
-g.it.s-cut:not(.k-face) .vis, g.it.s-set:not(.k-face) .vis { stroke: var(--ok); }
-g.it.s-island:not(.k-face) .vis { stroke: var(--island); }
-g.it.s-pick:not(.k-face) .vis { stroke: var(--pick); }
-g.it.k-point.s-cut .vis, g.it.k-point.s-set .vis { fill: var(--ok); }
-g.it.k-point.s-pick .vis { fill: var(--pick); }
+g.it.s-cut:not(.k-face) .vis { stroke: var(--ok); stroke-width: 2.2; }
+g.it.s-island:not(.k-face) .vis { stroke: var(--island); stroke-width: 2.2; }
+g.it.k-point.s-cut .vis { fill: var(--ok); }
 g.it.hov:not(.k-face) .vis { stroke: var(--strong); stroke-width: 3; }
 g.it.k-point.hov .vis { fill: var(--strong); }
 g.it.k-face.hov .vis { fill-opacity: .5; }
-.axis text { fill: var(--muted); font-size: 3px; }
 .zlab { fill: var(--muted); font-size: 2.6px; pointer-events: none; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Geometry tab: three concepts</h1>
-  <div class="concepts" id="conceptBar">
-    <button data-c="A">A · Named sets</button>
-    <button data-c="B">B · Op editor</button>
-    <button data-c="C">C · Facts browser</button>
-  </div>
-  <div class="blurb" id="blurb"></div>
+  <h1>Geometry tab, revision 2</h1>
+  <div class="blurb">A tab of the toolpath inspector. It lists the selected items only. Pick in the viewport.</div>
+  <button class="btn mini" id="themeBtn" title="Change the colour theme">Theme: auto</button>
 </header>
 <div class="wsbar">
-  <span>Setup</span><span class="on new">Geometry</span><span>Toolpaths</span><span>Simulation</span><span>Readiness</span>
+  <span>Setup</span><span class="on">Toolpaths</span><span>Simulation</span><span>Readiness</span>
 </div>
 <main>
   <aside class="left" id="left"></aside>
@@ -174,7 +171,7 @@ g.it.k-face.hov .vis { fill-opacity: .5; }
     <div class="pickbar" id="pickbar"></div>
     <svg id="svg" viewBox="-12 -12 146 106" preserveAspectRatio="xMidYMid meet" aria-label="Top view of a stepped block"></svg>
     <div class="legend" id="legend"></div>
-    <div class="status" id="status">Click an item in the view or in the list.</div>
+    <div class="status" id="status"></div>
   </section>
   <aside class="right" id="right"></aside>
 </main>
@@ -184,54 +181,64 @@ g.it.k-face.hov .vis { fill-opacity: .5; }
 "use strict";
 /* ---------- The model: a stepped block, seen from the top ----------
    Top face Z 32 (x 0..60), with a pocket (x 15..45, y 25..55) whose floor is Z 24.
-   Step face Z 20 (x 60..120), with two 6 mm holes and one 10 mm hole.
-   These are the items that UX-7 gives a STEP model. */
+   Step face Z 20 (x 60..120), with a grid of 24 holes of 6 mm and one hole of 10 mm.
+   These are the items that UX-7 gives a STEP model.
+   Mockup simplification: a hole boundary is a circle item only, not also a face ring.
+   UX-7 decides this. */
+const HOLES6 = [];
+[66, 74, 82, 90].forEach(x => [8, 21, 34, 47, 60, 73].forEach(y => HOLES6.push([x, y])));
+const HOLE10 = [106, 40];
+function circlePath(x, y, r) { return `M${x - r} ${y} a${r} ${r} 0 1 0 ${2 * r} 0 a${r} ${r} 0 1 0 ${-2 * r} 0`; }
 const ITEMS = [
-  { id: "F1", kind: "face",   name: "Top face",         z: 32, d: "M0 0 H60 V80 H0 Z M15 25 V55 H45 V25 Z", box: [0,0,60,80] },
-  { id: "F3", kind: "face",   name: "Pocket floor",     z: 24, d: "M15 25 H45 V55 H15 Z", box: [15,25,45,55] },
-  { id: "F2", kind: "face",   name: "Step face",        z: 20,
-    d: "M60 0 H120 V80 H60 Z M77 20 a3 3 0 1 0 6 0 a3 3 0 1 0 -6 0 M77 60 a3 3 0 1 0 6 0 a3 3 0 1 0 -6 0 M97 40 a5 5 0 1 0 10 0 a5 5 0 1 0 -10 0",
+  { id: "F1", kind: "face",   name: "Top face",          z: 32, d: "M0 0 H60 V80 H0 Z M15 25 V55 H45 V25 Z", box: [0,0,60,80] },
+  { id: "F3", kind: "face",   name: "Pocket floor",      z: 24, d: "M15 25 H45 V55 H15 Z", box: [15,25,45,55] },
+  { id: "F2", kind: "face",   name: "Step face",         z: 20,
+    d: "M60 0 H120 V80 H60 Z " + HOLES6.map(([x, y]) => circlePath(x, y, 3)).join(" ") + " " + circlePath(HOLE10[0], HOLE10[1], 5),
     box: [60,0,120,80] },
-  { id: "R1", kind: "ring",   name: "Top face outline", z: 32, d: "M0 0 H60 V80 H0 Z", box: [0,0,60,80] },
-  { id: "R2", kind: "ring",   name: "Pocket rim",       z: 32, d: "M15 25 H45 V55 H15 Z", box: [15,25,45,55] },
-  { id: "R3", kind: "ring",   name: "Pocket floor ring",z: 24, d: "M15 25 H45 V55 H15 Z", box: [15,25,45,55] },
-  { id: "R4", kind: "ring",   name: "Step face outline",z: 20, d: "M60 0 H120 V80 H60 Z", box: [60,0,120,80] },
-  { id: "E1", kind: "edge",   name: "Step rim edge",    z: 32, d: "M60 0 V80", box: [60,0,60,80] },
-  { id: "E2", kind: "edge",   name: "Step foot edge",   z: 20, d: "M60 0 V80", box: [60,0,60,80] },
-  { id: "E3", kind: "edge",   name: "Left top edge",    z: 32, d: "M0 0 V80", box: [0,0,0,80] },
-  { id: "E4", kind: "edge",   name: "Right top edge",   z: 20, d: "M120 0 V80", box: [120,0,120,80] },
-  { id: "C1", kind: "circle", name: "Hole",             z: 20, dia: 6,  c: [80,20], box: [77,17,83,23] },
-  { id: "C2", kind: "circle", name: "Hole",             z: 20, dia: 6,  c: [80,60], box: [77,57,83,63] },
-  { id: "C3", kind: "circle", name: "Hole",             z: 20, dia: 10, c: [102,40], box: [97,35,107,45] },
-  { id: "P1", kind: "point",  name: "Corner",           z: 32, c: [0,0] },
-  { id: "P2", kind: "point",  name: "Corner",           z: 32, c: [0,80] },
-  { id: "P3", kind: "point",  name: "Step corner",      z: 32, c: [60,0] },
-  { id: "P4", kind: "point",  name: "Step corner",      z: 32, c: [60,80] },
-  { id: "P5", kind: "point",  name: "Step foot corner", z: 20, c: [60,0] },
-  { id: "P6", kind: "point",  name: "Step foot corner", z: 20, c: [60,80] },
-  { id: "P7", kind: "point",  name: "Corner",           z: 20, c: [120,0] },
-  { id: "P8", kind: "point",  name: "Corner",           z: 20, c: [120,80] },
+  { id: "R1", kind: "ring",   name: "Top face outline",  z: 32, d: "M0 0 H60 V80 H0 Z", box: [0,0,60,80] },
+  { id: "R2", kind: "ring",   name: "Pocket rim",        z: 32, d: "M15 25 H45 V55 H15 Z", box: [15,25,45,55] },
+  { id: "R3", kind: "ring",   name: "Pocket floor ring", z: 24, d: "M15 25 H45 V55 H15 Z", box: [15,25,45,55] },
+  { id: "R4", kind: "ring",   name: "Step face outline", z: 20, d: "M60 0 H120 V80 H60 Z", box: [60,0,120,80] },
+  { id: "E1", kind: "edge",   name: "Step rim edge",     z: 32, d: "M60 0 V80", box: [60,0,60,80] },
+  { id: "E2", kind: "edge",   name: "Step foot edge",    z: 20, d: "M60 0 V80", box: [60,0,60,80] },
+  { id: "E3", kind: "edge",   name: "Left top edge",     z: 32, d: "M0 0 V80", box: [0,0,0,80] },
+  { id: "E4", kind: "edge",   name: "Right step edge",   z: 20, d: "M120 0 V80", box: [120,0,120,80] },
+  ...HOLES6.map(([x, y], i) => ({ id: "C" + String(i + 1).padStart(2, "0"), kind: "circle", name: "Hole", z: 20,
+    dia: 6, c: [x, y], box: [x - 3, y - 3, x + 3, y + 3] })),
+  { id: "C25", kind: "circle", name: "Hole", z: 20, dia: 10, c: HOLE10, box: [101,35,111,45] },
+  { id: "P1", kind: "point",  name: "Corner",            z: 32, c: [0,0] },
+  { id: "P2", kind: "point",  name: "Corner",            z: 32, c: [0,80] },
+  { id: "P3", kind: "point",  name: "Step corner",       z: 32, c: [60,0] },
+  { id: "P4", kind: "point",  name: "Step corner",       z: 32, c: [60,80] },
+  { id: "P5", kind: "point",  name: "Step foot corner",  z: 20, c: [60,0] },
+  { id: "P6", kind: "point",  name: "Step foot corner",  z: 20, c: [60,80] },
+  { id: "P7", kind: "point",  name: "Corner",            z: 20, c: [120,0] },
+  { id: "P8", kind: "point",  name: "Corner",            z: 20, c: [120,80] },
 ];
 const BY_ID = Object.fromEntries(ITEMS.map(i => [i.id, i]));
-const KINDS = [
-  ["face", "Faces"], ["ring", "Face rings"], ["edge", "Edges"], ["circle", "Circles"], ["point", "Points"],
-];
+const KINDS = [["face", "Faces"], ["ring", "Face rings"], ["edge", "Edges"], ["circle", "Circles"], ["point", "Points"]];
 const KIND_NOUN = { face: "face", ring: "face ring", edge: "edge", circle: "circle", point: "point" };
 const PICK_ORDER = { point: 0, circle: 1, edge: 2, ring: 3, face: 4 };
+const CAP = 8;
 
 function label(it) {
-  if (it.kind === "circle") return `${it.name} Ø ${it.dia.toFixed(2)} · Z ${it.z}`;
+  if (it.kind === "circle") return `Ø ${it.dia.toFixed(2)} at (${it.c[0]}, ${it.c[1]}) · Z ${it.z}`;
   return `${it.name} · Z ${it.z}`;
 }
+function plural(n, noun) { return `${n} ${noun}${n === 1 ? "" : "s"}`; }
 
-/* ---------- The ops (the Toolpaths side) ----------
+/* ---------- The ops ----------
    serves: the kinds the op can cut (ItemUse). defaultKinds: the default rule on a STEP
-   model (operator ruling Q3: face rings by default; edges, circles, points by a pick). */
+   model (Q3: face rings; edges, circles and points enter by a pick or a rule). */
 const OPS = [
-  { id: "pocket",  name: "Pocket 1",  serves: ["face","ring","circle"], defaultKinds: ["ring"], floorOp: true },
-  { id: "profile", name: "Profile 1", serves: ["face","ring","circle"], defaultKinds: ["ring"], floorOp: true },
-  { id: "drill",   name: "Drill 1",   serves: ["circle","point"],       defaultKinds: [],       floorOp: false },
-  { id: "chamfer", name: "Chamfer 1", serves: ["ring","edge"],          defaultKinds: ["ring"], floorOp: false },
+  { id: "pocket",  name: "Pocket 1",  serves: ["face","ring","circle"], defaultKinds: ["ring"], floorOp: true,
+    cut: [["Tool", "Ø 6 flat end mill"], ["Input", "stepped_block.step"], ["Stepover", "40 %"], ["Depth / pass", "2.0 mm"]] },
+  { id: "profile", name: "Profile 1", serves: ["face","ring","circle"], defaultKinds: ["ring"], floorOp: true,
+    cut: [["Tool", "Ø 6 flat end mill"], ["Input", "stepped_block.step"], ["Side", "Outside"], ["Depth / pass", "2.0 mm"]] },
+  { id: "drill",   name: "Drill 1",   serves: ["circle","point"],       defaultKinds: [],       floorOp: false,
+    cut: [["Tool", "Ø 6 drill"], ["Input", "stepped_block.step"], ["Cycle", "Peck"], ["Peck", "2.0 mm"]] },
+  { id: "chamfer", name: "Chamfer 1", serves: ["ring","edge"],          defaultKinds: ["ring"], floorOp: false,
+    cut: [["Tool", "90° V-bit"], ["Input", "stepped_block.step"], ["Width", "1.0 mm"]] },
 ];
 const OP_BY_ID = Object.fromEntries(OPS.map(o => [o.id, o]));
 const WHY_NOT = {
@@ -240,67 +247,78 @@ const WHY_NOT = {
   drill:   "Drill cuts points and circles only.",
   chamfer: "Chamfer cuts face rings and edges only.",
 };
+const FLOOR_OP_TOP = "Op top, depth 6";
+const FLOOR_EACH = "Each picked face, depth 0";
 
 /* ---------- State ---------- */
 const S = {
-  concept: "B",
   hover: null,
-  focusOp: "profile",
+  focusOp: "drill",
+  tab: "geometry",
+  pickOn: true,
   kindOn: new Set(KINDS.map(k => k[0])),
-  msg: "",
-  // B and C: one selection per op
+  filter: "",
+  open: {},        // group key -> open (per op)
+  shown: {},       // group key -> rows shown
+  offersFor: null, // item id whose rule offers are open
+  quiet: false,
   sel: {},
-  // A: named sets
-  sets: [
-    { id: "s1", name: "Pocket floor", members: new Set(["F3"]) },
-    { id: "s2", name: "Two tops",     members: new Set(["F1","F2"]) },
-    { id: "s3", name: "Ø6 holes",     members: new Set(["C1","C2"]) },
-    { id: "s4", name: "Step rim",     members: new Set(["E1"]) },
-  ],
-  opSet: { pocket: "s1", profile: "s2", drill: "s3", chamfer: "s4" },
-  activeSet: null,
-  browse: new Set(),
-  groupOpen: {},
 };
-function resetSel(op) {
-  S.sel[op] = { isDefault: true, picks: new Set(), rules: [], floor: "Op top, depth 6", floorFace: null };
+function freshSel() {
+  return { isDefault: true, picks: new Set(), rules: [], floorMode: "op", floorFace: null, notes: [] };
 }
+function resetSel(opId) { S.sel[opId] = freshSel(); }
 OPS.forEach(o => resetSel(o.id));
 
-/* ---------- Selection logic (B and C) ---------- */
-function ruleMatches(rule, it) {
-  if (rule.kind !== it.kind) return false;
-  if (rule.by === "dia") return it.dia === rule.value;
-  return it.z === rule.value;
+/* ---------- Selection logic ---------- */
+function ruleKey(r) { return `${r.kind}|${r.by}|${r.value === undefined ? "" : r.value}`; }
+function ruleMatches(r, it) {
+  if (r.kind !== it.kind) return false;
+  if (r.by === "dia") return it.dia === r.value;
+  if (r.by === "z") return it.z === r.value;
+  return true; // by kind
 }
+function ruleMembers(r) { return ITEMS.filter(it => ruleMatches(r, it)).map(it => it.id); }
+function ruleText(r) {
+  const noun = KIND_NOUN[r.kind] + "s";
+  if (r.by === "dia") return `All circles Ø ${r.value.toFixed(2)} on this model`;
+  if (r.by === "z") return r.kind === "face" ? `All up faces at Z ${r.value}` : `All ${noun} at Z ${r.value}`;
+  return `All ${noun} on this model`;
+}
+function ruleOffers(it) {
+  if (it.kind === "circle") return [{ kind: "circle", by: "dia", value: it.dia }, { kind: "circle", by: "kind" }];
+  if (it.kind === "face") return [{ kind: "face", by: "z", value: it.z }];
+  return [{ kind: it.kind, by: "z", value: it.z }, { kind: it.kind, by: "kind" }];
+}
+function defaultMembers(opId) {
+  const op = OP_BY_ID[opId];
+  return ITEMS.filter(it => op.defaultKinds.includes(it.kind) && op.serves.includes(it.kind)).map(it => it.id);
+}
+/* The members of an op, from the selection itself (not from the list model). */
 function members(opId) {
-  const op = OP_BY_ID[opId], s = S.sel[opId];
-  const out = new Set();
-  if (s.isDefault) {
-    ITEMS.forEach(it => { if (op.defaultKinds.includes(it.kind)) out.add(it.id); });
-  }
-  s.rules.forEach(r => ITEMS.forEach(it => { if (ruleMatches(r, it)) out.add(it.id); }));
+  const s = S.sel[opId], out = new Set();
+  if (s.isDefault) defaultMembers(opId).forEach(id => out.add(id));
+  s.rules.forEach(r => ruleMembers(r).forEach(id => out.add(id)));
   s.picks.forEach(id => out.add(id));
   return out;
 }
+function coveringRule(opId, id) { return S.sel[opId].rules.find(r => ruleMatches(r, BY_ID[id])); }
 function inside(a, b) {
   return a[0] >= b[0] - 1e-9 && a[1] >= b[1] - 1e-9 && a[2] <= b[2] + 1e-9 && a[3] <= b[3] + 1e-9 &&
     (a[0] > b[0] || a[1] > b[1] || a[2] < b[2] || a[3] < b[3]);
 }
-/* The state of an item for an op: off (kind not served), cut, island, idle.
+/* The state of an item for an op: off (kind not served), floor, cut, island, idle.
    Rings and circles nest by containment (a face keeps its own holes). */
-function opState(opId, it) {
-  const op = OP_BY_ID[opId];
+function opState(opId, it, m) {
+  const op = OP_BY_ID[opId], s = S.sel[opId];
   if (!op.serves.includes(it.kind)) return "off";
-  const m = members(opId);
+  if (s.floorFace === it.id && !(m || members(opId)).has(it.id)) return "floor";
+  m = m || members(opId);
   if (!m.has(it.id)) return "idle";
-  if (it.kind === "ring" || it.kind === "circle") {
+  if ((it.kind === "ring" || it.kind === "circle") && op.id !== "chamfer") {
     let depth = 0;
-    m.forEach(id => {
-      const o = BY_ID[id];
-      if (id !== it.id && o.kind === "ring" && inside(it.box, o.box)) depth++;
-    });
-    if (op.id !== "chamfer" && depth % 2 === 1) return "island";
+    m.forEach(id => { const o = BY_ID[id]; if (id !== it.id && o.kind === "ring" && inside(it.box, o.box)) depth++; });
+    if (depth % 2 === 1) return "island";
   }
   return "cut";
 }
@@ -308,44 +326,117 @@ function opSummary(opId) {
   const m = members(opId), counts = {};
   let islands = 0;
   m.forEach(id => {
-    const it = BY_ID[id], st = opState(opId, it);
+    const it = BY_ID[id], st = opState(opId, it, m);
     if (st === "island") { islands++; return; }
-    if (st === "cut") counts[it.kind] = (counts[it.kind] || 0) + 1;
+    counts[it.kind] = (counts[it.kind] || 0) + 1;
   });
-  const parts = Object.entries(counts).map(([k, n]) => `${n} ${KIND_NOUN[k]}${n > 1 ? "s" : ""}`);
-  if (islands) parts.push(`${islands} island${islands > 1 ? "s" : ""}`);
+  const parts = KINDS.filter(([k]) => counts[k]).map(([k]) => plural(counts[k], KIND_NOUN[k]));
+  if (islands) parts.push(plural(islands, "island"));
   return parts.length ? parts.join(" · ") : "nothing";
 }
-function togglePick(opId, id) {
+function floorText(s) {
+  if (s.floorMode === "face") return `A picked face: ${label(BY_ID[s.floorFace])}`;
+  return s.floorMode === "each" ? FLOOR_EACH : FLOOR_OP_TOP;
+}
+
+/* ---------- Acts. Each act clears the old notes and writes its own. ---------- */
+function note(s, cls, html) { s.notes.push({ cls, html }); }
+function pick(opId, id) {
   const op = OP_BY_ID[opId], s = S.sel[opId], it = BY_ID[id];
-  if (!op.serves.includes(it.kind)) { say(`<span class="dan">${WHY_NOT[opId]}</span>`); return; }
+  s.notes = [];
+  if (!op.serves.includes(it.kind)) {
+    note(s, "dan", `Refused: ${label(it)} is a ${KIND_NOUN[it.kind]}. ${WHY_NOT[opId]}`);
+    return say(`<span class="dan">Refused. ${WHY_NOT[opId]}</span>`);
+  }
+  const r = coveringRule(opId, id);
+  if (r) {
+    note(s, "", `${label(it)} is in the rule "${ruleText(r)}". Remove the rule to drop it.`);
+    return say("The item is already in a rule. Nothing changed.");
+  }
   if (s.isDefault) {
     s.isDefault = false; s.picks = new Set([id]); s.rules = [];
-    say(`The first pick replaces the default rule. ${op.name} now cuts this ${KIND_NOUN[it.kind]} only.`);
+    note(s, "", `The first pick replaced the default rule. ${op.name} cuts the picked items only.`);
+    say(`The first pick replaces the default rule (O-PICK).`);
   } else if (s.picks.has(id)) {
     s.picks.delete(id); say(`Removed: ${label(it)}.`);
   } else {
     s.picks.add(id); say(`Added: ${label(it)}.`);
   }
-  if (it.kind === "face" && op.floorOp && s.floor === "Op top, depth 6" && s.picks.has(id)) {
-    s.floor = "Each picked face, depth 0";
-    say(`${S.msg} The floor is now "Each picked face": each face cuts to its own plane.`);
+  if (it.kind === "face" && op.floorOp && s.floorMode === "op" && s.picks.has(id)) {
+    s.floorMode = "each";
+    note(s, "cau", `The floor is now "${FLOOR_EACH}". Each face cuts to its own plane (Q2).`);
   }
+  if (!members(opId).size) note(s, "cau", `${op.name} cuts nothing. Pick an item, or press Reset for the default rule.`);
 }
-function toggleRule(opId, rule) {
-  const op = OP_BY_ID[opId], s = S.sel[opId];
-  if (!op.serves.includes(rule.kind)) { say(`<span class="dan">${WHY_NOT[opId]}</span>`); return; }
-  const i = s.rules.findIndex(r => r.kind === rule.kind && r.by === rule.by && r.value === rule.value);
-  if (i >= 0) { s.rules.splice(i, 1); say(`Rule removed: ${ruleText(rule)}.`); return; }
-  const pre = s.isDefault ? "The first rule replaces the default rule. " : "";
-  if (s.isDefault) { s.isDefault = false; s.picks = new Set(); }
+function addRule(opId, rule) {
+  const s = S.sel[opId];
+  s.notes = [];
+  const want = new Set(ruleMembers(rule));
+  const holder = s.rules.find(r => [...want].every(id => ruleMatches(r, BY_ID[id])));
+  if (holder) {
+    note(s, "", `The rule "${ruleText(holder)}" already holds these items.`);
+    return say("Nothing changed.");
+  }
+  const dropRules = s.rules.filter(r => ruleMembers(r).every(id => want.has(id)));
+  s.rules = s.rules.filter(r => !dropRules.includes(r));
+  const dropPicks = [...s.picks].filter(id => want.has(id));
+  dropPicks.forEach(id => s.picks.delete(id));
   s.rules.push(rule);
-  say(`${pre}Rule added: ${ruleText(rule)}. A re-import adds new items that match.`);
-  if (rule.kind === "face" && op.floorOp && s.floor === "Op top, depth 6") s.floor = "Each picked face, depth 0";
+  const gone = [];
+  if (dropPicks.length) gone.push(plural(dropPicks.length, "pick"));
+  if (dropRules.length) gone.push(plural(dropRules.length, "rule"));
+  note(s, "ok", `Rule added: ${ruleText(rule)} (${want.size}).` + (gone.length ? ` It replaces ${gone.join(" and ")}.` : ""));
+  note(s, "", "A re-import adds the new items that match the rule.");
+  say(`Rule added. It holds ${plural(want.size, "item")}.`);
 }
-function ruleText(r) {
-  const noun = KIND_NOUN[r.kind] + "s";
-  return r.by === "dia" ? `${noun} Ø ${r.value.toFixed(2)} ± 0.01` : `${noun} at Z ${r.value}`;
+function removeRule(opId, rule) {
+  const s = S.sel[opId];
+  s.notes = [];
+  s.rules = s.rules.filter(r => r !== rule);
+  say(`Rule removed: ${ruleText(rule)}.`);
+  if (!members(opId).size) note(s, "cau", `${OP_BY_ID[opId].name} cuts nothing. Pick an item, or press Reset for the default rule.`);
+}
+function useAsFloor(opId, id) {
+  const s = S.sel[opId];
+  s.notes = [];
+  s.picks.delete(id);
+  s.floorMode = "face"; s.floorFace = id;
+  note(s, "ok", `The floor is the plane of ${label(BY_ID[id])} (Q4). The op does not cut this face.`);
+  say("Floor set from a picked face.");
+}
+function clearFloor(opId) {
+  const s = S.sel[opId];
+  s.notes = [];
+  s.floorFace = null;
+  s.floorMode = [...members(opId)].some(id => BY_ID[id].kind === "face") ? "each" : "op";
+  say(`Floor: ${floorText(s)}.`);
+}
+function reset(opId) {
+  resetSel(opId);
+  say(`${OP_BY_ID[opId].name}: the default rule is back.`);
+}
+
+/* ---------- The list model: what the Geometry tab lists. Selected items only. ---------- */
+function listModel(opId) {
+  const op = OP_BY_ID[opId], s = S.sel[opId], groups = [];
+  if (s.isDefault) {
+    const ids = defaultMembers(opId);
+    const title = op.defaultKinds.length
+      ? `Default: every ${op.defaultKinds.map(k => KIND_NOUN[k]).join(", ")}`
+      : `Default: nothing that ${op.name} cuts`;
+    groups.push({ key: "default", type: "default", title, ids });
+  }
+  s.rules.forEach(r => groups.push({ key: "rule:" + ruleKey(r), type: "rule", rule: r, title: ruleText(r), ids: ruleMembers(r) }));
+  KINDS.forEach(([k, t]) => {
+    const ids = [...s.picks].filter(id => BY_ID[id].kind === k);
+    if (ids.length) groups.push({ key: "pick:" + k, type: "pick", kind: k, title: `Picked ${t.toLowerCase()}`, ids });
+  });
+  return groups;
+}
+function isOpen(opId, g) {
+  const k = opId + "|" + g.key;
+  if (k in S.open) return S.open[k];
+  return g.type !== "default" && g.ids.length <= CAP;
 }
 
 /* ---------- Drawing the view ---------- */
@@ -359,8 +450,7 @@ function el(tag, attrs, parent) {
 }
 function drawModel() {
   svg.innerHTML = "";
-  const order = ["face", "ring", "edge", "circle", "point"];
-  order.forEach(kind => ITEMS.filter(i => i.kind === kind).forEach(it => {
+  ["face", "ring", "edge", "circle", "point"].forEach(kind => ITEMS.filter(i => i.kind === kind).forEach(it => {
     const g = el("g", { class: `it k-${kind}`, "data-id": it.id }, svg);
     if (kind === "face") {
       el("path", { d: it.d, class: "vis", "fill-rule": "evenodd" }, g);
@@ -376,41 +466,21 @@ function drawModel() {
       el("circle", { cx: it.c[0], cy: it.c[1], r: 2.2, class: "hit", style: "fill:transparent;pointer-events:fill" }, g);
     }
   }));
-  [["Z 32", 4, 6], ["Z 24 (pocket)", 17, 40], ["Z 20", 64, 6]].forEach(([t, x, y]) => {
+  [["Z 32", 4, 6], ["Z 24 (pocket)", 17, 40], ["Z 20", 96, 6]].forEach(([t, x, y]) => {
     const tx = el("text", { x, y, class: "zlab" }, svg); tx.textContent = t;
   });
 }
 drawModel();
 
-/* The class of an item in the view and its row word, for the concept that is on. */
-function viewState(it) {
-  if (S.concept === "A") {
-    if (S.browse.has(it.id)) return "pick";
-    if (S.activeSet) {
-      const set = S.sets.find(s => s.id === S.activeSet);
-      if (set && set.members.has(it.id)) return "set";
-    }
-    return "idle";
-  }
-  const st = opState(S.focusOp, it);
-  const s = S.sel[S.focusOp];
-  if (it.kind === "face" && s.floorFace === it.id) return "floor";
-  return st;
-}
-const STATE_WORD = {
-  cut: ["Cut", "ok"], island: ["Island", "acc"], idle: ["", ""], off: ["not cut", ""],
-  pick: ["picked", ""], set: ["in set", "ok"], floor: ["floor", "cau"],
-};
 function paint() {
+  const m = members(S.focusOp);
   svg.querySelectorAll("g.it").forEach(g => {
     const it = BY_ID[g.dataset.id];
-    const st = viewState(it);
-    g.setAttribute("class", `it k-${it.kind} s-${st}` +
-      (S.hover === it.id ? " hov" : "") + (S.kindOn.has(it.kind) ? "" : " nopick"));
+    const st = opState(S.focusOp, it, m);
+    const pickable = S.tab === "geometry" && S.pickOn && S.kindOn.has(it.kind);
+    g.setAttribute("class", `it k-${it.kind} s-${st}` + (S.hover === it.id ? " hov" : "") + (pickable ? "" : " nopick"));
   });
-  document.querySelectorAll("[data-row]").forEach(r => {
-    r.classList.toggle("hover", r.dataset.row === S.hover);
-  });
+  document.querySelectorAll("[data-row]").forEach(r => r.classList.toggle("hover", r.dataset.row === S.hover));
 }
 
 /* ---------- Clicks in the view: a chooser when items lie on one line ---------- */
@@ -418,6 +488,7 @@ let chooser = null;
 function closeChooser() { if (chooser) { chooser.remove(); chooser = null; } }
 svg.addEventListener("click", ev => {
   closeChooser();
+  if (S.tab !== "geometry" || !S.pickOn) { say("Pick is off. Open the Geometry tab and press Pick."); return; }
   const hits = [];
   document.elementsFromPoint(ev.clientX, ev.clientY).forEach(e => {
     const g = e.closest && e.closest("g.it");
@@ -427,18 +498,18 @@ svg.addEventListener("click", ev => {
   const lines = hits.filter(id => BY_ID[id].kind !== "face");
   const cands = lines.length ? lines : hits;
   cands.sort((a, b) => PICK_ORDER[BY_ID[a].kind] - PICK_ORDER[BY_ID[b].kind]);
-  if (cands.length === 1) { act(cands[0]); return; }
+  if (cands.length === 1) { act(() => pick(S.focusOp, cands[0])); return; }
   chooser = document.createElement("div");
   chooser.className = "chooser";
   const view = svg.parentElement.getBoundingClientRect();
-  chooser.style.left = Math.min(ev.clientX - view.left + 8, view.width - 240) + "px";
+  chooser.style.left = Math.max(4, Math.min(ev.clientX - view.left + 8, view.width - 250)) + "px";
   chooser.style.top = (ev.clientY - view.top + 8) + "px";
-  chooser.innerHTML = `<div class="note" style="padding:2px 6px 4px">${cands.length} items here. The top view draws them on one line. Choose one.</div>`;
+  chooser.innerHTML = `<div class="note" style="padding:2px 6px 4px">${cands.length} items are here. The top view draws them on one line. Choose one.</div>`;
   cands.forEach(id => {
     const r = document.createElement("div");
     r.className = "row"; r.innerHTML = `<span class="grow">${KIND_NOUN[BY_ID[id].kind]}: ${label(BY_ID[id])}</span>`;
     r.onmouseenter = () => { S.hover = id; paint(); };
-    r.onclick = e => { e.stopPropagation(); closeChooser(); act(id); };
+    r.onclick = e => { e.stopPropagation(); closeChooser(); act(() => pick(S.focusOp, id)); };
     chooser.appendChild(r);
   });
   svg.parentElement.appendChild(chooser);
@@ -452,316 +523,315 @@ svg.addEventListener("mousemove", ev => {
 svg.addEventListener("mouseleave", () => { S.hover = null; paint(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeChooser(); });
 
-/* One act for a click on an item, in the view or in the list. */
-function act(id) {
-  if (S.concept === "A") {
-    if (S.browse.has(id)) S.browse.delete(id); else S.browse.add(id);
-    say(`Current pick: ${S.browse.size} item${S.browse.size === 1 ? "" : "s"}. Save it as a set to use it in an op.`);
-  } else {
-    togglePick(S.focusOp, id);
-  }
-  render();
-}
-function say(html) { S.msg = html; document.getElementById("status").innerHTML = html; }
+function act(fn) { fn(); S.offersFor = null; render(); }
+function say(html) { if (!S.quiet) document.getElementById("status").innerHTML = html; }
 
-/* ---------- Panels ---------- */
-function itemRow(it, opts = {}) {
-  const st = viewState(it);
-  const [word, cls] = STATE_WORD[st];
-  const dis = S.concept !== "A" && st === "off";
-  const r = document.createElement("div");
-  r.className = `row ${opts.indent || "ind"} k-${it.kind}` + (dis ? " dis" : "") +
-    ((st === "cut" || st === "island" || st === "pick" || st === "floor") ? " sel" : "");
-  r.dataset.row = it.id;
-  r.title = dis ? WHY_NOT[S.focusOp] : `${KIND_NOUN[it.kind]} ${it.id}`;
-  const box = S.concept === "A" ? "" :
-    `<input type="checkbox" ${members(S.focusOp).has(it.id) ? "checked" : ""} ${dis ? "disabled" : ""} tabindex="-1">`;
-  r.innerHTML = `${box}<span class="grow">${label(it)}</span>` +
-    (opts.tag ? `<span class="tag">${opts.tag}</span>` : "") +
-    `<span class="st ${cls}">${word}</span>`;
-  r.onmouseenter = () => { S.hover = it.id; paint(); };
-  r.onmouseleave = () => { S.hover = null; paint(); };
-  r.onclick = () => act(it.id);
-  if (opts.floorBtn) {
-    const b = document.createElement("button");
-    b.className = "btn mini"; b.textContent = "Use as floor";
-    b.title = "The floor reference \"A picked face\" (Q4): this face sets the floor of the op.";
-    b.onclick = e => {
-      e.stopPropagation();
-      const s = S.sel[S.focusOp];
-      s.floorFace = s.floorFace === it.id ? null : it.id;
-      s.floor = s.floorFace ? `A picked face: ${label(it)}, depth 0` : "Each picked face, depth 0";
-      say(s.floorFace ? `The floor of ${OP_BY_ID[S.focusOp].name} is the plane of ${label(it)}.` : "Floor face removed.");
-      render();
-    };
-    r.appendChild(b);
-  }
-  return r;
-}
-function groupRow(text, count, key) {
-  const r = document.createElement("div");
-  const open = S.groupOpen[key] !== false;
-  r.className = "row grp";
-  r.innerHTML = `<span>${open ? "▾" : "▸"}</span><span class="grow">${text}</span><span class="tag">${count}</span>`;
-  r.onclick = () => { S.groupOpen[key] = !open; render(); };
-  return [r, open];
-}
+/* ---------- Small DOM helpers ---------- */
 function h2(text, parent) { const h = document.createElement("h2"); h.textContent = text; parent.appendChild(h); return h; }
 function div(html, cls, parent) { const d = document.createElement("div"); if (cls) d.className = cls; d.innerHTML = html; parent.appendChild(d); return d; }
-function button(text, cls, onclick, parent) {
-  const b = document.createElement("button"); b.className = "btn " + (cls || ""); b.textContent = text; b.onclick = onclick;
+function button(text, cls, onclick, parent, title) {
+  const b = document.createElement("button"); b.className = "btn " + (cls || ""); b.textContent = text;
+  b.onclick = e => { e.stopPropagation(); onclick(); };
+  if (title) b.title = title;
   parent.appendChild(b); return b;
 }
-
-/* The item tree by kind (A and B). */
-function kindTree(parent, floorButtons) {
-  div(`<b>stepped_block.step</b> <span class="note">· ${ITEMS.length} items</span>`, "", parent);
-  KINDS.forEach(([kind, title]) => {
-    const list = ITEMS.filter(i => i.kind === kind);
-    const [g, open] = groupRow(title, list.length, "k-" + kind);
-    parent.appendChild(g);
-    if (!open) return;
-    list.forEach(it => {
-      const fb = floorButtons && kind === "face" && OP_BY_ID[S.focusOp].floorOp;
-      const tag = S.concept === "A" ? S.sets.filter(s => s.members.has(it.id)).map(s => s.name).join(", ") : "";
-      parent.appendChild(itemRow(it, { floorBtn: fb, tag }));
-    });
-  });
+function hoverRow(r, id) {
+  r.dataset.row = id;
+  r.onmouseenter = () => { S.hover = id; paint(); };
+  r.onmouseleave = () => { S.hover = null; paint(); };
 }
 
-/* The fact groups (C): one group row per filter value. A group row is a rule. */
-function factGroups() {
-  const out = [];
-  const byZ = (kind, title) => {
-    const zs = [...new Set(ITEMS.filter(i => i.kind === kind).map(i => i.z))].sort((a, b) => b - a);
-    out.push({ title, kind, subs: zs.map(z => ({ text: `Z ${z}`, rule: { kind, by: "z", value: z } })) });
-  };
-  byZ("face", "Faces up");
-  byZ("ring", "Face rings");
-  byZ("edge", "Edges");
-  const ds = [...new Set(ITEMS.filter(i => i.kind === "circle").map(i => i.dia))].sort((a, b) => a - b);
-  out.push({ title: "Circles", kind: "circle", subs: ds.map(d => ({ text: `Ø ${d.toFixed(2)}`, rule: { kind: "circle", by: "dia", value: d } })) });
-  byZ("point", "Points");
-  return out;
-}
-function factTree(parent) {
-  div(`<b>stepped_block.step</b> <span class="note">· group by facts</span>`, "", parent);
-  div(`Click a group row to add a <b>rule</b>. Click an item row to add a <b>pick</b>.`, "note", parent);
-  const s = S.sel[S.focusOp];
-  factGroups().forEach(grp => {
-    const n = ITEMS.filter(i => i.kind === grp.kind).length;
-    const [g, open] = groupRow(grp.title, n, "c-" + grp.kind);
-    parent.appendChild(g);
-    if (!open) return;
-    grp.subs.forEach(sub => {
-      const its = ITEMS.filter(i => ruleMatches(sub.rule, i));
-      const on = s.rules.some(r => r.kind === sub.rule.kind && r.by === sub.rule.by && r.value === sub.rule.value);
-      const served = OP_BY_ID[S.focusOp].serves.includes(grp.kind);
-      const r = document.createElement("div");
-      r.className = "row ind" + (on ? " sel" : "") + (served ? "" : " dis");
-      r.title = served ? `Rule: ${ruleText(sub.rule)}. A re-import adds new matches.` : WHY_NOT[S.focusOp];
-      r.innerHTML = `<span class="grow">${sub.text}</span><span class="tag">${its.length}</span><span class="st ${on ? "ok" : ""}">${on ? "rule" : ""}</span>`;
-      r.onclick = () => { toggleRule(S.focusOp, sub.rule); render(); };
-      r.onmouseenter = () => { S.hover = its[0].id; paint(); };
-      parent.appendChild(r);
-      its.forEach(it => parent.appendChild(itemRow(it, { indent: "ind2", floorBtn: grp.kind === "face" && OP_BY_ID[S.focusOp].floorOp })));
-    });
-  });
-}
-
-/* The op list (B and C). */
-function opList(parent) {
-  h2("Toolpaths · Setup 1", parent);
+/* ---------- The left rail: the Toolpaths list ---------- */
+function renderLeft(L) {
+  h2("Toolpaths · Setup 1", L);
   OPS.forEach(op => {
     const r = document.createElement("div");
     r.className = "row" + (op.id === S.focusOp ? " sel" : "");
-    r.innerHTML = `<span class="sw" style="background:var(--ok)"></span><span class="grow">${op.name}</span><span class="tag">${opSummary(op.id)}</span>`;
-    r.onclick = () => { S.focusOp = op.id; say(`Editing the geometry of ${op.name}.`); render(); };
-    parent.appendChild(r);
+    r.title = opSummary(op.id);
+    r.innerHTML = `<span class="sw" style="background:var(--ok)"></span><span class="grow">${op.name}</span><span class="tag">${members(op.id).size}</span>`;
+    r.onclick = () => { S.focusOp = op.id; S.filter = ""; closeChooser(); say(`${op.name} is in the inspector.`); render(); };
+    L.appendChild(r);
   });
+  div("Click an op. The inspector on the right shows it. The workspace bar is unchanged.", "note", L).style.marginTop = "8px";
 }
-function opCard(parent) {
-  const op = OP_BY_ID[S.focusOp], s = S.sel[op.id];
-  h2(op.name, parent);
-  const c = div("", "card", parent);
-  const rules = s.isDefault
-    ? (op.defaultKinds.length ? `Default: every ${op.defaultKinds.map(k => KIND_NOUN[k]).join(", ")} <span class="note">(default)</span>` : `Default: nothing <span class="note">(pick circles or points)</span>`)
-    : (s.rules.length ? s.rules.map(ruleText).join("<br>") : "none");
-  const ok = members(op.id).size && opSummary(op.id) !== "nothing";
+
+/* ---------- The inspector ---------- */
+const TABS = [["cut", "Cut"], ["geometry", "Geometry"], ["feeds", "Feeds & Speeds"], ["linking", "Linking"], ["heights", "Heights"], ["dressup", "Dressup"]];
+function renderRight(R) {
+  const op = OP_BY_ID[S.focusOp];
+  const head = div("", "ophead", R);
+  head.innerHTML = `<b>${op.name}</b>`;
+  button("Generate", "pri", () => say("Generate is not part of this mockup."), head);
+  const tabs = div("", "tabs", R);
+  TABS.forEach(([key, title]) => {
+    const b = document.createElement("button");
+    b.textContent = title; b.dataset.tab = key;
+    b.className = (S.tab === key ? "on" : "") + (key === "geometry" ? " new" : "");
+    b.onclick = () => { S.tab = key; closeChooser(); render(); };
+    tabs.appendChild(b);
+  });
+  if (S.tab === "cut") return renderCut(R, op);
+  if (S.tab === "geometry") return renderGeometry(R, op);
+  div(`This tab does not change. It is not part of this mockup.`, "note", R);
+}
+function renderCut(R, op) {
+  div("The present Geometry tab, renamed. It keeps the tool, the input model and the op parameters.", "note", R);
+  const c = div("", "card", R);
+  c.innerHTML = `<div class="kv">${op.cut.map(([k, v]) => `<b>${k}</b><span>${v}</span>`).join("")}</div>`;
+  div("The values are placeholders. The Selection section moved to the Geometry tab.", "note", R);
+}
+function renderGeometry(R, op) {
+  const s = S.sel[op.id], m = members(op.id);
+  // Summary
+  const c = div("", "card", R);
+  const ok = m.size > 0;
   c.innerHTML = `<div class="kv">
-    <b>Cuts</b><span>${opSummary(op.id)} ${ok ? '<span class="ok">✓ OK</span>' : '<span class="cau">Pick an item</span>'}</span>
-    <b>Rules</b><span>${rules}</span>
-    <b>Picks</b><span>${s.picks.size ? s.picks.size + " item" + (s.picks.size > 1 ? "s" : "") : "none"}</span>
-    ${op.floorOp ? `<b>Floor</b><span>${s.floor}</span>` : ""}
+    <b>Cuts</b><span>${opSummary(op.id)} ${ok ? '<span class="ok">✓</span>' : '<span class="cau">Pick an item</span>'}</span>
+    <b>Selected</b><span id="selCount" data-count="${m.size}">${plural(m.size, "item")}</span>
+    ${op.floorOp ? `<b>Floor</b><span>${floorText(s)}</span>` : ""}
   </div>`;
-  const bar = div("", "", c); bar.style.marginTop = "6px";
-  button("Reset", "", () => { resetSel(op.id); say(`${op.name}: back to the default rule.`); render(); }, bar);
-  return c;
-}
-function inspectorPreview(parent, text, btnText) {
-  h2("In the Toolpaths inspector", parent);
-  const c = div("", "card", parent);
-  c.innerHTML = `<div class="kv"><b>Geometry</b><span>${text}</span></div>`;
-  if (btnText) { const b = div("", "", c); b.style.marginTop = "6px"; button(btnText, "pri", () => say("This button opens the Geometry tab with this op in focus."), b); }
-}
-
-/* ---------- Concept renderers ---------- */
-const BLURB = {
-  A: "Browse the items, save picks as named sets, and let each op name one set.",
-  B: "The tab edits the geometry of one op. The inspector keeps one line and an Edit button.",
-  C: "Group the items by facts. A group row is a rule; an item row is a pick. Recognition stays in a wizard.",
-};
-function render() {
-  document.querySelectorAll("#conceptBar button").forEach(b => b.classList.toggle("on", b.dataset.c === S.concept));
-  document.getElementById("blurb").textContent = BLURB[S.concept];
-  const L = document.getElementById("left"), R = document.getElementById("right");
-  L.innerHTML = ""; R.innerHTML = "";
-  if (S.concept === "A") renderA(L, R);
-  if (S.concept === "B") renderB(L, R);
-  if (S.concept === "C") renderC(L, R);
-  renderPickbar(); renderLegend(); paint();
-}
-function renderA(L, R) {
-  h2("Items", L);
-  kindTree(L, false);
-  h2("Current pick", L);
-  const cp = div("", "card", L);
-  cp.innerHTML = S.browse.size
-    ? [...S.browse].map(id => `${KIND_NOUN[BY_ID[id].kind]}: ${label(BY_ID[id])}`).join("<br>")
-    : '<span class="note">Nothing. Click items in the view or the list.</span>';
-  const save = div("", "", cp); save.style.marginTop = "6px";
-  const inp = document.createElement("input"); inp.type = "text"; inp.placeholder = "Set name"; save.appendChild(inp);
-  save.append(" ");
-  button("Save as set", "pri", () => {
-    if (!S.browse.size) { say('<span class="cau">Pick at least one item first.</span>'); return; }
-    const name = inp.value.trim() || `Set ${S.sets.length + 1}`;
-    const id = "s" + (S.sets.length + 1) + Date.now();
-    S.sets.push({ id, name, members: new Set(S.browse) });
-    S.browse.clear(); S.activeSet = id;
-    say(`Saved the set "${name}". An op can now name it.`); render();
-  }, save);
-
-  h2("Sets", R);
-  S.sets.forEach(set => {
-    const used = OPS.filter(o => S.opSet[o.id] === set.id).map(o => o.name);
-    const r = document.createElement("div");
-    r.className = "row" + (S.activeSet === set.id ? " sel" : "");
-    r.innerHTML = `<span class="grow">${set.name}</span><span class="tag">${set.members.size} · ${used.join(", ") || "not used"}</span>`;
-    r.onclick = () => { S.activeSet = S.activeSet === set.id ? null : set.id;
-      say(S.activeSet ? `Set "${set.name}": ${[...set.members].map(id => label(BY_ID[id])).join("; ")}.` : ""); render(); };
-    R.appendChild(r);
-  });
-  div("A set holds rules and picks, as an op does. Q4: does an op hold a link to the set, or a copy?", "note", R);
-
-  h2("Toolpaths · Setup 1", R);
-  OPS.forEach(op => {
-    const c = div("", "card", R);
-    const setName = (S.sets.find(s => s.id === S.opSet[op.id]) || {}).name || "none";
-    c.innerHTML = `<div style="display:flex;align-items:center;gap:6px"><b class="grow" style="flex:1">${op.name}</b></div>`;
-    const line = div("", "", c); line.style.marginTop = "4px";
-    line.append("Geometry ");
-    const sel = document.createElement("select");
-    S.sets.forEach(s => { const o = document.createElement("option"); o.value = s.id; o.textContent = s.name; if (s.id === S.opSet[op.id]) o.selected = true; sel.appendChild(o); });
-    const o2 = document.createElement("option"); o2.value = "__new"; o2.textContent = "New from the current pick"; sel.appendChild(o2);
-    sel.onchange = () => {
-      if (sel.value === "__new") {
-        if (!S.browse.size) { say('<span class="cau">The current pick is empty.</span>'); render(); return; }
-        const id = "s" + Date.now(); S.sets.push({ id, name: `${op.name} items`, members: new Set(S.browse) });
-        S.browse.clear(); S.opSet[op.id] = id; S.activeSet = id;
-      } else { S.opSet[op.id] = sel.value; S.activeSet = sel.value; }
-      const set = S.sets.find(s => s.id === S.opSet[op.id]);
-      const bad = [...set.members].filter(id => !op.serves.includes(BY_ID[id].kind));
-      say(bad.length ? `<span class="dan">${op.name} refuses: ${WHY_NOT[op.id]}</span>` : `${op.name} now cuts the set "${set.name}".`);
-      render();
-    };
-    line.appendChild(sel);
-    const set = S.sets.find(s => s.id === S.opSet[op.id]);
-    const bad = set ? [...set.members].filter(id => !op.serves.includes(BY_ID[id].kind)) : [];
-    div(bad.length ? `<span class="dan">Refused: ${WHY_NOT[op.id]}</span>` : `<span class="ok">✓</span> ${set ? set.members.size : 0} item(s) from "${setName}"`, "note", c);
-    c.onmouseenter = () => { if (set) { S.activeSet = set.id; paint(); } };
-  });
-}
-function renderB(L, R) {
-  opList(L);
-  h2(`Items · checked = ${OP_BY_ID[S.focusOp].name} names it`, L);
-  kindTree(L, true);
-  opCard(R);
-  const s = S.sel[S.focusOp];
+  // Actions: the pick bar entry and Reset
+  const a = div("", "actions", R);
+  button("Pick", S.pickOn ? "pri" : "", () => { S.pickOn = !S.pickOn; closeChooser();
+    say(S.pickOn ? "Pick is on. Click items in the view." : "Pick is off."); render(); }, a,
+    "Turn the pick bar on or off. A click in the view then adds or removes an item.");
+  const rb = button("Reset", "", () => act(() => reset(op.id)), a, "Go back to the default rule of the op.");
+  rb.disabled = s.isDefault;
+  // Search
+  const inp = document.createElement("input");
+  inp.type = "search"; inp.placeholder = "Filter the selected items"; inp.value = S.filter;
+  inp.oninput = () => { S.filter = inp.value; renderList(document.getElementById("glist"), op); paint(); };
+  R.appendChild(inp);
+  // The grouped list
+  const list = div("", "", R); list.id = "glist";
+  renderList(list, op);
+  // The floor face slot (floor ops only)
+  if (op.floorOp) {
+    h2("Floor face", R);
+    if (s.floorFace) {
+      const r = div("", "row sel", R);
+      r.dataset.floor = s.floorFace;
+      r.innerHTML = `<span class="sw" style="background:var(--floor)"></span><span class="grow">${label(BY_ID[s.floorFace])}</span><span class="st cau">Floor</span>`;
+      r.onmouseenter = () => { S.hover = s.floorFace; paint(); };
+      r.onmouseleave = () => { S.hover = null; paint(); };
+      button("Clear", "x", () => act(() => clearFloor(op.id)), r, "Remove the floor face. The floor goes back to its earlier reference.");
+    } else {
+      div('None. Pick a face, then press <b>Use as floor</b> on its row (Q4).', "note", R);
+    }
+  }
+  // Notes and refusals
   h2("Notes", R);
-  div(s.isDefault ? "The op uses its default rule. The first pick replaces it (O-PICK)." :
-      "Untick every item, or press Reset, to go back to the default rule.", "note", R);
-  if (OP_BY_ID[S.focusOp].floorOp) div('A face row has <b>Use as floor</b>. That face then sets the floor of the op (Q4).', "note", R);
-  inspectorPreview(R, `${opSummary(S.focusOp)} · ${OP_BY_ID[S.focusOp].floorOp ? s.floor : "no floor"}`, "Edit geometry");
+  const n = div("", "notes", R);
+  const notes = s.notes.slice();
+  if (s.isDefault) notes.push({ cls: "", html: "The op uses its default rule. The first pick replaces it (O-PICK)." });
+  if (!notes.length) notes.push({ cls: "", html: "None." });
+  notes.forEach(x => div(x.html, "note " + x.cls, n));
 }
-function renderC(L, R) {
-  factTree(L);
-  opList(R);
-  opCard(R);
-  h2("Recognition", R);
-  div('Job words like "Pocket floors" or "Dowel holes" come from recognition. ' +
-      'Recognition is a wizard: setup <b>+</b> menu ▸ <b>Find features…</b>. ' +
-      'The wizard writes ordinary ops. This tab has no button for it.', "note", R);
-  inspectorPreview(R, opSummary(S.focusOp), "Edit geometry");
+function renderList(list, op) {
+  list.innerHTML = "";
+  const groups = listModel(op.id), m = members(op.id), f = S.filter.trim().toLowerCase();
+  h2(`Selected items (${m.size})`, list);
+  if (f) {
+    const hits = [...m].filter(id => (label(BY_ID[id]) + " " + KIND_NOUN[BY_ID[id].kind]).toLowerCase().includes(f)).length;
+    div(`${hits} of ${m.size} match "${S.filter}".`, "note", list);
+  }
+  if (!groups.length) div("Nothing is selected. Pick items in the view.", "note", list);
+  groups.forEach(g => {
+    const key = op.id + "|" + g.key;
+    const rows = g.ids.filter(id => !f || (label(BY_ID[id]) + " " + KIND_NOUN[BY_ID[id].kind]).toLowerCase().includes(f));
+    const open = f ? rows.length > 0 : isOpen(op.id, g);
+    const hr = div("", "row grp", list);
+    hr.dataset.group = g.key; hr.dataset.gcount = g.ids.length;
+    hr.title = g.type === "default" ? "The default rule. On a STEP model it takes the face rings (Q3). On a DXF it takes the kinds that the op cuts."
+      : g.type === "rule" ? "A rule. It names items by their facts. A re-import adds new matches." : "Items that you picked in the view.";
+    hr.innerHTML = `<span class="caret">${open ? "▾" : "▸"}</span><span class="grow">${g.title}</span><span class="tag">${f ? rows.length + " of " : ""}${g.ids.length}</span>`;
+    hr.onclick = () => { S.open[key] = !open; renderList(list, op); paint(); };
+    if (g.type === "rule") button("×", "x", () => act(() => removeRule(op.id, g.rule)), hr, "Remove this rule.");
+    if (!open) return;
+    const limit = S.shown[key] || CAP;
+    rows.slice(0, limit).forEach(id => itemRow(list, op, g, id, m));
+    if (rows.length > limit) {
+      const more = div(`Show ${rows.length - limit} more`, "row ind more", list);
+      more.onclick = () => { S.shown[key] = rows.length; renderList(list, op); paint(); };
+    }
+  });
 }
+const STATE_WORD = { cut: ["Cut", "ok"], island: ["Island", "acc"] };
+function itemRow(list, op, g, id, m) {
+  const it = BY_ID[id], st = opState(op.id, it, m);
+  const [word, cls] = STATE_WORD[st] || ["", ""];
+  const r = div("", "row ind", list);
+  hoverRow(r, id);
+  r.dataset.item = id;
+  r.innerHTML = `<span class="grow">${label(it)}</span><span class="st ${cls}">${word}</span>`;
+  if (g.type === "pick") {
+    button("Rule…", "mini", () => { S.offersFor = S.offersFor === id ? null : id; renderList(list, op); paint(); }, r,
+      "Make a rule from the facts of this item.");
+    if (it.kind === "face" && op.floorOp) button("Use as floor", "mini", () => act(() => useAsFloor(op.id, id)), r,
+      "This face sets the floor of the op (Q4). The op does not cut it.");
+    button("×", "x", () => act(() => pick(op.id, id)), r, "Remove this pick.");
+    if (S.offersFor === id) {
+      const o = div("", "offers", list);
+      div("Make a rule from this item:", "note", o);
+      ruleOffers(it).forEach(rule => {
+        const n = ruleMembers(rule).length;
+        const orow = div(`<span class="grow">${ruleText(rule)}</span><span class="tag">${n}</span>`, "row", o);
+        orow.dataset.offer = ruleKey(rule);
+        orow.title = rule.by === "z" && it.kind !== "face" ? "A Z rule on this kind needs the item Z (GT-0)." : "The rule replaces the picks that it holds.";
+        orow.onclick = () => act(() => addRule(op.id, rule));
+      });
+    }
+  }
+}
+
+/* ---------- The pick bar and the legend ---------- */
 function renderPickbar() {
   const bar = document.getElementById("pickbar"); bar.innerHTML = "";
   const t = document.createElement("span"); t.className = "note";
-  t.textContent = S.concept === "A" ? "Pick ▸ current pick" : `Pick for ${OP_BY_ID[S.focusOp].name}`;
+  if (S.tab !== "geometry" || !S.pickOn) {
+    t.textContent = "The pick bar shows when the Geometry tab is open and Pick is on.";
+    bar.appendChild(t); return;
+  }
+  t.textContent = `Pick for ${OP_BY_ID[S.focusOp].name}:`;
   bar.appendChild(t);
+  const op = OP_BY_ID[S.focusOp];
   KINDS.forEach(([kind, title]) => {
     const b = document.createElement("button");
-    b.className = "chip" + (S.kindOn.has(kind) ? " on" : "");
+    const served = op.serves.includes(kind);
+    b.className = "chip" + (served ? (S.kindOn.has(kind) ? " on" : "") : " dis");
     b.textContent = title;
-    if (S.concept !== "A" && !OP_BY_ID[S.focusOp].serves.includes(kind)) { b.disabled = true; b.title = WHY_NOT[S.focusOp]; }
-    b.onclick = () => { if (S.kindOn.has(kind)) S.kindOn.delete(kind); else S.kindOn.add(kind); render(); };
+    if (!served) b.title = WHY_NOT[op.id] + " A click on this kind shows the refusal.";
+    else b.onclick = () => { if (S.kindOn.has(kind)) S.kindOn.delete(kind); else S.kindOn.add(kind); render(); };
     bar.appendChild(b);
   });
+  const done = document.createElement("button"); done.className = "chip"; done.textContent = "Done";
+  done.onclick = () => { S.pickOn = false; say("Pick is off."); render(); };
+  bar.appendChild(done);
 }
 function renderLegend() {
-  const L = document.getElementById("legend");
   const sw = (v, t) => `<span><i style="background:var(${v})"></i>${t}</span>`;
-  L.innerHTML = S.concept === "A"
-    ? sw("--pick", "current pick") + sw("--ok", "in the shown set") + sw("--idle", "other items") +
-      '<span>dashed = edge · square = point</span>'
-    : sw("--ok", "Cut") + sw("--island", "Island") + sw("--floor", "floor face") + sw("--idle", "not selected") + sw("--off", "op cannot cut it") +
-      '<span>dashed = edge · square = point</span>';
+  document.getElementById("legend").innerHTML =
+    sw("--ok", "Cut") + sw("--island", "Island") + sw("--floor", "floor face") + sw("--idle", "not selected") +
+    sw("--off", "op cannot cut it") + '<span>dashed = edge · square = point</span>';
 }
-document.querySelectorAll("#conceptBar button").forEach(b => b.onclick = () => {
-  S.concept = b.dataset.c; closeChooser();
-  say({ A: "Concept A. Click items to build a pick, then save it as a set.",
-        B: "Concept B. Choose an op on the left, then tick its items.",
-        C: "Concept C. Click a group row for a rule, or an item row for a pick." }[S.concept]);
-  render();
-});
+function render() {
+  const L = document.getElementById("left"), R = document.getElementById("right");
+  L.innerHTML = ""; R.innerHTML = "";
+  renderLeft(L); renderRight(R); renderPickbar(); renderLegend(); paint();
+  selfCheck();
+}
+
+/* ---------- Theme ---------- */
+const THEMES = ["auto", "dark", "light"];
+document.getElementById("themeBtn").onclick = e => {
+  const cur = document.documentElement.dataset.theme || "auto";
+  const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
+  if (next === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = next;
+  e.target.textContent = "Theme: " + next;
+};
 
 /* ---------- Self-check: each claim that the page makes ----------
-   1. Every list item has one view element, and every view element is a list item.
-   2. Keys without Z (anchor XY and measure, as MatchKey) collide for the coincident pairs
-      that design section 1.3 names: pocket rim and floor ring, step rim and foot edge,
-      the step corners at Z 32 and Z 20. */
+   A. Every model item has one view element, and every view element is a model item.
+   B. Keys without Z collide for the coincident pairs of DESIGN.md section 1.3.
+   C. Every default rule takes kinds that its op can cut.
+   D. The list length equals the selected count: each member is in exactly one group,
+      and nothing else is.
+   E. The default row count equals the default rule's members.
+   F. A rule row's count equals its matches.
+   G. The rendered list agrees with the list model (header count, group counts, rows are members).
+   H. A scripted session (picks, a rule, a floor face, a refusal, Reset) keeps D-F true and
+      gives the named results. */
 function keyNoZ(it) {
   if (it.kind === "point") return `${it.kind}|${it.c}|0`;
   if (it.kind === "circle") return `${it.kind}|${it.c}|${it.dia}`;
   return `${it.kind}|${it.d}`;
 }
+function modelClaims(opId) {
+  const errs = [], groups = listModel(opId), m = members(opId), seen = new Map();
+  groups.forEach(g => g.ids.forEach(id => seen.set(id, (seen.get(id) || 0) + 1)));
+  const total = groups.reduce((n, g) => n + g.ids.length, 0);
+  if (total !== m.size) errs.push(`${opId}: list ${total} ≠ selected ${m.size}`);
+  m.forEach(id => { if (seen.get(id) !== 1) errs.push(`${opId}: ${id} is in ${seen.get(id) || 0} groups`); });
+  seen.forEach((n, id) => { if (!m.has(id)) errs.push(`${opId}: ${id} is listed but not selected`); });
+  groups.forEach(g => {
+    if (g.type === "default" && g.ids.length !== defaultMembers(opId).length) errs.push(`${opId}: default row count`);
+    if (g.type === "rule" && g.ids.length !== ITEMS.filter(it => ruleMatches(g.rule, it)).length) errs.push(`${opId}: rule row count`);
+  });
+  return errs;
+}
+function domClaims() {
+  const errs = [];
+  if (S.tab !== "geometry") return errs;
+  const opId = S.focusOp, m = members(opId), groups = listModel(opId);
+  const cnt = document.getElementById("selCount");
+  if (!cnt || +cnt.dataset.count !== m.size) errs.push("header count");
+  const gRows = [...document.querySelectorAll("#glist [data-group]")];
+  if (gRows.length !== groups.length) errs.push("group rows");
+  gRows.forEach((r, i) => { if (!groups[i] || +r.dataset.gcount !== groups[i].ids.length) errs.push("group count " + r.dataset.group); });
+  document.querySelectorAll("#glist [data-item]").forEach(r => { if (!m.has(r.dataset.item)) errs.push("row " + r.dataset.item + " is not selected"); });
+  return errs;
+}
+function scripted() {
+  const saved = S.sel, savedQuiet = S.quiet, errs = [];
+  S.sel = {}; OPS.forEach(o => S.sel[o.id] = freshSel()); S.quiet = true;
+  const expect = (cond, what) => { if (!cond) errs.push(what); };
+  const all = () => OPS.forEach(o => errs.push(...modelClaims(o.id)));
+  try {
+    // Drill: default is empty, the first Ø6 pick replaces it, the rule takes all 24.
+    expect(members("drill").size === 0, "drill default is empty");
+    pick("drill", "C01"); all();
+    expect(members("drill").size === 1 && !S.sel.drill.isDefault, "first pick replaces the default");
+    addRule("drill", { kind: "circle", by: "dia", value: 6 }); all();
+    expect(S.sel.drill.picks.size === 0 && members("drill").size === 24, "Ø6 rule holds 24 and replaces the pick");
+    pick("drill", "C25"); all();
+    expect(members("drill").size === 25, "a Ø10 pick adds one");
+    pick("drill", "C02"); all();
+    expect(members("drill").size === 25, "a pick in a rule changes nothing");
+    addRule("drill", { kind: "circle", by: "kind" }); all();
+    expect(S.sel.drill.rules.length === 1 && S.sel.drill.picks.size === 0 && members("drill").size === 25, "the circle rule replaces the Ø6 rule and the pick");
+    // Profile: default is the 4 face rings; a face pick sets Each picked face; Use as floor.
+    expect(members("profile").size === 4, "profile default is 4 face rings");
+    pick("profile", "F1"); all();
+    expect(S.sel.profile.floorMode === "each" && members("profile").size === 1, "Q2 on the first face pick");
+    pick("profile", "F2"); useAsFloor("profile", "F2"); all();
+    expect(S.sel.profile.floorMode === "face" && S.sel.profile.floorFace === "F2" && members("profile").size === 1, "Use as floor");
+    // Pocket: a point is refused and the default stays.
+    pick("pocket", "P1"); all();
+    expect(S.sel.pocket.isDefault && members("pocket").size === 4 && S.sel.pocket.notes.some(n => n.cls === "dan"), "refusal keeps the default");
+    // Chamfer: coincident edge pick, then Reset.
+    pick("chamfer", "E1"); all();
+    expect(members("chamfer").size === 1 && members("chamfer").has("E1") && !members("chamfer").has("E2"), "coincident pick takes one edge");
+    reset("chamfer"); all();
+    expect(S.sel.chamfer.isDefault && members("chamfer").size === 4, "Reset brings the default back");
+  } finally { S.sel = saved; S.quiet = savedQuiet; }
+  return errs;
+}
+const SCRIPT_ERRS = scripted();
 function selfCheck() {
   const out = [];
+  let fail = false;
+  const line = (ok, good, bad) => { if (!ok) fail = true; out.push(ok ? "✓ " + good : `<span class="bad">✗ ${bad}</span>`); };
   const viewIds = [...svg.querySelectorAll("g.it")].map(g => g.dataset.id);
-  const ok1 = viewIds.length === ITEMS.length && ITEMS.every(i => viewIds.filter(v => v === i.id).length === 1);
-  out.push(ok1 ? `✓ ${ITEMS.length} items: list and view agree.` : "✗ The list and the view disagree.");
+  line(viewIds.length === ITEMS.length && ITEMS.every(i => viewIds.filter(v => v === i.id).length === 1),
+    `${ITEMS.length} model items, one view element each.`, "The model and the view disagree.");
   const seen = {}, pairs = [];
   ITEMS.filter(i => i.kind !== "face").forEach(i => { const k = keyNoZ(i); if (seen[k]) pairs.push(`${seen[k]}=${i.id}`); else seen[k] = i.id; });
   const want = ["R2=R3", "E1=E2", "P3=P5", "P4=P6"];
-  const ok2 = want.every(p => pairs.includes(p)) && pairs.length === want.length;
-  out.push(ok2 ? `✓ Keys without Z collide: ${pairs.join(", ")}. The list shows each as two rows.` : `✗ Collisions: ${pairs.join(", ")}`);
-  const okOps = OPS.every(o => o.defaultKinds.every(k => o.serves.includes(k)));
-  out.push(okOps ? "✓ Every default rule takes kinds that its op can cut." : "✗ A default rule takes a kind that its op cannot cut.");
-  document.getElementById("selfcheck").textContent = "Self-check: " + out.join("  ");
+  line(want.every(p => pairs.includes(p)) && pairs.length === want.length,
+    `Keys without Z collide: ${pairs.join(", ")}.`, `Collisions: ${pairs.join(", ")}`);
+  line(OPS.every(o => o.defaultKinds.every(k => o.serves.includes(k))), "Default rules take served kinds.", "A default rule takes a kind that its op cannot cut.");
+  const mErrs = []; OPS.forEach(o => mErrs.push(...modelClaims(o.id)));
+  line(!mErrs.length, "List length = selected count; default and rule row counts = their members.", mErrs.join("; "));
+  const dErrs = domClaims();
+  line(!dErrs.length, "The shown list agrees with the model.", dErrs.join("; "));
+  line(!SCRIPT_ERRS.length, "Scripted session (11 acts) passes.", "Script: " + SCRIPT_ERRS.join("; "));
+  const f = document.getElementById("selfcheck");
+  f.innerHTML = "Self-check: " + out.join("  ");
+  f.dataset.result = fail ? "fail" : "pass";
 }
 
-say("Concept B. Choose an op on the left, then tick its items.");
+say("Drill 1 uses its default rule, which takes nothing. Click a hole in the view.");
 render();
-selfCheck();
 </script>
 </body>
 </html>
