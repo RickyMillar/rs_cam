@@ -224,8 +224,8 @@ const RETIRED_VALUES: &[RetiredValue] = &[RetiredValue {
 
 /// One retired key of a toolpath table that left the format for some op
 /// kinds only (geometry selection P3.2). A [`RetiredKey`] matches a path
-/// and a key, but `depth` still lives on Face, Trace, Drill and Project
-/// Curve, and `heights.bottom_z` on every op. This row reads
+/// and a key, but `depth` still lives on Face, Trace and Project Curve,
+/// and `heights.bottom_z` on every op. This row reads
 /// `operation.kind` of each `setups[].toolpaths[]` entry first.
 struct RetiredOpEntry {
     /// The `operation.kind` values the row applies to.
@@ -272,6 +272,29 @@ const RETIRED_OP_ENTRIES: &[RetiredOpEntry] = &[
         replacement: "Removed (geometry selection P3, ruling D9): the floor of this op is \
                       operation.params.floor. A pinned Bottom Z never reached the cut of this op \
                       (G-BOTTOMPIN). Set bottom_z to { mode = \"auto\" } and set the floor",
+    },
+    // R-B, F19 (2026-10-23): the Drill depth counted from the stock top.
+    // The Drill floor counts a depth from the rim of each hole, so the old
+    // number names `stock_top`, not `top`.
+    RetiredOpEntry {
+        kinds: &["drill"],
+        table: &["operation", "params"],
+        key: "depth",
+        when: None,
+        replacement: "Removed (R-B, F19): the floor of a Drill is operation.params.floor. The \
+                      old depth counted from the stock top: for the same cut write floor = { \
+                      from = \"stock_top\", depth = <this value> } in the same table, or floor = \
+                      { from = \"each_hole\", depth = 0.0 } to drill each hole of a STEP model \
+                      to its own floor. Delete the key",
+    },
+    RetiredOpEntry {
+        kinds: &["drill"],
+        table: &["heights"],
+        key: "bottom_z",
+        when: Some(pinned_height),
+        replacement: "Removed (R-B, F19): the floor of a Drill is operation.params.floor. A \
+                      pinned Bottom Z never reached the cut of a Drill. Set bottom_z to { mode = \
+                      \"auto\" } and set the floor",
     },
 ];
 

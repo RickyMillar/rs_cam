@@ -14,8 +14,9 @@
 //! text and no widget goes past the right edge of the panel content. The
 //! cases are the long rows of the FR-2 screenshots:
 //!
-//! 1. a STEP Drill (`block_with_blind_hole.step`) on its default rule:
-//!    the refusal, painted ONCE at full length (F27);
+//! 1. a STEP Drill (`block_with_blind_hole.step`) on its default rule
+//!    (R-B: one hole row), and the same Drill with a pick of the floor
+//!    circle: the refusal, painted ONCE at full length (F27);
 //! 2. the same Drill with a pick of the rim circle at Z 20: a row with
 //!    "Rule…" and "×";
 //! 3. a DXF Drill with circles of three sizes, a point and open paths on
@@ -240,6 +241,21 @@ fn blind_hole_drill() -> ProjectSession {
     )
 }
 
+/// R-B: the STEP Drill with a pick BY KEY of the floor circle of the hole
+/// (Z 12): it refuses (`HoleFloorNotRim`). Before R-B the default STEP
+/// Drill refused; now it cuts the rim, so this fixture gives the refusal.
+fn refused_hole_drill() -> ProjectSession {
+    let mut session = blind_hole_drill();
+    let floor = keys(&session, |item| {
+        item.kind() == ItemKind::Circle && item.z().is_some_and(|z| (z - 12.0).abs() < 1e-6)
+    });
+    assert_eq!(floor.len(), 1, "fixture: one floor circle");
+    let mut key = floor[0].clone();
+    key.source = SourceRef::ToolpathModel;
+    edit(&mut session, SelectionEdit::AddPick(key));
+    session
+}
+
 /// Circles Ø 6 (the tool), Ø 8 and Ø 10, a point, and one open path on
 /// each of six layers with long names.
 fn dxf_drill() -> ProjectSession {
@@ -383,9 +399,12 @@ fn block(state: &mut AppState) {
 fn the_geometry_rows_fit_the_inspector_f22() {
     let mut found = Vec::new();
 
-    // 1. The STEP Drill on its default rule: the refusal.
+    // 1. The STEP Drill on its default rule (R-B: the hole row
+    //    "Ø6 hole, 8 deep"), and a refused STEP Drill.
     let mut state = state_of(blind_hole_drill());
     found.extend(breaches("STEP drill default", &settle(&mut state)));
+    let mut state = state_of(refused_hole_drill());
+    found.extend(breaches("STEP drill refused", &settle(&mut state)));
 
     // 2. The STEP Drill with the rim circle at the top picked.
     let mut session = blind_hole_drill();
@@ -492,14 +511,14 @@ fn each_picked_face_shows_the_floor_range_f25() {
 /// names the tab. The full refusal text paints once.
 #[test]
 fn a_refusal_paints_once_f27() {
-    let session = blind_hole_drill();
+    let session = refused_hole_drill();
     let report = session
         .selection_status(&session.toolpath_configs()[0], SelectionTarget::Op)
         .expect("the status answers");
     let refusal = report
         .refusal
         .as_ref()
-        .expect("fixture: the default STEP Drill refuses")
+        .expect("fixture: the STEP Drill on the floor circle refuses")
         .to_string();
     let mut state = state_of(session);
     let f = settle(&mut state);

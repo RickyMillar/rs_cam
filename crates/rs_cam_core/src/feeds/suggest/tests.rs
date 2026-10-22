@@ -911,7 +911,7 @@ fn alignment_pin_drill_peck_is_clamped_like_drill() {
     let mut drill = OperationConfig::Drill(DrillConfig {
         cycle: DrillCycleType::Peck,
         peck_depth: 3.0,
-        depth: hole_depth,
+        floor: crate::compute::floor::Floor::Top { depth: hole_depth },
         ..DrillConfig::default()
     });
     apply_drill_defaults(&mut drill, &tool, &material, Some(&stock));
@@ -983,7 +983,7 @@ fn drill_peck_depth_softwood_exceeds_hardwood() {
         let mut op = OperationConfig::Drill(DrillConfig {
             cycle: DrillCycleType::Peck,
             peck_depth: 3.0,
-            depth: drill_depth,
+            floor: crate::compute::floor::Floor::Top { depth: drill_depth },
             ..DrillConfig::default()
         });
         apply_drill_defaults(&mut op, &tool, material, None);
@@ -2611,7 +2611,7 @@ fn a_suggested_peck_respects_the_schema_floor_b14() {
     let drill_at = |depth: f64| {
         let mut op = OperationConfig::Drill(DrillConfig {
             cycle: DrillCycleType::Peck,
-            depth,
+            floor: crate::compute::floor::Floor::Top { depth },
             ..DrillConfig::default()
         });
         apply_drill_defaults(&mut op, &tool, &material, None);

@@ -248,11 +248,8 @@ impl<B: ComputeBackend> AppController<B> {
         let created = effects.as_ref().and_then(|effects| effects.created);
         // UX-7b: the add set the floor "Each picked face" (THE each-face
         // rule of core); the notice is the one Q2 note.
-        if effects.as_ref().is_some_and(|e| e.floor_set.is_some()) {
-            self.push_notification(
-                rs_cam_core::session::Effects::FLOOR_SET_NOTE.to_owned(),
-                super::super::Severity::Info,
-            );
+        if let Some(note) = effects.as_ref().and_then(|e| e.floor_set_note()) {
+            self.push_notification(note.to_owned(), super::super::Severity::Info);
         }
         if let Some(tp_idx) = created
             && let Some(tc) = self.state.session().toolpath_configs().get(tp_idx)

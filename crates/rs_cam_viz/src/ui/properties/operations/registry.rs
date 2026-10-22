@@ -306,7 +306,8 @@ editor!(ed_drill, Drill, |ui, cfg, cx| draw_drill_params(
     cfg,
     cx.holes,
     cx.pills,
-    cx.depth_caution
+    cx.depth_caution,
+    cx.floor
 ));
 editor!(ed_bore, Bore, |ui, cfg, cx| draw_bore_params(
     ui,

@@ -356,9 +356,17 @@ impl ProjectSession {
             // top keeps the default floor, so it does not refuse
             // `FloorAboveTop`). The heights resolver reads the new
             // selection.
-            if target == SelectionTarget::Op && added_area {
+            // R-B: a Drill at its default floor whose holes have a depth
+            // takes "Each hole floor" (`each_hole_floor_due`).
+            if target == SelectionTarget::Op {
                 let probe = tc.clone();
-                if let Some(candidate) = session.each_face_floor_due(&probe)
+                let due = if added_area {
+                    session.each_face_floor_due(&probe)
+                } else {
+                    None
+                }
+                .or_else(|| session.each_hole_floor_due(&probe));
+                if let Some(candidate) = due
                     && let Some(tc) = session.toolpath_configs.get_mut(index)
                 {
                     floor_set = candidate.floor();

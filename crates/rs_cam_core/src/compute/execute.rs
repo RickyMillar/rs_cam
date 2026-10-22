@@ -644,7 +644,7 @@ use dressup_apply::attach_generic_rest_analysis;
 pub use dressup_apply::{
     DRESSUP_PIPELINE, DressupContext, DressupStage, DressupStep, apply_dressups,
 };
-pub use drilling::build_drill_op_for_config;
+pub use drilling::{build_drill_op_for_config, drill_depth_bases};
 pub(crate) use drilling::{generate_alignment_pin_drill, generate_drill};
 pub(crate) use findings::OffsetFailures;
 pub(crate) use finish_3d::{

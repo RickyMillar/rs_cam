@@ -149,7 +149,7 @@ fn drill_session(op: OperationConfig) -> ProjectSession {
 
 fn hole_op(depth: f64, peck_depth: f64) -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
-        depth,
+        floor: rs_cam_core::compute::floor::Floor::Top { depth },
         cycle: DrillCycleType::Peck,
         peck_depth,
         ..DrillConfig::default()

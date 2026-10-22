@@ -250,7 +250,11 @@ fn assert_motion_matches_schedule(case: &str, cfg: DrillConfig) {
     // (`execute.rs::generate_drill`) and the hole bottom is `top - depth`.
     let stock_top = 0.0;
     let r_plane = effective_safe_z(cfg.retract_z, stock_top);
-    let bottom_z = stock_top - cfg.depth;
+    let bottom_z = stock_top
+        - cfg
+            .floor
+            .depth_below_top()
+            .expect("the fixture floor is a depth below the top");
     let expected =
         rs_cam_core::ops::drill::fed_descents(cfg.cycle.to_core(&cfg), bottom_z, r_plane);
 
@@ -342,7 +346,7 @@ fn peck_cycle_motion_matches_the_schedule_it_describes() {
     assert_motion_matches_schedule(
         "G83 shipped defaults",
         DrillConfig {
-            depth: 10.0,
+            floor: rs_cam_core::compute::floor::Floor::Top { depth: 10.0 },
             cycle: DrillCycleType::Peck,
             peck_depth: 3.0,
             ..DrillConfig::default()
@@ -358,7 +362,7 @@ fn chip_break_cycle_motion_matches_the_schedule_it_describes() {
     assert_motion_matches_schedule(
         "G73 shipped defaults",
         DrillConfig {
-            depth: 10.0,
+            floor: rs_cam_core::compute::floor::Floor::Top { depth: 10.0 },
             cycle: DrillCycleType::ChipBreak,
             peck_depth: 3.0,
             retract_amount: 0.5,
@@ -377,7 +381,7 @@ fn chip_break_with_retract_larger_than_peck_matches_the_schedule() {
     assert_motion_matches_schedule(
         "G73 retract 4.0 > peck 2.0",
         DrillConfig {
-            depth: 10.0,
+            floor: rs_cam_core::compute::floor::Floor::Top { depth: 10.0 },
             cycle: DrillCycleType::ChipBreak,
             peck_depth: 2.0,
             retract_amount: 4.0,

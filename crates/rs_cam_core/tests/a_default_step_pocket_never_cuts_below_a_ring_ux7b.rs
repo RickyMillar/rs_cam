@@ -422,7 +422,7 @@ fn a_tool_tangent_to_a_wall_is_clean_and_a_tool_in_it_is_not_ux7b() {
         reduced_tool: &reduced,
         tool_radius: R,
         bevel_depth_mm: 0.0,
-        depth_top_z: None,
+        depth_bases: &[],
     };
     let rule = OperationType::Pocket.capabilities().model_gouge;
     let line = |x: f64| {
@@ -451,7 +451,7 @@ fn hole_session(depth: f64) -> ProjectSession {
         .unwrap()
         .clone();
     let op = OperationConfig::Drill(DrillConfig {
-        depth,
+        floor: rs_cam_core::compute::floor::Floor::Top { depth },
         selection: Selection::empty(),
         ..DrillConfig::default()
     });
@@ -482,8 +482,9 @@ fn a_drill_gouges_only_below_the_floor_of_a_model_hole_ux7b() {
         "the hole floor is Z 12: {}",
         finding.message()
     );
-    // F30: the fix names the depth to type (from the stock top, Z 20, the
-    // top the Depth field measures from) and the hole floor Z.
+    // F30 (F19): the fix names the depth to type (from the rim of the
+    // hole, Z 20, the base the floor depth measures from) and the hole
+    // floor Z.
     assert!(
         finding
             .message()
@@ -521,7 +522,7 @@ fn a_drill_gouges_only_below_the_floor_of_a_model_hole_ux7b() {
         reduced_tool: &tool,
         tool_radius: 3.0,
         bevel_depth_mm: 0.0,
-        depth_top_z: None,
+        depth_bases: &[],
     };
     let mut tp = Toolpath::new();
     tp.rapid_to(P3::new(30.0, 15.0, 25.0));

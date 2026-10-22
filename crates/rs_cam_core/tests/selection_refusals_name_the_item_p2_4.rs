@@ -118,6 +118,9 @@ fn arm_of(cause: &RefusalCause) -> &'static str {
         RefusalCause::HoleDoesNotFit { .. } => "hole_does_not_fit",
         RefusalCause::CannotExtend { .. } => "cannot_extend",
         RefusalCause::NotAConvexEdge { .. } => "not_a_convex_edge",
+        RefusalCause::HoleFloorNotRim => "hole_floor_not_rim",
+        RefusalCause::HoleInTurnedSetup => "hole_in_turned_setup",
+        RefusalCause::NoHoleDepth => "no_hole_depth",
     }
 }
 
@@ -139,6 +142,9 @@ const ARMS: &[&str] = &[
     "hole_does_not_fit",
     "cannot_extend",
     "not_a_convex_edge",
+    "hole_floor_not_rim",
+    "hole_in_turned_setup",
+    "no_hole_depth",
 ];
 
 fn square(cx: f64) -> Polygon2 {
@@ -294,6 +300,9 @@ fn every_cause_has_an_arm() {
         RefusalCause::NotAConvexEdge {
             why: rs_cam_core::selection::EdgeRefusal::Concave,
         },
+        RefusalCause::HoleFloorNotRim,
+        RefusalCause::HoleInTurnedSetup,
+        RefusalCause::NoHoleDepth,
     ];
     let causes: BTreeSet<&str> = samples.iter().map(arm_of).collect();
     let arms: BTreeSet<&str> = ARMS.iter().copied().collect();
@@ -1196,4 +1205,124 @@ fn faces_not_ready() {
         s.generate_toolpath(0, &cancel).is_ok(),
         "generation refused on a cold face set"
     );
+}
+
+/// R-B: a hand-built STEP hole of the tool size at (5, 5): the rim at the
+/// stock top (Z 0) with a blind depth of 5 mm, and its floor circle at
+/// Z -5, as the STEP door gives them (`io::brep_items`).
+fn hole_items() -> (Item, Item) {
+    use rs_cam_core::selection::{EdgeForm, EdgeMaterial, HoleDepth, ModelEdge, ModelHole};
+    let at = |z: f64| {
+        Item::at_z(
+            SourceRef::ToolpathModel,
+            None,
+            Shape::circle(P2::new(5.0, 5.0), TOOL_DIAMETER),
+            z,
+        )
+        .unwrap()
+    };
+    let rim = at(0.0)
+        .with_model_edge(ModelEdge {
+            form: EdgeForm::ConvexTop {
+                material: EdgeMaterial::Outside,
+            },
+            ring: false,
+        })
+        .with_model_hole(ModelHole::Rim(HoleDepth::Blind { depth_mm: 5.0 }));
+    let floor = at(-5.0)
+        .with_model_edge(ModelEdge {
+            form: EdgeForm::Concave,
+            ring: false,
+        })
+        .with_model_hole(ModelHole::Floor);
+    (rim, floor)
+}
+
+/// One Drill over the hole items with `selection`.
+fn hole_drill_session(selection: Selection) -> ProjectSession {
+    use rs_cam_core::compute::operation_configs::DrillConfig;
+    let (rim, floor) = hole_items();
+    single_op_session_with(
+        stock_under(STOCK_HALF, STOCK_HEIGHT),
+        endmill_tool_config(TOOL_DIAMETER),
+        drawing_model(vec![rim, floor]),
+        "p2_4 drill",
+        OperationConfig::Drill(DrillConfig {
+            selection,
+            ..DrillConfig::default()
+        }),
+        |_| {},
+    )
+}
+
+/// The Drill refusal names its op and ends with its fix.
+#[track_caller]
+fn assert_drill_text(refusal: &SelectionRefusal, words: &[&str]) {
+    let text = refusal.to_string();
+    assert!(text.starts_with("Drill: "), "the op is not named: {text}");
+    for word in words {
+        assert!(
+            text.contains(word),
+            "the refusal does not say {word:?}: {text}"
+        );
+    }
+    assert!(
+        text.ends_with(&format!("Fix: {}.", refusal.fix())),
+        "the refusal does not end with its fix: {text}"
+    );
+}
+
+/// R-B: a pick BY KEY of the floor circle of a hole refuses; the fix
+/// names the rim. (A viewport click maps it to the rim: core
+/// `hole_rim_key`.)
+#[test]
+fn hole_floor_not_rim() {
+    let (_, floor) = hole_items();
+    let mut s = hole_drill_session(Selection::from_picks(vec![pick_of(&floor)]));
+    let r = refusal_of(&mut s);
+    assert_eq!(r.cause, RefusalCause::HoleFloorNotRim, "{r}");
+    assert_drill_text(&r, &["floor of a hole", "rim circle"]);
+}
+
+/// R-B: a hole of a STEP model in a turned setup refuses by name: its rim
+/// is not at its top there.
+#[test]
+fn hole_in_turned_setup() {
+    let (rim, _) = hole_items();
+    let mut s = hole_drill_session(Selection::from_picks(vec![pick_of(&rim)]));
+    let _ = s
+        .apply(Command::SetSetupFace(SetSetupFaceArgs {
+            setup_index: 0,
+            face_up: FaceUp::Bottom,
+        }))
+        .unwrap();
+    let r = refusal_of(&mut s);
+    assert_eq!(r.cause, RefusalCause::HoleInTurnedSetup, "{r}");
+    assert_drill_text(&r, &["turns the model", "Top setup"]);
+}
+
+/// R-B: "Each hole floor" on a drawing circle (no depth) refuses by name.
+#[test]
+fn no_hole_depth() {
+    use rs_cam_core::compute::operation_configs::DrillConfig;
+    let circle = Item::new(
+        SourceRef::ToolpathModel,
+        Some("HOLES".into()),
+        Shape::circle(P2::new(5.0, 5.0), TOOL_DIAMETER),
+    )
+    .unwrap();
+    let mut s = single_op_session_with(
+        stock_under(STOCK_HALF, STOCK_HEIGHT),
+        endmill_tool_config(TOOL_DIAMETER),
+        drawing_model(vec![circle]),
+        "p2_4 drill",
+        OperationConfig::Drill(DrillConfig {
+            floor: Floor::EachHole { depth: 0.0 },
+            ..DrillConfig::default()
+        }),
+        |_| {},
+    );
+    let r = refusal_of(&mut s);
+    assert_eq!(r.cause, RefusalCause::NoHoleDepth, "{r}");
+    assert_drill_text(&r, &["each hole floor", "circle on layer 'HOLES'"]);
 }

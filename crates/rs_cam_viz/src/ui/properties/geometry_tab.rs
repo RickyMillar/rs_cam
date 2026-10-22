@@ -157,13 +157,17 @@ fn draw_floor_lines(
     // FR-2 F25: under "Each picked face" each face cuts to its own floor,
     // so the line gives the range of the face floors (the floors that the
     // heights diagram draws, `FloorInputs::face_floors`).
-    let face_floors = match (floor, answer) {
-        (Floor::EachFace { .. }, Some(answer)) => {
-            let report = inputs
-                .selection_report
-                .as_ref()
-                .and_then(|read| read.as_ref().ok())
-                .map(AsRef::as_ref);
+    // R-B: a Drill or a Bore on holes of a STEP model cuts each hole to its
+    // own floor, so the line gives the range of the hole floors too.
+    let report = inputs
+        .selection_report
+        .as_ref()
+        .and_then(|read| read.as_ref().ok())
+        .map(AsRef::as_ref);
+    let per_item = matches!(floor, Floor::EachFace { .. } | Floor::EachHole { .. })
+        || report.is_some_and(|r| r.hole_rim_bottom_z.is_some());
+    let face_floors = match answer {
+        Some(answer) if per_item => {
             super::FloorInputs::new(answer, &entry.heights, report).face_floors
         }
         _ => Vec::new(),

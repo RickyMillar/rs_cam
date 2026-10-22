@@ -32,6 +32,12 @@
 //!   whose faces the door cannot read is neither ([`EdgeForm::Other`]), so
 //!   a Chamfer never cuts it.
 //!
+//! - **Holes (R-B).** A circle that is a convex top edge with the material
+//!   outside it is the rim of a hole. Its nearest lower circle on the same
+//!   axis with the same diameter is its floor circle (`ModelHole::Floor`),
+//!   or the model bottom of a through hole. The rim holds the depth
+//!   (`ModelHole::Rim`, a length; not in the key).
+//!
 //! The items are in a fixed order (rings in face order, then circles,
 //! paths, loops and points, each sorted by Z from the top, then X, then Y),
 //! so a re-import of the same file gives the same list.
@@ -42,7 +48,8 @@ use crate::geo::{P2, P3};
 use crate::geometry::enriched_mesh::EnrichedMesh;
 use crate::polygon::Polygon2;
 use crate::selection::{
-    CAD_ROUNDING_MM, EdgeForm, EdgeMaterial, Item, ItemKind, ItemSet, ModelEdge, Shape, SourceRef,
+    CAD_ROUNDING_MM, EdgeForm, EdgeMaterial, HoleDepth, Item, ItemKind, ItemSet, ModelEdge,
+    ModelHole, Shape, SourceRef, coaxial_circles,
 };
 
 /// The Z tolerance (mm) of a horizontal edge: two points of one run differ
@@ -641,5 +648,169 @@ pub fn brep_edge_items(enriched: &EnrichedMesh, faces: &ItemSet) -> BrepEdgeItem
     out.items.extend(by_kind(ItemKind::Path));
     out.items.extend(by_kind(ItemKind::Loop));
     out.items.extend(points);
+    mark_holes(&mut out.items, enriched.mesh.bbox.min.z);
     out
+}
+
+/// R-B: true when `item` is the rim of a round hole: a circle whose every
+/// segment is a convex top edge with the material outside it.
+fn is_hole_rim(item: &Item) -> bool {
+    item.kind() == ItemKind::Circle
+        && item.model_edge().is_some_and(|e| {
+            !e.ring
+                && e.form
+                    == EdgeForm::ConvexTop {
+                        material: EdgeMaterial::Outside,
+                    }
+        })
+}
+
+/// R-B: give each hole rim its depth, and mark the floor circle of each
+/// blind hole. The lower circle of a rim is the nearest lower circle on
+/// the same axis with the same diameter (`coaxial_circles`).
+///
+/// - That circle at the model bottom (`model_bottom_z`), on no up face
+///   (`EdgeForm::Other`): the hole goes through. The depth is to the
+///   model bottom.
+/// - Else the hole is blind: the depth is to that circle, and that circle
+///   is the floor (`ModelHole::Floor`) when it is not a rim itself. A
+///   cone or a fillet at the bottom gives the depth to the end of the
+///   straight wall.
+/// - No lower circle: the rim holds no depth.
+fn mark_holes(items: &mut [Item], model_bottom_z: f64) {
+    let mut marks: Vec<(usize, ModelHole)> = Vec::new();
+    for (r, rim) in items.iter().enumerate() {
+        if !is_hole_rim(rim) {
+            continue;
+        }
+        let Some(rim_z) = rim.z() else {
+            continue;
+        };
+        let lower = items
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.z().is_some_and(|z| z < rim_z - EDGE_FORM_Z_TOL_MM))
+            .filter(|(_, c)| coaxial_circles(rim, c))
+            .max_by(|(_, a), (_, b)| {
+                a.z()
+                    .unwrap_or(f64::MIN)
+                    .total_cmp(&b.z().unwrap_or(f64::MIN))
+            });
+        let Some((l, low)) = lower else {
+            continue;
+        };
+        let low_z = low.z().unwrap_or(rim_z);
+        let through = (low_z - model_bottom_z).abs() <= EDGE_FORM_Z_TOL_MM
+            && low.model_edge().is_some_and(|e| e.form == EdgeForm::Other);
+        let depth = if through {
+            HoleDepth::Through {
+                depth_mm: rim_z - model_bottom_z,
+            }
+        } else {
+            HoleDepth::Blind {
+                depth_mm: rim_z - low_z,
+            }
+        };
+        marks.push((r, ModelHole::Rim(depth)));
+        if !through && !is_hole_rim(low) {
+            marks.push((l, ModelHole::Floor));
+        }
+    }
+    for (index, hole) in marks {
+        if let Some(item) = items.get_mut(index) {
+            *item = item.clone().with_model_hole(hole);
+        }
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+mod tests {
+    use super::*;
+
+    /// A circle edge item at `z` with the edge form `form`.
+    fn circle(z: f64, diameter: f64, form: EdgeForm) -> Item {
+        Item::at_z(
+            SourceRef::ToolpathModel,
+            None,
+            Shape::circle(P2::new(15.0, 15.0), diameter),
+            z,
+        )
+        .unwrap()
+        .with_model_edge(ModelEdge { form, ring: false })
+    }
+
+    fn rim(z: f64, diameter: f64) -> Item {
+        circle(
+            z,
+            diameter,
+            EdgeForm::ConvexTop {
+                material: EdgeMaterial::Outside,
+            },
+        )
+    }
+
+    /// R-B: the door gives a rim its depth. A blind hole: the depth to the
+    /// floor circle, which becomes `ModelHole::Floor` and pairs with its
+    /// rim (`ItemSet::rim_of`). A through hole: the depth to the model
+    /// bottom; its bottom circle is no floor. A boss (material inside) and
+    /// a circle of another diameter are no hole. A scale scales the depth.
+    #[test]
+    fn a_rim_holds_its_hole_depth_rb() {
+        let mut blind = vec![rim(20.0, 6.0), circle(12.0, 6.0, EdgeForm::Concave)];
+        mark_holes(&mut blind, 0.0);
+        assert_eq!(
+            blind[0].model_hole(),
+            Some(ModelHole::Rim(HoleDepth::Blind { depth_mm: 8.0 }))
+        );
+        assert_eq!(blind[1].model_hole(), Some(ModelHole::Floor));
+        let set = ItemSet::new(blind);
+        assert_eq!(set.rim_of(1), Some(0), "the floor pairs with its rim");
+        assert_eq!(set.hole_floor_of(0), Some(1));
+        assert_eq!(set.rim_of(0), None, "a rim is not a floor");
+
+        let mut through = vec![rim(20.0, 6.0), circle(0.0, 6.0, EdgeForm::Other)];
+        mark_holes(&mut through, 0.0);
+        assert_eq!(
+            through[0].model_hole(),
+            Some(ModelHole::Rim(HoleDepth::Through { depth_mm: 20.0 }))
+        );
+        assert_eq!(through[1].model_hole(), None, "a through hole has no floor");
+
+        let boss = circle(
+            20.0,
+            6.0,
+            EdgeForm::ConvexTop {
+                material: EdgeMaterial::Inside,
+            },
+        );
+        let mut other = vec![
+            boss,
+            circle(12.0, 6.0, EdgeForm::Concave),
+            rim(20.0, 8.0),
+            circle(12.0, 6.0, EdgeForm::Concave),
+        ];
+        mark_holes(&mut other, 0.0);
+        assert!(
+            other.iter().all(|i| i.model_hole().is_none()),
+            "a boss and a circle of another size are no hole"
+        );
+
+        let scaled = ItemSet::new(vec![rim(20.0, 6.0), circle(12.0, 6.0, EdgeForm::Concave)]);
+        let mut items: Vec<Item> = scaled.iter().cloned().collect();
+        mark_holes(&mut items, 0.0);
+        let inches = ItemSet::new(items).scaled(25.4).unwrap();
+        let first = inches.iter().next().unwrap();
+        assert_eq!(
+            first.rim_depth(),
+            Some(HoleDepth::Blind {
+                depth_mm: 8.0 * 25.4
+            }),
+            "a scale scales the hole depth with the shape"
+        );
+    }
 }

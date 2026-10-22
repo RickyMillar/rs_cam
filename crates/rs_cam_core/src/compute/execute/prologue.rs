@@ -62,7 +62,7 @@ use crate::compute::catalog::{
     FaceTopRule, GeometryRequirement, ItemUse, OperationConfig, OperationType,
 };
 use crate::compute::config::ResolvedHeights;
-use crate::compute::floor::region_floors;
+use crate::compute::floor::{HoleFloorInputs, HoleSpan, hole_floors, region_floors};
 use crate::compute::toolpath_stats::SelectionNoteFinding;
 use crate::dexel_stock::FRESH_MATERIAL_THRESHOLD_MM;
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -171,6 +171,11 @@ pub struct Prepared<'a> {
     /// face", in the order of [`Prepared::regions`]. `None` for every
     /// other floor.
     region_ladders: Option<Vec<Vec<f64>>>,
+    /// R-B, F19: the depth base and the floor of each hole of a Drill or a
+    /// Bore, in the order of [`Prepared::holes`]
+    /// ([`crate::compute::floor::hole_floors`]). `None` for an op with no
+    /// floor or no holes.
+    hole_spans: Option<Vec<HoleSpan>>,
 }
 
 impl<'a> Prepared<'a> {
@@ -245,6 +250,12 @@ impl<'a> Prepared<'a> {
         self.region_ladders.as_deref()
     }
 
+    /// R-B, F19: the depth base and the floor of each hole, in the order of
+    /// [`Self::holes`]. `None` for an op with no floor (the Pin Drill).
+    pub(crate) fn hole_spans(&self) -> Option<&[HoleSpan]> {
+        self.hole_spans.as_deref()
+    }
+
     fn mismatch(&self, what: &str) -> OperationError {
         OperationError::Internal(format!(
             "registry adapter mismatch: {} reads {what}, but its row's geometry is {:?}",
@@ -287,6 +298,7 @@ pub(super) fn check_inputs<'a>(
         },
     };
     let region_ladders = region_ladders(ctx, op, &mut geometry, &mut notes)?;
+    let hole_spans = hole_spans(ctx, op, &geometry)?;
     // ONE finding holds every note of the op: the open paths that `view`
     // left out and the faces at the top (P3.7). The finding overwrites.
     if !notes.is_empty() {
@@ -303,6 +315,7 @@ pub(super) fn check_inputs<'a>(
         geometry,
         territory: Territory::resolve(ctx, op),
         region_ladders,
+        hole_spans,
     };
     refuse_buried_face(ctx, op, &prepared)?;
     Ok(prepared)
@@ -427,6 +440,31 @@ fn region_ladders(
         notes.extend(floors.into_notes());
         ladders
     }))
+}
+
+/// R-B, F19: THE per-hole floor rule ([`hole_floors`]) over the fitted
+/// holes of a Drill or a Bore, on the resolved heights of the op.
+/// `selection_status` runs the same rule on the same heights, so the
+/// status and generation give one answer. `None` for an op with no floor
+/// or no holes.
+fn hole_spans(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+    geometry: &CheckedGeometry<'_>,
+) -> Result<Option<Vec<HoleSpan>>, OperationError> {
+    let items = match geometry {
+        CheckedGeometry::Items(items) | CheckedGeometry::ItemsAndMesh { items, .. } => items,
+        CheckedGeometry::Mesh(_) => return Ok(None),
+    };
+    let (Some(floor), Some(holes)) = (op.floor(), items.holes()) else {
+        return Ok(None);
+    };
+    let inputs = HoleFloorInputs::new(ctx.heights, ctx.stock_bbox.min.z);
+    hole_floors(&ctx.selection.resolved, holes, &floor, &inputs)
+        .map(Some)
+        .map_err(|refusal| {
+            OperationError::Selection(Box::new(refusal.for_op(op.op_type().label())))
+        })
 }
 
 /// The items the op cuts: [`view`] over the resolved selection with the

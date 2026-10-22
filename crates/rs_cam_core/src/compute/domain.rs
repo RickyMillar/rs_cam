@@ -315,7 +315,13 @@ pub fn validate_operation(operation: &OperationConfig) -> Result<(), OpDomainRef
             high_value,
         });
     }
-    if let Some(refusal) = operation.floor().and_then(|floor| floor.door_refusal()) {
+    // R-B: a floor that the op cannot cut to (each hole floor on an op with
+    // no holes, a face floor on a Drill).
+    let item_use = operation.capabilities().item_use;
+    if let Some(refusal) = operation
+        .floor()
+        .and_then(|floor| floor.door_refusal().or_else(|| floor.op_refusal(item_use)))
+    {
         return Err(OpDomainRefusal::Floor {
             op: operation.label(),
             refusal,

@@ -30,7 +30,9 @@ use rs_cam_core::selection::{
     Facing, HoleFit, HoleFitRule, ItemKind, KindFilter, MatchKey, MatchedBy, NoteCause,
     RefusalCause, Rule, Selection, SelectionEdit, SelectionNote, SourceRef, kind_noun,
 };
-use rs_cam_core::session::{ItemState, RuleOffer, SelectionReport, SelectionTarget};
+use rs_cam_core::session::{
+    HoleSummary, ItemState, RuleOffer, SelectionReport, SelectionTarget, short_number,
+};
 
 use super::SelectionRead;
 use crate::state::pick::{OffersFor, PickMode, SelectionUi};
@@ -408,18 +410,6 @@ pub(crate) fn face_label(z: f64) -> String {
     format!("Face Z{z:.2}")
 }
 
-/// `value` at 2 decimals with no trailing zero: 20.00 is "20", 12.50 is
-/// "12.5".
-fn short_number(value: f64) -> String {
-    let text = format!("{value:.2}");
-    let text = text.trim_end_matches('0').trim_end_matches('.');
-    if text == "-0" {
-        "0".to_owned()
-    } else {
-        text.to_owned()
-    }
-}
-
 /// The full text of one item row: the kind, the size, the place and the
 /// layer.
 pub(crate) fn row_full_label(key: &MatchKey, plane_z: Option<f64>) -> String {
@@ -458,10 +448,21 @@ pub(crate) fn list_groups(
     report: &SelectionReport,
 ) -> Vec<ListGroup> {
     let default = inputs.is_default();
+    // R-E: a hole row reads the one core hole text ("Ø6 hole, 8 deep").
     let row_of = |row: &rs_cam_core::session::SelectedRow, acts: RowActs| ListRow {
         key: row.key.clone(),
-        label: row_label(&row.key, row.plane_z),
-        full: row_full_label(&row.key, row.plane_z),
+        label: row
+            .hole
+            .as_ref()
+            .map_or_else(|| row_label(&row.key, row.plane_z), HoleSummary::label),
+        full: match &row.hole {
+            Some(hole) => format!(
+                "{} \u{00B7} {}",
+                hole.label(),
+                row_full_label(&row.key, row.plane_z)
+            ),
+            None => row_full_label(&row.key, row.plane_z),
+        },
         state: report.row_state(row),
         acts,
     };

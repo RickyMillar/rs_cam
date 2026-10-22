@@ -326,7 +326,7 @@ fn both_drill_editors_draw_the_same_cycle_rows_ui11() {
         ..Default::default()
     };
     let drill_texts = rendered(|ui| {
-        super::operations::draw_drill_params(ui, &mut drill, None, None, None);
+        super::operations::draw_drill_params(ui, &mut drill, None, None, None, None);
     });
 
     let mut pin = AlignmentPinDrillConfig {
@@ -1180,4 +1180,128 @@ fn the_blocked_state_word_fits_its_slot_f22() {
             );
         }
     }
+}
+
+/// R-E (operator ruling 2026-10-23): one hole is ONE row, with one text,
+/// on every surface. A default Drill on `block_with_blind_hole.step` (one
+/// Ø6 hole, rim Z 20, floor Z 12):
+///
+/// - the GUI Geometry tab list (`list_groups`) gives one row,
+///   "Ø6 hole, 8 deep";
+/// - the MCP `selection_status` reply gives one `rows` entry with that
+///   `hole.label` and one `holes` entry with that `label`;
+/// - the MCP `list_model_items` reply gives one circle row with that
+///   `hole.label`, and no row for the floor circle;
+/// - the depth number is the same on each surface (8).
+///
+/// Red proof (run by hand, 2026-10-23): with the fold of the floor circle
+/// off (`fold_hole_floors` returns `rows`), `list_model_items` gives two
+/// circle rows.
+#[test]
+fn one_hole_is_one_row_re() {
+    use rs_cam_core::compute::StockConfig;
+    use rs_cam_core::compute::catalog::OperationConfig;
+    use rs_cam_core::compute::operation_configs::DrillConfig;
+    use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
+    use rs_cam_core::session::{ProjectSessionBuilder, SelectionTarget, ToolpathConfig};
+    const LABEL: &str = "\u{00D8}6 hole, 8 deep";
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../rs_cam_core/tests/fixtures/step/block_with_blind_hole.step");
+    let model = rs_cam_core::io::load_model_file(
+        &path,
+        rs_cam_core::ids::ModelId::from_raw(0),
+        ModelKind::Step,
+        ModelUnits::Millimeters,
+        Default::default(),
+    )
+    .unwrap();
+    let mut tool = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+        rs_cam_core::compute::ToolId::from_raw(1),
+        rs_cam_core::compute::tool_config::ToolType::EndMill,
+    );
+    tool.diameter = 6.0;
+    let mut builder = ProjectSessionBuilder::new()
+        .stock(StockConfig {
+            x: 50.0,
+            y: 40.0,
+            z: 25.0,
+            origin_x: -5.0,
+            origin_y: -5.0,
+            origin_z: 0.0,
+            auto_from_model: false,
+            ..StockConfig::default()
+        })
+        .tool(tool);
+    let model_id = builder.add_model(model);
+    let _ = builder
+        .add_toolpath(
+            0,
+            ToolpathConfig {
+                shoe: Default::default(),
+                id: rs_cam_core::compute::ToolpathId::from_raw(0),
+                name: "re drill".to_owned(),
+                enabled: true,
+                operation: OperationConfig::Drill(DrillConfig::default()),
+                dressups: Default::default(),
+                heights: Default::default(),
+                tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+                model_id,
+                pre_gcode: None,
+                post_gcode: None,
+                boundary: Default::default(),
+                boundary_inherit: true,
+                stock_source: Default::default(),
+                coolant: Default::default(),
+                debug_options: Default::default(),
+                feeds_provenance: Default::default(),
+                rest_analysis: Default::default(),
+                planner_origin: None,
+            },
+        )
+        .unwrap();
+    let session = builder.build();
+
+    // GUI: the Geometry tab list.
+    let (groups, _) = groups_of(&session);
+    let rows: Vec<&str> = groups
+        .iter()
+        .flat_map(|g| g.rows.iter())
+        .map(|row| row.label.as_str())
+        .collect();
+    assert_eq!(rows, vec![LABEL], "the GUI list: one row per hole");
+
+    // MCP: selection_status.
+    let status =
+        crate::app::mcp::commands::selection_status_reply(&session, 0, SelectionTarget::Op);
+    let status_rows = status["rows"].as_array().unwrap();
+    assert_eq!(status_rows.len(), 1, "{status}");
+    assert_eq!(status_rows[0]["hole"]["label"], serde_json::json!(LABEL));
+    assert_eq!(status_rows[0]["hole"]["depth_mm"], serde_json::json!(8.0));
+    let holes = status["holes"].as_array().unwrap();
+    assert_eq!(holes.len(), 1, "{status}");
+    assert_eq!(holes[0]["label"], serde_json::json!(LABEL));
+    assert_eq!(holes[0]["depth_mm"], serde_json::json!(8.0));
+
+    // MCP: list_model_items, the circles only.
+    let listed = crate::app::mcp::commands::list_model_items_reply(
+        &session,
+        &rs_cam_mcp::server::ListModelItemsParam {
+            model_id: model_id.raw(),
+            layer: None,
+            kind: Some(rs_cam_mcp::server::ItemKindParam::Circle),
+            near: None,
+        },
+    );
+    let items = listed["items"].as_array().unwrap();
+    assert_eq!(
+        items.len(),
+        1,
+        "the floor circle folds into its rim: {listed}"
+    );
+    assert_eq!(items[0]["hole"]["label"], serde_json::json!(LABEL));
+    assert_eq!(items[0]["hole"]["depth_mm"], serde_json::json!(8.0));
+    assert!(
+        items[0]["hole"]["floor_key"].is_object(),
+        "the rim row names its floor circle: {listed}"
+    );
 }

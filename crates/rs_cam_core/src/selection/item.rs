@@ -20,7 +20,7 @@ use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::ModelId;
 use crate::polygon::Polygon2;
 
-use super::key::MatchKey;
+use super::key::{CAD_ROUNDING_MM, MatchKey};
 
 /// The arc step of [`Shape::circle`]: the arc tolerance (degrees) that the
 /// model door passes to the DXF door (`io::load_geometry`).
@@ -265,6 +265,77 @@ pub struct Item {
     /// other item. The key does not hold it: it is a fact of the model,
     /// not a name of the item.
     edge: Option<ModelEdge>,
+    /// The part of a round hole that a STEP circular edge is (R-B): the
+    /// rim with the hole depth, or the floor circle. `None` for every
+    /// other item. The key does not hold it (as `edge`).
+    hole: Option<ModelHole>,
+}
+
+/// The depth of a round hole below its rim (R-B), in mm. It is a length,
+/// not a Z, so the frame door moves the rim Z and the depth stays.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HoleDepth {
+    /// The hole has a floor: the floor circle is `depth_mm` below the rim.
+    Blind { depth_mm: f64 },
+    /// The hole goes through the part: the model bottom is `depth_mm`
+    /// below the rim.
+    Through { depth_mm: f64 },
+}
+
+impl HoleDepth {
+    /// The length from the rim to the floor (blind) or to the model
+    /// bottom (through), in mm.
+    #[must_use]
+    pub const fn depth_mm(self) -> f64 {
+        match self {
+            Self::Blind { depth_mm } | Self::Through { depth_mm } => depth_mm,
+        }
+    }
+
+    /// True for a hole that goes through the part.
+    #[must_use]
+    pub const fn is_through(self) -> bool {
+        matches!(self, Self::Through { .. })
+    }
+}
+
+impl HoleDepth {
+    /// The same depth with its length multiplied by `scale`.
+    #[must_use]
+    pub const fn scaled(self, scale: f64) -> Self {
+        match self {
+            Self::Blind { depth_mm } => Self::Blind {
+                depth_mm: depth_mm * scale,
+            },
+            Self::Through { depth_mm } => Self::Through {
+                depth_mm: depth_mm * scale,
+            },
+        }
+    }
+}
+
+impl ModelHole {
+    /// The same hole data with its depth multiplied by `scale`.
+    #[must_use]
+    pub const fn scaled(self, scale: f64) -> Self {
+        match self {
+            Self::Rim(depth) => Self::Rim(depth.scaled(scale)),
+            Self::Floor => Self::Floor,
+        }
+    }
+}
+
+/// What a STEP circular edge is in a round hole (R-B). The STEP door
+/// decides it (`io::brep_items`): a rim is a convex top circle with the
+/// material outside it; its floor circle is the nearest lower circle on
+/// the same axis with the same diameter.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ModelHole {
+    /// The rim of the hole, with the depth of the hole below it.
+    Rim(HoleDepth),
+    /// The floor circle of a blind hole. A Drill does not drill it; a
+    /// pick of it maps to its rim ([`ItemSet::rim_of`]).
+    Floor,
 }
 
 /// Which side of a model edge holds the material (R-C), in the MODEL
@@ -416,6 +487,7 @@ impl Item {
             shape,
             z,
             edge: None,
+            hole: None,
         })
     }
 
@@ -431,6 +503,28 @@ impl Item {
     /// face (R-C), in the MODEL frame. `None` for every other item.
     pub fn model_edge(&self) -> Option<ModelEdge> {
         self.edge
+    }
+
+    /// The same item with the hole data `hole` (R-B). The STEP door calls
+    /// it; the key does not change.
+    #[must_use]
+    pub fn with_model_hole(mut self, hole: ModelHole) -> Self {
+        self.hole = Some(hole);
+        self
+    }
+
+    /// The hole data of a STEP circular edge (R-B): a rim and its depth,
+    /// or a floor circle. `None` for every other item.
+    pub fn model_hole(&self) -> Option<ModelHole> {
+        self.hole
+    }
+
+    /// The depth of the hole when this item is a hole rim (R-B).
+    pub fn rim_depth(&self) -> Option<HoleDepth> {
+        match self.hole {
+            Some(ModelHole::Rim(depth)) => Some(depth),
+            Some(ModelHole::Floor) | None => None,
+        }
     }
 
     pub fn source(&self) -> SourceRef {
@@ -487,10 +581,11 @@ impl Item {
         Self::build(self.source, self.layer.clone(), shape, self.z).map(|i| i.keep_edge(self))
     }
 
-    /// `self` with the model edge data of `from` (R-C): a rebuild of the
-    /// same edge keeps its form.
+    /// `self` with the model edge data of `from` (R-C) and its hole data
+    /// (R-B): a rebuild of the same edge keeps its form and its hole.
     fn keep_edge(mut self, from: &Item) -> Self {
         self.edge = from.edge;
+        self.hole = from.hole;
         self
     }
 
@@ -503,6 +598,27 @@ impl Item {
     /// The same item with a different source. The key is computed again.
     fn rebuilt(&self, source: SourceRef, shape: Shape) -> Result<Self, ItemError> {
         Self::build(source, self.layer.clone(), shape, self.z).map(|i| i.keep_edge(self))
+    }
+}
+
+/// R-B: true when `a` and `b` are circles on one vertical axis with one
+/// diameter, within the CAD rounding ([`CAD_ROUNDING_MM`]). The STEP door
+/// and [`ItemSet::rim_of`] pair a rim with its floor by it.
+pub fn coaxial_circles(a: &Item, b: &Item) -> bool {
+    match (a.shape(), b.shape()) {
+        (
+            Shape::Circle {
+                centre: ca,
+                diameter: da,
+                ..
+            },
+            Shape::Circle {
+                centre: cb,
+                diameter: db,
+                ..
+            },
+        ) => (ca - cb).norm() <= CAD_ROUNDING_MM && (da - db).abs() <= CAD_ROUNDING_MM,
+        _ => false,
     }
 }
 
@@ -614,6 +730,36 @@ impl ItemSet {
     /// edge chain, circular edge or vertex, each at its own Z.
     pub fn has_model_edges(&self) -> bool {
         self.items.iter().any(|i| i.z.is_some())
+    }
+
+    /// R-B: the index of the rim of the hole whose floor circle is at
+    /// `index`, or `None` when that item is not a floor circle. The rim
+    /// is the nearest higher rim on the same axis
+    /// ([`coaxial_circles`]) whose depth reaches the floor. THE one rule
+    /// that maps a pick of a floor circle to its hole (a viewport click,
+    /// an MCP `near` pick) and that folds the floor row into the rim row.
+    pub fn rim_of(&self, index: usize) -> Option<usize> {
+        let floor = self.items.get(index)?;
+        if floor.hole != Some(ModelHole::Floor) {
+            return None;
+        }
+        let floor_z = floor.z?;
+        self.items
+            .iter()
+            .enumerate()
+            .filter(|(_, rim)| {
+                rim.z.zip(rim.rim_depth()).is_some_and(|(z, depth)| {
+                    !depth.is_through() && (z - depth.depth_mm() - floor_z).abs() <= CAD_ROUNDING_MM
+                })
+            })
+            .find(|(_, rim)| coaxial_circles(rim, floor))
+            .map(|(i, _)| i)
+    }
+
+    /// R-B: the index of the floor circle of the blind hole whose rim is
+    /// at `index`, or `None` ([`Self::rim_of`] in reverse).
+    pub fn hole_floor_of(&self, index: usize) -> Option<usize> {
+        (0..self.items.len()).find(|&i| self.rim_of(i) == Some(index))
     }
 
     /// True when the set holds an item that a selection can name: a
@@ -762,7 +908,12 @@ impl ItemSet {
             i.shape.scaled(scale),
             i.z.map(|z| z * scale),
         )
-        .map(|item| item.keep_edge(i))
+        .map(|item| {
+            let mut item = item.keep_edge(i);
+            // R-B: the hole depth is a length, so it scales with the shape.
+            item.hole = i.hole.map(|hole| hole.scaled(scale));
+            item
+        })
     }
 
     /// The same items with `source` as their source.

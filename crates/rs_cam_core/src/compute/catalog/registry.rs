@@ -46,7 +46,8 @@ const FIX_PROFILE: &str =
 /// UX-7b: the fix sentence of the guard on a Face.
 const FIX_FACE: &str = "Set the Face depth so that the face stays above the model";
 /// UX-7b: the fix sentence of the guard on a Drill.
-const FIX_DRILL: &str = "Set the drill depth no deeper than the hole floor of the model";
+const FIX_DRILL: &str = "Set the drill floor no deeper than the hole floor of the model (the floor \
+     \"Each hole floor\" with depth 0 stops at it)";
 /// R-C: the fix sentence of the guard on a Chamfer.
 const FIX_CHAMFER: &str = "Remove from the selection each edge that runs into a wall (the cone \
                            of the V-bit cuts into that wall), or set a smaller chamfer width";
@@ -563,7 +564,9 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,
         air_cut_high_threshold_pct: None,
-        floor_owner: FloorOwner::OpDial,
+        // R-B, F19: the op `floor` (each hole floor, or a depth from each
+        // rim) is the Bottom Z.
+        floor_owner: FloorOwner::OpFloor,
         entry_probe: EntryProbeRule::Prism,
         link_ceiling: LinkCeilingNeed::NoLink,
         feeds_hints: FeedsHints::NONE,
@@ -583,7 +586,9 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
         top_on_stock_box: false,
         floor_inside_stock: true,
         ladder_includes_top: false,
-        face_top: FaceTopRule::Face,
+        // F19 (UX-1 reading): the cut starts at the higher of the hole rims
+        // and the stock top; the depth counts from each rim.
+        face_top: FaceTopRule::HigherOfFaceAndStock,
         lut_route: LutRoute::AsStated,
         // P6.5 (O-3): a circle that is not of the tool size is not drilled.
         item_use: ItemUse::Holes {

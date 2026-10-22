@@ -168,14 +168,18 @@ fn the_default_operation_carries_the_stock_defaults_and_no_recipe_fm5() {
     let stock = stock_ctx();
     let op = default_operation(OperationType::Drill, &stock);
     assert_eq!(op.op_type(), OperationType::Drill);
-    // `apply_stock_defaults` sets a drill's depth to the stock height.
+    // `apply_stock_defaults` sets a drill's floor to the stock height below
+    // the Top Z (F19: the drill floor field).
     let rs_cam_core::compute::catalog::OperationConfig::Drill(cfg) = &op else {
         panic!("default_operation must build the requested operation kind");
     };
-    assert!(
-        (cfg.depth - stock.stock_z).abs() < 1e-9,
-        "the stock default was not applied: depth {}",
-        cfg.depth
+    assert_eq!(
+        cfg.floor,
+        rs_cam_core::compute::floor::Floor::Top {
+            depth: stock.stock_z
+        },
+        "the stock default was not applied: floor {:?}",
+        cfg.floor
     );
 }
 

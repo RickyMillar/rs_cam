@@ -422,15 +422,31 @@ mod tests {
             OperationType::Zigzag,
             OperationType::Adaptive,
             OperationType::Bore,
+            OperationType::Drill,
         ] {
             let schema = OperationConfig::schema_for_type(op);
             let floor = schema
                 .floor
                 .unwrap_or_else(|| panic!("{} gives a floor schema", op.label()));
             assert_eq!(floor["set_through"], "set_toolpath_floor");
+            // R-B: the schema lists the references that the op admits
+            // (`Floor::admits`): each hole floor on a Drill and a Bore, no
+            // face floor on a Drill.
+            let admitted = Floor::EACH_REFERENCE
+                .iter()
+                .filter(|f| f.admits(op.capabilities().item_use))
+                .count();
+            // Non-vacuity: a Pocket has no hole floor, a Drill no face
+            // floor, a Bore every reference.
+            let want = match op {
+                OperationType::Drill => Floor::EACH_REFERENCE.len() - 2,
+                OperationType::Bore => Floor::EACH_REFERENCE.len(),
+                _ => Floor::EACH_REFERENCE.len() - 1,
+            };
+            assert_eq!(admitted, want, "{}", op.label());
             assert_eq!(
                 floor["variants"].as_array().map(Vec::len),
-                Some(Floor::EACH_REFERENCE.len()),
+                Some(admitted),
                 "{floor}"
             );
             assert!(

@@ -138,7 +138,7 @@ fn dxf_model(rings: usize) -> LoadedModel {
 
 fn drill_op() -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
-        depth: DEPTH,
+        floor: rs_cam_core::compute::floor::Floor::Top { depth: DEPTH },
         cycle: DrillCycleType::Peck,
         peck_depth: 15.0,
         retract_z: 2.0,

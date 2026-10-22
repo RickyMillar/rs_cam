@@ -25,11 +25,9 @@
 //!    refuses (UX-1c reads the item Z as the face top). A Trace that picks
 //!    one top edge (a `Path`) cuts along that edge only.
 //! 6. The default rule of a Pocket and of a Profile on a STEP model holds
-//!    the face rings only: no path, circle, point or face. A Drill on the
-//!    default rule has nothing to cut (as before UX-7). F29 (2026-10-23):
-//!    its refusal names the top rim of the hole that fits the tool (not the
-//!    floor circle), and the fix names the pick and the rule; the status
-//!    gives the same text.
+//!    the face rings only: no path, circle, point or face. R-B (2026-10-23,
+//!    replaces the F29 pin of this claim): a Drill on the default rule
+//!    takes the rim circle of the hole and nothing else, and generates.
 //!
 //! The fixture `tests/fixtures/step/block_with_blind_hole.step` comes from
 //! `gen_block_with_blind_hole.py` beside it (block 40 x 30 x 20, hole
@@ -38,8 +36,8 @@
 //! Red proofs (run by hand, 2026-10-22): claim 2 goes red when
 //! `MatchKey::names_same_geometry` ignores `z`; claim 6 goes red when
 //! `rule::served_by_default` admits every drawing kind of an edge item.
-//! (2026-10-23) claim 6 goes red when the prologue does not call
-//! `SelectionRefusal::with_default_rims`.
+//! R-B: claim 6 goes red when `rule::served_by_default` gives the Drill
+//! the Loop rule of Q3 again (the rim is then not `Cut`).
 //!
 //! ```text
 //! cargo test -p rs_cam_core -q --features step --test a_step_model_gives_edges_circles_and_points_ux7
@@ -326,7 +324,7 @@ fn a_drill_on_a_step_circle_drills_its_centre_to_its_floor_ux7() {
     let floor = find(&model, ItemKind::Circle, HOLE_XY, FLOOR_Z).clone();
     let depth = rim.z().unwrap() - floor.z().unwrap();
     let op = OperationConfig::Drill(DrillConfig {
-        depth,
+        floor: rs_cam_core::compute::floor::Floor::Top { depth },
         selection: Selection::empty(),
         ..DrillConfig::default()
     });
@@ -498,56 +496,27 @@ fn the_default_rule_on_a_step_model_holds_the_face_rings_only_ux7() {
             );
         }
     }
-    // A Drill on the default rule: nothing to cut.
+    // R-B (operator ruling 2026-10-23, replaces the F29 pin here): a Drill
+    // on the default rule takes the RIM circle of the hole (Z 20) and no
+    // ring; the floor circle (Z 12) does not serve. The Drill generates.
     let mut session = default_session(load(HOLE), OperationConfig::Drill(DrillConfig::default()));
     for (item, state) in states(&session) {
-        assert!(
-            matches!(state, ItemState::NotSelected | ItemState::Skipped),
-            "Drill default: {:?} at Z {:?} is {state:?}",
+        let rim = item.kind() == ItemKind::Circle && item.z().is_some_and(|z| near(z, RIM_Z));
+        let want = if rim {
+            ItemState::Cut
+        } else {
+            ItemState::NotSelected
+        };
+        assert_eq!(
+            state,
+            want,
+            "Drill default: {:?} at Z {:?}",
             item.kind(),
             item.z()
         );
-        if item.kind() == ItemKind::Circle {
-            assert_eq!(
-                state,
-                ItemState::NotSelected,
-                "a circle enters by a pick only"
-            );
-        }
     }
-    // F29: the refusal names the hole that the default rule did not take
-    // (its top rim, of the tool size), and the fix names the pick and the
-    // rule. The status gives the same text.
-    let tc = session.toolpath_configs()[0].clone();
-    let status = session
-        .selection_status(&tc, SelectionTarget::Op)
-        .unwrap()
-        .refusal
-        .clone()
-        .expect("the status refuses");
-    match generate(&mut session) {
-        Err(e) => {
-            let text = e.to_string();
-            assert!(
-                text.contains("nothing is left to cut"),
-                "want the Empty refusal: {text}"
-            );
-            for words in [
-                "The default takes the face rings only. This model has 1 circle that fits the \
-                 tool: Ø6.000 at X 15.000 Y 15.000 Z 20.000",
-                "Fix: Pick the top circle of each hole, or add the rule 'all circles Ø6.000'.",
-            ] {
-                assert!(text.contains(words), "F29: want {words:?} in: {text}");
-            }
-            assert!(
-                !text.contains("Z 12.000"),
-                "F29: the floor circle is not a rim: {text}"
-            );
-            assert!(
-                text.ends_with(&status.to_string()),
-                "status = generation: {text}"
-            );
-        }
-        Ok(_) => panic!("a Drill on the default rule of a STEP model has nothing to cut"),
-    }
+    assert!(
+        generate(&mut session).is_ok(),
+        "a Drill on the default rule of a STEP model drills the rim"
+    );
 }

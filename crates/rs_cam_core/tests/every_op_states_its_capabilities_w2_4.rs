@@ -198,7 +198,8 @@ fn frozen() -> Vec<Row> {
     row((OperationType::InlayPlug, [true, false, false, false, false, false, false, false, false, true], Some(3), Some(40.0), FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::None, TerritoryXy::ClipAfter)),
     row((OperationType::Zigzag, [true, false, true, false, false, false, false, false, false, true], None, Some(40.0), FloorOwner::OpFloor, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::Raster, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelClip, TerritoryXy::ClipAfter)),
     row((OperationType::Trace, [true, false, true, false, false, false, false, false, true, true], Some(3), Some(40.0), FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::CurveFollowing, None, AxialEnvelope::NotApplied, RestUse::LevelSkip, TerritoryXy::ClipAfter)),
-    row((OperationType::Drill, [true, true, false, false, true, false, false, false, false, true], None, None, FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::PeckDepth, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::StockColumn, TerritoryXy::ClipAfter)),
+    // R-B, F19 (2026-10-23): the Drill floor is its `floor` field.
+    row((OperationType::Drill, [true, true, false, false, true, false, false, false, false, true], None, None, FloorOwner::OpFloor, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::PeckDepth, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::StockColumn, TerritoryXy::ClipAfter)),
     row((OperationType::Bore, [true, true, false, false, true, false, false, false, false, true], None, Some(40.0), FloorOwner::OpFloor, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::StockColumn, TerritoryXy::ClipAfter)),
     row((OperationType::Chamfer, [true, false, false, false, true, false, false, false, false, true], Some(3), Some(40.0), FloorOwner::OpDial, EntryProbeRule::Prism, LinkCeilingNeed::NoLink, MoveCountModel::FeatureDriven, DocBasis::DepthPerPass, AirCutHint::NoHint, None, AxialEnvelope::NotApplied, RestUse::LevelSkip, TerritoryXy::ClipAfter)),
     row((OperationType::DropCutter, [true, true, false, false, true, false, false, false, false, true], Some(3), Some(45.0), FloorOwner::OpDial, EntryProbeRule::SurfaceFixed { leave_mm: 0.0 }, LinkCeilingNeed::WithRemainingStock, MoveCountModel::Raster, DocBasis::SurfaceHeights, AirCutHint::SurfaceFinish, Some("hookup_mm"), AxialEnvelope::Finish3d, RestUse::LinkSafetyOnly, TerritoryXy::Regions)),
@@ -910,7 +911,9 @@ fn frozen_ux1b() -> Vec<(OperationType, FaceTopRule)> {
     (O::InlayPlug, R),
     (O::Zigzag, S),
     (O::Trace, S),
-    (O::Drill, F),
+    // F19 (2026-10-23): the Drill starts at the higher of the rims and the
+    // stock top; each hole counts its depth from its own rim.
+    (O::Drill, S),
     (O::Bore, S),
     (O::Chamfer, RE),
     (O::DropCutter, F),

@@ -6518,7 +6518,7 @@
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
-      "description": "`set_toolpath_floor` (geometry selection P3.3): the floor of one Pocket,\nProfile, Zigzag or Adaptive 2D toolpath.",
+      "description": "`set_toolpath_floor` (geometry selection P3.3): the floor of one Pocket,\nProfile, Zigzag, Adaptive 2D, Bore or Drill toolpath.",
       "properties": {
         "floor": {
           "description": "The floor, as the project file writes it:\n`{\"from\": \"top\", \"depth\": 6.0}`.",
@@ -6775,6 +6775,26 @@
               "required": [
                 "from",
                 "key",
+                "depth"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "R-B: each hole of a STEP model to its own floor less `depth` (a\nblind hole to its floor circle, a through hole to the model bottom,\nnever below the stock bottom). Drill and Bore only.",
+              "properties": {
+                "depth": {
+                  "description": "mm below each hole floor; a positive value goes deeper.",
+                  "format": "double",
+                  "type": "number"
+                },
+                "from": {
+                  "const": "each_hole",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from",
                 "depth"
               ],
               "type": "object"

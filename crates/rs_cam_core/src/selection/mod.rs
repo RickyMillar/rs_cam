@@ -36,8 +36,8 @@ pub use extend::{CannotExtend, ExtendedEnds, PathSide, StockXy, extend_ends, ext
 pub use flat_regions::{FLAT_REGION_Z_BAND_MM, flat_region_items};
 pub use hole_fit::{HoleFit, HoleFitRule, fit_holes, hole_fit};
 pub use item::{
-    EdgeForm, EdgeMaterial, FaceItem, Item, ItemCounts, ItemError, ItemKind, ItemSet, ModelEdge,
-    Shape, SourceRef,
+    EdgeForm, EdgeMaterial, FaceItem, HoleDepth, Item, ItemCounts, ItemError, ItemKind, ItemSet,
+    ModelEdge, ModelHole, Shape, SourceRef, coaxial_circles,
 };
 pub use key::{CAD_ROUNDING_MM, KEY_MATCH_EPS_MM, MatchKey};
 pub use near::{PickLine, items_near, polyline_distance};

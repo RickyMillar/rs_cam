@@ -8,8 +8,11 @@
 //! only the circles larger than the tool, up to two tool diameters. A
 //! point states no size, so the view does not serve it to a Bore.
 //!
-//! The floor is the op floor (`FloorOwner::OpFloor`, D9):
-//! `ResolvedHeights::bottom_z`. The hole top is the resolved Top Z; on the
+//! The floor is the op floor (`FloorOwner::OpFloor`, D9), per hole (R-B:
+//! `compute::floor::hole_floors`, the spans of the prologue): one Z for
+//! most references, a depth from the rim of each hole under the Top Z,
+//! and the floor of each hole under "each hole floor". The hole top is the
+//! resolved Top Z; on the
 //! remaining stock (`RestUse::StockColumn`, D8) it is the column top over
 //! the circle, read with the hole radius (the helix sweeps the whole
 //! disc), and a hole with no material above its floor is dropped.
@@ -34,8 +37,11 @@ pub(crate) fn generate_bore(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Bore, "generate_bore");
-    let mut circles: Vec<(P2, f64)> = Vec::new();
-    for hole in prepared.holes()?.as_slice() {
+    let spans = prepared.hole_spans().ok_or_else(|| {
+        OperationError::Internal("the Bore prologue gave no hole spans".to_owned())
+    })?;
+    let mut circles: Vec<(P2, f64, f64)> = Vec::new();
+    for (hole, span) in prepared.holes()?.as_slice().iter().zip(spans) {
         let Some(d) = hole.diameter else {
             return Err(OperationError::Internal(
                 "the Bore fit step gave a hole with no diameter (a point); a Bore serves \
@@ -45,21 +51,20 @@ pub(crate) fn generate_bore(
         };
         // Two circles of one size on one centre are one hole: bore it once
         // (G-DRILLTWICE for a Bore).
-        let repeat = circles.iter().any(|(c, e)| {
+        let repeat = circles.iter().any(|(c, e, _)| {
             (c.x - hole.xy.x).abs() < KEY_MATCH_EPS_MM
                 && (c.y - hole.xy.y).abs() < KEY_MATCH_EPS_MM
                 && (e - d).abs() < KEY_MATCH_EPS_MM
         });
         if !repeat {
-            circles.push((hole.xy, d));
+            circles.push((hole.xy, d, span.floor_z));
         }
     }
-    let floor_z = ctx.heights.bottom_z;
     let top_z = ctx.heights.top_z;
     let stock = (op.capabilities().rest_use == RestUse::StockColumn)
         .then(|| prepared.territory().unguarded_stock())
         .flatten();
-    let holes = bore_holes(&circles, top_z, floor_z, stock);
+    let holes = bore_holes(&circles, top_z, stock);
     // The helix is short; the adapter polls once before the kernel.
     if ctx.is_cancelled() {
         return Err(OperationError::Cancelled);
@@ -82,28 +87,32 @@ pub(crate) fn generate_bore(
     ))
 }
 
-/// The holes to bore, with their tops (D8). On fresh stock (`stock` is
-/// `None`) each hole runs from `top_z` to `floor_z`. On the remaining stock
+/// The holes to bore, with their tops (D8). Each circle holds its centre,
+/// its diameter and its floor. On fresh stock (`stock` is `None`) each
+/// hole runs from `top_z` to its floor. On the remaining stock
 /// the top of a hole is the highest material within the hole radius of
 /// its centre (`column_top`), capped at `top_z`; a hole with no material
 /// above its floor is dropped, and a hole that the grid cannot see keeps
 /// `top_z`. The stock is read only when the W2.1 guard finds it in the
 /// frame of the holes.
 fn bore_holes(
-    circles: &[(P2, f64)],
+    circles: &[(P2, f64, f64)],
     top_z: f64,
-    floor_z: f64,
     stock: Option<&crate::dexel_stock::TriDexelStock>,
 ) -> Vec<BoreHole> {
     let Some(first) = circles.first() else {
         return Vec::new();
     };
+    let deepest = circles
+        .iter()
+        .map(|(_, _, floor)| *floor)
+        .fold(f64::INFINITY, f64::min);
     let holes_bbox = circles.iter().fold(
         BoundingBox3 {
-            min: P3::new(first.0.x, first.0.y, floor_z),
+            min: P3::new(first.0.x, first.0.y, deepest),
             max: P3::new(first.0.x, first.0.y, top_z),
         },
-        |mut b, (c, d)| {
+        |mut b, (c, d, _)| {
             let r = d / 2.0;
             b.min.x = b.min.x.min(c.x - r);
             b.min.y = b.min.y.min(c.y - r);
@@ -117,7 +126,7 @@ fn bore_holes(
     let mut dropped = 0_usize;
     let holes: Vec<BoreHole> = circles
         .iter()
-        .filter_map(|&(centre, diameter)| {
+        .filter_map(|&(centre, diameter, floor_z)| {
             let top = match stock.map(|s| column_top(s, centre, diameter / 2.0)) {
                 None | Some(ColumnTop::NoEvidence) => top_z,
                 Some(ColumnTop::Top(t)) => t.min(top_z),

@@ -7,7 +7,7 @@
 - `geometry_tab.rs` (GT-1, FIRST tab; old one is `Cut`): op block, `Pick faces`, Floor line (F25: face floor range), floor face slot, `Boundary`.
 - `selection_section.rs` — one block per selection: summary (Cuts, Selected, hole sizes), Pick + Reset, filter, `list_groups` (default
   row L-R2, a group per rule, per picked kind; `GROUP_CAP` 8), row acts `Rule…`, `Use as floor`, `×`; `row_hover` lights the item; notes
-  (`ADD_A_BORE`, Open paths, findings, `PICK_A_FACE_FIX`, `SKIPPED_ITEMS`). FR-2: a row is short (`row_label` "Ø6.00 Z20", `face_label`),
+  (`ADD_A_BORE`, Open paths, findings, `PICK_A_FACE_FIX`, `SKIPPED_ITEMS`). FR-2: a row is short (`row_label` "Ø6.00 Z20", `face_label`; R-E: a hole row is core `HoleSummary::label` "Ø6 hole, 8 deep", lib `one_hole_is_one_row_re` = MCP),
   `row_full_label` is hover + filter; acts first, label truncates. F32: default rule: never-cut kinds ONE line, no Selected row (MCP parity).
 - `model_sim_panels.rs` — a drawing gets "Import" (scale, join tolerance, report) and "Open shapes" (core
   `open_shapes`, Show me, the two close acts, Join all within, a lost edit in DANGER, the ledger in `Details`).
@@ -21,7 +21,7 @@
   parameter. Width: not from tab or content (F22); "Done · BLOCKED" never truncates (figures drop). Header refusal: `REFUSED_SEE_GEOMETRY`.
   A tab dot comes from `tab_badges::OWNER_TAB`, THE id-to-tab map (F24); an id with no tab gives no dot.
 - A panel door marks the project edited on success; `app.rs` guards on it. A pinned Bottom Z note names
-  the ops that `capabilities().floor_owner` does not mark `HeightsBottom`. An `OpFloor` op has the Floor row (`floor_row`, Cut tab; `Floor::row_references`, no "A picked face"); a reference change and a diagram drag use `FloorReferences` (L-10); the Heights tab has a read-only Floor line, no Bottom row (L-11). The diagram floor runs come from `floor_runs` (`FloorInputs::face_floors`: Z and face count); every run has a hover. F033: every heights write (a row, an Auto button, a diagram drag and its rounding) goes through `admit_heights_edit` (core `ToolpathHeights::edit_refusal`); the badge is `height_order_badge`; the refusal text is GUI state (`state.panels.heights_refusal`, scoped to the toolpath), not egui memory (ui09).
+  the ops that `capabilities().floor_owner` does not mark `HeightsBottom`. An `OpFloor` op (the Drill too, F19) has the Floor row (`floor_row`, Cut tab; `Floor::row_references(item_use)`, no "A picked face"); a reference change and a diagram drag use `FloorReferences` (L-10); the Heights tab has a read-only Floor line, no Bottom row (L-11). The diagram floor runs come from `floor_runs` (`FloorInputs::face_floors`: Z and face count); every run has a hover. F033: every heights write (a row, an Auto button, a diagram drag and its rounding) goes through `admit_heights_edit` (core `ToolpathHeights::edit_refusal`); the badge is `height_order_badge`; the refusal text is GUI state (`state.panels.heights_refusal`, scoped to the toolpath), not egui memory (ui09).
   "Show me" frames `selection_highlight::note_item_keys`: the skipped items of a note's kind and layer, or the one face of an at-the-top note.
 - A draw never writes `rest_analysis.enabled`; `apply_auto_enable` is the door. Do not draw a raw egui
   widget where `ui/components/` has one. A tooltip keys on the registry parameter NAME, never the label.

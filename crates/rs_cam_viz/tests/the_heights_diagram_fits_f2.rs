@@ -559,8 +559,8 @@ fn the_bottom_line_agrees_with_the_panel_r33() {
     // both. If a future edit made every operation answer the same way, the
     // assertions above would pass without testing anything.
     assert_eq!(
-        floors, 5,
-        "Pocket, Profile, Zigzag, Adaptive 2D (P3.7) and Bore (P6.6) own a floor"
+        floors, 6,
+        "Pocket, Profile, Zigzag, Adaptive 2D (P3.7), Bore (P6.6) and Drill (F19) own a floor"
     );
     assert!(
         honoured >= 1 && inert >= 1,

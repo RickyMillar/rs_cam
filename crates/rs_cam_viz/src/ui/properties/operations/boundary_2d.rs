@@ -35,11 +35,14 @@ fn floor_reason(refusal: FloorRefusal) -> &'static str {
         FloorRefusal::NotFinite => "The floor is not a finite number.",
         FloorRefusal::FaceLost => "The floor face is not on the model now.",
         FloorRefusal::NotAFloorItem { .. } => "The floor item is not a face.",
+        FloorRefusal::NoHoleDepth => "No hole of the selection has a known depth.",
+        FloorRefusal::NotForThisOp { .. } => "This operation cannot cut to this floor.",
     }
 }
 
-/// The floor row of Pocket, Profile, Zigzag, Adaptive 2D and Bore (geometry
-/// selection P3.7, design 8.1; P6.6). Two grid rows:
+/// The floor row of Pocket, Profile, Zigzag, Adaptive 2D, Bore and Drill
+/// (geometry selection P3.7, design 8.1; P6.6; R-B). The references are the
+/// ones the op admits (`Floor::row_references`). Two grid rows:
 ///
 /// 1. "Floor from:" and the reference combo (`Floor::EACH_REFERENCE`). A
 ///    change of reference re-expresses the value, so the resolved floor Z
@@ -69,7 +72,7 @@ pub(super) fn floor_row(
                 // UX-8: "A picked face" is not offered here. "Use as floor" in
                 // the Geometry tab is its one door (L-R5); a change away from it
                 // is offered.
-                for template in Floor::row_references() {
+                for template in Floor::row_references(op.capabilities().item_use) {
                     let selected = current.same_reference(&template);
                     let next = match refs {
                         Some(refs) if !selected => {

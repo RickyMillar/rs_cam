@@ -73,6 +73,10 @@ pub(crate) use drawing::drawing_ledger_json;
 pub(crate) use import::model_import_json;
 pub(crate) use obstacles::obstacle_json;
 pub(crate) use selection::item_counts_json;
+// R-E: the GUI/MCP hole row parity test (`ui::properties::tests`) reads the
+// two reply builders.
+#[cfg(test)]
+pub(crate) use selection::{list_model_items_reply, selection_status_reply};
 pub(crate) use stock_changes::stock_change_json;
 
 /// What one command carries from before the mutation into its reply.
@@ -2334,9 +2338,9 @@ impl RsCamApp {
                     )
                 };
                 // UX-7b: the add set the floor "Each picked face".
-                if effects.floor_set.is_some() {
+                if let Some(note) = effects.floor_set_note() {
                     message.push(' ');
-                    message.push_str(rs_cam_core::session::Effects::FLOOR_SET_NOTE);
+                    message.push_str(note);
                 }
                 let reply = self.mcp_mutation_result(
                     message,

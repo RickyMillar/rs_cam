@@ -1086,6 +1086,7 @@ impl OperationConfig {
         match self {
             OperationConfig::Pocket(c) => Some(c.floor.clone()),
             OperationConfig::Bore(c) => Some(c.floor.clone()),
+            OperationConfig::Drill(c) => Some(c.floor.clone()),
             OperationConfig::Profile(c) => Some(c.floor.clone()),
             OperationConfig::Adaptive(c) => Some(c.floor.clone()),
             OperationConfig::Zigzag(c) => Some(c.floor.clone()),
@@ -1094,7 +1095,6 @@ impl OperationConfig {
             | OperationConfig::Inlay(_)
             | OperationConfig::InlayPlug(_)
             | OperationConfig::Trace(_)
-            | OperationConfig::Drill(_)
             | OperationConfig::Chamfer(_)
             | OperationConfig::DropCutter(_)
             | OperationConfig::Adaptive3d(_)
@@ -1149,6 +1149,7 @@ impl OperationConfig {
         let slot = match self {
             OperationConfig::Pocket(c) => &mut c.floor,
             OperationConfig::Bore(c) => &mut c.floor,
+            OperationConfig::Drill(c) => &mut c.floor,
             OperationConfig::Profile(c) => &mut c.floor,
             OperationConfig::Adaptive(c) => &mut c.floor,
             OperationConfig::Zigzag(c) => &mut c.floor,
@@ -1157,7 +1158,6 @@ impl OperationConfig {
             | OperationConfig::Inlay(_)
             | OperationConfig::InlayPlug(_)
             | OperationConfig::Trace(_)
-            | OperationConfig::Drill(_)
             | OperationConfig::Chamfer(_)
             | OperationConfig::DropCutter(_)
             | OperationConfig::Adaptive3d(_)
@@ -1544,9 +1544,9 @@ impl OperationConfig {
                 .collect(),
             tool_constraints: tool_constraints_for_type(op_type),
             // P3.3: the floor is driver-set, so `params` leaves it out.
-            floor: Self::new_default(op_type)
-                .floor()
-                .map(|floor| crate::compute::floor::floor_schema_json(&floor)),
+            floor: Self::new_default(op_type).floor().map(|floor| {
+                crate::compute::floor::floor_schema_json(&floor, op_type.capabilities().item_use)
+            }),
         }
     }
 }

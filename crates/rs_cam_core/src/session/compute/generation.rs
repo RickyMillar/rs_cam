@@ -212,6 +212,17 @@ impl ProjectSession {
                 }
                 None => None,
             };
+        let hole_planes = if matches!(
+            tc.operation.capabilities().item_use,
+            crate::compute::catalog::ItemUse::Holes { .. }
+        ) {
+            self.selection_status(tc, super::super::selection_status::SelectionTarget::Op)
+                .map_or((None, None), |report| {
+                    (report.hole_rim_bottom_z, report.hole_floor_bottom_z)
+                })
+        } else {
+            (None, None)
+        };
         let heights = self.generation_heights(
             tc,
             &ctx,
@@ -220,6 +231,10 @@ impl ProjectSession {
                 top: face_top_z,
                 bottom: selection.face_bottom_z(),
                 floor_face,
+                // R-B: the hole planes of the same report that the status
+                // reads (status = generation).
+                hole_rim_bottom: hole_planes.0,
+                hole_floor_bottom: hole_planes.1,
             },
         )?;
 

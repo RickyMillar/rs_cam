@@ -133,7 +133,7 @@ fn controller(tool_diameter: f64) -> AppController<SilentBackend> {
         .tool(tool)
         .model(h::drawing_model(holes()));
     let drill = OperationConfig::Drill(DrillConfig {
-        depth: 6.0,
+        floor: rs_cam_core::compute::floor::Floor::Top { depth: 6.0 },
         selection: rule(),
         ..DrillConfig::default()
     });

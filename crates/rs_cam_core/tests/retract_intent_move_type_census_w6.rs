@@ -704,7 +704,7 @@ fn flat_cases() -> Vec<FlatCase> {
         (
             || {
                 OperationConfig::Drill(DrillConfig {
-                    depth: 8.0,
+                    floor: rs_cam_core::compute::floor::Floor::Top { depth: 8.0 },
                     ..DrillConfig::default()
                 })
             },

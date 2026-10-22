@@ -37,11 +37,11 @@ use crate::polygon::{Polygon2, detect_containment, detect_containment_tagged};
 
 use super::extend::{CannotExtend, PathSide, extend_to_stock, rings_touch};
 use super::hole_fit::HoleFitRule;
-use super::item::{EdgeForm, EdgeMaterial, Item, ItemKind, Shape, SourceRef};
+use super::item::{EdgeForm, EdgeMaterial, HoleDepth, Item, ItemKind, ModelHole, Shape, SourceRef};
 use super::refusal::{
     EdgeRefusal, ItemRef, NoteCause, RefusalCause, SelectionNote, SelectionRefusal,
 };
-use super::resolve::{ResolvedSelection, SelectionFrame, SetupFrame};
+use super::resolve::{MatchedBy, ResolvedSelection, SelectionFrame, SetupFrame};
 use super::rule::Facing;
 
 impl ItemKind {
@@ -212,6 +212,12 @@ pub struct Hole {
     /// The circle diameter; `None` for a point.
     pub diameter: Option<f64>,
     pub layer: Option<String>,
+    /// R-B: the Z of the rim of a STEP hole, in the frame of the
+    /// selection. `None` for a point or a circle of a drawing.
+    pub rim_z: Option<f64>,
+    /// R-B: the depth of a STEP hole below its rim. `None` for a drawing
+    /// item and for a model circle with no floor circle below it.
+    pub depth: Option<HoleDepth>,
 }
 
 /// Hole positions, in selection order. Two holes on one centre stay two
@@ -489,6 +495,27 @@ fn view_with<F: SelectionFrame>(
     let mut roles: Vec<ItemRole> = vec![ItemRole::Skipped; resolved.items().len()];
     for (at, r) in resolved.items().iter().enumerate() {
         let shape = r.item().shape();
+        // R-B: a hole of a STEP model, for a Drill.
+        if is_drill_use(item_use) && r.item().model_hole().is_some() {
+            if !resolved.upright() {
+                return Err(SelectionRefusal::new(
+                    Some(ItemRef::new(r.identity().clone())),
+                    RefusalCause::HoleInTurnedSetup,
+                ));
+            }
+            // The floor circle is a part of its hole: a pick of it by key
+            // refuses; a rule that names circles leaves it out with no
+            // note (the rim row stands for the hole).
+            if r.item().model_hole() == Some(ModelHole::Floor) {
+                if r.by() == MatchedBy::Pick {
+                    return Err(SelectionRefusal::new(
+                        Some(ItemRef::new(r.identity().clone())),
+                        RefusalCause::HoleFloorNotRim,
+                    ));
+                }
+                continue;
+            }
+        }
         let serves = item_serves(r.item(), item_use, resolved.upright()).map_err(|why| {
             SelectionRefusal::new(
                 Some(ItemRef::new(r.identity().clone())),
@@ -699,6 +726,8 @@ fn view_with<F: SelectionFrame>(
                             xy: *p,
                             diameter: None,
                             layer,
+                            rim_z: None,
+                            depth: None,
                         },
                         Shape::Circle {
                             centre, diameter, ..
@@ -706,6 +735,8 @@ fn view_with<F: SelectionFrame>(
                             xy: *centre,
                             diameter: Some(*diameter),
                             layer,
+                            rim_z: item.z(),
+                            depth: item.rim_depth(),
                         },
                         Shape::Loop(_) | Shape::Path(_) | Shape::Face(_) => return None,
                     };
@@ -728,6 +759,17 @@ fn view_with<F: SelectionFrame>(
         },
         notes,
     ))
+}
+
+/// R-B: true for the item use of a Drill: holes of the tool size.
+pub(crate) const fn is_drill_use(item_use: ItemUse) -> bool {
+    matches!(
+        item_use,
+        ItemUse::Holes {
+            fit: HoleFitRule::ToolSize,
+            ..
+        }
+    )
 }
 
 /// Whether an op of `use_` cuts `item` ([`Shape::serves`]), and for an

@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::compute::catalog::ItemUse;
 use crate::ids::ModelId;
 
+use super::hole_fit::HoleFitRule;
 use super::item::{Item, ItemKind, Shape, SourceRef};
 use super::key::MatchKey;
 use super::refusal::{RefusalCause, SelectionRefusal};
@@ -211,6 +212,11 @@ impl Filter {
 ///   the stepped block meets the Z 30 wall), and a V-bit along a concave
 ///   edge cuts into the wall above it. The convex runs of each ring are
 ///   its chains.
+/// - R-B (operator ruling 2026-10-23): a Drill ([`HoleFitRule::ToolSize`])
+///   takes the RIM circle of each hole that has a depth
+///   ([`Item::rim_depth`]), and no ring. The floor circle of a blind hole
+///   does not serve. The fit step then keeps the rims of the tool size.
+///   The Bore and the Pin Drill keep the Q3 rule.
 pub(super) fn served_by_default(item: &Item, item_use: ItemUse) -> bool {
     let kind = item.kind();
     if item.z().is_none() {
@@ -222,6 +228,13 @@ pub(super) fn served_by_default(item: &Item, item_use: ItemUse) -> bool {
                 .model_edge()
                 .is_some_and(|edge| !edge.ring && edge.is_convex_top()),
             ItemKind::Point | ItemKind::Face => false,
+        },
+        ItemUse::Holes {
+            fit: HoleFitRule::ToolSize,
+            ..
+        } => match kind {
+            ItemKind::Circle => item.rim_depth().is_some(),
+            ItemKind::Loop | ItemKind::Path | ItemKind::Point | ItemKind::Face => false,
         },
         ItemUse::None
         | ItemUse::Regions

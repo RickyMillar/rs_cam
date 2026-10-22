@@ -1326,6 +1326,21 @@ pub struct Effects {
 impl Effects {
     /// The one-line note of operator ruling Q2: the GUI notice and the MCP
     /// reply give it when [`Effects::floor_set`] is `Some`.
+    /// R-B: the one-line note when the floor becomes "Each hole floor".
+    pub const EACH_HOLE_FLOOR_NOTE: &'static str =
+        "The floor is now 'Each hole floor': each hole is drilled from its rim to its own floor.";
+
+    /// The note of [`Effects::floor_set`]: [`Self::EACH_HOLE_FLOOR_NOTE`]
+    /// for "Each hole floor", else [`Self::FLOOR_SET_NOTE`]. `None` when no
+    /// floor was set. Every surface reads this one text.
+    #[must_use]
+    pub fn floor_set_note(&self) -> Option<&'static str> {
+        self.floor_set.as_ref().map(|floor| match floor {
+            crate::compute::floor::Floor::EachHole { .. } => Self::EACH_HOLE_FLOOR_NOTE,
+            _ => Self::FLOOR_SET_NOTE,
+        })
+    }
+
     pub const FLOOR_SET_NOTE: &'static str =
         "The floor is now 'Each picked face': each face cuts to its own height.";
 }
@@ -1683,9 +1698,9 @@ pub struct AddToolpathArgs {
 ///
 /// The command adds ONE Bore toolpath directly after the Drill, in the
 /// setup of the Drill. The Bore takes a copy of the Drill selection, its
-/// model, its tool and its spindle speed. The Drill `depth` is a depth
-/// below the stock top, so the Bore floor is `Floor::StockTop` with the
-/// same depth. Every other Bore value is the `BoreConfig` default.
+/// model, its tool, its spindle speed, its floor and its heights (R-B: both
+/// ops read one per-hole floor rule, so "Each hole floor" gives each bored
+/// hole its own floor). Every other Bore value is the `BoreConfig` default.
 /// [`Effects::created`] reports the new toolpath's INDEX.
 ///
 /// The command refuses when the toolpath at `index` does not carry the id

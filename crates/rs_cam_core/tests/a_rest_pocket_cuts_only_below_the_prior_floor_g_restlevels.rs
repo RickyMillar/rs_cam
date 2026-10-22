@@ -918,7 +918,7 @@ const HOLE_OUTSIDE_A: [f64; 2] = [HALF + SHIFT / 2.0 + TOOL_R / 2.0, 0.0];
 
 fn drill(depth: f64) -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
-        depth,
+        floor: rs_cam_core::compute::floor::Floor::Top { depth },
         ..DrillConfig::default()
     })
 }

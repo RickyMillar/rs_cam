@@ -204,7 +204,12 @@ impl DrillCycleType {
     /// describe the same cycle — both consumers go through here.
     pub fn to_core(self, cfg: &DrillConfig) -> crate::ops::drill::DrillCycle {
         use crate::ops::drill::DrillCycle;
-        let peck_depth = clamp_peck_depth(cfg.peck_depth, cfg.depth);
+        // A floor that is not a depth below the top (each hole floor, a Z)
+        // states no one depth, so the peck is not clamped here.
+        let peck_depth = clamp_peck_depth(
+            cfg.peck_depth,
+            cfg.floor.depth_below_top().unwrap_or(f64::NAN),
+        );
         match self {
             Self::Simple => DrillCycle::Simple,
             Self::Dwell => DrillCycle::Dwell(cfg.dwell_time),
@@ -333,8 +338,12 @@ impl Default for TraceConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct DrillConfig {
-    #[param(help = HELP_DEPTH, range = 0.5..=100.0)]
-    pub depth: f64,
+    /// The floor and its reference (R-B, F19; geometry selection D9). A
+    /// depth below the Top Z counts from the rim of each hole of a STEP
+    /// model. `Floor::EachHole` drills each hole to its own floor. The file
+    /// has no default for it: a file states it.
+    #[param(driver_set = DRIVER_SET_FLOOR)]
+    pub floor: Floor,
     pub cycle: DrillCycleType,
     #[param(help = HELP_PECK_DEPTH, min = 0.5, max = 50.0)]
     pub peck_depth: f64,
@@ -383,7 +392,7 @@ pub struct DrillConfig {
 impl Default for DrillConfig {
     fn default() -> Self {
         Self {
-            depth: 10.0,
+            floor: Floor::Top { depth: 10.0 },
             cycle: DrillCycleType::Peck,
             peck_depth: 3.0,
             dwell_time: 0.5,
@@ -3343,8 +3352,8 @@ impl_operation_params!(DrillConfig {
     ramp_feed_rate: none,
     stepover: none,
     depth_per_pass: none,
-    total_depth: none,
-    depth_semantics: Explicit(depth)
+    total_depth: floor,
+    depth_semantics: Floor(floor)
 });
 
 // Geometry selection P6.6: the helix feed is the ramp feed, else the
@@ -3725,7 +3734,7 @@ mod tests {
     fn drill_selection_serde_round_trip() {
         use crate::selection::{ItemKind, MatchKey, SourceRef};
         let no_key = r#"{
-            "depth": 10.0,
+            "floor": { "from": "top", "depth": 10.0 },
             "cycle": "peck",
             "peck_depth": 3.0,
             "dwell_time": 0.5,

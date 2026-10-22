@@ -66,19 +66,28 @@ pub(crate) fn selection_report_json(
     tc: &rs_cam_core::session::ToolpathConfig,
     report: &SelectionReport,
 ) -> serde_json::Value {
+    // P4.4: one row per item of the model, index-aligned with
+    // `item_states` (the R-E fold of `list_model_items` is a read for an
+    // agent, not this alignment).
+    let source = rs_cam_core::selection::SourceRef::Model(tc.model_id);
     let item_states: Vec<serde_json::Value> = session
-        .list_model_items(tc.model_id, None, None)
-        .map(|items| {
-            items
+        .model_by_id(tc.model_id)
+        .map(|model| {
+            model
+                .items
                 .iter()
                 .zip(&report.item_states)
                 .enumerate()
                 .map(|(index, (item, state))| {
+                    let key = MatchKey {
+                        source,
+                        ..item.key().clone()
+                    };
                     serde_json::json!({
-                        "key": key_json(&item.key),
+                        "key": key_json(&key),
                         "state": state,
                         "floor_z": report.item_floor_z.get(index).copied().flatten(),
-                        "hole_fit": hole_fit_json(report, tc.model_id, &item.key),
+                        "hole_fit": hole_fit_json(report, tc.model_id, &key),
                     })
                 })
                 .collect()
@@ -125,6 +134,8 @@ pub(crate) fn selection_report_json(
             }))
             .collect::<Vec<_>>(),
         "refusal": report.refusal.as_ref().map(ToString::to_string),
+        // R-E: each hole once; a hole of a STEP model gives its rim Z, its
+        // depth and THE hole text (core `hole_label`).
         "holes": report
             .holes
             .iter()
@@ -132,6 +143,28 @@ pub(crate) fn selection_report_json(
                 "xy": [hole.xy.x, hole.xy.y],
                 "diameter": hole.diameter,
                 "layer": hole.layer,
+                "rim_z": hole.rim_z,
+                "depth_mm": hole.depth.map(|d| d.depth_mm()),
+                "through": hole.depth.map(|d| d.is_through()),
+                "label": hole
+                    .diameter
+                    .zip(hole.depth)
+                    .map(|(d, depth)| rs_cam_core::session::hole_label(d, depth)),
+            }))
+            .collect::<Vec<_>>(),
+        // GT-2, R-E: the rows of the GUI selected list, one per hole.
+        "rows": report
+            .rows
+            .iter()
+            .map(|row| serde_json::json!({
+                "key": key_json(&row.key),
+                "by": match row.by {
+                    rs_cam_core::selection::MatchedBy::Default { .. } => "default",
+                    rs_cam_core::selection::MatchedBy::Named { .. } => "rule",
+                    rs_cam_core::selection::MatchedBy::Pick => "pick",
+                },
+                "plane_z": row.plane_z,
+                "hole": row.hole.as_ref().map(hole_json),
             }))
             .collect::<Vec<_>>(),
         "selected": report.selected.iter().map(key_json).collect::<Vec<_>>(),
@@ -147,13 +180,28 @@ pub(crate) fn selection_report_json(
     })
 }
 
-/// One row of the `list_model_items` read.
+/// R-E: one hole as one value: the diameter, the rim Z (model frame), the
+/// depth, the floor circle key and THE hole text (`HoleSummary::label`).
+pub(crate) fn hole_json(hole: &rs_cam_core::session::HoleSummary) -> serde_json::Value {
+    serde_json::json!({
+        "diameter": hole.diameter,
+        "rim_z": hole.rim_z,
+        "depth_mm": hole.depth.depth_mm(),
+        "through": hole.depth.is_through(),
+        "floor_key": hole.floor_key.as_ref().map(key_json),
+        "label": hole.label(),
+    })
+}
+
+/// One row of the `list_model_items` read. R-E: a hole rim row carries
+/// `hole`; the floor circle of that hole is not a row.
 pub(crate) fn model_item_json(item: &ModelItem) -> serde_json::Value {
     serde_json::json!({
         "kind": item.kind,
         "layer": item.layer,
         "measure": item.measure,
         "key": key_json(&item.key),
+        "hole": item.hole.as_ref().map(hole_json),
     })
 }
 
@@ -358,11 +406,11 @@ impl RsCamApp {
                     })
                 })
         };
-        // Operator ruling Q2: the first face pick set the floor.
+        // Operator ruling Q2 (R-B): the edit set the floor; core gives the
+        // one note of that floor.
         let floor_note = effects
-            .floor_set
-            .as_ref()
-            .map_or_else(String::new, |_| format!(" {}", Effects::FLOOR_SET_NOTE));
+            .floor_set_note()
+            .map_or_else(String::new, |note| format!(" {note}"));
         CoreReply::succeeded(self.mcp_mutation_result(
             format!("Selection of toolpath {index} edited.{floor_note} Regenerate to apply."),
             applied,
@@ -1986,8 +2034,9 @@ mod tests {
         let click = gui.pick_edit(&tc, SelectionTarget::Op, key).unwrap();
         edit(&mut gui, 0, click);
 
-        // MCP: `near` at the same point, circles only, lists the Z 20 rim
-        // first; its key goes into `add_pick`.
+        // MCP: `near` at the same point, circles only, lists the Z 20 rim;
+        // R-E: the floor circle folds into the rim row (one row per hole);
+        // its key goes into `add_pick`.
         let mut mcp = project();
         let p: ListModelItemsParam = serde_json::from_value(serde_json::json!({
             "model_id": 0,
@@ -1996,7 +2045,12 @@ mod tests {
         }))
         .unwrap();
         let reply = list_model_items_reply(&mcp, &p);
-        assert_eq!(reply["count"], 2, "both rims are near: {reply}");
+        assert_eq!(reply["count"], 1, "one row for the hole: {reply}");
+        assert_eq!(
+            reply["items"][0]["hole"]["label"],
+            serde_json::json!("\u{00D8}6 hole, 8 deep"),
+            "{reply}"
+        );
         let first = &reply["items"][0];
         assert_eq!(first["key"]["z"], serde_json::json!(20.0), "{reply}");
         wire_edit(

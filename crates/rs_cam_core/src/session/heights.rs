@@ -87,6 +87,13 @@ pub(crate) struct FacePlanes {
     pub(crate) bottom: Option<f64>,
     /// UX-8: the plane Z of the face of the floor "A picked face".
     pub(crate) floor_face: Option<f64>,
+    /// R-B: the lowest rim Z of the fitted holes of a Drill or a Bore
+    /// (`compute::floor::hole_planes`). `Some` makes the auto top
+    /// "auto: hole rims".
+    pub(crate) hole_rim_bottom: Option<f64>,
+    /// R-B: the deepest hole floor of the fitted holes, with no extra
+    /// depth and no stock clamp. [`Floor::EachHole`] reads it.
+    pub(crate) hole_floor_bottom: Option<f64>,
 }
 
 /// Where the resolved Top Z of a toolpath comes from.
@@ -99,6 +106,10 @@ pub enum TopSource {
     /// the higher of the highest face and the stock top (UX-1, UX-1b); the
     /// depth measures from the highest face.
     AutoFaces,
+    /// Auto: the rims of the holes of a Drill or a Bore (R-B, F19). The
+    /// top is the higher of the highest rim and the stock top; each hole
+    /// counts its depth from its own rim.
+    AutoHoleRims,
     /// The stored Top Z (Manual or from a reference).
     Pinned,
 }
@@ -110,6 +121,7 @@ impl TopSource {
         match self {
             Self::AutoStockTop => "auto: stock top",
             Self::AutoFaces => "auto: faces",
+            Self::AutoHoleRims => "auto: hole rims",
             Self::Pinned => "pinned",
         }
     }
@@ -158,11 +170,17 @@ pub struct ToolpathHeights {
     /// UX-1: the auto top under a face pick is the higher of the face top
     /// and the stock top ([`clamps_face_top`] of the op).
     clamp: bool,
+    /// R-B: the face top comes from the rims of holes, so an auto top
+    /// reads [`TopSource::AutoHoleRims`].
+    rims: bool,
     /// The top of the up faces of the selection, in the setup frame.
     face_top_z: Option<f64>,
     /// The plane Z of the lowest up face of the selection, in the setup
     /// frame (the floor "each picked face" reads it).
     face_bottom_z: Option<f64>,
+    /// R-B: the deepest hole floor of the selection, clamped at the stock
+    /// bottom, in the setup frame (the floor "each hole floor" reads it).
+    hole_floor_z: Option<f64>,
     /// UX-8: the plane Z of the face of the floor "A picked face", in the
     /// setup frame, or `None` (not that floor, or the key does not
     /// resolve).
@@ -183,7 +201,10 @@ impl ToolpathHeights {
     /// Where the top of another `HeightsConfig` of this toolpath comes from.
     #[must_use]
     pub fn top_source(&self, heights: &HeightsConfig) -> TopSource {
-        apply_rule(heights, &self.context, self.face_top_z, self.clamp).1
+        rim_source(
+            apply_rule(heights, &self.context, self.face_top_z, self.clamp).1,
+            self.rims,
+        )
     }
 
     /// P3.7 (ruling L-10): the Z of each floor reference of this toolpath
@@ -205,6 +226,7 @@ impl ToolpathHeights {
             model_top_z: self.context.model_top_z,
             face_bottom_z: self.face_bottom_z,
             floor_face_z: self.floor_face_z,
+            hole_floor_z: self.hole_floor_z,
         }
     }
 
@@ -290,7 +312,12 @@ impl ToolpathHeights {
             FaceTopRule::RefuseBuriedEach => self.face_bottom_z,
             FaceTopRule::HigherOfFaceAndStock | FaceTopRule::Face => return None,
         };
-        if stock_source.reads_machined_stock() || self.top_source(heights) != TopSource::AutoFaces {
+        if stock_source.reads_machined_stock()
+            || !matches!(
+                self.top_source(heights),
+                TopSource::AutoFaces | TopSource::AutoHoleRims
+            )
+        {
             return None;
         }
         let buried_mm = self.context.stock_top_z - item_z?;
@@ -364,11 +391,22 @@ impl ToolpathHeights {
             heights: resolved,
             top_from,
             clamp: false,
+            rims: false,
             face_top_z: None,
             face_bottom_z: None,
+            hole_floor_z: None,
             floor_face_z: None,
             floor: context.floor.map(Ok),
         }
+    }
+}
+
+/// R-B: [`TopSource::AutoFaces`] reads [`TopSource::AutoHoleRims`] when
+/// the face top comes from hole rims.
+const fn rim_source(source: TopSource, rims: bool) -> TopSource {
+    match source {
+        TopSource::AutoFaces if rims => TopSource::AutoHoleRims,
+        other => other,
     }
 }
 
@@ -526,6 +564,8 @@ impl ProjectSession {
                 top: face_top_z,
                 bottom: op_status.face_bottom_z,
                 floor_face: floor_face_z,
+                hole_rim_bottom: op_status.hole_rim_bottom_z,
+                hole_floor_bottom: op_status.hole_floor_bottom_z,
             },
         ))
     }
@@ -554,7 +594,7 @@ impl ProjectSession {
 
     /// The mesh of `tc` ([`Self::toolpath_mesh`]) in the frame of the setup
     /// of `ctx`.
-    fn setup_mesh(
+    pub(super) fn setup_mesh(
         &self,
         tc: &ToolpathConfig,
         ctx: &SetupEvalContext,
@@ -696,6 +736,55 @@ impl ProjectSession {
         .then_some(candidate)
     }
 
+    /// THE "each hole" default rule (R-B, operator ruling 2026-10-23): the
+    /// op config of `tc` with the floor "Each hole floor", depth 0, when
+    /// the rule applies, else `None`. The `AddToolpath` row, the op change
+    /// and the `EditSelection` row call it, as [`Self::each_face_floor_due`].
+    ///
+    /// The rule applies when all of these are true:
+    ///
+    /// - the op is a Drill (`HoleFitRule::ToolSize`) and holds a floor;
+    /// - the floor is still a default floor
+    ///   ([`OperationConfig::floor_is_default`]);
+    /// - a fitted hole of the selection has a depth (a rim of a STEP hole:
+    ///   `SelectionReport::hole_floor_bottom_z`);
+    /// - the operation check accepts the new floor.
+    ///
+    /// A DXF Drill has no hole depth, so it keeps its depth below the top.
+    ///
+    /// [`OperationConfig::floor_is_default`]: crate::compute::catalog::OperationConfig::floor_is_default
+    pub(crate) fn each_hole_floor_due(
+        &self,
+        tc: &ToolpathConfig,
+    ) -> Option<crate::compute::catalog::OperationConfig> {
+        use crate::compute::catalog::ItemUse;
+        use crate::selection::HoleFitRule;
+        let drills = matches!(
+            tc.operation.capabilities().item_use,
+            ItemUse::Holes {
+                fit: HoleFitRule::ToolSize,
+                ..
+            }
+        );
+        let stock = crate::feeds::suggest::StockContext::from_stock_bbox(
+            self.stock_bbox(),
+            self.stock.padding,
+        );
+        if !drills || !tc.operation.floor_is_default(&stock) {
+            return None;
+        }
+        let has_depth = self
+            .selection_status(tc, SelectionTarget::Op)
+            .is_ok_and(|report| report.hole_floor_bottom_z.is_some());
+        if !has_depth {
+            return None;
+        }
+        let mut candidate = tc.operation.clone();
+        (candidate.set_floor(Floor::EachHole { depth: 0.0 })
+            && crate::compute::domain::validate_toolpath_operation(&tc.name, &candidate).is_ok())
+        .then_some(candidate)
+    }
+
     /// The floor that "Clear" of the floor face slot writes (geometry
     /// selection GT-4, rule L-R5): "Each picked face", depth 0, when an up
     /// face or a model ring of the op selection remains and the op accepts
@@ -806,11 +895,21 @@ impl ProjectSession {
         tc.floor_conflict()?;
         let answer = self.heights_in_setup(tc, ctx, setup_mesh, planes);
         let each_face = matches!(tc.operation.floor(), Some(Floor::EachFace { .. }));
+        // R-B: under "each hole floor" a hole with no depth and a hole
+        // floor at the top refuse in the prologue, by item
+        // (`compute::floor::hole_floors`), as `selection_status` refuses
+        // them.
+        let each_hole = matches!(tc.operation.floor(), Some(Floor::EachHole { .. }));
         if let Some(refusal) = answer.floor_refusal(&tc.heights)
             && !(each_face
                 && matches!(
                     refusal,
                     FloorRefusal::NoFace | FloorRefusal::AboveTop { .. }
+                ))
+            && !(each_hole
+                && matches!(
+                    refusal,
+                    FloorRefusal::NoHoleDepth | FloorRefusal::AboveTop { .. }
                 ))
         {
             return Err(SessionError::InvalidParam(format!(
@@ -840,7 +939,8 @@ impl ProjectSession {
             .into_iter()
             .filter(|v| {
                 v.refuses()
-                    && !(each_face && matches!(v, HeightOrderViolation::BottomNotBelowTop { .. }))
+                    && !((each_face || each_hole)
+                        && matches!(v, HeightOrderViolation::BottomNotBelowTop { .. }))
             })
             .collect();
         if !violations.is_empty() {
@@ -866,6 +966,8 @@ impl ProjectSession {
             top: face_top_z,
             bottom: face_bottom_z,
             floor_face: floor_face_z,
+            hole_rim_bottom,
+            hole_floor_bottom,
         } = planes;
         // K3: the heights do not read the obstacles. The obstacle step
         // after the dressups lifts only the moves that cross one.
@@ -876,20 +978,35 @@ impl ProjectSession {
         // P3.2: the floor resolves against the stock and the model of this
         // context. The top is not known yet, so `Floor::Top` stays relative.
         // P3.5: each face reads the planes of the up faces.
-        let floor = tc
-            .operation
-            .floor()
-            .map(|floor| floor.resolve(&context, face_bottom_z, floor_face_z));
+        // R-B: a through hole stops at the stock bottom (O-2).
+        let hole_floor_z = hole_floor_bottom.map(|z| z.max(context.stock_bottom_z));
+        let floor = tc.operation.floor().map(|floor| {
+            let resolved = floor.resolve(&context, face_bottom_z, floor_face_z, hole_floor_z);
+            // R-B, F19: under an auto top each hole counts a depth below
+            // the Top Z from its own rim, so the Bottom Z is the lowest rim
+            // less the depth (`compute::floor::hole_floors`).
+            match (&floor, hole_rim_bottom, resolved) {
+                (Floor::Top { depth }, Some(rim), Ok(_)) if tc.heights.top_z.is_auto() => {
+                    Ok(FloorRef::PerHole {
+                        deepest: rim - depth,
+                    })
+                }
+                (_, _, resolved) => resolved,
+            }
+        });
         context.floor = floor.and_then(Result::ok);
         let clamp = clamps_face_top(&tc.operation);
+        let rims = hole_rim_bottom.is_some();
         let (heights, top_from) = apply_rule(&tc.heights, &context, face_top_z, clamp);
         ToolpathHeights {
             context,
             heights,
-            top_from,
+            top_from: rim_source(top_from, rims),
             clamp,
+            rims,
             face_top_z,
             face_bottom_z,
+            hole_floor_z,
             floor_face_z,
             floor,
         }

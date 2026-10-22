@@ -233,7 +233,7 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
         (
             "drill",
             OperationConfig::Drill(DrillConfig {
-                depth: DEPTH_MM,
+                floor: rs_cam_core::compute::floor::Floor::Top { depth: DEPTH_MM },
                 ..DrillConfig::default()
             }),
             ToolKind::EndMill,

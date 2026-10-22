@@ -231,7 +231,7 @@ fn drill_toolpath(tool_id: usize, model_id: usize) -> ToolpathConfig {
     // dwelling cycle would therefore make the runtime identities below read
     // short for a reason that has nothing to do with N2.
     let drill = DrillConfig {
-        depth: 10.0,
+        floor: rs_cam_core::compute::floor::Floor::Top { depth: 10.0 },
         cycle: DrillCycleType::Simple,
         feed_rate: 300.0,
         ..DrillConfig::default()

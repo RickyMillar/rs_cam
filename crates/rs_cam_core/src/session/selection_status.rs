@@ -64,10 +64,10 @@ use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::{ModelId, ToolpathId};
 use crate::selection::hole_fit::DrillSize;
 use crate::selection::{
-    FLAT_REGION_Z_BAND_MM, FacesByFacing, Hole, HoleFit, HoleFitRule, ItemError, ItemKind, ItemRef,
-    ItemRole, ItemSet, MatchKey, MatchedBy, MeshFaces, ModelFrame, RefusalCause, ResolveScope,
-    ResolvedSelection, Selection, SelectionEdit, SelectionNote, SelectionRefusal, SetupFrame,
-    Shape, SourceRef, fit_holes, hole_fit,
+    FLAT_REGION_Z_BAND_MM, FacesByFacing, Hole, HoleDepth, HoleFit, HoleFitRule, ItemError,
+    ItemKind, ItemRef, ItemRole, ItemSet, MatchKey, MatchedBy, MeshFaces, ModelFrame, RefusalCause,
+    ResolveScope, ResolvedSelection, Selection, SelectionEdit, SelectionNote, SelectionRefusal,
+    SetupFrame, Shape, SourceRef, fit_holes, hole_fit,
 };
 use crate::session::{LoadedModel, ProjectSession, SessionError, ToolpathConfig};
 
@@ -328,8 +328,92 @@ pub struct SelectionReport {
     /// Geometry selection GT-2: one row per item of `selected`, in the same
     /// order: what holds the item (the default rule, a named rule, a pick)
     /// and its plane Z in the SETUP frame. The Geometry tab groups its
-    /// list by it.
+    /// list by it. R-E: the floor circle of a hole whose rim is a row is
+    /// not a row; the rim row holds the hole ([`SelectedRow::hole`]).
     pub rows: Vec<SelectedRow>,
+    /// R-B: the lowest rim Z of the fitted holes of a Drill or a Bore, in
+    /// the SETUP frame (`compute::floor::hole_planes`). `Some` makes the
+    /// auto top "auto: hole rims"; [`ProjectSession::toolpath_heights`]
+    /// and generation read it.
+    pub hole_rim_bottom_z: Option<f64>,
+    /// R-B: the deepest hole floor of the fitted holes with no extra depth
+    /// and no stock clamp, in the SETUP frame. "Each hole floor" reads it.
+    pub hole_floor_bottom_z: Option<f64>,
+}
+
+/// R-E (operator ruling 2026-10-23): one round hole of a STEP model as
+/// one row: its rim circle and its depth. The GUI Geometry tab, the MCP
+/// `list_model_items` and `selection_status` replies read this one value
+/// and its one text ([`Self::label`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct HoleSummary {
+    /// The diameter of the hole (mm).
+    pub diameter: f64,
+    /// The Z of the rim, in the MODEL frame.
+    pub rim_z: f64,
+    /// The depth of the hole below its rim.
+    pub depth: HoleDepth,
+    /// The key of the floor circle of a blind hole (source: the model), or
+    /// `None` for a through hole.
+    pub floor_key: Option<MatchKey>,
+}
+
+impl HoleSummary {
+    /// The hole of the rim at `index` of `items`, or `None` when that item
+    /// is not a hole rim with a depth. `source` is the source the keys
+    /// state.
+    #[must_use]
+    pub fn of(items: &ItemSet, index: usize, source: SourceRef) -> Option<Self> {
+        let rim = items.iter().nth(index)?;
+        let depth = rim.rim_depth()?;
+        let Shape::Circle { diameter, .. } = rim.shape() else {
+            return None;
+        };
+        Some(Self {
+            diameter: *diameter,
+            rim_z: rim.z()?,
+            depth,
+            floor_key: items
+                .hole_floor_of(index)
+                .and_then(|at| items.iter().nth(at))
+                .map(|floor| MatchKey {
+                    source,
+                    ..floor.key().clone()
+                }),
+        })
+    }
+
+    /// THE text of a hole row: "Ø6 hole, 8 deep", "Ø6 hole, through".
+    #[must_use]
+    pub fn label(&self) -> String {
+        hole_label(self.diameter, self.depth)
+    }
+}
+
+/// R-E: THE text of one hole: "Ø6 hole, 8 deep" or "Ø6 hole, through".
+/// Each number is [`short_number`].
+#[must_use]
+pub fn hole_label(diameter: f64, depth: HoleDepth) -> String {
+    let d = short_number(diameter);
+    match depth {
+        HoleDepth::Blind { depth_mm } => {
+            format!("\u{00D8}{d} hole, {} deep", short_number(depth_mm))
+        }
+        HoleDepth::Through { .. } => format!("\u{00D8}{d} hole, through"),
+    }
+}
+
+/// `value` at 2 decimals with no trailing zero: 20.00 is "20", 12.50 is
+/// "12.5". THE short number of the Geometry tab rows and of the hole text.
+#[must_use]
+pub fn short_number(value: f64) -> String {
+    let text = format!("{value:.2}");
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    if text == "-0" {
+        "0".to_owned()
+    } else {
+        text.to_owned()
+    }
 }
 
 /// One item that a selection holds (geometry selection GT-2): a row of
@@ -348,6 +432,8 @@ pub struct SelectedRow {
     /// The plane Z of a face, or the Z of a model edge item, in the SETUP
     /// frame. `None` for a drawing item.
     pub plane_z: Option<f64>,
+    /// R-E: the hole when this row is the rim of a hole with a depth.
+    pub hole: Option<HoleSummary>,
 }
 
 impl SelectionReport {
@@ -379,6 +465,9 @@ pub struct ModelItem {
     /// The key measure: loop and face `sqrt(|area|)`, path length, circle
     /// diameter, point 0 (mm).
     pub measure: f64,
+    /// R-E: the hole when this item is the rim of a hole with a depth. The
+    /// floor circle of that hole is not a row of the answer.
+    pub hole: Option<HoleSummary>,
 }
 
 /// The `near` filter of the `list_model_items` read (geometry selection
@@ -725,23 +814,37 @@ impl ProjectSession {
                 .collect()
         });
         let own_source = SourceRef::Model(tc.model_id);
-        let rows = frames
+        let own_items = self.toolpath_model(tc).ok().map(|m| Arc::clone(&m.items));
+        let rows: Vec<SelectedRow> = frames
             .model
             .items()
             .iter()
             .zip(frames.setup.items())
-            .map(|(model, setup)| SelectedRow {
-                key: model.identity().clone(),
-                by: model.by(),
-                own_index: (model.item().source() == own_source).then(|| model.index()),
-                plane_z: match setup.item().shape() {
-                    Shape::Face(face) => Some(face.plane_z),
-                    Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => {
-                        setup.item().z()
-                    }
-                },
+            .map(|(model, setup)| {
+                let own_index = (model.item().source() == own_source).then(|| model.index());
+                SelectedRow {
+                    key: model.identity().clone(),
+                    by: model.by(),
+                    own_index,
+                    plane_z: match setup.item().shape() {
+                        Shape::Face(face) => Some(face.plane_z),
+                        Shape::Loop(_)
+                        | Shape::Path(_)
+                        | Shape::Point(_)
+                        | Shape::Circle { .. } => setup.item().z(),
+                    },
+                    hole: own_index
+                        .zip(own_items.as_deref())
+                        .and_then(|(at, items)| HoleSummary::of(items, at, own_source)),
+                }
             })
             .collect();
+        // R-E: one hole is one row. The floor circle of a hole whose rim is
+        // a row folds into the rim row.
+        let rows = match own_items.as_deref() {
+            Some(items) => fold_hole_floors(rows, items, |row| row.own_index),
+            None => rows,
+        };
         let mut report = SelectionReport {
             rows,
             hole_fits,
@@ -872,6 +975,56 @@ impl ProjectSession {
                 })
             }
             (viewed, _) => viewed,
+        };
+        // R-B, F19: THE per-hole floor rule of the prologue
+        // (`compute::floor::hole_floors`), on the heights that the hole
+        // planes of this report give, so the status and generation give
+        // one answer. Each Cut hole gets its floor Z (`item_floor_z`).
+        let viewed = match (viewed, target, tc.operation.floor()) {
+            (Ok((items, notes)), SelectionTarget::Op, Some(floor)) => {
+                match items.holes().cloned() {
+                    None => Ok((items, notes)),
+                    Some(holes) => {
+                        let (rim_bottom, floor_bottom) = crate::compute::floor::hole_planes(&holes);
+                        report.hole_rim_bottom_z = rim_bottom;
+                        report.hole_floor_bottom_z = floor_bottom;
+                        let mesh = self.setup_mesh(tc, ctx)?;
+                        let answer = self.heights_in_setup(
+                            tc,
+                            ctx,
+                            mesh.as_deref(),
+                            super::heights::FacePlanes {
+                                top: report.face_top_z,
+                                bottom: report.face_bottom_z,
+                                floor_face: self
+                                    .floor_face_z(tc, ctx, FaceAccess::Peek)
+                                    .and_then(Result::ok),
+                                hole_rim_bottom: rim_bottom,
+                                hole_floor_bottom: floor_bottom,
+                            },
+                        );
+                        let inputs = crate::compute::floor::HoleFloorInputs::new(
+                            &answer.heights,
+                            answer.context.stock_bottom_z,
+                        );
+                        crate::compute::floor::hole_floors(&frames.setup, &holes, &floor, &inputs)
+                            .map(|spans| {
+                                if floors.is_empty() {
+                                    floors = vec![None; frames.model.items().len()];
+                                }
+                                for (index, span) in spans.iter().enumerate() {
+                                    if let Some(slot) =
+                                        holes.item(index).and_then(|at| floors.get_mut(at))
+                                    {
+                                        *slot = Some(span.floor_z);
+                                    }
+                                }
+                                (items, notes)
+                            })
+                    }
+                }
+            }
+            (viewed, _, _) => viewed,
         };
         // F29: the `Empty` refusal of a Drill names the hole rims that the
         // default rule did not take, as the prologue names them.
@@ -1168,6 +1321,7 @@ impl ProjectSession {
         target: SelectionTarget,
         key: MatchKey,
     ) -> Result<SelectionEdit, SessionError> {
+        let key = self.hole_rim_key(tc, target, key);
         let source = match key.source {
             SourceRef::ToolpathModel => SourceRef::Model(tc.model_id),
             other @ (SourceRef::Model(_) | SourceRef::Stock) => other,
@@ -1185,6 +1339,47 @@ impl ProjectSession {
         } else {
             SelectionEdit::AddPick(key)
         })
+    }
+
+    /// R-B, decision 4 (lead, 2026-10-23): THE pick rule of a hole. On the
+    /// op selection of a Drill or a Bore (`ItemUse::Holes`), a pick of the
+    /// floor circle of a hole is a pick of its rim ([`ItemSet::rim_of`]);
+    /// the key keeps its source. Every other key comes back unchanged. A
+    /// viewport click ([`Self::pick_edit`]) reads it; the MCP `near` read
+    /// folds the floor circle into its rim row by the same pairing rule.
+    #[must_use]
+    pub fn hole_rim_key(
+        &self,
+        tc: &ToolpathConfig,
+        target: SelectionTarget,
+        key: MatchKey,
+    ) -> MatchKey {
+        let holes_op = target == SelectionTarget::Op
+            && matches!(tc.operation.capabilities().item_use, ItemUse::Holes { .. });
+        let model_id = match key.source {
+            SourceRef::ToolpathModel => Some(tc.model_id),
+            SourceRef::Model(id) => Some(id),
+            SourceRef::Stock => None,
+        };
+        let Some(model) = model_id
+            .filter(|_| holes_op)
+            .and_then(|id| self.model_by_id(id))
+        else {
+            return key;
+        };
+        let items = &model.items;
+        let rim = items
+            .iter()
+            .position(|item| item.key().names_same_geometry(&key))
+            .and_then(|at| items.rim_of(at))
+            .and_then(|at| items.iter().nth(at));
+        match rim {
+            Some(rim) => MatchKey {
+                source: key.source,
+                ..rim.key().clone()
+            },
+            None => key,
+        }
     }
 
     /// The default of the selection `target` of `tc`: the op default
@@ -1475,19 +1670,50 @@ impl ProjectSession {
                 .collect()
             }
         };
-        Ok(ordered
+        // R-E: the index of each item in `source`, for the hole fold.
+        let index_of =
+            |item: &crate::selection::Item| source.iter().position(|i| std::ptr::eq(i, item));
+        let rows: Vec<(Option<usize>, ModelItem)> = ordered
             .into_iter()
-            .map(|item| ModelItem {
-                key: MatchKey {
-                    source: SourceRef::Model(model_id),
-                    ..item.key().clone()
-                },
-                kind: item.kind(),
-                layer: item.layer().map(str::to_owned),
-                measure: item.key().measure,
+            .map(|item| {
+                let at = index_of(item);
+                let row = ModelItem {
+                    key: MatchKey {
+                        source: SourceRef::Model(model_id),
+                        ..item.key().clone()
+                    },
+                    kind: item.kind(),
+                    layer: item.layer().map(str::to_owned),
+                    measure: item.key().measure,
+                    hole: at
+                        .and_then(|at| HoleSummary::of(&source, at, SourceRef::Model(model_id))),
+                };
+                (at, row)
             })
+            .collect();
+        Ok(fold_hole_floors(rows, &source, |(at, _)| *at)
+            .into_iter()
+            .map(|(_, row)| row)
             .collect())
     }
+}
+
+/// R-E: `rows` less each floor circle of a hole whose rim is also a row
+/// ([`ItemSet::rim_of`], THE pairing rule). `index` gives the index of a
+/// row in `items`, or `None` for a row of another source.
+fn fold_hole_floors<T>(
+    rows: Vec<T>,
+    items: &ItemSet,
+    index: impl Fn(&T) -> Option<usize>,
+) -> Vec<T> {
+    let present: std::collections::BTreeSet<usize> = rows.iter().filter_map(&index).collect();
+    rows.into_iter()
+        .filter(|row| {
+            index(row)
+                .and_then(|at| items.rim_of(at))
+                .is_none_or(|rim| !present.contains(&rim))
+        })
+        .collect()
 }
 
 /// What the `build_model_faces` job captured (geometry selection P4.7):
@@ -1715,8 +1941,10 @@ struct StatusKey {
     emission_stock: [u64; 6],
     /// P3.5: under the floor "each picked face", the floor and the Top Z
     /// config: the per-area floor check reads both. UX-8: under the floor
-    /// "A picked face", the floor (its key refuses or resolves). Empty for
-    /// every other floor, so a heights edit does not rebuild the report.
+    /// "A picked face", the floor (its key refuses or resolves). R-B: on a
+    /// Drill or a Bore, the floor and the Top Z config (the per-hole
+    /// floors). Empty for every other floor, so a heights edit does not
+    /// rebuild the report.
     each_face: Vec<u8>,
     /// P6.5: the bits of the tool diameter that the hole fit step reads
     /// (`ProjectSession::hole_fit_size`), and the bits of the size
@@ -1786,6 +2014,10 @@ impl StatusKey {
                     SelectionTarget::Op,
                     Some(floor @ (Floor::EachFace { .. } | Floor::Face { .. })),
                 ) => serde_json::to_vec(&(floor, &tc.heights.top_z)).ok()?,
+                // R-B: the per-hole floors read the floor and the Top Z.
+                (SelectionTarget::Op, Some(floor)) if matches!(item_use, ItemUse::Holes { .. }) => {
+                    serde_json::to_vec(&(floor, &tc.heights.top_z)).ok()?
+                }
                 _ => Vec::new(),
             },
             drill_size: match target {

@@ -192,7 +192,7 @@ coolant = "off"
 kind = "drill"
 
 [setups.toolpaths.operation.params]
-depth = 28.0
+floor = { from = "stock_top", depth = 28.0 }
 cycle = "peck"
 peck_depth = 3.0
 dwell_time = 0.5

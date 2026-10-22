@@ -180,9 +180,9 @@ pub enum ModelGougeRule {
     /// tip goes below the hole floor. A hole where the model is flat is the
     /// intent (a dowel hole that the model does not show).
     ///
-    /// `names_depth` (F30): the op has a depth dial from the stock top (a
-    /// Drill). The fix text then names the depth to type and the hole
-    /// floor Z that the guard measured.
+    /// `names_depth` (F30): the op floor counts a depth from the rim of
+    /// each hole (a Drill, F19). The fix text then names the depth to type
+    /// and the hole floor Z that the guard measured.
     Hole {
         fix: &'static str,
         names_depth: bool,
@@ -222,12 +222,12 @@ pub enum FloorOwner {
     /// Waterline (the level ladder).
     HeightsBottom,
     /// The op `floor` field (`compute::floor::Floor`, ruling D9): Pocket,
-    /// Profile, Zigzag and Adaptive 2D. `ResolvedHeights::bottom_z` IS the
+    /// Profile, Zigzag, Adaptive 2D, Bore and Drill (F19). `ResolvedHeights::bottom_z` IS the
     /// floor, and a pinned Heights Bottom Z refuses
     /// (`ToolpathConfig::floor_conflict`).
     OpFloor,
     /// The op's own dial (a depth, a width) or the surface. A pinned Heights
-    /// Bottom Z changes nothing it emits. The other 17 ops.
+    /// Bottom Z changes nothing it emits. The other 16 ops.
     OpDial,
 }
 
@@ -241,10 +241,12 @@ pub enum FaceTopRule {
     /// (`ResolvedHeights::depth_base_z`), so the floor does not move and
     /// the first level starts at the stock top. A face below the stock top
     /// must not start the first level inside fresh stock. Pocket, Profile,
-    /// Zigzag, Adaptive 2D, Bore (UX-1), Face and Trace (UX-1b).
+    /// Zigzag, Adaptive 2D, Bore (UX-1), Face and Trace (UX-1b), Drill
+    /// (F19: the face top is the highest hole rim; each hole counts its
+    /// depth from its own rim, `compute::floor::hole_floors`).
     HigherOfFaceAndStock,
     /// The auto top is the face top. The op does not read the top (3D
-    /// Rough, the drills, Project Curve, the surface finishers), or a
+    /// Rough, the Pin Drill, Project Curve, the surface finishers), or a
     /// higher top does not bound its cut on fresh stock (UX-1b, measured):
     /// Waterline and Unified Finish follow the surface, so they bury on
     /// fresh stock with no face pick too.

@@ -771,6 +771,13 @@ impl JobPhases<'_, '_> {
         reduced.corner_radius_mm = reduced.corner_radius_mm.min(reduced.diameter / 2.0);
         let reduced_tool = crate::session::session_cutter(&reduced)?;
         self.observer.set_phase("Check against the model");
+        let depth_bases = crate::compute::execute::drill_depth_bases(
+            &self.inputs.operation,
+            &self.inputs.selection,
+            &self.inputs.tool_def,
+            &self.inputs.emission_stock_bbox,
+            &self.inputs.heights,
+        );
         // R-C: a Chamfer may cut the bevel depth below the V-bit CL Z.
         let half_angle = (self.inputs.tool.included_angle / 2.0).to_radians();
         let probe = GougeProbe {
@@ -783,9 +790,9 @@ impl JobPhases<'_, '_> {
                 .operation
                 .bevel_depth_mm(half_angle)
                 .unwrap_or(0.0),
-            // F30: a Drill measures its depth from the stock box top
-            // (`execute::drilling::drill_hole_columns`).
-            depth_top_z: Some(self.inputs.emission_stock_bbox.max.z),
+            // F30 (after F19): a Drill measures its depth from the rim of
+            // each hole (`compute::floor::hole_floors`).
+            depth_bases: &depth_bases,
         };
         // W2.2: a kernel's `Cancelled` is the operation's `Cancelled`.
         let finding = measure(&annotated.toolpath, rule, &probe, cancel)
@@ -1278,6 +1285,7 @@ impl JobPhases<'_, '_> {
             &self.inputs.tool_def,
             &self.inputs.tool,
             &self.inputs.emission_stock_bbox,
+            &self.inputs.heights,
             self.gen_initial_stock,
             self.context.material.clone(),
         );

@@ -554,7 +554,7 @@ fn every_refusal_names_itself() {
 
     // A drill has no radial width of cut, and the caller offers no fallback.
     let drill = OperationConfig::Drill(DrillConfig {
-        depth: 20.0,
+        floor: rs_cam_core::compute::floor::Floor::Top { depth: 20.0 },
         feed_rate: 500.0,
         spindle_rpm: Some(10_000),
         ..DrillConfig::default()

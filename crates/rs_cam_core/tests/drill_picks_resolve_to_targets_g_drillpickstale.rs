@@ -159,7 +159,7 @@ fn picks(at: &[[f64; 2]]) -> Selection {
 
 fn drill_op(at: &[[f64; 2]]) -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
-        depth: 5.0,
+        floor: rs_cam_core::compute::floor::Floor::Top { depth: 5.0 },
         cycle: DrillCycleType::Simple,
         selection: picks(at),
         ..DrillConfig::default()

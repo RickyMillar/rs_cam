@@ -122,7 +122,7 @@ fn plate_model() -> LoadedModel {
 
 fn hole_drill_op() -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
-        depth: 12.0,
+        floor: rs_cam_core::compute::floor::Floor::Top { depth: 12.0 },
         cycle: DrillCycleType::Peck,
         peck_depth: 3.0,
         ..DrillConfig::default()

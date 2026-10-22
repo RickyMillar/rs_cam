@@ -1104,6 +1104,13 @@ pub enum FloorParam {
         /// mm below the face; a negative value stands above it.
         depth: f64,
     },
+    /// R-B: each hole of a STEP model to its own floor less `depth` (a
+    /// blind hole to its floor circle, a through hole to the model bottom,
+    /// never below the stock bottom). Drill and Bore only.
+    EachHole {
+        /// mm below each hole floor; a positive value goes deeper.
+        depth: f64,
+    },
 }
 
 impl From<FloorParam> for rs_cam_core::compute::floor::Floor {
@@ -1119,6 +1126,7 @@ impl From<FloorParam> for rs_cam_core::compute::floor::Floor {
                 key: key.into(),
                 depth,
             },
+            FloorParam::EachHole { depth } => Self::EachHole { depth },
         }
     }
 }
@@ -1137,6 +1145,7 @@ impl From<rs_cam_core::compute::floor::Floor> for FloorParam {
                 key: key.into(),
                 depth,
             },
+            Floor::EachHole { depth } => Self::EachHole { depth },
         }
     }
 }
@@ -1152,7 +1161,7 @@ impl Default for FloorParam {
 }
 
 /// `set_toolpath_floor` (geometry selection P3.3): the floor of one Pocket,
-/// Profile, Zigzag or Adaptive 2D toolpath.
+/// Profile, Zigzag, Adaptive 2D, Bore or Drill toolpath.
 #[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SetToolpathFloorParam {
@@ -3429,6 +3438,12 @@ pub fn build_info() -> serde_json::Value {
             // domain); `get_toolpath_params` gives `heights` (`top_from`,
             // `floor`, `floor_label`, `floor_z`, `floor_refusal`).
             "toolpath_floor",
+            // R-B, R-E, F19 (2026-10-23): the Drill holds a `floor`
+            // (`each_hole` drills each hole of a STEP model to its own
+            // floor); `list_model_items` rows and `selection_status` `rows`
+            // and `holes` carry `hole` (one row per hole, `label`
+            // "Ø6 hole, 8 deep").
+            "hole_rows",
             // TD3 B-5 (G-RESULTS): `get_diagnostics`' per-toolpath rows are
             // the core `ToolpathDiagnostic` — `op_kind`, per-toolpath
             // collision counts, and the report-only generation-finding
@@ -3706,6 +3721,8 @@ mod tests {
                 },
                 depth: 0.5,
             },
+            // R-B: each hole floor.
+            Floor::EachHole { depth: 0.0 },
         ];
         assert_eq!(cases.len(), Floor::EACH_REFERENCE.len());
         for floor in cases {

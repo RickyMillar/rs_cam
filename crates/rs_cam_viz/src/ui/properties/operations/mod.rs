@@ -327,6 +327,10 @@ const fn top_tooltip(source: rs_cam_core::session::TopSource) -> &'static str {
              an op with a Floor row, and on Face and Trace, the stock top when it is \
              higher; the depth still measures from the face."
         }
+        rs_cam_core::session::TopSource::AutoHoleRims => {
+            "Top of material. Cutting starts at this Z. Auto: the highest hole rim, or the \
+             stock top when it is higher. Each hole measures its depth from its own rim."
+        }
         rs_cam_core::session::TopSource::AutoStockTop | rs_cam_core::session::TopSource::Pinned => {
             "Top of material. Cutting starts at this Z. Usually the stock top surface."
         }

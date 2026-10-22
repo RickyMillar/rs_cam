@@ -94,9 +94,10 @@ pub struct ModelGougeFinding {
     pub surface_z: f64,
     /// The index of the move that holds the deepest gouge.
     pub move_index: usize,
-    /// F30: the Z that the depth dial of the op measures from (the stock
-    /// box top of a Drill), from [`GougeProbe::depth_top_z`]. A Drill
-    /// names the depth to type from it: `depth_top_z - surface_z`.
+    /// F30: the Z that the depth of the op measures from at the deepest
+    /// gouge (F19: the rim of that hole of a Drill), from
+    /// [`GougeProbe::depth_bases`]. A Drill names the depth to type from
+    /// it: `depth_top_z - surface_z`.
     pub depth_top_z: Option<f64>,
 }
 
@@ -171,10 +172,12 @@ pub struct GougeProbe<'a> {
     /// below the V-bit CL Z (`OperationConfig::bevel_depth_mm`). `0.0` for
     /// every other rule.
     pub bevel_depth_mm: f64,
-    /// F30: the Z the depth dial of the op measures from (the stock box
-    /// top in the setup frame), for the fix text of a Drill. `None` when
-    /// the caller does not know it.
-    pub depth_top_z: Option<f64>,
+    /// F30 (after F19): the XY and the depth base of each hole of a Drill
+    /// whose floor is a depth below the Top Z, in the setup frame
+    /// (`compute::execute::drill_depth_bases`). The fix text reads the base
+    /// of the hole at the deepest gouge. Empty when the caller does not
+    /// know them.
+    pub depth_bases: &'a [([f64; 2], f64)],
 }
 
 /// Measure `toolpath` under `rule`. `None` for [`ModelGougeRule::Exempt`].
@@ -205,7 +208,7 @@ pub fn measure(
         at: [0.0; 3],
         surface_z: 0.0,
         move_index: 0,
-        depth_top_z: probe.depth_top_z,
+        depth_top_z: None,
     };
     let mut samples: Vec<P3> = Vec::new();
     let mut walked = 0_usize;
@@ -261,6 +264,17 @@ pub fn measure(
                 }
             }
         }
+    }
+    // F30: the depth base of the hole at the deepest gouge.
+    if finding.gouges() {
+        let [x, y, _] = finding.at;
+        finding.depth_top_z = probe
+            .depth_bases
+            .iter()
+            .map(|([hx, hy], base)| ((hx - x).hypot(hy - y), *base))
+            .filter(|(d, _)| *d <= probe.tool_radius)
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, base)| base);
     }
     Ok(Some(finding))
 }

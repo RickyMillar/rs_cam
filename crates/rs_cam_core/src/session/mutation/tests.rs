@@ -145,7 +145,7 @@ fn add_bore_from_drill_copies_the_drill_p6_7() {
     let mut drill = make_tc(tool, 0);
     drill.name = "Holes".to_owned();
     drill.operation = OperationConfig::Drill(DrillConfig {
-        depth: 7.5,
+        floor: crate::compute::floor::Floor::Top { depth: 7.5 },
         spindle_rpm: Some(12_000),
         selection: selection.clone(),
         ..DrillConfig::default()
@@ -177,7 +177,10 @@ fn add_bore_from_drill_copies_the_drill_p6_7() {
         panic!("the new op is a Bore: {:?}", bore.operation.label());
     };
     assert_eq!(cfg.selection, selection, "the Bore copies the selection");
-    assert_eq!(cfg.floor, Floor::StockTop { depth: 7.5 });
+    // R-B (lead decision 2026-10-23): the Bore copies the Drill floor and
+    // heights, so both read the one per-hole floor rule.
+    assert_eq!(cfg.floor, Floor::Top { depth: 7.5 });
+    assert_eq!(bore.heights, s.toolpath_configs()[drill_index].heights);
     assert_eq!(cfg.spindle_rpm, Some(12_000));
     assert_eq!(bore.tool_id, s.toolpath_configs()[drill_index].tool_id);
     assert_eq!(bore.model_id, s.toolpath_configs()[drill_index].model_id);

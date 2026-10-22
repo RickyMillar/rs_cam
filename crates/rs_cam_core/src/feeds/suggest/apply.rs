@@ -1080,7 +1080,7 @@ pub fn apply_drill_defaults(
             // drill_depth values (e.g. 12 mm bit + 25 mm hole gives
             // 36 mm peck before clamping). Without this guard the
             // matrix `drill_no_peck_cycle` anti-pattern fires.
-            cfg.peck_depth = peck_for_hole(OperationType::Drill, peck, Some(cfg.depth));
+            cfg.peck_depth = peck_for_hole(OperationType::Drill, peck, cfg.floor.depth_below_top());
         }
         OperationConfig::AlignmentPinDrill(cfg) => {
             // Same clamp, same ceiling factor, against the depth this
@@ -1139,7 +1139,7 @@ pub fn apply_stock_defaults(operation: &mut OperationConfig, ctx: &StockContext)
             cfg.floor = crate::compute::floor::Floor::top(ctx.stock_z);
         }
         OperationConfig::Drill(cfg) => {
-            cfg.depth = ctx.stock_z;
+            cfg.floor = crate::compute::floor::Floor::top(ctx.stock_z);
         }
         OperationConfig::Pocket(cfg) => {
             cfg.floor = crate::compute::floor::Floor::top((ctx.stock_z * 0.5).min(5.0));

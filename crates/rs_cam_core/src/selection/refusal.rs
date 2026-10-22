@@ -387,10 +387,10 @@ impl EdgeRefusal {
 pub enum RefusalCause {
     /// The op has nothing to cut. `skipped` holds the items the default
     /// rule matched and the op cannot cut (empty when the rules matched
-    /// nothing at all). `rims` (F29) holds the top rims of the holes of a
-    /// STEP model (convex top circular edges) that fit the tool of a Drill
-    /// and that the default rule did not take (Q3: it takes the face
-    /// rings), so the text names the holes
+    /// nothing at all). `rims` (F29) holds the convex top circular edges of
+    /// a STEP model that fit the tool of a Drill and that the default rule
+    /// did not take (R-B: it takes the hole rims with a depth only), so the
+    /// text names them
     /// ([`SelectionRefusal::with_default_rims`]). Empty for every other
     /// op.
     Empty {
@@ -456,6 +456,19 @@ pub enum RefusalCause {
     /// names the edge. The default rule of a Chamfer takes the convex top
     /// chains only, so it never gives a concave edge.
     NotAConvexEdge { why: EdgeRefusal },
+    /// R-B: a pick names the floor circle of a blind hole. A Drill drills
+    /// a hole from its rim, so the floor circle does not serve. A viewport
+    /// click and an MCP `near` pick map a floor circle to its rim
+    /// (`ItemSet::rim_of`), so only a pick by key gives this cause.
+    HoleFloorNotRim,
+    /// R-B: a Drill names a hole of a STEP model in a setup that turns the
+    /// model (a Bottom or a side setup). The rim and the depth of a hole
+    /// are facts of the model frame, so they do not hold in this setup.
+    HoleInTurnedSetup,
+    /// R-B: the floor of the Drill is "each hole floor", and this hole has
+    /// no depth: a point or a circle of a drawing, or a circle of a model
+    /// with no floor circle below it.
+    NoHoleDepth,
     /// A rule or a pick names a model that does not exist. No fallback to
     /// another model.
     MissingSource(SourceRef),
@@ -578,6 +591,18 @@ impl SelectionRefusal {
             }
             RefusalCause::CannotExtend { why } => why.fix(),
             RefusalCause::NotAConvexEdge { why } => why.fix(),
+            RefusalCause::HoleFloorNotRim => {
+                "Pick the rim circle of the hole (the circle at the top of the hole), or remove \
+                 the floor circle from the selection"
+            }
+            RefusalCause::HoleInTurnedSetup => {
+                "Drill the holes of the model in a Top setup, or pick points or circles of a \
+                 drawing"
+            }
+            RefusalCause::NoHoleDepth => {
+                "Set the floor from another reference (the Top Z, the stock, the model or a Z \
+                 value), or remove the hole from the selection"
+            }
             RefusalCause::HoleDoesNotFit { fit, rule, .. } => match (*rule, *fit) {
                 (HoleFitRule::LargerThanTool, HoleFit::ToolSize) => {
                     "Drill it with a Drill op, or remove the circle from the selection"
@@ -671,6 +696,18 @@ impl SelectionRefusal {
                 format!("the open path cannot extend to the stock: {}", why.phrase())
             }
             RefusalCause::NotAConvexEdge { why } => why.phrase().to_owned(),
+            RefusalCause::HoleFloorNotRim => {
+                "this circle is the floor of a hole, and a Drill drills a hole from its rim"
+                    .to_owned()
+            }
+            RefusalCause::HoleInTurnedSetup => {
+                "the setup turns the model, so the rim of this hole is not at its top in this \
+                 setup"
+                    .to_owned()
+            }
+            RefusalCause::NoHoleDepth => {
+                "the floor is \"each hole floor\", and this hole has no known depth".to_owned()
+            }
             RefusalCause::MissingSource(source) => {
                 let name = match source {
                     SourceRef::ToolpathModel => "the model of the toolpath".to_owned(),
@@ -695,9 +732,12 @@ impl SelectionRefusal {
     }
 }
 
-/// F29: "The default takes the face rings only. This model has 1 circle
-/// that fits the tool: Ø6.000 at X 15.000 Y 15.000 Z 20.000." Each rim at
-/// its centre and Z, in the model frame (the frame of the item name).
+/// F29: "The default takes the rims of the holes with a known depth only.
+/// This model has 1 circle that fits the tool: Ø6.000 at X 15.000 Y 15.000
+/// Z 20.000." Each rim at its centre and Z, in the model frame (the frame
+/// of the item name). R-B: the default of a Drill takes each hole rim
+/// with a depth, so the list holds the convex top circles with no floor
+/// circle below them.
 fn rims_text(rims: &[ItemRef]) -> String {
     let at: Vec<String> = rims
         .iter()
@@ -716,8 +756,8 @@ fn rims_text(rims: &[ItemRef]) -> String {
         ("circles", "fit")
     };
     format!(
-        "The default takes the face rings only. This model has {} {noun} that {verb} the \
-         tool: {}.",
+        "The default takes the rims of the holes with a known depth only. This model has {} \
+         {noun} that {verb} the tool: {}.",
         rims.len(),
         at.join("; ")
     )

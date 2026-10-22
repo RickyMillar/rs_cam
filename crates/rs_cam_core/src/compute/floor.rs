@@ -1,5 +1,5 @@
 //! The floor of a Pocket, Profile, Zigzag, Adaptive 2D (geometry
-//! selection P3.2, ruling D9) or Bore (P6.6).
+//! selection P3.2, ruling D9), Bore (P6.6) or Drill (R-B, F19).
 //!
 //! One value names the floor and its reference. Before P3.2 the op `depth`
 //! and the pinned Heights Bottom Z were two fields that could disagree, and
@@ -21,6 +21,11 @@
 //!   (`Prepared::region_ladders`); the Layered runner steps each area down
 //!   its own ladder (Pocket, Zigzag, Profile), and Adaptive 2D does the
 //!   same in its own loop (P3.6, ruling L-5).
+//! - R-B, F19: a Drill and a Bore cut each hole to its own floor
+//!   ([`hole_floors`], one [`HoleSpan`] per hole): [`Floor::Top`] counts the
+//!   depth from the rim of each hole, [`Floor::EachHole`] goes to the floor
+//!   of each hole. The Bottom Z is the deepest hole floor
+//!   ([`FloorRef::PerHole`]).
 //! - A pinned Heights Bottom Z on a floor op refuses
 //!   (`ToolpathConfig::floor_conflict`).
 //!
@@ -51,6 +56,7 @@ use serde::{Deserialize, Serialize};
 
 use super::catalog::{ItemUse, ParamRange};
 use super::config::HeightContext;
+use crate::selection::HoleFitRule;
 use crate::selection::{
     ItemKind, ItemRef, MatchKey, NoteCause, OpItems, RefusalCause, ResolvedSelection,
     SelectionNote, SelectionRefusal, SetupFrame, SourceRef,
@@ -94,6 +100,12 @@ pub enum Floor {
     /// a Z). The key follows a re-import as a pick does. A key that names
     /// no item refuses generation ([`FloorRefusal::FaceLost`]).
     Face { key: MatchKey, depth: f64 },
+    /// R-B (operator ruling 2026-10-23): each hole of a STEP model to its
+    /// own floor, less the depth. A blind hole goes to its floor circle; a
+    /// through hole goes to the model bottom, and never below the stock
+    /// bottom (P7 ruling O-2). A positive depth goes deeper. The holes of
+    /// the op ([`hole_floors`]) read it: a Drill and a Bore.
+    EachHole { depth: f64 },
 }
 
 impl Floor {
@@ -115,6 +127,7 @@ impl Floor {
             Self::EachFace { .. } => "Each picked face",
             Self::Z { .. } => "Absolute Z",
             Self::Face { .. } => "A picked face",
+            Self::EachHole { .. } => "Each hole floor",
         }
     }
 
@@ -130,7 +143,8 @@ impl Floor {
             | Self::ModelTop { .. }
             | Self::EachFace { .. }
             | Self::Z { .. }
-            | Self::Face { .. } => None,
+            | Self::Face { .. }
+            | Self::EachHole { .. } => None,
         }
     }
 
@@ -138,7 +152,7 @@ impl Floor {
     /// `get_operation_schema` entry lists them ([`floor_schema_json`]).
     /// [`Floor::Face`] holds a placeholder key: only its reference, its
     /// number and its domain are read.
-    pub const EACH_REFERENCE: [Self; 7] = [
+    pub const EACH_REFERENCE: [Self; 8] = [
         Self::Top { depth: 0.0 },
         Self::StockTop { depth: 0.0 },
         Self::StockBottom { depth: 0.0 },
@@ -157,14 +171,55 @@ impl Floor {
             },
             depth: 0.0,
         },
+        Self::EachHole { depth: 0.0 },
     ];
 
-    /// The references that the GUI floor row offers. [`Floor::Face`] is not
-    /// one: "Use as floor" in the Geometry tab is its one GUI door (L-R5).
-    pub fn row_references() -> impl Iterator<Item = Self> {
+    /// The references that the GUI floor row of an op of `item_use` offers
+    /// ([`Self::admits`]). [`Floor::Face`] is not one: "Use as floor" in
+    /// the Geometry tab is its one GUI door (L-R5).
+    pub fn row_references(item_use: ItemUse) -> impl Iterator<Item = Self> {
         Self::EACH_REFERENCE
             .into_iter()
-            .filter(|floor| !matches!(floor, Self::Face { .. }))
+            .filter(move |floor| !matches!(floor, Self::Face { .. }) && floor.admits(item_use))
+    }
+
+    /// True when an op of `item_use` can cut to this floor (R-B).
+    ///
+    /// - [`Floor::EachHole`] reads the holes of the op: a Drill or a Bore
+    ///   ([`ItemUse::Holes`]).
+    /// - A Drill ([`HoleFitRule::ToolSize`]) takes no face floor
+    ///   ([`Floor::EachFace`], [`Floor::Face`]): a hole has no face.
+    /// - Every other reference serves every op.
+    #[must_use]
+    pub const fn admits(&self, item_use: ItemUse) -> bool {
+        match self {
+            Self::EachHole { .. } => matches!(item_use, ItemUse::Holes { .. }),
+            Self::EachFace { .. } | Self::Face { .. } => !matches!(
+                item_use,
+                ItemUse::Holes {
+                    fit: HoleFitRule::ToolSize,
+                    ..
+                }
+            ),
+            Self::Top { .. }
+            | Self::StockTop { .. }
+            | Self::StockBottom { .. }
+            | Self::ModelTop { .. }
+            | Self::Z { .. } => true,
+        }
+    }
+
+    /// The refusal of this floor on an op of `item_use`
+    /// ([`Self::admits`]), or `None`.
+    #[must_use]
+    pub const fn op_refusal(&self, item_use: ItemUse) -> Option<FloorRefusal> {
+        if self.admits(item_use) {
+            None
+        } else {
+            Some(FloorRefusal::NotForThisOp {
+                from: self.from_token(),
+            })
+        }
     }
 
     /// The face key of [`Floor::Face`], else `None`.
@@ -177,7 +232,8 @@ impl Floor {
             | Self::StockBottom { .. }
             | Self::ModelTop { .. }
             | Self::EachFace { .. }
-            | Self::Z { .. } => None,
+            | Self::Z { .. }
+            | Self::EachHole { .. } => None,
         }
     }
 
@@ -192,6 +248,7 @@ impl Floor {
             Self::EachFace { .. } => "each_face",
             Self::Z { .. } => "z",
             Self::Face { .. } => "face",
+            Self::EachHole { .. } => "each_hole",
         }
     }
 
@@ -205,7 +262,8 @@ impl Floor {
             | Self::StockBottom { .. }
             | Self::ModelTop { .. }
             | Self::EachFace { .. }
-            | Self::Face { .. } => "depth",
+            | Self::Face { .. }
+            | Self::EachHole { .. } => "depth",
             Self::Z { .. } => "z",
         }
     }
@@ -225,7 +283,8 @@ impl Floor {
             | Self::ModelTop { .. }
             | Self::EachFace { .. }
             | Self::Z { .. }
-            | Self::Face { .. } => ParamRange {
+            | Self::Face { .. }
+            | Self::EachHole { .. } => ParamRange {
                 min: None,
                 max: None,
                 min_exclusive: false,
@@ -265,7 +324,8 @@ impl Floor {
             | Self::StockBottom { depth }
             | Self::ModelTop { depth }
             | Self::EachFace { depth }
-            | Self::Face { depth, .. } => *depth,
+            | Self::Face { depth, .. }
+            | Self::EachHole { depth } => *depth,
             Self::Z { z } => *z,
         }
     }
@@ -278,18 +338,22 @@ impl Floor {
     /// the plane Z of the lowest up face of the selection, in the setup
     /// frame (P3.5). [`Floor::Face`] reads `floor_face_z`: the plane Z of
     /// its face, in the setup frame (UX-8; the session resolves the key).
-    /// Every other reference gives a Z.
+    /// [`Floor::EachHole`] reads `hole_floor_z`: the deepest hole floor of
+    /// the selection, in the setup frame (R-B; the session reads it from
+    /// [`hole_floors`]). Every other reference gives a Z.
     ///
     /// # Errors
     ///
     /// [`FloorRefusal::NotFinite`], [`FloorRefusal::NoModelMesh`] (ruling
-    /// L-4), [`FloorRefusal::NoFace`] (each face, and no up face) and
-    /// [`FloorRefusal::FaceLost`] (a face key that resolves to no plane).
+    /// L-4), [`FloorRefusal::NoFace`] (each face, and no up face),
+    /// [`FloorRefusal::FaceLost`] (a face key that resolves to no plane)
+    /// and [`FloorRefusal::NoHoleDepth`] (each hole, and no hole floor).
     pub fn resolve(
         &self,
         ctx: &HeightContext,
         face_bottom_z: Option<f64>,
         floor_face_z: Option<f64>,
+        hole_floor_z: Option<f64>,
     ) -> Result<FloorRef, FloorRefusal> {
         if !self.value().is_finite() {
             return Err(FloorRefusal::NotFinite);
@@ -311,6 +375,10 @@ impl Floor {
             Self::Face { depth, .. } => floor_face_z
                 .map(|z| FloorRef::At(z - depth))
                 .ok_or(FloorRefusal::FaceLost),
+            // The extra depth is in the hole floors already (`hole_floors`).
+            Self::EachHole { .. } => hole_floor_z
+                .map(|deepest| FloorRef::PerHole { deepest })
+                .ok_or(FloorRefusal::NoHoleDepth),
         }
     }
 }
@@ -340,6 +408,7 @@ impl Floor {
             Self::EachFace { .. } => Self::EachFace { depth: value },
             Self::Z { .. } => Self::Z { z: value },
             Self::Face { key, .. } => Self::Face { key, depth: value },
+            Self::EachHole { .. } => Self::EachHole { depth: value },
         }
     }
 
@@ -374,6 +443,11 @@ pub struct FloorReferences {
     /// The plane Z of the face of [`Floor::Face`] (UX-8), or `None` when
     /// the floor is not a face or its key resolves to no plane.
     pub floor_face_z: Option<f64>,
+    /// R-B: the deepest hole floor of the selection with no extra depth
+    /// (blind: the floor circle; through: the model bottom, not below the
+    /// stock bottom), or `None` when no hole has a depth.
+    /// [`Floor::EachHole`] reads it.
+    pub hole_floor_z: Option<f64>,
 }
 
 impl FloorReferences {
@@ -392,6 +466,7 @@ impl FloorReferences {
             Floor::EachFace { .. } => self.face_bottom_z.ok_or(FloorRefusal::NoFace),
             Floor::Z { .. } => Ok(0.0),
             Floor::Face { .. } => self.floor_face_z.ok_or(FloorRefusal::FaceLost),
+            Floor::EachHole { .. } => self.hole_floor_z.ok_or(FloorRefusal::NoHoleDepth),
         }
     }
 
@@ -410,7 +485,8 @@ impl FloorReferences {
             | Floor::StockBottom { depth }
             | Floor::ModelTop { depth }
             | Floor::EachFace { depth }
-            | Floor::Face { depth, .. } => reference - depth,
+            | Floor::Face { depth, .. }
+            | Floor::EachHole { depth } => reference - depth,
         })
     }
 
@@ -431,7 +507,8 @@ impl FloorReferences {
             | Floor::StockBottom { .. }
             | Floor::ModelTop { .. }
             | Floor::EachFace { .. }
-            | Floor::Face { .. } => self.reference_z(&like)? - z,
+            | Floor::Face { .. }
+            | Floor::EachHole { .. } => self.reference_z(&like)? - z,
         };
         let floor = like.with_value(value);
         match floor.door_refusal() {
@@ -475,6 +552,14 @@ pub enum FloorRef {
         /// The floor of the lowest face.
         deepest: f64,
     },
+    /// R-B: each hole of a Drill or a Bore to its own floor
+    /// ([`hole_floors`]): [`Floor::EachHole`], and [`Floor::Top`] on holes
+    /// whose rims are at more than one Z. The Bottom Z of the op is the
+    /// deepest hole floor.
+    PerHole {
+        /// The floor of the deepest hole.
+        deepest: f64,
+    },
 }
 
 impl FloorRef {
@@ -492,7 +577,7 @@ impl FloorRef {
         match self {
             Self::BelowTop(depth) => top_z - depth,
             Self::At(z) => z,
-            Self::EachFace { deepest } => deepest,
+            Self::EachFace { deepest } | Self::PerHole { deepest } => deepest,
         }
     }
 
@@ -630,6 +715,156 @@ pub fn region_floors(
     Ok(Some(RegionFloors { floors, notes }))
 }
 
+/// The heights that the per-hole rule reads ([`hole_floors`]), in the
+/// setup frame. The session builds it from `ToolpathHeights` and the
+/// prologue from `ResolvedHeights`, so both give one answer.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HoleFloorInputs {
+    /// The resolved Top Z: the cut starts at or below it.
+    pub top_z: f64,
+    /// True when the Top Z is pinned (Manual or from a reference): each
+    /// hole then measures its depth from it, not from its rim.
+    pub top_pinned: bool,
+    /// The Z a depth measures from when a hole has no rim
+    /// (`ResolvedHeights::depth_base_z`): a point or a drawing circle.
+    pub depth_base_z: f64,
+    /// The stock bottom: a through hole does not go below it (O-2).
+    pub stock_bottom_z: f64,
+    /// The resolved Bottom Z of a floor that is one Z for every hole (the
+    /// stock, the model, an absolute Z).
+    pub bottom_z: f64,
+}
+
+impl HoleFloorInputs {
+    /// The inputs from the resolved heights of the op and the stock bottom
+    /// (both in the setup frame).
+    #[must_use]
+    pub const fn new(heights: &super::config::ResolvedHeights, stock_bottom_z: f64) -> Self {
+        Self {
+            top_z: heights.top_z,
+            top_pinned: heights.top_pinned,
+            depth_base_z: heights.depth_base_z,
+            stock_bottom_z,
+            bottom_z: heights.bottom_z,
+        }
+    }
+}
+
+/// The depth base and the floor of one hole (R-B), in the setup frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HoleSpan {
+    /// The Z the depth of the hole measures from: its rim, or the pinned
+    /// Top Z, or the depth base of the op (a hole with no rim).
+    pub base_z: f64,
+    /// The floor of the hole: where the tool tip stops.
+    pub floor_z: f64,
+}
+
+/// R-B: the floor of the hole of depth `depth` with its rim at `rim_z`,
+/// with no extra depth: a blind hole to its floor circle, a through hole
+/// to the model bottom and never below `stock_bottom_z` (O-2).
+#[must_use]
+pub fn hole_floor_z(rim_z: f64, depth: crate::selection::HoleDepth, stock_bottom_z: f64) -> f64 {
+    match depth {
+        crate::selection::HoleDepth::Blind { depth_mm } => rim_z - depth_mm,
+        crate::selection::HoleDepth::Through { depth_mm } => (rim_z - depth_mm).max(stock_bottom_z),
+    }
+}
+
+/// THE per-hole floor rule (R-B, F19). One [`HoleSpan`] per hole of
+/// `holes` (the fitted holes of a Drill or a Bore), in their order.
+///
+/// - The depth base of a hole is the pinned Top Z, else its rim
+///   (`Hole::rim_z`), else `inputs.depth_base_z` (a hole with no rim: a
+///   point or a circle of a drawing, which gives the old numbers).
+/// - [`Floor::Top`]: the base less the depth. A typed depth counts from
+///   the rim of each hole.
+/// - [`Floor::EachHole`]: the floor of the hole ([`hole_floor_z`]) less
+///   the depth.
+/// - Every other reference: `inputs.bottom_z` for each hole.
+///
+/// The prologue calls it, and `selection_status` calls it with the same
+/// inputs, so the status and generation give one answer (the P2.4 rule).
+///
+/// # Errors
+///
+/// A [`SelectionRefusal`] that names the hole: [`RefusalCause::NoHoleDepth`]
+/// under [`Floor::EachHole`] for a hole with no depth, and
+/// [`RefusalCause::FloorAboveTop`] for a floor at or above the Top Z (L-16).
+pub fn hole_floors(
+    resolved: &ResolvedSelection<SetupFrame>,
+    holes: &crate::selection::Holes,
+    floor: &Floor,
+    inputs: &HoleFloorInputs,
+) -> Result<Vec<HoleSpan>, SelectionRefusal> {
+    let ref_at = |index: usize| {
+        holes
+            .item(index)
+            .and_then(|at| resolved.items().get(at))
+            .map(|r| ItemRef::new(r.identity().clone()))
+    };
+    let mut spans = Vec::with_capacity(holes.as_slice().len());
+    for (index, hole) in holes.as_slice().iter().enumerate() {
+        let base_z = match (inputs.top_pinned, hole.rim_z) {
+            (true, _) => inputs.top_z,
+            (false, Some(rim)) => rim,
+            (false, None) => inputs.depth_base_z,
+        };
+        let floor_z = match *floor {
+            Floor::Top { depth } => base_z - depth,
+            Floor::EachHole { depth } => match (hole.rim_z, hole.depth) {
+                (Some(rim), Some(hole_depth)) => {
+                    hole_floor_z(rim, hole_depth, inputs.stock_bottom_z) - depth
+                }
+                (None, _) | (_, None) => {
+                    return Err(SelectionRefusal::new(
+                        ref_at(index),
+                        RefusalCause::NoHoleDepth,
+                    ));
+                }
+            },
+            Floor::StockTop { .. }
+            | Floor::StockBottom { .. }
+            | Floor::ModelTop { .. }
+            | Floor::EachFace { .. }
+            | Floor::Z { .. }
+            | Floor::Face { .. } => inputs.bottom_z,
+        };
+        if floor_z.is_nan() || floor_z >= inputs.top_z {
+            return Err(SelectionRefusal::new(
+                ref_at(index),
+                RefusalCause::FloorAboveTop {
+                    floor_z,
+                    top_z: inputs.top_z,
+                },
+            ));
+        }
+        spans.push(HoleSpan { base_z, floor_z });
+    }
+    Ok(spans)
+}
+
+/// R-B: the hole planes of `holes` (the fitted holes, in the setup
+/// frame): the lowest rim Z of the holes with a rim, and the deepest hole
+/// floor with no extra depth and no stock clamp
+/// (`rim - HoleDepth::depth_mm`). The heights rule reads them
+/// (`session::heights::FacePlanes`).
+#[must_use]
+pub fn hole_planes(holes: &crate::selection::Holes) -> (Option<f64>, Option<f64>) {
+    let rims = holes.as_slice().iter().filter_map(|h| h.rim_z);
+    let floors = holes
+        .as_slice()
+        .iter()
+        .filter_map(|h| h.rim_z.zip(h.depth).map(|(rim, d)| rim - d.depth_mm()));
+    (rims.reduce(f64::min), floors.reduce(f64::min))
+}
+
+/// The deepest floor of `spans`, or `None` for no hole.
+#[must_use]
+pub fn deepest_hole_floor(spans: &[HoleSpan]) -> Option<f64> {
+    spans.iter().map(|s| s.floor_z).reduce(f64::min)
+}
+
 /// Why a floor does not resolve. The session puts the toolpath name in
 /// front of the text.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -661,6 +896,16 @@ pub enum FloorRefusal {
         name: &'static str,
         /// The value.
         value: f64,
+    },
+    /// R-B: [`Floor::EachHole`] on a selection with no hole of known
+    /// depth. The prologue refuses the hole by name
+    /// (`RefusalCause::NoHoleDepth`).
+    NoHoleDepth,
+    /// R-B: the op cannot cut to this reference ([`Floor::admits`]): each
+    /// hole floor on an op with no holes, a face floor on a Drill.
+    NotForThisOp {
+        /// The `from` token of the reference.
+        from: &'static str,
     },
     /// The floor is at or above the resolved top: the ladder would be empty
     /// (ruling L-16).
@@ -702,6 +947,18 @@ impl std::fmt::Display for FloorRefusal {
                 f,
                 "the floor {{ from = \"{from}\", {name} = {value} }} is at or above the top, so \
                  the op has nothing to cut. Set a {name} more than 0"
+            ),
+            Self::NoHoleDepth => write!(
+                f,
+                "the floor is \"each hole floor\", but no hole of the selection has a known \
+                 depth. Pick the rim circles of the holes of a STEP model, or set the floor \
+                 from the Top Z, the stock, the model or a Z value"
+            ),
+            Self::NotForThisOp { from } => write!(
+                f,
+                "the floor {{ from = \"{from}\" }} does not apply to this op. Each hole floor \
+                 is for a Drill or a Bore; a Drill takes no face floor. Set the floor from the \
+                 Top Z, the stock, the model or a Z value"
             ),
             Self::AboveTop { floor_z, top_z } => write!(
                 f,
@@ -749,6 +1006,11 @@ const fn reference_help(floor: &Floor) -> &'static str {
              ring, from list_model_items). The face leaves the picks of the op. A key that \
              matches no item refuses generation"
         }
+        Floor::EachHole { .. } => {
+            "mm below the floor of each hole of a STEP model: a blind hole to its floor \
+             circle, a through hole to the model bottom (never below the stock bottom). Each \
+             hole is cut from its own rim. A Drill or a Bore"
+        }
     }
 }
 
@@ -757,9 +1019,10 @@ const fn reference_help(floor: &Floor) -> &'static str {
 /// domain of its number ([`Floor::domain`]), and names the tool that writes
 /// the floor. The JSON of a floor is the file JSON.
 #[must_use]
-pub fn floor_schema_json(default: &Floor) -> serde_json::Value {
+pub fn floor_schema_json(default: &Floor, item_use: ItemUse) -> serde_json::Value {
     let variants: Vec<serde_json::Value> = Floor::EACH_REFERENCE
         .iter()
+        .filter(|floor| floor.admits(item_use))
         .map(|floor| {
             serde_json::json!({
                 "from": floor.from_token(),

@@ -100,7 +100,7 @@ fn build_drill_session(material: Material) -> ProjectSession {
     let model_id = builder.add_model(model);
 
     let drill = DrillConfig {
-        depth: 15.0,
+        floor: rs_cam_core::compute::floor::Floor::Top { depth: 15.0 },
         cycle: DrillCycleType::Peck,
         peck_depth: 3.0,
         feed_rate: 300.0,

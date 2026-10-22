@@ -248,7 +248,7 @@ fn pocket_op() -> OperationConfig {
 
 fn drill_op() -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
-        depth: DRILL_DEPTH,
+        floor: rs_cam_core::compute::floor::Floor::Top { depth: DRILL_DEPTH },
         cycle: DrillCycleType::Simple,
         feed_rate: 300.0,
         ..DrillConfig::default()

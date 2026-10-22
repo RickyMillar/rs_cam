@@ -235,9 +235,10 @@ fn a_floor_reference_change_keeps_the_cut_p3_7() {
     // stock top 5, the model top 0, the face and the auto Top Z -4, the
     // stock bottom -15), so a number carried across moves the floor.
     let refs = inputs(&s).refs;
-    let mut reference_z: Vec<f64> = Floor::row_references()
-        .map(|f| refs.reference_z(&f).unwrap())
-        .collect();
+    let mut reference_z: Vec<f64> =
+        Floor::row_references(rs_cam_core::compute::catalog::ItemUse::Regions)
+            .map(|f| refs.reference_z(&f).unwrap())
+            .collect();
     reference_z.sort_by(f64::total_cmp);
     reference_z.dedup();
     assert_eq!(
@@ -250,7 +251,8 @@ fn a_floor_reference_change_keeps_the_cut_p3_7() {
     // keeps the resolved floor Z.
     // UX-8: "A picked face" is not a row reference (its door is Use as
     // floor), so the walk takes the row references.
-    let mut walk: Vec<Floor> = Floor::row_references().collect();
+    let mut walk: Vec<Floor> =
+        Floor::row_references(rs_cam_core::compute::catalog::ItemUse::Regions).collect();
     walk.push(Floor::Top { depth: 0.0 });
     for template in walk {
         let from = s.toolpath_configs()[0].operation.floor().unwrap();

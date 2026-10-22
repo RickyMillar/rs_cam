@@ -324,7 +324,7 @@ fn build_operation(
                 .unwrap_or(inputs.diameter_mm * 5.0)
                 .max(0.0);
             Ok(OperationConfig::Drill(DrillConfig {
-                depth,
+                floor: rs_cam_core::compute::floor::Floor::Top { depth },
                 ..DrillConfig::default()
             }))
         }
@@ -585,10 +585,11 @@ fn snapshot_from_clamped(
     // wrote back (e.g. peck_depth after `apply_drill_defaults`).
     match op {
         OperationConfig::Drill(cfg) => {
+            let depth = cfg.floor.depth_below_top().unwrap_or(f64::NAN);
             bindings.insert("peck_depth".into(), cfg.peck_depth);
-            bindings.insert("drill_depth".into(), cfg.depth);
+            bindings.insert("drill_depth".into(), depth);
             bindings.insert("peck_over_d".into(), cfg.peck_depth / d);
-            bindings.insert("depth_over_d".into(), cfg.depth / d);
+            bindings.insert("depth_over_d".into(), depth / d);
         }
         OperationConfig::VCarve(cfg) => {
             bindings.insert("max_depth".into(), cfg.max_depth);

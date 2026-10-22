@@ -138,7 +138,7 @@ fn pick() -> Selection {
 
 fn hole_drill_op() -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
-        depth: 10.0,
+        floor: rs_cam_core::compute::floor::Floor::Top { depth: 10.0 },
         cycle: DrillCycleType::Peck,
         peck_depth: 3.0,
         selection: pick(),

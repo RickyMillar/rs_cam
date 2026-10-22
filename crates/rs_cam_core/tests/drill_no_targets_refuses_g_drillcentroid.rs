@@ -149,7 +149,7 @@ fn stock() -> StockConfig {
 
 fn drill_op(selection: Selection) -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
-        depth: 5.0,
+        floor: rs_cam_core::compute::floor::Floor::Top { depth: 5.0 },
         cycle: DrillCycleType::Simple,
         selection,
         ..DrillConfig::default()

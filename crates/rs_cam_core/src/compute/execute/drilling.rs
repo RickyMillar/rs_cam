@@ -12,6 +12,8 @@
 //! beside the toolpath. Split out of `compute/execute.rs` (P4).
 
 use crate::compute::catalog::{OperationConfig, RestUse};
+use crate::compute::config::ResolvedHeights;
+use crate::compute::floor::HoleSpan;
 use crate::compute::tool_config::ToolConfig;
 use crate::geo::BoundingBox3;
 use crate::selection::{Holes, KEY_MATCH_EPS_MM, ResolvedSelection, SetupFrame};
@@ -59,6 +61,7 @@ pub fn build_drill_op_for_config(
     tool_def: &ToolDefinition,
     tool_cfg: &ToolConfig,
     stock_bbox: &BoundingBox3,
+    heights: &ResolvedHeights,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     material: crate::material::Material,
 ) -> Option<crate::ops::drill_op::DrillOp> {
@@ -82,11 +85,20 @@ pub fn build_drill_op_for_config(
 
     match op {
         OperationConfig::Drill(cfg) => {
-            let hole_xys = selected_hole_xys(&holes_of()?);
+            // R-B, F19: the per-hole floor rule of the prologue, on the same
+            // heights.
+            let fitted = holes_of()?;
+            let spans = crate::compute::floor::hole_floors(
+                selection,
+                &fitted,
+                &cfg.floor,
+                &crate::compute::floor::HoleFloorInputs::new(heights, stock_bbox.min.z),
+            )
+            .ok()?;
             let holes = drill_hole_columns(
                 cfg,
-                &hole_xys,
-                stock_bbox,
+                &selected_holes(&fitted, &spans),
+                heights.top_z,
                 column_stock(op, initial_stock),
                 tool_def.radius(),
             );
@@ -143,15 +155,78 @@ pub fn build_drill_op_for_config(
     }
 }
 
-/// The XY of each selected hole, in selection order, with every repeat
-/// dropped ([`unique_holes`]). `holes` are the FITTED holes (P6.5): the
+/// F30 (after F19): the XY and the depth base of each hole of a Drill whose
+/// floor is a depth below the Top Z ([`crate::compute::floor::Floor::Top`]),
+/// by the prologue rule. The model gouge text names the depth to type from
+/// the base of the hole it gouges. Empty for every other op and floor.
+#[must_use]
+pub fn drill_depth_bases(
+    op: &OperationConfig,
+    selection: &ResolvedSelection<SetupFrame>,
+    tool_def: &ToolDefinition,
+    stock_bbox: &BoundingBox3,
+    heights: &ResolvedHeights,
+) -> Vec<([f64; 2], f64)> {
+    let OperationConfig::Drill(cfg) = op else {
+        return Vec::new();
+    };
+    if cfg.floor.depth_below_top().is_none() {
+        return Vec::new();
+    }
+    let item_use = op.capabilities().item_use;
+    let Ok((mut items, _)) = crate::selection::view(selection, item_use) else {
+        return Vec::new();
+    };
+    if crate::selection::fit_holes(
+        selection,
+        &mut items,
+        item_use,
+        op.drill_size(tool_def.diameter()),
+    )
+    .is_err()
+    {
+        return Vec::new();
+    }
+    let Some(holes) = items.holes() else {
+        return Vec::new();
+    };
+    crate::compute::floor::hole_floors(
+        selection,
+        holes,
+        &cfg.floor,
+        &crate::compute::floor::HoleFloorInputs::new(heights, stock_bbox.min.z),
+    )
+    .map(|spans| {
+        holes
+            .as_slice()
+            .iter()
+            .zip(spans)
+            .map(|(h, span)| ([h.xy.x, h.xy.y], span.base_z))
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+/// The XY and the span (R-B: depth base and floor) of each selected hole,
+/// in selection order, with every repeat dropped ([`unique_holes`]: the
+/// first copy keeps its span). `holes` are the FITTED holes (P6.5): the
 /// prologue's fit step left out each circle that is not of the tool size,
 /// so the XY alone is the whole hole (the tool makes its size). The holes are in the emission frame
 /// already: the frame door (`ResolvedSelection::to_setup_frame`) moved
 /// each point and circle centre as it moved the drawing, so a hole lands
-/// where the feature that locates it lands (G-DRILLPICK-FRAME).
-fn selected_hole_xys(holes: &Holes) -> Vec<[f64; 2]> {
-    unique_holes(holes.as_slice().iter().map(|h| [h.xy.x, h.xy.y]).collect())
+/// where the feature that locates it lands (G-DRILLPICK-FRAME). `spans`
+/// is index-aligned with `holes` ([`crate::compute::floor::hole_floors`]).
+fn selected_holes(holes: &Holes, spans: &[HoleSpan]) -> Vec<([f64; 2], HoleSpan)> {
+    let pairs: Vec<([f64; 2], HoleSpan)> = holes
+        .as_slice()
+        .iter()
+        .zip(spans)
+        .map(|(h, span)| ([h.xy.x, h.xy.y], *span))
+        .collect();
+    let kept = unique_holes(pairs.iter().map(|(xy, _)| *xy).collect());
+    kept.into_iter()
+        .filter_map(|xy| pairs.iter().find(|(p, _)| *p == xy).copied())
+        .collect()
 }
 
 /// Every hole an [`crate::compute::operation_configs::AlignmentPinDrillConfig`]
@@ -231,17 +306,21 @@ fn unique_holes(holes: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
 
 /// The hole tops a Drill cuts: D8 (W3.4, `RestUse::StockColumn`).
 ///
-/// On fresh stock (`initial_stock == None`) every hole runs from the stock
-/// box top to `box top - depth`, with the R-plane
-/// `effective_safe_z(cfg.retract_z, box top)`, as before W3.4.
+/// F19 (one rule): the cut starts at the resolved Top Z `top_z` of the op
+/// (auto: the higher of the highest hole rim and the stock top; else the
+/// pinned top), as the Bore does. Each hole stops at the floor of its span
+/// (R-B: `compute::floor::hole_floors`, a depth from its own rim or its
+/// own hole floor).
+///
+/// On fresh stock (`initial_stock == None`) every hole runs from `top_z`
+/// to its floor, with the R-plane `effective_safe_z(cfg.retract_z, top_z)`.
 ///
 /// On the remaining stock the top of each hole is the highest material in
 /// the reach of the tool over the hole (`standing_material::column_top`
-/// with the tool radius), capped at the box top. A hole in a cleared pocket
-/// then starts at the pocket floor, not in the air above it. The bottom
-/// stays at `box top - depth`: the depth dial names the design bottom of
-/// the hole. The R-plane keeps the clearance it has above the box top on
-/// fresh stock, so the first peck starts that clearance above the floor.
+/// with the tool radius), capped at `top_z`. A hole in a cleared pocket
+/// then starts at the pocket floor, not in the air above it. The R-plane
+/// keeps the clearance it has above `top_z` on fresh stock, so the first
+/// peck starts that clearance above the floor.
 ///
 /// A hole whose column holds no material down to its bottom has nothing
 /// to cut and is dropped. A hole that the grid cannot see keeps the box
@@ -249,30 +328,32 @@ fn unique_holes(holes: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
 /// guard (`StockReference::resolve`) finds it in the frame of the holes.
 fn drill_hole_columns(
     cfg: &crate::compute::operation_configs::DrillConfig,
-    hole_xys: &[[f64; 2]],
-    stock_bbox: &BoundingBox3,
+    holes_in: &[([f64; 2], HoleSpan)],
+    top_z: f64,
     initial_stock: Option<&crate::dexel_stock::TriDexelStock>,
     tool_radius: f64,
 ) -> Vec<crate::ops::drill_op::DrillHole> {
     use super::standing_material::{ColumnTop, column_top};
     use crate::ops::drill_op::DrillHole;
 
-    if hole_xys.is_empty() {
+    if holes_in.is_empty() {
         return Vec::new();
     }
-    let box_top = stock_bbox.max.z;
-    let bottom_z = box_top - cfg.depth;
-    let clearance = crate::compute::config::effective_safe_z(cfg.retract_z, box_top) - box_top;
-    let holes_bbox = hole_xys.iter().fold(
+    let clearance = crate::compute::config::effective_safe_z(cfg.retract_z, top_z) - top_z;
+    let deepest = holes_in
+        .iter()
+        .map(|(_, span)| span.floor_z)
+        .fold(f64::INFINITY, f64::min);
+    let holes_bbox = holes_in.iter().fold(
         BoundingBox3 {
-            min: crate::geo::P3::new(f64::INFINITY, f64::INFINITY, bottom_z),
-            max: crate::geo::P3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, box_top),
+            min: crate::geo::P3::new(f64::INFINITY, f64::INFINITY, deepest),
+            max: crate::geo::P3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, top_z),
         },
-        |mut b, &[x, y]| {
-            b.min.x = b.min.x.min(x);
-            b.min.y = b.min.y.min(y);
-            b.max.x = b.max.x.max(x);
-            b.max.y = b.max.y.max(y);
+        |mut b, ([x, y], _)| {
+            b.min.x = b.min.x.min(*x);
+            b.min.y = b.min.y.min(*y);
+            b.max.x = b.max.x.max(*x);
+            b.max.y = b.max.y.max(*y);
             b
         },
     );
@@ -280,25 +361,26 @@ fn drill_hole_columns(
         crate::surface::stock_reference::StockReference::resolve(initial_stock, &holes_bbox)
             .stock();
     let mut dropped = 0_usize;
-    let holes: Vec<DrillHole> = hole_xys
+    let holes: Vec<DrillHole> = holes_in
         .iter()
-        .filter_map(|&xy| {
-            let top_z = match stock
+        .filter_map(|&(xy, span)| {
+            let bottom_z = span.floor_z;
+            let hole_top = match stock
                 .map(|s| column_top(s, crate::geo::P2::new(xy[0], xy[1]), tool_radius))
             {
-                None | Some(ColumnTop::NoEvidence) => box_top,
-                Some(ColumnTop::Top(t)) => t.min(box_top),
+                None | Some(ColumnTop::NoEvidence) => top_z,
+                Some(ColumnTop::Top(t)) => t.min(top_z),
                 Some(ColumnTop::Empty) => bottom_z,
             };
-            if top_z <= bottom_z {
+            if hole_top <= bottom_z {
                 dropped += 1;
                 return None;
             }
             Some(DrillHole {
                 xy,
-                top_z,
+                top_z: hole_top,
                 bottom_z,
-                retract_z: top_z + clearance,
+                retract_z: hole_top + clearance,
             })
         })
         .collect();
@@ -338,14 +420,19 @@ pub(crate) fn generate_drill(
     // Checkpoint C, Q3 (F-4): a drill cycle is short, so the only cancel
     // poll is the dispatch prologue's (W2.2), ahead of any work. The drill
     // kernel has no poll of its own.
-    let hole_xys = selected_hole_xys(prepared.holes()?);
+    // R-B, F19: each hole with its span from the prologue (THE per-hole
+    // floor rule, `compute::floor::hole_floors`).
+    let spans = prepared.hole_spans().ok_or_else(|| {
+        OperationError::Internal("the Drill prologue gave no hole spans".to_owned())
+    })?;
+    let holes_in = selected_holes(prepared.holes()?, spans);
     // D8 (W3.4, `RestUse::StockColumn`): each hole starts at the remaining
-    // stock top over it. `build_drill_op_for_config` reads the same
-    // columns through the same rule.
+    // stock top over it, capped at the Top Z. `build_drill_op_for_config`
+    // reads the same columns through the same rule.
     let holes = drill_hole_columns(
         cfg,
-        &hole_xys,
-        ctx.stock_bbox,
+        &holes_in,
+        ctx.heights.top_z,
         column_stock(op, prepared.territory().unguarded_stock()),
         ctx.tool_def.radius(),
     );
