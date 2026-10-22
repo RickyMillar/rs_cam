@@ -972,3 +972,40 @@ screenshot the GUI, count clicks per common job on STEP, DXF, STL) ->
 feed FR-1 into the Geometry tab -> UX-8, GT, UX-C -> flow review FR-2 on
 the new tab -> a morning report with before/after screenshots. No push;
 no gate over 3 minutes; rulings that change what is cut wait on a list.
+
+## Operator rulings 2026-10-23 morning (on the FR-1/FR-2 report)
+
+Operator words: "stock should fit all models. In the future we might
+suppport multiple bits of stock. te heights panel should be adaptable to
+differnt ops / mcp should get errors yes / yeah champher ok. Rest ok too".
+
+- F31: the "auto from model" stock is the union of all part models. The
+  code keeps one stock; it must not block a later list of stocks.
+- F19: the Heights panel owns the op top, and it adapts to the op. The
+  value that the panel shows is the value that the op cuts from. For a
+  Drill the auto top is the hole rim (R-B); the Drill depth is measured
+  from that top. One rule, no second top in the Drill.
+- F26: every MCP param struct refuses an unknown field
+  (`deny_unknown_fields`). Wire break, stated in the commit.
+- R-C (Chamfer convex top edges only) confirmed.
+- "Rest ok": the lead recommendations stand:
+  - R-A: a STEP or STL model gives one part-outline `Loop` at the model
+    bottom Z. The default Profile on a mesh model cuts that outline,
+    Outside, to the bottom.
+  - R-B: the default STEP Drill selects the hole RIM circles that fit the
+    tool; the floor circle does not serve. Depth = rim Z - hole floor Z; a
+    through hole goes through (O-2 rule for the depth below stock).
+  - R-D: WITHDRAWN (operator, same morning: "default pocket sahould just
+    pocket. the wall would be removed by a watelie of champher aftere").
+    The default face Pocket cuts inside its face only. The wall round the
+    part is the job of a later op (Waterline, or the R-A outline Profile).
+    F34 then is a flow text issue: the Chamfer "buried" refusal names the
+    fix ("clear the wall first: add a Waterline or an outline Profile").
+  - R-E: one hole is one row ("Ø6 hole, 8 deep"), GUI and MCP.
+  - Chamfer edge that ends at a step wall: lead reading, UNCONFIRMED
+    (asked 2026-10-23): stop short (trim the run so the tool clears the
+    wall) instead of BLOCKED. The guard still checks it.
+  - Q5 (B), Q6 (A), Q7 (B), Q8 (table as written; wire names stay),
+    Q9 (B), Q10 (B) in P7, (C) after R-A/R-B land: lead reading,
+    UNCONFIRMED (asked 2026-10-23). The report did not list them.
+- P8 stays blocked.
