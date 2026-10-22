@@ -1052,3 +1052,19 @@ the operator only when the references disagree, no source exists, or a
 safety rule conflicts with the reference. The standing rules stay: no
 push without asking, no test run over 3 minutes without asking, P8
 blocked.
+
+## Operator rulings 2026-10-23 on the REFERENCE_AUDIT unclear rows
+
+- H7: the Drill cycle default stays Peck (G83). Operator: "peck is a good
+  default for saftey, gives time to e-stop if it looks too manic".
+- H6: the Bore keeps climb (lead, after the operator asked for the trade
+  off): one direction rule for Pocket, Profile and Bore on a rigid
+  machine; the direction stays a param.
+- S11 and a general rule: "that should just be defined. defaults here
+  help noo one. Defaults like this assume some 'math' has been done by the
+  user. If ther is no logical reason for a default, then dont have it."
+  A default value with no derivation (from the model, the tool, the
+  stock, or a sourced rule) is removed. The field shows empty, and the op
+  refuses to generate until the operator sets it (the O-2 pattern). First
+  case: the Pocket depth at add (min(half the stock, 5 mm)). The lead
+  lists the other underived defaults before the removal.
