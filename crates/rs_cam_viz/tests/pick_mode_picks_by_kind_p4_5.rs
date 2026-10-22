@@ -8,7 +8,8 @@
 //!    flipped and on a turned setup. The test computes the drawn point from
 //!    the setup transform itself, and the raw model point is more than the
 //!    pick threshold away, so a pick in the model frame fails. The
-//!    `TogglePick` of the hit takes the item out of the selection.
+//!    `TogglePick` of the hit on the default rule makes that item the one
+//!    item that the op cuts (operator ruling O-PICK, 2026-10-22).
 //! 2. `a_chip_off_skips_its_kind_p4_5`: a click on a circle ring that is
 //!    also near a loop edge picks the circle with every chip on, and the
 //!    loop with the circle chip off or with a circle range that leaves the
@@ -338,6 +339,12 @@ fn a_click_picks_each_drawn_kind(face_up: FaceUp, turn: ZRotation) {
     // The loop, the circle and the path: a point on the first edge of each
     // drawn line.
     for index in [0, 1, 2] {
+        // Each item starts from the default rule.
+        c.handle_internal_event(AppEvent::EditToolpathSelection {
+            toolpath_id: mode.toolpath_id,
+            target: mode.target,
+            edit: rs_cam_core::selection::SelectionEdit::Reset,
+        });
         let item = &items[index];
         let ring = match item.shape() {
             Shape::Loop(r) | Shape::Path(r) | Shape::Circle { ring: r, .. } => r,
@@ -362,7 +369,8 @@ fn a_click_picks_each_drawn_kind(face_up: FaceUp, turn: ZRotation) {
             "{face_up:?}/{turn:?}: the click on the {:?} picked {key:?}",
             item.kind()
         );
-        // The default rule holds the item; the click takes it out.
+        // The default rule holds the item. Operator ruling O-PICK: the
+        // click replaces the default, so the op cuts that item only.
         assert_eq!(
             state_of(&c, index),
             ItemState::Cut,
@@ -373,12 +381,19 @@ fn a_click_picks_each_drawn_kind(face_up: FaceUp, turn: ZRotation) {
             target: mode.target,
             key,
         });
-        assert_eq!(
-            state_of(&c, index),
-            ItemState::Excluded,
-            "{face_up:?}/{turn:?}: the click did not take the {:?} out",
-            item.kind()
-        );
+        for other in 0..items.len() {
+            let want = if other == index {
+                ItemState::Cut
+            } else {
+                ItemState::NotSelected
+            };
+            assert_eq!(
+                state_of(&c, other),
+                want,
+                "{face_up:?}/{turn:?}: the click on the {:?} must leave it the one cut item",
+                item.kind()
+            );
+        }
     }
 }
 
@@ -437,16 +452,13 @@ fn a_chip_off_skips_its_kind_p4_5() {
         target: mode.target,
         key,
     });
-    assert_eq!(
-        state_of(&c, 0),
-        ItemState::Excluded,
-        "the loop left the cut"
-    );
-    // The circle stays selected; with its outer loop gone it is no island.
+    // Operator ruling O-PICK: the click on the default rule makes the loop
+    // the one picked item; the circle leaves the cut.
+    assert_eq!(state_of(&c, 0), ItemState::Cut, "the loop is the pick");
     assert_eq!(
         state_of(&c, 1),
-        ItemState::Cut,
-        "the circle stays in the cut"
+        ItemState::NotSelected,
+        "the circle is not picked"
     );
 }
 

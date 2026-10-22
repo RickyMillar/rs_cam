@@ -263,6 +263,25 @@ impl ProjectSession {
     /// is not a selection (`Boundary`: the command never changes the
     /// source), or if the edit refuses (`SelectionEdit::RemoveRule` of an
     /// index that names no rule).
+    ///
+    /// The operator rulings of 2026-10-22 live here and in
+    /// `Selection::apply`, so every surface (GUI click, MCP, CLI) takes
+    /// them:
+    ///
+    /// - O-PICK: on a selection that is still its default, `AddPick` and
+    ///   `AddRule` replace the default (`Selection::apply`).
+    /// - GT-Q8: a `RemovePick` of an item that a rule holds turns each such
+    ///   rule into picks, all its members less the item
+    ///   (`ProjectSession::rule_drop_edit`), in this one command.
+    /// - Q2: when the edit adds a face pick to the op selection, the op is
+    ///   a floor op (`FloorOwner::OpFloor`), its floor is still the op
+    ///   default (`OperationConfig::floor_is_default`) and a picked face
+    ///   lies below the stock top in the setup frame
+    ///   (`ToolpathHeights::has_face_below_stock_top`, the UX-1 top), the
+    ///   floor becomes "Each picked face", depth 0, in this one command. A
+    ///   pick of a face at the stock top keeps the default floor. A floor
+    ///   that the operation check refuses (a Profile with side On) stays
+    ///   as it is. [`Effects::floor_set`] names the new floor.
     #[instrument(skip(self, edit))]
     pub(crate) fn edit_toolpath_selection(
         &mut self,
@@ -270,8 +289,18 @@ impl ProjectSession {
         target: crate::session::SelectionTarget,
         edit: crate::selection::SelectionEdit,
     ) -> Result<Effects, SessionError> {
+        use crate::compute::floor::Floor;
+        use crate::selection::SelectionEdit;
         use crate::session::SelectionTarget;
-        self.try_with_effects(Some(index), move |session| {
+        // GT-Q8: resolve first (the slot borrow below is mutable).
+        let edit = match (&edit, self.toolpath_configs.get(index)) {
+            (SelectionEdit::RemovePick(key), Some(tc)) => {
+                self.rule_drop_edit(tc, target, key)?.unwrap_or(edit)
+            }
+            _ => edit,
+        };
+        let mut floor_set = None;
+        let mut effects = self.try_with_effects(Some(index), |session| {
             // Read before the slot borrow: `tc` is borrowed mutably there.
             let boundary_default = session.boundary_selection_default();
             let tc = session
@@ -315,16 +344,42 @@ impl ProjectSession {
                     }
                 },
             };
+            let face_picks_before = slot.face_picks().count();
             let mut next = slot.clone().for_toolpath_model(model);
             next.apply(
                 edit.for_toolpath_model(model),
                 &op_default.for_toolpath_model(model),
             )
             .map_err(|e| SessionError::Selection(Box::new(e.for_op(label))))?;
+            let added_face_pick = next.face_picks().count() > face_picks_before;
             *slot = next;
+            // Q2: a face pick on a floor op at its default floor, when a
+            // picked face lies below the stock top (lead decision: a face at
+            // the top keeps the default floor, so it does not refuse
+            // `FloorAboveTop`). The heights resolver reads the new
+            // selection.
+            if target == SelectionTarget::Op && added_face_pick && tc.operation.floor_is_default() {
+                let probe = tc.clone();
+                let below_top = session
+                    .toolpath_heights(&probe)
+                    .is_ok_and(|h| h.has_face_below_stock_top());
+                let each_face = Floor::EachFace { depth: 0.0 };
+                let mut candidate = probe.operation.clone();
+                if below_top
+                    && candidate.set_floor(each_face)
+                    && crate::compute::domain::validate_toolpath_operation(&probe.name, &candidate)
+                        .is_ok()
+                    && let Some(tc) = session.toolpath_configs.get_mut(index)
+                {
+                    tc.operation = candidate;
+                    floor_set = Some(each_face);
+                }
+            }
             session.invalidate_result_chain(index, enabled);
             Ok(())
-        })
+        })?;
+        effects.floor_set = floor_set;
+        Ok(effects)
     }
 
     // ── Setup mutations ──────────────────────────────────────────

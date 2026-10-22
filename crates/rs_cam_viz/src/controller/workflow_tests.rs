@@ -333,13 +333,16 @@ fn w3_face_toggle_adds_and_removes() {
     );
 
     // Toggle same face OFF: the pick leaves, and no exclude is stored.
+    // Operator ruling O-PICK: the first pick replaced the default rule, so
+    // the selection is empty after the toggle off (Reset brings the
+    // default back).
     click_face(&mut c, tp_id, model_id, face_a);
 
     let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
     assert_eq!(
         tc.operation.selection(),
-        Some(&rs_cam_core::selection::Selection::drawing()),
-        "the selection is the op default after toggle off"
+        Some(&rs_cam_core::selection::Selection::empty()),
+        "the selection is empty after toggle off"
     );
 }
 
@@ -781,6 +784,142 @@ fn w4_a_face_click_on_a_face_op_replaces_the_stock_rule_p4_2() {
     );
     c.handle_internal_event(AppEvent::Redo);
     assert_eq!(face_picks(&c, tp_id), vec![face_a.0], "the redo");
+}
+
+/// Operator rulings O-PICK and Q2 (2026-10-22), the GUI arm. A face click
+/// on a Pocket that holds its default rule and its default floor:
+///
+/// - O-PICK: the click replaces the default rule with that one pick;
+/// - Q2: the floor becomes "Each picked face", depth 0, and a notice
+///   gives `Effects::FLOOR_SET_NOTE`;
+/// - one undo restores both the default rule and the default floor; the
+///   redo gives both back.
+///
+/// A Pocket whose floor the operator set keeps that floor and shows no
+/// notice. The core sentry `the_first_face_pick_sets_each_face_floor_q2`
+/// holds the MCP arm.
+///
+/// Red proof (run, red, reverted): the Q2 block of
+/// `edit_toolpath_selection` off: the floor stayed `Top Z` 3.
+#[test]
+fn w4_the_first_face_pick_sets_each_face_floor_o_pick_q2() {
+    use rs_cam_core::compute::catalog::OperationConfig;
+    use rs_cam_core::compute::floor::Floor;
+    use rs_cam_core::selection::Selection as OpSelection;
+
+    let mut c = step_controller();
+    // Lead decision on Q2: only a face below the stock top sets the face
+    // floor. The cube top is the stock top of the auto stock, so the stock
+    // here stands 5 mm above the cube.
+    let mut stock = c.state.session().stock_config().clone();
+    stock.auto_from_model = false;
+    stock.z += 5.0;
+    let _ = c
+        .state
+        .apply(Command::SetStockConfig(
+            rs_cam_core::session::SetStockConfigArgs {
+                stock: Box::new(stock),
+            },
+        ))
+        .unwrap();
+    let tp_id = add_pocket(&mut c);
+    let model_id = c.state.session().models()[0].id;
+    let enriched = c.state.session().models()[0]
+        .enriched_mesh
+        .as_ref()
+        .unwrap();
+    // The top face of the cube: the flat face at the top of the mesh box
+    // (the first plane in the list can be the bottom, which faces down).
+    let top_z = enriched.mesh.bbox.max.z;
+    let face_a = enriched
+        .face_groups
+        .iter()
+        .find(|g| {
+            enriched.face_boundary_as_polygon(g.id).is_some() && (g.bbox.min.z - top_z).abs() < 1e-6
+        })
+        .expect("the cube has a top face")
+        .id;
+    let op = |c: &AppController<ScriptedBackend>| {
+        let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
+        tc.operation.clone()
+    };
+    let default_floor = OperationConfig::new_default(OperationType::Pocket)
+        .floor()
+        .unwrap();
+    assert_eq!(op(&c).floor(), Some(default_floor), "the default floor");
+    assert!(op(&c).selection().unwrap().is_drawing(), "the default rule");
+    let key = {
+        let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
+        c.state
+            .session()
+            .face_pick_key(tc, model_id, face_a)
+            .unwrap()
+    };
+
+    let notes_before = c.notifications().len();
+    take_snapshot(&mut c, tp_id);
+    click_face(&mut c, tp_id, model_id, face_a);
+    assert_eq!(
+        op(&c).selection().cloned(),
+        Some(OpSelection::from_picks(vec![key])),
+        "O-PICK: the click replaces the default rule"
+    );
+    assert_eq!(
+        op(&c).floor(),
+        Some(Floor::EachFace { depth: 0.0 }),
+        "Q2: the first face pick sets the face floor"
+    );
+    assert!(
+        c.notifications()[notes_before..]
+            .iter()
+            .any(|n| n.message == rs_cam_core::session::Effects::FLOOR_SET_NOTE),
+        "Q2: a notice says that the floor moved"
+    );
+    flush_snapshot(&mut c);
+
+    c.handle_internal_event(AppEvent::Undo);
+    assert_eq!(op(&c).floor(), Some(default_floor), "one undo: the floor");
+    assert!(
+        op(&c).selection().unwrap().is_drawing(),
+        "one undo: the default rule"
+    );
+    c.handle_internal_event(AppEvent::Redo);
+    assert_eq!(op(&c).floor(), Some(Floor::EachFace { depth: 0.0 }));
+    assert_eq!(face_picks(&c, tp_id), vec![face_a.0]);
+
+    // A floor that the operator set stays.
+    let hand = add_pocket(&mut c);
+    let hand_floor = Floor::StockTop { depth: 3.0 };
+    let index = c
+        .state
+        .session()
+        .find_toolpath_config_by_id(hand)
+        .unwrap()
+        .0;
+    let _ = c
+        .state
+        .apply(Command::SetToolpathFloor(
+            rs_cam_core::session::SetToolpathFloorArgs {
+                index,
+                floor: hand_floor,
+            },
+        ))
+        .unwrap();
+    let notes_before = c.notifications().len();
+    click_face(&mut c, hand, model_id, face_a);
+    let (_, tc) = c.state.session().find_toolpath_config_by_id(hand).unwrap();
+    assert_eq!(face_picks(&c, hand), vec![face_a.0], "the pick landed");
+    assert_eq!(
+        tc.operation.floor(),
+        Some(hand_floor),
+        "the hand floor stays"
+    );
+    assert!(
+        !c.notifications()[notes_before..]
+            .iter()
+            .any(|n| n.message == rs_cam_core::session::Effects::FLOOR_SET_NOTE),
+        "no notice when the floor stays"
+    );
 }
 
 /// Ruling L-8 revised (geometry selection P4.D): a face click on a 3D op

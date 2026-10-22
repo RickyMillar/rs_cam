@@ -1112,6 +1112,20 @@ impl OperationConfig {
         }
     }
 
+    /// The floor that a new op of this kind holds
+    /// (`OperationConfig::new_default`): the op default floor that
+    /// operator ruling Q2 (2026-10-22) compares with. `None` for an op
+    /// that holds no floor.
+    pub fn default_floor(&self) -> Option<crate::compute::floor::Floor> {
+        Self::new_default(self.op_type()).floor()
+    }
+
+    /// True when the op holds a floor and that floor is still the op
+    /// default ([`Self::default_floor`]), by value.
+    pub fn floor_is_default(&self) -> bool {
+        self.floor().is_some() && self.floor() == self.default_floor()
+    }
+
     /// Write the floor of the op (geometry selection P3.3, the
     /// `SetToolpathFloor` door; P3.7, the GUI draft, which the panel writes
     /// back through `ReplaceToolpathConfig`). `false` for an op that holds

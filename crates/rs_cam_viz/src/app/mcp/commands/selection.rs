@@ -358,8 +358,12 @@ impl RsCamApp {
                     })
                 })
         };
+        // Operator ruling Q2: the first face pick set the floor.
+        let floor_note = effects
+            .floor_set
+            .map_or_else(String::new, |_| format!(" {}", Effects::FLOOR_SET_NOTE));
         CoreReply::succeeded(self.mcp_mutation_result(
-            format!("Selection of toolpath {index} edited. Regenerate to apply."),
+            format!("Selection of toolpath {index} edited.{floor_note} Regenerate to apply."),
             applied,
             stale,
             &before.diagnostics,
@@ -857,6 +861,84 @@ mod tests {
                 target: wire.target.into(),
                 edit: wire.edit.into(),
             }),
+        );
+    }
+
+    /// Operator rulings O-PICK and GT-Q8 (2026-10-22), MCP parity: on the
+    /// default Pocket (toolpath 3) the GUI click (`pick_edit`, then
+    /// `EditSelection`) and the wire `add_pick` of the same key store ONE
+    /// selection, the one pick with no default rule. A GUI click on an item
+    /// of a rule and the wire `remove_pick` of it store one selection too:
+    /// the rule turned into picks, with no exclude.
+    #[test]
+    fn a_pick_replaces_the_default_on_both_doors_o_pick() {
+        let circles = project()
+            .list_model_items(
+                rs_cam_core::ids::ModelId::from_raw(0),
+                Some("HOLES"),
+                Some(ItemKind::Circle),
+            )
+            .unwrap();
+        let key = circles[0].key.clone();
+
+        let mut gui = project();
+        assert!(stored(&gui, 3).is_drawing(), "fixture: the default rule");
+        let tc = gui.toolpath_config_at(3).unwrap().clone();
+        let click = gui
+            .pick_edit(&tc, SelectionTarget::Op, key.clone())
+            .unwrap();
+        assert_eq!(click, SelectionEdit::AddPick(key.clone()));
+        edit(&mut gui, 3, click);
+        let mut mcp = project();
+        wire_edit(
+            &mut mcp,
+            3,
+            &serde_json::json!({ "add_pick": serde_json::to_value(&key).unwrap() }),
+        );
+        assert_eq!(stored(&mcp, 3), stored(&gui, 3), "one rule, two doors");
+        assert!(stored(&gui, 3).rules().is_empty(), "the default is gone");
+        assert_eq!(stored(&gui, 3).picks().len(), 1);
+
+        // GT-Q8: a click on an item of the CUT layer rule of toolpath 0 (a
+        // click on a default rule replaces it by O-PICK, so the arm uses a
+        // rule that is not the default).
+        let cut = project()
+            .list_model_items(rs_cam_core::ids::ModelId::from_raw(0), Some("CUT"), None)
+            .unwrap();
+        let mut gui = project();
+        let tc = gui.toolpath_config_at(0).unwrap().clone();
+        let report = gui.selection_status(&tc, SelectionTarget::Op).unwrap();
+        let held = cut
+            .iter()
+            .find(|i| {
+                report
+                    .selected
+                    .iter()
+                    .any(|k| k.names_same_geometry(&i.key))
+            })
+            .expect("fixture: the CUT rule holds an item")
+            .key
+            .clone();
+        let click = gui
+            .pick_edit(&tc, SelectionTarget::Op, held.clone())
+            .unwrap();
+        assert_eq!(click, SelectionEdit::RemovePick(held.clone()));
+        edit(&mut gui, 0, click);
+        let mut mcp = project();
+        wire_edit(
+            &mut mcp,
+            0,
+            &serde_json::json!({ "remove_pick": serde_json::to_value(&held).unwrap() }),
+        );
+        assert_eq!(stored(&mcp, 0), stored(&gui, 0), "one drop, two doors");
+        assert!(stored(&gui, 0).rules().is_empty(), "the rule became picks");
+        assert!(stored(&gui, 0).excludes().is_empty(), "no exclude");
+        assert!(
+            !stored(&gui, 0)
+                .picks()
+                .iter()
+                .any(|k| k.names_same_geometry(&held)),
+            "the dropped item is not a pick"
         );
     }
 

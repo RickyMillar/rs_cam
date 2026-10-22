@@ -1295,6 +1295,13 @@ pub struct Effects {
     /// `SetToolpathOperation` sets it: the new op holds no selection (a
     /// 3D op), so the old selection has no place to go.
     pub selection_dropped: bool,
+    /// The floor that the command set by operator ruling Q2 (2026-10-22),
+    /// or `None`. Only `EditSelection` sets it: a face pick on a floor op
+    /// whose floor is still the op default, with a picked face below the
+    /// stock top, sets "Each picked face", depth 0, in the same command
+    /// (one undo step). Each surface
+    /// words it with [`Effects::FLOOR_SET_NOTE`].
+    pub floor_set: Option<crate::compute::floor::Floor>,
     /// The outcome of a multi-tool plan (F040), or `None` when the
     /// command planned nothing. Only `PlanMultitoolFinishing` sets it.
     ///
@@ -1310,6 +1317,13 @@ pub struct Effects {
     /// in [`Self::stale`]. A surface that holds its own copy of a
     /// toolpath re-reads these indices from the session.
     pub modulated: BTreeSet<usize>,
+}
+
+impl Effects {
+    /// The one-line note of operator ruling Q2: the GUI notice and the MCP
+    /// reply give it when [`Effects::floor_set`] is `Some`.
+    pub const FLOOR_SET_NOTE: &'static str =
+        "The floor is now 'Each picked face': each face cuts to its own height.";
 }
 
 // ── WP4 payloads ─────────────────────────────────────────────────
@@ -3138,6 +3152,7 @@ impl ProjectSession {
                 .map(|i| self.toolpath_revision_at(i)),
             created: None,
             selection_dropped: false,
+            floor_set: None,
             planned: None,
             modulated: BTreeSet::new(),
         })

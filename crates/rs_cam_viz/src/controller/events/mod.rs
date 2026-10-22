@@ -120,10 +120,23 @@ impl<B: ComputeBackend> AppController<B> {
             target,
             edit,
         });
-        if self.apply_controller_command(command, "the selection") {
-            self.state.selection = Selection::Toolpath(toolpath_id);
-            self.state.gui.mark_edited();
-            self.pending_upload = true;
+        match self.apply(command) {
+            Ok(effects) => {
+                self.state.selection = Selection::Toolpath(toolpath_id);
+                self.state.gui.mark_edited();
+                self.pending_upload = true;
+                // Operator ruling Q2: the first face pick set the floor.
+                if effects.floor_set.is_some() {
+                    self.push_notification(
+                        Effects::FLOOR_SET_NOTE.to_owned(),
+                        crate::controller::Severity::Info,
+                    );
+                }
+            }
+            Err(error) => self.push_notification(
+                format!("Could not write the selection: {error}"),
+                crate::controller::Severity::Error,
+            ),
         }
     }
 

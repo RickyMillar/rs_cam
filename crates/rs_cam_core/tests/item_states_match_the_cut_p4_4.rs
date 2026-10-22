@@ -392,15 +392,22 @@ fn an_exclude_and_a_layer_rule_give_excluded_and_not_selected() {
     let keep = s
         .list_model_items(model(&s).id, Some("KEEP"), Some(ItemKind::Loop))
         .unwrap();
-    let tc = s.toolpath_configs()[0].clone();
-    let removal = s
-        .pick_edit(&tc, SelectionTarget::Op, keep[0].key.clone())
-        .unwrap();
-    assert!(
-        matches!(removal, SelectionEdit::RemovePick(_)),
-        "a click on a rule match removes it"
+    // Operator rulings O-PICK and GT-Q8 (2026-10-22): a click on the
+    // default rule replaces it, and a click on a rule item turns the rule
+    // into picks, so no click writes an exclude. A wire `replace` still
+    // stores one; this arm writes it so.
+    let own = model(&s).id;
+    edit(
+        &mut s,
+        SelectionEdit::Replace(Box::new(
+            Selection::from_parts(
+                Selection::drawing().rules().to_vec(),
+                Vec::new(),
+                vec![keep[0].key.clone()],
+            )
+            .for_toolpath_model(own),
+        )),
     );
-    edit(&mut s, removal);
     let r = report(&s);
     check_states(&s, &r, "Pocket with an exclude");
     assert_eq!(

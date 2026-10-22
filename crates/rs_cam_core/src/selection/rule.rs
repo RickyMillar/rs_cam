@@ -285,11 +285,16 @@ pub enum SelectionEdit {
     /// Replace the whole selection.
     Replace(Box<Selection>),
     /// Add a rule. A rule equal to one the selection holds is not added
-    /// again.
+    /// again. Operator ruling O-PICK: on a selection that is still the op
+    /// default ([`Selection::is_default_of`]), the rule replaces the
+    /// default.
     AddRule(Rule),
     /// Remove the rule at this index.
     RemoveRule(usize),
     /// Add a pick. It also removes every exclude that names the item.
+    /// Operator ruling O-PICK: on a selection that is still the op default
+    /// ([`Selection::is_default_of`]), the pick replaces the default, so
+    /// the op cuts only the picked item.
     AddPick(MatchKey),
     /// Remove the picks that name the item. When no pick names it, the
     /// edit adds an exclude, so a rule match leaves the selection.
@@ -334,18 +339,15 @@ impl SelectionEdit {
     /// the selection does not hold, so the act is one undo step. No rule
     /// gives `None`.
     ///
-    /// The viewport and the section call it. An MCP `add_rule` stays an
-    /// explicit edit, as an MCP `add_pick` does.
+    /// The viewport and the section call it. An MCP `add_rule` takes the
+    /// same rule in [`Selection::apply`] (operator ruling O-PICK).
     pub fn add_rules(
         current: &Selection,
         op_default: &Selection,
         toolpath_model: ModelId,
         mut rules: Vec<Rule>,
     ) -> Option<SelectionEdit> {
-        let stored = current.clone().for_toolpath_model(toolpath_model);
-        let under_default =
-            !stored.is_empty() && stored == op_default.clone().for_toolpath_model(toolpath_model);
-        if under_default {
+        if current.holds_default(op_default, toolpath_model) {
             return (!rules.is_empty())
                 .then(|| SelectionEdit::Replace(Box::new(Selection::from_rules(rules))));
         }
@@ -506,6 +508,27 @@ impl Selection {
         *self == Self::drawing()
     }
 
+    /// True when the selection is still the op default `op_default`, and
+    /// that default is not empty (operator ruling O-PICK). Both
+    /// selections must be in the stored form
+    /// ([`Selection::for_toolpath_model`]); [`Self::holds_default`]
+    /// converts them first.
+    ///
+    /// An empty default (the Pin Drill extras, a boundary on a project
+    /// with no closed ring) is never "the default rule": a first pick on
+    /// it adds, as every later pick does.
+    pub fn is_default_of(&self, op_default: &Selection) -> bool {
+        !op_default.is_empty() && self == op_default
+    }
+
+    /// [`Self::is_default_of`] for a toolpath on `toolpath_model`: both
+    /// selections are compared in the stored form.
+    pub fn holds_default(&self, op_default: &Selection, toolpath_model: ModelId) -> bool {
+        self.clone()
+            .for_toolpath_model(toolpath_model)
+            .is_default_of(&op_default.clone().for_toolpath_model(toolpath_model))
+    }
+
     /// True when the selection holds no rule, no pick and no exclude.
     pub fn is_empty(&self) -> bool {
         self.rules.is_empty() && self.picks.is_empty() && self.excludes.is_empty()
@@ -545,9 +568,15 @@ impl Selection {
     }
 
     /// Apply one edit. `op_default` is the default selection of the op
-    /// that holds this selection; only [`SelectionEdit::Reset`] reads it.
-    /// A selection does not know its op, so the caller gives it
-    /// (`OperationConfig::default_selection`, P2.3b).
+    /// that holds this selection. A selection does not know its op, so the
+    /// caller gives it (`OperationConfig::default_selection`, P2.3b), in
+    /// the same stored form as `self`.
+    ///
+    /// Operator ruling O-PICK (2026-10-22): this is THE pick rule of every
+    /// surface. While the selection is still the default
+    /// ([`Self::is_default_of`]), `AddPick` and `AddRule` replace it: the
+    /// op then cuts only what the edit names. Later edits add or remove.
+    /// `Reset` brings the default back. `Replace` writes what it holds.
     ///
     /// Two keys name one item when [`MatchKey::matches`] holds: a pick and
     /// an exclude are stored keys, so the source is compared too.
@@ -558,6 +587,9 @@ impl Selection {
     ) -> Result<(), SelectionRefusal> {
         match edit {
             SelectionEdit::Replace(selection) => *self = *selection,
+            SelectionEdit::AddRule(rule) if self.is_default_of(op_default) => {
+                *self = Self::from_rules(vec![rule]);
+            }
             SelectionEdit::AddRule(rule) => {
                 if !self.rules.contains(&rule) {
                     self.rules.push(rule);
@@ -574,6 +606,9 @@ impl Selection {
                     ));
                 }
                 self.rules.remove(index);
+            }
+            SelectionEdit::AddPick(key) if self.is_default_of(op_default) => {
+                *self = Self::from_picks(vec![key]);
             }
             SelectionEdit::AddPick(key) => {
                 self.excludes.retain(|k| !k.matches(&key));
@@ -648,6 +683,9 @@ mod tests {
             .unwrap();
         assert!(s.picks().is_empty() && s.excludes().is_empty());
         // Rules: add once, remove by index, refuse a missing index.
+        // Operator ruling O-PICK: the selection is the default again here,
+        // so the first rule replaces the default rule.
+        assert!(s.is_default_of(&default));
         let rule = Rule {
             source: SourceRef::ToolpathModel,
             filter: Filter {
@@ -658,7 +696,14 @@ mod tests {
         };
         s.apply(SelectionEdit::AddRule(rule.clone()), &default)
             .unwrap();
+        assert_eq!(s.rules(), std::slice::from_ref(&rule));
         s.apply(SelectionEdit::AddRule(rule), &default).unwrap();
+        assert_eq!(s.rules().len(), 1);
+        s.apply(
+            SelectionEdit::AddRule(Selection::drawing().rules()[0].clone()),
+            &default,
+        )
+        .unwrap();
         assert_eq!(s.rules().len(), 2);
         s.apply(SelectionEdit::RemoveRule(0), &default).unwrap();
         assert_eq!(s.rules().len(), 1);
@@ -670,6 +715,44 @@ mod tests {
         // Reset reads the op default the caller gives.
         s.apply(SelectionEdit::Reset, &Selection::empty()).unwrap();
         assert!(s.is_empty());
+    }
+
+    /// Operator ruling O-PICK: on a selection that is still the op
+    /// default, the first pick (or rule) replaces the default. Later picks
+    /// add; `Reset` brings the default back. An empty default is never
+    /// replaced: a pick on it adds.
+    #[test]
+    fn a_pick_replaces_the_default_rule_o_pick() {
+        let default = Selection::drawing();
+        let mut s = Selection::drawing();
+        s.apply(SelectionEdit::AddPick(key(1.0)), &default).unwrap();
+        assert_eq!(s, Selection::from_picks(vec![key(1.0)]));
+        s.apply(SelectionEdit::AddPick(key(2.0)), &default).unwrap();
+        assert_eq!(s, Selection::from_picks(vec![key(1.0), key(2.0)]));
+        s.apply(SelectionEdit::Reset, &default).unwrap();
+        assert!(s.is_default_of(&default));
+        // A rule on the default replaces it too.
+        let rule = Rule {
+            source: SourceRef::ToolpathModel,
+            filter: Filter {
+                layers: vec!["H".into()],
+                ..Filter::default()
+            },
+        };
+        s.apply(SelectionEdit::AddRule(rule.clone()), &default)
+            .unwrap();
+        assert_eq!(s, Selection::from_rules(vec![rule]));
+        // The Face default (the stock) takes the same rule.
+        let mut face = Selection::stock();
+        face.apply(SelectionEdit::AddPick(key(1.0)), &Selection::stock())
+            .unwrap();
+        assert_eq!(face, Selection::from_picks(vec![key(1.0)]));
+        // An empty default: the pick adds.
+        let mut pins = Selection::empty();
+        assert!(!pins.is_default_of(&Selection::empty()));
+        pins.apply(SelectionEdit::AddPick(key(1.0)), &Selection::empty())
+            .unwrap();
+        assert_eq!(pins, Selection::from_picks(vec![key(1.0)]));
     }
 
     #[test]

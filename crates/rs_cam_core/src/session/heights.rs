@@ -197,6 +197,18 @@ impl ToolpathHeights {
         self.face_top_z
     }
 
+    /// True when the lowest up face of the selection lies below the stock
+    /// top in the setup frame (the top that UX-1 clamps to) by at least
+    /// `BuriedFaceRefusal::STOCK_TOP_EPS_MM`. Operator ruling Q2 (lead
+    /// decision 2026-10-22): only such a face pick sets the floor "Each
+    /// picked face"; a face at the stock top would leave it nothing to
+    /// cut.
+    #[must_use]
+    pub fn has_face_below_stock_top(&self) -> bool {
+        self.face_bottom_z
+            .is_some_and(|z| self.context.stock_top_z - z >= BuriedFaceRefusal::STOCK_TOP_EPS_MM)
+    }
+
     /// P3.2: the refusal of the floor of this toolpath under `heights`, or
     /// `None`. A floor that does not resolve (L-4, no up face under each
     /// face, a value that is not finite) refuses, and so does a floor at or

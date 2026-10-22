@@ -177,6 +177,17 @@ fn session() -> ProjectSession {
             edit: SelectionEdit::AddPick(face_key()),
         }))
         .unwrap();
+    // Operator ruling Q2: `Top { depth: 3 }` is the Pocket default floor, so
+    // the first face pick set "Each picked face". This sentry walks the
+    // references from `Top Z`, so it writes that floor back.
+    let _ = session
+        .apply(Command::SetToolpathFloor(
+            rs_cam_core::session::SetToolpathFloorArgs {
+                index: 0,
+                floor: Floor::Top { depth: DEPTH },
+            },
+        ))
+        .unwrap();
     session
 }
 

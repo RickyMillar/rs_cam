@@ -217,6 +217,7 @@ fn state(operation: OperationConfig, tab: properties::ToolpathTab) -> AppState {
         })
         .tool(tool)
         .model(model());
+    let floor = operation.floor();
     builder.add_toolpath(0, toolpath(operation)).unwrap();
     let mut state = AppState::new();
     state.replace_session(builder.build());
@@ -227,6 +228,16 @@ fn state(operation: OperationConfig, tab: properties::ToolpathTab) -> AppState {
             edit: SelectionEdit::AddPick(face_key()),
         }))
         .unwrap();
+    // Operator ruling Q2: on an op default floor the first face pick sets
+    // "Each picked face". Each arm here names its floor, so it writes that
+    // floor back.
+    if let Some(floor) = floor {
+        let _ = state
+            .apply(Command::SetToolpathFloor(
+                rs_cam_core::session::SetToolpathFloorArgs { index: 0, floor },
+            ))
+            .unwrap();
+    }
     let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     state.selection = GuiSelection::Toolpath(id);

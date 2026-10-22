@@ -9,8 +9,10 @@
 //!    `stock_offset` on each side, with the tool centre one radius inside
 //!    it (the output before P4.2; G-OPGOLDEN holds it byte for byte).
 //! 2. A viewport face click (`pick_edit`) on a Face op under the default
-//!    replaces the stock rule with that one pick (ruling L-6). An explicit
-//!    `AddPick` (MCP) adds the pick and keeps the stock rule.
+//!    replaces the stock rule with that one pick (ruling L-6). Operator
+//!    ruling O-PICK (2026-10-22) made the rule general: the click sends
+//!    `AddPick`, and `Selection::apply` replaces the default, so an
+//!    explicit `AddPick` (MCP) replaces it too.
 //! 3. The picked face moves the depth base of an AUTO top to the face Z in
 //!    the SETUP frame: the face Z on a Top setup, and `stock top - face Z`
 //!    on a `FaceUp::Bottom` setup. UX-1b (operator ruling Q1, SAFETY): the
@@ -39,7 +41,7 @@
 //!
 //! - Claim 1: the stock region grown by two `stock_offset`
 //!   (`generate_face`): the X range moved.
-//! - Claim 2: `pick_edit` without the L-6 rule (always `AddPick`): the
+//! - Claim 2: the O-PICK `AddPick` arm of `Selection::apply` off: the
 //!   stock rule stayed.
 //! - Claim 3: the auto top override skipped (`face_top_z` read as `None`
 //!   in `resolve_generation_inputs`): the top stayed at the stock top.
@@ -358,16 +360,17 @@ fn the_default_faces_the_stock_rectangle_p4_2() {
     );
 }
 
-/// Claim 2: a click under the default replaces the stock rule; an
-/// explicit `AddPick` adds.
+/// Claim 2: a click under the default replaces the stock rule, and so does
+/// an explicit `AddPick` (operator ruling O-PICK: one rule on every
+/// surface).
 #[test]
 fn a_click_replaces_the_stock_rule_and_an_add_pick_adds_p4_2() {
     let mut s = session(Some(part_model()), FaceUp::Top);
     let key = face_key(&s, 0);
     let edit = click_face(&mut s, 0);
     assert!(
-        matches!(edit, SelectionEdit::Replace(_)),
-        "a click under the stock default replaces it: {edit:?}"
+        matches!(edit, SelectionEdit::AddPick(_)),
+        "a click under the stock default sends the pick: {edit:?}"
     );
     assert_eq!(
         stored(&s),
@@ -381,7 +384,7 @@ fn a_click_replaces_the_stock_rule_and_an_add_pick_adds_p4_2() {
         "a second click removes the pick: {edit:?}"
     );
 
-    // An explicit `AddPick` on the stock default keeps the stock rule.
+    // O-PICK: an explicit `AddPick` on the stock default replaces it too.
     let mut s = session(Some(part_model()), FaceUp::Top);
     let _ = s
         .apply(Command::EditSelection(EditSelectionArgs {
@@ -390,13 +393,11 @@ fn a_click_replaces_the_stock_rule_and_an_add_pick_adds_p4_2() {
             edit: SelectionEdit::AddPick(key.clone()),
         }))
         .unwrap();
-    let held = stored(&s);
     assert_eq!(
-        held.rules(),
-        Selection::stock().rules(),
-        "the stock rule stays"
+        stored(&s),
+        Selection::from_picks(vec![key]),
+        "the pick replaces the stock rule"
     );
-    assert_eq!(held.picks(), &[key], "the pick is added");
 }
 
 /// Claim 3: the picked face sets the auto top in the setup frame.
@@ -506,12 +507,18 @@ fn a_pocket_on_the_stock_clears_round_a_drawing_loop_p4_2() {
     cfg.dressups = no_dressups();
     let _ = builder.add_toolpath(0, cfg).unwrap();
     let mut s = builder.build();
-    let stock_rule = Selection::stock().rules()[0].clone();
+    // Operator ruling O-PICK: an `AddRule` on the default rule replaces
+    // it, so the default rule and the stock rule are written in one
+    // `Replace`.
+    let rules = vec![
+        Selection::drawing().rules()[0].clone(),
+        Selection::stock().rules()[0].clone(),
+    ];
     let _ = s
         .apply(Command::EditSelection(EditSelectionArgs {
             index: 0,
             target: SelectionTarget::Op,
-            edit: SelectionEdit::AddRule(stock_rule),
+            edit: SelectionEdit::Replace(Box::new(Selection::from_rules(rules))),
         }))
         .unwrap();
 

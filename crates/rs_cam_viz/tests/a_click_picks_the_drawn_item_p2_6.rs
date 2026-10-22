@@ -14,8 +14,9 @@
 //!
 //! 1. Holes, on a `Bottom` setup and on a `Deg90` setup: a click on the
 //!    drawn marker of a hole hits that hole (`PickHit::Item` with its
-//!    key), and the `TogglePick` event of that hit takes the hole out of
-//!    the drill selection. The raw model point of the old pick is more
+//!    key), and the `TogglePick` event of that hit on the default rule
+//!    makes it the one selected hole (operator ruling O-PICK, 2026-10-22);
+//!    a second click takes it out. The raw model point of the old pick is more
 //!    than the pick threshold away on the screen, so the test tells the
 //!    two frames apart.
 //! 2. Faces, on a `Bottom` setup: a click on the drawn top face of the
@@ -293,19 +294,15 @@ fn a_click_on_a_drawn_hole_toggles_it(face_up: FaceUp, turn: ZRotation) {
             item.xy
         );
 
-        // The default rule holds the hole; the click takes it out.
-        assert!(is_selected(&c, &key), "fixture: the default holds the hole");
-        c.handle_internal_event(AppEvent::TogglePick {
+        // Each hole starts from the default rule, which holds it.
+        c.handle_internal_event(AppEvent::EditToolpathSelection {
             toolpath_id: tp_id,
             target: rs_cam_core::session::SelectionTarget::Op,
-            key: key.clone(),
+            edit: rs_cam_core::selection::SelectionEdit::Reset,
         });
-        assert!(
-            !is_selected(&c, &key),
-            "the click on hole {:?} did not toggle it",
-            item.xy
-        );
-        // A second click puts it back.
+        assert!(is_selected(&c, &key), "fixture: the default holds the hole");
+        // Operator ruling O-PICK: the click replaces the default rule, so
+        // the hole is the one selected item.
         c.handle_internal_event(AppEvent::TogglePick {
             toolpath_id: tp_id,
             target: rs_cam_core::session::SelectionTarget::Op,
@@ -313,7 +310,26 @@ fn a_click_on_a_drawn_hole_toggles_it(face_up: FaceUp, turn: ZRotation) {
         });
         assert!(
             is_selected(&c, &key),
-            "the second click did not toggle back"
+            "the click on hole {:?} did not pick it",
+            item.xy
+        );
+        assert!(
+            items
+                .iter()
+                .filter(|other| !other.key.names_same_geometry(&key))
+                .all(|other| !is_selected(&c, &other.key)),
+            "the click on hole {:?} left another hole selected",
+            item.xy
+        );
+        // A second click takes it out.
+        c.handle_internal_event(AppEvent::TogglePick {
+            toolpath_id: tp_id,
+            target: rs_cam_core::session::SelectionTarget::Op,
+            key: key.clone(),
+        });
+        assert!(
+            !is_selected(&c, &key),
+            "the second click did not toggle it off"
         );
     }
 }

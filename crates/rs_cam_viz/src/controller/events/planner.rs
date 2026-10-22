@@ -84,6 +84,7 @@ impl<B: ComputeBackend> AppController<B> {
             revision: _,
             created: _,
             selection_dropped: _,
+            floor_set: _,
             planned,
             modulated: _,
         } = effects;

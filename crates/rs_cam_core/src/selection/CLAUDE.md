@@ -6,7 +6,7 @@ The items of every source and the selection of an op. Plan: `planning/geometry_s
 - `mod.rs` facade; `tests.rs` P2.2 lib sentries; `stock.rs` `stock_items`; `key.rs` `MatchKey`, `matches`, `CAD_ROUNDING_MM` (L-13); `item.rs`
   `Item`, `Shape`, `FaceItem`, `ItemKind`, `SourceRef`, `ItemSet` (`has_selectable_item`: the 2D gate).
 - `rule.rs` — `Selection` (private fields, NO `Default`), `Rule` (`layer_rules`), `Filter`, `KindFilter`,
-  `SelectionEdit` (`add_rules`: THE replace-under-default rule); `near.rs` — THE pick rule (`polyline_distance`).
+  `SelectionEdit`; `Selection::apply` holds THE replace-under-default rule (O-PICK: `AddPick`/`AddRule` on `is_default_of` replace it; an empty default never counts; `add_rules` reuses `holds_default`); `near.rs` — THE pick rule (`polyline_distance`).
 - `join.rs` — THE join (`CLOSE_TOL_MM`); `drawing_edit.rs` — the ledger; `flat_regions.rs` — STL flat regions as faces (`FLAT_REGION_Z_BAND_MM`, L-7; Z order, then lowest triangle).
 - `resolve.rs` — `resolve` (pure; reports, never refuses), `face_top_z`, `to_setup_frame` (THE frame door; F013: `ResolvedSelection<ModelFrame | SetupFrame>`, `to_setup_frame(Option<&SetupTransformInfo>)` gives `<SetupFrame>`, `face_top_z`/`face_bottom_z` exist only on `<SetupFrame>`); `view.rs` — `view`, `view_boundary`, `OpItems`, `Regions` (`is_stock`, `exterior_item`), `Curves`, `Holes`; `refusal.rs` — `RefusalCause`; `hole_fit.rs` — `hole_fit`, `fit_holes` (P6.5); `extend.rs` — `extend_to_stock` = `extend_ends` (L-3 reuse) + `close_to_stock`, `PathSide`, `StockXy`, `CannotExtend` (P6.4).
 
@@ -37,4 +37,4 @@ The items of every source and the selection of an op. Plan: `planning/geometry_s
   `drill_picks_resolve_to_targets_g_drillpickstale`, `selection_refusals_name_the_item_p2_4` (status = generation, except `NoSuchRule`, `FacesNotReady`),
   `a_two_face_pick_keeps_both_faces_p2_4`, `a_selection_boundary_confines_g_modeloutline`, `selection_round_trips_p2_6`, `one_item_is_one_pick_p2_7`,
   `a_retired_selection_key_is_named_p2_6`, `a_down_face_gives_no_top_and_no_floor_p3_4`, `a_3d_op_face_pick_sets_its_top_p4_1`, `a_face_op_reads_its_selection_p4_2`, `item_states_match_the_cut_p4_4`,
-  `import_reports_joins_and_open_shapes_p4_8`, `drawing_edits_replay_on_reimport_p4_9`, `stl_flat_regions_are_face_items_p4_7` (`--features test-support`), `a_drill_drills_only_the_tool_size_p6_5`, `a_bore_cuts_the_stated_size_p6_6`, `a_pocket_extends_an_open_path_to_the_stock_p6_4` (`--lib selection::extend`)
+  `import_reports_joins_and_open_shapes_p4_8`, `drawing_edits_replay_on_reimport_p4_9`, `stl_flat_regions_are_face_items_p4_7` (`--features test-support`), `a_drill_drills_only_the_tool_size_p6_5`, `a_bore_cuts_the_stated_size_p6_6`, `a_pocket_extends_an_open_path_to_the_stock_p6_4` (`--lib selection::extend`), `a_pick_replaces_the_default_rule_o_pick` (O-PICK, GT-Q8)

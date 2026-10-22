@@ -1009,17 +1009,19 @@ impl ProjectSession {
     /// `target` of `tc` (lead ruling P2.2: no toggle edit in the selection;
     /// P4.1: the target). It reads
     /// THE resolution through the memo ([`Self::selection_status`]): an
-    /// item that the selection holds gives `RemovePick` (a rule match then
-    /// gets an exclude), any other item gives `AddPick`.
+    /// item that the selection holds gives `RemovePick` (the command turns
+    /// a rule that holds it into picks, GT-Q8), any other item gives
+    /// `AddPick`.
     ///
     /// `key` names its source as a stored pick does. The source
     /// [`SourceRef::ToolpathModel`] reads as the model of `tc`.
     ///
-    /// Lead ruling L-6 (P4.2): when the op selection is still the stock
-    /// default ([`Selection::stock`], the Face default), a click on an item
-    /// that is not the stock gives `Replace` with that one pick. So one
-    /// click gives one region, as the first layer pick of the drill does.
-    /// An explicit `AddPick` (MCP) stays additive.
+    /// Operator ruling O-PICK (2026-10-22): while the selection is still
+    /// its default ([`Selection::holds_default`]), a click on an item that
+    /// is not the stock gives `AddPick`, also when the default rule holds
+    /// the item. [`Selection::apply`] then replaces the default with that
+    /// one pick, so the op cuts only the picked item. A click on the stock
+    /// item of a Face op under its stock default still toggles it.
     pub fn pick_edit(
         &self,
         tc: &ToolpathConfig,
@@ -1030,22 +1032,157 @@ impl ProjectSession {
             SourceRef::ToolpathModel => SourceRef::Model(tc.model_id),
             other @ (SourceRef::Model(_) | SourceRef::Stock) => other,
         };
+        if source != SourceRef::Stock && self.holds_its_default(tc, target)? {
+            return Ok(SelectionEdit::AddPick(key));
+        }
         let report = self.selection_status(tc, target)?;
         let selected = report
             .selected
             .iter()
             .any(|k| k.source == source && k.names_same_geometry(&key));
-        if selected {
-            return Ok(SelectionEdit::RemovePick(key));
-        }
-        let under_stock_default = target == SelectionTarget::Op
-            && source != SourceRef::Stock
-            && tc.selection_of(target)?.is_some_and(Selection::is_stock);
-        Ok(if under_stock_default {
-            SelectionEdit::Replace(Box::new(Selection::from_picks(vec![key])))
+        Ok(if selected {
+            SelectionEdit::RemovePick(key)
         } else {
             SelectionEdit::AddPick(key)
         })
+    }
+
+    /// The default of the selection `target` of `tc`: the op default
+    /// (`OperationConfig::default_selection`) or
+    /// [`Self::boundary_selection_default`]. `None` for an op that holds
+    /// no selection.
+    pub(crate) fn selection_default_of(
+        &self,
+        tc: &ToolpathConfig,
+        target: SelectionTarget,
+    ) -> Option<Selection> {
+        match target {
+            SelectionTarget::Op => tc.operation.default_selection(),
+            SelectionTarget::Boundary => Some(self.boundary_selection_default()),
+        }
+    }
+
+    /// True when the selection `target` of `tc` is still its default rule
+    /// (operator ruling O-PICK, [`Selection::holds_default`]). The
+    /// Geometry tab and the Selection section read it for the default row.
+    pub fn holds_its_default(
+        &self,
+        tc: &ToolpathConfig,
+        target: SelectionTarget,
+    ) -> Result<bool, SessionError> {
+        let current = tc.selection_of(target)?;
+        Ok(match (current, self.selection_default_of(tc, target)) {
+            (Some(current), Some(default)) => current.holds_default(&default, tc.model_id),
+            _ => false,
+        })
+    }
+
+    /// Operator ruling GT-Q8 (2026-10-22): the edit that drops the item
+    /// `key` from the rules of the selection `target` of `tc`. Each rule
+    /// that holds the item turns into picks: all its members less the
+    /// dropped item. The rules that do not hold it, the other picks and the
+    /// excludes stay. A pick that names the item goes too. The answer is
+    /// ONE `Replace`, so the act is one undo step.
+    ///
+    /// The members of a rule are the items that it gives the op on its
+    /// own (with the excludes of the selection): for a default rule
+    /// ([`crate::selection::KindFilter::Served`]) the items that the op
+    /// cuts (`Cut` or `Island`), so an item that the default leaves out
+    /// (an open path on a Pocket, a Drill circle of another size) does not
+    /// become a named item that refuses. A rule that names its kinds gives
+    /// every item that it matches.
+    ///
+    /// `None` when no rule holds the item: the plain `RemovePick` then
+    /// applies. `edit_toolpath_selection` calls it for every `RemovePick`,
+    /// so the GUI click and the MCP `remove_pick` take one rule.
+    pub(crate) fn rule_drop_edit(
+        &self,
+        tc: &ToolpathConfig,
+        target: SelectionTarget,
+        key: &MatchKey,
+    ) -> Result<Option<SelectionEdit>, SessionError> {
+        let model = tc.model_id;
+        let Some(current) = tc.selection_of(target)? else {
+            return Ok(None);
+        };
+        let current = current.clone().for_toolpath_model(model);
+        let key = key.clone().for_toolpath_model(model);
+        let names_key = |k: &MatchKey| k.clone().for_toolpath_model(model).matches(&key);
+        let setup = self.find_setup_for_toolpath_id(tc.id);
+        let ctx = SetupEvalContext::build_for_setup(self, setup);
+        let mut kept_rules = Vec::new();
+        let mut rule_picks: Vec<MatchKey> = Vec::new();
+        let mut dropped_a_rule = false;
+        for rule in current.rules() {
+            let probe = with_selection(
+                tc,
+                target,
+                Selection::from_parts(vec![rule.clone()], Vec::new(), current.excludes().to_vec()),
+            );
+            let report = self.build_selection_report(&probe, target, &ctx)?;
+            let members: Vec<MatchKey> = report
+                .selected
+                .iter()
+                .filter(|k| {
+                    rule.names_kinds()
+                        || matches!(
+                            self.item_state_in(tc, &report, k),
+                            Some(ItemState::Cut | ItemState::Island)
+                        )
+                })
+                .map(|k| k.clone().for_toolpath_model(model))
+                .collect();
+            if !members.iter().any(&names_key) {
+                kept_rules.push(rule.clone());
+                continue;
+            }
+            dropped_a_rule = true;
+            for member in members {
+                if !names_key(&member) && !rule_picks.iter().any(|k| k.matches(&member)) {
+                    rule_picks.push(member);
+                }
+            }
+        }
+        if !dropped_a_rule {
+            return Ok(None);
+        }
+        let mut picks: Vec<MatchKey> = current
+            .picks()
+            .iter()
+            .filter(|k| !names_key(k))
+            .cloned()
+            .collect();
+        for member in rule_picks {
+            if !picks.iter().any(|k| k.matches(&member)) {
+                picks.push(member);
+            }
+        }
+        Ok(Some(SelectionEdit::Replace(Box::new(
+            Selection::from_parts(kept_rules, picks, current.excludes().to_vec()),
+        ))))
+    }
+
+    /// The state of the item `key` (a key of `report.selected`) in
+    /// `report`: from `foreign`, or from `item_states` by the item index in
+    /// the toolpath model.
+    fn item_state_in(
+        &self,
+        tc: &ToolpathConfig,
+        report: &SelectionReport,
+        key: &MatchKey,
+    ) -> Option<ItemState> {
+        if let Some((_, state)) = report.foreign.iter().find(|(k, _)| k.matches(key)) {
+            return Some(*state);
+        }
+        if key.source != SourceRef::Model(tc.model_id) {
+            return None;
+        }
+        let model = self.model_by_id(tc.model_id)?;
+        let index = model
+            .items
+            .iter()
+            .position(|item| item.key().names_same_geometry(key))?;
+        report.item_states.get(index).copied()
     }
 
     /// What a viewport click on `key` does to the selection `target` of
@@ -1116,10 +1253,9 @@ impl ProjectSession {
             ))
         };
         let current = tc.selection_of(target)?.ok_or_else(no_selection)?;
-        let op_default = match target {
-            SelectionTarget::Op => tc.operation.default_selection().ok_or_else(no_selection)?,
-            SelectionTarget::Boundary => self.boundary_selection_default(),
-        };
+        let op_default = self
+            .selection_default_of(tc, target)
+            .ok_or_else(no_selection)?;
         let rules = crate::selection::Rule::layer_rules(key.source, layer, kinds, circle);
         SelectionEdit::add_rules(current, &op_default, tc.model_id, rules).ok_or_else(|| {
             SessionError::InvalidParam("No kind is on, so the layer rule names no item".to_owned())
@@ -1325,6 +1461,33 @@ impl ToolpathConfig {
             },
         }
     }
+}
+
+/// A copy of `tc` whose selection `target` is `selection` (the GT-Q8
+/// probe of one rule). A boundary that is not a selection, or an op with
+/// no selection slot, stays as it is.
+fn with_selection(
+    tc: &ToolpathConfig,
+    target: SelectionTarget,
+    selection: Selection,
+) -> ToolpathConfig {
+    let mut probe = tc.clone();
+    match target {
+        SelectionTarget::Op => {
+            if let Some(slot) = probe.operation.selection_slot() {
+                *slot = selection;
+            }
+        }
+        SelectionTarget::Boundary => {
+            if let BoundarySource::Selection {
+                selection: slot, ..
+            } = &mut probe.boundary.source
+            {
+                *slot = selection;
+            }
+        }
+    }
+    probe
 }
 
 /// P6.4: the outer ring of each closed area of `items` whose exterior item

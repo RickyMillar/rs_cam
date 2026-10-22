@@ -350,12 +350,14 @@ fn an_exclude_removes_a_rule_match_and_not_a_pick() {
 fn a_rule_and_a_pick_of_one_item_give_it_once_as_the_pick() {
     let m = mixed();
     let path_item = m.items.iter().nth(1).unwrap().clone();
-    let mut sel = Selection::drawing();
-    sel.apply(
-        SelectionEdit::AddPick(pick_key(&path_item)),
-        &Selection::drawing(),
-    )
-    .unwrap();
+    // Operator ruling O-PICK: an `AddPick` on the default rule replaces
+    // it, so the rule and the pick are stored by hand here (as a wire
+    // `replace` stores them).
+    let sel = Selection::from_parts(
+        Selection::drawing().rules().to_vec(),
+        vec![pick_key(&path_item)],
+        Vec::new(),
+    );
     let r = resolve_on(&sel, &m);
     assert_eq!(r.items().len(), 4);
     assert_eq!(r.items()[1].by(), MatchedBy::Pick);

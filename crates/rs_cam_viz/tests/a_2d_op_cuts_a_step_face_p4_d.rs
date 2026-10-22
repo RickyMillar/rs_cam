@@ -15,7 +15,9 @@
 //!    so its selection refuses `Empty` ("pick a face").
 //! 3. A face click (`ProjectSession::click_edit`, the GUI click route) adds
 //!    that face. The Pocket then generates, and every cutting move lies
-//!    inside that face.
+//!    inside that face. (The case face is at the stock top, so operator
+//!    ruling Q2 keeps the default floor: a face at the top does not set
+//!    "Each picked face".)
 //! 4. A Trace takes the same face as a closed line (a face's rings are
 //!    closed curves): it generates, and its cut stays round that face.
 //!
