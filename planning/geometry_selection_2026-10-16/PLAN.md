@@ -384,7 +384,7 @@ Every door (GUI, MCP, CLI, project file) reads SVG through one function,
 | P3 depth refs | COMPLETE (P3.1-P3.8; D9 one floor field with its reference) | 6026eb37, 86265095, 6d403ac1, 272238d8, 1f814929, 294875be, 5236e6c2, 83df571f | pushed to 0346862f up to P3.6; P3.7-P3.8 local |
 | P4 UI + sources | P4.0 probe, P4.1-P4.9 and P4.D done (P4.8 without the SVG scale default); operator demo seen 2026-10-20 | 1ca93935, 229eb719, c223d7c4, 9bdfac8e, 3373d8d2, 099d946b, 22cb38fa, 8f5723e3, a53e0cf5, 30e9a146, 0458a586 (SVG O-2), a83d7236 (P4.10); P4 COMPLETE; pushed to ca18398c | next: P3 (D9) after the tech-debt W4 |
 | P5 tabs | done (operator look pending) | e76f82c8, P5b | GUI viewport tab editor -> P4. Lead ruling P5b: tab_width = the material bridge (today bridge = width - D: default leaves none); tab_height holds on every level |
-| P6 open paths, holes | P6.0-P6.6, P6.7a done (P6.5b, R-ARC done); next P6.7b (after W13b), P6.8 parity | e1dfa30e, b0a13361, 5d4e2a6c, 5410a90a, f8cdfd70, 65c949d9, 0b4348e6, f27d2634, b2f1b9cc, 13abac43, 070d32bc, a2887ceb, bd613c8e | pushed a2887ceb (tech-debt session, full gate); P6.7a not pushed; follow-ups P6.0d, P6.2b, P6.4 list |
+| P6 open paths, holes | done (P6.0-P6.8, P6.5b, R-ARC) | e1dfa30e, b0a13361, 5d4e2a6c, 5410a90a, f8cdfd70, 65c949d9, 0b4348e6, f27d2634, b2f1b9cc, 13abac43, 070d32bc, a2887ceb, bd613c8e, 17fb46ed | pushed to a2887ceb; P6.7a-P6.8 not pushed; follow-ups P6.0d, P6.2b, P6.4 list |
 | P7 templates | not started (P4 done) | | |
 | P8 recognition | not started (P4 done) | | |
 
@@ -764,6 +764,18 @@ Defects found by the design:
     path, so "M refused" is at most 1.
   - Trace Left/Right on a closed loop has no side mark; the side ring
     shows only with the selection-states overlay on.
+
+- P6.7b and P6.8 done (17fb46ed). Lead rulings on the editor's
+  decisions: the Bore takes the Drill's tool (a toolpath must have a tool;
+  L-17 "picks no tool" means no tool advice); the floor is
+  `StockTop { depth: drill.depth }` (the same bottom); default feeds, no
+  Suggest at add (Suggest is an explicit click). The action is one line
+  under the hole table, not a button in the row (`DataRow` has no slot).
+  A GUI click keeps the Drill selected, so that one undo removes the
+  Bore. The feeds matrix is 1000 cells (the tests fixture); the
+  `planning/` csv is the older 960-row record. P6 is complete; the
+  P6.0d, P6.2b, P6.4 and P6.7a follow-ups stay open. Next: the Profile
+  Island role fix (before P7.4), then P7.1-P7.9.
 
 ## P7 operator rulings (2026-10-22)
 
