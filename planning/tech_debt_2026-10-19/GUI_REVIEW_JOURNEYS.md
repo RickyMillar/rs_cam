@@ -4,6 +4,10 @@ Follow each journey in a GUI built from HEAD. Each step names what you
 do and what you must see. Tick the box when it holds; write a note when
 it does not. Part B holds the geometry-selection journeys (P4–P6).
 
+Not yet walked: both parts come from the editors' reports and the code,
+not from a look at a running GUI. Button names, labels and click paths
+may differ on screen; note each difference.
+
 Before you start:
 - The lead rebuilds the release GUI from HEAD (`gui_status` shows the
   binary is not newer than the process).
@@ -184,7 +188,7 @@ Fixture B: `crates/rs_cam_core/tests/fixtures/wanaka100/wanaka_full_tuned.toml`
 
 ### B7. Bore (P6.6, P6.7a)
 - [ ] Open B. Add a Bore with a 3 mm end mill on holes.dxf. The rows
-      read "Ø 5.859 × 12" with "helix r 1.430" (Ok).
+      read "Ø 5.859 × 12" with a helix radius of about 1.43 (Ok).
 - [ ] Generate and simulate. A helix in each hole, and a clean wall of
       Ø 5.859.
 - [ ] Change the tool to 2 mm. "leaves a core" in Danger (the hole is
