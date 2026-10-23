@@ -47,6 +47,9 @@ Surface rule samples EMITTED moves at ≤ D/4 through the drop-cutter.
 | D6 verifier | DONE 00:05 at f5b3725c (+ fix/ignore 7c75324d): fmt/check/clippy/harness green; C6's disc join test RED (nesting fails at levels 2, 9, 12; edge transition unapplied) → ignored with reason; all four controls exact. **No C6 column beats geodesic_curv** (73 / 63): curv_join 89 / 72, curv_local 85 / 89 (removes the pocket cascades 876 → 202 and the mop over-steps, at the cost of entries), curv_local_join 100 / 94. **Quantum test: the near-ceiling refusals are NOT a cell artefact — the count rises at half cell**, so the planner cell under-reads the cut width (G-CELLREAD, shipped measure). Was RUNNING 23:45: C6 gates, four exact-match controls, the quantum test (near-ceiling count at planner cell vs half cell) | `P15_D_verify.md` §D6 |
 | GUI rebuild (A4) + E4 | DONE 00:30. E4: the headline names a FREE island on every Corne rough (the spur on AS, a core on CS); counts unchanged (37 / 2 cores, spur, band); 596 of 627 hole-rim slivers now tagged. Edge cases of the wall tag remain: 41 angled-wall slivers (≤ 1.06 mm) stay free; an uncut hex hole the op never entered tags "at a wall" (it touches its own walls); the tall uncut ring inside the wall reads free (taller than the wall step). CP zero control: 1 387 wall-touching + 41 free slivers ≤ 1.06 mm. wanaka front 178 islands caution; adopt 18.9 s. Exports succeed. Tag iteration stops here for the night; the readings that matter (cores, spur, band, terraces gone) are right. | `P15_E_evidence.md` §E4 |
 | C7 area measure | RUNNING 00:00 (24th): exact area-per-mm step measure on the planner grid under the SAME ceiling c·D; research-only replay variant (`PassLoadMeasure` threaded through path.rs, shipped sites unchanged; byte parity is the proof); columns geodesic_curv_area, agent_area, contour_spiral_area; the L-step-at-a-wall unit test is the claim the ruling rests on | `P2_C2_geodesic_fixes.md` §C7 |
+| C7 area measure | DONE 00:50, committed 8deecf98 (not built): measure = standing stock in the step capsule outside the start disc × cell² per mm; same ceiling c·D; threaded `PassLoadMeasure` (shipped sites SweptWidth). **Result: the ruling's premise fails** — head-on steps exceed the ceiling in both measures; circular fronts read identically (area/mm = s + s(R − s/2)/ρ = the C3 swept-width formula). The measures differ only on slivers either side or a grazed lump. Columns geodesic_curv_area, agent_area, contour_spiral_area with both readings. | `P2_C2_geodesic_fixes.md` §C7 |
+| D7 verifier | DONE 01:30 at 8deecf98: all green, no fixes; shipped neutrality proven (byte parity, 14 adaptive3d sentries, both clippy configs); master reds unchanged. The area columns are NOT evidence: the per-mm reading is unbounded on short steps (raw up to 7.85 D), entries rose 1.3–4.8× under it → moved to EXTRA with a step-length floor (C8 first item). Was RUNNING 00:55: shipped neutrality of the threading (byte parity, 8 adaptive + 14 adaptive3d sentries, clippy with and without research), C7 tests, harness controls + area columns | `P15_D_verify.md` §D7 |
+| C8 link + lead-in | RUNNING 01:35: one-direction lobe arcs, keep-down return LINK through the just-cut band (existing link check, zero load), tangential LEAD-IN arc into the next band (radius derived from s and the ceiling); column geodesic_curv_lead; target one plunge per lobe | `P2_C2_geodesic_fixes.md` §C8 |
 | (old) GUI rebuild | was RUNNING 18:40 from the worktree (branch 3ae1da39); then install, gui_restart, E2 re-run of the Corne controls | |
 | (old) E evidence | was RUNNING 15:20: Phase 0 Corne columns through the two instruments in the GUI (zero control CP, positive control AS, CS), wanaka200 CP if time | `P15_E_evidence.md` |
 | (old) D verifier | was RUNNING 15:10: merge master into the branch, fmt, check, new sentries, folder sentries, viz --lib, mcp, clippy, magic-number scan, render harness | `P15_D_verify.md` (worktree) |
@@ -101,6 +104,10 @@ Operator 15:05: "I think your plan is good." Then the continuous spiral form
 
 ## Where things stand (read this first, 2026-10-24 00:35)
 
+- **00:20: adaptive-instruments LANDED on master 629748f1** (peer's c49414c5
+  merged, no conflict, ff'd). Post-merge smoke on main: check core + viz,
+  viz --lib 586 green, roughcov 9/9, roughgouge 6/6.
+
 - **Instruments (Phase 1.5) are built and measured.** Gouge: clean on all
   eight Phase 0 roughs, exports succeed, no false fire. Coverage: reads
   every eye defect (37 + 2 hex-hole cores, the 13 mm spur, the outer band),
@@ -115,9 +122,15 @@ Operator 15:05: "I think your plan is good." Then the continuous spiral form
   while the session runs). Star 73 entries (from 92), pocket 63 (from 88),
   no mid-wrap splits, five like arms. The morph and the transition joins
   were tried, measured and dropped by pre-set rules.
-- **One ruling needed:** the engagement measure at wall ends (section
-  below). The per-arc plunge is a limit of the swept-width measure, not of
-  the geometry; FreeCAD's exact area-per-mm measure accepts the turn.
+- **The measure ruling is WITHDRAWN (C7, 00:50):** the lead's premise was
+  wrong. C7 built the exact area-per-mm measure and showed that at a
+  wall-end turn the area per mm is over the ceiling too (a head-on step
+  clears a disc cap: 3.1 then 5.2 mm²/mm against 2.18), and that on every
+  circular front the two measures are the SAME expression. So the per-arc
+  plunge is real engagement, not a measurement artefact. What FreeCAD
+  does instead (R1 §4): the next arc is reached by a keep-down LINK through
+  the already-cleared band (zero load) and entered by a tangential LEAD-IN
+  whose bite grows from 0 to s. That is C8, after D7 verifies C7.
 - **Shipped-code findings filed tonight:** G-MOPLOAD (handed over),
   G-RESLINKLOAD, G-CELLREAD (the planner cell under-reads the cut width),
   G-WALLSTRIP-PLAN, G-SHELFSCAN (N11), plus the Phase 0 set.
@@ -295,7 +308,7 @@ Visible at the next gate: the gouge Caution path and `at_wall` are tested
 only synthetically (no live positive yet); the probe tolerance t ≈ 0.3 mm
 leaves a real wall cut up to t unflagged.
 
-## Ruling needed from the operator (morning): the engagement MEASURE at wall ends
+## (WITHDRAWN 00:50 by C7's measurement — kept for the record) Ruling on the engagement MEASURE at wall ends
 
 The geodesic growth pattern is accepted (G1) and the curvature-spaced wraps
 look right (page v4). The one open cost is one plunge per arc in every
