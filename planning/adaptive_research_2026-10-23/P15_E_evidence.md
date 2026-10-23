@@ -927,3 +927,260 @@ and about 110 m of rapid travel on this level.
 - For terrace residue, compare against the commanded step (as the Safety
   class already does) instead of the leave, or report terraces as a
   separate class.
+
+# E3 at c97093af
+
+- Date: 2026-10-23, from 20:14 NZDT.
+- GUI: branch `adaptive-instruments` c97093af (A3: the coverage target is
+  the plan's own reachable floor, eroded by the cutter disc; each island
+  carries `touches_wall`; the bar is standing > leave + one cell over
+  that target; see the worktree note `P15_A3_coverage_target.md` §6 for
+  A3's predictions).
+- Binary mtime_unix 1792739600.22, gui_pid 2918218 (generation 5). The
+  previous GUI (2538272) stopped through `gui_restart`, exit 0.
+- The same four projects and sequence. Exports go to
+  `phase0/gcode/<name>_p15c.nc`. Island maps colour `touches_wall`
+  islands apart.
+
+## E3 project 1: corne_contour_parallel (the zero control)
+
+- Generate 8006 / 5347 moves (unchanged). Adopt about 2.3 s. Export
+  `phase0/gcode/corne_contour_parallel_p15c.nc` succeeded. No
+  `cuts_into_model` finding on either op. `link_cuts_stock` unchanged.
+- Map: `phase0/img/corne_contour_parallel_p15c_islands.png` (op 0 on top,
+  op 1 below; orange = `touches_wall`; for free islands red = one cell,
+  magenta = 2.5–10 mm, yellow = ≥ 10 mm, cyan = < 2.5 mm).
+
+| Op | E2 islands | E3 islands | E3 `touches_wall` | E3 free one-cell | E3 free 2.5–10 mm | E3 area (E2) |
+|---|---|---|---|---|---|---|
+| op 0 (6 mm, step 6) | 711 | 902 | 191 (174 one-cell, 17 ≥ 10 mm) | 627 | 84 | 1373.5 mm² (1791.2) |
+| op 1 (3 mm, step 3, final) | 1406 | 1428 | 1387 (1367 one-cell, 15 ≥ 10 mm, 5 mid) | 41 | 0 | 772.9 mm² (960.0) |
+
+- Narration (verbatim):
+  - op 0: "coverage: 902 island(s) stand more than 0.80 mm above the
+    target (the floor the plan can reach, with 0.50 mm stock to leave),
+    1373.5 mm2 in all, 191 against a wall; the tallest is 22.50 mm high and
+    0.55 mm wide at (36.0, -109.3)."
+  - op 1: "coverage: 1428 island(s) stand more than 0.80 mm above the
+    target (the floor the plan can reach, with 0.50 mm stock to leave),
+    772.9 mm2 in all, 1387 against a wall; the tallest is 16.61 mm high
+    and 0.90 mm wide at (110.4, -9.7)."
+- Class: still critical / safety on both ops (op 0: 111 islands taller
+  than 6.30 mm; op 1: 411 taller than 3.30 mm). Every island in both
+  "tallest first" lists is marked "at a wall".
+
+What each class is (eye, on the map):
+
+- **Wall strips** (17 / 15, ≥ 10 mm, all `touches_wall`): the same strips
+  as E2 (87.4, 53.5, 33.5 mm² ...). As A3 predicted.
+- **Outer-edge fringe:** still reads, now `touches_wall` (orange dots on
+  the outer cut edge and the stock edge). The op 0 headline is one of
+  them: 22.50 mm × 0.55 mm at (36.0, −109.3), which is on the stock's
+  minimum-y edge. As A3 predicted.
+- **op 0, 84 free islands 2.5–10 mm:** one at the centre of almost every
+  hex hole, 3.5 mm tall (example 18.7 mm² at (36.3, −68.8)). The new
+  target puts the hole floor (0.5) inside the reach of the 6 mm tool, so
+  the plate-level stock in the hole reads. A3 predicted that the 6 mm
+  hex-corner residue would read nothing (E2: 151). **That prediction
+  fails: 84 remain.** They look like holes that op 0 did not enter.
+  Op 1 clears them (0 remain on op 1), so they are real residue of op 0,
+  not of the job.
+- **op 0, 627 free one-cell islands:** a ring of slivers round every hex
+  rim. The hex wall is a 3.5 mm step, which is less than op 0's 6 mm
+  depth per pass, so `touches_wall` (a target step of more than one depth
+  per pass) does not tag them. On op 1 (3 mm step) the same kind of
+  slivers are tagged (1367). **The tag depends on the op's depth per
+  pass**, not on the wall: one sliver can be "at a wall" for one op and
+  free for another.
+- **op 1, 41 free one-cell islands:** all 0.8–1.1 mm tall, just over the
+  0.80 mm bar, along the foot of the angled walls (for example the
+  diagonal at x 6–20, y −72 to −100, and y −93 to −96 at x 39–53). Grid
+  slivers at the wall foot that the tag misses by one cell.
+- **Screw holes:** no free island at the 5 small-hole positions on op 1.
+
+Verdict, project 1: on the final stock (op 1) the zero control fails on
+1387 `touches_wall` islands (the wall strips, the hex-side slivers and
+the reachable fringe) plus 41 free slivers 0.8–1.1 mm tall at angled wall
+feet. On op 0 it also fails on real uncut hole centres (84) and on 627
+hex-rim slivers that the tag misses because the hole wall is shorter
+than op 0's step.
+
+## E3 project 2: corne_agent_search (the positive control)
+
+- Generate 4168 / 6060 moves. Adopt about 2.5 s. Export
+  `phase0/gcode/corne_agent_search_p15c.nc` succeeded (depth-of-cut rule
+  of thumb noted, not gated). No `cuts_into_model` on op 1. I did not read
+  op 0's diagnostics in E3; the export shows no Blocking finding there.
+  `crosses_standing_material` unchanged.
+- Map (final stock, op 1): `phase0/img/corne_agent_search_p15c_islands.png`
+  (orange = `touches_wall`, green = hole core, red = free one-cell,
+  magenta = free 2.5–10 mm).
+
+| Op | E2 islands | E3 islands | E3 `touches_wall` | E3 free one-cell | E3 free 2.5–10 mm | E3 free ≥ 10 mm | E3 area (E2) |
+|---|---|---|---|---|---|---|---|
+| op 0 (6 mm) | 379 | 457 | 15 | 361 | 79 | 2 | 6832.7 mm² (7236.4) |
+| op 1 (3 mm, final) | 1262 | 1257 | 1175 | 44 | 34 | 0 | 3652.5 mm² (3695.2) |
+
+- Narration (verbatim):
+  - op 0: "coverage: 457 island(s) stand more than 0.80 mm above the
+    target (the floor the plan can reach, with 0.50 mm stock to leave),
+    6832.7 mm2 in all, 15 against a wall; the tallest is 22.50 mm high and
+    9.47 mm wide at (14.1, -109.3)."
+  - op 1: "coverage: 1257 island(s) stand more than 0.80 mm above the
+    target (the floor the plan can reach, with 0.50 mm stock to leave),
+    3652.5 mm2 in all, 1175 against a wall; the tallest is 16.50 mm high
+    and 3.90 mm wide at (85.5, -3.1)."
+- Eye defects on the final stock (op 1):
+  - **Hex cores: 37** (E2: 37), all `touches_wall` false, as A3
+    predicted. 1.5–3.6 mm tall, 1.40–1.60 mm wide.
+  - **Screw-hole islands: 0** (E2: 5). The new target removed them.
+  - **Band:** 8 islands of 49–1303 mm², 14.5–16.5 mm tall, all
+    `touches_wall` true (1302.7, 749.2, 678.1, 205.2, 103.1, 66.1, 61.0,
+    48.7 mm²). As A3 predicted.
+  - **Spur:** 13.0 mm tall, 0.30 mm wide, 0.54 mm², peak (102.91, −22.32,
+    17.0), `touches_wall` false. The same as E2, as A3 predicted.
+  - The free one-cell islands fall from 1171 (E2) to 44; the rest are now
+    tagged (1159 one-cell `touches_wall`).
+- op 0: 79 free 2.5–10 mm islands of about 51 mm² each, 3.5 mm tall,
+  7.59 mm wide: whole hex holes that op 0 did not enter (op 1 clears
+  them except the 37 cores). One free 16.5 mm island of 51.5 mm² at
+  (105.3, −24.7) is the hex hole at the spur, uncut to Z 17 by op 0.
+- The "tallest first" list of op 1 holds only band islands and one 13.04 mm
+  fringe cell, all "at a wall". The 37 cores and the spur are free
+  islands, but they are not in the list, because they are shorter than
+  the band.
+
+Verdict, project 2: **every eye defect still reads**, and each one is
+free (`touches_wall` false): 37 cores, the spur (13.0 × 0.3 mm). The band
+reads as wall-touching. The screw-hole residue is gone. The headline
+still names the band.
+
+## E3 project 3: corne_contour_spiral
+
+- Generate 14839 / 5376 moves. Adopt about 4.3 s. Export
+  `phase0/gcode/corne_contour_spiral_p15c.nc` succeeded. No
+  `cuts_into_model` on op 0 (op 1 not read; the export shows no Blocking).
+- Map (final stock, op 1): `phase0/img/corne_contour_spiral_p15c_islands.png`.
+
+| Op | E2 islands | E3 islands | E3 `touches_wall` | E3 free one-cell | E3 free 2.5–10 mm | E3 area (E2) |
+|---|---|---|---|---|---|---|
+| op 0 (6 mm) | 686 | 772 | 15 | 699 | 58 | 5271.9 mm² (5654.2) |
+| op 1 (3 mm, final) | 1227 | 1246 | 1204 | 40 | 2 | 3532.2 mm² (3577.6) |
+
+- Narration (verbatim):
+  - op 0: "coverage: 772 island(s) stand more than 0.80 mm above the
+    target (the floor the plan can reach, with 0.50 mm stock to leave),
+    5271.9 mm2 in all, 15 against a wall; the tallest is 22.50 mm high and
+    9.47 mm wide at (14.1, -109.3)."
+  - op 1: "coverage: 1246 island(s) stand more than 0.80 mm above the
+    target (the floor the plan can reach, with 0.50 mm stock to leave),
+    3532.2 mm2 in all, 1204 against a wall; the tallest is 16.80 mm high
+    and 5.10 mm wide at (110.4, -9.7)."
+- Eye defects on the final stock (op 1):
+  - **Hex cores: 2**, at (19.6, −84.9) and (54.3, −85.0), 3.00 mm tall,
+    1.6 and 1.4 mm wide, `touches_wall` false. The same as E2, the eye
+    and Phase 0. As A3 predicted.
+  - **The free 2.5–10 mm class on op 1 is exactly these 2 cores.**
+  - **Screw-hole islands: 0** (E2: 5).
+  - **Band:** 8 islands of 49–1305 mm², `touches_wall` true.
+  - **Spur:** none (no free island ≥ 10 mm). Correct.
+  - Free one-cell: 40 (E2: 1166).
+- op 0: 58 free 2.5–10 mm islands of 13–20 mm², 3.5 mm tall: hex holes
+  partly uncut by op 0 (op 1 clears them).
+
+Verdict, project 3: **every eye defect still reads** (2 cores, the band),
+with no spur. On the final stock the only free islands are the 2 cores
+and 40 one-cell slivers.
+
+## E3 project 4: wanaka200_contour_parallel
+
+- Generate 68 / 14180 / 14049 moves. **Adopt about 18.5 s** (E2: 4.7 s).
+  This is the one slow call of E3 (over 10 s). It is likely the new
+  eroded-floor target on the 0.5 mm grid of a 240 × 250 mm stock (the
+  Corne adopts stayed at 2.3–4.3 s).
+- Export `phase0/gcode/wanaka200_contour_parallel_p15c.nc` succeeded
+  (depth-of-cut rule of thumb noted on toolpath 1, not gated). No
+  `cuts_into_model` on the front rough. I did not read the back rough's
+  diagnostics; the export shows no Blocking. `link_cuts_stock` (critical,
+  move 5147, 11.26 mm) is unchanged in the triage actions.
+- Back rough: `not_measurable` / `setup_not_identity`, the same sentence
+  as E2.
+- Front rough: measured.
+
+| | E2 | E3 |
+|---|---|---|
+| Islands | 910 | 178 |
+| Area above spec | 14 976.0 mm² (36 % of compared) | 955.5 mm² (2.2 % of 42 525 mm²) |
+| Tallest | 9.31 mm (boundary frame) | 2.11 mm |
+| `touches_wall` | — | 0 |
+| Class | critical / safety | caution / quality (in `triage.actions`) |
+| One-cell | 755 | 175 |
+
+- Narration (verbatim): "coverage: 178 island(s) stand more than 1.00 mm
+  above the target (the floor the plan can reach, with 0.50 mm stock to
+  leave), 955.5 mm2 in all, 0 against a wall; the tallest is 2.11 mm
+  high and 0.50 mm wide at (105.0, 182.0)."
+- Heights: 176 islands of 1–2 mm, 2 of 2–3 mm.
+- Eye (`phase0/img/wanaka200_contour_parallel_p15c_islands.png`):
+  - The terrace networks of E2 (4–5.4 mm, up to 5044 mm²) read nothing.
+    The new target is the floor that the flat tool can reach, so the slope
+    shadow of the flat tool is inside the target. **A3 predicted that held
+    terraces would still read. None do.** The prediction fails in the good
+    direction.
+  - The 9.31 mm boundary frame is gone. A3 predicted it would read with
+    `touches_wall` true.
+  - What remains: one-cell lines 1.1–1.7 mm tall along the terrain border
+    (x ≈ 3 and 197–198.5, y ≈ 3 and 193–198; the largest is 307.5 mm²
+    along y 181.5–198.5), and scattered one-cell islands on steep slope
+    edges and on the edge of the low flat area. None is tagged
+    `touches_wall`, because no target step there is larger than one
+    depth per pass (4.2 mm).
+
+## E3 summary (E2 → E3)
+
+| Rough | Islands | `touches_wall` | Free one-cell | Free 2.5–10 mm | Eye defects | Class |
+|---|---|---|---|---|---|---|
+| CP op 0 | 711 → 902 | 191 | 627 (hex-rim slivers; the 3.5 mm hole wall is under the 6 mm step) | 84 (uncut hex holes, real) | none expected | safety |
+| CP op 1 (final) | 1406 → 1428 | 1387 | 41 (0.8–1.1 mm, angled wall foot) | 0 | none expected | safety |
+| AS op 0 | 379 → 457 | 15 | 361 | 79 (uncut hex holes) | — | safety |
+| AS op 1 (final) | 1262 → 1257 | 1175 | 44 | 34 (incl. the 37 cores, some under 2.5 mm) | 37 cores (free), band (wall), spur 13.0 × 0.3 mm (free); screw holes 5 → 0 | safety |
+| CS op 0 | 686 → 772 | 15 | 699 | 58 (partly uncut hex holes) | — | safety |
+| CS op 1 (final) | 1227 → 1246 | 1204 | 40 | 2 (= the 2 cores) | 2 cores (free), band (wall); screw holes 5 → 0 | safety |
+| wanaka back | abstain → abstain | — | — | — | — | — |
+| wanaka front | 910 → 178 | 0 | 175 | 0 | terraces gone, frame gone | safety → caution |
+
+Gouge: no `cuts_into_model` finding on any rough I read; all four exports
+succeed.
+
+Adopt times: Corne 2.3 / 2.5 / 4.3 s; wanaka200 18.5 s (E2: 4.7 s).
+
+### Verdicts at c97093af
+
+- **Does every eye defect still read? Yes.** 37 hex cores on
+  AgentSearch and 2 on ContourSpiral, all free (`touches_wall` false), at
+  the eye positions and heights. The spur (13.0 × 0.3 mm) reads free. The
+  band reads on both, tagged `touches_wall`. The screw-hole residue is
+  gone (5 → 0).
+- **Does the zero control now fail ONLY on real wall strips and reachable
+  fringe? Almost, on the final stock; no, on op 0.**
+  - Final stock (CP op 1): 1387 of 1428 islands are `touches_wall` (the
+    wall strips, the hex-side slivers, the reachable outer fringe). The
+    other 41 are free one-cell slivers 0.8–1.1 mm tall at the foot of
+    angled walls, missed by the tag by about one cell.
+  - CP op 0: 627 free one-cell hex-rim slivers and 84 free uncut hex
+    holes. The holes are real residue of op 0 (op 1 clears them). The
+    slivers are not tagged because `touches_wall` needs a target step of
+    more than one depth per pass: the 3.5 mm hole wall is under op 0's
+    6 mm step but over op 1's 3 mm step. **The tag depends on the op's
+    step, so the same sliver is "at a wall" for one op and free for
+    another.**
+- **The one-cell edge fringe outside the reach: gone** (wanaka frame
+  gone; Corne fringe now tagged `touches_wall` where it is inside the
+  reach).
+- **wanaka front:** the terrace class is gone. It now reads 178 small
+  islands (≤ 2.11 mm) on the border and slope edges, class caution.
+- **Headline:** on Corne it still names a wall-touching island (fringe
+  or band) every time. The free cores and the spur are not in the
+  "tallest first" list. A list of free islands first would put them
+  there.
+- **Cost:** the wanaka200 adopt grew from 4.7 s to 18.5 s.
