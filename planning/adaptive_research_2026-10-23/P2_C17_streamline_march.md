@@ -5,7 +5,8 @@ commit). Page: `farside_ideas_v3.html`. Scripts: `phase2/c17/`
 (`stream.py`, `run_c17.py`, `page_c17.py`, `assert_c17.py`; `try.py`,
 `try2.py`, `look.py` and `look2.py` are the debugging tools). Run
 `run_c17.py` (about 70 s), then `page_c17.py`, then `assert_c17.py`.
-`page_c17.py` writes this note and the page from `results_c17.json`;
+`page_c17.py` writes this note and the page from `results_c17.json` and
+`sweep.json` (`sweep.py` with `plan.py`, §7–§8);
 `assert_c17.py` checks every number in both. C15's scripts are imported from
 `phase2/c15/` and not edited.
 
@@ -128,10 +129,16 @@ Away from the stops (more than one pass step of arc) the smallest loop radius is
   loops also take more levels into the star tips (30 loops against 19).
 - The normal-gap variant is not stable on the pocket (steps to 14.6 mm,
   32127 self-crossings, 0.77 D).
-- **Not a candidate for Rust.** §5 of C15 stands: (a), with its open arcs
-  joined by the C14 turns. Every closed-loop plan measured so far ((e) and
-  this march with either field, where it ends) cuts 5.5 to 8.4 times the
-  length of (a).
+- **Not a candidate for Rust.** By cut length, every closed-loop plan
+  measured so far ((e) and this march with either field, where it ends) cuts
+  5.5 to 8.4 times the length of (a). With the air counted as keep-down
+  travel (§7), the march takes 1.00 (star) and 0.97 (pocket) times the time
+  of (e) at the cut feed, but its cut parts read over c where a loop leaves a
+  wall (§8). So it is still not a candidate.
+- In the family from (a) to (e) (§8) only (e) has no retract and holds c in
+  its cut parts: λ* is (e) on both shapes. (a) is faster unless a retract
+  costs more than 4.0 s (star) or 13.8 s (pocket); that cost is not measured.
+  The lead decides between (a) with the C14 turns and (e) on that cost.
 - What a Rust version would cost (prediction, not measured): a Laplace
   solve on the region, a streamline tracer, the implicit step solve per
   loop (many radius reads over the whole loop per loop), the air
@@ -145,3 +152,183 @@ Away from the stops (more than one pass step of arc) the smallest loop radius is
 - The links between loops are not modelled; every loop is cut whole.
 - The air stop reads the replay raster; a Rust stock model would read its
   own.
+
+## 7. Addition 1 (operator): cut parts and link parts
+
+The operator: the overlap of the harmonic plans is keep-down travel through
+cleared stock, not load, so cut length is the wrong cost. Script:
+`sweep.py` with `plan.py` (a few minutes on a process pool).
+
+- Engaged / air. Each plan is replayed in order, links included. A sample
+  is engaged when its area per mm over one pass step (centred) is more than
+  one cell width, 0.1 mm (the raster's resolution); else it is air.
+- Links: FreeCAD's rule, R1 §4 (ideas only). A link is clear when the tool
+  disc grown by s·R = 1.00 mm holds no standing stock, tested from
+  2·s·R inside each end. A keep-down route may be up to 3 × the direct
+  length (the shortest 8-connected path over clear nodes, which reads a
+  route up to 8.2% long). A gap under 2·s·R may be cut straight at most
+  1.5 × c·D per mm. Otherwise the link is a retract.
+- Order: levels in order; in a level the nearest curve next. An open arc
+  starts at its nearer end and a closed loop at its nearest point. The cut
+  direction (climb or conventional) is not kept.
+- Feeds:
+  - Cut feed 1500 mm/min: `fixture_feeds(Adaptive)`,
+    `crates/rs_cam_core/src/compute/fixture_values.rs:34-35` (S11: the op
+    has no feed default).
+  - The 2D adaptive emits its keep-down `Link` at `params.feed_rate`, the
+    cut feed: `crates/rs_cam_core/src/adaptive/path.rs:3163-3168`.
+  - A separate link feed exists only in the link-moves dressup:
+    `link_feed_rate`, default 500 mm/min, `compute/config.rs:1077-1083`
+    and `1439`.
+  - Times are information only: length over feed, no acceleration, and
+    retracts are counted, not timed.
+
+Star:
+
+<!-- plans-star:begin -->
+| Plan | Engaged mm | Air mm (share) | Keep-down links | Retracts | Time, air at cut feed min | Time, air at link feed min | Cut-part interior max D (over c) | Any engaged max D |
+|---|---|---|---|---|---|---|---|---|
+| C15 (a): exact-distance wraps | 933 | 9 (1%) | 18 | 46 | 0.63 | 0.64 | 0.3613 (0) | 0.519 |
+| C15 (e): harmonic level lines | 2389 | 3119 (57%) | 32 | 0 | 3.67 | 7.83 | 0.3575 (0) | 0.784 |
+| streamline march | 1422 | 4084 (74%) | 11 | 0 | 3.67 | 9.12 | 0.4988 (89) | 0.717 |
+| control: exact-distance streamlines | 1371 | 3641 (73%) | 11 | 0 | 3.34 | 8.20 | 0.5662 (280) | 0.763 |
+<!-- plans-star:end -->
+
+Pocket:
+
+<!-- plans-pocket:begin -->
+| Plan | Engaged mm | Air mm (share) | Keep-down links | Retracts | Time, air at cut feed min | Time, air at link feed min | Cut-part interior max D (over c) | Any engaged max D |
+|---|---|---|---|---|---|---|---|---|
+| C15 (a): exact-distance wraps | 1317 | 8 (1%) | 34 | 27 | 0.88 | 0.89 | 0.3617 (0) | 0.668 |
+| C15 (e): harmonic level lines | 3852 | 6776 (64%) | 68 | 0 | 7.09 | 16.12 | 0.3632 (0) | 0.363 |
+| streamline march | 1735 | 8584 (83%) | 8 | 0 | 6.88 | 18.33 | 0.4396 (91) | 0.552 |
+| control: exact-distance streamlines | 1138 | 5082 (82%) | 7 | 0 | 4.15 | 10.92 | 0.5098 (175) | 0.856 |
+<!-- plans-pocket:end -->
+
+- With air at the cut feed, (e) and the march take about the same time:
+  3.67 and 3.67 min on the star, 7.09 and 6.88 min on the pocket.
+- (a) takes 0.63 and 0.88 min, but needs 46 and 27 retracts.
+- (e) engages over 2.6 times the length of (a) on the star: its
+  engaged part is also a thinner cut.
+- The cut-part interior of (e) holds c on both shapes. Its tip samples
+  (up to 0.784 D on the star) lie within R of where an engaged run begins.
+
+## 8. Addition 2 (operator): one family from (a) to (e)
+
+- Family: u_λ = (1 − λ)·T/T_max + λ·u_harm. T is the exact entry distance,
+  u_harm the harmonic field; both are 0 on the entry disc and 1 at their far
+  end. Outside the region T keeps its closed form and u_harm is 1, so a level
+  line that reaches a wall is cut there (a point within one cell outside is
+  the contour's own error and is kept). λ = 0 is (a), λ = 1 is (e).
+- Why this blend: it is the one-parameter path between the two plans with no
+  other parameter. A blend that keeps the wall value constant (closed loops)
+  is (e) itself; for λ < 1 the wall value λ + (1 − λ)·T/T_max varies, so the
+  late levels reach the walls as open arcs.
+- Levels: the C15 rule, run until every node lies within one cell of a cut
+  (the same stop for every λ; it differs from C15's (a), which stopped at s).
+- Grid: steps of 0.05, then finer below the smallest λ that meets both
+  conditions, down to 0.001 (34 values per shape).
+- λ* = the least time at the cut feed among the λ with (1) no retract and
+  (2) cut-part interior width at most c plus one cell. It is computed.
+
+Star:
+
+<!-- lam-star:begin -->
+| λ | Levels | Curves (open arcs) | Levels with a retract | Retracts | Engaged mm | Air mm | Time cut feed min | Time link feed min | Cut-part interior max D | Any engaged max D | Both conditions |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0.000 | 20 | 73 (66) | 13 | 48 | 946 | 7 | 0.63 | 0.64 | 0.3618 | 0.513 | no |
+| 0.050 | 20 | 72 (65) | 13 | 49 | 951 | 7 | 0.64 | 0.65 | 0.3609 | 0.503 | no |
+| 0.100 | 20 | 72 (65) | 13 | 45 | 973 | 11 | 0.66 | 0.67 | 0.3598 | 0.507 | no |
+| 0.150 | 20 | 70 (63) | 13 | 47 | 973 | 14 | 0.66 | 0.68 | 0.3604 | 0.503 | no |
+| 0.200 | 20 | 71 (64) | 13 | 46 | 985 | 14 | 0.67 | 0.69 | 0.3595 | 0.510 | no |
+| 0.250 | 20 | 68 (60) | 12 | 43 | 1001 | 7 | 0.67 | 0.68 | 0.3596 | 0.502 | no |
+| 0.300 | 21 | 72 (64) | 13 | 44 | 1014 | 10 | 0.68 | 0.70 | 0.3609 | 0.504 | no |
+| 0.350 | 21 | 71 (63) | 12 | 42 | 1027 | 13 | 0.69 | 0.71 | 0.3612 | 0.508 | no |
+| 0.400 | 21 | 70 (62) | 13 | 43 | 1043 | 13 | 0.70 | 0.72 | 0.3604 | 0.505 | no |
+| 0.450 | 21 | 69 (61) | 13 | 43 | 1054 | 19 | 0.72 | 0.74 | 0.3598 | 0.507 | no |
+| 0.500 | 21 | 67 (58) | 12 | 42 | 1071 | 9 | 0.72 | 0.73 | 0.3601 | 0.507 | no |
+| 0.550 | 21 | 69 (60) | 12 | 42 | 1089 | 9 | 0.73 | 0.74 | 0.3609 | 0.506 | no |
+| 0.600 | 21 | 70 (61) | 11 | 38 | 1119 | 29 | 0.77 | 0.80 | 0.3592 | 0.504 | no |
+| 0.650 | 21 | 67 (58) | 12 | 41 | 1136 | 21 | 0.77 | 0.80 | 0.3592 | 0.503 | no |
+| 0.700 | 21 | 65 (55) | 11 | 36 | 1168 | 42 | 0.81 | 0.86 | 0.3591 | 0.506 | no |
+| 0.750 | 22 | 67 (57) | 10 | 37 | 1201 | 36 | 0.83 | 0.87 | 0.3586 | 0.506 | no |
+| 0.800 | 22 | 64 (53) | 10 | 34 | 1255 | 65 | 0.88 | 0.97 | 0.3576 | 0.534 | no |
+| 0.850 | 22 | 65 (54) | 9 | 31 | 1314 | 117 | 0.95 | 1.11 | 0.3580 | 0.511 | no |
+| 0.900 | 23 | 65 (53) | 9 | 29 | 1397 | 154 | 1.03 | 1.24 | 0.3581 | 0.506 | no |
+| 0.950 | 23 | 62 (49) | 7 | 23 | 1555 | 273 | 1.22 | 1.58 | 0.3576 | 0.507 | no |
+| 0.955 | 23 | 61 (48) | 7 | 22 | 1578 | 333 | 1.27 | 1.72 | 0.3576 | 0.504 | no |
+| 0.960 | 23 | 59 (45) | 6 | 20 | 1608 | 364 | 1.31 | 1.80 | 0.3576 | 0.503 | no |
+| 0.965 | 24 | 62 (48) | 7 | 22 | 1632 | 347 | 1.32 | 1.78 | 0.3576 | 0.512 | no |
+| 0.970 | 24 | 61 (47) | 7 | 21 | 1669 | 357 | 1.35 | 1.83 | 0.3576 | 0.506 | no |
+| 0.975 | 24 | 60 (46) | 6 | 19 | 1712 | 451 | 1.44 | 2.04 | 0.3576 | 0.502 | no |
+| 0.980 | 24 | 59 (44) | 6 | 18 | 1766 | 427 | 1.46 | 2.03 | 0.3576 | 0.514 | no |
+| 0.985 | 25 | 61 (46) | 5 | 16 | 1837 | 488 | 1.55 | 2.20 | 0.3576 | 0.513 | no |
+| 0.990 | 25 | 58 (42) | 6 | 15 | 1922 | 546 | 1.65 | 2.37 | 0.3576 | 0.524 | no |
+| 0.995 | 26 | 59 (42) | 5 | 12 | 2049 | 762 | 1.87 | 2.89 | 0.3575 | 0.513 | no |
+| 0.996 | 26 | 54 (36) | 5 | 11 | 2084 | 768 | 1.90 | 2.92 | 0.3575 | 0.511 | no |
+| 0.997 | 26 | 57 (39) | 4 | 9 | 2119 | 895 | 2.01 | 3.20 | 0.3575 | 0.504 | no |
+| 0.998 | 27 | 55 (36) | 4 | 9 | 2166 | 1004 | 2.11 | 3.45 | 0.3575 | 0.501 | no |
+| 0.999 | 27 | 53 (33) | 3 | 5 | 2229 | 1223 | 2.30 | 3.93 | 0.3575 | 0.514 | no |
+| 1.000 | 32 | 32 (0) | 0 | 0 | 2389 | 3119 | 3.67 | 7.83 | 0.3575 | 0.784 | yes |
+<!-- lam-star:end -->
+
+Pocket:
+
+<!-- lam-pocket:begin -->
+| λ | Levels | Curves (open arcs) | Levels with a retract | Retracts | Engaged mm | Air mm | Time cut feed min | Time link feed min | Cut-part interior max D | Any engaged max D | Both conditions |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0.000 | 44 | 104 (100) | 27 | 34 | 1620 | 1332 | 1.97 | 3.74 | 0.4406 | 0.814 | no |
+| 0.050 | 44 | 104 (99) | 26 | 32 | 1635 | 1386 | 2.01 | 3.86 | 0.4996 | 0.731 | no |
+| 0.100 | 43 | 102 (97) | 27 | 34 | 1599 | 1297 | 1.93 | 3.66 | 0.4614 | 0.783 | no |
+| 0.150 | 43 | 103 (98) | 24 | 32 | 1626 | 1292 | 1.95 | 3.67 | 0.4419 | 0.781 | no |
+| 0.200 | 43 | 102 (96) | 23 | 31 | 1631 | 1360 | 1.99 | 3.81 | 0.3933 | 0.699 | no |
+| 0.250 | 42 | 99 (93) | 24 | 30 | 1616 | 1260 | 1.92 | 3.60 | 0.4661 | 0.723 | no |
+| 0.300 | 42 | 99 (92) | 24 | 28 | 1643 | 1255 | 1.93 | 3.61 | 0.3889 | 0.710 | no |
+| 0.350 | 42 | 100 (93) | 24 | 28 | 1654 | 1268 | 1.95 | 3.64 | 0.3992 | 0.809 | no |
+| 0.400 | 42 | 101 (94) | 24 | 29 | 1662 | 1276 | 1.96 | 3.66 | 0.3661 | 0.779 | no |
+| 0.450 | 41 | 97 (89) | 20 | 24 | 1659 | 1225 | 1.92 | 3.56 | 0.3703 | 0.700 | no |
+| 0.500 | 41 | 98 (90) | 22 | 26 | 1673 | 1251 | 1.95 | 3.62 | 0.3613 | 0.883 | no |
+| 0.550 | 41 | 98 (90) | 21 | 25 | 1699 | 1231 | 1.95 | 3.60 | 0.3605 | 0.865 | no |
+| 0.600 | 41 | 98 (89) | 20 | 24 | 1719 | 1242 | 1.97 | 3.63 | 0.3893 | 0.700 | no |
+| 0.650 | 41 | 98 (89) | 21 | 25 | 1742 | 1223 | 1.98 | 3.61 | 0.3652 | 0.623 | no |
+| 0.700 | 42 | 100 (90) | 20 | 25 | 1771 | 1272 | 2.03 | 3.73 | 0.3674 | 0.659 | no |
+| 0.750 | 42 | 99 (88) | 20 | 24 | 1850 | 1228 | 2.05 | 3.69 | 0.5115 | 0.606 | no |
+| 0.800 | 42 | 104 (93) | 20 | 26 | 1876 | 1305 | 2.12 | 3.86 | 0.3621 | 0.652 | no |
+| 0.850 | 43 | 102 (90) | 20 | 25 | 1949 | 1288 | 2.16 | 3.88 | 0.3623 | 0.616 | no |
+| 0.900 | 43 | 100 (87) | 20 | 24 | 2077 | 1215 | 2.19 | 3.81 | 0.3693 | 0.614 | no |
+| 0.950 | 45 | 105 (90) | 18 | 23 | 2283 | 1372 | 2.44 | 4.27 | 0.3646 | 0.616 | no |
+| 0.955 | 45 | 103 (87) | 19 | 22 | 2306 | 1264 | 2.38 | 4.06 | 0.3615 | 0.620 | no |
+| 0.960 | 45 | 101 (85) | 18 | 22 | 2330 | 1255 | 2.39 | 4.06 | 0.3648 | 0.626 | no |
+| 0.965 | 46 | 103 (87) | 20 | 23 | 2351 | 1375 | 2.48 | 4.32 | 0.3677 | 0.614 | no |
+| 0.970 | 46 | 105 (88) | 17 | 20 | 2402 | 1409 | 2.54 | 4.42 | 0.3662 | 0.625 | no |
+| 0.975 | 46 | 104 (87) | 20 | 23 | 2440 | 1356 | 2.53 | 4.34 | 0.3591 | 0.622 | no |
+| 0.980 | 47 | 103 (85) | 18 | 21 | 2480 | 1404 | 2.59 | 4.46 | 0.3658 | 0.616 | no |
+| 0.985 | 47 | 103 (84) | 18 | 21 | 2543 | 1413 | 2.64 | 4.52 | 0.3656 | 0.623 | no |
+| 0.990 | 48 | 103 (83) | 17 | 19 | 2596 | 1553 | 2.77 | 4.84 | 0.3644 | 0.605 | no |
+| 0.995 | 49 | 104 (83) | 14 | 16 | 2641 | 1765 | 2.94 | 5.29 | 0.3657 | 0.599 | no |
+| 0.996 | 49 | 103 (81) | 14 | 17 | 2668 | 1772 | 2.96 | 5.32 | 0.3595 | 0.609 | no |
+| 0.997 | 49 | 101 (78) | 16 | 19 | 2676 | 1780 | 2.97 | 5.34 | 0.3635 | 0.581 | no |
+| 0.998 | 50 | 105 (81) | 15 | 19 | 2716 | 1990 | 3.14 | 5.79 | 0.3624 | 0.609 | no |
+| 0.999 | 51 | 103 (77) | 12 | 14 | 2776 | 2217 | 3.33 | 6.28 | 0.3625 | 0.592 | no |
+| 1.000 | 58 | 68 (0) | 0 | 0 | 3852 | 6776 | 7.09 | 16.12 | 0.3632 | 0.363 | yes |
+<!-- lam-pocket:end -->
+
+Result:
+
+- Only λ = 1 meets both conditions on both shapes: λ* = 1.000 (star) and
+  1.000 (pocket), which is (e).
+- Every λ below 1 has retracts: at least 5 (star) and 14 (pocket). At
+  λ = 0.999 there are still 5 and 14. The late levels reach the walls in the
+  lobes and behind the island, and an open arc in a lobe has no keep-down
+  route to the next one.
+- So the family cannot be set so that the overlap is only useful links:
+  the plan has either retracts or the air of (e).
+- Break-even: a plan below λ* is faster than (e) unless a retract costs more
+  than (time of (e) − time of the plan) / retracts. Over λ < 1 that is
+  3.7 to 16.5 s per retract (star) and 9.0 to 16.1 s (pocket); for (a)
+  4.0 s and 13.8 s. These are at the cut feed with no acceleration. The cost of a
+  retract (lift, travel, re-entry at the plunge feed) is not measured here,
+  so this note does not choose between (a) and (e) on time.
+- The streamline march has no retract. But its cut parts read
+  0.4988 D (star) and 0.4396 D (pocket) where a loop leaves a wall, which is over c. So it
+  fails condition (2) and does not beat λ* (star no, pocket no).

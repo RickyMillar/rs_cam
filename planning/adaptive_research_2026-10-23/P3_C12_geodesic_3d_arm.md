@@ -141,6 +141,31 @@ is the same expression result (`RetractedByCaller`). So the shipped output
 is byte-identical by construction; `adaptive3d_emission_byte_parity` is the
 proof the verifier runs.
 
+### The C12 block in `research_geodesic.rs` (owned by C14 from here on)
+
+C12's only change to that file is one additive block, the lines from
+`// ── The 3D research arm (C12) ──` to the closing `}` of `links_as_cuts`.
+At the time of writing (with C14's edits in place) the block is lines
+6720-6777 (md5 of the range `2dbf42ba…`). It holds exactly two items:
+
+- `pub(crate) fn slice_segments(polygon, params, options: GeodesicOptions,
+  cancel) -> Result<Option<Vec<AdaptiveSegment>>, Cancelled>`, which is
+  `Ok(geodesic_segments(..)?.map(|produced| produced.segments))`;
+- `pub(crate) fn links_as_cuts(segments: Vec<AdaptiveSegment>, params) ->
+  Vec<AdaptiveSegment>` (§3, "Links as cuts").
+
+No other line of the file is C12's, and C12 does not edit
+`adaptive/path.rs`, `adaptive/search.rs` or the 2D harness. The 3D arm
+takes the kernel only through the presets `GeodesicOptions::C5_CURV` and
+`GeodesicOptions::C11_SPLIT` (`adaptive3d/mod.rs`, `research_arm_override`;
+the test uses the same two). Neither the arm nor the test writes a
+`GeodesicOptions { .. }` literal, so C14's new field `arcs: ArcLink`
+needs no C12 change. A new preset plugs in as one more value in the
+`research_arm_override` match. Caution (from C14): `slice_segments` drops
+`Produced::turns`, so a C14 turn preset in 3D would plan turns that the 3D
+replay (the shipped `_with` cleanup, no turn list) refuses. Keep the 3D arm
+on C5_CURV / C11_SPLIT until the 3D side takes the turn list.
+
 ## 5. The test
 
 `tests/adaptive3d_geodesic_arm_c12.rs`: a height-field pocket

@@ -26,7 +26,11 @@ C15 = os.path.join(HERE, "..", "c15")
 sys.path.insert(0, C15)
 
 from geom import R, S, D, CD, C_FRAC, TOL, PASS_STEP  # noqa: E402
-from shapes import Shape, H, STAR  # noqa: E402
+from shapes import Shape, H, STAR, poly_inside  # noqa: E402
+
+
+def STAR_INSIDE(P):
+    return poly_inside(STAR, P[:, 0], P[:, 1])
 from march import law_spacing_v, Replay, SCALLOP  # noqa: E402
 import whole  # noqa: E402
 

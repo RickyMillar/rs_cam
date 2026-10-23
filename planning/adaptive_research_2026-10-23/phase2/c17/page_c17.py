@@ -13,6 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import stream as st  # noqa: E402
 from page import panel_shape  # noqa: E402  (C15 drawing, same frame as v2)
+import page_links as pl  # noqa: E402
 
 ROOT = os.path.join(HERE, "..", "..")
 PAGE = os.path.join(ROOT, "farside_ideas_v3.html")
@@ -231,6 +232,9 @@ table.all th:first-child, table.all td:first-child { text-align:left; }
 .key span.sw { display:inline-block; width:22px; height:3px; vertical-align:middle; margin:0 4px 0 10px; }
 .verdict { background:#eef3fb; border-left:4px solid var(--accent); padding:8px 12px; border-radius:4px; }
 .pred { color:#7a4b00; }
+.chartbox { background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+.chart { width:100%; height:auto; display:block; }
+.chart .tick { font-size:11px; fill:#5b5b5b; }
 code { font-size:13px; }
 """
 
@@ -277,6 +281,8 @@ def answers(C):
 def build():
     res, cur = load()
     res = derive(res)
+    sw, paths = pl.load_sweep()
+    res["sw"] = pl.derive_sweep(sw)
     C = Claims(res, html=True)
     c15 = c15_curves()
     sections = []
@@ -293,10 +299,10 @@ def build():
     html = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Streamline march</title>
+<title>Loops and links</title>
 <style>{CSS}</style></head>
 <body><main>
-<h1>Streamline march</h1>
+<h1>Loops and links</h1>
 <p class="sub">Agent C17, 2026-10-24. Star and pocket fixtures in tool-centre space, the same frames as <code>farside_ideas_v2.html</code>. Python prototype on C15's exact geometry, fields and 0.1 mm replay; no Rust. Scripts: <code>phase2/c17/</code>; <code>assert_c17.py</code> checks every number on this page.</p>
 
 <p><b>The question.</b> The harmonic level lines (C15 (e)) look good but cut the same stock many times: one value of the field per loop puts the loops close where the field is steep. The lead's idea: use the field only for its direction, move every point of a loop along its own streamline by its own law gap, and let a point that reaches a wall stop there.</p>
@@ -313,8 +319,12 @@ def build():
 <h2>3. The five questions</h2>
 {qa}
 <div class="verdict">
-<p><b>Verdict.</b> The streamline march does what the lead predicted for the shape: every loop is one closed curve, the load holds away from the walls, and the stock is cut. But it does not remove the overlap. It moves it: the cut length is {C(s + '.length_vs_e', '.2f')} times (e) on the star and {C(p + '.length_vs_e', '.2f')} times on the pocket, because a closed loop must run along all the wall it has reached. Against (a) it is {C(s + '.length_vs_a', '.1f')} times (star) and {C(p + '.length_vs_a', '.1f')} times (pocket). It is not a candidate for Rust as a roughing plan.</p>
+<p><b>Verdict on the march by cut length.</b> The streamline march does what the lead predicted for the shape: every loop is one closed curve, the load holds away from the walls, and the stock is cut. But it does not remove the overlap. It moves it: the cut length is {C(s + '.length_vs_e', '.2f')} times (e) on the star and {C(p + '.length_vs_e', '.2f')} times on the pocket, because a closed loop must run along all the wall it has reached. Against (a) it is {C(s + '.length_vs_a', '.1f')} times (star) and {C(p + '.length_vs_a', '.1f')} times (pocket). Sections 4 and 5 replace cut length with engaged length, air length and time.</p>
 <p class="pred"><b>Prediction (not measured):</b> a Rust version would need a field solve, a streamline tracer, the implicit step solve, the air stop on a stock model, and loop resampling; about the size of the C15 (a) level rule plus a stock query per point per loop. The wall runs are a property of a closed loop, not of the implementation, so a Rust version would keep them.</p>
+</div>
+{pl.section(res["sw"], paths, C)}
+<div class="verdict">
+<p><b>Overall verdict.</b> The march is not a candidate for Rust: with the air counted as keep-down travel it takes the time of (e) ({C('sw.star.h_step.time_vs_e', '.2f')} and {C('sw.pocket.h_step.time_vs_e', '.2f')} times (e) at the cut feed), but its cut parts read over c where a loop leaves a wall. In the family from (a) to (e), only (e) has no retract and holds c in its cut parts, so λ* is (e) on both shapes. The choice between (e) and (a) with its retracts depends on what a retract costs, which this prototype does not measure: (a) is faster unless a retract costs more than {C('sw.star.c15_a.breakeven_s', '.1f')} s (star) or {C('sw.pocket.c15_a.breakeven_s', '.1f')} s (pocket).</p>
 </div>
 </main></body></html>
 """
@@ -323,6 +333,8 @@ def build():
 
 def note(res, C=None):
     C = C or Claims(res, html=False)
+    if "sw" not in res:
+        res["sw"] = pl.derive_sweep(pl.load_sweep()[0])
     s, p = "star.h_step", "pocket.h_step"
 
     def table(nm):
@@ -351,7 +363,8 @@ commit). Page: `farside_ideas_v3.html`. Scripts: `phase2/c17/`
 (`stream.py`, `run_c17.py`, `page_c17.py`, `assert_c17.py`; `try.py`,
 `try2.py`, `look.py` and `look2.py` are the debugging tools). Run
 `run_c17.py` (about 70 s), then `page_c17.py`, then `assert_c17.py`.
-`page_c17.py` writes this note and the page from `results_c17.json`;
+`page_c17.py` writes this note and the page from `results_c17.json` and
+`sweep.json` (`sweep.py` with `plan.py`, §7–§8);
 `assert_c17.py` checks every number in both. C15's scripts are imported from
 `phase2/c15/` and not edited.
 
@@ -444,10 +457,16 @@ Pocket:
   loops also take more levels into the star tips ({C(s + '.loops', 'd')} loops against {C('star.c15_a.levels', 'd')}).
 - The normal-gap variant is not stable on the pocket (steps to {C('pocket.h_normal.step_max_mm', '.1f')} mm,
   {C('pocket.h_normal.self_crossings', 'd')} self-crossings, {C('pocket.h_normal.sw_interior_max', '.2f')} D).
-- **Not a candidate for Rust.** §5 of C15 stands: (a), with its open arcs
-  joined by the C14 turns. Every closed-loop plan measured so far ((e) and
-  this march with either field, where it ends) cuts {C('closed_min', '.1f')} to {C('closed_max', '.1f')} times the
-  length of (a).
+- **Not a candidate for Rust.** By cut length, every closed-loop plan
+  measured so far ((e) and this march with either field, where it ends) cuts
+  {C('closed_min', '.1f')} to {C('closed_max', '.1f')} times the length of (a). With the air counted as keep-down
+  travel (§7), the march takes {C('sw.star.h_step.time_vs_e', '.2f')} (star) and {C('sw.pocket.h_step.time_vs_e', '.2f')} (pocket) times the time
+  of (e) at the cut feed, but its cut parts read over c where a loop leaves a
+  wall (§8). So it is still not a candidate.
+- In the family from (a) to (e) (§8) only (e) has no retract and holds c in
+  its cut parts: λ* is (e) on both shapes. (a) is faster unless a retract
+  costs more than {C('sw.star.c15_a.breakeven_s', '.1f')} s (star) or {C('sw.pocket.c15_a.breakeven_s', '.1f')} s (pocket); that cost is not measured.
+  The lead decides between (a) with the C14 turns and (e) on that cost.
 - What a Rust version would cost (prediction, not measured): a Laplace
   solve on the region, a streamline tracer, the implicit step solve per
   loop (many radius reads over the whole loop per loop), the air
@@ -461,7 +480,8 @@ Pocket:
 - The links between loops are not modelled; every loop is cut whole.
 - The air stop reads the replay raster; a Rust stock model would read its
   own.
-"""
+
+""" + pl.note_section(res["sw"], C)
 
 
 def main():

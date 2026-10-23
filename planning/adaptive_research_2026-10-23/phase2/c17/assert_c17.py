@@ -41,6 +41,8 @@ check(st.CD == c * D and st.TOL == tol and st.PASS_STEP == 1.5, "stream inputs")
 
 res, cur = pg.load()
 res = pg.derive(res)
+import page_links as pl  # noqa: E402
+res["sw"] = pl.derive_sweep(pl.load_sweep()[0])
 inp = res["inputs"]
 check(abs(inp["cD"] - c * D) < 1e-12 and inp["pass_step"] == 1.5 and inp["tol"] == tol, "results inputs")
 
@@ -104,6 +106,49 @@ for nm in ("star", "pocket"):
     check(abs(inner.max() - r["sw_interior_max"]) < tol / D, f"{nm} replay interior {inner.max()} vs {r['sw_interior_max']}")
     check(abs(out["area"] / out["length"] / D - r["mean_width_frac"]) < 1e-3, f"{nm} replay mean width")
 
+# ── 4b. The additions (sweep.json) ──────────────────────────────────────
+import plan as pn  # noqa: E402
+ROOT_RS = os.path.join(HERE, "..", "..", "..", "..")
+
+
+def src_line(path, n):
+    return open(os.path.join(ROOT_RS, path)).read().split("\n")[n - 1]
+
+
+check("(1500.0, 500.0)" in src_line("crates/rs_cam_core/src/compute/fixture_values.rs", 35), "cut feed source")
+check("params.feed_rate" in src_line("crates/rs_cam_core/src/adaptive/path.rs", 3166), "link at cut feed source")
+check("feed_rate: 500.0" in src_line("crates/rs_cam_core/src/compute/config.rs", 1082), "link dressup feed source")
+check('"link_feed_rate"' in src_line("crates/rs_cam_core/src/compute/config.rs", 1439), "link_feed_rate field")
+sw = res["sw"]
+check(sw["inputs"]["F_cut"] == 1500.0 and sw["inputs"]["F_link_dressup"] == 500.0, "feeds in results")
+check(abs(sw["inputs"]["clear"] - (s / D) * R) < 1e-12 and sw["inputs"]["route_ratio"] == 3.0, "FreeCAD rule inputs")
+for nm in ("star", "pocket"):
+    r = sw[nm]
+    lams = r["lam_list"]
+    for l in lams:
+        m = r[pl.lk(l)]
+        f = m["retracts"] == 0 and m["cut_width_max"] <= c + tol / D
+        check(f == m["feasible"], f"{nm} lam {l} feasible flag")
+        check(abs(m["time_cut_feed_min"] - (m["engaged_mm"] + m["air_mm"]) / 1500.0) < 1e-9, f"{nm} {l} time")
+        check(abs(m["time_link_feed_min"] - (m["engaged_mm"] / 1500.0 + m["air_mm"] / 500.0)) < 1e-9, f"{nm} {l} time2")
+    feas = [l for l in lams if r[pl.lk(l)]["feasible"]]
+    best = min(feas, key=lambda l: r[pl.lk(l)]["time_cut_feed_min"])
+    check(best == r["lam_star"] == 1.0, f"{nm} lam* {best}")
+    check(all(r[pl.lk(l)]["retracts"] > 0 for l in lams if l < 1.0), f"{nm} every lam < 1 has a retract")
+    # lam = 1 is C15 (e) through the same planner
+    for f in ("engaged_mm", "air_mm", "retracts", "levels"):
+        # (C15 stores its curves in float32: 1e-4 relative)
+        check(abs(r[pl.lk(1.0)][f] - r["c15_e"][f]) <= 1e-4 * max(1, abs(r["c15_e"][f])), f"{nm} lam 1 = (e) {f}")
+    be = [(r["c15_e"]["time_cut_feed_min"] - r[pl.lk(l)]["time_cut_feed_min"]) * 60 / r[pl.lk(l)]["retracts"]
+          for l in lams if l < 1.0]
+    check(abs(min(be) - r["breakeven_min_s"]) < 1e-9 and abs(max(be) - r["breakeven_max_s"]) < 1e-9, f"{nm} break-even")
+# one plan again from scratch: C15 (a) on the star
+import sweep  # noqa: E402
+sweep.setup("star")
+m_a, _ = sweep.run_plan(sweep.SHAPES["star"][0], sweep.key_levels("star", "c15_a"))
+for f in ("engaged_mm", "air_mm", "retracts", "links", "cut_width_max"):
+    check(abs(m_a[f] - sw["star"]["c15_a"][f]) <= 1e-6 * max(1, abs(m_a[f])), f"star (a) plan again {f}")
+
 # ── 5. Every claim on the page; the page and the note are what the
 #      results give ───────────────────────────────────────────────────────
 page = open(pg.PAGE).read()
@@ -118,11 +163,13 @@ note = open(pg.NOTE).read()
 check(note == pg.note(res), "note equals a fresh build")
 # every number in the note's fixed text (with each claim replaced by a
 # marker) is a date, a section or agent number, a code constant (0.1 mm
-# tolerance, 0.0001 mm solve tolerance) or a percentile label (90 %, 99 %)
+# tolerance, 0.0001 mm solve tolerance), a percentile label (90 %, 99 %),
+# a section number (§1 to §8), or a condition number ((1), (2))
 marked = pg.note(res, C=lambda key, f=".2f": "§")
 left = sorted(set(re.findall(r"(?<![\w.])\d+(?:\.\d+)?(?![\w])", marked)))
 print("numbers in the fixed note text:", left)
-allowed = {"2026", "10", "24", "17", "15", "14", "5", "70", "0.0001", "0.1", "90", "99", "1", "2", "3", "4", "6", "0"}
+allowed = {"2026", "10", "24", "17", "15", "14", "5", "70", "0.0001", "0.1", "90", "99", "1", "2", "3", "4", "6", "7", "8", "0",
+           "34", "35", "3163", "3168", "1077", "1083", "1439"}  # source lines, checked in 4b
 check(set(left) <= allowed, f"note numbers not from a claim: {sorted(set(left) - allowed)}")
 pmarked = re.sub(r'<span data-claim[^>]*>[^<]*</span>', "§", page)
 pmarked = re.sub(r"<svg.*?</svg>", "", pmarked, flags=re.S)

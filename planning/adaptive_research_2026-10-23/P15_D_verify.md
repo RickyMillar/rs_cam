@@ -1646,3 +1646,236 @@ new file is `phase2/d10_harness.txt` (main checkout).
  M crates/rs_cam_core/src/adaptive/research_geodesic.rs
  M crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs
 ```
+
+## D11 at ea468814 + uncommitted C12 and C14
+
+Two independent uncommitted changes, verified together in one union run:
+
+- C12: the research-gated 3D arm `ClearingStrategy3d::Geodesic`
+  (`adaptive3d/{mod,path,clearing}.rs`, the C12 block in
+  `research_geodesic.rs`, `Cargo.toml` `[[test]]`, the new test
+  `tests/adaptive3d_geodesic_arm_c12.rs`).
+- C14: the arc links `geodesic_curv_oneway` / `geodesic_curv_zigzag` with
+  counted turns (`adaptive/path.rs` shipped file: `LinkLoad::turns`,
+  `admits_turn`, the `_turns` cleanup variants; `research_geodesic.rs`; the
+  2D harness).
+
+Same worktree, own target dir, the lane script and a `timeout` on each
+command. Disk: 40 GB free at the start, 39 GB at the end. The fixture runs
+of C12 §8 were not run (the lead asks the operator first).
+
+### Fix
+
+None. I changed no file in the tree under test.
+
+### Results
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `fmt --all -- --check` | green |
+| 1 | `check -p rs_cam_core --all-targets` (no research) | green, no warning |
+| 1 | `check -p rs_cam_core --all-targets --features research,test-support` | green, no warning |
+| 2 | `--features research,test-support --test adaptive3d_geodesic_arm_c12 -- --nocapture` | **RED** (C12's load assertion; below) |
+| 3 | `--features test-support --test adaptive3d_emission_byte_parity` | green 5/5 |
+| 3 | `--features research,test-support --test adaptive3d_emission_byte_parity` (env var unset) | green 5/5 |
+| 3 | the 13 adaptive3d sentries of `adaptive3d/CLAUDE.md`, `--features test-support` | green, all 13 |
+| 4 | `a_clearing_cut_holds_the_pass_load_g_adaptpassload` | red, the SAME red as master: `a_straight_plunge_entry_is_exempt_only_leaving_its_hole`, moves 2810 and 6159, sim 0.8329080445671909, exact 0.9403847504031052 (G-MOPLOAD) |
+| 4 | `a_link_feeds_only_within_the_pass_load_g_adaptlinkload` | green |
+| 4 | `adaptive_property_harness` | green |
+| 4 | the other four `adaptive/CLAUDE.md` sentries (C14 changed `path.rs`, so I added them) | `adaptive_keeps_its_planner_order_g_adaptorder`, `contour_spiral_gcode_validity_phase0`, `adaptive_plans_every_inset_piece_g_adaptpieces` green. `a_rapid_leaves_cut_depth_straight_up_g_adaptrapidlift` red, the SAME red as master: `sim-only rapid flags moved`, move 6930, 0.24951132908296492 |
+| 5 | `--lib adaptive` | green 143 passed, 7 ignored (C14's two `link_load_tests` included) |
+| 5 | `--features research,test-support --lib adaptive::research_geodesic` | green 17 passed, 2 ignored |
+| 5 | the same, `-- --ignored` | red 0/2, the SAME at HEAD ea468814 (below) |
+| 6 | `clippy -p rs_cam_core --all-targets -- -D warnings` | green |
+| 6 | `clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings` | green |
+| 6 | `clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research,rs_cam_core/test-support -- -D warnings` | green |
+| 7 | the 2D harness, release, `--ignored --nocapture` | green 1/1, 14.29 s; output in `phase2/d11_harness.txt` |
+
+**The two ignored kernel tests.** The two failures are:
+
+- `the_transition_join_nests_its_sectors_on_a_disc`: `every transition is
+  traced`, left 1, right 0. This is C6's known red, and its ignore reason
+  names it.
+- `every_emitted_step_holds_the_pass_load`: one `ResidueMop` step from
+  (3.437, 35.053) to (3.606, 35.784) reads 0.45244 against 0.3626.
+
+Both tests are `#[ignore]` with a reason. No D record ran them after D2.
+The ignore reason of the second test still says 0.3669 (D2). To find the
+owner, I ran the same command at HEAD ea468814: a detached worktree in the
+session scratchpad with its own target dir, removed after the run. HEAD
+fails the same two tests with the same 0.45244 mop step. So C12 and C14 do
+not cause them. The mop reading grew from 0.3669 to 0.4524 at some commit
+between D2 and ea468814. The ignore reason is now stale.
+
+### C12: the 3D arm test (red)
+
+`the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels` panics
+at `adaptive3d_geodesic_arm_c12.rs:370`:
+
+```
+geodesic_curv: 128 judged samples read over the bound 0.546 (peak 1.000); the first: move 60 ClearingCut at (-16.04, -10.42, 7.00) wall distance 13.58: radial 0.709
+```
+
+The panic happens in the first mode, so the `geodesic_curv_split` mode and
+the "the two toolpaths differ" assertion never run. The printed lines:
+
+```
+control AgentSearch: 657 moves, 3006 judged, 260 over 0.546, peak 0.928; entry 291, plunge hole 296, perimeter band 1212 (852 over)
+geodesic_curv: 2058 moves, 6303 judged at levels {45 … 105} (Z x 10), 128 over 0.546, peak 1.000; entry 1858, plunge hole 3219, perimeter band 3040 (856 over)
+```
+
+The 128 over samples (115 distinct moves), grouped from the printed lines:
+
+| Intent | Z | Wall distance | radial < 0.7 | 0.7 to < 1 | 1.000 |
+|---|---|---|---|---|---|
+| ClearingCut | 7.00 | ≥ 8 mm | 35 | 7 | 0 |
+| ClearingCut | 7.00 | < 4 mm | 3 | 9 | 0 |
+| ClearingCut | 4.50 | ≥ 8 mm | 36 | 3 | 0 |
+| ClearingCut | 4.50 | < 4 mm | 3 | 1 | 0 |
+| ClearingCut | other Z (4.6 to 5.0, draped) | < 4 mm | 6 | 3 | 0 |
+| Linking | 7.00 | ≥ 8 mm | 3 | 2 | 7 |
+| Linking | 4.75 | ≥ 8 mm | 1 | 3 | 6 |
+
+The facts that the lead must weigh (I make no classification beyond them):
+
+1. **The control fails the same bound.** AgentSearch, the shipped arm,
+   reads 260 judged samples over 0.546 (peak 0.928). The test prints the
+   control and does not assert on it. A bound that the shipped arm fails
+   2:1 more often than the research arm does not separate the two arms.
+2. **Most of the over samples are mid-pocket.** 81 of 128 are ClearingCut
+   samples at ≥ 8 mm from the wall, on the two levels Z 7 and Z 4.5. They
+   are not in the perimeter band and not the mop. C12's P5 expected only
+   "a few" RDP slivers and a mop step. The run does not show which of the
+   two causes these samples have; `print_exact_width_along_move` (the
+   `adaptive/CLAUDE.md` rule) is the next read.
+3. **13 Linking samples read 1.000** (a full-width cut), at Z 7.00 and at
+   Z 4.75, all ≥ 8 mm from the wall. `links_as_cuts` writes a `Link` as a
+   `Cut`, but these moves have intent `Linking`. A Z of 4.75 is 0.25 mm
+   above the level Z 4.5.
+4. The arm's judged samples lie at 61 Z values from 4.5 to 10.5. The
+   control does not print its levels.
+
+The bound was not changed. The test was not changed.
+
+### Controls (exact)
+
+All 26 control `.txt` files (13 columns × 2 shapes) that the harness wrote
+again are byte-identical to the D10 copies. `summary.txt` differs only by
+the four new column blocks. So `geodesic_a` 92/88, `geodesic_curv` 73 = S1
+J58 M0 P14 / 63 = S1 J34 M12 C6 P10, `reseed` 73/74, `split` 73/84, agent
+25/31, contour_spiral 101/91 are all unchanged. C14's threading changes no
+control.
+
+### C14 columns
+
+| Item | star oneway | star zigzag | pocket oneway | pocket zigzag |
+|---|---|---|---|---|
+| Entries | **39** | **50** | 54 | 66 |
+| S / L / J / M / C / W / P | 1/0/26/0/0/0/12 | 1/0/30/0/0/0/19 | 1/0/42/2/0/0/9 | 1/0/48/4/0/0/13 |
+| Arc-to-arc joins | 44 | 44 | 51 | 51 |
+| Turns planned / over the bound 3.207 / outside | 40 / 4 / 0 | 40 / 4 / 0 | 41 / 10 / 0 | 43 / 8 / 0 |
+| Turn length (mm), min … max | 1.745 … 2.727 | 0.643 … 2.727 | 1.750 … 3.011 | 0.284 … 3.203 |
+| Turn steps, over the ceiling | 80, 73 | 78, 73 | 83, 65 | 81, 65 |
+| Turns fed / without | 40 / **0** | 39 / **1** | 41 / **0** | 42 / **1** |
+| Turn swept/D: min, Q1/Q2/Q3, max | 0.056, 0.658/0.712/0.771, 0.830 | 0.000, 0.663/0.729/0.786, 0.896 | 0.000, 0.617/0.716/0.857, 0.946 | 0.000, 0.500/0.696/0.847, 0.946 |
+| Turn area/D: min, Q1/Q2/Q3, max | 0.122, 0.687/0.753/0.860, 1.000 | 0.075, 0.708/0.800/0.860, 0.961 | 0.000, 0.616/0.825/0.941, 1.032 | 0.000, 0.452/0.740/0.923, 1.085 |
+| Feed factor: min, Q1/Q2/Q3, max | 0.363, 0.418/0.474/0.516, 1.000 | 0.377, 0.415/0.446/0.498, 1.000 | 0.351, 0.386/0.439/0.546, 1.000 | 0.334, 0.388/0.474/0.610, 1.000 |
+| Steps on no turn: max, over | 0.3586, 0 | 0.3589, 0 | 0.3624, 0 | 0.3610, 0 |
+| Return links | 876 (338.7 mm) | 0 | 1466 (593.4 mm) | 0 |
+| Keep-down links | 928 (588.7 mm) | 82 (394.3 mm) | 1585 (865.1 mm) | 30 (185.5 mm) |
+| Cut length (mm) | 1192.5 | 1177.2 | 1321.6 | 1212.9 |
+| Raw plan, over / steps | 90 / 3484 | 80 / 2559 | 175 / 4525 | 193 / 2971 |
+
+For comparison, `geodesic_curv` has 73 / 63 entries and a cut length of
+1343.7 mm on the pocket.
+
+Cascade (refused / cascade / intrinsic), raw plan:
+
+| Class | star oneway | star zigzag | pocket oneway | pocket zigzag |
+|---|---|---|---|---|
+| total | 70 / 17 / 53 | 68 / 16 / 52 | 98 / 22 / 76 | 319 / 185 / 134 |
+| clearing join | 24 / 0 / 24 | 26 / 0 / 26 | 12 / 0 / 12 | 21 / 1 / 20 |
+| clearing wrap | 36 / 11 / 25 | 38 / 13 / 25 | 64 / 11 / 53 | 287 / 182 / 105 |
+| clearing link | 10 / 6 / 4 | 4 / 3 / 1 | 22 / 11 / 11 | 11 / 2 / 9 |
+
+No turn is refused in the cascade model (the `clearing turn` class has no
+refusal row).
+
+**The unfed turn of each zigzag shape.** `apply_turn_feeds` counts a turn
+as unfed when no emitted `Linear` move has both its start and its target
+on the turn segment (within 1e-6 mm). The readout does not name the unfed
+turn. The turn lines with factor 1.0000 are under the ceiling (they keep
+the full feed by design) and cannot be told apart from the unfed turn. The
+cause is not measured. A candidate: the emission drops collinear points
+(`adaptive/CLAUDE.md`), so a turn that is collinear with the step before or
+after it can become part of a longer move whose start is off the turn
+segment. The readout should print which turn is unfed.
+
+### Keep-or-drop (C14's pre-registered rule, applied as written)
+
+| Rule | oneway | zigzag |
+|---|---|---|
+| 1. star entries ≤ 36 | **39: no** | **50: no** |
+| 2. no non-turn step over 0.3626 (mop excepted) | star 0.3586, pocket 0.3624, 0 over: yes | star 0.3589, pocket 0.3610, 0 over: yes |
+| 3. every turn ≤ its bound and fed | max 2.727 / 3.011 ≤ 3.207, without 0 / 0: yes | max 2.727 / 3.203 ≤ 3.207, but without **1 / 1: no** |
+| **Verdict** | **DROP** (rule 1) | **DROP** (rules 1 and 3) |
+
+Facts that the rule does not weigh: on the star, one-way takes 39 entries
+against 73 (−34) and zigzag 50 (−23). On the pocket the counts are 54 and
+66 against 63. No non-turn step goes over the ceiling, and the mop holds
+the ceiling on all four plans.
+
+### Magic numbers (C12 + C14 diff)
+
+- Product hunks: the same-point tolerance `1e-6` (stated as the walker's
+  own); a midpoint `0.5 * (a + b)`. No underived constant.
+- C14 unit tests: `1e-12` / `1e-9` comparison slack; the scene points
+  (±15, 0, 2, 4) are test inputs.
+- C12 test, copied values:
+  - `const PERIMETER_INSET_MARGIN_MM: f64 = 0.25` is a local copy of the
+    shipped constant, not an import.
+  - `(TOOL_RADIUS / 6.0).max(TOLERANCE)` restates the planner cell formula.
+  - `quantum = 1.5 * planner_cell()` (the band margin) is not derived in
+    the test.
+  - `trochoid_cap_mult: 1.6`, `entry_clearance_mm: 0.5` and
+    `stay_down_clearance_mm: 0.5` are parameter inputs.
+
+### Fixture runs (C12 §8): not run; predicted duration
+
+I found no record of a CLI `project` run time for these files. The only
+generate times on record are GUI times: Corne roughs under 6 s each and
+the wanaka200 back rough about 20 s (`P15_E_evidence.md` E2). So these are
+estimates, not measurements:
+
+| Item | Predicted | Basis |
+|---|---|---|
+| Release build of `rs_cam_cli` with `rs_cam_core/research` (once) | 3 to 8 min | core is rebuilt in release without `test-support`, then the CLI |
+| Corne, per run (3 runs) | under 3 min each | 2 adaptive3d roughs at under 6 s each, plus the other ops of the file and the `--summary` sim |
+| wanaka200, per run (3 runs) | 1 to 3 min each | back rough about 20 s, plus the other ops and the sim |
+| rivmap100, per run (3 runs) | unknown; may exceed 3 min | no generate time on record; the file also holds a Scallop Finish and other ops |
+
+To bound the runs, use `--skip` on the non-rough ops, if the lead accepts
+that the run then measures the rough alone.
+
+### Files the harness wrote
+
+91 files in
+`.claude/worktrees/adaptive-head/target/tmp/adaptive_geodesic_2d_g1/`:
+`summary.txt` and `<shape>_<column>.{txt,svg,png}` for 15 columns × 2
+shapes. New: `{star,pocket}_geodesic_curv_oneway.{txt,svg,png}` and
+`{star,pocket}_geodesic_curv_zigzag.{txt,svg,png}`. Outside `target/`, the
+only new file is `phase2/d11_harness.txt` (main checkout).
+
+### `git status --short` (worktree) at the end of D11
+
+```
+ M crates/rs_cam_core/Cargo.toml
+ M crates/rs_cam_core/src/adaptive/path.rs
+ M crates/rs_cam_core/src/adaptive/research_geodesic.rs
+ M crates/rs_cam_core/src/adaptive3d/CLAUDE.md
+ M crates/rs_cam_core/src/adaptive3d/clearing.rs
+ M crates/rs_cam_core/src/adaptive3d/mod.rs
+ M crates/rs_cam_core/src/adaptive3d/path.rs
+ M crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs
+?? crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
+```

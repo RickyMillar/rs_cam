@@ -1,0 +1,112 @@
+pocket / geodesic_curv_zigzag
+pieces: 1
+cut length: 1212.9 mm
+keep-down links: 30 (185.5 mm)
+entries (plunges): 66
+retracts (lifts to safe Z, last included): 66
+pass load (planner readout, replay measure SweptWidth): max 0.9460 vs ceiling 0.3626; 0 of 2819 steps over; 0 exempt plunge-departure steps
+both measures of the emitted steps (fraction of D, ceiling 0.3626): swept width max 0.9460, 65 over; area per mm max 1.0851, 1090 over
+load by class, emitted plan (replay measure: max reading, steps over of steps; then swept width and area per mm side by side):
+  starter: max 0.3114, 0 of 160; swept max 0.3114, 0 over; area max 0.4427, 6 over
+  clearing: max 0.3610, 0 of 2266; swept max 0.3610, 0 over; area max 0.6146, 996 over
+  clearing turn: max 0.9460, 0 of 81; swept max 0.9460, 65 over; area max 1.0851, 60 over
+  clearing link: max 0.1667, 0 of 12; swept max 0.1667, 0 over; area max 0.3489, 0 over
+  wall pass link: max 0.3232, 0 of 69; swept max 0.3232, 0 over; area max 0.4119, 1 over
+  wall pass: max 0.3044, 0 of 37; swept max 0.3044, 0 over; area max 0.5090, 4 over
+  residue mop: max 0.3589, 0 of 139; swept max 0.3589, 0 over; area max 0.4896, 23 over
+  residue mop link: max 0.2700, 0 of 55; swept max 0.2700, 0 over; area max 0.2065, 0 over
+load by class, raw plan (replay measure: max reading, steps over of steps; then swept width and area per mm side by side):
+  starter: max 0.3114, 0 of 160; swept max 0.3114, 0 over; area max 0.4427, 6 over
+  clearing join: max 0.9302, 30 of 46; swept max 0.9302, 30 over; area max 1.0139, 35 over
+  clearing wrap: max 0.9280, 141 of 2528; swept max 0.9280, 141 over; area max 1.1288, 1341 over
+  clearing link: max 0.9496, 22 of 155; swept max 0.9496, 22 over; area max 0.9009, 23 over
+  clearing turn: max 0.9460, 0 of 82; swept max 0.9460, 65 over; area max 1.0833, 68 over
+cascade (replay model on the raw plan, read cell 0.500 mm): 319 refusals, 185 cascades, 134 intrinsic; intrinsic in the first quantum over the ceiling (c, c + cell/D]: 43
+  clearing join: refused 21, cascade 1, intrinsic 20 (max planned reading 0.9302)
+  clearing wrap: refused 287, cascade 182, intrinsic 105 (max planned reading 0.9280)
+  clearing link: refused 11, cascade 2, intrinsic 9 (max planned reading 0.7470)
+first refusal of each producer piece: 63 pieces, 13 of them cascades; the first ten:
+  first: clearing join (segment 4) from (15.50, 18.50) to (14.06, 18.50), replay reading 0.8333, planned reading 0.8333, intrinsic, 4.44 mm from the seed
+  first: clearing join (segment 4) from (12.47, 18.50) to (11.62, 18.50), replay reading 0.6667, planned reading 0.6667, intrinsic, 6.88 mm from the seed
+  first: clearing wrap (segment 4) from (11.62, 18.50) to (10.77, 18.50), replay reading 0.8333, planned reading 0.8333, intrinsic, 7.73 mm from the seed
+  first: clearing link (segment 5) from (8.66, 19.94) to (8.33, 21.37), replay reading 0.3737, planned reading 0.3737, intrinsic, 10.57 mm from the seed
+  first: clearing wrap (segment 6) from (27.13, 35.50) to (27.50, 35.31), replay reading 0.4792, planned reading 0.4792, intrinsic, 19.07 mm from the seed
+  first: clearing wrap (segment 6) from (28.50, 39.27) to (29.00, 39.02), replay reading 0.4109, planned reading 0.4109, intrinsic, 23.05 mm from the seed
+  first: clearing wrap (segment 6) from (30.50, 42.75) to (30.99, 42.50), replay reading 0.3705, planned reading 0.3705, intrinsic, 27.05 mm from the seed
+  first: clearing wrap (segment 6) from (8.50, 45.78) to (8.00, 45.59), replay reading 0.4529, planned reading 0.4529, intrinsic, 29.05 mm from the seed
+  first: clearing wrap (segment 6) from (35.75, 44.00) to (36.00, 43.71), replay reading 0.5318, planned reading 0.5318, intrinsic, 30.69 mm from the seed
+  first: clearing join (segment 6) from (36.16, 43.50) to (37.03, 44.00), replay reading 0.8057, planned reading 0.8057, intrinsic, 31.52 mm from the seed
+intrinsic refusals, the first three of each class:
+  intrinsic: clearing join (segment 4) from (15.50, 18.50) to (14.06, 18.50), replay reading 0.8333, planned reading 0.8333, intrinsic, 4.44 mm from the seed
+  intrinsic: clearing join (segment 4) from (12.47, 18.50) to (11.62, 18.50), replay reading 0.6667, planned reading 0.6667, intrinsic, 6.88 mm from the seed
+  intrinsic: clearing join (segment 6) from (36.16, 43.50) to (37.03, 44.00), replay reading 0.8057, planned reading 0.8057, intrinsic, 31.52 mm from the seed
+  intrinsic: clearing wrap (segment 4) from (11.62, 18.50) to (10.77, 18.50), replay reading 0.8333, planned reading 0.8333, intrinsic, 7.73 mm from the seed
+  intrinsic: clearing wrap (segment 6) from (27.13, 35.50) to (27.50, 35.31), replay reading 0.4792, planned reading 0.4792, intrinsic, 19.07 mm from the seed
+  intrinsic: clearing wrap (segment 6) from (27.50, 35.31) to (28.00, 35.03), replay reading 0.5427, planned reading 0.5102, intrinsic, 19.07 mm from the seed
+  intrinsic: clearing link (segment 5) from (8.66, 19.94) to (8.33, 21.37), replay reading 0.3737, planned reading 0.3737, intrinsic, 10.57 mm from the seed
+  intrinsic: clearing link (segment 7) from (28.90, 51.50) to (30.32, 51.50), replay reading 0.4583, planned reading 0.4583, intrinsic, 35.05 mm from the seed
+  intrinsic: clearing link (segment 13) from (28.48, 23.18) to (29.30, 22.00), replay reading 0.4504, planned reading 0.4504, intrinsic, 11.35 mm from the seed
+entries by producer: starter 1, clearing at a lead-in (L) 0, clearing at a wrap end (join) 48, clearing mid-wrap (replay split) 4, residue contour 0, wall pass 0, residue mop 13, other 0
+raw plan (before the replay): 193 of 2971 steps over the ceiling (the steps the replay refuses; exact up to the first); the first ten:
+  refused: clearing cut join (ramp, back-run or seam step) (segment 4) from (15.50, 18.50) to (14.06, 18.50), reading 0.8333
+  refused: clearing cut join (ramp, back-run or seam step) (segment 4) from (14.06, 18.50) to (13.27, 18.50), reading 0.5000
+  refused: clearing cut on a wrap (segment 4) from (13.27, 18.50) to (12.47, 18.50), reading 0.8333
+  refused: clearing cut join (ramp, back-run or seam step) (segment 4) from (12.47, 18.50) to (11.62, 18.50), reading 0.6667
+  refused: clearing cut on a wrap (segment 4) from (11.62, 18.50) to (10.77, 18.50), reading 0.8333
+  refused: clearing cut join (ramp, back-run or seam step) (segment 4) from (10.77, 18.50) to (9.88, 18.50), reading 0.5000
+  refused: clearing cut on a wrap (segment 4) from (9.88, 18.50) to (8.99, 18.50), reading 0.8333
+  refused: clearing link  (segment 5) from (8.66, 19.94) to (8.33, 21.37), reading 0.3737
+  refused: clearing link  (segment 5) from (8.33, 21.37) to (8.00, 22.81), reading 0.5176
+  refused: clearing cut on a wrap (segment 6) from (27.13, 35.50) to (27.50, 35.31), reading 0.4792
+field piece 0: applied true, seed Some([18.5, 18.5]), seed radius 3.00 mm, levels 32, wrap pieces 99, converged true, front branches 3, spiral levels 0
+joins piece 0: rim transition 0, closed-to-closed transition 0, transition refused (seam) 0, closed-to-closed seam 14, closed to arc 25, from an arc 59; local-spacing sweep converged None
+arcs piece 0: style Zigzag; arc-to-arc joins 51: clearing turns 43, over the bound 3.207 mm 8, straight step outside the region 0; turn length 0.284 to 3.203 mm; return links 0 (0.0 mm)
+steps on no turn (emitted): max 0.3610 vs ceiling 0.3626, 0 over
+clearing turns (emitted): 43 of 43 planned; 81 turn steps, 65 over the ceiling (the counted exemption); turns with the reduced feed 42, without 1
+  turn swept width / D: min 0.0000, quartiles 0.5000 / 0.6959 / 0.8465, max 0.9460
+  turn area per mm / D: min 0.0000, quartiles 0.4515 / 0.7397 / 0.9225, max 1.0851
+  turn feed factor: min 0.3342, quartiles 0.3884 / 0.4737 / 0.6100, max 1.0000
+  turn length (mm): min 0.2836, quartiles 2.0000 / 2.0535 / 2.4195, max 3.2027
+  turn: (27.00, 26.03) to (27.00, 28.65), 2.619 mm, 2 steps (2 over), swept 0.5833, area 0.7655, feed factor 0.4737, feed 710.6 mm/min
+  turn: (8.00, 26.56) to (8.00, 29.43), 2.868 mm, 2 steps (2 over), swept 0.5833, area 0.7319, feed factor 0.4955, feed 743.2 mm/min
+  turn: (27.00, 31.05) to (27.00, 33.34), 2.291 mm, 2 steps (2 over), swept 0.7500, area 0.8252, feed factor 0.4394, feed 659.2 mm/min
+  turn: (8.00, 32.00) to (8.00, 34.41), 2.419 mm, 2 steps (2 over), swept 0.6667, area 0.8352, feed factor 0.4342, feed 651.3 mm/min
+  turn: (28.00, 35.03) to (28.55, 37.00), 2.044 mm, 2 steps (2 over), swept 0.8567, area 0.9405, feed factor 0.3856, feed 578.4 mm/min
+  turn: (8.00, 36.75) to (8.00, 39.02), 2.276 mm, 2 steps (2 over), swept 0.6667, area 0.8881, feed factor 0.4084, feed 612.5 mm/min
+  turn: (29.92, 38.50) to (31.25, 40.00), 2.004 mm, 2 steps (2 over), swept 0.8858, area 0.9200, feed factor 0.3942, feed 591.3 mm/min
+  turn: (8.00, 41.25) to (8.00, 43.43), 2.186 mm, 2 steps (2 over), swept 0.7500, area 0.9197, feed factor 0.3943, feed 591.4 mm/min
+  turn: (32.58, 41.50) to (34.72, 42.00), 2.197 mm, 2 steps (2 over), swept 0.8494, area 0.9291, feed factor 0.3903, feed 585.5 mm/min
+  turn: (8.00, 45.59) to (8.50, 47.90), 2.363 mm, 1 steps (1 over), swept 0.7154, area 0.6348, feed factor 0.5069, feed 760.4 mm/min
+  turn: (42.01, 49.00) to (42.41, 48.50), 0.642 mm, 1 steps (1 over), swept 0.4312, area 0.5067, feed factor 0.7158, feed 1073.6 mm/min
+  turn: (42.39, 51.50) to (45.13, 51.50), 2.742 mm, 2 steps (1 over), swept 0.5000, area 0.2451, feed factor 0.7253, feed 1087.9 mm/min
+  turn: (48.00, 40.84) to (49.50, 39.43), 2.059 mm, 2 steps (2 over), swept 0.9460, area 1.0322, feed factor 0.3513, feed 527.0 mm/min
+  turn: (47.65, 51.50) to (50.04, 51.50), 2.390 mm, 2 steps (2 over), swept 0.8333, area 1.0851, feed factor 0.3342, feed 501.3 mm/min
+  turn: (51.00, 38.09) to (53.50, 38.43), 2.522 mm, 2 steps (2 over), swept 0.9196, area 1.0057, feed factor 0.3606, feed 540.9 mm/min
+  turn: (10.50, 50.57) to (10.23, 50.50), 0.284 mm, 1 steps (0 over), swept 0.2214, area 0.2917, feed factor 1.0000, feed 1500.0 mm/min
+  turn: (31.70, 19.50) to (33.65, 18.00), 2.458 mm, 2 steps (2 over), swept 0.6959, area 0.7205, feed factor 0.5034, feed 755.0 mm/min
+  turn: (29.50, 8.08) to (32.00, 8.01), 2.501 mm, 2 steps (2 over), swept 0.6760, area 0.6872, feed factor 0.5277, feed 791.6 mm/min
+  turn: (35.57, 17.50) to (37.51, 17.00), 2.001 mm, 2 steps (2 over), swept 0.8277, area 0.9655, feed factor 0.3756, feed 563.4 mm/min
+  turn: (34.50, 8.13) to (37.00, 8.45), 2.520 mm, 2 steps (2 over), swept 0.7122, area 0.7357, feed factor 0.4929, feed 739.4 mm/min
+  turn: (39.50, 17.00) to (41.50, 17.00), 2.000 mm, 2 steps (2 over), swept 0.8333, area 1.0599, feed factor 0.3422, feed 513.2 mm/min
+  turn: (39.50, 8.99) to (41.50, 8.57), 2.044 mm, 2 steps (2 over), swept 0.7854, area 0.9225, feed factor 0.3931, feed 589.7 mm/min
+  turn: (43.50, 17.00) to (45.23, 18.00), 1.996 mm, 2 steps (2 over), swept 0.8996, area 1.0150, feed factor 0.3573, feed 535.9 mm/min
+  turn: (43.50, 8.16) to (46.00, 9.13), 2.680 mm, 2 steps (2 over), swept 0.6396, area 0.6646, feed factor 0.5456, feed 818.4 mm/min
+  turn: (47.00, 18.93) to (48.68, 20.00), 1.989 mm, 2 steps (2 over), swept 0.9012, area 1.0395, feed factor 0.3489, feed 523.3 mm/min
+  turn: (48.00, 8.80) to (50.00, 8.49), 2.025 mm, 2 steps (2 over), swept 0.8753, area 0.8950, feed factor 0.4052, feed 607.8 mm/min
+  turn: (50.03, 21.50) to (51.34, 23.00), 1.987 mm, 2 steps (2 over), swept 0.8858, area 0.9042, feed factor 0.4011, feed 601.6 mm/min
+  turn: (52.00, 8.18) to (54.50, 9.73), 2.940 mm, 2 steps (2 over), swept 0.6815, area 0.5969, feed factor 0.5321, feed 798.1 mm/min
+  turn: (52.00, 24.91) to (53.00, 26.67), 2.024 mm, 2 steps (2 over), swept 0.8579, area 1.0085, feed factor 0.3596, feed 539.4 mm/min
+  turn: (56.50, 9.49) to (58.50, 9.26), 2.013 mm, 2 steps (1 over), swept 0.4140, area 0.2820, feed factor 0.8760, feed 1314.0 mm/min
+  turn: (53.00, 28.69) to (53.00, 30.69), 2.000 mm, 2 steps (2 over), swept 0.8333, area 1.0833, feed factor 0.3347, feed 502.1 mm/min
+  turn: (60.50, 9.04) to (62.50, 8.82), 2.012 mm, 2 steps (1 over), swept 0.8465, area 0.7404, feed factor 0.4284, feed 642.6 mm/min
+  turn: (53.00, 32.69) to (52.50, 34.57), 1.952 mm, 2 steps (2 over), swept 0.9336, area 0.2801, feed factor 0.3884, feed 582.7 mm/min
+  turn: (55.47, 36.36) to (56.00, 38.29), 2.001 mm, 2 steps (1 over), swept 0.5922, area 0.6690, feed factor 0.5421, feed 813.1 mm/min
+  turn: (66.44, 33.00) to (69.48, 32.00), 3.203 mm, 3 steps (0 over), swept 0.1855, area 0.2537, feed factor 1.0000, feed 1500.0 mm/min
+  turn: (66.06, 33.50) to (67.43, 35.00), 2.028 mm, 2 steps (2 over), swept 0.6502, area 0.7397, feed factor 0.4903, feed 735.4 mm/min
+  turn: (61.09, 40.50) to (62.50, 41.99), 2.053 mm, 2 steps (2 over), swept 0.4745, area 0.4515, feed factor 0.7643, feed 1146.5 mm/min
+  turn: (69.56, 35.50) to (69.93, 35.00), 0.617 mm, 1 steps (0 over), swept 0.0000, area 0.0000, feed factor 1.0000, feed 1500.0 mm/min
+  turn: (64.64, 43.00) to (66.69, 44.00), 2.283 mm, 2 steps (0 over), swept 0.1863, area 0.2076, feed factor 1.0000, feed 1500.0 mm/min
+  turn: (71.06, 40.00) to (71.46, 42.50), 2.532 mm, 2 steps (2 over), swept 0.5465, area 0.5945, feed factor 0.6100, feed 915.0 mm/min
+  turn: (68.68, 45.00) to (70.62, 46.00), 2.182 mm, 2 steps (0 over), swept 0.0741, area 0.1337, feed factor 1.0000, feed 1500.0 mm/min
+  turn: (13.50, 8.31) to (13.13, 8.50), 0.419 mm, 1 steps (1 over), swept 0.2936, area 0.4479, feed factor 0.8096, feed 1214.4 mm/min
+  turn: (9.98, 11.00) to (9.56, 11.50), 0.650 mm, 1 steps (1 over), swept 0.3193, area 0.4369, feed factor 0.8300, feed 1245.1 mm/min
