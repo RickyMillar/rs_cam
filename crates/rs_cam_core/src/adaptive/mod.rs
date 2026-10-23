@@ -16,6 +16,10 @@
 
 mod material_grid;
 pub(crate) mod path;
+/// Research candidate (a) of the adaptive research 2026-10-23: the
+/// geodesic-wavefront field for 2D clearing. No product path calls it.
+#[cfg(feature = "research")]
+pub mod research_geodesic;
 mod search;
 /// The one tool-centre region builder the planner and the entry dressup's
 /// helix containment share.

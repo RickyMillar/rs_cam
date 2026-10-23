@@ -406,7 +406,7 @@ fn resample_loop(loop_pts: &[P2], step: f64) -> Vec<P2> {
 }
 
 /// Index of the loop point nearest to `p`.
-fn nearest_index(pts: &[P2], p: P2) -> usize {
+pub(super) fn nearest_index(pts: &[P2], p: P2) -> usize {
     let mut best = 0usize;
     let mut best_d = f64::INFINITY;
     for (i, q) in pts.iter().enumerate() {

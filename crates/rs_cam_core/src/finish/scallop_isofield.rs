@@ -163,7 +163,8 @@ pub fn build_field(
         slope_map.origin_y,
     );
 
-    fast_sweep(&mut passes, &inside, &fixed, &stepover_mm, rows, cols, cell);
+    // The convergence flag is not part of this field's contract.
+    let _converged = fast_sweep(&mut passes, &inside, &fixed, &stepover_mm, rows, cols, cell);
 
     let max_pass = passes
         .iter()
@@ -310,11 +311,18 @@ fn seed_boundary(
 /// one cell. Four sweep directions, repeated until no cell moves by more than
 /// a tolerance — capped, because a pathological field must not hang a
 /// generator.
+///
+/// The one Eikonal solver of the crate. The 2D adaptive research candidate
+/// (`adaptive::research_geodesic`, behind the `research` feature) solves its
+/// geodesic distance from the entry disc with it: the seed nodes are `fixed`,
+/// and a node that is not `inside` holds `INFINITY`, so it is a wall. Returns
+/// true when a round moved no node by more than the tolerance, false when
+/// the round cap stopped the sweep first. `build_field` ignores the flag.
 #[expect(
     clippy::indexing_slicing,
     reason = "every index is bounded by the loop ranges"
 )]
-fn fast_sweep(
+pub(crate) fn fast_sweep(
     passes: &mut [f64],
     inside: &[bool],
     fixed: &[bool],
@@ -322,7 +330,7 @@ fn fast_sweep(
     rows: usize,
     cols: usize,
     cell: f64,
-) {
+) -> bool {
     const MAX_ROUNDS: usize = 24;
     const TOL: f64 = 1e-6;
 
@@ -373,9 +381,10 @@ fn fast_sweep(
             }
         }
         if moved <= TOL {
-            break;
+            return true;
         }
     }
+    false
 }
 
 #[expect(clippy::indexing_slicing, reason = "bounds checked before each read")]
@@ -434,11 +443,25 @@ pub fn extract_rings(field: &IsoScallopField) -> Vec<Vec<P2>> {
 /// midpoint. A boolean grid has no sub-cell information to interpolate with; a
 /// scalar field does, and throwing it away would hand the iso-field candidate
 /// a half-cell placement error it does not actually have.
+fn iso_contour(field: &IsoScallopField, level: f64) -> Vec<Vec<P2>> {
+    iso_contour_where(field, level, &|_, _| true)
+}
+
+/// [`iso_contour`] over the cells for which `cell_kept(row, col)` is true;
+/// the cell with corners `(row, col)` .. `(row + 1, col + 1)` gives no
+/// segment when it is false. [`iso_contour`] keeps every cell. The 2D
+/// adaptive research candidate (`adaptive::research_geodesic`) drops each
+/// cell with an unreachable corner, so a level set ends at a wall and does
+/// not run along it.
 #[expect(
     clippy::indexing_slicing,
     reason = "row/col bounded by the loop ranges"
 )]
-fn iso_contour(field: &IsoScallopField, level: f64) -> Vec<Vec<P2>> {
+pub(crate) fn iso_contour_where(
+    field: &IsoScallopField,
+    level: f64,
+    cell_kept: &dyn Fn(usize, usize) -> bool,
+) -> Vec<Vec<P2>> {
     if field.rows < 2 || field.cols < 2 {
         return Vec::new();
     }
@@ -468,6 +491,9 @@ fn iso_contour(field: &IsoScallopField, level: f64) -> Vec<Vec<P2>> {
     let mut segments: Vec<(P2, P2)> = Vec::new();
     for row in 0..field.rows - 1 {
         for col in 0..field.cols - 1 {
+            if !cell_kept(row, col) {
+                continue;
+            }
             // Local corner labels match `ms_bool_segments`: increasing row
             // moves DOWN in the local frame, so (r, c) is `tl`.
             let (tl, tr) = (at(row, col), at(row, col + 1));

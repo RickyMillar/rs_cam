@@ -163,7 +163,7 @@ impl LinkLoad {
     /// column that reads air is fed straight down), so the helix hole
     /// (R + helix radius) is stamped only where the disc holds stock; else
     /// the plunge's own disc.
-    fn stamp_entry(&self, grid: &mut MaterialGrid, p: P2) {
+    pub(super) fn stamp_entry(&self, grid: &mut MaterialGrid, p: P2) {
         let helix = super::search::compute_engagement(grid, p.x, p.y, self.tool_radius) > 0.0;
         let r = if helix {
             self.entry_hole(p)
@@ -200,7 +200,7 @@ impl LinkLoad {
     /// swept-width model no step out of a hole the cutter's own size holds
     /// the pass load (it reads at least half the diameter), so the first
     /// steps out of such an entry are exempt ([`PassLoad::departing`]).
-    fn plunge_departure_exempt(&self) -> bool {
+    pub(super) fn plunge_departure_exempt(&self) -> bool {
         self.holds_pass_load() && self.entry_radius <= self.tool_radius
     }
 
@@ -361,7 +361,7 @@ fn feed_link_checked(
 
 /// `path` with every segment longer than `max_step` split evenly, so each
 /// consecutive pair is at most one pass step apart.
-fn subdivide(path: &[P2], max_step: f64) -> Vec<P2> {
+pub(super) fn subdivide(path: &[P2], max_step: f64) -> Vec<P2> {
     let mut out = Vec::with_capacity(path.len());
     let Some(&first) = path.first() else {
         return out;
@@ -2494,7 +2494,7 @@ fn mop_capped_step_of(
 ///
 /// Reference: Autodesk patent US7831332 (Fusion HSM transition
 /// portion), Bieterman & Sandström (Boeing, ~2003), Ren & Bi (2014).
-fn emit_helical_starter_pocket(
+pub(super) fn emit_helical_starter_pocket(
     grid: &mut MaterialGrid,
     machinable_mask: &[bool],
     boundary_distances: &[f64],
