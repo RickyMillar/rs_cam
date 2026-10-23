@@ -486,6 +486,18 @@ impl super::catalog::OperationConfig {
             _ => None,
         }
     }
+
+    /// Chamfer Clearance: the chamfer width `w` and the tip offset `t`
+    /// (mm) that the wall trim of the model edges reads
+    /// (`compute::edge_clear`). `None` for every op that bevels no edge.
+    pub fn bevel_width_and_tip_mm(&self) -> Option<(f64, f64)> {
+        match self {
+            super::catalog::OperationConfig::Chamfer(cfg) => {
+                Some((cfg.chamfer_width, cfg.tip_offset))
+            }
+            _ => None,
+        }
+    }
 }
 
 /// The Bore op (geometry selection P6.6, design 4.4, lead ruling L-11): a

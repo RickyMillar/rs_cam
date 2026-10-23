@@ -48,6 +48,12 @@
 //! material stands above its face top over its area
 //! ([`OperationError::BuriedFace`]).
 //!
+//! Chamfer Clearance (operator ruling 2026-10-23): after the view and the
+//! hole fit, the prologue runs THE wall trim of the model edges of an
+//! `Edges` op ([`clear_edge_walls`]). An edge that ends at a higher wall
+//! stops short of it; an edge with no clear stretch is left out with a
+//! note. The buried check and the adapter read the trimmed runs.
+//!
 //! Geometry selection P6.4 (ruling O-2 (B)): for an op that extends its open
 //! paths to the stock (`ItemUse::RegionsExtendOpen`, Pocket with Extend to
 //! stock) the prologue grows the stock rectangle of the selection by the
@@ -62,6 +68,7 @@ use crate::compute::catalog::{
     FaceTopRule, GeometryRequirement, ItemUse, OperationConfig, OperationType,
 };
 use crate::compute::config::ResolvedHeights;
+use crate::compute::edge_clear::{EdgeClearProbe, clear_edge_walls};
 use crate::compute::floor::{HoleFloorInputs, HoleSpan, hole_floors, region_floors};
 use crate::compute::toolpath_stats::SelectionNoteFinding;
 use crate::dexel_stock::FRESH_MATERIAL_THRESHOLD_MM;
@@ -388,6 +395,8 @@ fn refuse_buried_face(
     }
     // R-C / F21: each area against its own top, and each model edge along
     // a band of the cone radius of the bevel on both sides of the edge.
+    // The edges are the runs after the wall trim (`clear_edges`), so the
+    // band of a run that ends at a higher wall does not reach that wall.
     for (i, outline) in regions.as_slice().iter().enumerate() {
         let own_top = regions.plane_z(i).unwrap_or(top_z);
         buried(
@@ -520,7 +529,44 @@ fn require_items(
     notes.extend(view_notes);
     let fit_notes = fit_holes(resolved, &mut items, item_use, size).map_err(selection_error)?;
     notes.extend(fit_notes);
+    let clear_notes = clear_edges(ctx, op, resolved, &mut items).map_err(selection_error)?;
+    notes.extend(clear_notes);
     Ok(items)
+}
+
+/// Chamfer Clearance (operator ruling 2026-10-23): THE wall trim
+/// ([`clear_edge_walls`]) of the model edges of an `Edges` op, with the
+/// mesh of the op, its V-bit and its bevel. Each edge run stops short of a
+/// higher wall; [`refuse_buried_face`] and the adapter then read the
+/// trimmed runs. With no mesh, no bevel or a tool that the op refuses,
+/// the trim does nothing (the tool check refuses after it).
+fn clear_edges(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+    resolved: &ResolvedSelection<SetupFrame>,
+    items: &mut OpItems,
+) -> Result<Vec<SelectionNote>, crate::selection::SelectionRefusal> {
+    let (Some(mesh), Some(index), Some((chamfer_width, tip_offset))) =
+        (ctx.mesh, ctx.index, op.bevel_width_and_tip_mm())
+    else {
+        return Ok(Vec::new());
+    };
+    if op
+        .op_type()
+        .tool_refusal(ctx.tool_cfg.tool_type.cutter_kind())
+        .is_some()
+    {
+        return Ok(Vec::new());
+    }
+    let probe = EdgeClearProbe {
+        mesh,
+        index,
+        cutter: ctx.tool_def,
+        half_angle_rad: (ctx.tool_cfg.included_angle / 2.0).to_radians(),
+        chamfer_width,
+        tip_offset,
+    };
+    clear_edge_walls(resolved, items, &probe)
 }
 
 /// The mesh, then its spatial index. The two texts are the ones the

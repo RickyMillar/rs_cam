@@ -207,7 +207,10 @@ fn fit_notes(s: &ProjectSession) -> Vec<([i64; 2], HoleFit, usize)> {
                         assert_eq!(n.kind, ItemKind::Circle);
                         Some((key(n.first.key.anchor), fit, n.count))
                     }
-                    NoteCause::KindNotServed | NoteCause::AtTheTop { .. } => None,
+                    NoteCause::KindNotServed
+                    | NoteCause::AtTheTop { .. }
+                    | NoteCause::StopsShort { .. }
+                    | NoteCause::AtAWall => None,
                 })
                 .collect()
         })

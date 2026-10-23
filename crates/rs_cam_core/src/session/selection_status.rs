@@ -65,9 +65,9 @@ use crate::ids::{ModelId, ToolpathId};
 use crate::selection::hole_fit::DrillSize;
 use crate::selection::{
     FLAT_REGION_Z_BAND_MM, FacesByFacing, Hole, HoleDepth, HoleFit, HoleFitRule, ItemError,
-    ItemKind, ItemRef, ItemRole, ItemSet, MatchKey, MatchedBy, MeshFaces, ModelFrame, RefusalCause,
-    ResolveScope, ResolvedSelection, Selection, SelectionEdit, SelectionNote, SelectionRefusal,
-    SetupFrame, Shape, SourceRef, fit_holes, hole_fit,
+    ItemKind, ItemRef, ItemRole, ItemSet, MatchKey, MatchedBy, MeshFaces, ModelFrame, OpItems,
+    RefusalCause, ResolveScope, ResolvedSelection, Selection, SelectionEdit, SelectionNote,
+    SelectionRefusal, SetupFrame, Shape, SourceRef, fit_holes, hole_fit,
 };
 use crate::session::{LoadedModel, ProjectSession, SessionError, ToolpathConfig};
 
@@ -978,6 +978,19 @@ impl ProjectSession {
             }
             (viewed, _) => viewed,
         };
+        // Chamfer Clearance: THE wall trim of the prologue
+        // (`compute::edge_clear`), on the setup mesh and the tool that
+        // generation reads, so an edge with no clear stretch is `Skipped`
+        // here and not cut there, and the notes are the same.
+        let viewed = match (viewed, target) {
+            (Ok((mut items, mut notes)), SelectionTarget::Op) if item_use == ItemUse::Edges => self
+                .clear_edges_as_generation(tc, ctx, &frames.setup, &mut items)?
+                .map(|clear_notes| {
+                    notes.extend(clear_notes);
+                    (items, notes)
+                }),
+            (viewed, _) => viewed,
+        };
         // R-B, F19: THE per-hole floor rule of the prologue
         // (`compute::floor::hole_floors`), on the heights that the hole
         // planes of this report give, so the status and generation give
@@ -1084,6 +1097,52 @@ impl ProjectSession {
             }
         }
         Ok(report)
+    }
+
+    /// Chamfer Clearance: THE wall trim (`compute::edge_clear`) of the
+    /// model edges in `items`, with the inputs that the prologue reads: the
+    /// setup mesh of the toolpath model, the built cutter of the tool, and
+    /// the bevel of the op. With no mesh, no bevel or a tool that the op
+    /// refuses, the trim does nothing, as in the prologue.
+    fn clear_edges_as_generation(
+        &self,
+        tc: &ToolpathConfig,
+        ctx: &SetupEvalContext,
+        setup: &crate::selection::ResolvedSelection<SetupFrame>,
+        items: &mut OpItems,
+    ) -> Result<Result<Vec<SelectionNote>, SelectionRefusal>, SessionError> {
+        let Some((chamfer_width, tip_offset)) = tc.operation.bevel_width_and_tip_mm() else {
+            return Ok(Ok(Vec::new()));
+        };
+        let Some(tool) = self.tool_by_id(tc.tool_id) else {
+            return Ok(Ok(Vec::new()));
+        };
+        if tc
+            .operation
+            .op_type()
+            .tool_refusal(tool.tool_type.cutter_kind())
+            .is_some()
+        {
+            return Ok(Ok(Vec::new()));
+        }
+        let Ok(cutter) = crate::compute::cutter::build_cutter(tool) else {
+            return Ok(Ok(Vec::new()));
+        };
+        let Some(mesh) = self.setup_mesh(tc, ctx)? else {
+            return Ok(Ok(Vec::new()));
+        };
+        let index = crate::maps::geom_cache::cached_auto_index(&mesh);
+        let probe = crate::compute::edge_clear::EdgeClearProbe {
+            mesh: &mesh,
+            index: &index,
+            cutter: &cutter,
+            half_angle_rad: (tool.included_angle / 2.0).to_radians(),
+            chamfer_width,
+            tip_offset,
+        };
+        Ok(crate::compute::edge_clear::clear_edge_walls(
+            setup, items, &probe,
+        ))
     }
 
     /// P6.5: the tool diameter and the size tolerance that the hole fit
@@ -1967,6 +2026,10 @@ struct StatusKey {
     /// the stock (`ProjectSession::extend_radius`), so a tool edit builds
     /// the report again. `None` for every other op.
     extend_radius: Option<u64>,
+    /// Chamfer Clearance: the tool and the bevel (`w`, `t`) that the wall
+    /// trim reads, so a tool or a bevel edit builds the report again.
+    /// Empty for every op with no model edges.
+    edge_clear: Vec<u8>,
 }
 
 impl StatusKey {
@@ -2041,6 +2104,12 @@ impl StatusKey {
                 SelectionTarget::Op => session.extend_radius(tc).map(f64::to_bits),
                 SelectionTarget::Boundary => None,
             },
+            edge_clear: match (target, tc.operation.bevel_width_and_tip_mm()) {
+                (SelectionTarget::Op, Some(bevel)) if item_use == ItemUse::Edges => {
+                    serde_json::to_vec(&(session.tool_by_id(tc.tool_id), bevel)).ok()?
+                }
+                _ => Vec::new(),
+            },
         })
     }
 
@@ -2060,6 +2129,7 @@ impl StatusKey {
             && self.each_face == now.each_face
             && self.drill_size == now.drill_size
             && self.extend_radius == now.extend_radius
+            && self.edge_clear == now.edge_clear
             && self.models.len() == now.models.len()
             && self
                 .models

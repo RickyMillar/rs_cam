@@ -244,6 +244,21 @@ pub enum NoteCause {
         /// The tool diameter and the size tolerance of the op.
         size: DrillSize,
     },
+    /// Chamfer Clearance (operator ruling 2026-10-23, the Fusion default):
+    /// an edge of a Chamfer ends at a higher wall, so the cut stops short
+    /// of the wall and the V-bit does not cut into it
+    /// (`compute::edge_clear`). The op cuts the rest of the edge. `count`
+    /// is the number of edges; `first` names the first of them.
+    StopsShort {
+        /// The number of edge ends that stop short.
+        ends: usize,
+        /// The shortest and the longest stop (mm), along the edge.
+        min_mm: f64,
+        max_mm: f64,
+    },
+    /// Chamfer Clearance: the V-bit reaches a higher wall along all of the
+    /// edge, so the op does not cut it (`compute::edge_clear`).
+    AtAWall,
 }
 
 impl fmt::Display for SelectionNote {
@@ -265,6 +280,40 @@ impl fmt::Display for SelectionNote {
                 kind_noun(self.kind, 1),
                 self.first,
                 hole_fit_fix(fit_rule(self.item_use), fit)
+            );
+        }
+        if let NoteCause::StopsShort {
+            ends,
+            min_mm,
+            max_mm,
+        } = self.cause
+        {
+            let (end_word, stop_word) = if ends == 1 {
+                ("end", "stops")
+            } else {
+                ("ends", "stop")
+            };
+            let by = if max_mm - min_mm < crate::selection::CAD_ROUNDING_MM {
+                format!("{max_mm:.3} mm")
+            } else {
+                format!("{min_mm:.3} to {max_mm:.3} mm")
+            };
+            return write!(
+                f,
+                "{ends} edge {end_word} {stop_word} short of a wall by {by}, so the V-bit does not \
+                 cut into the wall. The first edge: {}.",
+                self.first
+            );
+        }
+        if self.cause == NoteCause::AtAWall {
+            return write!(
+                f,
+                "{} {}{} {verb} not cut: the V-bit reaches a wall along all of it. The first: {}. \
+                 To bevel it, use a V-bit with a smaller diameter.",
+                self.count,
+                kind_noun(self.kind, self.count),
+                layer_phrase(self.layer.as_deref()),
+                self.first
             );
         }
         if let NoteCause::AtTheTop { floor_z, top_z } = self.cause {

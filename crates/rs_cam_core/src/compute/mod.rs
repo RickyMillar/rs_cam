@@ -11,6 +11,7 @@ pub mod collision_check;
 pub mod config;
 pub mod cutter;
 pub mod domain;
+pub mod edge_clear;
 pub mod execute;
 #[cfg(feature = "test-support")]
 pub mod fixture_values;
