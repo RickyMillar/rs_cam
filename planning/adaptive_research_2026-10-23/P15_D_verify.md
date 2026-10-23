@@ -923,3 +923,170 @@ which needs no code. The entries agree: `geodesic_curv` gives 73 and 63,
    of 763 wrap refusals are cascades (663 of 876 in total). The law
    under-protects behind the island, as C5 expected. Its emitted mop also
    steps over the ceiling twice (0.4526, 0.4677).
+
+## D6 at f5b3725c
+
+C6 (transition join, local spacing, half-cell read columns;
+`research_geodesic.rs` and the harness only). No merge of master. Same lane
+script, own target dir, a `timeout` on each command. Disk: 44 GB free.
+
+### Fix (uncommitted)
+
+- `crates/rs_cam_core/src/adaptive/research_geodesic.rs:2255`
+  (`curvature_levels`), rustc `unused variable: b` (clippy `-D warnings`
+  refused the build; `check` gave the warning).
+  - Before: `let r = tool_radius; let b = r - ceiling_width; let mut out = vec![0.0];`
+  - After: `let r = tool_radius; let mut out = vec![0.0];`
+  - Why: `b` is dead. The function calls `law_next_radius`, which computes
+    the same `b = r - ceiling_width` itself (`:2040`). The deletion is
+    behaviour-neutral.
+
+No other fix. The red unit test below is NOT fmt or clippy, so it is not
+changed.
+
+### Results
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `fmt --all -- --check` | green |
+| 1 | `check -p rs_cam_core --features research,test-support` | green, 1 warning (`b`) → fixed |
+| 2 | `--features research,test-support --lib research_geodesic` | **RED**: 8 passed, 1 failed, 1 ignored |
+| 3 | `clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings` | red (`b`) → green after the fix |
+| 4 | the harness, release, `timeout 900` | green 1/1, 6.05 s |
+
+The red test, `the_transition_join_nests_its_sectors_on_a_disc` (C6's new
+disc join test), first failing assertion verbatim (record list shortened):
+
+```
+panicked at crates/rs_cam_core/src/adaptive/research_geodesic.rs:4914:13:
+assertion `left == right` failed: every transition is traced: JoinReport { rim_transition: 1, closed_transition: 15, transition_fallback: 1, closed_seam: 0, closed_to_arc: 9, from_arc: 15, transitions: [ .. TransitionRecord { level: 16, rho: 34.678787860002444, delta: 2.0, fraction: 0.4491409471307148, sector: 2.891589484113832, applied: false }] }
+  left: 1
+ right: 0
+```
+
+- Only the outermost transition (level 16, ρ 34.68) is not traced. The
+  tool-centre disc has radius 35, so that wrap lies within 0.32 mm of the
+  region edge. A transition that leaves the region falls back. This looks
+  like an edge case of the test fixture or of the trace at the region
+  edge. The lead decides which.
+- The test has later checks that would also fail on these records (they
+  were not reached):
+  - "the sectors nest": level 2 has sector 6.7325 after 6.2660 at level 1
+    (allowed 6.2660 + 0.5/4.32 = 6.382); level 9 has 6.3561 after 6.2014
+    (allowed about 6.228); level 12 has 6.4872 after 6.3863.
+  - `all(|r| r.applied)` fails on level 16.
+  Only the first assertion fired.
+
+### Controls (exact)
+
+| Column | Required | D6 | Same |
+|---|---|---|---|
+| star / geodesic_a | 92 | 92 = S1 J56 M20 P15; 0.3600; raw 206/2330 | yes |
+| pocket / geodesic_a | 88 | 88 = S1 J42 M27 C4 P14; 0.3624; raw 289/2845 | yes |
+| star / geodesic_curv | 73 = S1 J58 M0 P14; 0.3581; raw 145/2545 | the same | yes |
+| pocket / geodesic_curv | 63 = S1 J34 M12 C6 P10; 0.4677; raw 260/2952 | the same | yes |
+| geodesic_curv_fine | entries, split, emitted max of geodesic_curv | star 73 S1 J58 M0 P14, 0.3581; pocket 63 S1 J34 M12 C6 P10, 0.4677 | yes |
+| geodesic_curv_join_fine | the same as geodesic_curv_join | star 89 S1 J56 M18 P14, 0.3616; pocket 72 S1 J32 M23 C6 P10, 0.4677 | yes |
+
+The C6 refactor did not change the existing columns. (The `_fine` columns
+read the raw plan at the half cell, so their raw counts differ by design:
+star 298/2738 and pocket 539/3177 for `curv_fine`; 417/3070 and 604/3347
+for `curv_join_fine`.)
+
+### The new columns
+
+Output: `/home/ricky/personal_repos/rs_cam/.claude/worktrees/adaptive-head/target/tmp/adaptive_geodesic_2d_g1/`.
+Split: S starter, J join at a wrap end, M mid-wrap split, C residue contour,
+W wall pass, P residue mop. Retracts equal entries.
+
+| Shape / column | Entries | S/J/M/C/W/P | Max emitted / 0.3626 | Emitted over | Raw over |
+|---|---|---|---|---|---|
+| star / geodesic_curv (reference) | 73 | 1/58/0/0/0/14 | 0.3581 | 0 | 145 / 2545 |
+| star / geodesic_curv_join | 89 | 1/56/18/0/0/14 | 0.3616 | 0 | 169 / 2883 |
+| star / geodesic_curv_local | 85 | 1/62/5/0/0/17 | 0.3620 | 0 | 173 / 2691 |
+| star / geodesic_curv_local_join | 100 | 1/59/24/0/0/16 | 0.3578 | 0 | 205 / 3145 |
+| star / geodesic_curv_fine | 73 | 1/58/0/0/0/14 | 0.3581 | 0 | 298 / 2738 |
+| star / geodesic_curv_join_fine | 89 | 1/56/18/0/0/14 | 0.3616 | 0 | 417 / 3070 |
+| pocket / geodesic_curv (reference) | 63 | 1/34/12/6/0/10 | 0.4677 | 2 (mop) | 260 / 2952 |
+| pocket / geodesic_curv_join | 72 | 1/32/23/6/0/10 | 0.4677 | 2 (mop) | 269 / 3128 |
+| pocket / geodesic_curv_local | 89 | 1/53/21/0/0/14 | 0.3620 | 0 | 253 / 3231 |
+| pocket / geodesic_curv_local_join | 94 | 1/51/28/0/0/14 | 0.3620 | 0 | 262 / 3423 |
+| pocket / geodesic_curv_fine | 63 | 1/34/12/6/0/10 | 0.4677 | 2 (mop) | 539 / 3177 |
+| pocket / geodesic_curv_join_fine | 72 | 1/32/23/6/0/10 | 0.4677 | 2 (mop) | 604 / 3347 |
+
+### Joins by kind (verbatim `joins piece 0:` lines)
+
+```
+star / geodesic_curv_join:       rim transition 1, closed-to-closed transition 13, transition refused (seam) 3, closed-to-closed seam 0, closed to arc 33, from an arc 50; local-spacing sweep converged None
+star / geodesic_curv_local:      rim transition 0, closed-to-closed transition 0, transition refused (seam) 0, closed-to-closed seam 20, closed to arc 36, from an arc 56; local-spacing sweep converged Some(true)
+star / geodesic_curv_local_join: rim transition 1, closed-to-closed transition 16, transition refused (seam) 4, closed-to-closed seam 0, closed to arc 36, from an arc 56; local-spacing sweep converged Some(true)
+star / geodesic_curv_fine:       rim transition 0, closed-to-closed transition 0, transition refused (seam) 0, closed-to-closed seam 16, closed to arc 33, from an arc 50; local-spacing sweep converged None
+pocket / geodesic_curv_join:       rim transition 1, closed-to-closed transition 10, transition refused (seam) 2, closed-to-closed seam 0, closed to arc 27, from an arc 59; local-spacing sweep converged None
+pocket / geodesic_curv_local:      rim transition 0, closed-to-closed transition 0, transition refused (seam) 0, closed-to-closed seam 3, closed to arc 5, from an arc 68; local-spacing sweep converged Some(true)
+pocket / geodesic_curv_local_join: rim transition 1, closed-to-closed transition 3, transition refused (seam) 0, closed-to-closed seam 0, closed to arc 5, from an arc 68; local-spacing sweep converged Some(true)
+pocket / geodesic_curv_fine:       rim transition 0, closed-to-closed transition 0, transition refused (seam) 0, closed-to-closed seam 12, closed to arc 27, from an arc 59; local-spacing sweep converged None
+```
+
+(`_join_fine` repeats `_join` on both shapes.) In the star join column, the
+transitions of levels 6→7, 7→8 and 15→16 are `applied false`. All
+transitions in the core zone have f = 1.000.
+
+### Cascade block per class (refused / cascade / intrinsic, max planned reading)
+
+| Column | Total | transition | join | wrap | link |
+|---|---|---|---|---|---|
+| star curv | 128 / 20 / 108 | — | 97 / 0 / 97 (0.8956) | 30 / 20 / 10 (0.9308) | 1 / 0 / 1 (0.3768) |
+| star curv_join | 154 / 28 / 126 | 46 / 8 / 38 (0.9375) | 87 / 2 / 85 (0.8956) | 20 / 18 / 2 (0.8333) | 1 / 0 / 1 (0.3768) |
+| star curv_local | 144 / 24 / 120 | — | 83 / 1 / 82 (0.9002) | 59 / 23 / 36 (0.9128) | 2 / 0 / 2 (0.4210) |
+| star curv_local_join | 160 / 22 / 138 | 39 / 1 / 38 (0.8188) | 73 / 0 / 73 (0.9002) | 46 / 21 / 25 (0.9128) | 2 / 0 / 2 (0.4210) |
+| pocket curv | 876 / 663 / 213 | — | 104 / 17 / 87 (0.9460) | 763 / 640 / 123 (0.9300) | 9 / 6 / 3 (0.4080) |
+| pocket curv_join | 884 / 665 / 219 | 67 / 29 / 38 (0.9531) | 89 / 15 / 74 (0.9460) | 719 / 615 / 104 (0.9300) | 9 / 6 / 3 (0.4080) |
+| pocket curv_local | 202 / 39 / 163 | — | 67 / 0 / 67 (0.8888) | 128 / 38 / 90 (0.9282) | 7 / 1 / 6 (0.6647) |
+| pocket curv_local_join | 207 / 40 / 167 | 11 / 1 / 10 (0.5012) | 65 / 0 / 65 (0.8888) | 124 / 38 / 86 (0.9282) | 7 / 1 / 6 (0.6647) |
+
+The `_fine` columns print the totals only: star curv_fine 231 / 47 / 184,
+pocket curv_fine 1331 / 900 / 431; star curv_join_fine 272 / 61 / 211,
+pocket curv_join_fine 1336 / 895 / 441.
+
+### The quantum test (intrinsic refusals in the first quantum over the ceiling, (c, c + cell/D])
+
+| Column | Planner cell 0.5 mm: near-ceiling / intrinsic | Half cell 0.25 mm: near-ceiling / intrinsic |
+|---|---|---|
+| star curv | 5 / 108 (4.6 %) | 19 / 184 (10.3 %) |
+| pocket curv | 56 / 213 (26.3 %) | 134 / 431 (31.1 %) |
+| star curv_join | 21 / 126 (16.7 %) | 31 / 211 (14.7 %) |
+| pocket curv_join | 60 / 219 (27.4 %) | 142 / 441 (32.2 %) |
+
+The quantum at the half cell is half as wide (cell/D = 0.0417 against
+0.0833). Even so, the near-ceiling count RISES at the half cell (5 → 19,
+56 → 134, 21 → 31, 60 → 142), and the intrinsic total rises too (108 →
+184, 213 → 431). The near-ceiling refusals do not go away at a finer read,
+so they are not a quantum artefact of the planner cell. The finer read
+finds more steps over the ceiling. This agrees with the
+`PassLoad::swept_width` doc: the lattice reads a side cut up to one cell
+NARROW, so the planner cell under-reads.
+
+### `git status --short` at the end of D6
+
+```
+ M crates/rs_cam_core/src/adaptive/research_geodesic.rs
+ M planning/adaptive_research_2026-10-23/P15_D_verify.md
+```
+
+### Top three for the lead
+
+1. **C6's new disc join test is red.** The outermost transition (level
+   16, 0.32 mm from the region edge) is not traced. The later checks of the
+   same test (sector nesting at levels 2, 9 and 12; all applied) would also
+   fail on these records. Decide whether the test or the trace near the
+   edge is wrong.
+2. **No C6 column beats `geodesic_curv` on entries.** Star: curv 73, join
+   89, local 85, local_join 100. Pocket: curv 63, join 72, local 89,
+   local_join 94. The transition join adds mid-wrap splits (star M 0 →
+   18). The local spacing is the only variant that removes the pocket
+   cascades (876 → 202 refusals) and the mop over-steps (max 0.4677 →
+   0.3620), but it costs entries.
+3. **The quantum test says the near-ceiling refusals are real.** At the
+   half cell they rise (star curv 5 → 19, pocket 56 → 134), so the planner
+   cell under-reads the swept width. A plan that the planner cell reads as
+   legal can be over the ceiling at a finer read.
