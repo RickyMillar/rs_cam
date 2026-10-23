@@ -454,9 +454,7 @@ impl ProjectSession {
             .filter(|tc| Self::is_coverage_rough(tc) && ids.contains(&tc.id) && wanted(tc.id))
             .map(|tc| RoughCoverageReading {
                 toolpath_id: tc.id,
-                outcome: RoughCoverageOutcome::NotMeasurable(
-                    RoughCoverageAbstention::RunNotStored,
-                ),
+                outcome: RoughCoverageOutcome::NotMeasurable(RoughCoverageAbstention::RunNotStored),
             })
             .collect()
     }

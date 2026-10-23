@@ -58,6 +58,13 @@ fn rough_controller() -> AppController<ScriptedBackend> {
         c.stock_to_leave_axial = STL_MM;
     }
     config.operation = operation;
+    // The flat sample model and the sample stock top both sit at Z 0, so
+    // the 3D Rough's Auto bottom equals its top (the stock top) and the
+    // height order refuses. Pin the bottom at the sample stock bottom: it is
+    // below the model, so the coverage target (model + leave) is unchanged.
+    config.heights.bottom_z = rs_cam_core::compute::config::HeightMode::Manual(
+        -rs_cam_core::compute::fixture_values::FIXTURE_STOCK_Z_MM,
+    );
     let _ = controller
         .state
         .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
@@ -154,7 +161,10 @@ fn a_gui_adopted_rough_reads_its_island_through_the_session_g_roughcov() {
         .session()
         .simulation_result()
         .expect("the session adopted the run");
-    assert!(session_sim.checkpoints.is_empty(), "W2-E: no checkpoint in the session");
+    assert!(
+        session_sim.checkpoints.is_empty(),
+        "W2-E: no checkpoint in the session"
+    );
 
     let evidence = controller.state.simulation.project_evidence();
     assert!(
@@ -177,10 +187,8 @@ fn a_gui_adopted_rough_reads_its_island_through_the_session_g_roughcov() {
     let island = coverage.islands.first().expect("one island");
     assert_eq!(island.cells, 9 * 17, "{island:?}");
     assert!(
-        triage
-            .findings()
-            .any(|f| f.diagnostic.id.as_str()
-                == rs_cam_core::diagnostics::ids::PROJECT_ROUGH_LEAVES_ISLANDS),
+        triage.findings().any(|f| f.diagnostic.id.as_str()
+            == rs_cam_core::diagnostics::ids::PROJECT_ROUGH_LEAVES_ISLANDS),
         "the island raises its finding"
     );
 

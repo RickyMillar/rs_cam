@@ -312,3 +312,187 @@ own target dir, a `timeout` on each command. Disk: 50 GB free at the end.
 
 The merge broke nothing. No fix was made, and the working tree has no
 change other than this section.
+
+## D2 at 009579fc
+
+Base 0e79f0fc (d0dd680f A2, c6d1abb3 B2, 0e79f0fc C2). Same lane script,
+own target dir, a `timeout` on every command. Disk: 47 GB free at the
+start, 46 GB at the end.
+
+### Merge
+
+`git merge master` (master 5591d974: 4240dfdd "Cut past open sides",
+0e6788b2 the s6 fixture fix). Merge commit **009579fc** (default message).
+
+| File | Conflict | Resolution |
+|---|---|---|
+| `crates/rs_cam_core/src/compute/CLAUDE.md` | textual (the `Files` line) | Master's text kept, with its new `open_sides.rs` entry. Our clauses (G-ROUGHGOUGE `Allowance` with `model_gouge_allowance`, probe R − t, limit CL Z + L − t, B2 Blocking only below CL Z − t, the sentry) inserted at the end of the `model_gouge.rs` entry, before master's closing parenthesis. 40 lines. |
+| `crates/rs_cam_core/src/compute/catalog.rs` | none (git merged it) | the check builds compile it |
+| `crates/rs_cam_core/src/session/CLAUDE.md` | none | — |
+
+### Fixes (uncommitted)
+
+1. **rustfmt**, A2 files only (all five are in d0dd680f):
+   `session/compute/simulation.rs`, `stock/standing_islands.rs`, viz
+   `controller/tests/mod.rs`,
+   `controller/tests/the_gui_adopt_reads_the_rough_coverage_g_roughcov.rs`,
+   viz `state/simulation.rs`.
+2. **A2 viz test red (not the merge; the test was never compiled before).**
+   `crates/rs_cam_viz/src/controller/tests/the_gui_adopt_reads_the_rough_coverage_g_roughcov.rs`,
+   `rough_controller`. Both tests panicked at line 67:
+   ```
+   the toolpath sits at a live index: HeightOrder(HeightOrderRefusal { toolpath: "Scallop", violations: [BottomNotBelowTop { bottom_z: 0.0, top_z: 0.0 }] })
+   ```
+   - Cause: the sample stock top resolves to Z 0, and the flat sample
+     model is at Z 0. For a 3D Rough the height order reads the top from
+     the stock box (`top_on_stock_box`) and the Auto bottom from the model,
+     so top = bottom = 0. The Scallop ladder does not refuse this. The 3D
+     Rough ladder does.
+   - Fix: after `config.operation = operation;` the test sets
+     `config.heights.bottom_z = HeightMode::Manual(-FIXTURE_STOCK_Z_MM)`
+     (the sample stock bottom, −25), with a comment. The pin is below the
+     model, so the coverage target `max(model + leave, pinned bottom)`
+     does not change. A first try that pinned `top_z` did not work
+     (`top_on_stock_box` ignores it) and was replaced.
+   - After the fix: `--lib g_roughcov` 2/2, viz `--lib` 585/0.
+
+No product code was changed. Both planted defects (below) were reverted with
+`git checkout` of `compute/model_gouge.rs`, which has no change.
+
+### Results
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `fmt --all -- --check` | red (5 A2 files) → green after fix 1; green again at the end |
+| 1 | `check -p rs_cam_core --features test-support` | green |
+| 1 | `check -p rs_cam_core --features research,test-support` | green |
+| 1 | `check -p rs_cam_viz` | green |
+| 2 | viz `--lib g_roughcov` | red → green 2/2 after fix 2 |
+| 2 | viz `--lib w2e` (memory sentry) | green 3/3 |
+| 2 | viz `--lib g_rapidframe` (A2's list) | green 5/5 |
+| 2 | viz `--lib` in full | green 585 passed, 2 ignored (after fix 2) |
+| 2 | core `--test a_rough_island_above_the_stock_to_leave_is_flagged_g_roughcov` | green 4/4 |
+| 2 | core `--lib standing_islands`, `--lib g_roughcov` | green 4/4, 2/2 |
+| 3 | `--test a_rough_cuts_no_deeper_than_its_leave_g_roughgouge` | green 6/6 |
+| 3 | `--test every_op_states_its_capabilities_w2_4` | green 21/21 |
+| 3 | `--test findings_transport_join_h21` | green 3/3 |
+| 3 | `--features step --test a_default_step_pocket_never_cuts_below_a_ring_ux7b` | green 10/10 |
+| 3 | viz `--test a_blocked_result_does_not_read_ok_f20` | green 1/1 |
+| 3 | viz `--test the_geometry_rows_fit_the_inspector_f22` | green 6/6 |
+| 4 | `--features research,test-support --lib research_geodesic` | **RED** 4 passed, 1 failed (below) |
+| 4 | `--lib adaptive` | green 141 passed, 7 ignored |
+| 4 | `a_clearing_cut_holds_the_pass_load_g_adaptpassload` | red, the SAME red as master (moves 2810 and 6159, sim 0.8329, exact 0.9404) |
+| 4 | `a_rapid_leaves_cut_depth_straight_up_g_adaptrapidlift` | red, the SAME red as master (move 6930, clearance 0.2495) |
+| 4 | `a_link_feeds_only_within_the_pass_load_g_adaptlinkload`, `adaptive_keeps_its_planner_order_g_adaptorder`, `adaptive_property_harness`, `contour_spiral_gcode_validity_phase0`, `adaptive_plans_every_inset_piece_g_adaptpieces`, `the_research_arms_are_feature_gated_fin01` | green |
+| 4 | `adaptive3d_emission_byte_parity` | green: `path.rs`'s new shared constants change no shipped number |
+| 4 | the 14 adaptive3d sentries (`--features test-support`) | green |
+| 5 | `test -p rs_cam_mcp -q` | green 36/36 |
+| 5 | full workspace clippy (`heavy-tests,research,test-support`, `-D warnings`) | green |
+| 6 | render harness, release, `timeout 900` | green 1/1, 1.95 s |
+
+The red unit test, verbatim:
+
+```
+panicked at crates/rs_cam_core/src/adaptive/research_geodesic.rs:2494:9:
+assertion `left == right` failed: every step holds the pass load: PassLoadReadout { ceiling: 0.36264459002853555, max_reading: 0.36687206264009165, steps: 2060, steps_over: 1, exempt_steps: 0, over: [OverStep { from: [48.4686454913005, 22.631632685874997], to: [48.53109906196661, 23.37902786348257], reading: 0.36687206264009165, producer: ResidueMop, link: false, segment: 258 }] }
+  left: 1
+```
+
+The one over-step is a `ResidueMop` cut, which is the shipped mop. It is not
+a candidate wrap or ramp. This is the case of C's note 5 (a `cut_only` walk
+drops stamped air steps). The test was not loosened.
+
+### Planted-defect checks (B2)
+
+| Plant | Expected | Tripped |
+|---|---|---|
+| (i) the `Allowance` arm of `probe_radial_tolerance_mm` returns `MODEL_GOUGE_TOL_MM` | test 1 fails | test 1 `a_rough_at_its_leave_or_grazing_within_its_tolerance_reads_clean_g_roughgouge` FAILED at `:202:5`: `a graze within the tolerance: ModelGougeFinding { rule: Allowance { .. }, judged: 43, gouging: 42, deepest_mm: 9.899999999999999, at: [17.05, -30.0, 10.5], surface_z: 20.4, move_index: 1, depth_top_z: None, below_surface_mm: 9.399999999999999, at_wall: true }`. Also test 5 `the_pocket_rule_reads_no_allowance_g_roughgouge` FAILED at `:326:5`: `assertion failed: near(probe_radial_tolerance_mm(rule, a, R), a.tolerance_mm)`. 4 passed, 2 failed. |
+| (ii) `blocks_export` returns `self.gouges()` | test 2 fails | test 2 `a_cut_into_the_leave_is_a_caution_g_roughgouge` FAILED at `:216:5`: `assertion left == right failed: ModelGougeFinding { .. deepest_mm: 0.040000000000000924, at: [-30.0, -20.0, 10.36], surface_z: 10.4, .. below_surface_mm: -0.4599999999999991, at_wall: false }  left: Some(Blocking)  right: Some(Caution)`. 5 passed, 1 failed. |
+
+After both reverts the sentry is green 6/6 again.
+
+### Magic numbers (three commits' diffs; not changed)
+
+Product code:
+
+| Place | Literal | Derivation |
+|---|---|---|
+| `adaptive/path.rs` `PLANNER_CELLS_PER_TOOL_RADIUS` | 6.0 | Now ONE named shipped value (doc: a shipped value, not derived here). Byte parity proves the arithmetic is unchanged. UNDERIVED at its origin |
+| `adaptive/path.rs` `PASS_STEP_CELLS` | 3.0 | The same: one named shipped value, UNDERIVED at its origin |
+| `research_geodesic.rs` `EntryLaw` (the C2 entry-ramp rule) | none | Every value comes from `R`, `s` and the ceiling: `s = stepover.min(2R)`, `ceiling_width = c·2R`, `h = √(R² − (R − s)²)`, `ρ = hypot(h, R)`, `φ₀ = atan2(R, h)`, `β(d) = φ₀ + asin((c·D − d − R)/ρ)`. The `2.0` is the diameter. No tuned value |
+| `research_geodesic.rs:1344`, `:1392` | `.max(3.0)` | The fewest chords of a closed polygon (a triangle). The chord count otherwise comes from `acos(1 − tolerance/r)` (doc at `:1337`) |
+| `research_geodesic.rs` | `1e-9` (`FieldSolver::SourceTracking` convergence, test bounds) | A float-equality epsilon. UNDERIVED, but not a physical value |
+| B2 Blocking threshold | 0.02 mm | `MODEL_GOUGE_Z_TOL_MM` (`compute/model_gouge.rs:123`) = `selection::FLAT_REGION_Z_BAND_MM` (0.01, `selection/flat_regions.rs:36`) + `selection::CAD_ROUNDING_MM` (0.01, `selection/key.rs:38`, ruling L-13). Not a new literal |
+| B2 probe bounds | none new | `MODEL_GOUGE_TOL_MM` = `CAD_ROUNDING_MM` (`model_gouge.rs:114`) |
+| A2 product code | none | — |
+
+Test and harness values (fixture or drawing values): A2 viz test
+`stock_bbox` (±20, 10), `CELL_MM 0.25`; B2 sentry `BLOCK_Z 20.0`,
+`WALL_X 20.0`, ±50, ±30, feeds 300/1000, `+ 0.1` past the tolerance,
+`tol + 0.2`; `below_surface_mm` 5.0/10.0 in the h21, f20, f22 and
+properties literals; C2 unit-test star and pocket vertices, `read_limit 33.0`,
+`read_to >= 25.0` (bounds from the Python prototype); harness stroke widths,
+dot and ring radii (4.0, 7.0), dash 6.0.
+
+### Render harness
+
+`target/tmp/adaptive_geodesic_2d_g1/` in the worktree (absolute:
+`/home/ricky/personal_repos/rs_cam/.claude/worktrees/adaptive-head/target/tmp/adaptive_geodesic_2d_g1/`).
+It holds an `.svg`, a `.png` and a `.txt` for each of the 10 columns
+(`{star,pocket}_{agent,contour_spiral,geodesic_g1,geodesic_a,geodesic_a_through}`)
+and `summary.txt`.
+
+| Shape / column | Entries (plunges) | Retracts | Keep-down links | Cut mm | Max / ceiling 0.3626 | Over-steps (producer, segment, from → to, reading) |
+|---|---|---|---|---|---|---|
+| star / agent | 25 | 25 | 261 (596.2 mm) | 1379.2 | 0.4515 | clearing cut, seg 85, (83.47, 40.11) → (83.35, 38.62), 0.4515 |
+| star / contour_spiral | 101 | 101 | 25 (141.2 mm) | 2850.6 | 0.3613 | none |
+| star / geodesic_g1 | 86 | 86 | 66 (206.1 mm) | 1010.9 | 0.3614 | none |
+| star / geodesic_a | 87 | 87 | 125 (283.9 mm) | 993.2 | 0.4468 | mop, seg 188, (34.30, 53.26) → (33.83, 52.68), 0.3661; mop, seg 193, (19.22, 39.99) → (18.89, 40.66), 0.4468 |
+| star / geodesic_a_through | 87 | 87 | 125 (283.9 mm) | 993.2 | 0.4468 | the same two as geodesic_a (front branches 1: no meeting line on the star) |
+| pocket / agent | 31 | 31 | 374 (496.1 mm) | 1471.0 | 0.3618 | none |
+| pocket / contour_spiral | 91 | 91 | 22 (137.3 mm) | 2630.0 | 0.3723 | mop, seg 205, (57.59, 33.55) → (57.82, 32.83), 0.3723 |
+| pocket / geodesic_g1 | 89 | 89 | 133 (315.5 mm) | 1237.8 | 0.4478 | mop, seg 168, (54.44, 28.13) → (55.00, 28.64), 0.4478 |
+| pocket / geodesic_a | 89 | 89 | 181 (437.9 mm) | 1077.6 | 0.4484 | mop, seg 353, (11.50, 11.40) → (11.34, 12.13), 0.4484 |
+| pocket / geodesic_a_through | 92 | 92 | 150 (669.5 mm) | 1490.1 | 0.4743 | mop, seg 251, (42.76, 51.64) → (42.03, 51.77), 0.4511; mop, seg 260, (9.63, 42.16) → (9.04, 41.70), 0.4743; mop, seg 260, (8.48, 25.15) → (8.87, 24.51), 0.4595 |
+
+Field lines: star geodesic_a: levels 18, wrap pieces 92, converged, front
+branches 1, spiral levels 6. Pocket geodesic_a: levels 31, wrap pieces 158,
+converged, front branches 3, spiral levels 3.
+
+Readings:
+
+- The ramp join did NOT cut the plunges. C2 predicted 1 to 6 entries for
+  the clearing producer. The harness reads 87 (star) and 89 (pocket), the
+  same as G1 (86, 89). The summary counts the entries of the whole
+  pipeline (clearing, residue contours, wall pass, mop). Thus the cause can
+  be in the candidate or in the later producers. The summary does not
+  split the entries per producer.
+- Every over-step of the candidate is in a `residue mop` cut (shipped
+  code). The shipped contour_spiral pocket has one too. The only other
+  over-step is a clearing cut of the shipped Agent on the star.
+
+### `git status --short` at the end of D2
+
+```
+ M crates/rs_cam_core/src/session/compute/simulation.rs
+ M crates/rs_cam_core/src/stock/standing_islands.rs
+ M crates/rs_cam_viz/src/controller/tests/mod.rs
+ M crates/rs_cam_viz/src/controller/tests/the_gui_adopt_reads_the_rough_coverage_g_roughcov.rs
+ M crates/rs_cam_viz/src/state/simulation.rs
+ M planning/adaptive_research_2026-10-23/P15_D_verify.md
+```
+
+### Top three for the lead
+
+1. **The plunge count did not fall.** Candidate (a) still enters 87 times
+   on the star and 89 on the pocket, against C2's prediction of 1 to 6.
+   Count the entries per producer before judging the ramp join.
+2. **The residue mop steps over the pass load in 6 of the 10 columns.**
+   These are five of the six candidate (a) columns (all except
+   star/geodesic_g1) and the shipped pocket/contour_spiral. The
+   `research_geodesic` pass-load unit test is red only on a `ResidueMop`
+   step (0.3669 against 0.3626). This looks like a shipped-code finding
+   (C's note 5), not a candidate defect. The lead decides.
+3. **A2's GUI test needed a fixture fix.** The 3D Rough refused the sample
+   project's heights (top = bottom = 0). The bottom pin at −25 is my
+   choice. Check that it keeps the test's intent.

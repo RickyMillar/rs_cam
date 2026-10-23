@@ -1345,8 +1345,11 @@ impl RoughCoverageMemo {
         results: &SimulationResults,
     ) -> Self {
         let ids: Vec<ToolpathId> = results.boundaries.iter().map(|b| b.id).collect();
-        let checkpoints: Vec<&rs_cam_core::compute::simulate::SimCheckpointMesh> =
-            results.checkpoints.iter().map(|c| c.core.as_ref()).collect();
+        let checkpoints: Vec<&rs_cam_core::compute::simulate::SimCheckpointMesh> = results
+            .checkpoints
+            .iter()
+            .map(|c| c.core.as_ref())
+            .collect();
         Self {
             run: RoughCoverageRunKey::of(results),
             readings: session.rough_coverage_for_run(&ids, &checkpoints),
