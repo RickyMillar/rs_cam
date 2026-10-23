@@ -45,7 +45,7 @@ Surface rule samples EMITTED moves at ≤ D/4 through the drop-cutter.
 | D5 verifier | DONE at 04b24757, all green, no fixes. **geodesic_curv: star 73 (S1 J58 M0 P14), pocket 63 (S1 J34 M12 C6 P10)** — mid-wrap splits gone, core clean; curv_morph 84/86 → morph DROPPED by C5's own rule. Remaining: joins (58 of 73 star entries; radial seam steps read 0.50–0.83), behind-island cascade on the pocket (640/763 wrap refusals are cascades: the law assumes a front curving about the seed). Page `g1_2d_renders_v4.html`. Was RUNNING: A4 + C5 gates, harness with the curv columns and the cascade diagnostic, C5's keep-or-drop rule for the morph | `P15_D_verify.md` §D5 |
 | C6 join + island spacing | DONE, committed f5b3725c (not built, ~700 lines): transition join for CLOSED wraps (the wrap drifts out to the next level over its last part; inside ρ* = 22.78 mm the whole wrap drifts = the spiral form); local spacing with ρ measured from each point's source (seed or bend node); half-cell READ columns (the replay stays at the planner cell: `path.rs` cleanup sets its own cell — request for a pub(crate) cell parameter filed). **Key finding:** open arcs in a lobe (≈ 50 of the 58 star joins) cannot be joined within one stepover by any single-pass scheme under the swept-width measure: same-direction passes step a full stepover against the wall, alternating passes meet two stepovers at every second end (the level sets hit the walls obliquely), the half-pitch morph was dropped. The limit is the pass-load MEASURE (swept width), not the geometry: FreeCAD measures exact area per mm (R1 §3, target 0.989·s·D), under which the wall-end turn is a thin wedge and passes. Prediction: geodesic_curv_join 66–75 on the star (little gain). Was RUNNING: (i) the seam join as a spiral transition under the spacing law (no radial step), (ii) spacing behind an island from the front's local centre of curvature (the source-tracking bend node), (iii) lattice-quantum experiment: harness run at half the planner cell to see whether the near-ceiling refusals (0.36–0.45) are measurement quantum | `P2_C2_geodesic_fixes.md` §C6 |
 | D6 verifier | DONE 00:05 at f5b3725c (+ fix/ignore 7c75324d): fmt/check/clippy/harness green; C6's disc join test RED (nesting fails at levels 2, 9, 12; edge transition unapplied) → ignored with reason; all four controls exact. **No C6 column beats geodesic_curv** (73 / 63): curv_join 89 / 72, curv_local 85 / 89 (removes the pocket cascades 876 → 202 and the mop over-steps, at the cost of entries), curv_local_join 100 / 94. **Quantum test: the near-ceiling refusals are NOT a cell artefact — the count rises at half cell**, so the planner cell under-reads the cut width (G-CELLREAD, shipped measure). Was RUNNING 23:45: C6 gates, four exact-match controls, the quantum test (near-ceiling count at planner cell vs half cell) | `P15_D_verify.md` §D6 |
-| GUI rebuild (A4) + E4 | build DONE (sha 8820c48c…, mtime 1792752676.96, pid 3671129); E4 RUNNING on the four controls (free-first headline, op-independent wall tag) | `P15_E_evidence.md` §E4 |
+| GUI rebuild (A4) + E4 | DONE 00:30. E4: the headline names a FREE island on every Corne rough (the spur on AS, a core on CS); counts unchanged (37 / 2 cores, spur, band); 596 of 627 hole-rim slivers now tagged. Edge cases of the wall tag remain: 41 angled-wall slivers (≤ 1.06 mm) stay free; an uncut hex hole the op never entered tags "at a wall" (it touches its own walls); the tall uncut ring inside the wall reads free (taller than the wall step). CP zero control: 1 387 wall-touching + 41 free slivers ≤ 1.06 mm. wanaka front 178 islands caution; adopt 18.9 s. Exports succeed. Tag iteration stops here for the night; the readings that matter (cores, spur, band, terraces gone) are right. | `P15_E_evidence.md` §E4 |
 | (old) GUI rebuild | was RUNNING 18:40 from the worktree (branch 3ae1da39); then install, gui_restart, E2 re-run of the Corne controls | |
 | (old) E evidence | was RUNNING 15:20: Phase 0 Corne columns through the two instruments in the GUI (zero control CP, positive control AS, CS), wanaka200 CP if time | `P15_E_evidence.md` |
 | (old) D verifier | was RUNNING 15:10: merge master into the branch, fmt, check, new sentries, folder sentries, viz --lib, mcp, clippy, magic-number scan, render harness | `P15_D_verify.md` (worktree) |
@@ -97,6 +97,31 @@ Operator 15:05: "I think your plan is good." Then the continuous spiral form
    (`max_chord_mm` 0.1, `closure_tol_mm` 0.05, backtrack 0.35 rad) are
    underived; they stay only because the module is research-only behind
    the `research` feature and nothing ships them. No productisation.
+
+## Where things stand (read this first, 2026-10-24 00:35)
+
+- **Instruments (Phase 1.5) are built and measured.** Gouge: clean on all
+  eight Phase 0 roughs, exports succeed, no false fire. Coverage: reads
+  every eye defect (37 + 2 hex-hole cores, the 13 mm spur, the outer band),
+  terraces gone, headline names a free island; the ContourParallel zero
+  control fails honestly on real wall strips (G-WALLSTRIP-PLAN) and small
+  slivers. All on branch `adaptive-instruments` (7c75324d), gates green
+  (P15_D_verify.md D2–D6). **ff of master blocked** by the peer's
+  uncommitted registry change (they land it, then I merge + ff).
+- **Candidate (a) geodesic:** growth pattern accepted at G1; the
+  curvature-spaced wraps (`geodesic_curv`) are the state to look at:
+  `g1_2d_renders_v4.html` (served at http://127.0.0.1:8766/g1_2d_renders_v4.html
+  while the session runs). Star 73 entries (from 92), pocket 63 (from 88),
+  no mid-wrap splits, five like arms. The morph and the transition joins
+  were tried, measured and dropped by pre-set rules.
+- **One ruling needed:** the engagement measure at wall ends (section
+  below). The per-arc plunge is a limit of the swept-width measure, not of
+  the geometry; FreeCAD's exact area-per-mm measure accepts the turn.
+- **Shipped-code findings filed tonight:** G-MOPLOAD (handed over),
+  G-RESLINKLOAD, G-CELLREAD (the planner cell under-reads the cut width),
+  G-WALLSTRIP-PLAN, G-SHELFSCAN (N11), plus the Phase 0 set.
+- Next, after the ruling: the measure as a research-flag quantity shown on
+  the 2D page; then the 3D arm on the three fixtures with the bars.
 
 ## Baseline pin
 

@@ -1184,3 +1184,191 @@ Adopt times: Corne 2.3 / 2.5 / 4.3 s; wanaka200 18.5 s (E2: 4.7 s).
   "tallest first" list. A list of free islands first would put them
   there.
 - **Cost:** the wanaka200 adopt grew from 4.7 s to 18.5 s.
+
+# E4 at 7c75324d
+
+- Date: 2026-10-23, from 23:52 NZDT.
+- GUI: A4 build (worktree note `P15_A3_coverage_target.md` §A4): free
+  islands are listed before wall-touching ones in the finding and the
+  narration, and the wall tag no longer depends on the op (a neighbour
+  within one cell, 8-connected, stands above the target by more than the
+  island's own peak height − one cell).
+- Binary mtime_unix 1792752676.96, gui_pid 3671129 (generation 6). The
+  previous GUI (2918218) stopped through `gui_restart`, exit 0.
+- The same four projects and sequence. Exports go to
+  `phase0/gcode/<name>_p15d.nc`; maps to `phase0/img/<name>_p15d_islands.png`.
+
+## E4 project 1: corne_contour_parallel (the zero control)
+
+- Generate 8006 / 5347 moves. Adopt about 2.7 s. Export
+  `phase0/gcode/corne_contour_parallel_p15d.nc` succeeded. The export shows no Blocking gouge finding (I did not call
+  `get_toolpath_diagnostics` in E4, so a Caution is not ruled out). `link_cuts_stock` is unchanged.
+- Map: `phase0/img/corne_contour_parallel_p15d_islands.png` (op 0 on
+  top, op 1 below; orange = `touches_wall`).
+
+| Op | E3 islands | E4 islands | E3 → E4 `touches_wall` | E3 → E4 free one-cell | E3 → E4 free 2.5–10 mm |
+|---|---|---|---|---|---|
+| op 0 | 902 | 902 | 191 → 871 | 627 → 31 | 84 → 0 |
+| op 1 (final) | 1428 | 1428 | 1387 → 1387 | 41 → 41 | 0 → 0 |
+
+- Narration (verbatim):
+  - op 0: "coverage: 31 free island(s) stand more than 0.80 mm above the
+    target (the floor the plan can reach, with 0.50 mm stock to leave);
+    the tallest is 1.01 mm high and 0.30 mm wide at (111.0, -10.3); 871
+    more touch a wall; 1373.5 mm2 in all."
+  - op 1: "coverage: 41 free island(s) stand more than 0.80 mm above the
+    target (the floor the plan can reach, with 0.50 mm stock to leave);
+    the tallest is 1.06 mm high and 0.30 mm wide at (65.1, -5.5); 1387
+    more touch a wall; 772.9 mm2 in all."
+- The finding message now begins "Free islands first, then the ones at a
+  wall, tallest first in each group".
+- Against the expectations:
+  - **Hole-rim slivers (op 0): 596 of the 627 E3 free slivers are now
+    tagged.** 31 stay free (0.8–1.01 mm tall). As expected, mostly.
+  - **The 84 uncut hex holes (op 0) are now tagged `touches_wall`
+    (0 free). Against the expectation.** An uncut hole fills its hex
+    from wall to wall. The plate next to it has a target 3.5 mm higher.
+    That is more than the island's peak (3.5 mm) − one cell, so the new
+    rule tags it. A real pocket that the op never entered now counts as
+    "at a wall", the same as a sliver.
+  - **The 41 angled-wall slivers (op 1) stay free. Against the
+    expectation.** They are the same 41 islands as in E3, 0.8–1.06 mm
+    tall, at the foot of the angled walls (and near the top wall,
+    y ≈ −5.5). I did not find why the new rule misses them; one
+    possibility is a gap of one cell between the sliver and the
+    wall-top columns.
+- Headline: it now names a free island on both ops, but on CP the free
+  islands are these marginal one-cell slivers (≤ 1.06 mm).
+
+## E4 project 2: corne_agent_search (the positive control)
+
+- Generate 4168 / 6060 moves. Adopt about 3.6 s. Export
+  `phase0/gcode/corne_agent_search_p15d.nc` succeeded (depth-of-cut rule
+  of thumb noted, not gated). The export shows no Blocking gouge finding (I did not call
+  `get_toolpath_diagnostics` in E4).
+- Map (final stock, op 1): `phase0/img/corne_agent_search_p15d_islands.png`.
+
+| Op | Islands (E3 = E4) | E3 → E4 `touches_wall` | E3 → E4 free |
+|---|---|---|---|
+| op 0 | 457 | 15 → 404 | 442 → 53 |
+| op 1 (final) | 1257 | 1175 → 1175 | 82 → 82 |
+
+- Narration (verbatim):
+  - op 0: "coverage: 53 free island(s) stand more than 0.80 mm above the
+    target (the floor the plan can reach, with 0.50 mm stock to leave);
+    the tallest is 16.50 mm high and 7.59 mm wide at (28.8, -16.6); 404
+    more touch a wall; 6832.7 mm2 in all."
+  - op 1: "coverage: 82 free island(s) stand more than 0.80 mm above the
+    target (the floor the plan can reach, with 0.50 mm stock to leave);
+    the tallest is 13.00 mm high and 0.30 mm wide at (102.9, -22.3); 1175
+    more touch a wall; 3652.5 mm2 in all."
+- Final stock (op 1), unchanged from E3:
+  - **Hex cores: 37, all free.**
+  - **Spur: 13.00 mm × 0.30 mm at (102.91, −22.32), free. It is now the
+    headline** of the finding and the narration, as expected.
+  - **Band: 8 islands (49–1303 mm²), all `touches_wall`.**
+  - The next free islands in the list are also thin and tall: 9.75 mm ×
+    0.30 mm at (119.7, −22.9) and 8.12 mm × 0.30 mm at (82.2, −64.9).
+    They may be other Phase 0 spurs (Phase 0 counted 39 at 0.2 mm).
+- op 0: the new rule tags 389 more islands, including the uncut whole
+  holes (74 of 79 of 2.5–10 mm now tagged). The op 0 headline is the
+  1478.2 mm², 16.5 mm ring of uncut stock inside the wall. In E3 it was
+  `touches_wall`; now it is free, because it stands taller (16.5 mm)
+  than the wall step next to it (14.5 mm), so no neighbour "stands above
+  the target by more than the island's peak − one cell". It is real uncut
+  stock of op 0.
+
+## E4 project 3: corne_contour_spiral
+
+- Generate 14839 / 5376 moves. Adopt about 2.9 s. Export
+  `phase0/gcode/corne_contour_spiral_p15d.nc` succeeded. The export shows no Blocking gouge finding (I did not call
+  `get_toolpath_diagnostics` in E4, so a Caution is not ruled out).
+- Map (final stock, op 1): `phase0/img/corne_contour_spiral_p15d_islands.png`.
+
+| Op | Islands (E3 = E4) | E3 → E4 `touches_wall` | E3 → E4 free |
+|---|---|---|---|
+| op 0 | 772 | 15 → 735 | 757 → 37 |
+| op 1 (final) | 1246 | 1204 → 1204 | 42 → 42 |
+
+- Narration (verbatim):
+  - op 0: "coverage: 37 free island(s) stand more than 0.80 mm above the
+    target (the floor the plan can reach, with 0.50 mm stock to leave);
+    the tallest is 16.50 mm high and 7.59 mm wide at (28.8, -16.6); 735
+    more touch a wall; 5271.9 mm2 in all."
+  - op 1: "coverage: 42 free island(s) stand more than 0.80 mm above the
+    target (the floor the plan can reach, with 0.50 mm stock to leave);
+    the tallest is 3.00 mm high and 1.60 mm wide at (19.8, -85.6); 1204
+    more touch a wall; 3532.2 mm2 in all."
+- Final stock (op 1): **2 cores**, free, 3.00 mm, at centroids
+  (19.6, −84.9) and (54.3, −85.0). **The headline names a core**, and
+  the finding lists both cores first (peaks (19.8, −85.6) and
+  (54.3, −85.6)). **Band:** 8 islands, all `touches_wall`. No spur.
+- op 0: the 58 partly uncut hex holes are now all `touches_wall`. The op 0
+  headline is the 1426.7 mm², 16.5 mm uncut ring inside the wall, now
+  free (the same effect as AgentSearch op 0).
+
+## E4 project 4: wanaka200_contour_parallel
+
+- Generate 68 / 14180 / 14049 moves. **Adopt about 18.9 s** (E3: 18.5 s;
+  E2: 4.7 s). It is still the one call over 10 s.
+- Export `phase0/gcode/wanaka200_contour_parallel_p15d.nc` succeeded
+  (depth-of-cut rule of thumb noted on toolpath 1, not gated). The export shows no Blocking gouge finding (I did not call
+  `get_toolpath_diagnostics` in E4, so a Caution is not ruled out).
+- `link_cuts_stock`, critical, move 5147, 11.26 mm: unchanged.
+- Back rough: `not_measurable` / `setup_not_identity`, unchanged.
+- Front rough: 178 islands, 955.5 mm² (the same as E3); `touches_wall`
+  0 → 91; free 178 → 87 (84 one-cell, 3 under 2 mm). Class caution.
+  Narration (verbatim): "coverage: 87 free island(s) stand more than
+  1.00 mm above the target (the floor the plan can reach, with 0.50 mm
+  stock to leave); the tallest is 1.99 mm high and 0.50 mm wide at
+  (121.0, 27.5); 91 more touch a wall; 955.5 mm2 in all."
+- Map: `phase0/img/wanaka200_contour_parallel_p15d_islands.png`.
+
+## E4 summary (E3 → E4)
+
+| Rough | Islands | `touches_wall` | Free | Headline (free first) | Eye defects |
+|---|---|---|---|---|---|
+| CP op 0 | 902 | 191 → 871 | 711 → 31 | 1.01 mm one-cell sliver | — (84 uncut holes now tagged) |
+| CP op 1 (final) | 1428 | 1387 → 1387 | 41 → 41 | 1.06 mm one-cell sliver | — |
+| AS op 0 | 457 | 15 → 404 | 442 → 53 | 16.5 mm uncut ring (1478 mm²) | — |
+| AS op 1 (final) | 1257 | 1175 → 1175 | 82 → 82 | **the spur, 13.00 × 0.30 mm** | 37 cores free, spur free, band tagged |
+| CS op 0 | 772 | 15 → 735 | 757 → 37 | 16.5 mm uncut ring (1427 mm²) | — |
+| CS op 1 (final) | 1246 | 1204 → 1204 | 42 → 42 | **a core, 3.00 × 1.60 mm** | 2 cores free, band tagged |
+| wanaka back | abstain | — | — | — | — |
+| wanaka front | 178 | 0 → 91 | 178 → 87 | 1.99 mm sliver | — |
+
+Gouge: all four exports succeed, so no Blocking finding stands. I did not
+call `get_toolpath_diagnostics` in E4.
+
+Adopt times: Corne 2.7 / 3.6 / 2.9 s; wanaka200 18.9 s.
+
+### Verdicts at 7c75324d
+
+- **Headline names a free island: yes on every Corne rough.** On the
+  final stocks it names the right defect: AgentSearch the spur (13.00 ×
+  0.30 mm), ContourSpiral a core (3.00 × 1.60 mm). On CP it names a
+  marginal one-cell sliver (≤ 1.06 mm). On the op 0 roughs of
+  AgentSearch and ContourSpiral it names the 16.5 mm uncut ring of op 0,
+  which is real stock.
+- **Counts of cores, spur and band: unchanged from E3** (37 / 13.0 ×
+  0.3 mm / 8 tagged band islands on AgentSearch; 2 cores / 8 band
+  islands on ContourSpiral).
+- **The 627 hole-rim slivers (CP op 0): 596 now tagged**, 31 stay free
+  (0.8–1.01 mm). Close to the expectation.
+- **The 41 angled-wall slivers (CP op 1): still free. Against the
+  expectation.** They are 0.8–1.06 mm tall at the foot of angled walls.
+  I did not find why the new rule misses them.
+- **The 84 uncut hex holes (CP op 0): now tagged `touches_wall`. Against
+  the expectation** (they were to stay free). A whole uncut hole touches
+  its own walls, and the wall step (3.5 mm) exceeds its peak − one cell
+  (3.2 mm). The same rule tags 74 of 79 uncut holes on AgentSearch op 0
+  and all 58 on ContourSpiral op 0. A real pocket that the op never
+  entered now reads "at a wall" next to the slivers.
+- **The 16.5 mm uncut ring inside the wall (AgentSearch and
+  ContourSpiral op 0) changed from tagged to free**, because it stands
+  taller than its wall step. The tag now depends on the island's height
+  against the neighbouring step, so a tall attached island is free and a
+  short attached island is tagged.
+- **Zero control:** on the final stock (op 1) it now reads 41 free
+  islands, all marginal slivers (≤ 1.06 mm), plus 1387 at a wall. It
+  still fails the bar, on wall-touching residue and 41 marginal slivers.
