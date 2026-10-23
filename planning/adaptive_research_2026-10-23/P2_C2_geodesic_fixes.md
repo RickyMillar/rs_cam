@@ -2275,3 +2275,315 @@ Read in this order:
    pocket (rule (1): cascade ≤ 320).
 6. The max emitted swept width and its over-steps (rule (3)).
 7. Then apply the keep-or-drop rule above.
+
+## C14 — traditional arc linking: one-way and zigzag (2026-10-24)
+
+Status: CODE COMPLETE, NOT RUN (no cargo; no commit). Base ea468814
+(worktree `.claude/worktrees/adaptive-head`, branch `adaptive-instruments`).
+`rustfmt --edition 2024 --check` is clean on the three Rust files. C12
+edits `research_geodesic.rs` at the same time (its section "The 3D research
+arm (C12)"); my hunks do not touch it.
+
+Paths: `R` = `crates/rs_cam_core/src/adaptive/research_geodesic.rs`,
+`P` = `crates/rs_cam_core/src/adaptive/path.rs`, `H` =
+`crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`. Line numbers
+are of the C14 tree.
+
+### The operator ruling (2026-10-24), as the spec
+
+- Two research columns. One-way: every arc in one direction, a return
+  through what was just cut. Zigzag: each arc in the opposite direction to
+  the one before.
+- The short step-over "turn" at each arc end may exceed the steady ceiling
+  c·D as an explicit, COUNTED exemption: its length is at most one stepover
+  (or the derived minimum the geometry needs), its feed is reduced by its
+  measured engagement, and each turn is reported with its real engagement.
+- The SHIPPED rule is unchanged.
+
+### Keep-or-drop rule (set before any prediction)
+
+KEEP a column (`geodesic_curv_oneway`, `geodesic_curv_zigzag`) when ALL
+three hold:
+
+1. Star entries are at most half of `geodesic_curv`'s: at most 36.
+2. No step that is not a turn exceeds the ceiling 0.3626 (the known
+   G-MOPLOAD mop step excepted). Read: `steps on no turn (emitted)` line,
+   and the `over:` lines of the emitted plan.
+3. Every turn has length at most its bound and carries its reduced feed.
+   Read: the `arcs piece` line (`turn length .. to ..` ≤ the bound), and
+   `turns with the reduced feed N, without 0`.
+
+Otherwise DROP. After the rule, the operator's look decides.
+
+### The design
+
+**(1) The option.** `ArcLink { Nearest, OneWay, Zigzag }` (R:1738), field
+`GeodesicOptions::arcs`; presets `C14_ONEWAY` (R:1853) and `C14_ZIGZAG`
+(R:1859), each `C5_CURV` with the one field changed. `G1` and `C2` set
+`arcs: ArcLink::Nearest`; every other preset inherits it, so every existing
+column plans as before. The links apply with `JoinRule::Seam` and
+`Reseed::Off`. **Not on the split base:** `split_segments` plans its own
+two fields with its own `append_path` loop, and the replay model of C9/C11
+(`ReplayModel`) would need the turn exemption too. That is not a one-line
+preset, so it is not built.
+
+**(2) The order: a lobe to its end first.** Under both links
+`ordered_wraps` takes a child of the wrap just cut first (R:2138), the rule
+the ramp join already had. Without it the nearest-wrap order jumps between
+arms, and the next arc is not at the same wall.
+
+**(3) One-way: climb.** The code's convention: a climb cut with a clockwise
+spindle has the wall (the stock) on the RIGHT of the travel
+(`compute/operation_configs.rs` doc of the bore `climb` flag;
+`ops/bore.rs` module doc and `climb_turns_counter_clockwise_p6_6`). The
+stock side of a level-set arc is where `T` grows. `climb_oriented`
+(R:2088) reads `T` one cell right and one cell left of each segment's
+middle and turns the arc so that `T` grows to the right (R:2190). Closed
+wraps keep their lap direction.
+
+**(4) The turn (R:4252, in the Seam loop of `geodesic_segments`).** For two
+consecutive wraps that are both open arcs:
+
+- zigzag: the turn is the step from the cutter (the end of arc k) to the
+  near end of arc k+1 (the start `ordered_wraps` gave it);
+- one-way: the turn is the step from the START of arc k to the start of
+  arc k+1 (both climb, so both starts are at the same wall). Before it, the
+  cutter goes back along arc k by one keep-down `Link` per vertex (the C8
+  pattern): the band just cut, zero load, judged by the shipped
+  `feed_link_checked`. A refused link becomes a re-entry, as everywhere.
+- The turn is planned when its length is at most the bound (below) and the
+  straight step lies inside the tool-centre region
+  (`ToolCentreRegion::contains_segment`). Else the join stays as in
+  `geodesic_curv` (a seam step the replay refuses, or a link) and is
+  counted (`over_bound`, `outside`).
+
+**(5) The bound (derived).** `turn_bound(s, cell) = s + (1 + √2)·cell`
+(P:60): 3.207 mm at s 2, cell 0.5.
+
+- Two consecutive arcs are `Δ ≤ s` apart in `T`.
+- Each arc end carries the field error, at most one cell (the module's
+  "Derived constants"; the disc unit test pins it).
+- Each arc ends on the edge of the last cell with four reachable corners,
+  at most one cell diagonal short of the wall.
+- So on a wall the front meets at a right angle, the ends are at most
+  `Δ + cell + √2·cell` apart. This is the producer's `reach`; the replay
+  computes it again from `params.stepover` and the planner cell.
+- **Oblique walls (C6).** Where the level sets meet the wall at an angle θ
+  off the normal, the ends are `Δ / cos θ` apart. Past the bound the turn is
+  not planned, and the count says how often (`over the bound`). I did not
+  build a curved turn: on a straight or concave wall the straight chord
+  between the two ends runs along the wall and lies inside the region. On a
+  convex wall (round an island) the chord can leave the region; that is
+  counted as `outside`. A turn path along a convex wall would need the
+  boundary walk; a ruling decides whether that is worth it.
+
+**(6) The replay exemption (the threading; shipped behaviour unchanged).**
+
+- `LinkLoad` gains `turns: Vec<(P2, P2)>` and `turn_bound` (P:138), empty
+  and 0 on every shipped path.
+- `LinkLoad::admits_turn(a, b)` (P:217) is true only when (a) both ends of
+  the step lie on a listed turn's segment (within 1e-6 mm, the walker's own
+  same-point tolerance; the walk splits a turn by linear interpolation)
+  and (b) that turn is no longer than the bound.
+- `emit_capped_walk_with` (P:562):
+  `holds = reading <= ceiling || load.admits_turn(a, b)`. With an empty list
+  the `||` arm is false, so the decision is the old one.
+- `apply_residue_mop_cleanup_with` and
+  `apply_contour_parallel_residue_cleanup_with` keep their signatures and
+  call new `_turns` variants (P:1744, P:1892) with `&[]`. In a `_turns`
+  variant only the replay of the kept segments gets the turns
+  (`LinkLoad::with_turns`, a copy). The residue contours, the wall pass and
+  the mop get the plain `LinkLoad`, so they hold the ceiling with no
+  exemption. With an empty list no copy is made.
+- (c), the feed: an `AdaptiveSegment` carries no feed, so the replay cannot
+  check it. The feed is written on the emitted toolpath by the research
+  run (`apply_turn_feeds`, R:6318), from the measured engagement of the
+  emitted plan. The readout then counts every emitted turn with no move
+  that carries it (`without`, must be 0). This is (c) by construction plus
+  a count, not a check inside the replay; I state it as a limit.
+
+**(7) The feed relation and its source.** `turn_feed_factor(c, w, a) =
+c / max(w, a)` when that is under 1 (R:6301); `w` is the swept width over
+D, `a` the area per mm over D, the largest over the turn's steps.
+
+- **Relation: hold the material removal rate of the steady cut.** The
+  removal rate of a move is `a_p × (area per mm) × F`. On the steady side
+  cut the area per mm equals the swept width (C7, Cavalieri), at most c·D.
+  So `F' = F · c·D / (area per mm)`.
+- **Source.** This is the shear term of the codebase's power model
+  (`tool_load/power.rs`, `P = A·(Ks·MRR + F_edge·a_p·V_c·z·ψ/2π)`); the
+  feed solver states "only the shear term moves with feed"
+  (`dressup/feed_modulation.rs`). The edge term does not move with feed, so
+  no feed holds it. It rises on a turn, and the record says so.
+- **The swept width is the second reading.** A head-on cap reads its span
+  in swept width and its removal in area. The lattice under-reads a thin
+  cap in area (C7). The larger of the two decides.
+- **The lateral force is held too.** The canonical force model
+  (`feeds/force.rs`: `F = a_p·(Ks·f_z·sin θ_peak + F_edge)`,
+  `θ_peak = min(ψ, π/2)`, `cos ψ = 1 − 2·a_e/D`) needs only
+  `F' = F·sin θ_peak(c)/sin θ_peak(w)`. For every `w > c` the removal
+  factor `c/w` is the smaller one: below `w = 1/2`,
+  `(c/w)² < c(1−c)/(w(1−w))` because `c/w < 1 < (1−c)/(1−w)`; above it,
+  `c/w < 2c ≤ 2√(c(1−c)) = sin θ_peak(c)`. The unit test pins both.
+- **Chip thinning is not used.** The operator ruled it out
+  (G-CHIPTHIN-HALFFIX, `dressup/feed_modulation.rs`).
+- **No constant enters.** Worked value (exact geometry, Python): a head-on
+  turn of 2 mm at R 3 in two 1 mm steps meets caps of 1 mm and 2 mm. The
+  chords are 4.47 mm and 5.66 mm (0.745 D and 0.943 D). The area per mm of
+  the second step is 5.15 mm²/mm (0.859 D). So the factor is
+  0.3626 / 0.943 = 0.385. The force alone would need 0.9615 (at
+  `w > 1/2`, `sin θ_peak(w) = 1`).
+
+**(8) The readout.**
+
+- `StepPart::Turn` (R:5297): `PartIndex::on_turn` (R:5384) classes a step
+  as a turn by the replay's own test, before every other part. The raw
+  plan's classes gain `clearing turn`. The emitted readout gets an index of
+  the turns alone (`PartIndex::of_turns`), so its other steps stay
+  `clearing`, as before (R:6662).
+- `PassLoadReadout` gains `turn_steps` (each turn step with its swept width
+  and area per mm), `turn_over`, `non_turn_max` and `non_turn_over`
+  (R:5522). A turn step over the ceiling is not in `steps_over` or `over`
+  (the replay admits it); it is counted in `turn_over` (R:5661).
+- The cascade model admits a turn as the replay does (R:5946).
+- `Summary2d::turns` (`TurnSummary`, R:6244) holds one record per emitted
+  turn: ends, length, steps, steps over, max swept, max area, feed factor
+  and feed (mm/min), and the fed and unfed counts.
+- `FieldReport::arcs` (`ArcReport`, R:3638): the arc-to-arc joins, turns
+  planned, over the bound, outside the region, the turn length range, and
+  the return links (count, mm).
+- Harness (H): the two columns after `geodesic_curv_split`.
+  - The `arcs piece` line.
+  - `steps on no turn (emitted)`: rule 2.
+  - `clearing turns (emitted)`: rule 3.
+  - The quartiles of turn swept width, area per mm, feed factor and
+    length: the distribution.
+  - One `turn:` line per turn.
+  - These lines print only for a column with the links enabled, so every
+    control's `.txt` is unchanged.
+
+### Unit tests
+
+- `P` `link_load_tests` (they need the private walker):
+  - `a_step_over_the_ceiling_off_every_turn_is_refused` (P:3485): a
+    corridor pass that ends with a 2 mm head-on step up the wall. The step
+    is refused with no turn listed, with a turn listed elsewhere, and with
+    a listed turn of 4 mm (over the 3.21 mm bound).
+  - `a_planned_turn_within_the_bound_is_admitted` (P:3509): the same step
+    on a listed 2 mm turn is admitted, with no re-entry.
+- `R` `tests`:
+  - `the_turn_feed_holds_the_steady_removal_and_the_lateral_force`
+    (R:7741): for 20 engagements from c to 1 D, `factor·w = c` and
+    `factor·sin θ_peak(w) ≤ sin θ_peak(c)` (`feeds::force::immersion_angle`);
+    the larger reading decides; a turn under the ceiling keeps the full
+    feed.
+  - `a_clearing_turn_is_bounded_and_fed_down_and_no_other_step_passes`
+    (R:7778), both links on the island pocket: turns are planned; every
+    planned turn ≤ the bound; every emitted turn carries `F·factor` on its
+    moves (`unfed` 0) and `factor·max(w, a) = c`; the emitted `clearing`
+    and `clearing link` classes have 0 steps over the ceiling.
+
+### Predictions (NOT results; the run decides)
+
+- **Controls byte-identical** (the new field defaults to `Nearest`; empty
+  turn lists change no decision; the new summary lines print only for the
+  new columns). `geodesic_a` 92/88, `geodesic_curv` 73/63, `reseed` 73/74,
+  `split` 73/84, agent 25/31, contour_spiral 101/91.
+- **Turn engagement:** a head-on step of about Δ at the wall. Swept width
+  0.75 to 0.94 D per step, area per mm 0.52 to 0.86 D. So the max per turn
+  is about 0.94, and the feed factor is about 0.38 to 0.45 (shorter `Δ`
+  under the curvature law near the seed gives a smaller cap).
+- **Star, zigzag:** J falls from 58. The arc-to-arc seam steps inside a
+  lobe become turns. The closed-to-closed seams (16) and the closed-to-arc
+  joins stay refused, and arcs at other walls or in other arms stay links.
+  Expected entries 35 to 55. **Rule 1 (≤ 36) is at risk;** the closed seams
+  alone hold J at about 16 or more.
+- **Star, one-way:** entries about the same as zigzag or a few more. A
+  return link that the shipped check refuses near a wall becomes a re-entry
+  (M). Keep-down link length grows by about the cut length of the lobe
+  arcs (+200 to +600 mm). Cut length is about the same.
+- **Pocket:** the long arcs between the rectangle's walls give turns on
+  both sides. J falls from 34; entries 40 to 60. Some joins round the
+  island count as `outside` (convex wall).
+- **Rule 2:** holds by construction for the clearing classes (the replay
+  admits nothing else); the mop over-step (G-MOPLOAD) can remain.
+- **Rule 3:** holds by construction (the bound is the planning test and the
+  replay test). `without` must be 0. A non-zero `without` means a turn's
+  moves were merged or blended in the toolpath (no corner radius is set,
+  so I do not expect it).
+
+### Risks for the verifier
+
+- About 600 new lines that no compiler has seen.
+- `apply_turn_feeds` matches moves to turns by geometry (start and target
+  on the turn segment within 1e-6 mm). With a corner radius > 0 the blend
+  arcs at a turn's corners keep the full feed. The 2D default and the
+  harness use 0.
+- The return links: one `Link` per arc vertex (one per cell), so the
+  `keep-down links` count grows by hundreds. Read the mm, not the count.
+- `climb_oriented` skips samples off the reachable cells. An arc that lies
+  entirely within one cell of a wall could get no sample and keep its
+  order. That is not expected on the development shapes.
+- The C14 unit test `a_clearing_turn_is_bounded…` asserts that turns are
+  planned on the island pocket (a prediction pinned as a test). If it is
+  red on that assertion alone, report the `ArcReport` it prints.
+
+### Files changed by C14
+
+- `crates/rs_cam_core/src/adaptive/path.rs`: `turn_bound`, the
+  `LinkLoad::turns` / `turn_bound` fields, `with_turns`, `admits_turn`, the
+  `holds` line of `emit_capped_walk_with`, the two `_turns` cleanup
+  variants (the `_with` functions call them with `&[]`), the test
+  `scene()` literal, and two unit tests.
+- `crates/rs_cam_core/src/adaptive/research_geodesic.rs`: `ArcLink`,
+  `GeodesicOptions::arcs`, `C14_ONEWAY`, `C14_ZIGZAG`, `climb_oriented`,
+  the order and orientation in `ordered_wraps`, `ArcReport` and
+  `FieldReport::arcs`, `Produced::turns`, the turn block in
+  `geodesic_segments`, `StepPart::Turn`, the `PartIndex` turns, the
+  readout fields (`TurnStep`, `turn_over`, `non_turn_*`), the cascade
+  admission, `TurnSummary`, `TurnRecord`, `turn_feed_factor`,
+  `apply_turn_feeds`, `cleaned(.., turns)`, `run_2d_with`, and two unit
+  tests.
+- `crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`: the two
+  columns, the `arcs piece` line, `turn_lines`.
+- This note.
+
+### Commands for the verifier (C14)
+
+Through `scripts/cargo_lane.sh`, each with a `timeout`, from the worktree:
+
+```text
+timeout 600 scripts/cargo_lane.sh fmt --all -- --check
+timeout 1800 scripts/cargo_lane.sh check -p rs_cam_core --features research,test-support
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --lib research_geodesic
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core -q --lib adaptive
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features test-support -q --test adaptive3d_emission_byte_parity
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features test-support -q --test a_clearing_cut_holds_the_pass_load_g_adaptpassload
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features test-support -q --test a_link_feeds_only_within_the_pass_load_g_adaptlinkload
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features test-support -q --test adaptive_property_harness
+timeout 1800 scripts/cargo_lane.sh clippy -p rs_cam_core --all-targets -- -D warnings
+timeout 1800 scripts/cargo_lane.sh clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support --release \
+    --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture
+```
+
+`path.rs` changed, so the three adaptive pass-load sentries are added to
+C11's list. `--lib adaptive` runs the two new `link_load_tests`.
+
+Read in this order:
+
+1. **Controls (exact):** `geodesic_a` 92/88; `geodesic_curv` 73 = S1 J58 M0
+   P14 / 63 = S1 J34 M12 C6 P10; `geodesic_curv_reseed` 73/74;
+   `geodesic_curv_split` 73/84; agent 25/31; contour_spiral 101/91. Compare
+   each control `.txt` byte for byte with D10's. A difference is a defect of
+   the threading: stop and report it.
+2. For each new column, shape by shape:
+   - `entries by producer` (S/L/J/M/C/W/P) and the entries;
+   - `arcs piece 0` (turns, over the bound, outside, length range, return
+     links);
+   - `clearing turns (emitted)` (turns, steps over, fed / without), and the
+     quartile lines;
+   - `steps on no turn (emitted)` (rule 2);
+   - `keep-down links` (count, mm) and `cut length`;
+   - the cascade block.
+3. Apply the keep-or-drop rule above.
