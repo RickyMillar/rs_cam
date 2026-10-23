@@ -2301,9 +2301,9 @@ pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2
                     })) => {
                         spiral = (
                             report.seed,
-                            (report.spiral_levels > 0).then(|| {
-                                report.seed_radius + report.spiral_levels as f64 * params.stepover
-                            }),
+                            (report.spiral_levels > 0).then_some(
+                                report.seed_radius + report.spiral_levels as f64 * params.stepover,
+                            ),
                         );
                         run.fields.push(report);
                         piece_wraps.clone_from(&wraps);

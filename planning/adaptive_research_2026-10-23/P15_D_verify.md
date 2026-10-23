@@ -496,3 +496,112 @@ Readings:
 3. **A2's GUI test needed a fixture fix.** The 3D Rough refused the sample
    project's heights (top = bottom = 0). The bottom pin at −25 is my
    choice. Check that it keeps the test's intent.
+
+## D3 at c8db8b55
+
+C3 on top (`research_geodesic.rs` and the harness only). Same lane script,
+own target dir, a `timeout` on each command. Disk: 46 GB free.
+
+### Fix (uncommitted)
+
+- `crates/rs_cam_core/src/adaptive/research_geodesic.rs:2304`, clippy
+  `unnecessary_lazy_evaluations` ("unnecessary closure used with
+  `bool::then`").
+  - Before: `(report.spiral_levels > 0).then(|| { report.seed_radius + report.spiral_levels as f64 * params.stepover })`
+  - After: `(report.spiral_levels > 0).then_some(report.seed_radius + report.spiral_levels as f64 * params.stepover)`
+  - Why: the lint denies it. The expression is plain arithmetic with no
+    side effect, so the eager form gives the same value. The harness ran
+    before the fix, and its numbers stay valid.
+
+### Results
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `fmt --all -- --check` | green (also green after the fix) |
+| 2 | `--features research,test-support -q --lib research_geodesic` | green: 4 passed, 1 ignored (`every_emitted_step_holds_the_pass_load`, ignored by bd287bd0, G-MOPLOAD) |
+| 3 | `clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings` | red (1 lint) → green after the fix; unit tests green again after it |
+| 4 | the harness, release, `timeout 900` | green 1/1, 2.76 s |
+
+### Harness table
+
+Output: `/home/ricky/personal_repos/rs_cam/.claude/worktrees/adaptive-head/target/tmp/adaptive_geodesic_2d_g1/`
+(an `.svg`, `.png` and `.txt` per column, and `summary.txt`). Retracts
+equal entries in every column. Entry split: S starter, J clearing at a wrap
+end (join), M clearing mid-wrap (replay split), C residue contour, W wall
+pass, P residue mop (other = 0 everywhere).
+
+| Shape / column | Entries | S | J | M | C | W | P | Cut mm | Max / 0.3626 | Emitted over-steps | Raw plan over-steps |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| star / agent | 25 | 1 | 0 | 17 | 0 | 0 | 7 | 1379.2 | 0.4515 | 1: clearing seg 85 (83.47, 40.11)→(83.35, 38.62) 0.4515 | 9 of 1749 |
+| star / contour_spiral | 101 | 1 | 0 | 93 | 0 | 0 | 7 | 2850.6 | 0.3613 | 0 | 501 of 4873 |
+| star / geodesic_g1 | 86 | 1 | 58 | 12 | 0 | 0 | 15 | 1010.9 | 0.3614 | 0 | 219 of 2422 |
+| star / geodesic_a | 92 | 1 | 56 | 20 | 0 | 0 | 15 | 957.7 | 0.3600 | 0 | 206 of 2330 |
+| star / geodesic_a_through | 92 | 1 | 56 | 20 | 0 | 0 | 15 | 957.7 | 0.3600 | 0 | 206 of 2330 |
+| star / geodesic_a_ramp | 87 | 1 | 35 | 23 | 9 | 0 | 19 | 993.2 | 0.4468 | 2 mop: seg 188 (34.30, 53.26)→(33.83, 52.68) 0.3661; seg 193 (19.22, 39.99)→(18.89, 40.66) 0.4468 | 338 of 3046 |
+| pocket / agent | 31 | 1 | 0 | 19 | 0 | 0 | 11 | 1471.0 | 0.3618 | 0 | 9 of 1805 |
+| pocket / contour_spiral | 91 | 1 | 0 | 72 | 8 | 0 | 10 | 2630.0 | 0.3723 | 1 mop: seg 205 (57.59, 33.55)→(57.82, 32.83) 0.3723 | 420 of 3797 |
+| pocket / geodesic_g1 | 89 | 1 | 43 | 23 | 6 | 0 | 16 | 1237.8 | 0.4478 | 1 mop: seg 168 (54.44, 28.13)→(55.00, 28.64) 0.4478 | 291 of 2974 |
+| pocket / geodesic_a | 88 | 1 | 42 | 27 | 4 | 0 | 14 | 1126.3 | 0.3624 | 0 | 289 of 2845 |
+| pocket / geodesic_a_through | 87 | 1 | 39 | 28 | 4 | 0 | 15 | 1126.3 | 0.4483 | 1 mop: seg 477 (53.95, 24.79)→(53.75, 24.07) 0.4483 | 276 of 2875 |
+| pocket / geodesic_a_ramp | 98 | 1 | 49 | 24 | 9 | 0 | 15 | 1507.9 | 0.4743 | 3 mop: seg 264 0.4511; seg 273 0.4743; seg 273 0.4595 | 472 of 5378 |
+
+Field lines: star geodesic_a: 18 levels, 98 wrap pieces, converged,
+1 branch, 0 spiral levels. Pocket geodesic_a: 31 levels, 91 wrap pieces
+(was 158 at D2: the shadow-line fix holds), converged, 3 branches,
+0 spiral levels. The ramp columns: 6 (star) and 3 (pocket) spiral levels.
+
+### Refused-step dump, `geodesic_a_ramp` (first ten lines, verbatim)
+
+star:
+
+```
+  refused: clearing cut spiral (segment 4) from (46.39, 48.02) to (46.87, 47.20), reading 0.4210
+  refused: clearing cut spiral (segment 4) from (46.87, 47.20) to (47.58, 46.51), reading 0.4071
+  refused: clearing cut spiral (segment 4) from (47.58, 46.51) to (48.48, 46.02), reading 0.4650
+  refused: clearing cut spiral (segment 4) from (48.48, 46.02) to (49.50, 45.77), reading 0.4612
+  refused: clearing cut spiral (segment 4) from (49.50, 45.77) to (50.58, 45.79), reading 0.4946
+  refused: clearing cut spiral (segment 4) from (50.58, 45.79) to (51.63, 46.07), reading 0.4395
+  refused: clearing cut spiral (segment 4) from (51.63, 46.07) to (52.60, 46.61), reading 0.5045
+  refused: clearing cut spiral (segment 4) from (52.60, 46.61) to (53.41, 47.38), reading 0.4799
+  refused: clearing cut spiral (segment 4) from (53.41, 47.38) to (54.00, 48.33), reading 0.4071
+  refused: clearing cut spiral (segment 4) from (54.00, 48.33) to (54.37, 49.39), reading 0.4562
+```
+
+pocket:
+
+```
+  refused: clearing cut spiral (segment 4) from (15.21, 17.53) to (15.30, 16.45), reading 0.3876
+  refused: clearing cut spiral (segment 4) from (15.30, 16.45) to (15.81, 15.39), reading 0.3832
+  refused: clearing cut spiral (segment 4) from (15.81, 15.39) to (16.69, 14.53), reading 0.4088
+  refused: clearing cut spiral (segment 4) from (16.69, 14.53) to (17.85, 13.98), reading 0.4035
+  refused: clearing cut spiral (segment 4) from (17.85, 13.98) to (19.17, 13.83), reading 0.4803
+  refused: clearing cut spiral (segment 4) from (19.17, 13.83) to (20.51, 14.10), reading 0.4565
+  refused: clearing cut spiral (segment 4) from (20.51, 14.10) to (21.72, 14.78), reading 0.4686
+  refused: clearing cut spiral (segment 4) from (21.72, 14.78) to (22.71, 15.80), reading 0.5234
+  refused: clearing cut spiral (segment 4) from (22.71, 15.80) to (23.30, 17.09), reading 0.4697
+  refused: clearing cut spiral (segment 4) from (23.30, 17.09) to (23.50, 18.50), reading 0.4717
+```
+
+### Readings
+
+- C3's prediction holds in kind: the first ten refused steps of each ramp
+  column are all `spiral` steps. C3 predicted radius 5 to 7 mm and
+  readings 0.40 to 0.47. The measured radii from the seed are 3.4 to
+  5.0 mm (star seed (49.5, 50.5), pocket seed (18.5, 18.5)), and the
+  readings are 0.38 to 0.52 of D. The ramp law does not hold on the curved
+  front (C3 §3).
+- Without the ramp (`geodesic_a`) the emitted plan holds the ceiling on
+  both shapes (0.3600, 0.3624). Entries stay high: 92 (star), 88 (pocket).
+  Joins at wrap ends are the largest part (56 and 42).
+- In the candidate columns without the ramp (`geodesic_g1`, `geodesic_a`,
+  `geodesic_a_through`), the first refused raw steps are the radial
+  seam join and the first wrap at the seed (reading 0.8333 of D), then
+  steps on the first wraps (0.37 to 0.45).
+- Emitted over-steps: all of them are `residue mop` cuts, except one
+  clearing cut of the shipped Agent on the star.
+
+### `git status --short` at the end of D3
+
+```
+ M crates/rs_cam_core/src/adaptive/research_geodesic.rs
+```
