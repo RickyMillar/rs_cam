@@ -1,6 +1,6 @@
 # C15: assert every number that farside_ideas_v1.html and
 # P2_C15_farside_ideas.md quote.
-# Run: python3 -I assert_c15.py   (re-runs run_c15.py first; about a minute)
+# Run: python3 -I assert_c15.py   (re-runs run_c15.py and whole.py first; about two minutes)
 import math
 import os
 import re
@@ -96,6 +96,9 @@ check(abs(vf - 0.5268) < 5e-5, f"vertex factor {vf}")
 import run_c15  # noqa: E402
 
 run_c15.main()
+import whole  # noqa: E402
+
+whole.main()
 import page  # noqa: E402
 import diag  # noqa: E402
 
@@ -231,6 +234,63 @@ for lvl in cv:
         if inner.any() and w[inner].max() > best[0]:
             best = (w[inner].max(), P[inner][np.argmax(w[inner])])
 check(np.hypot(*(best[1] - far_pt)) < R, f"c_star worst step at {best[1]}, far point {far_pt}")
+
+# ── 6. (e)/(f): the whole-region morphs ───────────────────────────────
+blk2 = note.split("<!-- whole:begin -->")[1].split("<!-- whole:end -->")[0].strip()
+check(blk2 == page.whole_table(res).strip(), "note (e)/(f) table differs from a fresh build")
+W = res["whole"]
+st, pk = W["star"], W["pocket"]
+h4 = res["h4"]
+prose2 = {
+    "regions": f"({st['region_mm2']:.0f} mm² on the grid; pocket {pk['region_mm2']:.0f} mm²)",
+    "visible": f"(fraction {st['visible_fraction']:.2f})",
+    "h4 star": f"{h4['star_geodesic_curv']['cut_mm']:.1f} mm, {h4['star_geodesic_curv']['entries']} entries",
+    "h4 star cs": f"ContourSpiral {h4['star_contour_spiral']['cut_mm']:.1f} mm, {h4['star_contour_spiral']['entries']} entries",
+    "h4 pocket": f"{h4['pocket_geodesic_curv']['cut_mm']:.1f} mm, {h4['pocket_geodesic_curv']['entries']}",
+    "h4 pocket cs": f"ContourSpiral {h4['pocket_contour_spiral']['cut_mm']:.1f} mm, {h4['pocket_contour_spiral']['entries']} entries",
+    "star e loops": f"({st['e']['loops']} loops in {st['e']['levels']} levels)",
+    "pocket e multi": f"({pk['e']['levels_multi']} levels)",
+    "star f multi": f"Star (f): {st['f']['levels_multi']} levels split into up to {st['f']['max_loops_per_level']} loops",
+    "pocket f stop": f"stops at u = {pk['f']['last_level']:.4f}",
+    "pocket f basin": f"(lowest value {pk['f']['zone_min']:.4f})",
+    "pocket f reach": f"only at u = {pk['f']['reach_level']:.4f}",
+    "pocket f residue": f"{pk['f']['residue_interior_mm2']:.0f} mm² stay uncut",
+    "star e corners": f"tip in {st['e']['narrowest_near_inner']} of {st['e']['located_loops']} loops; the widest lies nearer a tip in {st['e']['widest_near_tip']} of them",
+    "star e median": f"Median min/max gap per loop {st['e']['median_gap_ratio']:.4f}",
+    "pocket e median": f"Pocket (e): median {pk['e']['median_gap_ratio']:.4f}",
+    "cost": f"{st['e']['len_vs_curv']:.1f} times the v4 `geodesic_curv` cut length\n    on the star and {pk['e']['len_vs_curv']:.1f} times",
+    "pocket e load": f"({pk['e']['sw_interior_max']:.4f})",
+    "star e load": f"last {len(st['e']['over_levels'])} loops at {len(st['e']['over_tips'])} of the five tips",
+    "star e load2": f"({st['e']['sw_interior_max']:.4f}; every such sample within {st['e']['over_wall_max']:.1f} mm",
+    "f load": f"{st['f']['sw_interior_max']:.4f} on the star, {pk['f']['sw_interior_max']:.4f} on the pocket",
+}
+for k, v in prose2.items():
+    check(v in note, f"note (e)/(f) prose {k}: '{v}' not found")
+# sources of the method
+src = open(os.path.join(ROOT, "..", "..", ".claude", "worktrees", "adaptive-head", "crates", "rs_cam_core", "src",
+                        "adaptive", "research_geodesic.rs")).read()
+check("GeodesicField::on_lattice(lattice, inside, seed, r, s, options.solver, &walls)" in src
+      and "let r = params.tool_radius;" in src, "entry disc radius R from geodesic_segments")
+for nm, seed in (("star", "seed Some([49.5, 50.5]), seed radius 3.00 mm"),
+                 ("pocket", "seed Some([18.5, 18.5]), seed radius 3.00 mm")):
+    check(seed in open(os.path.join(HERE, "..", "renders4", f"{nm}_geodesic_curv.txt")).read(), f"{nm} seed")
+# qualitative claims
+check(st["visible_fraction"] == 1.0, "star region visible from the seed")
+check(st["e"]["all_closed"] == "yes" and st["e"]["levels_multi"] == 0 and st["e"]["loops"] == st["e"]["levels"],
+      "star (e): one closed loop per level")
+check(pk["e"]["all_closed"] == "yes" and pk["e"]["max_loops_per_level"] == 2, "pocket (e): closed, two per late level")
+check(abs(pk["f"]["last_level"] - pk["f"]["zone_min"]) < 1e-6 and pk["f"]["reach_level"] > pk["f"]["zone_min"] + 0.01,
+      "pocket (f) stops at its second basin")
+ol = st["e"]["over_levels"]
+check(ol == list(range(st["e"]["levels"] - len(ol), st["e"]["levels"])), "star (e) overs on the last loops only")
+check(st["e"]["over_wall_max"] < 0.5, "star (e) overs next to the wall")
+check(pk["e"]["sw_interior_max"] <= c + q and pk["e"]["sw_interior_over"] == 0, "pocket (e) holds")
+for nm in ("star", "pocket"):
+    check(W[nm]["f"]["sw_interior_max"] > 2 * c, f"{nm} (f) over at the medial axis")
+    check(W[nm]["e"]["len_vs_curv"] > 2, f"{nm} (e) cut length many times geodesic_curv")
+check(st["e"]["narrowest_near_inner"] == st["e"]["located_loops"], "star (e) narrowest gap at the inner corners")
+# the page puts (e)/(f) first
+check(html.index("0. Whole-region morphs") < html.index("1. Why the far side wobbles"), "(e)/(f) first on the page")
 
 print("assert_c15:", "FAILED" if FAILS else "all claims hold", f"({len(claims)} page claims, {len(prose)} note claims)")
 sys.exit(1 if FAILS else 0)

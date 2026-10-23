@@ -4,6 +4,7 @@
 import json
 import math
 import os
+import re
 import sys
 
 import numpy as np
@@ -43,6 +44,50 @@ def derived(res, curves):
     for k in ("a", "a0", "a_c"):
         out[k + "_zone_open"] = res[k]["arcs"] + res[k]["v_corners"]
     return out
+
+
+def load_whole():
+    with open(os.path.join(HERE, "results_whole.json")) as f:
+        w = json.load(f)
+    d = np.load(os.path.join(HERE, "curves_whole.npz"))
+    cur = {}
+    for key in d.files:
+        nm, k, i, j = key.split("|")
+        cur.setdefault((nm, k), {}).setdefault(int(i), []).append((int(j), d[key].astype(float)))
+    cur = {kk: [[P for _, P in sorted(v[i], key=lambda t: t[0])] for i in sorted(v)] for kk, v in cur.items()}
+    return w, cur
+
+
+def harness4():
+    """Cut length and entries of the v4 harness renders (renders4/*.txt)."""
+    out = {}
+    base = os.path.join(HERE, "..", "renders4")
+    for nm in ("star", "pocket"):
+        for col in ("geodesic_curv", "contour_spiral"):
+            txt = open(os.path.join(base, f"{nm}_{col}.txt")).read()
+            cut = float(re.search(r"cut length: ([0-9.]+) mm", txt).group(1))
+            ent = int(re.search(r"entries \(plunges\): ([0-9]+)", txt).group(1))
+            out[f"{nm}_{col}"] = dict(cut_mm=cut, entries=ent)
+    return out
+
+
+def add_whole(res):
+    w, cur = load_whole()
+    h4 = harness4()
+    for nm in ("star", "pocket"):
+        ideal = w[nm]["region_mm2"] / S
+        w[nm]["ideal_mm"] = ideal
+        for k in ("e", "f"):
+            w[nm][k]["all_closed"] = "yes" if w[nm][k]["closed"] == w[nm][k]["loops"] else "no"
+            w[nm][k]["len_vs_ideal"] = w[nm][k]["length_mm"] / ideal
+            w[nm][k]["len_vs_curv"] = w[nm][k]["length_mm"] / h4[f"{nm}_geodesic_curv"]["cut_mm"]
+    se = w["star"]["e"]
+    w["star"]["e_tip_levels"] = len(se["over_levels"])
+    w["star"]["e_tip_wall_max"] = se["over_wall_max"]
+    w["star"]["e_tip_count"] = len(se["over_tips"])
+    res["whole"] = w
+    res["h4"] = h4
+    return cur
 
 
 def get(res, key):
@@ -114,6 +159,33 @@ def panel(layers, label):
     return "\n".join(out)
 
 
+def panel_shape(sh, layers, label):
+    """The same drawing for any shape: its material outline, the entry, and
+    the layers (curves, colour, width)."""
+    mb = sh.mat_box
+    vb = f"{mb[0] - 1} {mb[2] - 1} {mb[1] - mb[0] + 2} {mb[3] - mb[2] + 2}"
+    flip = mb[2] + mb[3]
+    out = [f'<svg viewBox="{vb}" role="img" aria-label="{label}" class="pane">',
+           f'<g transform="translate(0,{flip}) scale(1,-1)">']
+    o = sh.outline()
+    if "rect" in o:
+        (x0, x1, y0, y1), rx = o["rect"]
+        out.append(f'<rect x="{x0}" y="{y0}" width="{x1-x0}" height="{y1-y0}" rx="{rx}" fill="#fff" stroke="#000" stroke-width="0.3"/>')
+    else:
+        pts = " ".join(f"{x},{y}" for x, y in o["poly"])
+        out.append(f'<polygon points="{pts}" fill="#fff" stroke="#000" stroke-width="0.3"/>')
+    for cc, rr in o["circles"]:
+        out.append(f'<circle cx="{cc[0]}" cy="{cc[1]}" r="{rr}" fill="#e6e6e6" stroke="#000" stroke-width="0.3"/>')
+    out.append(f'<circle cx="{sh.seed[0]}" cy="{sh.seed[1]}" r="0.6" fill="#d22"/>')
+    for curves, col, w in layers:
+        for lvl in curves:
+            for P in lvl:
+                out.append(f'<polyline points="{poly(P)}" fill="none" stroke="{col}" stroke-width="{w}" '
+                           'stroke-linejoin="round" stroke-linecap="round"/>')
+    out.append("</g></svg>")
+    return "\n".join(out)
+
+
 GREY = "#c4c4c4"
 BLUE = "#1f5fbf"
 RED = "#d1342f"
@@ -124,6 +196,7 @@ def build():
     cur = load_curves()
     res["derived"] = derived(res, cur)
     res["h1_neg_mean_mm"] = -res["h1_curv_vs_exact"]["mean_mm"]
+    wcur = add_whole(res)
     first = cur["first"]
     C = lambda k, f=".2f": claim(res, k, f)
 
@@ -173,6 +246,7 @@ h2 {{ font-size:19px; margin:30px 0 8px; border-bottom:1px solid var(--line); pa
 h3 {{ font-size:16px; margin:0 0 6px; }}
 p {{ margin:6px 0; max-width:78ch; }}
 .sub {{ color:var(--muted); }}
+.grid4 {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-bottom:14px; }}
 .grid {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:14px; }}
 .card {{ background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }}
 .pane {{ width:100%; height:auto; display:block; margin:6px 0; background:#fff; }}
@@ -195,6 +269,8 @@ code {{ font-size:13px; }}
 
 <p>Each picture shows the same frame. The black outline is the pocket wall and the grey disc is the island. The dashed circle is the island grown by the tool radius: the cutter centre cannot go inside it. The yellow area is the <b>zone</b>: the area that the island hides from the entry (red dot). The green dashed lines are the two <b>shadow lines</b> from the entry, tangent to the grown island.</p>
 <p class="key">Lines: <span class="sw" style="background:{GREY}"></span>near-side wraps (circles about the entry, the same in every idea)<span class="sw" style="background:{BLUE}"></span>the idea's wraps<span class="sw" style="background:{RED}"></span>the harness wraps (Rust, read from the render SVG)</p>
+
+{whole_section(res, wcur, C)}
 
 <h2>1. Why the far side wobbles</h2>
 <div class="grid">
@@ -274,9 +350,6 @@ def main():
     print("wrote", os.path.abspath(PAGE), len(html))
 
 
-if __name__ == "__main__":
-    main()
-
 
 ROWS = [("a0", "(a) at the harness levels"), ("a", "(a) exact, local radius"),
         ("c0", "exact split (C11, no lattice)"), ("b", "(b) harmonic"), ("c", "(c) round union"),
@@ -306,4 +379,71 @@ def results_with_derived():
     cur = load_curves()
     res["derived"] = derived(res, cur)
     res["h1_neg_mean_mm"] = -res["h1_curv_vs_exact"]["mean_mm"]
+    add_whole(res)
     return res
+
+
+def whole_section(res, wcur, C):
+    from shapes import Shape
+    from harness_svg import paths_view
+    base = os.path.join(HERE, "..", "renders4")
+    rows = []
+    for nm in ("star", "pocket"):
+        sh = Shape(nm)
+        cells = []
+        for k, title, what in (
+                ("e", "(e) harmonic morph",
+                 "Level lines of u: u = 0 on the entry disc, u = 1 on every wall and island, Laplace inside."),
+                ("f", "(f) distance-ratio morph",
+                 "Level lines of u = d_entry / (d_entry + d_wall).")):
+            r = f"whole.{nm}.{k}"
+            cells.append(f"""<section class="card"><h3>{nm}: {title}</h3><p class="what">{what}</p>
+{panel_shape(sh, [(wcur[(nm, k)], BLUE, 0.3)], nm + ' ' + k)}
+<table class="mini">
+<tr><th>levels / loops</th><td>{C(r + '.levels', 'd')} / {C(r + '.loops', 'd')}</td><th>every loop closed</th><td>{C(r + '.all_closed', 's')}</td></tr>
+<tr><th>levels with 2 or more loops</th><td>{C(r + '.levels_multi', 'd')} (max {C(r + '.max_loops_per_level', 'd')})</td><th>largest gap</th><td>{C(r + '.max_gap_mm', '.2f')} mm</td></tr>
+<tr><th>min/max gap in a loop: median, worst</th><td>{C(r + '.median_gap_ratio', '.4f')}, {C(r + '.worst_gap_ratio', '.6f')}</td><th>smallest radius</th><td>{C(r + '.min_abs_rho_mm', '.2f')} mm</td></tr>
+<tr><th>replay, loop interior</th><td>{C(r + '.sw_interior_max', '.4f')} D ({C(r + '.sw_interior_over', 'd')} over)</td><th>area per mm</th><td>{C(r + '.apm_interior_max', '.4f')} D</td></tr>
+<tr><th>cut length</th><td>{C(r + '.length_mm', '.0f')} mm</td><th>residue / max wall distance</th><td>{C(r + '.residue_interior_mm2', '.1f')} mm² / {C(r + '.residue_max_wall_distance_mm', '.2f')} mm</td></tr>
+</table></section>""")
+        for col, title in (("geodesic_curv", "harness v4: geodesic_curv"), ("contour_spiral", "harness v4: ContourSpiral")):
+            P = paths_view(os.path.join(base, f"{nm}_{col}.svg"), "#1f5fbf", sh.harness_view())
+            h = f"h4.{nm}_{col}"
+            cells.append(f"""<section class="card"><h3>{nm}: {title}</h3><p class="what">The blue clearing cuts of the v4 render, in the same frame.</p>
+{panel_shape(sh, [([P], RED, 0.25)], nm + ' ' + col)}
+<table class="mini"><tr><th>cut length</th><td>{C(h + '.cut_mm', '.1f')} mm</td><th>entries</th><td>{C(h + '.entries', 'd')}</td></tr></table></section>""")
+        rows.append('<div class="grid4">' + "\n".join(cells) + "</div>")
+    return f"""<h2>0. Whole-region morphs: start round, end in the wall shape</h2>
+<p>The operator saw other tools whose wraps start round and turn into the wall shape, half way between this spiral and contour-parallel. Ideas (e) and (f) are two fields with no parameter that do this. The levels use the same rule as the other ideas (the C5 law gap from each loop's own curvature). Red lines in the harness panels are the v4 clearing cuts, blue lines are the loops of (e) and (f).</p>
+<p class="look"><b>Look at:</b> on the star, (e) gives one smooth closed loop per level that turns from a circle into the star. The loops crowd at the inner corners. On the pocket, the loops of (e) crowd round the island and the near walls. On the pocket, (f) stops part way.</p>
+{rows[0]}
+{rows[1]}
+<div class="verdict">
+<p><b>Closed loops.</b> Star (e): every level is one closed loop ({C('whole.star.e.loops', 'd')} loops in {C('whole.star.e.levels', 'd')} levels). Pocket (e): every loop is closed, but when the loops meet behind the island a level is two loops, one round the island and one along the wall ({C('whole.pocket.e.levels_multi', 'd')} levels). Star (f): {C('whole.star.f.levels_multi', 'd')} levels split into up to {C('whole.star.f.max_loops_per_level', 'd')} loops near the tips. Pocket (f): the march stops at u = {C('whole.pocket.f.last_level', '.4f')}. Behind the island u has a second low basin (lowest value {C('whole.pocket.f.zone_min', '.4f')}) that the loops from the entry reach only at u = {C('whole.pocket.f.reach_level', '.4f')}. A level between the two opens a new loop in standing stock, which needs a new entry.</p>
+<p><b>Spacing.</b> One value of u per loop gives a gap of Δu/|∇u|, so the gap follows the gradient. On the star the narrowest gap of a loop (e) lies nearer an inner corner than a tip in {C('whole.star.e.narrowest_near_inner', 'd')} of {C('whole.star.e.located_loops', 'd')} loops; the widest lies nearer a tip in {C('whole.star.e.widest_near_tip', 'd')} of them. The level rule must hold the widest gap, so elsewhere the loops crowd: the median min/max gap in one loop is {C('whole.star.e.median_gap_ratio', '.4f')} on the star and {C('whole.pocket.e.median_gap_ratio', '.4f')} on the pocket. The cut length is {C('whole.star.e.len_vs_curv', '.1f')} times the v4 geodesic_curv on the star and {C('whole.pocket.e.len_vs_curv', '.1f')} times on the pocket.</p>
+<p><b>Load.</b> (e) holds the ceiling in the loop interior on the pocket ({C('whole.pocket.e.sw_interior_max', '.4f')} D). On the star it holds except on the last {C('whole.star.e_tip_levels', 'd')} loops at {C('whole.star.e_tip_count', 'd')} of the five tips ({C('whole.star.e.sw_interior_max', '.2f')} D, all within {C('whole.star.e_tip_wall_max', '.1f')} mm of the wall). (f) has corners where the nearest wall changes (the medial axis), and they read up to {C('whole.star.f.sw_interior_max', '.2f')} D on the star and {C('whole.pocket.f.sw_interior_max', '.2f')} D on the pocket.</p>
+<p><b>Verdict.</b> (e) gives the closed-loop, round-to-wall look on a region without an island, but at {C('whole.star.e.len_vs_curv', '.1f')} times the cut length, because one u per loop cannot give an even gap. (f) fails on load and, on the pocket, on coverage. Neither removes the per-arc plunge (problem 2) at an acceptable cost. A closed-loop morph needs a gap that is even along each loop, which a level set of one field does not give.</p>
+</div>
+"""
+
+
+def whole_table(res):
+    """The (e)/(f) table of the note (assert_c15.py rebuilds and compares it)."""
+    lines = ["| Shape / idea | Levels / loops | All closed | Levels with 2+ loops (max) | Max gap mm "
+             "| Min/max gap per loop: median, worst | Min radius mm | Replay interior D (over) "
+             "| Area/mm D | Cut mm (× v4 geodesic_curv) | Residue mm² / wall dist mm |",
+             "|" + "---|" * 11]
+    for nm in ("star", "pocket"):
+        for k in ("e", "f"):
+            r = res["whole"][nm][k]
+            lines.append(
+                f"| {nm} ({k}) | {r['levels']} / {r['loops']} | {r['all_closed']} | {r['levels_multi']} "
+                f"({r['max_loops_per_level']}) | {r['max_gap_mm']:.2f} | {r['median_gap_ratio']:.4f}, "
+                f"{r['worst_gap_ratio']:.6f} | {r['min_abs_rho_mm']:.2f} | {r['sw_interior_max']:.4f} "
+                f"({r['sw_interior_over']}) | {r['apm_interior_max']:.4f} | {r['length_mm']:.0f} "
+                f"({r['len_vs_curv']:.1f}) | {r['residue_interior_mm2']:.1f} / {r['residue_max_wall_distance_mm']:.2f} |")
+    return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    main()

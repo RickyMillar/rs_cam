@@ -36,3 +36,19 @@ def wraps(name):
 
 def cuts(name):
     return paths(name, "#1f5fbf")
+
+
+def paths_view(path, colour, view):
+    """Paths of one colour from a harness SVG, with that shape's View
+    (min_x, max_y, scale) (render harness View::over)."""
+    min_x, max_y, scale = view
+    txt = open(path).read()
+    out = []
+    for d, col in _path.findall(txt):
+        if col != colour:
+            continue
+        pts = [(min_x + (float(m.group(1)) - MARGIN) / scale, max_y - (float(m.group(2)) - MARGIN) / scale)
+               for m in re.finditer(r"[ML]([-0-9.]+),([-0-9.]+)", d)]
+        if len(pts) >= 2:
+            out.append(np.array(pts))
+    return out

@@ -13,15 +13,20 @@ from fields import XS, YS, H, GX, GY, ZONE
 # ── contours ───────────────────────────────────────────────────────────
 
 class Field:
-    def __init__(self, F):
+    def __init__(self, F, xs=XS, ys=YS, dom=None):
+        """F on the grid xs, ys. dom: the nodes the march must clear (default:
+        where F is finite)."""
         self.F = F
-        self.gen = contourpy.contour_generator(x=XS, y=YS, z=np.ma.masked_invalid(F),
+        self.xs, self.ys = xs, ys
+        self.GX, self.GY = (GX, GY) if xs is XS and ys is YS else np.meshgrid(xs, ys)
+        self.dom = np.isfinite(F) if dom is None else dom
+        self.gen = contourpy.contour_generator(x=xs, y=ys, z=np.ma.masked_invalid(F),
                                                name="serial", line_type="Separate",
                                                corner_mask=True)
         Fz = np.where(np.isfinite(F), F, 0.0)
         gy, gx = np.gradient(Fz, H)
         self.gx, self.gy = gx, gy
-        self.fmax = float(np.nanmax(F))
+        self.fmax = float(np.nanmax(F[self.dom]))
 
     def lines(self, t):
         out = []
@@ -31,8 +36,8 @@ class Field:
         return [l for l in out if len(l) >= 2]
 
     def grad(self, P):
-        j = np.clip(np.round((P[:, 0] - XS[0]) / H).astype(int), 0, len(XS) - 1)
-        i = np.clip(np.round((P[:, 1] - YS[0]) / H).astype(int), 0, len(YS) - 1)
+        j = np.clip(np.round((P[:, 0] - self.xs[0]) / H).astype(int), 0, len(self.xs) - 1)
+        i = np.clip(np.round((P[:, 1] - self.ys[0]) / H).astype(int), 0, len(self.ys) - 1)
         return np.stack([self.gx[i, j], self.gy[i, j]], axis=1)
 
 
@@ -129,10 +134,13 @@ def ok_level(lines, tree, field):
     return True
 
 
-def march(field, cut_pts, t0=0.0, iters=30, max_levels=200):
+def march(field, cut_pts, t0=0.0, iters=30, max_levels=200, stop_within=S):
     """Choose levels from t0 so that every point of each new curve lies at most
     the C5 law gap (from its own signed curvature radius) from the cut set.
-    cut_pts: the centre paths already cut (or the exact cut edge)."""
+    cut_pts: the centre paths already cut (or the exact cut edge).
+    stop_within: stop when every node left lies this close to a cut (S for
+    the zone fields, whose last wrap need not be the wall; the grid spacing
+    for the whole-region morphs, whose last loop is the wall itself)."""
     levels = []
     curves = []
     pts = [cut_pts]
@@ -140,12 +148,12 @@ def march(field, cut_pts, t0=0.0, iters=30, max_levels=200):
     for _ in range(max_levels):
         tree = cKDTree(np.concatenate(pts))
         # remaining region within the law cap of the cut set: done
-        rem = np.isfinite(field.F) & (field.F > t + 1e-9)
+        rem = field.dom & (field.F > t + 1e-9)
         if not rem.any():
             break
-        rp = np.stack([GX[rem], GY[rem]], 1)
+        rp = np.stack([field.GX[rem], field.GY[rem]], 1)
         dmax = tree.query(rp)[0].max()
-        if dmax <= S:  # what is left lies within one pass of a cut
+        if dmax <= stop_within:  # what is left lies within this of a cut
             break
         lo, hi = t, None
         step = (field.fmax - t) / 1024.0
@@ -193,15 +201,19 @@ _OX, _OY = np.meshgrid(_off * H, _off * H)
 
 
 class Replay:
-    def __init__(self):
-        self.stock = STOCK0.copy()
-        self.clear_disc(SEED, 2 * R)  # the starter pocket: centre radius R
+    def __init__(self, stock0=None, mx=None, my=None, seed=None):
+        self.mx = MX if mx is None else mx
+        self.my = MY if my is None else my
+        self.stock = (STOCK0 if stock0 is None else stock0).copy()
+        self.clear_disc(SEED if seed is None else seed, 2 * R)  # the starter: centre radius R
 
     def clear_disc(self, c, r):
-        m = np.hypot(MGX - c[0], MGY - c[1]) <= r
+        gx, gy = np.meshgrid(self.mx, self.my)
+        m = np.hypot(gx - c[0], gy - c[1]) <= r
         self.stock &= ~m
 
     def _window(self, x, y):
+        MX, MY = self.mx, self.my
         j0 = int(round((x - MX[0]) / H))
         i0 = int(round((y - MY[0]) / H))
         ii = i0 + _off

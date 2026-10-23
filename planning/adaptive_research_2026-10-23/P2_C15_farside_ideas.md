@@ -3,8 +3,9 @@
 Status: PROTOTYPE COMPLETE (Python only; no Rust edited, no cargo run, no
 commit). Look page: `farside_ideas_v1.html`. Scripts:
 `phase2/c15/` (`geom.py`, `fields.py`, `march.py`, `harness_svg.py`,
-`run_c15.py`, `page.py`, `assert_c15.py`, `diag.py`). Run
-`python3 -I phase2/c15/run_c15.py`, then `page.py`, then `assert_c15.py`
+`run_c15.py`, `whole.py`, `shapes.py`, `page.py`, `assert_c15.py`, `diag.py`,
+`diag_whole.py`, `preview_whole.py`). Run
+`run_c15.py` and `whole.py`, then `page.py`, then `assert_c15.py`
 (about two minutes in all). `assert_c15.py` checks every number on the page
 and in this note.
 
@@ -259,3 +260,100 @@ wants the V behind the island rounded.
   (a) that a lattice must carry.
 - The Neumann condition of (b) is first order; (b) is rejected on its shape,
   which does not depend on that order.
+
+## 7. Addition (operator, 2026-10-24): whole-region morphs (e) and (f)
+
+The operator: other tools "don't start with this perfect spiral. They
+almost look half way between this and contour parallel." Two whole-region
+fields with no parameter, on the pocket AND the star, with the same level
+rule and the same replay. Script: `phase2/c15/whole.py` (`shapes.py` holds
+the star). The page shows them first, beside the v4 `geodesic_curv` and
+ContourSpiral renders (`phase2/renders4/`, the clearing cuts redrawn in the
+same frame).
+
+### Method
+
+- Entry disc: radius R about the seed. Source: `geodesic_segments` calls
+  `GeodesicField::on_lattice(lattice, inside, seed, r, ..)` with
+  `r = params.tool_radius`; the spiral starter ends on that lap. Seeds from
+  the v4 summaries: pocket (18.5, 18.5), star (49.5, 50.5).
+- Star: `fixtures/demo_star.svg`, world = SVG coordinates. Tool-centre
+  region = the polygon points at least R from its edges
+  (1777 mm² on the grid; pocket 2264 mm²). Every
+  sampled node of the star region sees the seed in a straight line
+  (fraction 1.00), so d_entry is straight there; on the pocket it is
+  the exact path round the island.
+- (e): Laplace u = 0 on the entry disc, u = 1 on every wall and the island;
+  Shortley–Weller arms at both boundaries (exact boundary crossing by
+  bisection), direct sparse solve.
+- (f): u = d_entry / (d_entry + d_wall), with d_wall the tool-centre
+  distance to the nearest wall or island (the material distance minus R).
+- Levels: the rule of §1 (every point of a new loop within the C5 law gap
+  of the cut, radius from the loop's own curvature). The march runs until
+  every node lies within one grid cell of a cut, so the last loop is the
+  wall itself (u → 1).
+- The loop seam (R of arc length after the start and before the end of a
+  loop) is left out of the interior reading, as the arc ends are in §1.
+- Gap evenness: per loop, the smallest gap divided by the largest gap to the
+  cut (1 is even). The first loop is left out (it is measured from the
+  starter lap).
+
+### Table
+
+<!-- whole:begin -->
+| Shape / idea | Levels / loops | All closed | Levels with 2+ loops (max) | Max gap mm | Min/max gap per loop: median, worst | Min radius mm | Replay interior D (over) | Area/mm D | Cut mm (× v4 geodesic_curv) | Residue mm² / wall dist mm |
+|---|---|---|---|---|---|---|---|---|---|---|
+| star (e) | 32 / 32 | yes | 0 (1) | 1.74 | 0.0243, 0.000100 | 0.72 | 0.8046 (69) | 0.3717 | 5516 (5.2) | 57.3 / 2.11 |
+| star (f) | 65 / 73 | yes | 7 (3) | 1.28 | 0.2055, 0.099149 | 0.72 | 0.9099 (1145) | 0.3526 | 10250 (9.7) | 56.7 / 2.11 |
+| pocket (e) | 58 / 68 | yes | 10 (2) | 2.00 | 0.0005, 0.000003 | 1.46 | 0.3651 (0) | 0.3746 | 10536 (7.8) | 0.0 / 0.00 |
+| pocket (f) | 49 / 49 | yes | 0 (1) | 1.14 | 0.1205, 0.049133 | 0.75 | 0.8972 (334) | 0.4029 | 3575 (2.7) | 2119.8 / 13.84 |
+<!-- whole:end -->
+
+v4 harness for comparison: star `geodesic_curv` 1051.5 mm, 73 entries;
+ContourSpiral 2850.6 mm, 101 entries. Pocket `geodesic_curv` 1343.7 mm, 63
+entries; ContourSpiral 2630.0 mm, 91 entries. (Those lengths include the
+wall pass and the residue passes; the (e)/(f) lengths are the loops only.)
+
+### Findings
+
+- **Closed loops.**
+  - Star (e): every level is ONE closed loop (32 loops in 32 levels).
+    The shape turns from a circle into the star: the look the operator
+    describes.
+  - Pocket (e): every loop is closed. Once the loops meet behind the island,
+    a level is two loops, one round the island and one along the wall
+    (10 levels). That is expected: the region with the island is not
+    simply connected.
+  - Star (f): 7 levels split into up to 3 loops near the tips.
+  - Pocket (f): the march stops at u = 0.7857. Behind the island u has a
+    second low basin (lowest value 0.7857); the sublevel set grown from the
+    entry reaches it only at u = 0.8347. A level between the two opens a
+    new loop in standing stock (a new entry), and the law rule cannot place
+    it next to a cut. 2120 mm² stay uncut.
+- **Spacing (the tips and corners).** One u per loop gives a gap of
+  Δu/|∇u|. The rule must hold the widest gap, so the loops crowd where
+  |∇u| is high.
+  - Star (e): the narrowest gap of a loop lies nearer an inner corner than a
+    tip in 31 of 31 loops; the widest lies nearer a tip in 13 of them.
+    Median min/max gap per loop 0.0243.
+  - Pocket (e): median 0.0005; the loops crowd round the island and
+    the walls near the entry.
+  - Cost: the loops of (e) are 5.2 times the v4 `geodesic_curv` cut length
+    on the star and 7.8 times on the pocket.
+- **Load.**
+  - Pocket (e) holds the ceiling in the loop interior (0.3651).
+  - Star (e) holds it except on the last 5 loops at 4 of the five tips
+    (0.8046; every such sample within 0.4 mm of the wall). The
+    3-point radius over the pass step cannot see a corner as sharp as the
+    tool-centre tip, so the law under-reads there.
+  - (f) has corners where the nearest wall changes (the medial axis):
+    0.9099 on the star, 0.8972 on the pocket.
+- **Verdict.** (e) gives the closed-loop, round-to-wall look on a region
+  without an island, and one closed loop per level would remove the per-arc
+  plunge (problem 2) there. But one level value per loop cannot give an even
+  gap, so it costs 5.2 times the cut length on the star, and the
+  island splits the late levels in two. (f) fails on load (medial-axis
+  corners) and, on the pocket, on coverage. Neither is a next Rust step. A
+  closed-loop morph that the operator would accept needs a gap that is even
+  along each loop: that is a spacing that varies along the loop (the C6
+  pass-count idea), not a level set of one field. §5 stands.
