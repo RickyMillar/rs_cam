@@ -1083,3 +1083,226 @@ Read in this order:
      rule (3);
    - the `intrinsic:` lines of the morph class with ρ.
 7. The `lobes piece 0` line: the three split cases.
+
+## C6 — transition join, local spacing, half-cell read (2026-10-23)
+
+Status: CODE COMPLETE, NOT RUN (no cargo; no commit). Base 7d2c8988 (D5).
+`rustfmt --edition 2024 --check` is clean on both files. Shipped code is
+not touched.
+
+### What D5 gave (start point)
+
+- `geodesic_curv` is the best state: star 73 = S1 J58 M0 P14 (0.3581, raw
+  145/2545); pocket 63 = S1 J34 M12 C6 P10 (0.4677, raw 260/2952).
+- Star joins: 97 refusals, all intrinsic (planned up to 0.90), so the
+  joins are the cost.
+- Pocket wraps: 763 refusals, of which 640 are cascades (behind the
+  island).
+- At D5 the law spiral (only in `curv_morph`) kept 12 intrinsic refusals
+  at 4.3 to 6.9 mm, reading 0.36 to 0.40.
+
+### (i) The transition join (`JoinRule::Transition`, `transition_fraction`, `transition_wrap`)
+
+- **Shape.**
+  - A closed wrap followed by the closed wrap one level up drifts out
+    over its final fraction `f` of arc length, from `T_k` to `T_{k+1}`.
+  - Each point of that fraction moves along the ray from its pivot (the
+    seed, or the bend node) to `T = T_k + λ(T_{k+1} − T_k)`, with λ from 0
+    to 1. The drift ends on the next wrap's seam, so there is no radial
+    step.
+  - The starter rim is level 0: it drifts out to the first closed wrap.
+  - A transition that leaves the region, or whose ray leaves the
+    reachable cells, falls back to the seam join and is counted.
+- **`f` derived.**
+  - The plain spacing leaves the margin `m = cD − w(ρ, Δ)`, where
+    `w = R − (a² − R² − ρ²)/(2ρ)` with `a = ρ − Δ + R` (the C5
+    circular-front width).
+  - The drift kinks the path at the start and the end of the fraction, by
+    β with `tan β = Δ/(f·L)`. The lateral drift per pass step of length
+    ℓ is `ℓ·tan β`.
+  - A step tilted by β into a band against a straight cleared edge costs
+    `R(1 − cos β) + h sin β`, with `h = √(R² − (R − Δ)²)` (the `EntryLaw`
+    bound). Held to m:
+    `β_max = atan2(R, h) + asin((m − R)/√(h² + R²))`.
+  - So **`f(ρ) = min(1, Δ/(L·tan β_max))`**. Where m ≤ 0, which is all
+    of ρ < ρ\* = 22.78 mm, f = 1. Then the whole wrap drifts: the spiral
+    form `T/s − φ/2π`, which has no kink and runs each turn parallel to
+    the turn before it.
+  - Past ρ\* the margin and L both grow, so f and the sector angle
+    `f·L/ρ_wrap` both shrink outward. The sectors therefore nest. This is
+    the condition for the spacing to stay ≤ Δ: a wider sector would meet
+    the plain wrap two levels down.
+  - Worked numbers (s 2, R 3, cD 2.1756):
+    - next level at 25 mm: m 0.016 mm, `f·L` = 455 mm, which is longer
+      than L, so f = 1;
+    - next level at 33 mm: m 0.055 mm, `f·L` ≈ 103 mm against L ≈ 195 mm,
+      so f ≈ 0.53.
+  - Δ under `CurvatureLocal` is the law's closed form from the wrap's own
+    radius (`law_next_radius`), the value `Curvature` uses when the pivot
+    is the seed.
+- **Open arcs keep the seam join: a result, not an omission.**
+  - One-way passes over an arc need an advance of Δ at the start end. The
+    arc ends on a wall, so the cutter meets the band head-on there.
+  - Alternation at one level per pass meets 2Δ at alternate ends.
+  - The only alternation within Δ is the half pitch: the C4 morph,
+    dropped by rule at D5.
+  - `JoinReport` counts the joins by kind (rim transition,
+    closed→closed transition, refused transition, closed→closed seam,
+    closed→arc, from an arc). That count is the measured ceiling of this
+    mechanism.
+
+### (ii) Local spacing (`Spacing::CurvatureLocal`, `GeodesicField::use_local_spacing`)
+
+- `ρ` is each node's distance from its source-tracking pivot: the centre
+  of curvature of the front through it (the seed, or the bend node behind
+  a wall).
+- The field is replaced by the pass count `U`, solved with `fast_sweep`
+  at speed `Δ(ρ) = min(s, s'(ρ))`, so `|∇U| = 1/Δ(ρ)`. The levels are the
+  integers. T keeps the branches, meeting lines and pivots.
+- Along a straight path from one pivot, U grows by `∫dρ/Δ`. Since `s'`
+  grows with ρ, a pass at ρ_k lies at most `s'(ρ_k)` outside the pass
+  before it.
+- Across a shadow line ρ jumps (the seed circle meets the tighter bend
+  circle). The sweep's solution stays continuous there, so the levels bend
+  instead of ending.
+- The seed nodes hold the rim's speed (a node at the seed centre has
+  ρ = 0).
+- **Known limits.**
+  - The sweep is first order (C2: up to 6 cells behind an island in T).
+    The error shifts the levels as a whole, so the spacing changes
+    little.
+  - Near a bend node `s'(ρ) → ρ·cD/R`, so the levels pack round each
+    island corner: more short arcs, so more arc joins. A floor on ρ needs
+    a derivation or a ruling; it is the next lever and is not built.
+  - `distance_mm` returns `U·s` under this spacing. Only the tests read
+    it, under plain spacing.
+  - `fast_sweep` stops at 24 rounds. The harness prints
+    `local-spacing sweep converged`; false there is a defect signal.
+
+### (iii) Half-cell read (`ReadResolution`, `run_2d_with`)
+
+- The raw readout and the cascade walk read the SAME raw plan at half the
+  planner cell. The producer, the shipped cleanup and its replay, and the
+  emitted readout stay at `max(R/6, tolerance)`, because the shipped
+  cleanup derives its own cell in `path.rs`.
+- **Request (not done):** a finer REPLAY needs a `pub(crate)` cell
+  parameter on `apply_residue_mop_cleanup` /
+  `apply_contour_parallel_residue_cleanup` in `path.rs`.
+- `CascadeReadout::near_ceiling` counts the intrinsic refusals with a
+  planned reading in `(c, c + cell/D]`, where cell is the read cell.
+- Columns `geodesic_curv_fine` and `geodesic_curv_join_fine`. The second
+  was added because `geodesic_curv` has no spiral, and the D5
+  near-ceiling refusals were spiral steps. The full-turn transitions of
+  `geodesic_curv_join` rebuild those steps.
+
+### Columns
+
+- **Default:** agent, contour_spiral, geodesic_g1, geodesic_a (control),
+  geodesic_curv (control), geodesic_curv_join, geodesic_curv_local,
+  geodesic_curv_local_join, geodesic_curv_fine, geodesic_curv_join_fine.
+- **With `ADAPTIVE_GEODESIC_EXTRA`:** geodesic_morph_alt and
+  geodesic_curv_morph (dropped by rule at D5), geodesic_morph_return,
+  geodesic_a_through, geodesic_a_ramp, geodesic_morph_alt_full.
+- The summary now has:
+  - a `joins piece` line;
+  - one `transition:` line per transition (level, ρ, Δ, f, sector,
+    applied);
+  - `local-spacing sweep converged`;
+  - the read cell and the near-ceiling count on the cascade line;
+  - the step class `clearing transition`.
+
+### Unit test (new)
+
+`the_transition_join_nests_its_sectors_on_a_disc` (tool-centre disc of
+35 mm, beyond ρ\*), under both `C6_JOIN` and `C6_LOCAL_JOIN`:
+
+- one rim transition, at least 2 closed→closed transitions, no fallback;
+- 0 < f ≤ 1, and f = 1 wherever ρ < ρ\*;
+- some f < 1 (the margin branch runs);
+- each sector ≤ the one before, plus `cell/ρ_wrap` (the contour gives a
+  wrap's length to about one cell).
+
+### Predictions (not run)
+
+| Column | Star (D5 73) | Pocket (D5 63) |
+|---|---|---|
+| geodesic_curv_join | 66 to 75 | 58 to 66 |
+| geodesic_curv_local | 70 to 76 | 55 to 75 |
+| geodesic_curv_local_join | ≈ curv_local minus the closed joins | ≈ curv_local minus 3 or 4 |
+| *_fine | = its control, exactly | = its control, exactly |
+
+- **geodesic_curv_join, star.**
+  - The star's closed levels reach about 15 mm (about 7 levels: the rim
+    plus 6 closed→closed transitions). So the transition can take about
+    7 of 58 J; the rest are arc joins (5 arms).
+  - J 58 → about 50.
+  - **The M side:** inside ρ\* every transition is a full-turn drift,
+    which is the spiral D5 read with 12 intrinsic refusals. So M 0 → 0
+    to 12. Net entries 66 to 75: maybe no gain.
+  - The class rows shift: those steps move from `wrap` to `transition`.
+    Compare totals.
+- **geodesic_curv_join, pocket.** About 3 to 4 closed levels. J 34 → 30
+  to 31; M + 0 to 6.
+- **geodesic_curv_local, star.** No island, so every pivot is the seed.
+  The only difference from `geodesic_curv` is the first-order sweep
+  against the exact remap: within a few entries (70 to 76). A larger gap
+  is the solver, not the law.
+- **geodesic_curv_local, pocket.** Levels pack behind the island's
+  corners: more wrap pieces and more arc joins (J up), but fewer cascades
+  than 640 of 763 wraps. Entries 55 to 75 (wide). Read `converged` first.
+- **The fine columns.** Entries, split and emitted max equal their
+  controls exactly; only the raw and cascade rows may move. The quantum
+  claim is that `near_ceiling` empties at the half cell (its band is half
+  as wide). It is not that the totals fall. If the 0.36–0.40 transition
+  steps of `curv_join` leave the band at half cell, the cause is the
+  measure's quantum. The next decision is the lead's (a finer planner
+  grid, or a one-cell margin). If they stay, the excess is real stock (the
+  drift).
+
+### What C6 changes on the controls' path (each change has no effect on the plan)
+
+- `Wrap.level`: a new field, set from the chain; nothing in the seam or
+  ramp path reads it.
+- Join counting: a counter beside the unchanged `join(&w.pts, …)` call; the
+  seam path emits the same segments.
+- `track_sources` returns the pivots: added output, the same T, branches
+  and parents.
+- The `PartIndex` `Transition` class: only `moved` paths are added, and
+  the seam columns have none.
+- The readouts take their cell as a parameter: `planner_cell` for every
+  default-resolution column.
+
+### Commands for the verifier (C6)
+
+Through `scripts/cargo_lane.sh`, each with a `timeout`:
+
+```text
+cargo fmt --all -- --check
+cargo test -p rs_cam_core --features research,test-support -q --lib research_geodesic
+cargo clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings
+cargo clippy -p rs_cam_core --all-targets -- -D warnings
+cargo test -p rs_cam_core --features research,test-support --release \
+    --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture
+```
+
+**Exact-match conditions (a difference is a defect: stop and report):**
+
+1. `geodesic_a`: star 92 = S1 J56 M20 P15, 0.3600, raw 206/2330; pocket
+   88 = S1 J42 M27 C4 P14, 0.3624, raw 289/2845.
+2. `geodesic_curv`: star 73 = S1 J58 M0 P14, 0.3581, raw 145/2545; pocket
+   63 = S1 J34 M12 C6 P10, 0.4677, raw 260/2952.
+3. `geodesic_curv_fine`: entries, split and emitted max equal
+   `geodesic_curv`'s.
+4. `geodesic_curv_join_fine`: entries, split and emitted max equal
+   `geodesic_curv_join`'s.
+
+**Then read:**
+
+1. The `joins piece` line of `curv_join` and `curv_local_join` (the
+   ceiling of the mechanism).
+2. Their `transition:` lines (f = 1 inside ρ\*; sectors nest).
+3. `clearing transition` in the raw tally and the cascade block.
+4. `near_ceiling` at the planner cell against the half cell, for both
+   fine columns.
+5. `local-spacing sweep converged`.
+6. The pocket cascades of `curv_local` against 640 of 763.

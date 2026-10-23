@@ -133,6 +133,36 @@
 //! contouring are as before. From `ρ*` out (the lobes, where the front is
 //! nearly straight) the spacing is plain.
 //!
+//! # The transition join (C6, [`JoinRule::Transition`])
+//!
+//! The seam join steps radially into the next level and the replay refuses
+//! it (D5: 58 of the 73 star entries are joins). The transition join takes
+//! no radial step: a closed wrap drifts out to the next level over its
+//! final fraction `f` of arc length and ends on the next wrap's seam
+//! ([`transition_fraction`] has the derivation of `f` from the margin the
+//! law leaves and the kink the drift makes). Inside `ρ*` the law leaves no
+//! margin, so `f = 1`: the whole wrap drifts, which is the spiral form
+//! `T/s - φ/2π` of the core spiral, applied to any closed wrap.
+//!
+//! An open arc cannot take a transition within one stepover. One-way
+//! passes over an arc need an advance of `Δ` at the start end (the arc
+//! ends on a wall, where the cutter meets the band head-on). Alternating
+//! passes with one level per pass meet `2Δ` at alternate ends; the only
+//! alternation within `Δ` is the half pitch ([`LobeMorph::Alternate`]),
+//! measured and dropped at D5. So arcs keep the seam join, and
+//! [`JoinReport`] counts which joins the transition can take.
+//!
+//! # The local spacing (C6, [`Spacing::CurvatureLocal`])
+//!
+//! Behind a wall the front is a circle about the bend node, not the seed.
+//! The local law uses each node's distance from its pivot as `ρ` and
+//! solves the pass count `U` with the Eikonal sweep
+//! ([`GeodesicField::use_local_spacing`]). Known limits: the sweep is
+//! first order (its error is in `U`, so the levels shift as a whole and
+//! their spacing changes little); close to a bend node `Δ(ρ)` falls
+//! linearly (`s'(ρ) → ρ·cD/R`), so the levels pack round every island
+//! corner. A floor on `ρ` needs a derivation or a ruling.
+//!
 //! # The cascade diagnostic (C5, [`CascadeReadout`])
 //!
 //! The replay stamps only the steps it accepts, so one refused step can
@@ -411,7 +441,9 @@ const NEIGHBOURS: [(isize, isize); 8] = [
 /// round cap is the lattice's `rows + cols`, the longest 4-connected
 /// lattice path, since a round moves the front at least one node. Returns
 /// the branch of each node, the parent of each branch (index = branch id)
-/// and true when a round changed nothing.
+/// the pivot of each node (the seed centre, or the bend node its straight
+/// path starts from; the seed for a node never reached), and true when a
+/// round changed nothing.
 fn track_sources(
     lattice: &Lattice,
     inside: &[bool],
@@ -420,7 +452,7 @@ fn track_sources(
     seed: P2,
     seed_radius: f64,
     walls: &Walls<'_>,
-) -> (Vec<u32>, Vec<u32>, bool) {
+) -> (Vec<u32>, Vec<u32>, Vec<P2>, bool) {
     let (rows, cols) = (lattice.rows, lattice.cols);
     let mut branches = Branches::default();
     let mut pivots: Vec<Option<Pivot>> = fixed
@@ -507,11 +539,12 @@ fn track_sources(
         }
     }
     let branch = pivots.iter().map(|p| p.map_or(0, |p| p.branch)).collect();
+    let at = pivots.iter().map(|p| p.map_or(seed, |p| p.at)).collect();
     // The parent of each branch: 0 for the root and its children.
     let parent = std::iter::once(0)
         .chain(branches.keys.iter().map(|&(parent, _, _)| parent))
         .collect();
-    (branch, parent, converged)
+    (branch, parent, at, converged)
 }
 
 /// The geodesic distance from an entry disc over a region whose holes and
@@ -537,6 +570,14 @@ pub struct GeodesicField {
     levels: Vec<f64>,
     /// The largest finite `T` (stepovers).
     max_t: f64,
+    /// The pivot of each node ([`track_sources`]; the seed under the
+    /// first-order solver).
+    pivot: Vec<P2>,
+    seed: P2,
+    seed_radius: f64,
+    /// C6: whether the sweep of `U` converged ([`Self::use_local_spacing`]);
+    /// `None` when the field is `T`.
+    local_converged: Option<bool>,
 }
 
 impl GeodesicField {
@@ -603,7 +644,7 @@ impl GeodesicField {
             .iter()
             .map(|&reach| if reach { stepover } else { f64::NAN })
             .collect();
-        let (passes, branch, branch_parent, converged) = match solver {
+        let (passes, branch, branch_parent, pivot, converged) = match solver {
             FieldSolver::FirstOrder => {
                 let mut passes: Vec<f64> = t_mm.iter().map(|t| t / stepover).collect();
                 let converged = fast_sweep(
@@ -615,10 +656,10 @@ impl GeodesicField {
                     lattice.cols,
                     lattice.cell,
                 );
-                (passes, vec![0; n], vec![0], converged)
+                (passes, vec![0; n], vec![0], vec![seed; n], converged)
             }
             FieldSolver::SourceTracking => {
-                let (branch, branch_parent, converged) = track_sources(
+                let (branch, branch_parent, pivot, converged) = track_sources(
                     &lattice,
                     &inside,
                     &fixed,
@@ -631,6 +672,7 @@ impl GeodesicField {
                     t_mm.iter().map(|t| t / stepover).collect(),
                     branch,
                     branch_parent,
+                    pivot,
                     converged,
                 )
             }
@@ -660,7 +702,86 @@ impl GeodesicField {
             converged,
             levels,
             max_t: max_pass,
+            pivot,
+            seed,
+            seed_radius,
+            local_converged: None,
         })
+    }
+
+    /// The pivot of the lattice node nearest `p` ([`track_sources`]).
+    fn pivot_near(&self, p: P2) -> Option<P2> {
+        self.nearest_node(p)
+            .and_then(|i| self.pivot.get(i).copied())
+    }
+
+    /// C6, [`Spacing::CurvatureLocal`]: replace the field by `U`, the
+    /// number of passes, solved by the Eikonal sweep (`fast_sweep`) with
+    /// the local spacing as its speed: `|∇U| = 1 / Δ(ρ)` with
+    /// `Δ(ρ) = min(s, s'(ρ))` ([`law_spacing`]) and `ρ` the node's distance
+    /// from its pivot (the centre of curvature of the front through it:
+    /// the seed, or the bend node behind a wall). The levels are then the
+    /// integers. The source-tracked `T` keeps its branches, meeting lines
+    /// and pivots; `U` is what is contoured, sampled and displaced on.
+    ///
+    /// Along a straight path from one pivot, `U` grows by
+    /// `∫ dρ / Δ(ρ)`, so a pass at `ρ_k` lies at most `s'(ρ_k)` outside the
+    /// pass before it (`s'` grows with `ρ`). Across a shadow line `ρ`
+    /// jumps (the seed circle meets the tighter bend circle); the sweep's
+    /// viscosity solution stays continuous there, so the levels bend
+    /// instead of ending.
+    fn use_local_spacing(&mut self, tool_radius: f64, ceiling_width: f64) {
+        let f = &self.field;
+        let (rows, cols, cell) = (f.rows, f.cols, f.cell);
+        let n = rows * cols;
+        let node = |i: usize| {
+            P2::new(
+                f.origin_x + (i % cols) as f64 * cell,
+                f.origin_y + (i / cols) as f64 * cell,
+            )
+        };
+        let mut speed = vec![f64::NAN; n];
+        let mut passes = vec![f64::INFINITY; n];
+        let mut fixed = vec![false; n];
+        for i in 0..n {
+            if self.inside.get(i).copied() != Some(true) {
+                continue;
+            }
+            let x = node(i);
+            let pivot = self.pivot.get(i).copied().unwrap_or(self.seed);
+            let rho = (x.x - pivot.x).hypot(x.y - pivot.y);
+            let delta = law_spacing(tool_radius, self.stepover, ceiling_width, rho);
+            if let Some(v) = speed.get_mut(i) {
+                *v = delta;
+            }
+            // The seed nodes, as the field seeds them: within one cell of
+            // the seed disc, their signed distance in local passes.
+            let d = (x.x - self.seed.x).hypot(x.y - self.seed.y);
+            if d <= self.seed_radius + cell {
+                // A seed node may sit at the seed centre (`ρ = 0`, a zero
+                // speed); it holds the rim's speed instead.
+                let rim = law_spacing(tool_radius, self.stepover, ceiling_width, self.seed_radius);
+                if let (Some(p), Some(fx), Some(v)) =
+                    (passes.get_mut(i), fixed.get_mut(i), speed.get_mut(i))
+                {
+                    *p = (d - self.seed_radius) / rim;
+                    *fx = true;
+                    *v = rim;
+                }
+            }
+        }
+        let converged = fast_sweep(&mut passes, &self.inside, &fixed, &speed, rows, cols, cell);
+        let max_u = passes
+            .iter()
+            .copied()
+            .filter(|v| v.is_finite())
+            .fold(0.0_f64, f64::max);
+        self.field.passes = passes;
+        self.field.stepover_mm = speed;
+        self.field.ring_count = max_u.floor() as usize;
+        self.levels = (0..=self.field.ring_count).map(|k| k as f64).collect();
+        self.max_t = max_u;
+        self.local_converged = Some(converged);
     }
 
     /// Space the levels by the curvature law ([`curvature_levels`]) for a
@@ -690,7 +811,10 @@ impl GeodesicField {
     }
 
     /// The geodesic distance (mm) at the lattice node nearest `p`, `None`
-    /// at an unreachable or unsolved node.
+    /// at an unreachable or unsolved node. Under
+    /// [`Spacing::CurvatureLocal`] the field is the pass count `U`, and
+    /// this returns `U·s`, not millimetres (only the tests read it, under
+    /// plain spacing).
     #[must_use]
     pub fn distance_mm(&self, p: P2) -> Option<f64> {
         let i = self.nearest_node(p)?;
@@ -1256,6 +1380,15 @@ pub enum JoinRule {
     /// in a lobe is cut as under [`JoinRule::Seam`], with the one-side
     /// meeting rule.
     Morph(LobeMorph),
+    /// C6, the transition join: a closed wrap followed by a closed wrap one
+    /// level up drifts outward over its final fraction `f` of arc length,
+    /// from its level to the next ([`transition_wrap`],
+    /// [`transition_fraction`]), and ends on the next wrap's seam, so the
+    /// join has no radial step. The starter rim is a wrap of level 0 for
+    /// this. Every other join (to or from an open arc) is the
+    /// [`JoinRule::Seam`] join: an open arc cannot take the transition
+    /// within one stepover (C6 note).
+    Transition,
 }
 
 /// How the legs of a lobe run between consecutive arcs `A_k` and `A_{k+1}`
@@ -1313,6 +1446,11 @@ pub enum Spacing {
     /// The curvature law ([`curvature_levels`]): closer while the front is
     /// a tight circle about the seed, one stepover from `ρ*` out.
     Curvature,
+    /// C6: the curvature law with `ρ` the local centre of curvature, the
+    /// node's distance from its pivot (the seed, or the bend node behind a
+    /// wall), solved as a field of passes
+    /// ([`GeodesicField::use_local_spacing`]).
+    CurvatureLocal,
 }
 
 /// The research options of candidate (a).
@@ -1365,6 +1503,22 @@ impl GeodesicOptions {
         spacing: Spacing::Curvature,
         ..Self::C4_ALT
     };
+    /// C6: the curvature law with the transition join.
+    pub const C6_JOIN: Self = Self {
+        join: JoinRule::Transition,
+        ..Self::C5_CURV
+    };
+    /// C6: the local-curvature law (centre of curvature from the source),
+    /// the G1 join.
+    pub const C6_LOCAL: Self = Self {
+        spacing: Spacing::CurvatureLocal,
+        ..Self::C2
+    };
+    /// C6: the local-curvature law with the transition join.
+    pub const C6_LOCAL_JOIN: Self = Self {
+        join: JoinRule::Transition,
+        ..Self::C6_LOCAL
+    };
 }
 
 /// Where a wrap's ramp starts from.
@@ -1383,6 +1537,8 @@ struct Wrap {
     /// The level set, oriented for cutting (a loop closed on its seam).
     pts: Vec<P2>,
     closed: bool,
+    /// The level (C6: the transition join drifts to the next one).
+    level: usize,
     parent: ParentRef,
 }
 
@@ -1687,6 +1843,7 @@ fn ordered_wraps(
         out.push(Wrap {
             pts,
             closed: chain.closed,
+            level: chain.level,
             parent,
         });
         last = Some(i);
@@ -1866,6 +2023,197 @@ fn circle_from(c: P2, radius: f64, phi0: f64, tolerance: f64) -> Vec<P2> {
 
 // ── The morph join (C4) ────────────────────────────────────────────────
 
+/// `s'(ρ) = ρ + R - √(R² + ρ² + 2ρ(R - c·D))`: the spacing that puts a pass
+/// at cutter-centre radius `rho` round a cleared disc on the ceiling width
+/// `ceiling_width` (`c·D`); derivation at [`curvature_levels`].
+fn spacing_bound(tool_radius: f64, ceiling_width: f64, rho: f64) -> f64 {
+    let r = tool_radius;
+    rho + r - (r * r + rho * rho + 2.0 * rho * (r - ceiling_width)).sqrt()
+}
+
+/// The radius of the next pass after a pass at `rho` under the law (C5),
+/// read at the OUTER pass: the root of `ρ' = rho + s'(ρ')`,
+/// `ρ' = -(R - cD) + √((R - cD)² + (rho + R)² - R²)`, capped at
+/// `rho + stepover` ([`curvature_levels`] has the derivation).
+fn law_next_radius(tool_radius: f64, stepover: f64, ceiling_width: f64, rho: f64) -> f64 {
+    let r = tool_radius;
+    let b = r - ceiling_width;
+    (-b + (b * b + (rho + r).powi(2) - r * r).sqrt()).min(rho + stepover)
+}
+
+/// The law's spacing at `rho`: `s'(ρ)` capped at the stepover (C5).
+fn law_spacing(tool_radius: f64, stepover: f64, ceiling_width: f64, rho: f64) -> f64 {
+    spacing_bound(tool_radius, ceiling_width, rho)
+        .min(stepover)
+        .max(0.0)
+}
+
+/// The swept width (mm) of a pass at cutter-centre radius `rho`, `delta`
+/// outside the passes before it, round a cleared disc (C5):
+/// `R - (a² - R² - ρ²) / (2ρ)`, `a = ρ - Δ + R`.
+fn circular_front_width(tool_radius: f64, rho: f64, delta: f64) -> f64 {
+    let r = tool_radius;
+    let a = rho - delta + r;
+    r - (a * a - r * r - rho * rho) / (2.0 * rho)
+}
+
+/// The fraction `f` of a closed wrap's arc length over which the transition
+/// join (C6, [`JoinRule::Transition`]) drifts out by `delta` (mm) to the
+/// next level, for a wrap of `length` (mm) whose next level lies at
+/// cutter-centre radius `rho` from its centre of curvature.
+///
+/// - The plain spacing leaves the margin `m = c·D - w(ρ, Δ)`
+///   ([`circular_front_width`]) under the ceiling width. Inside `ρ*` the
+///   law spends all of it (`m = 0`).
+/// - Where the transition starts and ends, the path kinks by `β`, with
+///   `tan β = Δ / (f·L)` (the lateral drift per pass step of length `ℓ` is
+///   `ℓ·tan β`). A step tilted by `β` into a band of depth `d` against a
+///   straight cleared edge sweeps `d + R(1 - cos β) + h sin β`,
+///   `h = √(R² - (R - d)²)` ([`EntryLaw`]), so the kink costs
+///   `R(1 - cos β) + h sin β` over the plain width. Held to `m`:
+///   `h sin β - R cos β ≤ m - R`, so
+///   `β_max = φ₀ + asin((m - R)/ρ_h)`, `ρ_h = √(h² + R²)`, `φ₀ = atan2(R, h)`.
+/// - So `f = Δ / (L·tan β_max)`, at most 1. Where `m ≤ 0` (inside `ρ*`),
+///   `f = 1`: the drift spreads over the whole wrap, the spiral form
+///   `T/s - φ/2π` of the core spiral. It has no kink, and each turn runs
+///   parallel to the turn before it, so it meets the spacing `Δ` and no
+///   tilt.
+///
+/// From `ρ*` out the margin grows with `ρ` and `L` with it, so `f` and the
+/// sector angle `f·L/ρ` (on the wrap) shrink outward. The sectors therefore nest: each
+/// transition runs over the transition before it, which is the condition
+/// for its spacing to stay at most `Δ` (a wider sector would meet the plain
+/// wrap two levels down).
+fn transition_fraction(
+    tool_radius: f64,
+    ceiling_width: f64,
+    rho: f64,
+    delta: f64,
+    length: f64,
+) -> f64 {
+    let r = tool_radius;
+    let margin = ceiling_width - circular_front_width(r, rho, delta);
+    if margin <= 0.0 || length <= 0.0 {
+        return 1.0;
+    }
+    let h = (r * r - (r - delta).max(0.0).powi(2)).max(0.0).sqrt();
+    let rho_h = h.hypot(r);
+    let beta = r.atan2(h) + ((margin - r) / rho_h).clamp(-1.0, 1.0).asin();
+    if beta <= 0.0 {
+        return 1.0;
+    }
+    (delta / (length * beta.tan())).min(1.0)
+}
+
+/// One transition of the transition join (C6).
+#[derive(Debug, Clone, Copy)]
+pub struct TransitionRecord {
+    /// The level the wrap lies on (the transition goes to the next one).
+    pub level: usize,
+    /// The radius (mm) of the next level about the wrap's centre of
+    /// curvature (its seam point's pivot).
+    pub rho: f64,
+    /// The spacing (mm) to the next level.
+    pub delta: f64,
+    /// The fraction `f` of the wrap's length ([`transition_fraction`]).
+    pub fraction: f64,
+    /// The sector angle (rad) of the transition on the wrap,
+    /// `f·L / ρ_wrap` (`2πf` on a circle about the centre).
+    pub sector: f64,
+    /// False when the transition could not be traced inside the region
+    /// (the wrap then closes on its seam, the G1 join).
+    pub applied: bool,
+}
+
+/// How the wraps of a plan join (C6), counted for every join rule except
+/// the morph.
+#[derive(Debug, Clone, Default)]
+pub struct JoinReport {
+    /// The starter rim drifted out to the first closed wrap.
+    pub rim_transition: usize,
+    /// Closed wrap to the closed wrap one level up, by a transition.
+    pub closed_transition: usize,
+    /// Closed to closed, the transition refused (left the region or the
+    /// ray left the reachable cells): the seam join.
+    pub transition_fallback: usize,
+    /// Closed to closed by the seam join (no transition asked for).
+    pub closed_seam: usize,
+    /// Closed wrap to an open arc (the seam join).
+    pub closed_to_arc: usize,
+    /// From an open arc to the next wrap (the seam join).
+    pub from_arc: usize,
+    /// Each transition traced, in cutting order.
+    pub transitions: Vec<TransitionRecord>,
+}
+
+/// The transition of the closed wrap `pts` (oriented, closed on its seam)
+/// from level `level` to the next (C6): the points of its final fraction
+/// `f` of arc length move out along the ray from their pivot to
+/// `T = T_k + λ (T_{k+1} - T_k)`, `λ` from 0 to 1 over that fraction.
+/// Returns the path and the index of its first moved point. `None` when a
+/// ray leaves the reachable cells or a segment leaves the region.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input of one planning call"
+)]
+fn transition_wrap(
+    field: &GeodesicField,
+    region: &ToolCentreRegion,
+    pts: &[P2],
+    level: usize,
+    fraction: f64,
+    cell: f64,
+    tolerance: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<Option<(Vec<P2>, usize)>, Cancelled> {
+    let sub = subdivide(pts, cell);
+    let total = polyline_length(&sub);
+    if total <= 0.0 || fraction <= 0.0 {
+        return Ok(None);
+    }
+    let start = (1.0 - fraction) * total;
+    let (t0, t1) = (field.level_value(level), field.level_value(level + 1));
+    let mut out: Vec<P2> = Vec::with_capacity(sub.len());
+    let mut moved_from: Option<usize> = None;
+    let mut walked = 0.0_f64;
+    let mut prev: Option<P2> = None;
+    for &p in &sub {
+        check_cancel(cancel)?;
+        if let Some(q) = prev {
+            walked += (p.x - q.x).hypot(p.y - q.y);
+        }
+        prev = Some(p);
+        if walked < start {
+            out.push(p);
+            continue;
+        }
+        moved_from.get_or_insert(out.len());
+        let lambda = ((walked - start) / (fraction * total)).clamp(0.0, 1.0);
+        let t = t0 + lambda * (t1 - t0);
+        let Some(pivot) = field.pivot_near(p) else {
+            return Ok(None);
+        };
+        let (dx, dy) = (p.x - pivot.x, p.y - pivot.y);
+        let r0 = dx.hypot(dy);
+        if r0 <= 0.0 {
+            return Ok(None);
+        }
+        let phi = dy.atan2(dx);
+        let Some(r) = field.radius_at(pivot, phi, r0, t, tolerance) else {
+            return Ok(None);
+        };
+        out.push(P2::new(pivot.x + r * phi.cos(), pivot.y + r * phi.sin()));
+    }
+    let inside = out.windows(2).all(|w| match w {
+        &[a, b] => region.contains_segment(a, b),
+        _ => true,
+    });
+    Ok(inside.then(|| {
+        let from = moved_from.unwrap_or(out.len());
+        (out, from)
+    }))
+}
+
 /// The levels of the spacing law (C5, [`Spacing::Curvature`]): the values
 /// of `T` (mm) of the wraps, from 0 (the starter rim) up to `t_max_mm`.
 ///
@@ -1910,7 +2258,7 @@ fn curvature_levels(
     // `s'` grows with `ρ`, so each level moves at least the first step
     // (positive), and the walk ends at `t_max_mm`.
     while rho - r < t_max_mm {
-        let next = (-b + (b * b + (rho + r).powi(2) - r * r).sqrt()).min(rho + stepover);
+        let next = law_next_radius(r, stepover, ceiling_width, rho);
         if next <= rho || !next.is_finite() {
             break;
         }
@@ -2528,6 +2876,11 @@ pub struct FieldReport {
     pub spiral_levels: usize,
     /// The lobe counts of the morph join (all 0 under the other joins).
     pub lobes: LobeReport,
+    /// C6: how the wraps join (every join rule but the morph).
+    pub joins: JoinReport,
+    /// C6: whether the sweep of the local-spacing field converged
+    /// ([`Spacing::CurvatureLocal`]); `None` under the other spacings.
+    pub local_converged: Option<bool>,
 }
 
 /// The planner input every producer of one piece shares.
@@ -2690,8 +3043,10 @@ fn geodesic_segments(
     else {
         return Ok(None);
     };
-    if options.spacing == Spacing::Curvature {
-        field.use_curvature_spacing(r, pass.ceiling * 2.0 * r);
+    match options.spacing {
+        Spacing::Plain => {}
+        Spacing::Curvature => field.use_curvature_spacing(r, pass.ceiling * 2.0 * r),
+        Spacing::CurvatureLocal => field.use_local_spacing(r, pass.ceiling * 2.0 * r),
     }
 
     let reach = s + (1.0 + SQRT_2) * cell;
@@ -2732,6 +3087,8 @@ fn geodesic_segments(
             branches: field.branch_count(),
             spiral_levels: core_levels,
             lobes,
+            joins: JoinReport::default(),
+            local_converged: field.local_converged,
         };
         let mut parts = PartIndex::new(cell);
         parts.add(&core, StepPart::Spiral);
@@ -2792,7 +3149,7 @@ fn geodesic_segments(
         options,
         cancel,
     )?;
-    let report = FieldReport {
+    let mut report = FieldReport {
         applied: true,
         seed: Some(seed),
         seed_radius: r,
@@ -2802,11 +3159,18 @@ fn geodesic_segments(
         branches: field.branch_count(),
         spiral_levels,
         lobes: LobeReport::default(),
+        joins: JoinReport::default(),
+        local_converged: field.local_converged,
     };
     let nominal: Vec<Vec<P2>> = wraps.iter().map(|w| w.pts.clone()).collect();
+    // C6: the rim drifts out to the first wrap when that is a closed wrap
+    // of level 1 (the transition join).
+    let transition = options.join == JoinRule::Transition;
+    let rim_first = transition && wraps.first().is_some_and(|w| w.closed && w.level == 1);
 
     let first = match law {
         Some(_) => Some(starter_end),
+        None if rim_first => Some(starter_end),
         None => wraps.iter().find_map(|w| w.pts.first().copied()),
     };
     if let Some(first) = first {
@@ -2823,11 +3187,99 @@ fn geodesic_segments(
             append_path(path, run, cur, segments, reach);
         };
 
+    let mut moved: Vec<Vec<P2>> = Vec::new();
     match law {
         None => {
-            for path in &wraps {
-                join(&path.pts, &mut run, &mut cur, &mut segments);
+            let cd = pass.ceiling * 2.0 * r;
+            let mut joins = JoinReport::default();
+            // The transition of a closed wrap at `level` to the next level:
+            // its fraction (the radius and spacing read at its last point's
+            // pivot) and its path.
+            let mut drift = |pts: &[P2],
+                             level: usize,
+                             joins: &mut JoinReport|
+             -> Result<Option<Vec<P2>>, Cancelled> {
+                let Some(&end) = pts.last() else {
+                    return Ok(None);
+                };
+                let pivot = field.pivot_near(end).unwrap_or(seed);
+                let rho_here = (end.x - pivot.x).hypot(end.y - pivot.y);
+                let delta = match options.spacing {
+                    Spacing::Plain => s,
+                    Spacing::Curvature => {
+                        (field.level_value(level + 1) - field.level_value(level)) * s
+                    }
+                    // The law read at the outer pass, as the levels of
+                    // `Curvature` are (the same value when the pivot is the
+                    // seed).
+                    Spacing::CurvatureLocal => law_next_radius(r, s, cd, rho_here) - rho_here,
+                };
+                let rho = rho_here + delta;
+                let length = polyline_length(pts);
+                let fraction = transition_fraction(r, cd, rho, delta, length);
+                let traced = transition_wrap(
+                    &field,
+                    &region,
+                    pts,
+                    level,
+                    fraction,
+                    cell,
+                    params.tolerance,
+                    cancel,
+                )?;
+                joins.transitions.push(TransitionRecord {
+                    level,
+                    rho,
+                    delta,
+                    fraction,
+                    sector: fraction * length / rho_here.max(f64::EPSILON),
+                    applied: traced.is_some(),
+                });
+                Ok(traced.map(|(path, from)| {
+                    if let Some(part) = path.get(from.saturating_sub(1)..) {
+                        moved.push(part.to_vec());
+                    }
+                    path
+                }))
+            };
+            if rim_first {
+                let rim = circle_from(seed, r, phi0, params.tolerance);
+                match drift(&rim, 0, &mut joins)? {
+                    Some(path) => {
+                        joins.rim_transition += 1;
+                        join(&path, &mut run, &mut cur, &mut segments);
+                    }
+                    None => joins.transition_fallback += 1,
+                }
             }
+            for (i, w) in wraps.iter().enumerate() {
+                let next = wraps.get(i + 1);
+                let to_closed = next.is_some_and(|n| n.closed && n.level == w.level + 1);
+                let mut path: Option<Vec<P2>> = None;
+                if w.closed && to_closed {
+                    if transition {
+                        path = drift(&w.pts, w.level, &mut joins)?;
+                        if path.is_some() {
+                            joins.closed_transition += 1;
+                        } else {
+                            joins.transition_fallback += 1;
+                        }
+                    } else {
+                        joins.closed_seam += 1;
+                    }
+                } else if next.is_some() {
+                    if w.closed {
+                        joins.closed_to_arc += 1;
+                    } else {
+                        joins.from_arc += 1;
+                    }
+                }
+                match path {
+                    Some(p) => join(&p, &mut run, &mut cur, &mut segments),
+                    None => join(&w.pts, &mut run, &mut cur, &mut segments),
+                }
+            }
+            report.joins = joins;
         }
         Some(law) => {
             let rim = circle_from(seed, outer, phi0, params.tolerance);
@@ -2875,6 +3327,9 @@ fn geodesic_segments(
     }
     let mut parts = PartIndex::new(cell);
     parts.add(&spiral, StepPart::Spiral);
+    for m in &moved {
+        parts.add(m, StepPart::Transition);
+    }
     for w in &nominal {
         parts.add(w, StepPart::Wrap);
     }
@@ -2975,6 +3430,8 @@ pub enum StepPart {
     Morph,
     /// On the return of [`LobeMorph::Return`] through cleared stock.
     Return,
+    /// On the moved part of a transition ([`JoinRule::Transition`], C6).
+    Transition,
     /// On a planned wrap (its end within one cell of the wrap polyline).
     Wrap,
     /// Off every planned piece: a ramp, a back-run, a seam step, an
@@ -2991,6 +3448,7 @@ impl StepPart {
             Self::Spiral => "spiral",
             Self::Morph => "morph leg",
             Self::Return => "return",
+            Self::Transition => "transition",
             Self::Wrap => "on a wrap",
             Self::Join => "join (ramp, back-run or seam step)",
         }
@@ -3004,6 +3462,7 @@ impl StepPart {
             Self::Spiral => "spiral",
             Self::Morph => "morph",
             Self::Return => "return",
+            Self::Transition => "transition",
             Self::Wrap => "wrap",
             Self::Join => "join",
         }
@@ -3013,7 +3472,7 @@ impl StepPart {
 /// The planned polylines of candidate (a) by [`StepPart`], to classify
 /// each step of the raw plan: a step whose end AND midpoint lie within one
 /// cell of a polyline is on that part (the first match in the order
-/// spiral, morph leg, return, wrap); else it is a join. (C5: the midpoint
+/// spiral, morph leg, return, transition, wrap); else it is a join. (C5: the midpoint
 /// test is new; at C4 a radial join step that ended on the next wrap was
 /// classed "wrap".) One cell is the lattice the
 /// pieces were traced on. A return runs on its leg's polyline the other
@@ -3070,6 +3529,7 @@ impl PartIndex {
             StepPart::Spiral,
             StepPart::Morph,
             StepPart::Return,
+            StepPart::Transition,
             StepPart::Wrap,
         ]
         .into_iter()
@@ -3174,8 +3634,8 @@ fn pass_load_readout(
     params: &AdaptiveParams,
     segments: &[AdaptiveSegment],
     parts: Option<&PartIndex>,
+    cell: f64,
 ) -> PassLoadReadout {
-    let cell = planner_cell(params);
     let r = params.tool_radius;
     let pass = pass_load_for(params, cell);
     let mut out = PassLoadReadout {
@@ -3386,6 +3846,14 @@ pub struct CascadeReadout {
     pub first_of_piece: Vec<Refusal>,
     /// Every intrinsic refusal, in plan order.
     pub intrinsic: Vec<Refusal>,
+    /// C6: the intrinsic refusals whose planned reading lies in the first
+    /// lattice quantum over the ceiling, `(c, c + cell/D]`, with `cell` the
+    /// lattice the walk read on ([`Self::read_cell`]). The lattice reads an
+    /// edge up to one cell off (`PassLoad::swept_width`), so a refusal in
+    /// that band may be the measure's quantum, not the stock.
+    pub near_ceiling: usize,
+    /// The lattice cell (mm) the walk read on.
+    pub read_cell: f64,
 }
 
 impl CascadeReadout {
@@ -3395,6 +3863,8 @@ impl CascadeReadout {
         }
         self.first_of_piece.extend_from_slice(&other.first_of_piece);
         self.intrinsic.extend_from_slice(&other.intrinsic);
+        self.near_ceiling += other.near_ceiling;
+        self.read_cell = self.read_cell.max(other.read_cell);
     }
 
     /// Add the counts of `t` to the tally of its label.
@@ -3489,6 +3959,10 @@ impl CascadeWalk {
         });
         if !cascade {
             self.out.intrinsic.push(refusal);
+            let quantum = self.out.read_cell / (2.0 * self.tool_radius);
+            if planned <= self.pass.ceiling + quantum {
+                self.out.near_ceiling += 1;
+            }
         }
         if !self.piece_refused {
             self.piece_refused = true;
@@ -3538,16 +4012,17 @@ impl CascadeWalk {
 }
 
 /// The cascade diagnostic ([`CascadeReadout`]) of the raw plan `segments`
-/// of one piece. `parts` classes the clearing steps as in
-/// [`pass_load_readout`]; `seed` gives each refusal its distance.
+/// of one piece, read on a lattice of `cell`. `parts` classes the clearing
+/// steps as in [`pass_load_readout`]; `seed` gives each refusal its
+/// distance.
 fn cascade_readout(
     polygon: &Polygon2,
     params: &AdaptiveParams,
     segments: &[AdaptiveSegment],
     parts: Option<&PartIndex>,
     seed: Option<P2>,
+    cell: f64,
 ) -> CascadeReadout {
-    let cell = planner_cell(params);
     let (Some(plan), Some(replay)) = (
         PieceSetup::new(polygon, params, cell),
         PieceSetup::new(polygon, params, cell),
@@ -3563,7 +4038,10 @@ fn cascade_readout(
         piece: None,
         piece_refused: false,
         seed,
-        out: CascadeReadout::default(),
+        out: CascadeReadout {
+            read_cell: cell,
+            ..CascadeReadout::default()
+        },
     };
     let r = params.tool_radius;
     let step_len = pass_step_len(cell);
@@ -3868,6 +4346,33 @@ fn cleaned(
 /// field does not apply is not planned; its [`FieldReport`] says so.
 #[must_use]
 pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2d) -> Run2d {
+    run_2d_with(outline, params, candidate, ReadResolution::Planner)
+}
+
+/// The lattice the research readouts of the RAW plan read on (C6, harness
+/// only). The producer, the shipped cleanup and its replay, and the
+/// readout of the emitted plan stay on the planner cell
+/// (`max(R/6, tolerance)`, `path.rs` `planner_cell_size`): the shipped
+/// cleanup derives its own cell, so a finer replay would need a seam in
+/// `path.rs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadResolution {
+    /// The planner cell.
+    Planner,
+    /// Half the planner cell: the same plan read at twice the lattice
+    /// resolution, to tell the measure's one-cell quantum from stock.
+    HalfCell,
+}
+
+/// [`run_2d`] with the raw-plan readouts (`Summary2d::raw_pass_load`,
+/// `Summary2d::cascade`) read at `read` ([`ReadResolution`]).
+#[must_use]
+pub fn run_2d_with(
+    outline: &Polygon2,
+    params: &AdaptiveParams,
+    candidate: Candidate2d,
+    read: ReadResolution,
+) -> Run2d {
     let never: &dyn CancelCheck = &|| false;
     let strategy = match candidate {
         Candidate2d::Shipped(s) => s,
@@ -3924,7 +4429,11 @@ pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2
             continue;
         };
         let cell = planner_cell(&params);
-        let raw_load = pass_load_readout(piece, &params, &raw, piece_parts.as_ref());
+        let read_cell = match read {
+            ReadResolution::Planner => cell,
+            ReadResolution::HalfCell => cell / 2.0,
+        };
+        let raw_load = pass_load_readout(piece, &params, &raw, piece_parts.as_ref(), read_cell);
         run.summary.raw_pass_load.merge(&raw_load);
         run.summary.cascade.merge(&cascade_readout(
             piece,
@@ -3932,6 +4441,7 @@ pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2
             &raw,
             piece_parts.as_ref(),
             piece_seed,
+            read_cell,
         ));
         let segments = cleaned(piece, &params, raw);
         run.summary
@@ -3944,7 +4454,7 @@ pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2
         run.spans.extend(spans_of(&segments));
         run.summary
             .pass_load
-            .merge(&pass_load_readout(piece, &params, &segments, None));
+            .merge(&pass_load_readout(piece, &params, &segments, None, cell));
         run.summary.retracts += tp
             .moves
             .iter()
@@ -4368,6 +4878,67 @@ mod tests {
                 );
             }
             prev_step = step;
+        }
+    }
+
+    /// C6: the transition join on a disc large enough to pass `ρ*`. The rim
+    /// and every closed wrap drift out to the next level (one rim
+    /// transition, the rest closed to closed, all traced inside the
+    /// region); inside `ρ*` the fraction is 1 (the whole wrap, the spiral
+    /// form); it is at most 1 everywhere and under 1 somewhere past `ρ*`
+    /// (the margin branch runs); and the sectors nest: each sector angle is
+    /// at most the one before, to the angle of one cell at that radius (the
+    /// contour gives a wrap's length to about one cell).
+    #[test]
+    fn the_transition_join_nests_its_sectors_on_a_disc() {
+        let params = test_params();
+        let (s, tol) = op_defaults();
+        let cell = planner_cell_size(R, tol);
+        let disc_radius = 35.0;
+        let part = Polygon2::new(circle(P2::new(0.0, 0.0), disc_radius + R, cell));
+        let never: &dyn CancelCheck = &|| false;
+        let cd = pass_load_for(&params, cell).ceiling * 2.0 * R;
+        let rho_star = s * (2.0 * R - s) / (2.0 * (cd - s));
+        // The disc has no wall inside, so every pivot is the seed and the
+        // local law reads the same radius as the remapped law.
+        for options in [GeodesicOptions::C6_JOIN, GeodesicOptions::C6_LOCAL_JOIN] {
+            let produced = geodesic_segments(&part, &params, options, never)
+                .expect("not cancelled")
+                .expect("the field applies on a disc");
+            let j = &produced.report.joins;
+            assert_eq!(
+                j.rim_transition, 1,
+                "the rim drifts to the first wrap: {j:?}"
+            );
+            assert!(j.closed_transition >= 2, "closed wraps drift: {j:?}");
+            assert_eq!(
+                j.transition_fallback, 0,
+                "every transition is traced: {j:?}"
+            );
+            assert!(j.transitions.iter().all(|r| r.applied), "{j:?}");
+            for r in &j.transitions {
+                assert!(r.fraction > 0.0 && r.fraction <= 1.0, "{r:?}");
+                if r.rho < rho_star {
+                    assert!(
+                        (r.fraction - 1.0).abs() < 1e-12,
+                        "inside ρ* = {rho_star:.3} the transition takes the whole wrap: {r:?}"
+                    );
+                }
+            }
+            assert!(
+                j.transitions.iter().any(|r| r.fraction < 1.0),
+                "past ρ* the margin shortens a transition: {j:?}"
+            );
+            for pair in j.transitions.windows(2) {
+                let [a, b] = pair else {
+                    continue;
+                };
+                let wrap_radius = a.rho - a.delta;
+                assert!(
+                    b.sector <= a.sector + cell / wrap_radius,
+                    "the sectors nest: {a:?} then {b:?}"
+                );
+            }
         }
     }
 

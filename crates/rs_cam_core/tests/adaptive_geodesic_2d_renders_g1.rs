@@ -10,21 +10,29 @@
 //! protocol").
 //!
 //! - Strategies: `PathStrategy2d::Agent`, `PathStrategy2d::ContourSpiral`
-//!   and candidate (a) five times: `geodesic_g1` (`GeodesicOptions::G1`,
-//!   the form of the G1 look, the "before"), `geodesic_a`
-//!   (`GeodesicOptions::C2`, the G1 fixes with the G1 join, the C3 state,
-//!   the control), `geodesic_morph_alt` (`GeodesicOptions::C4_ALT`: the
-//!   morph join, the core spiral and half-pitch alternating legs in the
-//!   lobes), `geodesic_curv` (`GeodesicOptions::C5_CURV`: the curvature
-//!   spacing law, plain wraps and the G1 join) and `geodesic_curv_morph`
-//!   (`GeodesicOptions::C5_CURV_MORPH`: the spacing law and the morph).
+//!   and candidate (a):
+//!   - `geodesic_g1` (`GeodesicOptions::G1`, the form of the G1 look);
+//!   - `geodesic_a` (`GeodesicOptions::C2`, the C3 state; a control);
+//!   - `geodesic_curv` (`GeodesicOptions::C5_CURV`, the curvature spacing
+//!     law with plain wraps and the G1 join; a control, the best state at
+//!     D5);
+//!   - `geodesic_curv_join` (`GeodesicOptions::C6_JOIN`, the law and the
+//!     transition join);
+//!   - `geodesic_curv_local` (`GeodesicOptions::C6_LOCAL`, the law with the
+//!     local centre of curvature from the source tracking) and
+//!     `geodesic_curv_local_join` (the same with the transition join);
+//!   - `geodesic_curv_fine` (`geodesic_curv` with its raw-plan readouts
+//!     read at half the planner cell, `ReadResolution::HalfCell`; the
+//!     plan, the replay and the emitted readout stay at the planner cell,
+//!     so its entries must equal `geodesic_curv`'s) and
+//!     `geodesic_curv_join_fine` (the same for `geodesic_curv_join`, whose
+//!     full-turn transitions inside `ρ*` rebuild the spiral steps that read
+//!     0.36 to 0.40 at D5).
 //! - The record columns, only when `ADAPTIVE_GEODESIC_EXTRA` is set (any
-//!   value): `geodesic_morph_return` (`GeodesicOptions::C4_RETURN`, one-way
-//!   legs and a return; D4: more entries than the alternation),
-//!   `geodesic_a_through` (the fixes with the G1 meeting rule),
-//!   `geodesic_a_ramp` (the ramp join that C3 reverted, for its
-//!   refused-step dump) and `geodesic_morph_alt_full` (the brief's literal
-//!   alternation, one leg per band, for its refused-step dump). The 2D op exposes no contour-parallel strategy: its
+//!   value): `geodesic_morph_alt` and `geodesic_curv_morph` (the morph,
+//!   dropped by the C5 rule at D5), `geodesic_morph_return`,
+//!   `geodesic_a_through`, `geodesic_a_ramp` and `geodesic_morph_alt_full`.
+//! - The 2D op exposes no contour-parallel strategy: its
 //!   contour-parallel path runs only behind the narrow-region gate
 //!   (`CleanupStrategy::ContourParallelNarrow` / `Hybrid`), so it is not a
 //!   column here.
@@ -86,7 +94,7 @@ use std::path::PathBuf;
 
 use rs_cam_core::adaptive::research_geodesic::{
     Candidate2d, CascadeReadout, GeodesicOptions, JoinRule, LobeMorph, MeetingRule,
-    PassLoadReadout, Producer, Refusal, Run2d, Span2d, SpanKind, run_2d,
+    PassLoadReadout, Producer, ReadResolution, Refusal, Run2d, Span2d, SpanKind, run_2d_with,
 };
 use rs_cam_core::adaptive::{AdaptiveParams, KeepDownLinks, PathStrategy2d, adaptive_toolpath};
 use rs_cam_core::compute::catalog::OperationType;
@@ -497,6 +505,31 @@ fn summary_text(shape: &str, label: &str, run: &Run2d) -> String {
             f.branches,
             f.spiral_levels
         );
+        let j = &f.joins;
+        let _ = writeln!(
+            t,
+            "joins piece {i}: rim transition {}, closed-to-closed transition {}, transition refused (seam) {}, closed-to-closed seam {}, closed to arc {}, from an arc {}; local-spacing sweep converged {:?}",
+            j.rim_transition,
+            j.closed_transition,
+            j.transition_fallback,
+            j.closed_seam,
+            j.closed_to_arc,
+            j.from_arc,
+            f.local_converged
+        );
+        for r in &j.transitions {
+            let _ = writeln!(
+                t,
+                "  transition: level {} -> {}, rho {:.2} mm, delta {:.3} mm, f {:.3}, sector {:.3} rad, applied {}",
+                r.level,
+                r.level + 1,
+                r.rho,
+                r.delta,
+                r.fraction,
+                r.sector,
+                r.applied
+            );
+        }
         let b = &f.lobes;
         if b.lobes + b.plain_wraps > 0 {
             let _ = writeln!(
@@ -550,7 +583,8 @@ fn cascade_lines(t: &mut String, c: &CascadeReadout) {
     let (refused, cascades, intrinsic) = c.totals();
     let _ = writeln!(
         t,
-        "cascade (replay model on the raw plan): {refused} refusals, {cascades} cascades, {intrinsic} intrinsic"
+        "cascade (replay model on the raw plan, read cell {:.3} mm): {refused} refusals, {cascades} cascades, {intrinsic} intrinsic; intrinsic in the first quantum over the ceiling (c, c + cell/D]: {}",
+        c.read_cell, c.near_ceiling
     );
     for k in &c.tallies {
         let _ = writeln!(
@@ -600,62 +634,99 @@ fn render_candidate_a_beside_the_2d_strategies() {
     for &(shape, project) in SHAPES {
         let (outline, tool) = fixture(project);
         let mut columns = vec![
-            ("agent", Candidate2d::Shipped(PathStrategy2d::Agent)),
+            (
+                "agent",
+                Candidate2d::Shipped(PathStrategy2d::Agent),
+                ReadResolution::Planner,
+            ),
             (
                 "contour_spiral",
                 Candidate2d::Shipped(PathStrategy2d::ContourSpiral),
+                ReadResolution::Planner,
             ),
-            ("geodesic_g1", Candidate2d::Geodesic(GeodesicOptions::G1)),
-            ("geodesic_a", Candidate2d::Geodesic(GeodesicOptions::C2)),
             (
-                "geodesic_morph_alt",
-                Candidate2d::Geodesic(GeodesicOptions::C4_ALT),
+                "geodesic_g1",
+                Candidate2d::Geodesic(GeodesicOptions::G1),
+                ReadResolution::Planner,
+            ),
+            (
+                "geodesic_a",
+                Candidate2d::Geodesic(GeodesicOptions::C2),
+                ReadResolution::Planner,
             ),
             (
                 "geodesic_curv",
                 Candidate2d::Geodesic(GeodesicOptions::C5_CURV),
+                ReadResolution::Planner,
             ),
             (
-                "geodesic_curv_morph",
-                Candidate2d::Geodesic(GeodesicOptions::C5_CURV_MORPH),
+                "geodesic_curv_join",
+                Candidate2d::Geodesic(GeodesicOptions::C6_JOIN),
+                ReadResolution::Planner,
+            ),
+            (
+                "geodesic_curv_local",
+                Candidate2d::Geodesic(GeodesicOptions::C6_LOCAL),
+                ReadResolution::Planner,
+            ),
+            (
+                "geodesic_curv_local_join",
+                Candidate2d::Geodesic(GeodesicOptions::C6_LOCAL_JOIN),
+                ReadResolution::Planner,
+            ),
+            (
+                "geodesic_curv_fine",
+                Candidate2d::Geodesic(GeodesicOptions::C5_CURV),
+                ReadResolution::HalfCell,
+            ),
+            (
+                "geodesic_curv_join_fine",
+                Candidate2d::Geodesic(GeodesicOptions::C6_JOIN),
+                ReadResolution::HalfCell,
             ),
         ];
         if std::env::var_os("ADAPTIVE_GEODESIC_EXTRA").is_some() {
-            columns.extend([
-                (
-                    "geodesic_morph_return",
-                    Candidate2d::Geodesic(GeodesicOptions::C4_RETURN),
-                ),
+            let extra = [
+                ("geodesic_morph_alt", GeodesicOptions::C4_ALT),
+                ("geodesic_curv_morph", GeodesicOptions::C5_CURV_MORPH),
+                ("geodesic_morph_return", GeodesicOptions::C4_RETURN),
                 (
                     "geodesic_a_through",
-                    Candidate2d::Geodesic(GeodesicOptions {
+                    GeodesicOptions {
                         meeting: MeetingRule::Through,
                         ..GeodesicOptions::C2
-                    }),
+                    },
                 ),
                 (
                     "geodesic_a_ramp",
-                    Candidate2d::Geodesic(GeodesicOptions {
+                    GeodesicOptions {
                         join: JoinRule::Ramp,
                         ..GeodesicOptions::C2
-                    }),
+                    },
                 ),
                 (
                     "geodesic_morph_alt_full",
-                    Candidate2d::Geodesic(GeodesicOptions {
+                    GeodesicOptions {
                         join: JoinRule::Morph(LobeMorph::AlternateFull),
                         ..GeodesicOptions::C2
-                    }),
+                    },
                 ),
-            ]);
+            ];
+            columns.extend(extra.into_iter().map(|(label, options)| {
+                (
+                    label,
+                    Candidate2d::Geodesic(options),
+                    ReadResolution::Planner,
+                )
+            }));
         }
-        for (label, candidate) in columns {
+        for (label, candidate, read) in columns {
             let strategy = match candidate {
                 Candidate2d::Shipped(s) => s,
                 Candidate2d::Geodesic(_) => PathStrategy2d::Agent,
             };
             let params = params(&tool, strategy);
-            let run = run_2d(&outline, &params, candidate);
+            let run = run_2d_with(&outline, &params, candidate, read);
             if matches!(candidate, Candidate2d::Shipped(_)) {
                 assert_product_parity(&outline, &params, &run, label);
             } else {
