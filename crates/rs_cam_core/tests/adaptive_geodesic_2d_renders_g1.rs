@@ -12,8 +12,10 @@
 //! - Strategies: `PathStrategy2d::Agent`, `PathStrategy2d::ContourSpiral`
 //!   and candidate (a) three times: `geodesic_g1` (`GeodesicOptions::G1`,
 //!   the form of the G1 look, the "before"), `geodesic_a`
-//!   (`GeodesicOptions::C2`, the G1 fixes) and `geodesic_a_through` (the
-//!   fixes with the G1 meeting rule, to compare the meeting-line rules). The 2D op exposes no contour-parallel strategy: its
+//!   (`GeodesicOptions::C2`, the G1 fixes with the G1 join), `geodesic_a_through`
+//!   (the fixes with the G1 meeting rule, to compare the meeting-line rules)
+//!   and `geodesic_a_ramp` (the fixes with the ramp join that C3 reverted:
+//!   kept for the record and for its refused-step dump). The 2D op exposes no contour-parallel strategy: its
 //!   contour-parallel path runs only behind the narrow-region gate
 //!   (`CleanupStrategy::ContourParallelNarrow` / `Hybrid`), so it is not a
 //!   column here.
@@ -36,7 +38,11 @@
 //! - The summary: cut and link length, entries, lifts (retracts), keep-down
 //!   links and the planner's pass-load readout (`research_geodesic` module
 //!   doc, `PassLoadReadout`), with one line per step over the ceiling: its
-//!   producer, cut or link, segment, position and reading.
+//!   producer, cut or link, segment, position and reading; the entries by
+//!   producer (`EntrySplit`: starter, clearing at a wrap end, clearing
+//!   mid-wrap, residue contour, wall pass, residue mop); and the first ten
+//!   steps of the producer's raw plan that the replay refuses (the raw-plan
+//!   readout), each with its part of the plan (spiral, on a wrap, join).
 //!
 //! A shipped column must be the product plan: the harness asserts that its
 //! toolpath equals `adaptive_toolpath` on the same outline, move by move.
@@ -63,7 +69,7 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use rs_cam_core::adaptive::research_geodesic::{
-    Candidate2d, GeodesicOptions, MeetingRule, Producer, Run2d, Span2d, SpanKind, run_2d,
+    Candidate2d, GeodesicOptions, JoinRule, MeetingRule, Producer, Run2d, Span2d, SpanKind, run_2d,
 };
 use rs_cam_core::adaptive::{AdaptiveParams, KeepDownLinks, PathStrategy2d, adaptive_toolpath};
 use rs_cam_core::compute::catalog::OperationType;
@@ -425,6 +431,39 @@ fn summary_text(shape: &str, label: &str, run: &Run2d) -> String {
             o.reading
         );
     }
+    let e = &s.entry_split;
+    let _ = writeln!(
+        t,
+        "entries by producer: starter {}, clearing at a wrap end (join) {}, clearing mid-wrap (replay split) {}, residue contour {}, wall pass {}, residue mop {}, other {}",
+        e.starter,
+        e.clearing_join,
+        e.clearing_split,
+        e.residue_contour,
+        e.wall_pass,
+        e.residue_mop,
+        e.other
+    );
+    let r = &s.raw_pass_load;
+    let _ = writeln!(
+        t,
+        "raw plan (before the replay): {} of {} steps over the ceiling (the steps the replay refuses; exact up to the first); the first ten:",
+        r.steps_over, r.steps
+    );
+    for o in r.over.iter().take(10) {
+        let _ = writeln!(
+            t,
+            "  refused: {} {} {} (segment {}) from ({:.2}, {:.2}) to ({:.2}, {:.2}), reading {:.4}",
+            o.producer.label(),
+            if o.link { "link" } else { "cut" },
+            o.part.label(),
+            o.segment,
+            o.from.x,
+            o.from.y,
+            o.to.x,
+            o.to.y,
+            o.reading
+        );
+    }
     for (i, f) in run.fields.iter().enumerate() {
         let _ = writeln!(
             t,
@@ -462,6 +501,13 @@ fn render_candidate_a_beside_the_2d_strategies() {
                 "geodesic_a_through",
                 Candidate2d::Geodesic(GeodesicOptions {
                     meeting: MeetingRule::Through,
+                    ..GeodesicOptions::C2
+                }),
+            ),
+            (
+                "geodesic_a_ramp",
+                Candidate2d::Geodesic(GeodesicOptions {
+                    join: JoinRule::Ramp,
                     ..GeodesicOptions::C2
                 }),
             ),

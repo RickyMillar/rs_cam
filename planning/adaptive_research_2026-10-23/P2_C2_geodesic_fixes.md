@@ -401,3 +401,170 @@ ramp (section 7). If they sit at the meeting line, compare with
   geometric unit test of their own; the pass-load unit test
   (`every_emitted_step_holds_the_pass_load`) and the harness are their
   checks.
+
+## C3 — the ramp join regressed the render; diagnosis and decision (2026-10-23)
+
+Data: the verifier's run at bd287bd0 (G1 fixes in 0e79f0fc), copies in the
+main checkout `planning/adaptive_research_2026-10-23/phase2/renders2/`.
+I read the SVG spans in plan order with a small parser (session scratchpad
+`spans.py`, `split.py`); no cargo.
+
+### (1) The grey lines
+
+- Pale grey (`#d0d0d0`, 0.6 px) is NOT a producer. It is `Run2d::wraps`,
+  the nominal level sets the producer planned, drawn UNDER the moves in
+  every candidate (a) column. Grey dashed (`#999`) is a rapid.
+- In `geodesic_g1` the blue cuts lie on the wraps and hide them. In
+  `geodesic_a` (ramp join) the wraps show because the emitted cuts did not
+  follow them: the producer DID emit every wrap as a `Cut` (in runs of
+  back-run + ramp + wrap), but the replay refused their steps, and the
+  residue contour and the mop cut the stock instead. Also the closed wraps
+  round the seed (levels 1 to 6 on the star, 1 to 3 on the pocket) are not
+  in `wraps` under the ramp join: the spiral replaced them, and the spiral
+  itself was refused (below).
+
+### (2) Where the entries come from
+
+From the SVGs: each rapid's producer is the producer of the next cut; a
+clearing re-entry within 1.5 cells of a planned wrap end is a join, else a
+mid-wrap split by the replay.
+
+| Column | Entries | Clearing at a wrap end (join) | Clearing mid-wrap (replay split) | Residue contour | Residue mop | Starter | Wall pass |
+|---|---|---|---|---|---|---|---|
+| star `geodesic_g1` | 86 | 56 | 14 | 0 | 14 | 1 | 1 |
+| star `geodesic_a` (ramp) | 87 | 24 | 34 | 9 | 19 | 1 | 0 |
+| pocket `geodesic_g1` | 89 | 41 | 25 | 6 | 16 | 1 | 0 |
+| pocket `geodesic_a` (ramp) | 89 | 36 | 38 | 0 | 14 | 1 | 0 |
+| pocket `geodesic_a_through` (ramp) | 92 | 35 | 36 | 7 | 13 | 1 | 0 |
+| star agent | 25 | — | 17 (all clearing; frontier hops included) | 0 | 5 | 1 | 2 |
+| star contour_spiral | 101 | — | 93 | 0 | 7 | 1 | 0 |
+
+The ramp join traded join re-entries (56 -> 24 on the star) for mid-wrap
+splits (14 -> 34) and residue work (+9 contour, +5 mop). The harness now
+computes this split itself (`Summary2d::entry_split`, `EntrySplit`; the
+join radius is one pass step, the largest gap between two replay walk
+points) and prints it per column. A frontier hop is not a separate
+producer in the plan: it falls under "clearing" for the agent.
+
+### (3) Does the ramp hold the pass load?
+
+No. The plan of `star/geodesic_a` right after the starter (SVG spans 3 to
+21) is: a clearing piece of 2.5 mm, a rapid, 2.3 mm, a rapid, 3.2, 4.0,
+5.0, 5.8, 5.6 mm, each followed by a rapid outward. That is the spiral,
+split by the replay every few steps. No blue spiral survives; a brown
+residue contour and the mop clear the centre.
+
+Cause (derived, and it explains the G1 column too): `EntryLaw` bounds the
+swept width of a tilted step against a STRAIGHT cleared edge. Round the
+seed the cleared edge is a circle, and the stock wraps round the cutter.
+For a pass at radius `ρ` one stepover outside a cleared disc of radius
+`a = ρ - s + R`, the stock in the cutter's disc spans, across the heading,
+from the intersection of the two circles to the disc edge:
+`width = R - (a² - R² - ρ²) / (2ρ)`, which is `2 + 4/ρ` mm at s 2, R 3.
+It is over the ceiling (2.1756 mm) for every `ρ` below about 23 mm (2.8 mm
+at `ρ` = 5). The G1 column shows the same: its first circle (`ρ` = 5) is cut
+in six pieces with six entries; only the circles past about 15 mm come out
+whole (the lattice reads a cut up to one cell narrow).
+
+The refused-step dump: the harness now replays the producer's RAW plan
+through the readout (`Summary2d::raw_pass_load`) and prints the first ten
+over-steps with producer, part of the plan (spiral, on a wrap, join) and
+reading. The run that wrote renders2 did not have it, so the dump is for
+the next run: column `geodesic_a_ramp` keeps the ramp join for exactly
+this record. Predicted: its first refused steps are `spiral` steps at
+radius 5 to 7 mm, reading about 0.40 to 0.47 of D.
+
+### A second defect found: the meeting rule split the wraps at the shadow lines
+
+`pocket/geodesic_a` had 158 wrap pieces against 83 for
+`geodesic_a_through`. The meeting line behind the island crosses at most
+about 25 levels, so it cannot add 75 pieces. Cause: `cell_on_shock` marked
+every cell whose corners have different front branches. That includes the
+two SHADOW lines, where the paths start to bend round the island (branch 0
+next to its child branch). The field is smooth there; no fronts meet. So
+every level set that crossed a shadow line was cut in two there: more
+arcs, more joins, more entries.
+
+Fix: a cell holds a meeting line only when two of its corners lie in
+UNRELATED branches (neither is an ancestor of the other: the paths went
+round a wall on different sides). The branch table now keeps each
+branch's parent (`GeodesicField::branch_parent`, `related`,
+`is_ancestor`). The island unit test now asserts that every meeting-line
+cell lies behind the island on its axis (within one cell diagonal) and
+that at least one exists.
+
+### Decision
+
+1. **The join is REVERTED to the G1 join** (`GeodesicOptions::C2.join =
+   JoinRule::Seam`). The ramp join is recorded as "tried, refused by the
+   replay": its entry law assumed a straight cleared edge, and the front
+   round the seed is a circle (derivation above, and in the
+   `JoinRule::Ramp` and `EntryLaw` docs). It stays selectable
+   (`geodesic_a_ramp` column) for the refused-step dump only.
+2. Kept: G1-1 clipping, G1-3 source-tracked field, the one-side meeting
+   rule (with the shadow-line fix above).
+3. Not done, the next lever (derived, for the lead to rule on): the
+   join and the inner wraps can hold the load only if the wrap spacing
+   follows the front's curvature. From the width formula above, a pass at
+   radius `ρ` round a cleared disc holds the ceiling `c` when its spacing is
+   at most `s'(ρ) = ρ + R - √(R² + ρ² + 2ρ(R - c·D))` (1.21 mm at `ρ` = 3,
+   1.50 at 5, 1.80 at 10, 1.92 at 15, 1.98 at 20, and s = 2.0 from
+   about 23 mm, where the width formula meets the ceiling). With
+   source tracking, `ρ` is the distance of a node from its pivot, so a
+   field `U` with `dU = dT / s'(ρ)` is well defined in the seen region. It
+   would remove the mid-wrap splits on the inner circles (14 on the star,
+   25 on the pocket, as measured above) for about 1.3 extra wraps. A ramp
+   law built on the same curved-edge width, not the straight-edge one,
+   is the condition for any join that removes the join re-entries. Neither
+   is built: both change what the operator saw at G1.
+
+### Predicted counts after C3 (not run)
+
+`geodesic_a` = G1 join + source tracking + split meeting rule + clipping.
+The star has no island, one front branch, so its clearing plan equals
+`geodesic_g1`'s except for the field (exact, so the wraps sit up to
+0.84 cell from the G1 ones): about 86 entries, the same split. The pocket:
+the meeting rule now cuts only at the meeting line (about one extra arc
+per level behind the island, each a join), and the arcs no longer turn
+through the kink (fewer mid-wrap splits there). Expect about 89 or fewer;
+the run decides. If `geodesic_a` reads MORE entries than `geodesic_g1` on
+the pocket, the meeting rule costs more joins than it saves splits, and
+`geodesic_a_through` (the same with the G1 meeting rule) is the fallback.
+
+### Files changed by C3
+
+- `crates/rs_cam_core/src/adaptive/research_geodesic.rs`: `C2.join =
+  Seam`; `JoinRule::Ramp` and `EntryLaw` docs record the refusal; module
+  doc "The join and the order" rewritten; `EntrySplit`, `entry_split`,
+  `Summary2d::{raw_pass_load, entry_split}`, `StepPart`, `classify_parts`,
+  `OverStep::part`; the shadow-line fix (`branch_parent`, `related`,
+  `is_ancestor`, `track_sources` returns the parent table); the island
+  test's meeting-line check.
+- `crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`: the
+  `geodesic_a_ramp` column; the entry split line; the first ten refused
+  raw-plan steps.
+- This note.
+
+Not touched (the release GUI build): `adaptive/path.rs`, `spiral.rs`,
+`search.rs`, `scallop_isofield.rs`. `rustfmt --edition 2024 --check` is
+clean on both Rust files. No cargo, no commit.
+
+### Commands for the verifier (C3)
+
+Through `scripts/cargo_lane.sh`, each with a `timeout`, after the GUI build
+is done:
+
+```text
+cargo fmt --all -- --check
+cargo test -p rs_cam_core --features research,test-support -q --lib research_geodesic
+cargo test -p rs_cam_core --features research,test-support --release \
+    --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture
+cargo clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings
+cargo clippy -p rs_cam_core --all-targets -- -D warnings
+```
+
+Read in `summary.txt`: per column the `entries by producer` line (compare
+`geodesic_g1` with `geodesic_a`: the target is fewer, never more), the
+`raw plan` block of `geodesic_a_ramp` (the first ten refused steps), and
+the pocket's `wrap pieces` for `geodesic_a` (expected near
+`geodesic_a_through`'s, not double).

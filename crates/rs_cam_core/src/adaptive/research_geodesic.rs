@@ -71,38 +71,33 @@
 //!
 //! # The join and the order ([`JoinRule`])
 //!
-//! Under the swept-width measure a radial step of one stepover into the
-//! next band reads about 0.94 of D, so every G1 seam was a re-entry. The
-//! ramp join (`JoinRule::Ramp`) enters each band at a tilt the pass load
-//! allows at the depth reached ([`EntryLaw`]: `β(d)` from `R`, `s` and the
-//! ceiling):
+//! The default is the G1 join (`JoinRule::Seam`):
 //!
-//! - The wraps that are whole circles round the seed (the circle of radius
-//!   `R + k·s` lies inside the region, `k ≤ (clearance - R) / s`) are one
-//!   spiral out of the starter rim, the radius growing by the law against
-//!   the previous turn, then one closing lap. Inside that disc `T` is the
-//!   Euclidean distance, so these wraps ARE the circles.
-//! - Every other wrap is entered from its parent (the cut wrap one level
-//!   lower nearest its start, or the closing lap): its points are pulled
-//!   toward the parent until the law's depth reaches the gap. At s 2, R 3
-//!   the ramp reaches full depth in 7.7 mm.
-//! - The open arcs of a lobe are cut one way. A ramp leaves a wedge at the
-//!   arc's start; the child arc starts at that end and first runs back over
-//!   the parent from its full-depth point to its start (the back-run, which
-//!   cuts the wedge at most one stepover deep), then ramps out. Zig-zag arcs
-//!   would meet their parent's wedge with two stepovers of stock.
-//! - The cutter goes from an arc's end to the next start by a keep-down
-//!   `Link` over the cut stock; the replay admits it under the pass load or
-//!   turns it into a re-entry.
+//! - A closed wrap is lapped the way `spiral.rs` laps its wraps: rotated to
+//!   start at the point nearest the cutter (`spiral::nearest_index`), cut
+//!   round, and closed on its seam.
+//! - An open wrap is cut from the end nearer the cutter to the other end.
+//! - A seam step no longer than the reach (below) is a cutting step inside
+//!   the `Cut`, as in `spiral.rs`. A longer join is a keep-down `Link`; the
+//!   replay admits it under the pass load or turns it into a re-entry.
 //! - The order rule (grow outward from the cleared side): a wrap at level `k`
 //!   is cut only after every wrap at level `k - 1` within the reach of it.
-//!   Under the ramp join a child of the wrap just cut goes next; else the
-//!   wrap nearest the cutter is next.
-//! - The G1 join (`JoinRule::Seam`) stays selectable: a closed wrap lapped
-//!   from a radial seam (`spiral::nearest_index`), an arc from its end
-//!   nearer the cutter, a gap over the reach a keep-down `Link`.
+//!   Among the wraps that may be cut, the one nearest the cutter is next.
 //! - A wrap leaves the region nowhere: a vertex outside the tool-centre
 //!   region or a segment that leaves it cuts the wrap (`inside_pieces`).
+//!
+//! Under the swept-width measure a radial step of one stepover into the
+//! next band reads about 0.94 of D, so the replay re-enters at most seams
+//! and arc-to-arc steps (C3 run: 56 of 86 entries on the star, 41 of 89 on
+//! the pocket). A pass round a cleared disc of small radius also reads
+//! over the ceiling at the full stepover (the stock wraps round the
+//! cutter: `2 + 4/ρ` mm at s 2, R 3, against 2.18 mm), so the replay
+//! splits the inner wraps mid-way (14 and 25 entries).
+//!
+//! The ramp join (`JoinRule::Ramp`: a spiral round the seed, a ramp out of
+//! the parent wrap, arcs cut one way) was tried and refused by the replay:
+//! its entry law assumed a straight cleared edge ([`EntryLaw`]). It stays
+//! selectable for the record.
 //!
 //! # Engagement, the wall pass and the rest
 //!
@@ -361,7 +356,8 @@ const NEIGHBOURS: [(isize, isize); 8] = [
 /// value only falls, and the candidates are finite, so the sweep ends; the
 /// round cap is the lattice's `rows + cols`, the longest 4-connected
 /// lattice path, since a round moves the front at least one node. Returns
-/// the branch of each node and true when a round changed nothing.
+/// the branch of each node, the parent of each branch (index = branch id)
+/// and true when a round changed nothing.
 fn track_sources(
     lattice: &Lattice,
     inside: &[bool],
@@ -370,7 +366,7 @@ fn track_sources(
     seed: P2,
     seed_radius: f64,
     walls: &Walls<'_>,
-) -> (Vec<u32>, bool) {
+) -> (Vec<u32>, Vec<u32>, bool) {
     let (rows, cols) = (lattice.rows, lattice.cols);
     let mut branches = Branches::default();
     let mut pivots: Vec<Option<Pivot>> = fixed
@@ -457,7 +453,11 @@ fn track_sources(
         }
     }
     let branch = pivots.iter().map(|p| p.map_or(0, |p| p.branch)).collect();
-    (branch, converged)
+    // The parent of each branch: 0 for the root and its children.
+    let parent = std::iter::once(0)
+        .chain(branches.keys.iter().map(|&(parent, _, _)| parent))
+        .collect();
+    (branch, parent, converged)
 }
 
 /// The geodesic distance from an entry disc over a region whose holes and
@@ -471,6 +471,8 @@ pub struct GeodesicField {
     /// The front branch of each node ([`Branches`]); all 0 under
     /// [`FieldSolver::FirstOrder`].
     branch: Vec<u32>,
+    /// The parent of each front branch (index = branch id; the root's is 0).
+    branch_parent: Vec<u32>,
     stepover: f64,
     converged: bool,
 }
@@ -539,7 +541,7 @@ impl GeodesicField {
             .iter()
             .map(|&reach| if reach { stepover } else { f64::NAN })
             .collect();
-        let (passes, branch, converged) = match solver {
+        let (passes, branch, branch_parent, converged) = match solver {
             FieldSolver::FirstOrder => {
                 let mut passes: Vec<f64> = t_mm.iter().map(|t| t / stepover).collect();
                 let converged = fast_sweep(
@@ -551,10 +553,10 @@ impl GeodesicField {
                     lattice.cols,
                     lattice.cell,
                 );
-                (passes, vec![0; n], converged)
+                (passes, vec![0; n], vec![0], converged)
             }
             FieldSolver::SourceTracking => {
-                let (branch, converged) = track_sources(
+                let (branch, branch_parent, converged) = track_sources(
                     &lattice,
                     &inside,
                     &fixed,
@@ -566,6 +568,7 @@ impl GeodesicField {
                 (
                     t_mm.iter().map(|t| t / stepover).collect(),
                     branch,
+                    branch_parent,
                     converged,
                 )
             }
@@ -589,6 +592,7 @@ impl GeodesicField {
             field,
             inside,
             branch,
+            branch_parent,
             stepover,
             converged,
         })
@@ -663,11 +667,42 @@ impl GeodesicField {
     /// front branch: the cell holds a meeting line.
     fn cell_on_shock(&self, row: usize, col: usize) -> bool {
         let cols = self.field.cols;
-        let at = |r: usize, c: usize| self.branch.get(r * cols + c).copied();
-        let first = at(row, col);
-        [at(row, col + 1), at(row + 1, col), at(row + 1, col + 1)]
+        let at = |r: usize, c: usize| self.branch.get(r * cols + c).copied().unwrap_or(0);
+        let corners = [
+            at(row, col),
+            at(row, col + 1),
+            at(row + 1, col),
+            at(row + 1, col + 1),
+        ];
+        corners
             .iter()
-            .any(|&b| b != first)
+            .enumerate()
+            .any(|(k, &a)| corners.iter().skip(k + 1).any(|&b| !self.related(a, b)))
+    }
+
+    /// True when front branch `a` is `b`, or one is an ancestor of the
+    /// other. Two such branches meet on a shadow line, where a path starts
+    /// to bend round a wall and the field stays smooth: not a meeting line
+    /// (C3: the C2 rule cut every wrap there too). Two unrelated branches
+    /// went round a wall on different sides and meet on a shock.
+    fn related(&self, a: u32, b: u32) -> bool {
+        self.is_ancestor(a, b) || self.is_ancestor(b, a)
+    }
+
+    /// True when `a` is `b` or lies on the parent chain of `b`.
+    fn is_ancestor(&self, a: u32, b: u32) -> bool {
+        let mut at = b;
+        // A parent chain is at most one link per branch long.
+        for _ in 0..=self.branch_parent.len() {
+            if at == a {
+                return true;
+            }
+            if at == 0 {
+                return false;
+            }
+            at = self.branch_parent.get(at as usize).copied().unwrap_or(0);
+        }
+        false
     }
 
     /// The level set `T = level` stepovers, over the cells whose four
@@ -930,8 +965,19 @@ pub enum JoinRule {
     Seam,
     /// The entry law ([`EntryLaw`]): the closed wraps round the seed are one
     /// spiral out of the starter rim and a closing lap; every other wrap is
-    /// entered from its parent wrap by a ramp whose tilt holds the pass
-    /// load at each depth; the open arcs of a lobe are cut one way.
+    /// entered from its parent wrap by a ramp; the open arcs of a lobe are
+    /// cut one way.
+    ///
+    /// TRIED AND REFUSED BY THE REPLAY (C3, verifier run 2026-10-23: star
+    /// 87 entries against 86 with the G1 join, pocket 89 against 89; the
+    /// spiral came out as 2 to 6 mm pieces, each with its own entry, and
+    /// the mop took the rest). Reason: the law bounds the swept width of a
+    /// tilted step against a STRAIGHT cleared edge. Round the seed the
+    /// cleared edge is a circle that the stock wraps round, and the swept
+    /// width of a pass of radius `ρ` one stepover outside it is
+    /// `R - (a² - R² - ρ²) / (2ρ)`, `a = ρ - s + R`: `2 + 4/ρ` mm at s 2,
+    /// R 3, over the ceiling (2.18 mm) for every `ρ` under about 23 mm. Not
+    /// the default; kept so a run can dump the steps the replay refuses.
     Ramp,
 }
 
@@ -950,11 +996,13 @@ impl GeodesicOptions {
         meeting: MeetingRule::Through,
         join: JoinRule::Seam,
     };
-    /// The G1 fixes of editor C2.
+    /// The G1 fixes of editors C2 and C3: the source-tracked field, the
+    /// one-side meeting rule, and the G1 join (C3 reverted the ramp join,
+    /// see [`JoinRule::Ramp`]).
     pub const C2: Self = Self {
         solver: FieldSolver::SourceTracking,
         meeting: MeetingRule::Split,
-        join: JoinRule::Ramp,
+        join: JoinRule::Seam,
     };
 }
 
@@ -1235,6 +1283,11 @@ fn ordered_wraps(
 
 /// The entry law of the ramp join: how steeply the cutter may cross into
 /// the next band at each depth and still hold the pass load.
+///
+/// DEFECT (C3): the bound below assumes a straight cleared edge parallel to
+/// the step. A front grown from a disc is curved: round the seed the stock
+/// wraps round the cutter and reads wider (see [`JoinRule::Ramp`]), so the
+/// replay refuses the spiral and the ramps there.
 ///
 /// A step that heads at tilt `β` into a band of depth `d` (the cleared edge
 /// parallel to the wrap) holds the cap of the disc beyond `R - d`. Its
@@ -1752,8 +1805,39 @@ pub struct OverStep {
     pub producer: Producer,
     /// True for a keep-down `Link` step, false for a `Cut` step.
     pub link: bool,
-    /// The index of the segment in the cleaned plan of its piece.
+    /// The index of the segment in the plan of its piece.
     pub segment: usize,
+    /// Where on candidate (a)'s plan the step lies ([`StepPart`]); only the
+    /// raw-plan readout classifies it.
+    pub part: StepPart,
+}
+
+/// Where a step of candidate (a)'s plan lies (C3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StepPart {
+    /// Not classified (a cleaned plan, a shipped strategy).
+    #[default]
+    Unclassified,
+    /// On the spiral of the ramp join (within one cell of its disc).
+    Spiral,
+    /// On a planned wrap (its end within one cell of the wrap polyline).
+    Wrap,
+    /// Off every wrap: a ramp, a back-run, a seam step or an arc-to-arc
+    /// step.
+    Join,
+}
+
+impl StepPart {
+    /// A short name for a summary line.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Unclassified => "",
+            Self::Spiral => "spiral",
+            Self::Wrap => "on a wrap",
+            Self::Join => "join (ramp, back-run or seam step)",
+        }
+    }
 }
 
 /// The planner's own pass-load reading of a plan, replayed on a fresh grid.
@@ -1851,6 +1935,7 @@ fn pass_load_readout(
                 producer: tag.producer,
                 link: tag.link,
                 segment: tag.segment,
+                part: StepPart::Unclassified,
             });
         }
     };
@@ -2003,8 +2088,116 @@ pub struct Summary2d {
     /// Lifts to the safe Z in the emitted toolpath (`MoveIntent::Retract`),
     /// the last one of each piece included.
     pub retracts: usize,
-    /// The planner's pass-load reading.
+    /// The planner's pass-load reading of the cleaned plan (what is
+    /// emitted).
     pub pass_load: PassLoadReadout,
+    /// The same reading of the producer's raw plan, before the cleanup
+    /// replays it (C3): its over-steps are the steps the replay refuses,
+    /// in plan order. Exact up to the first one; after it the replay has
+    /// lifted and re-entered, so its grid differs from this readout's.
+    pub raw_pass_load: PassLoadReadout,
+    /// Where the entries of the cleaned plan come from ([`EntrySplit`]).
+    pub entry_split: EntrySplit,
+}
+
+/// Where the entries (`Rapid`s) of a cleaned plan come from (C3). The
+/// producer is the kind of the last marker before the entry.
+#[derive(Debug, Clone, Default)]
+pub struct EntrySplit {
+    /// The starter pocket's plunge.
+    pub starter: usize,
+    /// A clearing re-entry within one pass step of a planned wrap end (the
+    /// replay re-enters at a walk point, and walk points are at most one
+    /// pass step apart): a join the replay refused (a seam step, an
+    /// arc-to-arc step, a link, a ramp start).
+    pub clearing_join: usize,
+    /// Any other clearing re-entry: the replay split a wrap mid-way. For a
+    /// shipped strategy (no wraps) every clearing re-entry counts here,
+    /// the agent's frontier hops included.
+    pub clearing_split: usize,
+    /// A residue contour's re-entry.
+    pub residue_contour: usize,
+    /// A wall pass's re-entry.
+    pub wall_pass: usize,
+    /// A residue mop's re-entry.
+    pub residue_mop: usize,
+    /// Slot lines or no marker.
+    pub other: usize,
+}
+
+impl EntrySplit {
+    fn merge(&mut self, other: &Self) {
+        self.starter += other.starter;
+        self.clearing_join += other.clearing_join;
+        self.clearing_split += other.clearing_split;
+        self.residue_contour += other.residue_contour;
+        self.wall_pass += other.wall_pass;
+        self.residue_mop += other.residue_mop;
+        self.other += other.other;
+    }
+}
+
+/// The [`EntrySplit`] of a cleaned plan whose producer planned `wraps`; a
+/// re-entry within `step` of a wrap end is a join.
+fn entry_split(segments: &[AdaptiveSegment], wraps: &[Vec<P2>], step: f64) -> EntrySplit {
+    let ends: Vec<P2> = wraps
+        .iter()
+        .flat_map(|w| w.first().into_iter().chain(w.last()))
+        .copied()
+        .collect();
+    let mut out = EntrySplit::default();
+    let mut producer = Producer::Unmarked;
+    for seg in segments {
+        match seg {
+            AdaptiveSegment::Marker(event) => producer = producer.after(event),
+            AdaptiveSegment::Rapid(p) => match producer {
+                Producer::Starter => out.starter += 1,
+                Producer::Clearing => {
+                    let at_end = ends.iter().any(|q| (q.x - p.x).hypot(q.y - p.y) <= step);
+                    if at_end {
+                        out.clearing_join += 1;
+                    } else {
+                        out.clearing_split += 1;
+                    }
+                }
+                Producer::ResidueContour => out.residue_contour += 1,
+                Producer::WallPass => out.wall_pass += 1,
+                Producer::ResidueMop => out.residue_mop += 1,
+                Producer::Unmarked | Producer::SlotLines => out.other += 1,
+            },
+            AdaptiveSegment::Cut(_) | AdaptiveSegment::Link(_) => {}
+        }
+    }
+    out
+}
+
+/// Classify the over-steps of candidate (a)'s raw plan ([`StepPart`]):
+/// within one cell of the spiral's disc (radius `spiral_outer` about
+/// `seed`, when there is a spiral), within one cell of a wrap, else a join.
+fn classify_parts(
+    over: &mut [OverStep],
+    wraps: &[Vec<P2>],
+    seed: Option<P2>,
+    spiral_outer: Option<f64>,
+    cell: f64,
+) {
+    for step in over {
+        let p = step.to;
+        let in_spiral = match (seed, spiral_outer) {
+            (Some(c), Some(outer)) => (p.x - c.x).hypot(p.y - c.y) <= outer + cell,
+            _ => false,
+        };
+        let on_wrap = wraps
+            .iter()
+            .any(|w| nearest_on(w, p).is_some_and(|(_, d)| d <= cell));
+        step.part = if in_spiral {
+            StepPart::Spiral
+        } else if on_wrap {
+            StepPart::Wrap
+        } else {
+            StepPart::Join
+        };
+    }
 }
 
 /// One research run over every inset piece of an outline.
@@ -2093,6 +2286,8 @@ pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2
         spans: Vec::new(),
     };
     for piece in &pieces {
+        let mut piece_wraps: Vec<Vec<P2>> = Vec::new();
+        let mut spiral: (Option<P2>, Option<f64>) = (None, None);
         let raw = match candidate {
             Candidate2d::Shipped(_) => {
                 super::adaptive_segments_with_debug(piece, &params, never, None, None).ok()
@@ -2104,7 +2299,14 @@ pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2
                         report,
                         wraps,
                     })) => {
+                        spiral = (
+                            report.seed,
+                            (report.spiral_levels > 0).then(|| {
+                                report.seed_radius + report.spiral_levels as f64 * params.stepover
+                            }),
+                        );
                         run.fields.push(report);
+                        piece_wraps.clone_from(&wraps);
                         run.wraps.extend(wraps);
                         Some(segments)
                     }
@@ -2118,7 +2320,16 @@ pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2
         let Some(raw) = raw else {
             continue;
         };
+        let cell = planner_cell(&params);
+        let mut raw_load = pass_load_readout(piece, &params, &raw);
+        if matches!(candidate, Candidate2d::Geodesic(_)) {
+            classify_parts(&mut raw_load.over, &piece_wraps, spiral.0, spiral.1, cell);
+        }
+        run.summary.raw_pass_load.merge(&raw_load);
         let segments = cleaned(piece, &params, raw);
+        run.summary
+            .entry_split
+            .merge(&entry_split(&segments, &piece_wraps, pass_step_len(cell)));
         let region = (params.keep_down_links == KeepDownLinks::WithinPassLoad)
             .then(|| ToolCentreRegion::new(piece, params.tool_radius));
         let (tp, _) = segments_to_toolpath(&segments, &params, region.as_ref());
@@ -2313,6 +2524,28 @@ mod tests {
                     "the seed side and the two sides of the island: {}",
                     field.branch_count()
                 );
+                // The meeting line: behind the island, on its axis (the
+                // seed is on the axis, so the two fronts meet there, at
+                // y = 0, within one cell diagonal of it). The shadow lines
+                // (where the paths start to bend, from the island's top and
+                // bottom) are not meeting lines.
+                let f = &field.field;
+                let mut shock_cells = 0usize;
+                for row in 0..f.rows - 1 {
+                    for col in 0..f.cols - 1 {
+                        if !(field.cell_reachable(row, col) && field.cell_on_shock(row, col)) {
+                            continue;
+                        }
+                        let x = f.origin_x + (col as f64 + 0.5) * f.cell;
+                        let y = f.origin_y + (row as f64 + 0.5) * f.cell;
+                        assert!(
+                            x > island && y.abs() <= SQRT_2 * cell,
+                            "a meeting-line cell at ({x:.2}, {y:.2}) is not behind the island on its axis"
+                        );
+                        shock_cells += 1;
+                    }
+                }
+                assert!(shock_cells > 0, "the two fronts meet behind the island");
             }
         }
     }
