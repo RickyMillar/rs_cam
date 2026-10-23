@@ -1246,3 +1246,142 @@ intrinsic; near-ceiling = intrinsic in the first quantum over the ceiling):
 3. **Shipped neutrality holds.** Byte parity is green, the two master reds
    are unchanged, the 14 adaptive3d sentries and `--lib adaptive` are
    green, and both clippy configurations hold the `expect(dead_code)`.
+
+## D8 at 71f4cf0b
+
+C8 on top of the lead's master merge 3517d845: a mid-arc tangential
+lead-in (`LobeMorph::Lead`), keep-down return links, and one research-only
+line in `search.rs::compute_area_per_mm` (it divides by `max(ℓ, cell)`).
+Same lane script, own target dir, a `timeout` on each command. Disk: 43 GB
+free.
+
+### Fix (uncommitted)
+
+- `crates/rs_cam_core/src/adaptive/research_geodesic.rs` ~5792 and ~5798,
+  test `the_lobe_morph_on_a_rectangle_lobe_holds_one_stepover`: rustc
+  E0004 `non-exhaustive patterns: LobeMorph::Lead not covered` (two
+  `match morph`). The lib test target did not compile, so
+  `--lib research_geodesic` and the research clippy could not run.
+  - Before: the arms `Alternate` and `AlternateFull | Return`.
+  - After: one more arm in each,
+    `LobeMorph::Lead => panic!("this test covers Alternate and Return only")`.
+  - Why: the test loops over `[LobeMorph::Alternate, LobeMorph::Return]`
+    only, so the arm is never reached. The arm states the test's scope; it
+    assumes nothing about the legs of `Lead`. The module already
+    `#[expect(clippy::panic, ..)]`. Test code only: the harness ran before the
+    fix, and its numbers stay valid.
+
+### Results
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `fmt --all -- --check` | green (also after the fix) |
+| 1 | `check -p rs_cam_core` plain, and `--features research,test-support` | green, no warning |
+| 2 | `--lib adaptive` | green 141 passed, 7 ignored |
+| 2 | `--test adaptive3d_emission_byte_parity` | green 5/5 (the `search.rs` line is research-only) |
+| 3 | `--features research,test-support --lib research_geodesic` | red (did not compile) → green 13 passed, 2 ignored after the fix |
+| 4 | `clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings` | red (the same E0004) → green after the fix |
+| 4 | `clippy -p rs_cam_core --all-targets -- -D warnings` | green |
+| 5 | the harness, release, `timeout 900` | green 1/1, 6.84 s |
+
+### Controls (exact)
+
+| Column | Star | Pocket | Same |
+|---|---|---|---|
+| geodesic_a | 92 = S1 J56 M20 P15; 0.3600; raw 206/2330 | 88 = S1 J42 M27 C4 P14; 0.3624; raw 289/2845 | yes |
+| geodesic_curv | 73 = S1 J58 M0 P14; 0.3581; raw 145/2545 | 63 = S1 J34 M12 C6 P10; 0.4677; raw 260/2952 | yes |
+| agent | 25; 0.4515; raw 9/1749 | 31; 0.3618; raw 9/1805 | yes |
+| contour_spiral | 101; 0.3613; raw 501/4873 | 91; 0.3723; raw 420/3797 | yes |
+
+The harness's move-by-move product assertion passed. Every column now
+prints the L (lead-in) entry kind; it is 0 in all controls.
+
+### `geodesic_curv_lead`
+
+| Item | Star | Pocket |
+|---|---|---|
+| Entries (= retracts) | 82 | 73 |
+| S / L / J / M / C / W / P | 1 / **0** / 55 / 12 / 0 / 0 / 14 | 1 / **0** / 34 / 22 / 6 / 0 / 10 |
+| Lead-ins line (verbatim) | `lobe bands 0 (fell back to the seam 28), closed wraps 0 (fell back 10), planned link length 0.0 mm, lead-in radius 0.0 to 0.0 mm` | `lobe bands 0 (fell back to the seam 26), closed wraps 0 (fell back 9), planned link length 0.0 mm, lead-in radius 0.0 to 0.0 mm` |
+| Planned links | 0, 0.0 mm | 0, 0.0 mm |
+| Emitted keep-down links | 98 (236.7 mm) — the same as `geodesic_curv` | 171 (387.2 mm); `geodesic_curv` 173 (382.7 mm) |
+| Max emitted swept width | 0.3625, 0 over | 0.4677, 2 over (mop) |
+| Field | 19 levels, 94 wrap pieces, 6 spiral levels | 32 levels, 95 wrap pieces, 4 spiral levels |
+| Lobes | 6 / 34 arcs, 60 plain; split 51 (43 / 2 / 6), length ratio 8 | 5 / 31 arcs, 64 plain; split 53 (40 / 3 / 10), branch 2, length ratio 2, gap 2 |
+
+Max swept width per class, emitted plan:
+
+| Class | Star | Pocket |
+|---|---|---|
+| starter | 0.3114, 0 / 160 | 0.3114, 0 / 160 |
+| clearing | 0.3625, 0 / 1662 | 0.3616, 0 / 1509 |
+| clearing link | 0.1081, 0 / 22 | 0.3221, 0 / 25 |
+| residue contour link | — | 0.2271, 0 / 20 |
+| residue contour | — | 0.3333, 0 / 567 |
+| wall pass link | 0.0000, 0 / 22 | 0.3439, 0 / 74 |
+| wall pass | 0.1562, 0 / 75 | 0.3333, 0 / 21 |
+| residue mop | 0.3581, 0 / 91 | **0.4677, 2 / 337** |
+| residue mop link | 0.2500, 0 / 174 | 0.2395, 0 / 248 |
+
+Raw plan (swept width max, over / steps): star spiral 0.4044, 22/348; join
+0.8956, 100/124; wrap 0.9308, 33/1328; link 0.3768, 1/82. Pocket spiral
+0.4211, 17/187; link 0.9571, 24/134; wrap 0.9300, 146/2094; join 0.9460,
+85/109. No `lead` class appears in the raw plan.
+
+Cascade (refused / cascade / intrinsic):
+
+| Class | Star | Pocket |
+|---|---|---|
+| total | 135 / 20 / 115 (near-ceiling 17) | 887 / 663 / 224 (near-ceiling 70) |
+| clearing spiral | 12 / 0 / 12 (0.4044) | 12 / 0 / 12 (0.4211) |
+| clearing join | 94 / 0 / 94 (0.8956) | 102 / 17 / 85 (0.9460) |
+| clearing wrap | 28 / 20 / 8 (0.9308) | 764 / 640 / 124 (0.9300) |
+| clearing link | 1 / 0 / 1 (0.3768) | 9 / 6 / 3 (0.4080) |
+
+The area-per-mm floor holds the reading bounded: emitted area-per-mm max
+0.5885 (star) and 0.6094 (pocket), against 7.85 at D7. The raw wrap still
+reads 1.1288 of D on the pocket (above 1 D, but no longer unbounded).
+
+### C8's predictions
+
+| Prediction | Measured | Held? |
+|---|---|---|
+| star 75 to 90 entries | 82 | in range, but with 0 lead-ins |
+| pocket 60 to 80 entries | 73 | in range, but with 0 lead-ins |
+| few lead-ins on the star | 0 on the star AND 0 on the pocket | the mechanism never applied |
+
+Every lobe band and every closed wrap fell back to the seam (star 28 + 10,
+pocket 26 + 9). The column is therefore `geodesic_curv` with the core spiral
+(6 and 4 spiral levels) and no lead-in: J 55 against 58, M 12 against 0
+(star); J 34, M 22 against 12 (pocket). The entry counts are in range
+because of the spiral, not because of the lead-in.
+
+### Magic numbers (C8 diff)
+
+Product code: the floor `len.max(grid.cell_size)` (derived in its doc: the
+lattice cannot resolve travel under one cell). The lead-in radius
+`ρ_L` is derived per C8 (`lead_in_radius`); this pass read no new float
+literal in the product hunks.
+
+### `git status --short` at the end of D8
+
+```
+ M crates/rs_cam_core/src/adaptive/research_geodesic.rs
+ M planning/adaptive_research_2026-10-23/P15_D_verify.md
+```
+
+### Top three for the lead
+
+1. **The lead-in never applies.** `lead-ins piece 0: lobe bands 0` on both
+   shapes; all 28 + 10 (star) and 26 + 9 (pocket) fall back to the seam,
+   with planned link length 0.0 mm. Find the guard that rejects every
+   candidate (the lead-in radius reads 0.0 to 0.0 mm, so no radius was ever
+   accepted) before reading the column as evidence for or against the
+   FreeCAD mechanism.
+2. **C8's new test target did not compile** (`LobeMorph::Lead` missing in
+   an older test's two matches). Fixed with a scope arm. C8's own two new
+   tests pass; they test the lead-in geometry, not the harness fallback.
+3. **The `geodesic_curv_lead` numbers (82, 73) come from the spiral.** They
+   match the predicted ranges only because the core spiral replaces the
+   inner circles. The pocket mop still steps over the ceiling (0.4677, 2
+   steps).

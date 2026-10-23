@@ -5792,12 +5792,14 @@ mod tests {
             let apart = match morph {
                 LobeMorph::Alternate => 2,
                 LobeMorph::AlternateFull | LobeMorph::Return => 1,
+                LobeMorph::Lead => panic!("this test covers Alternate and Return only"),
             };
             assert_eq!(
                 legs.len(),
                 match morph {
                     LobeMorph::Alternate => 2 * (arcs.len() - 1),
                     LobeMorph::AlternateFull | LobeMorph::Return => arcs.len() - 1,
+                    LobeMorph::Lead => panic!("this test covers Alternate and Return only"),
                 },
                 "{morph:?}: legs per band"
             );
