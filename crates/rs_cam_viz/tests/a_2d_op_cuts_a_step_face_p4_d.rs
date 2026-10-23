@@ -259,7 +259,9 @@ fn a_new_pocket_on_a_step_model_takes_the_face_rings_ux7() {
     );
     let items = &session.models()[0].items;
     for (item, state) in items.iter().zip(&report.item_states) {
-        let ring = item.kind() == ItemKind::Loop && item.z().is_some();
+        // R-A: the part outline is a Loop at a Z too, and a Pocket does not
+        // take it.
+        let ring = item.kind() == ItemKind::Loop && item.z().is_some() && !item.is_part_outline();
         assert_eq!(
             *state != ItemState::NotSelected,
             ring,

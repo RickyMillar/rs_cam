@@ -321,7 +321,8 @@ fn the_default_rule_leaves_out_each_misfit_circle_with_a_note() {
             | NoteCause::AtTheTop { .. }
             | NoteCause::StopsShort { .. }
             | NoteCause::AtAWall
-            | NoteCause::NoOpenSide => None,
+            | NoteCause::NoOpenSide
+            | NoteCause::FreesThePart => None,
         })
         .collect();
     fits.sort_by(|a, b| a.1[0].total_cmp(&b.1[0]));

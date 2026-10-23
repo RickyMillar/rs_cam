@@ -118,6 +118,7 @@ fn resolve_in(
             // The default rule reads the use on a model edge item only
             // (R-C); these tests view the Q3 default.
             item_use: ItemUse::Regions,
+            outline_use: crate::compute::catalog::OutlineUse::PickOnly,
         },
     )
 }

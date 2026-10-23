@@ -28,7 +28,10 @@
 //!    `Top Z` 5 generates, gives the blocking diagnostic
 //!    `safety.cuts_into_model` (5 mm deep), and the export refuses
 //!    (`ExportRefusal::CutsIntoModel`).
-//! 4. The default Profile gives the same diagnostic and export refusal.
+//! 4. A Profile on the Z 30 ring through the stock (the floor of the
+//!    default Profile before R-A) gives the same diagnostic and export
+//!    refusal. R-A (2026-10-23): the default Profile on a mesh model now
+//!    cuts the part outline only (`a_mesh_model_gives_its_part_outline_ra`).
 //! 5. The tangent wall: a Pocket on the Z 20 ring, next to the Z 30 wall,
 //!    cuts inside the ring and measures clean; a move 0.2 mm into that
 //!    wall gouges. The ring is clockwise in the file: a lone ring was not
@@ -361,11 +364,16 @@ fn a_pocket_below_the_z30_ring_is_blocked_ux7b() {
     }
 }
 
-/// Claim 4 (defect 3).
+/// Claim 4 (defect 3). R-A: the default Profile takes the part outline
+/// only, so the ring is a pick, and the floor the old default wrote (the
+/// stock bottom, `Top` less the stock thickness) is stated.
 #[test]
-fn a_default_step_profile_is_blocked_ux7b() {
+fn a_ring_profile_through_the_stock_is_blocked_ux7b() {
     let mut s = stepped_session();
     let _ = add_as_the_doors_do(&mut s, OperationType::Profile);
+    let ring = item_at(&s, ItemKind::Loop, 30.0);
+    let _ = pick(&mut s, 0, &ring);
+    set_floor(&mut s, 0, Floor::top(STOCK_TOP));
     let _ = generate(&mut s, 0);
     let finding = s.result_at(0).unwrap().stats.model_gouge.unwrap();
     assert!(finding.gouges(), "{finding:?}");

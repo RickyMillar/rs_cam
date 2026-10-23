@@ -155,8 +155,8 @@ impl<B: ComputeBackend> AppController<B> {
             self.apply_add_or_toast(command)
         });
         let created = effects.as_ref().and_then(|effects| effects.created);
-        // UX-7b: the add set the floor "Each picked face" (THE each-face
-        // rule of core); the notice is the one Q2 note.
+        // UX-7b, R-B, R-A: the add set a floor (THE each-face, each-hole or
+        // part outline rule of core); the notice is the one core note.
         if let Some(note) = effects.as_ref().and_then(|e| e.floor_set_note()) {
             self.push_notification(note.to_owned(), super::super::Severity::Info);
         }

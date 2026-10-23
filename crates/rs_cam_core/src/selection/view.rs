@@ -30,7 +30,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::compute::catalog::ItemUse;
+use crate::compute::catalog::{ItemUse, OutlineUse};
 use crate::geo::P2;
 use crate::geometry::enriched_mesh::HORIZONTAL_FACE_MIN_NORMAL_Z;
 use crate::polygon::{Polygon2, detect_containment, detect_containment_tagged};
@@ -576,6 +576,18 @@ fn view_with<F: SelectionFrame>(
     let mut roles: Vec<ItemRole> = vec![ItemRole::Skipped; resolved.items().len()];
     for (at, r) in resolved.items().iter().enumerate() {
         let shape = r.item().shape();
+        // R-A (SAFETY): the part outline is the whole part. An op that cuts
+        // an area or an edge of it refuses a pick of it; a rule that names
+        // loops leaves it out with no note.
+        if r.item().is_part_outline() && resolved.outline_use() == OutlineUse::Refuse {
+            if r.by() == MatchedBy::Pick {
+                return Err(SelectionRefusal::new(
+                    Some(ItemRef::new(r.identity().clone())),
+                    RefusalCause::PartOutlineIsThePart,
+                ));
+            }
+            continue;
+        }
         // R-B: a hole of a STEP model, for a Drill.
         if is_drill_use(item_use) && r.item().model_hole().is_some() {
             if !resolved.upright() {
@@ -835,6 +847,24 @@ fn view_with<F: SelectionFrame>(
         }
     };
     notes.retain(|n| n.kind == ItemKind::Path);
+    // R-A: a Profile Outside on the part outline frees the part. The
+    // session and the prologue keep this note only when the floor and the
+    // tabs free it (`drop_part_free_note`).
+    if resolved.outline_use() == OutlineUse::Default
+        && let Some(r) = served_at
+            .iter()
+            .filter_map(|&at| resolved.items().get(at))
+            .find(|r| r.item().is_part_outline())
+    {
+        notes.push(SelectionNote {
+            kind: ItemKind::Loop,
+            layer: None,
+            count: 1,
+            first: ItemRef::new(r.identity().clone()),
+            item_use,
+            cause: NoteCause::FreesThePart,
+        });
+    }
     Ok((
         OpItems {
             view,
@@ -843,6 +873,16 @@ fn view_with<F: SelectionFrame>(
         },
         notes,
     ))
+}
+
+/// R-A: remove the [`NoteCause::FreesThePart`] note of `view` when the op
+/// does not free the part (`OperationConfig::frees_the_part`: a floor
+/// above the model bottom, or tabs). The prologue and the
+/// `selection_status` report call it with the same answer.
+pub fn drop_part_free_note(notes: &mut Vec<SelectionNote>, frees_the_part: bool) {
+    if !frees_the_part {
+        notes.retain(|n| n.cause != NoteCause::FreesThePart);
+    }
 }
 
 /// R-B: true for the item use of a Drill: holes of the tool size.

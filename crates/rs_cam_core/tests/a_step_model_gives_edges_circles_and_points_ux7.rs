@@ -24,8 +24,10 @@
 //!    a Chamfer that picks the floor circle 8 mm below the fresh stock top
 //!    refuses (UX-1c reads the item Z as the face top). A Trace that picks
 //!    one top edge (a `Path`) cuts along that edge only.
-//! 6. The default rule of a Pocket and of a Profile on a STEP model holds
-//!    the face rings only: no path, circle, point or face. R-B (2026-10-23,
+//! 6. The default rule of a Pocket on a STEP model holds the face rings
+//!    only: no path, circle, point or face. R-A (2026-10-23): the default
+//!    Profile (side Outside) holds the part outline only, and the Pocket
+//!    does not hold it. R-B (2026-10-23,
 //!    replaces the F29 pin of this claim): a Drill on the default rule
 //!    takes the rim circle of the hole and nothing else, and generates.
 //!
@@ -98,9 +100,15 @@ fn load(rel: &str) -> LoadedModel {
 }
 
 /// The count of the model edge items (the items with a Z) by kind.
+/// The model edge items by kind. R-A: the part outline is not a model
+/// edge (`a_mesh_model_gives_its_part_outline_ra` counts it).
 fn edge_counts(model: &LoadedModel) -> BTreeMap<ItemKind, usize> {
     let mut out = BTreeMap::new();
-    for item in model.items.iter().filter(|i| i.z().is_some()) {
+    for item in model
+        .items
+        .iter()
+        .filter(|i| i.z().is_some() && !i.is_part_outline())
+    {
         *out.entry(item.kind()).or_insert(0) += 1;
     }
     out
@@ -479,7 +487,13 @@ fn the_default_rule_on_a_step_model_holds_the_face_rings_only_ux7() {
             let session = default_session(load(rel), op.clone());
             let mut held = 0;
             for (item, state) in states(&session) {
-                let ring = item.kind() == ItemKind::Loop && item.z().is_some();
+                // R-A: the Profile takes the outline only, the Pocket the
+                // face rings only.
+                let ring = if name == "Profile" {
+                    item.is_part_outline()
+                } else {
+                    item.kind() == ItemKind::Loop && item.z().is_some() && !item.is_part_outline()
+                };
                 let selected = state != ItemState::NotSelected;
                 assert_eq!(
                     selected,
@@ -490,8 +504,9 @@ fn the_default_rule_on_a_step_model_holds_the_face_rings_only_ux7() {
                 );
                 held += usize::from(selected);
             }
+            let want = if name == "Profile" { 1 } else { 3 };
             assert!(
-                held >= 3,
+                held >= want,
                 "{name} on {rel}: the default holds the rings ({held})"
             );
         }

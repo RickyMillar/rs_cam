@@ -308,6 +308,16 @@ fn a_step_block_has_an_up_top_and_a_down_bottom() {
     );
     assert!(!model.items.has_drawing(), "a STEP model is not a drawing");
     assert!(model.outlines_pre_selection().is_none());
+    // R-A: one part outline, last, at the model bottom.
+    let outlines: Vec<_> = model
+        .items
+        .iter()
+        .enumerate()
+        .filter(|(_, i)| i.is_part_outline())
+        .collect();
+    assert_eq!(outlines.len(), 1, "one part outline");
+    assert_eq!(outlines[0].0, model.items.len() - 1, "the outline is last");
+    assert_eq!(outlines[0].1.z(), Some(bbox.min.z));
 }
 
 // ── 5. The bridges equal the lists before P2.1 ──────────────────────────

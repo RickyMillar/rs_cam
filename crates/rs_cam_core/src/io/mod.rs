@@ -238,6 +238,21 @@ pub(crate) fn model_from_geometry(
             model.enriched_mesh = Some(Arc::new(enriched));
         }
     }
+    // R-A: a mesh model (STEP or STL) gives its part outline, LAST, so
+    // each STEP item keeps its index.
+    if let Some(mesh) = &model.mesh {
+        match crate::selection::part_outline_item(mesh) {
+            Some(outline) => {
+                let mut items: Vec<crate::selection::Item> = model.items.iter().cloned().collect();
+                items.push(outline);
+                model.items = Arc::new(ItemSet::new(items));
+            }
+            None => tracing::info!(
+                model = %model.name,
+                "the mesh has no triangle with an XY area: no part outline"
+            ),
+        }
+    }
     model.bind_items();
     model
 }

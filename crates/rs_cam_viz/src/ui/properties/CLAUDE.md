@@ -8,7 +8,7 @@
 - `selection_section.rs` — one block per selection: summary (Cuts, Selected, hole sizes), Pick + Reset, filter, `list_groups` (default
   row L-R2, a group per rule, per picked kind; `GROUP_CAP` 8), row acts `Rule…`, `Use as floor`, `×`; `row_hover` lights the item; notes
   (`ADD_A_BORE`, Open paths, findings, `PICK_A_FACE_FIX`, `SKIPPED_ITEMS`). FR-2: a row is short (`row_label` "Ø6.00 Z20", `face_label`; R-E: a hole row is core `HoleSummary::label` "Ø6 hole, 8 deep", lib `one_hole_is_one_row_re` = MCP),
-  `row_full_label` is hover + filter; acts first, label truncates. F32: default rule: never-cut kinds ONE line, no Selected row (MCP parity).
+  `row_full_label` is hover + filter; acts first, label truncates. R-A: a `SelectedRow.outline` row is `outline_label` "Part outline Z0" (core `PART_OUTLINE_LABEL`), title "Default: the part outline", lib `the_part_outline_row_reads_part_outline_ra` (= MCP `role`). F32: default rule: never-cut kinds ONE line, no Selected row (MCP parity).
 - `model_sim_panels.rs` — a drawing gets "Import" (scale, join tolerance, report) and "Open shapes" (core
   `open_shapes`, Show me, the two close acts, Join all within, a lost edit in DANGER, the ledger in `Details`).
 - `operations/` — an editor per op family, `registry.rs`, `shape_diagrams.rs`, `height_diagram.rs`, `validate.rs`;

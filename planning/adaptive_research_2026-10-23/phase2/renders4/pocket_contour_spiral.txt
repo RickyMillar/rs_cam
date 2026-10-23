@@ -1,0 +1,41 @@
+pocket / contour_spiral
+pieces: 1
+cut length: 2630.0 mm
+keep-down links: 22 (137.3 mm)
+entries (plunges): 91
+retracts (lifts to safe Z, last included): 91
+pass load (planner readout): max 0.3723 vs ceiling 0.3626; 1 of 4282 steps over; 0 exempt plunge-departure steps
+  over: residue mop cut (segment 205) from (57.59, 33.55) to (57.82, 32.83), reading 0.3723
+load by class, emitted plan (max reading, steps over of steps):
+  starter: max 0.3114, 0 of 160
+  clearing link: max 0.3408, 0 of 25
+  clearing: max 0.3594, 0 of 3234
+  residue contour: max 0.3624, 0 of 626
+  residue contour link: max 0.0000, 0 of 23
+  wall pass link: max 0.1702, 0 of 48
+  wall pass: max 0.2029, 0 of 20
+  residue mop: max 0.3723, 1 of 140
+  residue mop link: max 0.0000, 0 of 6
+load by class, raw plan (max reading, steps over of steps):
+  starter: max 0.3114, 0 of 160
+  clearing: max 0.9167, 420 of 3637
+cascade (replay model on the raw plan): 235 refusals, 43 cascades, 192 intrinsic
+  clearing: refused 235, cascade 43, intrinsic 192 (max planned reading 0.9167)
+first refusal of each producer piece: 1 pieces, 0 of them cascades; the first ten:
+  first: clearing cut (segment 4) from (20.90, 15.75) to (21.65, 15.75), replay reading 0.5833, planned reading 0.5833, intrinsic
+intrinsic refusals, the first three of each class:
+  intrinsic: clearing cut (segment 4) from (20.90, 15.75) to (21.65, 15.75), replay reading 0.5833, planned reading 0.5833, intrinsic
+  intrinsic: clearing cut (segment 4) from (21.65, 15.75) to (22.18, 16.08), replay reading 0.4813, planned reading 0.4263, intrinsic
+  intrinsic: clearing cut (segment 4) from (22.18, 16.08) to (22.59, 16.55), replay reading 0.3881, planned reading 0.3881, intrinsic
+entries by producer: starter 1, clearing at a wrap end (join) 0, clearing mid-wrap (replay split) 72, residue contour 8, wall pass 0, residue mop 10, other 0
+raw plan (before the replay): 420 of 3797 steps over the ceiling (the steps the replay refuses; exact up to the first); the first ten:
+  refused: clearing cut  (segment 4) from (20.90, 15.75) to (21.65, 15.75), reading 0.5833
+  refused: clearing cut  (segment 4) from (21.65, 15.75) to (22.18, 16.08), reading 0.4263
+  refused: clearing cut  (segment 4) from (22.18, 16.08) to (22.59, 16.55), reading 0.3881
+  refused: clearing cut  (segment 4) from (22.40, 15.75) to (23.15, 15.75), reading 0.5833
+  refused: clearing cut  (segment 4) from (23.15, 15.75) to (23.68, 16.08), reading 0.4263
+  refused: clearing cut  (segment 4) from (23.68, 16.08) to (24.09, 16.55), reading 0.4422
+  refused: clearing cut  (segment 4) from (24.09, 16.55) to (24.33, 17.13), reading 0.4894
+  refused: clearing cut  (segment 4) from (23.90, 15.75) to (24.60, 15.85), reading 0.5289
+  refused: clearing cut  (segment 4) from (24.60, 15.85) to (25.14, 16.18), reading 0.5249
+  refused: clearing cut  (segment 4) from (25.14, 16.18) to (25.54, 16.66), reading 0.4422

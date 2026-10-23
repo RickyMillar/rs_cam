@@ -360,12 +360,18 @@ impl ProjectSession {
             // takes "Each hole floor" (`each_hole_floor_due`).
             if target == SelectionTarget::Op {
                 let probe = tc.clone();
-                let due = if added_area {
-                    session.each_face_floor_due(&probe)
-                } else {
-                    None
-                }
-                .or_else(|| session.each_hole_floor_due(&probe));
+                // R-A: a selection that now cuts the part outline on a
+                // Profile Outside at its default floor takes "Model bottom".
+                let due = session
+                    .part_outline_floor_due(&probe)
+                    .or_else(|| {
+                        if added_area {
+                            session.each_face_floor_due(&probe)
+                        } else {
+                            None
+                        }
+                    })
+                    .or_else(|| session.each_hole_floor_due(&probe));
                 if let Some(candidate) = due
                     && let Some(tc) = session.toolpath_configs.get_mut(index)
                 {

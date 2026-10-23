@@ -1,0 +1,7 @@
+star / contour_spiral
+pieces: 1
+cut length: 2850.6 mm
+keep-down links: 25 (141.2 mm)
+entries (plunges): 101
+retracts (lifts to safe Z, last included): 101
+pass load (planner readout): max 0.3613 vs ceiling 0.3626; 0 of 4498 steps over; 0 exempt plunge-departure steps

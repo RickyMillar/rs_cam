@@ -1,0 +1,30 @@
+star / contour_spiral
+pieces: 1
+cut length: 2850.6 mm
+keep-down links: 25 (141.2 mm)
+entries (plunges): 101
+retracts (lifts to safe Z, last included): 101
+pass load (planner readout): max 0.3613 vs ceiling 0.3626; 0 of 4498 steps over; 0 exempt plunge-departure steps
+load by class, emitted plan (max reading, steps over of steps):
+  starter: max 0.3114, 0 of 160
+  clearing link: max 0.3163, 0 of 23
+  clearing: max 0.3613, 0 of 4153
+  wall pass link: max 0.0000, 0 of 75
+  wall pass: max 0.2500, 0 of 31
+  residue mop: max 0.3433, 0 of 44
+  residue mop link: max 0.2500, 0 of 12
+load by class, raw plan (max reading, steps over of steps):
+  starter: max 0.3114, 0 of 160
+  clearing: max 0.8771, 501 of 4713
+entries by producer: starter 1, clearing at a wrap end (join) 0, clearing mid-wrap (replay split) 93, residue contour 0, wall pass 0, residue mop 7, other 0
+raw plan (before the replay): 501 of 4873 steps over the ceiling (the steps the replay refuses; exact up to the first); the first ten:
+  refused: clearing cut  (segment 4) from (52.57, 48.75) to (53.22, 48.97), reading 0.3942
+  refused: clearing cut  (segment 4) from (53.22, 48.97) to (53.76, 49.30), reading 0.6395
+  refused: clearing cut  (segment 4) from (53.76, 49.30) to (54.16, 49.78), reading 0.5597
+  refused: clearing cut  (segment 4) from (54.16, 49.78) to (54.40, 50.36), reading 0.4355
+  refused: clearing cut  (segment 4) from (54.45, 50.98) to (54.31, 51.59), reading 0.3662
+  refused: clearing cut  (segment 4) from (52.75, 52.84) to (52.68, 53.57), reading 0.4074
+  refused: clearing cut  (segment 4) from (52.68, 53.57) to (52.36, 54.10), reading 0.4813
+  refused: clearing cut  (segment 4) from (52.36, 54.10) to (51.88, 54.51), reading 0.4422
+  refused: clearing cut  (segment 4) from (46.75, 50.74) to (45.89, 51.26), reading 0.5141
+  refused: clearing cut  (segment 4) from (45.89, 51.26) to (45.03, 51.78), reading 0.7280

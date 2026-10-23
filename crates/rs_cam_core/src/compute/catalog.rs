@@ -18,8 +18,8 @@ mod schema;
 pub use capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
     AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, FaceTopRule,
-    FloorOwner, ItemUse, LutRoute, ModelGougeRule, MoveCountModel, RestUse, RowCapabilities,
-    TRANSFORM_DISCRETE_SCALLOP, TerritoryXy,
+    FloorOwner, ItemUse, LutRoute, ModelGougeRule, MoveCountModel, OutlineUse, RestUse,
+    RowCapabilities, TRANSFORM_DISCRETE_SCALLOP, TerritoryXy,
 };
 
 pub use schema::{
@@ -747,6 +747,45 @@ impl OperationType {
             ..row
         }
     }
+
+    /// R-A (SAFETY): what the op kind does with the part outline of a
+    /// mesh model ([`OutlineUse`]). The match names every op, so a new op
+    /// states its rule. [`OperationConfig::outline_use`] reads the Profile
+    /// side on top of it.
+    pub const fn outline_use(self) -> OutlineUse {
+        match self {
+            // The config arm refuses side Inside and On.
+            OperationType::Profile => OutlineUse::Default,
+            // Each follows a line the operator names; the default does not
+            // take the outline.
+            OperationType::Trace | OperationType::ProjectCurve => OutlineUse::PickOnly,
+            // These ops have no selection slot; their boundary reads
+            // `BOUNDARY_OUTLINE_USE`.
+            OperationType::DropCutter
+            | OperationType::Adaptive3d
+            | OperationType::Waterline
+            | OperationType::Pencil
+            | OperationType::Scallop
+            | OperationType::UnifiedFinish
+            | OperationType::SteepShallow
+            | OperationType::RampFinish
+            | OperationType::SpiralFinish
+            | OperationType::RadialFinish
+            | OperationType::HorizontalFinish => OutlineUse::PickOnly,
+            // An area or an edge of the outline is the whole part.
+            OperationType::Face
+            | OperationType::Pocket
+            | OperationType::Adaptive
+            | OperationType::VCarve
+            | OperationType::Inlay
+            | OperationType::InlayPlug
+            | OperationType::Zigzag
+            | OperationType::Drill
+            | OperationType::Bore
+            | OperationType::Chamfer
+            | OperationType::AlignmentPinDrill => OutlineUse::Refuse,
+        }
+    }
 }
 
 /// Common parameter accessors for all operation configs.
@@ -874,6 +913,41 @@ pub enum OperationConfig {
 }
 
 impl OperationConfig {
+    /// R-A (SAFETY): what this op does with the part outline of a mesh
+    /// model. The op kind states it ([`OperationType::outline_use`]); a
+    /// Profile takes it by default with side Outside only. Inside cuts the
+    /// part away, and On cuts half of the tool into the part.
+    pub fn outline_use(&self) -> OutlineUse {
+        match self {
+            OperationConfig::Profile(c) => match c.side {
+                crate::ops::profile::ProfileSide::Outside => OutlineUse::Default,
+                crate::ops::profile::ProfileSide::Inside | crate::ops::profile::ProfileSide::On => {
+                    OutlineUse::Refuse
+                }
+            },
+            other => other.op_type().outline_use(),
+        }
+    }
+
+    /// R-A: true when a Profile Outside on the part outline frees the part
+    /// from the stock: no tab (no automatic tab, no hand tab) and a floor
+    /// at or below the model bottom (`Floor::ModelBottom` with a depth of
+    /// 0 or more). The "frees the part" note reads it
+    /// (`selection::drop_part_free_note`).
+    pub fn frees_the_part(&self) -> bool {
+        match self {
+            OperationConfig::Profile(c) => {
+                c.tab_count == 0
+                    && c.tab_points.is_empty()
+                    && matches!(
+                        c.floor,
+                        crate::compute::floor::Floor::ModelBottom { depth } if depth >= 0.0
+                    )
+            }
+            _ => false,
+        }
+    }
+
     /// W2.4: this operation's capabilities. The registry row
     /// ([`OperationType::capabilities`]) is the default; an arm overrides
     /// only a field that reads this config. The match names every variant,

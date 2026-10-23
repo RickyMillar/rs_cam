@@ -1,0 +1,8 @@
+star / agent
+pieces: 1
+cut length: 1379.2 mm
+keep-down links: 261 (596.2 mm)
+entries (plunges): 25
+retracts (lifts to safe Z, last included): 25
+pass load (planner readout): max 0.4515 vs ceiling 0.3626; 1 of 1943 steps over; 0 exempt plunge-departure steps
+  over: clearing cut (segment 85) from (83.47, 40.11) to (83.35, 38.62), reading 0.4515

@@ -12,7 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::compute::catalog::ItemUse;
+use crate::compute::catalog::{ItemUse, OutlineUse};
 use crate::ids::ModelId;
 
 use super::hole_fit::HoleFitRule;
@@ -156,13 +156,13 @@ impl Filter {
     /// the setup frame (`resolve::face_in_setup_frame`,
     /// `resolve::item_z_in_setup_frame`).
     ///
-    /// `item_use` is the use of the op that reads the selection: the
-    /// default rule ([`KindFilter::Served`]) reads it on a model edge item
-    /// ([`served_by_default`]).
+    /// `(item_use, outline_use)` is the use of the op that reads the
+    /// selection: the default rule ([`KindFilter::Served`]) reads it on a
+    /// model edge item and on the part outline ([`served_by_default`]).
     pub(super) fn admits(
         &self,
         item: &Item,
-        item_use: ItemUse,
+        (item_use, outline_use): (ItemUse, OutlineUse),
         face_frame: impl Fn(&Item) -> (f64, f64),
     ) -> bool {
         let layer_ok = self.layers.is_empty()
@@ -171,7 +171,7 @@ impl Filter {
                 .is_some_and(|l| self.layers.iter().any(|want| want == l));
         let kind = item.kind();
         let kind_ok = match &self.kinds {
-            KindFilter::Served => served_by_default(item, item_use),
+            KindFilter::Served => served_by_default(item, item_use, outline_use),
             KindFilter::Only(kinds) => kinds.contains(&kind),
         };
         let diameter_ok = match (&self.diameter, item.shape()) {
@@ -217,7 +217,17 @@ impl Filter {
 ///   ([`Item::rim_depth`]), and no ring. The floor circle of a blind hole
 ///   does not serve. The fit step then keeps the rims of the tool size.
 ///   The Bore and the Pin Drill keep the Q3 rule.
-pub(super) fn served_by_default(item: &Item, item_use: ItemUse) -> bool {
+/// - R-A (operator ruling 2026-10-23, SAFETY): the part outline of a mesh
+///   model serves only an op of [`OutlineUse::Default`] (Profile Outside),
+///   and that op takes ONLY the outline of a mesh model: no face ring.
+///   A drawing item (no Z) does not change: a DXF Profile keeps every loop.
+pub(super) fn served_by_default(item: &Item, item_use: ItemUse, outline_use: OutlineUse) -> bool {
+    if item.is_part_outline() {
+        return outline_use == OutlineUse::Default;
+    }
+    if outline_use == OutlineUse::Default && item.z().is_some() {
+        return false;
+    }
     let kind = item.kind();
     if item.z().is_none() {
         return is_drawing_kind(kind);

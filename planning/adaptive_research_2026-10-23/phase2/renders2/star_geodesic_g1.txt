@@ -1,0 +1,8 @@
+star / geodesic_g1
+pieces: 1
+cut length: 1010.9 mm
+keep-down links: 66 (206.1 mm)
+entries (plunges): 86
+retracts (lifts to safe Z, last included): 86
+pass load (planner readout): max 0.3614 vs ceiling 0.3626; 0 of 2559 steps over; 0 exempt plunge-departure steps
+field piece 0: applied true, seed Some([49.5, 50.5]), seed radius 3.00 mm, levels 18, wrap pieces 103, converged true, front branches 1, spiral levels 0

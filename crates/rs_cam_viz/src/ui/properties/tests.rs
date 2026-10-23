@@ -1363,3 +1363,120 @@ fn one_hole_is_one_row_re() {
         "the rim row names its floor circle: {listed}"
     );
 }
+
+/// R-A (operator ruling 2026-10-23): the part outline row has one name on
+/// every surface. A default Profile (side Outside) on `stepped_block.step`:
+///
+/// - the GUI Geometry tab list (`list_groups`) gives one row,
+///   "Part outline Z0", under the title "Default: the part outline";
+/// - the MCP `selection_status` reply gives one `rows` entry with `role`
+///   `"part_outline"`;
+/// - the MCP `list_model_items` reply gives one row with that `role`, the
+///   last row, and every other row gives `role: null`.
+///
+/// Red proof (run by hand, 2026-10-23): with `row_of` back on
+/// `row_label` for the outline, the GUI row reads "Loop Z0 49.0 mm".
+#[test]
+fn the_part_outline_row_reads_part_outline_ra() {
+    use rs_cam_core::compute::StockConfig;
+    use rs_cam_core::compute::catalog::OperationConfig;
+    use rs_cam_core::compute::operation_configs::ProfileConfig;
+    use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
+    use rs_cam_core::session::{ProjectSessionBuilder, SelectionTarget, ToolpathConfig};
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../rs_cam_core/tests/fixtures/step/stepped_block.step");
+    let model = rs_cam_core::io::load_model_file(
+        &path,
+        rs_cam_core::ids::ModelId::from_raw(0),
+        ModelKind::Step,
+        ModelUnits::Millimeters,
+        Default::default(),
+    )
+    .unwrap();
+    let mut tool = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+        rs_cam_core::compute::ToolId::from_raw(1),
+        rs_cam_core::compute::tool_config::ToolType::EndMill,
+    );
+    tool.diameter = 6.0;
+    let mut builder = ProjectSessionBuilder::new()
+        .stock(StockConfig {
+            x: 70.0,
+            y: 50.0,
+            z: Some(30.0),
+            origin_x: -5.0,
+            origin_y: -5.0,
+            origin_z: 0.0,
+            auto_from_model: false,
+            ..StockConfig::default()
+        })
+        .tool(tool);
+    let model_id = builder.add_model(model);
+    let _ = builder
+        .add_toolpath(
+            0,
+            ToolpathConfig {
+                shoe: Default::default(),
+                id: rs_cam_core::compute::ToolpathId::from_raw(0),
+                name: "ra profile".to_owned(),
+                enabled: true,
+                operation: OperationConfig::Profile(ProfileConfig::default()),
+                dressups: Default::default(),
+                heights: Default::default(),
+                tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+                model_id,
+                pre_gcode: None,
+                post_gcode: None,
+                boundary: Default::default(),
+                boundary_inherit: true,
+                stock_source: Default::default(),
+                coolant: Default::default(),
+                debug_options: Default::default(),
+                feeds_provenance: Default::default(),
+                rest_analysis: Default::default(),
+                planner_origin: None,
+            },
+        )
+        .unwrap();
+    let session = builder.build();
+
+    // GUI: the Geometry tab list.
+    let (groups, _) = groups_of(&session);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].title, "Default: the part outline");
+    let rows: Vec<&str> = groups[0].rows.iter().map(|r| r.label.as_str()).collect();
+    assert_eq!(rows, vec!["Part outline Z0"], "the GUI list");
+
+    // MCP: selection_status.
+    let status =
+        crate::app::mcp::commands::selection_status_reply(&session, 0, SelectionTarget::Op);
+    let status_rows = status["rows"].as_array().unwrap();
+    assert_eq!(status_rows.len(), 1, "{status}");
+    assert_eq!(status_rows[0]["role"], serde_json::json!("part_outline"));
+
+    // MCP: list_model_items.
+    let listed = crate::app::mcp::commands::list_model_items_reply(
+        &session,
+        &rs_cam_mcp::server::ListModelItemsParam {
+            model_id: model_id.raw(),
+            layer: None,
+            kind: None,
+            near: None,
+        },
+    );
+    let items = listed["items"].as_array().unwrap();
+    let roles: Vec<usize> = items
+        .iter()
+        .enumerate()
+        .filter(|(_, i)| i["role"] == serde_json::json!("part_outline"))
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(
+        roles,
+        vec![items.len() - 1],
+        "one outline row, last: {listed}"
+    );
+    assert!(
+        items[..items.len() - 1].iter().all(|i| i["role"].is_null()),
+        "{listed}"
+    );
+}
