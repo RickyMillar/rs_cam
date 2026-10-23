@@ -101,6 +101,10 @@ Operator 15:05: "I think your plan is good." Then the continuous spiral form
 
 ## Where things stand (read this first, 2026-10-24 00:35)
 
+- **00:20: adaptive-instruments LANDED on master 629748f1** (peer's c49414c5
+  merged, no conflict, ff'd). Post-merge smoke on main: check core + viz,
+  viz --lib 586 green, roughcov 9/9, roughgouge 6/6.
+
 - **Instruments (Phase 1.5) are built and measured.** Gouge: clean on all
   eight Phase 0 roughs, exports succeed, no false fire. Coverage: reads
   every eye defect (37 + 2 hex-hole cores, the 13 mm spur, the outer band),
