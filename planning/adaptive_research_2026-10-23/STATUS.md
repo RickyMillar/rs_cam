@@ -34,7 +34,7 @@ Surface rule samples EMITTED moves at ≤ D/4 through the drop-cutter.
 | C3 plunge diagnosis | DONE 19:05, committed c8db8b55: the ramp's entry law assumed a straight cleared edge; round the seed the edge is a circle and the step reads 2 + 4/ρ mm vs the 2.18 ceiling for every ρ < 23 mm → ramp REVERTED to the G1 join (kept selectable for the refused-step dump). Second bug found and fixed: every front-branch change counted as a meeting line (shadow lines too) → wraps cut in two; now only branches that went round the island on different sides meet. Entry split on the G1 column: star 86 = 56 wrap-join re-entries + 14 mid-wrap splits + 14 mop + starter + wall. Next lever proposed (not built): curvature-aware wrap spacing s'(ρ) = ρ + R − √(R² + ρ² + 2ρ(R − c·D)) and a join under that width. Was RUNNING 18:45: entries per producer, does the ramp pass the load rule, keep clipping + source tracking + meeting rule, fix or revert the join | `P2_C2_geodesic_fixes.md` §C3 (worktree) |
 | D3 verifier | RUNNING 19:10: fmt, research lib tests, clippy, harness with the per-producer split and the refused-step dump | `P15_D_verify.md` §D3 |
 | GUI rebuild | DONE 19:05: binary from 3ae1da39 (sha b31029f2…, mtime 1792735547.89), installed, gui_restart ok (pid 2538272) |
-| E2 evidence | RUNNING 19:08: Corne controls + wanaka200 CP on the fixed build; expect coverage readings present and no Blocking gouge (exports succeed) | `P15_E_evidence.md` §E2 |
+| E2 evidence | DONE 19:25 at 3ae1da39. **Gouge: clean on all 8 roughs, all 4 exports succeed**; the wanaka plough stays a link_cuts_stock finding (correct); Caution path untested (no reading produced one). **Coverage: reads every eye defect** — AS 37 hex-hole cores (3.5 mm tall, 1.4–1.9 wide; eye count 37), the outer band (~8 islands 16.5–18 mm), the spur (13.0 mm tall, 0.30 wide, 2.2 mm from the Phase 0 spot), CS exactly 2 cores + band, 5 screw-hole islands on all three; wanaka back abstains `setup_not_identity` (flipped setup, as designed). **But it fails the zero control:** CP reads 711 / 1 406 islands (Safety) from (1) a one-cell edge fringe along the outer cut edge, (2) real 0.6–1.4 mm wall strips against vertical walls that read as full-height islands, (3) the normal Z-level terraces on the wanaka front slope (36 % of area). Adopt cost ~2 s per Corne project, 4.7 s wanaka; wanaka generate +2–3 s vs the first run. Was RUNNING 19:08: Corne controls + wanaka200 CP on the fixed build; expect coverage readings present and no Blocking gouge (exports succeed) | `P15_E_evidence.md` §E2 |
 | (old) GUI rebuild | was RUNNING 18:40 from the worktree (branch 3ae1da39); then install, gui_restart, E2 re-run of the Corne controls | |
 | (old) E evidence | was RUNNING 15:20: Phase 0 Corne columns through the two instruments in the GUI (zero control CP, positive control AS, CS), wanaka200 CP if time | `P15_E_evidence.md` |
 | (old) D verifier | was RUNNING 15:10: merge master into the branch, fmt, check, new sentries, folder sentries, viz --lib, mcp, clippy, magic-number scan, render harness | `P15_D_verify.md` (worktree) |
@@ -226,6 +226,20 @@ every corner look busy and potentially an artifact."
   AgentSearch: links partly, path no in odd shapes, part no (N5 spurs, N7
   band, N10 hole cores). ContourSpiral: links no (seam loop clusters), path
   yes except the seams, part partly (N7 band, 2 hole cores).
+
+## Lead ruling 19:30 on the coverage target (A3)
+
+The bar must judge against the rough's OWN intended surface, not the
+model: a Z-level rough cannot remove (a) the terrace between two levels on
+a slope, (b) the material within one tool radius of a wall above the
+wall foot, (c) anything outside the tool-reachable region. All three are
+one derived surface: the drop-cutter of the rough's cutter over the model
+plus its axial leave, quantised UP to the next level of the op's Z plan.
+A cell is above spec when the stock stands more than one simulation cell
+above that surface. No new constant. Hole cores, the spur and the band
+stay (the tool reaches them); fringe, wall strips and terraces go. The
+wall strips are a separate look item (G-WALLSTRIP), not a coverage
+failure of the rough's plan.
 
 ## Handed over 15:35: G-MOPLOAD and G-RAPIDLIFTPIN (adaptive/ sentries red since 10-20, see DEFECTS.md). G-MOPLOAD is a real pass-load break in the residue mop (the V1 mechanism): queue it right after the G1 fixes; the Phase 2 candidate must not inherit the mop.
 
