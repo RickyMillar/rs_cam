@@ -53,28 +53,13 @@ You are the lead of the geometry selection programme. Read `PLAN.md` from
 5. DONE c49414c5: R-A part outline item, default Profile Outside to the
    model bottom, no tabs, "frees the part" note. Open: after ModelBottom
    is written a face-ring pick on that Profile does not get Each face.
-6. IN PROGRESS, UNCOMMITTED (2026-10-24 morning): R2 + Q7 + Q9 in one
-   package. The working tree holds ~251 edited files (core, viz, cli,
-   mcp) plus 4 new tests: an_op_with_no_tool_is_a_state_r2,
-   a_new_op_takes_its_setup_model_q7, add_a_bore_takes_a_fitting_end_mill_q9,
-   viz every_add_door_takes_one_model_and_tool_q7. Design (accepted):
-   `ToolpathConfig.tool_id: Option<ToolId>` (no-tool state; generation
-   and export refuse "Set a tool on the Geometry tab"; diagnostics
-   `precondition.no_tool` "No tool fits: needs <kinds>"); one door
-   `ProjectSession::tool_fit`; `draft_toolpath(op, ToolChoice, selected_model,
-   setup, name)` picks the setup's selected/serving model
-   (`LoadedModel::serves`); picks at add become the selection;
-   AddBoreFromDrill takes the first fitting end mill (overturns P6.7b);
-   a no-tool draft keeps the default boundary and the first
-   SetToolpathTool sizes it. Breaks: file tool_id optional (F053
-   changes), MCP add_toolpath tool_index/model_id optional, wire snapshot
-   moves. The lead's agent was mid-gates when the session ended. A fresh
-   session: run `git diff --stat`, build (`cargo check -p rs_cam_core
-   -p rs_cam_viz -p rs_cam_cli`), then the gate list (core --lib, folder
-   sentries of session/compute/selection, opgolden, viz --lib +
-   properties/app/controller sentries, mcp, cli, fmt, clippy), fix reds,
-   review by path, commit by explicit paths. Known master reds, not
-   this work: g_adaptpassload, g_adaptrapidlift (adaptive research owns).
+6. DONE e5362911: R2 (an op may have no tool; state on the row; Cut
+   tab combo greys refused tools), Q7 (a new op takes its setup's
+   selected/serving model; picks at add become the selection), Q9 (Add
+   a Bore takes a fitting end mill). The working tree is clean of code.
+   Known limits: the GUI Selection::Faces -> picks arm has no viz test;
+   `ui/toolpath_panel.rs::add_menu_offers` keeps its own copy of the
+   serve predicate (should call `LoadedModel::serves`).
 7. T3 (delete the last tab, note that the part is freed) and L8 (run the
    held Profile near/far hole test, then pick "Island" or "Inner wall").
 8. Q5 (error state on the op row), Q6 (refuse a move with a typed
