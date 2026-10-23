@@ -759,3 +759,167 @@ bound, boundary 10.1/29.9, fringe and strip blocks 32.7..33.1, 41 cells,
    "split": 53 not joined on the star, 51 on the pocket (against 6 lobes of
    29 arcs and 5 lobes of 31 arcs). The star also stops 11 for the length
    ratio; the pocket stops 2 for branch and 2 for gap.
+
+## D5 at 04b24757
+
+C5 cc0b6d93 (cascade diagnostic, curvature spacing law, columns
+`geodesic_curv` / `geodesic_curv_morph`) and A4 04b24757 (free islands
+first, op-independent wall tag). No merge of master. Same lane script, own
+target dir, a `timeout` on each command. Disk: 45 GB free.
+
+### Fixes
+
+None. The tree had no change before this section.
+
+### Results
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `fmt --all -- --check` | green |
+| 1 | three `check` builds (core `test-support`; core `research,test-support`; viz) | green |
+| 2 | `--lib standing_islands` | green 6/6 |
+| 2 | `--lib sim_triage` | green 22/22 |
+| 2 | `--test a_rough_island_above_the_stock_to_leave_is_flagged_g_roughcov` | green 9/9 |
+| 2 | `--lib the_narration_sentence_states` | green 1/1 |
+| 2 | `test -p rs_cam_viz -q --lib` (the g_roughcov island and the narration sentence) | green 585 passed, 2 ignored |
+| 2 | `test -p rs_cam_mcp -q` | green 36/36 |
+| 3 | `--features research,test-support --lib research_geodesic` | green 8 passed, 1 ignored (G-MOPLOAD) |
+| 3 | the harness, release, `timeout 900` | green 1/1, 3.81 s |
+| 4 | full workspace clippy | green |
+
+### C5 refactor controls
+
+| Column | D4 | D5 | Same |
+|---|---|---|---|
+| star / geodesic_a | 92 = S1 J56 M20 P15; 0.3600; raw 206/2330 | 92 = S1 J56 M20 P15; 0.3600; raw 206/2330 | yes |
+| pocket / geodesic_a | 88 = S1 J42 M27 C4 P14; 0.3624; raw 289/2845 | 88 = S1 J42 M27 C4 P14; 0.3624; raw 289/2845 | yes |
+| star / geodesic_morph_alt | 69 = S1 J30 M14 C12 P12; 0.9745; raw 272/2312 | 69 = S1 J30 M14 C12 P12; 0.9745; raw 272/2312 | yes |
+| pocket / geodesic_morph_alt | 77 = S1 J45 M11 C9 P11; 0.4517; raw 280/3690 | 77 = S1 J45 M11 C9 P11; 0.4517; raw 280/3690 | yes |
+
+The C5 refactor did not change the existing columns.
+
+### The two new columns
+
+Output: `/home/ricky/personal_repos/rs_cam/.claude/worktrees/adaptive-head/target/tmp/adaptive_geodesic_2d_g1/`.
+Split: S starter, J join at a wrap end, M mid-wrap split, C residue contour,
+W wall pass, P residue mop. Retracts equal entries.
+
+| Shape / column | Entries | S/J/M/C/W/P | Max emitted / 0.3626 | Emitted over-steps | Raw over | C5 prediction |
+|---|---|---|---|---|---|---|
+| star / geodesic_curv | 73 | 1/58/0/0/0/14 | 0.3581 | 0 | 145 / 2545 | 70 to 80 (holds); M 0 to 5 (holds, 0) |
+| star / geodesic_curv_morph | 84 | 1/56/12/0/0/15 | 0.3625 | 0 | 163 / 2602 | 35 to 50 (FAILS) |
+| pocket / geodesic_curv | 63 | 1/34/12/6/0/10 | 0.4677 | 2 (mop: seg 134, 0.4526 and 0.4677) | 260 / 2952 | 75 to 82 (better); M 10 to 15 (holds, 12) |
+| pocket / geodesic_curv_morph | 86 | 1/60/13/0/0/12 | 0.3616 | 0 | 254 / 3677 | 45 to 60 (FAILS) |
+
+Field lines: star curv 19 levels, 100 wrap pieces, 0 spiral levels; star
+curv_morph 19 levels, 128 wrap pieces, 6 spiral levels; pocket curv 32
+levels, 99 wrap pieces, 0 spiral levels; pocket curv_morph 32 levels, 126
+wrap pieces, 4 spiral levels. All converged.
+
+### Cascade diagnostic (replay model on the raw plan)
+
+| Column | Class | Refused | Cascade | Intrinsic | Max planned reading | Raw tally (over / steps) |
+|---|---|---|---|---|---|---|
+| star curv | total | 128 | 20 | 108 | | |
+| | clearing join | 97 | 0 | 97 | 0.8956 | 106 / 130 |
+| | clearing wrap | 30 | 20 | 10 | 0.9308 | 38 / 2173 |
+| | clearing link | 1 | 0 | 1 | 0.3768 | 1 / 82 |
+| star curv_morph | total | 119 | 19 | 100 | | |
+| | clearing spiral | 12 | 0 | 12 | 0.4044 | 22 / 348 |
+| | clearing join | 38 | 0 | 38 | 0.8485 | 44 / 68 |
+| | clearing wrap | 19 | 11 | 8 | 0.9308 | 23 / 760 |
+| | clearing link | 1 | 0 | 1 | 0.3768 | 1 / 82 |
+| | clearing morph | 49 | 8 | 41 | 0.6467 | 73 / 1184 |
+| pocket curv | total | 876 | 663 | 213 | | |
+| | clearing join | 104 | 17 | 87 | 0.9460 | 89 / 113 |
+| | clearing wrap | 763 | 640 | 123 | 0.9300 | 146 / 2545 |
+| | clearing link | 9 | 6 | 3 | 0.4080 | 25 / 134 |
+| pocket curv_morph | total | 311 | 151 | 160 | | |
+| | clearing spiral | 12 | 0 | 12 | 0.4211 | 17 / 187 |
+| | clearing link | 9 | 2 | 7 | 0.7145 | 23 / 129 |
+| | clearing wrap | 95 | 55 | 40 | 0.9419 | 60 / 1209 |
+| | clearing join | 42 | 12 | 30 | 0.9302 | 39 / 62 |
+| | clearing morph | 153 | 82 | 71 | 0.7510 | 115 / 1930 |
+
+First refusal of each producer piece: star curv 74 pieces (12 cascades);
+star curv_morph 43 (7); pocket curv 131 (56); pocket curv_morph 63 (19).
+
+### The core spiral: the first three intrinsic refusals (verbatim)
+
+Only the `_curv_morph` columns have a core spiral (`geodesic_curv` has 0
+spiral levels). Star seed (49.5, 50.5), pocket seed (18.5, 18.5).
+
+star / geodesic_curv_morph:
+
+```
+  intrinsic: clearing spiral (segment 4) from (46.20, 55.28) to (45.10, 54.40), replay reading 0.4008, planned reading 0.4008, intrinsic, 5.88 mm from the seed
+  intrinsic: clearing spiral (segment 4) from (45.37, 45.83) to (45.91, 45.30), replay reading 0.4044, planned reading 0.4044, intrinsic, 6.31 mm from the seed
+  intrinsic: clearing spiral (segment 4) from (55.83, 48.11) to (56.18, 48.85), replay reading 0.3630, planned reading 0.3630, intrinsic, 6.88 mm from the seed
+```
+
+pocket / geodesic_curv_morph:
+
+```
+  intrinsic: clearing spiral (segment 4) from (15.72, 21.71) to (14.87, 20.83), replay reading 0.4039, planned reading 0.4039, intrinsic, 4.31 mm from the seed
+  intrinsic: clearing spiral (segment 4) from (14.87, 20.83) to (14.30, 19.73), replay reading 0.3809, planned reading 0.3781, intrinsic, 4.37 mm from the seed
+  intrinsic: clearing spiral (segment 4) from (15.43, 14.96) to (16.53, 14.18), replay reading 0.3859, planned reading 0.3859, intrinsic, 4.75 mm from the seed
+```
+
+Under the law, the spiral's raw over-steps fall from 138/392 to 22/348
+(star) and from 55/151 to 17/187 (pocket). 12 intrinsic refusals remain on
+each shape, all within 4.3 to 6.9 mm of the seed, at 0.36 to 0.40 of D.
+
+### Lobe stop reasons (split three ways)
+
+| Column | Lobes / arcs | Plain wraps | Split: total (two or more children / child with two or more parents / closed) | Branch | Length ratio | Gap | Left the region |
+|---|---|---|---|---|---|---|---|
+| star curv_morph | 6 / 34 | 60 | 51 (43 / 2 / 6) | 0 | 8 | 0 | 0 |
+| pocket curv_morph | 5 / 31 | 64 | 53 (40 / 3 / 10) | 2 | 2 | 2 | 0 |
+
+### C5's keep-or-drop rule for the morph (P2_C2 §(3))
+
+Rule: keep the morph when, in `geodesic_curv_morph`, the `clearing morph`
+intrinsic rate (intrinsic / raw-tally steps) is at or below the
+`clearing wrap` intrinsic rate of the same column, AND most of the morph's
+replay refusals are cascades. Otherwise drop it.
+
+| Shape | Morph intrinsic rate | Wrap intrinsic rate | Morph ≤ wrap | Morph cascades / refused | Most are cascades |
+|---|---|---|---|---|---|
+| star | 41 / 1184 = 3.46 % | 8 / 760 = 1.05 % | no | 8 / 49 | no |
+| pocket | 71 / 1930 = 3.68 % | 40 / 1209 = 3.31 % | no | 82 / 153 | yes |
+
+The first condition fails on both shapes, so the tie-break does not apply.
+**The rule says DROP the morph.** The fallback is the `geodesic_curv` column,
+which needs no code. The entries agree: `geodesic_curv` gives 73 and 63,
+`geodesic_curv_morph` gives 84 and 86.
+
+### Magic numbers (C5 and A4 diffs; not changed)
+
+- Product code: none. The C5 spacing law `s'(ρ)` and
+  `ρ* = s(2R − s)/(2(cD − s))` have no literal.
+- Test values: C5 epsilons `1e-9`, `1e-3`, and `s_prime(1e6, ..)` (a large ρ
+  to test the limit `s' → cD`); A4 sentry fixtures `HOLE_LO 15.1`,
+  `HOLE_HI 25.1`, `core_top = FLOOR_Z + STL_MM + 1.5`, tool 25.0 long, the core
+  block 19.5..20.5, the sliver 15.2..15.3 x 19.0..21.0, `flat(50.0, ..)`.
+
+### `git status --short` at the end of D5
+
+```
+ M planning/adaptive_research_2026-10-23/P15_D_verify.md
+```
+
+### Top three for the lead
+
+1. **The morph rule says drop it.** Its intrinsic refusal rate is above the
+   plain wrap's rate on both shapes (3.46 % vs 1.05 %; 3.68 % vs 3.31 %), and
+   `geodesic_curv_morph` has MORE entries than `geodesic_curv` (84 vs 73;
+   86 vs 63). C5 predicted 35 to 50 and 45 to 60.
+2. **Joins are the remaining cost of `geodesic_curv`.** Star: 58 of 73
+   entries are joins, and 97 of its 108 intrinsic refusals are joins
+   (planned reading up to 0.90). The first ones are the radial seam steps
+   at 4.4 to 15 mm from the seed (0.50 to 0.83). The spacing law removes the
+   mid-wrap splits on the star (M 20 → 0), not the joins.
+3. **The pocket cascade count is large.** In `pocket / geodesic_curv`, 640
+   of 763 wrap refusals are cascades (663 of 876 in total). The law
+   under-protects behind the island, as C5 expected. Its emitted mop also
+   steps over the ceiling twice (0.4526, 0.4677).
