@@ -498,6 +498,16 @@ impl super::catalog::OperationConfig {
             _ => None,
         }
     }
+
+    /// "Cut past open sides" (operator ruling 2026-10-23): true when the op
+    /// grows the area of each model face out through its open sides to the
+    /// stock edge (`compute::open_sides`). Only a Pocket has the setting.
+    pub fn cuts_past_open_sides(&self) -> bool {
+        match self {
+            super::catalog::OperationConfig::Pocket(cfg) => cfg.cut_past_open_sides,
+            _ => false,
+        }
+    }
 }
 
 /// The Bore op (geometry selection P6.6, design 4.4, lead ruling L-11): a
@@ -790,6 +800,11 @@ impl OpenPaths {
     }
 }
 
+/// The help text of the Pocket `cut_past_open_sides` parameter (operator
+/// ruling 2026-10-23). The GUI shows it as the hover of the checkbox.
+pub const HELP_CUT_PAST_OPEN_SIDES: &str =
+    "Clear the stock beyond the edges of the face that have no wall, out to the stock edge.";
+
 /// The help text of the Pocket `open_paths` parameter.
 const HELP_OPEN_PATHS: &str = "What the Pocket does with an open path: skip it (with a note), \
      or extend each end along its tangent to one tool radius past the stock edge and cut the \
@@ -854,6 +869,15 @@ pub struct PocketConfig {
     #[serde(default)]
     #[param(help = HELP_OPEN_PATHS)]
     pub open_paths: OpenPaths,
+    /// Operator ruling 2026-10-23 ("Cut past open sides", opt-in): the
+    /// area of each model face (a face or a Z ring) grows out through each
+    /// side of the face that has no wall, to the stock edge
+    /// (`compute::open_sides`). Default off; a file with no key loads it
+    /// off, and the file writes the key only when it is on. The param is
+    /// optional, so the schema does not need a written field (W4 check 6).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[param(help = HELP_CUT_PAST_OPEN_SIDES, optional)]
+    pub cut_past_open_sides: bool,
 }
 
 impl Default for PocketConfig {
@@ -874,6 +898,7 @@ impl Default for PocketConfig {
             region_ordering: default_layered_region_ordering(),
             selection: Selection::drawing(),
             open_paths: OpenPaths::Skip,
+            cut_past_open_sides: false,
         }
     }
 }

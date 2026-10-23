@@ -224,6 +224,7 @@ pub(in crate::ui::properties) fn draw_pocket_params(
     pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
     floor: Option<&FloorInputs>,
+    model_areas: bool,
 ) {
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
@@ -263,6 +264,11 @@ pub(in crate::ui::properties) fn draw_pocket_params(
         ui.end_row();
         region_ordering_row(ui, "pocket_ord", &mut cfg.region_ordering);
         open_paths_rows(ui, &mut cfg.open_paths);
+        // A drawing Pocket has no face, so it shows no row. The row stays
+        // while the setting is on, so the operator can turn it off.
+        if model_areas || cfg.cut_past_open_sides {
+            open_sides_row(ui, &mut cfg.cut_past_open_sides);
+        }
         if cfg.pattern == PocketPattern::Zigzag {
             dv(
                 ui,
@@ -346,6 +352,25 @@ fn open_paths_rows(ui: &mut egui::Ui, open_paths: &mut OpenPaths) {
         .clicked()
     {
         *open_paths = flipped(*open_paths);
+    }
+    ui.end_row();
+}
+
+/// The label of the Pocket "Cut past open sides" row (operator ruling
+/// 2026-10-23). The hover is the registry help of the parameter.
+pub(in crate::ui::properties) const OPEN_SIDES_LABEL: &str = "Cut past open sides";
+
+/// The "Cut past open sides" row of Pocket (operator ruling 2026-10-23):
+/// one checkbox. On, the area of each model face grows out through each
+/// side with no wall, to the stock edge. The row writes the draft; the
+/// panel sends one `ReplaceToolpathConfig`.
+fn open_sides_row(ui: &mut egui::Ui, on: &mut bool) {
+    let help = help_for(OperationType::Pocket, "cut_past_open_sides");
+    let label = ui.label(format!("{OPEN_SIDES_LABEL}:"));
+    let check = ui.checkbox(on, "");
+    if let Some(help) = help {
+        label.on_hover_text(help);
+        check.on_hover_text(help);
     }
     ui.end_row();
 }

@@ -1555,7 +1555,8 @@ impl OperationConfig {
     ///
     /// A list field ([`ParamKind::List`]) that serde skips when it is empty reads
     /// back as `[]`, not `null`. `null` is not a value of a list, so an
-    /// agent that sent the read value back got a refusal.
+    /// agent that sent the read value back got a refusal. A flag that serde
+    /// skips at `false` reads back as `false`.
     pub fn params_value_including_nulls(&self) -> serde_json::Value {
         let mut value = serde_json::to_value(self).unwrap_or_else(|_| serde_json::json!({}));
         let mut params = value
@@ -1564,10 +1565,16 @@ impl OperationConfig {
             .cloned()
             .unwrap_or_default();
         for def in param_defs_for_type(self.op_type()) {
-            let absent = if def.kind == ParamKind::List {
-                serde_json::Value::Array(Vec::new())
-            } else {
-                serde_json::Value::Null
+            // A flag that the file leaves out is off: an op flag is left out
+            // only at `false` (`skip_serializing_if = "std::ops::Not::not"`,
+            // Pocket `cut_past_open_sides`), and no op param is an
+            // `Option<bool>`.
+            let absent = match def.kind {
+                ParamKind::List => serde_json::Value::Array(Vec::new()),
+                ParamKind::Bool => serde_json::Value::Bool(false),
+                ParamKind::Real | ParamKind::Integer | ParamKind::Enum | ParamKind::Id => {
+                    serde_json::Value::Null
+                }
             };
             params.entry(def.name.to_owned()).or_insert(absent);
         }

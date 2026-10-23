@@ -556,6 +556,8 @@ pub(super) fn draw_cut_tab(
         toolpath_id: entry.id,
         selection_ui: &mut *selection_ui,
         floor: floor_inputs.as_ref(),
+        model_areas: op_report(inputs)
+            .is_some_and(rs_cam_core::session::SelectionReport::holds_a_model_area),
     };
     operations::registry::draw_editor_and_diagram(ui, &mut entry.operation, &mut draw_ctx);
     // G-PILLCLAMP: a pill wrote its field this frame — stamp the

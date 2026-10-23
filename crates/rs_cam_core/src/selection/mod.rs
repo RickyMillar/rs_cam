@@ -42,8 +42,8 @@ pub use item::{
 pub use key::{CAD_ROUNDING_MM, KEY_MATCH_EPS_MM, MatchKey};
 pub use near::{PickLine, items_near, polyline_distance};
 pub use refusal::{
-    EdgeRefusal, ItemRef, NoteCause, RefusalCause, SelectionNote, SelectionRefusal,
-    kind_not_cut_reason, kind_noun,
+    EdgeRefusal, ItemRef, NO_OPEN_SIDE_TEXT, NoteCause, RefusalCause, SelectionNote,
+    SelectionRefusal, kind_not_cut_reason, kind_noun,
 };
 pub use resolve::{
     ExcludedItem, LostPick, MatchedBy, MeshFaces, ModelFrame, ResolveScope, ResolvedItem,

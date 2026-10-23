@@ -259,7 +259,18 @@ pub enum NoteCause {
     /// Chamfer Clearance: the V-bit reaches a higher wall along all of the
     /// edge, so the op does not cut it (`compute::edge_clear`).
     AtAWall,
+    /// "Cut past open sides" (operator ruling 2026-10-23): the setting is
+    /// on, and no side of any face of the op is open (a wall stands at
+    /// each side), so the pocket stays inside each face
+    /// (`compute::open_sides`). The op cuts every face; this is not a
+    /// refusal. `count` is the number of faces; `first` names the first.
+    NoOpenSide,
 }
+
+/// The text of a [`NoteCause::NoOpenSide`] note (operator ruling
+/// 2026-10-23).
+pub const NO_OPEN_SIDE_TEXT: &str =
+    "No side of the face is open; the pocket stays inside the face.";
 
 impl fmt::Display for SelectionNote {
     /// "2 open paths on layer 'TEXT' are not cut: the op cuts closed areas
@@ -304,6 +315,9 @@ impl fmt::Display for SelectionNote {
                  cut into the wall. The first edge: {}.",
                 self.first
             );
+        }
+        if self.cause == NoteCause::NoOpenSide {
+            return f.write_str(NO_OPEN_SIDE_TEXT);
         }
         if self.cause == NoteCause::AtAWall {
             return write!(

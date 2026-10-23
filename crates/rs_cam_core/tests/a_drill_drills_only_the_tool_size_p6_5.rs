@@ -210,7 +210,8 @@ fn fit_notes(s: &ProjectSession) -> Vec<([i64; 2], HoleFit, usize)> {
                     NoteCause::KindNotServed
                     | NoteCause::AtTheTop { .. }
                     | NoteCause::StopsShort { .. }
-                    | NoteCause::AtAWall => None,
+                    | NoteCause::AtAWall
+                    | NoteCause::NoOpenSide => None,
                 })
                 .collect()
         })

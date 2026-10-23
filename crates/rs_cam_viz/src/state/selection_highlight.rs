@@ -163,6 +163,8 @@ impl HoverDetector {
 /// - A Chamfer edge that stops short of a wall (`NoteCause::StopsShort`) or
 ///   that the V-bit cannot reach clear of a wall (`NoteCause::AtAWall`):
 ///   the first edge that the note names.
+/// - A Pocket with "Cut past open sides" whose faces have no open side
+///   (`NoteCause::NoOpenSide`): the first face that the note names.
 ///
 /// The keys carry the source of the item.
 pub fn note_item_keys(
@@ -178,7 +180,8 @@ pub fn note_item_keys(
             NoteCause::AtTheTop { .. }
             | NoteCause::HoleFit { .. }
             | NoteCause::StopsShort { .. }
-            | NoteCause::AtAWall => {
+            | NoteCause::AtAWall
+            | NoteCause::NoOpenSide => {
                 vec![(*note.first.key).clone()]
             }
             NoteCause::KindNotServed => {
