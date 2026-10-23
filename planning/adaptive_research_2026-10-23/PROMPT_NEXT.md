@@ -36,6 +36,16 @@ do not read, code or run fixtures yourself. Read first, in this order:
   Serve the package dir with `python3 -m http.server 8766` (the
   operator's browser is a Flatpak and cannot read repo files directly).
 
+## Already in flight when this was written
+
+A lead session named rs-cam-e3 picked up this handoff at about 01:30 on
+2026-10-24 and started C9 (far-side re-seed, column `geodesic_curv_reseed`)
+and C10 (the lead-in guard, read-only); its rows are in STATUS.md. Before
+you brief anything, check STATUS.md, the worktree branch log and
+`P2_C2_geodesic_fixes.md` / `P2_C10_leadin_guard.md` for their results, and
+look for a running session with ListAgents, so two leads never drive the
+same worktree.
+
 ## The two open problems on the 2D shapes (fix these before 3D)
 
 1. **The far side of the island (meeting line).** The two front branches
