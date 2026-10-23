@@ -36,3 +36,5 @@ Not defects but instrument gaps (ruling 2026-10-23: build before Phase 2):
 | G-RAPIDLIFTPIN | Sentry `a_rapid_leaves_cut_depth_straight_up_g_adaptrapidlift` red since 2026-10-20: a sim-only flag on move 6930; the exact oracle clears it by 0.2495 mm; the pin `SIM_ONLY_FLAGS=0` sees count 1. Needs a re-pin or a cause hunt. | same |
 
 `added_material_cuts_as_stock_s6` was fixed by the peer in 0e6788b2.
+
+| G-BACKTRAVEL (N11) | Operator, live GUI 2026-10-23 15:45, wanaka200 "2 Back Rough" (ContourParallel): "second half of Back Rough 2 is doing huge travel across the board where it could do one waterline-like sweep." Capture pending (agent E): the level where it starts, retracts and rapid distance per level, region order. Related: G-HOPRETRACT (N8). | `phase0/img/wanaka200_cp_back_second_half_rapids.png` (pending) |
