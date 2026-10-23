@@ -263,8 +263,11 @@ impl Default for UnifiedFinishParams {
     fn default() -> Self {
         let config = crate::compute::operation_configs::UnifiedFinishConfig::default();
         config.params(crate::compute::operation_configs::OpMotion {
-            feed_rate: config.feed_rate,
-            plunge_rate: config.plunge_rate,
+            // S11: the config holds no feed. The kernel default (read by
+            // kernel tests; every op caller sets the motion) keeps the
+            // feeds the config had before S11.
+            feed_rate: 1000.0,
+            plunge_rate: 500.0,
             safe_z: 30.0,
         })
     }

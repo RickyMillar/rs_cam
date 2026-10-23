@@ -7,11 +7,12 @@ use crate::state::toolpath::{
 };
 
 use super::super::{
-    advanced, depth_caution_row, dv, dv_pill, help_for, p, schema_range, through_cut_row,
+    advanced, depth_caution_row, dv, dv_opt, dv_pill, dv_pill_opt, help_for, p, schema_range,
+    through_cut_row,
 };
 use super::{DepthBeyondStock, FloorInputs, ThroughCut, draw_tab_diagram};
 use crate::ui::components::value_row::label_cell;
-use crate::ui::components::{Button, OneLine, UiExt as _, ValueRow};
+use crate::ui::components::{Button, OneLine, UiExt as _};
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::floor::{Floor, FloorRefusal};
 use rs_cam_core::compute::operation_configs::OpenPaths;
@@ -37,6 +38,7 @@ fn floor_reason(refusal: FloorRefusal) -> &'static str {
         FloorRefusal::NotAFloorItem { .. } => "The floor item is not a face.",
         FloorRefusal::NoHoleDepth => "No hole of the selection has a known depth.",
         FloorRefusal::NotForThisOp { .. } => "This operation cannot cut to this floor.",
+        FloorRefusal::Unset => "The floor is not set.",
     }
 }
 
@@ -103,11 +105,14 @@ pub(super) fn floor_row(
     .on_disabled_hover_text("The heights of the toolpath do not resolve, so no floor Z is kept.");
     ui.end_row();
 
-    let (label, mut value) = match &*floor {
-        Floor::Z { z } => ("Z:", *z),
-        other => ("Depth:", other.value()),
+    // S11: an unset floor shows an empty field with the hint "set a
+    // value"; a typed depth sets the floor below the Top Z.
+    let label = match &*floor {
+        Floor::Z { .. } => "Z:",
+        _ => "Depth:",
     };
-    let out = ValueRow::new(
+    let mut value = floor.value();
+    let edited = crate::ui::components::OptionalValueRow::new(
         label,
         &mut value,
         " mm",
@@ -116,8 +121,11 @@ pub(super) fn floor_row(
     )
     .tooltip(Some(floor.reference_help()))
     .show(ui);
-    if out.edited && floor.domain().accepts(value) {
-        *floor = floor.clone().with_value(value);
+    if edited && let Some(value) = value {
+        let next = floor.clone().with_value(value);
+        if next.domain().accepts(value) {
+            *floor = next;
+        }
     }
 
     // The resolved floor Z, on its own row so the value row fits the
@@ -198,12 +206,14 @@ pub(in crate::ui::properties) fn draw_face_params(
             0.1,
             dpp_sugg,
         );
-        dv(
+        // S11: empty = the tool radius.
+        dv_opt(
             ui,
             p(OperationType::Face, "stock_offset", "Stock Offset:"),
             &mut cfg.stock_offset,
             " mm",
             0.5,
+            Some("tool R"),
         );
     });
 }
@@ -755,7 +765,7 @@ pub(in crate::ui::properties) fn draw_vcarve_params(
     let max_depth_sugg = pills.map(PillSuggestions::depth_per_pass);
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     ui.param_grid("vcarve_p", |ui| {
-        dv_pill(
+        dv_pill_opt(
             ui,
             p(OperationType::VCarve, "max_depth", "Max Depth:"),
             &mut cfg.max_depth,
@@ -795,20 +805,23 @@ pub(in crate::ui::properties) fn draw_inlay_params(
     // feeds-driven.
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     ui.param_grid("inlay_p", |ui| {
-        dv(
+        dv_opt(
             ui,
             p(OperationType::Inlay, "pocket_depth", "Pocket Depth:"),
             &mut cfg.pocket_depth,
             " mm",
             0.1,
+            None,
         );
         depth_caution_row(ui, depth_caution);
-        dv(
+        // S11: empty = 0.9 x the tool diameter.
+        dv_opt(
             ui,
             p(OperationType::Inlay, "floor_overlap", "Floor Overlap:"),
             &mut cfg.floor_overlap,
             " mm",
             0.1,
+            Some("0.9 x D"),
         );
         dv(
             ui,
@@ -848,12 +861,13 @@ pub(in crate::ui::properties) fn draw_inlay_plug_params(
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     ui.param_grid("inlay_plug_p", |ui| {
-        dv(
+        dv_opt(
             ui,
             p(OperationType::InlayPlug, "pocket_depth", "Pocket Depth:"),
             &mut cfg.pocket_depth,
             " mm",
             0.1,
+            None,
         );
         depth_caution_row(ui, depth_caution);
         dv(

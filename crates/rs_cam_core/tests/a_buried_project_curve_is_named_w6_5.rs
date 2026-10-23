@@ -66,11 +66,11 @@ fn generate(rest: bool) -> (ProjectSession, usize) {
 
 fn commanded_depth() -> f64 {
     let OperationConfig::ProjectCurve(cfg) =
-        OperationConfig::new_default(OperationType::ProjectCurve)
+        rs_cam_core::compute::fixture_values::fixture_op(OperationType::ProjectCurve)
     else {
         unreachable!("the default of ProjectCurve is a ProjectCurve config")
     };
-    cfg.depth
+    cfg.depth.expect("S11: the fixture sets it")
 }
 
 #[test]

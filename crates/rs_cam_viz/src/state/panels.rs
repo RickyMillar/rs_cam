@@ -284,6 +284,13 @@ pub struct ImportDialog {
     pub declared: Option<Result<rs_cam_core::io::svg_input::SvgDeclaredSize, String>>,
     /// The import at `units` and `options`, or the refusal of the door.
     pub preview: Result<rs_cam_core::session::LoadedModel, String>,
+    /// S11: true when the stock has no thickness at the open: a drawing
+    /// has none, so the dialog asks for it.
+    pub asks_stock_z: bool,
+    /// S11: the stock thickness (mm) the operator states in the dialog.
+    /// `None`: the stock stays "not set", and every op refuses until it is
+    /// set.
+    pub stock_z: Option<f64>,
 }
 
 #[cfg(test)]

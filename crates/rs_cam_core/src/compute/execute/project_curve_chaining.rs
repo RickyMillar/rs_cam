@@ -161,10 +161,10 @@ fn heights(safe_z: f64) -> ResolvedHeights {
 
 fn project_curve_config(chain_distance_mm: f64) -> ProjectCurveConfig {
     ProjectCurveConfig {
-        depth: CUT_DEPTH_MM,
+        depth: Some(CUT_DEPTH_MM),
         point_spacing: POINT_SPACING_MM,
-        feed_rate: 800.0,
-        plunge_rate: 400.0,
+        feed_rate: Some(800.0),
+        plunge_rate: Some(400.0),
         chain_distance_mm,
         ..ProjectCurveConfig::default()
     }
@@ -216,7 +216,10 @@ fn generate_with_findings(
             &cancel,
         )
     };
-    let generated = execute_operation_annotated(&ctx, &OperationConfig::ProjectCurve(cfg))
+    // S11: the fixture states the depth and the feeds.
+    let mut op = OperationConfig::ProjectCurve(cfg);
+    crate::compute::fixture_values::fill_unset(&mut op);
+    let generated = execute_operation_annotated(&ctx, &op)
         .expect("project_curve generates on the flat-plate fixture");
     (generated, findings.into_inner())
 }
@@ -330,10 +333,10 @@ fn chaining_off_emits_exactly_what_the_generator_emits() {
     let cfg = project_curve_config(0.0);
 
     let params = crate::ops::project_curve::ProjectCurveParams {
-        depth: cfg.depth,
+        depth: cfg.depth.expect("S11: the fixture sets it"),
         point_spacing: cfg.point_spacing,
-        feed_rate: cfg.feed_rate,
-        plunge_rate: cfg.plunge_rate,
+        feed_rate: cfg.feed_rate.expect("S11: the fixture sets it"),
+        plunge_rate: cfg.plunge_rate.expect("S11: the fixture sets it"),
         safe_z: SAFE_Z_MM,
         direction: crate::ops::project_curve::ProjectDirection::FromAbove,
         tool_radius: tool_def.radius(),

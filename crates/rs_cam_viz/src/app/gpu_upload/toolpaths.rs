@@ -86,8 +86,9 @@ pub(super) struct ToolpathInputs<'a> {
     span_filter: SpanKindFilter,
     /// The identity-setup emission → display translation.
     shift: P3,
-    /// The nominal feed of the Engagement colouring.
-    feed_rate: f64,
+    /// The nominal feed of the Engagement colouring. `None` when the op has
+    /// no feed (S11); the Engagement colouring then draws the Normal one.
+    feed_rate: Option<f64>,
     /// The selected toolpath's overlay inputs, `None` when the overlay is
     /// not drawn. `None` is what makes "deselect" a key change rather than
     /// a silent stale overlay.
@@ -359,12 +360,22 @@ fn build(
     let render_tp = &render_annotated.toolpath;
 
     let mut gpu_data = match colouring {
-        Colouring::Engagement => ToolpathGpuData::from_toolpath_engagement(
-            gpu.device,
-            &resources.gpu_limits,
-            render_tp,
-            feed_rate,
-        ),
+        Colouring::Engagement => match feed_rate {
+            Some(feed_rate) => ToolpathGpuData::from_toolpath_engagement(
+                gpu.device,
+                &resources.gpu_limits,
+                render_tp,
+                feed_rate,
+            ),
+            None => ToolpathGpuData::from_toolpath(
+                gpu.device,
+                &resources.gpu_limits,
+                render_annotated,
+                palette_index,
+                selected,
+                &span_filter,
+            ),
+        },
         Colouring::AdvancePerTooth(pass) => {
             let scans = pass.scans();
             let band = scans.0.get(&id).copied();

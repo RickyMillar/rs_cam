@@ -227,10 +227,11 @@ fn the_dial_scales_the_engagement_and_holds_the_chip_fm7() {
         r.rpm
     );
     assert!(
-        s.operation.feed_rate() <= r.feed_rate_mm_min + 1e-9
-            && s.operation.feed_rate() > r.feed_rate_mm_min - 1.0,
+        s.operation.feed_rate().expect("S11: the fixture sets it") <= r.feed_rate_mm_min + 1e-9
+            && s.operation.feed_rate().expect("S11: the fixture sets it")
+                > r.feed_rate_mm_min - 1.0,
         "the shipped feed {} is not the calculator feed {} rounded down",
-        s.operation.feed_rate(),
+        s.operation.feed_rate().expect("S11: the fixture sets it"),
         r.feed_rate_mm_min
     );
 

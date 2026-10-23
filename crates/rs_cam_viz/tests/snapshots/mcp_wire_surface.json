@@ -6798,6 +6798,20 @@
                 "depth"
               ],
               "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "S11: no floor. A new floor op has none (no rule gives a floor for a\ndrawing); generation refuses until a floor is set. Sending it\nclears the floor.",
+              "properties": {
+                "from": {
+                  "const": "unset",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from"
+              ],
+              "type": "object"
             }
           ]
         },

@@ -68,7 +68,7 @@ fn op(style: Adaptive3dEntryStyle) -> OperationConfig {
     OperationConfig::Adaptive3d(Adaptive3dConfig {
         depth_per_pass: DPP_MM,
         stepover: 1.2,
-        feed_rate: 911.0,
+        feed_rate: Some(911.0),
         spindle_rpm: Some(16_000),
         entry_style: style,
         ..Adaptive3dConfig::default()

@@ -2721,11 +2721,11 @@ mod tests {
         use crate::compute::catalog::OperationConfig;
         use crate::compute::operation_configs::PocketConfig;
         let mut cfg = PocketConfig {
-            feed_rate: 1000.0,
+            feed_rate: Some(1000.0),
             ..PocketConfig::default()
         };
         let a = OperationConfig::Pocket(cfg.clone());
-        cfg.feed_rate = 1500.0;
+        cfg.feed_rate = Some(1500.0);
         let b = OperationConfig::Pocket(cfg);
         assert_ne!(
             hash_operation_config(&a),
@@ -3032,7 +3032,7 @@ mod tests {
         let mut stock = StockConfig {
             x: 100.0, // pre-attach default
             y: 100.0,
-            z: 10.0, // user's 10mm thick stock
+            z: Some(10.0), // user's 10mm thick stock
             origin_x: 0.0,
             origin_y: 0.0,
             origin_z: 0.0,

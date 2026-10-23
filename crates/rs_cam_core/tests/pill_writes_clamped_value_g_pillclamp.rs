@@ -78,8 +78,8 @@ const FIELDS: [FeedsField; 5] = [
 
 fn read(op: &OperationConfig, field: FeedsField) -> Option<f64> {
     match field {
-        FeedsField::FeedRate => Some(op.feed_rate()),
-        FeedsField::PlungeRate => Some(op.plunge_rate()),
+        FeedsField::FeedRate => op.feed_rate(),
+        FeedsField::PlungeRate => op.plunge_rate(),
         FeedsField::SpindleRpm => op.spindle_rpm().map(f64::from),
         FeedsField::Stepover => op.stepover(),
         FeedsField::DepthPerPass => op.depth_per_pass(),

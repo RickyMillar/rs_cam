@@ -64,12 +64,24 @@ impl ModelUnits {
     }
 }
 
+/// The refusal text of a stock whose thickness is not set (S11). It names
+/// the field and the fix; the GUI, MCP and the CLI show this one text.
+pub const STOCK_THICKNESS_NOT_SET_TEXT: &str = "the stock thickness is not set: a drawing has \
+     no thickness. Set the stock thickness (field `z`: the Stock panel, the MCP tool \
+     set_stock_config, or the job key stock_z)";
+
 /// Stock material configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StockConfig {
     pub x: f64,
     pub y: f64,
-    pub z: f64,
+    /// The thickness (mm), or `None` when it is not set (S11, operator
+    /// ruling 2026-10-23). A drawing (DXF, SVG) has no thickness, so its
+    /// auto stock has none until the operator states it; every op then
+    /// refuses (`ProjectSession::stock_thickness_refusal`). A 3D model
+    /// sets it from its box. A file with no `z` key loads `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z: Option<f64>,
     pub origin_x: f64,
     pub origin_y: f64,
     pub origin_z: f64,
@@ -101,7 +113,8 @@ impl Default for StockConfig {
         Self {
             x: 100.0,
             y: 100.0,
-            z: 25.0,
+            // S11: no rule gives a thickness with no model.
+            z: None,
             origin_x: 0.0,
             origin_y: 0.0,
             origin_z: 0.0,
@@ -205,7 +218,6 @@ impl StockConfigPatch {
         for (name, value, target) in [
             ("x", *patch_x, x),
             ("y", *patch_y, y),
-            ("z", *patch_z, z),
             ("origin_x", *patch_origin_x, origin_x),
             ("origin_y", *patch_origin_y, origin_y),
             ("origin_z", *patch_origin_z, origin_z),
@@ -215,6 +227,21 @@ impl StockConfigPatch {
                 geometry_set.push(name);
             }
         }
+        // S11: the first thickness of a stock that has none (a drawing
+        // stock) keeps the stock top where it is, unless the patch states
+        // the bottom too. It completes the auto stock, so it does not clear
+        // `auto_from_model`.
+        let first_thickness = z.is_none() && patch_z.is_some();
+        if let Some(v) = patch_z {
+            if first_thickness && patch_origin_z.is_none() {
+                *origin_z -= v;
+            }
+            *z = Some(*v);
+            geometry_set.push("z");
+        }
+        let clears_auto = geometry_set
+            .iter()
+            .any(|name| !(first_thickness && *name == "z"));
         if let Some(v) = patch_padding {
             *padding = *v;
         }
@@ -224,7 +251,7 @@ impl StockConfigPatch {
         let auto_from_model_was = *auto_from_model;
         *auto_from_model = match patch_auto {
             Some(explicit) => *explicit,
-            None if !geometry_set.is_empty() => false,
+            None if clears_auto => false,
             None => auto_from_model_was,
         };
         StockPatchReport {
@@ -248,7 +275,6 @@ impl StockConfig {
         for (dimension, value) in [
             (D::X, self.x),
             (D::Y, self.y),
-            (D::Z, self.z),
             (D::OriginX, self.origin_x),
             (D::OriginY, self.origin_y),
             (D::OriginZ, self.origin_z),
@@ -256,7 +282,35 @@ impl StockConfig {
         ] {
             dimension.check(value)?;
         }
+        // S11: an unset thickness has no value to check.
+        if let Some(z) = self.z {
+            D::Z.check(z)?;
+        }
         Ok(())
+    }
+
+    /// The thickness (mm), or `None` when it is not set (S11).
+    #[must_use]
+    pub const fn thickness(&self) -> Option<f64> {
+        self.z
+    }
+
+    /// The Z extent of the stock box (mm): the thickness, or 0 for a stock
+    /// whose thickness is not set (a flat drawing stock, S11). A frame
+    /// transform reads it; no op cuts such a stock.
+    #[must_use]
+    pub fn box_height(&self) -> f64 {
+        self.top_z() - self.origin_z
+    }
+
+    /// The Z of the stock top: the bottom plus the thickness, or the
+    /// bottom when the thickness is not set (a flat drawing stock, S11).
+    #[must_use]
+    pub fn top_z(&self) -> f64 {
+        match self.z {
+            Some(z) => self.origin_z + z,
+            None => self.origin_z,
+        }
     }
 
     /// Update stock dimensions from a model bounding box.
@@ -267,8 +321,8 @@ impl StockConfig {
     /// - **3D** (mesh with non-zero Z extent): stock Z follows the bbox
     ///   Z range + padding, and `origin_z` is set to `bbox.min.z`.
     /// - **2D** (SVG/DXF polygon with `min.z == max.z`): the stock's
-    ///   existing Z dimension is preserved (the user's default
-    ///   thickness), but `origin_z` is set to `bbox.min.z − self.z`
+    ///   existing Z dimension is preserved (the thickness the operator
+    ///   set; S11: none until set), but `origin_z` is set to `bbox.min.z − self.z`
     ///   so the stock's **top** is at `bbox.min.z`. Pocket / adaptive /
     ///   profile / trace / v-carve / chamfer / drill operations on 2D
     ///   models cut at negative Z (cut_depth < 0 relative to the
@@ -286,25 +340,26 @@ impl StockConfig {
         self.origin_y = bbox.min.y - self.padding;
         let bbox_z_range = bbox.max.z - bbox.min.z;
         if bbox_z_range > 0.0 {
-            self.z = bbox_z_range + self.padding;
+            self.z = Some(bbox_z_range + self.padding);
             self.origin_z = bbox.min.z;
         } else {
             // 2D model: place stock so its TOP is at bbox.min.z (= 0 for
             // SVG/DXF). Leaves self.z unchanged; only origin_z shifts.
-            self.origin_z = bbox.min.z - self.z;
+            // S11: a stock with no thickness is flat at the drawing.
+            self.origin_z = match self.z {
+                Some(z) => bbox.min.z - z,
+                None => bbox.min.z,
+            };
         }
     }
 
-    /// Get the bounding box of the stock.
+    /// Get the bounding box of the stock. S11: a stock with no thickness
+    /// is flat ([`Self::top_z`]); every op refuses on it.
     pub fn bbox(&self) -> BoundingBox3 {
         use crate::geo::P3;
         BoundingBox3 {
             min: P3::new(self.origin_x, self.origin_y, self.origin_z),
-            max: P3::new(
-                self.origin_x + self.x,
-                self.origin_y + self.y,
-                self.origin_z + self.z,
-            ),
+            max: P3::new(self.origin_x + self.x, self.origin_y + self.y, self.top_z()),
         }
     }
 
@@ -404,7 +459,7 @@ mod tests {
         let mut stock = StockConfig {
             x: 100.0,
             y: 100.0,
-            z: 25.0,
+            z: Some(25.0),
             origin_x: 0.0,
             origin_y: 0.0,
             origin_z: 0.0,
@@ -424,7 +479,7 @@ mod tests {
         assert!((stock.origin_y - 0.0).abs() < 1e-9);
         // Z dimension should be UNCHANGED from 25.0 — F-13 requires the
         // user's default stock thickness survives attaching a 2D model.
-        assert!((stock.z - 25.0).abs() < 1e-9);
+        assert!((stock.box_height() - 25.0).abs() < 1e-9);
         // Z origin shifts so the stock TOP is at bbox.min.z (= 0 for
         // the SVG frame). Before F-2, origin_z stayed at 0 which put
         // the stock entirely below the 2D pocket's cut range.
@@ -440,7 +495,7 @@ mod tests {
         let mut stock = StockConfig {
             x: 100.0,
             y: 100.0,
-            z: 25.0,
+            z: Some(25.0),
             origin_x: 0.0,
             origin_y: 0.0,
             origin_z: 0.0,
@@ -455,7 +510,7 @@ mod tests {
         stock.update_from_bbox(&bbox);
         assert!((stock.x - 60.0).abs() < 1e-9); // 50 + 2*5
         assert!((stock.y - 50.0).abs() < 1e-9); // 40 + 2*5
-        assert!((stock.z - 15.0).abs() < 1e-9); // 10 + 5
+        assert!((stock.box_height() - 15.0).abs() < 1e-9); // 10 + 5
         assert!((stock.origin_z - 0.0).abs() < 1e-9);
     }
 

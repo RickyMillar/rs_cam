@@ -283,7 +283,9 @@ mod tests {
         let session = ProjectSession::new_empty();
         let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
         tool.diameter = 6.0;
-        let op = OperationConfig::new_default(OperationType::Pocket);
+        // S11: the fixture states the values before S11.
+        let op_type = OperationType::Pocket;
+        let op = rs_cam_core::compute::fixture_values::fixture_op(op_type);
         let stock = session.stock_config();
         let result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
             &op,
@@ -351,7 +353,9 @@ mod tests {
             .expect("set the fixture machine");
         let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
         tool.diameter = 6.0;
-        let op = OperationConfig::new_default(OperationType::Pocket);
+        // S11: the fixture states the values before S11.
+        let op_type = OperationType::Pocket;
+        let op = rs_cam_core::compute::fixture_values::fixture_op(op_type);
         let material = Material::SolidWood {
             species: WoodSpecies::GenericHardwood,
         };
@@ -548,7 +552,9 @@ mod tests {
         // the size law's window since ruling B4 keys a V-bit at its size.
         let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
         tool.diameter = 6.0;
-        let op = OperationConfig::new_default(OperationType::VCarve);
+        // S11: the fixture states the values before S11.
+        let op_type = OperationType::VCarve;
+        let op = rs_cam_core::compute::fixture_values::fixture_op(op_type);
         let stock = session.stock_config();
         let result = rs_cam_core::feeds::suggest::feeds_result_for_operation(
             &op,

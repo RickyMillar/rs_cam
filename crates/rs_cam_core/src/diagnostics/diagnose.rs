@@ -113,13 +113,16 @@ pub fn diagnose_toolpath_inputs(inputs: &ToolpathDiagnoseInputs<'_>) -> Vec<Diag
             inputs.toolpath_id,
             feeds,
         ));
-        out.extend(from_feeds::heuristic_hints_from_recommendation(
-            inputs.toolpath_id,
-            inputs.operation.feed_rate(),
-            inputs.operation.stepover(),
-            inputs.operation.depth_per_pass(),
-            feeds,
-        ));
+        // S11: an unset feed has no ratio to the recommendation.
+        if let Some(feed_rate) = inputs.operation.feed_rate() {
+            out.extend(from_feeds::heuristic_hints_from_recommendation(
+                inputs.toolpath_id,
+                feed_rate,
+                inputs.operation.stepover(),
+                inputs.operation.depth_per_pass(),
+                feeds,
+            ));
+        }
     }
     if let Some(warnings) = inputs.suggest_warnings {
         out.extend(

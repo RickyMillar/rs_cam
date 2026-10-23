@@ -528,7 +528,8 @@ pub(crate) fn draw_chart_c(
     let explore = modal.explore;
     let display_point = explore.unwrap_or(crate::state::NomogramExplore {
         rpm: current.spindle_rpm.map(f64::from).unwrap_or(0.0),
-        feed_mm_min: current.feed_rate_mm_min,
+        // S11: an unset feed draws at 0, as an unset RPM does.
+        feed_mm_min: current.feed_rate_mm_min.unwrap_or(0.0),
     });
 
     let mut hover_readout: Option<(String, egui::Color32)> = None;
@@ -641,9 +642,9 @@ pub(crate) fn draw_chart_c(
             }
 
             // 5. Current operating point.
-            if let Some(rpm) = current.spindle_rpm {
+            if let (Some(rpm), Some(feed)) = (current.spindle_rpm, current.feed_rate_mm_min) {
                 plot_ui.points(
-                    Points::new("", vec![[f64::from(rpm), current.feed_rate_mm_min]])
+                    Points::new("", vec![[f64::from(rpm), feed]])
                         .shape(MarkerShape::Circle)
                         .filled(true)
                         .radius(6.0_f32)
@@ -730,12 +731,12 @@ pub(crate) fn draw_chart_c(
                         .name("Explore"),
                 );
                 // Proposed-move line from current → explore.
-                if let Some(rpm) = current.spindle_rpm {
+                if let (Some(rpm), Some(feed)) = (current.spindle_rpm, current.feed_rate_mm_min) {
                     plot_ui.line(
                         Line::new(
                             "",
                             PlotPoints::from(vec![
-                                [f64::from(rpm), current.feed_rate_mm_min],
+                                [f64::from(rpm), feed],
                                 [display_point.rpm, display_point.feed_mm_min],
                             ]),
                         )
@@ -906,7 +907,10 @@ fn draw_chart_c_legend(
             // Ruling R23: the operator's own value is not a verdict.
             tokens::TEXT_STRONG,
             "\u{25CF} Now",
-            format!("{rpm} RPM \u{00B7} {:.0} mm/min", current.feed_rate_mm_min),
+            current.feed_rate_mm_min.map_or_else(
+                || format!("{rpm} RPM \u{00B7} feed not set"),
+                |feed| format!("{rpm} RPM \u{00B7} {feed:.0} mm/min"),
+            ),
         ));
     }
     let target_cl = explain.recommended.derates.target_chip_load_mm;
@@ -1225,7 +1229,9 @@ fn draw_explore_controls(
             .spindle_rpm
             .map(f64::from)
             .unwrap_or(explain.recommended.rpm),
-        feed_mm_min: current.feed_rate_mm_min.max(1.0),
+        feed_mm_min: current
+            .feed_rate_mm_min
+            .map_or(explain.recommended.feed_rate_mm_min, |feed| feed.max(1.0)),
     });
     let initial = explore;
     ui.horizontal(|ui| {
@@ -1350,7 +1356,9 @@ fn draw_explore_controls(
                         .spindle_rpm
                         .map(f64::from)
                         .unwrap_or(explain.recommended.rpm),
-                    feed_mm_min: current.feed_rate_mm_min.max(1.0),
+                    feed_mm_min: current
+                        .feed_rate_mm_min
+                        .map_or(explain.recommended.feed_rate_mm_min, |feed| feed.max(1.0)),
                 };
                 events.push(AppEvent::Ui(UiCommand::SetFeedsExplore(Some(snap))));
             }

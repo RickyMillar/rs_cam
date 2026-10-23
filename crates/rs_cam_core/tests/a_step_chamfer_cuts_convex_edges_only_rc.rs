@@ -132,7 +132,7 @@ fn part_stock() -> StockConfig {
     StockConfig {
         x: 60.0,
         y: 40.0,
-        z: TOP,
+        z: Some(TOP),
         origin_x: 0.0,
         origin_y: 0.0,
         origin_z: 0.0,

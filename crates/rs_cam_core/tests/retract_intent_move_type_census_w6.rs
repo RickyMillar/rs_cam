@@ -266,13 +266,19 @@ fn toolpath_config(
     heights: HeightsConfig,
 ) -> ToolpathConfig {
     let op_type = op.op_type();
+    // S11: the fixture states each value the op leaves unset (the values
+    // before S11).
+    let mut op = op;
+    rs_cam_core::compute::fixture_values::fill_unset(&mut op);
+    let mut dressups = profile.build(op_type);
+    rs_cam_core::compute::fixture_values::fill_unset_dressups(&mut dressups);
     ToolpathConfig {
         shoe: Default::default(),
         id: ToolpathId::from_raw(0),
         name: format!("{op_type:?}"),
         enabled: true,
         operation: op,
-        dressups: profile.build(op_type),
+        dressups,
         heights,
         tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
@@ -310,7 +316,7 @@ fn flat_stock() -> StockConfig {
     StockConfig {
         x: FLAT_X,
         y: FLAT_Y,
-        z: FLAT_Z,
+        z: Some(FLAT_Z),
         origin_x: -10.0,
         origin_y: -10.0,
         origin_z: -FLAT_Z,
@@ -382,7 +388,7 @@ fn hemi_stock() -> StockConfig {
     StockConfig {
         x: 2.0 * HEMI_STOCK_HALF_MM,
         y: 2.0 * HEMI_STOCK_HALF_MM,
-        z: HEMI_RADIUS_MM,
+        z: Some(HEMI_RADIUS_MM),
         origin_x: -HEMI_STOCK_HALF_MM,
         origin_y: -HEMI_STOCK_HALF_MM,
         origin_z: 0.0,
@@ -446,7 +452,7 @@ fn plate_session(op: OperationConfig, profile: DressupProfile) -> ProjectSession
     builder = builder.stock(StockConfig {
         x: PLATE_MM,
         y: PLATE_MM,
-        z: PLATE_STOCK_Z_MM,
+        z: Some(PLATE_STOCK_Z_MM),
         origin_x: -PLATE_MM / 2.0,
         origin_y: -PLATE_MM / 2.0,
         origin_z: 0.0,
@@ -512,10 +518,10 @@ fn project_curve_session(profile: DressupProfile) -> ProjectSession {
         drawing: Default::default(),
     });
     let op = OperationConfig::ProjectCurve(ProjectCurveConfig {
-        depth: 1.0,
+        depth: Some(1.0),
         point_spacing: 0.4,
-        feed_rate: 800.0,
-        plunge_rate: 400.0,
+        feed_rate: Some(800.0),
+        plunge_rate: Some(400.0),
         surface_model_id: Some(ModelId::from_raw(surface_model_id)),
         spindle_rpm: Some(18_000),
         ..ProjectCurveConfig::default()
@@ -550,8 +556,8 @@ fn flat_cases() -> Vec<FlatCase> {
                     stepover: 3.0,
                     floor: rs_cam_core::compute::floor::Floor::top(6.0),
                     depth_per_pass: 3.0,
-                    feed_rate: 1000.0,
-                    plunge_rate: 400.0,
+                    feed_rate: Some(1000.0),
+                    plunge_rate: Some(400.0),
                     climb: true,
                     pattern: PocketPattern::Contour,
                     angle: 0.0,
@@ -573,8 +579,8 @@ fn flat_cases() -> Vec<FlatCase> {
                     stepover: 3.0,
                     floor: rs_cam_core::compute::floor::Floor::top(3.0),
                     depth_per_pass: 3.0,
-                    feed_rate: 1000.0,
-                    plunge_rate: 400.0,
+                    feed_rate: Some(1000.0),
+                    plunge_rate: Some(400.0),
                     angle: 45.0,
                     spindle_rpm: Some(18_000),
                     region_ordering:
@@ -591,8 +597,8 @@ fn flat_cases() -> Vec<FlatCase> {
                     stepover: 3.0,
                     depth: 2.0,
                     depth_per_pass: 2.0,
-                    feed_rate: 1500.0,
-                    plunge_rate: 500.0,
+                    feed_rate: Some(1500.0),
+                    plunge_rate: Some(500.0),
                     spindle_rpm: Some(18_000),
                     ..FaceConfig::default()
                 })
@@ -606,8 +612,8 @@ fn flat_cases() -> Vec<FlatCase> {
                     stepover: 2.0,
                     floor: rs_cam_core::compute::floor::Floor::top(6.0),
                     depth_per_pass: 3.0,
-                    feed_rate: 1500.0,
-                    plunge_rate: 500.0,
+                    feed_rate: Some(1500.0),
+                    plunge_rate: Some(500.0),
                     spindle_rpm: Some(18_000),
                     ..AdaptiveConfig::default()
                 })
@@ -623,8 +629,8 @@ fn flat_cases() -> Vec<FlatCase> {
                     side: ProfileSide::Outside,
                     floor: rs_cam_core::compute::floor::Floor::top(6.0),
                     depth_per_pass: 3.0,
-                    feed_rate: 1000.0,
-                    plunge_rate: 400.0,
+                    feed_rate: Some(1000.0),
+                    plunge_rate: Some(400.0),
                     climb: true,
                     tab_count: 0,
                     tab_width: 6.0,
@@ -645,10 +651,10 @@ fn flat_cases() -> Vec<FlatCase> {
         (
             || {
                 OperationConfig::Trace(TraceConfig {
-                    depth: 3.0,
+                    depth: Some(3.0),
                     depth_per_pass: 1.5,
-                    feed_rate: 800.0,
-                    plunge_rate: 400.0,
+                    feed_rate: Some(800.0),
+                    plunge_rate: Some(400.0),
                     spindle_rpm: Some(18_000),
                     ..TraceConfig::default()
                 })
@@ -659,10 +665,10 @@ fn flat_cases() -> Vec<FlatCase> {
         (
             || {
                 OperationConfig::VCarve(VCarveConfig {
-                    max_depth: 4.0,
+                    max_depth: Some(4.0),
                     stepover: 0.5,
-                    feed_rate: 800.0,
-                    plunge_rate: 400.0,
+                    feed_rate: Some(800.0),
+                    plunge_rate: Some(400.0),
                     spindle_rpm: Some(18_000),
                     ..VCarveConfig::default()
                 })
@@ -677,8 +683,8 @@ fn flat_cases() -> Vec<FlatCase> {
                     ramp_feed_rate: None,
                     chamfer_width: 1.5,
                     tip_offset: 0.1,
-                    feed_rate: 800.0,
-                    plunge_rate: 400.0,
+                    feed_rate: Some(800.0),
+                    plunge_rate: Some(400.0),
                     spindle_rpm: Some(18_000),
                     selection: rs_cam_core::selection::Selection::drawing(),
                 })
@@ -689,9 +695,9 @@ fn flat_cases() -> Vec<FlatCase> {
         (
             || {
                 OperationConfig::Inlay(InlayConfig {
-                    pocket_depth: 3.0,
-                    feed_rate: 800.0,
-                    plunge_rate: 400.0,
+                    pocket_depth: Some(3.0),
+                    feed_rate: Some(800.0),
+                    plunge_rate: Some(400.0),
                     spindle_rpm: Some(18_000),
                     ..InlayConfig::default()
                 })
@@ -733,8 +739,8 @@ fn hemi_cases() -> Vec<HemiCase> {
                 OperationConfig::Adaptive3d(Adaptive3dConfig {
                     stepover: 2.0,
                     depth_per_pass: 2.5,
-                    feed_rate: 1500.0,
-                    plunge_rate: 500.0,
+                    feed_rate: Some(1500.0),
+                    plunge_rate: Some(500.0),
                     spindle_rpm: Some(18_000),
                     ..Adaptive3dConfig::default()
                 })
@@ -747,8 +753,8 @@ fn hemi_cases() -> Vec<HemiCase> {
                 OperationConfig::DropCutter(DropCutterConfig {
                     ramp_feed_rate: None,
                     stepover: 1.5,
-                    feed_rate: 1000.0,
-                    plunge_rate: 400.0,
+                    feed_rate: Some(1000.0),
+                    plunge_rate: Some(400.0),
                     min_z: 0.0,
                     slope_from: 0.0,
                     slope_to: 90.0,
@@ -766,8 +772,8 @@ fn hemi_cases() -> Vec<HemiCase> {
                     ramp_feed_rate: None,
                     z_step: 1.5,
                     sampling: 0.4,
-                    feed_rate: 1000.0,
-                    plunge_rate: 400.0,
+                    feed_rate: Some(1000.0),
+                    plunge_rate: Some(400.0),
                     continuous: false,
                     spindle_rpm: Some(18_000),
                     hookup_mm: 0.0,
@@ -780,8 +786,8 @@ fn hemi_cases() -> Vec<HemiCase> {
             || {
                 OperationConfig::Scallop(ScallopConfig {
                     scallop_height: 0.1,
-                    feed_rate: 1000.0,
-                    plunge_rate: 500.0,
+                    feed_rate: Some(1000.0),
+                    plunge_rate: Some(500.0),
                     spindle_rpm: Some(18_000),
                     ..ScallopConfig::default()
                 })
@@ -792,8 +798,8 @@ fn hemi_cases() -> Vec<HemiCase> {
         (
             || {
                 OperationConfig::UnifiedFinish(UnifiedFinishConfig {
-                    feed_rate: 1000.0,
-                    plunge_rate: 500.0,
+                    feed_rate: Some(1000.0),
+                    plunge_rate: Some(500.0),
                     spindle_rpm: Some(18_000),
                     ..UnifiedFinishConfig::default()
                 })
@@ -804,8 +810,8 @@ fn hemi_cases() -> Vec<HemiCase> {
         (
             || {
                 OperationConfig::SteepShallow(SteepShallowConfig {
-                    feed_rate: 1000.0,
-                    plunge_rate: 500.0,
+                    feed_rate: Some(1000.0),
+                    plunge_rate: Some(500.0),
                     spindle_rpm: Some(18_000),
                     ..SteepShallowConfig::default()
                 })
@@ -816,8 +822,8 @@ fn hemi_cases() -> Vec<HemiCase> {
         (
             || {
                 OperationConfig::RampFinish(RampFinishConfig {
-                    feed_rate: 1000.0,
-                    plunge_rate: 500.0,
+                    feed_rate: Some(1000.0),
+                    plunge_rate: Some(500.0),
                     spindle_rpm: Some(18_000),
                     ..RampFinishConfig::default()
                 })
@@ -828,8 +834,8 @@ fn hemi_cases() -> Vec<HemiCase> {
         (
             || {
                 OperationConfig::SpiralFinish(SpiralFinishConfig {
-                    feed_rate: 1000.0,
-                    plunge_rate: 500.0,
+                    feed_rate: Some(1000.0),
+                    plunge_rate: Some(500.0),
                     spindle_rpm: Some(18_000),
                     ..SpiralFinishConfig::default()
                 })
@@ -840,8 +846,8 @@ fn hemi_cases() -> Vec<HemiCase> {
         (
             || {
                 OperationConfig::RadialFinish(RadialFinishConfig {
-                    feed_rate: 1000.0,
-                    plunge_rate: 500.0,
+                    feed_rate: Some(1000.0),
+                    plunge_rate: Some(500.0),
                     spindle_rpm: Some(18_000),
                     ..RadialFinishConfig::default()
                 })
@@ -852,8 +858,8 @@ fn hemi_cases() -> Vec<HemiCase> {
         (
             || {
                 OperationConfig::Pencil(PencilConfig {
-                    feed_rate: 1000.0,
-                    plunge_rate: 500.0,
+                    feed_rate: Some(1000.0),
+                    plunge_rate: Some(500.0),
                     spindle_rpm: Some(18_000),
                     ..PencilConfig::default()
                 })
@@ -903,8 +909,8 @@ fn collect_rows() -> (Vec<Row>, Vec<String>) {
 
         let horizontal = OperationConfig::HorizontalFinish(HorizontalFinishConfig {
             stepover: 1.0,
-            feed_rate: 1000.0,
-            plunge_rate: 500.0,
+            feed_rate: Some(1000.0),
+            plunge_rate: Some(500.0),
             spindle_rpm: Some(18_000),
             ..HorizontalFinishConfig::default()
         });

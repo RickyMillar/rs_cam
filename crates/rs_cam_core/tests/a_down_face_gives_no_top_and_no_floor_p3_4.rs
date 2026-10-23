@@ -149,7 +149,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: PART_SIDE + 2.0 * STOCK_MARGIN,
         y: PART_SIDE + 2.0 * STOCK_MARGIN,
-        z: UP_FACE_Z - DOWN_FACE_Z + 2.0 * STOCK_MARGIN,
+        z: Some(UP_FACE_Z - DOWN_FACE_Z + 2.0 * STOCK_MARGIN),
         origin_x: -STOCK_MARGIN,
         origin_y: -STOCK_MARGIN,
         origin_z: DOWN_FACE_Z - STOCK_MARGIN,
@@ -161,7 +161,7 @@ fn stock() -> StockConfig {
 /// The stock top in the world frame (= the Top setup frame).
 fn world_stock_top() -> f64 {
     let s = stock();
-    s.origin_z + s.z
+    s.top_z()
 }
 
 /// One op on the part, on a setup with `face_up`.

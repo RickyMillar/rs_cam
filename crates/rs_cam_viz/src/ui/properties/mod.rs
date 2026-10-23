@@ -41,8 +41,8 @@ pub use tab_badges::{REST_MACHINING_LABEL, height_order_badge, rest_machining_ro
 // `pills.rs` (`super::prov_from_chipload`) resolves through.
 use feeds_speeds::prov_from_chipload;
 use linking_dressup::{
-    advanced, depth_caution_row, dv, dv_narrowed, dv_pill, help_for, p, schema_range,
-    through_cut_row,
+    advanced, depth_caution_row, dv, dv_narrowed, dv_opt, dv_pill, dv_pill_opt, help_for, p,
+    schema_range, through_cut_row,
 };
 use machine_panel::draw_machine_panel;
 use model_sim_panels::{draw_model_properties, draw_simulation_panel};
@@ -1215,7 +1215,7 @@ fn draw_post_selection(ui: &mut egui::Ui, state: &mut AppState) {
     if state.history.post_snapshot.is_none() {
         state.history.post_snapshot = Some(state.session().post_config().clone());
     }
-    let stock_top = state.session().stock_config().origin_z + state.session().stock_config().z;
+    let stock_top = state.session().stock_config().top_z();
     let mut edited = state.session().post_config().clone();
     post::draw(ui, &mut edited, stock_top);
     let _ = commit_post_edit(state, edited);

@@ -3,7 +3,7 @@
 ## Files
 - `mod.rs` — `draw`, `PanelEdit`, `ToolpathTab`, the snapshot and inputs builders, `apply_auto_enable`.
   Beside it: `panel_apply.rs`, `machine_panel.rs`, `feeds_speeds.rs`, `tab_badges.rs`, `tests.rs`,
-  `linking_dressup.rs` (`Param`, `dv`, `dv_pill`, `dv_dressup`, `advanced`), `toolpath_panel.rs` (a fn per tab).
+  `linking_dressup.rs` (`Param`, `dv`, `dv_pill`, `dv_dressup`, `advanced`; S11: `dv_opt`, `dv_pill_opt`, `dv_dressup_rule` draw an unset value empty), `toolpath_panel.rs` (a fn per tab).
 - `geometry_tab.rs` (GT-1, FIRST tab; old one is `Cut`): op block, `Pick faces`, Floor line (F25: face floor range), floor face slot, `Boundary`.
 - `selection_section.rs` — one block per selection: summary (Cuts, Selected, hole sizes), Pick + Reset, filter, `list_groups` (default
   row L-R2, a group per rule, per picked kind; `GROUP_CAP` 8), row acts `Rule…`, `Use as floor`, `×`; `row_hover` lights the item; notes

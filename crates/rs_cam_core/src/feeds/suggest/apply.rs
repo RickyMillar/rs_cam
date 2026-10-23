@@ -137,8 +137,14 @@ fn apply_feeds_subset(
     // correct. `a_clamped_feed_ships_at_or_below_its_ceiling_g_feeddown`
     // pins the direction and `rubbing_floor_never_exceeds_band` pins the
     // band.
-    scratch.set_feed_rate(round_suggestion_value_down(result.feed_rate_mm_min, 1.0));
-    scratch.set_plunge_rate(round_suggestion_value_down(result.plunge_rate_mm_min, 1.0));
+    let written_feed = round_suggestion_value_down(result.feed_rate_mm_min, 1.0);
+    let written_plunge = round_suggestion_value_down(result.plunge_rate_mm_min, 1.0);
+    scratch.set_feed_rate(written_feed);
+    scratch.set_plunge_rate(written_plunge);
+    // S11: the scratch holds a feed and a plunge from here on (the two
+    // writes above). The passes below can move them, never clear them.
+    let scratch_feed = |op: &OperationConfig| op.feed_rate().unwrap_or(written_feed);
+    let scratch_plunge = |op: &OperationConfig| op.plunge_rate().unwrap_or(written_plunge);
     // T-12: both setters return `bool` so the caller can refuse instead of
     // discarding the value — their doc comments say exactly that. Capture
     // the refusals here and report them below, but ONLY when this call was
@@ -256,12 +262,12 @@ fn apply_feeds_subset(
     // move. A drill cycle gives no value: its plunge is its feed. The ramp
     // below reads this plunge, so the plunge comes first.
     let plunge_binding = if write_speeds {
-        crate::feeds::plunge::resolve_plunge(&result.plunge, scratch.feed_rate())
+        crate::feeds::plunge::resolve_plunge(&result.plunge, scratch_feed(&scratch))
     } else {
         None
     };
     if let Some((to_mm_min, binding)) = plunge_binding {
-        let from_mm_min = scratch.plunge_rate();
+        let from_mm_min = scratch_plunge(&scratch);
         if (to_mm_min - from_mm_min).abs() >= 1.0 {
             scratch.set_plunge_rate(to_mm_min);
             warnings.push(SuggestWarning::PlungeReDerived {
@@ -301,8 +307,8 @@ fn apply_feeds_subset(
     // (2026-10-12) the only scope that does not write the geometry,
     // `Speeds`, does not run pass 6b, so no such record reaches this point.
     if write_speeds {
-        operation.set_feed_rate(scratch.feed_rate());
-        operation.set_plunge_rate(scratch.plunge_rate());
+        operation.set_feed_rate(scratch_feed(&scratch));
+        operation.set_plunge_rate(scratch_plunge(&scratch));
         if rpm_written {
             operation.set_spindle_rpm(scratch.spindle_rpm());
         }
@@ -323,10 +329,10 @@ fn apply_feeds_subset(
         let record = crate::feeds::ramp::resolve_ramp_feed(
             &result.ramp,
             entry,
-            operation.feed_rate(),
+            scratch_feed(operation),
             operation.spindle_rpm(),
             tool.flute_count,
-            operation.plunge_rate(),
+            scratch_plunge(operation),
         );
         if operation.as_params_mut().set_ramp_feed_rate(record.value()) {
             ramp_record = Some(record.clone());
@@ -640,8 +646,8 @@ pub fn preview_field_applies(
         })
     };
     FieldApplyPreviews {
-        feed_rate: slot(FeedsField::FeedRate, Some(scratch.feed_rate())),
-        plunge_rate: slot(FeedsField::PlungeRate, Some(scratch.plunge_rate())),
+        feed_rate: slot(FeedsField::FeedRate, scratch.feed_rate()),
+        plunge_rate: slot(FeedsField::PlungeRate, scratch.plunge_rate()),
         spindle_rpm: slot(FeedsField::SpindleRpm, scratch.spindle_rpm().map(f64::from)),
         stepover: slot(FeedsField::Stepover, scratch.stepover()),
         depth_per_pass: slot(FeedsField::DepthPerPass, scratch.depth_per_pass()),
@@ -1091,7 +1097,9 @@ pub fn apply_drill_defaults(
             cfg.peck_depth = peck_for_hole(
                 OperationType::AlignmentPinDrill,
                 peck,
-                stock.map(|ctx| ctx.stock_z + cfg.spoilboard_penetration),
+                stock
+                    .and_then(|ctx| ctx.stock_z)
+                    .map(|z| z + cfg.spoilboard_penetration),
             );
         }
         _ => {}
@@ -1135,21 +1143,28 @@ pub fn apply_stock_defaults(operation: &mut OperationConfig, ctx: &StockContext)
         OperationConfig::Face(cfg) => {
             cfg.depth = ctx.stock_padding.max(1.0);
         }
+        // Through the stock. S11: a stock with no thickness gives no floor;
+        // the floor stays `Floor::Unset`.
         OperationConfig::Profile(cfg) => {
-            cfg.floor = crate::compute::floor::Floor::top(ctx.stock_z);
+            if let Some(z) = ctx.stock_z {
+                cfg.floor = crate::compute::floor::Floor::top(z);
+            }
         }
         OperationConfig::Drill(cfg) => {
-            cfg.floor = crate::compute::floor::Floor::top(ctx.stock_z);
-        }
-        OperationConfig::Pocket(cfg) => {
-            cfg.floor = crate::compute::floor::Floor::top((ctx.stock_z * 0.5).min(5.0));
-        }
-        OperationConfig::Adaptive(cfg) => {
-            cfg.floor = crate::compute::floor::Floor::top(ctx.stock_z * 0.5);
+            if let Some(z) = ctx.stock_z {
+                cfg.floor = crate::compute::floor::Floor::top(z);
+            }
         }
         // F161/F183: these ops take no stock-aware default. Each is named, so
         // a new op is a compile error here until it states its default.
-        OperationConfig::VCarve(_)
+        // S11 (operator ruling 2026-10-23): Pocket and Adaptive 2D had a floor
+        // of a part of the stock (min(half, 5 mm) and half). No rule gives
+        // that part, so their floor stays `Floor::Unset` until the operator
+        // sets it. A face pick still sets "each picked face"
+        // (`each_face_floor_due`).
+        OperationConfig::Pocket(_)
+        | OperationConfig::Adaptive(_)
+        | OperationConfig::VCarve(_)
         | OperationConfig::Inlay(_)
         | OperationConfig::InlayPlug(_)
         | OperationConfig::Zigzag(_)

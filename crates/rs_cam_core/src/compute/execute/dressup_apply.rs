@@ -930,7 +930,7 @@ impl PipelineRun<'_> {
         else {
             return current;
         };
-        let max_dist = link.max_distance;
+        let max_dist = link.max_distance_for(self.tool_radius * 2.0);
         let link_feed = link.feed_rate;
         let safe_z = self.ctx.safe_z;
         let tool_radius = self.tool_radius;
@@ -1120,7 +1120,14 @@ impl PipelineRun<'_> {
             return current;
         };
         let nominal = self.ctx.nominal_feed_rate;
-        let max_rate = cfg.feed_max_rate;
+        // S11: the set ceiling, else the machine maximum feed. With no
+        // machine envelope there is no ceiling, so the pass does not run.
+        let Some(max_rate) = cfg
+            .feed_max_rate
+            .or_else(|| self.ctx.link_kinematics.map(|k| k.max_feed_mm_min))
+        else {
+            return current;
+        };
         let ramp_rate = cfg.feed_ramp_rate;
         let params = crate::dressup::feedopt::FeedOptParams {
             nominal_feed_rate: nominal,

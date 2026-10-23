@@ -510,8 +510,12 @@ fn depth_checks(scope: &Scope, op: &OperationConfig, tool: &ToolConfig) -> Vec<D
 
 // ── feed / plunge ───────────────────────────────────────────────────
 
-fn feed_checks(scope: &Scope, feed: f64, plunge: f64) -> Vec<Diagnostic> {
+fn feed_checks(scope: &Scope, feed: Option<f64>, plunge: Option<f64>) -> Vec<Diagnostic> {
     let mut out = Vec::new();
+    // S11: an unset feed has no ratio; `PRECOND_NOT_SET` names it.
+    let (Some(feed), Some(plunge)) = (feed, plunge) else {
+        return out;
+    };
     if plunge > feed && feed > 0.0 {
         out.push(Diagnostic {
             id: DiagnosticId::from(ids::GEOM_PLUNGE_EXCEEDS_FEED),
@@ -662,7 +666,8 @@ pub fn depth_beyond_stock(op: &OperationConfig, h: &ResolvedHeights) -> Option<D
         crate::compute::catalog::DepthSemantics::Resolved => h.bottom_z,
         crate::compute::catalog::DepthSemantics::Explicit(_)
         | crate::compute::catalog::DepthSemantics::DerivedStockTop(_)
-        | crate::compute::catalog::DepthSemantics::None => {
+        | crate::compute::catalog::DepthSemantics::None
+        | crate::compute::catalog::DepthSemantics::Unset => {
             h.depth_base_z - op.default_depth_for_heights().abs()
         }
     });

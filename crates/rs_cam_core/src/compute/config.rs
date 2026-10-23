@@ -1055,11 +1055,19 @@ impl Default for LeadParams {
     }
 }
 
+/// The longest link a tool stays down across, in tool diameters, when the
+/// link dressup holds no value (S11: `None` = this rule x D). It is the
+/// stay-down rule of 3D Rough (`adaptive3d::path::resolved_stay_down_mm`,
+/// "the Fusion HSM roughing default"), the one stay-down rule of the repo.
+pub const LINK_MAX_DISTANCE_OVER_D: f64 = 8.0;
+
 /// The link-moves dressup's parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LinkDressupParams {
-    /// Longest gap (mm) the tool may stay down across.
-    pub max_distance: f64,
+    /// Longest gap (mm) the tool may stay down across. `None` =
+    /// [`LINK_MAX_DISTANCE_OVER_D`] x the tool diameter (S11); it follows a
+    /// tool change.
+    pub max_distance: Option<f64>,
     /// Feed rate (mm/min) of a link move.
     pub feed_rate: f64,
 }
@@ -1067,9 +1075,20 @@ pub struct LinkDressupParams {
 impl Default for LinkDressupParams {
     fn default() -> Self {
         Self {
-            max_distance: 10.0,
+            // S11: from the tool (`max_distance_for`).
+            max_distance: None,
             feed_rate: 500.0,
         }
+    }
+}
+
+impl LinkDressupParams {
+    /// The longest link (mm) for a tool of diameter `tool_diameter`: the
+    /// set value, else [`LINK_MAX_DISTANCE_OVER_D`] x D (S11).
+    #[must_use]
+    pub fn max_distance_for(&self, tool_diameter: f64) -> f64 {
+        self.max_distance
+            .unwrap_or(LINK_MAX_DISTANCE_OVER_D * tool_diameter)
     }
 }
 
@@ -1152,7 +1171,10 @@ pub struct DressupConfig {
     /// [`DressupFieldDef::owner`], so they stay settable and stored while
     /// the dressup is off.
     pub feed_optimization: bool,
-    pub feed_max_rate: f64,
+    /// The upper feed (mm/min) the optimiser may command. `None` = the
+    /// machine maximum feed (S11); with no machine envelope the pass does
+    /// not run.
+    pub feed_max_rate: Option<f64>,
     pub feed_ramp_rate: f64,
     /// Rapid-order optimisation. A bool with no value field of its own, so
     /// there is no pair to fold.
@@ -1189,7 +1211,10 @@ struct DressupConfigWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     lead_out_feed_rate: Option<f64>,
     link_moves: bool,
-    link_max_distance: f64,
+    /// S11: absent (or null) is the rule 8 x D. A saved project's
+    /// `link_max_distance = 10.0` loads as the value `Some(10.0)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    link_max_distance: Option<f64>,
     link_feed_rate: f64,
     arc_fitting: bool,
     arc_tolerance: f64,
@@ -1198,7 +1223,9 @@ struct DressupConfigWire {
     #[serde(default = "default_segment_merge_tolerance")]
     segment_merge_tolerance: f64,
     feed_optimization: bool,
-    feed_max_rate: f64,
+    /// S11: absent (or null) is the machine maximum feed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    feed_max_rate: Option<f64>,
     feed_ramp_rate: f64,
     optimize_rapid_order: bool,
 }
@@ -1403,7 +1430,7 @@ impl DressupConfig {
         },
         DressupFieldDef {
             name: "link_max_distance",
-            description: "longest gap a link move may span (mm)",
+            description: "longest gap a link move may span (mm); null = 8 x tool diameter",
             owner: Some(DressupKey::LinkMoves),
         },
         DressupFieldDef {
@@ -1438,7 +1465,7 @@ impl DressupConfig {
         },
         DressupFieldDef {
             name: "feed_max_rate",
-            description: "upper feed the optimiser may command (mm/min)",
+            description: "upper feed the optimiser may command (mm/min); null = the machine maximum feed",
             owner: None,
         },
         DressupFieldDef {
@@ -1478,7 +1505,8 @@ impl Default for DressupConfig {
             arc_fitting: None,
             segment_merge: None,
             feed_optimization: true,
-            feed_max_rate: 3000.0,
+            // S11: the machine maximum feed.
+            feed_max_rate: None,
             feed_ramp_rate: 200.0,
             optimize_rapid_order: true,
         }
@@ -1685,7 +1713,7 @@ mod tests {
                 out_feed_rate: Some(654.0),
             }),
             link_moves: Some(LinkDressupParams {
-                max_distance: 17.0,
+                max_distance: Some(17.0),
                 feed_rate: 432.0,
             }),
             arc_fitting: Some(ArcFitParams { tolerance: 0.017 }),
@@ -1840,6 +1868,12 @@ mod tests {
             // G10 D2: the rule (`None`) is not written, so an operator value
             // puts the key on the wire.
             helix_radius: Some(2.0),
+            // S11: the rules (`None`) are not written either.
+            link_moves: Some(LinkDressupParams {
+                max_distance: Some(10.0),
+                feed_rate: 500.0,
+            }),
+            feed_max_rate: Some(3000.0),
             ..DressupConfig::default()
         };
         let value = serde_json::to_value(&full).unwrap();

@@ -871,7 +871,7 @@ fn step_stock() -> StockConfig {
     StockConfig {
         x: FACE_SIDE + 10.0,
         y: FACE_SIDE + 10.0,
-        z: FACE_Z + 10.0,
+        z: Some(FACE_Z + 10.0),
         origin_x: -5.0,
         origin_y: -5.0,
         origin_z: -5.0,
@@ -998,7 +998,7 @@ fn no_face_for_floor() {
 fn floor_above_top() {
     let mut s = face_pick_session(0);
     let stock = step_stock();
-    let stock_top = stock.origin_z + stock.z;
+    let stock_top = stock.top_z();
     let depth = FACE_Z - stock_top - 1.0;
     set_floor(&mut s, Floor::EachFace { depth });
     let r = refusal_of(&mut s);
@@ -1148,7 +1148,7 @@ fn faces_not_ready() {
         StockConfig {
             x: 20.0,
             y: 10.0,
-            z: 8.0,
+            z: Some(8.0),
             auto_from_model: false,
             ..StockConfig::default()
         },

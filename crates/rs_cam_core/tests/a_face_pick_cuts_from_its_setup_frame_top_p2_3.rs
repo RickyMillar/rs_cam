@@ -133,7 +133,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: PART_SIDE + 2.0 * STOCK_MARGIN,
         y: PART_SIDE + 2.0 * STOCK_MARGIN,
-        z: TOP_FACE_Z - BOTTOM_FACE_Z + 2.0 * STOCK_MARGIN,
+        z: Some(TOP_FACE_Z - BOTTOM_FACE_Z + 2.0 * STOCK_MARGIN),
         origin_x: -STOCK_MARGIN,
         origin_y: -STOCK_MARGIN,
         origin_z: BOTTOM_FACE_Z - STOCK_MARGIN,
@@ -210,7 +210,7 @@ fn a_face_pick_on_a_flipped_setup_cuts_from_the_face_in_the_setup_frame() {
     // it. A Bottom flip turns the world stock top into the setup-frame
     // floor, so a world Z maps to `stock top - Z`.
     let stock = stock();
-    let world_stock_top = stock.origin_z + stock.z;
+    let world_stock_top = stock.top_z();
     let face_top = world_stock_top - BOTTOM_FACE_Z;
     let want = face_top - POCKET_DEPTH;
     assert!(

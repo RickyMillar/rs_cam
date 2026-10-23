@@ -191,7 +191,7 @@ fn controller(
     let stock = StockConfig {
         x: 100.0,
         y: 80.0,
-        z: 20.0,
+        z: Some(20.0),
         origin_x: -10.0,
         origin_y: -5.0,
         origin_z: -20.0,
@@ -286,7 +286,7 @@ fn drawn(c: &AppController<SilentBackend>, camera: &OrbitCamera, p: P2) -> [f32;
 /// Where the raw model point `p` falls on the screen (the old pick frame).
 fn raw(c: &AppController<SilentBackend>, camera: &OrbitCamera, p: P2) -> [f32; 2] {
     let stock = c.state().session().stock_config();
-    screen(camera, P3::new(p.x, p.y, stock.origin_z + stock.z))
+    screen(camera, P3::new(p.x, p.y, stock.top_z()))
 }
 
 fn screen(camera: &OrbitCamera, p: P3) -> [f32; 2] {

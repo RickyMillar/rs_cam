@@ -41,7 +41,7 @@ fn op_on(polygon: &Polygon2, op: OperationConfig, tool_diameter: f64) -> Toolpat
     let stock = StockConfig {
         x: max_x - min_x + 20.0,
         y: max_y - min_y + 20.0,
-        z: 10.0,
+        z: Some(10.0),
         origin_x: min_x - 10.0,
         origin_y: min_y - 10.0,
         origin_z: -10.0,
@@ -70,8 +70,8 @@ fn pocket_on(
             stepover,
             floor: rs_cam_core::compute::floor::Floor::top(depth),
             depth_per_pass: depth,
-            feed_rate,
-            plunge_rate,
+            feed_rate: Some(feed_rate),
+            plunge_rate: Some(plunge_rate),
             climb: false,
             ..PocketConfig::default()
         }),
@@ -214,8 +214,8 @@ fn pocket_and_profile_on_same_polygon() {
             side: ProfileSide::Outside,
             floor: rs_cam_core::compute::floor::Floor::top(3.0),
             depth_per_pass: 3.0,
-            feed_rate: 1000.0,
-            plunge_rate: 500.0,
+            feed_rate: Some(1000.0),
+            plunge_rate: Some(500.0),
             climb: false,
             ..ProfileConfig::default()
         }),

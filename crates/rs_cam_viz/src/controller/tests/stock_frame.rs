@@ -29,7 +29,7 @@ fn controller_built_stock_bbox_drives_axial_engagement_within_commanded_doc_f024
     let stock = StockConfig {
         x: 100.0,
         y: 100.0,
-        z: 12.0,
+        z: Some(12.0),
         origin_x: -10.0,
         origin_y: -10.0,
         origin_z: -12.0,
@@ -188,7 +188,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
     let stock = StockConfig {
         x: 100.0,
         y: 100.0,
-        z: 12.0,
+        z: Some(12.0),
         origin_x: -10.0,
         origin_y: -10.0,
         origin_z: -12.0,
@@ -237,8 +237,8 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         stepover: 2.4,
         floor: rs_cam_core::compute::floor::Floor::top(6.0),
         depth_per_pass: 2.0,
-        feed_rate: 900.0,
-        plunge_rate: 350.0,
+        feed_rate: Some(900.0),
+        plunge_rate: Some(350.0),
         climb: true,
         pattern: PocketPattern::Contour,
         angle: 0.0,

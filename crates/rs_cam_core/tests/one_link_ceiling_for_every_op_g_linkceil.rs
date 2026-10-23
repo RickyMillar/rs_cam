@@ -106,7 +106,7 @@ fn project_curve_on_fresh_stock(chain_distance_mm: f64) -> Vec<Move> {
     let plate_id = builder.add_model(plate);
     let curve_id = builder.add_model(polygon_model(curves(), "g_linkceil_curves"));
     let op = OperationConfig::ProjectCurve(ProjectCurveConfig {
-        depth: CUT_DEPTH_MM,
+        depth: Some(CUT_DEPTH_MM),
         point_spacing: POINT_SPACING_MM,
         chain_distance_mm,
         surface_model_id: Some(plate_id),

@@ -1366,14 +1366,14 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
             after.id,
             truncate(&after.name, 32),
             format!(
-                "{:.0}→{:.0}",
-                before.operation.feed_rate(),
-                after.operation.feed_rate()
+                "{}→{}",
+                rate_cell(before.operation.feed_rate()),
+                rate_cell(after.operation.feed_rate())
             ),
             format!(
-                "{:.0}→{:.0}",
-                before.operation.plunge_rate(),
-                after.operation.plunge_rate()
+                "{}→{}",
+                rate_cell(before.operation.plunge_rate()),
+                rate_cell(after.operation.plunge_rate())
             ),
             format!(
                 "{}→{}",
@@ -1579,6 +1579,11 @@ fn print_triage_report(
         c.hotspots_total
     );
     eprintln!();
+}
+
+/// A feed cell of the apply table: the rate, or `unset` (S11).
+fn rate_cell(rate: Option<f64>) -> String {
+    rate.map_or_else(|| "unset".to_owned(), |r| format!("{r:.0}"))
 }
 
 #[cfg(test)]

@@ -374,7 +374,7 @@ fn stock_for_terrain(mesh: &TriangleMesh) -> StockConfig {
     StockConfig {
         x: (b.max.x - b.min.x) + 4.0,
         y: (b.max.y - b.min.y) + 4.0,
-        z: b.max.z - b.min.z,
+        z: Some(b.max.z - b.min.z),
         origin_x: b.min.x - 2.0,
         origin_y: b.min.y - 2.0,
         origin_z: b.min.z,
@@ -410,7 +410,7 @@ fn stock_for_groove() -> StockConfig {
     StockConfig {
         x: 2.0 * GROOVE_X_EXTENT_MM + 4.0,
         y: 2.0 * GROOVE_Y_HALF_MM + 4.0,
-        z: GROOVE_DEPTH_MM + 2.0,
+        z: Some(GROOVE_DEPTH_MM + 2.0),
         origin_x: -GROOVE_X_EXTENT_MM - 2.0,
         origin_y: -GROOVE_Y_HALF_MM - 2.0,
         origin_z: -(GROOVE_DEPTH_MM + 2.0),
@@ -435,8 +435,8 @@ fn unified_arm_config() -> UnifiedFinishConfig {
         z_step: 0.3,
         sampling: 0.5,
         stock_to_leave: 0.0,
-        feed_rate: 3000.0,
-        plunge_rate: 150.0,
+        feed_rate: Some(3000.0),
+        plunge_rate: Some(150.0),
         spindle_rpm: Some(21000),
         pencil_claims: false,
         territory_clip: false,
@@ -469,8 +469,8 @@ fn scallop_arm_config() -> ScallopConfig {
     ScallopConfig {
         scallop_height: cusp_mm(),
         tolerance: 0.05,
-        feed_rate: 3000.0,
-        plunge_rate: 150.0,
+        feed_rate: Some(3000.0),
+        plunge_rate: Some(150.0),
         stock_to_leave: 0.0,
         spindle_rpm: Some(21000),
         ..ScallopConfig::default()
@@ -1358,7 +1358,7 @@ fn tiny_groove_stock() -> StockConfig {
     StockConfig {
         x: 16.0,
         y: 16.0,
-        z: 4.0,
+        z: Some(4.0),
         origin_x: -8.0,
         origin_y: -8.0,
         origin_z: -4.0,
@@ -1421,8 +1421,8 @@ fn h4_harness_arithmetic_sentry() {
         z_step: 1.0,
         sampling: 0.5,
         stock_to_leave: 0.0,
-        feed_rate: 1500.0,
-        plunge_rate: 300.0,
+        feed_rate: Some(1500.0),
+        plunge_rate: Some(300.0),
         ..UnifiedFinishConfig::default()
     };
 

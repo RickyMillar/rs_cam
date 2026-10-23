@@ -143,7 +143,7 @@ pub fn flat_stock() -> StockConfig {
     StockConfig {
         x: FLAT_X,
         y: FLAT_Y,
-        z: FLAT_Z,
+        z: Some(FLAT_Z),
         origin_x: -FLAT_X / 2.0,
         origin_y: -FLAT_Y / 2.0,
         origin_z: -FLAT_Z,
@@ -312,7 +312,7 @@ pub fn mesh_stock() -> StockConfig {
     StockConfig {
         x: 2.0 * MESH_HALF,
         y: 2.0 * MESH_HALF,
-        z: MESH_STOCK_Z,
+        z: Some(MESH_STOCK_Z),
         origin_x: -MESH_HALF,
         origin_y: -MESH_HALF,
         origin_z: 0.0,
@@ -406,7 +406,7 @@ fn mirror_xy(p: P2) -> P2 {
 /// height and the Z origin of the mesh mirror and of a face plane.
 pub fn mirrored_model(mut model: LoadedModel, stock: &StockConfig) -> LoadedModel {
     // Two reflections (Y and Z) of a vertex: (x, y, z) -> (x, -y, z_sum - z).
-    let z_sum = stock.z + 2.0 * stock.origin_z;
+    let z_sum = stock.box_height() + 2.0 * stock.origin_z;
     let mirror_poly = |poly: &Polygon2| {
         let mut m = Polygon2::with_holes(
             poly.exterior.iter().map(|p| mirror_xy(*p)).collect(),
@@ -711,7 +711,7 @@ pub fn dressup_face(depth: f64) -> Toolpath {
     let stock = StockConfig {
         x: 40.0,
         y: 30.0,
-        z: 5.0,
+        z: Some(5.0),
         origin_x: 0.0,
         origin_y: 0.0,
         origin_z: -5.0,
@@ -723,9 +723,9 @@ pub fn dressup_face(depth: f64) -> Toolpath {
         stepover: 4.0,
         depth,
         depth_per_pass: 2.0,
-        feed_rate: 1500.0,
-        plunge_rate: 500.0,
-        stock_offset: 0.0,
+        feed_rate: Some(1500.0),
+        plunge_rate: Some(500.0),
+        stock_offset: Some(0.0),
         direction: FaceDirection::OneWay,
         ..FaceConfig::default()
     });

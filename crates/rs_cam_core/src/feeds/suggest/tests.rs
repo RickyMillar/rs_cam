@@ -164,7 +164,7 @@ fn stock_ctx() -> StockContext {
     StockContext {
         stock_top_z: 10.0,
         stock_bottom_z: 0.0,
-        stock_z: 10.0,
+        stock_z: Some(10.0),
         stock_padding: 1.0,
     }
 }
@@ -236,7 +236,7 @@ fn drill_apply_round_trips_suggested_feed() {
             "{op_type:?}: the drill claim serves the cell, got {:?}",
             s.feeds_result.support
         );
-        let stored = s.operation.feed_rate();
+        let stored = s.operation.feed_rate().expect("S11: the fixture sets it");
         let suggested = s.feeds_result.feed_rate_mm_min;
         assert_eq!(
             s.feeds_result.plunge_rate_mm_min, suggested,
@@ -363,8 +363,14 @@ fn apply_speeds_changes_speeds_leaves_cut_geometry() {
         role,
         SuggestContext::default(),
     );
-    assert_eq!(kept.feed_rate().to_bits(), both.feed_rate().to_bits());
-    assert_eq!(kept.plunge_rate().to_bits(), both.plunge_rate().to_bits());
+    assert_eq!(
+        kept.feed_rate().map(f64::to_bits),
+        both.feed_rate().map(f64::to_bits)
+    );
+    assert_eq!(
+        kept.plunge_rate().map(f64::to_bits),
+        both.plunge_rate().map(f64::to_bits)
+    );
     assert_eq!(kept.spindle_rpm(), both.spindle_rpm());
     assert_eq!(kept_prov.feed_rate, both_prov.feed_rate);
     assert_eq!(kept.stepover(), at_both_geometry.stepover());
@@ -601,7 +607,11 @@ fn explored_speeds_survive_the_funnel_but_still_get_clamped() {
             suggest: SuggestContext::default(),
         },
     );
-    assert_eq!(op.feed_rate(), 120.0, "the explored feed was re-solved");
+    assert_eq!(
+        op.feed_rate(),
+        Some(120.0),
+        "the explored feed was re-solved"
+    );
     assert_eq!(op.spindle_rpm(), Some(14_000), "the explored RPM moved");
     assert!(
         warnings
@@ -615,7 +625,7 @@ fn explored_speeds_survive_the_funnel_but_still_get_clamped() {
     // Before G10 the plunge stopped at the clamp, 120.
     assert_eq!(
         op.plunge_rate(),
-        60.0,
+        Some(60.0),
         "the plunge is not feed / Z at the explored feed"
     );
     assert!(
@@ -666,7 +676,7 @@ fn resolve_operation_invariants_clamps_an_axis_edit_without_re_solving_it() {
     );
     assert_eq!(
         op.feed_rate(),
-        1234.0,
+        Some(1234.0),
         "the accepted feed was re-solved; the default context must leave it alone"
     );
 }
@@ -702,8 +712,8 @@ fn fallback_formula_path_is_used_without_matching_lut_row() {
 #[test]
 fn invariants_clamp_and_warn() {
     let mut op = OperationConfig::Pocket(PocketConfig {
-        feed_rate: 100.0,
-        plunge_rate: 250.0,
+        feed_rate: Some(100.0),
+        plunge_rate: Some(250.0),
         stepover: 12.0,
         depth_per_pass: 20.0,
         ..PocketConfig::default()
@@ -730,7 +740,7 @@ fn invariants_clamp_and_warn() {
         SuggestContext::default(),
     );
 
-    assert_eq!(op.plunge_rate(), 100.0);
+    assert_eq!(op.plunge_rate(), Some(100.0));
     assert_eq!(op.stepover(), Some(6.0));
     assert_eq!(op.depth_per_pass(), Some(1.0));
     assert!(
@@ -783,6 +793,8 @@ fn drill_peck_depth_scales_with_diameter_and_material() {
     let mut op_3mm = OperationConfig::Drill(DrillConfig {
         cycle: DrillCycleType::Peck,
         peck_depth: 3.0, // pre-fix hardcode value
+        // S11: the fixture states the 10 mm hole the claim reads.
+        floor: crate::compute::floor::Floor::top(10.0),
         ..DrillConfig::default()
     });
     let mut tool_3mm = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
@@ -805,6 +817,8 @@ fn drill_peck_depth_scales_with_diameter_and_material() {
     let mut op_12mm = OperationConfig::Drill(DrillConfig {
         cycle: DrillCycleType::Peck,
         peck_depth: 3.0, // pre-fix hardcode value
+        // S11: the fixture states the 10 mm hole the claim reads.
+        floor: crate::compute::floor::Floor::top(10.0),
         ..DrillConfig::default()
     });
     let mut tool_12mm = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
@@ -900,10 +914,10 @@ fn alignment_pin_drill_peck_is_clamped_like_drill() {
     let stock = StockContext {
         stock_top_z: 0.0,
         stock_bottom_z: -11.0,
-        stock_z: 11.0,
+        stock_z: Some(11.0),
         stock_padding: 0.0,
     };
-    let hole_depth = stock.stock_z + 2.0;
+    let hole_depth = stock.stock_z.expect("S11: the fixture sets it") + 2.0;
 
     let mut pin = OperationConfig::AlignmentPinDrill(pin_cfg());
     apply_drill_defaults(&mut pin, &tool, &material, Some(&stock));
@@ -1056,8 +1070,8 @@ fn drill_peck_depth_softwood_exceeds_hardwood() {
 fn adaptive_op_uses_adaptive_doc_factor_not_doc_roughing_factor() {
     use crate::compute::operation_configs::Adaptive3dConfig;
     let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        feed_rate: 1000.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(1000.0),
+        plunge_rate: Some(500.0),
         stepover: 0.88,
         depth_per_pass: 6.0,
         ..Adaptive3dConfig::default()
@@ -1128,8 +1142,8 @@ fn plunge_entry_unstable_warning_fires_when_dpp_exceeds_half_diameter() {
 
     for (dpp, label) in cases {
         let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-            feed_rate: 1500.0,
-            plunge_rate: 500.0,
+            feed_rate: Some(1500.0),
+            plunge_rate: Some(500.0),
             stepover: 0.88,
             depth_per_pass: *dpp,
             entry_style: Adaptive3dEntryStyle::Plunge,
@@ -1204,8 +1218,8 @@ fn plunge_entry_unstable_does_not_fire_below_half_diameter() {
     // 0.5×D trigger. Plunge entry, so the *only* reason the warning
     // wouldn't fire is the threshold — not the entry-style guard.
     let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        feed_rate: 1500.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(1500.0),
+        plunge_rate: Some(500.0),
         stepover: 0.88,
         depth_per_pass: 2.0,
         entry_style: Adaptive3dEntryStyle::Plunge,
@@ -1251,8 +1265,8 @@ fn plunge_entry_unstable_does_not_fire_for_helix_or_ramp() {
 
     for style in [Adaptive3dEntryStyle::Helix, Adaptive3dEntryStyle::Ramp] {
         let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-            feed_rate: 1500.0,
-            plunge_rate: 500.0,
+            feed_rate: Some(1500.0),
+            plunge_rate: Some(500.0),
             stepover: 0.88,
             depth_per_pass: 9.0,
             entry_style: style,
@@ -1282,8 +1296,8 @@ fn plunge_entry_unstable_does_not_fire_for_helix_or_ramp() {
 #[test]
 fn conventional_op_still_clamps_by_doc_roughing_factor() {
     let mut op = OperationConfig::Pocket(PocketConfig {
-        feed_rate: 1000.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(1000.0),
+        plunge_rate: Some(500.0),
         stepover: 3.0,
         depth_per_pass: 6.0,
         ..PocketConfig::default()
@@ -1361,8 +1375,8 @@ fn deflection_machinery_caps_dpp_for_long_reach_tool() {
     // bound, so the axial-DOC envelope clamps it to the deflection-safe
     // DPP in one shot (no phantom back-off thrash).
     let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        feed_rate: 911.0,
-        plunge_rate: 300.0,
+        feed_rate: Some(911.0),
+        plunge_rate: Some(300.0),
         stepover: 1.2,
         depth_per_pass: 9.0,
         spindle_rpm: Some(16_000),
@@ -1461,8 +1475,8 @@ fn deflection_back_off_skipped_for_finish_pass() {
     use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
     use crate::material::WoodSpecies;
     let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        feed_rate: 911.0,
-        plunge_rate: 300.0,
+        feed_rate: Some(911.0),
+        plunge_rate: Some(300.0),
         stepover: 1.2,
         depth_per_pass: 9.0,
         spindle_rpm: Some(16_000),
@@ -1611,8 +1625,8 @@ fn deflection_back_off_respects_05mm_floor() {
     use crate::compute::operation_configs::{Adaptive3dConfig, Adaptive3dEntryStyle};
     use crate::material::WoodSpecies;
     let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        feed_rate: 1500.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(1500.0),
+        plunge_rate: Some(500.0),
         stepover: 1.0,
         // Start at 1.0 mm so 0.8^N drops to 0.5 in <5 iterations
         // (log(0.5/1.0)/log(0.8) ≈ 3.1 steps). Otherwise the
@@ -1698,8 +1712,8 @@ fn stepover_raised_for_wanaka_3d_finish_case() {
     use crate::compute::operation_configs::DropCutterConfig;
     let mut op = OperationConfig::DropCutter(DropCutterConfig {
         stepover: 0.03,
-        feed_rate: 2000.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(2000.0),
+        plunge_rate: Some(500.0),
         scallop_height: Some(0.010),
         ..DropCutterConfig::default()
     });
@@ -1805,8 +1819,8 @@ fn stepover_unchanged_when_model_bbox_unknown() {
     use crate::compute::operation_configs::DropCutterConfig;
     let mut op = OperationConfig::DropCutter(DropCutterConfig {
         stepover: 0.03,
-        feed_rate: 2000.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(2000.0),
+        plunge_rate: Some(500.0),
         scallop_height: Some(0.010),
         ..DropCutterConfig::default()
     });
@@ -1861,8 +1875,8 @@ fn stepover_floor_caps_back_off() {
     // ceiling) on iter 3 — bails on ceiling, not on max iterations.
     let mut op = OperationConfig::DropCutter(DropCutterConfig {
         stepover: 0.3,
-        feed_rate: 2000.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(2000.0),
+        plunge_rate: Some(500.0),
         scallop_height: Some(0.010),
         ..DropCutterConfig::default()
     });
@@ -1946,8 +1960,8 @@ fn retired_lift_leaves_wanaka_back_rough_feed_untouched() {
     use crate::material::WoodSpecies;
 
     let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        feed_rate: 911.0,
-        plunge_rate: 300.0,
+        feed_rate: Some(911.0),
+        plunge_rate: Some(300.0),
         stepover: 1.2,
         // Post-v1.1-back-off DPP. Helix entry so we don't also
         // fire PlungeEntryUnstableAtDpp.
@@ -1977,7 +1991,7 @@ fn retired_lift_leaves_wanaka_back_rough_feed_untouched() {
         max_mm_per_tooth: 0.060,
     });
 
-    let initial_feed = op.feed_rate();
+    let initial_feed = op.feed_rate().expect("S11: the fixture sets it");
     let warnings = enforce_invariants(
         &mut op,
         &tool,
@@ -1991,10 +2005,10 @@ fn retired_lift_leaves_wanaka_back_rough_feed_untouched() {
     );
 
     assert!(
-        (op.feed_rate() - initial_feed).abs() < 1e-6,
+        (op.feed_rate().expect("S11: the fixture sets it") - initial_feed).abs() < 1e-6,
         "retired pass 8 must leave feed at the calculator value {initial_feed} \
              (pre-fix it was lifted to 3456), got {}",
-        op.feed_rate()
+        op.feed_rate().expect("S11: the fixture sets it")
     );
     assert!(
         !warnings
@@ -2058,8 +2072,8 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
     {
         let aggressiveness = "the one Suggest policy";
         let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-            feed_rate: initial_feed,
-            plunge_rate: 300.0,
+            feed_rate: Some(initial_feed),
+            plunge_rate: Some(300.0),
             stepover: 1.2,
             depth_per_pass: 3.69,
             spindle_rpm: Some(16_000),
@@ -2115,9 +2129,9 @@ fn retired_lift_fires_no_cap_on_a_deflection_bound_fixture() {
         );
 
         assert!(
-            (op.feed_rate() - initial_feed).abs() < 1e-6,
+            (op.feed_rate().expect("S11: the fixture sets it") - initial_feed).abs() < 1e-6,
             "{aggressiveness:?}: feed must stay at the calculator value {initial_feed}, got {}",
-            op.feed_rate()
+            op.feed_rate().expect("S11: the fixture sets it")
         );
         assert!(
             !warnings.iter().any(|w| matches!(
@@ -2153,8 +2167,8 @@ fn retired_lift_reports_no_max_feed_shortfall() {
     use crate::material::WoodSpecies;
 
     let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        feed_rate: 4000.0,
-        plunge_rate: 300.0,
+        feed_rate: Some(4000.0),
+        plunge_rate: Some(300.0),
         stepover: 1.2,
         depth_per_pass: 2.0,
         spindle_rpm: Some(16_000),
@@ -2195,9 +2209,9 @@ fn retired_lift_reports_no_max_feed_shortfall() {
     );
 
     assert!(
-        (op.feed_rate() - 4000.0).abs() < 1e-6,
+        (op.feed_rate().expect("S11: the fixture sets it") - 4000.0).abs() < 1e-6,
         "feed must stay at the machine cap, got {}",
-        op.feed_rate()
+        op.feed_rate().expect("S11: the fixture sets it")
     );
     assert!(
         !warnings.iter().any(|w| matches!(
@@ -2234,8 +2248,8 @@ fn feed_recalibration_skipped_when_already_in_band() {
     // ≥ 0.108 mm/tooth → at 16 kRPM × 2 flutes that's feed ≥ 3456
     // mm/min. Use 4000 to be safely above.
     let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
-        feed_rate: 4000.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(4000.0),
+        plunge_rate: Some(500.0),
         stepover: 1.2,
         depth_per_pass: 2.0,
         spindle_rpm: Some(16_000),
@@ -2259,7 +2273,7 @@ fn feed_recalibration_skipped_when_already_in_band() {
         max_mm_per_tooth: 0.050,
     });
 
-    let initial_feed = op.feed_rate();
+    let initial_feed = op.feed_rate().expect("S11: the fixture sets it");
     let warnings = enforce_invariants(
         &mut op,
         &tool,
@@ -2273,9 +2287,9 @@ fn feed_recalibration_skipped_when_already_in_band() {
     );
 
     assert!(
-        (op.feed_rate() - initial_feed).abs() < 1e-6,
+        (op.feed_rate().expect("S11: the fixture sets it") - initial_feed).abs() < 1e-6,
         "feed must be unchanged when observed chipload already in band, got {} vs {initial_feed}",
-        op.feed_rate()
+        op.feed_rate().expect("S11: the fixture sets it")
     );
     assert!(
         !warnings
@@ -2325,7 +2339,7 @@ fn suggest_never_writes_entry_style() {
                 let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
                     depth_per_pass: 3.69,
                     stepover: 1.2,
-                    feed_rate: 911.0,
+                    feed_rate: Some(911.0),
                     spindle_rpm: Some(16_000),
                     entry_style: style,
                     ..Adaptive3dConfig::default()
@@ -2375,7 +2389,7 @@ fn clearing_strategy_recommendation_is_warn_only() {
     let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
         depth_per_pass: 2.0,
         stepover: 1.2,
-        feed_rate: 911.0,
+        feed_rate: Some(911.0),
         spindle_rpm: Some(16_000),
         ..Adaptive3dConfig::default()
     });
@@ -2445,7 +2459,7 @@ fn clearing_strategy_recommendation_skips() {
         let mut op = OperationConfig::Adaptive3d(Adaptive3dConfig {
             depth_per_pass: 2.0,
             stepover: 1.2,
-            feed_rate: 911.0,
+            feed_rate: Some(911.0),
             spindle_rpm: Some(16_000),
             clearing_strategy: strategy,
             ..Adaptive3dConfig::default()
@@ -2540,7 +2554,7 @@ fn operation_feeds_hints_is_an_explicit_per_op_decision() {
             OperationConfig::DropCutter(cfg) => (None, None, cfg.scallop_height),
             OperationConfig::Waterline(cfg) => (Some(cfg.z_step), None, None),
             OperationConfig::SteepShallow(cfg) => (Some(cfg.z_step), None, None),
-            OperationConfig::VCarve(cfg) => (Some(cfg.max_depth), None, None),
+            OperationConfig::VCarve(cfg) => (cfg.max_depth, None, None),
             OperationConfig::RampFinish(cfg) => (Some(cfg.max_stepdown), None, None),
             // Ops that have explicitly DECIDED to provide no hints —
             // the calculator falls back to LUT/diameter-factor
@@ -2648,7 +2662,7 @@ fn a_suggested_peck_respects_the_schema_floor_b14() {
         let stock = stock_z.map(|z| StockContext {
             stock_top_z: 0.0,
             stock_bottom_z: -z,
-            stock_z: z,
+            stock_z: Some(z),
             stock_padding: 0.0,
         });
         apply_drill_defaults(&mut op, &pin_tool, &material, stock.as_ref());

@@ -143,7 +143,6 @@ use std::sync::Arc;
 
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::OperationConfig;
-use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::compute::transform::FaceUp;
@@ -216,7 +215,10 @@ fn core_result() -> ToolpathComputeResult {
 }
 
 fn pocket_op(rpm: u32) -> OperationConfig {
-    let mut op = OperationConfig::Pocket(PocketConfig::default());
+    // S11: the fixture states the values before S11.
+    let mut op = rs_cam_core::compute::fixture_values::fixture_op(
+        rs_cam_core::compute::catalog::OperationType::Pocket,
+    );
     op.set_spindle_rpm(Some(rpm));
     op
 }
@@ -262,7 +264,7 @@ fn build_state(last_coolant: CoolantMode) -> (ProjectSession, GuiState, Simulati
         .stock(StockConfig {
             x: STOCK_X,
             y: STOCK_Y,
-            z: STOCK_Z,
+            z: Some(STOCK_Z),
             origin_x: ORIGIN_X,
             origin_y: ORIGIN_Y,
             origin_z: ORIGIN_Z,

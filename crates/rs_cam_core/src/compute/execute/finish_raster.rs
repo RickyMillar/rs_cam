@@ -39,8 +39,8 @@ pub(crate) fn generate_scallop(
     let pass = ScallopPass {
         params: cfg.params(
             OpMotion {
-                feed_rate: op.feed_rate(),
-                plunge_rate: op.plunge_rate(),
+                feed_rate: op.cut_feeds()?.feed_rate,
+                plunge_rate: op.cut_feeds()?.plunge_rate,
                 safe_z: ctx.heights.retract_z,
             },
             ctx.link_kinematics.clone(),
@@ -156,8 +156,8 @@ pub(crate) fn generate_drop_cutter(
         min_z: cfg.min_z,
         stock_bottom_z: ctx.stock_bbox.min.z,
         hookup_mm: cfg.hookup_mm,
-        feed_rate: op.feed_rate(),
-        plunge_rate: op.plunge_rate(),
+        feed_rate: op.cut_feeds()?.feed_rate,
+        plunge_rate: op.cut_feeds()?.plunge_rate,
         safe_z: ctx.heights.retract_z,
     };
     run_height_field(&pass, ctx, prepared)
@@ -297,8 +297,8 @@ pub(crate) fn generate_waterline(
     let surface = prepared.mesh()?;
     let params = crate::ops::waterline::WaterlineParams {
         sampling: cfg.sampling,
-        feed_rate: op.feed_rate(),
-        plunge_rate: op.plunge_rate(),
+        feed_rate: op.cut_feeds()?.feed_rate,
+        plunge_rate: op.cut_feeds()?.plunge_rate,
         safe_z: ctx.heights.retract_z,
         // `WaterlineConfig` exposes no stock-to-leave dial, so the
         // standalone op has an ABSENT capability, not a dropped one: no

@@ -1,0 +1,107 @@
+//! S11 (operator ruling 2026-10-23): a value with no derivation is not set.
+//!
+//! "If there is no logical reason for a default, then dont have it." A
+//! drawing has no depth, and a tool with no feeds data has no feed. So a
+//! new op holds these values as `None` (the floor as
+//! [`crate::compute::floor::Floor::Unset`]). The op stays in the project,
+//! and generation refuses with a [`NotSet`] that names each field and the
+//! fix. The GUI shows the field empty with a hint, and MCP reports it
+//! unset.
+//!
+//! - Depth ([`NotSetKind::Depth`]): Trace `depth`, V-Carve `max_depth`,
+//!   Inlay and Inlay Plug `pocket_depth`, Project Curve `depth`. The floor
+//!   of a floor op refuses through the heights door
+//!   (`FloorRefusal::Unset`).
+//! - Feeds ([`NotSetKind::Feeds`]): `feed_rate`, `plunge_rate` and
+//!   `spindle_rpm` of every op. Suggest writes them when the tool has
+//!   feeds data; with no data the operator sets them.
+//!
+//! [`crate::compute::catalog::OperationConfig::not_set`] lists them, and
+//! [`crate::compute::catalog::OperationConfig::cut_feeds`] gives the set
+//! feeds to the generators.
+
+/// The refusal text of an op with no feeds (S11). The GUI, MCP and the CLI
+/// show this one text.
+pub const FEEDS_NOT_SET_TEXT: &str = "no feeds data for this tool: set feed and RPM";
+
+/// The hint the GUI shows in an empty field (S11).
+pub const SET_A_VALUE_HINT: &str = "set a value";
+
+/// What kind of value is not set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotSetKind {
+    /// A depth that no rule gives (a drawing has no depth).
+    Depth,
+    /// The feeds: Suggest had no data for the tool.
+    Feeds,
+}
+
+/// An op refuses to generate: values with no derivation are not set (S11).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotSet {
+    /// The op label (`OperationType::label`).
+    pub op: &'static str,
+    /// What kind of value is not set.
+    pub kind: NotSetKind,
+    /// The parameter names that are not set, in schema order. Never empty.
+    pub fields: Vec<&'static str>,
+}
+
+impl NotSet {
+    /// The first field that is not set: the `field` of the session error.
+    #[must_use]
+    pub fn first_field(&self) -> Option<&'static str> {
+        self.fields.first().copied()
+    }
+}
+
+impl std::fmt::Display for NotSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let fields = self
+            .fields
+            .iter()
+            .map(|name| format!("`{name}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        match self.kind {
+            NotSetKind::Depth => write!(
+                f,
+                "{}: the depth is not set: no rule gives a depth for this op. Set {fields}",
+                self.op
+            ),
+            NotSetKind::Feeds => write!(f, "{}: {FEEDS_NOT_SET_TEXT} (not set: {fields})", self.op),
+        }
+    }
+}
+
+/// The feeds of an op whose feeds are all set ([`NotSet`] otherwise). The
+/// generators read these numbers.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CutFeeds {
+    /// The cut feed (mm/min).
+    pub feed_rate: f64,
+    /// The plunge feed (mm/min).
+    pub plunge_rate: f64,
+    /// The spindle speed (RPM).
+    pub spindle_rpm: u32,
+}
+
+/// The depth `value` of the field `field` of the op labelled `op`, or the
+/// [`NotSet`] refusal when it is not set. The prologue refuses first; a
+/// generator reads its depth through this door, so it never cuts an unset
+/// depth.
+///
+/// # Errors
+///
+/// A [`NotSet`] of kind `Depth` that names `field`.
+pub fn required_depth(
+    value: Option<f64>,
+    op: &'static str,
+    field: &'static str,
+) -> Result<f64, NotSet> {
+    value.ok_or_else(|| NotSet {
+        op,
+        kind: NotSetKind::Depth,
+        fields: vec![field],
+    })
+}

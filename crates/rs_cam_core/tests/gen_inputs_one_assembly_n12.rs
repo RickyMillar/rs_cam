@@ -103,7 +103,10 @@ fn pocket_session() -> ProjectSession {
 
 /// The operation's commanded cutting feed, in mm/min.
 fn commanded_feed(session: &ProjectSession) -> f64 {
-    session.toolpath_configs()[0].operation.feed_rate()
+    session.toolpath_configs()[0]
+        .operation
+        .feed_rate()
+        .expect("S11: the fixture sets it")
 }
 
 /// How many cutting moves carry a feed the operation did not command.

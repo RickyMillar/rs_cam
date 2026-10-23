@@ -216,12 +216,12 @@ fn re_derived(warnings: &[SuggestWarning]) -> Vec<(f64, f64, PlungeBinding)> {
 fn a_flat_plunges_at_feed_over_two_g10() {
     let s = suggest(&op(OperationType::Pocket), &flat(6.0, 2), &hardwood());
     assert_eq!(rule_id(&s.feeds_result.plunge), "g10_plunge_flat");
-    let feed = s.operation.feed_rate();
+    let feed = s.operation.feed_rate().expect("S11: the fixture sets it");
     assert_eq!(
         s.operation.plunge_rate(),
-        (feed / 2.0).floor(),
+        Some((feed / 2.0).floor()),
         "plunge {} at feed {feed}",
-        s.operation.plunge_rate()
+        s.operation.plunge_rate().expect("S11: the fixture sets it")
     );
     let (headline, _) = s.feeds_result.plunge.card_text();
     assert!(
@@ -235,10 +235,10 @@ fn a_flat_plunges_at_feed_over_two_g10() {
 fn a_three_flute_flat_plunges_at_feed_over_three_g10() {
     let s = suggest(&op(OperationType::Pocket), &flat(6.0, 3), &hardwood());
     assert_eq!(rule_id(&s.feeds_result.plunge), "g10_plunge_flat");
-    let feed = s.operation.feed_rate();
+    let feed = s.operation.feed_rate().expect("S11: the fixture sets it");
     assert_eq!(
         s.operation.plunge_rate(),
-        (feed / 3.0).floor(),
+        Some((feed / 3.0).floor()),
         "feed {feed}"
     );
 }
@@ -255,9 +255,9 @@ fn a_ball_plunges_at_half_the_feed_under_its_tip_cap_g10() {
         .tip_cap()
         .expect("a ball has a tip cap");
     assert!((cap.cap_mm_min - 900.0).abs() < 1e-9, "{cap:?}");
-    let feed = s.operation.feed_rate();
+    let feed = s.operation.feed_rate().expect("S11: the fixture sets it");
     let expected = (0.5 * feed).floor().min(900.0);
-    assert_eq!(s.operation.plunge_rate(), expected, "feed {feed}");
+    assert_eq!(s.operation.plunge_rate(), Some(expected), "feed {feed}");
     let binding = if (0.5 * feed).floor() <= 900.0 {
         PlungeBinding::Rule
     } else {
@@ -280,10 +280,10 @@ fn a_ball_plunges_at_half_the_feed_under_its_tip_cap_g10() {
 fn a_sixty_degree_vbit_plunges_at_a_third_of_the_feed_g10() {
     let s = suggest(&op(OperationType::VCarve), &vbit(12.7, 60.0), &mdf());
     assert_eq!(rule_id(&s.feeds_result.plunge), "g10_plunge_vbit60");
-    let feed = s.operation.feed_rate();
+    let feed = s.operation.feed_rate().expect("S11: the fixture sets it");
     assert_eq!(
         s.operation.plunge_rate(),
-        (feed / 3.0).floor(),
+        Some((feed / 3.0).floor()),
         "feed {feed}"
     );
     assert!(
@@ -376,7 +376,7 @@ fn a_refused_tool_plunges_at_the_named_repo_rule_g10() {
 fn a_one_millimetre_tapered_tip_is_held_by_the_tip_cap_g10() {
     let s = suggest(&op(OperationType::DropCutter), &tapered(1.0), &hardwood());
     assert_eq!(rule_id(&s.feeds_result.plunge), "g10_plunge_tapered");
-    let feed = s.operation.feed_rate();
+    let feed = s.operation.feed_rate().expect("S11: the fixture sets it");
     assert!(
         0.5 * feed > 150.0,
         "the cap must be the smaller term: {feed}"
@@ -385,8 +385,8 @@ fn a_one_millimetre_tapered_tip_is_held_by_the_tip_cap_g10() {
         resolve_plunge(&s.feeds_result.plunge, feed),
         Some((150.0, PlungeBinding::TipCap))
     );
-    assert!(s.operation.plunge_rate() <= 150.0);
-    assert_eq!(s.operation.plunge_rate(), 150.0);
+    assert!(s.operation.plunge_rate().expect("S11: the fixture sets it") <= 150.0);
+    assert_eq!(s.operation.plunge_rate(), Some(150.0));
 }
 
 /// (g) A drill cycle plunges at its feed, as before G10.
@@ -432,7 +432,7 @@ fn the_funnel_runs_the_rule_again_at_the_rescaled_feed_g10() {
                 if !rescaled {
                     continue;
                 }
-                let feed = s.operation.feed_rate();
+                let feed = s.operation.feed_rate().expect("S11: the fixture sets it");
                 if (feed - s.feeds_result.feed_rate_mm_min).abs() < 1.0 {
                     continue;
                 }
@@ -440,7 +440,11 @@ fn the_funnel_runs_the_rule_again_at_the_rescaled_feed_g10() {
                 let cell = format!("{op_type:?} {d} mm {z}F {material:?}");
                 assert_eq!(rule_id(&s.feeds_result.plunge), "g10_plunge_flat", "{cell}");
                 let expected = (feed / f64::from(z)).floor();
-                assert_eq!(s.operation.plunge_rate(), expected, "{cell}: feed {feed}");
+                assert_eq!(
+                    s.operation.plunge_rate(),
+                    Some(expected),
+                    "{cell}: feed {feed}"
+                );
                 let records = re_derived(&s.warnings);
                 assert_eq!(records.len(), 1, "{cell}: {records:?}");
                 let (from, to, binding) = records[0];
@@ -490,8 +494,8 @@ fn an_explored_feed_moves_the_plunge_with_it_g10() {
             suggest: SuggestContext::default(),
         },
     );
-    assert_eq!(applied.feed_rate(), 1200.0);
-    assert_eq!(applied.plunge_rate(), 600.0);
+    assert_eq!(applied.feed_rate(), Some(1200.0));
+    assert_eq!(applied.plunge_rate(), Some(600.0));
     let records = re_derived(&warnings);
     assert_eq!(records.len(), 1, "{warnings:?}");
     assert_eq!(records[0].1, 600.0);

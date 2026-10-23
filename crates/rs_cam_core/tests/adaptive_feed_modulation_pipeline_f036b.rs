@@ -114,7 +114,7 @@ fn build_as001_pocket_session(attach_kinematics: bool) -> ProjectSession {
     let stock = StockConfig {
         x: 100.0,
         y: 100.0,
-        z: 12.0,
+        z: Some(12.0),
         origin_x: -10.0,
         origin_y: -10.0,
         origin_z: -12.0,
@@ -154,8 +154,8 @@ fn build_as001_pocket_session(attach_kinematics: bool) -> ProjectSession {
         stepover: 2.0,
         floor: rs_cam_core::compute::floor::Floor::top(6.0),
         depth_per_pass: 2.0,
-        feed_rate: 770.0,
-        plunge_rate: 385.0,
+        feed_rate: Some(770.0),
+        plunge_rate: Some(385.0),
         climb: true,
         pattern: PocketPattern::Contour,
         angle: 0.0,
@@ -897,7 +897,7 @@ fn modulated_path_never_emits_below_min_chipload() {
         .map(f64::from)
         .unwrap_or(18_000.0);
     let flutes = f64::from(tool.flute_count.max(1));
-    let commanded_feed = tc.operation.feed_rate();
+    let commanded_feed = tc.operation.feed_rate().expect("S11: the fixture sets it");
 
     let mut modulated_moves = 0usize;
     let mut below_floor = 0usize;

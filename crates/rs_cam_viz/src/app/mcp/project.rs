@@ -281,6 +281,9 @@ impl RsCamApp {
                     "id": tc.id,
                     "name": tc.name,
                     "enabled": tc.enabled,
+                    // S11: the fields that are not set (the floor, a depth,
+                    // the feeds). Generation refuses until they are set.
+                    "unset": tc.operation.unset_fields(),
                     "tool_id": tc.tool_id,
                     "model_id": tc.model_id,
                     "operation": op_value,

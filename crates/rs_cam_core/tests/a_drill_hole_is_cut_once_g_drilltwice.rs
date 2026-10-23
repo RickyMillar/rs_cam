@@ -92,7 +92,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: STOCK_X,
         y: STOCK_Y,
-        z: STOCK_Z,
+        z: Some(STOCK_Z),
         origin_x: 0.0,
         origin_y: 0.0,
         // Stock top at world Z 0, as in the live setup frame.
@@ -142,7 +142,7 @@ fn drill_op() -> OperationConfig {
         cycle: DrillCycleType::Peck,
         peck_depth: 15.0,
         retract_z: 2.0,
-        feed_rate: 2082.0,
+        feed_rate: Some(2082.0),
         ..DrillConfig::default()
     })
 }
@@ -156,7 +156,7 @@ fn live_dressups(base: DressupConfig) -> DressupConfig {
     DressupConfig {
         entry_style: DressupEntryStyle::None,
         link_moves: Some(LinkDressupParams {
-            max_distance: 10.0,
+            max_distance: Some(10.0),
             feed_rate: 500.0,
         }),
         arc_fitting: Some(ArcFitParams::default()),

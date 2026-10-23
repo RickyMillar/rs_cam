@@ -38,8 +38,12 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
   token, every other key that is not in `OperationDef::JOB_KEYS` is a
   schema parameter, and `[operation.dressups]` holds `DressupConfig::FIELD_DEFS`
   names. The core setters apply them in schema order. Do not add a CLI
-  spelling, a per-op map or a default number: an unset key keeps the
-  registry default, and `parse_job_file` refuses an unknown key. The job key
+  spelling, a per-op map or a default number: S11 parity, a job op (and
+  `run`) is the core draft (`ProjectSession::draft_toolpath`, the GUI and
+  MCP door), an unset key keeps the draft value, a value that no rule
+  gives stays unset and the op refuses as on the GUI, and
+  `parse_job_file` refuses an unknown key. The job key `stock_z` (`run
+  --stock-z`) states the thickness of a drawing stock. The job key
   `selection` (P2.7) has the project-file shape and goes through `EditSelection`;
   the job key `floor` (P3.3) has the project-file shape and goes through `SetToolpathFloor`.
 

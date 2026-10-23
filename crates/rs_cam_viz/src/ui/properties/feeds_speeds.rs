@@ -7,8 +7,7 @@ use crate::state::toolpath::{
 };
 use crate::ui::AppEvent;
 use crate::ui::components::{
-    DataRow, DataTable, Details, PrecedenceField, ProvKind, Role, SectionHeader, Source, UiExt,
-    ValueRow,
+    DataRow, DataTable, Details, OptionalValueRow, ProvKind, Role, SectionHeader, Source, UiExt,
 };
 use crate::ui::feeds::shared::{material_family_label, tool_family_label};
 
@@ -96,26 +95,24 @@ pub(super) fn calculate_and_apply_feeds(
 /// The write idiom is the panel's own: edit the scratch `ToolpathEntry` and
 /// stamp `stale_since`. The panel's write-back turns that into a `Command`,
 /// so no draw site touches the session (WP6).
-pub(super) fn draw_speed_controls(
-    ui: &mut egui::Ui,
-    entry: &mut ToolpathEntry,
-    project_default_rpm: u32,
-) {
+pub(super) fn draw_speed_controls(ui: &mut egui::Ui, entry: &mut ToolpathEntry) {
     // A drill is Z-only: its plunge rate IS its feed rate. A second field
     // there is a duplicate that writes nothing (the W3.2 rule). F095: the
     // core drill-family predicate decides it.
     let z_only = entry.operation.op_type().is_drill_kinematics();
     ui.named_section("Speed", |ui| {
         ui.param_grid("feeds_speed_controls", |ui| {
+            // S11: a feed that Suggest did not write (no feeds data for the
+            // tool) is not set. The field is empty with the hint "set a
+            // value", and the op refuses to generate until it is set.
             let mut feed = entry.operation.feed_rate();
             // W5: an op whose schema states a feed range (the drill ops)
             // clamps to it here too; the others keep this row's own range.
             let feed_range =
                 OperationConfig::param_range_for_type(entry.operation.op_type(), "feed_rate")
                     .map_or(1.0..=50_000.0, |range| range.inclusive_bounds());
-            if ValueRow::new("Feed:", &mut feed, " mm/min", 50.0, feed_range)
-                .show(ui)
-                .edited
+            if OptionalValueRow::new("Feed:", &mut feed, " mm/min", 50.0, feed_range).show(ui)
+                && let Some(feed) = feed
             {
                 entry.operation.set_feed_rate(feed);
                 entry.stale_since = Some(std::time::Instant::now());
@@ -123,10 +120,11 @@ pub(super) fn draw_speed_controls(
 
             if z_only {
                 ui.label("Plunge:");
+                let text =
+                    feed.map_or_else(|| "not set".to_owned(), |feed| format!("{feed:.0} mm/min"));
                 ui.add(
                     egui::Label::new(
-                        egui::RichText::new(format!("{feed:.0} mm/min"))
-                            .color(crate::ui::tokens::TEXT_FAINT),
+                        egui::RichText::new(text).color(crate::ui::tokens::TEXT_FAINT),
                     )
                     .wrap(),
                 )
@@ -137,30 +135,33 @@ pub(super) fn draw_speed_controls(
                 ui.end_row();
             } else {
                 let mut plunge = entry.operation.plunge_rate();
-                if ValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10_000.0)
+                if OptionalValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10_000.0)
                     .show(ui)
-                    .edited
+                    && let Some(plunge) = plunge
                 {
                     entry.operation.set_plunge_rate(plunge);
                     entry.stale_since = Some(std::time::Instant::now());
                 }
             }
 
-            // The project default stays visible beside the override, so
-            // the operator can see which value actually runs. The old
-            // widget hid it behind a hardcoded 18 000 (P1-005/P2-006).
-            let mut spindle = entry.operation.spindle_rpm();
-            if PrecedenceField::new("Spindle:", &mut spindle, project_default_rpm)
-                .suffix(" RPM")
-                .speed(100.0)
-                .range(1_000..=60_000)
-                .tooltip(
-                    "Tick to override the project default spindle speed for this \
-                     operation. Untick to follow the post-config spindle speed.",
-                )
+            // S11: the spindle speed of the op. With no feeds data it is not
+            // set, and the op refuses to generate until it is set; the post
+            // spindle speed is no fallback.
+            let mut spindle = entry.operation.spindle_rpm().map(f64::from);
+            if OptionalValueRow::new("Spindle:", &mut spindle, " RPM", 100.0, 1_000.0..=60_000.0)
+                .tooltip(Some(
+                    "The spindle speed of this operation. Suggest writes it when the \
+                     tool has feeds data; else set it here.",
+                ))
                 .show(ui)
+                && let Some(rpm) = spindle
             {
-                entry.operation.set_spindle_rpm(spindle);
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "the row clamps the RPM to 1 000..=60 000, inside u32"
+                )]
+                entry.operation.set_spindle_rpm(Some(rpm.round() as u32));
                 entry.stale_since = Some(std::time::Instant::now());
             }
         });

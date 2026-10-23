@@ -754,7 +754,7 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
             stock: Box::new(StockConfig {
                 x: 60.0,
                 y: 70.0,
-                z: 12.0,
+                z: Some(12.0),
                 origin_x: -20.0,
                 origin_y: -25.0,
                 origin_z: -12.0,

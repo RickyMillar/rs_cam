@@ -108,7 +108,7 @@ pub fn build_drill_op_for_config(
                 tool_profile: ToolProfile::Flat,
                 tool_diameter_mm,
                 cycle: cfg.cycle.to_core(cfg),
-                feed_rate_mm_min: cfg.feed_rate,
+                feed_rate_mm_min: cfg.feed_rate?,
                 spindle_rpm: cfg.spindle_rpm.unwrap_or(0),
                 flute_count,
                 material,
@@ -145,7 +145,7 @@ pub fn build_drill_op_for_config(
                 tool_profile: ToolProfile::Flat,
                 tool_diameter_mm,
                 cycle,
-                feed_rate_mm_min: cfg.feed_rate,
+                feed_rate_mm_min: cfg.feed_rate?,
                 spindle_rpm: cfg.spindle_rpm.unwrap_or(0),
                 flute_count,
                 material,
@@ -439,7 +439,7 @@ pub(crate) fn generate_drill(
     let generated = generated_with_drill_spans(crate::ops::drill::drill_toolpath_at_holes(
         &holes,
         cfg.cycle.to_core(cfg),
-        op.feed_rate(),
+        op.cut_feeds()?.feed_rate,
         ctx.heights.retract_z,
     ));
     if let Some(sem) = ctx.semantic_ctx {
@@ -482,7 +482,7 @@ pub(crate) fn generate_alignment_pin_drill(
         depth,
         top_z: ctx.stock_bbox.max.z,
         cycle,
-        feed_rate: cfg.feed_rate,
+        feed_rate: op.cut_feeds()?.feed_rate,
         safe_z: ctx.heights.retract_z,
         retract_z: crate::compute::config::effective_safe_z(cfg.retract_z, ctx.stock_bbox.max.z),
     };

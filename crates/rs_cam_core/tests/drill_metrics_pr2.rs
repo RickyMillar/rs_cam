@@ -49,7 +49,7 @@ fn make_drill_toolpath(tool_id: usize, peck_depth: f64) -> ToolpathConfig {
             spoilboard_penetration: 1.0,
             cycle: DrillCycleType::Peck,
             peck_depth,
-            feed_rate: 300.0,
+            feed_rate: Some(300.0),
             retract_z: 2.0,
             spindle_rpm: Some(18_000),
             selection: rs_cam_core::selection::Selection::empty(),
@@ -79,7 +79,7 @@ fn build_drill_session(peck_depth: f64, tool_diameter: f64) -> ProjectSession {
         // Keep total hole depth (stock z + spoilboard penetration) under
         // 0.75 × chip-welding threshold for softwood (8 × 4mm tool / 4 =
         // 8 mm safe per unit D, so 0.75 × 8 = 6 → 24mm safe at D=4mm).
-        z: 14.0,
+        z: Some(14.0),
         auto_from_model: false,
         alignment_pins: vec![
             AlignmentPin::new(20.0, 20.0, 4.0),

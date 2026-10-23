@@ -90,8 +90,8 @@ fn pocket(depth_per_pass: f64) -> OperationConfig {
         stepover: STEPOVER_MM,
         floor: rs_cam_core::compute::floor::Floor::top(30.0),
         depth_per_pass,
-        feed_rate: 3877.0,
-        plunge_rate: 1938.0,
+        feed_rate: Some(3877.0),
+        plunge_rate: Some(1938.0),
         spindle_rpm: Some(18_000),
         ..PocketConfig::default()
     })
@@ -224,11 +224,11 @@ fn a_speeds_only_apply_ships_the_calculator_feed_for_the_kept_depth_g_speedsappl
     );
     let expected_feed = round_suggestion_value_down(result.feed_rate_mm_min, 1.0);
     assert_eq!(
-        applied.feed_rate().to_bits(),
-        expected_feed.to_bits(),
+        applied.feed_rate().map(f64::to_bits),
+        Some(expected_feed.to_bits()),
         "the operation keeps {DEEP_DPP_MM} mm, and the calculator at that depth \
          gives {expected_feed} mm/min; the speeds-only apply ships {} mm/min",
-        applied.feed_rate()
+        applied.feed_rate().expect("S11: the fixture sets it")
     );
     assert_eq!(
         applied.spindle_rpm(),
@@ -249,8 +249,8 @@ fn a_speeds_only_apply_ships_the_calculator_feed_for_the_kept_depth_g_speedsappl
         both.feed_rate() > applied.feed_rate(),
         "the feed of the combined apply ({} mm/min, at {both_dpp} mm) must be \
          above the feed for {DEEP_DPP_MM} mm ({} mm/min)",
-        both.feed_rate(),
-        applied.feed_rate()
+        both.feed_rate().expect("S11: the fixture sets it"),
+        applied.feed_rate().expect("S11: the fixture sets it")
     );
 }
 
@@ -277,8 +277,8 @@ fn the_door_result_is_derated_to_the_kept_depth_g_speedsapply() {
         applied.feed_rate() < both.feed_rate(),
         "the speeds-only feed ({} mm/min, for {DEEP_DPP_MM} mm) must be below the \
          feed of the combined apply ({} mm/min, for {:?} mm)",
-        applied.feed_rate(),
-        both.feed_rate(),
+        applied.feed_rate().expect("S11: the fixture sets it"),
+        both.feed_rate().expect("S11: the fixture sets it"),
         both.depth_per_pass()
     );
 }
@@ -307,18 +307,18 @@ fn inside_the_cap_the_speeds_equal_the_combined_apply_g_speedsapply() {
     let both = f.both(&at_funnel_geometry, &result);
 
     assert_eq!(
-        speeds.feed_rate().to_bits(),
-        both.feed_rate().to_bits(),
+        speeds.feed_rate().map(f64::to_bits),
+        both.feed_rate().map(f64::to_bits),
         "feed: speeds-only {} vs combined {}",
-        speeds.feed_rate(),
-        both.feed_rate()
+        speeds.feed_rate().expect("S11: the fixture sets it"),
+        both.feed_rate().expect("S11: the fixture sets it")
     );
     assert_eq!(
-        speeds.plunge_rate().to_bits(),
-        both.plunge_rate().to_bits(),
+        speeds.plunge_rate().map(f64::to_bits),
+        both.plunge_rate().map(f64::to_bits),
         "plunge: speeds-only {} vs combined {}",
-        speeds.plunge_rate(),
-        both.plunge_rate()
+        speeds.plunge_rate().expect("S11: the fixture sets it"),
+        both.plunge_rate().expect("S11: the fixture sets it")
     );
     assert_eq!(speeds.spindle_rpm(), both.spindle_rpm(), "rpm");
     assert_eq!(speeds.depth_per_pass(), at_funnel_geometry.depth_per_pass());

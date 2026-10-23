@@ -82,7 +82,7 @@ fn two_traces_across_the_clamp() -> ProjectSession {
             name,
         ));
         let op = OperationConfig::Trace(TraceConfig {
-            depth: 1.0,
+            depth: Some(1.0),
             depth_per_pass: 1.0,
             ..TraceConfig::default()
         });

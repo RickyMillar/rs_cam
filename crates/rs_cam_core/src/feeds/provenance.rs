@@ -383,6 +383,7 @@ impl FeedsResult {
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,
+    clippy::expect_used,
     reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
@@ -530,9 +531,9 @@ mod tests {
 
     #[test]
     fn detect_manual_edits_stamps_only_value_changes_without_new_provenance() {
-        let old_op = OperationConfig::new_default(OperationType::Pocket);
+        let old_op = crate::compute::fixture_values::fixture_op(OperationType::Pocket);
         let mut new_op = old_op.clone();
-        new_op.set_feed_rate(old_op.feed_rate() + 500.0); // hand-edited feed
+        new_op.set_feed_rate(old_op.feed_rate().expect("S11: the fixture sets it") + 500.0); // hand-edited feed
         // depth_per_pass unchanged.
 
         let old_prov = FeedsProvenance::default();
@@ -550,9 +551,9 @@ mod tests {
     fn detect_manual_edits_ignores_suggest_driven_changes() {
         // A suggest pass changed feed AND already stamped its provenance — the
         // diff must NOT relabel it Manual.
-        let old_op = OperationConfig::new_default(OperationType::Pocket);
+        let old_op = crate::compute::fixture_values::fixture_op(OperationType::Pocket);
         let mut new_op = old_op.clone();
-        new_op.set_feed_rate(old_op.feed_rate() + 500.0);
+        new_op.set_feed_rate(old_op.feed_rate().expect("S11: the fixture sets it") + 500.0);
 
         let old_prov = FeedsProvenance::default();
         let mut entry_prov = old_prov.clone();

@@ -72,6 +72,10 @@ diameter = {tool_d}
 type = "{op_type}"
 input = "{input}"
 tool = "flat"
+# S11: the job states the drawing thickness and the floor (the CLI values
+# before S11).
+stock_z = 25.0
+floor = {{ from = "top", depth = 3.0 }}
 {lines}
 "#,
         input = drawing().display(),
@@ -144,7 +148,15 @@ fn assert_ran(run: &std::process::Output, what: &str) {
 #[test]
 fn a_job_file_bores_a_hole_p6_8() {
     // A 4 mm tool bores each 6 mm circle with a helix of radius 1 mm.
-    let (run, xys) = run_job("bore", "bore", 4.0, "");
+    // S11 parity: the job takes the dressups of the GUI and MCP add
+    // (`DressupConfig::for_op`), so arc fitting is on; the arm counts line
+    // points on the helix, so the job turns arc fitting off.
+    let (run, xys) = run_job(
+        "bore",
+        "bore",
+        4.0,
+        "[operation.dressups]\narc_fitting = false",
+    );
     assert_ran(&run, "the bore job");
     assert!(!xys.is_empty(), "the bore cut nothing");
     for p in &xys {

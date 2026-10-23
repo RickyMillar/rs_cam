@@ -473,13 +473,25 @@ fn dia_ramp_finish(op: &OperationConfig, ui: &mut egui::Ui) {
 
 fn dia_inlay(op: &OperationConfig, ui: &mut egui::Ui) {
     if let OperationConfig::Inlay(cfg) = op {
-        draw_inlay_diagram(ui, cfg.pocket_depth, None);
+        // S11: an unset depth has no diagram.
+        match cfg.pocket_depth {
+            Some(depth) => draw_inlay_diagram(ui, depth, None),
+            None => {
+                ui.label("Set the pocket depth to draw the diagram.");
+            }
+        }
     }
 }
 
 fn dia_inlay_plug(op: &OperationConfig, ui: &mut egui::Ui) {
     if let OperationConfig::InlayPlug(cfg) = op {
-        draw_inlay_diagram(ui, cfg.pocket_depth, Some(cfg.glue_gap));
+        // S11: an unset depth has no diagram.
+        match cfg.pocket_depth {
+            Some(depth) => draw_inlay_diagram(ui, depth, Some(cfg.glue_gap)),
+            None => {
+                ui.label("Set the pocket depth to draw the diagram.");
+            }
+        }
     }
 }
 

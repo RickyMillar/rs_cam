@@ -236,8 +236,8 @@ fn adaptive_op(dpp: f64) -> OperationConfig {
         // and the entry value the invariants see is the requested one.
         floor: rs_cam_core::compute::floor::Floor::top(2.0 * dpp),
         depth_per_pass: dpp,
-        feed_rate: 1000.0,
-        plunge_rate: 400.0,
+        feed_rate: Some(1000.0),
+        plunge_rate: Some(400.0),
         ..AdaptiveConfig::default()
     })
 }
@@ -371,7 +371,7 @@ fn run_funnel(machine: &MachineProfile, material: &Material, requested_ap: f64) 
     );
 
     Shipped {
-        feed_mm_min: operation.feed_rate(),
+        feed_mm_min: operation.feed_rate().expect("S11: the fixture sets it"),
         ap_mm: operation.depth_per_pass().unwrap_or(0.0),
         ae_mm: operation.stepover().unwrap_or(0.0),
         warnings,

@@ -82,7 +82,7 @@ impl SetupFrame {
             z_rotation: self.z_rotation,
             stock_x: stock.x,
             stock_y: stock.y,
-            stock_z: stock.z,
+            stock_z: stock.box_height(),
             stock_origin_x: stock.origin_x,
             stock_origin_y: stock.origin_y,
             stock_origin_z: stock.origin_z,
@@ -103,7 +103,9 @@ impl SetupFrame {
 
     /// Effective stock dimensions in this setup's local frame.
     pub fn effective_stock(&self, stock: &StockConfig) -> (f64, f64, f64) {
-        let (w, d, h) = self.face_up.effective_stock(stock.x, stock.y, stock.z);
+        let (w, d, h) = self
+            .face_up
+            .effective_stock(stock.x, stock.y, stock.box_height());
         self.z_rotation.effective_stock(w, d, h)
     }
 
@@ -259,7 +261,7 @@ mod tests {
         StockConfig {
             x: 100.0,
             y: 80.0,
-            z: 25.0,
+            z: Some(25.0),
             ..StockConfig::default()
         }
     }
@@ -268,7 +270,7 @@ mod tests {
         StockConfig {
             x: 100.0,
             y: 80.0,
-            z: 25.0,
+            z: Some(25.0),
             origin_x: -50.0,
             origin_y: -40.0,
             origin_z: 0.0,
@@ -284,7 +286,7 @@ mod tests {
         let stock = StockConfig {
             x: 200.0,
             y: 171.5,
-            z: 25.0,
+            z: Some(25.0),
             origin_x: 3.0,
             origin_y: -4.0,
             origin_z: -19.0,
@@ -358,12 +360,12 @@ mod tests {
             // Origin corner
             P3::new(0.0, 0.0, 0.0),
             // Far corner
-            P3::new(stock.x, stock.y, stock.z),
+            P3::new(stock.x, stock.y, stock.box_height()),
             // Center of stock
-            P3::new(stock.x / 2.0, stock.y / 2.0, stock.z / 2.0),
+            P3::new(stock.x / 2.0, stock.y / 2.0, stock.box_height() / 2.0),
             // Edge midpoints
-            P3::new(stock.x / 2.0, 0.0, stock.z / 2.0),
-            P3::new(0.0, stock.y / 2.0, stock.z / 2.0),
+            P3::new(stock.x / 2.0, 0.0, stock.box_height() / 2.0),
+            P3::new(0.0, stock.y / 2.0, stock.box_height() / 2.0),
         ];
 
         for &face in FaceUp::ALL {
@@ -396,12 +398,12 @@ mod tests {
         let setup = SetupFrame::new(FaceUp::Bottom, ZRotation::Deg0);
 
         // A point at the top of the stock (z = stock.z) should map to z = 0
-        let top_point = P3::new(50.0, 40.0, stock.z);
+        let top_point = P3::new(50.0, 40.0, stock.box_height());
         let transformed = setup.transform_point(top_point, &stock);
         assert!(
             transformed.z.abs() < 1e-10,
             "FaceUp::Bottom should map stock top (z={}) to z=0, got z={}",
-            stock.z,
+            stock.box_height(),
             transformed.z
         );
 
@@ -409,9 +411,9 @@ mod tests {
         let bottom_point = P3::new(50.0, 40.0, 0.0);
         let transformed = setup.transform_point(bottom_point, &stock);
         assert!(
-            (transformed.z - stock.z).abs() < 1e-10,
+            (transformed.z - stock.box_height()).abs() < 1e-10,
             "FaceUp::Bottom should map z=0 to z={}, got z={}",
-            stock.z,
+            stock.box_height(),
             transformed.z
         );
     }
@@ -511,7 +513,7 @@ mod tests {
                 let setup = SetupFrame::new(face, rot);
 
                 // A point in the interior of the stock
-                let point = P3::new(stock.x * 0.3, stock.y * 0.3, stock.z * 0.3);
+                let point = P3::new(stock.x * 0.3, stock.y * 0.3, stock.box_height() * 0.3);
                 let transformed = setup.transform_point(point, &stock);
 
                 assert!(

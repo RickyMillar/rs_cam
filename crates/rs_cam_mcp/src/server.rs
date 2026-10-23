@@ -1111,6 +1111,10 @@ pub enum FloorParam {
         /// mm below each hole floor; a positive value goes deeper.
         depth: f64,
     },
+    /// S11: no floor. A new floor op has none (no rule gives a floor for a
+    /// drawing); generation refuses until a floor is set. Sending it
+    /// clears the floor.
+    Unset,
 }
 
 impl From<FloorParam> for rs_cam_core::compute::floor::Floor {
@@ -1127,6 +1131,7 @@ impl From<FloorParam> for rs_cam_core::compute::floor::Floor {
                 depth,
             },
             FloorParam::EachHole { depth } => Self::EachHole { depth },
+            FloorParam::Unset => Self::Unset,
         }
     }
 }
@@ -1146,17 +1151,19 @@ impl From<rs_cam_core::compute::floor::Floor> for FloorParam {
                 depth,
             },
             Floor::EachHole { depth } => Self::EachHole { depth },
+            Floor::Unset => Self::Unset,
         }
     }
 }
 
 impl Default for FloorParam {
-    /// The default floor of a Pocket, from the operation catalog.
+    /// The default floor of a Pocket, from the operation catalog (S11:
+    /// not set).
     fn default() -> Self {
         use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
         OperationConfig::new_default(OperationType::Pocket)
             .floor()
-            .map_or(Self::Top { depth: 0.0 }, Self::from)
+            .map_or(Self::Unset, Self::from)
     }
 }
 
@@ -3372,6 +3379,9 @@ pub fn build_info() -> serde_json::Value {
         "git_sha": option_env!("VERGEN_GIT_SHA"),
         "features": [
             "stale_defaults",
+            // S11: an op reports the fields that are not set (`unset`), and
+            // generation refuses until they are set.
+            "unset_values_refuse",
             "drill_summaries",
             "drill_gates",
             "transit_span_doc",

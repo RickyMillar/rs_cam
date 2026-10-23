@@ -346,7 +346,11 @@ fn floor_text(floor: &rs_cam_core::compute::floor::Floor) -> String {
     use rs_cam_core::compute::floor::Floor;
     match floor {
         Floor::Z { z } => format!("{} {z:.2}", floor.reference_label()),
-        other => format!("{:.2} below {}", other.value(), other.reference_label()),
+        other => match other.value() {
+            Some(value) => format!("{value:.2} below {}", other.reference_label()),
+            // S11.
+            None => "not set".to_owned(),
+        },
     }
 }
 

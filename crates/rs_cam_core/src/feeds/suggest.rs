@@ -40,8 +40,9 @@ pub struct StockContext {
     pub stock_top_z: f64,
     /// Bottom of the stock in part-Z coordinates.
     pub stock_bottom_z: f64,
-    /// Stock thickness in mm.
-    pub stock_z: f64,
+    /// Stock thickness in mm, or `None` when the stock has no thickness
+    /// (S11: not set). No through-stock floor is written then.
+    pub stock_z: Option<f64>,
     /// Stock-top minus model-top margin in mm.
     pub stock_padding: f64,
 }
@@ -49,7 +50,9 @@ pub struct StockContext {
 impl StockContext {
     /// Build a stock context from a stock bbox and padding value.
     pub fn from_stock_bbox(bbox: crate::geo::BoundingBox3, padding: f64) -> Self {
-        let stock_z = (bbox.max.z - bbox.min.z).max(0.0);
+        // S11: a flat box is a stock whose thickness is not set.
+        let thickness = bbox.max.z - bbox.min.z;
+        let stock_z = (thickness > 0.0).then_some(thickness);
         Self {
             stock_top_z: bbox.max.z,
             stock_bottom_z: bbox.min.z,

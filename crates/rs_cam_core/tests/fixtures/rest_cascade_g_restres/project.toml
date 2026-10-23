@@ -55,6 +55,8 @@ floor = { from = "top", depth = 3.0 }
 depth_per_pass = 3.0
 feed_rate = 1000.0
 plunge_rate = 500.0
+# S11: the fixture states its RPM (the post default before S11).
+spindle_rpm = 18000
 climb = true
 pattern = "contour"
 angle = 0.0
@@ -77,6 +79,8 @@ floor = { from = "top", depth = 3.5 }
 depth_per_pass = 3.5
 feed_rate = 1000.0
 plunge_rate = 500.0
+# S11: the fixture states its RPM (the post default before S11).
+spindle_rpm = 18000
 climb = true
 pattern = "contour"
 angle = 0.0

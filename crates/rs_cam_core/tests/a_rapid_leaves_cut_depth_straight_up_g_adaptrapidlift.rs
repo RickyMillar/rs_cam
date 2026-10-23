@@ -77,7 +77,7 @@ fn a_rapid_leaves_cut_depth_straight_up() {
     let session = adaptive_session(false);
     let tp = toolpath_of(&session);
     let stock = stock();
-    let stock_top = stock.origin_z + stock.z;
+    let stock_top = stock.top_z();
     // The rapid plane: the retract height the path climbs to. It must
     // clear the stock top, or the check below is vacuous.
     let plane = tp
@@ -401,7 +401,7 @@ fn print_rapid_strike_cells() {
             s.origin_x + s.x,
             s.origin_y + s.y,
             s.origin_z,
-            s.origin_z + s.z,
+            s.top_z(),
             common::adaptive_islands::SIM_RESOLUTION_MM,
         )
     };

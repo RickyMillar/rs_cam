@@ -73,7 +73,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: STOCK_X,
         y: STOCK_Y,
-        z: STOCK_Z,
+        z: Some(STOCK_Z),
         origin_x: 0.0,
         origin_y: 0.0,
         origin_z: -STOCK_Z,

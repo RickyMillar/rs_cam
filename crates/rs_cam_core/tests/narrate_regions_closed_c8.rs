@@ -264,7 +264,7 @@ fn scallop_inside_unified_finish_does_not_add_a_second_region_population() {
     let stock = StockConfig {
         x: 34.0,
         y: 34.0,
-        z: 9.0,
+        z: Some(9.0),
         origin_x: -17.0,
         origin_y: -17.0,
         origin_z: -9.0,

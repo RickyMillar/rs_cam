@@ -102,7 +102,7 @@ fn preview(wall_height: f64) -> MultitoolPreview {
     let mut builder = ProjectSessionBuilder::new().stock(StockConfig {
         x: 2.0 * half + 4.0,
         y: LENGTH + 4.0,
-        z: wall_height + 2.0,
+        z: Some(wall_height + 2.0),
         origin_x: -half - 2.0,
         origin_y: -2.0,
         origin_z: 0.0,

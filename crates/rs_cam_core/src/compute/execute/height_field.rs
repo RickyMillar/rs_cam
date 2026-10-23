@@ -356,7 +356,6 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use super::*;
-    use crate::compute::catalog::OperationConfig;
     use crate::compute::config::ResolvedHeights;
     use crate::compute::cutter::build_cutter;
     use crate::compute::execute::GenerationFindings;
@@ -484,7 +483,7 @@ mod tests {
         };
         let prepared = crate::compute::execute::prologue::prepare(
             &ctx,
-            &OperationConfig::new_default(OperationType::DropCutter),
+            &crate::compute::fixture_values::fixture_op(OperationType::DropCutter),
         )
         .unwrap();
         let generated = run_height_field(op, &ctx, &prepared).unwrap();

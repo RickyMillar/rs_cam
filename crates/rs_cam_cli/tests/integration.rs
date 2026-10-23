@@ -210,7 +210,7 @@ fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath 
     let mut builder = ProjectSessionBuilder::new().stock(StockConfig {
         x: 60.0,
         y: 50.0,
-        z: 10.0,
+        z: Some(10.0),
         origin_x: -10.0,
         origin_y: -10.0,
         origin_z: -10.0,
@@ -240,9 +240,11 @@ fn pocket_through_session(polygon: Polygon2) -> rs_cam_core::toolpath::Toolpath 
         stepover: 2.0,
         floor: rs_cam_core::compute::floor::Floor::top(3.0),
         depth_per_pass: 3.0,
-        feed_rate: 1000.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(1000.0),
+        plunge_rate: Some(500.0),
         climb: false,
+        // S11: the fixture states its RPM (the post default before S11).
+        spindle_rpm: Some(18_000),
         ..PocketConfig::default()
     });
     let _ = builder

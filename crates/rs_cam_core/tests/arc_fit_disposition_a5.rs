@@ -215,8 +215,8 @@ fn adaptive3d_op(feed: f64, rpm: u32, stepover: f64, dpp: f64) -> OperationConfi
     OperationConfig::Adaptive3d(Adaptive3dConfig {
         stepover,
         depth_per_pass: dpp,
-        feed_rate: feed,
-        plunge_rate: 300.0,
+        feed_rate: Some(feed),
+        plunge_rate: Some(300.0),
         spindle_rpm: Some(rpm),
         // Helix entry so the fixture does not also trip
         // `PlungeEntryUnstableAtDpp` and confound the warning list.
@@ -228,8 +228,8 @@ fn adaptive3d_op(feed: f64, rpm: u32, stepover: f64, dpp: f64) -> OperationConfi
 fn drop_cutter_op(feed: f64, rpm: u32, stepover: f64) -> OperationConfig {
     OperationConfig::DropCutter(DropCutterConfig {
         stepover,
-        feed_rate: feed,
-        plunge_rate: 300.0,
+        feed_rate: Some(feed),
+        plunge_rate: Some(300.0),
         spindle_rpm: Some(rpm),
         min_z: STOCK_Z - RELIEF - 1.0,
         ..DropCutterConfig::default()
@@ -608,7 +608,7 @@ fn suggest_read(session: &ProjectSession, fx: &Fixture) -> SuggestRead {
         .map(|b| (b.min_mm_per_tooth, b.max_mm_per_tooth));
 
     SuggestRead {
-        shipped_feed: suggested.feed_rate(),
+        shipped_feed: suggested.feed_rate().expect("S11: the fixture sets it"),
         // `SuggestAggressiveness::Default` (the policy `cutter_op_profile`
         // uses) targets the band midpoint.
         lut_target: band.map_or(f64::NAN, |(lo, hi)| (lo + hi) / 2.0),

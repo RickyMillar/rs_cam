@@ -289,7 +289,8 @@ impl ProjectSession {
             material: &self.stock.material,
             operation_family: crate::feeds::vendor_normalize::op_family_to_lut(family),
             pass_role: pass_role.into(),
-            operation_feed_rate_mm_min: tc.operation.feed_rate(),
+            // S11: an op with no feed has no load context.
+            operation_feed_rate_mm_min: tc.operation.feed_rate()?,
             operation_kind: tc.operation.op_type(),
             spans: result
                 .filter(|r| r.annotated().spans_valid)
@@ -522,6 +523,7 @@ impl ProjectSession {
             selection_holes,
             selection_refusal,
             buried_face_refusal,
+            stock_thickness_refusal: self.stock_thickness_refusal(),
         }
     }
 

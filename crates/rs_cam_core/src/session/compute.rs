@@ -1831,7 +1831,8 @@ fn optimized_candidate(
         feed_scale,
     )?;
     let regime = outcome
-        .build_summary(operation.feed_rate(), feed_scale, strategy)
+        // S11: an op with no feed has no regime to report.
+        .build_summary(operation.feed_rate()?, feed_scale, strategy)
         .map(|s| regime_from_binding(&s))
         .unwrap_or(crate::machine::strategy_advisor::LoadRegime::Unconstrained);
     Some((modulated, regime))
@@ -2171,7 +2172,8 @@ fn modulate_annotated_against_trace(
         // Phase 3 (2026-09-07) — the operation's OWN plunge rate, the
         // ceiling the geometric guard applies to a vertical-dominant
         // move whose generator emitted it without a plunge tag.
-        plunge_rate_mm_min: operation.plunge_rate(),
+        // S11: an op with no plunge has nothing to modulate.
+        plunge_rate_mm_min: operation.plunge_rate()?,
     };
 
     let mut modulated_toolpath = annotated.toolpath.clone();
@@ -2502,6 +2504,24 @@ impl ProjectSession {
         index: usize,
         cancel: &AtomicBool,
     ) -> Result<GenerateToolpathHandle, SessionError> {
+        // S11: no op cuts a stock whose thickness is not set, and an op
+        // with a value that is not set (a depth, then the feeds) refuses
+        // before any work, with the generator's own sentence (the prologue
+        // gives the same one). The floor refuses in the heights door, which
+        // `resolve_generation_inputs` runs.
+        if let Some(text) = self.stock_thickness_refusal() {
+            return Err(SessionError::InvalidParam(text));
+        }
+        if let Some(not_set) = self
+            .toolpath_configs
+            .get(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?
+            .operation
+            .not_set()
+            .filter(|not_set| not_set.kind == crate::compute::not_set::NotSetKind::Depth)
+        {
+            return Err(crate::compute::OperationError::NotSet(not_set).into());
+        }
         let inputs = self.resolve_generation_inputs(index, cancel)?;
 
         // Re-borrow the config for the recorder labels and for every dial
@@ -2601,6 +2621,16 @@ impl ProjectSession {
                 None
             };
 
+        // S11: an op with a value that is not set (a depth, then the
+        // feeds) refuses here, before any work, with the generator's own
+        // sentence (the prologue gives the same one).
+        if let Some(not_set) = tc.operation.not_set() {
+            return Err(crate::compute::OperationError::NotSet(not_set).into());
+        }
+        let feeds = tc
+            .operation
+            .cut_feeds()
+            .map_err(crate::compute::OperationError::from)?;
         let context = GenContext {
             toolpath_name: tc.name.clone(),
             op_label: tc.operation.label(),
@@ -2609,8 +2639,8 @@ impl ProjectSession {
             rest_analysis: tc.rest_analysis.clone(),
             debug_options: tc.debug_options,
             entry_probe_leave: tc.operation.capabilities().entry_probe.leave_mm(),
-            feed_rate: tc.operation.feed_rate(),
-            plunge_rate: tc.operation.plunge_rate(),
+            feed_rate: feeds.feed_rate,
+            plunge_rate: feeds.plunge_rate,
             // G-RAMPCLAMP: the entry never runs faster than the cut feed.
             ramp_feed_rate: tc.operation.entry_feed_rate(),
             transform_capabilities: tc.operation.capabilities().transform,

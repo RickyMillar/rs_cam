@@ -111,7 +111,7 @@ fn square_model_polygon() -> Polygon2 {
 /// the lead dressup off — see its doc.
 fn trace_op() -> OperationConfig {
     OperationConfig::Trace(TraceConfig {
-        depth: 4.0,
+        depth: Some(4.0),
         depth_per_pass: 2.0,
         ..TraceConfig::default()
     })
@@ -154,7 +154,7 @@ fn build_two_setup_session() -> ProjectSession {
     builder = builder.stock(StockConfig {
         x: STOCK_X,
         y: STOCK_Y,
-        z: STOCK_Z,
+        z: Some(STOCK_Z),
         origin_x: ORIGIN_X,
         origin_y: ORIGIN_Y,
         origin_z: ORIGIN_Z,
@@ -407,7 +407,7 @@ fn zero_origin_stock_is_unchanged() {
     builder = builder.stock(StockConfig {
         x: STOCK_X,
         y: STOCK_Y,
-        z: STOCK_Z,
+        z: Some(STOCK_Z),
         origin_x: 0.0,
         origin_y: 0.0,
         origin_z: -STOCK_Z,
@@ -459,7 +459,7 @@ fn stock_top_above_world_zero_shifts_z_to_the_top() {
         let stock = StockConfig {
             x: STOCK_X,
             y: STOCK_Y,
-            z: 25.0,
+            z: Some(25.0),
             origin_x: 0.0,
             origin_y: 0.0,
             origin_z: TOP_Z - 25.0,

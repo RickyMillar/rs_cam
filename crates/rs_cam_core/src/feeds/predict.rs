@@ -392,11 +392,12 @@ pub fn predict_peak_deflection_um(
         .spindle_rpm()
         .map_or(PREDICTOR_FALLBACK_RPM, |r| r as f64);
     let flute_count = tool.flute_count.max(1) as f64;
-    let feed_rate = operation.feed_rate();
-    let chipload_per_tooth_mm = if rpm > 0.0 && flute_count > 0.0 && feed_rate.is_finite() {
-        feed_rate / (rpm * flute_count)
-    } else {
-        0.0
+    // S11: an unset feed gives no chipload (0, as a non-finite feed did).
+    let chipload_per_tooth_mm = match operation.feed_rate() {
+        Some(feed_rate) if rpm > 0.0 && flute_count > 0.0 && feed_rate.is_finite() => {
+            feed_rate / (rpm * flute_count)
+        }
+        Some(_) | None => 0.0,
     };
 
     // Zero feed → zero chipload → the calling Suggest path will have
@@ -881,7 +882,7 @@ mod tests {
         OperationConfig::Adaptive(AdaptiveConfig {
             depth_per_pass: dpp,
             stepover,
-            feed_rate: feed,
+            feed_rate: Some(feed),
             spindle_rpm: Some(rpm),
             ..AdaptiveConfig::default()
         })
@@ -995,7 +996,7 @@ mod tests {
         let op = OperationConfig::Pocket(PocketConfig {
             depth_per_pass: 2.0,
             stepover: 1.0,
-            feed_rate: 800.0,
+            feed_rate: Some(800.0),
             spindle_rpm: Some(16_000),
             ..PocketConfig::default()
         });
@@ -1111,7 +1112,7 @@ mod tests {
         let op = OperationConfig::Pocket(PocketConfig {
             depth_per_pass: 1.0,
             stepover: 0.5,
-            feed_rate: 600.0,
+            feed_rate: Some(600.0),
             spindle_rpm: Some(18_000),
             ..PocketConfig::default()
         });

@@ -1,7 +1,8 @@
 use crate::state::toolpath::OperationConfig;
 
-/// Extract feed rate (mm/min) from an operation config.
-fn feed_rate_of(op: &OperationConfig) -> f64 {
+/// Extract feed rate (mm/min) from an operation config, or `None` when it
+/// is not set (S11).
+fn feed_rate_of(op: &OperationConfig) -> Option<f64> {
     op.feed_rate()
 }
 
@@ -17,7 +18,8 @@ fn depth_of(
     match tc.operation.depth_semantics() {
         crate::state::toolpath::DepthSemantics::Explicit(value)
         | crate::state::toolpath::DepthSemantics::DerivedStockTop(value) => Some(value),
-        crate::state::toolpath::DepthSemantics::None => None,
+        crate::state::toolpath::DepthSemantics::None
+        | crate::state::toolpath::DepthSemantics::Unset => None,
         crate::state::toolpath::DepthSemantics::Resolved => session
             .toolpath_heights(tc)
             .ok()
@@ -184,7 +186,12 @@ tr:nth-child(even) {{ background: #24242e; }}
              <tr><td>Size</td><td>{:.2} x {:.2} x {:.2} mm</td></tr>\n\
              <tr><td>Origin</td><td>({:.2}, {:.2}, {:.2})</td></tr>\n\
              </table>\n",
-            stock.x, stock.y, stock.z, stock.origin_x, stock.origin_y, stock.origin_z,
+            stock.x,
+            stock.y,
+            stock.box_height(),
+            stock.origin_x,
+            stock.origin_y,
+            stock.origin_z,
         ),
     );
 
@@ -392,13 +399,14 @@ tr:nth-child(even) {{ background: #24242e; }}
         let _ = std::fmt::Write::write_fmt(
             &mut html,
             format_args!(
-                "<tr><td>{}</td><td>{}{}</td><td>{}</td><td>{}</td><td>{:.0} mm/min</td><td>{}</td><td>{}</td></tr>\n",
+                "<tr><td>{}</td><td>{}{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>\n",
                 i + 1,
                 escape_html(&tc.name),
                 enabled_marker,
                 escape_html(tool_name),
                 tc.operation.label(),
-                feed,
+                // S11: an op with no feed shows "not set".
+                feed.map_or_else(|| "not set".to_owned(), |f| format!("{f:.0} mm/min")),
                 depth_str,
                 time_str,
             ),

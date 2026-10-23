@@ -232,6 +232,9 @@ fn keys(session: &ProjectSession, keep: impl Fn(&Item) -> bool) -> Vec<MatchKey>
 fn blind_hole_drill() -> ProjectSession {
     let stock = StockConfig {
         auto_from_model: true,
+        // S11: the stock default before S11 (the raw builder fits no auto
+        // stock).
+        z: Some(25.0),
         ..StockConfig::default()
     };
     step_session(
@@ -294,7 +297,7 @@ fn dxf_drill() -> ProjectSession {
     let stock = StockConfig {
         x: 160.0,
         y: 100.0,
-        z: 18.0,
+        z: Some(18.0),
         origin_x: -20.0,
         origin_y: -10.0,
         origin_z: -18.0,
@@ -322,6 +325,9 @@ fn stepped_pocket(floor_face: bool) -> ProjectSession {
         OperationType::Pocket,
         StockConfig {
             auto_from_model: true,
+            // S11: the stock default before S11 (the raw builder fits no
+            // auto stock).
+            z: Some(25.0),
             ..StockConfig::default()
         },
     );

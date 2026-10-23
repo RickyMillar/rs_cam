@@ -167,6 +167,8 @@ fn every_stock_field_is_patched_or_has_its_own_door() {
     let stock_names = stock_fields();
     let probe = StockConfig {
         pin_part_models: Some(Vec::new()),
+        // S11: the thickness is an `Option`, absent by default.
+        z: Some(25.0),
         ..StockConfig::default()
     };
     assert_names_are_serde_keys(

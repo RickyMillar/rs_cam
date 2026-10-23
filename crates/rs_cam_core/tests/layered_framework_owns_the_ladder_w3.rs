@@ -121,7 +121,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: 2.0 * (CENTRE_X + HALF + MARGIN),
         y: 2.0 * (HALF + MARGIN),
-        z: STOCK_Z,
+        z: Some(STOCK_Z),
         origin_x: -CENTRE_X - HALF - MARGIN,
         origin_y: -HALF - MARGIN,
         origin_z: -STOCK_Z,
@@ -431,7 +431,7 @@ fn zigzag_op(region_ordering: RegionOrdering) -> OperationConfig {
 /// ruling, so the pinned toolpath of before W3.2 holds unchanged.
 fn trace_op(region_ordering: RegionOrdering) -> OperationConfig {
     OperationConfig::Trace(TraceConfig {
-        depth: DEPTH,
+        depth: Some(DEPTH),
         depth_per_pass: DPP,
         compensation: TraceCompensation::Right,
         region_ordering,

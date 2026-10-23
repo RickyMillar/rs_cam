@@ -218,7 +218,14 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
     tool.name = "Sample tool".to_owned();
     // Every caller hands in a controller straight from `with_backend`, so the
     // builder replaces an empty session.
-    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    // S11: the flat mesh has no Z extent, so the fixture states the 25 mm
+    // thickness before S11.
+    let mut builder = ProjectSessionBuilder::new()
+        .stock(rs_cam_core::compute::StockConfig {
+            z: Some(rs_cam_core::compute::fixture_values::FIXTURE_STOCK_Z_MM),
+            ..rs_cam_core::compute::StockConfig::default()
+        })
+        .tool(tool);
 
     let mesh = Arc::new(make_test_flat(40.0));
     let _ = builder.add_model(LoadedModel {
@@ -242,8 +249,9 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
         id: ToolpathId::from_raw(0),
         name: "Scallop".to_owned(),
         enabled: true,
-        operation: OperationConfig::Scallop(
-            rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+        // S11: the fixture states the feeds (the values before S11).
+        operation: rs_cam_core::compute::fixture_values::fixture_op(
+            rs_cam_core::compute::catalog::OperationType::Scallop,
         ),
         dressups: Default::default(),
         heights: Default::default(),
@@ -308,8 +316,9 @@ fn push_toolpath<B: ComputeBackend>(controller: &mut AppController<B>, name: &st
         id: ToolpathId::from_raw(next),
         name: name.to_owned(),
         enabled: true,
-        operation: OperationConfig::Scallop(
-            rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+        // S11: the fixture states the feeds (the values before S11).
+        operation: rs_cam_core::compute::fixture_values::fixture_op(
+            rs_cam_core::compute::catalog::OperationType::Scallop,
         ),
         dressups: Default::default(),
         heights: Default::default(),
@@ -494,8 +503,9 @@ fn add_derived_rest_dependent(
         id: ToolpathId::from_raw(0), // placeholder — add_toolpath assigns the real id
         name: "Rest scallop".to_owned(),
         enabled: true,
-        operation: OperationConfig::Scallop(
-            rs_cam_core::compute::operation_configs::ScallopConfig::default(),
+        // S11: the fixture states the feeds (the values before S11).
+        operation: rs_cam_core::compute::fixture_values::fixture_op(
+            rs_cam_core::compute::catalog::OperationType::Scallop,
         ),
         dressups: Default::default(),
         heights: Default::default(),

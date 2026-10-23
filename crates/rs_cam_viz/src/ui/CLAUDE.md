@@ -15,7 +15,7 @@ Every panel, modal and workspace. `../app.rs` calls the `draw` of each surface o
 - `readiness.rs`, `readiness_panel.rs`, `preflight.rs` — is this safe to cut?
   `shoe_list.rs` — the H2 run sheet; Readiness and the export wizard draw it.
 - `export_wizard.rs`, `pin_wizard.rs` (R4: two steps, the only pin editor), `multitool_planner.rs`, `*_modal.rs`.
-- `import_modal.rs` — the drawing import dialog (declared size, scale, result, join, report). A number reads
+- `import_modal.rs` — the drawing import dialog (declared size, scale, result, join, report; S11: it asks the stock thickness while the stock has none, `ImportDialog::stock_z`). A number reads
   the file again on commit only (`committed_number`; its draft is in `state.panels.number_drafts`).
 - `viewport_overlay.rs`, `automation.rs`, `shortcuts_window.rs`, `preferences.rs` — dock (legend: `overlays/`), automation, shortcuts, prefs.
 - `pick_bar.rs` — the pick-mode filter bar and the tab editor bar, top centre, no width (L-4). A disabled

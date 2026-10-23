@@ -262,7 +262,8 @@ fn edit_stock_height(controller: &mut AppController<ScriptedLane>) {
     // WP6: the GUI route is the stock panel's apply funnel, not the
     // deleted `AppEvent::StockChanged`.
     let mut stock = controller.state.session().stock_config().clone();
-    stock.z += 5.0;
+    // S11: the edit adds 5 mm to the thickness the fixture states.
+    stock.z = Some(stock.box_height() + 5.0);
     crate::ui::properties::apply_stock_draft(&mut controller.state, stock);
 }
 

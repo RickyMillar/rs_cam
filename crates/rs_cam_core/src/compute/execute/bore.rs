@@ -74,8 +74,8 @@ pub(crate) fn generate_bore(
         pitch: cfg.pitch,
         climb: cfg.climb,
         finish_allowance: cfg.finish_allowance,
-        helix_feed: op.entry_feed_rate().unwrap_or_else(|| op.plunge_rate()),
-        feed: op.feed_rate(),
+        helix_feed: op.entry_feed_rate().unwrap_or(op.cut_feeds()?.plunge_rate),
+        feed: op.cut_feeds()?.feed_rate,
         safe_z: ctx.heights.retract_z,
         start_clearance: crate::dressup::ENTRY_CONTACT_CLEARANCE,
     };

@@ -108,7 +108,7 @@ fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
     builder = builder.stock(StockConfig {
         x: FLAT_X,
         y: FLAT_Y,
-        z: FLAT_Z,
+        z: Some(FLAT_Z),
         origin_x: -10.0,
         origin_y: -10.0,
         origin_z: -FLAT_Z,

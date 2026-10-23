@@ -554,7 +554,7 @@ fn rivers_b4_probe_project_curve_on_remaining_stock() {
         .iter()
         .find(|t| t.id == ToolpathId::from_raw(PC_ID))
         .and_then(|t| match &t.operation {
-            OperationConfig::ProjectCurve(p) => Some(p.depth.abs()),
+            OperationConfig::ProjectCurve(p) => p.depth.map(f64::abs),
             _ => None,
         })
         .expect("Project Curve 6 is a project_curve op");

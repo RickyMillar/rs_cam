@@ -178,7 +178,7 @@ fn fixture(cutter: &Cutter) -> AppState {
 
     let mut operation = OperationConfig::Pocket(Default::default());
     if let OperationConfig::Pocket(config) = &mut operation {
-        config.feed_rate = 1_291.0;
+        config.feed_rate = Some(1_291.0);
         config.spindle_rpm = Some(17_000);
     }
     let config = ToolpathConfig {

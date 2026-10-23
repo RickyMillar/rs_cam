@@ -522,9 +522,12 @@ mod tests {
 
     #[test]
     fn face_zigzag_alternates_direction() {
+        // S11: the fixture states its feed (the value before S11), so the
+        // rows below read it.
         let cfg = FaceConfig {
             direction: FaceDirection::Zigzag,
             stepover: 10.0,
+            feed_rate: Some(1500.0),
             ..FaceConfig::default()
         };
         let (tp, _) = generated(polygon_spec(
@@ -535,7 +538,7 @@ mod tests {
         let mut cut_directions = Vec::new();
         for i in 1..tp.moves.len() {
             if let MoveType::Linear { feed_rate } = tp.moves[i].move_type
-                && (feed_rate - cfg.feed_rate).abs() < 1e-6
+                && Some(feed_rate) == cfg.feed_rate
             {
                 let dx = tp.moves[i].target.x - tp.moves[i - 1].target.x;
                 if dx.abs() > 1.0 {
@@ -563,6 +566,8 @@ mod tests {
             stepover: 6.0,
             floor: rs_cam_core::compute::floor::Floor::top(2.0),
             depth_per_pass: 2.0,
+            // S11: the fixture states its feed (the value before S11).
+            feed_rate: Some(1000.0),
             ..ZigzagConfig::default()
         };
         let (tp, _) = generated(polygon_spec(
@@ -571,7 +576,7 @@ mod tests {
         ));
 
         assert_eq!(
-            dominant_cut_axis(&tp, cfg.feed_rate),
+            dominant_cut_axis(&tp, cfg.feed_rate.expect("S11: the fixture sets it")),
             Some('y'),
             "90 degree zigzag should cut along Y, not a radian-converted skew"
         );

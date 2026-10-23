@@ -133,7 +133,7 @@ fn mini_stock(w: f64, d: f64) -> StockConfig {
     StockConfig {
         x: w,
         y: d,
-        z: 24.5,
+        z: Some(24.5),
         origin_z: -24.5,
         padding: 0.0,
         auto_from_model: false,

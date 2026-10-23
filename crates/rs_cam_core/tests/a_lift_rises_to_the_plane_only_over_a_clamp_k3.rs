@@ -153,7 +153,7 @@ fn a_link_rises_to_the_plane_only_when_it_crosses_the_clamp_k3() {
         polygon_model(outlines, "Three outlines"),
         "Trace",
         OperationConfig::Trace(TraceConfig {
-            depth: 1.0,
+            depth: Some(1.0),
             depth_per_pass: 1.0,
             ..TraceConfig::default()
         }),

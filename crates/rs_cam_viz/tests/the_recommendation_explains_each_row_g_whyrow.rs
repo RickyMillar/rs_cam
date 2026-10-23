@@ -100,7 +100,7 @@ fn fixture() -> AppState {
     // warning has its own cell, [`floor_fixture`].
     let mut operation = OperationConfig::Adaptive3d(Default::default());
     if let OperationConfig::Adaptive3d(config) = &mut operation {
-        config.feed_rate = 3_000.0;
+        config.feed_rate = Some(3_000.0);
         config.spindle_rpm = Some(18_000);
     }
     state_with(None, tool, material, operation)
@@ -134,7 +134,7 @@ fn floor_fixture() -> AppState {
     tool.stickout = 20.0;
     let mut operation = OperationConfig::Profile(Default::default());
     if let OperationConfig::Profile(config) = &mut operation {
-        config.feed_rate = 3_000.0;
+        config.feed_rate = Some(3_000.0);
         config.spindle_rpm = Some(18_000);
     }
     let mut machine = MachineProfile::generic_wood_router();

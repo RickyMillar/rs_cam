@@ -152,7 +152,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: PART_SIDE + 2.0 * STOCK_MARGIN + 2.0 * DOME_RADIUS,
         y: PART_SIDE + 2.0 * STOCK_MARGIN + 2.0 * DOME_RADIUS,
-        z: UP_FACE_Z - DOWN_FACE_Z + 2.0 * STOCK_MARGIN,
+        z: Some(UP_FACE_Z - DOWN_FACE_Z + 2.0 * STOCK_MARGIN),
         origin_x: -STOCK_MARGIN - DOME_RADIUS,
         origin_y: -STOCK_MARGIN - DOME_RADIUS,
         origin_z: DOWN_FACE_Z - STOCK_MARGIN,
@@ -164,7 +164,7 @@ fn stock() -> StockConfig {
 /// The stock top in the world frame (= the Top setup frame).
 fn world_stock_top() -> f64 {
     let s = stock();
-    s.origin_z + s.z
+    s.top_z()
 }
 
 /// The stock bottom in the world frame.
@@ -305,7 +305,7 @@ fn a_face_pick_gives_one_top_and_one_bottom_on_a_bottom_setup() {
     let face_top = world_stock_top() - DOWN_FACE_Z;
     // UX-1: the top is the setup-frame stock top (the stock height), above
     // the face; the floor measures from the face.
-    let setup_stock_top = stock().z;
+    let setup_stock_top = stock().z.expect("S11: the fixture sets it");
     assert!(
         face_top < setup_stock_top - 1.0,
         "the fixture must hold the face below the stock top, or the arm is vacuous"

@@ -88,8 +88,8 @@ fn heavy_pocket() -> OperationConfig {
         stepover: DIAMETER_MM,
         floor: rs_cam_core::compute::floor::Floor::top(4.0 * DIAMETER_MM),
         depth_per_pass: 2.0 * DIAMETER_MM,
-        feed_rate: 1000.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(1000.0),
+        plunge_rate: Some(500.0),
         climb: true,
         ..PocketConfig::default()
     })
@@ -175,7 +175,7 @@ fn run_funnel(machine: &MachineProfile, material: &Material) -> Option<Shipped> 
 
     Some(Shipped {
         calculator_feed: result.feed_rate_mm_min,
-        shipped_feed: operation.feed_rate(),
+        shipped_feed: operation.feed_rate()?,
         clamped,
     })
 }

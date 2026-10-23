@@ -287,10 +287,10 @@ fn resolve_operating_point(
         return Err(PowerUnmodeled::MaterialUnvalidated);
     };
 
-    let feed_mm_min = operation.feed_rate();
-    if !usable(feed_mm_min) {
+    // S11: an unset feed is no feed.
+    let Some(feed_mm_min) = operation.feed_rate().filter(|v| usable(*v)) else {
         return Err(PowerUnmodeled::NoFeed);
-    }
+    };
 
     let Some(ae_mm) = operation
         .stepover()

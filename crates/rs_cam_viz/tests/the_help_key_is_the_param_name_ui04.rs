@@ -212,7 +212,9 @@ fn every_value_row_reads_a_schema_range_w5() {
             let at = from + i;
             from = at + needle.len();
             let caller = caller_before(&flat, at);
-            if !matches!(caller.as_str(), "dv" | "dv_pill") {
+            // S11: `dv_opt` and `dv_pill_opt` draw a value that can be not
+            // set; they read the same schema range.
+            if !matches!(caller.as_str(), "dv" | "dv_pill" | "dv_opt" | "dv_pill_opt") {
                 continue;
             }
             let rest = &flat[from..];

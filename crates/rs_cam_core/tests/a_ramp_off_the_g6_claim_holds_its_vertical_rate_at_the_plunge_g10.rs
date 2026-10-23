@@ -22,6 +22,7 @@
 
 #![expect(
     clippy::panic,
+    clippy::expect_used,
     clippy::indexing_slicing,
     reason = "test code: a panic is how a test reports a failure"
 )]
@@ -134,8 +135,8 @@ fn a_bull_ramp_ships_the_cut_feed_under_the_plunge_limit_g10() {
     );
     let (r, notes) = record(&s);
     let ramp = plunge_slope(r);
-    let feed = s.operation.feed_rate();
-    let plunge = s.operation.plunge_rate();
+    let feed = s.operation.feed_rate().expect("S11: the fixture sets it");
+    let plunge = s.operation.plunge_rate().expect("S11: the fixture sets it");
     let tan3 = 3.0_f64.to_radians().tan();
     let expected = feed.min(plunge / tan3).floor();
     assert_eq!(s.operation.ramp_feed_rate(), Some(expected));
@@ -187,8 +188,8 @@ fn a_steep_ball_helix_ships_the_plunge_limit_g10() {
     assert!((ramp.theta_deg - 9.49).abs() < 0.01, "{}", ramp.theta_deg);
     assert_eq!(ramp.arm, RampArm::PlungeTerm);
     let tan = 1.0 / (std::f64::consts::TAU * radius_mm);
-    let expected = (s.operation.plunge_rate() / tan).floor();
-    assert!(expected < s.operation.feed_rate());
+    let expected = (s.operation.plunge_rate().expect("S11: the fixture sets it") / tan).floor();
+    assert!(expected < s.operation.feed_rate().expect("S11: the fixture sets it"));
     assert_eq!(s.operation.ramp_feed_rate(), Some(expected));
 }
 

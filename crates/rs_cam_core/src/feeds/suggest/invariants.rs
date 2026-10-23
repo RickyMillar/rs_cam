@@ -343,8 +343,11 @@ fn run_invariants(
 /// Pass 1: clamp plunge_rate to feed_rate when plunge exceeds feed.
 pub(super) fn clamp_plunge_to_feed(operation: &mut OperationConfig) -> Vec<SuggestWarning> {
     let mut warnings = Vec::new();
-    let feed_rate = operation.feed_rate();
-    let plunge_rate = operation.plunge_rate();
+    // S11: an unset value has nothing to clamp.
+    let (Some(feed_rate), Some(plunge_rate)) = (operation.feed_rate(), operation.plunge_rate())
+    else {
+        return warnings;
+    };
     if feed_rate.is_finite() && plunge_rate.is_finite() && plunge_rate > feed_rate {
         operation.set_plunge_rate(feed_rate);
         warnings.push(SuggestWarning::PlungeClampedToFeed {

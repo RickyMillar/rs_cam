@@ -170,7 +170,11 @@ pub fn simulated_state(cut: Cut) -> AppState {
         depth_per_pass: dpp,
         // Inside the matched vendor chip band on both sides; see the
         // constant's own doc for the window it sits in.
-        feed_rate: BAND_FEED_MM_MIN,
+        feed_rate: Some(BAND_FEED_MM_MIN),
+        // S11: the fixture states the plunge and the RPM (the values before
+        // S11: the raw plunge and the post spindle speed).
+        plunge_rate: Some(500.0),
+        spindle_rpm: Some(18_000),
         ..PocketConfig::default()
     });
     let op_type = operation.op_type();

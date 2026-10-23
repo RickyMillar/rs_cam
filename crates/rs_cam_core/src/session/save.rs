@@ -726,7 +726,7 @@ mod tests {
         let mut stock = s.stock_config().clone();
         stock.x = 150.0;
         stock.y = 200.0;
-        stock.z = 25.0;
+        stock.z = Some(25.0);
         stock.origin_x = -10.0;
         stock.padding = 5.0;
         let _ = s.set_stock_config(stock);
@@ -738,7 +738,7 @@ mod tests {
         let loaded_stock = loaded.stock_config();
         assert!((loaded_stock.x - 150.0).abs() < 1e-9);
         assert!((loaded_stock.y - 200.0).abs() < 1e-9);
-        assert!((loaded_stock.z - 25.0).abs() < 1e-9);
+        assert!((loaded_stock.z.expect("S11: the fixture sets it") - 25.0).abs() < 1e-9);
         assert!((loaded_stock.origin_x - (-10.0)).abs() < 1e-9);
         assert!((loaded_stock.padding - 5.0).abs() < 1e-9);
         cleanup(&path);

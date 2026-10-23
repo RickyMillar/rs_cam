@@ -93,7 +93,7 @@ fn board() -> StockConfig {
     StockConfig {
         x: 90.0,
         y: 90.0,
-        z: 12.0,
+        z: Some(12.0),
         origin_x: -45.0,
         origin_y: -45.0,
         origin_z: -12.0,
@@ -180,7 +180,13 @@ fn bottom_edge_profile(cells: &[(f64, f64, f64)]) -> Vec<(f64, f64)> {
 
 #[test]
 fn a_the_inlay_cuts_only_the_pocket_walls() {
-    let cfg = InlayConfig::default();
+    // S11: the fixture states the depth and the band (the values before
+    // S11).
+    let cfg = InlayConfig {
+        pocket_depth: Some(3.0),
+        floor_overlap: Some(4.5),
+        ..InlayConfig::default()
+    };
     let half = 45.0_f64.to_radians();
     let mut session = single_op_session(
         board(),
@@ -214,7 +220,7 @@ fn a_the_inlay_cuts_only_the_pocket_walls() {
     );
 
     // The wall makes the bit angle with the vertical.
-    let d_n = floor_inset(cfg.pocket_depth, half);
+    let d_n = floor_inset(cfg.pocket_depth.expect("S11: the fixture sets it"), half);
     let profile = bottom_edge_profile(&all);
     let wall: Vec<(f64, f64)> = profile
         .iter()
@@ -237,7 +243,10 @@ fn a_the_inlay_cuts_only_the_pocket_walls() {
     // The band at the wall foot is at the pocket depth.
     let band: Vec<f64> = profile
         .iter()
-        .filter(|(d, _)| *d > d_n + CELL_MM && *d < d_n + cfg.floor_overlap - CELL_MM)
+        .filter(|(d, _)| {
+            *d > d_n + CELL_MM
+                && *d < d_n + cfg.floor_overlap.expect("S11: the fixture sets it") - CELL_MM
+        })
         .map(|(_, t)| *t)
         .collect();
     assert!(!band.is_empty());
@@ -248,22 +257,25 @@ fn a_the_inlay_cuts_only_the_pocket_walls() {
         });
     eprintln!(
         "(a) foot band depth {lo:.3}..{hi:.3} mm (pocket depth {})",
-        cfg.pocket_depth
+        cfg.pocket_depth.expect("S11: the fixture sets it")
     );
     // The simulated top reads about 0.025 mm shallow of the emitted Z on
     // this grid (the wall fit intercept shows the same offset), so the
     // depth tolerance is 0.05 mm.
     assert!(
-        (hi - cfg.pocket_depth).abs() < 0.05,
+        (hi - cfg.pocket_depth.expect("S11: the fixture sets it")).abs() < 0.05,
         "the deepest cut is {hi:.3} mm"
     );
     assert!(
-        cfg.pocket_depth - lo < INLAY_GLUE_GAP_DEFAULT_MM,
+        cfg.pocket_depth.expect("S11: the fixture sets it") - lo < INLAY_GLUE_GAP_DEFAULT_MM,
         "a ridge reaches {lo:.3} mm"
     );
 
     // The floor far from the walls stays uncut: the op is V walls only.
-    let reach = d_n + cfg.floor_overlap + cfg.pocket_depth * half.tan() + CELL_MM;
+    let reach = d_n
+        + cfg.floor_overlap.expect("S11: the fixture sets it")
+        + cfg.pocket_depth.expect("S11: the fixture sets it") * half.tan()
+        + CELL_MM;
     let far = profile.iter().filter(|(d, _)| *d > reach).count();
     let far_cut = profile
         .iter()
@@ -280,7 +292,11 @@ fn a_the_inlay_cuts_only_the_pocket_walls() {
 
 #[test]
 fn b_the_plug_face_is_the_mirrored_design() {
-    let cfg = InlayPlugConfig::default();
+    // S11: the fixture states the pocket depth (the value before S11).
+    let cfg = InlayPlugConfig {
+        pocket_depth: Some(3.0),
+        ..InlayPlugConfig::default()
+    };
     let half = 45.0_f64.to_radians();
     let mut session = single_op_session(
         board(),
@@ -295,7 +311,7 @@ fn b_the_plug_face_is_the_mirrored_design() {
     let mirror = mirror_design(std::slice::from_ref(&design))
         .pop()
         .expect("one polygon");
-    let face_inset = cfg.start_depth() * half.tan();
+    let face_inset = cfg.start_depth().expect("S11: the fixture sets it") * half.tan();
 
     let (mut face_in_mirror_only, mut face_in_design_only, mut face_cells) = (0, 0, 0);
     let mut face_outside_mirror = 0;
@@ -490,9 +506,15 @@ fn c_the_plug_fits_the_pocket_with_a_90_degree_bit() {
 
 #[test]
 fn e_inlay_plus_the_clipped_floor_pocket_make_the_whole_pocket() {
-    let inlay = InlayConfig::default();
+    // S11: the fixture states the depth and the band (the values before
+    // S11).
+    let inlay = InlayConfig {
+        pocket_depth: Some(3.0),
+        floor_overlap: Some(4.5),
+        ..InlayConfig::default()
+    };
     let half = 45.0_f64.to_radians();
-    let d_n = floor_inset(inlay.pocket_depth, half);
+    let d_n = floor_inset(inlay.pocket_depth.expect("S11: the fixture sets it"), half);
 
     let mut builder = ProjectSessionBuilder::new().stock(board());
     let vbit_idx = builder.add_tool(vbit(90.0));
@@ -506,7 +528,9 @@ fn e_inlay_plus_the_clipped_floor_pocket_make_the_whole_pocket() {
 
     // The floor Pocket, as the Inlay help text says.
     let pocket = PocketConfig {
-        floor: rs_cam_core::compute::floor::Floor::top(inlay.pocket_depth),
+        floor: rs_cam_core::compute::floor::Floor::top(
+            inlay.pocket_depth.expect("S11: the fixture sets it"),
+        ),
         depth_per_pass: 1.5,
         stepover: 1.6,
         ..PocketConfig::default()
@@ -553,12 +577,12 @@ fn e_inlay_plus_the_clipped_floor_pocket_make_the_whole_pocket() {
         }
         let d = design.distance_to_boundary(&p);
         let t = -z;
-        if t > inlay.pocket_depth + 0.02 {
+        if t > inlay.pocket_depth.expect("S11: the fixture sets it") + 0.02 {
             deeper += 1;
         }
         if d > d_n + CELL_MM {
             floor_cells += 1;
-            let high = inlay.pocket_depth - t;
+            let high = inlay.pocket_depth.expect("S11: the fixture sets it") - t;
             worst_floor = worst_floor.max(high);
             if high >= INLAY_GLUE_GAP_DEFAULT_MM {
                 floor_high += 1;

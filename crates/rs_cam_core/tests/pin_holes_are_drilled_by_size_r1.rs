@@ -62,6 +62,9 @@ fn pin_drill_op(diameter: f64, tool_id: usize) -> ToolpathConfig {
         operation: OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
             diameter,
             cycle: DrillCycleType::Simple,
+            // S11: the fixture states its feeds (the values before S11).
+            feed_rate: Some(300.0),
+            spindle_rpm: Some(18_000),
             ..AlignmentPinDrillConfig::default()
         }),
         dressups: DressupConfig::for_op(OperationType::AlignmentPinDrill),
@@ -85,7 +88,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: 100.0,
         y: 100.0,
-        z: 20.0,
+        z: Some(20.0),
         origin_z: -20.0,
         auto_from_model: false,
         alignment_pins: vec![SMALL, LARGE],

@@ -56,7 +56,7 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
     builder = builder.stock(StockConfig {
         x: 240.0,
         y: 250.0,
-        z: 25.0,
+        z: Some(25.0),
         origin_x: ORIGIN_X,
         origin_y: ORIGIN_Y,
         origin_z: -25.0,
@@ -75,7 +75,7 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
         spoilboard_penetration: 1.0,
         cycle: DrillCycleType::Simple,
         peck_depth: 3.0,
-        feed_rate: 300.0,
+        feed_rate: Some(300.0),
         retract_z: 2.0,
         spindle_rpm: None,
         selection: rs_cam_core::selection::Selection::empty(),
@@ -169,7 +169,7 @@ fn a_flipped_setup_pin_translation_is_a_no_op() {
     builder = builder.stock(StockConfig {
         x: 240.0,
         y: 250.0,
-        z: 25.0,
+        z: Some(25.0),
         origin_x: ORIGIN_X,
         origin_y: ORIGIN_Y,
         origin_z: -25.0,

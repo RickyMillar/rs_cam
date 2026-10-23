@@ -296,8 +296,14 @@ fn wanaka_suggest_baseline() {
             "  tp {} {:?}: feed={:.0} plunge={:.0} dpp={:?} stepover={:?}",
             id,
             name,
-            suggested.operation.feed_rate(),
-            suggested.operation.plunge_rate(),
+            suggested
+                .operation
+                .feed_rate()
+                .expect("S11: the fixture sets it"),
+            suggested
+                .operation
+                .plunge_rate()
+                .expect("S11: the fixture sets it"),
             suggested.operation.depth_per_pass(),
             suggested.operation.stepover(),
         );
@@ -485,11 +491,18 @@ fn wanaka_suggest_baseline() {
         // sit strictly below the ceiling the lift used to slam into —
         // otherwise the lift is still happening somewhere.
         assert!(
-            suggested.operation.feed_rate() < DEFAULT_CUTTING_FEED_CAP_MM_MIN,
+            suggested
+                .operation
+                .feed_rate()
+                .expect("S11: the fixture sets it")
+                < DEFAULT_CUTTING_FEED_CAP_MM_MIN,
             "{ctx}: the shipped feed must sit below the derived cutting ceiling \
              ({DEFAULT_CUTTING_FEED_CAP_MM_MIN}) the retired lift used to clamp against, \
              got {}",
-            suggested.operation.feed_rate()
+            suggested
+                .operation
+                .feed_rate()
+                .expect("S11: the fixture sets it")
         );
 
         // INVERTED by ruling Q11 (G10, 2026-09-25). Until then the
@@ -716,10 +729,17 @@ fn wanaka_suggest_baseline() {
         // mm/min, `cap_hit: Some(MaxFeed)`, still-low alongside. Retired.
         assert_no_feed_raised(&suggested.warnings, &ctx);
         assert!(
-            suggested.operation.feed_rate() < DEFAULT_CUTTING_FEED_CAP_MM_MIN,
+            suggested
+                .operation
+                .feed_rate()
+                .expect("S11: the fixture sets it")
+                < DEFAULT_CUTTING_FEED_CAP_MM_MIN,
             "{ctx}: the shipped feed must sit below the derived cutting ceiling \
              ({DEFAULT_CUTTING_FEED_CAP_MM_MIN}), got {}",
-            suggested.operation.feed_rate()
+            suggested
+                .operation
+                .feed_rate()
+                .expect("S11: the fixture sets it")
         );
     }
 
@@ -852,7 +872,10 @@ fn wanaka_suggest_baseline() {
             "{ctx}: the drill RPM cap must replace the chart's 18 000, got {}",
             r.rpm
         );
-        let feed = suggested.operation.feed_rate();
+        let feed = suggested
+            .operation
+            .feed_rate()
+            .expect("S11: the fixture sets it");
         assert!(
             (1777.0..=1778.0 + 1e-9).contains(&feed),
             "{ctx}: feed must be 14 000 x 0.0635 x 2 = 1778 (rounded down), got {feed}"
@@ -1135,8 +1158,14 @@ fn wanaka_suggest_idempotent_on_second_run() {
     })
     .expect("second Suggest");
 
-    let f1 = first.operation.feed_rate();
-    let f2 = second.operation.feed_rate();
+    let f1 = first
+        .operation
+        .feed_rate()
+        .expect("S11: the fixture sets it");
+    let f2 = second
+        .operation
+        .feed_rate()
+        .expect("S11: the fixture sets it");
     let dpp1 = first.operation.depth_per_pass().unwrap_or(f64::NAN);
     let dpp2 = second.operation.depth_per_pass().unwrap_or(f64::NAN);
     let so1 = first.operation.stepover().unwrap_or(f64::NAN);

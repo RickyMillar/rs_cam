@@ -169,7 +169,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: PART_SIDE + 2.0 * STOCK_MARGIN,
         y: PART_SIDE + 2.0 * STOCK_MARGIN,
-        z: TOP_FACE_Z - BOTTOM_FACE_Z + 2.0 * STOCK_MARGIN,
+        z: Some(TOP_FACE_Z - BOTTOM_FACE_Z + 2.0 * STOCK_MARGIN),
         origin_x: -STOCK_MARGIN,
         origin_y: -STOCK_MARGIN,
         origin_z: BOTTOM_FACE_Z - STOCK_MARGIN,
@@ -280,7 +280,7 @@ fn face_square() -> Polygon2 {
 /// The stock top in the setup frame of a `FaceUp::Bottom` setup: the setup
 /// frame is zero-rooted at the stock bottom, so it is the stock height.
 fn flipped_stock_top() -> f64 {
-    stock().z
+    stock().z.expect("S11: the fixture sets it")
 }
 
 #[test]
@@ -328,7 +328,7 @@ fn without_the_boundary_the_top_is_the_stock_and_the_cut_leaves_the_face_p4_1() 
         "with the boundary off the face must not set the top; got {top}"
     );
     assert!(
-        (top - (stock.origin_z + stock.z)).abs() < EPS,
+        (top - (stock.top_z())).abs() < EPS,
         "with the boundary off the top is the stock top; got {top}"
     );
     let face = face_square();
@@ -347,7 +347,7 @@ fn a_face_pick_on_a_flipped_setup_sets_the_top_in_the_setup_frame_p4_1() {
     // A Bottom flip maps a world Z to `stock top - Z` in the zero-rooted
     // setup frame.
     let stock = stock();
-    let world_stock_top = stock.origin_z + stock.z;
+    let world_stock_top = stock.top_z();
     let want = world_stock_top - BOTTOM_FACE_Z;
     let top = op_top_z(&mut s);
     assert!(

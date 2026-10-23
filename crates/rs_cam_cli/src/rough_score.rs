@@ -539,7 +539,8 @@ mod tests {
                     id: ToolpathId::from_raw(0),
                     name: "Pocket (rough-score test)".to_owned(),
                     enabled: true,
-                    operation: rs_cam_core::compute::catalog::OperationConfig::new_default(
+                    // S11: the fixture states the values before S11.
+                    operation: rs_cam_core::compute::fixture_values::fixture_op(
                         OperationType::Pocket,
                     ),
                     dressups: rs_cam_core::compute::config::DressupConfig::default(),

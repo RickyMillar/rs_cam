@@ -122,7 +122,12 @@ fn generate(
             &cancel,
         )
     };
-    execute_operation_annotated(&ctx, &op)
+    execute_operation_annotated(&ctx, &{
+        // S11: the fixture states the feeds.
+        let mut op = op;
+        crate::compute::fixture_values::fill_unset(&mut op);
+        op
+    })
 }
 
 /// The combination that died. The assertion is that the call RETURNS and

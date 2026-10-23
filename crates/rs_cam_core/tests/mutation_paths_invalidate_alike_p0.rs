@@ -431,7 +431,10 @@ fn set(indices: &[usize]) -> BTreeSet<usize> {
 }
 
 fn assert_feed_landed(s: &ProjectSession) {
-    let feed = s.toolpath_configs()[0].operation.feed_rate();
+    let feed = s.toolpath_configs()[0]
+        .operation
+        .feed_rate()
+        .expect("S11: the fixture sets it");
     assert!(
         (feed - EDITED_FEED_RATE).abs() < 1e-9,
         "the arm must write the feed. Otherwise it invalidates nothing \

@@ -244,15 +244,15 @@ fn state_for(fixture: Fixture) -> AppState {
     let mut operation = fixture.operation;
     match &mut operation {
         OperationConfig::Adaptive3d(config) => {
-            config.feed_rate = 3_000.0;
+            config.feed_rate = Some(3_000.0);
             config.spindle_rpm = Some(18_000);
         }
         OperationConfig::Pocket(config) => {
-            config.feed_rate = 3_000.0;
+            config.feed_rate = Some(3_000.0);
             config.spindle_rpm = Some(18_000);
         }
         OperationConfig::Profile(config) => {
-            config.feed_rate = 3_000.0;
+            config.feed_rate = Some(3_000.0);
             config.spindle_rpm = Some(18_000);
         }
         other => panic!("fixture operation {other:?} has no feed/RPM setter here"),

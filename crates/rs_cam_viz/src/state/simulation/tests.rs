@@ -711,7 +711,6 @@ fn adopt(
 /// fixture and the simulation boundary name. The second row carries a
 /// result.
 fn session_for_toolpath_one() -> rs_cam_core::session::ProjectSession {
-    use rs_cam_core::compute::catalog::OperationConfig;
     use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use rs_cam_core::session::{ProjectSessionBuilder, ToolpathConfig};
     let mut builder = ProjectSessionBuilder::new().tool(ToolConfig::new_default(
@@ -724,7 +723,10 @@ fn session_for_toolpath_one() -> rs_cam_core::session::ProjectSession {
             id: rs_cam_core::ToolpathId::from_raw(0),
             name: name.to_owned(),
             enabled: true,
-            operation: OperationConfig::Pocket(Default::default()),
+            // S11: the fixture states the floor and the feeds.
+            operation: rs_cam_core::compute::fixture_values::fixture_op(
+                rs_cam_core::compute::catalog::OperationType::Pocket,
+            ),
             dressups: Default::default(),
             heights: Default::default(),
             tool_id: rs_cam_core::ids::ToolId::from_raw(1),

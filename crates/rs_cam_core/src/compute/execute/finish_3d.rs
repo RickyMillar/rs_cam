@@ -33,8 +33,8 @@ pub(crate) fn generate_pencil(
     } = prepared.mesh()?;
     let params = cfg.params(
         OpMotion {
-            feed_rate: op.feed_rate(),
-            plunge_rate: op.plunge_rate(),
+            feed_rate: op.cut_feeds()?.feed_rate,
+            plunge_rate: op.cut_feeds()?.plunge_rate,
             safe_z: ctx.heights.retract_z,
         },
         ctx.reference_tool_cfg
@@ -99,8 +99,8 @@ pub(crate) fn generate_unified_finish(
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, UnifiedFinish, "generate_unified_finish");
     let params = cfg.params(OpMotion {
-        feed_rate: op.feed_rate(),
-        plunge_rate: op.plunge_rate(),
+        feed_rate: op.cut_feeds()?.feed_rate,
+        plunge_rate: op.cut_feeds()?.plunge_rate,
         safe_z: ctx.heights.retract_z,
     });
     // F2: the `for_tool` derivation plus this op's own dials, built in ONE
@@ -300,8 +300,8 @@ pub(crate) fn generate_steep_shallow(
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, SteepShallow, "generate_steep_shallow");
     let params = cfg.params(OpMotion {
-        feed_rate: op.feed_rate(),
-        plunge_rate: op.plunge_rate(),
+        feed_rate: op.cut_feeds()?.feed_rate,
+        plunge_rate: op.cut_feeds()?.plunge_rate,
         safe_z: ctx.heights.retract_z,
     });
     // W6.4.4: the composed op. Two concatenated passes, not one continuous
@@ -342,7 +342,7 @@ pub(crate) fn generate_ramp_finish(
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, RampFinish, "generate_ramp_finish");
     let pass = RampPass {
-        params: cfg.params(op_motion(ctx, op)),
+        params: cfg.params(op_motion(ctx, op)?),
     };
     run_height_field(&pass, ctx, prepared)
 }
@@ -411,7 +411,7 @@ pub(crate) fn generate_spiral_finish(
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, SpiralFinish, "generate_spiral_finish");
     let pass = SpiralPass {
-        params: cfg.params(op_motion(ctx, op)),
+        params: cfg.params(op_motion(ctx, op)?),
     };
     run_height_field(&pass, ctx, prepared)
 }
@@ -474,7 +474,7 @@ pub(crate) fn generate_radial_finish(
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, RadialFinish, "generate_radial_finish");
     let pass = RadialPass {
-        params: cfg.params(op_motion(ctx, op)),
+        params: cfg.params(op_motion(ctx, op)?),
     };
     run_height_field(&pass, ctx, prepared)
 }
@@ -551,7 +551,7 @@ pub(crate) fn generate_horizontal_finish(
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, HorizontalFinish, "generate_horizontal_finish");
     let pass = HorizontalPass {
-        params: cfg.params(op_motion(ctx, op)),
+        params: cfg.params(op_motion(ctx, op)?),
     };
     run_height_field(&pass, ctx, prepared)
 }
@@ -602,10 +602,12 @@ impl HeightFieldOp for HorizontalPass {
 }
 
 /// The feed, the plunge and the safe Z of one op.
-fn op_motion(ctx: &ExecutionContext<'_>, op: &OperationConfig) -> OpMotion {
-    OpMotion {
-        feed_rate: op.feed_rate(),
-        plunge_rate: op.plunge_rate(),
+/// S11: refuses an op whose feeds are not set.
+fn op_motion(ctx: &ExecutionContext<'_>, op: &OperationConfig) -> Result<OpMotion, OperationError> {
+    let cut = op.cut_feeds()?;
+    Ok(OpMotion {
+        feed_rate: cut.feed_rate,
+        plunge_rate: cut.plunge_rate,
         safe_z: ctx.heights.retract_z,
-    }
+    })
 }

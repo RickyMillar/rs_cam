@@ -18,6 +18,8 @@
 //!   `PRECOND_BURIED_FACE`) — a face pick below the stock top on fresh
 //!   stock: the generator's own refusal sentence, from
 //!   `ToolpathHeights::buried_face_refusal`.
+//! - **Every op** (S11, `PRECOND_NOT_SET`) — a value with no derivation
+//!   that is not set: the floor, a depth of a drawing op, or the feeds.
 //! - **ProjectCurve** — needs both a source curve (the toolpath's
 //!   `model_id` must point at a polygon-bearing model) AND a target
 //!   surface mesh (either the same model or any other loaded model).
@@ -70,6 +72,9 @@ pub struct PreconditionContext {
     /// (`ToolpathHeights::buried_face_refusal`). `None` when the op does
     /// not refuse.
     pub buried_face_refusal: Option<String>,
+    /// S11: the refusal of every op while the stock thickness is not set
+    /// (`ProjectSession::stock_thickness_refusal`). `None` when it is set.
+    pub stock_thickness_refusal: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -136,7 +141,41 @@ pub fn diagnostics_from_preconditions(
         }
     }
     out.extend(buried_face(&scope, ctx));
+    out.extend(not_set(&scope, op, ctx));
     out
+}
+
+/// S11 (operator ruling 2026-10-23): the values of the op that no rule
+/// gives and that are not set. The message is the generator's own refusal
+/// sentence, in the order generation refuses: the stock thickness, the
+/// floor (`FloorRefusal::Unset`), else the depth or the feeds
+/// (`OperationConfig::not_set`).
+fn not_set(scope: &Scope, op: &OperationConfig, ctx: &PreconditionContext) -> Option<Diagnostic> {
+    let message = if let Some(text) = &ctx.stock_thickness_refusal {
+        text.clone()
+    } else if op.floor().is_some_and(|floor| floor.is_unset()) {
+        format!(
+            "{}: {}",
+            op.op_type().label(),
+            crate::compute::floor::FLOOR_UNSET_TEXT
+        )
+    } else {
+        op.not_set()?.to_string()
+    };
+    Some(Diagnostic {
+        id: DiagnosticId::from(ids::PRECOND_NOT_SET),
+        scope: scope.clone(),
+        category: Category::Geometry,
+        severity: Severity::Blocking,
+        confidence: Confidence::Static,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!("{message} — generation will fail."),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    })
 }
 
 /// UX-1c (operator ruling 2026-10-22, SAFETY): a one-depth op on fresh
@@ -267,15 +306,24 @@ mod tests {
     };
 
     fn drill_op() -> OperationConfig {
-        OperationConfig::Drill(DrillConfig::default())
+        // S11: the fixture states the values this check does not read.
+        let mut op = OperationConfig::Drill(DrillConfig::default());
+        crate::compute::fixture_values::fill_unset(&mut op);
+        op
     }
 
     fn project_curve_op() -> OperationConfig {
-        OperationConfig::ProjectCurve(ProjectCurveConfig::default())
+        // S11: the fixture states the values this check does not read.
+        let mut op = OperationConfig::ProjectCurve(ProjectCurveConfig::default());
+        crate::compute::fixture_values::fill_unset(&mut op);
+        op
     }
 
     fn alignment_pin_drill_op() -> OperationConfig {
-        OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default())
+        // S11: the fixture states the values this check does not read.
+        let mut op = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig::default());
+        crate::compute::fixture_values::fill_unset(&mut op);
+        op
     }
 
     /// The ribbon prints the refusal sentence the session gives for the
@@ -432,7 +480,9 @@ mod tests {
     #[test]
     fn non_precondition_ops_emit_nothing() {
         let ctx = PreconditionContext::default();
-        let pocket = OperationConfig::new_default(crate::compute::catalog::OperationType::Pocket);
+        let pocket = crate::compute::fixture_values::fixture_op(
+            crate::compute::catalog::OperationType::Pocket,
+        );
         let diags = diagnostics_from_preconditions(ToolpathId::from_raw(0), &pocket, &ctx);
         assert!(diags.is_empty());
     }

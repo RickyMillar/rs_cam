@@ -172,8 +172,16 @@ fn shipped_params() -> ScallopParams {
         continuous: cfg.continuous,
         slope_from: cfg.slope_from,
         slope_to: cfg.slope_to,
-        feed_rate: cfg.feed_rate,
-        plunge_rate: cfg.plunge_rate,
+        // S11: the config holds no feeds; the fixture states the Scallop
+        // feeds before S11.
+        feed_rate: rs_cam_core::compute::fixture_values::fixture_feeds(
+            rs_cam_core::compute::catalog::OperationType::Scallop,
+        )
+        .0,
+        plunge_rate: rs_cam_core::compute::fixture_values::fixture_feeds(
+            rs_cam_core::compute::catalog::OperationType::Scallop,
+        )
+        .1,
         safe_z: SAFE_Z,
         stock_to_leave: cfg.stock_to_leave,
         intra_pass_hookup_mm: cfg.intra_pass_hookup_mm,

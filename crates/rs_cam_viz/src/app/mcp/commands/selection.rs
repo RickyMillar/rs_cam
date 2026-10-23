@@ -1537,7 +1537,7 @@ mod tests {
             .stock(StockConfig {
                 x: 80.0,
                 y: 40.0,
-                z: 20.0,
+                z: Some(20.0),
                 origin_x: -40.0,
                 origin_y: -20.0,
                 origin_z: -15.0,
@@ -1656,7 +1656,7 @@ mod tests {
             .stock(StockConfig {
                 x: 100.0,
                 y: 60.0,
-                z: 10.0,
+                z: Some(10.0),
                 origin_x: -50.0,
                 origin_y: -30.0,
                 origin_z: -10.0,
@@ -1923,7 +1923,7 @@ mod tests {
                 .stock(StockConfig {
                     x: 40.0,
                     y: 30.0,
-                    z: 20.0,
+                    z: Some(20.0),
                     origin_x: 0.0,
                     origin_y: 0.0,
                     origin_z: 0.0,

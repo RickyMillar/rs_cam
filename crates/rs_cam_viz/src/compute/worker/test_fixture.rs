@@ -42,7 +42,7 @@ pub(super) fn board(half: f64, height: f64) -> StockConfig {
     StockConfig {
         x: 2.0 * half + 4.0,
         y: 2.0 * half + 4.0,
-        z: height,
+        z: Some(height),
         origin_x: -half - 2.0,
         origin_y: -half - 2.0,
         origin_z: -height,
@@ -60,7 +60,7 @@ pub(super) fn stock_between(min: rs_cam_core::geo::P3, max: rs_cam_core::geo::P3
     StockConfig {
         x: max.x - min.x,
         y: max.y - min.y,
-        z: max.z - min.z,
+        z: Some(max.z - min.z),
         origin_x: min.x,
         origin_y: min.y,
         origin_z: min.z,
@@ -76,7 +76,7 @@ pub(super) fn stock_bbox(stock: &StockConfig) -> BoundingBox3 {
         max: rs_cam_core::geo::P3::new(
             stock.origin_x + stock.x,
             stock.origin_y + stock.y,
-            stock.origin_z + stock.z,
+            stock.top_z(),
         ),
     }
 }
@@ -202,13 +202,19 @@ fn toolpath_config(
     spec: &RequestSpec,
     boundary: BoundaryConfig,
 ) -> ToolpathConfig {
+    // S11: the fixture states every value the op leaves unset (the values
+    // before S11).
+    let mut operation = operation;
+    rs_cam_core::compute::fixture_values::fill_unset(&mut operation);
+    let mut dressups = spec.dressups.clone();
+    rs_cam_core::compute::fixture_values::fill_unset_dressups(&mut dressups);
     ToolpathConfig {
         shoe: Default::default(),
         id,
         name: name.to_owned(),
         enabled: true,
         operation,
-        dressups: spec.dressups.clone(),
+        dressups,
         heights: Default::default(),
         tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id: rs_cam_core::ids::ModelId::from_raw(model_id),

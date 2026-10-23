@@ -184,6 +184,9 @@ pub(crate) const OWNER_TAB: &[(&str, Option<ToolpathTab>)] = {
         (i::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES, NO),
         (i::PRECOND_SELECTION_REFUSED, G),
         (i::PRECOND_BURIED_FACE, G),
+        // S11: an unset floor or depth is a Cut row; the text names the
+        // field (the feeds rows are on the Feeds tab).
+        (i::PRECOND_NOT_SET, C),
         (i::SAFETY_CUTS_INTO_MODEL, G),
         (i::PRECOND_PROJECT_CURVE_NO_CURVE, G),
         (i::PRECOND_PROJECT_CURVE_NO_SURFACE, C),

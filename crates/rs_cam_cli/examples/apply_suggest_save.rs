@@ -115,8 +115,9 @@ fn main() -> Result<()> {
             "{:<3} {:<32} {:>14} {:>14} {:>12} {:>12} {:>12}",
             tc.id,
             truncate(&tc.name, 32),
-            format!("{feed_before:.0} -> {feed_after:.0}"),
-            format!("{plunge_before:.0} -> {plunge_after:.0}"),
+            // S11: a feed can be not set.
+            format!("{} -> {}", fmt_opt(feed_before), fmt_opt(feed_after)),
+            format!("{} -> {}", fmt_opt(plunge_before), fmt_opt(plunge_after)),
             format!(
                 "{} -> {}",
                 fmt_opt(stepover_before),

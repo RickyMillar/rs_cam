@@ -153,7 +153,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: 2.0 * BOARD_HALF,
         y: 2.0 * BOARD_HALF,
-        z: STOCK_Z,
+        z: Some(STOCK_Z),
         origin_x: -BOARD_HALF,
         origin_y: -BOARD_HALF,
         origin_z: -STOCK_Z,

@@ -78,7 +78,9 @@ fn toolpath(id: usize, op_type: OperationType) -> ToolpathConfig {
         id: rs_cam_core::ToolpathId::from_raw(id),
         name: format!("{op_type:?} fixture"),
         enabled: true,
-        operation: OperationConfig::new_default(op_type),
+        // S11: the fixture states the values before S11 (the 3 mm Pocket
+        // floor the recipe fingerprint reads).
+        operation: rs_cam_core::compute::fixture_values::fixture_op(op_type),
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: rs_cam_core::ids::ToolId::from_raw(1),
@@ -523,7 +525,7 @@ fn modal_apply_all_writes_what_the_panel_writes() {
         ("feed", modal_op.feed_rate(), panel_op.feed_rate()),
         ("plunge", modal_op.plunge_rate(), panel_op.plunge_rate()),
     ] {
-        assert_eq!(a, b, "{name}: modal {a} vs panel {b}");
+        assert_eq!(a, b, "{name}: modal {a:?} vs panel {b:?}");
     }
     assert_eq!(modal_op.spindle_rpm(), panel_op.spindle_rpm(), "rpm");
     assert_eq!(modal_op.stepover(), panel_op.stepover(), "woc");
@@ -766,11 +768,11 @@ fn pocket_fixture_recipe_fingerprint_is_unmoved() {
         ctx(),
     );
 
-    assert_eq!(op.feed_rate(), 3999.0, "feed");
+    assert_eq!(op.feed_rate(), Some(3999.0), "feed");
     // T-9 (`6a9330dc`) floors the plunge instead of rounding it to the
     // nearest, so this fixture's unrounded 793.75 ships as 793, not 794. The
     // figure is re-derived from the cause; it is not a widened tolerance.
-    assert_eq!(op.plunge_rate(), 1999.0, "plunge");
+    assert_eq!(op.plunge_rate(), Some(1999.0), "plunge");
     assert_eq!(op.spindle_rpm(), Some(11_248), "rpm");
     // 1.525 arrives as 1.5250000000000001 from the dial's solve; the pin
     // is the value, not the bit pattern.
@@ -868,21 +870,25 @@ fn explore_apply_takes_the_clamps_but_keeps_the_dragged_point() {
     });
     let after = op_of(&controller);
 
-    assert_eq!(after.feed_rate(), 120.0, "the dragged feed was re-solved");
+    assert_eq!(
+        after.feed_rate(),
+        Some(120.0),
+        "the dragged feed was re-solved"
+    );
     assert_eq!(after.spindle_rpm(), Some(14_000), "the dragged RPM moved");
     // G10 (2026-09-25): the funnel runs the plunge rule again at the
     // dragged feed. The Ø6.35 2F flat claim gives floor(120 / 2) = 60.
     assert_eq!(
         after.plunge_rate(),
-        60.0,
+        Some(60.0),
         "plunge is not the G10 flat claim at the dragged feed (floor(120 / 2)) — pre-fix \
          this left plunge at 900 mm/min under a 120 mm/min cut"
     );
     assert!(
         after.plunge_rate() <= after.feed_rate(),
         "the plunge {} is above the dragged feed {}",
-        after.plunge_rate(),
-        after.feed_rate()
+        after.plunge_rate().expect("S11: the fixture sets it"),
+        after.feed_rate().expect("S11: the fixture sets it")
     );
     assert_eq!(
         (after.stepover(), after.depth_per_pass()),

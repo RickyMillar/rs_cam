@@ -6,7 +6,7 @@ use crate::state::toolpath::{
 };
 use rs_cam_core::compute::operation_configs::PROJECT_CURVE_POINT_CAUTION;
 
-use super::super::{advanced, dv, p};
+use super::super::{advanced, dv, dv_opt, p};
 use crate::ui::components::UiExt as _;
 use rs_cam_core::compute::catalog::OperationType;
 
@@ -118,12 +118,13 @@ pub(in crate::ui::properties) fn draw_project_curve_params(
             });
         ui.end_row();
 
-        dv(
+        dv_opt(
             ui,
             p(OperationType::ProjectCurve, "depth", "Depth:"),
             &mut cfg.depth,
             " mm",
             0.1,
+            None,
         );
     });
     advanced(ui, "proj_adv", |ui| {

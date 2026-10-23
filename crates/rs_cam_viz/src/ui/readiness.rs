@@ -521,7 +521,8 @@ pub fn toolpath_cycle_time(
     trace: Option<&Arc<SimulationCutTrace>>,
     id: ToolpathId,
     cutting_distance_mm: f64,
-    nominal_feed_mm_min: f64,
+    // S11: `None` when the op has no feed.
+    nominal_feed_mm_min: Option<f64>,
 ) -> CycleTime {
     let Some((index, _)) = session.find_toolpath_config_by_id(id) else {
         return CycleTime::NONE;
@@ -530,7 +531,7 @@ pub fn toolpath_cycle_time(
         index,
         trace: trace.map(Arc::clone),
         cutting_distance_mm: Some(cutting_distance_mm),
-        nominal_feed_mm_min: Some(nominal_feed_mm_min),
+        nominal_feed_mm_min,
     });
     match session.query(query) {
         Ok(QueryAnswer::ToolpathCycleTime(answer)) => answer

@@ -1017,13 +1017,16 @@ fn check4_a_flipped_setup_cuts_inside_the_stock_and_mirrors_the_top_up_cut() {
                     && p.x <= stock.x + r + tol
                     && p.y >= -r - tol
                     && p.y <= stock.y + r + tol
-                    && (!cut || p.z <= stock.z + tol)
+                    && (!cut || p.z <= stock.z.expect("S11: the fixture sets it") + tol)
                     && p.z >= -r - tol)
         }) {
             defects.push(format!(
                 "{key}/flipped: a feed move to {:?} lies outside the stock [0, {}] x [0, {}] \
                  x [0, {}] grown by the tool radius {r}",
-                m.target, stock.x, stock.y, stock.z
+                m.target,
+                stock.x,
+                stock.y,
+                stock.z.expect("S11: the fixture sets it")
             ));
         }
         let moved = moved_by_minus_origin(top, &stock);
@@ -1111,17 +1114,18 @@ fn default_op_session(op: OperationType) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new();
     let tool_idx = builder.add_tool(tool_for(op));
     let tool_id = builder.tools()[tool_idx].id.raw();
-    let _ = builder
-        .add_toolpath(
-            0,
-            toolpath_config(
-                op.kind_str(),
-                OperationConfig::new_default(op),
-                rs_cam_core::ids::ToolId::from_raw(tool_id),
-                rs_cam_core::ids::ModelId::from_raw(0),
-            ),
+    // S11: the schema checks read the registry default as it is (unset
+    // values included), not the fixture values `toolpath_config` states.
+    let config = rs_cam_core::session::ToolpathConfig {
+        operation: OperationConfig::new_default(op),
+        ..toolpath_config(
+            op.kind_str(),
+            OperationConfig::new_default(op),
+            rs_cam_core::ids::ToolId::from_raw(tool_id),
+            rs_cam_core::ids::ModelId::from_raw(0),
         )
-        .expect("add the op");
+    };
+    let _ = builder.add_toolpath(0, config).expect("add the op");
     builder.build()
 }
 
@@ -1347,7 +1351,7 @@ fn strip_world(stock: &StockConfig) -> [[f64; 3]; 2] {
         [
             STRIP_X[1],
             stock.origin_y + stock.y + STRIP_MARGIN_MM,
-            stock.origin_z + stock.z + STRIP_MARGIN_MM,
+            stock.top_z() + STRIP_MARGIN_MM,
         ],
     ]
 }

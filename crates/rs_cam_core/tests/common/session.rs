@@ -225,7 +225,7 @@ pub fn stock_over(half: f64, height: f64) -> StockConfig {
     StockConfig {
         x: 2.0 * half + 4.0,
         y: 2.0 * half + 4.0,
-        z: height,
+        z: Some(height),
         origin_x: -half - 2.0,
         origin_y: -half - 2.0,
         origin_z: 0.0,
@@ -259,13 +259,19 @@ pub fn toolpath_config(
     model_id: rs_cam_core::ids::ModelId,
 ) -> ToolpathConfig {
     let op_type = op.op_type();
+    // S11: the fixture states every value that the op leaves unset (the
+    // values before S11, `compute::fixture_values`).
+    let mut op = op;
+    rs_cam_core::compute::fixture_values::fill_unset(&mut op);
+    let mut dressups = DressupConfig::for_op(op_type);
+    rs_cam_core::compute::fixture_values::fill_unset_dressups(&mut dressups);
     ToolpathConfig {
         shoe: Default::default(),
         id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
         operation: op,
-        dressups: DressupConfig::for_op(op_type),
+        dressups,
         heights: HeightsConfig::default(),
         tool_id,
         model_id,
@@ -328,6 +334,9 @@ pub fn single_op_session_with(
     op: OperationConfig,
     tweak: impl FnOnce(&mut ToolpathConfig),
 ) -> ProjectSession {
+    // S11: the fixture states a thickness when the test gives none.
+    let mut stock = stock;
+    rs_cam_core::compute::fixture_values::fill_unset_stock(&mut stock);
     let mut builder = ProjectSessionBuilder::new().stock(stock);
     let tool_idx = builder.add_tool(tool);
     let tool_id = builder.tools()[tool_idx].id.raw();

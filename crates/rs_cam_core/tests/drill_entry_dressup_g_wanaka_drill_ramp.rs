@@ -91,7 +91,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: STOCK_X,
         y: STOCK_Y,
-        z: STOCK_Z,
+        z: Some(STOCK_Z),
         origin_x: 0.0,
         origin_y: 0.0,
         // Stock top at world Z0 — the 2D convention, so the emitted Z is

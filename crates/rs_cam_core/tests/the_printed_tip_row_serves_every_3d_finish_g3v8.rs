@@ -102,7 +102,7 @@ fn a_one_millimetre_tapered_tip_reads_the_printed_band_on_every_3d_finish_g3v8()
     let stock = StockContext {
         stock_top_z: 0.0,
         stock_bottom_z: -18.0,
-        stock_z: 18.0,
+        stock_z: Some(18.0),
         stock_padding: 2.0,
     };
     let lo = PRINTED_MIN_IN * MM_PER_IN;

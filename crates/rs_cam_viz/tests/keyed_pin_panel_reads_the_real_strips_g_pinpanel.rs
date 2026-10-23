@@ -68,7 +68,7 @@ fn stock(width: f64, origin_x: f64) -> StockConfig {
     StockConfig {
         x: width,
         y: STOCK_D_MM,
-        z: 26.0,
+        z: Some(26.0),
         origin_x,
         origin_y: -15.0,
         padding: 5.0,
@@ -235,7 +235,7 @@ fn the_inputs_come_from_the_part_models_and_the_drill() {
         .stock(StockConfig {
             x: 400.0,
             y: 200.0,
-            z: 20.0,
+            z: Some(20.0),
             origin_x: -25.0,
             origin_y: -50.0,
             auto_from_model: false,
@@ -276,7 +276,7 @@ fn the_mini_project_gets_a_keyed_pattern_in_the_rim() {
     let stock = StockConfig {
         x: 65.0,
         y: 65.0,
-        z: 24.5,
+        z: Some(24.5),
         origin_z: -24.5,
         padding: 0.0,
         auto_from_model: false,

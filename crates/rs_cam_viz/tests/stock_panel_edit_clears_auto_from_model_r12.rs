@@ -177,8 +177,11 @@ fn a_material_edit_under_auto_refits_a_stale_record() {
 
 #[test]
 fn without_a_model_the_flag_keeps_its_value_and_nothing_refits() {
+    // S11: the record states a thickness (the 25 mm before S11); a first
+    // thickness on a stock with none is a separate rule.
     let previous = StockConfig {
         auto_from_model: false,
+        z: Some(25.0),
         ..StockConfig::default()
     };
     let mut draft = previous.clone();
@@ -192,7 +195,7 @@ fn without_a_model_the_flag_keeps_its_value_and_nothing_refits() {
     );
 
     let mut moved = previous.clone();
-    moved.z = 30.0;
+    moved.z = Some(30.0);
     let reconciled = reconcile_auto_from_model(&previous, moved.clone(), None);
     assert_eq!(
         reconciled, moved,

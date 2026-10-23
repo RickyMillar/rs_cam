@@ -81,7 +81,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: 2.0 * (HALF + MARGIN),
         y: 2.0 * (HALF + MARGIN),
-        z: STOCK_Z,
+        z: Some(STOCK_Z),
         origin_x: -HALF - MARGIN,
         origin_y: -HALF - MARGIN,
         origin_z: -STOCK_Z,

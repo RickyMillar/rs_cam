@@ -142,7 +142,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: 2.0 * HALF + SHIFT + 2.0 * MARGIN,
         y: 2.0 * HALF + 2.0 * MARGIN,
-        z: STOCK_Z,
+        z: Some(STOCK_Z),
         origin_x: -HALF - MARGIN,
         origin_y: -HALF - MARGIN,
         origin_z: -STOCK_Z,
@@ -1423,7 +1423,7 @@ fn face_b8(depth: f64) -> OperationConfig {
         depth,
         depth_per_pass: DPP,
         stepover: 2.3,
-        stock_offset: FACE_B8_OFFSET,
+        stock_offset: Some(FACE_B8_OFFSET),
         ..FaceConfig::default()
     })
 }
@@ -1657,7 +1657,7 @@ fn waterline_stock() -> StockConfig {
     StockConfig {
         x: 2.0 * WL_HALF,
         y: 2.0 * WL_HALF,
-        z: WL_STOCK_Z,
+        z: Some(WL_STOCK_Z),
         origin_x: -WL_HALF,
         origin_y: -WL_HALF,
         origin_z: 0.0,
@@ -1742,7 +1742,7 @@ fn waterline_after_pocket(source: StockSource, feed_rate: f64) -> WaterlineArm {
     let mut waterline = toolpath_config(
         "waterline",
         OperationConfig::Waterline(WaterlineConfig {
-            feed_rate,
+            feed_rate: Some(feed_rate),
             ..WaterlineConfig::default()
         }),
         rs_cam_core::ids::ToolId::from_raw(tool_id),
@@ -2033,7 +2033,11 @@ fn a_rest_waterline_cuts_only_the_runs_that_pass_material() {
 ///      points at every level, and its finding drops no level.
 #[test]
 fn a_rest_waterline_feeds_through_air_that_a_retract_would_not_save() {
-    let feed = WaterlineConfig::default().feed_rate;
+    // S11: the fixture feed of a Waterline (its default before S11).
+    let feed = rs_cam_core::compute::fixture_values::fixture_feeds(
+        rs_cam_core::compute::catalog::OperationType::Waterline,
+    )
+    .0;
     let fresh = waterline_after_pocket(StockSource::Fresh, feed);
     let rest = waterline_after_pocket(StockSource::FromRemainingStock, feed);
     eprintln!(

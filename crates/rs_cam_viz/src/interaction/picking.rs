@@ -643,7 +643,7 @@ const PICK_TIE_PX: f64 = 2.0;
 pub fn drawing_display_z(frame: Option<&SetupFrame>, stock: &StockConfig) -> f64 {
     match frame {
         Some(frame) => frame.effective_stock(stock).2 + HOLE_MARK_LIFT_MM,
-        None => stock.origin_z + stock.z + HOLE_MARK_LIFT_MM,
+        None => stock.top_z() + HOLE_MARK_LIFT_MM,
     }
 }
 

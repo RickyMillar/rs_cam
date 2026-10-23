@@ -230,7 +230,10 @@ fn rest_chain_session(feed_optimization: bool) -> ProjectSession {
 
 /// The operation's commanded cutting feed, in mm/min.
 fn commanded_feed(session: &ProjectSession, index: usize) -> f64 {
-    session.toolpath_configs()[index].operation.feed_rate()
+    session.toolpath_configs()[index]
+        .operation
+        .feed_rate()
+        .expect("S11: the fixture sets it")
 }
 
 /// Step (i): capture the generation inputs.

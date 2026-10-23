@@ -118,7 +118,10 @@ fn inverted_pocket_session() -> ProjectSession {
         "Pocket",
         pocket_op(),
         |cfg| {
-            let ceiling = cfg.dressups.feed_max_rate;
+            let ceiling = cfg
+                .dressups
+                .feed_max_rate
+                .expect("S11: the fixture sets it");
             cfg.operation
                 .set_feed_rate(FEED_MULTIPLE_OF_CEILING * ceiling);
         },
@@ -167,8 +170,11 @@ fn a_pocket_above_twice_the_ceiling_generates_without_a_panic() {
         .first()
         .expect("the fixture holds one toolpath")
         .clone();
-    let ceiling = cfg.dressups.feed_max_rate;
-    let commanded = cfg.operation.feed_rate();
+    let ceiling = cfg
+        .dressups
+        .feed_max_rate
+        .expect("S11: the fixture sets it");
+    let commanded = cfg.operation.feed_rate().expect("S11: the fixture sets it");
     assert!(
         cfg.dressups.feed_optimization,
         "the pass must be on, or this arm measures a dressup that never ran"

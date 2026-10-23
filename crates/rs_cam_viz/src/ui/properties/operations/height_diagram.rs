@@ -820,9 +820,12 @@ pub fn draw_height_diagram(
         // as it was.
         match (drag_idx, owner, floor.as_mut()) {
             (Some(BOTTOM_LINE_INDEX), FloorOwner::OpFloor, Some(f)) => {
-                let rounded = f.floor.clone().with_value(round_pin(f.floor.value()));
-                if rounded.door_refusal().is_none() {
-                    *f.floor = rounded;
+                // S11: an unset floor has no value to round.
+                if let Some(value) = f.floor.value() {
+                    let rounded = f.floor.clone().with_value(round_pin(value));
+                    if rounded.door_refusal().is_none() {
+                        *f.floor = rounded;
+                    }
                 }
             }
             (Some(BOTTOM_LINE_INDEX), FloorOwner::OpFloor, None) | (None, _, _) => {}

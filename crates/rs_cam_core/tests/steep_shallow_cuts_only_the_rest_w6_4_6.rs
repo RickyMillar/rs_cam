@@ -151,7 +151,7 @@ fn long_session(op: OperationConfig, source: StockSource) -> (ProjectSession, us
     let mut builder = ProjectSessionBuilder::new().stock(StockConfig {
         x: LONG_X,
         y: LONG_Y,
-        z: MESH_STOCK_Z,
+        z: Some(MESH_STOCK_Z),
         origin_x: -LONG_X / 2.0,
         origin_y: -LONG_Y / 2.0,
         origin_z: 0.0,
@@ -222,7 +222,7 @@ struct Arm {
 }
 
 fn steep_shallow(hookup_mm: f64) -> OperationConfig {
-    let mut op = OperationConfig::new_default(OperationType::SteepShallow);
+    let mut op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::SteepShallow);
     let OperationConfig::SteepShallow(cfg) = &mut op else {
         unreachable!("a Steep and Shallow config")
     };

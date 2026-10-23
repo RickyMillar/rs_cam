@@ -195,7 +195,7 @@ impl ProjectSession {
                 // setup orientation. For identity setups (`face_up=Top`,
                 // `z_rotation=Deg0`) no transform is applied to the toolpath
                 // before stamping, so the dexel grid must also be in world
-                // frame (`stock.origin_z..stock.origin_z + stock.z`). Using a
+                // frame (`stock.origin_z..stock.top_z()`). Using a
                 // zero-rooted local bbox `(0..stock_z)` here placed the
                 // cutter at world Z=-2 below every dexel ray, which clears
                 // the full ray length and inflates `axial_engagement_mm` to
@@ -569,7 +569,10 @@ impl ProjectSession {
                 continue;
             };
             let annotated_arc = result.annotated();
-            let commanded_feed_for_summary = tc.operation.feed_rate();
+            // S11: an op with no feed has no commanded feed to modulate.
+            let Some(commanded_feed_for_summary) = tc.operation.feed_rate() else {
+                continue;
+            };
             // F-039 core (shared with the strategy advisor): aggregate
             // engagement + build the deflection / power / chipload context
             // and modulate this toolpath's per-move feeds in one place.

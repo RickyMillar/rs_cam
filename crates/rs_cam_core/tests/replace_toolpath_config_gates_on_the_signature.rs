@@ -321,7 +321,10 @@ fn a_replacement_that_moves_the_signature_drops_the_chain() {
         s.result_at(1).is_none(),
         "the downstream row reads the stock the edited row leaves"
     );
-    let feed = s.toolpath_configs()[0].operation.feed_rate();
+    let feed = s.toolpath_configs()[0]
+        .operation
+        .feed_rate()
+        .expect("S11: the fixture sets it");
     assert!(
         (feed - EDITED_FEED_RATE).abs() < 1e-9,
         "the feed must land. Otherwise the arm invalidates for a reason \

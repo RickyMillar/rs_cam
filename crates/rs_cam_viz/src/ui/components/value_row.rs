@@ -290,6 +290,160 @@ impl<'a> ValueRow<'a> {
     }
 }
 
+/// S11 (operator ruling 2026-10-23): one numeric row whose value can be
+/// not set (`None`).
+///
+/// - A set value draws as a [`ValueRow`]. With [`Self::clearable`] a "×"
+///   after the input sets the value back to `None`.
+/// - A value that is not set draws an empty field with a hint: "set a
+///   value" for a value that no rule gives, or the rule text (for example
+///   "tool radius") for a value that a rule derives. A typed number sets the
+///   value, clamped to the range.
+pub struct OptionalValueRow<'a> {
+    label: &'a str,
+    value: &'a mut Option<f64>,
+    suffix: &'a str,
+    speed: f64,
+    range: std::ops::RangeInclusive<f64>,
+    hint: &'a str,
+    tooltip: Option<&'a str>,
+    clearable: bool,
+    suggest: Option<Suggestion<'a>>,
+}
+
+impl<'a> OptionalValueRow<'a> {
+    /// A row with the hint "set a value" (`not_set::SET_A_VALUE_HINT`).
+    pub fn new(
+        label: &'a str,
+        value: &'a mut Option<f64>,
+        suffix: &'a str,
+        speed: f64,
+        range: std::ops::RangeInclusive<f64>,
+    ) -> Self {
+        Self {
+            label,
+            value,
+            suffix,
+            speed,
+            range,
+            hint: rs_cam_core::compute::not_set::SET_A_VALUE_HINT,
+            tooltip: None,
+            clearable: false,
+            suggest: None,
+        }
+    }
+
+    /// The hint of the empty field: the rule that gives the value.
+    pub fn hint(mut self, hint: &'a str) -> Self {
+        self.hint = hint;
+        self
+    }
+
+    /// Explicit tooltip.
+    pub fn tooltip(mut self, tip: Option<&'a str>) -> Self {
+        self.tooltip = tip;
+        self
+    }
+
+    /// Show a "×" that clears a set value (back to the rule).
+    pub fn clearable(mut self) -> Self {
+        self.clearable = true;
+        self
+    }
+
+    /// The single-field ⚡ of a set value (see [`ValueRow::suggest`]).
+    pub fn suggest(mut self, s: Option<Suggestion<'a>>) -> Self {
+        self.suggest = s;
+        self
+    }
+
+    /// Draw the row and call `ui.end_row()`. `true` when the value changed.
+    pub fn show(self, ui: &mut egui::Ui) -> bool {
+        if let Some(current) = *self.value {
+            let mut v = current;
+            if !self.clearable {
+                let mut row =
+                    ValueRow::new(self.label, &mut v, self.suffix, self.speed, self.range)
+                        .tooltip(self.tooltip);
+                if let Some(s) = self.suggest {
+                    row = row.suggest(s);
+                }
+                let edited = row.show(ui).edited;
+                *self.value = Some(v);
+                return edited;
+            }
+            // A clearable value: the input and the "×" share the value cell.
+            let _ = label_cell(ui, self.label);
+            let mut changed = false;
+            let mut cleared = false;
+            ui.horizontal(|ui| {
+                let mut resp = ui.add_sized(
+                    [
+                        crate::ui::tokens::WELL_MIN_WIDTH,
+                        crate::ui::tokens::WELL_HEIGHT,
+                    ],
+                    egui::DragValue::new(&mut v)
+                        .speed(self.speed)
+                        .range(self.range.clone())
+                        .suffix(self.suffix),
+                );
+                if let Some(tip) = self.tooltip {
+                    resp = resp.on_hover_text(tip);
+                }
+                changed |= resp.changed();
+                if ui
+                    .small_button("\u{00D7}")
+                    .on_hover_text(format!("Clear: {}", self.hint))
+                    .clicked()
+                {
+                    cleared = true;
+                }
+            });
+            ui.end_row();
+            *self.value = if cleared { None } else { Some(v) };
+            return changed || cleared;
+        }
+        // No value: a drag field that shows the hint. The field works on a
+        // local NaN that is never stored; egui keeps the typed text of an
+        // edit in its own widget state, so the panel keeps no draft. A
+        // typed or dragged number sets the value.
+        let _ = label_cell(ui, self.label);
+        let hint = self.hint.to_owned();
+        let mut local = f64::NAN;
+        let mut changed = false;
+        ui.horizontal(|ui| {
+            let drag = egui::DragValue::new(&mut local)
+                .speed(self.speed)
+                .range(self.range.clone())
+                .clamp_existing_to_range(false)
+                .custom_formatter(move |v, _| {
+                    if v.is_nan() {
+                        hint.clone()
+                    } else {
+                        format!("{v}")
+                    }
+                })
+                .custom_parser(|text| text.trim().parse::<f64>().ok());
+            let resp = ui.add_sized(
+                [
+                    crate::ui::tokens::WELL_MIN_WIDTH,
+                    crate::ui::tokens::WELL_HEIGHT,
+                ],
+                drag,
+            );
+            if let Some(tip) = self.tooltip {
+                let _ = resp.on_hover_text(tip);
+            }
+            if local.is_finite() {
+                *self.value = Some(local.clamp(*self.range.start(), *self.range.end()));
+                changed = true;
+            }
+        });
+        ui.end_row();
+        changed
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

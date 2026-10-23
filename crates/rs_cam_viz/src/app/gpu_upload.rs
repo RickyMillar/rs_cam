@@ -122,14 +122,16 @@ impl RsCamApp {
             return;
         };
         let stock_cfg = self.controller.state().session().stock_config();
-        let (eff_w, eff_d, _) = face_up.effective_stock(stock_cfg.x, stock_cfg.y, stock_cfg.z);
+        let (eff_w, eff_d, _) =
+            face_up.effective_stock(stock_cfg.x, stock_cfg.y, stock_cfg.box_height());
         for i in (0..mesh.vertices.len()).step_by(3) {
             let p = rs_cam_core::geo::P3::new(
                 mesh.vertices[i] as f64,
                 mesh.vertices[i + 1] as f64,
                 mesh.vertices[i + 2] as f64,
             );
-            let flipped = face_up.transform_point(p, stock_cfg.x, stock_cfg.y, stock_cfg.z);
+            let flipped =
+                face_up.transform_point(p, stock_cfg.x, stock_cfg.y, stock_cfg.box_height());
             let local = z_rot.transform_point(flipped, eff_w, eff_d);
             mesh.vertices[i] = local.x as f32;
             mesh.vertices[i + 1] = local.y as f32;

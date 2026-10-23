@@ -153,7 +153,7 @@ fn session(op: OperationConfig) -> ProjectSession {
     let stock = StockConfig {
         x: 70.0,
         y: 50.0,
-        z: STOCK_TOP,
+        z: Some(STOCK_TOP),
         origin_x: -5.0,
         origin_y: -5.0,
         origin_z: 0.0,
@@ -164,12 +164,18 @@ fn session(op: OperationConfig) -> ProjectSession {
     let tool_idx = builder.add_tool(endmill_tool_config(TOOL_DIAMETER));
     let tool_id = builder.tools()[tool_idx].id.raw();
     let model_id = builder.add_model(stepped_block());
-    let cfg = toolpath_config(
+    // S11: the fixture fills the feeds, and the floor stays as the test
+    // gives it (a default floor is `Floor::Unset` now).
+    let floor = op.floor();
+    let mut cfg = toolpath_config(
         "q2",
         op,
         rs_cam_core::ids::ToolId::from_raw(tool_id),
         model_id,
     );
+    if let Some(floor) = floor {
+        let _ = cfg.operation.set_floor(floor);
+    }
     let _ = builder.add_toolpath(0, cfg).unwrap();
     builder.build()
 }
@@ -207,8 +213,8 @@ fn a_face_pick_on_a_default_pocket_sets_each_face() {
     let mut s = session(OperationConfig::new_default(OperationType::Pocket));
     let default_floor = op(&s).default_floor().unwrap();
     assert!(
-        matches!(default_floor, Floor::Top { .. }),
-        "non-vacuity: the Pocket default is Top Z"
+        default_floor.is_unset(),
+        "non-vacuity: the Pocket default is not set (S11)"
     );
     assert!(op(&s).floor_is_default(&stock_ctx(&s)));
     assert!(op(&s).selection().unwrap().is_drawing());
@@ -315,9 +321,18 @@ fn a_face_at_the_stock_top_keeps_the_default_floor() {
     assert_eq!(effects.floor_set, None, "no Q2 note for a face at the top");
     assert_eq!(op(&s).floor(), default_floor, "the default floor stays");
     assert_eq!(op(&s).selection().unwrap().face_picks().count(), 1);
+    // S11: the default floor is not set, so generation refuses for the
+    // floor only, not for the pick of the top face.
     let cancel = AtomicBool::new(false);
-    s.generate_toolpath(0, &cancel)
-        .expect("a pick of the top face does not refuse");
+    let text = s
+        .generate_toolpath(0, &cancel)
+        .err()
+        .map(|e| e.to_string())
+        .unwrap_or_default();
+    assert!(
+        text.contains(rs_cam_core::compute::floor::FLOOR_UNSET_TEXT),
+        "a pick of the top face does not refuse; the unset floor does: {text}"
+    );
 
     // (b) A lower face: the floor is still the default, so Q2 applies.
     let effects = pick(&mut s, FACE_Z20);
