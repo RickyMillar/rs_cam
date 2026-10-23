@@ -99,6 +99,49 @@ ContourSpiral (wanaka back 10.92 vs 5.46 mm). Corne ContourParallel cycle
 time not reproducible (2 022 s then 1 564 s; the feed modulation reads the
 previous simulation).
 
+## G0 look (2026-10-23 13:15): operator and lead readings
+
+**Operator (live GUI and the pages):** "AgentSearch looks like it makes a
+nice spiral, then in odd shapes makes some very odd toolpaths (no clean
+arcs). ContourSpiral looks almost as nice as parallel, but the arcs on
+every corner look busy and potentially an artifact."
+
+**Lead (all 9 columns, key views of each; zoom crops `phase0/img/lead_*.png`):**
+
+- The spiral's "arcs on every corner" are NOT arcs. The Corne spiral G-code
+  holds 11 G2/G3 in total. The busy shapes are chains of small closed
+  polyline loops (1.5–2 mm) with a keep-down entry each, along the medial
+  seam where the wraps' corners meet (`lead_corne_cs_corner_zoom.png`).
+  They are the residue clean-up between wraps: V1 in its HEAD form (N1
+  bead chain). The operator's artifact hunch is right.
+- AgentSearch in the odd-shaped Corne region: irregular polyline walks with
+  no structure, long diagonal fed links, scattered plunges
+  (`lead_corne_as_right_zoom.png`). Matches the operator's reading.
+- **New defect N10, hex-hole cores left standing (Corne).** The final stock
+  top view shows a central pillar inside about a third of the hex holes on
+  AgentSearch and inside 2 holes on ContourSpiral; ContourParallel cuts every
+  hole clean (`lead_corne_as_stock_top_zoom.png`, `lead_corne_cs_...`,
+  `lead_corne_cp_...`). The page did not name this. It is a finished-part
+  defect and a coverage failure that bar 2 would have caught if it had an
+  instrument.
+- N7 confirmed on the zooms: AgentSearch and ContourSpiral leave the band
+  outside the case wall standing with holes punched; ContourParallel clears it.
+- rivmap100: ContourParallel links view is 104 retracts criss-crossing the
+  part plus a fan of fed links from one corner (N2); AgentSearch has two big
+  spirals and walks the rest; ContourSpiral has 1 061 keep-down clusters
+  (the residue mop). Final floors of AgentSearch and ContourSpiral differ on
+  0.2 % of pixels at this render; ContourParallel's floor shows rounder
+  cusps (4 % of pixels differ from AgentSearch).
+- wanaka200: ContourParallel back rough's links view is a solid wall of
+  1 726 G0 hops (N8); AgentSearch back is one clean spiral with corner
+  walks; ContourSpiral front has 4 414 keep-down links over the terrain.
+  Final stocks look alike per fixture at this scale.
+- Lead's answers to the three questions, per strategy (not a ranking):
+  ContourParallel: links no (retract zigzags), path yes, part yes.
+  AgentSearch: links partly, path no in odd shapes, part no (N5 spurs, N7
+  band, N10 hole cores). ContourSpiral: links no (seam loop clusters), path
+  yes except the seams, part partly (N7 band, 2 hole cores).
+
 ## Operator observation 2026-10-23 ~12:20 (Corne case, live GUI)
 
 "As it's milling down it leaves tall spurs of material. These could snap
