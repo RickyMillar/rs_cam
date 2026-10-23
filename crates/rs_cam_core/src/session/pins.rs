@@ -276,12 +276,12 @@ impl ProjectSession {
     #[must_use]
     pub fn pin_drill_tool_for(&self, diameter: f64) -> Option<crate::ids::ToolId> {
         if let Some(index) = self.pin_drill_op_for(diameter) {
-            return self.toolpath_configs.get(index).map(|tc| tc.tool_id);
+            return self.toolpath_configs.get(index).and_then(|tc| tc.tool_id);
         }
         self.toolpath_configs
             .iter()
             .filter(|tc| tc.operation.op_type().is_drill_kinematics())
-            .map(|tc| tc.tool_id)
+            .filter_map(|tc| tc.tool_id)
             .find(|&id| {
                 self.tool_diameter(id)
                     .is_some_and(|d| same_pin_diameter(d, diameter))
@@ -379,7 +379,8 @@ impl ProjectSession {
         };
         first_of(true)
             .or_else(|| first_of(false))
-            .and_then(|tc| self.tool_diameter(tc.tool_id))
+            .and_then(|tc| tc.tool_id)
+            .and_then(|id| self.tool_diameter(id))
     }
 
     /// The pin findings that need the session and not only the stock: a
@@ -534,7 +535,7 @@ impl ProjectSession {
             .toolpath_configs
             .iter()
             .filter(|tc| tc.operation.op_type().is_drill_kinematics())
-            .find_map(|tc| self.tools.iter().find(|t| t.id == tc.tool_id));
+            .find_map(|tc| self.toolpath_tool(tc));
         let mut tool = match source {
             Some(t) => t.clone(),
             None => {

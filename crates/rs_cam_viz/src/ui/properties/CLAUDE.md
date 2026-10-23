@@ -17,7 +17,7 @@
 
 ## Invariants
 - Every edit writes through the core command path. Helix r: None = rule. The stock refit (`panel_apply.rs`) reads core `session::auto_stock_bbox` (F31, every model). The inspector nests ONCE.
-- The toolpath panel takes `ToolpathPanelSnapshot` and `ToolpathPanelInputs`. Add a field there, not a
+- R2/6.F4: the Cut-tab Tool combo greys each tool of `ToolpathPanelInputs::tool_refusals` (core `tool_fit`) and draws `no_tool_state` + `NO_TOOL_FIX` in DANGER (lib `the_tool_picker_greys_refused_tools_r2`). The toolpath panel takes `ToolpathPanelSnapshot` and `ToolpathPanelInputs`. Add a field there, not a
   parameter. Width: not from tab or content (F22); "Done · BLOCKED" never truncates (figures drop). Header refusal: `REFUSED_SEE_GEOMETRY`.
   A tab dot comes from `tab_badges::OWNER_TAB`, THE id-to-tab map (F24); an id with no tab gives no dot.
 - A panel door marks the project edited on success; `app.rs` guards on it. A pinned Bottom Z note names

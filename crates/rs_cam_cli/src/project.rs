@@ -1341,16 +1341,16 @@ fn apply_suggested_feeds_to_session(session: &mut ProjectSession) -> Result<()> 
             Err(SessionError::FeedsRefused(e)) => {
                 warn!(
                     toolpath_id = before.id.raw(),
-                    tool_id = before.tool_id.raw(),
+                    tool_id = ?before.tool_id,
                     error = %e,
                     "Suggest refused this toolpath, leaving existing values"
                 );
                 continue;
             }
-            Err(SessionError::ToolNotFound(_)) => {
+            Err(SessionError::ToolNotFound(_) | SessionError::NoTool { .. }) => {
                 warn!(
                     toolpath_id = before.id.raw(),
-                    tool_id = before.tool_id.raw(),
+                    tool_id = ?before.tool_id,
                     "Tool not found, skipping suggest"
                 );
                 continue;

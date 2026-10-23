@@ -174,7 +174,7 @@ fn build_as001_pocket_session(attach_kinematics: bool) -> ProjectSession {
         operation: OperationConfig::Pocket(pocket),
         dressups: DressupConfig::for_op(OperationType::Pocket),
         heights: HeightsConfig::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(tool_id)),
         model_id,
         pre_gcode: None,
         post_gcode: None,
@@ -890,7 +890,7 @@ fn modulated_path_never_emits_below_min_chipload() {
     let toolpath = &result.annotated().toolpath;
     let tc = session.toolpath_config_at(0).expect("toolpath config 0");
     let tool = session
-        .tool_by_id(tc.tool_id)
+        .toolpath_tool(tc)
         .expect("tool referenced by toolpath");
     let rpm = tc
         .operation
@@ -1088,7 +1088,7 @@ fn fixture_sanity_lut_band_resolves_for_as001() {
 
     let tc = session.toolpath_config_at(0).expect("toolpath config 0");
     let tool = session
-        .tool_by_id(tc.tool_id)
+        .toolpath_tool(tc)
         .expect("tool referenced by toolpath");
     let target = rs_cam_core::tool_load::chip_target_for_toolpath(
         &session.stock_config().material,

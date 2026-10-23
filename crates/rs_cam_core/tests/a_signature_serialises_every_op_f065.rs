@@ -83,7 +83,9 @@ fn a_rename_keeps_the_signature_and_a_tool_change_moves_it() {
         renamed.generation_inputs_signature()
     );
     let mut retooled = base.clone();
-    retooled.tool_id = rs_cam_core::ids::ToolId::from_raw(retooled.tool_id.raw() + 1);
+    retooled.tool_id = retooled
+        .tool_id
+        .map(|id| rs_cam_core::ids::ToolId::from_raw(id.raw() + 1));
     assert_ne!(
         base.generation_inputs_signature(),
         retooled.generation_inputs_signature()

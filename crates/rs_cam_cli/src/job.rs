@@ -1227,12 +1227,16 @@ fn job_op_session(
     // `DressupConfig::for_op`. A key the job leaves unset keeps the draft
     // value; a value that no rule gives stays unset, and the op refuses as
     // it does on the GUI and MCP.
+    // The job names its tool and its model, so both are exact.
     let draft = session
         .draft_toolpath(
-            op_type,
-            tool_id,
-            model_id,
-            format!("op_{}_{}", i, op_type.kind_str()),
+            rs_cam_core::session::DraftRequest::new(
+                op_type,
+                0,
+                format!("op_{}_{}", i, op_type.kind_str()),
+            )
+            .tool(tool_id)
+            .model(model_id),
         )
         .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?;
     if let Some(refusal) = &draft.feeds_refusal {
@@ -1523,10 +1527,13 @@ mod tests {
         let job_tc = session.toolpath_configs()[index].clone();
         let draft = session
             .draft_toolpath(
-                OperationType::Pocket,
-                job_tc.tool_id,
-                job_tc.model_id,
-                job_tc.name.clone(),
+                rs_cam_core::session::DraftRequest::new(
+                    OperationType::Pocket,
+                    0,
+                    job_tc.name.clone(),
+                )
+                .tool(job_tc.tool_id.expect("the job op has its tool"))
+                .model(job_tc.model_id),
             )
             .expect("the draft");
         assert_eq!(

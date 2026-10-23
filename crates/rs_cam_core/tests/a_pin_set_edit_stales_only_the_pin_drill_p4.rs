@@ -46,7 +46,7 @@ fn tc(name: &str, op: OperationConfig, stock_source: StockSource) -> ToolpathCon
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(0),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(0)),
         model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
@@ -116,7 +116,7 @@ fn session_with(ops: Vec<ToolpathConfig>) -> ProjectSession {
     let tool = builder.tools()[0].id.raw();
     let model = builder.models()[0].id;
     for mut op in ops {
-        op.tool_id = rs_cam_core::ids::ToolId::from_raw(tool);
+        op.tool_id = Some(rs_cam_core::ids::ToolId::from_raw(tool));
         op.model_id = model;
         let _ = builder.add_toolpath(0, op).unwrap();
     }

@@ -107,7 +107,7 @@ fn toolpath(name: &str, model_id: usize, op: OperationConfig) -> ToolpathConfig 
         operation: op,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(TOOL),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(TOOL)),
         model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
@@ -231,7 +231,7 @@ fn read_case(case: &Case) -> (Option<String>, Vec<Diagnostic>) {
     let tool = session
         .tools()
         .iter()
-        .find(|t| t.id == tc.tool_id)
+        .find(|t| Some(t.id) == tc.tool_id)
         .cloned()
         .expect("the tool is in the session");
     let header = collect_diagnostics(

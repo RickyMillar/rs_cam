@@ -151,7 +151,7 @@ pub(super) fn plunge_stress_offenders_for_session(
         if !tc.enabled {
             continue;
         }
-        let Some(tool_cfg) = session.tool_by_id(tc.tool_id) else {
+        let Some(tool_cfg) = session.toolpath_tool(tc) else {
             continue;
         };
         // F029: a tool outside its domain is skipped, as a missing tool is.
@@ -260,7 +260,7 @@ impl<'a> TriageView<'a> {
                 id: *id,
                 name,
                 stock_source: *stock_source,
-                tool: tools.iter().find(|t| t.id == *tool_id),
+                tool: tool_id.and_then(|id| tools.iter().find(|t| t.id == id)),
                 operation,
             }
         })
@@ -542,9 +542,7 @@ impl ProjectSession {
             return Ok(None);
         }
 
-        let tool = self
-            .tool_by_id(tc.tool_id)
-            .ok_or(SessionError::ToolNotFound(tc.tool_id))?;
+        let tool = self.tool_of(tc)?;
         let tool_def = crate::session::session_cutter(tool)?;
 
         let request = CollisionCheckRequest {
@@ -631,9 +629,7 @@ impl ProjectSession {
             .results
             .get(&index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
-        let tool = self
-            .tool_by_id(tc.tool_id)
-            .ok_or(SessionError::ToolNotFound(tc.tool_id))?;
+        let tool = self.tool_of(tc)?;
         let tool_def = crate::session::session_cutter(tool)?;
         let cut_trace = self
             .simulation
@@ -1223,10 +1219,7 @@ impl ProjectSession {
                     empty_results_by_tp.push((tc.id, tc.name.clone(), op_type.label()));
                 }
 
-                let tool_name = self
-                    .tool_by_id(tc.tool_id)
-                    .map(|t| t.name.clone())
-                    .unwrap_or_else(|| SessionError::ToolNotFound(tc.tool_id).to_string());
+                let tool_name = self.tool_name_of(tc);
 
                 per_toolpath.push(ToolpathDiagnostic {
                     toolpath_id: tc.id,

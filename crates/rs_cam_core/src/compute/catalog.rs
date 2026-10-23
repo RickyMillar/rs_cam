@@ -558,6 +558,12 @@ impl OperationType {
             .refusal(self.spec().label, kind)
     }
 
+    /// R2: the tool kinds the op needs, as words ("needs a flat end mill
+    /// or a ball nose"), from the registry `tool_constraints`.
+    pub fn needs_text(self) -> String {
+        self.registry_entry().tool_constraints.needs_text()
+    }
+
     /// The geometry the operation reads, from its registry row.
     pub fn geometry_requirement(self) -> GeometryRequirement {
         self.spec().geometry

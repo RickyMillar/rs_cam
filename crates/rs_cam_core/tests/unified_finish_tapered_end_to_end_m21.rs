@@ -246,7 +246,7 @@ fn toolpath(op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathCon
             bottom_z: HeightMode::Manual(-9.0),
             ..HeightsConfig::default()
         },
-        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(tool_id)),
         model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,

@@ -607,6 +607,8 @@ pub enum McpRequestKind {
     AddToolpathViaGui {
         operation_type: rs_cam_core::compute::catalog::OperationType,
         setup_index: Option<usize>,
+        /// Q7: the model the operator would select in the Setup rail.
+        model_id: Option<usize>,
     },
     /// Phase O — plan a multi-tool island finishing chain. Emits k enabled
     /// `unified_finish` ops, coarse to fine, each carrying its tier's islands

@@ -11,7 +11,9 @@
 //! - With a 6 mm tool the 10 mm circle is larger: one click sends ONE
 //!   `AddBoreFromDrill`. The controller adds one Bore, directly after the
 //!   Drill in the setup, with the Drill selection (a layer rule, not the
-//!   default), the Drill model and tool, and one undo step.
+//!   default), the Drill model, and one undo step. Q9: the Bore takes the
+//!   first tool that fits the 10 mm hole; the one 6 mm end mill fits
+//!   (6 < 10 <= 12), so it is the tool of both ops here.
 //! - One undo removes the Bore. A redo adds it again, and the next undo
 //!   removes that Bore too (the step names the new id).
 //!
@@ -231,7 +233,10 @@ fn add_bore_copies_the_selection_p6_7() {
     assert_eq!(bore_op.selection, rule(), "the Bore holds the Drill rule");
     assert_eq!(bore_op.selection, drill_op.selection);
     assert_eq!(bore.model_id, drill.model_id);
-    assert_eq!(bore.tool_id, drill.tool_id);
+    // Q9: the first tool that the Bore accepts and that fits the 10 mm
+    // hole. The project holds one 6 mm end mill (6 < 10 <= 2 x 6).
+    assert_eq!(bore.tool_id, Some(ToolId::from_raw(h::TOOL)));
+    assert_eq!(drill.tool_id, bore.tool_id);
     assert_eq!(
         c.state().history.undo_len(),
         steps + 1,

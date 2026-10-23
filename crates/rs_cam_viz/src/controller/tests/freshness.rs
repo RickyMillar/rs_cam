@@ -239,7 +239,7 @@ fn freshness_state_g_freshness_tool_and_model_reassignment_stale() {
         let id = controller.state.session().toolpath_configs()[0].id;
         panel_edit(&mut controller, id, |entry| {
             if row == "tool" {
-                entry.tool_id = crate::state::job::ToolId::from_raw(2);
+                entry.tool_id = Some(crate::state::job::ToolId::from_raw(2));
             } else {
                 entry.model_id = crate::state::job::ModelId::from_raw(7);
             }

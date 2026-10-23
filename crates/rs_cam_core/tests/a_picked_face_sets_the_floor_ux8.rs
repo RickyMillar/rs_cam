@@ -196,7 +196,7 @@ fn a_picked_face_sets_the_floor_ux8() {
     let tool = no_model.add_tool(endmill_tool_config(TOOL_DIAMETER));
     let tool_id = no_model.tools()[tool].id;
     let mut saved_tc = tc.clone();
-    saved_tc.tool_id = tool_id;
+    saved_tc.tool_id = Some(tool_id);
     let _ = no_model.add_toolpath(0, saved_tc).unwrap();
     no_model.build().save(&file).unwrap();
     let text = std::fs::read_to_string(&file).unwrap();

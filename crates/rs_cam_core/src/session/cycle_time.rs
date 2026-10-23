@@ -411,7 +411,7 @@ pub fn spindle_starts(session: &super::ProjectSession) -> usize {
     for setup in session.list_setups() {
         // A setup pause stops the spindle (M5), so the first op of each
         // setup starts it again.
-        let mut last: Option<(crate::ids::ToolId, u32)> = None;
+        let mut last: Option<(Option<crate::ids::ToolId>, u32)> = None;
         for idx in &setup.toolpath_indices {
             let Some(tc) = session.toolpath_configs().get(*idx) else {
                 continue;

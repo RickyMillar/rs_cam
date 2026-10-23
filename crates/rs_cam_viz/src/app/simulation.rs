@@ -642,7 +642,12 @@ impl RsCamApp {
             let motion = tp.moves.get(local_idx)?;
             let tool_info = session
                 .find_toolpath_config_by_id(toolpath_id)
-                .and_then(|(_, tc)| session.tools().iter().find(|tool| tool.id == tc.tool_id))
+                .and_then(|(_, tc)| {
+                    session
+                        .tools()
+                        .iter()
+                        .find(|tool| Some(tool.id) == tc.tool_id)
+                })
                 .cloned()
                 // F029: a tool outside its domain draws no ghost.
                 .and_then(|tool| {

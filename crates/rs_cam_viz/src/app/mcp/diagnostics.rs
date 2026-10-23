@@ -37,9 +37,9 @@ impl RsCamApp {
     /// `narration_tool_lookup_refuses_where_the_parent_took_another_tool`.
     pub(super) fn narration_tool_for(
         tools: &[rs_cam_core::compute::tool_config::ToolConfig],
-        tool_id: rs_cam_core::ids::ToolId,
+        tool_id: Option<rs_cam_core::ids::ToolId>,
     ) -> Option<&rs_cam_core::compute::tool_config::ToolConfig> {
-        tools.iter().find(|tool| tool.id == tool_id)
+        tools.iter().find(|tool| Some(tool.id) == tool_id)
     }
 
     pub(super) fn mcp_narrate_toolpath(&self, index: usize) -> String {
@@ -55,9 +55,14 @@ impl RsCamApp {
         };
         let Some(tool_config) = Self::narration_tool_for(state.session().tools(), tc.tool_id)
         else {
+            let Some(tool_id) = tc.tool_id else {
+                return format!(
+                    "Error: toolpath {index} has no tool. {}.",
+                    rs_cam_core::session::NO_TOOL_FIX
+                );
+            };
             return format!(
-                "Error: toolpath {index} references tool id {} but no such tool is configured. Narration refuses rather than describing this toolpath with another tool's geometry.",
-                tc.tool_id,
+                "Error: toolpath {index} references tool id {tool_id} but no such tool is configured. Narration refuses rather than describing this toolpath with another tool's geometry.",
             );
         };
 

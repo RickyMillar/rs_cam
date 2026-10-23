@@ -20,6 +20,8 @@
 //!   `ToolpathHeights::buried_face_refusal`.
 //! - **Every op** (S11, `PRECOND_NOT_SET`) — a value with no derivation
 //!   that is not set: the floor, a depth of a drawing op, or the feeds.
+//! - **Every op** (R2, `PRECOND_NO_TOOL`) — the op has no tool: the
+//!   no-tool state and the fix.
 //! - **ProjectCurve** — needs both a source curve (the toolpath's
 //!   `model_id` must point at a polygon-bearing model) AND a target
 //!   surface mesh (either the same model or any other loaded model).
@@ -75,6 +77,9 @@ pub struct PreconditionContext {
     /// S11: the refusal of every op while the stock thickness is not set
     /// (`ProjectSession::stock_thickness_refusal`). `None` when it is set.
     pub stock_thickness_refusal: Option<String>,
+    /// R2: the no-tool state of the op (`ProjectSession::no_tool_state`),
+    /// or `None` when the op has a tool.
+    pub no_tool_state: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -142,7 +147,31 @@ pub fn diagnostics_from_preconditions(
     }
     out.extend(buried_face(&scope, ctx));
     out.extend(not_set(&scope, op, ctx));
+    out.extend(no_tool(&scope, ctx));
     out
+}
+
+/// R2 (Fusion): the op has no tool. The message is the no-tool state and
+/// the fix, as the generation refusal (`SessionError::NoTool`) gives them.
+fn no_tool(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnostic> {
+    let state = ctx.no_tool_state.as_ref()?;
+    Some(Diagnostic {
+        id: DiagnosticId::from(ids::PRECOND_NO_TOOL),
+        scope: scope.clone(),
+        category: Category::Geometry,
+        severity: Severity::Blocking,
+        confidence: Confidence::Static,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        message: format!(
+            "{state}. {} — generation will fail.",
+            crate::session::NO_TOOL_FIX
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    })
 }
 
 /// S11 (operator ruling 2026-10-23): the values of the op that no rule

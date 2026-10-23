@@ -179,7 +179,7 @@ pub(super) fn draw_toolpath_panel(
     // them. The rows DRAW in the panel footer, below the tab content.
     let tool_for_diags = tool_configs
         .iter()
-        .find(|(id, _)| *id == entry.tool_id)
+        .find(|(id, _)| Some(*id) == entry.tool_id)
         .map(|(_, tc)| tc);
     let diagnostics = operations::collect_diagnostics(
         entry,
@@ -470,7 +470,7 @@ pub(super) fn draw_cut_tab(
     // on every frame.
     let pill_tool_cfg = tool_configs
         .iter()
-        .find(|(id, _)| *id == entry.tool_id)
+        .find(|(id, _)| Some(*id) == entry.tool_id)
         .map(|(_, t)| t);
     if let Some(tool_cfg) = pill_tool_cfg {
         entry.feeds_memo.refresh(
@@ -536,7 +536,7 @@ pub(super) fn draw_cut_tab(
     // map engagement to stepover.
     let tool_radius = tool_configs
         .iter()
-        .find(|(id, _)| *id == entry.tool_id)
+        .find(|(id, _)| Some(*id) == entry.tool_id)
         .map_or(0.0, |(_, t)| t.diameter / 2.0);
     let mut draw_ctx = operations::registry::OpDrawCtx {
         tools,
@@ -1005,7 +1005,7 @@ fn draw_feeds_tab(
 
     let tool_info = tool_configs
         .iter()
-        .find(|(id, _)| *id == entry.tool_id)
+        .find(|(id, _)| Some(*id) == entry.tool_id)
         .map(|(_, t)| (t.diameter, t.tool_type));
     let (tool_diameter, tool_type) =
         tool_info.unwrap_or((6.0, crate::state::job::ToolType::EndMill));
@@ -1023,7 +1023,7 @@ fn draw_feeds_tab(
     ui.add_space(4.0);
     if let Some(tool_cfg) = tool_configs
         .iter()
-        .find(|(id, _)| *id == entry.tool_id)
+        .find(|(id, _)| Some(*id) == entry.tool_id)
         .map(|(_, t)| t)
     {
         calculate_and_apply_feeds(

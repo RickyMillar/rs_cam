@@ -273,7 +273,7 @@ pub fn toolpath_config(
         operation: op,
         dressups,
         heights: HeightsConfig::default(),
-        tool_id,
+        tool_id: Some(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,

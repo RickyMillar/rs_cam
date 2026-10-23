@@ -58,8 +58,8 @@ fn main() -> Result<()> {
             continue;
         }
         let mut tc = stored.clone();
-        let Some(tool) = tools_snapshot.iter().find(|t| t.id == tc.tool_id) else {
-            eprintln!("skip {} (tool {} missing)", tc.id, tc.tool_id);
+        let Some(tool) = tools_snapshot.iter().find(|t| Some(t.id) == tc.tool_id) else {
+            eprintln!("skip {} (tool {:?} missing)", tc.id, tc.tool_id);
             continue;
         };
 

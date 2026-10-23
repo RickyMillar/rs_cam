@@ -95,10 +95,9 @@ fn seed(tool: ToolConfig, material: Material) -> AppController<SilentBackend> {
 fn core_draft(controller: &AppController<SilentBackend>, op_type: OperationType) -> ToolpathDraft {
     let s = controller.state.session();
     s.draft_toolpath(
-        op_type,
-        s.tools()[0].id,
-        s.models()[0].id,
-        format!("{} 1", op_type.label()),
+        rs_cam_core::session::DraftRequest::new(op_type, 0, format!("{} 1", op_type.label()))
+            .tool(s.tools()[0].id)
+            .model(s.models()[0].id),
     )
     .expect("the tool fits")
 }
@@ -193,7 +192,7 @@ fn the_mcp_and_gui_add_doors_call_the_draft_door_s11() {
         ("src/app/mcp/commands.rs", "fn core_add_toolpath("),
         (
             "src/controller/events/toolpath.rs",
-            "fn handle_add_toolpath(",
+            "fn add_toolpath_with_model(",
         ),
     ] {
         let code = code_of(file);

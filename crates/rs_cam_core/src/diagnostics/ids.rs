@@ -447,6 +447,11 @@ diag_ids! {
     /// no feeds data), so generation will refuse. The message names each
     /// field and the fix.
     pub const PRECOND_NOT_SET: &str = "precondition.not_set";
+    /// R2 (Fusion): the op has no tool (`ToolpathConfig::tool_id` is
+    /// `None`), so generation will refuse (`SessionError::NoTool`). The
+    /// message is the no-tool state ("No tool fits: needs a flat end mill")
+    /// and the fix.
+    pub const PRECOND_NO_TOOL: &str = "precondition.no_tool";
     /// UX-7b (operator rulings 2026-10-22, SAFETY): the emitted moves of a
     /// 2.5D op cut into the mesh of its own model
     /// (`compute::model_gouge`). Blocking: export refuses while it stands

@@ -83,10 +83,9 @@ fn stepped_session() -> ProjectSession {
 fn add_drafted_pocket(s: &mut ProjectSession) -> Effects {
     let draft = s
         .draft_toolpath(
-            OperationType::Pocket,
-            s.tools()[0].id,
-            s.models()[0].id,
-            "Pocket".to_owned(),
+            rs_cam_core::session::DraftRequest::new(OperationType::Pocket, 0, "Pocket".to_owned())
+                .tool(s.tools()[0].id)
+                .model(s.models()[0].id),
         )
         .expect("the end mill fits a Pocket");
     assert_eq!(

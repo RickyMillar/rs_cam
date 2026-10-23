@@ -51,10 +51,8 @@ impl ProjectSession {
             .get(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
 
-        let tool = self
-            .tool_by_id(tc.tool_id)
-            .ok_or(SessionError::ToolNotFound(tc.tool_id))?
-            .clone();
+        // R2: an op with no tool refuses with the fix (`NoTool`).
+        let tool = self.tool_of(tc)?.clone();
 
         // P2.4: the model by its EXACT id. A toolpath whose model id names
         // no model reads no mesh and no item; its selection refuses

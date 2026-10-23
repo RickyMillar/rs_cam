@@ -73,9 +73,7 @@ impl ProjectSession {
                 tc.operation.op_type().label()
             )));
         };
-        let tool = self
-            .tool_by_id(tc.tool_id)
-            .ok_or(SessionError::ToolNotFound(tc.tool_id))?;
+        let tool = self.tool_of(tc)?;
         let setup = self.find_setup_for_toolpath_id(tc.id);
         self.check_lateral_setup_support(setup, &tc.operation)?;
         let ctx = SetupEvalContext::build_for_setup(self, setup);

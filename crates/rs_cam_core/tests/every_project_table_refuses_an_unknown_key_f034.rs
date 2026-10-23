@@ -23,8 +23,9 @@
 //! 2. One unknown key in each closed table refuses, and the message names
 //!    the key.
 //! 3. A retired key in a closed table keeps its retirement message.
-//! 4. A toolpath with no `tool_id` or no `model_id` refuses. Two entries
-//!    of one kind with one id refuse.
+//! 4. A toolpath with no `model_id` refuses. R2 (2026-10-24) changed the
+//!    F053 rule for `tool_id`: a toolpath with no `tool_id` loads with no
+//!    tool. Two entries of one kind with one id refuse.
 //!
 //! # Red-first
 //!
@@ -248,18 +249,28 @@ fn a_retired_key_in_a_closed_table_keeps_its_message_f034() {
 }
 
 #[test]
-fn a_toolpath_must_name_its_tool_and_its_model_f053() {
-    for key in ["tool_id", "model_id"] {
-        let text = PROJECT.replace(&format!("{key} = 0\n"), "");
-        assert_ne!(text, PROJECT, "non-vacuity: {key} is in the fixture");
-        match load_text(&text) {
-            Err(SessionError::TomlParse(message)) => {
-                assert!(message.contains(key), "{key}: {message}");
-            }
-            Err(other) => panic!("{key}: expected a parse refusal, got {other}"),
-            Ok(_) => panic!("{key}: a toolpath with no {key} must refuse"),
+fn a_toolpath_must_name_its_model_f053() {
+    let key = "model_id";
+    let text = PROJECT.replace(&format!("{key} = 0\n"), "");
+    assert_ne!(text, PROJECT, "non-vacuity: {key} is in the fixture");
+    match load_text(&text) {
+        Err(SessionError::TomlParse(message)) => {
+            assert!(message.contains(key), "{key}: {message}");
         }
+        Err(other) => panic!("{key}: expected a parse refusal, got {other}"),
+        Ok(_) => panic!("{key}: a toolpath with no {key} must refuse"),
     }
+}
+
+/// R2 (operator ruling 2026-10-24): a toolpath with no `tool_id` key loads
+/// with no tool. It refuses generation (`SessionError::NoTool`), not the
+/// load.
+#[test]
+fn a_toolpath_with_no_tool_id_loads_with_no_tool_r2() {
+    let text = PROJECT.replace("tool_id = 0\n", "");
+    assert_ne!(text, PROJECT, "non-vacuity: tool_id is in the fixture");
+    let session = load_text(&text).unwrap_or_else(|e| panic!("the load: {e}"));
+    assert_eq!(session.toolpath_configs()[0].tool_id, None);
 }
 
 #[test]

@@ -27,7 +27,9 @@ mod load_report;
 pub mod multitool;
 mod mutation;
 mod op_draft;
-pub use op_draft::{DraftRefusal, ToolpathDraft};
+pub use op_draft::{
+    DraftRefusal, DraftRequest, ModelChoice, NO_TOOL_FIX, NO_TOOL_NAME, ToolChoice, ToolpathDraft,
+};
 mod pin_report;
 mod pins;
 pub mod project_file;
@@ -197,6 +199,15 @@ pub enum SessionError {
     },
     /// Tool not found by id.
     ToolNotFound(ToolId),
+    /// R2: the toolpath has no tool (`ToolpathConfig::tool_id` is `None`).
+    /// Generation, export and every query that needs the cutter refuse
+    /// with this. `state` is [`ProjectSession::no_tool_state`].
+    NoTool {
+        /// The id of the toolpath.
+        toolpath: ToolpathId,
+        /// The state text: "No tool fits: needs ..." or "No tool set".
+        state: String,
+    },
     /// Setup not found by index.
     SetupNotFound(usize),
     /// Tool still referenced by toolpaths — cannot remove.
@@ -397,7 +408,7 @@ impl SessionError {
                 Some("index")
             }
             Self::ToolpathIdNotFound(_) | Self::ToolpathIdMismatch { .. } => Some("toolpath_id"),
-            Self::ToolNotFound(_) | Self::ToolInUse(_) => Some("tool_id"),
+            Self::ToolNotFound(_) | Self::ToolInUse(_) | Self::NoTool { .. } => Some("tool_id"),
             Self::SetupNotFound(_) => Some("setup_index"),
             Self::ModelNotFound { .. } => Some("model_id"),
             Self::ModelIndexNotFound(_) => Some("model_index"),
@@ -489,6 +500,9 @@ impl std::fmt::Display for SessionError {
                  selection of a Drill only."
             ),
             Self::ToolNotFound(id) => write!(f, "Tool {} not found", id.raw()),
+            Self::NoTool { toolpath, state } => {
+                write!(f, "Toolpath {toolpath}: {state}. {NO_TOOL_FIX}")
+            }
             Self::SetupNotFound(id) => write!(f, "Setup {id} not found"),
             Self::ToolInUse(id) => write!(f, "Tool {} is still referenced by toolpaths", id.raw()),
             Self::MissingGeometry(msg) => write!(f, "Missing geometry: {msg}"),
@@ -1248,7 +1262,11 @@ pub struct ToolpathConfig {
     pub operation: OperationConfig,
     pub dressups: DressupConfig,
     pub heights: HeightsConfig,
-    pub tool_id: ToolId,
+    /// R2: the tool of the op, or `None` when the op has no tool. An add
+    /// with no project tool that the op accepts makes the op with no tool;
+    /// generation and export refuse it (`SessionError::NoTool`) until the
+    /// operator sets one. The file writes no `tool_id` key for `None`.
+    pub tool_id: Option<ToolId>,
     pub model_id: ModelId,
     /// Raw G-code to emit before this toolpath's moves.
     pub pre_gcode: Option<String>,
@@ -1387,7 +1405,8 @@ impl ToolpathConfig {
             signature_json(heights),
             boundary,
             rest_analysis,
-            tool_id,
+            // R2: an op with no tool signs as "none".
+            tool_id.map_or_else(|| "none".to_owned(), |id| id.to_string()),
             model_id,
             stock_source,
         )
@@ -1990,10 +2009,7 @@ impl ProjectSession {
             .iter()
             .enumerate()
             .map(|(idx, tc)| {
-                let tool_name = self
-                    .tool_by_id(tc.tool_id)
-                    .map(|t| t.name.clone())
-                    .unwrap_or_else(|| SessionError::ToolNotFound(tc.tool_id).to_string());
+                let tool_name = self.tool_name_of(tc);
                 ToolpathSummary {
                     index: idx,
                     id: tc.id,
@@ -2036,6 +2052,26 @@ impl ProjectSession {
     /// so a toolpath that names a missing tool refuses by its id.
     pub fn tool_by_id(&self, id: ToolId) -> Option<&ToolConfig> {
         self.tools.iter().find(|t| t.id == id)
+    }
+
+    /// R2: the tool name of `tc` for a list row: the name, "No tool" for
+    /// an op with no tool, or the `ToolNotFound` text for an id that names
+    /// no tool.
+    pub fn tool_name_of(&self, tc: &ToolpathConfig) -> String {
+        match tc.tool_id {
+            None => NO_TOOL_NAME.to_owned(),
+            Some(id) => self
+                .tool_by_id(id)
+                .map(|t| t.name.clone())
+                .unwrap_or_else(|| SessionError::ToolNotFound(id).to_string()),
+        }
+    }
+
+    /// R2: the tool of `tc`, or `None` when it has no tool or its id names
+    /// no tool. A reader that must refuse uses `tool_of` (the `NoTool`
+    /// refusal with the state text).
+    pub fn toolpath_tool(&self, tc: &ToolpathConfig) -> Option<&ToolConfig> {
+        tc.tool_id.and_then(|id| self.tool_by_id(id))
     }
 
     /// The model with the EXACT id `id`. There is no fallback to
@@ -2206,7 +2242,7 @@ impl ProjectSession {
     ) -> Option<crate::feeds::profile::CutterOpProfile<'a>> {
         use crate::feeds::profile::{CutterOpProfile, CutterOpProfileInput};
 
-        let tool = self.tool_by_id(tc.tool_id)?;
+        let tool = self.toolpath_tool(tc)?;
         let stock = self.stock_config();
         // F114: the one context assembly. The dressups carry the G6 entry
         // θ, so MCP and the CLI report the ramp feed the card shows.
@@ -2592,7 +2628,7 @@ mod tests {
                     name: "Bare".to_owned(),
                     operation: None,
                     enabled: true,
-                    tool_id: crate::ids::ToolId::from_raw(0),
+                    tool_id: Some(crate::ids::ToolId::from_raw(0)),
                     model_id: crate::ids::ModelId::from_raw(0),
                     dressups: crate::compute::config::DressupConfig::default(),
                     heights: crate::compute::config::HeightsConfig::default(),
@@ -2902,7 +2938,7 @@ mod tests {
                         crate::compute::catalog::OperationType::Pocket,
                     )),
                     enabled: true,
-                    tool_id: crate::ids::ToolId::from_raw(0),
+                    tool_id: Some(crate::ids::ToolId::from_raw(0)),
                     model_id: crate::ids::ModelId::from_raw(0),
                     dressups: crate::compute::config::DressupConfig::default(),
                     heights: crate::compute::config::HeightsConfig::default(),
@@ -3046,7 +3082,7 @@ mod tests {
             operation: OperationConfig::new_default(OperationType::Profile),
             dressups: crate::compute::config::DressupConfig::default(),
             heights: crate::compute::config::HeightsConfig::default(),
-            tool_id: crate::ids::ToolId::from_raw(0),
+            tool_id: Some(crate::ids::ToolId::from_raw(0)),
             model_id: crate::ids::ModelId::from_raw(0),
             pre_gcode: None,
             post_gcode: None,

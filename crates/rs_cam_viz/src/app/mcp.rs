@@ -401,6 +401,7 @@ impl super::RsCamApp {
             McpRequestKind::AddToolpathViaGui {
                 operation_type,
                 setup_index,
+                model_id,
             } => {
                 // NO toast is pushed here, deliberately. Every other
                 // synchronous arm pushes one from its reply (F1.1,
@@ -415,7 +416,7 @@ impl super::RsCamApp {
                     .push(AppEvent::Ui(UiCommand::SwitchWorkspace(
                         Workspace::Toolpaths,
                     )));
-                let resp = self.mcp_add_toolpath_via_gui(operation_type, setup_index);
+                let resp = self.mcp_add_toolpath_via_gui(operation_type, setup_index, model_id);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
             McpRequestKind::PlanMultitoolFinishing { spec } => {

@@ -211,11 +211,12 @@ fn toasts(controller: &AppController<SilentBackend>) -> Vec<(String, Severity)> 
         .collect()
 }
 
-/// R0.3 §2.2 row A1, the standing example. Scallop with a flat end mill as
-/// the only tool is refused by the add-time Suggest door: nothing is created, and the
-/// ONLY report is a Warning toast. That last clause is why F3.1 and F3.5
-/// are one task — without the stack there is nothing for the tool to
-/// return.
+/// R0.3 §2.2 row A1, as R2 (operator ruling 2026-10-23) left it: a Scallop
+/// with a flat end mill as the only tool is no longer refused for the tool
+/// (the op would be made with no tool). This seed has no model, so the add
+/// refuses for the geometry: nothing is created, and the ONLY report is a
+/// Warning toast. That last clause is why F3.1 and F3.5 are one task —
+/// without the stack there is nothing for the tool to return.
 #[test]
 fn a_refused_add_creates_nothing_and_reports_itself_only_as_a_toast() {
     let mut controller = flat_only_seed();
@@ -225,7 +226,7 @@ fn a_refused_add_creates_nothing_and_reports_itself_only_as_a_toast() {
 
     assert!(
         controller.state.session().toolpath_configs().is_empty(),
-        "the Suggest door refused, so NOTHING may be created: {:?}",
+        "the add refused, so NOTHING may be created: {:?}",
         controller
             .state
             .session()
@@ -237,8 +238,8 @@ fn a_refused_add_creates_nothing_and_reports_itself_only_as_a_toast() {
     let shown = toasts(&controller);
     assert_eq!(shown.len(), 1, "exactly one toast: {shown:?}");
     assert_eq!(shown[0].1, Severity::Warning, "{shown:?}");
-    assert!(
-        shown[0].0.starts_with("Cannot add toolpath: "),
+    assert_eq!(
+        shown[0].0, "Cannot add Scallop Finish toolpath: import geometry first",
         "the refusal text is the only record of what happened: {shown:?}"
     );
 }
@@ -297,7 +298,7 @@ fn a_permitted_add_creates_one_toolpath_bound_to_the_first_tool() {
     assert_eq!(configs.len(), 1, "exactly one toolpath");
     assert_eq!(
         configs[0].tool_id,
-        rs_cam_core::ids::ToolId::from_raw(first_tool_id),
+        Some(rs_cam_core::ids::ToolId::from_raw(first_tool_id)),
         "bound to tools().first(), not to a chosen tool"
     );
     let warnings: Vec<_> = toasts(&controller)
@@ -310,19 +311,28 @@ fn a_permitted_add_creates_one_toolpath_bound_to_the_first_tool() {
     );
 }
 
-/// R0.3 §2.2 row A3. With no tools at all there is nothing to bind, and
-/// the refusal names that rather than a shape mismatch.
+/// R0.3 §2.2 row A3, as R2 (operator ruling 2026-10-23) left it: with no
+/// tools at all the op is still made, with no tool, and one Warning toast
+/// names the state and the fix.
 #[test]
-fn an_add_with_no_tools_refuses_with_the_no_tools_text() {
+fn an_add_with_no_tools_makes_the_op_with_no_tool_r2() {
     let mut controller = AppController::with_backend(SilentBackend);
     assert!(controller.state.session().tools().is_empty());
 
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Face));
 
-    assert!(controller.state.session().toolpath_configs().is_empty());
+    let configs = controller.state.session().toolpath_configs();
+    assert_eq!(configs.len(), 1, "the op is made");
+    assert_eq!(configs[0].tool_id, None);
     let shown = toasts(&controller);
     assert_eq!(shown.len(), 1, "{shown:?}");
-    assert_eq!(shown[0].0, "Cannot add toolpath: no tools defined");
+    assert_eq!(
+        shown[0].0,
+        format!(
+            "Added with no tool: No tool fits: needs a tool. {}.",
+            rs_cam_core::session::NO_TOOL_FIX
+        )
+    );
     assert_eq!(shown[0].1, Severity::Warning);
 }
 
@@ -350,7 +360,7 @@ fn the_stack_only_grows_so_the_tail_belongs_to_the_latest_add() {
     assert!(
         controller.notifications()[0]
             .message
-            .starts_with("Cannot add toolpath: "),
+            .starts_with("Cannot add "),
         "the earlier refusal is still the oldest entry"
     );
 }

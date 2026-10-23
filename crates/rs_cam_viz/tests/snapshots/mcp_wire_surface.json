@@ -498,10 +498,13 @@
       "additionalProperties": false,
       "properties": {
         "model_id": {
-          "description": "Model ID (project-assigned `id` field — use the `id` value\nfrom `inspect_model` results, NOT a 0-based positional index;\nIDs typically start at 1 and increment per import).",
+          "description": "Model ID (project-assigned `id` field — use the `id` value\nfrom `inspect_model` results, NOT a 0-based positional index;\nIDs typically start at 1 and increment per import). Exact when\nstated. Omit it to take the model of the core rule (Q7): the first\nmodel of the setup that is native to the op (a drawing for a 2D op,\na mesh for a 3D op), else the first that serves it.",
           "format": "uint",
           "minimum": 0,
-          "type": "integer"
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "name": {
           "description": "Optional name for the toolpath",
@@ -548,17 +551,18 @@
           "type": "integer"
         },
         "tool_index": {
-          "description": "Tool index (0-based) from list_tools",
+          "description": "Tool index (0-based) from list_tools. Omit it to take the first\nproject tool that the operation accepts; with none, the op is made\nwith NO tool (`no_tool` in the reply names the state) and refuses to\ngenerate until a tool is set (R2). A stated tool that the operation\nrefuses is refused.",
           "format": "uint",
           "minimum": 0,
-          "type": "integer"
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [
         "setup_index",
-        "operation_type",
-        "tool_index",
-        "model_id"
+        "operation_type"
       ],
       "title": "AddToolpathParam",
       "type": "object"
@@ -571,6 +575,15 @@
       "additionalProperties": false,
       "description": "F3.1 — add a toolpath through the GUI's own add path.",
       "properties": {
+        "model_id": {
+          "description": "Q7: the model (project-assigned `id`) that the operator would select\nin the Setup rail. The core rule takes it when it is in the setup\nand serves the op, else the first setup model that serves the op.\nOmit it to read the GUI selection.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "operation_type": {
           "description": "The operation kind, the same vocabulary `add_toolpath` accepts.",
           "enum": [

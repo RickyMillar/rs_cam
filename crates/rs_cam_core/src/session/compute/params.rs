@@ -679,7 +679,7 @@ impl ProjectSession {
             toolpath_name: tc.name.clone(),
             toolpath_enabled: tc.enabled,
             stored_operation: tc.operation.clone(),
-            stored_tool: self.tool_by_id(tc.tool_id).cloned(),
+            stored_tool: self.toolpath_tool(tc).cloned(),
             stock_bbox: self.stock_bbox(),
             model_bbox: self.model_bbox_by_id(tc.model_id),
             setup_ctx: super::SetupEvalContext::build_for_setup(self, setup),

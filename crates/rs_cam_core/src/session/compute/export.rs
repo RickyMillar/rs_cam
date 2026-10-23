@@ -194,15 +194,11 @@ impl ProjectSession {
                 // on the config id — NOT the user-curated T-number, which
                 // collides in real projects (WANAKA: two distinct tools both
                 // T1).
-                let tool = self
-                    .tools()
-                    .iter()
-                    .find(|t| t.id == tc.tool_id)
-                    .map(|t| PhaseTool {
-                        id: t.id,
-                        number: t.tool_number,
-                        label: t.name.as_str(),
-                    });
+                let tool = self.toolpath_tool(tc).map(|t| PhaseTool {
+                    id: t.id,
+                    number: t.tool_number,
+                    label: t.name.as_str(),
+                });
                 let phase = GcodePhase {
                     toolpath: emitted_toolpath.as_ref(),
                     spindle_rpm: crate::compute::catalog::effective_spindle_rpm(
@@ -281,7 +277,7 @@ impl ProjectSession {
         index: usize,
     ) -> Option<crate::tool_load::LoadContextParts<'_>> {
         let tc = self.toolpath_configs.get(index)?;
-        let tool_cfg = self.tool_by_id(tc.tool_id)?;
+        let tool_cfg = self.toolpath_tool(tc)?;
         let tool = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
         let (family, pass_role) = tc.operation.feeds_style();
         let result = self.result_at(index);
@@ -353,9 +349,28 @@ impl ProjectSession {
             .toolpath_configs
             .get(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
-        let tool = self
-            .tool_by_id(tc.tool_id)
-            .ok_or(SessionError::ToolNotFound(tc.tool_id))?;
+        // R2: an op with no tool has no tool checks, no feeds and no load
+        // report. Its list holds the precondition findings (the no-tool
+        // state first among them) and the model references.
+        if tc.tool_id.is_none() {
+            let preconditions = self.precondition_context_for_toolpath(tc);
+            let model_refs = self.model_ref_context_for_toolpath(tc);
+            let mut out =
+                crate::diagnostics::adapters::from_model_refs::diagnostics_from_model_refs(
+                    tc.id,
+                    &tc.operation,
+                    &model_refs,
+                );
+            out.extend(
+                crate::diagnostics::adapters::from_preconditions::diagnostics_from_preconditions(
+                    tc.id,
+                    &tc.operation,
+                    &preconditions,
+                ),
+            );
+            return Ok(out);
+        }
+        let tool = self.tool_of(tc)?;
         let stale_defaults = crate::compute::validate::validate_one_toolpath(
             tc,
             Some(tool),
@@ -540,6 +555,11 @@ impl ProjectSession {
             selection_refusal,
             buried_face_refusal,
             stock_thickness_refusal: self.stock_thickness_refusal(),
+            no_tool_state: self
+                .toolpath_configs
+                .iter()
+                .position(|t| t.id == tc.id)
+                .and_then(|index| self.no_tool_state(index)),
         }
     }
 

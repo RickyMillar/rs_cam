@@ -1490,7 +1490,7 @@ fn check8_no_op_puts_the_tool_inside_an_obstacle() {
             let tool_cfg = session
                 .tools()
                 .iter()
-                .find(|t| t.id == tc.tool_id)
+                .find(|t| Some(t.id) == tc.tool_id)
                 .expect("the case tool")
                 .clone();
             let tool = rs_cam_core::compute::cutter::build_cutter(&tool_cfg).unwrap();

@@ -110,7 +110,7 @@ fn build_pocket_session() -> ProjectSession {
         operation: OperationConfig::Pocket(pocket),
         dressups: DressupConfig::for_op(OperationType::Pocket),
         heights: HeightsConfig::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(tool_id)),
         model_id,
         pre_gcode: None,
         post_gcode: None,

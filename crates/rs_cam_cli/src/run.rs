@@ -163,12 +163,16 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
     // (`ProjectSession::draft_toolpath`): the stock defaults, Suggest and
     // `DressupConfig::for_op`. A value that no rule gives stays unset, and
     // the op refuses until `--set` gives it.
+    // The run names its tool and its model, so both are exact.
     let draft = session
         .draft_toolpath(
-            op_type,
-            tool_id,
-            model_id,
-            format!("{} (cli run)", op_type.label()),
+            rs_cam_core::session::DraftRequest::new(
+                op_type,
+                0,
+                format!("{} (cli run)", op_type.label()),
+            )
+            .tool(tool_id)
+            .model(model_id),
         )
         .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?;
     let tp_index = apply_command(

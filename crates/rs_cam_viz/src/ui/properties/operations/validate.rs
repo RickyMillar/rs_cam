@@ -16,6 +16,9 @@ pub struct ToolpathValidationContext {
     /// op (`ProjectSession::hole_selection`, geometry selection P2.3c):
     /// the Generate button prints the generator's own sentence.
     hole_refusals: Vec<(rs_cam_core::ids::ToolpathId, String)>,
+    /// R2: the no-tool state of each op with no tool
+    /// (`ProjectSession::no_tool_state`), with the fix.
+    no_tool_states: Vec<(rs_cam_core::ids::ToolpathId, String)>,
 }
 
 pub(in crate::ui::properties) struct ValidationTool {
@@ -56,6 +59,16 @@ impl ToolpathValidationContext {
                     has_enriched_mesh: model.enriched_mesh.is_some(),
                 })
                 .collect(),
+            no_tool_states: (0..session.toolpath_configs().len())
+                .filter_map(|index| {
+                    let id = session.toolpath_configs().get(index)?.id;
+                    let state = session.no_tool_state(index)?;
+                    Some((
+                        id,
+                        format!("{state}. {}", rs_cam_core::session::NO_TOOL_FIX),
+                    ))
+                })
+                .collect(),
             hole_refusals: session
                 .toolpath_configs()
                 .iter()
@@ -75,11 +88,10 @@ pub fn validate_toolpath_config(
 ) -> Vec<String> {
     let mut errs = Vec::new();
 
-    let tool_id = tc.tool_id;
     let model_id = tc.model_id;
 
-    let Some(tool) = ctx.tools.iter().find(|t| t.id == tool_id) else {
-        errs.push("No tool selected".into());
+    let Some(tool) = ctx.tools.iter().find(|t| Some(t.id) == tc.tool_id) else {
+        errs.push(no_tool_text(ctx, tc.id));
         return errs;
     };
 
@@ -136,6 +148,19 @@ pub fn validate_toolpath_config(
     errs
 }
 
+/// R2: the text of an op with no tool: core's no-tool state and the fix
+/// ("No tool fits: needs a flat end mill. Set a tool on the Geometry
+/// tab"), or "No tool selected" for a tool id that names no tool.
+fn no_tool_text(
+    ctx: &ToolpathValidationContext,
+    toolpath_id: rs_cam_core::ids::ToolpathId,
+) -> String {
+    ctx.no_tool_states
+        .iter()
+        .find(|(id, _)| *id == toolpath_id)
+        .map_or_else(|| "No tool selected".to_owned(), |(_, text)| text.clone())
+}
+
 /// G-DRILLCENTROID (UX-R03-004), geometry selection P2.3c: the refusal the
 /// generator gives for the selection of drill op `toolpath_id`, so Generate
 /// is disabled with the generator's own sentence instead of a hole
@@ -153,8 +178,8 @@ pub(in crate::ui::properties) fn hole_refusal(
 pub fn validate_toolpath(entry: &ToolpathEntry, ctx: &ToolpathValidationContext) -> Vec<String> {
     let mut errs = Vec::new();
 
-    let Some(tool) = ctx.tools.iter().find(|tool| tool.id == entry.tool_id) else {
-        errs.push("No tool selected".into());
+    let Some(tool) = ctx.tools.iter().find(|tool| Some(tool.id) == entry.tool_id) else {
+        errs.push(no_tool_text(ctx, entry.id));
         return errs;
     };
 

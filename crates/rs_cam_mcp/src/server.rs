@@ -1200,6 +1200,11 @@ pub struct AddToolpathViaGuiParam {
     /// whatever is selected now — which is what the operator's next click
     /// would do, and may not be setup 0.
     pub setup_index: Option<usize>,
+    /// Q7: the model (project-assigned `id`) that the operator would select
+    /// in the Setup rail. The core rule takes it when it is in the setup
+    /// and serves the op, else the first setup model that serves the op.
+    /// Omit it to read the GUI selection.
+    pub model_id: Option<usize>,
 }
 
 /// F3.5 — read the toast stack.
@@ -1465,12 +1470,19 @@ pub struct AddToolpathParam {
     pub setup_index: usize,
     /// The operation kind.
     pub operation_type: OperationTypeParam,
-    /// Tool index (0-based) from list_tools
-    pub tool_index: usize,
+    /// Tool index (0-based) from list_tools. Omit it to take the first
+    /// project tool that the operation accepts; with none, the op is made
+    /// with NO tool (`no_tool` in the reply names the state) and refuses to
+    /// generate until a tool is set (R2). A stated tool that the operation
+    /// refuses is refused.
+    pub tool_index: Option<usize>,
     /// Model ID (project-assigned `id` field — use the `id` value
     /// from `inspect_model` results, NOT a 0-based positional index;
-    /// IDs typically start at 1 and increment per import).
-    pub model_id: usize,
+    /// IDs typically start at 1 and increment per import). Exact when
+    /// stated. Omit it to take the model of the core rule (Q7): the first
+    /// model of the setup that is native to the op (a drawing for a 2D op,
+    /// a mesh for a 3D op), else the first that serves it.
+    pub model_id: Option<usize>,
     /// Optional name for the toolpath
     pub name: Option<String>,
 }
@@ -4587,8 +4599,9 @@ mod tests {
     /// F26 (operator ruling): every MCP parameter type refuses a field it
     /// does not know. Before F26, serde dropped an unknown field with no
     /// error, so a client that sent `model_id` to `add_toolpath_via_gui`
-    /// or `kinds` to `list_model_items` got a reply that ignored its
-    /// request. rmcp wraps the serde error as "failed to deserialize
+    /// (a declared field since Q7) or `kinds` to `list_model_items` got a
+    /// reply that ignored its request. The test sends `tool_index`, which
+    /// `add_toolpath_via_gui` does not declare. rmcp wraps the serde error as "failed to deserialize
     /// parameters: {error}", so the field name reaches the client.
     ///
     /// To prove this test red, remove `deny_unknown_fields` from
@@ -4608,10 +4621,10 @@ mod tests {
             serde_json::from_value::<AddToolpathViaGuiParam>(serde_json::json!({
                 "operation_type": "pocket",
                 "setup_index": 0,
-                "model_id": 0,
+                "tool_index": 0,
             }))
             .map(|_| ()),
-            "model_id",
+            "tool_index",
         );
         refused(
             serde_json::from_value::<ListModelItemsParam>(serde_json::json!({

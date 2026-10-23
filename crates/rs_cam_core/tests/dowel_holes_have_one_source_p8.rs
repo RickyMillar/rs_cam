@@ -50,7 +50,7 @@ fn tc(name: &str, op: OperationConfig) -> ToolpathConfig {
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(0),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(0)),
         model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
@@ -130,7 +130,7 @@ fn mini(with_pin_drill: bool) -> ProjectSession {
         ));
     }
     for mut op in ops {
-        op.tool_id = rs_cam_core::ids::ToolId::from_raw(tool);
+        op.tool_id = Some(rs_cam_core::ids::ToolId::from_raw(tool));
         op.model_id = model;
         let _ = builder.add_toolpath(0, op).unwrap();
     }

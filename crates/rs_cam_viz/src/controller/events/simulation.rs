@@ -240,7 +240,7 @@ impl<B: ComputeBackend> AppController<B> {
                     .session()
                     .tools()
                     .iter()
-                    .find(|t| t.id == tc.tool_id)
+                    .find(|t| Some(t.id) == tc.tool_id)
                 else {
                     continue;
                 };
@@ -268,7 +268,7 @@ impl<B: ComputeBackend> AppController<B> {
                     name: tc.name.clone(),
                     annotated: Arc::clone(result.annotated()),
                     tool: tool_def,
-                    tool_id: tc.tool_id,
+                    tool_id: tool.id,
                     flute_count,
                     tool_summary,
                     semantic_trace,
@@ -636,7 +636,7 @@ impl<B: ComputeBackend> AppController<B> {
                     .session()
                     .tools()
                     .iter()
-                    .find(|t| t.id == tc.tool_id)?
+                    .find(|t| Some(t.id) == tc.tool_id)?
                     .clone();
                 let mesh = self
                     .state

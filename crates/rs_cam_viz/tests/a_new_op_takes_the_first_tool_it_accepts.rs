@@ -6,9 +6,10 @@
 //! - A project with tools `[V-bit, end mill]`: the GUI add of a Bore
 //!   (`AppEvent::AddToolpath`) creates one Bore bound to the end mill.
 //!   The V-bit is skipped without a toast.
-//! - A project with only a V-bit: the add creates nothing, and one
-//!   Warning toast carries the refusal text. The text names the tool
-//!   kinds that a Bore needs.
+//! - R2: a project with only a V-bit: the add makes the Bore with NO
+//!   tool, and one Warning toast names the state ("No tool fits: needs a
+//!   flat end mill or a bull nose smaller than Ø10.00 ...") and the fix. Generation refuses with
+//!   `SessionError::NoTool`.
 //!
 //! The operator saw the defect on 2026-10-22: Add toolpath → Bore did
 //! nothing, because the first tool was a V-bit.
@@ -138,7 +139,8 @@ fn a_new_op_takes_the_first_tool_it_accepts() {
     );
     assert_eq!(configs[0].operation.op_type(), OperationType::Bore);
     assert_eq!(
-        configs[0].tool_id, end_mill_id,
+        configs[0].tool_id,
+        Some(end_mill_id),
         "the Bore takes the end mill, not the V-bit before it"
     );
     let warnings: Vec<_> = toasts(&controller)
@@ -151,23 +153,62 @@ fn a_new_op_takes_the_first_tool_it_accepts() {
     );
 }
 
+/// R2 (Fusion, operator ruling 2026-10-23): an add that no project tool
+/// fits still MAKES the op, with no tool. One Warning toast names the state
+/// and the fix, and generation refuses with the same fix.
+///
+/// Red proof: make `draft_toolpath` refuse when `FirstFitting` finds no
+/// tool (the old rule). The op count is 0 and the test fails.
 #[test]
-fn an_add_that_no_tool_fits_refuses_with_one_toast() {
+fn an_add_that_no_tool_fits_makes_the_op_with_no_tool_r2() {
     let mut controller = controller(vec![v_bit(ToolId::from_raw(0))]);
 
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Bore));
 
-    assert!(
-        controller.state.session().toolpath_configs().is_empty(),
-        "no tool fits, so nothing is created"
+    let configs = controller.state.session().toolpath_configs();
+    assert_eq!(
+        configs.len(),
+        1,
+        "the op is made: {:?}",
+        toasts(&controller)
+    );
+    assert_eq!(configs[0].operation.op_type(), OperationType::Bore);
+    assert_eq!(configs[0].tool_id, None, "no tool fits, so the op has none");
+    // Q9: a Bore state names the size limit of its held circle (Ø10).
+    let state = "No tool fits: needs a flat end mill or a bull nose \
+                 smaller than Ø10.00 and at least Ø5.00";
+    assert_eq!(
+        controller.state.session().no_tool_state(0).as_deref(),
+        Some(state)
     );
     let shown = toasts(&controller);
     assert_eq!(shown.len(), 1, "exactly one toast: {shown:?}");
     assert_eq!(shown[0].1, Severity::Warning, "{shown:?}");
     assert_eq!(
         shown[0].0,
-        "Cannot add toolpath: Bore needs a flat end mill or bull nose tool; \
-         this tool is a V-bit.",
-        "the toast names the tool kinds that a Bore needs"
+        format!(
+            "Added with no tool: {state}. {}.",
+            rs_cam_core::session::NO_TOOL_FIX
+        ),
+        "the toast names the state and the fix"
+    );
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let refusal = controller
+        .state
+        .session()
+        .resolve_generation_inputs(0, &cancel)
+        .err()
+        .unwrap_or_else(|| panic!("an op with no tool must refuse generation"));
+    assert!(
+        matches!(refusal, rs_cam_core::session::SessionError::NoTool { .. }),
+        "{refusal:?}"
+    );
+    assert_eq!(
+        refusal.to_string(),
+        format!(
+            "Toolpath {}: {state}. {}",
+            configs[0].id,
+            rs_cam_core::session::NO_TOOL_FIX
+        )
     );
 }

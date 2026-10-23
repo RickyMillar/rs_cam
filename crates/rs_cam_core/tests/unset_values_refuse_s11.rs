@@ -115,10 +115,9 @@ fn set_material(s: &mut ProjectSession, material: Material) {
 fn add_drafted(s: &mut ProjectSession, op_type: OperationType) -> usize {
     let draft = s
         .draft_toolpath(
-            op_type,
-            s.tools()[0].id,
-            s.models()[0].id,
-            op_type.label().to_owned(),
+            rs_cam_core::session::DraftRequest::new(op_type, 0, op_type.label().to_owned())
+                .tool(s.tools()[0].id)
+                .model(s.models()[0].id),
         )
         .expect("the tool fits the op");
     s.apply(Command::AddToolpath(AddToolpathArgs {
@@ -262,10 +261,13 @@ fn an_unbacked_tool_refuses_with_the_feeds_text_s11() {
     );
     let draft = s
         .draft_toolpath(
-            OperationType::Pocket,
-            s.tools()[0].id,
-            s.models()[0].id,
-            "ball pocket".to_owned(),
+            rs_cam_core::session::DraftRequest::new(
+                OperationType::Pocket,
+                0,
+                "ball pocket".to_owned(),
+            )
+            .tool(s.tools()[0].id)
+            .model(s.models()[0].id),
         )
         .expect("the tool fits the op; only the feeds data is missing");
     assert!(

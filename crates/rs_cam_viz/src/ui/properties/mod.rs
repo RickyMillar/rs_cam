@@ -333,7 +333,7 @@ pub fn toolpath_panel_snapshot(
         suggest_warnings: session
             .tools()
             .iter()
-            .find(|tool| tool.id == tc.tool_id)
+            .find(|tool| Some(tool.id) == tc.tool_id)
             .and_then(|tool| session.suggest_warnings_for_toolpath(tc, tool)),
     })
 }
@@ -347,6 +347,13 @@ pub fn toolpath_panel_snapshot(
 /// part the panel EDITS; this carries the part it only READS.
 pub(crate) struct ToolpathPanelInputs {
     pub tools: Vec<(crate::state::job::ToolId, String, f64)>,
+    /// R2 / 6.F4: the refusal of each project tool that the op does not
+    /// accept, from core `ProjectSession::tool_fit` (the acceptance door of
+    /// the add). The Tool combo greys these tools and shows the text.
+    pub tool_refusals: Vec<(crate::state::job::ToolId, String)>,
+    /// R2: the no-tool state of the op (`ProjectSession::no_tool_state`),
+    /// or `None` when it has a tool.
+    pub no_tool_state: Option<String>,
     pub models: Vec<(crate::state::job::ModelId, String)>,
     /// The "Selection" boundary source is enabled: a model of the project
     /// holds a drawing item or a face item (geometry selection P4.3).
@@ -681,7 +688,7 @@ pub(crate) fn toolpath_panel_inputs(
     let stale_default_defects = session
         .find_toolpath_config_by_id(id)
         .map(|(_, tc)| {
-            let tool = session.tools().iter().find(|t| t.id == tc.tool_id);
+            let tool = session.tools().iter().find(|t| Some(t.id) == tc.tool_id);
             let stock_bottom_z = session.stock_config().origin_z;
             rs_cam_core::compute::validate::validate_one_toolpath(
                 tc,
@@ -745,8 +752,27 @@ pub(crate) fn toolpath_panel_inputs(
         .find_toolpath_config_by_id(id)
         .and_then(|(index, _)| session.feed_stage(index));
     let rest_fresh = session.current_rest_fresh_comparisons().get(&id).copied();
+    // R2 / 6.F4: THE acceptance door of the add, per tool, for this op.
+    let (tool_refusals, no_tool_state) = match session.find_toolpath_config_by_id(id) {
+        Some((index, tc)) => (
+            session
+                .tools()
+                .iter()
+                .filter_map(|t| {
+                    session
+                        .tool_fit(tc.operation.op_type(), t.id, tc.model_id)
+                        .err()
+                        .map(|refusal| (t.id, refusal.to_string()))
+                })
+                .collect(),
+            session.no_tool_state(index),
+        ),
+        None => (Vec::new(), None),
+    };
     ToolpathPanelInputs {
         tools,
+        tool_refusals,
+        no_tool_state,
         models,
         boundary_selection_enabled,
         boundary_default,
@@ -1190,7 +1216,7 @@ pub(crate) fn drill_tool_diameters(session: &rs_cam_core::session::ProjectSessio
         .iter()
         // F095: the core drill-family predicate names the drilling operations.
         .filter(|tc| tc.operation.op_type().is_drill_kinematics())
-        .filter_map(|tc| session.tools().iter().find(|t| t.id == tc.tool_id))
+        .filter_map(|tc| session.tools().iter().find(|t| Some(t.id) == tc.tool_id))
         .chain(
             session
                 .tools()

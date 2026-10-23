@@ -37,7 +37,7 @@
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::cutter::build_cutter;
-use crate::compute::tool_config::{ToolConfig, ToolId};
+use crate::compute::tool_config::ToolConfig;
 use crate::feeds::ToolGeometryHint;
 use crate::ids::ToolpathId;
 use crate::material::Material;
@@ -118,7 +118,7 @@ pub fn validate_stale_defaults(session: &ProjectSession) -> Vec<StaleDefault> {
     let stock = session.stock_config();
     let stock_bottom_z = compute_stock_bottom_z(session);
     for tc in session.toolpath_configs() {
-        let tool = find_tool_for(session, tc.tool_id);
+        let tool = session.toolpath_tool(tc);
         out.extend(validate_one_toolpath(
             tc,
             tool,
@@ -350,10 +350,6 @@ fn compute_stock_bottom_z(session: &ProjectSession) -> f64 {
     session.stock_config().origin_z
 }
 
-fn find_tool_for(session: &ProjectSession, id: ToolId) -> Option<&ToolConfig> {
-    session.tools().iter().find(|t| t.id == id)
-}
-
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,
@@ -386,7 +382,7 @@ mod tests {
             operation: op,
             dressups: DressupConfig::default(),
             heights: HeightsConfig::default(),
-            tool_id: crate::ids::ToolId::from_raw(tool_id),
+            tool_id: Some(crate::ids::ToolId::from_raw(tool_id)),
             model_id: crate::ids::ModelId::from_raw(0),
             pre_gcode: None,
             post_gcode: None,

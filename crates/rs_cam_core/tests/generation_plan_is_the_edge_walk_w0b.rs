@@ -101,7 +101,7 @@ fn tc(name: &str, stock_source: StockSource, tool_id: usize, model_id: usize) ->
         operation: OperationConfig::Pocket(PocketConfig::default()),
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(tool_id)),
         model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,

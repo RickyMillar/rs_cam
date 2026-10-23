@@ -185,7 +185,7 @@ fn one_pocket_session() -> (
                 ),
                 dressups: Default::default(),
                 heights: Default::default(),
-                tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+                tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
                 model_id: rs_cam_core::ids::ModelId::from_raw(0),
                 pre_gcode: None,
                 post_gcode: None,
@@ -424,8 +424,13 @@ fn a_setup_map_op_draws_no_boundary_controls_d3() {
             Some(ToolpathTab::Geometry),
             false,
         );
-        let mut entry =
-            ToolpathEntry::for_operation(tc.id, "Case".to_owned(), tc.tool_id, tc.model_id, op);
+        let mut entry = ToolpathEntry::for_operation(
+            tc.id,
+            "Case".to_owned(),
+            tc.tool_id.expect("the case tool"),
+            tc.model_id,
+            op,
+        );
         let ctx = egui::Context::default();
         crate::ui::tokens::apply(&ctx);
         crate::ui::tokens::apply_fonts(&ctx);
@@ -499,8 +504,13 @@ fn tab_texts(
         Some(ToolpathTab::Geometry),
         false,
     );
-    let mut entry =
-        ToolpathEntry::for_operation(tc.id, "Case".to_owned(), tc.tool_id, tc.model_id, op);
+    let mut entry = ToolpathEntry::for_operation(
+        tc.id,
+        "Case".to_owned(),
+        tc.tool_id.expect("the case tool"),
+        tc.model_id,
+        op,
+    );
     entry.boundary = tc.boundary.clone();
     if tc.operation.op_type() == op {
         entry.operation = tc.operation.clone();
@@ -581,7 +591,7 @@ fn step_pocket_session() -> rs_cam_core::session::ProjectSession {
                 },
                 dressups: Default::default(),
                 heights: Default::default(),
-                tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+                tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
                 model_id,
                 pre_gcode: None,
                 post_gcode: None,
@@ -800,7 +810,7 @@ fn holes_session() -> rs_cam_core::session::ProjectSession {
                 ),
                 dressups: Default::default(),
                 heights: Default::default(),
-                tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+                tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
                 model_id,
                 pre_gcode: None,
                 post_gcode: None,
@@ -994,7 +1004,7 @@ fn the_geometry_tab_paints_the_groups_and_the_row_hover_gt2() {
     let mut entry = crate::state::toolpath::ToolpathEntry::for_operation(
         tc.id,
         "Drill".to_owned(),
-        tc.tool_id,
+        tc.tool_id.expect("the case tool"),
         tc.model_id,
         tc.operation.op_type(),
     );
@@ -1111,7 +1121,7 @@ fn a_finding_dots_the_tab_of_its_fix_f24() {
     let entry = crate::state::toolpath::ToolpathEntry::for_operation(
         tc.id,
         "Case".to_owned(),
-        tc.tool_id,
+        tc.tool_id.expect("the case tool"),
         tc.model_id,
         crate::state::toolpath::OperationType::Pocket,
     );
@@ -1302,7 +1312,7 @@ fn one_hole_is_one_row_re() {
                 operation: OperationConfig::Drill(DrillConfig::default()),
                 dressups: Default::default(),
                 heights: Default::default(),
-                tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+                tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
                 model_id,
                 pre_gcode: None,
                 post_gcode: None,
@@ -1422,7 +1432,7 @@ fn the_part_outline_row_reads_part_outline_ra() {
                 operation: OperationConfig::Profile(ProfileConfig::default()),
                 dressups: Default::default(),
                 heights: Default::default(),
-                tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+                tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
                 model_id,
                 pre_gcode: None,
                 post_gcode: None,
@@ -1478,5 +1488,126 @@ fn the_part_outline_row_reads_part_outline_ra() {
     assert!(
         items[..items.len() - 1].iter().all(|i| i["role"].is_null()),
         "{listed}"
+    );
+}
+
+/// R2 / 6.F4 (Fusion, operator ruling 2026-10-23): the Tool combo greys a
+/// tool that the op refuses, by core `ProjectSession::tool_fit` (the
+/// acceptance door of the add), and an op with no tool draws its state and
+/// the fix on the Cut tab.
+///
+/// Red proof: build `tool_refusals` as an empty list in
+/// `toolpath_panel_inputs`. The first assertion fails.
+#[test]
+fn the_tool_picker_greys_refused_tools_r2() {
+    use crate::state::toolpath::{OperationType, ToolpathEntry};
+    use rs_cam_core::compute::tool_config::{ToolConfig, ToolType};
+    use rs_cam_core::selection::{Item, ItemSet, Shape, SourceRef};
+    use rs_cam_core::session::{AddToolpathArgs, Command, LoadedModel, ProjectSessionBuilder};
+    use std::sync::Arc;
+
+    let v_bit = ToolConfig::new_default(rs_cam_core::compute::ToolId::from_raw(0), ToolType::VBit);
+    let end_mill =
+        ToolConfig::new_default(rs_cam_core::compute::ToolId::from_raw(1), ToolType::EndMill);
+    let circle = Item::new(
+        SourceRef::ToolpathModel,
+        None,
+        Shape::circle(rs_cam_core::geo::P2::new(0.0, 0.0), 10.0),
+    )
+    .unwrap();
+    let mut session = ProjectSessionBuilder::new()
+        .tool(v_bit.clone())
+        .tool(end_mill.clone())
+        .model(LoadedModel {
+            id: rs_cam_core::ids::ModelId::from_raw(1),
+            path: std::path::PathBuf::from("holes.svg"),
+            name: "Holes".to_owned(),
+            kind: Some(rs_cam_core::compute::stock_config::ModelKind::Svg),
+            mesh: None,
+            items: Arc::new(ItemSet::new(vec![circle])),
+            enriched_mesh: None,
+            units: Some(rs_cam_core::compute::stock_config::ModelUnits::Millimeters),
+            winding_report: None,
+            load_error: None,
+            import_options: Default::default(),
+            import_report: None,
+            drawing: Default::default(),
+        })
+        .build();
+    let mut config = session
+        .draft_toolpath(rs_cam_core::session::DraftRequest::new(
+            OperationType::Bore,
+            0,
+            "Bore",
+        ))
+        .unwrap()
+        .config;
+    assert_eq!(config.tool_id, Some(end_mill.id), "the add skips the V-bit");
+    // The state of an op with no tool (a file can hold it).
+    config.tool_id = None;
+    let _ = session
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(config),
+        }))
+        .unwrap();
+    let tc = session.toolpath_configs()[0].clone();
+    let inputs = super::toolpath_panel_inputs(
+        tc.id,
+        &session,
+        &crate::state::runtime::GuiState::default(),
+        None,
+        Some(ToolpathTab::Cut),
+        false,
+    );
+    let greyed: Vec<_> = inputs.tool_refusals.iter().map(|(id, _)| *id).collect();
+    assert_eq!(greyed, vec![v_bit.id], "only the V-bit is grey");
+    let text = super::tab_badges::tool_refusal(&inputs, v_bit.id).unwrap();
+    assert!(text.contains("Bore"), "the hover names the refusal: {text}");
+    assert!(super::tab_badges::tool_refusal(&inputs, end_mill.id).is_none());
+    // A fitting tool exists, so the state is "No tool set".
+    assert_eq!(inputs.no_tool_state.as_deref(), Some("No tool set"));
+
+    let mut entry = ToolpathEntry::for_operation(
+        tc.id,
+        "Bore".to_owned(),
+        end_mill.id,
+        tc.model_id,
+        OperationType::Bore,
+    );
+    entry.tool_id = None;
+    let ctx = egui::Context::default();
+    crate::ui::tokens::apply(&ctx);
+    crate::ui::tokens::apply_fonts(&ctx);
+    let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
+    warmup.textures_delta.clear();
+    let mut events = Vec::new();
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        super::toolpath_panel::draw_cut_tab(
+            ui,
+            &mut entry,
+            &inputs,
+            None,
+            &mut crate::state::pick::SelectionUi::default(),
+            &mut events,
+        );
+    });
+    let mut texts = Vec::new();
+    for clipped in &out.shapes {
+        if let egui::epaint::Shape::Text(text) = &clipped.shape {
+            texts.push(text.galley.job.text.clone());
+        }
+    }
+    out.textures_delta.clear();
+    let line = format!("No tool set. {}", rs_cam_core::session::NO_TOOL_FIX);
+    assert!(
+        texts.iter().any(|t| t == &line),
+        "the Cut tab draws the state; it rendered {texts:?}"
+    );
+    assert!(
+        texts
+            .iter()
+            .any(|t| t == rs_cam_core::session::NO_TOOL_NAME),
+        "the Tool combo reads `No tool`; it rendered {texts:?}"
     );
 }

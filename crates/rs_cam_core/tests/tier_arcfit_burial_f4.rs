@@ -583,7 +583,7 @@ fn arc_fit_burial_on_the_rivmap100_fine_tier() {
     let tool = session
         .tools()
         .iter()
-        .find(|t| t.id == tc.tool_id)
+        .find(|t| Some(t.id) == tc.tool_id)
         .unwrap()
         .clone();
     let cutter = build_cutter(&tool).unwrap();

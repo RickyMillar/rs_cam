@@ -4,7 +4,7 @@
 
 - `../controller.rs` — the type, the apply path, the plan progress accessor and `PlanResolutionConfirm`.
 - `events/` — the handlers by area: compute (the plan driver), model, toolpath, simulation, planner,
-  preferences, undo, pins (the one pin-edit door for GUI and MCP, P5), `model_faces.rs` (STL faces). S11: `handle_add_toolpath` builds the op with core `draft_toolpath` (the MCP and CLI door); no op is built here.
+  preferences, undo, pins (the one pin-edit door for GUI and MCP, P5), `model_faces.rs` (STL faces). S11: `handle_add_toolpath` (= `add_toolpath_with_model`) builds the op with core `draft_toolpath` (the MCP and CLI door); no op is built here. Q7: it passes the selected model (`Model`/`Face`/`Faces`) and the picked faces; R2: no fitting tool adds the op with no tool and one Warning toast (the Bore add too).
   `EditTabs`: one `SetToolpathParam` and one undo step per act; the panel snapshot moves past the act.
   `TogglePick` asks core `click_edit`; a `BoundaryToSelection` is one `SetBoundaryConfig`
   (`apply_boundary_switch`) with a notice. `AddPick` (P3) asks the same, and a `RemovePick` answer is no edit.

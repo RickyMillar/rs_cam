@@ -1,4 +1,4 @@
-//! The Geometry tab of the toolpath inspector (geometry selection GT-1):
+//! The Cut tab of the toolpath inspector (geometry selection GT-1):
 //! what the op cuts. It is the first tab (operator ruling 2026-10-22).
 //!
 //! From top to bottom (design revision 2, R2.5):
@@ -51,7 +51,7 @@ pub(super) fn draw_geometry_tab(
     let tool_diameter = inputs
         .tool_configs
         .iter()
-        .find(|(id, _)| *id == entry.tool_id)
+        .find(|(id, _)| Some(*id) == entry.tool_id)
         .map(|(_, tool)| tool.diameter);
     let floor = entry.operation.floor();
 

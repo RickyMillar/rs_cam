@@ -297,7 +297,7 @@ fn simulation_results_capture_setup_boundaries() {
         operation: OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
         model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,

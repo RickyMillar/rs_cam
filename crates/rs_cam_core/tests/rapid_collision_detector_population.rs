@@ -194,7 +194,7 @@ fn build_session(heights: HeightsConfig) -> ProjectSession {
         // Shipped roughing dressups, identical on both arms.
         dressups: DressupConfig::for_op(OperationType::Pocket),
         heights,
-        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(tool_id)),
         model_id,
         pre_gcode: None,
         post_gcode: None,

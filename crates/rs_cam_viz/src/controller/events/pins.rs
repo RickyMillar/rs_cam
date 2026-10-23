@@ -361,7 +361,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .map(|tc| tc.tool_id);
             // No operation: the synchronisation above refused the size and
             // said why; a bind would refuse and toast a second time.
-            if bound.is_some_and(|b| b != tool_id) {
+            if bound.is_some_and(|b| b != Some(tool_id)) {
                 let _ = self.bind_pin_drill_tool(d, tool_id);
             }
         }
@@ -630,7 +630,7 @@ impl<B: ComputeBackend> AppController<B> {
             operation: OperationConfig::AlignmentPinDrill(cfg),
             dressups: crate::state::toolpath::DressupConfig::default(),
             heights: crate::state::toolpath::HeightsConfig::default(),
-            tool_id,
+            tool_id: Some(tool_id),
             model_id,
             pre_gcode: None,
             post_gcode: None,

@@ -258,7 +258,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
         operation: OperationConfig::Pocket(pocket),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
         model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,

@@ -245,7 +245,7 @@ fn inputs<'a>(
                     helix_radius: session
                         .tools()
                         .iter()
-                        .find(|t| t.id == tc.tool_id)
+                        .find(|t| Some(t.id) == tc.tool_id)
                         // F029: a tool outside its domain builds no
                         // cutter, so the preview has no rule radius.
                         .and_then(|t| rs_cam_core::compute::cutter::build_cutter(t).ok())
@@ -262,7 +262,7 @@ fn inputs<'a>(
                 }
             });
         let profile_tool = (selected && state.viewport.show_tool_profile_preview)
-            .then(|| session.tools().iter().find(|t| t.id == tc.tool_id))
+            .then(|| session.tools().iter().find(|t| Some(t.id) == tc.tool_id))
             .flatten();
 
         out.push(ToolpathInputs {

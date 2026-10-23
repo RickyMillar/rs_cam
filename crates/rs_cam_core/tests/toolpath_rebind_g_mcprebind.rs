@@ -79,7 +79,7 @@ fn tc(name: &str, op: OperationConfig, tool_id: usize, model_id: usize) -> Toolp
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(tool_id)),
         model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
@@ -148,7 +148,10 @@ fn seed() -> ProjectSession {
 fn set_toolpath_tool_rebinds_and_invalidates_the_cached_result() {
     let mut s = seed();
     let tool_b = s.tools()[1].id.raw();
-    assert_ne!(s.toolpath_configs()[0].tool_id.raw(), tool_b);
+    assert_ne!(
+        s.toolpath_configs()[0].tool_id.map(|id| id.raw()),
+        Some(tool_b)
+    );
     adopt(&mut s, 0);
     assert!(
         s.result_at(0).is_some(),
@@ -165,7 +168,7 @@ fn set_toolpath_tool_rebinds_and_invalidates_the_cached_result() {
 
     assert_eq!(
         s.toolpath_configs()[0].tool_id,
-        rs_cam_core::ids::ToolId::from_raw(tool_b),
+        Some(rs_cam_core::ids::ToolId::from_raw(tool_b)),
         "binding moved"
     );
     assert!(
@@ -301,7 +304,7 @@ fn a_tool_id_that_resolves_to_nothing_is_refused() {
     );
     assert_eq!(
         s.toolpath_configs()[0].tool_id,
-        rs_cam_core::ids::ToolId::from_raw(tool_a),
+        Some(rs_cam_core::ids::ToolId::from_raw(tool_a)),
         "a refused rebind must not move the binding"
     );
 }
@@ -391,7 +394,7 @@ fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_r
         .unwrap();
     assert_eq!(
         s.toolpath_configs()[0].tool_id,
-        rs_cam_core::ids::ToolId::from_raw(flat)
+        Some(rs_cam_core::ids::ToolId::from_raw(flat))
     );
 
     // …and the registry predicate the generator reads still says no.
@@ -413,7 +416,7 @@ fn a_rebind_to_a_tool_the_operation_rejects_is_allowed_and_the_generator_still_r
         .unwrap();
     assert_eq!(
         s.toolpath_configs()[0].tool_id,
-        rs_cam_core::ids::ToolId::from_raw(ball)
+        Some(rs_cam_core::ids::ToolId::from_raw(ball))
     );
 }
 
@@ -447,7 +450,7 @@ fn rebind_is_not_reachable_through_the_param_route() {
     }
     assert_eq!(
         s.toolpath_configs()[0].tool_id,
-        rs_cam_core::ids::ToolId::from_raw(tool_a)
+        Some(rs_cam_core::ids::ToolId::from_raw(tool_a))
     );
     assert_eq!(s.toolpath_configs()[0].model_id, model_a);
 
@@ -476,7 +479,7 @@ fn rebind_is_not_reachable_through_the_param_route() {
         .expect("reference_tool_id is a real Pencil param");
     assert_eq!(
         s.toolpath_configs()[1].tool_id,
-        rs_cam_core::ids::ToolId::from_raw(tool_a),
+        Some(rs_cam_core::ids::ToolId::from_raw(tool_a)),
         "setting reference_tool_id must NOT move the toolpath's own tool binding"
     );
 }

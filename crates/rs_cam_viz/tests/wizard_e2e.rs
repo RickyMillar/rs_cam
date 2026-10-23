@@ -158,7 +158,7 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
         model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
@@ -396,7 +396,7 @@ fn default_wizard_state_does_not_mutate_export() {
                 tool: session
                     .tools()
                     .iter()
-                    .find(|t| t.id == tc.tool_id)
+                    .find(|t| Some(t.id) == tc.tool_id)
                     .map(|t| PhaseTool {
                         id: t.id,
                         number: t.tool_number,
@@ -459,7 +459,7 @@ fn viz_phase_assembly_uses_per_op_spindle_rpm() {
         operation: op,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
         model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
@@ -630,7 +630,7 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
         model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
@@ -785,7 +785,7 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
         model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
@@ -894,7 +894,7 @@ fn two_setup_session() -> (ProjectSession, GuiState, SimulationState) {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
         model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,

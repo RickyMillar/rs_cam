@@ -218,7 +218,7 @@ fn chip_targets_for_session(
         if !tc.enabled {
             continue;
         }
-        let Some(tool_cfg) = session.tool_by_id(tc.tool_id) else {
+        let Some(tool_cfg) = session.toolpath_tool(tc) else {
             continue;
         };
         if let Some(target) =

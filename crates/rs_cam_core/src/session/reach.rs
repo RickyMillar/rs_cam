@@ -89,7 +89,7 @@ impl ProjectSession {
             .flatten()
             .filter(|s| s.is_finite() && *s > 0.0)
             .and_then(|stepover_mm| {
-                let tool = self.tool_by_id(tc.tool_id)?;
+                let tool = self.toolpath_tool(tc)?;
                 // F029: no tip radius for a tool outside its domain.
                 let tip_radius_mm = tip_sphere_radius_mm(&build_cutter(tool).ok()?)?;
                 let cusp =
@@ -147,7 +147,7 @@ impl ProjectSession {
         if !tc.operation.op_type().supports_reach_map() {
             return None;
         }
-        let tool_cfg = self.tool_by_id(tc.tool_id)?;
+        let tool_cfg = self.toolpath_tool(tc)?;
         let model = self.model_by_id(tc.model_id)?;
         let mut mesh = model.mesh.clone()?;
         let model_id = model.id;

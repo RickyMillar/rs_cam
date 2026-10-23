@@ -170,6 +170,8 @@ pub(crate) const OWNER_TAB: &[(&str, Option<ToolpathTab>)] = {
         (i::CONFIG_INERT_CLAIMS_DIAL, C),
         // The tool and the input model combos are on the Cut tab.
         (i::COMPAT_TOOL_KIND_REFUSED, C),
+        // R2: an op with no tool; the fix is the Tool combo.
+        (i::PRECOND_NO_TOOL, C),
         (i::COMPAT_BALL_NOSE_FLAT_CLEARING, C),
         (i::COMPAT_PROJECT_CURVE_POINT_PROJECTION, G),
         (i::TOOL_NAME_SIZE_MISMATCH, NO),
@@ -492,6 +494,19 @@ pub(super) fn render_diagnostic_row(
     });
 }
 
+/// R2 / 6.F4: the refusal text of the tool `id` for the op of `inputs`, or
+/// `None` when the op accepts it.
+pub(crate) fn tool_refusal(
+    inputs: &super::ToolpathPanelInputs,
+    id: crate::state::job::ToolId,
+) -> Option<&str> {
+    inputs
+        .tool_refusals
+        .iter()
+        .find(|(tool, _)| *tool == id)
+        .map(|(_, text)| text.as_str())
+}
+
 /// True when `d` is the refusal of the op selection: the footer row of
 /// `precondition.selection_refused`, and its drill form
 /// `precondition.drill_no_holes` (both carry the `selection_status`
@@ -699,18 +714,35 @@ pub(super) fn draw_geometry_wiring(
         ui.label("Tool:");
         let tool_label = tools
             .iter()
-            .find(|(id, _, _)| *id == entry.tool_id)
-            .map(|(_, s, _)| s.as_str())
-            .unwrap_or("(none)");
+            .find(|(id, _, _)| Some(*id) == entry.tool_id)
+            .map_or(rs_cam_core::session::NO_TOOL_NAME, |(_, s, _)| s.as_str());
         egui::ComboBox::from_id_salt("tp_tool")
             .truncate()
             .selected_text(tool_label)
             .show_ui(ui, |ui| {
                 for (id, name, _) in tools {
-                    ui.selectable_value(&mut entry.tool_id, *id, name.as_str());
+                    // R2 / 6.F4: a tool that the op refuses is grey, with
+                    // the refusal of core `tool_fit` (the add's door).
+                    let refusal = tool_refusal(inputs, *id);
+                    let row = ui.add_enabled_ui(refusal.is_none(), |ui| {
+                        ui.selectable_value(&mut entry.tool_id, Some(*id), name.as_str())
+                    });
+                    if let Some(text) = refusal {
+                        row.response.on_disabled_hover_text(text);
+                    }
                 }
             });
     });
+    // R2: the op has no tool. The state stays on the panel until a tool is
+    // set (Q4: a state, not a toast).
+    if entry.tool_id.is_none()
+        && let Some(state) = &inputs.no_tool_state
+    {
+        ui.label(
+            egui::RichText::new(format!("{state}. {}", rs_cam_core::session::NO_TOOL_FIX))
+                .color(crate::ui::tokens::DANGER),
+        );
+    }
 
     // Model selector
     ui.horizontal(|ui| {

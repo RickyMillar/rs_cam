@@ -154,7 +154,7 @@ pub fn simulation_request_is_buildable(session: &ProjectSession) -> bool {
             }
             // The builder drops a config whose `tool_id` names no tool, so
             // the predicate must not admit it either.
-            if session.tools().iter().any(|t| t.id == tc.tool_id) {
+            if session.tools().iter().any(|t| Some(t.id) == tc.tool_id) {
                 admissible += 1;
             }
         }
@@ -621,7 +621,7 @@ pub fn format_cycle_time(seconds: f64) -> String {
 /// Number of tool changes across the enabled toolpath sequence.
 pub fn count_tool_changes(state: &AppState) -> usize {
     let mut count = 0;
-    let mut last_tool: Option<rs_cam_core::ids::ToolId> = None;
+    let mut last_tool: Option<Option<rs_cam_core::ids::ToolId>> = None;
     for tc in state.session().toolpath_configs() {
         if !tc.enabled {
             continue;

@@ -112,8 +112,8 @@ fn plan_key(session: &ProjectSession) -> u64 {
 pub struct RunLine {
     /// The setup name.
     pub setup: String,
-    /// The tool id.
-    pub tool_id: rs_cam_core::ids::ToolId,
+    /// The tool id, or `None` for a run of ops with no tool (R2).
+    pub tool_id: Option<rs_cam_core::ids::ToolId>,
     /// The tool name.
     pub tool: String,
     /// The toolpath names of the run, in order.
@@ -143,8 +143,14 @@ pub fn run_lines(session: &ProjectSession, rows: &[ShoePlanRow]) -> Vec<RunLine>
             let tool = session
                 .tools()
                 .iter()
-                .find(|tool| tool.id == row.tool_id)
-                .map_or_else(|| format!("tool {}", row.tool_id), |tool| tool.name.clone());
+                .find(|tool| Some(tool.id) == row.tool_id)
+                .map_or_else(
+                    || match row.tool_id {
+                        Some(id) => format!("tool {id}"),
+                        None => rs_cam_core::session::NO_TOOL_NAME.to_owned(),
+                    },
+                    |tool| tool.name.clone(),
+                );
             lines.push(RunLine {
                 setup,
                 tool_id: row.tool_id,
@@ -209,7 +215,7 @@ mod tests {
             toolpath_index: index,
             toolpath_id: ToolpathId::from_raw(index),
             toolpath_name: format!("op {index}"),
-            tool_id: rs_cam_core::ids::ToolId::from_raw(tool),
+            tool_id: Some(rs_cam_core::ids::ToolId::from_raw(tool)),
             run_start,
             setting: ShoeSetting::Auto,
             resolved,

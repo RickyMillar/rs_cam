@@ -512,7 +512,7 @@ impl ProjectSession {
             enabled: true,
             dressups,
             heights: ctx.heights.clone(),
-            tool_id: tool.id,
+            tool_id: Some(tool.id),
             model_id: spec.model_id,
             pre_gcode: None,
             post_gcode: None,

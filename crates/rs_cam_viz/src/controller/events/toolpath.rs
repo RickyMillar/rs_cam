@@ -18,13 +18,20 @@ impl<B: ComputeBackend> AppController<B> {
     /// Add one toolpath the way the operator's Add menu does, and report
     /// the command's own [`Effects`].
     ///
-    /// The operation takes the first tool in tool-list order that it
-    /// accepts. The add-time Suggest door is the acceptance rule.
+    /// The op is drafted by core `draft_toolpath` (S11 parity):
     ///
-    /// `None` means nothing was created: no tool, no geometry, or the
-    /// add-time Suggest door refused every tool of the project. The
-    /// refusal reaches the operator as a toast and nothing else carries
-    /// it (G-GUIADD).
+    /// - R2: the first tool in tool-list order that the op accepts. With
+    ///   none, the op is made with NO tool; a toast names the state ("No
+    ///   tool fits: needs ...") and the op refuses generation until a tool
+    ///   is set.
+    /// - Q7: the model by the core rule (`model_for_new_op`), with the
+    ///   model selected in the Setup rail or the viewport.
+    /// - Q7 (O-PICK): BREP faces picked in the viewport become the op
+    ///   selection.
+    ///
+    /// `None` means nothing was created: no geometry for an op that needs
+    /// a model, or a command refusal. The refusal reaches the operator as a
+    /// toast (G-GUIADD).
     ///
     /// WP28 part 2: the answer carries `Effects` because the MCP
     /// `add_toolpath_via_gui` reply reports `Effects::stale` — the set
@@ -37,96 +44,94 @@ impl<B: ComputeBackend> AppController<B> {
         &mut self,
         op_type: crate::state::toolpath::OperationType,
     ) -> Option<Effects> {
+        self.add_toolpath_with_model(op_type, None)
+    }
+
+    /// [`Self::handle_add_toolpath`] with a stated selected model, which
+    /// replaces the model of the GUI selection (MCP
+    /// `add_toolpath_via_gui` `model_id`). `None` reads the GUI selection
+    /// only.
+    pub(crate) fn add_toolpath_with_model(
+        &mut self,
+        op_type: crate::state::toolpath::OperationType,
+        model_override: Option<rs_cam_core::ids::ModelId>,
+    ) -> Option<Effects> {
+        // Q7: the model selected in the Setup rail or the viewport, and the
+        // faces picked in the viewport.
+        let (selected_model, picked_faces) = match &self.state.selection {
+            Selection::Model(model_id) => (Some(*model_id), Vec::new()),
+            Selection::Face(model_id, face) => (Some(*model_id), vec![(*model_id, *face)]),
+            Selection::Faces(model_id, faces) => (
+                Some(*model_id),
+                faces.iter().map(|face| (*model_id, *face)).collect(),
+            ),
+            _ => (None, Vec::new()),
+        };
+        let selected_model = model_override.or(selected_model);
+        let setups = self.state.session().list_setups();
         let target_setup_idx = match self.state.selection {
-            Selection::Toolpath(tp_id) => self.setup_of_toolpath(tp_id).and_then(|sid| {
-                self.state
-                    .session()
-                    .list_setups()
-                    .iter()
-                    .position(|s| s.id == sid)
-            }),
-            Selection::Setup(setup_id) => self
-                .state
-                .session()
-                .list_setups()
-                .iter()
-                .position(|s| s.id == setup_id),
-            Selection::Obstacle(setup_id, _) => self
-                .state
-                .session()
-                .list_setups()
-                .iter()
-                .position(|s| s.id == setup_id),
+            Selection::Toolpath(tp_id) => self
+                .setup_of_toolpath(tp_id)
+                .and_then(|sid| setups.iter().position(|s| s.id == sid)),
+            Selection::Setup(setup_id) | Selection::Obstacle(setup_id, _) => {
+                setups.iter().position(|s| s.id == setup_id)
+            }
+            // Q7: a selected model adds into the first setup whose
+            // "Models" list holds it (empty = every model).
+            Selection::Model(_) | Selection::Face(..) | Selection::Faces(..) => selected_model
+                .and_then(|model_id| {
+                    setups
+                        .iter()
+                        .position(|s| s.model_ids.is_empty() || s.model_ids.contains(&model_id))
+                }),
             _ => None,
         }
-        .or(Some(0)); // default to first setup
+        .unwrap_or(0); // default to first setup
 
-        if self.state.session().tools().is_empty() {
-            tracing::warn!("Cannot add toolpath: no tools defined");
-            self.push_notification(
-                "Cannot add toolpath: no tools defined".into(),
-                super::super::Severity::Warning,
-            );
-            return None;
-        }
-        // Q1: the model this toolpath will use is the one the draft reads.
-        let model_id = self
-            .state
-            .session()
-            .models()
-            .first()
-            .map_or(rs_cam_core::ids::ModelId::placeholder(), |m| m.id);
         let name = format!(
             "{} {}",
             op_type.label(),
             self.state.session().toolpath_configs().len() + 1
         );
         // S11 parity: THE draft door of core (`ProjectSession::draft_toolpath`),
-        // which MCP and the CLI job share. The new operation takes the FIRST
-        // tool in tool-list order that the operation accepts: the draft
-        // refuses a tool that the operation does not accept (the registry's
-        // tool rule, or a scallop-height stepover on a tool with no tip
-        // radius). A V-bit first in the list no longer blocks a Bore when an
-        // end mill follows it.
-        let mut chosen: Option<rs_cam_core::session::ToolpathDraft> = None;
-        let mut first_refusal: Option<rs_cam_core::session::DraftRefusal> = None;
-        for tool in self.state.session().tools() {
-            match self
-                .state
-                .session()
-                .draft_toolpath(op_type, tool.id, model_id, name.clone())
-            {
-                Ok(draft) => {
-                    chosen = Some(draft);
-                    break;
-                }
-                Err(e) => {
-                    first_refusal.get_or_insert(e);
-                }
+        // which MCP and the CLI job share.
+        let request = rs_cam_core::session::DraftRequest::new(op_type, target_setup_idx, name)
+            .selected_model(selected_model)
+            .picks(picked_faces);
+        let draft = match self.state.session().draft_toolpath(request) {
+            Ok(draft) => draft,
+            Err(error) => {
+                let msg = format!("Cannot add toolpath: {error}");
+                tracing::warn!("{msg}");
+                self.push_notification(msg, super::super::Severity::Warning);
+                return None;
             }
-        }
-        let Some(rs_cam_core::session::ToolpathDraft {
+        };
+        let rs_cam_core::session::ToolpathDraft {
             config: tc,
             feeds_refusal,
-        }) = chosen
-        else {
-            // No tool of the project fits the operation. The refusal
-            // text of the first tool names the tool kinds the operation
-            // needs. The toast is the operator's only record.
-            let tool_count = self.state.session().tools().len();
-            let reason = first_refusal.map_or_else(String::new, |e| e.to_string());
-            let msg = if tool_count == 1 {
-                format!("Cannot add toolpath: {reason}")
-            } else {
-                format!(
-                    "Cannot add toolpath: none of the {tool_count} project tools fits. \
-                     First tool: {reason}"
-                )
-            };
+            no_tool,
+            dropped_picks,
+        } = draft;
+        if !tc.operation.is_stock_based() && self.state.session().models().is_empty() {
+            let msg = format!(
+                "Cannot add {} toolpath: import geometry first",
+                tc.operation.label()
+            );
             tracing::warn!("{msg}");
             self.push_notification(msg, super::super::Severity::Warning);
             return None;
-        };
+        }
+        if let Some(state) = no_tool {
+            // R2 (Fusion): the op is made with no tool. It refuses to
+            // generate until the operator sets one.
+            let msg = format!(
+                "Added with no tool: {state}. {}.",
+                rs_cam_core::session::NO_TOOL_FIX
+            );
+            tracing::warn!("{msg}");
+            self.push_notification(msg, super::super::Severity::Warning);
+        }
         if let Some(e) = feeds_refusal {
             // Ruling R1 + S11: no feeds data for the tool. The op is added
             // with no feeds; it refuses to generate until they are set.
@@ -137,15 +142,13 @@ impl<B: ComputeBackend> AppController<B> {
             tracing::warn!("{msg}");
             self.push_notification(msg, super::super::Severity::Warning);
         }
-        if !tc.operation.is_stock_based() && self.state.session().models().is_empty() {
-            let msg = format!(
-                "Cannot add {} toolpath: import geometry first",
-                tc.operation.label()
+        for note in dropped_picks {
+            self.push_notification(
+                format!("A picked face is not used: {note}"),
+                super::super::Severity::Warning,
             );
-            tracing::warn!("{msg}");
-            self.push_notification(msg, super::super::Severity::Warning);
-            return None;
         }
+        let target_setup_idx = Some(target_setup_idx);
 
         let effects = target_setup_idx.and_then(|setup_idx| {
             let command = Command::AddToolpath(AddToolpathArgs {
@@ -282,6 +285,16 @@ impl<B: ComputeBackend> AppController<B> {
             .created?;
         let tc = self.state.session().toolpath_configs().get(created)?;
         let (bore_id, auto_regen) = (tc.id, tc.operation.default_auto_regen());
+        // Q9 + R2: no project tool fits the holes; the Bore has no tool.
+        if let Some(state) = self.state.session().no_tool_state(created) {
+            self.push_notification(
+                format!(
+                    "Added a Bore with no tool: {state}. {}.",
+                    rs_cam_core::session::NO_TOOL_FIX
+                ),
+                super::super::Severity::Warning,
+            );
+        }
         self.state.gui.toolpath_rt.insert(
             bore_id,
             crate::state::runtime::ToolpathRuntime::new(auto_regen),

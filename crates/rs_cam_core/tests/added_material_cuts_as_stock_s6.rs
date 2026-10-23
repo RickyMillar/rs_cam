@@ -293,7 +293,7 @@ fn own_material_with_force_data_uses_it_s6() {
             .find(|tc| tc.id == *id)
             .unwrap();
         let tool =
-            rs_cam_core::compute::cutter::build_cutter(run.session.tool_by_id(tc.tool_id).unwrap())
+            rs_cam_core::compute::cutter::build_cutter(run.session.toolpath_tool(tc).unwrap())
                 .unwrap();
         let maple = maple();
         // The spans the report reads (`gcode::project_load_report`).

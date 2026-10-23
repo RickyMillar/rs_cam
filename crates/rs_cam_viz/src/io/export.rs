@@ -428,7 +428,7 @@ fn gcode_phase_for_session_toolpath<'a>(
     toolpath: &'a rs_cam_core::toolpath::Toolpath,
     feeds: FeedStage,
 ) -> GcodePhase<'a> {
-    let tool = session.tools().iter().find(|t| t.id == tc.tool_id);
+    let tool = session.tools().iter().find(|t| Some(t.id) == tc.tool_id);
 
     GcodePhase {
         toolpath,

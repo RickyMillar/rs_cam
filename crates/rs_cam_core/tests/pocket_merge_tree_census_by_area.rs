@@ -258,7 +258,7 @@ fn pocket_merge_tree_census_on_the_rough() {
     let tool = session
         .tools()
         .iter()
-        .find(|t| t.id == tc.tool_id)
+        .find(|t| Some(t.id) == tc.tool_id)
         .expect("the rough's tool");
     let cutter = build_cutter(tool).unwrap();
     let mesh = session

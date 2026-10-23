@@ -793,14 +793,26 @@ impl RsCamApp {
 
         let session = self.controller.state().session();
         let tools = session.list_tools();
-        let tool_id = match tools.get(p.tool_index) {
-            Some(info) => info.id,
-            None => {
-                return CorePlan::Answered(CoreReply::refused(
-                    &format!("Error: Tool index {} not found", p.tool_index),
-                    None,
-                ));
+        // R2: no `tool_index` takes the first tool that the op accepts; with
+        // none, the op has no tool.
+        let tool = match p.tool_index {
+            None => rs_cam_core::session::ToolChoice::FirstFitting,
+            Some(tool_index) => match tools.get(tool_index) {
+                Some(info) => rs_cam_core::session::ToolChoice::Exact(info.id),
+                None => {
+                    return CorePlan::Answered(CoreReply::refused(
+                        &format!("Error: Tool index {tool_index} not found"),
+                        None,
+                    ));
+                }
+            },
+        };
+        // Q7: a stated model is exact (P2.4); no model takes the core rule.
+        let model = match p.model_id {
+            Some(id) => {
+                rs_cam_core::session::ModelChoice::Exact(rs_cam_core::ids::ModelId::from_wire(id))
             }
+            None => rs_cam_core::session::ModelChoice::Rule { selected: None },
         };
 
         let label = op_type.label();
@@ -810,19 +822,11 @@ impl RsCamApp {
         // defaults, Suggest, `DressupConfig::for_op` and the 3D boundary.
         // With no feeds data (ruling R1) the op has no feeds; it refuses to
         // generate until they are set, and the reply names that.
-        let draft = match session.draft_toolpath(
-            op_type,
-            tool_id,
-            rs_cam_core::ids::ModelId::from_wire(p.model_id),
-            tp_name,
-        ) {
+        let mut request = rs_cam_core::session::DraftRequest::new(op_type, p.setup_index, tp_name);
+        request.tool = tool;
+        request.model = model;
+        let draft = match session.draft_toolpath(request) {
             Ok(draft) => draft,
-            Err(rs_cam_core::session::DraftRefusal::NoSuchTool(_)) => {
-                return CorePlan::Answered(CoreReply::refused(
-                    &format!("Error: Tool index {} not found", p.tool_index),
-                    None,
-                ));
-            }
             Err(e) => {
                 return CorePlan::Answered(CoreReply::refused(
                     &format!("Cannot add toolpath: {e}"),
@@ -830,6 +834,7 @@ impl RsCamApp {
                 ));
             }
         };
+        let no_tool = draft.no_tool;
         let feeds_refusal = draft.feeds_refusal;
         let unset = draft.config.operation.unset_fields();
         let config = draft.config;
@@ -837,6 +842,8 @@ impl RsCamApp {
         before.extra = serde_json::json!({
             "operation": label,
             "feeds_refusal": feeds_refusal,
+            // R2: the no-tool state, or null when the op has a tool.
+            "no_tool": no_tool,
             // S11: the fields that are not set (the floor, a depth, the
             // feeds); generation refuses until they are set.
             "unset": unset,

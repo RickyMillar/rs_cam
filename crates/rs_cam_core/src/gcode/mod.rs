@@ -1606,7 +1606,7 @@ mod tests {
             operation,
             dressups: crate::compute::config::DressupConfig::default(),
             heights: crate::compute::config::HeightsConfig::default(),
-            tool_id: crate::ids::ToolId::from_raw(0),
+            tool_id: Some(crate::ids::ToolId::from_raw(0)),
             model_id: crate::ids::ModelId::from_raw(0),
             pre_gcode: None,
             post_gcode: None,

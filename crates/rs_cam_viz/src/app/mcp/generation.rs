@@ -214,7 +214,14 @@ impl RsCamApp {
         };
         let Some(profile) = state.session().cutter_op_profile(tc) else {
             return json_str(serde_json::json!({
-                "error": format!("Tool {} for toolpath {} not found", tc.tool_id, tc.id)
+                "error": match tc.tool_id {
+                    Some(tool_id) => format!("Tool {tool_id} for toolpath {} not found", tc.id),
+                    None => format!(
+                        "Toolpath {} has no tool. {}.",
+                        tc.id,
+                        rs_cam_core::session::NO_TOOL_FIX
+                    ),
+                }
             }));
         };
         match profile.feasibility {
@@ -353,6 +360,7 @@ impl RsCamApp {
         &mut self,
         op_type: rs_cam_core::compute::catalog::OperationType,
         setup_index: Option<usize>,
+        model_id: Option<usize>,
     ) -> String {
         // The GUI reads the target setup from the CURRENT SELECTION, so
         // honour `setup_index` the way a click does: select the setup,
@@ -387,7 +395,11 @@ impl RsCamApp {
         // `AppEvent::AddToolpath` arm calls and nothing else. It reports
         // the command's `Effects` so the reply can name the set the
         // setter dropped (WP28); the arm itself returns `()`.
-        let effects = self.controller.handle_add_toolpath(op_type);
+        // Q7: `model_id` is the model the operator would select in the
+        // Setup rail; the core rule takes it when it serves the op.
+        let effects = self
+            .controller
+            .add_toolpath_with_model(op_type, model_id.map(rs_cam_core::ids::ModelId::from_wire));
 
         // Whatever this call put on the stack. The GUI add path pushes at
         // most one, but read the tail rather than assuming a count.
@@ -413,7 +425,7 @@ impl RsCamApp {
                 let tool_name = session
                     .tools()
                     .iter()
-                    .find(|t| t.id == tc.tool_id)
+                    .find(|t| Some(t.id) == tc.tool_id)
                     .map(|t| t.name.clone());
                 let model_name = session
                     .models()
@@ -424,6 +436,8 @@ impl RsCamApp {
                     .list_setups()
                     .iter()
                     .position(|s| s.toolpath_indices().contains(&index));
+                // R2: the no-tool state, or null when the op has a tool.
+                let no_tool = session.no_tool_state(index);
                 serde_json::json!({
                     "index": index,
                     "id": tc.id.raw(),
@@ -432,6 +446,7 @@ impl RsCamApp {
                     "setup_index": setup_index,
                     "tool_id": tc.tool_id,
                     "tool_name": tool_name,
+                    "no_tool": no_tool,
                     "model_id": tc.model_id,
                     "model_name": model_name,
                 })

@@ -160,7 +160,7 @@ fn tc(
         operation: op,
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(tool_id)),
         model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
@@ -513,7 +513,7 @@ fn arm_snapshot() -> Observation {
 fn arm_replace_config() -> Observation {
     let mut s = fixture(pocket());
     let before = revisions(&s);
-    let tool = s.toolpath_configs()[0].tool_id;
+    let tool = s.toolpath_configs()[0].tool_id.expect("the fixture tool");
     let model = s.toolpath_configs()[0].model_id;
     let id = s.toolpath_configs()[0].id;
     let mut op = s.toolpath_configs()[0].operation.clone();

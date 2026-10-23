@@ -535,7 +535,7 @@ fn materialize_case_toolpath(
         operation,
         dressups: rs_cam_core::compute::config::DressupConfig::for_op(op_type),
         heights: rs_cam_core::compute::config::HeightsConfig::default(),
-        tool_id,
+        tool_id: Some(tool_id),
         model_id,
         pre_gcode: None,
         post_gcode: None,

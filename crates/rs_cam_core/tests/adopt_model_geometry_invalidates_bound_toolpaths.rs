@@ -105,7 +105,7 @@ fn toolpath(id: usize, name: &str, model_id: usize) -> ToolpathConfig {
         operation: OperationConfig::Pocket(PocketConfig::default()),
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(TOOL),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(TOOL)),
         model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,

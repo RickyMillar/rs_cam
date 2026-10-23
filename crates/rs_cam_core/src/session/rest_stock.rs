@@ -208,7 +208,7 @@ impl ProjectSession {
             .iter()
             .filter(|tc| tc.enabled && tc.stock_source == StockSource::FromRemainingStock)
         {
-            let Some(tool) = self.tools.iter().find(|t| t.id == tc.tool_id) else {
+            let Some(tool) = self.toolpath_tool(tc) else {
                 continue;
             };
             let needed = ((tool.diameter / 2.0) / 5.0).max(RESOLUTION_FLOOR_MM);
@@ -224,7 +224,7 @@ impl ProjectSession {
             .toolpath_configs
             .iter()
             .filter(|tc| tc.enabled)
-            .map(|tc| tc.tool_id)
+            .filter_map(|tc| tc.tool_id)
             .collect();
         let min_radius = self
             .tools

@@ -146,8 +146,8 @@ fn try_suggest_case(
             )
         });
     let tool = session
-        .tool_by_id(tc.tool_id)
-        .unwrap_or_else(|| panic!("Tool {} missing for toolpath {id}", tc.tool_id))
+        .toolpath_tool(tc)
+        .unwrap_or_else(|| panic!("Tool {:?} missing for toolpath {id}", tc.tool_id))
         .clone();
     let profile = session
         .cutter_op_profile(tc)

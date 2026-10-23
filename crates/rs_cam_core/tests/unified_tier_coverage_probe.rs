@@ -152,7 +152,7 @@ fn unified_tier_coverage_probe() {
             let tool = session
                 .tools()
                 .iter()
-                .find(|t| t.id == tc.tool_id)
+                .find(|t| Some(t.id) == tc.tool_id)
                 .expect("tool")
                 .clone();
             let cutter = build_cutter(&tool).unwrap();

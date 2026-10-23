@@ -20,7 +20,8 @@ pub struct ToolpathEntryInit {
     pub enabled: bool,
     pub visible: bool,
     pub locked: bool,
-    pub tool_id: ToolId,
+    /// R2: `None` for an op with no tool (`ToolpathConfig::tool_id`).
+    pub tool_id: Option<ToolId>,
     pub model_id: ModelId,
     pub operation: OperationConfig,
     pub dressups: DressupConfig,
@@ -51,7 +52,7 @@ impl ToolpathEntryInit {
             enabled: true,
             visible: true,
             locked: false,
-            tool_id,
+            tool_id: Some(tool_id),
             model_id,
             operation,
             dressups: DressupConfig::for_op(op_type),
@@ -137,7 +138,8 @@ pub struct ToolpathEntry {
     pub enabled: bool,
     pub visible: bool,
     pub locked: bool,
-    pub tool_id: ToolId,
+    /// R2: `None` for an op with no tool (`ToolpathConfig::tool_id`).
+    pub tool_id: Option<ToolId>,
     pub model_id: ModelId,
     pub operation: OperationConfig,
     pub dressups: DressupConfig,

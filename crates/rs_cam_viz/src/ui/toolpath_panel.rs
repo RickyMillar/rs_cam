@@ -55,7 +55,7 @@ struct CardInfo {
     id: rs_cam_core::ToolpathId,
     name: String,
     enabled: bool,
-    tool_id: rs_cam_core::ids::ToolId,
+    tool_id: Option<rs_cam_core::ids::ToolId>,
 }
 
 /// Minimal snapshot of `ToolpathRuntime` fields the card needs.
@@ -551,7 +551,7 @@ fn draw_toolpath_card(
         .session()
         .tools()
         .iter()
-        .find(|t| t.id == tc.tool_id)
+        .find(|t| Some(t.id) == tc.tool_id)
         .map(|tool| tool.summary());
     let pc = palette_color(global_idx);
     let swatch_color = tokens::from_linear_rgb(pc);

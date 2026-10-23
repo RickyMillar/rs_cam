@@ -142,7 +142,7 @@ impl ProjectSession {
             let in_use = session
                 .toolpath_configs
                 .iter()
-                .any(|tc| tc.tool_id == tool_id);
+                .any(|tc| tc.tool_id == Some(tool_id));
             if in_use {
                 return Err(SessionError::ToolInUse(tool_id));
             }

@@ -1156,7 +1156,7 @@ pub fn tab_scene(
     let frame = toolpath_setup_frame(session, id);
     let z = drawing_plane_z(session, tc, frame.as_ref());
     let half_bar = session
-        .tool_by_id(tc.tool_id)
+        .toolpath_tool(tc)
         .map_or(POINT_MARK_RADIUS_MM, |t| t.diameter / 2.0);
     let tabs = answer
         .marks

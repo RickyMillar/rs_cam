@@ -345,7 +345,7 @@ pub(super) fn upload(
             .session()
             .tools()
             .iter()
-            .find(|tool| tool.id == toolpath.tool_id)
+            .find(|tool| Some(tool.id) == toolpath.tool_id)
             .map_or(mark, |tool| tool.diameter / 2.0);
         let side_mark = |ring: &[rs_cam_core::geo::P2], verts: &mut Vec<LineVertex>| {
             let (Some(side), Some((middle, direction))) = (

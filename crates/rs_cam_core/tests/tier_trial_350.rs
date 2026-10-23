@@ -576,7 +576,7 @@ fn apply_suggest(session: &mut ProjectSession) -> Result<Vec<Value>, String> {
         }
         let Some(profile) = session.cutter_op_profile(tc) else {
             return Err(format!(
-                "toolpath {} ({}): tool {} not found",
+                "toolpath {} ({}): tool {:?} not found",
                 tc.id.raw(),
                 tc.name,
                 tc.tool_id
@@ -711,7 +711,7 @@ fn configure_arm(
             }
             cfg.operation = op;
             cfg.name = format!("Parallel raster R1 s {stepover:.4}");
-            cfg.tool_id = rs_cam_core::ids::ToolId::from_raw(R1_TOOL);
+            cfg.tool_id = Some(rs_cam_core::ids::ToolId::from_raw(R1_TOOL));
             let _ = session
                 .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
                     index: scallop,
@@ -852,7 +852,7 @@ fn configure_arm(
             // simulated stock.
             let mut cfg = session.toolpath_configs()[scallop].clone();
             cfg.name = format!("Pencil rest_depth R1 after R2, passes {passes}");
-            cfg.tool_id = rs_cam_core::ids::ToolId::from_raw(R1_TOOL);
+            cfg.tool_id = Some(rs_cam_core::ids::ToolId::from_raw(R1_TOOL));
             cfg.operation = OperationConfig::Pencil(pencil.clone());
             cfg.dressups = DressupConfig::for_op(OperationType::Pencil);
             cfg.stock_source = StockSource::Fresh;
@@ -903,7 +903,7 @@ fn configure_arm(
                 let t1 = &session.toolpath_configs()[tier1];
                 assert_eq!(
                     t1.tool_id,
-                    rs_cam_core::ids::ToolId::from_raw(R1_TOOL),
+                    Some(rs_cam_core::ids::ToolId::from_raw(R1_TOOL)),
                     "tier 1 is the R1"
                 );
                 assert!(
@@ -916,7 +916,7 @@ fn configure_arm(
                 );
                 assert_eq!(
                     session.toolpath_configs()[tier0].tool_id,
-                    rs_cam_core::ids::ToolId::from_raw(r2),
+                    Some(rs_cam_core::ids::ToolId::from_raw(r2)),
                     "tier 0 is the R2"
                 );
             }
@@ -1225,9 +1225,7 @@ fn collect_entries(session: &ProjectSession) -> Vec<EntryParts> {
             {
                 continue;
             }
-            let tool = session
-                .tool_by_id(tc.tool_id)
-                .expect("every arm tool resolves");
+            let tool = session.toolpath_tool(tc).expect("every arm tool resolves");
             let (tool_def, flute_count, tool_summary) = entry_tool_fields(tool).unwrap();
             out.push(EntryParts {
                 id: tc.id,
@@ -1552,7 +1550,7 @@ fn tier_trial_350() {
             } else {
                 rough_s += rt.total_s;
             }
-            let tool = session.tool_by_id(tc.tool_id).expect("tool");
+            let tool = session.toolpath_tool(tc).expect("tool");
             let (cusp, iso) = match &tc.operation {
                 OperationConfig::Scallop(s) => (Some(s.scallop_height), Some(s.iso_field)),
                 OperationConfig::UnifiedFinish(u) => (Some(u.scallop_height), None),
@@ -1566,7 +1564,7 @@ fn tier_trial_350() {
                 "role": if finish_ids.contains(&tc.id.raw()) { "finish" } else { "face_rough" },
                 "tool_id": tc.tool_id,
                 "tool_name": tool.name,
-                "hypothetical_tool": Some(tc.tool_id.raw()) == h1,
+                "hypothetical_tool": tc.tool_id.map(|id| id.raw()) == h1,
                 "stock_source": format!("{:?}", tc.stock_source),
                 "arc_fitting": serde_json::to_value(tc.dressups.arc_fitting).unwrap(),
                 "planner_tier": tc.planner_origin.as_ref().map(|p| p.tier),
@@ -1902,7 +1900,7 @@ fn tier_trial_350_config_only() {
                     _ => (None, None),
                 };
                 eprintln!(
-                    "   op {:>3} {:<5} {:<14} tool {:>2} h {:?} iso {:?} feed {:?} rpm {:?} \
+                    "   op {:>3} {:<5} {:<14} tool {:?} h {:?} iso {:?} feed {:?} rpm {:?} \
                      stock {:?} tier {:?} arc {:?}\n        boundary {}\n        pencil {}",
                     tc.id.raw(),
                     if tc.enabled { "ON" } else { "off" },

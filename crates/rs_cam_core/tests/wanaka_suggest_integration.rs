@@ -180,7 +180,7 @@ fn run_suggest_for_enabled(session: &ProjectSession) -> SuggestRun {
         }
         let profile = session
             .cutter_op_profile(tc)
-            .unwrap_or_else(|| panic!("Tool {} missing for toolpath {}", tc.tool_id, tc.id));
+            .unwrap_or_else(|| panic!("Tool {:?} missing for toolpath {}", tc.tool_id, tc.id));
         match &profile.feasibility {
             Err(e @ FeedsError::Unbacked { .. }) => {
                 refused.push((tc.id, tc.name.clone(), e.to_string()));
@@ -1123,9 +1123,7 @@ fn wanaka_suggest_idempotent_on_second_run() {
         .iter()
         .find(|t| t.id == ToolpathId::from_raw(4))
         .expect("Wanaka Back Rough (tp 4) missing");
-    let tool = session
-        .tool_by_id(tc.tool_id)
-        .expect("Back Rough tool missing");
+    let tool = session.toolpath_tool(tc).expect("Back Rough tool missing");
     let model_bbox = model_bboxes
         .iter()
         .find(|(id, _)| *id == tc.model_id)
@@ -1216,8 +1214,8 @@ fn session_cutter_op_profile_matches_gui_rationale_assembly() {
             continue;
         }
         let tool = session
-            .tool_by_id(tc.tool_id)
-            .unwrap_or_else(|| panic!("Tool {} missing for toolpath {}", tc.tool_id, tc.id));
+            .toolpath_tool(tc)
+            .unwrap_or_else(|| panic!("Tool {:?} missing for toolpath {}", tc.tool_id, tc.id));
 
         // The exact context the GUI modal / MCP rationale path built
         // by hand before the dedup (feeds_modal.rs / app/mcp.rs).

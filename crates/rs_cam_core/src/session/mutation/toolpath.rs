@@ -105,9 +105,11 @@ impl ProjectSession {
     /// - the selection (a copy), so both ops split the holes by the fit
     ///   rule (design 4.1);
     /// - the model, because the stored selection names the toolpath model;
-    /// - the tool, because every toolpath binds a tool. The tool makes the
-    ///   two fits one rule: a circle that the Drill skips as `Larger` is a
-    ///   circle that the Bore helix cuts;
+    /// - NOT the tool (Q9, Fusion hole recognition; it overturns the P6.7b
+    ///   ruling): the Bore takes the first project tool that it accepts and
+    ///   that is smaller than the smallest hole the Drill skips as `Larger`
+    ///   (`bore_tool_for`). With none, the Bore has no tool (R2) and its
+    ///   state names the kind and the size limit (`no_tool_state`);
     /// - the floor (R-B, lead decision 2026-10-23): the same `Floor`. Both
     ///   ops read one per-hole rule (`compute::floor::hole_floors`), so
     ///   "Each hole floor" gives each bored hole its own floor too;
@@ -162,7 +164,7 @@ impl ProjectSession {
             operation: OperationConfig::Bore(bore),
             dressups: crate::compute::config::DressupConfig::for_op(op_type),
             heights: drill.heights.clone(),
-            tool_id: drill.tool_id,
+            tool_id: self.bore_tool_for(drill),
             model_id: drill.model_id,
             pre_gcode: None,
             post_gcode: None,
@@ -766,14 +768,24 @@ impl ProjectSession {
             if !session.tools.iter().any(|t| t.id == tool_id) {
                 return Err(SessionError::ToolNotFound(tool_id));
             }
+            let mut candidate = session
+                .toolpath_configs
+                .get(index)
+                .ok_or(SessionError::ToolpathNotFound(index))?
+                .clone();
+            if candidate.tool_id == Some(tool_id) {
+                return Ok(());
+            }
+            let old_tool = candidate.tool_id;
+            candidate.tool_id = Some(tool_id);
+            // R2: the first tool of an op with no tool applies THE boundary
+            // rule of the draft (`apply_first_tool_boundary`).
+            session.apply_first_tool_boundary(old_tool, &mut candidate);
             let tc = session
                 .toolpath_configs
                 .get_mut(index)
                 .ok_or(SessionError::ToolpathNotFound(index))?;
-            if tc.tool_id == tool_id {
-                return Ok(());
-            }
-            tc.tool_id = tool_id;
+            *tc = candidate;
             let enabled = tc.enabled;
             // A different cutter removes different material, so this is a
             // stock-chain change: same invalidation as

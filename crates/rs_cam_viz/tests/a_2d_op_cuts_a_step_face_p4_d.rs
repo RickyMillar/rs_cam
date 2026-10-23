@@ -123,7 +123,7 @@ fn add_op(session: &mut ProjectSession, op: OperationType) -> usize {
         operation,
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
         model_id: session.models()[0].id,
         pre_gcode: None,
         post_gcode: None,

@@ -91,7 +91,7 @@ fn two_operation_job() -> AppController<ScriptedLane> {
         .expect("the session takes the tool list");
 
     let mut second_op = toolpath(1);
-    second_op.tool_id = rs_cam_core::ids::ToolId::from_raw(2);
+    second_op.tool_id = Some(rs_cam_core::ids::ToolId::from_raw(2));
     let _ = controller
         .state
         .apply(Command::AddToolpath(AddToolpathArgs {

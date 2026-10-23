@@ -136,7 +136,7 @@ const MIN_FILES_WALKED: usize = 100;
 /// `controller::tests` — is a DIRECTORY module with eighteen theme
 /// children since SHL-03. The bar catches a resolver that starts
 /// excluding production code, not a new test file.
-const MAX_EXCLUDED_FILES: usize = 40;
+const MAX_EXCLUDED_FILES: usize = 41;
 
 /// The lowest number of CLI sites the one path rule must exempt.
 ///

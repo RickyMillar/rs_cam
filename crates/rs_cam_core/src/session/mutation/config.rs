@@ -370,7 +370,7 @@ impl ProjectSession {
             .iter()
             .enumerate()
             .filter(|(_, tc)| {
-                tc.tool_id == tool_id
+                tc.tool_id == Some(tool_id)
                     || matches!(
                         &tc.boundary.source,
                         BoundarySource::PlannedTierRegions { tool_ids, .. }

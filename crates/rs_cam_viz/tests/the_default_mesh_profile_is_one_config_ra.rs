@@ -105,10 +105,13 @@ fn the_gui_door_gives_the_core_default_mesh_profile_ra() {
     let mut core = session();
     let draft = core
         .draft_toolpath(
-            OperationType::Profile,
-            core.tools()[0].id,
-            core.models()[0].id,
-            format!("{} 1", OperationType::Profile.label()),
+            rs_cam_core::session::DraftRequest::new(
+                OperationType::Profile,
+                0,
+                format!("{} 1", OperationType::Profile.label()),
+            )
+            .tool(core.tools()[0].id)
+            .model(core.models()[0].id),
         )
         .expect("the tool fits");
     let effects = core

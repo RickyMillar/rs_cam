@@ -31,5 +31,8 @@ run the server; the live server, GUI dispatch and session ownership are in
   viz server/handler and MCP surface tests.
 - Do not put controller, GUI state or `ProjectSession` mutation logic here.
   Those belong in viz/core respectively.
+- R2/Q7 (2026-10-24): `AddToolpathParam` `tool_index` and `model_id` are optional (the first
+  fitting tool; the core model rule), `AddToolpathViaGuiParam` has `model_id`, both replies carry
+  `no_tool`, and the wire snapshot was re-blessed.
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.

@@ -114,7 +114,7 @@ fn build_identity_origin_session_with_heights(heights: HeightsConfig) -> Project
         operation: OperationConfig::Adaptive3d(adaptive),
         dressups: DressupConfig::for_op(OperationType::Adaptive3d),
         heights,
-        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(tool_id)),
         model_id,
         pre_gcode: None,
         post_gcode: None,

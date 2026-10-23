@@ -639,7 +639,7 @@ fn rivmap100_tiered_finish_step0() {
     let tool = session
         .tools()
         .iter()
-        .find(|t| t.id == tc.tool_id)
+        .find(|t| Some(t.id) == tc.tool_id)
         .unwrap()
         .clone();
     let def = build_cutter(&tool).unwrap();

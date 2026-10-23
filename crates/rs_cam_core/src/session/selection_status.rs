@@ -1186,7 +1186,7 @@ impl ProjectSession {
         let Some((chamfer_width, tip_offset)) = tc.operation.bevel_width_and_tip_mm() else {
             return Ok(Ok(Vec::new()));
         };
-        let Some(tool) = self.tool_by_id(tc.tool_id) else {
+        let Some(tool) = self.toolpath_tool(tc) else {
             return Ok(Ok(Vec::new()));
         };
         if tc
@@ -1258,7 +1258,7 @@ impl ProjectSession {
         if !tc.operation.cuts_past_open_sides() {
             return None;
         }
-        let tool = self.tool_by_id(tc.tool_id)?;
+        let tool = self.toolpath_tool(tc)?;
         crate::compute::cutter::build_cutter(tool)
             .ok()
             .map(|cutter| crate::tool::MillingCutter::diameter(&cutter) / 2.0)
@@ -1285,7 +1285,7 @@ impl ProjectSession {
             | ItemUse::Curves
             | ItemUse::Edges => return None,
         }
-        let tool = self.tool_by_id(tc.tool_id)?;
+        let tool = self.toolpath_tool(tc)?;
         crate::compute::cutter::build_cutter(tool)
             .ok()
             .map(|cutter| {
@@ -1312,7 +1312,7 @@ impl ProjectSession {
                 return None;
             }
         }
-        let tool = self.tool_by_id(tc.tool_id)?;
+        let tool = self.toolpath_tool(tc)?;
         crate::compute::cutter::build_cutter(tool)
             .ok()
             .map(|cutter| crate::tool::MillingCutter::diameter(&cutter) / 2.0)
@@ -2235,7 +2235,7 @@ impl StatusKey {
             },
             edge_clear: match (target, tc.operation.bevel_width_and_tip_mm()) {
                 (SelectionTarget::Op, Some(bevel)) if item_use == ItemUse::Edges => {
-                    serde_json::to_vec(&(session.tool_by_id(tc.tool_id), bevel)).ok()?
+                    serde_json::to_vec(&(session.toolpath_tool(tc), bevel)).ok()?
                 }
                 _ => Vec::new(),
             },

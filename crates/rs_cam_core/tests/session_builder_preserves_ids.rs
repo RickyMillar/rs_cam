@@ -94,7 +94,7 @@ fn toolpath(id: usize, name: &str, tool_id: usize, model_id: usize) -> ToolpathC
         operation: OperationConfig::Pocket(PocketConfig::default()),
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(tool_id)),
         model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
@@ -207,11 +207,11 @@ fn builder_keeps_toolpath_order_and_bindings() {
     assert_eq!(ids, vec![10, 11, 12], "the toolpath ids moved");
     assert_eq!(
         session.toolpath_configs()[0].tool_id,
-        rs_cam_core::ids::ToolId::from_raw(TOOL_A)
+        Some(rs_cam_core::ids::ToolId::from_raw(TOOL_A))
     );
     assert_eq!(
         session.toolpath_configs()[1].tool_id,
-        rs_cam_core::ids::ToolId::from_raw(TOOL_B)
+        Some(rs_cam_core::ids::ToolId::from_raw(TOOL_B))
     );
     assert_eq!(
         session.toolpath_configs()[2].model_id,

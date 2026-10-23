@@ -327,7 +327,7 @@ fn pocket_session(depth: f64) -> ProjectSession {
         // Auto everywhere. The point is that the OPERATION's depth reaches
         // the caution with no Heights pin involved at all.
         heights: HeightsConfig::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(tool_id)),
         model_id,
         pre_gcode: None,
         post_gcode: None,

@@ -159,11 +159,11 @@ fn the_primary_and_the_builder_agree_about_a_runnable_project_ur3() {
     generate_all_for_test(&mut controller);
     let id = controller.state.session().toolpath_configs()[0].id;
     panel_edit(&mut controller, id, |entry| {
-        entry.tool_id = ToolId::from_raw(999);
+        entry.tool_id = Some(ToolId::from_raw(999));
     });
     assert_eq!(
         controller.state.session().toolpath_configs()[0].tool_id,
-        rs_cam_core::ids::ToolId::from_raw(999),
+        Some(rs_cam_core::ids::ToolId::from_raw(999)),
         "fixture 3 precondition failed: the corrupt tool id did not reach the session"
     );
     let predicate =

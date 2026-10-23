@@ -63,7 +63,7 @@ fn narration_tool_lookup_refuses_where_the_parent_took_another_tool() {
     assert!(
         crate::app::RsCamApp::narration_tool_for(
             &tools,
-            rs_cam_core::ids::ToolId::from_raw(MISSING_ID)
+            Some(rs_cam_core::ids::ToolId::from_raw(MISSING_ID))
         )
         .is_none(),
         "the shipped lookup must refuse an unresolvable tool id rather than narrate \
@@ -76,9 +76,11 @@ fn narration_tool_lookup_refuses_where_the_parent_took_another_tool() {
 #[test]
 fn narration_tool_lookup_still_finds_the_toolpaths_own_tool() {
     let tools = two_tool_fixture();
-    let found =
-        crate::app::RsCamApp::narration_tool_for(&tools, rs_cam_core::ids::ToolId::from_raw(2))
-            .expect("tool id 2 is configured");
+    let found = crate::app::RsCamApp::narration_tool_for(
+        &tools,
+        Some(rs_cam_core::ids::ToolId::from_raw(2)),
+    )
+    .expect("tool id 2 is configured");
     assert_eq!(found.name, "Ø1 ball");
     assert!((found.diameter - 1.0).abs() < 1e-9);
 }
@@ -128,7 +130,7 @@ fn cut_trace_fixture(
             operation,
             dressups: crate::state::toolpath::DressupConfig::for_op(op_type),
             heights: crate::state::toolpath::HeightsConfig::default(),
-            tool_id: rs_cam_core::ids::ToolId::from_raw(0),
+            tool_id: Some(rs_cam_core::ids::ToolId::from_raw(0)),
             model_id: rs_cam_core::ids::ModelId::from_raw(0),
             pre_gcode: None,
             post_gcode: None,
@@ -889,7 +891,7 @@ fn mcp_generate_all_leaves_the_saved_debug_options_unchanged_u4() {
         operation,
         dressups: crate::state::toolpath::DressupConfig::for_op(op_type),
         heights: crate::state::toolpath::HeightsConfig::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(0),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(0)),
         model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,

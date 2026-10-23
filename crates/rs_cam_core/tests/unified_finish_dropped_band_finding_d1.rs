@@ -159,7 +159,7 @@ fn toolpath(heights: HeightsConfig, tool_id: usize, model_id: usize) -> Toolpath
         operation: op,
         dressups: DressupConfig::for_op(op_type),
         heights,
-        tool_id: rs_cam_core::ids::ToolId::from_raw(tool_id),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(tool_id)),
         model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,

@@ -368,7 +368,7 @@ fn probe_cell(session: &mut ProjectSession, index: usize, dpp: f64, stepover: f6
         .collect();
     line(&format!("this toolpath's collisions: {}", mine.len()));
 
-    let tool_cfg = session.tool_by_id(tc.tool_id).expect("the tool").clone();
+    let tool_cfg = session.toolpath_tool(&tc).expect("the tool").clone();
     let cutter = build_cutter(&tool_cfg).unwrap();
     let radius = cutter.radius();
     let lut = RadialProfileLUT::from_cutter(&cutter, LUT_SAMPLES);

@@ -300,7 +300,7 @@ mod tests {
             operation: OperationConfig::Pocket(PocketConfig::default()),
             dressups: DressupConfig::default(),
             heights: HeightsConfig::default(),
-            tool_id: crate::ids::ToolId::from_raw(tool_id),
+            tool_id: Some(crate::ids::ToolId::from_raw(tool_id)),
             model_id: crate::ids::ModelId::from_raw(model_id),
             pre_gcode: None,
             post_gcode: None,

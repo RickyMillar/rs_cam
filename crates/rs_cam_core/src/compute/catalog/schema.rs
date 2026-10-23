@@ -488,6 +488,25 @@ impl ToolConstraintsDef {
         })
     }
 
+    /// R2: the tool kinds the op needs, as words for the no-tool state:
+    /// "needs a flat end mill or a ball nose". With no kind list it is
+    /// "needs a tool that is not a V-bit" or "needs a tool".
+    pub fn needs_text(&self) -> String {
+        let names: Vec<String> = self
+            .required_kinds
+            .iter()
+            .map(|k| format!("a {}", k.label()))
+            .collect();
+        match names.split_last() {
+            Some((last, init)) if !init.is_empty() => {
+                format!("needs {} or {last}", init.join(", "))
+            }
+            Some((last, _)) => format!("needs {last}"),
+            None if !self.supports_v_bit => "needs a tool that is not a V-bit".to_owned(),
+            None => "needs a tool".to_owned(),
+        }
+    }
+
     /// Materialize the serde-facing [`ToolConstraints`].
     pub fn to_schema(&self) -> ToolConstraints {
         ToolConstraints {

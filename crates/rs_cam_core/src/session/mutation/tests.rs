@@ -48,7 +48,7 @@ fn make_tc(tool_id: usize, model_id: usize) -> ToolpathConfig {
         operation: OperationConfig::Pocket(PocketConfig::default()),
         dressups: DressupConfig::default(),
         heights: HeightsConfig::default(),
-        tool_id: crate::ids::ToolId::from_raw(tool_id),
+        tool_id: Some(crate::ids::ToolId::from_raw(tool_id)),
         model_id: crate::ids::ModelId::from_raw(model_id),
         pre_gcode: None,
         post_gcode: None,
@@ -116,8 +116,10 @@ fn add_toolpath_assigns_id_and_updates_setup() {
 }
 
 /// Geometry selection P6.7 (L-17): `AddBoreFromDrill` adds one Bore
-/// directly after the Drill, with a copy of the Drill selection, its tool
-/// and model, and the floor at the Drill depth below the stock top. It
+/// directly after the Drill, with a copy of the Drill selection, its model,
+/// and the floor at the Drill depth below the stock top. Q9: the tool is
+/// NOT copied; it is the first tool that the Bore accepts and that fits the
+/// holes the Drill leaves (here no hole: the one end mill). It
 /// refuses a toolpath that is not a Drill and a stale index, and a refusal
 /// writes nothing.
 ///
@@ -182,7 +184,9 @@ fn add_bore_from_drill_copies_the_drill_p6_7() {
     assert_eq!(cfg.floor, Floor::Top { depth: 7.5 });
     assert_eq!(bore.heights, s.toolpath_configs()[drill_index].heights);
     assert_eq!(cfg.spindle_rpm, Some(12_000));
-    assert_eq!(bore.tool_id, s.toolpath_configs()[drill_index].tool_id);
+    // Q9: the first tool that the Bore accepts (the Drill leaves no larger
+    // hole, so there is no size limit).
+    assert_eq!(bore.tool_id, Some(s.tools()[0].id));
     assert_eq!(bore.model_id, s.toolpath_configs()[drill_index].model_id);
     assert_eq!(bore.name, "Holes bore");
 

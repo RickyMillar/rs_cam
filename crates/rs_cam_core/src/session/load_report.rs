@@ -85,7 +85,7 @@ impl LoadReportStamp {
 struct RowKey {
     id: crate::ids::ToolpathId,
     enabled: bool,
-    tool_id: crate::ids::ToolId,
+    tool_id: Option<crate::ids::ToolId>,
     operation: Vec<u8>,
     annotated: Option<Weak<AnnotatedToolpath>>,
     drill_op: Option<Weak<DrillOp>>,
@@ -100,7 +100,7 @@ struct RowKey {
 struct RowInputs<'a> {
     id: crate::ids::ToolpathId,
     enabled: bool,
-    tool_id: crate::ids::ToolId,
+    tool_id: Option<crate::ids::ToolId>,
     operation: &'a crate::compute::catalog::OperationConfig,
     annotated: Option<&'a Arc<AnnotatedToolpath>>,
     drill_op: Option<&'a Arc<DrillOp>>,
@@ -417,7 +417,7 @@ mod tests {
             ),
             dressups: DressupConfig::default(),
             heights: HeightsConfig::default(),
-            tool_id: crate::ids::ToolId::from_raw(tool_id),
+            tool_id: Some(crate::ids::ToolId::from_raw(tool_id)),
             model_id: crate::ids::ModelId::from_raw(0),
             pre_gcode: None,
             post_gcode: None,
@@ -635,7 +635,7 @@ mod tests {
         let mut s = session();
         s.insert_result(0, result_of(plunges(1200.0))).unwrap();
         for tool_id in [s.tools[0].id.raw(), 999] {
-            s.toolpath_configs[0].tool_id = crate::ids::ToolId::from_raw(tool_id);
+            s.toolpath_configs[0].tool_id = Some(crate::ids::ToolId::from_raw(tool_id));
             let trace = Arc::new(fresh_trace(&s));
             let evidence = crate::session::ProjectEvidence {
                 cut_trace: Some(trace.as_ref()),

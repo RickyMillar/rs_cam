@@ -83,7 +83,7 @@ fn toolpath(id: usize, op_type: OperationType) -> ToolpathConfig {
         operation: rs_cam_core::compute::fixture_values::fixture_op(op_type),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
         model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,

@@ -8,7 +8,7 @@ The view-side state; the core owns the project, so it is not an alternate data m
   raises the sim flag, logs a refusal), `replace_session`, `start_job`; `split_mut` gives disjoint borrows.
 - `freshness.rs` — `FreshnessState` per toolpath and `SimFreshness`: both DERIVED, never stored.
 - `stale.rs` — the one place the GUI stamps `stale_since` from a core answer.
-- `toolpath.rs` and `toolpath/` — the toolpath rows, their catalogue entries and configuration support.
+- `toolpath.rs` and `toolpath/` — the toolpath rows, their catalogue entries and configuration support. R2: `ToolpathEntry.tool_id` is `Option` (an op with no tool), as `ShoePlanRow.tool_id` and `RunLine.tool_id`.
 - `simulation.rs`, `job.rs`, `runtime.rs` — sim, job lanes, GUI runtime; `FeedsMemo::refresh` is the one `feeds_result` writer (F216);
   `ToolpathRun` is the run and its result as one value (F031), `status()` derives `ComputeStatus`.
 - `simulation/` — `playback_state.rs`, `issue_triage.rs`, `semantic_trace.rs`.

@@ -2936,10 +2936,9 @@ impl ProjectSession {
                 let Some(mut draft) = self.toolpath_configs.get(index).cloned() else {
                     return Err(SessionError::ToolpathNotFound(index));
                 };
-                let tool_id = draft.tool_id;
-                let Some(tool) = self.tool_by_id(tool_id) else {
-                    return Err(SessionError::ToolNotFound(tool_id));
-                };
+                // R2: an op with no tool has no Suggest; it refuses with
+                // the fix (`NoTool`).
+                let tool = self.tool_of(&draft)?;
                 let slots = self.suggest_slots(&draft);
                 let input = crate::feeds::suggest::OperationApplyInput {
                     tool,
@@ -2965,10 +2964,13 @@ impl ProjectSession {
                 }))
             }
             Command::ReplaceToolpathConfig(args) => {
-                let ReplaceToolpathConfigArgs { index, config } = args;
-                if index >= self.toolpath_count() {
+                let ReplaceToolpathConfigArgs { index, mut config } = args;
+                let Some(old_tool) = self.toolpath_configs.get(index).map(|tc| tc.tool_id) else {
                     return Err(SessionError::ToolpathNotFound(index));
-                }
+                };
+                // R2: the first tool set on an op with no tool (the GUI Tool
+                // combo) applies THE boundary rule of the draft.
+                self.apply_first_tool_boundary(old_tool, &mut config);
                 // P3.2: the GUI door refuses a pinned Bottom Z on an
                 // `OpFloor` op before it writes anything.
                 config.floor_conflict()?;

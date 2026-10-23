@@ -959,7 +959,7 @@ fn coarse_steps_is_gone_from_the_wire() {
         operation: OperationConfig::Adaptive3d(Adaptive3dConfig::default()),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: s.tools()[0].id,
+        tool_id: Some(s.tools()[0].id),
         model_id: crate::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,

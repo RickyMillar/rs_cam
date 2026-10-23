@@ -256,7 +256,7 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
         model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
@@ -323,7 +323,7 @@ fn push_toolpath<B: ComputeBackend>(controller: &mut AppController<B>, name: &st
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
         model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
@@ -510,7 +510,7 @@ fn add_derived_rest_dependent(
         ),
         dressups: Default::default(),
         heights: Default::default(),
-        tool_id: rs_cam_core::ids::ToolId::from_raw(1),
+        tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
         model_id: rs_cam_core::ids::ModelId::from_raw(0),
         pre_gcode: None,
         post_gcode: None,
@@ -1073,7 +1073,7 @@ fn project_fingerprint(controller: &AppController<ScriptedBackend>) -> Vec<Strin
         .iter()
         .map(|tc| {
             format!(
-                "{}|{}|{}|{:?}",
+                "{}|{:?}|{}|{:?}",
                 tc.name,
                 tc.tool_id,
                 tc.enabled,

@@ -885,10 +885,14 @@ pub struct ProjectToolpathSection {
     pub operation: Option<OperationConfig>,
     #[serde(default = "default_true")]
     pub enabled: bool,
-    /// F053: required. A toolpath with no tool id used to bind to tool 0
+    /// R2 (changes F053): optional. A toolpath with no tool writes no
+    /// `tool_id` key and loads with no tool (it refuses generation until a
+    /// tool is set). A stated id is EXACT (P2.4/P2.5): it never binds to
+    /// another tool.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_id: Option<ToolId>,
+    /// F053: required. A toolpath with no model id used to bind to model 0
     /// with no word; the ids are EXACT (P2.4/P2.5).
-    pub tool_id: ToolId,
-    /// F053: required, as `tool_id`.
     pub model_id: ModelId,
     #[serde(default)]
     pub dressups: DressupConfig,
@@ -1536,10 +1540,13 @@ pub(super) fn build_session_from_project(
     // cannot generate. The GUI used to re-derive these two sentences from
     // the loaded session; the loader knows the same fact first.
     for tc in &toolpath_configs {
-        if !tools.iter().any(|t| t.id == tc.tool_id) {
+        // R2: a toolpath with no tool names no tool; it loads as is.
+        if let Some(tool_id) = tc.tool_id
+            && !tools.iter().any(|t| t.id == tool_id)
+        {
             warnings.push(ProjectLoadWarning::MissingToolReference {
                 toolpath: tc.name.clone(),
-                tool_id: tc.tool_id,
+                tool_id,
             });
         }
         if !models.iter().any(|m| m.id == tc.model_id) {

@@ -712,7 +712,7 @@ mod pin_edit_one_door_p5 {
             .map_or(0, |m| m + 1);
         config.id = ToolpathId::from_raw(next);
         config.name = "Dowel holes".to_owned();
-        config.tool_id = rs_cam_core::ids::ToolId::from_raw(drill_id);
+        config.tool_id = Some(rs_cam_core::ids::ToolId::from_raw(drill_id));
         config.operation =
             OperationConfig::Drill(rs_cam_core::compute::operation_configs::DrillConfig::default());
         let _ = controller
@@ -1039,7 +1039,7 @@ mod pin_edit_one_door_p5 {
                     let tool = session
                         .tools()
                         .iter()
-                        .find(|t| t.id == tc.tool_id)
+                        .find(|t| Some(t.id) == tc.tool_id)
                         .map_or(0.0, |t| t.diameter);
                     Some((c.diameter, tool))
                 }
@@ -1159,8 +1159,8 @@ mod pin_edit_one_door_p5 {
         assert_ne!(
             controller.state.session().toolpath_configs()[op]
                 .tool_id
-                .raw(),
-            second_id,
+                .map(|id| id.raw()),
+            Some(second_id),
             "non-vacuity: the door chose the first tool"
         );
         let pins = controller
@@ -1183,7 +1183,7 @@ mod pin_edit_one_door_p5 {
             .expect("the op");
         assert_eq!(
             controller.state.session().toolpath_configs()[op].tool_id,
-            rs_cam_core::ids::ToolId::from_raw(second_id)
+            Some(rs_cam_core::ids::ToolId::from_raw(second_id))
         );
     }
 

@@ -225,12 +225,32 @@ impl<B: ComputeBackend> AppController<B> {
         let tool_id = tc.tool_id;
         let operation = tc.operation.clone();
 
-        if !self.state.session().tools().iter().any(|t| t.id == tool_id) {
+        // R2: an op with no tool refuses with its state and the fix, the
+        // text of core `SessionError::NoTool`.
+        if let Some(state) = self.state.session().no_tool_state(tp_idx) {
+            let msg = format!("{state}. {}", rs_cam_core::session::NO_TOOL_FIX);
             self.push_notification(
-                "Cannot generate: no tool assigned to this toolpath".into(),
+                format!("Cannot generate: {msg}"),
                 super::super::Severity::Warning,
             );
-            self.fail_toolpath_submit(tp_id, "No tool assigned to this toolpath".to_owned());
+            self.fail_toolpath_submit(tp_id, msg);
+            return;
+        }
+        if !self
+            .state
+            .session()
+            .tools()
+            .iter()
+            .any(|t| Some(t.id) == tool_id)
+        {
+            self.push_notification(
+                "Cannot generate: the tool of this toolpath is not in the project".into(),
+                super::super::Severity::Warning,
+            );
+            self.fail_toolpath_submit(
+                tp_id,
+                "The tool of this toolpath is not in the project".to_owned(),
+            );
             return;
         }
 
@@ -2404,7 +2424,7 @@ impl<B: ComputeBackend> AppController<B> {
             let tool_name = session
                 .tools()
                 .iter()
-                .find(|t| t.id == tc.tool_id)
+                .find(|t| Some(t.id) == tc.tool_id)
                 .map(|t| t.name.clone())
                 .unwrap_or_default();
             if let Some(rt) = gui.toolpath_rt.get(&tc.id) {

@@ -116,10 +116,13 @@ fn the_plan_emits_a_coarse_to_fine_chain_with_provenance() {
 
     assert_eq!(
         tcs[0].tool_id,
-        rs_cam_core::ids::ToolId::from_raw(coarse_id),
+        Some(rs_cam_core::ids::ToolId::from_raw(coarse_id)),
         "tier 0 is the COARSE tool"
     );
-    assert_eq!(tcs[1].tool_id, rs_cam_core::ids::ToolId::from_raw(fine_id));
+    assert_eq!(
+        tcs[1].tool_id,
+        Some(rs_cam_core::ids::ToolId::from_raw(fine_id))
+    );
     assert_eq!(tcs[0].name, "Finish tier 0 (R2.0)");
     assert_eq!(tcs[1].name, "Finish tier 1 (R1.5)");
 

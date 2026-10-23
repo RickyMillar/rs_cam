@@ -27,7 +27,8 @@ pub struct ShoePlanRow {
     /// The toolpath name.
     pub toolpath_name: String,
     /// The raw tool id of the toolpath.
-    pub tool_id: ToolId,
+    /// R2: `None` for an op with no tool.
+    pub tool_id: Option<ToolId>,
     /// The first toolpath of its run: a tool change, a setup start, or a
     /// change of the shoe setting.
     pub run_start: bool,
@@ -146,39 +147,43 @@ impl ProjectSession {
                     continue;
                 };
                 let setting = first.shoe;
-                let tool = self
-                    .tool_by_id(first.tool_id)
-                    .ok_or(SessionError::ToolNotFound(first.tool_id))?;
-                let solution = match setting {
-                    ShoeSetting::Raised | ShoeSetting::Off => None,
-                    ShoeSetting::Auto | ShoeSetting::Gap { .. } => {
-                        let toolpaths: Vec<&crate::toolpath::Toolpath> = run
-                            .iter()
-                            .filter_map(|i| self.results.get(i).map(|r| r.toolpath()))
-                            .collect();
-                        // The join of each toolpath: unknown at the run start,
-                        // then the previous end. (After a setting change with
-                        // no tool change the check reads the previous end;
-                        // the solver reads Unknown there, which asks the
-                        // first target to clear every ceiling.)
-                        let joined: Vec<(&crate::toolpath::Toolpath, JoinStart)> = toolpaths
-                            .iter()
-                            .enumerate()
-                            .map(|(k, tp)| {
-                                let join = JoinStart::after_previous(
-                                    toolpaths.iter().take(k).map(|t| ((), *t)),
-                                    &(),
-                                );
-                                (*tp, join)
-                            })
-                            .collect();
-                        crate::compute::shoe::solve_gap(
-                            head,
-                            tool.stickout,
-                            &obstacles,
-                            &stock,
-                            &joined,
-                        )?
+                // R2: a run of ops with no tool has no shoe plan to solve;
+                // the ops do not generate, so nothing is cut.
+                let solution = if first.tool_id.is_none() {
+                    None
+                } else {
+                    let tool = self.tool_of(first)?;
+                    match setting {
+                        ShoeSetting::Raised | ShoeSetting::Off => None,
+                        ShoeSetting::Auto | ShoeSetting::Gap { .. } => {
+                            let toolpaths: Vec<&crate::toolpath::Toolpath> = run
+                                .iter()
+                                .filter_map(|i| self.results.get(i).map(|r| r.toolpath()))
+                                .collect();
+                            // The join of each toolpath: unknown at the run start,
+                            // then the previous end. (After a setting change with
+                            // no tool change the check reads the previous end;
+                            // the solver reads Unknown there, which asks the
+                            // first target to clear every ceiling.)
+                            let joined: Vec<(&crate::toolpath::Toolpath, JoinStart)> = toolpaths
+                                .iter()
+                                .enumerate()
+                                .map(|(k, tp)| {
+                                    let join = JoinStart::after_previous(
+                                        toolpaths.iter().take(k).map(|t| ((), *t)),
+                                        &(),
+                                    );
+                                    (*tp, join)
+                                })
+                                .collect();
+                            crate::compute::shoe::solve_gap(
+                                head,
+                                tool.stickout,
+                                &obstacles,
+                                &stock,
+                                &joined,
+                            )?
+                        }
                     }
                 };
                 let resolved = crate::compute::shoe::resolve(head, setting, solution);

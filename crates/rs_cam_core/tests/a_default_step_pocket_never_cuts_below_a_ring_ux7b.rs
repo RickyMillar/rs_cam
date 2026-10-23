@@ -160,7 +160,11 @@ fn add_as_the_doors_do(session: &mut ProjectSession, op_type: OperationType) -> 
     let tool_id = session.tools()[0].id;
     let model_id = session.models()[0].id;
     let mut cfg = session
-        .draft_toolpath(op_type, tool_id, model_id, op_type.label().to_owned())
+        .draft_toolpath(
+            rs_cam_core::session::DraftRequest::new(op_type, 0, op_type.label().to_owned())
+                .tool(tool_id)
+                .model(model_id),
+        )
         .expect("the tool fits the op")
         .config;
     let floor = cfg.operation.floor();
