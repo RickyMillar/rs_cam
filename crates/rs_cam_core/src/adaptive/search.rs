@@ -653,6 +653,10 @@ pub(crate) fn compute_swept_width(
 /// On a straight cut along a lattice axis with `ℓ` a whole number of cells
 /// the start and end discs are the same node set shifted, and the reading
 /// is the band width rounded to whole rows (within one cell).
+///
+/// Floor (C8, after D7 read 7.85 of D on short steps): the lattice cannot
+/// resolve travel under one cell, so the reading divides by
+/// `max(ℓ, cell)`. That bounds the quantum error at `√2 · P` per mm.
 #[expect(
     clippy::indexing_slicing,
     reason = "rows and columns are clamped to the grid before indexing."
@@ -708,7 +712,7 @@ pub(crate) fn compute_area_per_mm(
             }
         }
     }
-    area / len
+    area / len.max(grid.cell_size)
 }
 
 /// [`compute_swept_width`] with the fringe's standing sub-points read too

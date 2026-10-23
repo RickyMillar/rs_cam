@@ -28,7 +28,12 @@
 //!     `geodesic_curv_join_fine` (the same for `geodesic_curv_join`, whose
 //!     full-turn transitions inside `ρ*` rebuild the spiral steps that read
 //!     0.36 to 0.40 at D5);
-//!   - C7, the same plans judged by area per mm (FreeCAD's quantity, R1
+//!   - `geodesic_curv_lead` (`GeodesicOptions::C8_LEAD`: the curvature
+//!     law, the core spiral, and lobes entered by tangential lead-ins with
+//!     keep-down links through the cut band; the summary's `lead-ins` line
+//!     and the L entry kind);
+//!   - C7 (in the record set since D7: the per-mm reading is not evidence
+//!     on short steps), the same plans judged by area per mm (FreeCAD's quantity, R1
 //!     §3) instead of swept width, against the same `c·D`
 //!     (`ReplayMeasure::AreaPerMm`: the cleanup's replay, residue passes,
 //!     wall pass and mop all hold the area measure): `geodesic_curv_area`,
@@ -474,8 +479,9 @@ fn summary_text(shape: &str, label: &str, run: &Run2d) -> String {
     let e = &s.entry_split;
     let _ = writeln!(
         t,
-        "entries by producer: starter {}, clearing at a wrap end (join) {}, clearing mid-wrap (replay split) {}, residue contour {}, wall pass {}, residue mop {}, other {}",
+        "entries by producer: starter {}, clearing at a lead-in (L) {}, clearing at a wrap end (join) {}, clearing mid-wrap (replay split) {}, residue contour {}, wall pass {}, residue mop {}, other {}",
         e.starter,
+        e.clearing_lead,
         e.clearing_join,
         e.clearing_split,
         e.residue_contour,
@@ -560,6 +566,19 @@ fn summary_text(shape: &str, label: &str, run: &Run2d) -> String {
                 b.outside,
                 b.return_length_mm
             );
+            if b.lead_ins + b.lead_fallback + b.closed_lead_ins + b.closed_lead_fallback > 0 {
+                let _ = writeln!(
+                    t,
+                    "lead-ins piece {i}: lobe bands {} (fell back to the seam {}), closed wraps {} (fell back {}), planned link length {:.1} mm, lead-in radius {:.1} to {:.1} mm",
+                    b.lead_ins,
+                    b.lead_fallback,
+                    b.closed_lead_ins,
+                    b.closed_lead_fallback,
+                    b.link_length_mm,
+                    b.lead_radius_min,
+                    b.lead_radius_max
+                );
+            }
         }
     }
     t
@@ -714,22 +733,10 @@ fn render_candidate_a_beside_the_2d_strategies() {
                 ReplayMeasure::SweptWidth,
             ),
             (
-                "geodesic_curv_area",
-                Candidate2d::Geodesic(GeodesicOptions::C5_CURV),
+                "geodesic_curv_lead",
+                Candidate2d::Geodesic(GeodesicOptions::C8_LEAD),
                 ReadResolution::Planner,
-                ReplayMeasure::AreaPerMm,
-            ),
-            (
-                "agent_area",
-                Candidate2d::Shipped(PathStrategy2d::Agent),
-                ReadResolution::Planner,
-                ReplayMeasure::AreaPerMm,
-            ),
-            (
-                "contour_spiral_area",
-                Candidate2d::Shipped(PathStrategy2d::ContourSpiral),
-                ReadResolution::Planner,
-                ReplayMeasure::AreaPerMm,
+                ReplayMeasure::SweptWidth,
             ),
         ];
         if std::env::var_os("ADAPTIVE_GEODESIC_EXTRA").is_some() {
@@ -767,6 +774,28 @@ fn render_candidate_a_beside_the_2d_strategies() {
                     ReplayMeasure::SweptWidth,
                 )
             }));
+            // C7: the same plans judged by area per mm (D7: the reading is
+            // not evidence on short steps; kept for the record).
+            columns.extend([
+                (
+                    "geodesic_curv_area",
+                    Candidate2d::Geodesic(GeodesicOptions::C5_CURV),
+                    ReadResolution::Planner,
+                    ReplayMeasure::AreaPerMm,
+                ),
+                (
+                    "agent_area",
+                    Candidate2d::Shipped(PathStrategy2d::Agent),
+                    ReadResolution::Planner,
+                    ReplayMeasure::AreaPerMm,
+                ),
+                (
+                    "contour_spiral_area",
+                    Candidate2d::Shipped(PathStrategy2d::ContourSpiral),
+                    ReadResolution::Planner,
+                    ReplayMeasure::AreaPerMm,
+                ),
+            ]);
         }
         for (label, candidate, read, measure) in columns {
             let strategy = match candidate {

@@ -163,6 +163,18 @@
 //! linearly (`s'(ρ) → ρ·cD/R`), so the levels pack round every island
 //! corner. A floor on `ρ` needs a derivation or a ruling.
 //!
+//! # The lead-in join (C8, [`LobeMorph::Lead`])
+//!
+//! The FreeCAD mechanism (R1 §4): a band is entered by a tangential
+//! lead-in from the cleared band and left by a keep-down link through the
+//! cut, so no step meets a band head-on. The lead-in radius is bounded by
+//! the margin the band leaves under the ceiling ([`lead_in_radius`]:
+//! `ρ_L ≥ R + (h² - m²)/(2m)`, 25.7 mm on a straight band at s 2, R 3; the
+//! tool radius does not satisfy it). The lead-in enters mid-arc, because one
+//! tangent at an arc's start against a wall would begin beyond the wall.
+//! Inside `ρ*` the curvature law leaves no margin, so the closed wraps there
+//! keep the seam join; the core spiral covers most of them.
+//!
 //! # The cascade diagnostic (C5, [`CascadeReadout`])
 //!
 //! The replay stamps only the steps it accepts, so one refused step can
@@ -1436,6 +1448,23 @@ pub enum LobeMorph {
     /// could turn into a re-entry and hide the mechanism under test. The
     /// readout reads the return like any cut (about zero load).
     Return,
+    /// C8, the FreeCAD mechanism (R1 §4): every band is entered by a
+    /// tangential lead-in from the cleared band, mid-arc, and no step meets
+    /// the band head-on ([`lead_legs`]). Per band, the cutter stands on
+    /// `A_k` at its end E:
+    /// 1. a keep-down link along `A_k` (cut, zero load) to the lead-in start;
+    /// 2. the lead-in, a circular arc of radius `ρ_L` ([`lead_in_radius`])
+    ///    tangent to `A_{k+1}` at a point P, its bite growing from 0 to `Δ`;
+    /// 3. `A_{k+1}` cut from P to its far end F;
+    /// 4. a keep-down link back along the cut to P;
+    /// 5. `A_{k+1}` cut from P to E: the stock beside it there is the wedge
+    ///    the lead-in left, whose bite grows from 0 at P, heading tangent.
+    ///
+    /// The brief's form (one direction, return to wall A, lead-in to the
+    /// arc's START) cannot work at a wall: a lead-in tangent at the start
+    /// begins beyond the wall, and one tangent further on leaves an uncut
+    /// corner wedge at A that grows by one lead-in span per band.
+    Lead,
 }
 
 /// How far apart the levels (wraps) are (C5).
@@ -1502,6 +1531,13 @@ impl GeodesicOptions {
     pub const C5_CURV_MORPH: Self = Self {
         spacing: Spacing::Curvature,
         ..Self::C4_ALT
+    };
+    /// C8: the curvature law, the core spiral and the lead-in join
+    /// ([`LobeMorph::Lead`]).
+    pub const C8_LEAD: Self = Self {
+        join: JoinRule::Morph(LobeMorph::Lead),
+        spacing: Spacing::Curvature,
+        ..Self::C2
     };
     /// C6: the curvature law with the transition join.
     pub const C6_JOIN: Self = Self {
@@ -2410,6 +2446,20 @@ pub struct LobeReport {
     /// Length (mm) of the return cuts through cleared stock
     /// ([`LobeMorph::Return`]).
     pub return_length_mm: f64,
+    /// C8 ([`LobeMorph::Lead`]): bands entered by a lead-in, and bands
+    /// that fell back to the seam join (no margin, or the lead-in does not
+    /// fit the arc or the region) ...
+    pub lead_ins: usize,
+    pub lead_fallback: usize,
+    /// ... closed wraps joined to the next by a lead-in, and those that
+    /// fell back ...
+    pub closed_lead_ins: usize,
+    pub closed_lead_fallback: usize,
+    /// ... the planned keep-down link length (mm) ...
+    pub link_length_mm: f64,
+    /// ... and the smallest and largest lead-in radius used (mm).
+    pub lead_radius_min: f64,
+    pub lead_radius_max: f64,
 }
 
 /// `pts` resampled at `m + 1` points of equal arc length, its two ends
@@ -2507,6 +2557,11 @@ enum PieceKind {
     Morph,
     /// The return of [`LobeMorph::Return`] along the leg just cut.
     Return,
+    /// C8: a lead-in ([`LobeMorph::Lead`]).
+    LeadIn,
+    /// C8: a keep-down link path through cut stock, emitted as one `Link`
+    /// per vertex (judged by the shipped link check).
+    Link,
 }
 
 /// One planned piece of the morph join, in cutting order.
@@ -2574,6 +2629,9 @@ fn morph_legs(arcs: &[Vec<P2>], morph: LobeMorph, cell: f64) -> Vec<PlanPiece> {
                 }
                 at_far_end = !at_far_end;
             }
+            // Planned by `lead_legs`; `morph_plan` never calls this for it
+            // (only the last arc's plain pass would come out).
+            LobeMorph::Lead => {}
             LobeMorph::Return => {
                 let pts = leg(&|p: f64| p, true);
                 if k + 1 < bands {
@@ -2613,6 +2671,299 @@ fn morph_legs(arcs: &[Vec<P2>], morph: LobeMorph, cell: f64) -> Vec<PlanPiece> {
     out
 }
 
+/// The smallest lead-in radius (mm) for a band of spacing `delta` whose
+/// front has cutter-centre radius `rho` about its centre of curvature (C8),
+/// or `None` when the band leaves no margin under the ceiling.
+///
+/// A lead-in is a circular arc of radius `ρ_L` that ends tangent to the
+/// next wrap, on the cleared side. At angle `θ` before the tangent point its
+/// bite is `b = Δ - ρ_L(1 - cos θ)` and its heading turns `θ` into the
+/// stock. A step tilted by `θ` into a band of depth `b` sweeps
+/// `b + R(1 - cos θ) + h(b) sin θ`, `h(b) = √(R² - (R - b)²)` ([`EntryLaw`]);
+/// with `h(b) ≤ h(Δ)` that is at most
+/// `Δ + h sin θ - (ρ_L - R)(1 - cos θ)`, and over `θ` its largest value is
+/// `Δ + √(h² + (ρ_L - R)²) - (ρ_L - R)` (the amplitude of
+/// `h sin θ + B cos θ` is `√(h² + B²)`). On a curved front the plain pass
+/// already reads `w(ρ, Δ)` ([`circular_front_width`]) instead of `Δ`, so the
+/// margin is `m = c·D - w(ρ, Δ)`. Held to it:
+/// `√(h² + B²) ≤ m + B`, so `ρ_L ≥ R + (h² - m²)/(2m)`.
+///
+/// At the tangent point the reading is the plain pass's `w ≤ c·D`; the
+/// bound is set by the points just before it, where the tilt grows faster
+/// than the bite falls. The tool radius `ρ_L = R` does not satisfy it
+/// (`m ≥ h` would be needed; at s 2, R 3 a lead-in of radius R reads
+/// 3.67 mm against 2.18). On a straight edge at s 2, R 3: `ρ_L` = 25.7 mm,
+/// a lead-in about 10 mm long. Inside `ρ*` the curvature law leaves `m = 0`
+/// (no lead-in).
+fn lead_in_radius(tool_radius: f64, ceiling_width: f64, rho: f64, delta: f64) -> Option<f64> {
+    let r = tool_radius;
+    let margin = ceiling_width - circular_front_width(r, rho, delta);
+    if margin <= 0.0 || delta <= 0.0 {
+        return None;
+    }
+    let h2 = delta * (2.0 * r - delta).max(0.0);
+    Some(r + (h2 - margin * margin).max(0.0) / (2.0 * margin))
+}
+
+/// What a lead-in plan reads from the field and the region (C8).
+struct LeadContext<'a> {
+    field: &'a GeodesicField,
+    region: &'a ToolCentreRegion,
+    tool_radius: f64,
+    ceiling_width: f64,
+    cell: f64,
+}
+
+/// True when every segment of every polyline lies inside the region.
+fn all_inside(region: &ToolCentreRegion, polys: &[&[P2]]) -> bool {
+    polys.iter().all(|pts| {
+        pts.windows(2).all(|w| match w {
+            &[a, b] => region.contains_segment(a, b),
+            _ => true,
+        })
+    })
+}
+
+/// The lead-in radius in the pivot frame (C8): a lead-in circle tangent
+/// inside a front of radius `rho` turns against the front by
+/// `ψ = θ(1 - ρ_L/ρ)` and loses bite as `b = Δ - ρ_e ψ²/2` with
+/// `ρ_e = ρ_L ρ/(ρ - ρ_L)` (small angles). So the straight bound
+/// ([`lead_in_radius`]) applies to `ρ_e`, and
+/// `ρ_L ≥ ρ_min · ρ / (ρ + ρ_min)`, always under `ρ`. Checked on the exact
+/// circles (Python, C8 note; unit test
+/// `the_pivot_frame_lead_in_holds_the_ceiling_on_curved_fronts`): the worst
+/// width along the lead-in is 2.1725 to 2.1755 mm against 2.1756 for
+/// `ρ` 25 to 60 mm.
+fn lead_in_radius_pivot(tool_radius: f64, ceiling_width: f64, rho: f64, delta: f64) -> Option<f64> {
+    let straight = lead_in_radius(tool_radius, ceiling_width, rho, delta)?;
+    Some(straight * rho / (rho + straight))
+}
+
+/// The lead-in onto `next` at its point `p` heading `t` (unit), from the
+/// cleared wrap `prev` (C8): its radius ([`lead_in_radius_pivot`]) and its
+/// points from its start to `p`, or `None`. The start is traced: walk the
+/// lead circle out from `p` in steps of one cell until a point lies within
+/// one cell of `prev` (the bite is then under one cell); a lead-in that
+/// turns more than a right angle first is not a lead-in (`None`). The
+/// circle reaches `prev` only when `ρ_L ≤ ρ - Δ/2`.
+fn lead_in_onto(ctx: &LeadContext<'_>, prev: &[P2], p: P2, t: P2) -> Option<(f64, Vec<P2>)> {
+    let (foot, delta) = nearest_on(prev, p)?;
+    if delta <= 0.0 {
+        return None;
+    }
+    let n = P2::new((foot.x - p.x) / delta, (foot.y - p.y) / delta);
+    let pivot = ctx.field.pivot_near(p)?;
+    let rho = (p.x - pivot.x).hypot(p.y - pivot.y);
+    let radius = lead_in_radius_pivot(ctx.tool_radius, ctx.ceiling_width, rho, delta)?;
+    if radius > rho - delta / 2.0 {
+        return None;
+    }
+    let centre = P2::new(p.x + radius * n.x, p.y + radius * n.y);
+    let at = |th: f64| {
+        let (c, s) = (th.cos(), th.sin());
+        P2::new(
+            centre.x - radius * (n.x * c + t.x * s),
+            centre.y - radius * (n.y * c + t.y * s),
+        )
+    };
+    let dtheta = ctx.cell / radius;
+    let max_steps = (std::f64::consts::FRAC_PI_2 / dtheta).floor() as usize;
+    let reached = (1..=max_steps)
+        .find(|&i| nearest_on(prev, at(i as f64 * dtheta)).is_some_and(|(_, d)| d <= ctx.cell))?;
+    let pts: Vec<P2> = (0..=reached).rev().map(|i| at(i as f64 * dtheta)).collect();
+    Some((radius, pts))
+}
+
+/// One band of a lobe by the lead-in (C8, [`LobeMorph::Lead`]). `a` is the
+/// cut arc `A_k` and `b` the next arc `A_{k+1}`, both with index 0 at the
+/// end E where the cutter stands. Returns the pieces (link, lead-in, cut
+/// P→F, link back, cut P→E: the cutter ends at E of `b`), the lead-in
+/// radius and the link length, or `None` (the seam join then).
+fn lead_band(ctx: &LeadContext<'_>, a: &[P2], b: &[P2]) -> Option<(Vec<PlanPiece>, f64, f64)> {
+    let sub_a = subdivide(a, ctx.cell);
+    let sub_b = subdivide(b, ctx.cell);
+    let total = polyline_length(&sub_b);
+    if total <= 0.0 || sub_b.len() < 2 {
+        return None;
+    }
+    // The point at arc length `at` along `sub_b`, its segment index and
+    // the unit heading toward F.
+    let point_at = |at: f64| -> Option<(P2, usize, P2)> {
+        let mut walked = 0.0;
+        for (i, w) in sub_b.windows(2).enumerate() {
+            let &[u, v] = w else {
+                continue;
+            };
+            let len = (v.x - u.x).hypot(v.y - u.y);
+            if len > 0.0 && walked + len >= at {
+                let f = ((at - walked) / len).clamp(0.0, 1.0);
+                let p = P2::new(u.x + f * (v.x - u.x), u.y + f * (v.y - u.y));
+                return Some((p, i, P2::new((v.x - u.x) / len, (v.y - u.y) / len)));
+            }
+            walked += len;
+        }
+        None
+    };
+    // P: mid-arc, or further from E when the lead-in's span (traced at
+    // mid-arc) needs it.
+    let (mid, _, t_mid) = point_at(total / 2.0)?;
+    let (_, mid_lead) = lead_in_onto(ctx, a, mid, t_mid)?;
+    let span = mid_lead
+        .first()
+        .map_or(f64::INFINITY, |q| (q.x - mid.x).hypot(q.y - mid.y));
+    let at = (total / 2.0).max(span);
+    if at >= total {
+        return None;
+    }
+    let (p, seg, t) = point_at(at)?;
+    let (radius, lead) = lead_in_onto(ctx, a, p, t)?;
+    let start = *lead.first()?;
+    // The link along `a` from E to the lead-in start.
+    let iq = super::spiral::nearest_index(&sub_a, start);
+    let mut link: Vec<P2> = sub_a.iter().take(iq + 1).copied().collect();
+    link.push(start);
+    // `b` from P to F, and from P back to E.
+    let forward: Vec<P2> = std::iter::once(p)
+        .chain(sub_b.iter().skip(seg + 1).copied())
+        .collect();
+    let mut back = forward.clone();
+    back.reverse();
+    let backward: Vec<P2> = std::iter::once(p)
+        .chain(sub_b.iter().take(seg + 1).rev().copied())
+        .collect();
+    if !all_inside(ctx.region, &[&link, &lead, &forward, &backward]) {
+        return None;
+    }
+    let link_len = polyline_length(&link) + polyline_length(&back);
+    Some((
+        vec![
+            PlanPiece {
+                pts: link,
+                kind: PieceKind::Link,
+            },
+            PlanPiece {
+                pts: lead,
+                kind: PieceKind::LeadIn,
+            },
+            PlanPiece {
+                pts: forward,
+                kind: PieceKind::Wrap,
+            },
+            PlanPiece {
+                pts: back,
+                kind: PieceKind::Link,
+            },
+            PlanPiece {
+                pts: backward,
+                kind: PieceKind::Wrap,
+            },
+        ],
+        radius,
+        link_len,
+    ))
+}
+
+/// The bands of a lobe after its first arc is cut (C8): each by
+/// [`lead_band`], or, when that has no plan, by the seam join (the next arc
+/// cut whole from the cutter's end; the cutter then stands at the other
+/// end, so the following band reads the arcs from there). `arcs` as for
+/// [`morph_legs`].
+fn lead_legs(arcs: &[Vec<P2>], ctx: &LeadContext<'_>, report: &mut LobeReport) -> Vec<PlanPiece> {
+    let mut out: Vec<PlanPiece> = Vec::new();
+    let mut far = false;
+    for pair in arcs.windows(2) {
+        let [a, b] = pair else {
+            continue;
+        };
+        let (mut a, mut b) = (a.clone(), b.clone());
+        if far {
+            a.reverse();
+            b.reverse();
+        }
+        match lead_band(ctx, &a, &b) {
+            Some((pieces, radius, link_len)) => {
+                report.lead_ins += 1;
+                report.link_length_mm += link_len;
+                report.lead_radius_min = if report.lead_radius_min > 0.0 {
+                    report.lead_radius_min.min(radius)
+                } else {
+                    radius
+                };
+                report.lead_radius_max = report.lead_radius_max.max(radius);
+                out.extend(pieces);
+            }
+            None => {
+                report.lead_fallback += 1;
+                out.push(PlanPiece {
+                    pts: b,
+                    kind: PieceKind::Wrap,
+                });
+                far = !far;
+            }
+        }
+    }
+    out
+}
+
+/// The lead-in join of a closed wrap to the closed wrap one level up (C8):
+/// `prev` is the lap just cut, ending at its seam where the cutter stands;
+/// `next` the next level's loop. A link back along `prev` (against its
+/// direction) to the lead-in start, the lead-in tangent to `next` at its
+/// point nearest the seam, then `next` lapped from there in `prev`'s
+/// direction. `None` when there is no margin (all of `ρ < ρ*` under the
+/// law) or the lead-in does not fit.
+fn lead_closed(
+    ctx: &LeadContext<'_>,
+    prev: &[P2],
+    next: &Chain,
+) -> Option<(Vec<PlanPiece>, Vec<P2>, f64, f64)> {
+    let (&seam, &before) = (prev.last()?, prev.get(prev.len().checked_sub(2)?)?);
+    let mut lap = next.oriented(seam);
+    let p = *lap.first()?;
+    let second = *lap.get(1)?;
+    let dir_prev = P2::new(seam.x - before.x, seam.y - before.y);
+    if (second.x - p.x) * dir_prev.x + (second.y - p.y) * dir_prev.y < 0.0 {
+        lap.reverse();
+    }
+    let second = *lap.get(1)?;
+    let len = (second.x - p.x).hypot(second.y - p.y);
+    if len <= 0.0 {
+        return None;
+    }
+    let t = P2::new((second.x - p.x) / len, (second.y - p.y) / len);
+    let (radius, lead) = lead_in_onto(ctx, prev, p, t)?;
+    let start = *lead.first()?;
+    let mut back: Vec<P2> = prev.to_vec();
+    back.reverse();
+    let sub = subdivide(&back, ctx.cell);
+    let iq = super::spiral::nearest_index(&sub, start);
+    let mut link: Vec<P2> = sub.iter().take(iq + 1).copied().collect();
+    link.push(start);
+    if !all_inside(ctx.region, &[&link, &lead, &lap]) {
+        return None;
+    }
+    let link_len = polyline_length(&link);
+    Some((
+        vec![
+            PlanPiece {
+                pts: link,
+                kind: PieceKind::Link,
+            },
+            PlanPiece {
+                pts: lead,
+                kind: PieceKind::LeadIn,
+            },
+            PlanPiece {
+                pts: lap.clone(),
+                kind: PieceKind::Wrap,
+            },
+        ],
+        lap,
+        radius,
+        link_len,
+    ))
+}
+
 /// The cutting plan of the morph join after the core spiral (C4): the
 /// wrap pieces of `field` from `min_level` up, grouped into lobes and
 /// plain wraps, in cutting order from `start`.
@@ -2639,12 +2990,23 @@ fn morph_plan(
     reach: f64,
     stepover: f64,
     tool_radius: f64,
+    ceiling_width: f64,
     min_level: usize,
     options: GeodesicOptions,
     morph: LobeMorph,
     cancel: &dyn CancelCheck,
 ) -> Result<(Vec<PlanPiece>, LobeReport), Cancelled> {
     let cell = field.cell();
+    let lead = LeadContext {
+        field,
+        region,
+        tool_radius,
+        ceiling_width,
+        cell,
+    };
+    // C8: the closed wrap just cut (its level and its lap), while nothing
+    // has been cut after it.
+    let mut last_closed: Option<(usize, Vec<P2>)> = None;
     let chains = collect_chains(field, region, min_level, options.meeting, cancel)?;
     let parents = parents_of(&chains, reach, cancel)?;
     let mut children: Vec<Vec<usize>> = vec![Vec::new(); chains.len()];
@@ -2777,6 +3139,34 @@ fn morph_plan(
         let Some(first) = unit.first().and_then(|&i| chains.get(i)) else {
             continue;
         };
+        // C8: a closed wrap after the closed wrap one level down joins it by
+        // a lead-in.
+        if morph == LobeMorph::Lead && unit.len() == 1 && first.closed {
+            let after_closed = last_closed
+                .as_ref()
+                .filter(|(level, _)| level + 1 == first.level);
+            if let Some((_, prev)) = after_closed {
+                match lead_closed(&lead, prev, first) {
+                    Some((pieces, lap, radius, link_len)) => {
+                        report.closed_lead_ins += 1;
+                        report.link_length_mm += link_len;
+                        report.lead_radius_min = if report.lead_radius_min > 0.0 {
+                            report.lead_radius_min.min(radius)
+                        } else {
+                            radius
+                        };
+                        report.lead_radius_max = report.lead_radius_max.max(radius);
+                        out.extend(pieces);
+                        if let Some(&end) = lap.last() {
+                            cur = end;
+                        }
+                        last_closed = Some((first.level, lap));
+                        continue;
+                    }
+                    None => report.closed_lead_fallback += 1,
+                }
+            }
+        }
         // The first arc (or the plain wrap): from the end nearer the cutter.
         let mut pts = first.oriented(cur);
         if options.meeting == MeetingRule::Split {
@@ -2786,6 +3176,7 @@ fn morph_plan(
         let mut p0 = pts.clone();
         p0.reverse();
         arcs.push(p0);
+        last_closed = (unit.len() == 1 && first.closed).then(|| (first.level, pts.clone()));
         out.push(PlanPiece {
             pts,
             kind: PieceKind::Wrap,
@@ -2801,7 +3192,11 @@ fn morph_plan(
             }
             arcs.push(q);
         }
-        let legs = morph_legs(&arcs, morph, cell);
+        let legs = if morph == LobeMorph::Lead {
+            lead_legs(&arcs, &lead, &mut report)
+        } else {
+            morph_legs(&arcs, morph, cell)
+        };
         let inside = legs.iter().all(|piece| {
             piece.pts.windows(2).all(|w| match w {
                 &[a, b] => region.contains_segment(a, b),
@@ -2940,6 +3335,8 @@ struct Produced {
     /// The planned polylines by part, for the readout's step classes
     /// ([`PartIndex`]).
     parts: PartIndex,
+    /// C8: the lead-ins, for the entry split's lead-in kind.
+    leads: Vec<Vec<P2>>,
 }
 
 /// The clearance (mm) from `p` to the nearest ring of `region`: the largest
@@ -3071,6 +3468,7 @@ fn geodesic_segments(
             reach,
             s,
             r,
+            pass.ceiling * 2.0 * r,
             core_levels + 1,
             options,
             morph,
@@ -3095,14 +3493,23 @@ fn geodesic_segments(
         if !core.is_empty() {
             wraps.push(core.clone());
         }
+        let mut leads: Vec<Vec<P2>> = Vec::new();
         for piece in &plan {
             let part = match piece.kind {
-                PieceKind::Wrap => StepPart::Wrap,
-                PieceKind::Morph => StepPart::Morph,
-                PieceKind::Return => StepPart::Return,
+                PieceKind::Wrap => Some(StepPart::Wrap),
+                PieceKind::Morph => Some(StepPart::Morph),
+                PieceKind::Return => Some(StepPart::Return),
+                PieceKind::LeadIn => Some(StepPart::LeadIn),
+                // A link path is emitted as `Link`s, read as links.
+                PieceKind::Link => None,
             };
-            parts.add(&piece.pts, part);
-            if piece.kind != PieceKind::Return {
+            if let Some(part) = part {
+                parts.add(&piece.pts, part);
+            }
+            if piece.kind == PieceKind::LeadIn {
+                leads.push(piece.pts.clone());
+            }
+            if !matches!(piece.kind, PieceKind::Return | PieceKind::Link) {
                 wraps.push(piece.pts.clone());
             }
         }
@@ -3121,6 +3528,22 @@ fn geodesic_segments(
         let mut cur = starter_end;
         append_path(&core, &mut run, &mut cur, &mut segments, reach);
         for piece in &plan {
+            if piece.kind == PieceKind::Link {
+                // C8: one keep-down `Link` per vertex, through cut stock; the
+                // shipped check (`feed_link_checked`) judges each, and a
+                // refused one becomes a re-entry.
+                if run.len() >= 2 {
+                    segments.push(AdaptiveSegment::Cut(std::mem::take(&mut run)));
+                }
+                for &q in &piece.pts {
+                    if (q.x - cur.x).hypot(q.y - cur.y) > CHAIN_EPS {
+                        segments.push(AdaptiveSegment::Link(q));
+                        cur = q;
+                    }
+                }
+                run = vec![cur];
+                continue;
+            }
             append_path(&piece.pts, &mut run, &mut cur, &mut segments, reach);
         }
         if run.len() >= 2 {
@@ -3131,6 +3554,7 @@ fn geodesic_segments(
             report,
             wraps,
             parts,
+            leads,
         }));
     }
     let outer = r + spiral_levels as f64 * s;
@@ -3337,6 +3761,7 @@ fn geodesic_segments(
         report,
         wraps: nominal,
         parts,
+        leads: Vec::new(),
     }))
 }
 
@@ -3431,6 +3856,8 @@ pub enum StepPart {
     Return,
     /// On the moved part of a transition ([`JoinRule::Transition`], C6).
     Transition,
+    /// On a lead-in ([`LobeMorph::Lead`], C8).
+    LeadIn,
     /// On a planned wrap (its end within one cell of the wrap polyline).
     Wrap,
     /// Off every planned piece: a ramp, a back-run, a seam step, an
@@ -3448,6 +3875,7 @@ impl StepPart {
             Self::Morph => "morph leg",
             Self::Return => "return",
             Self::Transition => "transition",
+            Self::LeadIn => "lead-in",
             Self::Wrap => "on a wrap",
             Self::Join => "join (ramp, back-run or seam step)",
         }
@@ -3462,6 +3890,7 @@ impl StepPart {
             Self::Morph => "morph",
             Self::Return => "return",
             Self::Transition => "transition",
+            Self::LeadIn => "lead",
             Self::Wrap => "wrap",
             Self::Join => "join",
         }
@@ -3529,6 +3958,7 @@ impl PartIndex {
             StepPart::Morph,
             StepPart::Return,
             StepPart::Transition,
+            StepPart::LeadIn,
             StepPart::Wrap,
         ]
         .into_iter()
@@ -4294,6 +4724,10 @@ pub struct EntrySplit {
     /// pass step apart): a join the replay refused (a seam step, an
     /// arc-to-arc step, a link, a ramp start).
     pub clearing_join: usize,
+    /// C8 (L): a clearing re-entry within one pass step of a planned
+    /// lead-in ([`LobeMorph::Lead`]): the replay refused a lead-in step.
+    /// Counted before the join test.
+    pub clearing_lead: usize,
     /// Any other clearing re-entry: the replay split a wrap mid-way. For a
     /// shipped strategy (no wraps) every clearing re-entry counts here,
     /// the agent's frontier hops included.
@@ -4312,6 +4746,7 @@ impl EntrySplit {
     fn merge(&mut self, other: &Self) {
         self.starter += other.starter;
         self.clearing_join += other.clearing_join;
+        self.clearing_lead += other.clearing_lead;
         self.clearing_split += other.clearing_split;
         self.residue_contour += other.residue_contour;
         self.wall_pass += other.wall_pass;
@@ -4320,9 +4755,15 @@ impl EntrySplit {
     }
 }
 
-/// The [`EntrySplit`] of a cleaned plan whose producer planned `wraps`; a
-/// re-entry within `step` of a wrap end is a join.
-fn entry_split(segments: &[AdaptiveSegment], wraps: &[Vec<P2>], step: f64) -> EntrySplit {
+/// The [`EntrySplit`] of a cleaned plan whose producer planned `wraps` and
+/// `leads`; a re-entry within `step` of a lead-in point is a lead-in
+/// refusal, else within `step` of a wrap end a join.
+fn entry_split(
+    segments: &[AdaptiveSegment],
+    wraps: &[Vec<P2>],
+    leads: &[Vec<P2>],
+    step: f64,
+) -> EntrySplit {
     let ends: Vec<P2> = wraps
         .iter()
         .flat_map(|w| w.first().into_iter().chain(w.last()))
@@ -4336,8 +4777,11 @@ fn entry_split(segments: &[AdaptiveSegment], wraps: &[Vec<P2>], step: f64) -> En
             AdaptiveSegment::Rapid(p) => match producer {
                 Producer::Starter => out.starter += 1,
                 Producer::Clearing => {
-                    let at_end = ends.iter().any(|q| (q.x - p.x).hypot(q.y - p.y) <= step);
-                    if at_end {
+                    let near = |q: &P2| (q.x - p.x).hypot(q.y - p.y) <= step;
+                    let at_end = ends.iter().any(near);
+                    if leads.iter().any(|l| l.iter().any(near)) {
+                        out.clearing_lead += 1;
+                    } else if at_end {
                         out.clearing_join += 1;
                     } else {
                         out.clearing_split += 1;
@@ -4483,6 +4927,7 @@ pub fn run_2d_with(
         let mut piece_wraps: Vec<Vec<P2>> = Vec::new();
         let mut piece_parts: Option<PartIndex> = None;
         let mut piece_seed: Option<P2> = None;
+        let mut piece_leads: Vec<Vec<P2>> = Vec::new();
         let raw = match candidate {
             Candidate2d::Shipped(_) => {
                 super::adaptive_segments_with_debug(piece, &params, never, None, None).ok()
@@ -4494,8 +4939,10 @@ pub fn run_2d_with(
                         report,
                         wraps,
                         parts,
+                        leads,
                     })) => {
                         piece_parts = Some(parts);
+                        piece_leads = leads;
                         piece_seed = report.seed;
                         run.fields.push(report);
                         piece_wraps.clone_from(&wraps);
@@ -4536,9 +4983,12 @@ pub fn run_2d_with(
             measure,
         ));
         let segments = cleaned(piece, &params, raw, measure);
-        run.summary
-            .entry_split
-            .merge(&entry_split(&segments, &piece_wraps, pass_step_len(cell)));
+        run.summary.entry_split.merge(&entry_split(
+            &segments,
+            &piece_wraps,
+            &piece_leads,
+            pass_step_len(cell),
+        ));
         let region = (params.keep_down_links == KeepDownLinks::WithinPassLoad)
             .then(|| ToolCentreRegion::new(piece, params.tool_radius));
         let (tp, _) = segments_to_toolpath(&segments, &params, region.as_ref());
@@ -5162,6 +5612,108 @@ mod tests {
             "the swept width {swept:.3} spans both slivers"
         );
         assert!(area <= cd, "the area per mm {area:.3} is under c·D {cd:.4}");
+    }
+
+    /// C8: the lead-in radius bound on a straight band (a front of very
+    /// large radius). Along a lead-in of radius `ρ_L` from bite 0 to `s`,
+    /// the tilted-step width `b + R(1 - cos θ) + h(b) sin θ` stays at most
+    /// `c·D` at `ρ_L = lead_in_radius(..)`, the closed form
+    /// `R + (h² - m²)/(2m)` with `m = c·D - s`; at the tool radius it does
+    /// not (the brief's natural choice fails the bound).
+    #[test]
+    fn the_lead_in_radius_holds_the_ceiling_on_a_straight_band() {
+        let params = test_params();
+        let (s, tol) = op_defaults();
+        let cell = planner_cell_size(R, tol);
+        let cd = pass_load_for(&params, cell).ceiling * 2.0 * R;
+        // The largest width along a lead-in of radius `rl`, sampled at
+        // arc steps of the op tolerance.
+        let widest = |rl: f64| -> f64 {
+            let theta0 = (1.0 - s / rl).clamp(-1.0, 1.0).acos();
+            let n = ((rl * theta0 / tol).ceil() as usize).max(1);
+            (0..=n)
+                .map(|i| {
+                    let th = theta0 * i as f64 / n as f64;
+                    let b = (s - rl * (1.0 - th.cos())).max(0.0);
+                    let h = (R * R - (R - b).powi(2)).max(0.0).sqrt();
+                    b + R * (1.0 - th.cos()) + h * th.sin()
+                })
+                .fold(0.0_f64, f64::max)
+        };
+        // A front of 1 km radius: its curvature adds `s(R - s/2)/ρ` = 4e-6 mm
+        // to the width (and `1/ε` would cancel catastrophically in the
+        // width formula's `a² - ρ²`).
+        let straight = 1.0e6;
+        let rl = lead_in_radius(R, cd, straight, s).expect("a straight band leaves a margin");
+        let m = cd - s;
+        let h2 = s * (2.0 * R - s);
+        let closed = R + (h2 - m * m) / (2.0 * m);
+        assert!(
+            (rl - closed).abs() <= cell,
+            "the radius {rl:.4} is the closed form {closed:.4} (the front's curvature at this radius is under a cell)"
+        );
+        assert!(
+            widest(rl) <= cd,
+            "the lead-in of radius {rl:.3} reads {:.4} over c·D {cd:.4}",
+            widest(rl)
+        );
+        assert!(
+            widest(R) > cd,
+            "a lead-in of the tool radius reads {:.4}, over c·D {cd:.4}",
+            widest(R)
+        );
+        assert!(
+            lead_in_radius(R, cd, R + s, s).is_none(),
+            "a tight front (inside ρ*) leaves no margin for a lead-in"
+        );
+    }
+
+    /// C8: the lead-in in the pivot frame on curved fronts (exact circles,
+    /// no field). For a front of radius `ρ` beyond `ρ*`, the lead circle of
+    /// radius `lead_in_radius_pivot(..)`, tangent inside the front at the
+    /// axis point, reaches the cleared band (bite 0) before it turns a right
+    /// angle, and at every sample on the way the tilted-step width plus the
+    /// front's curvature excess, `b + R(1 - cos ψ) + h(b) sin ψ +
+    /// (w(ρ, s) - s)`, is at most `c·D`; `ψ` is the angle between the lead
+    /// radius and the front radius through the point.
+    #[test]
+    fn the_pivot_frame_lead_in_holds_the_ceiling_on_curved_fronts() {
+        let params = test_params();
+        let (s, tol) = op_defaults();
+        let cell = planner_cell_size(R, tol);
+        let cd = pass_load_for(&params, cell).ceiling * 2.0 * R;
+        for rho in [30.0, 45.0, 60.0] {
+            let rl = lead_in_radius_pivot(R, cd, rho, s).expect("a front beyond ρ* has a margin");
+            assert!(
+                rl < rho - s / 2.0,
+                "ρ {rho}: the lead circle {rl:.3} reaches the band"
+            );
+            let excess = circular_front_width(R, rho, s) - s;
+            let centre = rho - rl;
+            let dtheta = tol / rl;
+            let mut reached = false;
+            let mut theta = 0.0_f64;
+            while theta <= std::f64::consts::FRAC_PI_2 {
+                let (x, y) = (centre + rl * theta.cos(), rl * theta.sin());
+                let bite = x.hypot(y) - (rho - s);
+                if bite <= 0.0 {
+                    reached = true;
+                    break;
+                }
+                let psi = theta - y.atan2(x);
+                let h = (R * R - (R - bite).powi(2)).max(0.0).sqrt();
+                let w = bite + R * (1.0 - psi.cos()) + h * psi.sin() + excess;
+                assert!(
+                    w <= cd,
+                    "ρ {rho}: at θ {theta:.4} the lead-in reads {w:.4} over c·D {cd:.4}"
+                );
+                theta += dtheta;
+            }
+            assert!(
+                reached,
+                "ρ {rho}: the lead-in reaches the band before a right angle"
+            );
+        }
     }
 
     /// The straight parallel arcs of a rectangular lobe, `s` apart, `n` of

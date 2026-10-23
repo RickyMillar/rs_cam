@@ -1516,3 +1516,214 @@ cargo test -p rs_cam_core --features research,test-support --release \
   `a_head_on_step_up_a_wall_is_over_the_ceiling_in_both_measures`. If it
   is RED, the lattice says area admits the wall step and my derivation is
   wrong. Report the readings.
+
+## C8 — area columns parked; the lead-in join (2026-10-24)
+
+Status: CODE COMPLETE, NOT RUN (no cargo; no commit). Base 6d74feb9 (D7).
+`rustfmt --edition 2024 --check` is clean.
+
+### Area columns (D7: not evidence)
+
+- `geodesic_curv_area`, `agent_area` and `contour_spiral_area` moved to
+  the `ADAPTIVE_GEODESIC_EXTRA` set.
+- **Floor:** `compute_area_per_mm` divides by `max(ℓ, cell)`. The lattice
+  cannot resolve travel under one cell, so the quantum error is bounded at
+  `√2 · P` per mm. This is a one-line edit to research-only code in
+  `search.rs`; no shipped path builds the area measure. Nothing more is
+  spent on the area columns.
+
+### The lead-in join (`LobeMorph::Lead`, column `geodesic_curv_lead`)
+
+`GeodesicOptions::C8_LEAD` uses the curvature law (C5), the core spiral
+(C4, under the law) and lead-ins.
+
+**Why not the brief's literal form.** One direction, a return link to wall
+A, then a lead-in tangent to arc k+1 at its START: the lead-in arc lies
+before its tangent point, so a lead-in tangent at the start begins beyond
+wall A. A lead-in tangent further along leaves an uncut corner wedge at A.
+The next band's lead-in then starts on stock the band before never cut,
+and the wedge grows by one lead-in span per band.
+
+**The built form (enter mid-arc, cut both ways).** Per lobe band, the
+cutter stands on arc k at its end E:
+
+1. A keep-down link along arc k (cut, zero load) to the lead-in start.
+2. The lead-in: a circular arc of radius ρ_L, tangent to arc k+1 at P, on
+   the cleared side. Its bite grows from 0 (its start lies on arc k,
+   checked within one cell) to Δ.
+3. Arc k+1 cut from P to its far end F.
+4. A keep-down link back along that cut, to P.
+5. Arc k+1 cut from P to E. The stock beside it there is the wedge the
+   lead-in left; its bite grows from 0 at P, with the heading tangent, so
+   the width is at most `w(ρ, Δ)`.
+
+The cutter ends at E of arc k+1, and the next band starts there. No step
+meets a band head-on, and no entry is at a wall.
+
+- P is mid-arc, or further from E where the lead-in's span needs it. The
+  band falls back to the seam join (counted) when the span does not fit
+  the arc, there is no margin, or a piece leaves the region. After a
+  fallback the cutter stands at F, so the next band reads the arcs from
+  there.
+- **Links.** Each `Link` piece is emitted as one keep-down `Link` per
+  vertex along the cut arc. The shipped check (`feed_link_checked`: region,
+  legality, `step_within_pass_load` per step) judges each, with no new
+  rule. A refused link becomes a re-entry, as everywhere.
+- **Closed wraps not in the core** (`lead_closed`): a link back along the
+  lap just cut to the lead-in start, a lead-in tangent to the next loop at
+  its point nearest the seam (the lap direction is kept), then the lap from
+  there. The one-side meeting rule is unchanged (arcs are trimmed at
+  placement as before).
+
+### The lead-in radius (derived; only R, s or Δ, and c·D enter)
+
+- At angle θ before the tangent point, the bite is `b = Δ − ρ_L(1 − cos θ)`
+  and the heading is tilted θ into the stock.
+- A step tilted θ into a band of depth b sweeps
+  `b + R(1 − cos θ) + h(b) sin θ`, with `h(b) = √(R² − (R − b)²)` (the
+  `EntryLaw` bound). With `h(b) ≤ h(Δ)` this is at most
+  `Δ + h sin θ − (ρ_L − R)(1 − cos θ)`.
+- Its largest value over θ is `Δ + √(h² + B²) − B`, with `B = ρ_L − R`.
+- On a curved front the plain pass already reads `w(ρ, Δ)`, so the margin
+  is `m = c·D − w(ρ, Δ)`.
+- Held to the margin: **`ρ_L ≥ R + (h² − m²)/(2m)`**.
+- **At the tangent point** the reading is the plain pass's
+  `w(ρ, Δ) ≤ c·D` (the brief's bound). The binding points are just before
+  it, where the tilt grows linearly and the bite falls only quadratically.
+- **The tool radius does not satisfy the bound:** it needs `m ≥ h`. At s 2,
+  R 3 a lead-in of radius R reads 3.67 mm against 2.18 mm (numerical check).
+
+**The frame: the bound above is in the STRAIGHT frame.** On a front of
+radius ρ (about the pivot), a lead circle of radius `ρ_L < ρ` tangent
+inside it has, at angle θ:
+- a tilt against the front of `ψ = θ(1 − ρ_L/ρ)` (the angle between the
+  lead radius and the front radius through the point);
+- a bite of `b = Δ − ρ_e ψ²/2`, with `ρ_e = ρ_L ρ/(ρ − ρ_L)`.
+
+So the straight bound applies to `ρ_e`:
+**`ρ_L ≥ ρ_min·ρ/(ρ + ρ_min)`** (`lead_in_radius_pivot`, always under ρ).
+The circle reaches the cleared band only when `ρ_L ≤ ρ − Δ/2`.
+
+The lead-in's start is not taken from a formula. It is traced: walk the
+lead circle out from P one cell at a time until a point lies within one
+cell of arc k, giving up past a right angle. The span used in the fit test
+is measured from that traced start.
+
+(The advisor caught the first version, which built the circle in the
+straight frame. On these fronts that put the start in uncut stock, so
+every band would have fallen back.)
+
+Values, pivot frame, exact circles (Python), s 2, R 3, cD 2.1756:
+
+| Front radius ρ | Straight ρ_min (mm) | Pivot ρ_L (mm) | Worst width (mm) | Start angle (rad) | Span P→start (mm) |
+|---|---|---|---|---|---|
+| straight | 25.7 | 25.7 | 2.167 | 0.40 | 9.9 |
+| 60 | 39.7 | 23.9 | 2.1725 | 0.53 | 12.5 |
+| 45 | 49.1 | 23.5 | 2.1736 | 0.60 | 13.9 |
+| 35 | 68.2 | 23.1 | 2.1746 | 0.72 | 16.3 |
+| 30 | 97.6 | 23.0 | 2.1751 | 0.88 | 19.4 |
+| 25 | 259 | 22.8 | 2.1755 | 1.53 | 31.6 |
+| < ρ\* = 22.8 | none (law: no margin) | — | — | — | — |
+
+### Readout
+
+- The entry split gains **L**: a clearing re-entry within one pass step
+  of a planned lead-in (a refused lead-in step), counted before the join
+  test.
+- Class `clearing lead` in the tallies and the cascade block.
+- A `lead-ins piece` line: lobe bands with a lead-in and those that fell
+  back; closed wraps with a lead-in and those that fell back; the planned
+  link length; the lead-in radius range.
+- The emitted keep-down link count and length are the existing `keep-down
+  links` line: **the cost to report**.
+
+### Unit tests (C8)
+
+- `the_lead_in_radius_holds_the_ceiling_on_a_straight_band`:
+  - the radius equals the closed form (front radius 1 km);
+  - the worst tilted-step width along the lead-in is ≤ c·D;
+  - a lead-in of the tool radius reads over c·D;
+  - a front inside ρ\* gets no lead-in.
+- `the_pivot_frame_lead_in_holds_the_ceiling_on_curved_fronts`, on exact
+  circles at ρ 30, 45 and 60 mm:
+  - `ρ_L < ρ − Δ/2`;
+  - the circle reaches the band before a right angle;
+  - at every sample, `b + R(1 − cos ψ) + h(b) sin ψ + (w(ρ, s) − s) ≤ c·D`.
+
+### Predictions (not run)
+
+- **Star.** The arms' arcs lie at about 16 to 45 mm. Inside ρ\* the law
+  leaves no margin, so there is no lead-in. Beyond it the span (14 to
+  32 mm) is long against the arm widths, so few arcs can host P with the
+  span behind it.
+  - Expect `lead_fallback` ≫ `lead_ins`. The lobes are also few: D5
+    `curv_morph` had 6 lobes of 34 arcs and 60 plain wraps, and most splits
+    were "two children" at the inside corners.
+  - Entries about 75 to 90 (`curv_morph` 84; `curv` 73).
+  - The target, one plunge per lobe plus one for the core, is NOT
+    expected. The two causes are the lobe split rule and the lead-in span
+    at this stepover.
+- **Pocket.** The arcs run across the rectangle at ρ up to about 60 mm:
+  longer arcs and a larger margin, so some lead-ins fit. Expect
+  `lead_ins` about 5 to 20, L small, J below `curv_morph`'s 60. Entries
+  about 60 to 80.
+- **Core spiral.** As at D5: 12 intrinsic refusals at 4.3 to 6.9 mm, so M
+  about 12 on each shape.
+- **The cost.** The planned link length is about one arc length per lead-in
+  band (E→Q plus F→P).
+- **M has two sources in this column.**
+  - The core spiral's inner refusals.
+  - Refused keep-down links: a refused `Link` becomes a `Rapid` at the
+    link's next vertex, mid-arc on arc k, which the split counts as M, not
+    L.
+
+  The planned link count (one `Link` per vertex of every `Link` piece)
+  against the emitted `keep-down links` count tells the two sources apart.
+- **If L is high,** the replay refuses lead-in steps; read the `clearing
+  lead` row and its intrinsic refusals. The bound uses the straight-edge
+  `EntryLaw` and the circular excess, both upper bounds, so a lead-in
+  refusal points at the lattice (G-CELLREAD) or at a link refusal before
+  it (a cascade).
+
+### What would make it fit (for the lead; not built)
+
+The lead-in span is `≈ √(2Δρ_L)`, and ρ_L grows as the margin shrinks. A
+smaller lobe spacing (a margin reserved for the lead-in) or a variable-tilt
+ramp (the `EntryLaw` ramp, 7.7 mm on a straight edge at full depth) would
+shorten it. Both change the spacing or the shape the operator saw, so both
+are rulings.
+
+### Files changed by C8
+
+- `crates/rs_cam_core/src/adaptive/research_geodesic.rs`
+- `crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`
+- `crates/rs_cam_core/src/adaptive/search.rs`: one line, the floor in the
+  research-only `compute_area_per_mm`, plus its doc. No shipped path
+  builds the area measure.
+- this note.
+
+### Commands for the verifier (C8)
+
+Through `scripts/cargo_lane.sh`, each with a `timeout`:
+
+```text
+cargo fmt --all -- --check
+cargo test -p rs_cam_core -q --lib adaptive
+cargo test -p rs_cam_core -q --features test-support --test adaptive3d_emission_byte_parity
+cargo test -p rs_cam_core --features research,test-support -q --lib research_geodesic
+cargo clippy -p rs_cam_core --all-targets -- -D warnings
+cargo clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings
+cargo test -p rs_cam_core --features research,test-support --release \
+    --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture
+```
+
+- **Controls (exact):** `geodesic_a` star 92 / pocket 88; `geodesic_curv`
+  star 73 = S1 J58 M0 P14 (0.3581, raw 145/2545), pocket 63 = S1 J34 M12
+  C6 P10 (0.4677, raw 260/2952); agent and contour_spiral product parity.
+- **Read for `geodesic_curv_lead`:**
+  - the `entries by producer` line (S, L, J, M, …);
+  - the `lead-ins piece 0` line (lead-ins against fallbacks, the link
+    length, the radius range);
+  - `keep-down links` (count and mm);
+  - the `clearing lead` and `clearing link` classes (max swept width, over);
+  - the cascade block.
