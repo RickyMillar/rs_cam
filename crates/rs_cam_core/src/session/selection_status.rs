@@ -42,6 +42,9 @@
 //! - P6.4: for a Pocket with Extend to stock (`ItemUse::RegionsExtendOpen`)
 //!   the tool radius, by value, because the stock grows by it before
 //!   `view`. A tool edit then builds the report again.
+//! - "Cut past open sides" (operator ruling 2026-10-23): the tool radius,
+//!   by value, when the setting is on, because THE area rule grows the
+//!   stock by it.
 //!
 //! The key does not hold the `holes` flag of a boundary: the report does
 //! not read it (the holes of the union are a generation step after `view`).
@@ -322,7 +325,9 @@ pub struct SelectionReport {
     /// area that an open path gives when the op extends it to the stock
     /// (Pocket with Extend to stock), in the MODEL frame (the frame of the
     /// drawing, as `holes`), in the order of the areas. The path itself is
-    /// `Cut` in `item_states`. Empty for every other op and when the
+    /// `Cut` in `item_states`. "Cut past open sides" (operator ruling
+    /// 2026-10-23): also the outer ring of each face area that the setting
+    /// grew to the stock edge. Empty for every other op and when the
     /// selection refuses. The GUI preview (P6.7) draws it.
     pub extended: Vec<Vec<P2>>,
     /// Geometry selection GT-2: one row per item of `selected`, in the same
@@ -449,6 +454,20 @@ impl SelectionReport {
                 .map(|(_, state)| *state),
         }
         .unwrap_or(ItemState::NotSelected)
+    }
+
+    /// "Cut past open sides" (operator ruling 2026-10-23): true when the
+    /// selection holds a model area that a Pocket cuts as a face: a face,
+    /// or a loop or a circle at its own Z (a STEP ring). A drawing item has
+    /// no Z. The GUI shows the Pocket setting only then.
+    pub fn holds_a_model_area(&self) -> bool {
+        self.rows.iter().any(|row| {
+            row.plane_z.is_some()
+                && matches!(
+                    row.key.kind,
+                    ItemKind::Face | ItemKind::Loop | ItemKind::Circle
+                )
+        })
     }
 }
 
@@ -780,6 +799,9 @@ impl ProjectSession {
             SelectionTarget::Boundary => (BOUNDARY_LABEL, BOUNDARY_ITEM_USE, true),
         };
         let frames = self.resolve_selection_frames(tc, target, ctx, FaceAccess::Peek)?;
+        // "Cut past open sides": the stock as resolved, before the P6.4
+        // growth, as the prologue reads it.
+        let resolved_stock = frames.setup.stock_xy();
         // P6.4 (O-2 (B)): the stock grown by the tool radius, as the
         // prologue grows it, so the report extends as generation does.
         let frames = match (target, self.extend_radius(tc)) {
@@ -927,6 +949,25 @@ impl ProjectSession {
         let viewed = match target {
             SelectionTarget::Op => crate::selection::view(&frames.setup, item_use),
             SelectionTarget::Boundary => crate::selection::view_boundary(&frames.setup),
+        };
+        // "Cut past open sides" (operator ruling 2026-10-23): THE area rule
+        // of the prologue (`compute::open_sides`), on the setup mesh and the
+        // tool radius that generation reads, before the per-face floors as
+        // in the prologue, so the status shows the area that the op cuts.
+        let viewed = match (viewed, target) {
+            (Ok((mut items, mut notes)), SelectionTarget::Op)
+                if tc.operation.cuts_past_open_sides() =>
+            {
+                notes.extend(self.grow_open_sides_as_generation(
+                    tc,
+                    ctx,
+                    &frames.setup,
+                    resolved_stock,
+                    &mut items,
+                )?);
+                Ok((items, notes))
+            }
+            (viewed, _) => viewed,
         };
         // P3.5: under "each picked face" every closed area needs a face.
         // P3.7: a face whose floor is at or above the top is left out with a
@@ -1143,6 +1184,53 @@ impl ProjectSession {
         Ok(crate::compute::edge_clear::clear_edge_walls(
             setup, items, &probe,
         ))
+    }
+
+    /// "Cut past open sides": THE area rule (`compute::open_sides`) of the
+    /// prologue, on the setup mesh and the tool radius of the built cutter,
+    /// with the stock as resolved. No tool, no cutter, no stock, no mesh or
+    /// a floor that is not "Each picked face": no change (generation
+    /// refuses the tool itself).
+    fn grow_open_sides_as_generation(
+        &self,
+        tc: &ToolpathConfig,
+        ctx: &SetupEvalContext,
+        setup: &crate::selection::ResolvedSelection<SetupFrame>,
+        stock: Option<crate::selection::StockXy>,
+        items: &mut OpItems,
+    ) -> Result<Vec<SelectionNote>, SessionError> {
+        let Some(radius) = self.open_sides_radius(tc) else {
+            return Ok(Vec::new());
+        };
+        let (Some(stock), Some(Floor::EachFace { depth })) = (stock, tc.operation.floor()) else {
+            return Ok(Vec::new());
+        };
+        let Some(mesh) = self.setup_mesh(tc, ctx)? else {
+            return Ok(Vec::new());
+        };
+        let probe = crate::compute::open_sides::OpenSidesProbe {
+            mesh: &mesh,
+            stock,
+            tool_radius: radius,
+            face_depth: depth,
+        };
+        Ok(crate::compute::open_sides::grow_past_open_sides(
+            setup, items, &probe,
+        ))
+    }
+
+    /// "Cut past open sides": the tool radius by which THE area rule grows
+    /// the stock (`ToolDefinition::diameter` of the built cutter, as the
+    /// prologue reads it), or `None` when the setting is off or the
+    /// toolpath has no valid tool.
+    fn open_sides_radius(&self, tc: &ToolpathConfig) -> Option<f64> {
+        if !tc.operation.cuts_past_open_sides() {
+            return None;
+        }
+        let tool = self.tool_by_id(tc.tool_id)?;
+        crate::compute::cutter::build_cutter(tool)
+            .ok()
+            .map(|cutter| crate::tool::MillingCutter::diameter(&cutter) / 2.0)
     }
 
     /// P6.5: the tool diameter and the size tolerance that the hole fit
@@ -1946,7 +2034,8 @@ pub(super) fn with_selection(
 
 /// P6.4: the outer ring of each closed area of `items` whose exterior item
 /// is an open path (an area that the extend reader closed by the stock
-/// edge), mapped from the SETUP frame back to the drawing frame
+/// edge), and of each face area that "Cut past open sides" grew to the
+/// stock edge (`Regions::is_grown`), mapped from the SETUP frame back to the drawing frame
 /// (`SetupTransformInfo::local_to_drawing`, the exact inverse of the frame
 /// door). Empty for a view with no such area.
 fn extended_areas(
@@ -1966,10 +2055,11 @@ fn extended_areas(
         .iter()
         .enumerate()
         .filter(|(index, _)| {
-            regions
-                .exterior_item(*index)
-                .and_then(|at| setup.items().get(at))
-                .is_some_and(|r| r.item().kind() == ItemKind::Path)
+            regions.is_grown(*index)
+                || regions
+                    .exterior_item(*index)
+                    .and_then(|at| setup.items().get(at))
+                    .is_some_and(|r| r.item().kind() == ItemKind::Path)
         })
         .map(|(_, polygon)| match info {
             Some(info) => polygon
@@ -2030,6 +2120,10 @@ struct StatusKey {
     /// trim reads, so a tool or a bevel edit builds the report again.
     /// Empty for every op with no model edges.
     edge_clear: Vec<u8>,
+    /// "Cut past open sides": the bits of the tool radius of THE area rule
+    /// (`ProjectSession::open_sides_radius`), so a tool edit or the
+    /// setting builds the report again. `None` when the setting is off.
+    open_sides: Option<u64>,
 }
 
 impl StatusKey {
@@ -2110,6 +2204,10 @@ impl StatusKey {
                 }
                 _ => Vec::new(),
             },
+            open_sides: match target {
+                SelectionTarget::Op => session.open_sides_radius(tc).map(f64::to_bits),
+                SelectionTarget::Boundary => None,
+            },
         })
     }
 
@@ -2130,6 +2228,7 @@ impl StatusKey {
             && self.drill_size == now.drill_size
             && self.extend_radius == now.extend_radius
             && self.edge_clear == now.edge_clear
+            && self.open_sides == now.open_sides
             && self.models.len() == now.models.len()
             && self
                 .models

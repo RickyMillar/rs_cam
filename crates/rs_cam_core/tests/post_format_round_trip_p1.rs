@@ -180,6 +180,7 @@ fn build_project_with_mist(dir: &Path, format: PostFormat, mist: Option<bool>) -
             region_ordering: rs_cam_core::compute::operation_configs::RegionOrdering::ByArea,
             selection: rs_cam_core::selection::Selection::drawing(),
             open_paths: rs_cam_core::compute::operation_configs::OpenPaths::Skip,
+            cut_past_open_sides: false,
         }),
         dressups: DressupConfig::for_op(OperationType::Pocket),
         heights: HeightsConfig::default(),

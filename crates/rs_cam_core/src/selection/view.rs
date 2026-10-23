@@ -127,6 +127,10 @@ pub struct Regions {
     /// For each polygon: the plane Z of its exterior item when that item is
     /// a face, else `None` (geometry selection P3.5).
     plane_z: Vec<Option<f64>>,
+    /// For each polygon: true when "Cut past open sides" grew it out
+    /// through the open sides of its face (`compute::open_sides`). Empty
+    /// until that step runs; a missing entry is false.
+    grown: Vec<bool>,
 }
 
 impl Regions {
@@ -158,6 +162,13 @@ impl Regions {
     /// "each picked face" reads it (`compute::floor::region_floors`).
     pub fn plane_z(&self, index: usize) -> Option<f64> {
         self.plane_z.get(index).copied().flatten()
+    }
+
+    /// True when "Cut past open sides" grew the polygon at `index` of
+    /// [`Self::as_slice`] out through the open sides of its face, to the
+    /// stock edge (operator ruling 2026-10-23, `compute::open_sides`).
+    pub fn is_grown(&self, index: usize) -> bool {
+        self.grown.get(index).copied().unwrap_or(false)
     }
 
     /// The same polygons as lines to follow: a closed region is also a
@@ -315,6 +326,9 @@ impl OpItems {
             if index < regions.plane_z.len() {
                 regions.plane_z.remove(index);
             }
+            if index < regions.grown.len() {
+                regions.grown.remove(index);
+            }
             if index < regions.exterior_items.len() {
                 let at = regions.exterior_items.remove(index);
                 if let Some(role) = self.roles.get_mut(at) {
@@ -386,6 +400,47 @@ impl OpItems {
         match &self.view {
             View::Edges(e) => Some(e),
             View::None | View::Regions(_) | View::Curves(_) | View::Holes(_) => None,
+        }
+    }
+
+    /// "Cut past open sides" (operator ruling 2026-10-23): put each polygon
+    /// of `grown` in place of the closed area at its index of
+    /// [`Regions::as_slice`] and mark it grown, then remove the areas at
+    /// `merged` (in increasing order): a face whose grown area is the area
+    /// of an earlier face at the same Z. The item of a merged area stays
+    /// [`ItemRole::Cut`]: the earlier area cuts it. THE grow step
+    /// (`compute::open_sides::grow_past_open_sides`) calls it. Every other
+    /// view does not change.
+    pub(crate) fn grow_regions(&mut self, grown: Vec<(usize, Polygon2)>, merged: &[usize]) {
+        let View::Regions(regions) = &mut self.view else {
+            return;
+        };
+        let count = regions.curves.polygons.len();
+        regions.grown.resize(count, false);
+        for (index, polygon) in grown {
+            if let (Some(slot), Some(flag)) = (
+                regions.curves.polygons.get_mut(index),
+                regions.grown.get_mut(index),
+            ) {
+                *slot = polygon;
+                *flag = true;
+            }
+        }
+        for &index in merged.iter().rev() {
+            if index >= regions.curves.polygons.len() {
+                continue;
+            }
+            regions.curves.polygons.remove(index);
+            regions.grown.remove(index);
+            if index < regions.stock.len() {
+                regions.stock.remove(index);
+            }
+            if index < regions.plane_z.len() {
+                regions.plane_z.remove(index);
+            }
+            if index < regions.exterior_items.len() {
+                regions.exterior_items.remove(index);
+            }
         }
     }
 
@@ -645,6 +700,7 @@ fn view_with<F: SelectionFrame>(
                     .filter_map(|pos| served_at.get(pos).copied())
                     .collect(),
                 plane_z,
+                grown: Vec::new(),
             })
         }
         // P6.4 (O-2): each open path closes by the stock edge on `side`;
@@ -678,6 +734,7 @@ fn view_with<F: SelectionFrame>(
                     .filter_map(|pos| served_at.get(pos).copied())
                     .collect(),
                 plane_z,
+                grown: Vec::new(),
             })
         }
         // R-C: the drawing areas nest as `Regions`; each convex top model
@@ -728,6 +785,7 @@ fn view_with<F: SelectionFrame>(
                         .filter_map(|&served_pos| served_at.get(served_pos).copied())
                         .collect(),
                     plane_z,
+                    grown: Vec::new(),
                 },
                 lines,
             })

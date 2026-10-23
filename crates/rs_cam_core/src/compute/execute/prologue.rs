@@ -61,6 +61,12 @@
 //! so the area ends one tool radius past the stock edge and the tool centre
 //! reaches the edge. The `selection_status` report grows it by the same
 //! radius.
+//!
+//! "Cut past open sides" (operator ruling 2026-10-23): last in the item
+//! step, for a Pocket with the setting on, the prologue runs THE area rule
+//! of `compute::open_sides`: the area of each model face grows out through
+//! its open sides to the stock edge. The per-face floors, the adapter and
+//! the gouge guard read the grown areas.
 
 use std::borrow::Cow;
 
@@ -69,7 +75,8 @@ use crate::compute::catalog::{
 };
 use crate::compute::config::ResolvedHeights;
 use crate::compute::edge_clear::{EdgeClearProbe, clear_edge_walls};
-use crate::compute::floor::{HoleFloorInputs, HoleSpan, hole_floors, region_floors};
+use crate::compute::floor::{Floor, HoleFloorInputs, HoleSpan, hole_floors, region_floors};
+use crate::compute::open_sides::{OpenSidesProbe, grow_past_open_sides};
 use crate::compute::toolpath_stats::SelectionNoteFinding;
 use crate::dexel_stock::FRESH_MATERIAL_THRESHOLD_MM;
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -531,7 +538,36 @@ fn require_items(
     notes.extend(fit_notes);
     let clear_notes = clear_edges(ctx, op, resolved, &mut items).map_err(selection_error)?;
     notes.extend(clear_notes);
+    notes.extend(grow_open_sides(ctx, op, &mut items));
     Ok(items)
+}
+
+/// "Cut past open sides" (operator ruling 2026-10-23): THE area rule
+/// ([`grow_past_open_sides`]) over the face areas of a Pocket with the
+/// setting on, with the mesh of the op and the tool radius. It reads the
+/// stock of the selection as resolved, not the stock that the open path
+/// extend grew, so the stock grows by the tool radius once. With the
+/// setting off, with no mesh, or under a floor that is not "Each picked
+/// face", it does nothing.
+fn grow_open_sides(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+    items: &mut OpItems,
+) -> Vec<SelectionNote> {
+    let (Some(mesh), Some(stock), Some(Floor::EachFace { depth })) = (
+        ctx.mesh.filter(|_| op.cuts_past_open_sides()),
+        ctx.selection.resolved.stock_xy(),
+        op.floor(),
+    ) else {
+        return Vec::new();
+    };
+    let probe = OpenSidesProbe {
+        mesh,
+        stock,
+        tool_radius: ctx.tool_def.diameter() / 2.0,
+        face_depth: depth,
+    };
+    grow_past_open_sides(&ctx.selection.resolved, items, &probe)
 }
 
 /// Chamfer Clearance (operator ruling 2026-10-23): THE wall trim

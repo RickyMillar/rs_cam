@@ -1514,6 +1514,48 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// "Cut past open sides" (operator ruling 2026-10-23): the job key is
+    /// the schema name, as MCP `set_toolpath_param` takes it, and the core
+    /// setter writes the field. A job with no key keeps the setting off.
+    #[test]
+    #[expect(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        reason = "test code: a panic is how a test reports a failure"
+    )]
+    fn the_job_key_sets_cut_past_open_sides_opensides() {
+        let drawing = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf")
+            .canonicalize()
+            .expect("the fixture exists");
+        let dir = std::env::temp_dir().join(format!("rs_cam_opensides_job_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let flag_of = |line: &str| {
+            let job_path = dir.join("job.toml");
+            std::fs::write(
+                &job_path,
+                format!(
+                    "[job]\noutput = \"out.nc\"\n\n[tools.flat_3mm]\ntype = \"end_mill\"\n\
+                     diameter = 3.0\n\n[[operation]]\ntype = \"pocket\"\ninput = \"{}\"\n\
+                     tool = \"flat_3mm\"\nstock_z = 12.0\n{line}\n",
+                    drawing.display()
+                ),
+            )
+            .expect("write the job");
+            let job = parse_job_file(&job_path).expect("the job parses");
+            let op = &job.operation[0];
+            let tool_def = &job.tools[&op.tool];
+            let (session, index) =
+                job_op_session(&job, &dir, 0, op, tool_def, false).expect("the job session");
+            session.toolpath_configs()[index]
+                .operation
+                .cuts_past_open_sides()
+        };
+        assert!(flag_of("cut_past_open_sides = true"));
+        assert!(!flag_of(""));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// The cutter of a job tool, through the one core builder.
     fn cutter_of(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
         phase_cutter(&tool_config_from_def(def, "t")?)

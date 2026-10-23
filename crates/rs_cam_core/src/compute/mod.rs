@@ -20,6 +20,7 @@ pub mod generated_empty;
 pub mod model_gouge;
 pub mod not_set;
 pub mod obstacle;
+pub mod open_sides;
 pub mod operation_configs;
 pub mod shoe;
 pub mod sim_prefix;

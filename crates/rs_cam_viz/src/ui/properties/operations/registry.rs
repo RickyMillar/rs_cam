@@ -86,6 +86,11 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
     /// Bore).
     /// `None` for every other op, and when the heights do not resolve.
     pub floor: Option<&'a super::FloorInputs>,
+    /// "Cut past open sides" (operator ruling 2026-10-23): true when the op
+    /// selection holds a model face or ring (core
+    /// `SelectionReport::holds_a_model_area`). The Pocket editor shows the
+    /// setting only then, or while it is on.
+    pub model_areas: bool,
 }
 
 /// What shape diagram an operation shows under its parameter grid.
@@ -255,7 +260,8 @@ editor!(ed_pocket, Pocket, |ui, cfg, cx| draw_pocket_params(
     cfg,
     cx.pills,
     cx.depth_caution,
-    cx.floor
+    cx.floor,
+    cx.model_areas
 ));
 editor!(ed_profile, Profile, |ui, cfg, cx| draw_profile_params(
     ui,

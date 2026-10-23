@@ -2023,6 +2023,32 @@ fn ring_perimeter(pts: &[P2]) -> f64 {
     perim
 }
 
+/// Boolean difference of two sets: the regions of the union of `a` that
+/// the union of `b` does not cover. One overlay pass, so a hole of the
+/// result can come from many polygons of `b` together.
+#[must_use]
+pub fn difference_all(a: &[Polygon2], b: &[Polygon2]) -> Vec<Polygon2> {
+    use geo::BooleanOps;
+    let set = |polys: &[Polygon2]| {
+        geo::MultiPolygon(
+            polys
+                .iter()
+                .filter(|p| p.exterior.len() >= 3)
+                .map(Polygon2::to_geo_polygon)
+                .collect(),
+        )
+    };
+    let a = set(a);
+    if a.0.is_empty() {
+        return Vec::new();
+    }
+    let b = set(b);
+    if b.0.is_empty() {
+        return multipolygon_to_polygons(&a);
+    }
+    multipolygon_to_polygons(&a.difference(&b))
+}
+
 // --- boolean-op helpers ---
 
 /// Convert a `geo::MultiPolygon` (boolean-op output) back to `Polygon2`s,

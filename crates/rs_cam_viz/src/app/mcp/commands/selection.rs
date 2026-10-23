@@ -1685,6 +1685,135 @@ mod tests {
         .expect("the selection resolves")
     }
 
+    /// "Cut past open sides" (operator ruling 2026-10-23): an MCP
+    /// `set_toolpath_param cut_past_open_sides` and a GUI draft write (the
+    /// Pocket checkbox, `write_entry_config_to_session`) give one config;
+    /// the `get_toolpath_params` params read the field back; and the MCP
+    /// `selection_status` `extended` rings are the GUI report rings (the
+    /// viewport highlight of the grown face areas).
+    ///
+    /// The model is `stepped_block.step` with the default Pocket: its Z
+    /// rings have open sides, so the setting grows them.
+    ///
+    /// Red proof: `extended_areas` with no grown area. The rings are then
+    /// empty, and the non-vacuity check fails.
+    #[test]
+    fn mcp_and_gui_give_one_open_sides_pocket_opensides() {
+        use rs_cam_core::session::SetToolpathParamArgs;
+
+        fn step_project() -> ProjectSession {
+            let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/gui_step/stepped_block.step");
+            let model = rs_cam_core::io::load_model_file(
+                &path,
+                rs_cam_core::ids::ModelId::from_raw(0),
+                ModelKind::Step,
+                ModelUnits::Millimeters,
+                Default::default(),
+            )
+            .expect("the STEP fixture loads");
+            let mut s = ProjectSession::new_empty();
+            let _ = apply(
+                &mut s,
+                Command::AddModel(AddModelArgs {
+                    model: Box::new(model),
+                }),
+            );
+            let tool_index = apply(
+                &mut s,
+                Command::AddTool(AddToolArgs {
+                    tool: Box::new(ToolConfig::new_default(
+                        ToolId::from_raw(0),
+                        ToolType::EndMill,
+                    )),
+                }),
+            )
+            .created
+            .unwrap();
+            let tool_id = s.tools()[tool_index].id.raw();
+            let _ = add_op(&mut s, OperationType::Pocket, tool_id);
+            s
+        }
+        let rings = |reply: &serde_json::Value| -> Vec<Vec<[f64; 2]>> {
+            serde_json::from_value(reply["extended"].clone()).expect("extended is a ring list")
+        };
+
+        // Control: the setting is off by default, and nothing grows.
+        let control = step_project();
+        assert!(
+            gui_report(&control).holds_a_model_area(),
+            "the GUI row shows"
+        );
+        assert!(rings(&selection_status_reply(&control, 0, SelectionTarget::Op)).is_empty());
+        assert_eq!(
+            control
+                .toolpath_config_at(0)
+                .unwrap()
+                .operation
+                .params_value_including_nulls()["cut_past_open_sides"],
+            serde_json::json!(false)
+        );
+
+        // MCP: the wire value through the conversion the MCP arm uses.
+        let mut mcp = step_project();
+        let value = rs_cam_mcp::server::coerce_json_container_string(serde_json::json!(true));
+        let effects = apply(
+            &mut mcp,
+            Command::SetToolpathParam(SetToolpathParamArgs {
+                index: 0,
+                param: "cut_past_open_sides".to_owned(),
+                value,
+            }),
+        );
+        assert!(effects.stale.contains(&0), "the edit stales the toolpath");
+
+        // GUI: the inspector edits the draft and writes the whole config.
+        let mut state = crate::state::AppState::new();
+        state.replace_session(step_project());
+        let id = state.session().toolpath_configs()[0].id;
+        let mut entry = crate::ui::properties::build_entry_from_session_and_gui(
+            id,
+            state.session(),
+            &state.gui,
+        )
+        .expect("the toolpath has an entry");
+        match &mut entry.operation {
+            OperationConfig::Pocket(c) => c.cut_past_open_sides = true,
+            other => panic!("the fixture op is a Pocket, not {}", other.label()),
+        }
+        let _ = crate::ui::properties::write_entry_config_to_session(&entry, &mut state)
+            .expect("the GUI write applies");
+
+        // One config, and the params read it back.
+        let mcp_tc = mcp.toolpath_config_at(0).unwrap();
+        let gui_tc = state.session().toolpath_config_at(0).unwrap();
+        assert_eq!(
+            serde_json::to_value(&mcp_tc.operation).unwrap(),
+            serde_json::to_value(&gui_tc.operation).unwrap(),
+            "the two routes store one operation config"
+        );
+        assert_eq!(
+            mcp_tc.operation.params_value_including_nulls()["cut_past_open_sides"],
+            serde_json::json!(true)
+        );
+
+        // One `extended` report.
+        let reply = selection_status_reply(&mcp, 0, SelectionTarget::Op);
+        assert!(reply["refusal"].is_null(), "{reply}");
+        let mcp_rings = rings(&reply);
+        let gui = gui_report(state.session());
+        let gui_rings: Vec<Vec<[f64; 2]>> = gui
+            .extended
+            .iter()
+            .map(|ring| ring.iter().map(|p| [p.x, p.y]).collect())
+            .collect();
+        assert!(
+            !mcp_rings.is_empty(),
+            "non-vacuity: a face area grew: {reply}"
+        );
+        assert_eq!(mcp_rings, gui_rings, "MCP extended is the GUI report");
+    }
+
     /// Geometry selection P6.8 (design section 8, the `open_paths` row):
     /// an MCP `set_toolpath_param open_paths` and a GUI draft write
     /// (`write_entry_config_to_session`, the Pocket "Open paths" row) give

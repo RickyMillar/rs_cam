@@ -35,14 +35,13 @@ You are the lead of the geometry selection programme. Read `PLAN.md` from
 
 1. DONE 44af62dc: GUI pass, audit rows P4, P3, D7,
    L3, L5 (checkbox), L6, L7.
-2. Underived defaults: the inventory is
-   `UNDERIVED_DEFAULTS.md` (if it is absent, run it again). Remove the UNDERIVED ones; first the Pocket depth at add.
-3. Chamfer stop-short: an edge that ends at a higher wall is trimmed by
-   a clearance (Fusion "Chamfer Clearance"). The buried check and the
-   gouge guard read the trimmed run. Live case: stepped_block, Pocket ->
-   Waterline -> Chamfer "Rest machining: from previous ops" refuses
-   today ("10.0 mm below the material that stands over it") because the
-   edge band reaches the step wall.
+2. DONE 74af0f8e (+0e6788b2 s6 fixture): underived defaults removed
+   (S11); stepover and depth per pass raw values still ship when
+   Suggest has no data (ruling text named feed and RPM only).
+3. DONE 5516aa8b: Chamfer stop-short at a wall. DONE 4240dfdd: Pocket
+   "Cut past open sides" (opt-in); Pocket (on) -> rest Chamfer works on
+   stepped_block. Known: a grown higher area can be cut again in air by
+   a lower face.
 4. D6 + D1: the floor is edited as "Bottom height" on the Heights tab
    under "Top height"; add the floor reference "Model bottom".
 5. R-A: the outline item and the default Profile (design note
