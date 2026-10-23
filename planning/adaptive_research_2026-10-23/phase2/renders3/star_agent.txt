@@ -1,0 +1,31 @@
+star / agent
+pieces: 1
+cut length: 1379.2 mm
+keep-down links: 261 (596.2 mm)
+entries (plunges): 25
+retracts (lifts to safe Z, last included): 25
+pass load (planner readout): max 0.4515 vs ceiling 0.3626; 1 of 1943 steps over; 0 exempt plunge-departure steps
+  over: clearing cut (segment 85) from (83.47, 40.11) to (83.35, 38.62), reading 0.4515
+load by class, emitted plan (max reading, steps over of steps):
+  starter: max 0.3114, 0 of 160
+  clearing link: max 0.3277, 0 of 350
+  clearing: max 0.4515, 1 of 1230
+  wall pass link: max 0.0000, 0 of 90
+  wall pass: max 0.0000, 0 of 24
+  residue mop: max 0.2531, 0 of 21
+  residue mop link: max 0.1772, 0 of 68
+load by class, raw plan (max reading, steps over of steps):
+  starter: max 0.3114, 0 of 160
+  clearing link: max 0.3277, 0 of 350
+  clearing: max 0.4651, 9 of 1239
+entries by producer: starter 1, clearing at a wrap end (join) 0, clearing mid-wrap (replay split) 17, residue contour 0, wall pass 0, residue mop 7, other 0
+raw plan (before the replay): 9 of 1749 steps over the ceiling (the steps the replay refuses; exact up to the first); the first ten:
+  refused: clearing cut  (segment 5) from (35.37, 54.49) to (35.04, 53.81), reading 0.4465
+  refused: clearing cut  (segment 5) from (60.44, 65.62) to (61.07, 65.20), reading 0.4470
+  refused: clearing cut  (segment 5) from (61.17, 38.45) to (61.87, 38.19), reading 0.4540
+  refused: clearing cut  (segment 10) from (49.26, 16.70) to (49.79, 16.18), reading 0.4531
+  refused: clearing cut  (segment 32) from (79.95, 39.07) to (80.56, 39.51), reading 0.4571
+  refused: clearing cut  (segment 73) from (83.14, 39.44) to (83.47, 40.11), reading 0.4651
+  refused: clearing cut  (segment 220) from (29.70, 44.32) to (30.29, 43.84), reading 0.3670
+  refused: clearing cut  (segment 222) from (24.48, 43.99) to (24.01, 44.57), reading 0.4499
+  refused: clearing cut  (segment 267) from (20.41, 40.63) to (20.05, 41.29), reading 0.4583

@@ -1,0 +1,39 @@
+pocket / geodesic_morph_alt
+pieces: 1
+cut length: 1811.4 mm
+keep-down links: 66 (99.7 mm)
+entries (plunges): 77
+retracts (lifts to safe Z, last included): 77
+pass load (planner readout): max 0.4517 vs ceiling 0.3626; 1 of 3355 steps over; 0 exempt plunge-departure steps
+  over: residue mop cut (segment 165) from (16.84, 36.30) to (16.10, 36.22), reading 0.4517
+load by class, emitted plan (max reading, steps over of steps):
+  starter: max 0.3114, 0 of 160
+  clearing: max 0.3602, 0 of 1926
+  clearing link: max 0.3229, 0 of 12
+  residue contour link: max 0.3093, 0 of 11
+  residue contour: max 0.3101, 0 of 767
+  wall pass link: max 0.1632, 0 of 11
+  wall pass: max 0.2500, 0 of 6
+  residue mop: max 0.4517, 1 of 388
+  residue mop link: max 0.1448, 0 of 74
+load by class, raw plan (max reading, steps over of steps):
+  starter: max 0.3114, 0 of 160
+  clearing spiral: max 0.4882, 55 of 151
+  clearing link: max 0.9601, 22 of 134
+  clearing wrap: max 0.9316, 63 of 1287
+  clearing morph: max 0.7064, 123 of 1930
+  clearing join: max 0.8685, 17 of 28
+entries by producer: starter 1, clearing at a wrap end (join) 45, clearing mid-wrap (replay split) 11, residue contour 9, wall pass 0, residue mop 11, other 0
+raw plan (before the replay): 280 of 3690 steps over the ceiling (the steps the replay refuses; exact up to the first); the first ten:
+  refused: clearing cut spiral (segment 4) from (20.32, 22.48) to (19.14, 22.95), reading 0.3727
+  refused: clearing cut spiral (segment 4) from (19.14, 22.95) to (17.85, 23.02), reading 0.4401
+  refused: clearing cut spiral (segment 4) from (17.85, 23.02) to (16.55, 22.76), reading 0.4431
+  refused: clearing cut spiral (segment 4) from (16.55, 22.76) to (15.39, 22.09), reading 0.4212
+  refused: clearing cut spiral (segment 4) from (15.39, 22.09) to (14.40, 21.14), reading 0.4801
+  refused: clearing cut spiral (segment 4) from (14.40, 21.14) to (13.76, 19.89), reading 0.4882
+  refused: clearing cut spiral (segment 4) from (13.76, 19.89) to (13.50, 18.50), reading 0.4048
+  refused: clearing cut spiral (segment 4) from (13.50, 18.50) to (13.58, 17.06), reading 0.4017
+  refused: clearing cut spiral (segment 4) from (13.58, 17.06) to (14.14, 15.70), reading 0.4462
+  refused: clearing cut spiral (segment 4) from (14.14, 15.70) to (15.02, 14.49), reading 0.4398
+field piece 0: applied true, seed Some([18.5, 18.5]), seed radius 3.00 mm, levels 31, wrap pieces 119, converged true, front branches 3, spiral levels 3
+lobes piece 0: 5 lobes of 31 arcs, 57 plain wraps; not joined: split 51, branch 2, length ratio 0, gap 2; lobes that left the region (cut plain) 0; return length 0.0 mm

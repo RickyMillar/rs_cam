@@ -1,0 +1,36 @@
+pocket / geodesic_g1
+pieces: 1
+cut length: 1237.8 mm
+keep-down links: 133 (315.5 mm)
+entries (plunges): 89
+retracts (lifts to safe Z, last included): 89
+pass load (planner readout): max 0.4478 vs ceiling 0.3626; 1 of 2891 steps over; 0 exempt plunge-departure steps
+  over: residue mop cut (segment 168) from (54.44, 28.13) to (55.00, 28.64), reading 0.4478
+load by class, emitted plan (max reading, steps over of steps):
+  starter: max 0.3114, 0 of 160
+  clearing: max 0.3623, 0 of 1881
+  clearing link: max 0.2937, 0 of 12
+  residue contour link: max 0.0000, 0 of 34
+  residue contour: max 0.3333, 0 of 292
+  wall pass link: max 0.0000, 0 of 80
+  wall pass: max 0.2606, 0 of 29
+  residue mop: max 0.4478, 1 of 239
+  residue mop link: max 0.1512, 0 of 164
+load by class, raw plan (max reading, steps over of steps):
+  starter: max 0.3114, 0 of 160
+  clearing join: max 0.9638, 46 of 57
+  clearing wrap: max 0.9310, 225 of 2657
+  clearing link: max 0.9938, 20 of 100
+entries by producer: starter 1, clearing at a wrap end (join) 43, clearing mid-wrap (replay split) 23, residue contour 6, wall pass 0, residue mop 16, other 0
+raw plan (before the replay): 291 of 2974 steps over the ceiling (the steps the replay refuses; exact up to the first); the first ten:
+  refused: clearing cut join (ramp, back-run or seam step) (segment 4) from (15.50, 18.50) to (14.50, 18.50), reading 0.8333
+  refused: clearing cut on a wrap (segment 4) from (14.50, 18.50) to (13.50, 18.50), reading 0.8333
+  refused: clearing cut on a wrap (segment 4) from (13.62, 17.50) to (13.77, 17.00), reading 0.4124
+  refused: clearing cut on a wrap (segment 4) from (13.77, 17.00) to (13.97, 16.50), reading 0.4003
+  refused: clearing cut on a wrap (segment 4) from (14.00, 16.44) to (14.24, 16.00), reading 0.4492
+  refused: clearing cut on a wrap (segment 4) from (14.24, 16.00) to (14.50, 15.63), reading 0.3875
+  refused: clearing cut on a wrap (segment 4) from (14.50, 15.63) to (14.59, 15.50), reading 0.4004
+  refused: clearing cut on a wrap (segment 4) from (14.59, 15.50) to (15.00, 15.04), reading 0.3748
+  refused: clearing cut on a wrap (segment 4) from (15.04, 15.00) to (15.50, 14.59), reading 0.4486
+  refused: clearing cut on a wrap (segment 4) from (15.63, 14.50) to (16.00, 14.24), reading 0.4197
+field piece 0: applied true, seed Some([18.5, 18.5]), seed radius 3.00 mm, levels 32, wrap pieces 88, converged true, front branches 1, spiral levels 0

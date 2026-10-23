@@ -1,0 +1,33 @@
+star / geodesic_g1
+pieces: 1
+cut length: 1010.9 mm
+keep-down links: 66 (206.1 mm)
+entries (plunges): 86
+retracts (lifts to safe Z, last included): 86
+pass load (planner readout): max 0.3614 vs ceiling 0.3626; 0 of 2559 steps over; 0 exempt plunge-departure steps
+load by class, emitted plan (max reading, steps over of steps):
+  starter: max 0.3114, 0 of 160
+  clearing: max 0.3614, 0 of 2031
+  clearing link: max 0.0000, 0 of 17
+  wall pass link: max 0.0481, 0 of 74
+  wall pass: max 0.2992, 0 of 126
+  residue mop: max 0.3580, 0 of 65
+  residue mop link: max 0.2500, 0 of 86
+load by class, raw plan (max reading, steps over of steps):
+  starter: max 0.3114, 0 of 160
+  clearing join: max 0.8333, 59 of 62
+  clearing wrap: max 0.9196, 153 of 2109
+  clearing link: max 0.7012, 7 of 91
+entries by producer: starter 1, clearing at a wrap end (join) 58, clearing mid-wrap (replay split) 12, residue contour 0, wall pass 0, residue mop 15, other 0
+raw plan (before the replay): 219 of 2422 steps over the ceiling (the steps the replay refuses; exact up to the first); the first ten:
+  refused: clearing cut join (ramp, back-run or seam step) (segment 4) from (46.50, 50.50) to (45.50, 50.50), reading 0.8333
+  refused: clearing cut on a wrap (segment 4) from (45.50, 50.50) to (44.50, 50.50), reading 0.8333
+  refused: clearing cut on a wrap (segment 4) from (44.62, 49.50) to (44.77, 49.00), reading 0.4124
+  refused: clearing cut on a wrap (segment 4) from (44.77, 49.00) to (44.97, 48.50), reading 0.4003
+  refused: clearing cut on a wrap (segment 4) from (45.00, 48.44) to (45.24, 48.00), reading 0.4492
+  refused: clearing cut on a wrap (segment 4) from (45.24, 48.00) to (45.50, 47.63), reading 0.3875
+  refused: clearing cut on a wrap (segment 4) from (45.50, 47.63) to (45.59, 47.50), reading 0.4004
+  refused: clearing cut on a wrap (segment 4) from (45.59, 47.50) to (46.00, 47.04), reading 0.3748
+  refused: clearing cut on a wrap (segment 4) from (46.04, 47.00) to (46.50, 46.59), reading 0.4486
+  refused: clearing cut on a wrap (segment 4) from (46.63, 46.50) to (47.00, 46.24), reading 0.4197
+field piece 0: applied true, seed Some([49.5, 50.5]), seed radius 3.00 mm, levels 18, wrap pieces 103, converged true, front branches 1, spiral levels 0

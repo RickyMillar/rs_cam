@@ -49,3 +49,5 @@ Not defects but instrument gaps (ruling 2026-10-23: build before Phase 2):
 | G-ROUGHCOV-WIRING | `triage.coverage` is `[]` in the GUI: the viz hands the session an empty checkpoint list. Fix in progress (A2). | P15_E §coverage |
 
 | G-WALLSTRIP-PLAN | The ContourParallel 3D Rough leaves real 0.6–1.4 mm strips of stock against vertical walls (E2, Corne zero control: confirmed against the model). Reachable material the planner left; suspected grid-cell inset or the last pass stopping short of the boundary. Coverage reads them honestly. | P15_E_evidence.md §E2, `phase0/img/corne_contour_parallel_p15b_islands.png` |
+
+| G-RESLINKLOAD | In the research harness (geodesic morph columns on the 2D star) the shipped residue-contour cleanup emits a ~27 mm LINK from (48.00, 67.43) to (69.51, 51.19) that reads 0.55–0.97 of D against the 0.3626 pass-load ceiling (17 steps over). The cleanup is shipped `adaptive/path.rs` code; the candidate only changed what residue it meets. Check whether a shipped strategy can emit the same link class (the G-ADAPTLINKLOAD sentry covers links, not this cleanup path?). | P15_D_verify.md §D4 |
