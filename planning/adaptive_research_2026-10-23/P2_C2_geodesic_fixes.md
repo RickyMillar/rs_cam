@@ -1306,3 +1306,213 @@ cargo test -p rs_cam_core --features research,test-support --release \
    fine columns.
 5. `local-spacing sweep converged`.
 6. The pocket cascades of `curv_local` against 640 of 763.
+
+## C7 — the same plans judged by area per mm (2026-10-24)
+
+Status: CODE COMPLETE, NOT RUN (no cargo; no commit). Base 7c75324d (D6).
+`rustfmt --edition 2024 --check` is clean on all four files. The brief
+allowed edits to `path.rs` and `search.rs` for one threading only.
+
+### The measure and its ceiling (no new constant)
+
+- **Measure** (`search.rs`, `compute_area_per_mm`): the area of standing
+  stock a step newly clears, per mm of travel. That is FreeCAD's quantity
+  (R1 §3); their target 0.98948·s·D is not used.
+  - The new region is the capsule of the tool radius about the step,
+    outside the disc at its start (where the cutter already stands). This
+    is a little wider than the end disc minus the start disc that the
+    brief named: it includes the two side slivers between the discs.
+  - Each standing lattice node in that region counts cell². Each standing
+    fringe sub-point counts (cell/SUB)². The sum is divided by the step
+    length.
+- **Ceiling.** For a straight side cut of width w, every line parallel to
+  the heading inside the band meets the new region in the step length
+  (Cavalieri). So the area per mm is w, the swept width. The swept-width
+  ceiling fraction c (0.3626 of D) is therefore the SAME ceiling on area
+  per mm: `c·D` = 2.1756 mm²/mm.
+  - `PassLoad::area_per_mm` is the swept-width load with the step read in
+    area (same target, band and ceiling; no sliver reading, because the
+    area counts the fringe sub-points itself).
+- **Quantum.**
+  - A node stands for its cell, so the count errs only in the cells the
+    region's boundary crosses: at most `√2·cell·P` mm² for perimeter P,
+    so at most `√2·cell·P/ℓ` per mm.
+  - On a straight cut along a lattice axis with ℓ a whole number of cells,
+    the start and end discs are the same node set shifted. The reading is
+    then the band's rows times the cell, within one cell of w.
+  - Thin caps under-read: the lattice reads 2.0 mm² for the first
+    millimetre of the wall step below, where the exact cap is 3.10 mm².
+    This is the same G-CELLREAD direction D6 found for the swept width.
+
+### The threading (path.rs, search.rs; no shipped behaviour change)
+
+- **`search.rs`:**
+  - `StepMeasure::AreaPerMm` and `PassLoadMeasure { SweptWidth, AreaPerMm }`
+    (`pub(crate)`).
+  - `PassLoad::area_per_mm` and `compute_area_per_mm`.
+  - `measure_step` returns the area reading over D first when the load's
+    measure is `AreaPerMm`.
+  - `measure_engagement` reads a single point as the swept width under
+    both measures (a point has no travel; this serves presence and
+    scoring).
+  - `caps()` is true for both measures.
+  - The `AreaPerMm` variant carries
+    `#[cfg_attr(not(feature = "research"), expect(dead_code, ..))]`. Only
+    the research harness builds it.
+- **`path.rs`:**
+  - `LinkLoad::new` calls the new `LinkLoad::new_with(.., measure)` with
+    `SweptWidth`.
+  - `apply_residue_mop_cleanup` and `apply_contour_parallel_residue_cleanup`
+    keep their signatures and call new `_with(.., measure)` variants with
+    `SweptWidth`. The bodies moved unchanged; only their `LinkLoad::new` became
+    `new_with(.., measure)`.
+  - Every ceiling decision in the replay, the residue contours, the wall
+    pass and the mop goes through `measure_step` or
+    `step_within_pass_load` with `link_load.pass`. One measure on the
+    `LinkLoad` therefore reaches all of them.
+- The callers in `mod.rs` and `adaptive3d/clearing.rs` are unchanged.
+
+### Research side (research_geodesic.rs, the harness)
+
+- `ReplayMeasure` (the public twin of the crate enum), and
+  `run_2d_with(.., read, measure)`. The plan is the same whatever the
+  measure; the cleanup runs `_with(measure)`.
+- `PassLoadReadout` and `LoadTally` read BOTH measures for every step,
+  side by side: `max_swept`/`over_swept` and `max_area`/`over_area`. Their
+  `max_reading`, `steps_over` and over-step list are in the replay's
+  measure. The cascade model reads in the replay's measure.
+- **Columns.**
+  - `geodesic_curv_area`: the plan of `geodesic_curv`, with the replay
+    under area.
+  - `agent_area` and `contour_spiral_area`: the shipped plans, replay under
+    area. They show the measure is no gift to one candidate. No product
+    parity is asserted for them.
+  - The default set otherwise is as at C6.
+
+### The claim the ruling rests on: it FAILS on the wall-end turn
+
+The brief asked for a test that, at a wall-end turn, swept width reads ≥ 2s
+while area per mm reads ≤ c·D.
+
+- **Exact geometry.** A pass at level k reaches the wall and steps up it
+  by s, head-on into the stock above `y_k + R`. A step of h head-on clears
+  the cap of height h of the cutter's disc:
+  `R² acos((R − h)/R) − (R − h)√(2Rh − h²)`.
+  - That is 3.10 mm² for the first millimetre and 5.15 mm² for the second
+    (R 3), against 2.18 mm² per mm.
+  - In general, a head-on step into uncut stock removes about the full
+    chord per mm once it is deeper than a few tenths of a millimetre.
+- **Lattice (Python emulation of both measures, session scratchpad
+  `c7_measures.py`).**
+
+  | Step | Swept width (mm) | Area per mm (mm²/mm) | Ceiling c·D 2.1756 |
+  |---|---|---|---|
+  | straight side cut, w 2 | 1.5 | 2.0 | both under |
+  | wall step, first 1 mm | 3.0 | 2.0 (thin cap under-read) | swept over, area under |
+  | wall step, second 1 mm | 5.0 | 5.0 | both over |
+
+So the area measure does NOT admit the radial advance at a wall end.
+
+**An identity: the two measures are equal on every circular front.** Round a
+cleared disc, the area per mm of a pass at ρ with spacing s is
+`((ρ + R)² − (ρ + R − s)²)/(2ρ) = s + s(R − s/2)/ρ`. The C3 swept width
+`R − (a² − R² − ρ²)/(2ρ)` with `a = ρ − s + R` expands to the same
+expression, for every ρ, R and s. So the area measure cannot relax the core
+or the arm bases either: the curvature spacing law is the same under both
+measures. The two measures part where the stock in the disc is
+not one band: two slivers either side, a lump the step only grazes, the
+first touch of a head-on step. There the swept width reads the span and the
+area reads the removal.
+
+### Unit tests (C7, research module)
+
+- `a_straight_side_cut_reads_alike_in_both_measures`: both readings are
+  within one cell of s and of each other.
+- `a_head_on_step_up_a_wall_is_over_the_ceiling_in_both_measures`: the
+  second step reads a swept width ≥ 2s AND area per mm > c·D, and the mean
+  area per mm of the whole advance is > c·D. This is the opposite of the
+  brief's claim, pinned with the derivation above. The first step's thin
+  cap is not asserted (lattice under-read).
+- `two_slivers_read_wide_in_swept_width_and_narrow_in_area`: slivers
+  2.5 mm either side of the path read a swept width ≥ 2s and area per
+  mm ≤ c·D. This is where the measures part.
+
+### Predictions (not run)
+
+- **Lattice effect, set before the run (G-CELLREAD on the area measure).**
+  The replay splits each radial join (s = 2) into two pass steps of 1 mm.
+  The lattice reads the first one's thin cap at 2.0 mm²/mm (exact 3.10), so
+  the area replay ADMITS the first sub-step and refuses the second.
+  Expected:
+  - J unchanged (the refusal is still within one pass step of the wrap
+    end);
+  - the raw intrinsic refusals in the `clearing join` class about halve;
+  - the emitted plan carries a 1 mm stub into each join.
+
+  That is the lattice under-reading a thin cap, not the area measure
+  admitting the join.
+- **`geodesic_curv_area` ≈ `geodesic_curv`** (73 / 63). The joins (J, head-on
+  radial steps) stay refused: their planned swept readings at D5/D6 are
+  0.50 to 0.90, and their area readings are of the same size by the cap
+  argument. M stays about 0 on the star, because the curved front reads
+  the same in both measures. Residue mop and wall-pass entries (P, W) may
+  fall: those steps graze slivers, where area reads less than swept
+  width. Expect J unchanged, P down by a few.
+- **`agent_area` and `contour_spiral_area`:** the same direction. Fewer
+  refusals where the shipped replay split on slivers (contour_spiral M was
+  93 on the star), and no change on head-on steps.
+- **Readout check:** in every column, `area max` ≤ `swept max` on most
+  classes, with near-equality on clearing wraps (straight and curved
+  fronts) and the largest gap on the residue mop and the wall pass.
+
+If these hold, the operator's ruling is not between two measures that
+disagree about the joins. The measures agree on the joins. They disagree
+only on sliver work.
+
+### Commands for the verifier (C7)
+
+Through `scripts/cargo_lane.sh`, each with a `timeout`:
+
+```text
+cargo fmt --all -- --check
+cargo test -p rs_cam_core -q --lib adaptive
+# the adaptive folder's sentries (adaptive/CLAUDE.md), path.rs and search.rs changed:
+cargo test -p rs_cam_core -q --features test-support --test a_clearing_cut_holds_the_pass_load_g_adaptpassload
+cargo test -p rs_cam_core -q --features test-support --test a_link_feeds_only_within_the_pass_load_g_adaptlinkload
+cargo test -p rs_cam_core -q --features test-support --test a_rapid_leaves_cut_depth_straight_up_g_adaptrapidlift
+cargo test -p rs_cam_core -q --features test-support --test adaptive_keeps_its_planner_order_g_adaptorder
+cargo test -p rs_cam_core -q --features test-support --test adaptive_property_harness
+cargo test -p rs_cam_core -q --features test-support --test contour_spiral_gcode_validity_phase0
+cargo test -p rs_cam_core -q --features test-support --test adaptive3d_emission_byte_parity
+cargo test -p rs_cam_core -q --features test-support --test adaptive_plans_every_inset_piece_g_adaptpieces
+cargo test -p rs_cam_core --features research,test-support -q --lib research_geodesic
+cargo clippy -p rs_cam_core --all-targets -- -D warnings
+cargo clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings
+cargo clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research,rs_cam_core/test-support -- -D warnings
+cargo test -p rs_cam_viz -q --lib
+cargo test -p rs_cam_core --features research,test-support --release \
+    --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture
+```
+
+- **The threading proof:** `--lib adaptive` and the eight adaptive
+  sentries green (byte parity among them).
+- **If the straight-cut unit test reads a swept width of 1.0 or 2.0 instead
+  of 1.5,** that is the `MaterialGrid` origin or boundary convention, which
+  my emulation assumed. Report the two readings before anything else. Clippy must be green both WITHOUT
+  `research` (the `expect(dead_code)` on `PassLoadMeasure::AreaPerMm`
+  fires there) and with it.
+- **Controls (exact, as D6):**
+  - `geodesic_a`: star 92, pocket 88;
+  - `geodesic_curv`: star 73 = S1 J58 M0 P14 (0.3581, raw 145/2545),
+    pocket 63 = S1 J34 M12 C6 P10 (0.4677, raw 260/2952);
+  - agent and contour_spiral keep product parity (the harness asserts it).
+- **Then read** for the three `_area` columns:
+  - entries by producer;
+  - the `both measures of the emitted steps` line (area max must be at or
+    under the ceiling where the replay held area; the swept width beside
+    it);
+  - the per-class tallies (area max against swept max, class by class).
+- **The unit test the ruling rests on:**
+  `a_head_on_step_up_a_wall_is_over_the_ceiling_in_both_measures`. If it
+  is RED, the lattice says area admits the wall step and my derivation is
+  wrong. Report the readings.

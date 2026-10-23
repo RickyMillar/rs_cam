@@ -7,8 +7,9 @@
 
 use super::material_grid::polygon_bbox;
 use super::search::{
-    NoStep, PassLoad, ToolCentreRegion, find_entry_point, find_entry_via_distance_transform,
-    path_bounds, search_direction_gradient, search_direction_with_metrics, step_within_pass_load,
+    NoStep, PassLoad, PassLoadMeasure, ToolCentreRegion, find_entry_point,
+    find_entry_via_distance_transform, path_bounds, search_direction_gradient,
+    search_direction_with_metrics, step_within_pass_load,
 };
 use super::{
     AdaptiveParams, AdaptiveRuntimeAnnotation, AdaptiveRuntimeEvent, CleanupStrategy,
@@ -123,6 +124,17 @@ pub(crate) struct LinkLoad {
 
 impl LinkLoad {
     pub(crate) fn new(params: &AdaptiveParams, grid: &MaterialGrid, polygon: &Polygon2) -> Self {
+        Self::new_with(params, grid, polygon, PassLoadMeasure::SweptWidth)
+    }
+
+    /// [`Self::new`] with the pass load read in `measure` (research, C7;
+    /// every shipped call site reads [`PassLoadMeasure::SweptWidth`]).
+    pub(crate) fn new_with(
+        params: &AdaptiveParams,
+        grid: &MaterialGrid,
+        polygon: &Polygon2,
+        measure: PassLoadMeasure,
+    ) -> Self {
         let holds = params.keep_down_links == KeepDownLinks::WithinPassLoad;
         let helix = params.entry_helix_radius.max(0.0);
         let region = holds.then(|| ToolCentreRegion::new(polygon, params.tool_radius));
@@ -155,7 +167,12 @@ impl LinkLoad {
             rule: params.keep_down_links,
             tool_radius: params.tool_radius,
             step_len: pass_step_len(grid.cell_size),
-            pass: pass_load_for(params, grid.cell_size),
+            pass: match measure {
+                PassLoadMeasure::SweptWidth => pass_load_for(params, grid.cell_size),
+                PassLoadMeasure::AreaPerMm => {
+                    PassLoad::area_per_mm(params.stepover, params.tool_radius, grid.cell_size)
+                }
+            },
             entry_radius: params.tool_radius + helix,
             entry_mask,
             rewalk_replayed_cuts: holds,
@@ -1653,14 +1670,25 @@ fn filter_short_cuts_by_redundancy(
     filtered
 }
 
-#[expect(
-    clippy::indexing_slicing,
-    reason = "bounded indexing in algorithmic code"
-)]
 pub(crate) fn apply_residue_mop_cleanup(
     polygon: &Polygon2,
     params: &AdaptiveParams,
     segments: &[AdaptiveSegment],
+) -> Vec<AdaptiveSegment> {
+    apply_residue_mop_cleanup_with(polygon, params, segments, PassLoadMeasure::SweptWidth)
+}
+
+/// [`apply_residue_mop_cleanup`] with the replay, the wall pass and the mop
+/// held to the pass load in `measure` (research, C7).
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
+pub(crate) fn apply_residue_mop_cleanup_with(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    segments: &[AdaptiveSegment],
+    measure: PassLoadMeasure,
 ) -> Vec<AdaptiveSegment> {
     let tool_radius = params.tool_radius;
     let cell_size = planner_cell_size(tool_radius, params.tolerance);
@@ -1726,7 +1754,7 @@ pub(crate) fn apply_residue_mop_cleanup(
         grid.cols,
         grid.cell_size,
     );
-    let link_load = LinkLoad::new(params, &grid, polygon);
+    let link_load = LinkLoad::new_with(params, &grid, polygon, measure);
     let (mut out, last_pos) = replay_kept_segments(out, &mut grid, &machinable_mask, &link_load);
 
     // Step 4 — mop remaining residue.
@@ -1771,6 +1799,23 @@ pub(crate) fn apply_contour_parallel_residue_cleanup(
     polygon: &Polygon2,
     params: &AdaptiveParams,
     segments: &[AdaptiveSegment],
+) -> Vec<AdaptiveSegment> {
+    apply_contour_parallel_residue_cleanup_with(
+        polygon,
+        params,
+        segments,
+        PassLoadMeasure::SweptWidth,
+    )
+}
+
+/// [`apply_contour_parallel_residue_cleanup`] with the replay, the
+/// residue contours, the wall pass and the mop held to the pass load in
+/// `measure` (research, C7).
+pub(crate) fn apply_contour_parallel_residue_cleanup_with(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    segments: &[AdaptiveSegment],
+    measure: PassLoadMeasure,
 ) -> Vec<AdaptiveSegment> {
     let tool_radius = params.tool_radius;
     let cell_size = planner_cell_size(tool_radius, params.tolerance);
@@ -1842,7 +1887,7 @@ pub(crate) fn apply_contour_parallel_residue_cleanup(
         grid.cols,
         grid.cell_size,
     );
-    let link_load = LinkLoad::new(params, &grid, polygon);
+    let link_load = LinkLoad::new_with(params, &grid, polygon, measure);
     let (mut out, mut last_pos) =
         replay_kept_segments(out, &mut grid, &machinable_mask, &link_load);
 

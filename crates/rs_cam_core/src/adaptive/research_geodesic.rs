@@ -252,11 +252,11 @@ use crate::polygon::{Polygon2, offset_polygon};
 use crate::toolpath::{MoveIntent, Toolpath};
 
 use super::path::{
-    AdaptiveSegment, LinkLoad, apply_contour_parallel_residue_cleanup, apply_residue_mop_cleanup,
-    emit_helical_starter_pocket, pass_load_for, pass_step_len, planner_cell_size,
-    segments_to_toolpath, subdivide,
+    AdaptiveSegment, LinkLoad, apply_contour_parallel_residue_cleanup_with,
+    apply_residue_mop_cleanup_with, emit_helical_starter_pocket, pass_load_for, pass_step_len,
+    planner_cell_size, segments_to_toolpath, subdivide,
 };
-use super::search::{PassLoad, ToolCentreRegion, measure_step, step_within_pass_load};
+use super::search::{PassLoad, PassLoadMeasure, ToolCentreRegion, measure_step};
 use super::{
     AdaptiveParams, AdaptiveRuntimeEvent, CleanupStrategy, KeepDownLinks, MaterialGrid,
     PathStrategy2d,
@@ -3550,6 +3550,14 @@ pub struct LoadTally {
     /// Steps over the ceiling: in the raw plan, the steps the replay
     /// refuses.
     pub steps_over: usize,
+    /// C7: the largest swept-width reading and the steps over the ceiling
+    /// in it ...
+    pub max_swept: f64,
+    pub over_swept: usize,
+    /// ... and the same in area per mm over D ([`ReplayMeasure::AreaPerMm`]),
+    /// for the same steps.
+    pub max_area: f64,
+    pub over_area: usize,
 }
 
 /// The planner's own pass-load reading of a plan, replayed on a fresh grid.
@@ -3583,6 +3591,16 @@ pub struct PassLoadReadout {
     /// The readout per class of steps ([`LoadTally`]), in the order the
     /// classes first appear.
     pub tallies: Vec<LoadTally>,
+    /// C7: the measure `max_reading`, `steps_over` and `over` are read in
+    /// (the measure the column's replay held the plan to).
+    pub measure: ReplayMeasure,
+    /// C7: both readings of every step read, side by side: the largest
+    /// swept width and its steps over the ceiling ...
+    pub max_swept: f64,
+    pub over_swept: usize,
+    /// ... and the largest area per mm over D and its steps over.
+    pub max_area: f64,
+    pub over_area: usize,
 }
 
 impl PassLoadReadout {
@@ -3593,25 +3611,60 @@ impl PassLoadReadout {
         self.steps_over += other.steps_over;
         self.exempt_steps += other.exempt_steps;
         self.over.extend_from_slice(&other.over);
+        self.measure = other.measure;
+        self.max_swept = self.max_swept.max(other.max_swept);
+        self.over_swept += other.over_swept;
+        self.max_area = self.max_area.max(other.max_area);
+        self.over_area += other.over_area;
         for t in &other.tallies {
-            self.tally(&t.label, t.max_reading, t.steps, t.steps_over);
+            self.tally(t);
         }
     }
 
-    /// Add `steps` steps (of which `over` over the ceiling, the largest
-    /// reading `max`) to the tally of `label`.
-    fn tally(&mut self, label: &str, max: f64, steps: usize, over: usize) {
-        if let Some(t) = self.tallies.iter_mut().find(|t| t.label == label) {
-            t.max_reading = t.max_reading.max(max);
-            t.steps += steps;
-            t.steps_over += over;
+    /// Add the counts of `sample` to the tally of its label.
+    fn tally(&mut self, sample: &LoadTally) {
+        if let Some(t) = self.tallies.iter_mut().find(|t| t.label == sample.label) {
+            t.max_reading = t.max_reading.max(sample.max_reading);
+            t.steps += sample.steps;
+            t.steps_over += sample.steps_over;
+            t.max_swept = t.max_swept.max(sample.max_swept);
+            t.over_swept += sample.over_swept;
+            t.max_area = t.max_area.max(sample.max_area);
+            t.over_area += sample.over_area;
         } else {
-            self.tallies.push(LoadTally {
-                label: label.to_owned(),
-                max_reading: max,
-                steps,
-                steps_over: over,
-            });
+            self.tallies.push(sample.clone());
+        }
+    }
+}
+
+/// The measure a research replay holds the plan to (C7). Public twin of
+/// the crate's `PassLoadMeasure` for the harness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReplayMeasure {
+    /// The shipped rule: swept width against `c·D`.
+    #[default]
+    SweptWidth,
+    /// FreeCAD's quantity (R1 §3): the area of standing stock a step clears
+    /// per mm of travel ([`super::search::compute_area_per_mm`]), against
+    /// the same `c·D`. On a straight side cut of width `w` the area per mm
+    /// is `w`, the swept width, so the ceiling carries over with no new
+    /// constant.
+    AreaPerMm,
+}
+
+impl ReplayMeasure {
+    fn crate_measure(self) -> PassLoadMeasure {
+        match self {
+            Self::SweptWidth => PassLoadMeasure::SweptWidth,
+            Self::AreaPerMm => PassLoadMeasure::AreaPerMm,
+        }
+    }
+
+    /// The pass load of `params` on a lattice of `cell` in this measure.
+    fn pass(self, params: &AdaptiveParams, cell: f64) -> PassLoad {
+        match self {
+            Self::SweptWidth => pass_load_for(params, cell),
+            Self::AreaPerMm => PassLoad::area_per_mm(params.stepover, params.tool_radius, cell),
         }
     }
 }
@@ -3634,11 +3687,15 @@ fn pass_load_readout(
     segments: &[AdaptiveSegment],
     parts: Option<&PartIndex>,
     cell: f64,
+    measure: ReplayMeasure,
 ) -> PassLoadReadout {
     let r = params.tool_radius;
-    let pass = pass_load_for(params, cell);
+    let pass = measure.pass(params, cell);
+    let swept_pass = ReplayMeasure::SweptWidth.pass(params, cell);
+    let area_pass = ReplayMeasure::AreaPerMm.pass(params, cell);
     let mut out = PassLoadReadout {
         ceiling: pass.ceiling,
+        measure,
         ..PassLoadReadout::default()
     };
     let Some(mut setup) = PieceSetup::new(polygon, params, cell) else {
@@ -3662,17 +3719,31 @@ fn pass_load_readout(
             return;
         }
         let angle = (b.y - a.y).atan2(b.x - a.x);
-        let load = pass;
-        let reading = measure_step(grid, a, b.x, b.y, r, angle, &load);
+        let reading = measure_step(grid, a, b.x, b.y, r, angle, &pass);
+        let swept = measure_step(grid, a, b.x, b.y, r, angle, &swept_pass);
+        let area = measure_step(grid, a, b.x, b.y, r, angle, &area_pass);
         out.steps += 1;
         out.max_reading = out.max_reading.max(reading);
         let part = match parts {
             Some(index) if tag.producer == Producer::Clearing && !tag.link => index.part(a, b),
             _ => StepPart::Unclassified,
         };
-        let label = step_label(tag, part);
-        let held = step_within_pass_load(grid, a, b.x, b.y, r, angle, &load);
-        out.tally(&label, reading, 1, usize::from(!held));
+        let held = reading <= pass.ceiling;
+        let (swept_over, area_over) = (swept > swept_pass.ceiling, area > area_pass.ceiling);
+        out.max_swept = out.max_swept.max(swept);
+        out.over_swept += usize::from(swept_over);
+        out.max_area = out.max_area.max(area);
+        out.over_area += usize::from(area_over);
+        out.tally(&LoadTally {
+            label: step_label(tag, part),
+            max_reading: reading,
+            steps: 1,
+            steps_over: usize::from(!held),
+            max_swept: swept,
+            over_swept: usize::from(swept_over),
+            max_area: area,
+            over_area: usize::from(area_over),
+        });
         if !held {
             out.steps_over += 1;
             out.over.push(OverStep {
@@ -4021,6 +4092,7 @@ fn cascade_readout(
     parts: Option<&PartIndex>,
     seed: Option<P2>,
     cell: f64,
+    measure: ReplayMeasure,
 ) -> CascadeReadout {
     let (Some(plan), Some(replay)) = (
         PieceSetup::new(polygon, params, cell),
@@ -4031,7 +4103,7 @@ fn cascade_readout(
     let mut walk = CascadeWalk {
         plan,
         replay,
-        pass: pass_load_for(params, cell),
+        pass: measure.pass(params, cell),
         tool_radius: params.tool_radius,
         down: true,
         piece: None,
@@ -4324,14 +4396,16 @@ fn cleaned(
     polygon: &Polygon2,
     params: &AdaptiveParams,
     segments: Vec<AdaptiveSegment>,
+    measure: ReplayMeasure,
 ) -> Vec<AdaptiveSegment> {
+    let m = measure.crate_measure();
     match params.cleanup_strategy {
         CleanupStrategy::Legacy => segments,
         CleanupStrategy::ResidueMop | CleanupStrategy::ContourParallelNarrow => {
-            apply_residue_mop_cleanup(polygon, params, &segments)
+            apply_residue_mop_cleanup_with(polygon, params, &segments, m)
         }
         CleanupStrategy::ContourParallelHybrid => {
-            apply_contour_parallel_residue_cleanup(polygon, params, &segments)
+            apply_contour_parallel_residue_cleanup_with(polygon, params, &segments, m)
         }
     }
 }
@@ -4345,7 +4419,13 @@ fn cleaned(
 /// field does not apply is not planned; its [`FieldReport`] says so.
 #[must_use]
 pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2d) -> Run2d {
-    run_2d_with(outline, params, candidate, ReadResolution::Planner)
+    run_2d_with(
+        outline,
+        params,
+        candidate,
+        ReadResolution::Planner,
+        ReplayMeasure::SweptWidth,
+    )
 }
 
 /// The lattice the research readouts of the RAW plan read on (C6, harness
@@ -4364,13 +4444,18 @@ pub enum ReadResolution {
 }
 
 /// [`run_2d`] with the raw-plan readouts (`Summary2d::raw_pass_load`,
-/// `Summary2d::cascade`) read at `read` ([`ReadResolution`]).
+/// `Summary2d::cascade`) read at `read` ([`ReadResolution`]), and the
+/// cleanup's replay held to `measure` ([`ReplayMeasure`], C7). The
+/// readouts read both measures; their over-steps and the cascade model are
+/// in `measure`. The producer is the same whatever `measure`, so a column
+/// under [`ReplayMeasure::AreaPerMm`] judges the same plan by area.
 #[must_use]
 pub fn run_2d_with(
     outline: &Polygon2,
     params: &AdaptiveParams,
     candidate: Candidate2d,
     read: ReadResolution,
+    measure: ReplayMeasure,
 ) -> Run2d {
     let never: &dyn CancelCheck = &|| false;
     let strategy = match candidate {
@@ -4432,7 +4517,14 @@ pub fn run_2d_with(
             ReadResolution::Planner => cell,
             ReadResolution::HalfCell => cell / 2.0,
         };
-        let raw_load = pass_load_readout(piece, &params, &raw, piece_parts.as_ref(), read_cell);
+        let raw_load = pass_load_readout(
+            piece,
+            &params,
+            &raw,
+            piece_parts.as_ref(),
+            read_cell,
+            measure,
+        );
         run.summary.raw_pass_load.merge(&raw_load);
         run.summary.cascade.merge(&cascade_readout(
             piece,
@@ -4441,8 +4533,9 @@ pub fn run_2d_with(
             piece_parts.as_ref(),
             piece_seed,
             read_cell,
+            measure,
         ));
-        let segments = cleaned(piece, &params, raw);
+        let segments = cleaned(piece, &params, raw, measure);
         run.summary
             .entry_split
             .merge(&entry_split(&segments, &piece_wraps, pass_step_len(cell)));
@@ -4451,9 +4544,9 @@ pub fn run_2d_with(
         let (tp, _) = segments_to_toolpath(&segments, &params, region.as_ref());
         add_counts(&mut run.summary, &segments);
         run.spans.extend(spans_of(&segments));
-        run.summary
-            .pass_load
-            .merge(&pass_load_readout(piece, &params, &segments, None, cell));
+        run.summary.pass_load.merge(&pass_load_readout(
+            piece, &params, &segments, None, cell, measure,
+        ));
         run.summary.retracts += tp
             .moves
             .iter()
@@ -4943,6 +5036,132 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// C7: a material grid over the square `[0, side]²` on the planner
+    /// lattice, with the stock standing only where `stands(x, y)`.
+    fn stock_grid(side: f64, cell: f64, stands: impl Fn(f64, f64) -> bool) -> MaterialGrid {
+        let square = Polygon2::new(vec![
+            P2::new(0.0, 0.0),
+            P2::new(side, 0.0),
+            P2::new(side, side),
+            P2::new(0.0, side),
+        ]);
+        let mut grid = MaterialGrid::from_polygon(&square, cell);
+        let (ox, oy, cols) = (grid.origin_x, grid.origin_y, grid.cols);
+        for (i, v) in grid.cells.iter_mut().enumerate() {
+            let x = ox + (i % cols) as f64 * cell;
+            let y = oy + (i / cols) as f64 * cell;
+            if *v == super::super::material_grid::CELL_MATERIAL && !stands(x, y) {
+                *v = super::super::material_grid::CELL_CLEARED;
+            }
+        }
+        grid
+    }
+
+    /// The two readings (mm) of the step `a -> b` on `grid`: the swept
+    /// width at `b` and the area per mm.
+    fn readings(grid: &MaterialGrid, a: P2, b: P2) -> (f64, f64) {
+        let angle = (b.y - a.y).atan2(b.x - a.x);
+        let swept = super::super::search::compute_swept_width(grid, b.x, b.y, R, angle) * 2.0 * R;
+        let area = super::super::search::compute_area_per_mm(grid, a, b.x, b.y, R);
+        (swept, area)
+    }
+
+    /// C7: on a straight side cut of width `s` the two measures agree within
+    /// one cell, and each is within one cell of `s` (the area is the band's
+    /// rows times the step, Cavalieri; the swept width reads the band up to
+    /// one cell narrow). This is why `c·D` carries over as the area ceiling.
+    #[test]
+    fn a_straight_side_cut_reads_alike_in_both_measures() {
+        let (s, tol) = op_defaults();
+        let cell = planner_cell_size(R, tol);
+        // The pass before at y = 10 cleared to y = 10 + R; the pass now runs
+        // at y = 10 + s, along +x, one pass step at a time.
+        let mut grid = stock_grid(45.0, cell, |_, y| y > 10.0 + R);
+        let y = 10.0 + s;
+        grid.clear_segment(P2::new(5.0, y), P2::new(20.0, y), R);
+        let step = pass_step_len(cell);
+        let (swept, area) = readings(&grid, P2::new(20.0, y), P2::new(20.0 + step, y));
+        assert!(
+            (swept - area).abs() <= cell + 1e-9,
+            "the measures agree within one cell: swept {swept:.3}, area {area:.3}"
+        );
+        for (name, v) in [("swept", swept), ("area", area)] {
+            assert!(
+                (v - s).abs() <= cell + 1e-9,
+                "{name} {v:.3} reads the side cut {s} within one cell {cell}"
+            );
+        }
+    }
+
+    /// C7: the wall-end turn. A pass at level k reaches the wall (the
+    /// tool-centre wall at x = 37 of a 40 mm wide pocket) and turns to step
+    /// up the wall by `s` to the next level, in two pass steps, head-on
+    /// into the stock above `y_k + R`. The swept width of the second step
+    /// reads at least `2s`, AND its area per mm reads over `c·D` too, as
+    /// does the mean area per mm of the whole advance.
+    ///
+    /// This is the opposite of the claim the C7 brief asked to pin (area per
+    /// mm ≤ c·D at the turn). The exact geometry agrees with the lattice: a
+    /// step of `h` head-on into stock clears the cap of height `h` of the
+    /// cutter's disc, `R² acos((R - h)/R) - (R - h)√(2Rh - h²)`: 3.10 mm² for
+    /// the first millimetre, 5.15 mm² for the second (R 3), against
+    /// `c·D` = 2.18 mm² per mm. (The lattice reads the first step's thin cap
+    /// at 2.0 mm²; that step is not asserted.)
+    #[test]
+    fn a_head_on_step_up_a_wall_is_over_the_ceiling_in_both_measures() {
+        let params = test_params();
+        let (s, tol) = op_defaults();
+        let cell = planner_cell_size(R, tol);
+        let cd = pass_load_for(&params, cell).ceiling * 2.0 * R;
+        let y_k = 15.0;
+        let wall_x = 40.0 - R;
+        let mut grid = stock_grid(40.0, cell, |_, y| y > y_k + R);
+        let half = s / 2.0;
+        let p0 = P2::new(wall_x, y_k);
+        let p1 = P2::new(wall_x, y_k + half);
+        let p2 = P2::new(wall_x, y_k + s);
+        let (_, area_1) = readings(&grid, p0, p1);
+        grid.clear_segment(p0, p1, R);
+        let (swept_2, area_2) = readings(&grid, p1, p2);
+        assert!(
+            swept_2 >= 2.0 * s,
+            "the swept width {swept_2:.3} reads at least 2s"
+        );
+        assert!(
+            area_2 > cd,
+            "the second step's area per mm {area_2:.3} is over c·D {cd:.4}"
+        );
+        let mean = (area_1 * half + area_2 * half) / s;
+        assert!(
+            mean > cd,
+            "the advance's mean area per mm {mean:.3} is over c·D {cd:.4}"
+        );
+    }
+
+    /// C7: where the two measures part. The stock is two slivers either side
+    /// of the cutter's path (one lattice column each, 2.5 mm off the path):
+    /// the swept width reads their whole span (at least `2s`), the area per
+    /// mm reads only what the step removes (under `c·D`).
+    #[test]
+    fn two_slivers_read_wide_in_swept_width_and_narrow_in_area() {
+        let params = test_params();
+        let (s, tol) = op_defaults();
+        let cell = planner_cell_size(R, tol);
+        let cd = pass_load_for(&params, cell).ceiling * 2.0 * R;
+        let x0 = 20.0;
+        let grid = stock_grid(45.0, cell, |x, _| {
+            let d = (x - x0).abs();
+            d >= 2.5 - cell / 2.0 && d <= 2.5 + cell / 2.0
+        });
+        let step = pass_step_len(cell);
+        let (swept, area) = readings(&grid, P2::new(x0, 20.0), P2::new(x0, 20.0 + step));
+        assert!(
+            swept >= 2.0 * s,
+            "the swept width {swept:.3} spans both slivers"
+        );
+        assert!(area <= cd, "the area per mm {area:.3} is under c·D {cd:.4}");
     }
 
     /// The straight parallel arcs of a rectangular lobe, `s` apart, `n` of

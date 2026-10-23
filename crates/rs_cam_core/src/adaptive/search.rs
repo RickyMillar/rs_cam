@@ -632,6 +632,85 @@ pub(crate) fn compute_swept_width(
     swept_width_on(grid, cx, cy, radius, dir_angle, false, None)
 }
 
+/// Research (C7): the area (mm²) of standing stock a step from `from` to
+/// `(nx, ny)` newly clears, per mm of travel: FreeCAD's quantity (R1 §3).
+///
+/// The step sweeps the capsule of the tool radius about the segment; the
+/// disc at `from` is where the cutter already stands. Each lattice node in
+/// the capsule, outside the start disc and still standing
+/// ([`super::material_grid::CELL_MATERIAL`]) counts `cell²`; each standing
+/// fringe sub-point counts `(cell / SUB)²`. The sum over the step length.
+///
+/// On a straight side cut of width `w` every line parallel to the heading
+/// inside the band meets the new region in the step length (Cavalieri), so
+/// the area is `w · ℓ` and the reading is `w`: the swept width's quantity.
+/// Where the stock wraps round the cutter the swept width reads the full
+/// sideways extent, while the area reads only what the step removes.
+///
+/// Quantum: a node stands for its cell, so the count errs only in the cells
+/// the region's boundary crosses; the error is at most `√2 · cell · P` mm²
+/// for a region of perimeter `P`, so at most `√2 · cell · P / ℓ` per mm.
+/// On a straight cut along a lattice axis with `ℓ` a whole number of cells
+/// the start and end discs are the same node set shifted, and the reading
+/// is the band width rounded to whole rows (within one cell).
+#[expect(
+    clippy::indexing_slicing,
+    reason = "rows and columns are clamped to the grid before indexing."
+)]
+pub(crate) fn compute_area_per_mm(
+    grid: &MaterialGrid,
+    from: P2,
+    nx: f64,
+    ny: f64,
+    radius: f64,
+) -> f64 {
+    let to = P2::new(nx, ny);
+    let len = (nx - from.x).hypot(ny - from.y);
+    if len <= 0.0 {
+        return 0.0;
+    }
+    let r_sq = radius * radius;
+    let new_point = |px: f64, py: f64| {
+        segment_distance_sq(from, to, px, py) <= r_sq
+            && (px - from.x).powi(2) + (py - from.y).powi(2) > r_sq
+    };
+    let (lo_x, hi_x) = (from.x.min(nx) - radius, from.x.max(nx) + radius);
+    let (lo_y, hi_y) = (from.y.min(ny) - radius, from.y.max(ny) + radius);
+    let col_min = ((lo_x - grid.origin_x) / grid.cell_size).floor().max(0.0) as usize;
+    let col_max = (((hi_x - grid.origin_x) / grid.cell_size).ceil() as usize)
+        .min(grid.cols.saturating_sub(1));
+    let row_min = ((lo_y - grid.origin_y) / grid.cell_size).floor().max(0.0) as usize;
+    let row_max = (((hi_y - grid.origin_y) / grid.cell_size).ceil() as usize)
+        .min(grid.rows.saturating_sub(1));
+    let cell_area = grid.cell_size * grid.cell_size;
+    let sub_area = cell_area / (SUB * SUB) as f64;
+    let mut area = 0.0_f64;
+    for row in row_min..=row_max {
+        let y = grid.origin_y + row as f64 * grid.cell_size;
+        for col in col_min..=col_max {
+            let x = grid.origin_x + col as f64 * grid.cell_size;
+            let idx = row * grid.cols + col;
+            match grid.cells[idx] {
+                CELL_MATERIAL if new_point(x, y) => area += cell_area,
+                CELL_FRINGE => {
+                    let bits = grid.fringe_bits(idx);
+                    for j in 0..SUB {
+                        let py = y + sub_offset(j) * grid.cell_size;
+                        for i in 0..SUB {
+                            let px = x + sub_offset(i) * grid.cell_size;
+                            if bits & (1 << (j * SUB + i)) != 0 && new_point(px, py) {
+                                area += sub_area;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    area / len
+}
+
 /// [`compute_swept_width`] with the fringe's standing sub-points read too
 /// ([`super::material_grid::CELL_FRINGE`]): the slivers the centre lattice
 /// misses. Two such slivers either side of a disc are one wide step on the
@@ -729,6 +808,31 @@ pub(crate) enum StepMeasure {
     /// [`compute_swept_width`], compared against the radial fraction a_e/D
     /// (2D Adaptive, whatever `engagement_measure` a project saved).
     SweptWidth,
+    /// Research only (adaptive research 2026-10-23, C7): [`compute_area_per_mm`]
+    /// over D, the same fraction as [`StepMeasure::SweptWidth`] on a
+    /// straight side cut. No shipped call site builds it
+    /// ([`PassLoadMeasure`]).
+    AreaPerMm,
+}
+
+/// Which quantity the 2D pass load holds a step to (research, C7). Every
+/// shipped call site passes [`PassLoadMeasure::SweptWidth`]; the research
+/// harness (`adaptive::research_geodesic`) passes
+/// [`PassLoadMeasure::AreaPerMm`] to judge the same plan by FreeCAD's
+/// quantity (R1 §3: the area of stock removed per mm of travel).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PassLoadMeasure {
+    /// The shipped rule (G-ADAPTPASSLOAD): swept width.
+    SweptWidth,
+    /// Area per mm of travel, against the same ceiling.
+    #[cfg_attr(
+        not(feature = "research"),
+        expect(
+            dead_code,
+            reason = "only the research harness (feature `research`) builds the area measure"
+        )
+    )]
+    AreaPerMm,
 }
 
 /// The load a planning call holds a step to: the measure, the band the
@@ -800,6 +904,20 @@ impl PassLoad {
         }
     }
 
+    /// Research (C7): the swept-width load with the step read as area per
+    /// mm ([`compute_area_per_mm`]) instead. The ceiling, target and band
+    /// are unchanged: a straight side cut of width `w` clears `w` mm² per
+    /// mm, so the fraction `c` of `D` is the same ceiling on both readings.
+    /// No sliver reading (the area counts the fringe's standing
+    /// sub-points itself).
+    pub(crate) fn area_per_mm(stepover: f64, tool_radius: f64, cell: f64) -> Self {
+        Self {
+            measure: StepMeasure::AreaPerMm,
+            sliver_ceiling: f64::INFINITY,
+            ..Self::swept_width(stepover, tool_radius, cell)
+        }
+    }
+
     /// The same load with no ceiling, for the steps out of a straight
     /// plunge (G-ADAPTPASSLOAD). Leaving a hole of the cutter's own size
     /// reads at least half the diameter whatever the heading, so a plunge
@@ -816,7 +934,10 @@ impl PassLoad {
 
     /// True when a step above the ceiling is refused (no fallback).
     pub(crate) fn caps(&self) -> bool {
-        self.measure == StepMeasure::SweptWidth
+        matches!(
+            self.measure,
+            StepMeasure::SweptWidth | StepMeasure::AreaPerMm
+        )
     }
 }
 
@@ -838,7 +959,12 @@ pub(super) fn measure_engagement(
         StepMeasure::Historical(EngagementMeasure::LeadingArc) => {
             compute_engagement_arc(grid, nx, ny, tool_radius, angle)
         }
-        StepMeasure::SweptWidth => compute_swept_width(grid, nx, ny, tool_radius, angle),
+        // A point has no travel: the area measure reads whole steps
+        // (`measure_step`); a point reading (presence, scoring) stays the
+        // swept width.
+        StepMeasure::SweptWidth | StepMeasure::AreaPerMm => {
+            compute_swept_width(grid, nx, ny, tool_radius, angle)
+        }
     }
 }
 
@@ -905,6 +1031,9 @@ pub(crate) fn measure_step(
     angle: f64,
     load: &PassLoad,
 ) -> f64 {
+    if load.measure == StepMeasure::AreaPerMm {
+        return compute_area_per_mm(grid, from, nx, ny, tool_radius) / (2.0 * tool_radius);
+    }
     let reading = measure_engagement(grid, nx, ny, tool_radius, angle, load.measure);
     if load.measure != StepMeasure::SweptWidth
         || reading > load.ceiling

@@ -27,7 +27,13 @@
 //!     so its entries must equal `geodesic_curv`'s) and
 //!     `geodesic_curv_join_fine` (the same for `geodesic_curv_join`, whose
 //!     full-turn transitions inside `ρ*` rebuild the spiral steps that read
-//!     0.36 to 0.40 at D5).
+//!     0.36 to 0.40 at D5);
+//!   - C7, the same plans judged by area per mm (FreeCAD's quantity, R1
+//!     §3) instead of swept width, against the same `c·D`
+//!     (`ReplayMeasure::AreaPerMm`: the cleanup's replay, residue passes,
+//!     wall pass and mop all hold the area measure): `geodesic_curv_area`,
+//!     and for comparison `agent_area` and `contour_spiral_area` (the
+//!     shipped plans; no product parity is asserted for them).
 //! - The record columns, only when `ADAPTIVE_GEODESIC_EXTRA` is set (any
 //!   value): `geodesic_morph_alt` and `geodesic_curv_morph` (the morph,
 //!   dropped by the C5 rule at D5), `geodesic_morph_return`,
@@ -94,7 +100,8 @@ use std::path::PathBuf;
 
 use rs_cam_core::adaptive::research_geodesic::{
     Candidate2d, CascadeReadout, GeodesicOptions, JoinRule, LobeMorph, MeetingRule,
-    PassLoadReadout, Producer, ReadResolution, Refusal, Run2d, Span2d, SpanKind, run_2d_with,
+    PassLoadReadout, Producer, ReadResolution, Refusal, ReplayMeasure, Run2d, Span2d, SpanKind,
+    run_2d_with,
 };
 use rs_cam_core::adaptive::{AdaptiveParams, KeepDownLinks, PathStrategy2d, adaptive_toolpath};
 use rs_cam_core::compute::catalog::OperationType;
@@ -439,8 +446,13 @@ fn summary_text(shape: &str, label: &str, run: &Run2d) -> String {
     );
     let _ = writeln!(
         t,
-        "pass load (planner readout): max {:.4} vs ceiling {:.4}; {} of {} steps over; {} exempt plunge-departure steps",
-        l.max_reading, l.ceiling, l.steps_over, l.steps, l.exempt_steps
+        "pass load (planner readout, replay measure {:?}): max {:.4} vs ceiling {:.4}; {} of {} steps over; {} exempt plunge-departure steps",
+        l.measure, l.max_reading, l.ceiling, l.steps_over, l.steps, l.exempt_steps
+    );
+    let _ = writeln!(
+        t,
+        "both measures of the emitted steps (fraction of D, ceiling {:.4}): swept width max {:.4}, {} over; area per mm max {:.4}, {} over",
+        l.ceiling, l.max_swept, l.over_swept, l.max_area, l.over_area
     );
     for o in &l.over {
         let _ = writeln!(
@@ -614,13 +626,20 @@ fn cascade_lines(t: &mut String, c: &CascadeReadout) {
 fn tallies(t: &mut String, title: &str, readout: &PassLoadReadout) {
     let _ = writeln!(
         t,
-        "load by class, {title} (max reading, steps over of steps):"
+        "load by class, {title} (replay measure: max reading, steps over of steps; then swept width and area per mm side by side):"
     );
     for c in &readout.tallies {
         let _ = writeln!(
             t,
-            "  {}: max {:.4}, {} of {}",
-            c.label, c.max_reading, c.steps_over, c.steps
+            "  {}: max {:.4}, {} of {}; swept max {:.4}, {} over; area max {:.4}, {} over",
+            c.label,
+            c.max_reading,
+            c.steps_over,
+            c.steps,
+            c.max_swept,
+            c.over_swept,
+            c.max_area,
+            c.over_area
         );
     }
 }
@@ -638,51 +657,79 @@ fn render_candidate_a_beside_the_2d_strategies() {
                 "agent",
                 Candidate2d::Shipped(PathStrategy2d::Agent),
                 ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
             ),
             (
                 "contour_spiral",
                 Candidate2d::Shipped(PathStrategy2d::ContourSpiral),
                 ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
             ),
             (
                 "geodesic_g1",
                 Candidate2d::Geodesic(GeodesicOptions::G1),
                 ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
             ),
             (
                 "geodesic_a",
                 Candidate2d::Geodesic(GeodesicOptions::C2),
                 ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
             ),
             (
                 "geodesic_curv",
                 Candidate2d::Geodesic(GeodesicOptions::C5_CURV),
                 ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
             ),
             (
                 "geodesic_curv_join",
                 Candidate2d::Geodesic(GeodesicOptions::C6_JOIN),
                 ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
             ),
             (
                 "geodesic_curv_local",
                 Candidate2d::Geodesic(GeodesicOptions::C6_LOCAL),
                 ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
             ),
             (
                 "geodesic_curv_local_join",
                 Candidate2d::Geodesic(GeodesicOptions::C6_LOCAL_JOIN),
                 ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
             ),
             (
                 "geodesic_curv_fine",
                 Candidate2d::Geodesic(GeodesicOptions::C5_CURV),
                 ReadResolution::HalfCell,
+                ReplayMeasure::SweptWidth,
             ),
             (
                 "geodesic_curv_join_fine",
                 Candidate2d::Geodesic(GeodesicOptions::C6_JOIN),
                 ReadResolution::HalfCell,
+                ReplayMeasure::SweptWidth,
+            ),
+            (
+                "geodesic_curv_area",
+                Candidate2d::Geodesic(GeodesicOptions::C5_CURV),
+                ReadResolution::Planner,
+                ReplayMeasure::AreaPerMm,
+            ),
+            (
+                "agent_area",
+                Candidate2d::Shipped(PathStrategy2d::Agent),
+                ReadResolution::Planner,
+                ReplayMeasure::AreaPerMm,
+            ),
+            (
+                "contour_spiral_area",
+                Candidate2d::Shipped(PathStrategy2d::ContourSpiral),
+                ReadResolution::Planner,
+                ReplayMeasure::AreaPerMm,
             ),
         ];
         if std::env::var_os("ADAPTIVE_GEODESIC_EXTRA").is_some() {
@@ -717,18 +764,24 @@ fn render_candidate_a_beside_the_2d_strategies() {
                     label,
                     Candidate2d::Geodesic(options),
                     ReadResolution::Planner,
+                    ReplayMeasure::SweptWidth,
                 )
             }));
         }
-        for (label, candidate, read) in columns {
+        for (label, candidate, read, measure) in columns {
             let strategy = match candidate {
                 Candidate2d::Shipped(s) => s,
                 Candidate2d::Geodesic(_) => PathStrategy2d::Agent,
             };
             let params = params(&tool, strategy);
-            let run = run_2d_with(&outline, &params, candidate, read);
+            let run = run_2d_with(&outline, &params, candidate, read, measure);
             if matches!(candidate, Candidate2d::Shipped(_)) {
-                assert_product_parity(&outline, &params, &run, label);
+                // A shipped plan under the area measure is not the product
+                // plan (its replay differs), so only the swept-width column
+                // is held to parity.
+                if measure == ReplayMeasure::SweptWidth {
+                    assert_product_parity(&outline, &params, &run, label);
+                }
             } else {
                 assert!(
                     run.fields.iter().any(|f| f.applied),
