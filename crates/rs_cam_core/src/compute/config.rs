@@ -511,8 +511,9 @@ impl std::fmt::Display for HeightOrderViolation {
             ),
             Self::RetractBelowTop { retract_z, top_z } => write!(
                 f,
-                "Retract Z ({retract_z:.2}) is below Top Z ({top_z:.2}). Rapid moves would \
-                 go through the material. Raise the Retract Z or lower the Top Z"
+                "Retract Z ({retract_z:.2}) is below the Top height ({top_z:.2}). Rapid \
+                 moves would go through the material. Raise the Retract Z or lower the Top \
+                 height"
             ),
             Self::RetractBelowFeed { retract_z, feed_z } => write!(
                 f,
@@ -521,13 +522,14 @@ impl std::fmt::Display for HeightOrderViolation {
             ),
             Self::FeedBelowTop { feed_z, top_z } => write!(
                 f,
-                "Feed Z ({feed_z:.2}) is below Top Z ({top_z:.2}). The approach height is \
-                 inside the material"
+                "Feed Z ({feed_z:.2}) is below the Top height ({top_z:.2}). The approach \
+                 height is inside the material"
             ),
             Self::BottomNotBelowTop { bottom_z, top_z } => write!(
                 f,
-                "Bottom Z ({bottom_z:.2}) is not below Top Z ({top_z:.2}). No material is \
-                 cut. Lower the Bottom Z or raise the Top Z"
+                "The Bottom height ({bottom_z:.2}) is not below the Top height \
+                 ({top_z:.2}). No material is cut. Lower the Bottom height or raise the Top \
+                 height"
             ),
         }
     }

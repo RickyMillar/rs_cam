@@ -1009,7 +1009,7 @@ fn floor_above_top() {
             top_z: stock_top,
         }
     );
-    assert_names(&r, &["face (centre X", "is at or above the Top Z"]);
+    assert_names(&r, &["face (centre X", "is at or above the Top height"]);
 }
 
 // ── P3.7: a face at the top is skipped with a note ──────────────────

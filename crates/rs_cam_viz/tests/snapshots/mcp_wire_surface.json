@@ -6525,7 +6525,7 @@
           "oneOf": [
             {
               "additionalProperties": false,
-              "description": "`depth` mm below the resolved Top Z of the op (auto: the stock top,\nor the top of the picked faces). The depth must be more than 0.",
+              "description": "`depth` mm below the resolved Top height of the op (auto: the stock\ntop, or the top of the picked faces). The depth must be more than 0.",
               "properties": {
                 "depth": {
                   "description": "mm below the reference.",
@@ -6594,6 +6594,26 @@
                 },
                 "from": {
                   "const": "model_top",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from",
+                "depth"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "D1: `depth` mm below the model bottom (the lowest Z of the model in\nthe setup). A model with no mesh (a drawing) refuses. No rule stops\nit at the stock bottom.",
+              "properties": {
+                "depth": {
+                  "description": "mm below the reference; a negative value stands above it.",
+                  "format": "double",
+                  "type": "number"
+                },
+                "from": {
+                  "const": "model_bottom",
                   "type": "string"
                 }
               },

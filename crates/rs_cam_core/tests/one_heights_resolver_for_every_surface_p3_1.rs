@@ -372,7 +372,7 @@ fn a_model_top_on_a_drawing_refuses_l4() {
         "generation says {text:?}; the tab says {shown:?}"
     );
     assert!(
-        text.contains("Model Top") && text.contains("Top Z"),
+        text.contains("Model Top") && text.contains("Top height"),
         "{text}"
     );
 

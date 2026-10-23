@@ -10,9 +10,7 @@ use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::operation_configs::BoreConfig;
 use rs_cam_core::session::HoleSelection;
 
-use super::super::{depth_caution_row, dv, p};
-use super::boundary_2d::floor_row;
-use super::{DepthBeyondStock, FloorInputs};
+use super::super::{dv, p};
 use crate::ui::components::{OneLine, UiExt as _};
 
 /// What a Bore cuts, printed on the panel so the operator knows which
@@ -24,12 +22,8 @@ pub(in crate::ui::properties) fn draw_bore_params(
     ui: &mut egui::Ui,
     cfg: &mut BoreConfig,
     holes: Option<&HoleSelection>,
-    depth_caution: Option<&DepthBeyondStock>,
-    floor: Option<&FloorInputs>,
 ) {
     ui.param_grid("bore_p", |ui| {
-        floor_row(ui, OperationType::Bore, &mut cfg.floor, floor);
-        depth_caution_row(ui, depth_caution);
         dv(
             ui,
             p(OperationType::Bore, "pitch", "Pitch:"),

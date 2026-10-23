@@ -224,6 +224,7 @@ impl ToolpathHeights {
             stock_top_z: self.context.stock_top_z,
             stock_bottom_z: self.context.stock_bottom_z,
             model_top_z: self.context.model_top_z,
+            model_bottom_z: self.context.model_bottom_z,
             face_bottom_z: self.face_bottom_z,
             floor_face_z: self.floor_face_z,
             hole_floor_z: self.hole_floor_z,
@@ -513,7 +514,7 @@ fn depth_base_z(cfg: &HeightsConfig, top_z: f64, face_top_z: Option<f64>) -> f64
 /// L-4: the name of the first of Top Z and Bottom Z that reads a model
 /// reference, with the reference.
 fn model_reference(cfg: &HeightsConfig) -> Option<(&'static str, HeightReference)> {
-    [("Top Z", cfg.top_z), ("Bottom Z", cfg.bottom_z)]
+    [("Top height", cfg.top_z), ("Bottom height", cfg.bottom_z)]
         .into_iter()
         .find_map(|(slot, mode)| match mode {
             HeightMode::FromReference(r)
@@ -1068,7 +1069,8 @@ impl ToolpathConfig {
             FloorOwner::OpFloor if !self.heights.bottom_z.is_auto() => {
                 Err(SessionError::InvalidParam(format!(
                     "{} '{}' takes its floor from its floor field (operation.params.floor), \
-                     not from the Heights Bottom Z. Set Bottom Z to Auto, and set the floor",
+                     not from a pinned Bottom height. Set the Bottom height to Auto, and set \
+                     the floor",
                     self.operation.label(),
                     self.name
                 )))

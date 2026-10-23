@@ -17,21 +17,23 @@ use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::floor::{Floor, FloorRefusal};
 use rs_cam_core::compute::operation_configs::OpenPaths;
 
-/// The label of the reference combo of the floor row.
-const FLOOR_FROM_LABEL: &str = "Floor from:";
+/// The label of the Bottom height row (D6, ruling Q8: Fusion "Bottom
+/// height", FreeCAD "Final Depth"). The row sets the floor of the op.
+pub(crate) const BOTTOM_HEIGHT_LABEL: &str = "Bottom height:";
 
 /// The hover of the reference combo (ruling L-10).
-const FLOOR_FROM_HOVER: &str = "The reference of the floor. A change of reference keeps the \
-    floor Z: the value is expressed again from the new reference.";
+const FLOOR_FROM_HOVER: &str = "The floor of the operation: the tool cuts down to this Z. The \
+    combo sets the reference. A change of reference keeps the floor Z: the value is \
+    expressed again from the new reference.";
 
 /// The short reason a reference is not offered, for the hover of its
 /// disabled entry.
 fn floor_reason(refusal: FloorRefusal) -> &'static str {
     match refusal {
-        FloorRefusal::NoModelMesh => "The model has no mesh, so it has no top.",
+        FloorRefusal::NoModelMesh => "The model has no mesh, so it has no Z extent.",
         FloorRefusal::NoFace => "No up face is picked in the selection.",
         FloorRefusal::OutOfDomain { .. } | FloorRefusal::AboveTop { .. } => {
-            "The floor would be at or above the Top Z."
+            "The floor would be at or above the Top height."
         }
         FloorRefusal::NotFinite => "The floor is not a finite number.",
         FloorRefusal::FaceLost => "The floor face is not on the model now.",
@@ -42,11 +44,13 @@ fn floor_reason(refusal: FloorRefusal) -> &'static str {
     }
 }
 
-/// The floor row of Pocket, Profile, Zigzag, Adaptive 2D, Bore and Drill
-/// (geometry selection P3.7, design 8.1; P6.6; R-B). The references are the
-/// ones the op admits (`Floor::row_references`). Two grid rows:
+/// The Bottom height row of Pocket, Profile, Zigzag, Adaptive 2D, Bore and
+/// Drill (geometry selection P3.7, design 8.1; P6.6; R-B). D6: the Heights
+/// tab draws it, under the Top height row; the Cut tab does not. The
+/// references are the ones the op admits (`Floor::row_references`). Two
+/// grid rows:
 ///
-/// 1. "Floor from:" and the reference combo (`Floor::EACH_REFERENCE`). A
+/// 1. "Bottom height:" and the reference combo (`Floor::EACH_REFERENCE`). A
 ///    change of reference re-expresses the value, so the resolved floor Z
 ///    stays (ruling L-10, `FloorReferences::re_express`). An entry that
 ///    has no Z here, or whose value the domain refuses, is disabled with its
@@ -56,7 +60,10 @@ fn floor_reason(refusal: FloorRefusal) -> &'static str {
 ///    rule of the door, so a refused value never reaches the config. The
 ///    hover is `Floor::reference_help`: the schema text of the `floor`
 ///    parameter (a driver-set field has no registry `help`).
-/// 3. The resolved floor Z; under "each picked face", the floor of each face.
+/// 3. In the cell of the combo: the resolved floor Z. Under "Each picked
+///    face" and "Each hole floor" (and on hole rims) the range of the floors
+///    of the items (FR-2 F25). Under "A picked face" the plane Z of the
+///    floor face that the Geometry tab slot holds (GT-4).
 pub(super) fn floor_row(
     ui: &mut egui::Ui,
     op: OperationType,
@@ -64,49 +71,71 @@ pub(super) fn floor_row(
     inputs: Option<&FloorInputs>,
 ) {
     let refs = inputs.map(|inputs| inputs.refs);
-    label_cell(ui, FLOOR_FROM_LABEL).on_hover_text(FLOOR_FROM_HOVER);
+    label_cell(ui, BOTTOM_HEIGHT_LABEL).on_hover_text(FLOOR_FROM_HOVER);
     let current = floor.clone();
-    ui.add_enabled_ui(refs.is_some(), |ui| {
-        egui::ComboBox::from_id_salt(("floor_from", op.name()))
-            .truncate()
-            .selected_text(current.reference_label())
-            .show_ui(ui, |ui| {
-                // UX-8: "A picked face" is not offered here. "Use as floor" in
-                // the Geometry tab is its one door (L-R5); a change away from it
-                // is offered.
-                for template in Floor::row_references(op.capabilities().item_use) {
-                    let selected = current.same_reference(&template);
-                    let next = match refs {
-                        Some(refs) if !selected => {
-                            Some(refs.re_express(&current, template.clone()))
+    // IC1: the resolved floor Z shares the cell of the reference combo, so
+    // the row takes two grid rows, not three. It reads the floor of the
+    // last frame; egui draws again after an edit.
+    let resolved = resolved_floor_text(&current, inputs);
+    ui.horizontal(|ui| {
+        // Half of the cell for the combo, the rest for the resolved Z.
+        let combo_width = ui.available_width() / 2.0;
+        ui.add_enabled_ui(refs.is_some(), |ui| {
+            egui::ComboBox::from_id_salt(("floor_from", op.name()))
+                .truncate()
+                .width(combo_width)
+                .selected_text(current.reference_label())
+                .show_ui(ui, |ui| {
+                    // UX-8: "A picked face" is not offered here. "Use as floor"
+                    // in the Geometry tab is its one door (L-R5); a change
+                    // away from it is offered.
+                    for template in Floor::row_references(op.capabilities().item_use) {
+                        let selected = current.same_reference(&template);
+                        let next = match refs {
+                            Some(refs) if !selected => {
+                                Some(refs.re_express(&current, template.clone()))
+                            }
+                            Some(_) | None => None,
+                        };
+                        let enabled = selected || matches!(next, Some(Ok(_)));
+                        let response = ui
+                            .add_enabled(
+                                enabled,
+                                egui::Button::selectable(selected, template.reference_label()),
+                            )
+                            .on_hover_text(template.reference_help())
+                            .on_disabled_hover_text(match next {
+                                Some(Err(refusal)) => floor_reason(refusal),
+                                Some(Ok(_)) | None => "",
+                            });
+                        if response.clicked()
+                            && let Some(Ok(re_expressed)) = next
+                        {
+                            *floor = re_expressed;
                         }
-                        Some(_) | None => None,
-                    };
-                    let enabled = selected || matches!(next, Some(Ok(_)));
-                    let response = ui
-                        .add_enabled(
-                            enabled,
-                            egui::Button::selectable(selected, template.reference_label()),
-                        )
-                        .on_hover_text(template.reference_help())
-                        .on_disabled_hover_text(match next {
-                            Some(Err(refusal)) => floor_reason(refusal),
-                            Some(Ok(_)) | None => "",
-                        });
-                    if response.clicked()
-                        && let Some(Ok(re_expressed)) = next
-                    {
-                        *floor = re_expressed;
                     }
-                }
-            });
-    })
-    .response
-    .on_disabled_hover_text("The heights of the toolpath do not resolve, so no floor Z is kept.");
+                });
+        })
+        .response
+        .on_disabled_hover_text(
+            "The heights of the toolpath do not resolve, so no floor Z is kept.",
+        );
+        let color = if resolved.starts_with("= no Z") {
+            crate::ui::tokens::DANGER
+        } else {
+            crate::ui::tokens::TEXT_BODY
+        };
+        ui.add(OneLine::new(resolved).color(color).detail(
+            "The resolved floor Z in the setup frame. Under Each picked face: from the \
+             lowest to the highest floor of the cut faces, each its plane Z less the depth; \
+             a face at the top is not cut. Under Each hole floor: the range of the hole \
+             floors. Under A picked face: the plane Z of the face in the Geometry tab.",
+        ));
+    });
     ui.end_row();
 
     // S11: an unset floor shows an empty field with the hint "set a
-    // value"; a typed depth sets the floor below the Top Z.
+    // value"; a typed depth sets the floor below the Top height.
     let label = match &*floor {
         Floor::Z { .. } => "Z:",
         _ => "Depth:",
@@ -127,38 +156,45 @@ pub(super) fn floor_row(
             *floor = next;
         }
     }
+}
 
-    // The resolved floor Z, on its own row so the value row fits the
-    // 240-point rail. Under "each picked face": the floor of each face.
-    let face_floors = match (&*floor, inputs) {
-        (Floor::EachFace { .. }, Some(inputs)) => inputs.face_floors.as_slice(),
+/// The text of the resolved floor line of the Bottom height row: `= Z ..`,
+/// the range of the item floors (FR-2 F25), or why the floor has no Z.
+fn resolved_floor_text(floor: &Floor, inputs: Option<&FloorInputs>) -> String {
+    let refs = inputs.map(|inputs| inputs.refs);
+    // F25: each face, each hole, or a depth from the rim of each hole.
+    let per_item = matches!(floor, Floor::EachFace { .. } | Floor::EachHole { .. })
+        || inputs.is_some_and(|inputs| inputs.hole_rims);
+    let item_floors = match inputs {
+        Some(inputs) if per_item => inputs.face_floors.as_slice(),
         _ => &[],
     };
-    let text = if face_floors.is_empty() {
-        match refs.map(|refs| refs.floor_z(floor)) {
-            Some(Ok(z)) => format!("= Z {z:.2}"),
-            Some(Err(refusal)) => format!("= no Z: {}", floor_reason(refusal)),
-            None => "= Z \u{2014}".to_owned(),
+    // The floors are top first.
+    match (item_floors.first(), item_floors.last()) {
+        (Some(top), Some(bottom)) if top.z.to_bits() != bottom.z.to_bits() => {
+            return format!(
+                "= Z {:.2} to {:.2} \u{00B7} {} floors",
+                bottom.z,
+                top.z,
+                item_floors.len()
+            );
         }
-    } else {
-        let count = face_floors.len();
-        let runs: Vec<String> = face_floors
-            .iter()
-            .enumerate()
-            .map(|(i, run)| format!("F{} Z {:.2}", i + 1, run.z))
-            .collect();
-        format!(
-            "{} \u{00B7} {count} floor{}",
-            runs.join(" \u{00B7} "),
-            if count == 1 { "" } else { "s" }
-        )
+        (Some(only), Some(_)) => return format!("= Z {:.2}", only.z),
+        _ => {}
+    }
+    let z = match refs.map(|refs| refs.floor_z(floor)) {
+        Some(Ok(z)) => format!("= Z {z:.2}"),
+        Some(Err(refusal)) => return format!("= no Z: {}", floor_reason(refusal)),
+        None => return "= Z \u{2014}".to_owned(),
     };
-    ui.label("");
-    ui.add(OneLine::new(text).detail(
-        "The resolved floor Z in the setup frame. Under Each picked face: the floor of \
-         each cut face, its plane Z less the depth; a face at the top is not cut.",
-    ));
-    ui.end_row();
+    // GT-4: the face that the Geometry tab slot holds.
+    match (floor, refs.and_then(|refs| refs.floor_face_z)) {
+        (Floor::Face { .. }, Some(face_z)) => format!(
+            "{z} \u{00B7} {}: Face Z {face_z:.2}",
+            floor.reference_label()
+        ),
+        _ => z,
+    }
 }
 
 pub(in crate::ui::properties) fn draw_face_params(
@@ -222,8 +258,6 @@ pub(in crate::ui::properties) fn draw_pocket_params(
     ui: &mut egui::Ui,
     cfg: &mut PocketConfig,
     pills: Option<&PillSuggestions>,
-    depth_caution: Option<&DepthBeyondStock>,
-    floor: Option<&FloorInputs>,
     model_areas: bool,
 ) {
     let stepover_sugg = pills.map(PillSuggestions::stepover);
@@ -249,8 +283,6 @@ pub(in crate::ui::properties) fn draw_pocket_params(
             0.1,
             stepover_sugg,
         );
-        floor_row(ui, OperationType::Pocket, &mut cfg.floor, floor);
-        depth_caution_row(ui, depth_caution);
         dv_pill(
             ui,
             p(OperationType::Pocket, "depth_per_pass", "Depth/Pass:"),
@@ -528,9 +560,7 @@ pub(in crate::ui::properties) fn draw_profile_params(
     ui: &mut egui::Ui,
     cfg: &mut ProfileConfig,
     pills: Option<&PillSuggestions>,
-    depth_caution: Option<&DepthBeyondStock>,
     through_cut: Option<&ThroughCut>,
-    floor: Option<&FloorInputs>,
     tab_editor: (
         crate::state::toolpath::ToolpathId,
         &mut crate::state::pick::SelectionUi,
@@ -539,9 +569,7 @@ pub(in crate::ui::properties) fn draw_profile_params(
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
     ui.param_grid("profile_p", |ui| {
         profile_side_row(ui, cfg);
-        floor_row(ui, OperationType::Profile, &mut cfg.floor, floor);
         through_cut_row(ui, through_cut);
-        depth_caution_row(ui, depth_caution);
         dv_pill(
             ui,
             p(OperationType::Profile, "depth_per_pass", "Depth/Pass:"),
@@ -699,8 +727,6 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
     ui: &mut egui::Ui,
     cfg: &mut AdaptiveConfig,
     pills: Option<&PillSuggestions>,
-    depth_caution: Option<&DepthBeyondStock>,
-    floor: Option<&FloorInputs>,
 ) {
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
@@ -713,8 +739,6 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
             0.1,
             stepover_sugg,
         );
-        floor_row(ui, OperationType::Adaptive, &mut cfg.floor, floor);
-        depth_caution_row(ui, depth_caution);
         dv_pill(
             ui,
             p(OperationType::Adaptive, "depth_per_pass", "Depth/Pass:"),
@@ -948,8 +972,6 @@ pub(in crate::ui::properties) fn draw_zigzag_params(
     ui: &mut egui::Ui,
     cfg: &mut ZigzagConfig,
     pills: Option<&PillSuggestions>,
-    depth_caution: Option<&DepthBeyondStock>,
-    floor: Option<&FloorInputs>,
 ) {
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
@@ -962,8 +984,6 @@ pub(in crate::ui::properties) fn draw_zigzag_params(
             0.1,
             stepover_sugg,
         );
-        floor_row(ui, OperationType::Zigzag, &mut cfg.floor, floor);
-        depth_caution_row(ui, depth_caution);
         dv_pill(
             ui,
             p(OperationType::Zigzag, "depth_per_pass", "Depth/Pass:"),

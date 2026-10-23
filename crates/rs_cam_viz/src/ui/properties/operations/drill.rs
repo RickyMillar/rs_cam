@@ -3,9 +3,7 @@ use rs_cam_core::session::HoleSelection;
 
 use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
 
-use super::super::{depth_caution_row, dv, dv_pill_opt, p};
-use super::boundary_2d::floor_row;
-use super::{DepthBeyondStock, FloorInputs};
+use super::super::{dv, dv_pill_opt, p};
 use crate::ui::components::{OneLine, UiExt as _};
 use rs_cam_core::compute::catalog::OperationType;
 
@@ -146,8 +144,6 @@ pub(in crate::ui::properties) fn draw_drill_params(
     cfg: &mut DrillConfig,
     holes: Option<&HoleSelection>,
     pills: Option<&PillSuggestions>,
-    depth_caution: Option<&DepthBeyondStock>,
-    floor: Option<&FloorInputs>,
 ) {
     // Spec: drill ops get a feed pill (peck-cycle plunge feed) but no
     // stepover/DOC pills (Z-only kinematics — LUT radial/axial don't
@@ -156,11 +152,10 @@ pub(in crate::ui::properties) fn draw_drill_params(
     let feed_sugg = pills.map(PillSuggestions::feed_rate);
     ui.param_grid("drill_p", |ui| {
         draw_drill_cycle_combo(ui, "drill_cycle", &mut cfg.cycle);
-        // R-B, F19: the one floor row of the floor ops. A depth below the
-        // Top Z counts from the rim of each hole; "Each hole floor" drills
-        // each hole of a STEP model to its own floor.
-        floor_row(ui, OperationType::Drill, &mut cfg.floor, floor);
-        depth_caution_row(ui, depth_caution);
+        // D6: the floor is the Bottom height row of the Heights tab. A
+        // depth below the Top height counts from the rim of each hole;
+        // "Each hole floor" drills each hole of a STEP model to its own
+        // floor.
         draw_drill_feed_rows(
             ui,
             OperationType::Drill,

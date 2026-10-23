@@ -1061,8 +1061,8 @@ pub struct SetToolpathHeightsParam {
 #[serde(tag = "from", rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum FloorParam {
-    /// `depth` mm below the resolved Top Z of the op (auto: the stock top,
-    /// or the top of the picked faces). The depth must be more than 0.
+    /// `depth` mm below the resolved Top height of the op (auto: the stock
+    /// top, or the top of the picked faces). The depth must be more than 0.
     Top {
         /// mm below the reference.
         depth: f64,
@@ -1080,6 +1080,13 @@ pub enum FloorParam {
     },
     /// `depth` mm below the model top. A model with no mesh refuses.
     ModelTop {
+        /// mm below the reference; a negative value stands above it.
+        depth: f64,
+    },
+    /// D1: `depth` mm below the model bottom (the lowest Z of the model in
+    /// the setup). A model with no mesh (a drawing) refuses. No rule stops
+    /// it at the stock bottom.
+    ModelBottom {
         /// mm below the reference; a negative value stands above it.
         depth: f64,
     },
@@ -1124,6 +1131,7 @@ impl From<FloorParam> for rs_cam_core::compute::floor::Floor {
             FloorParam::StockTop { depth } => Self::StockTop { depth },
             FloorParam::StockBottom { depth } => Self::StockBottom { depth },
             FloorParam::ModelTop { depth } => Self::ModelTop { depth },
+            FloorParam::ModelBottom { depth } => Self::ModelBottom { depth },
             FloorParam::EachFace { depth } => Self::EachFace { depth },
             FloorParam::Z { z } => Self::Z { z },
             FloorParam::Face { key, depth } => Self::Face {
@@ -1144,6 +1152,7 @@ impl From<rs_cam_core::compute::floor::Floor> for FloorParam {
             Floor::StockTop { depth } => Self::StockTop { depth },
             Floor::StockBottom { depth } => Self::StockBottom { depth },
             Floor::ModelTop { depth } => Self::ModelTop { depth },
+            Floor::ModelBottom { depth } => Self::ModelBottom { depth },
             Floor::EachFace { depth } => Self::EachFace { depth },
             Floor::Z { z } => Self::Z { z },
             Floor::Face { key, depth } => Self::Face {
@@ -3715,6 +3724,7 @@ mod tests {
             Floor::StockTop { depth: 2.0 },
             Floor::StockBottom { depth: -0.5 },
             Floor::ModelTop { depth: 1.0 },
+            Floor::ModelBottom { depth: -0.5 },
             Floor::EachFace { depth: 0.0 },
             Floor::Z { z: -20.0 },
             Floor::Face {

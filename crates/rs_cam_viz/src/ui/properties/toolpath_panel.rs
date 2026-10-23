@@ -538,11 +538,6 @@ pub(super) fn draw_cut_tab(
         .iter()
         .find(|(id, _)| *id == entry.tool_id)
         .map_or(0.0, |(_, t)| t.diameter / 2.0);
-    // P3.7: the floor references and the face floors of an op that holds
-    // a floor (the floor row and its re-expression, L-10).
-    let floor_inputs = toolpath_heights
-        .filter(|_| entry.operation.floor().is_some())
-        .map(|answer| super::FloorInputs::new(answer, &entry.heights, op_report(inputs)));
     let mut draw_ctx = operations::registry::OpDrawCtx {
         tools,
         models,
@@ -555,7 +550,6 @@ pub(super) fn draw_cut_tab(
         stock_source: entry.stock_source,
         toolpath_id: entry.id,
         selection_ui: &mut *selection_ui,
-        floor: floor_inputs.as_ref(),
         model_areas: op_report(inputs)
             .is_some_and(rs_cam_core::session::SelectionReport::holds_a_model_area),
     };
@@ -1078,17 +1072,25 @@ fn draw_heights_tab(
     // F-6 / R33: the diagram takes the same operation, so its Bottom
     // line agrees with the sentence the panel prints beside the row.
     let op_type = entry.operation.op_type();
+    // P3.7, D6: the floor of an `OpFloor` op. The diagram drags it in its
+    // own reference (L-10), and the Bottom height row under the Top height
+    // row edits it. Both write ONE draft floor; it goes back through the
+    // config after both, as every op row does.
+    let floor_inputs = answer.and_then(|answer| {
+        entry
+            .operation
+            .floor()
+            .map(|_| super::FloorInputs::new(answer, &entry.heights, op_report(inputs)))
+    });
+    // G-DEPTHSTOCK: the caution of a floor below the stock bottom goes
+    // with the Bottom height row. Read before the mutable borrows.
+    let depth_caution = answer.and_then(|answer| {
+        operations::depth_beyond_stock(&entry.operation, &entry.heights, answer)
+    });
+    let mut floor = entry.operation.floor();
     // IC1: the diagram summarises the five planes, so it comes first. The
     // rows below it set them.
     if let Some(answer) = answer {
-        // P3.7: the floor of an `OpFloor` op. The diagram drags it in its
-        // own reference (L-10); the rows show it read-only (L-11). The
-        // draft floor goes back through the config, as every op row does.
-        let floor_inputs = entry
-            .operation
-            .floor()
-            .map(|_| super::FloorInputs::new(answer, &entry.heights, op_report(inputs)));
-        let mut floor = entry.operation.floor();
         let diagram_floor = floor
             .as_mut()
             .zip(floor_inputs.as_ref())
@@ -1101,20 +1103,24 @@ fn draw_heights_tab(
             diagram_floor,
             heights_refusal,
         );
-        if let Some(floor) = floor
-            && entry.operation.floor().as_ref() != Some(&floor)
-        {
-            let _ = entry.operation.set_floor(floor);
-        }
         ui.add_space(6.0);
-        draw_heights_params(
-            ui,
-            &mut entry.heights,
-            answer,
-            op_type,
-            entry.operation.floor().as_ref(),
-            heights_refusal,
-        );
+    }
+    draw_heights_params(
+        ui,
+        &mut entry.heights,
+        answer,
+        op_type,
+        floor.as_mut().map(|floor| operations::BottomHeight {
+            floor,
+            inputs: floor_inputs.as_ref(),
+            depth_caution: depth_caution.as_ref(),
+        }),
+        heights_refusal,
+    );
+    if let Some(floor) = floor
+        && entry.operation.floor().as_ref() != Some(&floor)
+    {
+        let _ = entry.operation.set_floor(floor);
     }
     // H2: the dust shoe sits with the safety heights. It moves no
     // toolpath; it decides what the checks read above the tool.

@@ -380,7 +380,7 @@ fn both_drill_editors_draw_the_same_cycle_rows_ui11() {
         ..Default::default()
     };
     let drill_texts = rendered(|ui| {
-        super::operations::draw_drill_params(ui, &mut drill, None, None, None, None);
+        super::operations::draw_drill_params(ui, &mut drill, None, None);
     });
 
     let mut pin = AlignmentPinDrillConfig {

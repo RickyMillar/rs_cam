@@ -81,11 +81,6 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
     /// The viewport mode state (`SelectionUi`): the tab editor is one of its
     /// modes (L-3). Only the Profile editor writes it.
     pub selection_ui: &'a mut crate::state::pick::SelectionUi,
-    /// Geometry selection P3.7: the floor references and the face floors
-    /// of an op that holds a floor (Pocket, Profile, Zigzag, Adaptive 2D,
-    /// Bore).
-    /// `None` for every other op, and when the heights do not resolve.
-    pub floor: Option<&'a super::FloorInputs>,
     /// "Cut past open sides" (operator ruling 2026-10-23): true when the op
     /// selection holds a model face or ring (core
     /// `SelectionReport::holds_a_model_area`). The Pocket editor shows the
@@ -259,25 +254,17 @@ editor!(ed_pocket, Pocket, |ui, cfg, cx| draw_pocket_params(
     ui,
     cfg,
     cx.pills,
-    cx.depth_caution,
-    cx.floor,
     cx.model_areas
 ));
 editor!(ed_profile, Profile, |ui, cfg, cx| draw_profile_params(
     ui,
     cfg,
     cx.pills,
-    cx.depth_caution,
     cx.through_cut,
-    cx.floor,
     (cx.toolpath_id, &mut *cx.selection_ui)
 ));
 editor!(ed_adaptive, Adaptive, |ui, cfg, cx| draw_adaptive_params(
-    ui,
-    cfg,
-    cx.pills,
-    cx.depth_caution,
-    cx.floor
+    ui, cfg, cx.pills
 ));
 editor!(ed_vcarve, VCarve, |ui, cfg, cx| draw_vcarve_params(
     ui,
@@ -295,11 +282,7 @@ editor!(ed_inlay_plug, InlayPlug, |ui, cfg, cx| {
     draw_inlay_plug_params(ui, cfg, cx.pills, cx.depth_caution);
 });
 editor!(ed_zigzag, Zigzag, |ui, cfg, cx| draw_zigzag_params(
-    ui,
-    cfg,
-    cx.pills,
-    cx.depth_caution,
-    cx.floor
+    ui, cfg, cx.pills
 ));
 editor!(ed_trace, Trace, |ui, cfg, cx| draw_trace_params(
     ui,
@@ -308,19 +291,10 @@ editor!(ed_trace, Trace, |ui, cfg, cx| draw_trace_params(
     cx.depth_caution
 ));
 editor!(ed_drill, Drill, |ui, cfg, cx| draw_drill_params(
-    ui,
-    cfg,
-    cx.holes,
-    cx.pills,
-    cx.depth_caution,
-    cx.floor
+    ui, cfg, cx.holes, cx.pills
 ));
 editor!(ed_bore, Bore, |ui, cfg, cx| draw_bore_params(
-    ui,
-    cfg,
-    cx.holes,
-    cx.depth_caution,
-    cx.floor
+    ui, cfg, cx.holes
 ));
 editor!(ed_chamfer, Chamfer, |ui, cfg, cx| draw_chamfer_params(
     ui,

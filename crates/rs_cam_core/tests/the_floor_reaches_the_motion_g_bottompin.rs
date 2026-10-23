@@ -116,7 +116,7 @@ fn assert_floor_refusal(result: Result<impl std::fmt::Debug, SessionError>, door
     assert!(
         matches!(err, SessionError::InvalidParam(_))
             && text.contains("takes its floor from its floor field")
-            && text.contains("Set Bottom Z to Auto"),
+            && text.contains("Set the Bottom height to Auto"),
         "{door}: the refusal names the floor field and the fix: {text}"
     );
 }
@@ -322,7 +322,8 @@ fn a_floor_above_the_top_refuses_before_the_ladder() {
             .expect_err("a floor at or above the top must refuse");
         let text = err.to_string();
         assert!(
-            matches!(err, SessionError::InvalidParam(_)) && text.contains("at or above the Top Z"),
+            matches!(err, SessionError::InvalidParam(_))
+                && text.contains("at or above the Top height"),
             "{floor:?}: the refusal names the floor and the top: {text}"
         );
     }

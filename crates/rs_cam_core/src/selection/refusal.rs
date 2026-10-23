@@ -334,8 +334,9 @@ impl fmt::Display for SelectionNote {
             return write!(
                 f,
                 "{} {}{} {verb} not cut: it is at the top, so it has nothing to cut (its \
-                 floor Z {floor_z:.3} is at or above the Top Z {top_z:.3}). The face: {}. To \
-                 cut it, set a larger floor depth or pin the Top Z above it.",
+                 floor Z {floor_z:.3} is at or above the Top height {top_z:.3}). The face: {}. \
+                 To cut it, set a larger depth in the Bottom height row or pin the Top height \
+                 above it.",
                 self.count,
                 kind_noun(self.kind, self.count),
                 layer_phrase(self.layer.as_deref()),
@@ -626,8 +627,8 @@ impl SelectionRefusal {
             }
             RefusalCause::LostPick => "Pick the item again, or remove the pick from the selection",
             RefusalCause::FloorFaceLost => {
-                "Use another face as the floor (Geometry tab, Use as floor), or set the floor \
-                 from another reference"
+                "Use another face as the floor (Geometry tab, Use as floor), or set the Bottom \
+                 height from another reference (Heights tab)"
             }
             RefusalCause::AmbiguousPick { .. } => {
                 "Remove the duplicate entity from the drawing, or remove the \
@@ -645,12 +646,12 @@ impl SelectionRefusal {
                 "Pick it in a setup that faces it, or pick the face above it"
             }
             RefusalCause::NoFaceForFloor => {
-                "Pick faces only, or set the floor from another reference (the Top Z, \
-                 the stock, the model or a Z value)"
+                "Pick faces only, or set the Bottom height from another reference (the Top \
+                 height, the stock, the model or a Z value)"
             }
             RefusalCause::FloorAboveTop { .. } => {
-                "Set a larger floor depth, set the Top Z above the face, or remove the \
-                 face from the selection"
+                "Set a larger depth in the Bottom height row, pin the Top height above the \
+                 face, or remove the face from the selection"
             }
             RefusalCause::CannotExtend { why } => why.fix(),
             RefusalCause::NotAConvexEdge { why } => why.fix(),
@@ -663,8 +664,8 @@ impl SelectionRefusal {
                  drawing"
             }
             RefusalCause::NoHoleDepth => {
-                "Set the floor from another reference (the Top Z, the stock, the model or a Z \
-                 value), or remove the hole from the selection"
+                "Set the Bottom height from another reference (the Top height, the stock, the \
+                 model or a Z value), or remove the hole from the selection"
             }
             RefusalCause::HoleDoesNotFit { fit, rule, .. } => match (*rule, *fit) {
                 (HoleFitRule::LargerThanTool, HoleFit::ToolSize) => {
@@ -744,8 +745,8 @@ impl SelectionRefusal {
                     .to_owned()
             }
             RefusalCause::FloorAboveTop { floor_z, top_z } => format!(
-                "the floor of this face, Z {floor_z:.3}, is at or above the Top Z {top_z:.3}, \
-                 so it has nothing to cut"
+                "the floor of this face, Z {floor_z:.3}, is at or above the Top height \
+                 {top_z:.3}, so it has nothing to cut"
             ),
             RefusalCause::HoleDoesNotFit { fit, size, rule } => format!(
                 "the diameter of this circle {}, and the op {}",
