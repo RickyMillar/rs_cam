@@ -19,8 +19,14 @@ do not read, code or run fixtures yourself. Read first, in this order:
   edit; delete it with its target when the research ends.
 - The installed GUI `target/release/rs_cam_gui` is the branch build
   (sha 8820c48c…, mtime 1792752676.96); `gui_status` before trusting it.
-- Peer session "rs-cam-03" (geometry-selection lead) works in the main
-  checkout; coordinate every `--release` build and ff by SendMessage.
+- Peer session (geometry-selection lead, name changes per session) works
+  in the main checkout; coordinate every `--release` build and ff by
+  SendMessage. Their R2/Q7/Q9 landed as e5362911 (2026-10-24 01:30):
+  `ToolpathConfig::tool_id` is now `Option<ToolId>` (six
+  tests/adaptive3d_*.rs literals took `Some(..)`, no behaviour change);
+  `effects_are_stamped_wp19` MAX_EXCLUDED_FILES 40 -> 41 for the A2
+  controller test. Master is e5362911 or later; the worktree branch is
+  behind it — `git merge master` there before any agent edits.
 - Instruments (Phase 1.5) are DONE: rough gouge rule (Allowance) and rough
   coverage (plan's own reachable floor, islands with `touches_wall`),
   both read what the eye saw on the controls (P15_E_evidence.md E3/E4).
