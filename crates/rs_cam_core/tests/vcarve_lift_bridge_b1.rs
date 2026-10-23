@@ -79,7 +79,7 @@ fn build_vcarve_session() -> ProjectSession {
     let stock = StockConfig {
         x: 120.0,
         y: 120.0,
-        z: 12.0,
+        z: Some(12.0),
         origin_x: -10.0,
         origin_y: -10.0,
         origin_z: -12.0,
@@ -116,10 +116,10 @@ fn build_vcarve_session() -> ProjectSession {
 
     let vcarve = VCarveConfig {
         ramp_feed_rate: None,
-        max_depth: 3.0,
+        max_depth: Some(3.0),
         stepover: 0.5,
-        feed_rate: 800.0,
-        plunge_rate: 400.0,
+        feed_rate: Some(800.0),
+        plunge_rate: Some(400.0),
         tolerance: 0.05,
         spindle_rpm: Some(18_000),
         selection: rs_cam_core::selection::Selection::drawing(),

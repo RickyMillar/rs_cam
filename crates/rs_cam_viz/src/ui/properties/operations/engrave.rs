@@ -2,7 +2,7 @@ use super::super::pills::PillSuggestions;
 
 use crate::state::toolpath::{ChamferConfig, ChamferSide, TraceCompensation, TraceConfig};
 
-use super::super::{depth_caution_row, dv, help_for, p};
+use super::super::{depth_caution_row, dv, dv_opt, help_for, p};
 use super::DepthBeyondStock;
 use crate::ui::components::UiExt as _;
 use rs_cam_core::compute::catalog::OperationType;
@@ -47,12 +47,13 @@ pub(in crate::ui::properties) fn draw_trace_params(
                 }
             });
         ui.end_row();
-        dv(
+        dv_opt(
             ui,
             p(OperationType::Trace, "depth", "Depth:"),
             &mut cfg.depth,
             " mm",
             0.1,
+            None,
         );
         depth_caution_row(ui, depth_caution);
         dv(

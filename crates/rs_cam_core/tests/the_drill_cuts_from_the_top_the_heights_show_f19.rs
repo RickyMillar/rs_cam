@@ -93,7 +93,7 @@ fn rim_drill(floor: Floor) -> ProjectSession {
     let stock = StockConfig {
         x: 50.0,
         y: 40.0,
-        z: STOCK_TOP,
+        z: Some(STOCK_TOP),
         origin_x: -5.0,
         origin_y: -5.0,
         origin_z: 0.0,

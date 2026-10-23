@@ -219,7 +219,7 @@ fn generate_with_rest_analysis(
     builder = builder.stock(StockConfig {
         x: 44.0,
         y: 28.0,
-        z: 8.0,
+        z: Some(8.0),
         origin_x: -22.0,
         origin_y: -14.0,
         origin_z: -8.0,

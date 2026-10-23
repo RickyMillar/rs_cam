@@ -193,7 +193,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: PART_SIDE + 2.0 * STOCK_MARGIN,
         y: PART_SIDE + 2.0 * STOCK_MARGIN,
-        z: TOP_FACE_Z - BOTTOM_FACE_Z + 2.0 * STOCK_MARGIN,
+        z: Some(TOP_FACE_Z - BOTTOM_FACE_Z + 2.0 * STOCK_MARGIN),
         origin_x: -STOCK_MARGIN,
         origin_y: -STOCK_MARGIN,
         origin_z: BOTTOM_FACE_Z - STOCK_MARGIN,
@@ -207,7 +207,7 @@ fn stock() -> StockConfig {
 fn face_op() -> OperationConfig {
     OperationConfig::Face(FaceConfig {
         stepover: STEPOVER,
-        stock_offset: STOCK_OFFSET,
+        stock_offset: Some(STOCK_OFFSET),
         ..FaceConfig::default()
     })
 }
@@ -404,7 +404,7 @@ fn a_click_replaces_the_stock_rule_and_an_add_pick_adds_p4_2() {
 #[test]
 fn a_face_pick_sets_the_auto_top_in_the_setup_frame_p4_2() {
     let stock = stock();
-    let world_stock_top = stock.origin_z + stock.z;
+    let world_stock_top = stock.top_z();
 
     let mut s = session(Some(part_model()), FaceUp::Top);
     let before = op_top_z(&mut s);
@@ -436,9 +436,9 @@ fn a_face_pick_sets_the_auto_top_in_the_setup_frame_p4_2() {
     );
     // The setup frame is zero-rooted at the stock bottom.
     assert!(
-        (top - stock.z).abs() < EPS,
+        (top - stock.box_height()).abs() < EPS,
         "Bottom setup: the auto top is {top}, want the setup-frame stock top {} (UX-1b)",
-        stock.z
+        stock.z.expect("S11: the fixture sets it")
     );
 }
 

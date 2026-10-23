@@ -367,7 +367,7 @@ fn every_consumer_reads_the_transferred_band_g3() {
     let stock = StockContext {
         stock_top_z: 0.0,
         stock_bottom_z: -18.0,
-        stock_z: 18.0,
+        stock_z: Some(18.0),
         stock_padding: 2.0,
     };
     let s = suggest_params(SuggestParamsInput {
@@ -579,7 +579,7 @@ fn a_bull_finish_reads_the_home_row_through_two_claims_g3() {
     let stock = StockContext {
         stock_top_z: 0.0,
         stock_bottom_z: -18.0,
-        stock_z: 18.0,
+        stock_z: Some(18.0),
         stock_padding: 2.0,
     };
     let s = suggest_params(SuggestParamsInput {

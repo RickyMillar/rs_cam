@@ -390,7 +390,6 @@ mod tests {
 
     use crate::compute::catalog::OperationConfig;
     use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
-    use crate::compute::operation_configs::PocketConfig;
     use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use crate::compute::toolpath_stats::ToolpathStats;
     use crate::gcode::CoolantMode;
@@ -411,7 +410,11 @@ mod tests {
             id: ToolpathId::from_raw(0),
             name: "memo".to_owned(),
             enabled: true,
-            operation: OperationConfig::Pocket(PocketConfig::default()),
+            // S11: the fixture states the feeds (the 500 mm/min plunge the
+            // plunge test reads).
+            operation: crate::compute::fixture_values::fixture_op(
+                crate::compute::catalog::OperationType::Pocket,
+            ),
             dressups: DressupConfig::default(),
             heights: HeightsConfig::default(),
             tool_id: crate::ids::ToolId::from_raw(tool_id),
@@ -560,7 +563,7 @@ mod tests {
 
         // A parameter edit (feed rate) on the operation.
         if let OperationConfig::Pocket(cfg) = &mut s.toolpath_configs[0].operation {
-            cfg.feed_rate += 100.0;
+            cfg.feed_rate = cfg.feed_rate.map(|feed| feed + 100.0);
         }
         let _ = s.tool_load_report_for(None);
         assert_eq!(

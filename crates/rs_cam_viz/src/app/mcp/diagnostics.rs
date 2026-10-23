@@ -116,7 +116,7 @@ impl RsCamApp {
             depth_per_pass_mm: tc.operation.depth_per_pass(),
             stepover_mm: tc.operation.stepover(),
             tool_diameter_mm: Some(tool_config.diameter),
-            feed_rate_mm_min: Some(tc.operation.feed_rate()),
+            feed_rate_mm_min: tc.operation.feed_rate(),
             spindle_rpm: Some(
                 tc.operation
                     .spindle_rpm()

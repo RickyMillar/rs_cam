@@ -1118,7 +1118,7 @@ fn update_stock_from_bbox_invalidates_sim() {
     // Stock grew to fit bbox + padding (XY) and exact bbox + padding (Z).
     assert!((s.stock_config().x - (120.0 + 2.0 * pad)).abs() < 1e-6);
     assert!((s.stock_config().y - (80.0 + 2.0 * pad)).abs() < 1e-6);
-    assert!((s.stock_config().z - (25.0 + pad)).abs() < 1e-6);
+    assert!((s.stock_config().z.expect("S11: the fixture sets it") - (25.0 + pad)).abs() < 1e-6);
     // Simulation cache is cleared (mirrors the pattern in
     // set_toolpath_enabled_invalidates_sim).
     assert!(s.simulation.is_none());
@@ -1247,7 +1247,10 @@ fn set(indices: &[usize]) -> BTreeSet<usize> {
 }
 
 fn assert_feed_landed(s: &ProjectSession) {
-    let feed = s.toolpath_configs()[0].operation.feed_rate();
+    let feed = s.toolpath_configs()[0]
+        .operation
+        .feed_rate()
+        .expect("S11: the fixture sets it");
     assert!(
         (feed - EDITED_FEED_RATE).abs() < 1e-9,
         "the arm must write the feed. Otherwise it invalidates nothing \

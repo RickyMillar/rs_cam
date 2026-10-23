@@ -43,8 +43,8 @@ use std::sync::atomic::AtomicBool;
 use tracing::{debug, info, warn};
 
 use rs_cam_core::{
-    compute::catalog::{OperationConfig, OperationType},
-    compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource},
+    compute::catalog::OperationType,
+    compute::config::DressupConfig,
     compute::tool_config::{ToolConfig, ToolId, ToolType},
     compute::{ModelUnits, build_cutter},
     dexel_stock::{StockCutDirection, TriDexelStock},
@@ -225,6 +225,12 @@ pub struct OperationDef {
     /// The stock top Z. Empty: the session stock, which the model sizes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stock_top_z: Option<f64>,
+    /// The stock thickness (mm): the `z` of `set_stock_config` (S11). A
+    /// drawing (DXF, SVG) has no thickness, so a job on a drawing states
+    /// it; with no value every op of the job refuses. The thickness keeps
+    /// the stock top at the drawing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stock_z: Option<f64>,
     /// Dressup fields by their `DressupConfig::FIELD_DEFS` name.
     #[serde(default, skip_serializing_if = "toml::Table::is_empty")]
     pub dressups: toml::Table,
@@ -259,6 +265,7 @@ impl OperationDef {
         "coolant",
         "scale",
         "stock_top_z",
+        "stock_z",
         "dressups",
         "selection",
         "floor",
@@ -1118,14 +1125,17 @@ fn tool_config_from_def(def: &ToolDef, name: &str) -> Result<ToolConfig> {
     Ok(tc)
 }
 
-fn execute_op_via_session(
+/// The session of one job op: the model, the stock keys, the tool, the op
+/// (THE draft door, then the job keys through the core setters) and the
+/// post. Nothing is generated. The S11 parity test reads it.
+fn job_op_session(
     job: &JobFile,
     job_dir: &Path,
     i: usize,
     op: &OperationDef,
     tool_def: &ToolDef,
     debug_trace: bool,
-) -> Result<SessionOpOutput> {
+) -> Result<(ProjectSession, usize)> {
     let op_type = op.operation_type()?;
     let mut session = ProjectSession::new_empty();
 
@@ -1157,6 +1167,23 @@ fn execute_op_via_session(
         .last()
         .map(|m| m.id)
         .context("add_model added no model")?;
+
+    // S11: the stock thickness of a drawing, the patch MCP merges. On a
+    // stock with no thickness it keeps the top and the auto fit.
+    if let Some(z) = op.stock_z {
+        let mut stock = session.stock_config().clone();
+        let _ = rs_cam_core::compute::stock_config::StockConfigPatch {
+            z: Some(z),
+            ..Default::default()
+        }
+        .apply_to(&mut stock);
+        let _ = crate::command::apply_command(
+            &mut session,
+            Command::SetStockConfig(SetStockConfigArgs {
+                stock: Box::new(stock),
+            }),
+        )?;
+    }
 
     // \u{2500}\u{2500} Stock: a set top only; the session sizes the rest \u{2500}\u{2500}
     if let Some(top) = op.stock_top_z {
@@ -1195,31 +1222,37 @@ fn execute_op_via_session(
         .get(tool_idx)
         .context("tool index out of bounds after add_tool")?
         .id;
+    // S11 parity: THE draft door that the GUI and MCP share
+    // (`ProjectSession::draft_toolpath`): the stock defaults, Suggest and
+    // `DressupConfig::for_op`. A key the job leaves unset keeps the draft
+    // value; a value that no rule gives stays unset, and the op refuses as
+    // it does on the GUI and MCP.
+    let draft = session
+        .draft_toolpath(
+            op_type,
+            tool_id,
+            model_id,
+            format!("op_{}_{}", i, op_type.kind_str()),
+        )
+        .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?;
+    if let Some(refusal) = &draft.feeds_refusal {
+        warn!(
+            op = i,
+            op_type = op_type.kind_str(),
+            %refusal,
+            "no feeds data for the tool: set feed_rate, plunge_rate and spindle_rpm in the job"
+        );
+    }
+    let config = ToolpathConfig {
+        coolant: op.coolant,
+        debug_options,
+        ..draft.config
+    };
     let tp_index = crate::command::apply_command(
         &mut session,
         Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
-            config: Box::new(ToolpathConfig {
-                shoe: Default::default(),
-                id: rs_cam_core::ToolpathId::placeholder(),
-                name: format!("op_{}_{}", i, op_type.kind_str()),
-                enabled: true,
-                operation: OperationConfig::new_default(op_type),
-                dressups: DressupConfig::default(),
-                heights: HeightsConfig::default(),
-                tool_id,
-                model_id,
-                pre_gcode: None,
-                post_gcode: None,
-                boundary: BoundaryConfig::default(),
-                boundary_inherit: true,
-                rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
-                stock_source: StockSource::default(),
-                coolant: op.coolant,
-                debug_options,
-                feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
-                planner_origin: None,
-            }),
+            config: Box::new(config),
         }),
     )
     .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?
@@ -1283,6 +1316,19 @@ fn execute_op_via_session(
         }),
     )?;
 
+    Ok((session, tp_index))
+}
+
+fn execute_op_via_session(
+    job: &JobFile,
+    job_dir: &Path,
+    i: usize,
+    op: &OperationDef,
+    tool_def: &ToolDef,
+    debug_trace: bool,
+) -> Result<SessionOpOutput> {
+    let op_type = op.operation_type()?;
+    let (mut session, tp_index) = job_op_session(job, job_dir, i, op, tool_def, debug_trace)?;
     // \u{2500}\u{2500} Generate \u{2500}\u{2500}
     let cancel = AtomicBool::new(false);
     session
@@ -1379,6 +1425,94 @@ pub(crate) fn param_value_from_str(s: &str) -> serde_json::Value {
 )]
 mod tests {
     use super::*;
+
+    /// S11 parity (operator ruling 2026-10-23): a job op is THE core draft
+    /// (`ProjectSession::draft_toolpath`, the GUI and MCP door), so a key
+    /// the job leaves unset gives the unset state of the GUI and MCP. The
+    /// job states the stock thickness (`stock_z`) of the drawing and no
+    /// floor: the op equals the draft (params with nulls, dressups,
+    /// boundary), its floor is not set, and generation refuses with the
+    /// floor text. A job with no `stock_z` refuses with the stock text. The
+    /// GUI twin is `rs_cam_viz/tests/one_draft_for_every_add_door_s11.rs`.
+    ///
+    /// Red proof (run by hand, 2026-10-23): the job op back on
+    /// `DressupConfig::default()` goes red.
+    #[test]
+    #[expect(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        reason = "test code: a panic is how a test reports a failure"
+    )]
+    fn the_job_drafts_through_the_core_door_s11() {
+        let drawing = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf")
+            .canonicalize()
+            .expect("the fixture exists");
+        let dir = std::env::temp_dir().join(format!("rs_cam_s11_job_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let session_of = |stock_line: &str| {
+            let job_path = dir.join("job.toml");
+            std::fs::write(
+                &job_path,
+                format!(
+                    "[job]\noutput = \"out.nc\"\n\n[tools.flat_3mm]\ntype = \"end_mill\"\n\
+                     diameter = 3.0\n\n[[operation]]\ntype = \"pocket\"\ninput = \"{}\"\n\
+                     tool = \"flat_3mm\"\n{stock_line}\n",
+                    drawing.display()
+                ),
+            )
+            .expect("write the job");
+            let job = parse_job_file(&job_path).expect("the job parses");
+            let op = &job.operation[0];
+            let tool_def = &job.tools[&op.tool];
+            job_op_session(&job, &dir, 0, op, tool_def, false).expect("the job session")
+        };
+
+        let (mut session, index) = session_of("stock_z = 12.0");
+        let job_tc = session.toolpath_configs()[index].clone();
+        let draft = session
+            .draft_toolpath(
+                OperationType::Pocket,
+                job_tc.tool_id,
+                job_tc.model_id,
+                job_tc.name.clone(),
+            )
+            .expect("the draft");
+        assert_eq!(
+            job_tc.operation.params_value_including_nulls(),
+            draft.config.operation.params_value_including_nulls(),
+            "the job op is the core draft"
+        );
+        assert_eq!(
+            serde_json::to_value(&job_tc.dressups).expect("json"),
+            serde_json::to_value(&draft.config.dressups).expect("json"),
+            "the job takes `DressupConfig::for_op`, as the GUI and MCP do"
+        );
+        assert_eq!(job_tc.boundary, draft.config.boundary);
+        assert_eq!(job_tc.operation.unset_fields(), vec!["floor"]);
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let text = session
+            .generate_toolpath(index, &cancel)
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(
+            text.contains(rs_cam_core::compute::floor::FLOOR_UNSET_TEXT),
+            "the job refuses as the GUI does: {text}"
+        );
+
+        let (mut session, index) = session_of("");
+        let text = session
+            .generate_toolpath(index, &cancel)
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(
+            text.contains(rs_cam_core::compute::stock_config::STOCK_THICKNESS_NOT_SET_TEXT),
+            "a drawing job with no stock_z refuses: {text}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// The cutter of a job tool, through the one core builder.
     fn cutter_of(def: &ToolDef) -> Result<rs_cam_core::tool::ToolDefinition> {
@@ -1693,7 +1827,7 @@ mod tests {
             let source = format!(
                 "[job]\noutput = \"o.nc\"\n[tools.t]\ntype = \"end_mill\"\ndiameter = 6.0\n\
                  [[operation]]\ntype = \"pocket\"\ninput = \"demo_pocket.svg\"\ntool = \"t\"\n\
-                 {extra}"
+                 stock_z = 25.0\nfloor = {{ from = \"top\", depth = 3.0 }}\n{extra}"
             );
             let job: JobFile = toml::from_str(&source).unwrap();
             let _ = job.operation.first().unwrap().operation_type().unwrap();

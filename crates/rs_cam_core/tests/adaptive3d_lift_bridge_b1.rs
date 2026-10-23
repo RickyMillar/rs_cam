@@ -63,7 +63,7 @@ fn build_adaptive3d_session() -> ProjectSession {
     let stock = StockConfig {
         x: 50.0,
         y: 50.0,
-        z: 25.0,
+        z: Some(25.0),
         origin_x: 0.0,
         origin_y: 0.0,
         origin_z: 0.0,

@@ -314,7 +314,7 @@ fn own_material_with_force_data_uses_it_s6() {
             material,
             operation_family: rs_cam_core::feeds::vendor_lut::LutOperationFamily::Pocket,
             pass_role: rs_cam_core::feeds::vendor_lut::LutPassRole::Roughing,
-            operation_feed_rate_mm_min: tc.operation.feed_rate(),
+            operation_feed_rate_mm_min: tc.operation.feed_rate().expect("S11: the fixture sets it"),
             operation_kind: tc.operation.op_type(),
             spans,
             drill_op: None,

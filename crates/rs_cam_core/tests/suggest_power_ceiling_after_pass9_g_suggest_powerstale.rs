@@ -269,8 +269,8 @@ fn heavy_pocket() -> OperationConfig {
         stepover: DIAMETER_MM,
         floor: rs_cam_core::compute::floor::Floor::top(4.0 * DIAMETER_MM),
         depth_per_pass: 2.0 * DIAMETER_MM,
-        feed_rate: 1000.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(1000.0),
+        plunge_rate: Some(500.0),
         climb: true,
         ..PocketConfig::default()
     })
@@ -349,7 +349,7 @@ fn run_funnel_at(machine: &MachineProfile, material: &Material, requested_ap: f6
     );
 
     Shipped {
-        feed_mm_min: operation.feed_rate(),
+        feed_mm_min: operation.feed_rate().expect("S11: the fixture sets it"),
         ap_mm: operation.depth_per_pass().unwrap_or(0.0),
         ae_mm: operation.stepover().unwrap_or(0.0),
         recommended,

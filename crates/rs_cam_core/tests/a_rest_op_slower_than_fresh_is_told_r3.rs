@@ -158,7 +158,10 @@ fn a_rest_op_slower_than_its_fresh_twin_is_reported_with_both_times_on_request()
     }
 
     // An edit of the op makes the comparison stale, with the result.
-    let feed = session.toolpath_configs()[index].operation.feed_rate();
+    let feed = session.toolpath_configs()[index]
+        .operation
+        .feed_rate()
+        .expect("S11: the fixture sets it");
     let _ = session
         .apply(Command::SetToolpathParam(SetToolpathParamArgs {
             index,

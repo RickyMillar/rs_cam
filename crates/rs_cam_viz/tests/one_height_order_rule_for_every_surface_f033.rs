@@ -109,7 +109,7 @@ fn session() -> ProjectSession {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
-        z: STOCK_THICKNESS_MM,
+        z: Some(STOCK_THICKNESS_MM),
         auto_from_model: false,
         ..StockConfig::default()
     };

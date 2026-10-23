@@ -77,7 +77,7 @@ fn dressup_combos() -> Vec<(&'static str, DressupConfig)> {
             "link_moves",
             DressupConfig {
                 link_moves: Some(LinkDressupParams {
-                    max_distance: 50.0,
+                    max_distance: Some(50.0),
                     ..LinkDressupParams::default()
                 }),
                 ..DressupConfig::default()
@@ -94,7 +94,7 @@ fn dressup_combos() -> Vec<(&'static str, DressupConfig)> {
             "link_and_arc",
             DressupConfig {
                 link_moves: Some(LinkDressupParams {
-                    max_distance: 50.0,
+                    max_distance: Some(50.0),
                     ..LinkDressupParams::default()
                 }),
                 arc_fitting: Some(ArcFitParams { tolerance: 0.05 }),
@@ -112,7 +112,7 @@ fn dressup_combos() -> Vec<(&'static str, DressupConfig)> {
             "everything",
             DressupConfig {
                 link_moves: Some(LinkDressupParams {
-                    max_distance: 50.0,
+                    max_distance: Some(50.0),
                     ..LinkDressupParams::default()
                 }),
                 arc_fitting: Some(ArcFitParams { tolerance: 0.05 }),
@@ -235,7 +235,7 @@ fn synthetic_three_pass_link_moves_never_straddles_barrier() {
     let input = synthetic_three_pass();
     let cfg = DressupConfig {
         link_moves: Some(LinkDressupParams {
-            max_distance: 100.0,
+            max_distance: Some(100.0),
             ..LinkDressupParams::default()
         }),
         ..DressupConfig::default()
@@ -298,7 +298,7 @@ fn synthetic_with_invalid_input_spans_stays_invalid() {
     input.spans_valid = false;
     let cfg = DressupConfig {
         link_moves: Some(LinkDressupParams {
-            max_distance: 100.0,
+            max_distance: Some(100.0),
             ..LinkDressupParams::default()
         }),
         arc_fitting: Some(ArcFitParams { tolerance: 0.05 }),
@@ -461,7 +461,7 @@ fn dressup_stages_run_in_the_order_the_pipeline_lists() {
             ..LeadParams::default()
         }),
         link_moves: Some(LinkDressupParams {
-            max_distance: 50.0,
+            max_distance: Some(50.0),
             ..LinkDressupParams::default()
         }),
         arc_fitting: Some(ArcFitParams { tolerance: 0.05 }),

@@ -35,7 +35,7 @@ fn square_at(x: f64) -> Polygon2 {
 
 fn trace_op(spindle_rpm: u32) -> OperationConfig {
     OperationConfig::Trace(TraceConfig {
-        depth: 1.0,
+        depth: Some(1.0),
         depth_per_pass: 1.0,
         spindle_rpm: Some(spindle_rpm),
         ..TraceConfig::default()

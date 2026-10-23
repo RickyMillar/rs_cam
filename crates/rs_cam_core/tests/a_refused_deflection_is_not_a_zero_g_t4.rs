@@ -120,8 +120,8 @@ fn roughing_pocket(depth_per_pass: f64) -> OperationConfig {
         floor: rs_cam_core::compute::floor::Floor::top(4.0 * depth_per_pass),
         depth_per_pass,
         stepover: 2.0,
-        feed_rate: 1800.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(1800.0),
+        plunge_rate: Some(500.0),
         spindle_rpm: Some(18_000),
         ..PocketConfig::default()
     })

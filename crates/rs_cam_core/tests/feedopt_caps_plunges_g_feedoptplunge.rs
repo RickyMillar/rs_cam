@@ -199,7 +199,10 @@ fn a_generated_pocket_holds_no_plunge_above_the_plunge_rate() {
         cfg.dressups.feed_optimization,
         "the pass must be on, or this arm measures a dressup that never ran"
     );
-    let plunge_rate = cfg.operation.plunge_rate();
+    let plunge_rate = cfg
+        .operation
+        .plunge_rate()
+        .expect("S11: the fixture sets it");
     assert!(
         plunge_rate > 0.0,
         "the operation must carry a plunge rate; this arm grades against it"
@@ -255,7 +258,10 @@ fn the_generator_alone_emits_no_plunge_above_the_plunge_rate() {
         !cfg.dressups.feed_optimization,
         "this arm measures the generator, so the pass must be off"
     );
-    let plunge_rate = cfg.operation.plunge_rate();
+    let plunge_rate = cfg
+        .operation
+        .plunge_rate()
+        .expect("S11: the fixture sets it");
 
     let result = run_job(&mut session, 0);
     let found = plunges(result.toolpath());

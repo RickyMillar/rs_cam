@@ -150,13 +150,12 @@ pub(crate) fn axial_envelope_for_operation(
     // F029: a tool outside its domain has no envelope.
     let tool_def = build_cutter(tool).ok()?;
     let radial = operation.stepover();
-    let feed = operation.feed_rate();
     let rpm = operation.spindle_rpm().unwrap_or(0) as f64;
     let flute_count = tool.flute_count.max(1) as f64;
-    let feed_per_tooth_mm = if rpm > 0.0 {
-        feed / (rpm * flute_count)
-    } else {
-        0.0
+    // S11: an unset feed gives no chip (0, as no RPM does).
+    let feed_per_tooth_mm = match operation.feed_rate() {
+        Some(feed) if rpm > 0.0 => feed / (rpm * flute_count),
+        Some(_) | None => 0.0,
     };
 
     // W2.4: the registry row states the class; the WOC heuristics below
@@ -296,12 +295,14 @@ pub(super) fn pick_axial_envelope(
             }
         }
         AxialEnvelope::VBitGroove => {
-            if let OperationConfig::VCarve(cfg) = operation {
-                let commanded = cfg.max_depth;
+            // S11: an unset depth has nothing to clamp.
+            if let OperationConfig::VCarve(cfg) = operation
+                && let Some(commanded) = cfg.max_depth
+            {
                 let (new_depth, ws) = apply_axial_envelope(commanded, &env, "vcarve", "max_depth");
                 warnings.extend(ws);
                 if (new_depth - commanded).abs() > 1.0e-6 {
-                    cfg.max_depth = new_depth;
+                    cfg.max_depth = Some(new_depth);
                     // VCarve `max_depth` is not the chipload-DPP — re-derivation
                     // only matters for ops where DPP feeds back into the chip
                     // geometry calculator. Leave `dpp_mutated` false here.
@@ -309,11 +310,13 @@ pub(super) fn pick_axial_envelope(
             }
         }
         AxialEnvelope::CurveRough => {
-            if let OperationConfig::ProjectCurve(cfg) = operation {
+            if let OperationConfig::ProjectCurve(cfg) = operation
+                && let Some(depth) = cfg.depth
+            {
                 let safe_max = env.safe_max_doc_mm();
-                if cfg.depth > safe_max && safe_max > 0.0 {
+                if depth > safe_max && safe_max > 0.0 {
                     warnings.push(SuggestWarning::ProjectCurveDepthInfeasible {
-                        commanded_mm: cfg.depth,
+                        commanded_mm: depth,
                         max_safe_mm: safe_max,
                         binding: axial_binding_str(env.binding_constraint),
                     });

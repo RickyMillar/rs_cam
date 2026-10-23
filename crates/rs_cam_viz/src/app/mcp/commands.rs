@@ -803,107 +803,43 @@ impl RsCamApp {
             }
         };
 
-        // Roadmap B.1–B.3 — pull stock-aware depth defaults so a fresh
-        // toolpath added via MCP gets the same sensible per-op depths
-        // as a GUI add (drop_cutter min_z = stock_bottom, etc).
-        let stock_bbox = session.stock_bbox();
-        let stock_padding = session.stock_config().padding;
-        let stock_ctx =
-            rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(stock_bbox, stock_padding);
         let label = op_type.label();
         let tp_name = p.name.unwrap_or_else(|| label.to_owned());
-
-        // Roadmap F.5 — one-shot canonical suggest call at toolpath creation.
-        // New toolpaths get recommended feeds written in once; after that,
-        // fields are always user-owned.
-        let Some(tool) = session.tools().iter().find(|t| t.id == tool_id) else {
-            return CorePlan::Answered(CoreReply::refused(
-                &format!("Error: Tool index {} not found", p.tool_index),
-                None,
-            ));
-        };
-        // R2: the creation-time boundary copies this diameter as its offset.
-        let tool_diameter_mm = tool.diameter;
-        // Q1: `add_toolpath` takes `model_id` as a required parameter, so
-        // the model IS known here. The bbox gates the runtime-sanity
-        // stepover back-off in Suggest.
-        let model_bbox = session.model_bbox_by_id(rs_cam_core::ids::ModelId::from_wire(p.model_id));
-        let (op_config, feeds_provenance, feeds_refusal) =
-            match rs_cam_core::feeds::suggest::suggest_params(
-                rs_cam_core::feeds::suggest::SuggestParamsInput {
-                    op_type,
-                    tool,
-                    machine: session.machine(),
-                    material: &session.stock_config().material,
-                    lut: rs_cam_core::feeds::embedded_vendor_lut(),
-                    stock_ctx: &stock_ctx,
-                    spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-                    // Q1: the stock reaches Suggest through `stock_ctx`
-                    // above, so `SuggestContext::stock` stays empty rather
-                    // than carrying the same value twice.
-                    // `upstream_leftover_stock_mm` stays `None`: no lookup
-                    // here gives it, and v1 does not read it.
-                    context: rs_cam_core::feeds::suggest::SuggestContext {
-                        model_bbox: model_bbox.as_ref(),
-                        ..rs_cam_core::feeds::suggest::SuggestContext::default()
-                    },
-                },
-            ) {
-                Ok(s) => (s.operation, s.provenance, None),
-                Err(e @ rs_cam_core::feeds::FeedsError::Unbacked { .. }) => {
-                    // Ruling R1 (2026-09-23): no checked basis for a recipe on
-                    // this cell. The operation is added with the registry and
-                    // stock defaults and no recipe; the reply carries the
-                    // refusal text, as the GUI toast does.
-                    (
-                        rs_cam_core::feeds::suggest::default_operation(op_type, &stock_ctx),
-                        rs_cam_core::feeds::FeedsProvenance::default(),
-                        Some(e.to_string()),
-                    )
-                }
-                Err(e) => {
-                    return CorePlan::Answered(CoreReply::refused(
-                        &format!("Cannot add toolpath: {e}"),
-                        None,
-                    ));
-                }
-            };
-
-        // Roadmap B.7 — boundary auto-enable for 3D ops on mesh models.
-        // R2: silhouette plus one tool diameter, the same rule the GUI
-        // controller applies (`BoundaryConfig::for_3d_op`).
-        let has_mesh = session.models().iter().any(|m| m.mesh.is_some());
-        let boundary = if op_config.is_3d() && has_mesh {
-            BoundaryConfig::for_3d_op(tool_diameter_mm)
-        } else {
-            BoundaryConfig::default()
-        };
-
-        let config = rs_cam_core::session::ToolpathConfig {
-            shoe: Default::default(),
-            id: rs_cam_core::ToolpathId::placeholder(),
-            name: tp_name,
-            enabled: true,
-            operation: op_config,
-            dressups: DressupConfig::for_op(op_type),
-            heights: crate::state::toolpath::HeightsConfig::default(),
+        // S11 parity: THE draft door of core (`ProjectSession::draft_toolpath`),
+        // which the GUI and the CLI job share: the registry op, the stock
+        // defaults, Suggest, `DressupConfig::for_op` and the 3D boundary.
+        // With no feeds data (ruling R1) the op has no feeds; it refuses to
+        // generate until they are set, and the reply names that.
+        let draft = match session.draft_toolpath(
+            op_type,
             tool_id,
-            model_id: rs_cam_core::ids::ModelId::from_wire(p.model_id),
-            pre_gcode: None,
-            post_gcode: None,
-            boundary,
-            boundary_inherit: true,
-            rest_analysis: crate::state::toolpath::RestAnalysisConfig::default(),
-            stock_source: rs_cam_core::compute::config::StockSource::default(),
-            coolant: rs_cam_core::gcode::CoolantMode::default(),
-            debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
-            feeds_provenance,
-            planner_origin: None,
+            rs_cam_core::ids::ModelId::from_wire(p.model_id),
+            tp_name,
+        ) {
+            Ok(draft) => draft,
+            Err(rs_cam_core::session::DraftRefusal::NoSuchTool(_)) => {
+                return CorePlan::Answered(CoreReply::refused(
+                    &format!("Error: Tool index {} not found", p.tool_index),
+                    None,
+                ));
+            }
+            Err(e) => {
+                return CorePlan::Answered(CoreReply::refused(
+                    &format!("Cannot add toolpath: {e}"),
+                    None,
+                ));
+            }
         };
+        let feeds_refusal = draft.feeds_refusal;
+        let unset = draft.config.operation.unset_fields();
+        let config = draft.config;
 
         before.extra = serde_json::json!({
             "operation": label,
             "feeds_refusal": feeds_refusal,
+            // S11: the fields that are not set (the floor, a depth, the
+            // feeds); generation refuses until they are set.
+            "unset": unset,
         });
         CorePlan::Apply(
             Command::AddToolpath(AddToolpathArgs {
@@ -2014,10 +1950,17 @@ impl RsCamApp {
                 self.controller.state_mut().gui.mark_edited();
                 self.controller.set_pending_upload();
 
+                // S11: a drawing has no thickness. The reply says when the
+                // stock has none; every op refuses until `set_stock_config`
+                // sets `z`.
+                let stock_thickness_refusal =
+                    self.controller.state().session().stock_thickness_refusal();
                 let mut resp = serde_json::json!({
                     "id": id,
                     "name": name,
                     "kind": kind.to_lowercase(),
+                    "stock_thickness_set": stock_thickness_refusal.is_none(),
+                    "stock_thickness_note": stock_thickness_refusal,
                 });
                 // P4.8: the units, the import options and the join report.
                 let import = self
@@ -2555,7 +2498,11 @@ impl RsCamApp {
                     .and_then(serde_json::Value::as_bool)
                     .unwrap_or_default();
                 let geometry_set = before.extra("fields_set");
-                let geometry_was_set = geometry_set.as_array().is_some_and(|v| !v.is_empty());
+                // S11: a thickness alone on an auto drawing stock completes it;
+                // the refit keeps it, so it needs no overwrite note.
+                let geometry_was_set = geometry_set
+                    .as_array()
+                    .is_some_and(|v| !v.is_empty() && v.iter().any(|f| f != "z"));
                 let auto_note = if auto_before && !auto_after {
                     Some(
                         "auto_from_model was true and has been CLEARED: it would have re-derived \
@@ -2573,8 +2520,10 @@ impl RsCamApp {
                 } else {
                     None
                 };
+                // S11: a stock with no thickness reports it unset.
+                let z_text = z.map_or_else(|| "(thickness not set)".to_owned(), |z| format!("{z:.1}"));
                 let summary = format!(
-                    "Stock: {x:.1} x {y:.1} x {z:.1} mm at origin ({origin_x:.2}, {origin_y:.2}, \
+                    "Stock: {x:.1} x {y:.1} x {z_text} mm at origin ({origin_x:.2}, {origin_y:.2}, \
                      {origin_z:.2}), material {material_label}, \
                      auto_from_model {auto_after}. Regenerate toolpaths and simulation to apply."
                 );
@@ -2585,7 +2534,8 @@ impl RsCamApp {
                         "y": y,
                         "z": z,
                         "origin": { "x": origin_x, "y": origin_y, "z": origin_z },
-                        "stock_top_z": origin_z + z,
+                        "stock_top_z": origin_z + z.unwrap_or(0.0),
+                        "thickness_set": z.is_some(),
                         "padding": padding,
                         "material": material_label,
                         "auto_from_model": auto_after,

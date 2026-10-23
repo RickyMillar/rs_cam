@@ -15,15 +15,12 @@ use std::sync::atomic::AtomicBool;
 use tracing::info;
 
 use rs_cam_core::compute::ModelUnits;
-use rs_cam_core::compute::catalog::{OpCategory, OperationConfig, OperationType};
-use rs_cam_core::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig, StockSource};
+use rs_cam_core::compute::catalog::{OpCategory, OperationType};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
-use rs_cam_core::gcode::CoolantMode;
 use rs_cam_core::session::{
     AddModelArgs, AddToolArgs, AddToolpathArgs, Command, LoadedModel, ProjectSession,
-    SetPostConfigArgs, SetToolParamArgs, SetToolpathParamArgs, ToolpathConfig,
+    SetPostConfigArgs, SetToolParamArgs, SetToolpathParamArgs,
 };
-use rs_cam_core::trace::debug_trace::ToolpathDebugOptions;
 
 use crate::command::apply_command;
 
@@ -44,6 +41,9 @@ pub struct RunArgs {
     pub post: rs_cam_core::gcode::PostFormat,
     pub safe_z: f64,
     pub spindle_speed: u32,
+    /// S11: the stock thickness (mm), the `z` of `set_stock_config`. A
+    /// drawing has none; with no value every op refuses.
+    pub stock_z: Option<f64>,
     /// G11: the grblHAL export options, the keys of MCP `export_gcode`.
     pub controller_waits_for_spindle: Option<bool>,
     pub mist_output: Option<bool>,
@@ -114,6 +114,23 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
         .map(|m| m.id)
         .context("add_model added no model")?;
 
+    // S11: the stock thickness of a drawing, the patch MCP merges. On a
+    // stock with no thickness it keeps the top and the auto fit.
+    if let Some(z) = args.stock_z {
+        let mut stock = session.stock_config().clone();
+        let _ = rs_cam_core::compute::stock_config::StockConfigPatch {
+            z: Some(z),
+            ..Default::default()
+        }
+        .apply_to(&mut stock);
+        let _ = apply_command(
+            &mut session,
+            Command::SetStockConfig(rs_cam_core::session::SetStockConfigArgs {
+                stock: Box::new(stock),
+            }),
+        )?;
+    }
+
     let (tool_type, diameter) = parse_tool_spec(tool_spec)?;
     let mut tool = ToolConfig::new_default(ToolId::placeholder(), tool_type);
     tool.name = format!("{} {:.3}mm", tool_type.label(), diameter);
@@ -142,31 +159,23 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
         .get(tool_idx)
         .context("tool index out of bounds after add_tool")?
         .id;
+    // S11 parity: THE draft door that the GUI, MCP and the job share
+    // (`ProjectSession::draft_toolpath`): the stock defaults, Suggest and
+    // `DressupConfig::for_op`. A value that no rule gives stays unset, and
+    // the op refuses until `--set` gives it.
+    let draft = session
+        .draft_toolpath(
+            op_type,
+            tool_id,
+            model_id,
+            format!("{} (cli run)", op_type.label()),
+        )
+        .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?;
     let tp_index = apply_command(
         &mut session,
         Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
-            config: Box::new(ToolpathConfig {
-                shoe: Default::default(),
-                id: rs_cam_core::ToolpathId::placeholder(),
-                name: format!("{} (cli run)", op_type.label()),
-                enabled: true,
-                operation: OperationConfig::new_default(op_type),
-                dressups: DressupConfig::default(),
-                heights: HeightsConfig::default(),
-                tool_id,
-                model_id,
-                pre_gcode: None,
-                post_gcode: None,
-                boundary: BoundaryConfig::default(),
-                boundary_inherit: true,
-                rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
-                stock_source: StockSource::default(),
-                coolant: CoolantMode::Off,
-                debug_options: ToolpathDebugOptions::default(),
-                feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
-                planner_origin: None,
-            }),
+            config: Box::new(draft.config),
         }),
     )
     .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?

@@ -48,6 +48,11 @@ pub(crate) fn generate_inlay(
     let cfg = config_guard!(op, Inlay, "generate_inlay");
     let polys = prepared.regions()?.as_slice();
     let ha = vbit_half_angle(ctx.tool_cfg);
+    let pocket_depth = crate::compute::not_set::required_depth(
+        cfg.pocket_depth,
+        op.op_type().label(),
+        "pocket_depth",
+    )?;
     let safe_z = ctx.heights.retract_z;
     let cancel_fn = ctx.cancel_fn();
     let mut out = Toolpath::new();
@@ -56,14 +61,14 @@ pub(crate) fn generate_inlay(
             poly,
             &crate::ops::inlay::InlayPocketParams {
                 half_angle: ha,
-                pocket_depth: cfg.pocket_depth,
-                floor_overlap: cfg.floor_overlap,
+                pocket_depth,
+                floor_overlap: cfg.floor_overlap_for(ctx.tool_def.diameter()),
                 floor_ridge: cfg.floor_ridge,
                 // `ToolConfig` holds no tip flat for a V-bit: a sharp tip.
                 tip_flat: 0.0,
                 stepover: cfg.stepover,
-                feed_rate: op.feed_rate(),
-                plunge_rate: op.plunge_rate(),
+                feed_rate: op.cut_feeds()?.feed_rate,
+                plunge_rate: op.cut_feeds()?.plunge_rate,
                 safe_z,
                 tolerance: cfg.tolerance,
                 top_z: ctx.heights.top_z,
@@ -91,10 +96,15 @@ pub(crate) fn generate_inlay_plug(
     let cfg = config_guard!(op, InlayPlug, "generate_inlay_plug");
     let polys = prepared.regions()?.as_slice();
     let ha = vbit_half_angle(ctx.tool_cfg);
-    if cfg.start_depth() <= 0.0 {
+    let pocket_depth = crate::compute::not_set::required_depth(
+        cfg.pocket_depth,
+        op.op_type().label(),
+        "pocket_depth",
+    )?;
+    if crate::ops::inlay::plug_start_depth(pocket_depth, cfg.glue_gap) <= 0.0 {
         return Err(OperationError::InvalidParam(format!(
-            "InlayPlug: glue_gap {} mm must be smaller than pocket_depth {} mm",
-            cfg.glue_gap, cfg.pocket_depth
+            "InlayPlug: glue_gap {} mm must be smaller than pocket_depth {pocket_depth} mm",
+            cfg.glue_gap
         )));
     }
     let safe_z = ctx.heights.retract_z;
@@ -103,14 +113,14 @@ pub(crate) fn generate_inlay_plug(
         polys,
         &crate::ops::inlay::InlayPlugParams {
             half_angle: ha,
-            pocket_depth: cfg.pocket_depth,
+            pocket_depth,
             glue_gap: cfg.glue_gap,
             proud_height: cfg.proud_height,
             outer_margin: cfg.outer_margin,
             depth_per_pass: cfg.depth_per_pass,
             stepover: cfg.stepover,
-            feed_rate: op.feed_rate(),
-            plunge_rate: op.plunge_rate(),
+            feed_rate: op.cut_feeds()?.feed_rate,
+            plunge_rate: op.cut_feeds()?.plunge_rate,
             safe_z,
             tolerance: cfg.tolerance,
             top_z: ctx.heights.top_z,
@@ -139,10 +149,14 @@ pub(crate) fn generate_vcarve(
         },
         params: crate::ops::vcarve::VCarveParams {
             half_angle: vbit_half_angle(ctx.tool_cfg),
-            max_depth: cfg.max_depth,
+            max_depth: crate::compute::not_set::required_depth(
+                cfg.max_depth,
+                op.op_type().label(),
+                "max_depth",
+            )?,
             stepover: cfg.stepover,
-            feed_rate: op.feed_rate(),
-            plunge_rate: op.plunge_rate(),
+            feed_rate: op.cut_feeds()?.feed_rate,
+            plunge_rate: op.cut_feeds()?.plunge_rate,
             safe_z: ctx.heights.retract_z,
             tolerance: cfg.tolerance,
             top_z: ctx.heights.top_z,
@@ -238,8 +252,8 @@ pub(crate) fn generate_chamfer(
             tip_offset: cfg.tip_offset,
             tool_half_angle: vbit_half_angle(ctx.tool_cfg),
             side: cfg.side,
-            feed_rate: op.feed_rate(),
-            plunge_rate: op.plunge_rate(),
+            feed_rate: op.cut_feeds()?.feed_rate,
+            plunge_rate: op.cut_feeds()?.plunge_rate,
             safe_z: ctx.heights.retract_z,
             top_z: ctx.heights.top_z,
         },
@@ -481,8 +495,9 @@ pub(crate) fn generate_project_curve(
     let cfg = config_guard!(op, ProjectCurve, "generate_project_curve");
     let project_op = ProjectCurveOp {
         cfg,
-        feed_rate: op.feed_rate(),
-        plunge_rate: op.plunge_rate(),
+        depth: crate::compute::not_set::required_depth(cfg.depth, op.op_type().label(), "depth")?,
+        feed_rate: op.cut_feeds()?.feed_rate,
+        plunge_rate: op.cut_feeds()?.plunge_rate,
         safe_z: ctx.heights.retract_z,
         tool_radius: ctx.tool_def.radius(),
     };
@@ -492,6 +507,8 @@ pub(crate) fn generate_project_curve(
 /// The Project Curve op: the config and the resolved rates of one run.
 struct ProjectCurveOp<'a> {
     cfg: &'a ProjectCurveConfig,
+    /// The set depth (S11: the adapter refuses an unset one).
+    depth: f64,
     feed_rate: f64,
     plunge_rate: f64,
     safe_z: f64,
@@ -502,7 +519,7 @@ impl ProjectCurveOp<'_> {
     /// The kernel params in `frame`.
     fn kernel_params(&self, frame: CurveFrame) -> ProjectCurveParams {
         ProjectCurveParams {
-            depth: self.cfg.depth,
+            depth: self.depth,
             point_spacing: self.cfg.point_spacing,
             feed_rate: self.feed_rate,
             plunge_rate: self.plunge_rate,
@@ -520,7 +537,7 @@ impl CurveOp for ProjectCurveOp<'_> {
     const SPAN_LABEL: &'static str = "Projected curve";
 
     fn commanded_depth_mm(&self) -> f64 {
-        self.cfg.depth
+        self.depth
     }
 
     fn plan(

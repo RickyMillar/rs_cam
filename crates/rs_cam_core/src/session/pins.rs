@@ -554,7 +554,7 @@ impl ProjectSession {
                 crate::compute::operation_configs::AlignmentPinDrillConfig::default()
                     .spoilboard_penetration
             });
-        let reach = self.stock.z + penetration;
+        let reach = self.stock.box_height() + penetration;
         tool.id = ToolId::placeholder();
         tool.diameter = diameter;
         tool.shaft_diameter = diameter;

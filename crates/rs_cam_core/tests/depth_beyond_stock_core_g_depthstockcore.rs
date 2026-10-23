@@ -266,7 +266,7 @@ fn pocket_session(depth: f64) -> ProjectSession {
     builder = builder.stock(StockConfig {
         x: 100.0,
         y: 100.0,
-        z: STOCK_TOP_Z - STOCK_BOTTOM_Z,
+        z: Some(STOCK_TOP_Z - STOCK_BOTTOM_Z),
         origin_x: -10.0,
         origin_y: -10.0,
         // Negative, so the stock TOP sits at Z = 0 and 2D ops cut downward.
@@ -311,8 +311,8 @@ fn pocket_session(depth: f64) -> ProjectSession {
             stepover: 2.0,
             floor: rs_cam_core::compute::floor::Floor::top(depth),
             depth_per_pass: 2.0,
-            feed_rate: 770.0,
-            plunge_rate: 385.0,
+            feed_rate: Some(770.0),
+            plunge_rate: Some(385.0),
             climb: true,
             pattern: PocketPattern::Contour,
             angle: 0.0,

@@ -395,7 +395,10 @@ fn a_plain_generate_and_simulate_gives_measured_cards_g_stalecards() {
 fn the_cards_and_the_gui_agree_on_a_simulation_that_just_landed_g_stalecards() {
     let (mut controller, rough, budget) = generated_fixture();
     panel_edit(&mut controller, rough, |entry| {
-        let feed = entry.operation.feed_rate();
+        let feed = entry
+            .operation
+            .feed_rate()
+            .expect("S11: the fixture sets it");
         entry.operation.set_feed_rate(feed + 100.0);
     });
     pump_until_settled(&mut controller, &budget, "after the edit");

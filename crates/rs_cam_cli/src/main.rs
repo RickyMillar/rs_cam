@@ -229,6 +229,11 @@ enum Commands {
         #[arg(long, default_value = "18000")]
         spindle_speed: u32,
 
+        /// The stock thickness (mm). A drawing (DXF, SVG) has none, so a
+        /// run on a drawing states it (S11); a 3D model sets it from its box
+        #[arg(long)]
+        stock_z: Option<f64>,
+
         /// grblHAL: the controller waits for the spindle ($394/$340), so
         /// no warm-up dwell is written (true/false)
         #[arg(long)]
@@ -594,6 +599,7 @@ fn main() -> Result<()> {
             post,
             safe_z,
             spindle_speed,
+            stock_z,
             controller_waits_for_spindle,
             mist_output,
             native_drill_cycles,
@@ -614,6 +620,7 @@ fn main() -> Result<()> {
                 post,
                 safe_z,
                 spindle_speed,
+                stock_z,
                 controller_waits_for_spindle,
                 mist_output,
                 native_drill_cycles,

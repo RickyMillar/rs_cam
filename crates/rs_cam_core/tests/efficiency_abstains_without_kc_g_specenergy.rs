@@ -103,7 +103,7 @@ fn pocket_op() -> OperationConfig {
         stepover: RADIAL_WOC_MM,
         floor: rs_cam_core::compute::floor::Floor::top(12.0),
         depth_per_pass: AXIAL_DOC_MM,
-        feed_rate: FZ * RPM * f64::from(FLUTES),
+        feed_rate: Some(FZ * RPM * f64::from(FLUTES)),
         spindle_rpm: Some(17_000),
         ..PocketConfig::default()
     })

@@ -245,7 +245,7 @@ fn trace_arm(name: &'static str) -> Arm {
     Arm {
         name,
         op: OperationConfig::Trace(TraceConfig {
-            depth: TRACE_DEPTH,
+            depth: Some(TRACE_DEPTH),
             depth_per_pass: TRACE_DEPTH_PER_PASS,
             selection: Selection::empty(),
             ..TraceConfig::default()
@@ -262,7 +262,7 @@ fn op_session(arm: &Arm, faces: &[u16], face_up: FaceUp, stock_bottom: f64) -> P
     let stock = StockConfig {
         x: 60.0 + 2.0 * XY_MARGIN,
         y: 40.0 + 2.0 * XY_MARGIN,
-        z: 32.0 - stock_bottom,
+        z: Some(32.0 - stock_bottom),
         origin_x: -XY_MARGIN,
         origin_y: -XY_MARGIN,
         origin_z: stock_bottom,

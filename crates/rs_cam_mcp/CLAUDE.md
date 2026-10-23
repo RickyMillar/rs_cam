@@ -11,7 +11,8 @@ run the server; the live server, GUI dispatch and session ownership are in
   so a `$ref` does not resolve for a client.
 - A wire enum that mirrors a core enum converts with an exhaustive
   `match` in BOTH directions (`server.rs`, F166), so a variant that core
-  gains does not compile until the wire carries it. A wire patch of a
+  gains does not compile until the wire carries it (S11: `FloorParam::Unset`
+  is the floor that is not set). A wire patch of a
   core struct converts by a full destructure with no `..` on both sides
   (`SetStockConfigParam` → `StockConfigPatch`, F118). Free text stays a
   `String`: names, paths, layers, the `material` name, overlay ids.

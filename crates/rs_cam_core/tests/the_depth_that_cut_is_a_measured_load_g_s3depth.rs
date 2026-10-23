@@ -683,8 +683,8 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
         stepover: STEPOVER_MM,
         floor: rs_cam_core::compute::floor::Floor::top(2.0 * REQUESTED_DPP_MM),
         depth_per_pass: REQUESTED_DPP_MM,
-        feed_rate: 1000.0,
-        plunge_rate: 400.0,
+        feed_rate: Some(1000.0),
+        plunge_rate: Some(400.0),
         ..PocketConfig::default()
     });
 

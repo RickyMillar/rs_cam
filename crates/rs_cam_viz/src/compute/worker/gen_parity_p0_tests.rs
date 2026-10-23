@@ -81,7 +81,7 @@ use crate::compute::{
 };
 use crate::controller::AppController;
 use crate::state::job::{ToolConfig, ToolId, ToolType};
-use crate::state::toolpath::{ComputeStatus, DressupConfig, OperationConfig, ToolpathId};
+use crate::state::toolpath::{ComputeStatus, DressupConfig, ToolpathId};
 use crate::ui::AppEvent;
 
 /// Positional agreement bar, copied from `worker::tests::assert_toolpaths_match`.
@@ -145,7 +145,14 @@ fn fixture(feed_optimization: bool) -> Fixture {
         submitted: Arc::clone(&submitted),
     });
     let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
-    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    // S11: a drawing has no thickness; the fixture states the 25 mm before
+    // S11.
+    let mut builder = ProjectSessionBuilder::new()
+        .stock(rs_cam_core::compute::StockConfig {
+            z: Some(rs_cam_core::compute::fixture_values::FIXTURE_STOCK_Z_MM),
+            ..rs_cam_core::compute::StockConfig::default()
+        })
+        .tool(tool);
     let _ = builder.add_model(LoadedModel {
         id: rs_cam_core::ids::ModelId::from_raw(0),
         path: std::path::PathBuf::from("plate.svg"),
@@ -168,10 +175,17 @@ fn fixture(feed_optimization: bool) -> Fixture {
         id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,
-        operation: OperationConfig::Pocket(Default::default()),
-        dressups: DressupConfig {
-            feed_optimization,
-            ..Default::default()
+        // S11: the fixture states the floor and the feeds.
+        operation: rs_cam_core::compute::fixture_values::fixture_op(
+            rs_cam_core::compute::catalog::OperationType::Pocket,
+        ),
+        dressups: {
+            let mut dressups = DressupConfig {
+                feed_optimization,
+                ..Default::default()
+            };
+            rs_cam_core::compute::fixture_values::fill_unset_dressups(&mut dressups);
+            dressups
         },
         heights: Default::default(),
         tool_id: rs_cam_core::ids::ToolId::from_raw(1),

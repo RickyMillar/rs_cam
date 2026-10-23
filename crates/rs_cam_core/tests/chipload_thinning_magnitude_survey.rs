@@ -198,7 +198,7 @@ fn stock_ctx() -> StockContext {
     StockContext {
         stock_top_z: 0.0,
         stock_bottom_z: -18.0,
-        stock_z: 18.0,
+        stock_z: Some(18.0),
         stock_padding: 2.0,
     }
 }
@@ -277,7 +277,8 @@ fn sweep() -> Vec<Point> {
                     if !(divisor.is_finite() && divisor > 0.0) {
                         continue;
                     }
-                    let advance = s.operation.feed_rate() / divisor;
+                    let advance =
+                        s.operation.feed_rate().expect("S11: the fixture sets it") / divisor;
                     if !(advance.is_finite() && advance > 0.0) {
                         continue;
                     }

@@ -69,81 +69,35 @@ impl<B: ComputeBackend> AppController<B> {
             );
             return None;
         }
-        // Roadmap B.1–B.3 — pull stock-aware depth defaults so e.g.
-        // a fresh DropCutter starts with `min_z = stock_bottom_z`
-        // instead of the hard-coded `-50.0` that clipped any stock
-        // not sitting at exactly that depth.
-        let stock_bbox = self.state.session().stock_bbox();
-        let stock_padding = self.state.session().stock_config().padding;
-        let stock_ctx =
-            rs_cam_core::feeds::suggest::StockContext::from_stock_bbox(stock_bbox, stock_padding);
-        // Q1: the model this toolpath will use is the one the config
-        // below writes. Reading it BEFORE the Suggest call is the whole
-        // fix: `SuggestContext::model_bbox` gates the runtime-sanity
-        // stepover back-off, and every surface used to pass `None`.
+        // Q1: the model this toolpath will use is the one the draft reads.
         let model_id = self
             .state
             .session()
             .models()
             .first()
             .map_or(rs_cam_core::ids::ModelId::placeholder(), |m| m.id);
-        let model_bbox = self.state.session().model_bbox_by_id(model_id);
-        // The new operation takes the FIRST tool in tool-list order that
-        // the operation accepts. The add-time Suggest door is the rule:
-        // it refuses a tool that the operation does not accept (the
-        // registry's tool rule, or a scallop-height stepover on a tool
-        // with no tip radius). A V-bit first in the list no longer
-        // blocks a Bore when an end mill follows it.
-        let mut chosen: Option<AddPick> = None;
-        let mut first_refusal: Option<rs_cam_core::feeds::FeedsError> = None;
+        let name = format!(
+            "{} {}",
+            op_type.label(),
+            self.state.session().toolpath_configs().len() + 1
+        );
+        // S11 parity: THE draft door of core (`ProjectSession::draft_toolpath`),
+        // which MCP and the CLI job share. The new operation takes the FIRST
+        // tool in tool-list order that the operation accepts: the draft
+        // refuses a tool that the operation does not accept (the registry's
+        // tool rule, or a scallop-height stepover on a tool with no tip
+        // radius). A V-bit first in the list no longer blocks a Bore when an
+        // end mill follows it.
+        let mut chosen: Option<rs_cam_core::session::ToolpathDraft> = None;
+        let mut first_refusal: Option<rs_cam_core::session::DraftRefusal> = None;
         for tool in self.state.session().tools() {
-            let suggested = rs_cam_core::feeds::suggest::suggest_params(
-                rs_cam_core::feeds::suggest::SuggestParamsInput {
-                    op_type,
-                    tool,
-                    machine: self.state.session().machine(),
-                    material: &self.state.session().stock_config().material,
-                    lut: rs_cam_core::feeds::embedded_vendor_lut(),
-                    stock_ctx: &stock_ctx,
-                    spindle_strategy: rs_cam_core::feeds::SpindleStrategy::default(),
-                    // Q1: the bbox the runtime-sanity back-off reads. The
-                    // stock reaches Suggest through `stock_ctx` above, so
-                    // `SuggestContext::stock` stays empty rather than
-                    // carrying the same value twice.
-                    // `upstream_leftover_stock_mm` stays `None`: no lookup
-                    // here gives it, and v1 does not read it.
-                    context: rs_cam_core::feeds::suggest::SuggestContext {
-                        model_bbox: model_bbox.as_ref(),
-                        ..rs_cam_core::feeds::suggest::SuggestContext::default()
-                    },
-                },
-            );
-            match suggested {
-                Ok(s) => {
-                    chosen = Some(AddPick {
-                        tool_id: tool.id,
-                        tool_diameter_mm: tool.diameter,
-                        operation: s.operation,
-                        feeds_provenance: s.provenance,
-                        unbacked: None,
-                    });
-                    break;
-                }
-                Err(e @ rs_cam_core::feeds::FeedsError::Unbacked { .. }) => {
-                    // Ruling R1 (2026-09-23): the engine has no checked
-                    // basis for a recipe on this cell. The tool still
-                    // fits, so the operation is added with the registry
-                    // and stock defaults and no recipe; the refusal is
-                    // shown, and the Feeds tab repeats it.
-                    chosen = Some(AddPick {
-                        tool_id: tool.id,
-                        tool_diameter_mm: tool.diameter,
-                        operation: rs_cam_core::feeds::suggest::default_operation(
-                            op_type, &stock_ctx,
-                        ),
-                        feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
-                        unbacked: Some(format!("Added without a feeds recipe: {e}")),
-                    });
+            match self
+                .state
+                .session()
+                .draft_toolpath(op_type, tool.id, model_id, name.clone())
+            {
+                Ok(draft) => {
+                    chosen = Some(draft);
                     break;
                 }
                 Err(e) => {
@@ -151,12 +105,9 @@ impl<B: ComputeBackend> AppController<B> {
                 }
             }
         }
-        let Some(AddPick {
-            tool_id,
-            tool_diameter_mm,
-            operation,
-            feeds_provenance,
-            unbacked,
+        let Some(rs_cam_core::session::ToolpathDraft {
+            config: tc,
+            feeds_refusal,
         }) = chosen
         else {
             // No tool of the project fits the operation. The refusal
@@ -176,67 +127,25 @@ impl<B: ComputeBackend> AppController<B> {
             self.push_notification(msg, super::super::Severity::Warning);
             return None;
         };
-        if let Some(msg) = unbacked {
+        if let Some(e) = feeds_refusal {
+            // Ruling R1 + S11: no feeds data for the tool. The op is added
+            // with no feeds; it refuses to generate until they are set.
+            let msg = format!(
+                "Added with no feeds: {e}. {}.",
+                rs_cam_core::compute::not_set::FEEDS_NOT_SET_TEXT
+            );
             tracing::warn!("{msg}");
             self.push_notification(msg, super::super::Severity::Warning);
         }
-        // Capture is_3d before `operation` moves into the toolpath
-        // config below — used by the boundary auto-enable (B.7).
-        let op_is_3d = operation.is_3d();
-        if !operation.is_stock_based() && self.state.session().models().is_empty() {
+        if !tc.operation.is_stock_based() && self.state.session().models().is_empty() {
             let msg = format!(
                 "Cannot add {} toolpath: import geometry first",
-                operation.label()
+                tc.operation.label()
             );
             tracing::warn!("{msg}");
             self.push_notification(msg, super::super::Severity::Warning);
             return None;
         }
-        let tc = rs_cam_core::session::ToolpathConfig {
-            shoe: Default::default(),
-            id: rs_cam_core::ToolpathId::placeholder(), // will be assigned by session
-            name: format!(
-                "{} {}",
-                op_type.label(),
-                self.state.session().toolpath_configs().len() + 1
-            ),
-            enabled: true,
-            operation,
-            dressups: crate::state::toolpath::DressupConfig::for_op(op_type),
-            heights: crate::state::toolpath::HeightsConfig::default(),
-            tool_id,
-            model_id,
-            pre_gcode: None,
-            post_gcode: None,
-            // Roadmap B.7 — for 3D ops on a 3D mesh model, default the
-            // machining boundary to the model silhouette so the cutter
-            // doesn't sweep over the whole stock area on small parts in
-            // oversized stock. R2: the silhouette is expanded by one tool
-            // diameter so the cutter reaches the outer faces; the rule is
-            // `BoundaryConfig::for_3d_op`, shared with the MCP door. Falls
-            // back to the default (disabled) for 2D / stock-based ops or
-            // when no mesh model is available.
-            boundary: {
-                let has_mesh = self
-                    .state
-                    .session()
-                    .models()
-                    .iter()
-                    .any(|m| m.mesh.is_some());
-                if op_is_3d && has_mesh {
-                    crate::state::toolpath::BoundaryConfig::for_3d_op(tool_diameter_mm)
-                } else {
-                    crate::state::toolpath::BoundaryConfig::default()
-                }
-            },
-            boundary_inherit: true,
-            rest_analysis: crate::state::toolpath::RestAnalysisConfig::default(),
-            stock_source: crate::state::toolpath::StockSource::Fresh,
-            coolant: rs_cam_core::gcode::CoolantMode::Off,
-            debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
-            feeds_provenance,
-            planner_origin: None,
-        };
 
         let effects = target_setup_idx.and_then(|setup_idx| {
             let command = Command::AddToolpath(AddToolpathArgs {
@@ -800,15 +709,4 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
     }
-}
-
-/// The tool and the Suggest answer that [`AppController::handle_add_toolpath`]
-/// chose for a new operation.
-struct AddPick {
-    tool_id: rs_cam_core::ids::ToolId,
-    tool_diameter_mm: f64,
-    operation: rs_cam_core::compute::catalog::OperationConfig,
-    feeds_provenance: rs_cam_core::feeds::FeedsProvenance,
-    /// The R1 "no feeds recipe" text, when Suggest had no basis.
-    unbacked: Option<String>,
 }

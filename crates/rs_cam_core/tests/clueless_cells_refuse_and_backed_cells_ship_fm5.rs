@@ -70,7 +70,7 @@ fn stock_ctx() -> StockContext {
     StockContext {
         stock_top_z: 0.0,
         stock_bottom_z: -18.0,
-        stock_z: 18.0,
+        stock_z: Some(18.0),
         stock_padding: 2.0,
     }
 }
@@ -176,7 +176,7 @@ fn the_default_operation_carries_the_stock_defaults_and_no_recipe_fm5() {
     assert_eq!(
         cfg.floor,
         rs_cam_core::compute::floor::Floor::Top {
-            depth: stock.stock_z
+            depth: stock.stock_z.expect("S11: the fixture sets it")
         },
         "the stock default was not applied: floor {:?}",
         cfg.floor

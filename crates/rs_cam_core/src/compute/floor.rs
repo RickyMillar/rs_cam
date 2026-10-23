@@ -106,14 +106,32 @@ pub enum Floor {
     /// bottom (P7 ruling O-2). A positive depth goes deeper. The holes of
     /// the op ([`hole_floors`]) read it: a Drill and a Bore.
     EachHole { depth: f64 },
+    /// S11 (operator ruling 2026-10-23): no floor is set. No rule gives a
+    /// floor for a drawing, so a new op has none, and generation refuses
+    /// ([`FloorRefusal::Unset`]) until the operator sets one. A file with
+    /// no `floor` key loads this, and the file never writes it.
+    Unset,
+}
+
+impl Default for Floor {
+    /// No floor (S11): the registry default of each floor op.
+    fn default() -> Self {
+        Self::Unset
+    }
 }
 
 impl Floor {
-    /// The floor `depth` mm below the resolved Top Z: the default of each
-    /// op.
+    /// The floor `depth` mm below the resolved Top Z.
     #[must_use]
     pub const fn top(depth: f64) -> Self {
         Self::Top { depth }
+    }
+
+    /// True when no floor is set (S11). The serde `skip_serializing_if`
+    /// of each floor field reads it.
+    #[must_use]
+    pub const fn is_unset(&self) -> bool {
+        matches!(self, Self::Unset)
     }
 
     /// The name of the reference, for a message or a label.
@@ -128,6 +146,7 @@ impl Floor {
             Self::Z { .. } => "Absolute Z",
             Self::Face { .. } => "A picked face",
             Self::EachHole { .. } => "Each hole floor",
+            Self::Unset => "Not set",
         }
     }
 
@@ -144,7 +163,8 @@ impl Floor {
             | Self::EachFace { .. }
             | Self::Z { .. }
             | Self::Face { .. }
-            | Self::EachHole { .. } => None,
+            | Self::EachHole { .. }
+            | Self::Unset => None,
         }
     }
 
@@ -205,7 +225,8 @@ impl Floor {
             | Self::StockTop { .. }
             | Self::StockBottom { .. }
             | Self::ModelTop { .. }
-            | Self::Z { .. } => true,
+            | Self::Z { .. }
+            | Self::Unset => true,
         }
     }
 
@@ -233,7 +254,8 @@ impl Floor {
             | Self::ModelTop { .. }
             | Self::EachFace { .. }
             | Self::Z { .. }
-            | Self::EachHole { .. } => None,
+            | Self::EachHole { .. }
+            | Self::Unset => None,
         }
     }
 
@@ -249,6 +271,7 @@ impl Floor {
             Self::Z { .. } => "z",
             Self::Face { .. } => "face",
             Self::EachHole { .. } => "each_hole",
+            Self::Unset => "unset",
         }
     }
 
@@ -263,7 +286,8 @@ impl Floor {
             | Self::ModelTop { .. }
             | Self::EachFace { .. }
             | Self::Face { .. }
-            | Self::EachHole { .. } => "depth",
+            | Self::EachHole { .. }
+            | Self::Unset => "depth",
             Self::Z { .. } => "z",
         }
     }
@@ -284,7 +308,8 @@ impl Floor {
             | Self::EachFace { .. }
             | Self::Z { .. }
             | Self::Face { .. }
-            | Self::EachHole { .. } => ParamRange {
+            | Self::EachHole { .. }
+            | Self::Unset => ParamRange {
                 min: None,
                 max: None,
                 min_exclusive: false,
@@ -296,10 +321,11 @@ impl Floor {
     /// context: the `set_toolpath_floor` door (P3.3). A number that is not
     /// finite, and a number outside [`Self::domain`]. A floor at or above a
     /// resolved top that is not [`Floor::Top`] needs the session, so
-    /// generation refuses it.
+    /// generation refuses it. [`Floor::Unset`] passes the door: it clears
+    /// the floor, and generation then refuses (S11).
     #[must_use]
     pub fn door_refusal(&self) -> Option<FloorRefusal> {
-        let value = self.value();
+        let value = self.value()?;
         if !value.is_finite() {
             return Some(FloorRefusal::NotFinite);
         }
@@ -316,8 +342,9 @@ impl Floor {
     }
 
     /// The number the floor holds: the depth, or the Z of [`Floor::Z`].
+    /// `None` for [`Floor::Unset`]: it holds no number.
     #[must_use]
-    pub const fn value(&self) -> f64 {
+    pub const fn value(&self) -> Option<f64> {
         match self {
             Self::Top { depth }
             | Self::StockTop { depth }
@@ -325,8 +352,9 @@ impl Floor {
             | Self::ModelTop { depth }
             | Self::EachFace { depth }
             | Self::Face { depth, .. }
-            | Self::EachHole { depth } => *depth,
-            Self::Z { z } => *z,
+            | Self::EachHole { depth } => Some(*depth),
+            Self::Z { z } => Some(*z),
+            Self::Unset => None,
         }
     }
 
@@ -346,8 +374,9 @@ impl Floor {
     ///
     /// [`FloorRefusal::NotFinite`], [`FloorRefusal::NoModelMesh`] (ruling
     /// L-4), [`FloorRefusal::NoFace`] (each face, and no up face),
-    /// [`FloorRefusal::FaceLost`] (a face key that resolves to no plane)
-    /// and [`FloorRefusal::NoHoleDepth`] (each hole, and no hole floor).
+    /// [`FloorRefusal::FaceLost`] (a face key that resolves to no plane),
+    /// [`FloorRefusal::NoHoleDepth`] (each hole, and no hole floor) and
+    /// [`FloorRefusal::Unset`] (no floor is set, S11).
     pub fn resolve(
         &self,
         ctx: &HeightContext,
@@ -355,7 +384,10 @@ impl Floor {
         floor_face_z: Option<f64>,
         hole_floor_z: Option<f64>,
     ) -> Result<FloorRef, FloorRefusal> {
-        if !self.value().is_finite() {
+        let Some(value) = self.value() else {
+            return Err(FloorRefusal::Unset);
+        };
+        if !value.is_finite() {
             return Err(FloorRefusal::NotFinite);
         }
         match *self {
@@ -379,6 +411,7 @@ impl Floor {
             Self::EachHole { .. } => hole_floor_z
                 .map(|deepest| FloorRef::PerHole { deepest })
                 .ok_or(FloorRefusal::NoHoleDepth),
+            Self::Unset => Err(FloorRefusal::Unset),
         }
     }
 }
@@ -397,7 +430,8 @@ pub fn face_key_is_a_floor(key: &MatchKey) -> bool {
 
 impl Floor {
     /// The same reference with the number `value`: the depth, or the Z of
-    /// [`Floor::Z`].
+    /// [`Floor::Z`]. [`Floor::Unset`] has no reference, so a number typed
+    /// into an empty floor gives [`Floor::Top`] (the GUI floor row).
     #[must_use]
     pub fn with_value(self, value: f64) -> Self {
         match self {
@@ -409,6 +443,7 @@ impl Floor {
             Self::Z { .. } => Self::Z { z: value },
             Self::Face { key, .. } => Self::Face { key, depth: value },
             Self::EachHole { .. } => Self::EachHole { depth: value },
+            Self::Unset => Self::Top { depth: value },
         }
     }
 
@@ -467,6 +502,7 @@ impl FloorReferences {
             Floor::Z { .. } => Ok(0.0),
             Floor::Face { .. } => self.floor_face_z.ok_or(FloorRefusal::FaceLost),
             Floor::EachHole { .. } => self.hole_floor_z.ok_or(FloorRefusal::NoHoleDepth),
+            Floor::Unset => Err(FloorRefusal::Unset),
         }
     }
 
@@ -487,6 +523,8 @@ impl FloorReferences {
             | Floor::EachFace { depth }
             | Floor::Face { depth, .. }
             | Floor::EachHole { depth } => reference - depth,
+            // `reference_z` refused it above.
+            Floor::Unset => return Err(FloorRefusal::Unset),
         })
     }
 
@@ -508,7 +546,8 @@ impl FloorReferences {
             | Floor::ModelTop { .. }
             | Floor::EachFace { .. }
             | Floor::Face { .. }
-            | Floor::EachHole { .. } => self.reference_z(&like)? - z,
+            | Floor::EachHole { .. }
+            | Floor::Unset => self.reference_z(&like)? - z,
         };
         let floor = like.with_value(value);
         match floor.door_refusal() {
@@ -530,7 +569,10 @@ impl FloorReferences {
             Ok(z) => self.at_z(to, z),
             Err(_) => {
                 self.reference_z(&to)?;
-                Ok(to.with_value(from.value()))
+                Ok(match from.value() {
+                    Some(value) => to.with_value(value),
+                    None => to,
+                })
             }
         }
     }
@@ -829,6 +871,10 @@ pub fn hole_floors(
             | Floor::EachFace { .. }
             | Floor::Z { .. }
             | Floor::Face { .. } => inputs.bottom_z,
+            // S11: no floor. The heights refuse it first (`floor_refusal`),
+            // and `selection_status` does not call this rule for it. A floor
+            // that is not a number refuses below, so no reader cuts it.
+            Floor::Unset => f64::NAN,
         };
         if floor_z.is_nan() || floor_z >= inputs.top_z {
             return Err(SelectionRefusal::new(
@@ -907,6 +953,10 @@ pub enum FloorRefusal {
         /// The `from` token of the reference.
         from: &'static str,
     },
+    /// S11 (operator ruling 2026-10-23): no floor is set
+    /// ([`Floor::Unset`]). No rule gives a floor for a drawing, so the
+    /// operator sets one.
+    Unset,
     /// The floor is at or above the resolved top: the ladder would be empty
     /// (ruling L-16).
     AboveTop {
@@ -917,10 +967,17 @@ pub enum FloorRefusal {
     },
 }
 
+/// The refusal text of a floor that is not set (S11). It names the field
+/// and the fix; the GUI, MCP and the CLI show this one text.
+pub const FLOOR_UNSET_TEXT: &str = "the floor is not set: no rule gives a depth for this \
+     op. Set the floor (field `floor`: for example { from = \"top\", depth = 6.0 }, the MCP \
+     tool set_toolpath_floor, or the Floor row of the Geometry tab)";
+
 impl std::fmt::Display for FloorRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NotFinite => write!(f, "the floor is not a finite number. Set a floor value"),
+            Self::Unset => write!(f, "{FLOOR_UNSET_TEXT}"),
             Self::NoModelMesh => write!(
                 f,
                 "the floor reads the Model top, but the model of the toolpath has no mesh, so \
@@ -1011,6 +1068,7 @@ const fn reference_help(floor: &Floor) -> &'static str {
              circle, a through hole to the model bottom (never below the stock bottom). Each \
              hole is cut from its own rim. A Drill or a Bore"
         }
+        Floor::Unset => "not set: generation refuses until a floor is set (S11)",
     }
 }
 
@@ -1040,7 +1098,8 @@ pub fn floor_schema_json(default: &Floor, item_use: ItemUse) -> serde_json::Valu
         "note": "The floor names its reference. Write it with set_toolpath_floor \
                  { index, floor }; set_toolpath_param refuses it. A floor at or above the \
                  resolved top refuses at generation.",
-        "default": default,
+        // S11: a new op has no floor; the schema says `null`.
+        "default": (!default.is_unset()).then_some(default),
         "variants": variants,
     })
 }

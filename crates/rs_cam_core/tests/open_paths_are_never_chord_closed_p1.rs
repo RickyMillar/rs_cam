@@ -82,7 +82,7 @@ fn board() -> StockConfig {
     StockConfig {
         x: 100.0,
         y: 60.0,
-        z: 10.0,
+        z: Some(10.0),
         origin_x: -50.0,
         origin_y: -30.0,
         origin_z: -10.0,

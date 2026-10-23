@@ -24,7 +24,7 @@ The egui application, its per-frame work and the GUI-side MCP requests. The serv
 
 ## Invariants
 
-- An MCP mutation dispatches through the same command path as the UI.
+- An MCP mutation dispatches through the same command path as the UI. S11: `add_toolpath` drafts with core `draft_toolpath` and replies `unset`; `get_toolpath_params` gives `unset`; `import_model` gives `stock_thickness_set`.
 - A setter stales the result. Regenerate before you export. Tool and model rebinding uses its own
   endpoint, not a generic parameter setter.
 - Export refuses missing or stale enabled geometry, and an unsafe or unmodelled load verdict, unless

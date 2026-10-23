@@ -578,7 +578,8 @@ fn wanaka_front_rough_reports_the_plunge_class_peak() {
     let plunge_rate = session
         .toolpath_params_at(index)
         .expect("front rough params")
-        .plunge_rate();
+        .plunge_rate()
+        .expect("S11: the fixture sets it");
     let kinematics = session.machine().effective_kinematics();
     let max_feed = session.machine().max_feed_mm_min;
 

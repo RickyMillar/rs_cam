@@ -129,7 +129,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: STOCK_SIDE_MM,
         y: STOCK_SIDE_MM,
-        z: STOCK_SIDE_MM,
+        z: Some(STOCK_SIDE_MM),
         auto_from_model: true,
         ..StockConfig::default()
     }

@@ -55,11 +55,7 @@ pub fn active_display_setup(
 /// hides the circle (C8).
 #[must_use]
 pub fn pin_display_point(frame: &SetupFrame, stock: &StockConfig, x: f64, y: f64) -> P3 {
-    let world = P3::new(
-        x + stock.origin_x,
-        y + stock.origin_y,
-        stock.origin_z + stock.z,
-    );
+    let world = P3::new(x + stock.origin_x, y + stock.origin_y, stock.top_z());
     let local = frame.transform_point(world, stock);
     let (_, _, top) = frame.effective_stock(stock);
     P3::new(local.x, local.y, top + PIN_MARK_LIFT_MM)

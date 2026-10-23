@@ -130,7 +130,7 @@ fn build_wanaka_shaped_rough() -> ProjectSession {
     let stock = StockConfig {
         x: 60.0,
         y: 60.0,
-        z: STOCK_THICKNESS_MM,
+        z: Some(STOCK_THICKNESS_MM),
         origin_x: 0.0,
         origin_y: 0.0,
         origin_z: STOCK_ORIGIN_Z_MM,

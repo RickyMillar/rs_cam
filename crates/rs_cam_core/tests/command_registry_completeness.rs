@@ -457,7 +457,10 @@ fn the_command_writes_the_parameter() {
             value: serde_json::json!(EDITED_FEED_RATE),
         }))
         .expect("feed_rate is a Pocket parameter");
-    let feed = s.toolpath_configs()[0].operation.feed_rate();
+    let feed = s.toolpath_configs()[0]
+        .operation
+        .feed_rate()
+        .expect("S11: the fixture sets it");
     assert!(
         (feed - EDITED_FEED_RATE).abs() < 1e-9,
         "the command must write the feed; got {feed}"

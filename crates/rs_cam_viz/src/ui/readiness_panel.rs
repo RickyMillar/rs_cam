@@ -691,10 +691,14 @@ fn draw_project_rollup(
                             ui.label(egui::RichText::new(&r.name).small());
                         }
                     }
-                    ui.label(format!("{:.0}", r.current.feed_rate_mm_min));
+                    ui.label(compare::format_optional(
+                        r.current.feed_rate_mm_min,
+                        "",
+                        1.0,
+                    ));
                     ui.label(format!("{:.0}", r.explain.recommended.feed_rate_mm_min));
                     ui.label(compare::delta_tag(
-                        Some(r.current.feed_rate_mm_min),
+                        r.current.feed_rate_mm_min,
                         Some(r.explain.recommended.feed_rate_mm_min),
                     ));
                     ui.label(compare::format_optional(r.current.depth_per_pass, "", 0.01));
@@ -752,8 +756,8 @@ fn draw_bottleneck_callout(ui: &mut egui::Ui, rows: &[ProjectFeedsRow]) {
                 );
                 ui.label(
                     egui::RichText::new(format!(
-                        "feed {:.0} → {:.0} mm/min ({:.2}× speedup)",
-                        row.current.feed_rate_mm_min,
+                        "feed {} → {:.0} mm/min ({:.2}× speedup)",
+                        compare::format_optional(row.current.feed_rate_mm_min, "", 1.0),
                         row.explain.recommended.feed_rate_mm_min,
                         s
                     ))
@@ -795,8 +799,8 @@ fn aggregate_speedup(rows: &[ProjectFeedsRow]) -> f64 {
     let mut t_current = 0.0;
     let mut t_recommended = 0.0;
     for r in rows {
-        if r.current.feed_rate_mm_min > 0.0 {
-            t_current += 1.0 / r.current.feed_rate_mm_min;
+        if let Some(feed) = r.current.feed_rate_mm_min.filter(|feed| *feed > 0.0) {
+            t_current += 1.0 / feed;
         }
         if r.explain.recommended.feed_rate_mm_min > 0.0 {
             t_recommended += 1.0 / r.explain.recommended.feed_rate_mm_min;
@@ -824,7 +828,7 @@ fn draw_project_scatter(ui: &mut egui::Ui, rows: &[ProjectFeedsRow]) {
         * 1.1;
     let max_feed = rows
         .iter()
-        .map(|r| r.current.feed_rate_mm_min)
+        .filter_map(|r| r.current.feed_rate_mm_min)
         .chain(rows.iter().map(|r| r.explain.recommended.feed_rate_mm_min))
         .chain(rows.iter().map(|r| r.explain.machine.max_feed_mm_min))
         .fold(0.0_f64, f64::max)
@@ -851,8 +855,8 @@ fn draw_project_scatter(ui: &mut egui::Ui, rows: &[ProjectFeedsRow]) {
                 draw_machine_envelope(plot_ui, env, max_rpm, max_feed);
             }
             for r in rows {
-                let cur = match r.current.spindle_rpm {
-                    Some(rpm) if rpm > 0 => Some([f64::from(rpm), r.current.feed_rate_mm_min]),
+                let cur = match (r.current.spindle_rpm, r.current.feed_rate_mm_min) {
+                    (Some(rpm), Some(feed)) if rpm > 0 => Some([f64::from(rpm), feed]),
                     _ => None,
                 };
                 let rec = [

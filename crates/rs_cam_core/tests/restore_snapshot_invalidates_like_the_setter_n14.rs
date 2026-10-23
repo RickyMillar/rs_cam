@@ -232,7 +232,10 @@ fn the_restore_drops_the_set_the_setter_drops_n14() {
 
     let effects = restore(&mut s, operation, None);
 
-    let feed = s.toolpath_configs()[0].operation.feed_rate();
+    let feed = s.toolpath_configs()[0]
+        .operation
+        .feed_rate()
+        .expect("S11: the fixture sets it");
     assert!(
         (feed - EDITED_FEED_RATE).abs() < 1e-9,
         "the command must write the operation, or it invalidates on a \

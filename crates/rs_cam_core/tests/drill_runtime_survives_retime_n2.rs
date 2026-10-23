@@ -190,8 +190,8 @@ fn pocket_toolpath(tool_id: usize, model_id: usize) -> ToolpathConfig {
         stepover: 2.0,
         floor: rs_cam_core::compute::floor::Floor::top(6.0),
         depth_per_pass: 2.0,
-        feed_rate: 770.0,
-        plunge_rate: 385.0,
+        feed_rate: Some(770.0),
+        plunge_rate: Some(385.0),
         climb: true,
         pattern: PocketPattern::Contour,
         angle: 0.0,
@@ -233,7 +233,7 @@ fn drill_toolpath(tool_id: usize, model_id: usize) -> ToolpathConfig {
     let drill = DrillConfig {
         floor: rs_cam_core::compute::floor::Floor::Top { depth: 10.0 },
         cycle: DrillCycleType::Simple,
-        feed_rate: 300.0,
+        feed_rate: Some(300.0),
         ..DrillConfig::default()
     };
     ToolpathConfig {
@@ -266,7 +266,7 @@ fn build_session() -> ProjectSession {
     let stock = StockConfig {
         x: 100.0,
         y: 100.0,
-        z: 12.0,
+        z: Some(12.0),
         origin_x: -10.0,
         origin_y: -10.0,
         origin_z: -12.0,
@@ -401,7 +401,7 @@ fn modulation_really_moves_this_fixture() {
 
     let session_on = run(true);
     let tc = session_on.toolpath_config_at(0).expect("toolpath config 0");
-    let commanded_feed = tc.operation.feed_rate();
+    let commanded_feed = tc.operation.feed_rate().expect("S11: the fixture sets it");
     let result = session_on
         .result_at(0)
         .expect("session result for toolpath 0");

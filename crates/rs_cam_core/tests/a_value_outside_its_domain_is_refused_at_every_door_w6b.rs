@@ -315,7 +315,7 @@ fn the_loader_refuses_each_entity_and_names_the_field() {
     ));
 
     let (mut stock, machine, config) = good();
-    stock.z = 0.0;
+    stock.z = Some(0.0);
     match round_trip("stock", &raw(stock, machine, config)) {
         Err(SessionError::OutOfDomain(DomainRefusal::Stock(e))) => {
             assert_eq!(e.dimension, StockDimension::Z);

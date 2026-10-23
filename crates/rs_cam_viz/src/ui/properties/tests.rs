@@ -1280,7 +1280,7 @@ fn one_hole_is_one_row_re() {
         .stock(StockConfig {
             x: 50.0,
             y: 40.0,
-            z: 25.0,
+            z: Some(25.0),
             origin_x: -5.0,
             origin_y: -5.0,
             origin_z: 0.0,

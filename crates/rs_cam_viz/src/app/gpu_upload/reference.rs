@@ -61,7 +61,7 @@ pub(super) fn upload_origin_axes(
             stock.origin_z as f32,
         ]
     };
-    let min_dim = stock.x.min(stock.y).min(stock.z) as f32;
+    let min_dim = stock.x.min(stock.y).min(stock.box_height()) as f32;
     let length = (min_dim * 0.3).clamp(5.0, 50.0);
     resources.origin_axes_data = Some(crate::render::grid_render::OriginAxesGpuData::new(
         gpu.device, origin, length,

@@ -17,7 +17,7 @@
 //! # The claims
 //!
 //! 1. Part 1 (each-face default): the `AddToolpath` row, with the op of
-//!    the add doors (`feeds::suggest::default_operation`), sets the Pocket
+//!    the add doors (`ProjectSession::draft_toolpath`, S11), sets the Pocket
 //!    floor "Each picked face", depth 0, and names it in `floor_set`. The
 //!    Pocket generates; inside each ring (shrunk by the tool radius) no
 //!    cutting sample lies below the ring Z, and the deepest one lies AT the
@@ -90,7 +90,7 @@ use rs_cam_core::compute::operation_configs::{DrillConfig, PocketConfig};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::ToolConfig;
 use rs_cam_core::diagnostics::{Severity, ids};
-use rs_cam_core::feeds::suggest::{StockContext, default_operation};
+use rs_cam_core::feeds::suggest::StockContext;
 use rs_cam_core::gcode::{ExportRefusal, ToolLoadExportPolicy};
 use rs_cam_core::geo::P3;
 use rs_cam_core::ids::ModelId;
@@ -129,7 +129,7 @@ fn stepped_stock() -> StockConfig {
     StockConfig {
         x: 70.0,
         y: 50.0,
-        z: STOCK_TOP,
+        z: Some(STOCK_TOP),
         origin_x: -5.0,
         origin_y: -5.0,
         origin_z: 0.0,
@@ -146,15 +146,24 @@ fn stepped_session() -> ProjectSession {
     builder.build()
 }
 
-/// Add `op_type` as every add door does: the op of
-/// `feeds::suggest::default_operation` for the session stock, through the
-/// `AddToolpath` row. The effects of the add.
+/// Add `op_type` as every add door does: THE draft door
+/// (`ProjectSession::draft_toolpath`, S11), through the `AddToolpath` row.
+/// The effects of the add. S11: the fixture states the feeds that a tool
+/// with no feeds data leaves unset, and the dressup values before S11; the
+/// floor stays as the door leaves it.
 fn add_as_the_doors_do(session: &mut ProjectSession, op_type: OperationType) -> Effects {
-    let stock = StockContext::from_stock_bbox(session.stock_bbox(), session.stock_config().padding);
-    let op = default_operation(op_type, &stock);
     let tool_id = session.tools()[0].id;
     let model_id = session.models()[0].id;
-    let cfg = common::session::toolpath_config(op_type.label(), op, tool_id, model_id);
+    let mut cfg = session
+        .draft_toolpath(op_type, tool_id, model_id, op_type.label().to_owned())
+        .expect("the tool fits the op")
+        .config;
+    let floor = cfg.operation.floor();
+    rs_cam_core::compute::fixture_values::fill_unset(&mut cfg.operation);
+    if let Some(floor) = floor {
+        let _ = cfg.operation.set_floor(floor);
+    }
+    rs_cam_core::compute::fixture_values::fill_unset_dressups(&mut cfg.dressups);
     session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
@@ -293,7 +302,9 @@ fn a_default_step_pocket_cuts_each_ring_to_its_own_z_ux7b() {
 /// for a ring.
 #[test]
 fn a_face_or_ring_pick_at_the_stock_default_floor_sets_each_face_ux7b() {
-    let stock_default = Floor::top(5.0);
+    // S11: a new Pocket has no floor; the default floor is `Floor::Unset`
+    // (before S11 the stock default `Top Z` 5).
+    let stock_default = Floor::Unset;
     for kind in [ItemKind::Face, ItemKind::Loop] {
         let mut s = stepped_session();
         let _ = add_as_the_doors_do(&mut s, OperationType::Pocket);
@@ -305,7 +316,7 @@ fn a_face_or_ring_pick_at_the_stock_default_floor_sets_each_face_ux7b() {
                     s.stock_bbox(),
                     s.stock_config().padding
                 )),
-            "non-vacuity: the stock default (Top Z 5) is a default floor"
+            "non-vacuity: the unset floor is a default floor"
         );
         let item = item_at(&s, kind, 10.0);
         let effects = pick(&mut s, 0, &item);
@@ -459,7 +470,7 @@ fn hole_session(depth: f64) -> ProjectSession {
     let stock = StockConfig {
         x: 50.0,
         y: 40.0,
-        z: 20.0,
+        z: Some(20.0),
         origin_x: -5.0,
         origin_y: -5.0,
         origin_z: 0.0,
@@ -570,7 +581,7 @@ fn an_stl_face_pocket_at_its_own_floor_is_clean_ux7b() {
     let stock = StockConfig {
         x: 20.0,
         y: 10.0,
-        z: 8.0,
+        z: Some(8.0),
         origin_x: 0.0,
         origin_y: 0.0,
         origin_z: 0.0,
@@ -650,7 +661,7 @@ fn a_bore_gouges_only_below_the_hole_floor_ux7b() {
         let stock = StockConfig {
             x: 50.0,
             y: 40.0,
-            z: 20.0,
+            z: Some(20.0),
             origin_x: -5.0,
             origin_y: -5.0,
             origin_z: 0.0,

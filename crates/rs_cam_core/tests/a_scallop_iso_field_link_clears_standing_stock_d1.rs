@@ -88,7 +88,7 @@ enum PriorKind {
 }
 
 fn iso_field_scallop() -> OperationConfig {
-    let mut op = OperationConfig::new_default(OperationType::Scallop);
+    let mut op = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Scallop);
     let OperationConfig::Scallop(cfg) = &mut op else {
         unreachable!("a Scallop config")
     };

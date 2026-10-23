@@ -80,7 +80,7 @@ fn session(clamp: bool) -> ProjectSession {
             name,
         ));
         let op = OperationConfig::Trace(TraceConfig {
-            depth: 1.0,
+            depth: Some(1.0),
             depth_per_pass: 1.0,
             ..TraceConfig::default()
         });

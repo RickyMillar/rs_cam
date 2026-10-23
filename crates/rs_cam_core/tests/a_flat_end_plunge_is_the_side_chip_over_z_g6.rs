@@ -222,7 +222,7 @@ fn suggest(
     let stock = StockContext {
         stock_top_z: 0.0,
         stock_bottom_z: -18.0,
-        stock_z: 18.0,
+        stock_z: Some(18.0),
         stock_padding: 2.0,
     };
     suggest_params(SuggestParamsInput {
@@ -313,7 +313,7 @@ fn each_verified_cell_ships_the_side_chip_over_z_g6() {
                 );
                 // The feed: the chip is held per tooth at the cap, and the
                 // feed rounds down on apply.
-                let feed = s.operation.feed_rate();
+                let feed = s.operation.feed_rate().expect("S11: the fixture sets it");
                 let held = RPM_CAP * chip * f64::from(v.flutes);
                 assert!(
                     feed <= held + 1e-9 && feed >= held.floor() - 1.0,
@@ -325,7 +325,8 @@ fn each_verified_cell_ships_the_side_chip_over_z_g6() {
                     "{cell}: feed {feed} must sit under the printed Ramp Down {printed_feed}"
                 );
                 assert!(
-                    (s.operation.plunge_rate() - feed).abs() < 1.0,
+                    (s.operation.plunge_rate().expect("S11: the fixture sets it") - feed).abs()
+                        < 1.0,
                     "{cell}: a drill's plunge is its feed"
                 );
                 checked += 1;
@@ -464,7 +465,7 @@ fn the_mdf_eighth_inch_cell_is_within_the_plunge_envelope_g6() {
     let material = mdf();
     let tool = tool_of(ToolType::EndMill, 3.175, 2);
     let s = suggest(OperationType::Drill, &tool, &material).expect("the G6 claim serves it");
-    let feed = s.operation.feed_rate();
+    let feed = s.operation.feed_rate().expect("S11: the fixture sets it");
     match classify_plunge_feed(feed, 3.175, &material) {
         DrillGateOutcome::Within {
             observed,

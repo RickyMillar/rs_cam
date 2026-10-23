@@ -238,7 +238,7 @@ pub(crate) fn draw_inspector_comparison(
         ),
         change_row(
             "Feed",
-            Some(current.feed_rate_mm_min),
+            current.feed_rate_mm_min,
             Some(feed),
             " mm/min",
             1.0,
@@ -246,7 +246,7 @@ pub(crate) fn draw_inspector_comparison(
         ),
         change_row(
             "Plunge",
-            Some(current.plunge_rate_mm_min),
+            current.plunge_rate_mm_min,
             Some(plunge),
             " mm/min",
             1.0,

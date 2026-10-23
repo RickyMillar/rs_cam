@@ -96,7 +96,7 @@ fn step_only_session() -> ProjectSession {
     let stock = StockConfig {
         x: bbox.max.x - bbox.min.x,
         y: bbox.max.y - bbox.min.y,
-        z: bbox.max.z - bbox.min.z,
+        z: Some(bbox.max.z - bbox.min.z),
         origin_x: bbox.min.x,
         origin_y: bbox.min.y,
         origin_z: bbox.min.z,
@@ -110,14 +110,17 @@ fn step_only_session() -> ProjectSession {
     builder.build()
 }
 
-/// Add a default toolpath of `op` on the model; returns its index.
+/// Add a default toolpath of `op` on the model; returns its index. S11: the
+/// fixture states the feeds and the depths; the floor stays the default.
 fn add_op(session: &mut ProjectSession, op: OperationType) -> usize {
+    let mut operation = OperationConfig::new_default(op);
+    rs_cam_core::compute::fixture_values::fill_unset_keep_floor(&mut operation);
     let config = ToolpathConfig {
         shoe: Default::default(),
         id: ToolpathId::from_raw(0),
         name: op.label().to_owned(),
         enabled: true,
-        operation: OperationConfig::new_default(op),
+        operation,
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: rs_cam_core::ids::ToolId::from_raw(1),
@@ -146,7 +149,8 @@ fn add_op(session: &mut ProjectSession, op: OperationType) -> usize {
 /// stock top: its pick key (as a click stores it) and its rings.
 fn up_face(session: &ProjectSession, below_top: bool) -> (MatchKey, Polygon2) {
     let model = &session.models()[0];
-    let top_z = session.stock_config().origin_z + session.stock_config().z;
+    let top_z = session.stock_config().origin_z
+        + session.stock_config().z.expect("S11: the fixture sets it");
     let (item, face) = model
         .items
         .iter()

@@ -235,7 +235,7 @@ fn dressup_no_links() -> DressupConfig {
 fn dressup_with_links(link_max_distance: f64) -> DressupConfig {
     DressupConfig {
         link_moves: Some(LinkDressupParams {
-            max_distance: link_max_distance,
+            max_distance: Some(link_max_distance),
             ..LinkDressupParams::default()
         }),
         optimize_rapid_order: false,

@@ -452,7 +452,7 @@ fn plan_keyed_pins_converts_the_model_bbox_into_the_pin_frame() {
     let stock = StockConfig {
         x: W,
         y: D,
-        z: 25.0,
+        z: Some(25.0),
         origin_x: -20.0,
         origin_y: -25.0,
         origin_z: -25.0,
@@ -603,7 +603,7 @@ fn project_diagnostics_publish_the_pin_keying_verdict_g_pinauto() {
     let mut stock = StockConfig {
         x: W,
         y: D,
-        z: 25.0,
+        z: Some(25.0),
         origin_z: -25.0,
         auto_from_model: false,
         ..StockConfig::default()
@@ -668,7 +668,7 @@ fn keyed_pins_raise_no_diagnostic_g_pinauto() {
     let mut stock = StockConfig {
         x: W,
         y: D,
-        z: 25.0,
+        z: Some(25.0),
         origin_z: -25.0,
         auto_from_model: false,
         ..StockConfig::default()

@@ -134,7 +134,7 @@ fn the_setup_rotation_reaches_the_project_diagnostics() {
     let mut stock = StockConfig {
         x: W,
         y: D,
-        z: 25.0,
+        z: Some(25.0),
         origin_z: -25.0,
         auto_from_model: false,
         ..StockConfig::default()

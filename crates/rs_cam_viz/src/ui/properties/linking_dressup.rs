@@ -64,6 +64,32 @@ pub(super) fn dv(ui: &mut egui::Ui, param: Param, val: &mut f64, suffix: &str, s
     record_stock_to_leave(ui, param.name, &out);
 }
 
+/// S11: one numeric row whose value can be not set. An unset value shows
+/// an empty field with `hint`: "set a value" (`not_set::SET_A_VALUE_HINT`)
+/// for a value that no rule gives, else the rule text. A rule value
+/// (`rule` true) has a "×" that clears it back to the rule.
+pub(super) fn dv_opt(
+    ui: &mut egui::Ui,
+    param: Param,
+    val: &mut Option<f64>,
+    suffix: &str,
+    speed: f64,
+    hint: Option<&str>,
+) {
+    let mut row = crate::ui::components::OptionalValueRow::new(
+        param.label,
+        val,
+        suffix,
+        speed,
+        schema_range(param.op, param.name),
+    )
+    .tooltip(help_for(param.op, param.name));
+    if let Some(rule) = hint {
+        row = row.hint(rule).clearable();
+    }
+    let _ = row.show(ui);
+}
+
 /// [`dv`] for a row whose range a GUI rule narrows inside [`schema_range`].
 /// The row clamps to the part of `narrow` that is inside the schema range.
 ///
@@ -139,6 +165,30 @@ pub(super) fn dv_dressup(
     range: std::ops::RangeInclusive<f64>,
 ) {
     ValueRow::new(label, val, suffix, speed, range)
+        .tooltip(dressup_help(field))
+        .show(ui);
+}
+
+/// S11: [`dv_dressup`] for a dressup value that a rule derives when it is
+/// empty. `rule` is the hint of the empty field; a set value has a "×" that
+/// clears it back to the rule.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the arguments of `dv_dressup` and the rule text of the empty field"
+)]
+pub(super) fn dv_dressup_rule(
+    ui: &mut egui::Ui,
+    field: &'static str,
+    label: &str,
+    val: &mut Option<f64>,
+    suffix: &str,
+    speed: f64,
+    range: std::ops::RangeInclusive<f64>,
+    rule: &str,
+) {
+    let _ = crate::ui::components::OptionalValueRow::new(label, val, suffix, speed, range)
+        .hint(rule)
+        .clearable()
         .tooltip(dressup_help(field))
         .show(ui);
 }
@@ -274,6 +324,25 @@ pub(super) fn dv_pill(
         c.record();
     }
     out.suggested
+}
+
+/// S11: [`dv_pill`] for a value that can be not set. A set value draws with
+/// its pill; an unset one draws the empty field of [`dv_opt`].
+pub(super) fn dv_pill_opt(
+    ui: &mut egui::Ui,
+    param: Param,
+    val: &mut Option<f64>,
+    suffix: &str,
+    speed: f64,
+    suggestion: Option<pills::PillSuggestion<'_>>,
+) -> bool {
+    match val.as_mut() {
+        Some(value) => dv_pill(ui, param, value, suffix, speed, suggestion),
+        None => {
+            dv_opt(ui, param, val, suffix, speed, None);
+            false
+        }
+    }
 }
 
 // ── Dressup configuration ────────────────────────────────────────────────
@@ -523,7 +592,8 @@ pub(super) fn draw_linking_params(
         && let Some(link) = cfg.link_moves.as_mut()
     {
         ui.param_grid("link_p", |ui| {
-            dv_dressup(
+            // S11: empty = 8 x the tool diameter.
+            dv_dressup_rule(
                 ui,
                 "link_max_distance",
                 "  Max Distance:",
@@ -531,6 +601,7 @@ pub(super) fn draw_linking_params(
                 " mm",
                 0.5,
                 1.0..=50.0,
+                "8 x D",
             );
             dv_dressup(
                 ui,
@@ -579,7 +650,8 @@ pub(super) fn draw_linking_params(
     }
     if cfg.feed_optimization && feed_opt_reason.is_none() {
         ui.param_grid("fopt_p", |ui| {
-            dv_dressup(
+            // S11: empty = the machine maximum feed.
+            dv_dressup_rule(
                 ui,
                 "feed_max_rate",
                 "  Max Rate:",
@@ -587,6 +659,7 @@ pub(super) fn draw_linking_params(
                 " mm/min",
                 50.0,
                 500.0..=20000.0,
+                "machine max",
             );
             dv_dressup(
                 ui,

@@ -639,8 +639,10 @@ pub struct ProjectStockConfig {
     pub x: f64,
     #[serde(default = "default_stock_dim")]
     pub y: f64,
-    #[serde(default = "default_stock_z")]
-    pub z: f64,
+    /// S11: a file with no `z` loads a stock whose thickness is not set;
+    /// the file writes no `z` for such a stock.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z: Option<f64>,
     #[serde(default)]
     pub origin_x: f64,
     #[serde(default)]
@@ -670,7 +672,8 @@ impl Default for ProjectStockConfig {
         Self {
             x: 100.0,
             y: 100.0,
-            z: 25.0,
+            // S11: no rule gives a thickness.
+            z: None,
             origin_x: 0.0,
             origin_y: 0.0,
             origin_z: 0.0,
@@ -685,9 +688,6 @@ impl Default for ProjectStockConfig {
 
 fn default_stock_dim() -> f64 {
     100.0
-}
-fn default_stock_z() -> f64 {
-    25.0
 }
 fn default_stock_padding() -> f64 {
     5.0

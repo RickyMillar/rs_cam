@@ -69,6 +69,17 @@ pub enum OperationError {
     /// `FaceTopRule::RefuseBuried` op (Chamfer, V-Carve, Inlay, Inlay
     /// Plug) is below the material that stands at the start of the op.
     BuriedFace(BuriedFaceRefusal),
+    /// S11 (operator ruling 2026-10-23): a value with no derivation is not
+    /// set (a depth of a drawing op, or the feeds of a tool with no feeds
+    /// data). The op stays in the project; it refuses until the operator
+    /// sets the value.
+    NotSet(crate::compute::not_set::NotSet),
+}
+
+impl From<crate::compute::not_set::NotSet> for OperationError {
+    fn from(not_set: crate::compute::not_set::NotSet) -> Self {
+        Self::NotSet(not_set)
+    }
 }
 
 /// What a buried face is below (UX-1c).
@@ -311,6 +322,7 @@ impl std::fmt::Display for OperationError {
             ),
             Self::Selection(refusal) => write!(f, "{refusal}"),
             Self::BuriedFace(refusal) => write!(f, "{refusal}"),
+            Self::NotSet(not_set) => write!(f, "{not_set}"),
             Self::InvalidParam(s) | Self::Internal(s) => write!(f, "{s}"),
         }
     }

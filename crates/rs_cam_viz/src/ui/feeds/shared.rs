@@ -110,8 +110,10 @@ pub(crate) fn hardness_label(kind: Option<HardnessKind>, value: Option<f64>) -> 
 /// dispatching on operation variant.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct CurrentValues {
-    pub(crate) feed_rate_mm_min: f64,
-    pub(crate) plunge_rate_mm_min: f64,
+    /// S11: `None` when the op has no feed.
+    pub(crate) feed_rate_mm_min: Option<f64>,
+    /// S11: `None` when the op has no plunge.
+    pub(crate) plunge_rate_mm_min: Option<f64>,
     pub(crate) spindle_rpm: Option<u32>,
     pub(crate) depth_per_pass: Option<f64>,
     pub(crate) stepover: Option<f64>,
@@ -141,7 +143,11 @@ impl CurrentValues {
         if self.flute_count == 0 {
             return 0.0;
         }
-        self.feed_rate_mm_min / (rpm * f64::from(self.flute_count))
+        // S11: an unset feed is a missing input.
+        let Some(feed) = self.feed_rate_mm_min else {
+            return 0.0;
+        };
+        feed / (rpm * f64::from(self.flute_count))
     }
 }
 
@@ -507,8 +513,9 @@ pub(crate) fn draw_machine_envelope(
 }
 
 pub(crate) fn speedup(current: &CurrentValues, explain: &FeedsExplain) -> f64 {
-    if current.feed_rate_mm_min <= 0.0 {
+    // S11: an unset feed has no speed-up to report.
+    let Some(feed) = current.feed_rate_mm_min.filter(|feed| *feed > 0.0) else {
         return 1.0;
-    }
-    explain.recommended.feed_rate_mm_min / current.feed_rate_mm_min
+    };
+    explain.recommended.feed_rate_mm_min / feed
 }

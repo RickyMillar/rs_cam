@@ -246,7 +246,14 @@ fn expected(s: &SuggestedParams, tan_theta: f64) -> (f64, f64) {
             .expect("the speeds apply writes the RPM"),
     );
     let chip_term = 0.0635 * rpm * 2.0 / tan_theta;
-    (chip_term, s.operation.feed_rate().min(chip_term).floor())
+    (
+        chip_term,
+        s.operation
+            .feed_rate()
+            .expect("S11: the fixture sets it")
+            .min(chip_term)
+            .floor(),
+    )
 }
 
 /// (a) The default helix (r 2, pitch 1): θ 4.55°, and the cut feed wins.
@@ -282,7 +289,7 @@ fn the_helix_ships_the_cut_feed_at_the_shipped_rpm_g6ramp() {
     );
     assert_eq!(ramp.arm, RampArm::CutFeed);
     assert_eq!(r.value(), Some(value));
-    assert_eq!(r.value(), Some(s.operation.feed_rate()));
+    assert_eq!(r.value(), s.operation.feed_rate());
     assert_eq!(s.operation.ramp_feed_rate(), r.value());
     let (face, _) = r.card_text();
     assert!(
@@ -311,7 +318,7 @@ fn the_three_degree_ramp_ships_the_cut_feed_g6ramp() {
         ramp.chip_term_mm_min
     );
     assert_eq!(ramp.arm, RampArm::CutFeed);
-    assert_eq!(s.operation.ramp_feed_rate(), Some(s.operation.feed_rate()));
+    assert_eq!(s.operation.ramp_feed_rate(), s.operation.feed_rate());
 }
 
 /// (c) A 60° ramp: the chip term is under the cut feed, so it wins. It
@@ -330,7 +337,10 @@ fn a_steep_ramp_ships_the_chip_term_at_the_shipped_rpm_g6ramp() {
     let ramp = sourced(r);
     let tan60 = 60.0_f64.to_radians().tan();
     let (chip_term, value) = expected(&s, tan60);
-    assert!(chip_term < s.operation.feed_rate(), "{chip_term}");
+    assert!(
+        chip_term < s.operation.feed_rate().expect("S11: the fixture sets it"),
+        "{chip_term}"
+    );
     assert_eq!(ramp.arm, RampArm::ChipTerm);
     assert_eq!(r.value(), Some(value));
     assert_eq!(s.operation.ramp_feed_rate(), Some(value));
@@ -342,7 +352,7 @@ fn a_steep_ramp_ships_the_chip_term_at_the_shipped_rpm_g6ramp() {
             "the chip term reads the shipped RPM, not the drill RPM cap"
         );
     }
-    assert!(ramp.value_mm_min < s.operation.feed_rate());
+    assert!(ramp.value_mm_min < s.operation.feed_rate().expect("S11: the fixture sets it"));
 }
 
 /// (d) Adaptive3d reads its own helix: radius 0.3 x 6 mm, pitch 2 mm.
@@ -613,7 +623,7 @@ fn the_ramp_rounds_down_g6ramp() {
             "{} <= {bound} - 1",
             ramp.value_mm_min
         );
-        assert!(ramp.value_mm_min <= s.operation.feed_rate());
+        assert!(ramp.value_mm_min <= s.operation.feed_rate().expect("S11: the fixture sets it"));
     }
 }
 

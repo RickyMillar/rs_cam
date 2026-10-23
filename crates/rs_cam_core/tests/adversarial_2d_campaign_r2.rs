@@ -123,7 +123,7 @@ fn stock_for(polys: &[Polygon2]) -> StockConfig {
     StockConfig {
         x: (hi_x - lo_x) + 10.0,
         y: (hi_y - lo_y) + 10.0,
-        z: height,
+        z: Some(height),
         origin_x: lo_x - 5.0,
         origin_y: lo_y - 5.0,
         origin_z: -height,
@@ -196,7 +196,7 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
         (
             "trace",
             OperationConfig::Trace(TraceConfig {
-                depth: DEPTH_MM,
+                depth: Some(DEPTH_MM),
                 depth_per_pass: DEPTH_MM,
                 ..TraceConfig::default()
             }),
@@ -215,7 +215,7 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
         (
             "vcarve",
             OperationConfig::VCarve(VCarveConfig {
-                max_depth: DEPTH_MM,
+                max_depth: Some(DEPTH_MM),
                 stepover,
                 ..VCarveConfig::default()
             }),
@@ -224,7 +224,7 @@ fn op_matrix(tool_d: f64) -> Vec<(&'static str, OperationConfig, ToolKind)> {
         (
             "inlay",
             OperationConfig::Inlay(InlayConfig {
-                pocket_depth: DEPTH_MM,
+                pocket_depth: Some(DEPTH_MM),
                 stepover,
                 ..InlayConfig::default()
             }),

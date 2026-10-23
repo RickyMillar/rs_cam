@@ -42,13 +42,15 @@ struct LayerFeeds {
 }
 
 impl LayerFeeds {
-    fn new(ctx: &ExecutionContext<'_>, op: &OperationConfig) -> Self {
-        Self {
+    /// S11: refuses an op whose feeds are not set.
+    fn new(ctx: &ExecutionContext<'_>, op: &OperationConfig) -> Result<Self, OperationError> {
+        let cut = op.cut_feeds()?;
+        Ok(Self {
             tool_radius: ctx.tool_def.radius(),
             safe_z: ctx.heights.retract_z,
-            feed_rate: op.feed_rate(),
-            plunge_rate: op.plunge_rate(),
-        }
+            feed_rate: cut.feed_rate,
+            plunge_rate: cut.plunge_rate,
+        })
     }
 }
 
@@ -66,7 +68,7 @@ pub(crate) fn generate_zigzag(
         angle: cfg.angle,
         region_ordering: cfg.region_ordering,
         rest_use: op.capabilities().rest_use,
-        feeds: LayerFeeds::new(ctx, op),
+        feeds: LayerFeeds::new(ctx, op)?,
     };
     run_layered(&raster, ctx, prepared)
 }
@@ -81,13 +83,17 @@ pub(crate) fn generate_trace(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Trace, "generate_trace");
-    let feeds = LayerFeeds::new(ctx, op);
+    let feeds = LayerFeeds::new(ctx, op)?;
     let pass = TracePass {
         cfg,
         rest_use: op.capabilities().rest_use,
         params: crate::ops::trace_path::TraceParams {
             tool_radius: feeds.tool_radius,
-            depth: cfg.depth,
+            depth: crate::compute::not_set::required_depth(
+                cfg.depth,
+                op.op_type().label(),
+                "depth",
+            )?,
             depth_per_pass: cfg.depth_per_pass,
             feed_rate: feeds.feed_rate,
             plunge_rate: feeds.plunge_rate,
@@ -128,7 +134,7 @@ pub(crate) fn generate_profile(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Profile, "generate_profile");
-    let feeds = LayerFeeds::new(ctx, op);
+    let feeds = LayerFeeds::new(ctx, op)?;
     let capabilities = op.capabilities();
     let regions = profile_lines(prepared, capabilities.item_use)?;
     let hand_tabs = crate::dressup::tabs::resolve_hand_tabs(
@@ -194,7 +200,7 @@ pub(crate) fn generate_pocket(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Pocket, "generate_pocket");
-    let feeds = LayerFeeds::new(ctx, op);
+    let feeds = LayerFeeds::new(ctx, op)?;
     let rest_use = op.capabilities().rest_use;
     match cfg.pattern {
         PocketPattern::Contour => run_layered(
@@ -713,7 +719,7 @@ pub(crate) fn generate_face(
                 // The stock region is the facing rectangle, as before
                 // P4.2. It ignores the holes of the region (drawing rings
                 // inside the stock): Face levels the whole stock top.
-                crate::ops::face::face_rectangle(ctx.stock_bbox, cfg.stock_offset)
+                crate::ops::face::face_rectangle(ctx.stock_bbox, cfg.stock_offset_for(tool_radius))
             } else {
                 region.clone()
             }
@@ -728,7 +734,7 @@ pub(crate) fn generate_face(
         rest_use: op.capabilities().rest_use,
         outlines,
         lattices,
-        feeds: LayerFeeds::new(ctx, op),
+        feeds: LayerFeeds::new(ctx, op)?,
     };
     run_layered(&pass, ctx, prepared)
 }
@@ -947,8 +953,8 @@ pub(crate) fn generate_adaptive(
                 tool_radius: ctx.tool_def.radius(),
                 stepover: cfg.stepover,
                 cut_depth: z,
-                feed_rate: op.feed_rate(),
-                plunge_rate: op.plunge_rate(),
+                feed_rate: op.cut_feeds()?.feed_rate,
+                plunge_rate: op.cut_feeds()?.plunge_rate,
                 safe_z,
                 tolerance: cfg.tolerance,
                 slot_clearing: cfg.slot_clearing,

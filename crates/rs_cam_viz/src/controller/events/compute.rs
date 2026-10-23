@@ -845,7 +845,7 @@ impl<B: ComputeBackend> AppController<B> {
                 let stock = self.state.session().stock_config();
                 let stock_bbox = rs_cam_core::geo::BoundingBox3 {
                     min: rs_cam_core::geo::P3::new(0.0, 0.0, 0.0),
-                    max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.z),
+                    max: rs_cam_core::geo::P3::new(stock.x, stock.y, stock.box_height()),
                 };
 
                 self.state.simulation.results = Some(SimulationResults {

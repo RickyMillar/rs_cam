@@ -115,7 +115,7 @@ fn session_levels(op: OperationConfig, poly: &Polygon2) -> Toolpath {
     let stock = StockConfig {
         x: 2.0 * half,
         y: 2.0 * half,
-        z: 20.0,
+        z: Some(20.0),
         origin_x: -half,
         origin_y: -half,
         origin_z: -20.0,
@@ -137,8 +137,8 @@ fn pocket_levels(poly: &Polygon2, n: usize) -> Toolpath {
             stepover: STEPOVER,
             floor: rs_cam_core::compute::floor::Floor::top(LEVEL_STEP * n as f64),
             depth_per_pass: LEVEL_STEP,
-            feed_rate: 1200.0,
-            plunge_rate: 400.0,
+            feed_rate: Some(1200.0),
+            plunge_rate: Some(400.0),
             climb: true,
             ..PocketConfig::default()
         }),
@@ -152,8 +152,8 @@ fn profile_levels(poly: &Polygon2, n: usize) -> Toolpath {
             side: ProfileSide::Outside,
             floor: rs_cam_core::compute::floor::Floor::top(LEVEL_STEP * n as f64),
             depth_per_pass: LEVEL_STEP,
-            feed_rate: 1200.0,
-            plunge_rate: 400.0,
+            feed_rate: Some(1200.0),
+            plunge_rate: Some(400.0),
             climb: true,
             ..ProfileConfig::default()
         }),
@@ -167,8 +167,8 @@ fn zigzag_levels(poly: &Polygon2, n: usize) -> Toolpath {
             stepover: STEPOVER,
             floor: rs_cam_core::compute::floor::Floor::top(LEVEL_STEP * n as f64),
             depth_per_pass: LEVEL_STEP,
-            feed_rate: 1200.0,
-            plunge_rate: 400.0,
+            feed_rate: Some(1200.0),
+            plunge_rate: Some(400.0),
             angle: 0.0,
             ..ZigzagConfig::default()
         }),

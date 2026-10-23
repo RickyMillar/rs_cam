@@ -442,6 +442,11 @@ diag_ids! {
     /// Inlay or Inlay Plug on fresh stock takes a face pick below the stock
     /// top, so generation will refuse (`OperationError::BuriedFace`).
     pub const PRECOND_BURIED_FACE: &str = "precondition.buried_face";
+    /// S11 (operator ruling 2026-10-23): a value with no derivation is not
+    /// set (the floor, a depth of a drawing op, or the feeds of a tool with
+    /// no feeds data), so generation will refuse. The message names each
+    /// field and the fix.
+    pub const PRECOND_NOT_SET: &str = "precondition.not_set";
     /// UX-7b (operator rulings 2026-10-22, SAFETY): the emitted moves of a
     /// 2.5D op cut into the mesh of its own model
     /// (`compute::model_gouge`). Blocking: export refuses while it stands

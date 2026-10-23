@@ -63,4 +63,4 @@ pub use section::{SummaryCard, UiExt};
 pub use sparkline::{ChartFace, ChartFlip, Sparkline, SparklineResponse, TraceOpen};
 pub use suggest::{SuggestButton, SuggestScope, Suggestion};
 pub use tab_strip::{TabBadge, TabStrip};
-pub use value_row::{ValueRow, ValueRowOutcome};
+pub use value_row::{OptionalValueRow, ValueRow, ValueRowOutcome};

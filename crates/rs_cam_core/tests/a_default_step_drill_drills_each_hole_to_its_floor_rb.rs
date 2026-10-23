@@ -97,7 +97,7 @@ fn empty_session() -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(StockConfig {
         x: 50.0,
         y: 40.0,
-        z: STOCK_TOP,
+        z: Some(STOCK_TOP),
         origin_x: -5.0,
         origin_y: -5.0,
         origin_z: 0.0,
@@ -113,15 +113,19 @@ fn empty_session() -> ProjectSession {
 fn add_default_drill(session: &mut ProjectSession) -> Effects {
     let tool_id = session.tools()[0].id;
     let model_id = session.models()[0].id;
+    let mut config = toolpath_config(
+        "rb drill",
+        OperationConfig::Drill(DrillConfig::default()),
+        tool_id,
+        model_id,
+    );
+    // S11: the fixture fills the unset values, but this op keeps the
+    // default floor (`Floor::Unset`) that the rule reads.
+    assert!(config.operation.set_floor(Floor::Unset));
     session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
-            config: Box::new(toolpath_config(
-                "rb drill",
-                OperationConfig::Drill(DrillConfig::default()),
-                tool_id,
-                model_id,
-            )),
+            config: Box::new(config),
         }))
         .unwrap()
 }

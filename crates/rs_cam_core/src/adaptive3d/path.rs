@@ -1189,7 +1189,7 @@ pub(super) fn resolved_stay_down_mm(params: &Adaptive3dParams, tool_radius: f64)
     params
         .linking
         .max_stay_down_distance_mm
-        .unwrap_or(tool_radius * 2.0 * 8.0)
+        .unwrap_or(tool_radius * 2.0 * crate::compute::config::LINK_MAX_DISTANCE_OVER_D)
 }
 
 /// The radius over which the planner reads an entry's rapid floor: the tool

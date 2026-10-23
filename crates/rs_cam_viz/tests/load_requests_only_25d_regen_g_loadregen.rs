@@ -106,6 +106,9 @@ fn clean_up(path: &std::path::Path) {
 }
 
 fn toolpath(id: usize, name: &str, model_id: usize, operation: OperationConfig) -> ToolpathConfig {
+    // S11: the fixture states the values the op leaves unset.
+    let mut operation = operation;
+    rs_cam_core::compute::fixture_values::fill_unset(&mut operation);
     ToolpathConfig {
         shoe: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(id),
@@ -134,7 +137,14 @@ fn toolpath(id: usize, name: &str, model_id: usize, operation: OperationConfig) 
 /// path, so the file shape is whatever the loader actually accepts.
 fn write_two_op_project() -> PathBuf {
     let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::BallNose);
-    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    // S11: the drawing and the flat plate give no thickness; the fixture
+    // states the 25 mm before S11.
+    let mut builder = ProjectSessionBuilder::new()
+        .stock(rs_cam_core::compute::StockConfig {
+            z: Some(25.0),
+            ..rs_cam_core::compute::StockConfig::default()
+        })
+        .tool(tool);
     // Two models, because the two operations need different geometry: the
     // pocket is 2.5D and wants polygons, the scallop is 3D and wants a
     // mesh. The loader re-imports both from these paths, so an operation

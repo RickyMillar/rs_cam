@@ -934,7 +934,9 @@ impl ProjectSession {
         // rule (`compute::floor::region_floors`) that the prologue runs, with
         // the same top, so the status and generation give one answer.
         let mut floors = Vec::new();
-        let viewed = match (viewed, target, tc.operation.floor()) {
+        // S11: an unset floor has no plane rule; the heights refuse it.
+        let set_floor = tc.operation.floor().filter(|floor| !floor.is_unset());
+        let viewed = match (viewed, target, set_floor) {
             (Ok((mut items, mut notes)), SelectionTarget::Op, Some(floor)) => {
                 match self.each_face_top_z(tc, ctx)? {
                     Some(top_z) => crate::compute::floor::region_floors(
@@ -980,10 +982,19 @@ impl ProjectSession {
         // (`compute::floor::hole_floors`), on the heights that the hole
         // planes of this report give, so the status and generation give
         // one answer. Each Cut hole gets its floor Z (`item_floor_z`).
+        // S11: the hole planes are facts of the holes, so the report gives
+        // them under an unset floor too (`each_hole_floor_due` reads them);
+        // only the per-hole floors need a set floor.
         let viewed = match (viewed, target, tc.operation.floor()) {
             (Ok((items, notes)), SelectionTarget::Op, Some(floor)) => {
                 match items.holes().cloned() {
                     None => Ok((items, notes)),
+                    Some(holes) if floor.is_unset() => {
+                        let (rim_bottom, floor_bottom) = crate::compute::floor::hole_planes(&holes);
+                        report.hole_rim_bottom_z = rim_bottom;
+                        report.hole_floor_bottom_z = floor_bottom;
+                        Ok((items, notes))
+                    }
                     Some(holes) => {
                         let (rim_bottom, floor_bottom) = crate::compute::floor::hole_planes(&holes);
                         report.hole_rim_bottom_z = rim_bottom;

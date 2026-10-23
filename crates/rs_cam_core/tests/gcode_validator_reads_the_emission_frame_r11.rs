@@ -66,7 +66,7 @@ fn square(x0: f64, y0: f64, side: f64) -> Polygon2 {
 
 fn trace_op() -> OperationConfig {
     OperationConfig::Trace(TraceConfig {
-        depth: 4.0,
+        depth: Some(4.0),
         depth_per_pass: 2.0,
         ..TraceConfig::default()
     })
@@ -79,7 +79,7 @@ fn build_session() -> ProjectSession {
     builder = builder.stock(StockConfig {
         x: STOCK_XY,
         y: STOCK_XY,
-        z: STOCK_Z,
+        z: Some(STOCK_Z),
         origin_x: 0.0,
         origin_y: 0.0,
         origin_z: 0.0,
@@ -297,7 +297,7 @@ fn a_stock_top_at_world_zero_keeps_the_raw_post_safe_z() {
     builder = builder.stock(StockConfig {
         x: STOCK_XY,
         y: STOCK_XY,
-        z: 12.0,
+        z: Some(12.0),
         origin_x: 0.0,
         origin_y: 0.0,
         origin_z: -12.0,

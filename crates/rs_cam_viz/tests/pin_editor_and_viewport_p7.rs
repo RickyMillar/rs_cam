@@ -110,7 +110,7 @@ fn mini_session(origin: (f64, f64)) -> ProjectSession {
     let stock = StockConfig {
         x: 65.0,
         y: 65.0,
-        z: 24.5,
+        z: Some(24.5),
         origin_x: origin.0,
         origin_y: origin.1,
         origin_z: -24.5,
@@ -411,7 +411,7 @@ fn a_pick_on_a_flipped_setup_hits_the_drawn_pin() {
     let mut stock_with_pin = stock.clone();
     stock_with_pin.alignment_pins = vec![pin.clone()];
     let drawn = pin_display_point(&frame, &stock_with_pin, pin.at.x(), pin.at.y());
-    let raw = (pin.at.x(), pin.at.y(), stock.z);
+    let raw = (pin.at.x(), pin.at.y(), stock.box_height());
     assert!(
         (drawn.y - raw.1).abs() > 1.0,
         "the flipped setup must move the pin: drawn {drawn:?}, raw {raw:?}"

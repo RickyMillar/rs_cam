@@ -143,8 +143,8 @@ fn pocket_op(dpp: f64) -> OperationConfig {
         // and the entry value the invariants see is the requested one.
         floor: rs_cam_core::compute::floor::Floor::top(2.0 * dpp),
         depth_per_pass: dpp,
-        feed_rate: 1000.0,
-        plunge_rate: 400.0,
+        feed_rate: Some(1000.0),
+        plunge_rate: Some(400.0),
         ..PocketConfig::default()
     })
 }
@@ -440,8 +440,8 @@ fn the_door_and_pass_ten_are_one_evaluation() {
         stepover: T15_STEPOVER_MM,
         floor: rs_cam_core::compute::floor::Floor::top(2.0 * T15_ENTRY_DPP_MM),
         depth_per_pass: T15_ENTRY_DPP_MM,
-        feed_rate: 1000.0,
-        plunge_rate: 400.0,
+        feed_rate: Some(1000.0),
+        plunge_rate: Some(400.0),
         ..AdaptiveConfig::default()
     });
     let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();
@@ -555,7 +555,7 @@ fn every_refusal_names_itself() {
     // A drill has no radial width of cut, and the caller offers no fallback.
     let drill = OperationConfig::Drill(DrillConfig {
         floor: rs_cam_core::compute::floor::Floor::Top { depth: 20.0 },
-        feed_rate: 500.0,
+        feed_rate: Some(500.0),
         spindle_rpm: Some(10_000),
         ..DrillConfig::default()
     });

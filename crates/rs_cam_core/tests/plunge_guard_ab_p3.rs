@@ -197,8 +197,8 @@ fn wanaka_front_rough_plunge_guard_ab() {
     let op = session
         .toolpath_params_at(index)
         .expect("front rough params");
-    let plunge_rate = op.plunge_rate();
-    let commanded_feed = op.feed_rate();
+    let plunge_rate = op.plunge_rate().expect("S11: the fixture sets it");
+    let commanded_feed = op.feed_rate().expect("S11: the fixture sets it");
     let kinematics = session.machine().effective_kinematics();
     let max_feed = session.machine().max_feed_mm_min;
 

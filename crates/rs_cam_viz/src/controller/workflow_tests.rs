@@ -813,7 +813,8 @@ fn w4_the_first_face_pick_sets_each_face_floor_o_pick_q2() {
     // here stands 5 mm above the cube.
     let mut stock = c.state.session().stock_config().clone();
     stock.auto_from_model = false;
-    stock.z += 5.0;
+    // S11: the edit adds 5 mm to the thickness the fixture states.
+    stock.z = Some(stock.box_height() + 5.0);
     let _ = c
         .state
         .apply(Command::SetStockConfig(

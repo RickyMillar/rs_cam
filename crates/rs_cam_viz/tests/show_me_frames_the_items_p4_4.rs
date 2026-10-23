@@ -389,7 +389,7 @@ fn at_the_top_state() -> (AppState, Vec<MatchKey>) {
         .stock(StockConfig {
             x: 80.0,
             y: 40.0,
-            z: 15.0,
+            z: Some(15.0),
             origin_x: -40.0,
             origin_y: -20.0,
             origin_z: -15.0,

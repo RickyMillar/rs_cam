@@ -2,10 +2,10 @@
 //!
 //! The key has the project-file spelling (`floor = { from = "z", z = -2.5 }`),
 //! and the CLI applies it through the `set_toolpath_floor` command after the
-//! parameters. Four arms on one Pocket job (the P2.7 drawing):
+//! parameters. Five arms on one Pocket job (the P2.7 drawing):
 //!
-//! - Control: a job with no floor key cuts to the default floor, below
-//!   Z -2.5.
+//! - S11: a job with no floor key refuses, and the refusal names the floor.
+//! - Control: a job with the floor Top Z 3 cuts below Z -2.5.
 //! - An absolute floor at Z -2.5: the lowest feed move is at Z -2.5.
 //! - A Top depth of 0 refuses at the door, and the refusal names the floor.
 //! - A floor on an op with no floor field (Face) refuses by name.
@@ -49,6 +49,8 @@ diameter = 3.0
 type = "{op_type}"
 input = "{input}"
 tool = "flat_3mm"
+# S11: the job states the drawing thickness.
+stock_z = 25.0
 {lines}
 "#,
         input = drawing().display(),
@@ -103,18 +105,28 @@ fn lowest(zs: &[f64]) -> f64 {
 
 #[test]
 fn a_job_file_sets_a_floor_p3_3() {
-    // Control: the default floor is below the floor the next arm asks for,
-    // so the next arm measures the key and not the default.
-    let (run, zs) = run_job("default", "pocket", "");
+    // S11: a job with no floor key refuses, and the refusal names the
+    // field (a new Pocket has no floor).
+    let (run, _) = run_job("default", "pocket", "");
+    assert!(!run.status.success(), "a pocket with no floor must refuse");
     assert!(
-        run.status.success(),
-        "the default job runs: {}",
+        String::from_utf8_lossy(&run.stderr).contains("the floor is not set"),
+        "the refusal names the floor: {}",
         String::from_utf8_lossy(&run.stderr)
     );
-    assert!(!zs.is_empty(), "the default pocket cut nothing");
+
+    // Control: a Top Z 3 floor is below the floor the next arm asks for,
+    // so the next arm measures the key and not the control.
+    let (run, zs) = run_job("top3", "pocket", "floor = { from = \"top\", depth = 3.0 }");
+    assert!(
+        run.status.success(),
+        "the control job runs: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert!(!zs.is_empty(), "the control pocket cut nothing");
     assert!(
         lowest(&zs) < FLOOR_Z - PRINT_TOLERANCE,
-        "the default floor {} must be below Z {FLOOR_Z} (control)",
+        "the control floor {} must be below Z {FLOOR_Z}",
         lowest(&zs)
     );
 

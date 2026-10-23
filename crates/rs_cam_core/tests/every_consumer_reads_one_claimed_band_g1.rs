@@ -133,7 +133,7 @@ fn suggest(
     let stock = StockContext {
         stock_top_z: 0.0,
         stock_bottom_z: -18.0,
-        stock_z: 18.0,
+        stock_z: Some(18.0),
         stock_padding: 2.0,
     };
     suggest_params(SuggestParamsInput {

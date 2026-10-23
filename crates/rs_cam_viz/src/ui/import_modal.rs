@@ -14,7 +14,7 @@ use rs_cam_core::io::svg_input::SvgDeclaredSize;
 use crate::state::AppState;
 use crate::state::panels::{ImportDialog, NumberDrafts};
 use crate::ui::AppEvent;
-use crate::ui::components::{DataRow, DataTable, Role};
+use crate::ui::components::{DataRow, DataTable, Role, UiExt as _};
 
 /// The "File size" row text: the viewport size in mm (core
 /// `SvgDeclaredSize::viewport_mm`, by the CSS units: a unitless length is
@@ -172,7 +172,7 @@ pub fn report_row(report: &rs_cam_core::io::ImportReport) -> DataRow {
 /// Draw the import dialog when it is open.
 pub fn draw(ctx: &egui::Context, state: &mut AppState, events: &mut Vec<AppEvent>) {
     let panels = &mut state.panels;
-    let Some(dialog) = panels.import_dialog.as_ref() else {
+    let Some(dialog) = panels.import_dialog.as_mut() else {
         return;
     };
     let drafts = &mut panels.number_drafts;
@@ -187,7 +187,7 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, events: &mut Vec<AppEvent
 
 fn draw_body(
     ui: &mut egui::Ui,
-    dialog: &ImportDialog,
+    dialog: &mut ImportDialog,
     drafts: &mut NumberDrafts,
     events: &mut Vec<AppEvent>,
 ) {
@@ -254,6 +254,28 @@ fn draw_body(
     }
     if edited {
         events.push(AppEvent::ImportDialogEdit(units, options));
+    }
+
+    // S11 (operator ruling 2026-10-23): a drawing has no thickness, so the
+    // import asks for the stock thickness. Empty: the stock stays "not
+    // set", and every op refuses until it is set.
+    if dialog.asks_stock_z {
+        ui.add_space(8.0);
+        ui.param_grid("import_dialog_stock_z", |ui| {
+            let _ = crate::ui::components::OptionalValueRow::new(
+                "Stock thickness:",
+                &mut dialog.stock_z,
+                " mm",
+                0.5,
+                rs_cam_core::compute::stock_domain::StockDimension::Z.ui_range(),
+            )
+            .hint("set the thickness")
+            .tooltip(Some(
+                "A drawing has no thickness. Set the stock thickness here or in the Stock \
+                 panel. Until it is set, every operation refuses to generate.",
+            ))
+            .show(ui);
+        });
     }
 
     ui.add_space(12.0);

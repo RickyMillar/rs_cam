@@ -90,7 +90,8 @@ fn edit_the_tool(controller: &mut AppController<ScriptedBackend>) {
 
 fn edit_the_stock(controller: &mut AppController<ScriptedBackend>) {
     let mut stock = controller.state.session().stock_config().clone();
-    stock.z += 5.0;
+    // S11: the edit adds 5 mm to the thickness the fixture states.
+    stock.z = Some(stock.box_height() + 5.0);
     crate::ui::properties::apply_stock_draft(&mut controller.state, stock);
     controller.discharge_panel_side_effects();
 }

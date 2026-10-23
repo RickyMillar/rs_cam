@@ -228,7 +228,7 @@ fn full_dressups() -> DressupConfig {
             ..LeadParams::default()
         }),
         link_moves: Some(LinkDressupParams {
-            max_distance: 50.0,
+            max_distance: Some(50.0),
             ..LinkDressupParams::default()
         }),
         arc_fitting: Some(ArcFitParams { tolerance: 0.05 }),

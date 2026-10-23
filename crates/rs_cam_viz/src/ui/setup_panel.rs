@@ -98,10 +98,12 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
 fn draw_stock_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let stock = state.session().stock_config();
     let (eff_w, eff_d, eff_h) = if let Some(setup) = active_setup(state) {
-        let (w, d, h) = setup.face_up.effective_stock(stock.x, stock.y, stock.z);
+        let (w, d, h) = setup
+            .face_up
+            .effective_stock(stock.x, stock.y, stock.box_height());
         setup.z_rotation.effective_stock(w, d, h)
     } else {
-        (stock.x, stock.y, stock.z)
+        (stock.x, stock.y, stock.box_height())
     };
     let value = format!("{eff_w:.0} × {eff_d:.0} × {eff_h:.0} mm");
 

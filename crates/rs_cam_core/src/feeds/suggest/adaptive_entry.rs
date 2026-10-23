@@ -238,7 +238,10 @@ pub(super) fn rescale_feed_to_final_geometry(
         return warnings;
     };
     let usable = |v: f64| v.is_finite() && v > 0.0;
-    let requested = operation.feed_rate();
+    // S11: an unset feed has nothing to rescale.
+    let Some(requested) = operation.feed_rate() else {
+        return warnings;
+    };
     if !(usable(calc.feed_rate_mm_min) && usable(requested)) {
         return warnings;
     }

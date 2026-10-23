@@ -73,7 +73,7 @@ fn via_session(op: OperationConfig, tool_diameter: f64) -> Toolpath {
     let stock = rs_cam_core::compute::StockConfig {
         x: b.max.x - b.min.x,
         y: b.max.y - b.min.y,
-        z: b.max.z - b.min.z,
+        z: Some(b.max.z - b.min.z),
         origin_x: b.min.x,
         origin_y: b.min.y,
         origin_z: b.min.z,
@@ -1087,9 +1087,9 @@ fn default_face_params() -> FaceConfig {
         stepover: 5.0,
         depth: 0.0,
         depth_per_pass: 1.0,
-        feed_rate: 1500.0,
-        plunge_rate: 500.0,
-        stock_offset: 5.0,
+        feed_rate: Some(1500.0),
+        plunge_rate: Some(500.0),
+        stock_offset: Some(5.0),
         direction: FaceDirection::Zigzag,
         ..FaceConfig::default()
     }
@@ -1183,7 +1183,7 @@ fn sweep_face_stock_offset() {
         |ov| {
             let mut p = default_face_params();
             if let Some(v) = ov {
-                p.stock_offset = v.as_f64().unwrap();
+                p.stock_offset = Some(v.as_f64().unwrap());
             }
             face_via_session(p)
         },
@@ -1267,10 +1267,10 @@ const TRACE_TOOL_DIAMETER: f64 = 6.35;
 
 fn default_trace_params() -> TraceConfig {
     TraceConfig {
-        depth: 1.0,
+        depth: Some(1.0),
         depth_per_pass: 0.5,
-        feed_rate: 800.0,
-        plunge_rate: 400.0,
+        feed_rate: Some(800.0),
+        plunge_rate: Some(400.0),
         compensation: TraceCompensation::None,
         ..TraceConfig::default()
     }
@@ -1323,7 +1323,7 @@ fn sweep_trace_depth() {
         |ov| {
             let mut p = default_trace_params();
             if let Some(v) = ov {
-                p.depth = v.as_f64().unwrap();
+                p.depth = Some(v.as_f64().unwrap());
             }
             trace_via_session(p)
         },

@@ -143,7 +143,7 @@ fn all_ops_session() -> ProjectSession {
 /// operation serves as both the generate-able fixture and a reject case.
 fn trace_op() -> OperationConfig {
     OperationConfig::Trace(TraceConfig {
-        depth: 1.0,
+        depth: Some(1.0),
         depth_per_pass: 1.0,
         ..TraceConfig::default()
     })

@@ -77,7 +77,7 @@ fn build_session(origin_z: f64) -> ProjectSession {
     let stock = StockConfig {
         x: 60.0,
         y: 60.0,
-        z: STOCK_THICKNESS,
+        z: Some(STOCK_THICKNESS),
         origin_x: 0.0,
         origin_y: 0.0,
         origin_z,

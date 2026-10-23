@@ -45,14 +45,19 @@ fn unknown_param_error(
     if param == "depth"
         && let Some(floor) = operation.floor()
     {
+        let now = match floor.value() {
+            Some(value) => format!(
+                "now {{ from = \"{}\", {} = {value} }}",
+                floor.from_token(),
+                floor.value_name()
+            ),
+            None => "now not set".to_owned(),
+        };
         return SessionError::InvalidParam(format!(
             "unknown parameter 'depth' for {} operation: its floor names its reference \
-             (now {{ from = \"{}\", {} = {} }}). Set the floor with set_toolpath_floor \
+             ({now}). Set the floor with set_toolpath_floor \
              {{ index, floor }}, for example {{\"from\": \"top\", \"depth\": 6.0}}",
             operation.label(),
-            floor.from_token(),
-            floor.value_name(),
-            floor.value()
         ));
     }
     // CMP-08: `param_names` is every name this setter accepts, and the
@@ -200,6 +205,15 @@ impl ProjectSession {
         };
 
         match param {
+            // S11: `null` clears the value (the published default of an
+            // unset feed); generation then refuses until it is set.
+            "feed_rate" | "plunge_rate" if value.is_null() => {
+                if param == "feed_rate" {
+                    tc.operation.as_params_mut().unset_feed_rate();
+                } else {
+                    tc.operation.as_params_mut().unset_plunge_rate();
+                }
+            }
             "feed_rate" => {
                 let v = as_number(&value).ok_or_else(|| {
                     SessionError::InvalidParam("feed_rate must be a number".to_owned())

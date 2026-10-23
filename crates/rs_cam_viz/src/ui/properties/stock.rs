@@ -31,12 +31,19 @@ pub fn reconcile_auto_from_model(
     mut draft: StockConfig,
     model_bbox: Option<&BoundingBox3>,
 ) -> StockConfig {
+    // S11: the first thickness of a stock that has none keeps the stock
+    // top where it is and completes the auto stock: it is not a manual
+    // stock.
+    let first_thickness =
+        previous.z.is_none() && draft.z.is_some() && draft.origin_z == previous.origin_z;
+    if first_thickness && let Some(z) = draft.z {
+        draft.origin_z = previous.origin_z - z;
+    }
     let geometry_edited = draft.x != previous.x
         || draft.y != previous.y
-        || draft.z != previous.z
+        || (!first_thickness && (draft.z != previous.z || draft.origin_z != previous.origin_z))
         || draft.origin_x != previous.origin_x
-        || draft.origin_y != previous.origin_y
-        || draft.origin_z != previous.origin_z;
+        || draft.origin_y != previous.origin_y;
     if geometry_edited {
         draft.auto_from_model = false;
         return draft;
@@ -164,11 +171,26 @@ pub fn draw(
         edit.drag(&out.value_response);
         geometry_edited |= out.value_response.changed();
 
-        let out = ValueRow::new("Z:", &mut stock.z, " mm", 0.5, StockDimension::Z.ui_range())
-            .keep_existing()
-            .show(ui);
-        edit.drag(&out.value_response);
-        geometry_edited |= out.value_response.changed();
+        // S11: a drawing stock has no thickness until the operator sets
+        // it. The first thickness completes the auto stock (its top stays at
+        // the drawing), so it does not clear "Auto from model".
+        let was_unset = stock.z.is_none();
+        if crate::ui::components::OptionalValueRow::new(
+            "Z:",
+            &mut stock.z,
+            " mm",
+            0.5,
+            StockDimension::Z.ui_range(),
+        )
+        .hint("set the thickness")
+        .tooltip(Some(
+            rs_cam_core::compute::stock_config::STOCK_THICKNESS_NOT_SET_TEXT,
+        ))
+        .show(ui)
+        {
+            edit.commit();
+            geometry_edited |= !was_unset;
+        }
     });
 
     ui.add_space(8.0);

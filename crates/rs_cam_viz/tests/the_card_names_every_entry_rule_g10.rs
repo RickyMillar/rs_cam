@@ -387,7 +387,7 @@ fn the_mcp_basis_carries_plunge_and_entry_g10() {
         .expect("Suggest ships an operation");
     assert_eq!(
         basis["plunge"]["value_mm_min"].as_f64(),
-        Some(shipped.plunge_rate())
+        shipped.plunge_rate()
     );
     let re_derived = &basis["plunge"]["re_derived"];
     assert!(

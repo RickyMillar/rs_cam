@@ -72,7 +72,7 @@ fn build_world_stock_bbox_respects_stock_origin_f024() {
     let stock = StockConfig {
         x: 100.0,
         y: 100.0,
-        z: 12.0,
+        z: Some(12.0),
         origin_x: -10.0,
         origin_y: -10.0,
         origin_z: -12.0,
@@ -383,7 +383,7 @@ mod an_stl_face_click_p4_7 {
         let stock = StockConfig {
             x: 20.0,
             y: 10.0,
-            z: 8.0,
+            z: Some(8.0),
             origin_x: 0.0,
             origin_y: 0.0,
             origin_z: 0.0,

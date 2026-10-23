@@ -12,9 +12,12 @@ pub mod config;
 pub mod cutter;
 pub mod domain;
 pub mod execute;
+#[cfg(feature = "test-support")]
+pub mod fixture_values;
 pub mod floor;
 pub mod generated_empty;
 pub mod model_gouge;
+pub mod not_set;
 pub mod obstacle;
 pub mod operation_configs;
 pub mod shoe;

@@ -636,8 +636,8 @@ fn pocket(ap: f64, ae: f64, feed: f64, rpm: f64) -> OperationConfig {
         stepover: ae,
         floor: rs_cam_core::compute::floor::Floor::top(4.0 * ap),
         depth_per_pass: ap,
-        feed_rate: feed,
-        plunge_rate: 400.0,
+        feed_rate: Some(feed),
+        plunge_rate: Some(400.0),
         spindle_rpm: Some(rpm as u32),
         ..PocketConfig::default()
     })

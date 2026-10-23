@@ -83,10 +83,7 @@ use rs_cam_core::diagnostics::adapters::from_feeds::{
 };
 use rs_cam_core::diagnostics::adapters::from_static_checks::diagnostics_from_static_checks;
 use rs_cam_core::feeds::plunge::resolve_plunge;
-use rs_cam_core::feeds::suggest::{
-    StockContext, SuggestContext, SuggestParamsInput, SuggestWarning, SuggestedParams,
-    suggest_params,
-};
+use rs_cam_core::feeds::suggest::{StockContext, SuggestContext, SuggestWarning, SuggestedParams};
 use rs_cam_core::feeds::vendor_lookup::vbit_key_text;
 use rs_cam_core::feeds::vendor_lut::{MaterialFamily, VendorObservation};
 use rs_cam_core::feeds::{EMBEDDED_LUT, FeedsSupport, PlungeBasis, SpindleStrategy};
@@ -231,7 +228,7 @@ fn stock_ctx() -> StockContext {
     StockContext {
         stock_top_z: 0.0,
         stock_bottom_z: -18.0,
-        stock_z: 18.0,
+        stock_z: Some(18.0),
         stock_padding: 2.0,
     }
 }
@@ -243,16 +240,42 @@ fn suggest(
     material: &Material,
     stock: &StockContext,
 ) -> Result<SuggestedParams, rs_cam_core::feeds::FeedsError> {
-    suggest_params(SuggestParamsInput {
-        op_type: op,
-        tool,
-        machine,
-        material,
-        lut: &EMBEDDED_LUT,
-        stock_ctx: stock,
-        spindle_strategy: SpindleStrategy::default(),
-        context: SuggestContext::default(),
-    })
+    let operation = add_time_op(op, stock);
+    let dressups = rs_cam_core::compute::config::DressupConfig::for_op(op);
+    rs_cam_core::feeds::suggest::suggest_for_operation(
+        rs_cam_core::feeds::suggest::SuggestForOperationInput {
+            operation: &operation,
+            tool,
+            machine,
+            material,
+            lut: &EMBEDDED_LUT,
+            spindle_strategy: SpindleStrategy::default(),
+            context: SuggestContext {
+                dressups: Some(&dressups),
+                ..SuggestContext::default()
+            },
+        },
+    )
+}
+
+/// S11 (operator ruling 2026-10-23) removed the underived values of an
+/// add: the Pocket and Adaptive 2D floor of a part of the stock, the raw
+/// Zigzag and Bore floor, the drawing depths and the raw feeds. Suggest
+/// reads the depth of the op (the depth snap, the V-Carve axial hint), so
+/// the matrix fixture states the op that an add door gave before S11:
+/// `default_operation`, then those values. The RPM stays unset, as it was.
+fn add_time_op(op: OperationType, stock: &StockContext) -> OperationConfig {
+    use rs_cam_core::compute::floor::Floor;
+    let mut operation = rs_cam_core::feeds::suggest::default_operation(op, stock);
+    let z = stock.stock_z.expect("the matrix stock has a thickness");
+    match &mut operation {
+        OperationConfig::Pocket(c) => c.floor = Floor::top((z * 0.5).min(5.0)),
+        OperationConfig::Adaptive(c) => c.floor = Floor::top(z * 0.5),
+        _ => {}
+    }
+    rs_cam_core::compute::fixture_values::fill_unset(&mut operation);
+    operation.set_spindle_rpm(None);
+    operation
 }
 
 // ── CSV helpers (formatting only) ───────────────────────────────────────
@@ -296,8 +319,11 @@ fn entry_columns(s: &SuggestedParams) -> [String; 6] {
         PlungeBasis::MaterialBase { reason, .. } => reason.short(),
         PlungeBasis::DrillCycle => String::new(),
     };
-    let binding = resolve_plunge(&r.plunge, s.operation.feed_rate())
-        .map_or_else(String::new, |(_, b)| format!("{b:?}"));
+    let binding = resolve_plunge(
+        &r.plunge,
+        s.operation.feed_rate().expect("S11: the fixture sets it"),
+    )
+    .map_or_else(String::new, |(_, b)| format!("{b:?}"));
     let record = s.warnings.iter().find_map(|w| match w {
         SuggestWarning::RampFeed { record, notes, .. } => Some((record, notes)),
         _ => None,
@@ -516,7 +542,7 @@ fn recipe_diagnostics(s: &SuggestedParams, tool: &ToolConfig) -> Vec<Diagnostic>
     out.extend(diagnostics_from_feeds_result(tp, r));
     out.extend(heuristic_hints_from_recommendation(
         tp,
-        s.operation.feed_rate(),
+        s.operation.feed_rate().expect("S11: the fixture sets it"),
         s.operation.stepover(),
         s.operation.depth_per_pass(),
         r,
@@ -623,7 +649,7 @@ fn walk_matrix(
                             fields.extend(std::iter::repeat_n(String::new(), 4));
                             fields.extend(cap_columns(
                                 machine,
-                                &OperationConfig::new_default(op),
+                                &add_time_op(op, &stock_ctx()),
                                 &tool,
                             ));
                             fields.extend(force_line_columns(material, None, &tool));
@@ -644,8 +670,12 @@ fn walk_matrix(
                             fields.push(num(Some(
                                 s.operation.spindle_rpm().map_or(r.rpm, f64::from),
                             )));
-                            fields.push(num(Some(s.operation.feed_rate())));
-                            fields.push(num(Some(s.operation.plunge_rate())));
+                            fields.push(num(Some(
+                                s.operation.feed_rate().expect("S11: the fixture sets it"),
+                            )));
+                            fields.push(num(Some(
+                                s.operation.plunge_rate().expect("S11: the fixture sets it"),
+                            )));
                             fields.push(num(s.operation.stepover()));
                             fields.push(num(s.operation.depth_per_pass()));
                             fields.push(num(Some(r.axial_depth_mm)));
@@ -662,7 +692,8 @@ fn walk_matrix(
                             // the RPM follow-down. `None` where a model refuses.
                             let shipped_rpm = s.operation.spindle_rpm().map_or(r.rpm, f64::from);
                             let shipped_fz =
-                                s.operation.feed_rate() / (shipped_rpm * f64::from(FLUTES));
+                                s.operation.feed_rate().expect("S11: the fixture sets it")
+                                    / (shipped_rpm * f64::from(FLUTES));
                             let shipped_ap =
                                 s.operation.depth_per_pass().unwrap_or(r.axial_depth_mm);
                             let shipped_ae = s.operation.stepover().unwrap_or(r.radial_width_mm);
@@ -1015,7 +1046,9 @@ fn run_sim_cell(cell: &SimCell, machine: &MachineProfile) -> Result<Vec<String>,
     let r = &s.feeds_result;
     let mut out = vec![
         num(Some(s.operation.spindle_rpm().map_or(r.rpm, f64::from))),
-        num(Some(s.operation.feed_rate())),
+        num(Some(
+            s.operation.feed_rate().expect("S11: the fixture sets it"),
+        )),
         num(s.operation.stepover()),
         num(s.operation.depth_per_pass()),
         support_columns(&r.support).0,

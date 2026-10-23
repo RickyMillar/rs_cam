@@ -192,7 +192,7 @@ pub fn apply_stale_default_to_op(
         }
         StaleDefaultRule::ProjectCurveNegativeDepth => {
             if let OperationConfig::ProjectCurve(cfg) = op {
-                cfg.depth = defect.new_value;
+                cfg.depth = Some(defect.new_value);
             }
         }
     }
@@ -237,7 +237,8 @@ fn check_tapered_ball_plunge(tc: &ToolpathConfig, tool: &ToolConfig) -> Option<S
         return None;
     }
     let cap = safe_plunge_cap_mm_min(hint, tool_def.diameter())?;
-    let plunge = tc.operation.plunge_rate();
+    // S11: an unset plunge has no value to correct.
+    let plunge = tc.operation.plunge_rate()?;
     if plunge <= cap {
         return None;
     }
@@ -305,10 +306,12 @@ fn check_project_curve_negative_depth(tc: &ToolpathConfig) -> Option<StaleDefaul
     let OperationConfig::ProjectCurve(cfg) = &tc.operation else {
         return None;
     };
-    if cfg.depth >= 0.0 {
+    // S11: an unset depth has no sign to correct.
+    let depth = cfg.depth?;
+    if depth >= 0.0 {
         return None;
     }
-    let new_value = -cfg.depth;
+    let new_value = -depth;
     let direction_label = cfg.direction.label();
     Some(StaleDefault {
         rule_id: StaleDefaultRule::ProjectCurveNegativeDepth,
@@ -323,10 +326,10 @@ fn check_project_curve_negative_depth(tc: &ToolpathConfig) -> Option<StaleDefaul
              negative depth lifts the cutter into air for the whole toolpath (0 mm of \
              in-material cut). Flipping to {new_value:+.3} mm restores the intended \
              {new_value:.1} mm-deep cut.",
-            cfg.depth,
+            depth,
         ),
         new_value,
-        current_value: cfg.depth,
+        current_value: depth,
     })
 }
 
@@ -478,7 +481,7 @@ mod tests {
         let mut s = wood_session();
         let _ = s.add_tool(tapered_ball(1.0));
         let mut cfg = DropCutterConfig::default();
-        cfg.plunge_rate = 750.0;
+        cfg.plunge_rate = Some(750.0);
         cfg.min_z = -20.0; // disable B.1 rule
         let _ = s
             .add_toolpath(
@@ -501,7 +504,7 @@ mod tests {
         let mut s = wood_session();
         let _ = s.add_tool(flat_em(6.0));
         let mut cfg = DropCutterConfig::default();
-        cfg.plunge_rate = 750.0;
+        cfg.plunge_rate = Some(750.0);
         cfg.min_z = -20.0;
         let _ = s
             .add_toolpath(0, make_tp(0, "Flat", OperationConfig::DropCutter(cfg), 0))
@@ -515,7 +518,7 @@ mod tests {
         let mut s = wood_session();
         let _ = s.add_tool(tapered_ball(1.0));
         let mut cfg = DropCutterConfig::default();
-        cfg.plunge_rate = 150.0; // at cap
+        cfg.plunge_rate = Some(150.0); // at cap
         cfg.min_z = -20.0;
         let _ = s
             .add_toolpath(0, make_tp(0, "TB", OperationConfig::DropCutter(cfg), 0))
@@ -647,7 +650,7 @@ mod tests {
         // TP0: DropCutter with stale min_z + tapered-ball plunge defect.
         let mut tp0 = DropCutterConfig::default();
         tp0.min_z = -50.0;
-        tp0.plunge_rate = 750.0;
+        tp0.plunge_rate = Some(750.0);
         let _ = s
             .add_toolpath(
                 0,
@@ -681,7 +684,7 @@ mod tests {
         let mut s = wood_session();
         let _ = s.add_tool(flat_em(6.0));
         let mut cfg = ProjectCurveConfig::default();
-        cfg.depth = -2.0;
+        cfg.depth = Some(-2.0);
         cfg.direction = ProjectCurveDirection::FromBelow;
         let _ = s
             .add_toolpath(
@@ -714,7 +717,7 @@ mod tests {
         let mut s = wood_session();
         let _ = s.add_tool(flat_em(6.0));
         let mut cfg = ProjectCurveConfig::default();
-        cfg.depth = -0.5;
+        cfg.depth = Some(-0.5);
         cfg.direction = ProjectCurveDirection::FromAbove;
         let _ = s
             .add_toolpath(0, make_tp(0, "PC", OperationConfig::ProjectCurve(cfg), 0))
@@ -729,7 +732,7 @@ mod tests {
         let mut s = wood_session();
         let _ = s.add_tool(flat_em(6.0));
         let mut cfg = ProjectCurveConfig::default();
-        cfg.depth = 2.0;
+        cfg.depth = Some(2.0);
         let _ = s
             .add_toolpath(
                 0,
@@ -750,7 +753,7 @@ mod tests {
         let mut s = wood_session();
         let _ = s.add_tool(flat_em(6.0));
         let mut cfg = ProjectCurveConfig::default();
-        cfg.depth = 0.0;
+        cfg.depth = Some(0.0);
         let _ = s
             .add_toolpath(
                 0,
@@ -766,7 +769,7 @@ mod tests {
         let mut s = wood_session();
         let _ = s.add_tool(flat_em(6.0));
         let mut cfg = ProjectCurveConfig::default();
-        cfg.depth = -3.5;
+        cfg.depth = Some(-3.5);
         let _ = s
             .add_toolpath(0, make_tp(0, "PC", OperationConfig::ProjectCurve(cfg), 0))
             .unwrap();
@@ -776,7 +779,7 @@ mod tests {
         let OperationConfig::ProjectCurve(after) = &s.toolpath_configs()[0].operation else {
             panic!("operation type changed during auto-fix");
         };
-        assert!((after.depth - 3.5).abs() < 1e-9);
+        assert!((after.depth.expect("S11: the fixture sets it") - 3.5).abs() < 1e-9);
         // Re-running the validator should now be clean.
         let after_defects = validate_stale_defaults(&s);
         assert!(after_defects.is_empty(), "auto-fix should clear the rule");
@@ -788,7 +791,7 @@ mod tests {
         let _ = s.add_tool(flat_em(6.0));
         let mut cfg = Adaptive3dConfig::default();
         cfg.stepover = 1.2;
-        cfg.plunge_rate = 500.0;
+        cfg.plunge_rate = Some(500.0);
         let _ = s
             .add_toolpath(0, make_tp(0, "Clean", OperationConfig::Adaptive3d(cfg), 0))
             .unwrap();

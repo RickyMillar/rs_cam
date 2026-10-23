@@ -137,7 +137,7 @@ fn mini(with_pin_drill: bool) -> ProjectSession {
     let stock = rs_cam_core::compute::stock_config::StockConfig {
         x: 65.0,
         y: 65.0,
-        z: 24.5,
+        z: Some(24.5),
         origin_x: 0.0,
         origin_y: 0.0,
         origin_z: 0.0,

@@ -2,6 +2,33 @@
 
 Lead session: Fable, started 2026-10-23 10:41 NZDT. **G0 PASSED 2026-10-23 13:30** with rulings below. Next: Phase 1.5 instruments, then Phase 2.
 
+## Phase 1.5 + Phase 2 start (2026-10-23 13:45)
+
+Branch `adaptive-instruments` in worktree `.claude/worktrees/adaptive-head`
+(HEAD a23df1f8, own target). Agents edit there with no cargo; one verifier
+runs the worktree lane script. The lead commits by pathspec on the branch
+and cherry-picks onto master after the peer's default-removal commit lands
+(it edits `compute/operation_configs.rs` widely; rebase on it).
+
+Facts checked before briefing: `metrology::union_coverage` is LIVE (only
+its evidence test is a gated target); `ToolpathStats::untouched_material_mm2`
+is the scallop-cascade measure, not a rough measure, so the rough's coverage
+is the union audit per op checkpoint; `ModelGougeRule::Exempt` on 3D ops
+dates from UX-7b (6d5a5423, 2026-10-22), whose scope was 2.5D ops; the
+Surface rule samples EMITTED moves at ≤ D/4 through the drop-cutter.
+
+| Agent | Scope | Owns (files) |
+|---|---|---|
+| A coverage+thinstand | G-ROUGHCOV + G-THINSTAND: union audit per rough checkpoint against model + stock_to_leave, islands with height and min width, into SimulationTriage findings | `metrology/union_coverage.rs`, `stock/sim_triage.rs`, `session/compute/simulation.rs` (wiring), new sentry |
+| B gouge | G-ROUGHGOUGE: Surface rule with the stock_to_leave allowance for 3D Rough (and other 3D ops that leave stock), on emitted moves; registry row change LAST | `compute/model_gouge.rs`, `compute/catalog/registry.rs` (one row), new sentry with an injected gouge |
+| C candidate (a) | Phase 2 2D: geodesic field from the entry with islands as obstacles, wraps as level sets, one continuous path, behind a research flag; render beside the 2D baselines on `ux_2d_star` / `ux_2d_pocket` | new `adaptive/research_geodesic.rs` (or similar), a render harness; no edit to shipped paths |
+| B result (14:20) | DONE, lead-reviewed by path: new `ModelGougeRule::Allowance { fix }`; limit = drop-cutter CL Z + (stock_to_leave_axial − chord_tolerance(tolerance, segment_merge_tolerance)), both read from the config the planner reads (no new constant; `OperationConfig::model_gouge_limit_offset_mm`); REG_ADAPTIVE3D row flipped; probe unchanged (real cutter − MODEL_GOUGE_TOL_MM); measured on the exported moves at generation; sentry `a_rough_cuts_no_deeper_than_its_leave_g_roughgouge` (4 tests). Deviation from the brief accepted: the Z tolerance is the op's own chord tolerance, not the 0.02 mm CAD rounding, because the RDP simplification may sit a chord that far below a draped point. Not built yet. | `P15_B_gouge.md` (worktree) |
+| A result (14:35) | DONE (first pass): `metrology` is gated behind `test-support` at lib.rs (lead's "live" fact was wrong at the crate root), so the column walk and island flood moved to ungated `stock/standing_islands.rs`; the union audit calls it. Rough target = model + stock_to_leave_axial where there is model, mesh-bbox floor + leave where there is none (hole cores, outer band), raised to a pinned bottom_z, read only on tool-reachable columns. Bar: standing > leave + one cell (G-OVERCUTREF tolerance). Islands 4-connected with area, height, inscribed-disc width, peak; class safety when height > depth_per_pass + cell else action; abstains when cell > leave or flipped setup. Id `project.rough_leaves_islands`, field `triage.coverage`. Rulings given 14:40: add the viz tab row, append per-toolpath triage findings to `get_toolpath_diagnostics`, one narrate sentence. | `P15_A_coverage.md` (worktree) |
+| D verifier | after A–C: fmt, clippy, named sentries, `rs_cam_core --lib adaptive`, viz `--lib`, mcp tests; `rg` for bare float literals in new code | — |
+
+Operator 13:40: "sounds like it's worth trying some of these ideas" → Phase 2
+candidate (a) starts in parallel with the instruments; (b) and (c) wait for G1.
+
 ## G0 rulings (operator, 2026-10-23 13:25) and lead judgements
 
 1. **Instruments first.** Operator: "instruments are important." Before

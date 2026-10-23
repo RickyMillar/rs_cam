@@ -1023,7 +1023,7 @@ fn draw_feeds_tab(
         }
     });
     ui.add_space(4.0);
-    draw_speed_controls(ui, entry, project_default_rpm);
+    draw_speed_controls(ui, entry);
     ui.add_space(4.0);
     if let Some(tool_cfg) = tool_configs
         .iter()

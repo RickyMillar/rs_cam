@@ -265,7 +265,7 @@ fn suggest_ships_the_lowered_rpm_with_a_rationale_row_fm8() {
     let stock = StockContext {
         stock_top_z: 0.0,
         stock_bottom_z: -18.0,
-        stock_z: 18.0,
+        stock_z: Some(18.0),
         stock_padding: 2.0,
     };
     let s = suggest_params(SuggestParamsInput {
@@ -295,7 +295,7 @@ fn suggest_ships_the_lowered_rpm_with_a_rationale_row_fm8() {
     assert_eq!(s.operation.spindle_rpm(), Some(15_748));
     assert_eq!(
         s.operation.feed_rate(),
-        3999.0,
+        Some(3999.0),
         "0.254 x 15 748 = 3999.992, floored"
     );
 

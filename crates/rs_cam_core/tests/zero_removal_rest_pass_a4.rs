@@ -132,8 +132,8 @@ fn unified_cfg(raster_stepover: f64, rest_pass: bool) -> UnifiedFinishConfig {
         raster_stepover,
         z_step: 0.5,
         sampling: 0.4,
-        feed_rate: 2000.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(2000.0),
+        plunge_rate: Some(500.0),
         // The claims pipeline runs only under `pencil_claims`, and
         // `territory_clip` is what makes the op a rest pass at all.
         pencil_claims: rest_pass,

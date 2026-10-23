@@ -415,7 +415,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
     // exactly the "phantom straight line across the stock" the user sees.
     let mut with_links = DressupConfig::default();
     with_links.link_moves = Some(LinkDressupParams {
-        max_distance: 10.0,
+        max_distance: Some(10.0),
         ..LinkDressupParams::default()
     });
     let tp_with_links = apply_dressups(

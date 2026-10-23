@@ -189,7 +189,10 @@ pub(super) fn apply_aggressiveness(
         .filter(|v| usable(*v))
         .unwrap_or(calc.rpm);
     let flutes = f64::from(tool.flute_count.max(1));
-    let feed = operation.feed_rate();
+    // S11: an unset feed has no chip to check.
+    let Some(feed) = operation.feed_rate() else {
+        return Vec::new();
+    };
     if !(usable(rpm) && usable(feed)) {
         return Vec::new();
     }

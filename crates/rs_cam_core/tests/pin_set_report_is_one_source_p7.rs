@@ -61,7 +61,7 @@ fn mini() -> ProjectSession {
     let stock = StockConfig {
         x: 65.0,
         y: 65.0,
-        z: 24.5,
+        z: Some(24.5),
         origin_z: -24.5,
         padding: 0.0,
         auto_from_model: false,

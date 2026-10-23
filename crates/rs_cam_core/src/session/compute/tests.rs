@@ -26,6 +26,10 @@ use serde_json::json;
 
 fn make_session() -> ProjectSession {
     let mut s = ProjectSession::new_empty();
+    // S11: the fixture states the stock thickness.
+    let mut stock = s.stock_config().clone();
+    crate::compute::fixture_values::fill_unset_stock(&mut stock);
+    let _ = s.set_stock_config(stock).unwrap();
     let tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     let _ = s.add_tool(tool);
     s
@@ -37,8 +41,15 @@ fn make_tc(tool_id: usize) -> ToolpathConfig {
         id: ToolpathId::from_raw(0),
         name: "test".to_owned(),
         enabled: true,
-        operation: OperationConfig::Pocket(PocketConfig::default()),
-        dressups: DressupConfig::default(),
+        // S11: the fixture states the floor and the feeds.
+        operation: crate::compute::fixture_values::fixture_op(
+            crate::compute::catalog::OperationType::Pocket,
+        ),
+        dressups: {
+            let mut dressups = DressupConfig::default();
+            crate::compute::fixture_values::fill_unset_dressups(&mut dressups);
+            dressups
+        },
         heights: HeightsConfig::default(),
         tool_id: crate::ids::ToolId::from_raw(tool_id),
         model_id: crate::ids::ModelId::from_raw(0),
@@ -64,7 +75,9 @@ fn set_toolpath_param_feed_rate() {
     let _ = s.set_toolpath_param(0, "feed_rate", json!(2000.0)).unwrap();
     // Verify via OperationParams trait
     match &s.toolpath_configs()[0].operation {
-        OperationConfig::Pocket(cfg) => assert!((cfg.feed_rate - 2000.0).abs() < 1e-9),
+        OperationConfig::Pocket(cfg) => {
+            assert_eq!(cfg.feed_rate, Some(2000.0));
+        }
         _ => panic!("expected Pocket"),
     }
 }
@@ -77,7 +90,9 @@ fn set_toolpath_param_plunge_rate() {
         .set_toolpath_param(0, "plunge_rate", json!(500.0))
         .unwrap();
     match &s.toolpath_configs()[0].operation {
-        OperationConfig::Pocket(cfg) => assert!((cfg.plunge_rate - 500.0).abs() < 1e-9),
+        OperationConfig::Pocket(cfg) => {
+            assert_eq!(cfg.plunge_rate, Some(500.0));
+        }
         _ => panic!("expected Pocket"),
     }
 }
@@ -324,7 +339,7 @@ fn set_toolpath_param_drill_plunge_rate_updates_feed_rate() {
         .set_toolpath_param(0, "plunge_rate", json!(250.0))
         .unwrap();
     match &s.toolpath_configs()[0].operation {
-        OperationConfig::Drill(cfg) => assert_eq!(cfg.feed_rate, 250.0),
+        OperationConfig::Drill(cfg) => assert_eq!(cfg.feed_rate, Some(250.0)),
         _ => panic!("expected Drill"),
     }
 }
@@ -553,8 +568,11 @@ fn set_toolpath_param_invalid_index() {
 fn set_toolpath_param_spindle_rpm() {
     let mut s = make_session();
     let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
-    // Default is None.
-    assert_eq!(s.toolpath_configs()[0].operation.spindle_rpm(), None);
+    // S11: the fixture states its RPM; the setter replaces it.
+    assert_eq!(
+        s.toolpath_configs()[0].operation.spindle_rpm(),
+        Some(crate::compute::fixture_values::FIXTURE_SPINDLE_RPM)
+    );
     let _ = s
         .set_toolpath_param(0, "spindle_rpm", json!(15000))
         .unwrap();
@@ -2032,8 +2050,8 @@ fn terrain_adaptive3d_session(strategy: ClearingStrategy) -> ProjectSession {
         stepover: 1.2,
         depth_per_pass: 3.0,
         stock_to_leave_axial: 0.5,
-        feed_rate: 2500.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(2500.0),
+        plunge_rate: Some(500.0),
         tolerance: 0.25,
         min_cutting_radius: 0.0,
         entry_style: Adaptive3dEntryStyle::Plunge,

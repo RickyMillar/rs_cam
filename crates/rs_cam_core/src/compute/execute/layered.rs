@@ -912,7 +912,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
-    use crate::compute::catalog::{OperationConfig, OperationType};
+    use crate::compute::catalog::OperationType;
     use crate::compute::config::ResolvedHeights;
     use crate::compute::cutter::build_cutter;
     use crate::compute::execute::GenerationFindings;
@@ -1022,7 +1022,7 @@ mod tests {
             };
             let prepared = crate::compute::execute::prologue::prepare(
                 &ctx,
-                &OperationConfig::new_default(OperationType::Pocket),
+                &crate::compute::fixture_values::fixture_op(OperationType::Pocket),
             )
             .unwrap();
             let op = CancelMidLadder {

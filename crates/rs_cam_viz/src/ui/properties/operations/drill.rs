@@ -3,7 +3,7 @@ use rs_cam_core::session::HoleSelection;
 
 use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
 
-use super::super::{depth_caution_row, dv, dv_pill, p};
+use super::super::{depth_caution_row, dv, dv_pill_opt, p};
 use super::boundary_2d::floor_row;
 use super::{DepthBeyondStock, FloorInputs};
 use crate::ui::components::{OneLine, UiExt as _};
@@ -71,11 +71,12 @@ fn draw_drill_cycle_combo(ui: &mut egui::Ui, id_salt: &str, cycle: &mut DrillCyc
 fn draw_drill_feed_rows(
     ui: &mut egui::Ui,
     op: OperationType,
-    feed_rate: &mut f64,
+    feed_rate: &mut Option<f64>,
     retract_z: &mut f64,
     feed_sugg: Option<super::super::pills::PillSuggestion<'_>>,
 ) {
-    dv_pill(
+    // S11: an unset feed shows the hint "set a value".
+    dv_pill_opt(
         ui,
         p(op, "feed_rate", "Feed Rate:"),
         feed_rate,

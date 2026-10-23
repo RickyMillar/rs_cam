@@ -84,7 +84,7 @@ fn op_matrix() -> Vec<(&'static str, OperationConfig)> {
         (
             "trace",
             OperationConfig::Trace(TraceConfig {
-                depth: 6.0,
+                depth: Some(6.0),
                 depth_per_pass: 2.0,
                 ..TraceConfig::default()
             }),

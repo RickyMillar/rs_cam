@@ -81,7 +81,7 @@ fn fixture() -> AppState {
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "F216 fixture".to_owned(),
         enabled: true,
-        operation: OperationConfig::new_default(OperationType::Pocket),
+        operation: rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket),
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: rs_cam_core::ids::ToolId::from_raw(1),
@@ -329,7 +329,7 @@ fn no_dry_run(
 
 #[test]
 fn every_feeds_input_moves_the_memo_key_f216() {
-    let operation = OperationConfig::new_default(OperationType::Pocket);
+    let operation = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket);
     let tool = tool();
     let material = Material::Plywood {
         grade: PlywoodGrade::BalticBirch,
@@ -363,7 +363,7 @@ fn every_feeds_input_moves_the_memo_key_f216() {
     assert!(result.is_some(), "the fixture pairing must give a result");
 
     let mut moved_op = operation.clone();
-    moved_op.set_feed_rate(operation.feed_rate() + 100.0);
+    moved_op.set_feed_rate(operation.feed_rate().expect("S11: the fixture sets it") + 100.0);
     let mut moved_tool = tool.clone();
     moved_tool.flute_count = 3;
     let moved_material = Material::Plywood {

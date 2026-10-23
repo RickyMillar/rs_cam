@@ -175,7 +175,7 @@ fn final_operating_point(case: &Case) -> (f64, f64, f64) {
     let op = &case.suggested.operation;
     let flutes = f64::from(case.tool.flute_count.max(1));
     let rpm = f64::from(op.spindle_rpm().expect("Suggest writes the calculator RPM"));
-    let advance = op.feed_rate() / (rpm * flutes);
+    let advance = op.feed_rate().expect("S11: the fixture sets it") / (rpm * flutes);
     let geom = build_cutter(&case.tool).unwrap().to_geometry_hint();
     let factor = geometry_factor(
         geom,
@@ -227,7 +227,7 @@ fn dump(case: &Case) {
          advance={adv_f:.6} implied_target={tgt_f:.6}",
         op.stepover(),
         op.depth_per_pass(),
-        op.feed_rate(),
+        op.feed_rate().expect("S11: the fixture sets it"),
         op.spindle_rpm()
     );
     println!("   band       : {:?}", r.chipload_bounds);
@@ -369,7 +369,11 @@ fn a_raised_stepover_does_not_move_the_feed_at_all() {
     // direction, so a future change that raises a feed here fails even by
     // half a step.
     let calculator_feed = case.suggested.feeds_result.feed_rate_mm_min;
-    let shipped_feed = case.suggested.operation.feed_rate();
+    let shipped_feed = case
+        .suggested
+        .operation
+        .feed_rate()
+        .expect("S11: the fixture sets it");
     let quantisation_gap = calculator_feed - shipped_feed;
     assert!(
         quantisation_gap >= 0.0 && quantisation_gap < 1.0 + calculator_feed * 1e-9,

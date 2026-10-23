@@ -1149,7 +1149,7 @@ fn apply_stock_overrides(session: &mut ProjectSession, baseline_params: &str, ca
                         );
                         continue;
                     }
-                    stock.z = new_z;
+                    stock.z = Some(new_z);
                     stock.auto_from_model = false;
                     let applied_z = stock.z;
                     if let Err(error) = crate::command::apply_command(

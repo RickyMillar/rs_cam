@@ -314,7 +314,7 @@ fn project_curve_spec(id: usize) -> RequestSpec {
     else {
         unreachable!("default op kind mismatch");
     };
-    cfg.depth = 0.75;
+    cfg.depth = Some(0.75);
     cfg.point_spacing = 1.0;
     let mut spec = RequestSpec::new(
         id,
@@ -2579,7 +2579,7 @@ fn worker_reconciles_semantic_links_with_debug_options_disabled() {
         // vacuous.
         spec.dressups.optimize_rapid_order = true;
         spec.dressups.link_moves = Some(LinkDressupParams {
-            max_distance: 50.0,
+            max_distance: Some(50.0),
             ..LinkDressupParams::default()
         });
         spec.dressups.arc_fitting = Some(ArcFitParams { tolerance: 0.05 });

@@ -122,7 +122,7 @@ fn toolpath() -> ToolpathConfig {
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Rough Pocket".to_owned(),
         enabled: true,
-        operation: OperationConfig::new_default(OperationType::Pocket),
+        operation: rs_cam_core::compute::fixture_values::fixture_op(OperationType::Pocket),
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: rs_cam_core::ids::ToolId::from_raw(1),
@@ -183,7 +183,11 @@ fn op_of(controller: &AppController<SilentBackend>) -> OperationConfig {
 
 /// Feed / plunge / RPM.
 fn speeds_of(op: &OperationConfig) -> (f64, f64, Option<u32>) {
-    (op.feed_rate(), op.plunge_rate(), op.spindle_rpm())
+    (
+        op.feed_rate().expect("S11: the fixture sets it"),
+        op.plunge_rate().expect("S11: the fixture sets it"),
+        op.spindle_rpm(),
+    )
 }
 
 /// DOC / WOC as raw bits. "Byte-identical" is the contract, so the comparison
@@ -326,7 +330,7 @@ fn the_speeds_apply_refuses_a_refused_pairing() {
         ToolType::EndMill,
     ));
     let mut refused = toolpath();
-    refused.operation = OperationConfig::new_default(OperationType::Scallop);
+    refused.operation = rs_cam_core::compute::fixture_values::fixture_op(OperationType::Scallop);
     let _ = builder.add_toolpath(0, refused).expect("add toolpath");
     controller.state.replace_session(builder.build());
 

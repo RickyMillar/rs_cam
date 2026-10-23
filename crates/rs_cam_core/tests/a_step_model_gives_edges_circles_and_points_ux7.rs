@@ -266,7 +266,7 @@ fn hole_stock(top: f64) -> StockConfig {
     StockConfig {
         x: 50.0,
         y: 40.0,
-        z: top,
+        z: Some(top),
         origin_x: -5.0,
         origin_y: -5.0,
         origin_z: 0.0,
@@ -408,7 +408,7 @@ fn a_chamfer_and_a_trace_cut_step_edges_ux7() {
         edge.key()
     );
     let trace = OperationConfig::Trace(TraceConfig {
-        depth: 1.0,
+        depth: Some(1.0),
         selection: Selection::empty(),
         ..TraceConfig::default()
     });
@@ -449,7 +449,7 @@ fn default_session(model: LoadedModel, op: OperationConfig) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(StockConfig {
         x: 70.0,
         y: 50.0,
-        z: 30.0,
+        z: Some(30.0),
         origin_x: -5.0,
         origin_y: -5.0,
         origin_z: 0.0,

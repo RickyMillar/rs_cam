@@ -273,6 +273,11 @@ pub(super) fn prepare<'a>(
     if ctx.is_cancelled() {
         return Err(OperationError::Cancelled);
     }
+    // S11: a value with no derivation that is not set refuses before any
+    // geometry work: the op cannot cut with it.
+    if let Some(not_set) = op.not_set() {
+        return Err(OperationError::NotSet(not_set));
+    }
     check_inputs(ctx, op)
 }
 

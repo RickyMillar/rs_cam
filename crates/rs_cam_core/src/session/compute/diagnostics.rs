@@ -159,7 +159,10 @@ pub(super) fn plunge_stress_offenders_for_session(
             continue;
         };
         let geometry = tool_def.to_geometry_hint();
-        let plunge_rate = tc.operation.plunge_rate();
+        // S11: an unset plunge has no stress to check.
+        let Some(plunge_rate) = tc.operation.plunge_rate() else {
+            continue;
+        };
         if plunge_rate <= 0.0 {
             continue;
         }
@@ -654,7 +657,7 @@ impl ProjectSession {
             depth_per_pass_mm: tc.operation.depth_per_pass(),
             stepover_mm: tc.operation.stepover(),
             tool_diameter_mm: Some(tool.diameter),
-            feed_rate_mm_min: Some(tc.operation.feed_rate()),
+            feed_rate_mm_min: tc.operation.feed_rate(),
             spindle_rpm: Some(
                 tc.operation
                     .spindle_rpm()
@@ -862,7 +865,8 @@ impl ProjectSession {
             &kinematics,
             max_feed,
             rapid_feed,
-            tc.operation.plunge_rate(),
+            // S11: an op with no plunge has no utilisation.
+            tc.operation.plunge_rate()?,
         );
         util.feeds_provenance = Self::feeds_provenance_of(tc.id, toolpath, trace);
         Some(util)

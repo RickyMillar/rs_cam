@@ -46,8 +46,8 @@ pub(crate) fn generate_adaptive3d(
     let rough = Adaptive3dRough {
         cfg,
         tool: ctx.tool_def,
-        feed_rate: op.feed_rate(),
-        plunge_rate: op.plunge_rate(),
+        feed_rate: op.cut_feeds()?.feed_rate,
+        plunge_rate: op.cut_feeds()?.plunge_rate,
         entry_feed_rate: op.entry_feed_rate(),
     };
     run_volumetric(&rough, ctx, prepared)

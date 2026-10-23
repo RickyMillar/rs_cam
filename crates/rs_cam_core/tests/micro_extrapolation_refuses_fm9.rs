@@ -88,7 +88,7 @@ fn stock_ctx() -> StockContext {
     StockContext {
         stock_top_z: 0.0,
         stock_bottom_z: -18.0,
-        stock_z: 18.0,
+        stock_z: Some(18.0),
         stock_padding: 2.0,
     }
 }
@@ -302,7 +302,7 @@ fn a_standard_tapered_scallop_ships_fm9() {
         "{:?}",
         s.feeds_result.support
     );
-    assert!(s.operation.feed_rate() > 0.0);
+    assert!(s.operation.feed_rate().expect("S11: the fixture sets it") > 0.0);
 }
 
 /// Extrapolation P1 step 3: the 1.0 mm tool sits between two printed sizes

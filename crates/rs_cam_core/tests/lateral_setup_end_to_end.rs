@@ -241,7 +241,7 @@ fn pocket_op() -> OperationConfig {
         floor: rs_cam_core::compute::floor::Floor::top(POCKET_DEPTH),
         depth_per_pass: 2.0,
         stepover: 3.0,
-        feed_rate: 1500.0,
+        feed_rate: Some(1500.0),
         ..PocketConfig::default()
     })
 }
@@ -250,7 +250,7 @@ fn drill_op() -> OperationConfig {
     OperationConfig::Drill(DrillConfig {
         floor: rs_cam_core::compute::floor::Floor::Top { depth: DRILL_DEPTH },
         cycle: DrillCycleType::Simple,
-        feed_rate: 300.0,
+        feed_rate: Some(300.0),
         ..DrillConfig::default()
     })
 }
@@ -273,7 +273,7 @@ fn build_session(with_mesh: bool, with_fixture: bool) -> ProjectSession {
     let stock = StockConfig {
         x: STOCK_X,
         y: STOCK_Y,
-        z: STOCK_Z,
+        z: Some(STOCK_Z),
         origin_x: 0.0,
         origin_y: 0.0,
         origin_z: 0.0,

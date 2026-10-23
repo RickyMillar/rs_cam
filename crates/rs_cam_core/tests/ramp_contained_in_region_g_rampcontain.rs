@@ -113,7 +113,7 @@ fn pocket_session(dressups: DressupConfig) -> ProjectSession {
     builder = builder.stock(StockConfig {
         x: 100.0,
         y: 100.0,
-        z: 12.0,
+        z: Some(12.0),
         origin_x: -10.0,
         origin_y: -10.0,
         origin_z: -12.0,
@@ -158,8 +158,8 @@ fn pocket_session(dressups: DressupConfig) -> ProjectSession {
             // every DPP, so this value does not set the defect's size —
             // it only sets how many entries there are to check.
             depth_per_pass: 1.2,
-            feed_rate: 770.0,
-            plunge_rate: 385.0,
+            feed_rate: Some(770.0),
+            plunge_rate: Some(385.0),
             climb: true,
             pattern: PocketPattern::Contour,
             angle: 0.0,

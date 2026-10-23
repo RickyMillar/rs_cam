@@ -83,6 +83,10 @@ pub enum DepthSemantics {
     /// `ResolvedHeights::bottom_z`. A reader with no height context treats
     /// it as "no depth" (ruling L-6).
     Resolved,
+    /// S11: the op takes an explicit depth, and it is not set. Generation
+    /// refuses (`OperationError::NotSet`); a reader with no depth treats
+    /// it as "no depth".
+    Unset,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -756,12 +760,22 @@ impl OperationType {
 /// returns `false`. `ProjectSession::set_toolpath_param` refuses on
 /// `false` instead of reporting a success it did not deliver (N5).
 pub trait OperationParams {
-    fn feed_rate(&self) -> f64;
+    /// The cut feed (mm/min), or `None` when it is not set (S11: Suggest
+    /// had no data for the tool, and the operator did not set it).
+    fn feed_rate(&self) -> Option<f64>;
     fn set_feed_rate(&mut self, value: f64);
 
     /// Returns the plunge rate. Drill operations return feed_rate since they're purely vertical.
-    fn plunge_rate(&self) -> f64;
+    /// `None` when it is not set (S11).
+    fn plunge_rate(&self) -> Option<f64>;
     fn set_plunge_rate(&mut self, value: f64);
+    /// The name of the field the plunge rate reads: `plunge_rate`, or
+    /// `feed_rate` on a drilling op (its motion is vertical).
+    fn plunge_field(&self) -> &'static str;
+    /// S11: clear the cut feed (a `null` from a setter).
+    fn unset_feed_rate(&mut self);
+    /// S11: clear the plunge feed (a `null` from a setter).
+    fn unset_plunge_rate(&mut self);
 
     /// Feed (mm/min) of a helix or ramp entry through material, when the
     /// operator set one. `None` uses the plunge feed.
@@ -917,7 +931,7 @@ impl OperationConfig {
             },
             OperationConfig::VCarve(c) => Capabilities {
                 feeds_hints: FeedsHints {
-                    axial_depth_mm: Some(c.max_depth),
+                    axial_depth_mm: c.max_depth,
                     ..FeedsHints::NONE
                 },
                 ..row
@@ -1380,7 +1394,8 @@ impl OperationConfig {
         self.geometry_requirement() == GeometryRequirement::ItemsAndMesh
     }
 
-    pub fn feed_rate(&self) -> f64 {
+    /// The cut feed, or `None` when it is not set (S11).
+    pub fn feed_rate(&self) -> Option<f64> {
         self.as_params().feed_rate()
     }
 
@@ -1390,8 +1405,131 @@ impl OperationConfig {
 
     /// Returns the plunge rate.
     /// Drill ops are purely vertical -- feed_rate IS the plunge rate.
-    pub fn plunge_rate(&self) -> f64 {
+    pub fn plunge_rate(&self) -> Option<f64> {
         self.as_params().plunge_rate()
+    }
+
+    /// S11: the depth parameters of this op that no rule gives and that
+    /// are not set, in schema order. Empty when every depth is set. The
+    /// floor of a floor op is not here: the heights door refuses it
+    /// (`FloorRefusal::Unset`).
+    pub fn unset_depths(&self) -> Vec<&'static str> {
+        let unset = |value: Option<f64>, name: &'static str| value.is_none().then_some(name);
+        match self {
+            OperationConfig::Trace(c) => unset(c.depth, "depth").into_iter().collect(),
+            OperationConfig::VCarve(c) => unset(c.max_depth, "max_depth").into_iter().collect(),
+            OperationConfig::Inlay(c) => {
+                unset(c.pocket_depth, "pocket_depth").into_iter().collect()
+            }
+            OperationConfig::InlayPlug(c) => {
+                unset(c.pocket_depth, "pocket_depth").into_iter().collect()
+            }
+            OperationConfig::ProjectCurve(c) => unset(c.depth, "depth").into_iter().collect(),
+            OperationConfig::Face(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Bore(_)
+            | OperationConfig::AlignmentPinDrill(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_) => Vec::new(),
+        }
+    }
+
+    /// S11: the feeds parameters of this op that are not set
+    /// (`feed_rate`, `plunge_rate`, `spindle_rpm`), in that order. A
+    /// drilling op reads its plunge from `feed_rate`, so it names that
+    /// field once.
+    pub fn unset_feeds(&self) -> Vec<&'static str> {
+        let params = self.as_params();
+        let mut fields = Vec::new();
+        if params.feed_rate().is_none() {
+            fields.push("feed_rate");
+        }
+        if params.plunge_rate().is_none() && !fields.contains(&params.plunge_field()) {
+            fields.push(params.plunge_field());
+        }
+        if params.spindle_rpm().is_none() {
+            fields.push("spindle_rpm");
+        }
+        fields
+    }
+
+    /// S11: every field of this op that is not set, in the order generation
+    /// refuses them: `floor` (an unset floor), the depths, the feeds. The
+    /// MCP replies list it as `unset`.
+    pub fn unset_fields(&self) -> Vec<&'static str> {
+        let mut fields = Vec::new();
+        if self.floor().is_some_and(|floor| floor.is_unset()) {
+            fields.push("floor");
+        }
+        fields.extend(self.unset_depths());
+        fields.extend(self.unset_feeds());
+        fields
+    }
+
+    /// S11: why this op refuses to generate for a value that is not set,
+    /// or `None`. A depth comes first, then the feeds.
+    pub fn not_set(&self) -> Option<crate::compute::not_set::NotSet> {
+        use crate::compute::not_set::{NotSet, NotSetKind};
+        let op = self.op_type().label();
+        let depths = self.unset_depths();
+        if !depths.is_empty() {
+            return Some(NotSet {
+                op,
+                kind: NotSetKind::Depth,
+                fields: depths,
+            });
+        }
+        let feeds = self.unset_feeds();
+        (!feeds.is_empty()).then_some(NotSet {
+            op,
+            kind: NotSetKind::Feeds,
+            fields: feeds,
+        })
+    }
+
+    /// S11: the feeds the generators read, or the [`NotSet`] refusal
+    /// when one of them is not set.
+    ///
+    /// # Errors
+    ///
+    /// A [`NotSet`] of kind `Feeds` that names each unset field.
+    ///
+    /// [`NotSet`]: crate::compute::not_set::NotSet
+    pub fn cut_feeds(
+        &self,
+    ) -> Result<crate::compute::not_set::CutFeeds, crate::compute::not_set::NotSet> {
+        use crate::compute::not_set::{CutFeeds, NotSet, NotSetKind};
+        let params = self.as_params();
+        match (
+            params.feed_rate(),
+            params.plunge_rate(),
+            params.spindle_rpm(),
+        ) {
+            (Some(feed_rate), Some(plunge_rate), Some(spindle_rpm)) => Ok(CutFeeds {
+                feed_rate,
+                plunge_rate,
+                spindle_rpm,
+            }),
+            _ => Err(NotSet {
+                op: self.op_type().label(),
+                kind: NotSetKind::Feeds,
+                fields: self.unset_feeds(),
+            }),
+        }
     }
 
     pub fn set_plunge_rate(&mut self, value: f64) {
@@ -1413,7 +1551,9 @@ impl OperationConfig {
     /// the entry emitter, whose `feed_rate` is the dressup caller's feed
     /// (G10 F3).
     pub fn entry_feed_rate(&self) -> Option<f64> {
-        self.ramp_feed_rate().map(|r| r.min(self.feed_rate()))
+        let feed = self.feed_rate();
+        self.ramp_feed_rate()
+            .map(|r| feed.map_or(r, |feed| r.min(feed)))
     }
 
     pub fn stepover(&self) -> Option<f64> {
@@ -1465,7 +1605,7 @@ impl OperationConfig {
     pub fn default_depth_for_heights(&self) -> f64 {
         match self.depth_semantics() {
             DepthSemantics::Explicit(value) | DepthSemantics::DerivedStockTop(value) => value.abs(),
-            DepthSemantics::None | DepthSemantics::Resolved => 0.0,
+            DepthSemantics::None | DepthSemantics::Resolved | DepthSemantics::Unset => 0.0,
         }
     }
 
@@ -1687,10 +1827,16 @@ impl OperationConfig {
             }
             Self::Adaptive(cfg) => floor_ladder(top_z, floor, cfg.depth_per_pass, 0),
             Self::Zigzag(cfg) => floor_ladder(top_z, floor, cfg.depth_per_pass, 0),
-            Self::Trace(cfg) => uniform(cfg.depth, cfg.depth_per_pass),
+            // S11: an unset depth gives no level (the prologue refuses it
+            // first, `OperationError::NotSet`).
+            Self::Trace(cfg) => cfg
+                .depth
+                .map_or_else(Vec::new, |depth| uniform(depth, cfg.depth_per_pass)),
             // The plug kernel walks the same `z_ladder` arm over the same
             // total (`ops::inlay::inlay_plug_toolpath_with_cancel`).
-            Self::InlayPlug(cfg) => uniform(cfg.total_cut_depth(), cfg.depth_per_pass),
+            Self::InlayPlug(cfg) => cfg
+                .total_cut_depth()
+                .map_or_else(Vec::new, |depth| uniform(depth, cfg.depth_per_pass)),
             // The one Face ladder (W3.3): the kernel and the Layered Face
             // read the same function.
             Self::Face(cfg) => {

@@ -251,7 +251,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: 40.0,
         y: 24.0,
-        z: 6.0,
+        z: Some(6.0),
         origin_x: -20.0,
         origin_y: -12.0,
         origin_z: -6.0,

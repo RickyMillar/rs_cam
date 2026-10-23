@@ -123,7 +123,7 @@ fn controller(tool_diameter: f64) -> AppController<SilentBackend> {
         .stock(StockConfig {
             x: 100.0,
             y: 40.0,
-            z: 18.0,
+            z: Some(18.0),
             origin_x: -30.0,
             origin_y: -20.0,
             origin_z: -18.0,

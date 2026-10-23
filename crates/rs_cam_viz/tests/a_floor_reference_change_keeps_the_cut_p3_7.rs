@@ -159,7 +159,7 @@ fn session() -> ProjectSession {
         .stock(StockConfig {
             x: 60.0,
             y: 60.0,
-            z: 20.0,
+            z: Some(20.0),
             origin_x: -30.0,
             origin_y: -30.0,
             origin_z: -15.0,

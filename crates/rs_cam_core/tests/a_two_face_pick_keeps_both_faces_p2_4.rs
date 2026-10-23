@@ -110,7 +110,7 @@ fn stock() -> StockConfig {
     StockConfig {
         x: FACE_B_X + FACE_SIDE + 10.0,
         y: FACE_SIDE + 10.0,
-        z: FACE_Z + 10.0,
+        z: Some(FACE_Z + 10.0),
         origin_x: -5.0,
         origin_y: -5.0,
         origin_z: -5.0,

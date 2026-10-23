@@ -156,7 +156,7 @@ fn drill_controller(face_up: FaceUp, turn: ZRotation) -> AppController<SilentBac
     let stock = StockConfig {
         x: 100.0,
         y: 80.0,
-        z: 20.0,
+        z: Some(20.0),
         origin_x: -10.0,
         origin_y: -5.0,
         origin_z: -20.0,
@@ -274,7 +274,7 @@ fn a_click_on_a_drawn_hole_toggles_it(face_up: FaceUp, turn: ZRotation) {
         // transform, not from the helper the code shares.
         let drawn_xy = frame.transform_point(P3::new(item.xy.x, item.xy.y, 0.0), &stock);
         let drawn = P3::new(drawn_xy.x, drawn_xy.y, frame.effective_stock(&stock).2);
-        let raw = P3::new(item.xy.x, item.xy.y, stock.origin_z + stock.z);
+        let raw = P3::new(item.xy.x, item.xy.y, stock.top_z());
         let at = screen(&camera, drawn);
         let old = screen(&camera, raw);
         assert!(
@@ -361,7 +361,7 @@ fn a_click_on_a_drawn_face_picks_it_on_a_flipped_setup() {
     let stock = StockConfig {
         x: bbox.max.x - bbox.min.x,
         y: bbox.max.y - bbox.min.y,
-        z: bbox.max.z - bbox.min.z,
+        z: Some(bbox.max.z - bbox.min.z),
         origin_x: bbox.min.x,
         origin_y: bbox.min.y,
         origin_z: bbox.min.z,

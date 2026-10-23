@@ -130,7 +130,7 @@ fn fixture() -> AppState {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
-        z: 18.0,
+        z: Some(18.0),
         auto_from_model: false,
         ..StockConfig::default()
     };
@@ -168,6 +168,10 @@ fn fixture() -> AppState {
             HeightsConfig::default(),
         ),
     ] {
+        // S11: the fixture states the feeds and the depths; the Pocket floor
+        // stays not set, so the unset-floor rows are measured too.
+        let mut op = op;
+        rs_cam_core::compute::fixture_values::fill_unset_keep_floor(&mut op);
         let mut config = toolpath(name, model, op);
         config.heights = heights;
         builder

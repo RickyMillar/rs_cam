@@ -97,8 +97,8 @@ fn pocket_op(ramp_feed: Option<f64>) -> OperationConfig {
         cfg.floor = rs_cam_core::compute::floor::Floor::top(POCKET_DEPTH);
         cfg.depth_per_pass = POCKET_DEPTH;
         cfg.stepover = 1.0;
-        cfg.feed_rate = FEED;
-        cfg.plunge_rate = PLUNGE;
+        cfg.feed_rate = Some(FEED);
+        cfg.plunge_rate = Some(PLUNGE);
         cfg.ramp_feed_rate = ramp_feed;
     }
     op
@@ -359,8 +359,8 @@ fn adaptive3d_toolpath(style: Adaptive3dEntryStyle, helix_radius_factor: f64) ->
         stepover: 2.0,
         depth_per_pass: 8.0,
         stock_to_leave_axial: 0.5,
-        feed_rate: FEED,
-        plunge_rate: PLUNGE,
+        feed_rate: Some(FEED),
+        plunge_rate: Some(PLUNGE),
         ramp_feed_rate: Some(RAMP_FEED),
         entry_style: style,
         helix_radius_factor,

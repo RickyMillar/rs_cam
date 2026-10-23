@@ -76,7 +76,7 @@ fn session_with(pins: Vec<AlignmentPin>, flip: bool) -> ProjectSession {
             stock: Box::new(StockConfig {
                 x: 65.0,
                 y: 65.0,
-                z: 12.0,
+                z: Some(12.0),
                 origin_x: 0.0,
                 origin_y: 0.0,
                 origin_z: -12.0,

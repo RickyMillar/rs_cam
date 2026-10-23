@@ -34,7 +34,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
@@ -135,7 +135,8 @@ fn toolpath(name: &str, op_type: OperationType, stock_source: StockSource) -> To
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,
-        operation: OperationConfig::new_default(op_type),
+        // S11: the fixture states the values before S11.
+        operation: rs_cam_core::compute::fixture_values::fixture_op(op_type),
         dressups: Default::default(),
         heights: Default::default(),
         tool_id: rs_cam_core::ids::ToolId::from_raw(1),
@@ -228,11 +229,9 @@ fn id_at(controller: &AppController<SilentBackend>, index: usize) -> rs_cam_core
 }
 
 fn feed_at(controller: &AppController<SilentBackend>, index: usize) -> Option<f64> {
-    Some(
-        controller.state.session().toolpath_configs()[index]
-            .operation
-            .feed_rate(),
-    )
+    controller.state.session().toolpath_configs()[index]
+        .operation
+        .feed_rate()
 }
 
 fn export(controller: &AppController<SilentBackend>) -> Result<String, String> {

@@ -26,6 +26,8 @@ mod heights;
 mod load_report;
 pub mod multitool;
 mod mutation;
+mod op_draft;
+pub use op_draft::{DraftRefusal, ToolpathDraft};
 mod pin_report;
 mod pins;
 pub mod project_file;
@@ -1964,6 +1966,17 @@ impl ProjectSession {
         self.stock.bbox()
     }
 
+    /// S11 (operator ruling 2026-10-23): the refusal of every op while the
+    /// stock thickness is not set (a drawing stock), or `None`. Generation
+    /// refuses with it, and the diagnostics show it before generation.
+    #[must_use]
+    pub fn stock_thickness_refusal(&self) -> Option<String> {
+        self.stock
+            .thickness()
+            .is_none()
+            .then(|| crate::compute::stock_config::STOCK_THICKNESS_NOT_SET_TEXT.to_owned())
+    }
+
     /// List all toolpaths with summary info.
     pub fn list_toolpaths(&self) -> Vec<ToolpathSummary> {
         self.toolpath_configs
@@ -2368,7 +2381,7 @@ impl ProjectSession {
             z_rotation,
             stock_x: self.stock.x,
             stock_y: self.stock.y,
-            stock_z: self.stock.z,
+            stock_z: self.stock.box_height(),
             stock_origin_x: self.stock.origin_x,
             stock_origin_y: self.stock.origin_y,
             stock_origin_z: self.stock.origin_z,
@@ -2385,11 +2398,16 @@ impl ProjectSession {
         z_rotation: ZRotation,
     ) -> P3 {
         // 1. Undo ZRotation
-        let (eff_w, eff_d, _) = face_up.effective_stock(self.stock.x, self.stock.y, self.stock.z);
+        let (eff_w, eff_d, _) =
+            face_up.effective_stock(self.stock.x, self.stock.y, self.stock.box_height());
         let unrotated = z_rotation.inverse_transform_point(p, eff_w, eff_d);
         // 2. Undo FaceUp flip -> stock-relative
-        let rel =
-            face_up.inverse_transform_point(unrotated, self.stock.x, self.stock.y, self.stock.z);
+        let rel = face_up.inverse_transform_point(
+            unrotated,
+            self.stock.x,
+            self.stock.y,
+            self.stock.box_height(),
+        );
         // 3. Translate stock-relative -> world
         P3::new(
             rel.x + self.stock.origin_x,
@@ -2519,7 +2537,10 @@ mod tests {
         let bbox = session.stock_bbox();
         assert!((bbox.max.x - bbox.min.x - 100.0).abs() < 1e-6);
         assert!((bbox.max.y - bbox.min.y - 100.0).abs() < 1e-6);
-        assert!((bbox.max.z - bbox.min.z - 25.0).abs() < 1e-6);
+        // S11: no rule gives a thickness with no model, so the stock is
+        // flat until the operator sets it.
+        assert!((bbox.max.z - bbox.min.z).abs() < 1e-6);
+        assert!(session.stock_thickness_refusal().is_some());
     }
 
     #[test]
@@ -2827,7 +2848,6 @@ mod tests {
 
     /// Create a session with one tool and one Pocket toolpath for mutation tests.
     fn session_with_toolpath() -> ProjectSession {
-        use crate::compute::catalog::OperationConfig;
         let project = ProjectFile {
             format_version: 3,
             job: ProjectJobSection::default(),
@@ -2870,7 +2890,8 @@ mod tests {
                     shoe: Default::default(),
                     id: Some(ToolpathId::from_raw(0)),
                     name: "Test Pocket".to_owned(),
-                    operation: Some(OperationConfig::new_default(
+                    // S11: the fixture states the floor and the feeds.
+                    operation: Some(crate::compute::fixture_values::fixture_op(
                         crate::compute::catalog::OperationType::Pocket,
                     )),
                     enabled: true,
@@ -2897,13 +2918,19 @@ mod tests {
     #[test]
     fn set_common_param_feed_rate() {
         let mut session = session_with_toolpath();
-        let original = session.toolpath_configs[0].operation.feed_rate();
+        let original = session.toolpath_configs[0]
+            .operation
+            .feed_rate()
+            .expect("S11: the fixture sets it");
 
         let _ = session
             .set_toolpath_param(0, "feed_rate", serde_json::json!(1500.0))
             .unwrap();
 
-        let updated = session.toolpath_configs[0].operation.feed_rate();
+        let updated = session.toolpath_configs[0]
+            .operation
+            .feed_rate()
+            .expect("S11: the fixture sets it");
         assert!(
             (updated - 1500.0).abs() < 1e-6,
             "feed_rate should be 1500.0, got {updated} (was {original})"
@@ -3131,7 +3158,7 @@ mod tests {
         let new_stock = StockConfig {
             x: 200.0,
             y: 200.0,
-            z: 50.0,
+            z: Some(50.0),
             ..StockConfig::default()
         };
         let _ = session.set_stock_config(new_stock);

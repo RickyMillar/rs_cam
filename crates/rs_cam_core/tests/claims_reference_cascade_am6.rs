@@ -147,8 +147,8 @@ fn unified_cfg(arm: Option<RestArm>) -> UnifiedFinishConfig {
         raster_stepover: 0.5,
         z_step: 0.5,
         sampling: 0.4,
-        feed_rate: 2000.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(2000.0),
+        plunge_rate: Some(500.0),
         // The finish op leaves the skin; the rest op takes it to size.
         stock_to_leave: if arm.is_some() { 0.0 } else { FINISH_SKIN_MM },
         // The claims pipeline runs only under `pencil_claims`; `territory_clip`

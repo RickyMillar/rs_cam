@@ -310,7 +310,7 @@ fn build_operation(
             // SFM calculation (engaged D = 2 × max_depth × tan(half_angle)).
             let mut cfg = VCarveConfig::default();
             if let Some(d) = inputs.max_depth_mm {
-                cfg.max_depth = d;
+                cfg.max_depth = Some(d);
             }
             Ok(OperationConfig::VCarve(cfg))
         }
@@ -555,8 +555,8 @@ fn snapshot_from_clamped(
     let effective_chip = r.derates.effective_chip_load_mm();
     let warnings: Vec<String> = r.warnings.iter().map(|w| format!("{w:?}")).collect();
 
-    let final_feed = op.feed_rate();
-    let final_plunge = op.plunge_rate();
+    let final_feed = op.feed_rate().expect("S11: the fixture sets it");
+    let final_plunge = op.plunge_rate().expect("S11: the fixture sets it");
     let final_doc = op.depth_per_pass().unwrap_or(r.axial_depth_mm);
     let final_woc = op.stepover().unwrap_or(r.radial_width_mm);
 
@@ -592,7 +592,10 @@ fn snapshot_from_clamped(
             bindings.insert("depth_over_d".into(), depth / d);
         }
         OperationConfig::VCarve(cfg) => {
-            bindings.insert("max_depth".into(), cfg.max_depth);
+            bindings.insert(
+                "max_depth".into(),
+                cfg.max_depth.expect("S11: the fixture sets it"),
+            );
         }
         OperationConfig::Scallop(cfg) => {
             bindings.insert("scallop_height".into(), cfg.scallop_height);

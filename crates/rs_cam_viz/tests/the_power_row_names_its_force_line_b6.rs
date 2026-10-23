@@ -66,7 +66,7 @@ fn hardwood() -> Material {
 fn pocket(material: Material) -> Fixture {
     let mut operation = OperationConfig::Pocket(Default::default());
     if let OperationConfig::Pocket(config) = &mut operation {
-        config.feed_rate = 3_000.0;
+        config.feed_rate = Some(3_000.0);
         config.spindle_rpm = Some(18_000);
     }
     Fixture {
@@ -86,7 +86,7 @@ fn pocket(material: Material) -> Fixture {
 fn thin_profile() -> Fixture {
     let mut operation = OperationConfig::Profile(Default::default());
     if let OperationConfig::Profile(config) = &mut operation {
-        config.feed_rate = 3_000.0;
+        config.feed_rate = Some(3_000.0);
         config.spindle_rpm = Some(18_000);
     }
     Fixture {

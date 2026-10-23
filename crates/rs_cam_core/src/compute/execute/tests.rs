@@ -19,6 +19,18 @@ use crate::toolpath::Toolpath;
 use super::rough_3d::adaptive3d_effective_stock_to_leave;
 use super::*;
 
+/// S11: run the op with the fixture values for every value it leaves
+/// unset (`compute::fixture_values`), so a test of the generator states
+/// what it cuts.
+fn run_filled(
+    ctx: &ExecutionContext<'_>,
+    op: &OperationConfig,
+) -> Result<GeneratedToolpath, OperationError> {
+    let mut op = op.clone();
+    crate::compute::fixture_values::fill_unset(&mut op);
+    execute_operation_annotated(ctx, &op)
+}
+
 // ── C8: findings collections ────────────────────────────────────────
 
 fn stepover_finding(
@@ -137,7 +149,7 @@ fn drill_holes_come_from_points_and_circles_never_centroids() {
     let item = |layer: &str, shape: Shape| {
         Item::new(SourceRef::ToolpathModel, Some(layer.into()), shape).unwrap()
     };
-    let op = OperationConfig::new_default(OperationType::Drill);
+    let op = crate::compute::fixture_values::fixture_op(OperationType::Drill);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
     let heights = test_heights();
     let bbox = test_stock_bbox();
@@ -156,7 +168,7 @@ fn drill_holes_come_from_points_and_circles_never_centroids() {
                 &cancel,
             )
         };
-        execute_operation_annotated(&ctx, &op)
+        run_filled(&ctx, &op)
     };
 
     // A point, a circle and a loop: two holes, at the point and the centre.
@@ -345,7 +357,7 @@ fn op_with_updates(
     op_type: OperationType,
     update: impl FnOnce(&mut OperationConfig),
 ) -> OperationConfig {
-    let mut op = OperationConfig::new_default(op_type);
+    let mut op = crate::compute::fixture_values::fixture_op(op_type);
     update(&mut op);
     op
 }
@@ -353,7 +365,7 @@ fn op_with_updates(
 /// Two stock pins of the default pin-drill diameter, stock-relative.
 fn span_coverage_pins() -> Vec<crate::compute::alignment_pins::AlignmentPin> {
     let OperationConfig::AlignmentPinDrill(cfg) =
-        OperationConfig::new_default(OperationType::AlignmentPinDrill)
+        crate::compute::fixture_values::fixture_op(OperationType::AlignmentPinDrill)
     else {
         unreachable!("default op kind mismatch");
     };
@@ -382,7 +394,8 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
     });
     // W6.5 (C7): the holes come from the pins of the context
     // (`span_coverage_pins`), not from the config.
-    let alignment_pin = OperationConfig::new_default(OperationType::AlignmentPinDrill);
+    let alignment_pin =
+        crate::compute::fixture_values::fixture_op(OperationType::AlignmentPinDrill);
     let drop_cutter = op_with_updates(OperationType::DropCutter, |op| {
         let OperationConfig::DropCutter(cfg) = op else {
             unreachable!("default op kind mismatch");
@@ -436,14 +449,14 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         let OperationConfig::ProjectCurve(cfg) = op else {
             unreachable!("default op kind mismatch");
         };
-        cfg.depth = 0.75;
+        cfg.depth = Some(0.75);
         cfg.point_spacing = 1.0;
     });
 
     vec![
         SpanCoverageCase {
             name: "Face",
-            op: OperationConfig::new_default(OperationType::Face),
+            op: crate::compute::fixture_values::fixture_op(OperationType::Face),
             tool_type: ToolType::EndMill,
             mesh: None,
             polygons: Some(PolygonFixture::Stock),
@@ -453,7 +466,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         },
         SpanCoverageCase {
             name: "Pocket",
-            op: OperationConfig::new_default(OperationType::Pocket),
+            op: crate::compute::fixture_values::fixture_op(OperationType::Pocket),
             tool_type: ToolType::EndMill,
             mesh: None,
             polygons: Some(PolygonFixture::Standard),
@@ -463,7 +476,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         },
         SpanCoverageCase {
             name: "Profile",
-            op: OperationConfig::new_default(OperationType::Profile),
+            op: crate::compute::fixture_values::fixture_op(OperationType::Profile),
             tool_type: ToolType::EndMill,
             mesh: None,
             polygons: Some(PolygonFixture::Standard),
@@ -473,7 +486,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         },
         SpanCoverageCase {
             name: "Adaptive",
-            op: OperationConfig::new_default(OperationType::Adaptive),
+            op: crate::compute::fixture_values::fixture_op(OperationType::Adaptive),
             tool_type: ToolType::EndMill,
             mesh: None,
             polygons: Some(PolygonFixture::Standard),
@@ -483,7 +496,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         },
         SpanCoverageCase {
             name: "VCarve",
-            op: OperationConfig::new_default(OperationType::VCarve),
+            op: crate::compute::fixture_values::fixture_op(OperationType::VCarve),
             tool_type: ToolType::VBit,
             mesh: None,
             polygons: Some(PolygonFixture::Standard),
@@ -493,7 +506,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         },
         SpanCoverageCase {
             name: "Inlay",
-            op: OperationConfig::new_default(OperationType::Inlay),
+            op: crate::compute::fixture_values::fixture_op(OperationType::Inlay),
             tool_type: ToolType::VBit,
             mesh: None,
             polygons: Some(PolygonFixture::Standard),
@@ -503,7 +516,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         },
         SpanCoverageCase {
             name: "InlayPlug",
-            op: OperationConfig::new_default(OperationType::InlayPlug),
+            op: crate::compute::fixture_values::fixture_op(OperationType::InlayPlug),
             tool_type: ToolType::VBit,
             mesh: None,
             polygons: Some(PolygonFixture::Standard),
@@ -513,7 +526,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         },
         SpanCoverageCase {
             name: "Zigzag",
-            op: OperationConfig::new_default(OperationType::Zigzag),
+            op: crate::compute::fixture_values::fixture_op(OperationType::Zigzag),
             tool_type: ToolType::EndMill,
             mesh: None,
             polygons: Some(PolygonFixture::Standard),
@@ -523,7 +536,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         },
         SpanCoverageCase {
             name: "Trace",
-            op: OperationConfig::new_default(OperationType::Trace),
+            op: crate::compute::fixture_values::fixture_op(OperationType::Trace),
             tool_type: ToolType::EndMill,
             mesh: None,
             polygons: Some(PolygonFixture::Standard),
@@ -535,7 +548,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
             name: "Drill",
             // Two points are the hole source on this model-less path
             // (G-DRILLCENTROID: a loop centroid is no hole source).
-            op: OperationConfig::new_default(OperationType::Drill),
+            op: crate::compute::fixture_values::fixture_op(OperationType::Drill),
             tool_type: ToolType::EndMill,
             mesh: None,
             polygons: Some(PolygonFixture::Drill),
@@ -545,7 +558,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         },
         SpanCoverageCase {
             name: "Chamfer",
-            op: OperationConfig::new_default(OperationType::Chamfer),
+            op: crate::compute::fixture_values::fixture_op(OperationType::Chamfer),
             tool_type: ToolType::VBit,
             mesh: None,
             polygons: Some(PolygonFixture::Standard),
@@ -590,7 +603,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         },
         SpanCoverageCase {
             name: "Pencil",
-            op: OperationConfig::new_default(OperationType::Pencil),
+            op: crate::compute::fixture_values::fixture_op(OperationType::Pencil),
             tool_type: ToolType::BallNose,
             mesh: Some(MeshFixture::Groove),
             polygons: None,
@@ -610,7 +623,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
         },
         SpanCoverageCase {
             name: "SteepShallow",
-            op: OperationConfig::new_default(OperationType::SteepShallow),
+            op: crate::compute::fixture_values::fixture_op(OperationType::SteepShallow),
             tool_type: ToolType::BallNose,
             mesh: Some(MeshFixture::Hemisphere),
             polygons: None,
@@ -683,7 +696,7 @@ fn span_coverage_cases() -> Vec<SpanCoverageCase> {
 
 #[test]
 fn missing_polygons_error_for_2d_operation() {
-    let op = OperationConfig::new_default(OperationType::Profile);
+    let op = crate::compute::fixture_values::fixture_op(OperationType::Profile);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
     let heights = test_heights();
     let bbox = test_stock_bbox();
@@ -701,7 +714,7 @@ fn missing_polygons_error_for_2d_operation() {
             &cancel,
         )
     };
-    let result = execute_operation_annotated(&ctx, &op).map(|generated| generated.toolpath);
+    let result = run_filled(&ctx, &op).map(|generated| generated.toolpath);
 
     // P2.3a: an op that reads items, with no selection resolved, refuses
     // through its selection: nothing to cut (`Empty`), with the op name.
@@ -720,7 +733,7 @@ fn missing_polygons_error_for_2d_operation() {
 
 #[test]
 fn missing_mesh_error_for_3d_operation() {
-    let op = OperationConfig::new_default(OperationType::DropCutter);
+    let op = crate::compute::fixture_values::fixture_op(OperationType::DropCutter);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
     let heights = test_heights();
     let bbox = test_stock_bbox();
@@ -738,7 +751,7 @@ fn missing_mesh_error_for_3d_operation() {
             &cancel,
         )
     };
-    let result = execute_operation_annotated(&ctx, &op).map(|generated| generated.toolpath);
+    let result = run_filled(&ctx, &op).map(|generated| generated.toolpath);
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -750,7 +763,7 @@ fn missing_mesh_error_for_3d_operation() {
 
 #[test]
 fn invalid_tool_for_vcarve() {
-    let op = OperationConfig::new_default(OperationType::VCarve);
+    let op = crate::compute::fixture_values::fixture_op(OperationType::VCarve);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill); // not a V-Bit
     let heights = test_heights();
     let bbox = test_stock_bbox();
@@ -770,7 +783,7 @@ fn invalid_tool_for_vcarve() {
             &cancel,
         )
     };
-    let result = execute_operation_annotated(&ctx, &op).map(|generated| generated.toolpath);
+    let result = run_filled(&ctx, &op).map(|generated| generated.toolpath);
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -787,7 +800,7 @@ fn invalid_tool_for_vcarve() {
 /// `every_tool_refusal_is_the_registry_rows_through_the_dispatch`.
 #[test]
 fn scallop_without_a_mesh_refuses_the_mesh_before_the_tool() {
-    let op = OperationConfig::new_default(OperationType::Scallop);
+    let op = crate::compute::fixture_values::fixture_op(OperationType::Scallop);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill); // not ball nose
     let heights = test_heights();
     let bbox = test_stock_bbox();
@@ -803,7 +816,7 @@ fn scallop_without_a_mesh_refuses_the_mesh_before_the_tool() {
         &bbox,
         &cancel,
     );
-    let err = execute_operation_annotated(&ctx, &op)
+    let err = run_filled(&ctx, &op)
         .map(|generated| generated.toolpath)
         .unwrap_err();
     assert!(
@@ -814,7 +827,7 @@ fn scallop_without_a_mesh_refuses_the_mesh_before_the_tool() {
 
 #[test]
 fn face_produces_output() {
-    let op = OperationConfig::new_default(OperationType::Face);
+    let op = crate::compute::fixture_values::fixture_op(OperationType::Face);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
     let heights = test_heights();
     let bbox = test_stock_bbox();
@@ -833,7 +846,7 @@ fn face_produces_output() {
             &cancel,
         )
     };
-    let result = execute_operation_annotated(&ctx, &op).map(|generated| generated.toolpath);
+    let result = run_filled(&ctx, &op).map(|generated| generated.toolpath);
 
     assert!(result.is_ok(), "Face should succeed, got: {result:?}");
     let tp = result.unwrap();
@@ -847,7 +860,7 @@ fn face_produces_output() {
 fn drill_produces_output() {
     // This path resolves no model, so the hole is one point item
     // (G-DRILLCENTROID: a polygon centroid is no longer a hole source).
-    let op = OperationConfig::new_default(OperationType::Drill);
+    let op = crate::compute::fixture_values::fixture_op(OperationType::Drill);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
     let heights = test_heights();
     let bbox = test_stock_bbox();
@@ -866,7 +879,7 @@ fn drill_produces_output() {
             &cancel,
         )
     };
-    let result = execute_operation_annotated(&ctx, &op).map(|generated| generated.toolpath);
+    let result = run_filled(&ctx, &op).map(|generated| generated.toolpath);
 
     assert!(result.is_ok(), "Drill should succeed, got: {result:?}");
     let tp = result.unwrap();
@@ -929,7 +942,7 @@ fn all_operation_families_emit_expected_structural_span_kinds() {
                 &cancel,
             )
         };
-        let result = execute_operation_annotated(&ctx, &case.op)
+        let result = run_filled(&ctx, &case.op)
             .unwrap_or_else(|err| panic!("{} should generate: {err}", case.name));
 
         assert!(result.spans_valid, "{} spans should be valid", case.name);
@@ -1065,7 +1078,7 @@ fn cancellable_families_honour_a_preset_cancel_flag() {
     let heights = test_heights();
     let bbox = test_stock_bbox();
     for &op_type in OperationType::ALL {
-        let op = OperationConfig::new_default(op_type);
+        let op = crate::compute::fixture_values::fixture_op(op_type);
         let refused = crate::feeds::CutterKind::ALL
             .iter()
             .copied()
@@ -1084,7 +1097,7 @@ fn cancellable_families_honour_a_preset_cancel_flag() {
             &bbox,
             &cancel,
         );
-        match execute_operation_annotated(&ctx, &op) {
+        match run_filled(&ctx, &op) {
             Err(OperationError::Cancelled) => {}
             Ok(generated) => panic!(
                 "{op_type:?}: a pre-set cancel was ignored; generation ran to \
@@ -1199,7 +1212,7 @@ fn every_tool_refusal_is_the_registry_rows_through_the_dispatch() {
     let mut restricted = 0;
     for &op_type in OperationType::ALL {
         let tc = op_type.registry_entry().tool_constraints;
-        let op = OperationConfig::new_default(op_type);
+        let op = crate::compute::fixture_values::fixture_op(op_type);
         let mut refused_here = 0;
         for &kind in crate::feeds::CutterKind::ALL {
             let (tool_def, tool_cfg) = make_tool(kind.tool_type());
@@ -1233,7 +1246,7 @@ fn every_tool_refusal_is_the_registry_rows_through_the_dispatch() {
             let expected = op_type
                 .tool_refusal(kind)
                 .unwrap_or_else(|| panic!("{op_type:?} x {kind:?}: no registry text"));
-            match execute_operation_annotated(&ctx, &op) {
+            match run_filled(&ctx, &op) {
                 Err(OperationError::InvalidTool(text)) => {
                     assert_eq!(text, expected, "{op_type:?} x {kind:?}");
                 }
@@ -1269,7 +1282,7 @@ fn the_static_check_and_the_generator_refuse_the_same_tools() {
     let index = SpatialIndex::build_auto(&mesh);
 
     for &op_type in OperationType::ALL {
-        let op = OperationConfig::new_default(op_type);
+        let op = crate::compute::fixture_values::fixture_op(op_type);
         for &kind in crate::feeds::CutterKind::ALL {
             let (tool_def, tool_cfg) = make_tool(kind.tool_type());
             let diagnostic: Vec<String> =
@@ -1315,7 +1328,7 @@ fn the_static_check_and_the_generator_refuse_the_same_tools() {
 
 #[test]
 fn trace_annotated_output_has_depth_and_region_spans() {
-    let op = OperationConfig::new_default(OperationType::Trace);
+    let op = crate::compute::fixture_values::fixture_op(OperationType::Trace);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
     let heights = test_heights();
     let bbox = test_stock_bbox();
@@ -1330,7 +1343,7 @@ fn trace_annotated_output_has_depth_and_region_spans() {
             &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
         )
     };
-    let result = execute_operation_annotated(&ctx, &op).expect("trace should succeed");
+    let result = run_filled(&ctx, &op).expect("trace should succeed");
 
     assert!(result.spans_valid);
     assert!(
@@ -1354,7 +1367,7 @@ fn trace_annotated_output_has_depth_and_region_spans() {
 
 #[test]
 fn drill_annotated_output_has_hole_and_plunge_spans_without_depth_barriers() {
-    let op = OperationConfig::new_default(OperationType::Drill);
+    let op = crate::compute::fixture_values::fixture_op(OperationType::Drill);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
     let heights = test_heights();
     let bbox = test_stock_bbox();
@@ -1373,7 +1386,7 @@ fn drill_annotated_output_has_hole_and_plunge_spans_without_depth_barriers() {
             &cancel,
         )
     };
-    let result = execute_operation_annotated(&ctx, &op).expect("drill should succeed");
+    let result = run_filled(&ctx, &op).expect("drill should succeed");
 
     assert!(result.spans_valid);
     // C4: role queries, not label parsing. A test that asserted on the
@@ -1406,7 +1419,7 @@ fn drill_annotated_output_has_hole_and_plunge_spans_without_depth_barriers() {
 
 #[test]
 fn trace_semantic_trace_has_depth_and_chain_children() {
-    let op = OperationConfig::new_default(OperationType::Trace);
+    let op = crate::compute::fixture_values::fixture_op(OperationType::Trace);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
     let heights = test_heights();
     let bbox = test_stock_bbox();
@@ -1424,7 +1437,7 @@ fn trace_semantic_trace_has_depth_and_chain_children() {
             &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
         )
     };
-    let _ = execute_operation_annotated(&ctx, &op).expect("trace should succeed");
+    let _ = run_filled(&ctx, &op).expect("trace should succeed");
     let semantic = recorder.finish();
 
     assert!(
@@ -1446,7 +1459,7 @@ fn trace_semantic_trace_has_depth_and_chain_children() {
 
 #[test]
 fn drill_semantic_trace_has_hole_and_cycle_children() {
-    let op = OperationConfig::new_default(OperationType::Drill);
+    let op = crate::compute::fixture_values::fixture_op(OperationType::Drill);
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
     let heights = test_heights();
     let bbox = test_stock_bbox();
@@ -1468,7 +1481,7 @@ fn drill_semantic_trace_has_hole_and_cycle_children() {
             &cancel,
         )
     };
-    let _ = execute_operation_annotated(&ctx, &op).expect("drill should succeed");
+    let _ = run_filled(&ctx, &op).expect("drill should succeed");
     let semantic = recorder.finish();
 
     assert!(
@@ -1499,7 +1512,7 @@ fn feed_optimization_uses_configured_nominal_feed_not_entry_plunge() {
     let cfg = DressupConfig {
         entry_style: DressupEntryStyle::Ramp,
         feed_optimization: true,
-        feed_max_rate: 5000.0,
+        feed_max_rate: Some(5000.0),
         ..DressupConfig::default()
     };
     let (tool_def, tool_cfg) = make_tool(ToolType::EndMill);
@@ -1598,7 +1611,7 @@ fn rest_analysis_attaches_artifacts_for_non_pencil_op() {
     let heights = test_heights();
     let bbox = test_stock_bbox();
     let cancel = AtomicBool::new(false);
-    let op = OperationConfig::new_default(OperationType::Scallop);
+    let op = crate::compute::fixture_values::fixture_op(OperationType::Scallop);
     let levels = op.cutting_levels(&heights);
     let rest_analysis = crate::compute::config::RestAnalysisConfig {
         enabled: true,
@@ -1618,8 +1631,7 @@ fn rest_analysis_attaches_artifacts_for_non_pencil_op() {
             &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
         )
     };
-    let result = execute_operation_annotated(&ctx, &op)
-        .expect("scallop with rest_analysis enabled should succeed");
+    let result = run_filled(&ctx, &op).expect("scallop with rest_analysis enabled should succeed");
 
     assert!(
         result.produced.rest_grid.is_some(),
@@ -1641,7 +1653,7 @@ fn rest_analysis_disabled_leaves_artifacts_none() {
     let heights = test_heights();
     let bbox = test_stock_bbox();
     let cancel = AtomicBool::new(false);
-    let op = OperationConfig::new_default(OperationType::Scallop);
+    let op = crate::compute::fixture_values::fixture_op(OperationType::Scallop);
     let levels = op.cutting_levels(&heights);
     let rest_analysis = crate::compute::config::RestAnalysisConfig::default(); // disabled
 
@@ -1654,7 +1666,7 @@ fn rest_analysis_disabled_leaves_artifacts_none() {
             &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
         )
     };
-    let result = execute_operation_annotated(&ctx, &op).expect("scallop should succeed");
+    let result = run_filled(&ctx, &op).expect("scallop should succeed");
 
     assert!(result.produced.rest_grid.is_none());
     assert!(result.produced.rest_regions.is_none());
@@ -1668,7 +1680,7 @@ fn rest_analysis_disabled_leaves_artifacts_none() {
             &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
         )
     };
-    let result_none = execute_operation_annotated(&ctx, &op).expect("scallop should succeed");
+    let result_none = run_filled(&ctx, &op).expect("scallop should succeed");
     assert!(result_none.produced.rest_grid.is_none());
     assert!(result_none.produced.rest_regions.is_none());
 }
@@ -1715,7 +1727,7 @@ fn pencil_rest_depth_precedence_skips_generic_pass() {
             &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
         )
     };
-    let result = execute_operation_annotated(&ctx, &op).expect("pencil rest_depth should succeed");
+    let result = run_filled(&ctx, &op).expect("pencil rest_depth should succeed");
 
     let grid = result
         .produced
@@ -1738,7 +1750,6 @@ mod each_face_p3_5 {
 
     use super::{
         ExecutionContext, GenerationFindings, OperationError, SelectionInputs, build_cutter,
-        execute_operation_annotated,
     };
     use crate::compute::catalog::OperationConfig;
     use crate::compute::config::ResolvedHeights;
@@ -1841,7 +1852,7 @@ mod each_face_p3_5 {
                 &findings, &tool_def, &tool_cfg, &heights, &levels, &bbox, &cancel,
             )
         };
-        execute_operation_annotated(&ctx, op).map(|generated| generated.toolpath)
+        super::run_filled(&ctx, op).map(|generated| generated.toolpath)
     }
 
     pub fn pocket(ordering: RegionOrdering, finishing_passes: usize) -> OperationConfig {

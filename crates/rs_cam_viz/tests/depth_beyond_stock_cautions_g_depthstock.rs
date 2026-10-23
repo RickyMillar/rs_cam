@@ -111,6 +111,9 @@ fn mesh_model(id: usize) -> LoadedModel {
 }
 
 fn toolpath(name: &str, model_id: usize, op: OperationConfig) -> ToolpathConfig {
+    // S11: the fixture states the values the op leaves unset.
+    let mut op = op;
+    rs_cam_core::compute::fixture_values::fill_unset(&mut op);
     ToolpathConfig {
         shoe: Default::default(),
         id: ToolpathId::from_raw(0), // assigned by session.add_toolpath
@@ -147,7 +150,7 @@ fn pocket(depth: f64) -> OperationConfig {
 fn trace(depth: f64) -> OperationConfig {
     let mut op = OperationConfig::Trace(Default::default());
     if let OperationConfig::Trace(cfg) = &mut op {
-        cfg.depth = depth;
+        cfg.depth = Some(depth);
     }
     op
 }
@@ -171,7 +174,7 @@ fn session() -> ProjectSession {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(TOOL), ToolType::EndMill);
     tool.diameter = 6.0;
     let stock = StockConfig {
-        z: STOCK_THICKNESS_MM,
+        z: Some(STOCK_THICKNESS_MM),
         auto_from_model: false,
         ..StockConfig::default()
     };

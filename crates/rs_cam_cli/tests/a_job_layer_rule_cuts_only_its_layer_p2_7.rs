@@ -54,6 +54,10 @@ diameter = 3.0
 type = "pocket"
 input = "{input}"
 tool = "flat_3mm"
+# S11: the job states the drawing thickness and the floor (the CLI values
+# before S11).
+stock_z = 25.0
+floor = {{ from = "top", depth = 3.0 }}
 {selection}
 "#,
         input = drawing().display(),

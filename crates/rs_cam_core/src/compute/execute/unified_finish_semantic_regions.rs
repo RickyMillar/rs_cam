@@ -138,8 +138,13 @@ fn generate(tool_cfg: &ToolConfig) -> Generated {
             &cancel,
         )
     };
-    let annotated = execute_operation_annotated(&ctx, &op)
-        .expect("UnifiedFinish must generate on the hemisphere fixture");
+    let annotated = execute_operation_annotated(&ctx, &{
+        // S11: the fixture states the feeds.
+        let mut op = op;
+        crate::compute::fixture_values::fill_unset(&mut op);
+        op
+    })
+    .expect("UnifiedFinish must generate on the hemisphere fixture");
     op_scope.finish();
 
     let trace = recorder.finish();

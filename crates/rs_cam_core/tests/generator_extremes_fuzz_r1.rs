@@ -207,7 +207,7 @@ fn fast_two_d_generators_survive_search_space_corners() {
         (
             "trace@floors",
             OperationConfig::Trace(TraceConfig {
-                depth: DEPTH_MM,
+                depth: Some(DEPTH_MM),
                 depth_per_pass: doc_floor(OperationType::Trace),
                 ..TraceConfig::default()
             }),

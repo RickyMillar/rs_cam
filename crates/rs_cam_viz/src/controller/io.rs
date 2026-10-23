@@ -129,6 +129,8 @@ impl<B: ComputeBackend> AppController<B> {
             options,
             declared,
             preview,
+            asks_stock_z: self.state.session().stock_config().thickness().is_none(),
+            stock_z: None,
         });
     }
 
@@ -155,7 +157,27 @@ impl<B: ComputeBackend> AppController<B> {
             return Ok(None);
         };
         let model = dialog.preview.map_err(VizError::Other)?;
-        self.import_drawing(model)
+        let bbox = self.import_drawing(model)?;
+        // S11: the thickness the dialog asked for. The patch keeps the stock
+        // top at the drawing and the auto fit (`StockConfigPatch::apply_to`).
+        if let Some(z) = dialog.stock_z
+            && self.state.session().stock_config().thickness().is_none()
+        {
+            let mut stock = self.state.session().stock_config().clone();
+            let _ = rs_cam_core::compute::stock_config::StockConfigPatch {
+                z: Some(z),
+                ..Default::default()
+            }
+            .apply_to(&mut stock);
+            // `AppController::apply` mirrors the stale set and the
+            // simulation drop (F096).
+            let _mirrored = self.apply(Command::SetStockConfig(
+                rs_cam_core::session::SetStockConfigArgs {
+                    stock: Box::new(stock),
+                },
+            ))?;
+        }
+        Ok(bbox)
     }
 
     pub fn import_step_path(&mut self, path: &Path) -> Result<Option<BoundingBox3>, VizError> {

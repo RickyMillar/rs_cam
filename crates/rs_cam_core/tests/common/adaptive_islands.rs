@@ -147,7 +147,7 @@ pub fn stock() -> StockConfig {
     StockConfig {
         x: 130.0,
         y: 90.0,
-        z: 12.0,
+        z: Some(12.0),
         origin_x: -65.0,
         origin_y: -45.0,
         origin_z: -12.0,
@@ -171,8 +171,8 @@ pub fn adaptive_session_with(
         stepover: STEPOVER_MM,
         floor: rs_cam_core::compute::floor::Floor::top(6.0),
         depth_per_pass: 3.0,
-        feed_rate: 1500.0,
-        plunge_rate: 500.0,
+        feed_rate: Some(1500.0),
+        plunge_rate: Some(500.0),
         ..AdaptiveConfig::default()
     };
     assert_eq!(
