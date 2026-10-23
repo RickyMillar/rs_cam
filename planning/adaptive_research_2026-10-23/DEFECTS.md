@@ -38,3 +38,12 @@ Not defects but instrument gaps (ruling 2026-10-23: build before Phase 2):
 `added_material_cuts_as_stock_s6` was fixed by the peer in 0e6788b2.
 
 | G-BACKTRAVEL (N11) | Operator, live GUI 2026-10-23 15:45, wanaka200 "2 Back Rough" (ContourParallel): "second half of Back Rough 2 is doing huge travel across the board where it could do one waterline-like sweep." Capture pending (agent E): the level where it starts, retracts and rapid distance per level, region order. Related: G-HOPRETRACT (N8). | `phase0/img/wanaka200_cp_back_second_half_rapids.png` (pending) |
+
+## From the Phase 1.5 evidence run (P15_E_evidence.md, 2026-10-23 15:55)
+
+| Tag | Defect | Evidence |
+|---|---|---|
+| G-SHELFSCAN (N11 cause) | At the third level of the wanaka200 back rough the ContourParallel planner leaves its 2.0 mm rows and runs a one-way +X scan with 0.5 mm rows over the whole board while 3.6 % of the level holds material; short cuts (median 2.24 mm), a lift to 5 mm and a rapid to the next piece: 1 581 rapid runs, ~115 m rapid travel on that level. The planner step that switches is not yet found. | `phase0/img/wanaka200_cp_back_second_half_rapids.png`, P15_E §N11 |
+| G-WALLSTRIP | Green mid-height strips stand inside the Corne case wall on AgentSearch and ContourSpiral; not named in Phase 0. | `phase0/img/corne_agent_search_p15_stock.png` |
+| G-ROUGHGOUGE-STRICT | The new Allowance rule blocks export on every rough: wall-graze depth overstated (Z-only), and the blocking class applies inside the leave band. Fix in progress (B2). | P15_E §gouge |
+| G-ROUGHCOV-WIRING | `triage.coverage` is `[]` in the GUI: the viz hands the session an empty checkpoint list. Fix in progress (A2). | P15_E §coverage |
