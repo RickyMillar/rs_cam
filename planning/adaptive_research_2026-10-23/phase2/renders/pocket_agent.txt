@@ -1,0 +1,7 @@
+pocket / agent
+pieces: 1
+cut length: 1471.0 mm
+keep-down links: 374 (496.1 mm)
+entries (plunges): 31
+retracts (lifts to safe Z, last included): 31
+pass load (planner readout): max 0.3618 vs ceiling 0.3626; 0 of 2024 steps over; 0 exempt plunge-departure steps

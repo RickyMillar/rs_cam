@@ -31,6 +31,26 @@ Surface rule samples EMITTED moves at ≤ D/4 through the drop-cutter.
 Operator 13:40: "sounds like it's worth trying some of these ideas" → Phase 2
 candidate (a) starts in parallel with the instruments; (b) and (c) wait for G1.
 
+## G1 ruling (operator, 2026-10-23 14:55, page `g1_2d_renders.html`)
+
+"Geodesic looks good. Maybe spills a bit over the edges and also seems to
+break down as it finds the other side of the circle; I would expect the
+pattern to diffuse out of that opening better, instead it seems to have
+broken down. The spiral still looks worse than contour parallel. Agent
+search looks odd as always. The growth pattern does look a lot more like
+the classic adaptive I wanted." Decision left to the lead: **candidate (a)
+goes forward; (b) and (c) stay shelved unless (a) stalls.**
+
+G1 defects to fix on (a) before 3D: G1-1 edge spill (wrap ends past the
+region edge; partly the one-colour render), G1-2 meeting-line breakdown
+behind the island (sawtooth fragments instead of a continued front),
+G1-3 arm asymmetry on the symmetric star (operator 15:05: "I'm surprised
+they all look different"; lead hypothesis: direction-dependent error of
+the first-order upwind sweep on the square grid, each arm at its own
+angle to the grid; the lower-left arm also carries the residue clean-up).
+Operator 15:05: "I think your plan is good." Then the continuous spiral form
+(no radial step, no plunge per wrap) and the link stage.
+
 ## G0 rulings (operator, 2026-10-23 13:25) and lead judgements
 
 1. **Instruments first.** Operator: "instruments are important." Before

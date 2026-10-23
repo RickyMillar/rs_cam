@@ -1,0 +1,7 @@
+pocket / contour_spiral
+pieces: 1
+cut length: 2630.0 mm
+keep-down links: 22 (137.3 mm)
+entries (plunges): 91
+retracts (lifts to safe Z, last included): 91
+pass load (planner readout): max 0.3723 vs ceiling 0.3626; 1 of 4282 steps over; 0 exempt plunge-departure steps
