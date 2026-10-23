@@ -1,0 +1,64 @@
+pocket / geodesic_curv
+pieces: 1
+cut length: 1343.7 mm
+keep-down links: 173 (382.7 mm)
+entries (plunges): 63
+retracts (lifts to safe Z, last included): 63
+pass load (planner readout, replay measure SweptWidth): max 0.4677 vs ceiling 0.3626; 2 of 3250 steps over; 0 exempt plunge-departure steps
+both measures of the emitted steps (fraction of D, ceiling 0.3626): swept width max 0.4677, 2 over; area per mm max 0.6094, 817 over
+  over: residue mop cut (segment 134) from (50.91, 38.26) to (51.13, 37.54), reading 0.4526
+  over: residue mop cut (segment 134) from (54.57, 32.31) to (55.24, 31.96), reading 0.4677
+load by class, emitted plan (replay measure: max reading, steps over of steps; then swept width and area per mm side by side):
+  starter: max 0.3114, 0 of 160; swept max 0.3114, 0 over; area max 0.4427, 6 over
+  clearing: max 0.3563, 0 of 1788; swept max 0.3563, 0 over; area max 0.6094, 682 over
+  clearing link: max 0.3221, 0 of 25; swept max 0.3221, 0 over; area max 0.4482, 4 over
+  residue contour link: max 0.2271, 0 of 20; swept max 0.2271, 0 over; area max 0.1834, 0 over
+  residue contour: max 0.3333, 0 of 567; swept max 0.3333, 0 over; area max 0.5260, 7 over
+  wall pass link: max 0.3439, 0 of 74; swept max 0.3439, 0 over; area max 0.4599, 1 over
+  wall pass: max 0.3333, 0 of 21; swept max 0.3333, 0 over; area max 0.4565, 3 over
+  residue mop: max 0.4677, 2 of 349; swept max 0.4677, 2 over; area max 0.5694, 114 over
+  residue mop link: max 0.2395, 0 of 246; swept max 0.2395, 0 over; area max 0.2463, 0 over
+load by class, raw plan (replay measure: max reading, steps over of steps; then swept width and area per mm side by side):
+  starter: max 0.3114, 0 of 160; swept max 0.3114, 0 over; area max 0.4427, 6 over
+  clearing join: max 0.9460, 89 of 113; swept max 0.9460, 89 over; area max 1.0784, 96 over
+  clearing wrap: max 0.9300, 146 of 2545; swept max 0.9300, 146 over; area max 1.1288, 1352 over
+  clearing link: max 0.9571, 25 of 134; swept max 0.9571, 25 over; area max 0.9781, 27 over
+cascade (replay model on the raw plan, read cell 0.500 mm): 876 refusals, 663 cascades, 213 intrinsic; intrinsic in the first quantum over the ceiling (c, c + cell/D]: 56
+  clearing join: refused 104, cascade 17, intrinsic 87 (max planned reading 0.9460)
+  clearing wrap: refused 763, cascade 640, intrinsic 123 (max planned reading 0.9300)
+  clearing link: refused 9, cascade 6, intrinsic 3 (max planned reading 0.4080)
+first refusal of each producer piece: 131 pieces, 56 of them cascades; the first ten:
+  first: clearing join (segment 4) from (15.50, 18.50) to (14.06, 18.50), replay reading 0.8333, planned reading 0.8333, intrinsic, 4.44 mm from the seed
+  first: clearing join (segment 4) from (12.47, 18.50) to (11.62, 18.50), replay reading 0.6667, planned reading 0.6667, intrinsic, 6.88 mm from the seed
+  first: clearing wrap (segment 4) from (11.62, 18.50) to (10.77, 18.50), replay reading 0.8333, planned reading 0.8333, intrinsic, 7.73 mm from the seed
+  first: clearing link (segment 5) from (8.66, 19.94) to (8.33, 21.37), replay reading 0.3737, planned reading 0.3737, intrinsic, 10.57 mm from the seed
+  first: clearing join (segment 6) from (27.00, 26.03) to (27.00, 27.34), replay reading 0.4583, planned reading 0.4583, intrinsic, 12.26 mm from the seed
+  first: clearing join (segment 6) from (8.00, 27.99) to (8.00, 29.43), replay reading 0.5833, planned reading 0.5833, intrinsic, 15.15 mm from the seed
+  first: clearing join (segment 6) from (27.00, 31.05) to (27.00, 32.19), replay reading 0.5000, planned reading 0.5000, intrinsic, 16.11 mm from the seed
+  first: clearing join (segment 6) from (8.00, 32.00) to (8.00, 33.21), replay reading 0.5000, planned reading 0.5000, intrinsic, 18.07 mm from the seed
+  first: clearing wrap (segment 6) from (27.50, 35.31) to (28.00, 35.03), replay reading 0.4698, planned reading 0.5102, intrinsic, 19.07 mm from the seed
+  first: clearing join (segment 6) from (28.00, 35.03) to (28.27, 36.02), replay reading 0.6607, planned reading 0.6607, intrinsic, 20.06 mm from the seed
+intrinsic refusals, the first three of each class:
+  intrinsic: clearing join (segment 4) from (15.50, 18.50) to (14.06, 18.50), replay reading 0.8333, planned reading 0.8333, intrinsic, 4.44 mm from the seed
+  intrinsic: clearing join (segment 4) from (12.47, 18.50) to (11.62, 18.50), replay reading 0.6667, planned reading 0.6667, intrinsic, 6.88 mm from the seed
+  intrinsic: clearing join (segment 6) from (27.00, 26.03) to (27.00, 27.34), replay reading 0.4583, planned reading 0.4583, intrinsic, 12.26 mm from the seed
+  intrinsic: clearing wrap (segment 4) from (11.62, 18.50) to (10.77, 18.50), replay reading 0.8333, planned reading 0.8333, intrinsic, 7.73 mm from the seed
+  intrinsic: clearing wrap (segment 6) from (27.50, 35.31) to (28.00, 35.03), replay reading 0.4698, planned reading 0.5102, intrinsic, 19.07 mm from the seed
+  intrinsic: clearing wrap (segment 6) from (29.04, 39.00) to (29.50, 38.76), replay reading 0.4747, planned reading 0.3684, intrinsic, 23.05 mm from the seed
+  intrinsic: clearing link (segment 5) from (8.66, 19.94) to (8.33, 21.37), replay reading 0.3737, planned reading 0.3737, intrinsic, 10.57 mm from the seed
+  intrinsic: clearing link (segment 15) from (24.33, 8.17) to (25.67, 8.26), replay reading 0.3926, planned reading 0.3926, intrinsic, 12.50 mm from the seed
+  intrinsic: clearing link (segment 17) from (65.33, 9.45) to (66.17, 10.30), replay reading 0.4080, planned reading 0.4080, intrinsic, 48.37 mm from the seed
+entries by producer: starter 1, clearing at a lead-in (L) 0, clearing at a wrap end (join) 34, clearing mid-wrap (replay split) 12, residue contour 6, wall pass 0, residue mop 10, other 0
+raw plan (before the replay): 260 of 2952 steps over the ceiling (the steps the replay refuses; exact up to the first); the first ten:
+  refused: clearing cut join (ramp, back-run or seam step) (segment 4) from (15.50, 18.50) to (14.06, 18.50), reading 0.8333
+  refused: clearing cut join (ramp, back-run or seam step) (segment 4) from (14.06, 18.50) to (13.27, 18.50), reading 0.5000
+  refused: clearing cut on a wrap (segment 4) from (13.27, 18.50) to (12.47, 18.50), reading 0.8333
+  refused: clearing cut join (ramp, back-run or seam step) (segment 4) from (12.47, 18.50) to (11.62, 18.50), reading 0.6667
+  refused: clearing cut on a wrap (segment 4) from (11.62, 18.50) to (10.77, 18.50), reading 0.8333
+  refused: clearing cut join (ramp, back-run or seam step) (segment 4) from (10.77, 18.50) to (9.88, 18.50), reading 0.5000
+  refused: clearing cut on a wrap (segment 4) from (9.88, 18.50) to (8.99, 18.50), reading 0.8333
+  refused: clearing link  (segment 5) from (8.66, 19.94) to (8.33, 21.37), reading 0.3737
+  refused: clearing link  (segment 5) from (8.33, 21.37) to (8.00, 22.81), reading 0.5176
+  refused: clearing cut join (ramp, back-run or seam step) (segment 6) from (27.00, 26.03) to (27.00, 27.34), reading 0.4583
+field piece 0: applied true, seed Some([18.5, 18.5]), seed radius 3.00 mm, levels 32, wrap pieces 99, converged true, front branches 3, spiral levels 0
+joins piece 0: rim transition 0, closed-to-closed transition 0, transition refused (seam) 0, closed-to-closed seam 12, closed to arc 27, from an arc 59; local-spacing sweep converged None

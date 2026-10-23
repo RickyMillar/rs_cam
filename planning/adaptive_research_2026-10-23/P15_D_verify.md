@@ -1385,3 +1385,140 @@ literal in the product hunks.
    match the predicted ranges only because the core spiral replaces the
    inner circles. The pocket mop still steps over the ceiling (0.4677, 2
    steps).
+
+## D9 at 609ce75b + uncommitted C9
+
+C9 on top of 609ce75b: a re-seed of the geodesic field from the cleared
+area of a replay model (`Reseed::Cleared`, `GeodesicOptions::C9_RESEED`),
+and the split of `track_sources` into `sweep_sources`. Worktree
+`.claude/worktrees/adaptive-head`, own target dir, the lane script and a
+`timeout` on each command. Disk: 40 GB free at the start and at the end.
+
+### Fix
+
+None. Every command compiled and passed on C9's tree as delivered.
+
+### Results
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `fmt --all -- --check` | green |
+| 1 | `check -p rs_cam_core --features research,test-support` | green, no warning |
+| 2 | `--features research,test-support --lib research_geodesic` | green 14 passed, 2 ignored (C9's `the_reseeded_field_grows_from_the_cleared_area` passes) |
+| 2 | `--lib adaptive` | green 141 passed, 7 ignored |
+| 2 | `--features test-support --test adaptive3d_emission_byte_parity` | green 5/5 (shipped path neutral) |
+| 3 | `clippy -p rs_cam_core --all-targets -- -D warnings` | green |
+| 3 | `clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings` | green |
+| 4 | the harness, release, `--ignored --nocapture` | green 1/1, 8.22 s; output in `phase2/d9_harness.txt` |
+
+### Controls (exact)
+
+| Column | Star | Pocket | Same |
+|---|---|---|---|
+| geodesic_a | 92 = S1 J56 M20 P15; 0.3600; raw 206/2330 | 88 = S1 J42 M27 C4 P14; 0.3624; raw 289/2845 | yes |
+| geodesic_curv | 73 = S1 J58 M0 P14; 0.3581; raw 145/2545 | 63 = S1 J34 M12 C6 P10; 0.4677; raw 260/2952 | yes |
+| agent | 25; 0.4515; raw 9/1749 | 31; 0.3618; raw 9/1805 | yes |
+| contour_spiral | 101; 0.3613; raw 501/4873 | 91; 0.3723; raw 420/3797 | yes |
+
+The `track_sources` split and the new option field change no control.
+
+### `geodesic_curv_reseed`
+
+| Item | Star | Pocket |
+|---|---|---|
+| Re-seed line (verbatim) | `re-seed piece 0: 0 re-seeds, 1 fields in use, stop Finished` | `re-seed piece 0: 47 re-seeds, 48 fields in use, stop Finished` |
+| Entries (= retracts) | 73 | **74** |
+| S / L / J / M / C / W / P | 1 / 0 / 58 / 0 / 0 / 0 / 14 | 1 / 0 / 63 / 0 / 0 / 0 / 10 |
+| Max emitted swept width | 0.3581, 0 over (residue mop) | 0.3563, 0 over (clearing) |
+| Residue mop max | 0.3581, 0 / 91 | 0.3484, 0 / 97 (`geodesic_curv`: 0.4677, 2 / 349) |
+| Raw plan, over / steps | 145 / 2545 | 232 / 4135 |
+| Cut length | as `geodesic_curv` | 1598.5 mm (`geodesic_curv` 1343.7 mm) |
+| Keep-down links | as `geodesic_curv` | 143 (411.6 mm); `geodesic_curv` 173 (382.7 mm) |
+
+Star, 0 re-seeds: the `.txt` equals `star_geodesic_curv.txt` except the
+title, the new re-seed lines and the `joins piece 0` line (below). The
+consistency rule of C9 ("0 re-seeds gives `geodesic_curv`'s numbers") holds.
+The star's only field: 19 levels, 100 wraps placed, uncleared at the solve
+1759.5 mm², stock cut (model) 2404.2 mm², trigger none.
+
+Cascade (refused / cascade / intrinsic), raw plan:
+
+| Class | Star reseed (= curv) | Pocket reseed | Pocket `geodesic_curv` |
+|---|---|---|---|
+| total | 128 / 20 / 108 | 106 / 20 / 86 | 876 / 663 / 213 |
+| clearing join | 97 / 0 / 97 | 30 / 0 / 30 | 104 / 17 / 87 |
+| clearing wrap | 30 / 20 / 10 | **43 / 18 / 25** | 763 / 640 / 123 |
+| clearing link | 1 / 0 / 1 | 33 / 2 / 31 | 9 / 6 / 3 |
+
+### Pocket re-seeds (48 fields)
+
+| Field | Levels | Wraps placed | Uncleared at solve (mm²) | Stock cut, model (mm²) | Trigger |
+|---|---|---|---|---|---|
+| 0 | 32 | 9 | 2236.2 | 653.0 | level 9 at (27.50, 35.31) |
+| 1 | 25 | 5 | 1778.8 | 270.0 | level 5 at (8.50, 43.97) |
+| 2 | 23 | 1 | 1585.0 | 39.5 | level 1 at (34.03, 44.00) |
+| 3 | 23 | 1 | 1554.5 | 11.5 | level 1 at (35.34, 43.50) |
+| 4 | 23 | 5 | 1550.8 | 154.2 | level 3 at (36.50, 48.16) |
+| 5 to 28 | 23 to 10 | 1 each | 1442.8 to 1024.2 | 7.5 to 61.0 | level 1 each |
+| 29 | 9 | 4 | 997.2 | 56.0 | level 1 at (54.50, 14.56) |
+| 30 | 9 | 3 | 964.5 | 39.0 | level 3 at (34.48, 15.50) |
+| 31 | 9 | 2 | 946.5 | 65.0 | level 1 at (54.57, 13.50) |
+| 32 to 44 | 9 to 3 | 1 each | 891.2 to 467.2 | 13.5 to 59.5 | level 1 each |
+| 45 | 3 | 4 | 431.5 | 125.2 | level 1 at (71.44, 19.50) |
+| 46 | 3 | 4 | 309.0 | 60.5 | level 1 at (32.50, 11.56) |
+| 47 | 3 | 13 | 257.2 | 110.2 | none (stop Finished) |
+
+Sum of the stock cut over the 48 fields: 2893.3 mm². 39 of the 48 fields
+place one wrap only; 43 of the 47 triggers are on level 1. Fields 15 to 23
+and 37 to 43 trigger at y 48.50, at x 53.84, 54.84, … 70.34: one re-seed
+per 1 mm of advance along the same line. This is C9's "known limit" (the
+end of a cut wrap is a tighter point than the law assumes), and it sets
+most of the re-seed count. The full per-field lines are in
+`pocket_geodesic_curv_reseed.txt` lines 61 to 109.
+
+### Keep-or-drop (C9's pre-registered rule, applied as written)
+
+| Rule | Limit | Measured | Holds |
+|---|---|---|---|
+| 1. pocket `clearing wrap` cascades ≤ half of `geodesic_curv` | ≤ 320 (640 / 2) | 18 | yes |
+| 2. entries ≤ `geodesic_curv` on each shape | star ≤ 73, pocket ≤ 63 | star 73, pocket **74** | **no** (pocket +11) |
+| 3. max emitted swept width ≤ 0.3626, mop excepted | 0.3626 | star 0.3581, pocket 0.3563; 0 over | yes |
+
+**Verdict: DROP** (rule 2 fails on the pocket: 74 > 63). The pocket J count
+rises from 34 to 63 while M falls from 12 to 0 and C from 6 to 0. The
+cascade falls from 640 to 18 and the mop over-step (G-MOPLOAD) is gone on
+the pocket; those are facts of the run, but the rule does not weigh them.
+
+### Readout defect (not fixed)
+
+`reseed_segments` builds its `FieldReport` with `joins:
+JoinReport::default()` and never counts the seam joins. So the
+`joins piece 0` line of the re-seed column reads 0 for every class, also on
+the star where the moves equal `geodesic_curv` (16 / 33 / 50 there). Only
+the readout is wrong; no move and no assertion depends on it.
+
+### Magic numbers (C9 diff)
+
+No bare float literal without a derivation in the product hunks:
+`0.5 * SQRT_2 * cell` in `cleared_nodes` has its comment (half a cell
+diagonal, the reach of `clear_circle` under a fringe); `2.0 * r` is the
+diameter; the `0.0` values are initial values. Test code: the island
+`(25, 20)`, radius 6 restates `island_pocket` (same values, checked); the
+seed offset 17 has its comment; two `1e-9` float tolerances have no
+derivation (comparison slack only).
+
+### Files the harness wrote
+
+73 files in
+`.claude/worktrees/adaptive-head/target/tmp/adaptive_geodesic_2d_g1/`:
+`summary.txt` and, for each of 12 columns × 2 shapes, `<shape>_<column>.{txt,svg,png}`.
+New in this run: `star_geodesic_curv_reseed.{txt,svg,png}` and
+`pocket_geodesic_curv_reseed.{txt,svg,png}`. Outside `target/`, the only
+new file is `phase2/d9_harness.txt` (main checkout).
+
+### `git status --short` (worktree) at the end of D9
+
+```
+ M crates/rs_cam_core/src/adaptive/research_geodesic.rs
+ M crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs
+```

@@ -1727,3 +1727,264 @@ cargo test -p rs_cam_core --features research,test-support --release \
   - `keep-down links` (count and mm);
   - the `clearing lead` and `clearing link` classes (max swept width, over);
   - the cascade block.
+
+## C9 — re-seed from the cleared area (2026-10-24)
+
+Status: CODE COMPLETE, NOT RUN (no cargo; no commit). Base 609ce75b
+(worktree `.claude/worktrees/adaptive-head`, branch `adaptive-instruments`).
+`rustfmt --edition 2024 --check` is clean on both Rust files. No shipped
+path is changed (`path.rs`, `search.rs`, `spiral.rs`, `mod.rs`,
+`material_grid.rs` are not touched; no visibility change was needed: the
+module reads `material_count`, `cells`, `fringe_bits`, `SUB`,
+`sub_offset`, `CELL_MATERIAL` and `CELL_FRINGE`, which are `pub(super)` or
+`pub` in `material_grid.rs` and so visible inside `adaptive`).
+
+Paths below are in `crates/rs_cam_core/src/adaptive/research_geodesic.rs`
+unless named otherwise; line numbers are of the C9 tree.
+
+### Keep-or-drop rule (set before any prediction)
+
+Column `geodesic_curv_reseed` (`GeodesicOptions::C9_RESEED`) against
+`geodesic_curv` (`C5_CURV`). KEEP when ALL three hold:
+
+1. On the pocket, the cascade-class wrap refusals (the `clearing wrap`
+   row of the cascade block, column "cascade") are at most half of
+   `geodesic_curv`'s: at most 640 / 2 = 320.
+2. Total entries do not rise above `geodesic_curv` on either shape: at
+   most 73 on the star and at most 63 on the pocket.
+3. The max emitted swept width is at most the ceiling 0.3626, except the
+   known G-MOPLOAD mop step (a `residue mop` over-step counts as known).
+
+Otherwise DROP, and the lead goes to idea 1b (split at the meeting line).
+The operator's look decides after that.
+
+### The design
+
+**What re-seeds.** The producer walks its own plan through a replay model
+while it plans (`ReplayModel`, :4047). The model is the replay half of the
+cascade diagnostic, with the same rules (`CascadeWalk::step` :5128,
+`CascadeWalk::link`, `cascade_readout` :5238): a step that holds
+`measure_step` under the ceiling is stamped; a refused step is not, and the
+cutter lifts; a lifted cutter re-starts at the next step that holds, with
+the entry hole stamped (`LinkLoad::stamp_entry`, `path.rs:207`); a `Link`
+holds when every step holds, else it is a re-entry at its end. The steps
+are the replay's: `subdivide` at the pass step (`path.rs:405`), and the
+model splits a wrap's join exactly as `append_path` (:3617) emits it (a
+gap no longer than the reach is a cutting step, a longer one a `Link`).
+
+**The trigger** (`ReplayModel::plan_wrap`, :4203): a WRAP step (not a join
+step) that the model refuses while its cutter is down, once a wrap step of
+the same field has cut stock. At the trigger:
+
+1. the wrap ends before the refused step (the refused step is not
+   planned, so the model cutter stays down there);
+2. the field's remaining wraps are dropped: they were placed on stock the
+   replay will not have cut;
+3. a new field is solved from the cleared area (below), and the plan goes
+   on from the cutter with that field's wraps (`ordered_wraps` :1972, the
+   one-side meeting rule `meeting_trim` :1919 included).
+
+This repeats (`reseed_segments`, :4366).
+
+**Why this trigger, and not the meeting line only or the whole first
+field.**
+
+- A refused wrap step is the refusal that cascades. The replay stamps
+  only accepted steps, so every later wrap of the field over that stretch
+  meets the stock it left (D5: 640 of the 763 pocket wrap refusals are
+  cascades). A refused JOIN is not a trigger: the replay re-enters at the
+  wrap, and join refusals do not cascade (D5 star: 0 of 97).
+- "Down" excludes the steps of a cutter that is hunting for a re-entry
+  after a refused join; those are the J entries, not a cascade source.
+  With them as triggers, every join refusal (97 on the star) would
+  re-seed.
+- The D5 render of `pocket / geodesic_curv` (`g1_2d_renders_v4.html`, the
+  pale grey wraps under the brown residue contours and the magenta mop)
+  shows that the refusals start where the fronts bend round the island,
+  BEFORE the two branches meet. A re-seed at the meeting line comes after
+  the cascade has begun, and a re-seed after the whole first field comes
+  after every cascade. The refusal trigger is the earliest point at which
+  a cascade can be stopped. It contains the meeting-line case: the far
+  side's first refused wrap is a trigger.
+- This is the simplest form that answers idea 1a: one rule, no new
+  constant, and with no trigger it is the `geodesic_curv` plan (next
+  paragraph).
+
+**Consistency with the control.** With no trigger, `reseed_segments`
+emits the same segments as the `Reseed::Off` path of the same options:
+the same `ordered_wraps` call (start at the starter end, level 1), the
+same `PassEntry` marker, every wrap through `append_path` with the same
+reach. The model only reads. So `fields in use 1, 0 re-seeds` must give
+`geodesic_curv`'s numbers exactly (73 / 63); a difference with 0 re-seeds
+is a defect.
+
+**The re-seeded field** (`GeodesicField::reseeded`, :796):
+
+- `T = 0` on every reachable node where the cutter meets no stock in the
+  model grid (`cleared_nodes`, :4269): no material cell centre within `R`,
+  and no standing fringe sub-point within `R` (the points the swept width
+  reads; the arithmetic of `clear_circle_inner`, `material_grid.rs:351`).
+  These are the accepted passes' own stamps (the replay's material state),
+  not the planned wraps.
+- Why tool-centre nodes and not the stamped cells themselves. The field
+  is in cutter-centre space: a wrap is one spacing from the cutter centres
+  that cut. The edge of the cut stock lies `R` further out, so `T = 0` on
+  the stamped cells would put the next wrap `R − s'` inside the cut.
+  A node on a stamped step is cleared, because the stamp cleared every
+  point within `R` of the step (`clear_capsule_inner`,
+  `material_grid.rs:269`). The unit test checks this.
+- Each cleared node is its own pivot (`t = 0`) and keeps its front branch
+  from the field before. The branch table is handed over
+  (`GeodesicField::branch_keys`), so a meeting line of the new field lies
+  where the fronts from the two sides of the island meet again
+  (`cell_on_shock` :1056 reads unrelated branches). The islands and the
+  walls stay unreachable (the same `inside` mask and `Walls`).
+- The solver is the source tracking of the first field. `track_sources`
+  (:472) is split: its sweep is now `sweep_sources` (:511), which takes
+  the start pivots and the branch table. `track_sources` builds the same
+  start pivots (the seed centre, `t = −R`, branch 0) and an empty table,
+  so the first field is unchanged, operation for operation.
+- `T` at a node is the length of its pivot path to a cleared node. It is
+  never less than the distance to the cleared area (each value is a pivot's
+  value plus the distance to that pivot, down to a cleared node at 0). So
+  a wrap lies at most its level from the cut. The over-read (the true
+  cleared edge lies up to a cell diagonal past the last cleared node, plus
+  the hand-off error of the 8-neighbour sweep) moves the wraps toward the
+  cut: less stock, never more.
+
+**The spacing of a re-seeded field** is the curvature law from `ρ_0 = R`
+(`use_curvature_spacing` :961, `curvature_levels` :2472), the law of the
+first field at its seed. The cleared area is treated as the starter lap.
+The first new wrap lies `s'` from the cut: `ρ_1 − R` with
+`ρ_1 = −(R − cD) + √((R − cD)² + (2R)² − R²)` (`law_next_radius` :2262),
+1.437 mm at s 2, R 3, c 0.3626 (C5 table). The spacing reaches `s` at
+`ρ* = s(2R − s)/(2(cD − s))`, 22.8 mm. Why not plain spacing: the first
+plain wrap would lie where the refused wrap lay, on the same stock, and
+the model would refuse it again. Known limit: the law assumes that the
+cleared front has a radius of at least `R + T`. The end of a cut wrap (a
+truncated wrap's own end) is a tighter point, and a pass round it can
+still read over the ceiling. That refusal is a new trigger, not a
+cascade.
+
+**The stop rule** (derived; no count, no tolerance):
+
+- a field that places every wrap without a trigger ends the plan
+  (`stop Finished`);
+- a re-seeded field with no level ends it (`stop NoLevel`): every
+  reachable uncleared node lies within the law's first spacing `s'(ρ_1)`
+  of the cleared area, so no wrap is left, and the residue passes take
+  the rest (this is the coverage condition in field form: the levels
+  start at the first spacing the law allows);
+- a trigger needs a wrap step of the same field that held AND cut stock
+  (the material cell count fell). So the stock count falls strictly
+  between two re-seeds, and the number of re-seeds is finite (at most the
+  number of material cells). A field whose wraps cut nothing before a
+  refusal is placed whole, as under `Reseed::Off`, and the replay handles
+  it.
+
+### Readout
+
+- `FieldReport::reseed` (`ReseedReport`, :3513): per field in use, its
+  levels, the wraps placed, the uncleared reachable tool-centre area at
+  its solve (mm²), the stock its planned steps cut in the model (mm²,
+  material cells × cell²: the area each re-seed covered), where the
+  trigger was (level and point), and convergence; the re-seed count and
+  the stop.
+- The harness prints `re-seed piece 0: N re-seeds, M fields in use, stop
+  …` and one `field k:` line per field, for the C9 column only (the other
+  columns' `.txt` files are unchanged).
+- Entries by producer (S/L/J/M/C/W/P), the cascade block per class
+  (refused / cascade / intrinsic), and the max emitted swept width are the
+  existing lines. The wraps the harness draws are the emitted (truncated)
+  wraps.
+
+### Unit test
+
+`the_reseeded_field_grows_from_the_cleared_area` (:6729), on
+`island_pocket` (60 × 40 mm, island of radius 6 at (25, 20)), seed on the
+island's axis at (8, 20). The grid is cut by the disc of every node with
+`T ≤ |c − seed| − R` (the front at the island's centre line: part of the
+way round, the far side standing). It asserts:
+
+- every stamped node reads cleared (`cleared_nodes`);
+- the re-seeded field holds `T = 0` exactly on the cleared nodes and
+  `T > 0` on every other node, and it solves nodes on the far side
+  (x > 25 + 6 + R);
+- under the law its level 1 is `ρ_1 − R` from `ρ_0 = R` to 1e-9 (the law
+  restarts at the cut);
+- every point of level `k` lies within `L_k·s + √2·cell` of a cleared node
+  (a contour point lies in a cell with a corner whose `T` is at most `L_k`;
+  that `T` is a path length to a cleared node; the corner is at most a
+  cell diagonal away), with points on the far side present.
+
+### Predictions (NOT results; the run decides)
+
+- **Re-seeds.** Star: about 3 to 10 (D5: 10 intrinsic wrap refusals).
+  Pocket: about 5 to 20 (D5: 123 intrinsic wrap refusals, but after a
+  re-seed the law's tight first spacings should remove most of them).
+- **Pocket cascades.** Cascade-class wrap refusals 640 → under 100: after
+  each trigger the stock the refusal left is planned again from the cut.
+  Rule (1) predicted to hold.
+- **Entries.** Each re-seed restarts the law, which costs about one extra
+  level over the remaining area (C5: "one extra level out to ρ*"), and
+  each extra level adds arcs, so joins. Star 70 to 85 (rule (2) at risk);
+  pocket 50 to 70 (M and P fall where the cascade went; J may rise).
+- **Max emitted swept width.** As `geodesic_curv` (0.3581 star; pocket
+  0.4677 is the mop, G-MOPLOAD); the mop may cut less on the pocket.
+- **Runtime.** Each re-seed is one source-tracking solve and one
+  `ordered_wraps` call; the harness may take tens of seconds longer.
+
+### Risks for the verifier
+
+- About 700 new lines that no compiler has seen.
+- The model is a model (C5 risk note): the shipped replay's walk
+  (`emit_capped_walk_with`) has more cases. Read the cascade block of the
+  C9 column (the diagnostic replays the emitted raw plan) as the outcome.
+- The truncated wrap is emitted in the model's subdivision (collinear
+  points at the pass step). A re-subdivision of a piece exactly one pass
+  step long can split it in two by rounding; the plan is the same moves.
+
+### Files changed by C9
+
+- `crates/rs_cam_core/src/adaptive/research_geodesic.rs`: `Reseed`,
+  `GeodesicOptions::reseed` (Off in every existing preset),
+  `GeodesicOptions::C9_RESEED`; `track_sources` split into
+  `sweep_sources`; `GeodesicField::branch_keys`,
+  `GeodesicField::reseeded`; `FieldReport::reseed`, `ReseedReport`,
+  `ReseedField`, `ReseedStop`; `ReplayModel`, `cleared_nodes`,
+  `reseed_segments` and the hook in `geodesic_segments` (:3702); the
+  module doc section; the unit test.
+- `crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`: the
+  `geodesic_curv_reseed` column (default set) and the `re-seed` lines.
+- This note.
+
+### Commands for the verifier (C9)
+
+Through `scripts/cargo_lane.sh`, each with a `timeout`, from the worktree:
+
+```text
+timeout 600 scripts/cargo_lane.sh fmt --all -- --check
+timeout 1800 scripts/cargo_lane.sh check -p rs_cam_core --features research,test-support
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --lib research_geodesic
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core -q --lib adaptive
+timeout 1800 scripts/cargo_lane.sh clippy -p rs_cam_core --all-targets -- -D warnings
+timeout 1800 scripts/cargo_lane.sh clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support --release \
+    --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture
+```
+
+Read in this order:
+
+1. **Controls (exact).** `geodesic_a` star 92 / pocket 88; `geodesic_curv`
+   star 73 = S1 J58 M0 P14 (0.3581, raw 145/2545), pocket 63 = S1 J34 M12
+   C6 P10 (0.4677, raw 260/2952); agent 25 / 31; contour_spiral 101 / 91.
+   A difference is a defect of the `track_sources` split or the new
+   option field: stop and report it.
+2. `geodesic_curv_reseed`, per shape: the `re-seed piece 0` line and its
+   `field k` lines (re-seeds, the area each covered, the stop); if it reads
+   0 re-seeds, its numbers must equal `geodesic_curv`'s.
+3. The `entries by producer` line (S/L/J/M/C/W/P).
+4. The cascade block: `clearing wrap` refused / cascade / intrinsic on the
+   pocket (rule (1): cascade ≤ 320), and per class on both shapes.
+5. The max emitted swept width and its over-steps (rule (3)).
+6. Then apply the keep-or-drop rule above.
