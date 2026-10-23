@@ -193,8 +193,9 @@ fn draw_floor_lines(
         &text,
         color,
         &format!(
-            "Floor {text}. The floor of the op. Set the reference and the depth in the Heights \
-             tab; \"Use as floor\" on a picked face sets the floor to that face."
+            "Floor {text}. The floor of the op. Set the reference and the depth in the Bottom \
+             height row of the Heights tab; \"Use as floor\" on a picked face sets the floor \
+             to that face."
         ),
         &[],
     );

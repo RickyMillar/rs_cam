@@ -772,7 +772,7 @@ pub(super) fn draw_entry_preview_diagram(
     );
 
     // Dashed horizontal reference lines
-    for &(z, label) in &[(feed_z, "Feed Z"), (top_z, "Top Z")] {
+    for &(z, label) in &[(feed_z, "Feed Z"), (top_z, "Top height")] {
         let y = z_to_y(z);
         // Draw dashed line
         let dash_len = 6.0;

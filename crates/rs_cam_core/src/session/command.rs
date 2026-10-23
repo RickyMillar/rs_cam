@@ -348,8 +348,8 @@ macro_rules! for_each_command {
              }),
             // Geometry selection P3.3 (L-17): MCP and the CLI write the
             // floor through this row. GT-4: the GUI "Use as floor" and the
-            // floor face "Clear" write it too; the floor row of the Cut tab
-            // still writes the whole config.
+            // floor face "Clear" write it too; the Bottom height row of the
+            // Heights tab (D6) still writes the whole config.
             (Command, SetToolpathFloor, "set_toolpath_floor", SetToolpathFloorArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,

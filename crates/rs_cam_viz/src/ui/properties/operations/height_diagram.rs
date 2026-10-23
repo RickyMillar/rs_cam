@@ -22,6 +22,10 @@ pub struct FloorInputs {
     /// (`SelectionReport::item_floor_z`, `foreign_floor_z`). Empty for
     /// every other floor.
     pub face_floors: Vec<FaceFloor>,
+    /// R-B: true when the holes of the selection have rims (a STEP model):
+    /// a Drill or a Bore then cuts each hole to its own floor, under every
+    /// reference, and `face_floors` holds the hole floors.
+    pub hole_rims: bool,
 }
 
 /// One distinct face floor under "each picked face": its Z and the count of
@@ -59,6 +63,7 @@ impl FloorInputs {
         Self {
             refs: answer.floor_references(heights),
             face_floors,
+            hole_rims: report.is_some_and(|r| r.hole_rim_bottom_z.is_some()),
         }
     }
 }
@@ -97,8 +102,8 @@ pub struct FloorRun {
     /// The label beside the run: "FL -6.0" or "F2 15.0".
     pub text: String,
     /// The hover of the run: the Z, the reference and, under "each picked
-    /// face", the face count ("F2: Z 15.0, 1 face, floor from Each picked
-    /// face").
+    /// face", the face count ("F2: Z 15.0, 1 face, Bottom height from Each
+    /// picked face").
     pub hover: String,
     /// A face floor draws dashed.
     pub dashed: bool,
@@ -122,7 +127,7 @@ pub fn floor_runs(floor: Option<(&Floor, &FloorInputs)>, bottom_z: f64) -> Vec<F
         return vec![FloorRun {
             z,
             text: format!("FL {z:.1}"),
-            hover: format!("FL: Z {z:.1}, floor from {reference}"),
+            hover: format!("FL: Z {z:.1}, Bottom height from {reference}"),
             dashed: false,
         }];
     }
@@ -137,7 +142,7 @@ pub fn floor_runs(floor: Option<(&Floor, &FloorInputs)>, bottom_z: f64) -> Vec<F
                 z,
                 text: format!("F{n} {z:.1}"),
                 hover: format!(
-                    "F{n}: Z {z:.1}, {} {noun}, floor from {}",
+                    "F{n}: Z {z:.1}, {} {noun}, Bottom height from {}",
                     run.faces,
                     Floor::EachFace { depth: 0.0 }.reference_label()
                 ),

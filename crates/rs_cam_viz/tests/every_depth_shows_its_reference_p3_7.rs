@@ -4,11 +4,13 @@
 //! # The claims
 //!
 //! 1. Each op that holds a floor (Pocket, Profile, Zigzag, Adaptive 2D)
-//!    draws the floor row on its Cut tab (the Geometry tab before GT-1):
-//!    "Floor from:", the reference of its floor, and the resolved floor Z.
-//! 2. Its Heights tab has no Bottom row (one owner, L-11). It draws one
-//!    read-only Floor line with the reference and the resolved Z, and the
-//!    Top line names its source ("auto: faces").
+//!    draws the floor as the Bottom height row of its Heights tab (D6; the
+//!    Cut tab before D6, the Geometry tab before GT-1): "Bottom height:",
+//!    the reference of its floor, and the resolved floor Z.
+//! 2. That row is the one floor editor (IC1): the Cut tab draws no floor
+//!    row, the Heights tab draws no read-only Floor line and no second
+//!    Bottom height row, and the Top height line names its source
+//!    ("auto: faces").
 //!
 //! GT-1 (R2.4, FR-1 F7) removed the O-2 hint and its arm: it said "Each
 //! picked face" while the floor was Top Z and no face was picked. Q2 sets
@@ -19,8 +21,9 @@
 //! `Context` and reads the glyphs it painted.
 //!
 //! Red proofs:
-//! - Claim 1: draw the combo of the floor row with an empty selected text
-//!   (`.selected_text("")`): the reference is not painted, and the arm fails.
+//! - Claim 1: draw the combo of the Bottom height row with an empty
+//!   selected text (`.selected_text("")`): the reference is not painted,
+//!   and the arm fails.
 //!
 //! ```text
 //! cargo test -p rs_cam_viz -q --test every_depth_shows_its_reference_p3_7
@@ -307,41 +310,41 @@ fn every_depth_shows_its_reference_p3_7() {
         let label = operation.label();
         let reference = floor.reference_label();
 
-        // 1. The Cut tab: the floor row names its reference and the
-        // resolved Z.
-        let mut s = state(operation.clone(), properties::ToolpathTab::Cut);
-        let geometry = draw(&ctx, &mut s, None);
-        let all = texts(&geometry);
-        assert!(
-            all.contains(&"Floor from:"),
-            "{label}: no floor row: {all:?}"
+        // 1. The Heights tab: the Bottom height row names its reference
+        // and the resolved Z.
+        let mut s = state(operation.clone(), properties::ToolpathTab::Heights);
+        let heights = draw(&ctx, &mut s, None);
+        let all = texts(&heights);
+        assert_eq!(
+            all.iter().filter(|t| **t == "Bottom height:").count(),
+            1,
+            "{label}: one Bottom height row: {all:?}"
         );
         assert!(
             all.contains(&reference),
-            "{label}: the floor row does not name its reference {reference:?}: {all:?}"
+            "{label}: the Bottom height row does not name its reference {reference:?}: {all:?}"
         );
         assert!(
             all.iter().any(|t| t.starts_with("= Z ")),
-            "{label}: the floor row does not show the resolved Z: {all:?}"
+            "{label}: the Bottom height row does not show the resolved Z: {all:?}"
         );
 
-        // 2. The Heights tab: one read-only Floor line, no Bottom row, and
-        // the Top line names its source.
-        let mut s = state(operation, properties::ToolpathTab::Heights);
-        let heights = draw(&ctx, &mut s, None);
-        let all = texts(&heights);
+        // 2. One owner: no read-only Floor line, and the Top height line
+        // names its source.
         assert!(
-            all.iter()
-                .any(|t| t.starts_with("Floor: ") && t.contains(reference) && t.contains("= Z ")),
-            "{label}: the Heights tab has no Floor line with {reference:?}: {all:?}"
+            !all.iter().any(|t| t.starts_with("Floor: ")),
+            "{label}: the Heights tab still draws the read-only Floor line: {all:?}"
         );
         assert!(
-            !all.contains(&"Bottom:"),
-            "{label}: the Heights tab still draws a Bottom row: {all:?}"
+            all.contains(&"Top height: auto: faces"),
+            "{label}: the Top height line does not name its source: {all:?}"
         );
+        let mut s = state(operation, properties::ToolpathTab::Cut);
+        let cut = draw(&ctx, &mut s, None);
+        let all = texts(&cut);
         assert!(
-            all.contains(&"Top: auto: faces"),
-            "{label}: the Top line does not name its source: {all:?}"
+            !all.contains(&"Bottom height:") && !all.contains(&"Floor from:"),
+            "{label}: the Cut tab still draws a floor row: {all:?}"
         );
     }
 }

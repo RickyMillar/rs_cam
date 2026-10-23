@@ -88,6 +88,13 @@ pub enum Floor {
     /// Below the model top. A model with no mesh has no top, so this
     /// refuses there (ruling L-4).
     ModelTop { depth: f64 },
+    /// Below the model bottom: the lowest Z of the model in the setup
+    /// frame (D1, Fusion "Model bottom"). A positive depth goes further
+    /// down, a negative depth stands above it. A model with no mesh (a
+    /// drawing) has no bottom, so this refuses there (ruling L-4). No rule
+    /// clamps it at the stock bottom, as for [`Floor::ModelTop`]; the
+    /// depth-beyond-stock caution names a floor below the stock bottom.
+    ModelBottom { depth: f64 },
     /// Each face region of the op selection at its own plane Z less the
     /// depth (S6). Pocket, Zigzag and Profile cut it (P3.5), and Adaptive
     /// 2D (P3.6).
@@ -138,10 +145,11 @@ impl Floor {
     #[must_use]
     pub const fn reference_label(&self) -> &'static str {
         match self {
-            Self::Top { .. } => "Top Z",
+            Self::Top { .. } => "Top height",
             Self::StockTop { .. } => "Stock top",
             Self::StockBottom { .. } => "Stock bottom",
             Self::ModelTop { .. } => "Model top",
+            Self::ModelBottom { .. } => "Model bottom",
             Self::EachFace { .. } => "Each picked face",
             Self::Z { .. } => "Absolute Z",
             Self::Face { .. } => "A picked face",
@@ -160,6 +168,7 @@ impl Floor {
             Self::StockTop { .. }
             | Self::StockBottom { .. }
             | Self::ModelTop { .. }
+            | Self::ModelBottom { .. }
             | Self::EachFace { .. }
             | Self::Z { .. }
             | Self::Face { .. }
@@ -172,11 +181,12 @@ impl Floor {
     /// `get_operation_schema` entry lists them ([`floor_schema_json`]).
     /// [`Floor::Face`] holds a placeholder key: only its reference, its
     /// number and its domain are read.
-    pub const EACH_REFERENCE: [Self; 8] = [
+    pub const EACH_REFERENCE: [Self; 9] = [
         Self::Top { depth: 0.0 },
         Self::StockTop { depth: 0.0 },
         Self::StockBottom { depth: 0.0 },
         Self::ModelTop { depth: 0.0 },
+        Self::ModelBottom { depth: 0.0 },
         Self::EachFace { depth: 0.0 },
         Self::Z { z: 0.0 },
         Self::Face {
@@ -225,6 +235,7 @@ impl Floor {
             | Self::StockTop { .. }
             | Self::StockBottom { .. }
             | Self::ModelTop { .. }
+            | Self::ModelBottom { .. }
             | Self::Z { .. }
             | Self::Unset => true,
         }
@@ -252,6 +263,7 @@ impl Floor {
             | Self::StockTop { .. }
             | Self::StockBottom { .. }
             | Self::ModelTop { .. }
+            | Self::ModelBottom { .. }
             | Self::EachFace { .. }
             | Self::Z { .. }
             | Self::EachHole { .. }
@@ -267,6 +279,7 @@ impl Floor {
             Self::StockTop { .. } => "stock_top",
             Self::StockBottom { .. } => "stock_bottom",
             Self::ModelTop { .. } => "model_top",
+            Self::ModelBottom { .. } => "model_bottom",
             Self::EachFace { .. } => "each_face",
             Self::Z { .. } => "z",
             Self::Face { .. } => "face",
@@ -284,6 +297,7 @@ impl Floor {
             | Self::StockTop { .. }
             | Self::StockBottom { .. }
             | Self::ModelTop { .. }
+            | Self::ModelBottom { .. }
             | Self::EachFace { .. }
             | Self::Face { .. }
             | Self::EachHole { .. }
@@ -305,6 +319,7 @@ impl Floor {
             Self::StockTop { .. }
             | Self::StockBottom { .. }
             | Self::ModelTop { .. }
+            | Self::ModelBottom { .. }
             | Self::EachFace { .. }
             | Self::Z { .. }
             | Self::Face { .. }
@@ -350,6 +365,7 @@ impl Floor {
             | Self::StockTop { depth }
             | Self::StockBottom { depth }
             | Self::ModelTop { depth }
+            | Self::ModelBottom { depth }
             | Self::EachFace { depth }
             | Self::Face { depth, .. }
             | Self::EachHole { depth } => Some(*depth),
@@ -398,6 +414,10 @@ impl Floor {
                 .model_top_z
                 .map(|top| FloorRef::At(top - depth))
                 .ok_or(FloorRefusal::NoModelMesh),
+            Self::ModelBottom { depth } => ctx
+                .model_bottom_z
+                .map(|bottom| FloorRef::At(bottom - depth))
+                .ok_or(FloorRefusal::NoModelMesh),
             Self::EachFace { depth } => face_bottom_z
                 .map(|lowest| FloorRef::EachFace {
                     deepest: lowest - depth,
@@ -439,6 +459,7 @@ impl Floor {
             Self::StockTop { .. } => Self::StockTop { depth: value },
             Self::StockBottom { .. } => Self::StockBottom { depth: value },
             Self::ModelTop { .. } => Self::ModelTop { depth: value },
+            Self::ModelBottom { .. } => Self::ModelBottom { depth: value },
             Self::EachFace { .. } => Self::EachFace { depth: value },
             Self::Z { .. } => Self::Z { z: value },
             Self::Face { key, .. } => Self::Face { key, depth: value },
@@ -471,6 +492,8 @@ pub struct FloorReferences {
     pub stock_bottom_z: f64,
     /// The model top, or `None` when the model has no mesh (L-4).
     pub model_top_z: Option<f64>,
+    /// The model bottom, or `None` when the model has no mesh (L-4, D1).
+    pub model_bottom_z: Option<f64>,
     /// The plane Z of the lowest up face of the selection, or `None` with
     /// no up face. [`Floor::EachFace`] reads it: the Bottom Z under that
     /// floor is the deepest face floor.
@@ -498,6 +521,7 @@ impl FloorReferences {
             Floor::StockTop { .. } => Ok(self.stock_top_z),
             Floor::StockBottom { .. } => Ok(self.stock_bottom_z),
             Floor::ModelTop { .. } => self.model_top_z.ok_or(FloorRefusal::NoModelMesh),
+            Floor::ModelBottom { .. } => self.model_bottom_z.ok_or(FloorRefusal::NoModelMesh),
             Floor::EachFace { .. } => self.face_bottom_z.ok_or(FloorRefusal::NoFace),
             Floor::Z { .. } => Ok(0.0),
             Floor::Face { .. } => self.floor_face_z.ok_or(FloorRefusal::FaceLost),
@@ -520,6 +544,7 @@ impl FloorReferences {
             | Floor::StockTop { depth }
             | Floor::StockBottom { depth }
             | Floor::ModelTop { depth }
+            | Floor::ModelBottom { depth }
             | Floor::EachFace { depth }
             | Floor::Face { depth, .. }
             | Floor::EachHole { depth } => reference - depth,
@@ -544,6 +569,7 @@ impl FloorReferences {
             | Floor::StockTop { .. }
             | Floor::StockBottom { .. }
             | Floor::ModelTop { .. }
+            | Floor::ModelBottom { .. }
             | Floor::EachFace { .. }
             | Floor::Face { .. }
             | Floor::EachHole { .. }
@@ -868,6 +894,7 @@ pub fn hole_floors(
             Floor::StockTop { .. }
             | Floor::StockBottom { .. }
             | Floor::ModelTop { .. }
+            | Floor::ModelBottom { .. }
             | Floor::EachFace { .. }
             | Floor::Z { .. }
             | Floor::Face { .. } => inputs.bottom_z,
@@ -917,7 +944,8 @@ pub fn deepest_hole_floor(spans: &[HoleSpan]) -> Option<f64> {
 pub enum FloorRefusal {
     /// The depth or the Z is not a finite number.
     NotFinite,
-    /// [`Floor::ModelTop`] on a toolpath whose model has no mesh (L-4).
+    /// [`Floor::ModelTop`] or [`Floor::ModelBottom`] on a toolpath whose
+    /// model has no mesh (L-4, D1): a drawing.
     NoModelMesh,
     /// [`Floor::EachFace`] on a selection with no up face (P3.5). The
     /// prologue refuses the area by name (`RefusalCause::NoFaceForFloor`).
@@ -971,7 +999,7 @@ pub enum FloorRefusal {
 /// and the fix; the GUI, MCP and the CLI show this one text.
 pub const FLOOR_UNSET_TEXT: &str = "the floor is not set: no rule gives a depth for this \
      op. Set the floor (field `floor`: for example { from = \"top\", depth = 6.0 }, the MCP \
-     tool set_toolpath_floor, or the Floor row of the Geometry tab)";
+     tool set_toolpath_floor, or the Bottom height row of the Heights tab)";
 
 impl std::fmt::Display for FloorRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -980,13 +1008,15 @@ impl std::fmt::Display for FloorRefusal {
             Self::Unset => write!(f, "{FLOOR_UNSET_TEXT}"),
             Self::NoModelMesh => write!(
                 f,
-                "the floor reads the Model top, but the model of the toolpath has no mesh, so \
-                 it has no Z extent. Set the floor from the Top Z, the stock or a Z value"
+                "the floor reads the model (Model top or Model bottom), but the model of the \
+                 toolpath has no mesh, so it has no Z extent. Set the Bottom height from the Top \
+                 height, the stock or a Z value"
             ),
             Self::NoFace => write!(
                 f,
                 "the floor is \"each picked face\", but the selection holds no up face. Pick \
-                 faces, or set the floor from the Top Z, the stock, the model or a Z value"
+                 faces, or set the Bottom height from the Top height, the stock, the model or a \
+                 Z value"
             ),
             Self::FaceLost => write!(
                 f,
@@ -1008,19 +1038,19 @@ impl std::fmt::Display for FloorRefusal {
             Self::NoHoleDepth => write!(
                 f,
                 "the floor is \"each hole floor\", but no hole of the selection has a known \
-                 depth. Pick the rim circles of the holes of a STEP model, or set the floor \
-                 from the Top Z, the stock, the model or a Z value"
+                 depth. Pick the rim circles of the holes of a STEP model, or set the Bottom \
+                 height from the Top height, the stock, the model or a Z value"
             ),
             Self::NotForThisOp { from } => write!(
                 f,
                 "the floor {{ from = \"{from}\" }} does not apply to this op. Each hole floor \
-                 is for a Drill or a Bore; a Drill takes no face floor. Set the floor from the \
-                 Top Z, the stock, the model or a Z value"
+                 is for a Drill or a Bore; a Drill takes no face floor. Set the Bottom height \
+                 from the Top height, the stock, the model or a Z value"
             ),
             Self::AboveTop { floor_z, top_z } => write!(
                 f,
-                "the floor Z {floor_z:.3} is at or above the Top Z {top_z:.3}, so the op has \
-                 nothing to cut. Set a floor below the top"
+                "the floor Z {floor_z:.3} is at or above the Top height {top_z:.3}, so the op \
+                 has nothing to cut. Set the Bottom height below the Top height"
             ),
         }
     }
@@ -1041,8 +1071,8 @@ impl Floor {
 const fn reference_help(floor: &Floor) -> &'static str {
     match floor {
         Floor::Top { .. } => {
-            "mm below the resolved Top Z of the op (auto: the stock top, or the top of the \
-             picked faces; else the pinned top). The default"
+            "mm below the resolved Top height of the op (auto: the stock top, or the top of \
+             the picked faces; else the pinned top). The default"
         }
         Floor::StockTop { .. } => "mm below the stock top; a negative value stands above it",
         Floor::StockBottom { .. } => {
@@ -1051,6 +1081,11 @@ const fn reference_help(floor: &Floor) -> &'static str {
         }
         Floor::ModelTop { .. } => {
             "mm below the model top; a model with no mesh has no top, so generation refuses it"
+        }
+        Floor::ModelBottom { .. } => {
+            "mm below the model bottom (the lowest Z of the model in the setup); a negative \
+             value stands above it. A model with no mesh (a drawing) has no bottom, so \
+             generation refuses it. No rule stops it at the stock bottom"
         }
         Floor::EachFace { .. } => {
             "mm below the plane Z of each picked face: each face region is cut to its own \
@@ -1140,6 +1175,10 @@ mod tests {
                 Floor::ModelTop { depth: 1.0 },
             ),
             (
+                "floor = { from = \"model_bottom\", depth = -0.5 }",
+                Floor::ModelBottom { depth: -0.5 },
+            ),
+            (
                 "floor = { from = \"each_face\", depth = 0.0 }",
                 Floor::EachFace { depth: 0.0 },
             ),
@@ -1188,7 +1227,11 @@ mod tests {
         assert_eq!(Floor::EachFace { depth: 1.0 }.door_refusal(), None);
         assert_eq!(Floor::EachFace { depth: -1.0 }.door_refusal(), None);
         // UX-8: a face key must name an area with a plane Z.
-        let mut key = Floor::EACH_REFERENCE[6].face_key().unwrap().clone();
+        let mut key = Floor::EACH_REFERENCE
+            .iter()
+            .find_map(Floor::face_key)
+            .unwrap()
+            .clone();
         assert_eq!(
             Floor::Face {
                 key: key.clone(),

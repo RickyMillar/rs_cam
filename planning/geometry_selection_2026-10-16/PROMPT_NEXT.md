@@ -42,8 +42,8 @@ You are the lead of the geometry selection programme. Read `PLAN.md` from
    "Cut past open sides" (opt-in); Pocket (on) -> rest Chamfer works on
    stepped_block. Known: a grown higher area can be cut again in air by
    a lower face.
-4. D6 + D1: the floor is edited as "Bottom height" on the Heights tab
-   under "Top height"; add the floor reference "Model bottom".
+4. DONE a68cf423: D6 Bottom height on the Heights tab, D1 Model bottom,
+   Q8 names. Open: the Geometry tab still has a read-only Floor line.
 5. R-A: the outline item and the default Profile (design note
    `RA_OUTLINE_DESIGN.md`; decisions taken:
    exact outline from the mesh triangles, outline only, Outside, to the
