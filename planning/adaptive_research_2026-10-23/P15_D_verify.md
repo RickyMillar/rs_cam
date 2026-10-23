@@ -1879,3 +1879,140 @@ only new file is `phase2/d11_harness.txt` (main checkout).
  M crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs
 ?? crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
 ```
+
+### D11 addendum: the C12 over samples, classified (lead's request)
+
+**The two ignored kernel tests: the recorded reasons hold.**
+
+- `the_transition_join_nests_its_sectors_on_a_disc` fails on `every
+  transition is traced` (`transition_fallback: 1`). This is C6's recorded
+  red (D6; the ignore reason names the unapplied edge transition).
+- `every_emitted_step_holds_the_pass_load` fails on one `ResidueMop` step.
+  This is G-MOPLOAD (D2). The reading is now 0.4524, not 0.3669, and HEAD
+  ea468814 gives the same 0.4524.
+- The plunge sentry (`a_straight_plunge_entry_is_exempt_only_leaving_its_hole`,
+  moves 2810 and 6159) is the master-side red.
+
+**The instrument.** A scratch test, `tests/zz_d11_c12_probe.rs`, gated on
+`research` and `test-support`. It copied the C12 fixture, params, plan,
+simulation and judge without change. For each over sample it added the
+exact swept width of its move on the emitted path. That reading is
+`exact_width_at` of `a_clearing_cut_holds_the_pass_load_g_adaptpassload`,
+copied for `Linear` moves, at a 0.05 mm pitch. The probe also added the
+move context and the distance to the last entry. I ran it once (487 s) and
+deleted it from the crate.
+
+- The source is `phase2/d11_c12_probe.rs.txt`.
+- The output is `phase2/d11_c12_probe_output.txt`.
+- The C12 test output is `phase2/d11_c12_test_output.txt`.
+
+The probe gives the same counts as the C12 test: AgentSearch 260 and
+`geodesic_curv` 128. It also measures `geodesic_curv_split`, which the
+test never reaches: 121.
+
+**The rule (applied in this order to each over sample):**
+
+- **A:** a `Linking` move of zero XY length (a vertical lift).
+- **B:** wall distance < 4 mm.
+- **C:** one of the first cut moves after an `EntryPlunge` (only
+  `ClearingCut` moves between them).
+- **D:** the remainder.
+
+| Class | geodesic_curv | geodesic_curv_split | AgentSearch control | Exact peak of the move |
+|---|---|---|---|---|
+| A: vertical lift after a cut (`Linking`, dz +3.0 / +3.5) | 22 | 19 | 0 | 0.000 on every one |
+| B: wall band, wall distance 2.75 to 3.6 mm | 25 | 24 | 26 | 0.724 to 0.990 |
+| C: the first steps out of a straight plunge, 3.0 to 3.6 mm from the plunge point | 34 | 27 | 10 | 0.655 to 0.998 |
+| D: wraps mid-pocket, 8 to 15 mm from the walls | 47 | 51 | 224 | 0.558 to 0.794 (arm); 0.490 to 0.999 (control) |
+| total | 128 | 121 | 260 | |
+
+**The worst 10 samples of `geodesic_curv` by sim reading.** All ten are
+class A:
+
+| # | Move | Intent | Class | Sample (x, y) | Z | Wall (mm) | Sim radial | Exact peak | To last entry (mm) |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 150 | Linking | A | (-9.14, -15.38) | 7.25 | 8.62 | 1.000 | 0.000 | 3.36 |
+| 2 | 204 | Linking | A | (20.38, -12.38) | 7.25 | 11.62 | 1.000 | 0.000 | 3.07 |
+| 3 | 229 | Linking | A | (-24.95, 0.43) | 7.25 | 9.05 | 1.000 | 0.000 | 3.46 |
+| 4 | 349 | Linking | A | (14.07, 11.12) | 7.25 | 12.88 | 1.000 | 0.000 | 3.23 |
+| 5 | 356 | Linking | A | (19.05, 5.22) | 7.25 | 14.75 | 1.000 | 0.000 | 3.56 |
+| 6 | 390 | Linking | A | (19.91, 14.12) | 7.25 | 9.88 | 1.000 | 0.000 | 3.48 |
+| 7 | 728 | Linking | A | (6.42, 13.97) | 7.25 | 10.03 | 1.000 | 0.000 | 4.41 |
+| 8 | 1226 | Linking | A | (-9.14, -15.38) | 4.75 | 8.62 | 1.000 | 0.000 | 3.36 |
+| 9 | 1263 | Linking | A | (20.38, -12.38) | 4.75 | 11.62 | 1.000 | 0.000 | 3.07 |
+| 10 | 1286 | Linking | A | (-24.95, 0.43) | 4.75 | 9.05 | 1.000 | 0.000 | 3.46 |
+
+**The worst class D moves by exact reading** (each appears at both levels):
+
+| Moves (Z 7 / Z 4.5) | Sample (x, y) | Wall (mm) | Sim radial | Exact peak | To last entry (mm) |
+|---|---|---|---|---|---|
+| 61 / 1146 | (-15.52, -9.11) | 12.99 | 0.649 | 0.794 | 4.70 |
+| 67 / 1152 | (-19.63, -6.17) | 14.37 | 0.667 | 0.766 | 5.06 |
+| 65 / 1150 | (-17.14, -6.21) | 13.23 | 0.671 | 0.765 | 5.64 |
+| 66 / 1151 | (-18.26, -5.91) | 14.19 | 0.572 | 0.763 | 5.51 |
+| 64 / 1149 | (-16.20, -6.93) | 12.62 | 0.585 | 0.742 | 5.55 |
+
+**The verdict against the lead's four classes:**
+
+- **(i) The oracle filter has gaps. Classes A, B and C: 81 of 128
+  (geodesic_curv), 70 of 121 (split).**
+  - A: the sim reads radial 1.000 on a vertical lift that the exact
+    geometry reads 0.000. The lift is `Linking` intent, straight up from
+    the last cut point (for example 149 → 150: (-9.14, -15.38), Z 7.00 →
+    10.50). The test judges every cutting sample that is not an entry, so
+    it judges these lifts. The sim measure is not defined on a vertical
+    move.
+  - B: the C12 note says that the perimeter band [5.5, 7.46] mm "also
+    hides the 2D wall pass". It does not. These cuts run at wall distance
+    2.75 to 3.6 mm (about R) along the outer pocket walls (for example
+    move 998, x = -31.25, y −19 → 20, Z 7.50, draped over the 0.5 mm wall
+    slope). The control has the same 26 samples. The exact reading counts
+    the uncut wall slope as stock, so B is a wall-pass reading. The test
+    says that it does not judge the wall pass.
+  - C: the 2D exemption is per step. `emit_capped_walk_with` exempts a
+    step whose START lies within R of the plunge point (`departing`,
+    `adaptive/path.rs`). The test exempts a sample within R of the hole.
+    The C samples lie 3.0 to 3.6 mm from the plunge, on the step out of
+    the hole.
+- **(ii) RDP slivers: at most 2 samples.** The cut RDP tolerance is 0.1 mm,
+  so a sliver can add at most 0.1 / D = 0.017 of D. Only 2 of the 47
+  class D samples read within 0.017 of the bound. The median excess is
+  0.137 D (0.8 mm) and the max is 0.248 D (1.5 mm). RDP cannot make these.
+- **(iii) 2D links emitted as 3D cuts through stock: none found.**
+  - No over sample sits on a straight chain of planner-cell cut moves
+    (the shape that `links_as_cuts` writes).
+  - Every class D move is 0.6 to 4.5 mm long, on a curved wrap.
+  - Every `Linking` over sample is a vertical lift with exact 0.000.
+- **(iv) A real arm defect, or a defect in the shared 3D slice: class D,
+  47 (geodesic_curv) / 51 (split).** The exact geometry reads 0.558 to
+  0.794 mid-pocket.
+  - The worst moves (57 to 70, and 1142 to 1155 at Z 4.5) are the arm's
+    starter: a straight `EntryPlunge` at (-19.71, -11.23) (move 57), then
+    a full-depth lap of radius 2.4 to 3.4 mm about (-18.05, -8.38). The
+    lap meets standing stock on most of its length.
+  - The 3D slice sets `entry_helix_radius: 0.0` (`clear_z_level_agent_2d_slice`,
+    params_2d). The 2D harness plans the starter after a helix of
+    `HELIX_RADIUS_OVER_D · D`, and there it reads 0.3114. A plunge-entered
+    starter lap at full depth cannot hold the ceiling.
+  - Unmeasured: does the 2D replay judge the starter's steps? The note
+    (`research_geodesic.rs`, "Walk planned segments (the starter pocket)")
+    suggests that the starter is planned segments.
+  - The other D moves are wraps 4 to 18 moves after other entries, 73 of
+    81 at x < 0 (the far side of the island from the seed region).
+  - The shipped AgentSearch control has 224 class D samples (exact up to
+    0.999). So the 3D slice path, not only the kernel, may hold part of
+    this. The 3D AgentSearch never claimed the 2D pass load (`adaptive/CLAUDE.md`:
+    "Adaptive3d keeps the historical rule").
+  - The cause of the non-starter D samples is not isolated.
+
+**Next reads (not done):**
+
+1. The 2D segments of the first slice outline after the cleanup: the
+   output of `research_geodesic::slice_segments` plus the
+   `apply_contour_parallel_residue_cleanup` replay. Compare them with the
+   3D XY moves of level Z 7.
+2. The starter under `entry_helix_radius = 0`: does the replay judge it,
+   or does it pass as an exempt or modelled entry?
+3. A C12 filter that matches the 2D rules: per-step departure, vertical
+   moves, and the wall pass at wall distance about R. Only after that
+   does the bound say anything about class D.

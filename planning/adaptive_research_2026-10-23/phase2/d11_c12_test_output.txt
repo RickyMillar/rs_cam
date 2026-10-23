@@ -1,0 +1,146 @@
+
+running 1 test
+control AgentSearch: 657 moves, 3006 judged, 260 over 0.546, peak 0.928; entry 291, plunge hole 296, perimeter band 1212 (852 over)
+geodesic_curv: 2058 moves, 6303 judged at levels {45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105} (Z x 10), 128 over 0.546, peak 1.000; entry 1858, plunge hole 3219, perimeter band 3040 (856 over)
+  geodesic_curv over: move 60 ClearingCut at (-16.04, -10.42, 7.00) wall distance 13.58: radial 0.709
+  geodesic_curv over: move 61 ClearingCut at (-15.52, -9.11, 7.00) wall distance 12.99: radial 0.649
+  geodesic_curv over: move 62 ClearingCut at (-15.49, -8.44, 7.00) wall distance 12.64: radial 0.639
+  geodesic_curv over: move 63 ClearingCut at (-15.73, -7.67, 7.00) wall distance 12.50: radial 0.600
+  geodesic_curv over: move 64 ClearingCut at (-16.20, -6.93, 7.00) wall distance 12.62: radial 0.585
+  geodesic_curv over: move 65 ClearingCut at (-17.14, -6.21, 7.00) wall distance 13.23: radial 0.671
+  geodesic_curv over: move 66 ClearingCut at (-18.26, -5.91, 7.00) wall distance 14.19: radial 0.572
+  geodesic_curv over: move 67 ClearingCut at (-19.63, -6.17, 7.00) wall distance 14.37: radial 0.667
+  geodesic_curv over: move 68 ClearingCut at (-20.62, -6.85, 7.00) wall distance 13.38: radial 0.580
+  geodesic_curv over: move 80 Linking at (-15.45, -8.88, 7.25) wall distance 12.82: radial 0.640
+  geodesic_curv over: move 98 ClearingCut at (-15.78, -3.48, 7.00) wall distance 11.16: radial 0.581
+  geodesic_curv over: move 99 ClearingCut at (-16.78, -3.09, 7.00) wall distance 12.07: radial 0.587
+  geodesic_curv over: move 100 ClearingCut at (-18.26, -2.87, 7.00) wall distance 13.49: radial 0.548
+  geodesic_curv over: move 101 ClearingCut at (-20.25, -3.15, 7.00) wall distance 13.75: radial 0.615
+  geodesic_curv over: move 110 ClearingCut at (-23.46, -12.21, 7.00) wall distance 10.54: radial 0.547
+  geodesic_curv over: move 111 ClearingCut at (-22.61, -13.21, 7.00) wall distance 10.79: radial 0.614
+  geodesic_curv over: move 137 ClearingCut at (-9.38, -11.69, 7.00) wall distance 9.98: radial 0.608
+  geodesic_curv over: move 138 ClearingCut at (-9.99, -13.19, 7.00) wall distance 10.81: radial 0.623
+  geodesic_curv over: move 150 Linking at (-9.14, -15.38, 7.25) wall distance 8.62: radial 1.000
+  geodesic_curv over: move 186 Linking at (0.08, -13.38, 7.25) wall distance 8.38: radial 0.600
+  geodesic_curv over: move 204 Linking at (20.38, -12.38, 7.25) wall distance 11.62: radial 1.000
+  geodesic_curv over: move 216 ClearingCut at (-15.75, 0.22, 7.00) wall distance 10.75: radial 0.650
+  geodesic_curv over: move 217 ClearingCut at (-17.75, 0.59, 7.00) wall distance 12.76: radial 0.586
+  geodesic_curv over: move 218 ClearingCut at (-19.75, 0.53, 7.00) wall distance 14.25: radial 0.578
+  geodesic_curv over: move 219 ClearingCut at (-21.75, 0.03, 7.00) wall distance 12.25: radial 0.621
+  geodesic_curv over: move 220 ClearingCut at (-23.75, -1.01, 7.00) wall distance 10.25: radial 0.546
+  geodesic_curv over: move 229 Linking at (-24.95, 0.43, 7.25) wall distance 9.05: radial 1.000
+  geodesic_curv over: move 240 ClearingCut at (-14.26, 3.67, 7.00) wall distance 9.73: radial 0.628
+  geodesic_curv over: move 241 ClearingCut at (-17.24, 4.28, 7.00) wall distance 12.76: radial 0.668
+  geodesic_curv over: move 242 ClearingCut at (-20.24, 4.22, 7.00) wall distance 13.76: radial 0.657
+  geodesic_curv over: move 244 Linking at (-23.45, 3.38, 7.25) wall distance 10.55: radial 0.640
+  geodesic_curv over: move 262 ClearingCut at (-15.25, 7.91, 7.00) wall distance 12.18: radial 0.623
+  geodesic_curv over: move 263 ClearingCut at (-17.25, 8.17, 7.00) wall distance 14.09: radial 0.555
+  geodesic_curv over: move 264 ClearingCut at (-19.20, 8.19, 7.00) wall distance 14.80: radial 0.667
+  geodesic_curv over: move 265 ClearingCut at (-21.25, 7.98, 7.00) wall distance 12.75: radial 0.652
+  geodesic_curv over: move 266 ClearingCut at (-23.25, 7.52, 7.00) wall distance 10.75: radial 0.629
+  geodesic_curv over: move 284 ClearingCut at (-15.23, 11.91, 7.00) wall distance 12.09: radial 0.663
+  geodesic_curv over: move 285 ClearingCut at (-19.23, 12.14, 7.00) wall distance 11.86: radial 0.603
+  geodesic_curv over: move 286 ClearingCut at (-21.89, 11.80, 7.00) wall distance 12.11: radial 0.589
+  geodesic_curv over: move 286 ClearingCut at (-22.34, 11.74, 7.00) wall distance 11.66: radial 0.589
+  geodesic_curv over: move 286 ClearingCut at (-22.78, 11.67, 7.00) wall distance 11.22: radial 0.589
+  geodesic_curv over: move 286 ClearingCut at (-23.23, 11.61, 7.00) wall distance 10.77: radial 0.648
+  geodesic_curv over: move 348 ClearingCut at (14.05, 10.94, 7.00) wall distance 12.80: radial 0.845
+  geodesic_curv over: move 349 Linking at (14.07, 11.12, 7.25) wall distance 12.88: radial 1.000
+  geodesic_curv over: move 355 ClearingCut at (18.86, 5.35, 7.00) wall distance 14.61: radial 0.901
+  geodesic_curv over: move 356 Linking at (19.05, 5.22, 7.25) wall distance 14.75: radial 1.000
+  geodesic_curv over: move 389 ClearingCut at (19.92, 13.88, 7.00) wall distance 10.12: radial 0.842
+  geodesic_curv over: move 390 Linking at (19.91, 14.12, 7.25) wall distance 9.88: radial 1.000
+  geodesic_curv over: move 675 Linking at (-9.46, 12.00, 7.25) wall distance 10.27: radial 0.880
+  geodesic_curv over: move 728 Linking at (6.42, 13.97, 7.25) wall distance 10.03: radial 1.000
+  geodesic_curv over: move 738 ClearingCut at (18.28, -0.29, 7.00) wall distance 13.28: radial 0.710
+  geodesic_curv over: move 738 ClearingCut at (18.42, -0.77, 7.00) wall distance 13.43: radial 0.732
+  geodesic_curv over: move 738 ClearingCut at (18.55, -1.24, 7.00) wall distance 13.59: radial 0.710
+  geodesic_curv over: move 812 Linking at (13.67, -14.77, 7.25) wall distance 9.23: radial 0.840
+  geodesic_curv over: move 998 ClearingCut at (-31.25, 19.75, 7.50) wall distance 2.75: radial 0.833
+  geodesic_curv over: move 999 ClearingCut at (-31.15, 20.47, 7.12) wall distance 2.85: radial 0.752
+  geodesic_curv over: move 1000 ClearingCut at (-31.03, 21.10, 7.38) wall distance 2.90: radial 0.768
+  geodesic_curv over: move 1001 ClearingCut at (28.75, 21.25, 7.50) wall distance 2.75: radial 0.750
+  geodesic_curv over: move 1002 ClearingCut at (29.43, 21.01, 7.12) wall distance 2.99: radial 0.607
+  geodesic_curv over: move 1003 ClearingCut at (29.75, 20.83, 7.00) wall distance 3.17: radial 0.583
+  geodesic_curv over: move 1003 ClearingCut at (30.50, 20.42, 7.00) wall distance 3.50: radial 0.769
+  geodesic_curv over: move 1004 ClearingCut at (31.11, 20.07, 7.38) wall distance 2.89: radial 0.777
+  geodesic_curv over: move 1005 ClearingCut at (31.25, -18.75, 7.50) wall distance 2.75: radial 0.750
+  geodesic_curv over: move 1007 ClearingCut at (30.63, -19.62, 7.00) wall distance 3.37: radial 0.707
+  geodesic_curv over: move 1007 ClearingCut at (29.62, -20.63, 7.00) wall distance 3.37: radial 0.648
+  geodesic_curv over: move 1008 ClearingCut at (29.11, -21.14, 7.38) wall distance 2.86: radial 0.707
+  geodesic_curv over: move 1145 ClearingCut at (-16.04, -10.42, 4.50) wall distance 13.58: radial 0.709
+  geodesic_curv over: move 1146 ClearingCut at (-15.52, -9.11, 4.50) wall distance 12.99: radial 0.649
+  geodesic_curv over: move 1147 ClearingCut at (-15.49, -8.44, 4.50) wall distance 12.64: radial 0.639
+  geodesic_curv over: move 1148 ClearingCut at (-15.73, -7.67, 4.50) wall distance 12.50: radial 0.600
+  geodesic_curv over: move 1149 ClearingCut at (-16.20, -6.93, 4.50) wall distance 12.62: radial 0.585
+  geodesic_curv over: move 1150 ClearingCut at (-17.14, -6.21, 4.50) wall distance 13.23: radial 0.671
+  geodesic_curv over: move 1151 ClearingCut at (-18.26, -5.91, 4.50) wall distance 14.19: radial 0.572
+  geodesic_curv over: move 1152 ClearingCut at (-19.63, -6.17, 4.50) wall distance 14.37: radial 0.667
+  geodesic_curv over: move 1153 ClearingCut at (-20.62, -6.85, 4.50) wall distance 13.38: radial 0.580
+  geodesic_curv over: move 1165 Linking at (-15.45, -8.88, 4.75) wall distance 12.82: radial 0.600
+  geodesic_curv over: move 1177 ClearingCut at (-15.78, -3.48, 4.50) wall distance 11.16: radial 0.581
+  geodesic_curv over: move 1178 ClearingCut at (-16.78, -3.09, 4.50) wall distance 12.07: radial 0.587
+  geodesic_curv over: move 1179 ClearingCut at (-18.26, -2.87, 4.50) wall distance 13.49: radial 0.548
+  geodesic_curv over: move 1180 ClearingCut at (-20.25, -3.15, 4.50) wall distance 13.75: radial 0.615
+  geodesic_curv over: move 1189 ClearingCut at (-23.46, -12.21, 4.50) wall distance 10.54: radial 0.547
+  geodesic_curv over: move 1190 ClearingCut at (-22.61, -13.21, 4.50) wall distance 10.79: radial 0.614
+  geodesic_curv over: move 1213 ClearingCut at (-9.38, -11.69, 4.50) wall distance 9.98: radial 0.608
+  geodesic_curv over: move 1214 ClearingCut at (-9.99, -13.19, 4.50) wall distance 10.81: radial 0.579
+  geodesic_curv over: move 1226 Linking at (-9.14, -15.38, 4.75) wall distance 8.62: radial 1.000
+  geodesic_curv over: move 1263 Linking at (20.38, -12.38, 4.75) wall distance 11.62: radial 1.000
+  geodesic_curv over: move 1273 ClearingCut at (-15.75, 0.22, 4.50) wall distance 10.75: radial 0.650
+  geodesic_curv over: move 1274 ClearingCut at (-17.75, 0.59, 4.50) wall distance 12.76: radial 0.586
+  geodesic_curv over: move 1275 ClearingCut at (-19.75, 0.53, 4.50) wall distance 14.25: radial 0.578
+  geodesic_curv over: move 1276 ClearingCut at (-21.75, 0.03, 4.50) wall distance 12.25: radial 0.621
+  geodesic_curv over: move 1277 ClearingCut at (-23.75, -1.01, 4.50) wall distance 10.25: radial 0.546
+  geodesic_curv over: move 1286 Linking at (-24.95, 0.43, 4.75) wall distance 9.05: radial 1.000
+  geodesic_curv over: move 1296 ClearingCut at (-14.75, 3.82, 4.50) wall distance 10.24: radial 0.641
+  geodesic_curv over: move 1297 ClearingCut at (-16.26, 4.17, 4.50) wall distance 11.79: radial 0.657
+  geodesic_curv over: move 1298 ClearingCut at (-18.25, 4.35, 4.50) wall distance 13.76: radial 0.620
+  geodesic_curv over: move 1299 ClearingCut at (-20.74, 4.14, 4.50) wall distance 13.26: radial 0.581
+  geodesic_curv over: move 1314 ClearingCut at (-15.25, 7.91, 4.50) wall distance 12.18: radial 0.623
+  geodesic_curv over: move 1315 ClearingCut at (-17.25, 8.17, 4.50) wall distance 14.09: radial 0.555
+  geodesic_curv over: move 1316 ClearingCut at (-19.20, 8.19, 4.50) wall distance 14.80: radial 0.667
+  geodesic_curv over: move 1317 ClearingCut at (-21.25, 7.98, 4.50) wall distance 12.75: radial 0.652
+  geodesic_curv over: move 1318 ClearingCut at (-23.25, 7.52, 4.50) wall distance 10.75: radial 0.629
+  geodesic_curv over: move 1330 ClearingCut at (-15.23, 11.91, 4.50) wall distance 12.09: radial 0.663
+  geodesic_curv over: move 1331 ClearingCut at (-19.23, 12.14, 4.50) wall distance 11.86: radial 0.603
+  geodesic_curv over: move 1332 ClearingCut at (-21.89, 11.80, 4.50) wall distance 12.11: radial 0.589
+  geodesic_curv over: move 1332 ClearingCut at (-22.34, 11.74, 4.50) wall distance 11.66: radial 0.589
+  geodesic_curv over: move 1332 ClearingCut at (-22.78, 11.67, 4.50) wall distance 11.22: radial 0.589
+  geodesic_curv over: move 1332 ClearingCut at (-23.23, 11.61, 4.50) wall distance 10.77: radial 0.648
+  geodesic_curv over: move 1373 ClearingCut at (7.20, 14.81, 4.50) wall distance 9.19: radial 0.868
+  geodesic_curv over: move 1374 Linking at (7.27, 14.62, 4.75) wall distance 9.38: radial 0.840
+  geodesic_curv over: move 1391 ClearingCut at (15.26, 7.34, 4.50) wall distance 11.94: radial 0.799
+  geodesic_curv over: move 1393 Linking at (15.55, 7.00, 4.75) wall distance 12.05: radial 0.840
+  geodesic_curv over: move 1398 Linking at (25.73, -0.38, 4.75) wall distance 8.27: radial 1.000
+  geodesic_curv over: move 1413 Linking at (20.50, 14.87, 4.75) wall distance 9.13: radial 1.000
+  geodesic_curv over: move 1670 Linking at (-9.21, 12.83, 4.75) wall distance 10.80: radial 0.840
+  geodesic_curv over: move 1690 Linking at (19.72, 8.10, 4.75) wall distance 14.28: radial 1.000
+  geodesic_curv over: move 1967 ClearingCut at (-31.04, 19.75, 5.00) wall distance 2.96: radial 0.750
+  geodesic_curv over: move 1968 ClearingCut at (-31.03, 20.40, 4.81) wall distance 2.97: radial 0.833
+  geodesic_curv over: move 1969 ClearingCut at (-31.02, 20.66, 4.82) wall distance 2.98: radial 0.550
+  geodesic_curv over: move 1969 ClearingCut at (-31.00, 20.92, 4.94) wall distance 3.00: radial 0.833
+  geodesic_curv over: move 1970 ClearingCut at (28.75, 21.04, 5.00) wall distance 2.96: radial 0.667
+  geodesic_curv over: move 1971 ClearingCut at (29.39, 20.84, 4.62) wall distance 3.16: radial 0.668
+  geodesic_curv over: move 1972 ClearingCut at (29.68, 20.69, 4.50) wall distance 3.31: radial 0.598
+  geodesic_curv over: move 1972 ClearingCut at (30.36, 20.35, 4.50) wall distance 3.64: radial 0.744
+  geodesic_curv over: move 1973 ClearingCut at (30.92, 20.06, 4.88) wall distance 3.08: radial 0.671
+  geodesic_curv over: move 1974 ClearingCut at (31.04, -18.75, 5.00) wall distance 2.96: radial 0.667
+  geodesic_curv over: move 1976 ClearingCut at (30.36, -19.68, 4.50) wall distance 3.64: radial 0.648
+  geodesic_curv over: move 1976 ClearingCut at (29.68, -20.36, 4.50) wall distance 3.64: radial 0.589
+  geodesic_curv over: move 1977 ClearingCut at (29.12, -20.92, 4.88) wall distance 3.08: radial 0.648
+
+thread 'the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels' (2685528) panicked at crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs:370:9:
+geodesic_curv: 128 judged samples read over the bound 0.546 (peak 1.000); the first: move 60 ClearingCut at (-16.04, -10.42, 7.00) wall distance 13.58: radial 0.709
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels --- FAILED
+
+failures:
+
+failures:
+    the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.60s
+
+error: test failed, to rerun pass `-p rs_cam_core --test adaptive3d_geodesic_arm_c12`
