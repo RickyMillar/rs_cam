@@ -75,7 +75,7 @@ use crate::mesh::TriangleMesh;
 use crate::session::{Effects, ProjectSession, SessionError, ToolpathConfig};
 
 use super::SetupEvalContext;
-use super::selection_status::SelectionTarget;
+use super::selection_status::{ItemState, SelectionTarget};
 
 /// The face planes that the heights rule reads, in the setup frame.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -733,6 +733,58 @@ impl ProjectSession {
         }
         let mut candidate = tc.operation.clone();
         (candidate.set_floor(Floor::EachFace { depth: 0.0 })
+            && crate::compute::domain::validate_toolpath_operation(&tc.name, &candidate).is_ok())
+        .then_some(candidate)
+    }
+
+    /// THE part outline default rule (R-A, operator ruling 2026-10-23; the
+    /// Kiri:Moto "Outline" and FreeCAD Profile default): the op config of
+    /// `tc` with the floor "Model bottom", depth 0, when the rule applies,
+    /// else `None`. The `AddToolpath` row and the `EditSelection` row call
+    /// it before [`Self::each_face_floor_due`].
+    ///
+    /// The rule applies when all of these are true:
+    ///
+    /// - the op takes the part outline by default
+    ///   (`OutlineUse::Default`: a Profile with side Outside) and holds a
+    ///   floor;
+    /// - the floor is still a default floor
+    ///   ([`OperationConfig::floor_is_default`]);
+    /// - the op selection cuts the part outline of a mesh model (a row of
+    ///   the selection report with `outline`);
+    /// - the operation check accepts the new floor.
+    ///
+    /// The cut then frees the part on its last level; the selection report
+    /// gives the note `selection::PART_FREE_TEXT` while the op has no tab.
+    ///
+    /// [`OperationConfig::floor_is_default`]: crate::compute::catalog::OperationConfig::floor_is_default
+    pub(crate) fn part_outline_floor_due(
+        &self,
+        tc: &ToolpathConfig,
+    ) -> Option<crate::compute::catalog::OperationConfig> {
+        use crate::compute::catalog::OutlineUse;
+        let stock = crate::feeds::suggest::StockContext::from_stock_bbox(
+            self.stock_bbox(),
+            self.stock.padding,
+        );
+        if tc.operation.outline_use() != OutlineUse::Default
+            || !tc.operation.floor_is_default(&stock)
+        {
+            return None;
+        }
+        let cuts_outline = self
+            .selection_status(tc, SelectionTarget::Op)
+            .is_ok_and(|report| {
+                report
+                    .rows
+                    .iter()
+                    .any(|row| row.outline && report.row_state(row) == ItemState::Cut)
+            });
+        if !cuts_outline {
+            return None;
+        }
+        let mut candidate = tc.operation.clone();
+        (candidate.set_floor(Floor::ModelBottom { depth: 0.0 })
             && crate::compute::domain::validate_toolpath_operation(&tc.name, &candidate).is_ok())
         .then_some(candidate)
     }

@@ -1337,9 +1337,15 @@ impl Effects {
     pub fn floor_set_note(&self) -> Option<&'static str> {
         self.floor_set.as_ref().map(|floor| match floor {
             crate::compute::floor::Floor::EachHole { .. } => Self::EACH_HOLE_FLOOR_NOTE,
+            crate::compute::floor::Floor::ModelBottom { .. } => Self::MODEL_BOTTOM_FLOOR_NOTE,
             _ => Self::FLOOR_SET_NOTE,
         })
     }
+
+    /// R-A: the one-line note when the part outline rule sets the floor
+    /// "Model bottom" (`ProjectSession::part_outline_floor_due`).
+    pub const MODEL_BOTTOM_FLOOR_NOTE: &'static str = "The floor is now 'Model bottom'. This cut \
+         frees the part from the stock. Add tabs if the part must stay held.";
 
     pub const FLOOR_SET_NOTE: &'static str =
         "The floor is now 'Each picked face': each face cuts to its own height.";

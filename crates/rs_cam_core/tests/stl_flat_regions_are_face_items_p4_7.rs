@@ -195,9 +195,12 @@ fn two_loads_of_one_stl_give_equal_keys() {
     let (a, b) = (load(), load());
     let _ = std::fs::remove_dir_all(&dir);
     assert!(a.faces_are_flat_regions() && b.faces_are_flat_regions());
+    // R-A: the face set of an STL holds its part outline first; this
+    // claim counts the faces.
     let keys = |m: &LoadedModel| -> Vec<MatchKey> {
         m.face_items_built()
             .iter()
+            .filter(|i| i.kind() == ItemKind::Face)
             .map(|i| i.key().clone())
             .collect()
     };

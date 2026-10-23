@@ -19,6 +19,7 @@ pub mod item;
 pub mod join;
 pub mod key;
 pub mod near;
+pub mod outline;
 pub mod refusal;
 pub mod resolve;
 pub mod rule;
@@ -37,13 +38,14 @@ pub use flat_regions::{FLAT_REGION_Z_BAND_MM, flat_region_items};
 pub use hole_fit::{HoleFit, HoleFitRule, fit_holes, hole_fit};
 pub use item::{
     EdgeForm, EdgeMaterial, FaceItem, HoleDepth, Item, ItemCounts, ItemError, ItemKind, ItemSet,
-    ModelEdge, ModelHole, Shape, SourceRef, coaxial_circles,
+    ModelEdge, ModelHole, PartOutline, Shape, SourceRef, coaxial_circles,
 };
 pub use key::{CAD_ROUNDING_MM, KEY_MATCH_EPS_MM, MatchKey};
 pub use near::{PickLine, items_near, polyline_distance};
+pub use outline::{PART_OUTLINE_LABEL, part_outline_item, part_outline_ring};
 pub use refusal::{
-    EdgeRefusal, ItemRef, NO_OPEN_SIDE_TEXT, NoteCause, RefusalCause, SelectionNote,
-    SelectionRefusal, kind_not_cut_reason, kind_noun,
+    EdgeRefusal, ItemRef, NO_OPEN_SIDE_TEXT, NoteCause, PART_FREE_TEXT, RefusalCause,
+    SelectionNote, SelectionRefusal, kind_not_cut_reason, kind_noun,
 };
 pub use resolve::{
     ExcludedItem, LostPick, MatchedBy, MeshFaces, ModelFrame, ResolveScope, ResolvedItem,
@@ -56,5 +58,6 @@ pub use rule::{
 };
 pub use stock::stock_items;
 pub use view::{
-    Curves, EdgeLine, Edges, Hole, Holes, ItemRole, OpItems, Regions, view, view_boundary,
+    Curves, EdgeLine, Edges, Hole, Holes, ItemRole, OpItems, Regions, drop_part_free_note, view,
+    view_boundary,
 };

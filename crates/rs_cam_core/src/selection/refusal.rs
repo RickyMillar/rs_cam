@@ -265,7 +265,17 @@ pub enum NoteCause {
     /// (`compute::open_sides`). The op cuts every face; this is not a
     /// refusal. `count` is the number of faces; `first` names the first.
     NoOpenSide,
+    /// R-A (operator ruling 2026-10-23, the Kiri:Moto and FreeCAD
+    /// default): a Profile Outside cuts the part outline of a mesh model to
+    /// the model bottom or below with no tabs, so the last level frees the
+    /// part. The op cuts; this is not a refusal (`PART_FREE_TEXT`).
+    FreesThePart,
 }
+
+/// The text of a [`NoteCause::FreesThePart`] note (R-A, operator ruling
+/// 2026-10-23).
+pub const PART_FREE_TEXT: &str =
+    "This cut frees the part from the stock. Add tabs if the part must stay held.";
 
 /// The text of a [`NoteCause::NoOpenSide`] note (operator ruling
 /// 2026-10-23).
@@ -318,6 +328,9 @@ impl fmt::Display for SelectionNote {
         }
         if self.cause == NoteCause::NoOpenSide {
             return f.write_str(NO_OPEN_SIDE_TEXT);
+        }
+        if self.cause == NoteCause::FreesThePart {
+            return f.write_str(PART_FREE_TEXT);
         }
         if self.cause == NoteCause::AtAWall {
             return write!(
@@ -529,6 +542,11 @@ pub enum RefusalCause {
     /// model (a Bottom or a side setup). The rim and the depth of a hole
     /// are facts of the model frame, so they do not hold in this setup.
     HoleInTurnedSetup,
+    /// R-A (operator ruling 2026-10-23, SAFETY): a pick names the part
+    /// outline of a mesh model, and the op cuts an area or an edge of it
+    /// (`OutlineUse::Refuse`). The outline is the whole part, so the op
+    /// would cut the part away.
+    PartOutlineIsThePart,
     /// R-B: the floor of the Drill is "each hole floor", and this hole has
     /// no depth: a point or a circle of a drawing, or a circle of a model
     /// with no floor circle below it.
@@ -659,6 +677,10 @@ impl SelectionRefusal {
                 "Pick the rim circle of the hole (the circle at the top of the hole), or remove \
                  the floor circle from the selection"
             }
+            RefusalCause::PartOutlineIsThePart => {
+                "Use a Profile with side Outside to cut the part outline, or remove the outline \
+                 from the selection"
+            }
             RefusalCause::HoleInTurnedSetup => {
                 "Drill the holes of the model in a Top setup, or pick points or circles of a \
                  drawing"
@@ -762,6 +784,11 @@ impl SelectionRefusal {
             RefusalCause::NotAConvexEdge { why } => why.phrase().to_owned(),
             RefusalCause::HoleFloorNotRim => {
                 "this circle is the floor of a hole, and a Drill drills a hole from its rim"
+                    .to_owned()
+            }
+            RefusalCause::PartOutlineIsThePart => {
+                "this item is the part outline, which is the whole part, and this operation cuts \
+                 inside it or on it, so it cuts the part away"
                     .to_owned()
             }
             RefusalCause::HoleInTurnedSetup => {

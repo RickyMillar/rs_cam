@@ -269,6 +269,20 @@ pub struct Item {
     /// rim with the hole depth, or the floor circle. `None` for every
     /// other item. The key does not hold it (as `edge`).
     hole: Option<ModelHole>,
+    /// R-A: the part outline marker of a mesh model (`None` for every
+    /// other item). The key does not hold it (as `edge`).
+    outline: Option<PartOutline>,
+}
+
+/// R-A (operator ruling 2026-10-23): the marker of the part-outline item
+/// of a mesh model (`selection::part_outline_item`). The item is a `Loop`
+/// at the model bottom Z; the marker holds the model top Z, so the frame
+/// door can map the part bottom of a turned setup (a `Bottom` setup sees
+/// the model top as the part bottom).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PartOutline {
+    /// The model top Z (`TriangleMesh::bbox.max.z`), in the model frame.
+    pub top_z: f64,
 }
 
 /// The depth of a round hole below its rim (R-B), in mm. It is a length,
@@ -488,6 +502,7 @@ impl Item {
             z,
             edge: None,
             hole: None,
+            outline: None,
         })
     }
 
@@ -517,6 +532,25 @@ impl Item {
     /// or a floor circle. `None` for every other item.
     pub fn model_hole(&self) -> Option<ModelHole> {
         self.hole
+    }
+
+    /// The same item with the part outline marker `outline` (R-A). The
+    /// model door calls it; the key does not change.
+    #[must_use]
+    pub fn with_part_outline(mut self, outline: PartOutline) -> Self {
+        self.outline = Some(outline);
+        self
+    }
+
+    /// The part outline marker (R-A), or `None` when this item is not the
+    /// part outline of a mesh model.
+    pub fn part_outline(&self) -> Option<PartOutline> {
+        self.outline
+    }
+
+    /// True when this item is the part outline of a mesh model (R-A).
+    pub fn is_part_outline(&self) -> bool {
+        self.outline.is_some()
     }
 
     /// The depth of the hole when this item is a hole rim (R-B).
@@ -581,11 +615,13 @@ impl Item {
         Self::build(self.source, self.layer.clone(), shape, self.z).map(|i| i.keep_edge(self))
     }
 
-    /// `self` with the model edge data of `from` (R-C) and its hole data
-    /// (R-B): a rebuild of the same edge keeps its form and its hole.
+    /// `self` with the model edge data of `from` (R-C), its hole data
+    /// (R-B) and its part outline marker (R-A): a rebuild of the same item
+    /// keeps its form, its hole and its marker.
     fn keep_edge(mut self, from: &Item) -> Self {
         self.edge = from.edge;
         self.hole = from.hole;
+        self.outline = from.outline;
         self
     }
 
@@ -912,6 +948,10 @@ impl ItemSet {
             let mut item = item.keep_edge(i);
             // R-B: the hole depth is a length, so it scales with the shape.
             item.hole = i.hole.map(|hole| hole.scaled(scale));
+            // R-A: the model top Z scales with the item Z.
+            item.outline = i.outline.map(|o| PartOutline {
+                top_z: o.top_z * scale,
+            });
             item
         })
     }

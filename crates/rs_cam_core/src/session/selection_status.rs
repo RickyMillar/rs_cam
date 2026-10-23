@@ -58,7 +58,7 @@ use std::sync::{Arc, Mutex, Weak};
 
 use serde::{Deserialize, Serialize};
 
-use crate::compute::catalog::{GeometryRequirement, ItemUse, OperationType};
+use crate::compute::catalog::{GeometryRequirement, ItemUse, OperationType, OutlineUse};
 use crate::compute::config::{BoundaryConfig, BoundarySource};
 use crate::compute::floor::Floor;
 use crate::compute::transform::{FaceUp, ZRotation};
@@ -128,6 +128,23 @@ pub(crate) enum FaceAccess {
 /// (`resolve_boundary_selection_polys` and the boundary report). The GUI
 /// selection section reads it for the kinds a boundary rule can name.
 pub const BOUNDARY_ITEM_USE: ItemUse = ItemUse::Regions;
+
+/// R-A: what a boundary selection does with the part outline of a mesh
+/// model: its default does not take it, and a pick may name it (the
+/// outline of the part is a valid machining boundary).
+pub const BOUNDARY_OUTLINE_USE: OutlineUse = OutlineUse::PickOnly;
+
+/// The item use and the outline use (R-A) of the reader of the selection
+/// `target` of `tc`: the op, or the boundary.
+pub(crate) fn target_uses(tc: &ToolpathConfig, target: SelectionTarget) -> (ItemUse, OutlineUse) {
+    match target {
+        SelectionTarget::Op => (
+            tc.operation.capabilities().item_use,
+            tc.operation.outline_use(),
+        ),
+        SelectionTarget::Boundary => (BOUNDARY_ITEM_USE, BOUNDARY_OUTLINE_USE),
+    }
+}
 
 /// The name that a refusal of a boundary selection gives as its op.
 pub(crate) const BOUNDARY_LABEL: &str = "Machining boundary";
@@ -439,6 +456,9 @@ pub struct SelectedRow {
     pub plane_z: Option<f64>,
     /// R-E: the hole when this row is the rim of a hole with a depth.
     pub hole: Option<HoleSummary>,
+    /// R-A: true when this row is the part outline of a mesh model. The GUI
+    /// row and the MCP `role` read it ("Part outline").
+    pub outline: bool,
 }
 
 impl SelectionReport {
@@ -487,6 +507,8 @@ pub struct ModelItem {
     /// R-E: the hole when this item is the rim of a hole with a depth. The
     /// floor circle of that hole is not a row of the answer.
     pub hole: Option<HoleSummary>,
+    /// R-A: true when this item is the part outline of a mesh model.
+    pub outline: bool,
 }
 
 /// The `near` filter of the `list_model_items` read (geometry selection
@@ -528,11 +550,8 @@ impl ProjectSession {
     ) -> Result<SelectionFrames, SessionError> {
         let empty = Selection::empty();
         let spec = tc.selection_of(target)?.unwrap_or(&empty);
-        let item_use = match target {
-            SelectionTarget::Op => tc.operation.capabilities().item_use,
-            SelectionTarget::Boundary => BOUNDARY_ITEM_USE,
-        };
-        self.resolve_spec_frames(tc, spec, ctx, faces, item_use)
+        let uses = target_uses(tc, target);
+        self.resolve_spec_frames(tc, spec, ctx, faces, uses)
             .map_err(|e| SessionError::OperationFailed(e.to_string()))
     }
 
@@ -543,15 +562,16 @@ impl ProjectSession {
     ///
     /// P4.7: when `spec` names a face, each mesh model it reads resolves
     /// against its flat-region faces ([`Self::mesh_faces_of`]); `faces`
-    /// says whether a cold cache builds. `item_use` is the use of the
-    /// reader: the default rule reads it on a model edge item (R-C).
+    /// says whether a cold cache builds. `(item_use, outline_use)` is the
+    /// use of the reader: the default rule reads it on a model edge item
+    /// (R-C) and on the part outline (R-A).
     pub(crate) fn resolve_spec_frames(
         &self,
         tc: &ToolpathConfig,
         spec: &Selection,
         ctx: &SetupEvalContext,
         faces: FaceAccess,
-        item_use: ItemUse,
+        (item_use, outline_use): (ItemUse, OutlineUse),
     ) -> Result<SelectionFrames, ItemError> {
         let mesh_faces = self.mesh_faces_of(tc, spec, faces);
         let resolved = crate::selection::resolve(
@@ -563,6 +583,7 @@ impl ProjectSession {
                 setup: ctx.local_to_global.as_ref(),
                 mesh_faces: &mesh_faces,
                 item_use,
+                outline_use,
             },
         );
         let setup = resolved
@@ -598,8 +619,8 @@ impl ProjectSession {
         // a lateral setup turns on its side collapses. That face is not
         // flat and horizontal in this setup.
         // A one-pick selection: the use does not change what a pick matches.
-        let item_use = tc.operation.capabilities().item_use;
-        let Ok(frames) = self.resolve_spec_frames(tc, &spec, ctx, faces, item_use) else {
+        let uses = target_uses(tc, SelectionTarget::Op);
+        let Ok(frames) = self.resolve_spec_frames(tc, &spec, ctx, faces, uses) else {
             return Some(Err(SelectionRefusal::new(
                 named,
                 RefusalCause::FaceNotFlat { face: None },
@@ -858,6 +879,7 @@ impl ProjectSession {
                     hole: own_index
                         .zip(own_items.as_deref())
                         .and_then(|(at, items)| HoleSummary::of(items, at, own_source)),
+                    outline: model.item().is_part_outline(),
                 }
             })
             .collect();
@@ -947,7 +969,16 @@ impl ProjectSession {
         // P3.4: a boundary keeps a down face (its outline); an op refuses
         // it. Each reads the view that its generation reads.
         let viewed = match target {
-            SelectionTarget::Op => crate::selection::view(&frames.setup, item_use),
+            // R-A: the "frees the part" note by the prologue rule.
+            SelectionTarget::Op => {
+                crate::selection::view(&frames.setup, item_use).map(|(items, mut notes)| {
+                    crate::selection::drop_part_free_note(
+                        &mut notes,
+                        tc.operation.frees_the_part(),
+                    );
+                    (items, notes)
+                })
+            }
             SelectionTarget::Boundary => crate::selection::view_boundary(&frames.setup),
         };
         // "Cut past open sides" (operator ruling 2026-10-23): THE area rule
@@ -1845,6 +1876,7 @@ impl ProjectSession {
                     measure: item.key().measure,
                     hole: at
                         .and_then(|at| HoleSummary::of(&source, at, SourceRef::Model(model_id))),
+                    outline: item.is_part_outline(),
                 };
                 (at, row)
             })
@@ -2090,6 +2122,10 @@ struct StatusKey {
     selection: Vec<u8>,
     op_type: OperationType,
     item_use: ItemUse,
+    /// R-A: the outline use (a Profile side edit changes it) and the
+    /// "frees the part" answer (a floor or a tab edit changes it).
+    outline_use: OutlineUse,
+    frees_the_part: bool,
     model_id: ModelId,
     models: Vec<(ModelId, Weak<ItemSet>)>,
     /// P4.7: the cached flat-region set of each mesh model the selection
@@ -2135,10 +2171,7 @@ impl StatusKey {
         target: SelectionTarget,
         ctx: &SetupEvalContext,
     ) -> Option<Self> {
-        let item_use = match target {
-            SelectionTarget::Op => tc.operation.capabilities().item_use,
-            SelectionTarget::Boundary => BOUNDARY_ITEM_USE,
-        };
+        let (item_use, outline_use) = target_uses(tc, target);
         let spec = tc.selection_of(target).ok()?;
         // UX-8: the face key of the floor "A picked face" resolves as a
         // one-pick selection, so its model's flat faces are a key part too.
@@ -2166,6 +2199,8 @@ impl StatusKey {
             selection: serde_json::to_vec(&spec).ok()?,
             op_type: tc.operation.op_type(),
             item_use,
+            outline_use,
+            frees_the_part: target == SelectionTarget::Op && tc.operation.frees_the_part(),
             model_id: tc.model_id,
             models: session
                 .models
@@ -2219,6 +2254,8 @@ impl StatusKey {
             && self.selection == now.selection
             && self.op_type == now.op_type
             && self.item_use == now.item_use
+            && self.outline_use == now.outline_use
+            && self.frees_the_part == now.frees_the_part
             && self.model_id == now.model_id
             && self.face_up == now.face_up
             && self.z_rotation == now.z_rotation

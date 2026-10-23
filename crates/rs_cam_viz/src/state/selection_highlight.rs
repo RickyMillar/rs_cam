@@ -164,7 +164,8 @@ impl HoverDetector {
 ///   that the V-bit cannot reach clear of a wall (`NoteCause::AtAWall`):
 ///   the first edge that the note names.
 /// - A Pocket with "Cut past open sides" whose faces have no open side
-///   (`NoteCause::NoOpenSide`): the first face that the note names.
+///   (`NoteCause::NoOpenSide`): the first face that the note names; R-A
+///   (`NoteCause::FreesThePart`): the part outline.
 ///
 /// The keys carry the source of the item.
 pub fn note_item_keys(
@@ -181,7 +182,8 @@ pub fn note_item_keys(
             | NoteCause::HoleFit { .. }
             | NoteCause::StopsShort { .. }
             | NoteCause::AtAWall
-            | NoteCause::NoOpenSide => {
+            | NoteCause::NoOpenSide
+            | NoteCause::FreesThePart => {
                 vec![(*note.first.key).clone()]
             }
             NoteCause::KindNotServed => {

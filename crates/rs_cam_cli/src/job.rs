@@ -1437,6 +1437,57 @@ mod tests {
     ///
     /// Red proof (run by hand, 2026-10-23): the job op back on
     /// `DressupConfig::default()` goes red.
+    /// R-A parity: a job Profile on a STEP model takes the part outline
+    /// only, side Outside, to the model bottom, with no tabs, as the GUI
+    /// and MCP add doors do (`the_default_mesh_profile_is_one_config_ra`).
+    #[test]
+    #[expect(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic,
+        reason = "test code: a panic is how a test reports a failure"
+    )]
+    fn a_job_profile_on_a_step_model_cuts_the_outline_ra() {
+        let step = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../rs_cam_core/tests/fixtures/step/stepped_block.step")
+            .canonicalize()
+            .expect("the fixture exists");
+        let dir = std::env::temp_dir().join(format!("rs_cam_ra_job_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let job_path = dir.join("job.toml");
+        std::fs::write(
+            &job_path,
+            format!(
+                "[job]\noutput = \"out.nc\"\n\n[tools.flat_6mm]\ntype = \"end_mill\"\n\
+                 diameter = 6.0\n\n[[operation]]\ntype = \"profile\"\ninput = \"{}\"\n\
+                 tool = \"flat_6mm\"\n",
+                step.display()
+            ),
+        )
+        .expect("write the job");
+        let job = parse_job_file(&job_path).expect("the job parses");
+        let op = &job.operation[0];
+        let tool_def = &job.tools[&op.tool];
+        let (session, index) =
+            job_op_session(&job, &dir, 0, op, tool_def, false).expect("the job session");
+        let _ = std::fs::remove_dir_all(&dir);
+        let tc = &session.toolpath_configs()[index];
+        let rs_cam_core::compute::catalog::OperationConfig::Profile(cfg) = &tc.operation else {
+            panic!("a Profile");
+        };
+        assert_eq!(
+            cfg.floor,
+            rs_cam_core::compute::floor::Floor::ModelBottom { depth: 0.0 }
+        );
+        assert_eq!(cfg.side, rs_cam_core::ops::profile::ProfileSide::Outside);
+        assert_eq!((cfg.tab_count, cfg.tab_points.len()), (0, 0));
+        let report = session
+            .selection_status(tc, rs_cam_core::session::SelectionTarget::Op)
+            .expect("the status");
+        assert_eq!(report.rows.len(), 1, "the outline only");
+        assert!(report.rows[0].outline);
+    }
+
     #[test]
     #[expect(
         clippy::expect_used,

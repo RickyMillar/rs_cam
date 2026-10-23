@@ -147,6 +147,9 @@ fn differences(label: &str, model: &LoadedModel, setup: Option<&SetupTransformIn
             mesh_faces: &[],
             // A drawing: the use reads only a model edge item (R-C).
             item_use: ItemUse::Regions,
+            // R-A: the default of every op but Profile Outside leaves the
+            // part outline out.
+            outline_use: rs_cam_core::compute::catalog::OutlineUse::PickOnly,
         },
     );
     let resolved = resolved.to_setup_frame(setup).unwrap();
@@ -306,7 +309,9 @@ fn step_ring_differences(files: &[(String, LoadedModel)]) -> Vec<String> {
         .filter(|(_, m)| {
             m.items
                 .iter()
-                .any(|i| i.kind() == ItemKind::Loop && i.z().is_some())
+                // R-A: the part outline is not a face ring, and the
+                // default of this view does not take it.
+                .any(|i| i.kind() == ItemKind::Loop && i.z().is_some() && !i.is_part_outline())
         })
         .flat_map(|(label, _)| {
             ["model", "flipped"].into_iter().flat_map(move |frame| {
@@ -492,6 +497,7 @@ fn an_open_path_keeps_its_drawn_direction_in_the_view() {
             setup: None,
             mesh_faces: &[],
             item_use: ItemUse::Curves,
+            outline_use: rs_cam_core::compute::catalog::OutlineUse::PickOnly,
         },
     );
     let (items, _) = view(&resolved, ItemUse::Curves).unwrap();

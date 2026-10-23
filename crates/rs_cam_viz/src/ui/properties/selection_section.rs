@@ -404,6 +404,24 @@ pub(crate) fn row_label(key: &MatchKey, plane_z: Option<f64>) -> String {
     }
 }
 
+/// R-A: the short text of the part outline row: "Part outline Z0".
+pub(crate) fn outline_label(plane_z: Option<f64>) -> String {
+    let z = plane_z.map_or_else(String::new, |z| format!(" Z{}", short_number(z)));
+    format!("{}{z}", rs_cam_core::selection::PART_OUTLINE_LABEL)
+}
+
+/// R-A: the full text of the part outline row: "Part outline at (0.0,
+/// 0.0) Z 0.00".
+pub(crate) fn outline_full_label(key: &MatchKey, plane_z: Option<f64>) -> String {
+    let z = plane_z.map_or_else(String::new, |z| format!(" Z {z:.2}"));
+    format!(
+        "{} at ({:.1}, {:.1}){z}",
+        rs_cam_core::selection::PART_OUTLINE_LABEL,
+        key.anchor[0],
+        key.anchor[1]
+    )
+}
+
 /// The short name of a face at plane `z`: "Face Z20.00" (FR-2 F23). The
 /// list rows and the floor face slot read it.
 pub(crate) fn face_label(z: f64) -> String {
@@ -449,19 +467,24 @@ pub(crate) fn list_groups(
 ) -> Vec<ListGroup> {
     let default = inputs.is_default();
     // R-E: a hole row reads the one core hole text ("Ø6 hole, 8 deep").
+    // R-A: the part outline row reads "Part outline Z0".
     let row_of = |row: &rs_cam_core::session::SelectedRow, acts: RowActs| ListRow {
         key: row.key.clone(),
-        label: row
-            .hole
-            .as_ref()
-            .map_or_else(|| row_label(&row.key, row.plane_z), HoleSummary::label),
-        full: match &row.hole {
-            Some(hole) => format!(
+        label: if row.outline {
+            outline_label(row.plane_z)
+        } else {
+            row.hole
+                .as_ref()
+                .map_or_else(|| row_label(&row.key, row.plane_z), HoleSummary::label)
+        },
+        full: match (&row.hole, row.outline) {
+            (_, true) => outline_full_label(&row.key, row.plane_z),
+            (Some(hole), false) => format!(
                 "{} \u{00B7} {}",
                 hole.label(),
                 row_full_label(&row.key, row.plane_z)
             ),
-            None => row_full_label(&row.key, row.plane_z),
+            (None, false) => row_full_label(&row.key, row.plane_z),
         },
         state: report.row_state(row),
         acts,
@@ -476,8 +499,15 @@ pub(crate) fn list_groups(
             .map(|row| row_of(row, RowActs::default()))
             .collect();
         let kinds: BTreeSet<ItemKind> = rows.iter().map(|r| r.key.kind).collect();
+        let only_outline = !report.rows.is_empty() && report.rows.iter().all(|row| row.outline);
         let title = if rows.is_empty() {
             format!("Default: nothing that {} cuts", inputs.op_label)
+        } else if only_outline {
+            // R-A: the default Profile on a mesh model.
+            format!(
+                "Default: the {}",
+                rs_cam_core::selection::PART_OUTLINE_LABEL.to_lowercase()
+            )
         } else {
             let names: Vec<&str> = kinds.iter().map(|k| kind_noun(*k, 1)).collect();
             format!("Default: every {}", names.join(", "))

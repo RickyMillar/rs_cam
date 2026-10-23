@@ -531,8 +531,10 @@ fn require_items(
     let size = op.drill_size(ctx.tool_def.diameter());
     // F29: an `Empty` Drill names the hole rims that the default rule did
     // not take.
-    let (mut items, view_notes) = view(resolved, item_use)
+    let (mut items, mut view_notes) = view(resolved, item_use)
         .map_err(|refusal| selection_error(refusal.with_default_rims(resolved, item_use, &size)))?;
+    // R-A: the "frees the part" note stays only when the op frees it.
+    crate::selection::drop_part_free_note(&mut view_notes, op.frees_the_part());
     notes.extend(view_notes);
     let fit_notes = fit_holes(resolved, &mut items, item_use, size).map_err(selection_error)?;
     notes.extend(fit_notes);

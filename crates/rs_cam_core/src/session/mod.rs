@@ -104,9 +104,9 @@ pub use rest_stock::{RESOLUTION_FLOOR_MM, SimulationResolution, SnapshotMiss};
 pub use result_provenance::{FeedStage, ResultProvenance};
 pub use rule_offers::RuleOffer;
 pub use selection_status::{
-    BOUNDARY_ITEM_USE, BuildModelFacesHandle, ClickEdit, HoleItem, HoleSelection, HoleSummary,
-    ItemState, ModelFacesBuilt, ModelItem, Near, SelectedRow, SelectionReport, SelectionTarget,
-    execute_build_model_faces, hole_label, short_number,
+    BOUNDARY_ITEM_USE, BOUNDARY_OUTLINE_USE, BuildModelFacesHandle, ClickEdit, HoleItem,
+    HoleSelection, HoleSummary, ItemState, ModelFacesBuilt, ModelItem, Near, SelectedRow,
+    SelectionReport, SelectionTarget, execute_build_model_faces, hole_label, short_number,
 };
 pub use stock_change_report::{StockChangeRow, StockChangeVolumeAbsence, StockMaterialSwatch};
 
@@ -632,7 +632,8 @@ pub struct LoadedModel {
     pub name: String,
     pub mesh: Option<Arc<TriangleMesh>>,
     /// The pickable 2D items of the source (P2.1): DXF and SVG drawing
-    /// items, STEP faces. Empty for an STL mesh. The session binds them to
+    /// items, STEP faces and edges. R-A: a mesh model (STEP or STL) also
+    /// holds its part outline, last. The session binds them to
     /// `SourceRef::Model(id)` (`bind_items`).
     pub items: Arc<ItemSet>,
     /// Original file path (for save round-trip).
@@ -870,15 +871,21 @@ impl LoadedModel {
         }
     }
 
-    /// The cached flat-region faces bound to `SourceRef::Model(self.id)`.
+    /// The items of this model, then the cached flat-region faces bound to
+    /// `SourceRef::Model(self.id)`. R-A: the items of a mesh with no BREP
+    /// faces hold its part outline, so a selection that names a face keeps
+    /// the outline, and the outline keeps its index (0) in `items`.
     fn bind_faces(&self, set: &ItemSet) -> Arc<ItemSet> {
         let source = SourceRef::Model(self.id);
-        Arc::new(set.bound_to(source).unwrap_or_else(|error| {
+        let faces = set.bound_to(source).unwrap_or_else(|error| {
             // A rebuild of a valid item set with a new source cannot break
             // a shape invariant.
             tracing::error!(model = %self.name, %error, "face bind failed");
             ItemSet::default()
-        }))
+        });
+        Arc::new(ItemSet::new(
+            self.items.iter().chain(faces.iter()).cloned().collect(),
+        ))
     }
 
     /// Replay `edits` on `door`, the bound items of the import door

@@ -52,7 +52,8 @@ impl ProjectSession {
             created = Some(index);
             let due = session.toolpath_configs.get(index).and_then(|tc| {
                 session
-                    .each_face_floor_due(tc)
+                    .part_outline_floor_due(tc)
+                    .or_else(|| session.each_face_floor_due(tc))
                     .or_else(|| session.each_hole_floor_due(tc))
             });
             if let Some(candidate) = due

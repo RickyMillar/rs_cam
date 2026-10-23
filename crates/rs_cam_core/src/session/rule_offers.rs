@@ -79,7 +79,7 @@ impl ProjectSession {
                 &Selection::from_picks(vec![key.clone()]),
                 &ctx,
                 FaceAccess::Peek,
-                tc.operation.capabilities().item_use,
+                super::selection_status::target_uses(tc, SelectionTarget::Op),
             )
             .map_err(|e| SessionError::OperationFailed(e.to_string()))?;
         let Some(item) = frames.setup.items().first() else {

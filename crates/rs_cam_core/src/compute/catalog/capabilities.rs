@@ -327,6 +327,29 @@ impl<P> Capabilities<P> {
     }
 }
 
+/// R-A (operator ruling 2026-10-23, SAFETY): what an op does with the
+/// part outline of a mesh model (`selection::part_outline_item`). The
+/// outline is the whole part, so an op that cuts inside an area of it
+/// cuts the part away.
+///
+/// [`super::OperationType::outline_use`] states it for each op with no
+/// wildcard, and `OperationConfig::outline_use` reads the Profile side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutlineUse {
+    /// The default rule takes the outline, and ONLY the outline of a mesh
+    /// model (no face ring): Profile with side Outside.
+    Default,
+    /// The default rule does not take it; a pick or a rule may name it:
+    /// Trace, Project Curve, the machining boundary, the ops with no
+    /// selection.
+    PickOnly,
+    /// The op refuses it, also as a pick (`RefusalCause::PartOutlineIsThePart`):
+    /// every op that cuts an area or an edge of the part (Pocket, Face,
+    /// 2D Adaptive, Zigzag, V-Carve, Inlay, Inlay Plug, Chamfer, Drill,
+    /// Bore, Pin Drill, Profile Inside and On).
+    Refuse,
+}
+
 /// How an operation cuts the drawing items it gets (P1; geometry selection
 /// `DESIGN.md` 4.2). It is a config answer, so a config field can change
 /// it. P6.2: Trace follows closed and open paths with every compensation.

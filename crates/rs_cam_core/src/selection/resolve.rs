@@ -57,6 +57,12 @@ pub struct ResolveScope<'a> {
     /// a model edge item (`rule::served_by_default`, R-C): a Chamfer takes
     /// the convex top chains, every other op the face rings (Q3).
     pub item_use: crate::compute::catalog::ItemUse,
+    /// R-A: what the reader does with the part outline of a mesh model
+    /// (`OperationConfig::outline_use`; the boundary reads
+    /// `selection_status::BOUNDARY_OUTLINE_USE`). The default rule reads
+    /// it (`rule::served_by_default`) and `view` refuses a named outline
+    /// under `OutlineUse::Refuse`.
+    pub outline_use: crate::compute::catalog::OutlineUse,
 }
 
 /// The flat-region face items of one mesh model (geometry selection P4.7),
@@ -238,6 +244,8 @@ pub struct ResolvedSelection<F: SelectionFrame> {
     /// a Drill names those of the tool size
     /// ([`super::SelectionRefusal::with_default_holes`]).
     rims_off_default: Vec<MatchKey>,
+    /// R-A: the outline use of the reader (`ResolveScope::outline_use`).
+    outline_use: crate::compute::catalog::OutlineUse,
     frame: PhantomData<F>,
 }
 
@@ -282,6 +290,8 @@ impl ResolvedSelection<SetupFrame> {
             mirrored: false,
             upright: true,
             rims_off_default: Vec::new(),
+            // A hand-built list holds no part outline.
+            outline_use: crate::compute::catalog::OutlineUse::PickOnly,
             frame: PhantomData,
         }
     }
@@ -349,6 +359,9 @@ impl ResolvedSelection<SetupFrame> {
     fn up_face_planes(&self) -> impl Iterator<Item = f64> + '_ {
         self.items
             .iter()
+            // R-A: the part outline lies at the bottom of the material, not
+            // on its top, so it gives no top and no face floor.
+            .filter(|r| !r.item.is_part_outline())
             .filter_map(|r| match r.item.shape() {
                 Shape::Face(face) if Facing::Up.admits(face.normal.z) => Some(face.plane_z),
                 Shape::Face(_) => None,
@@ -369,6 +382,11 @@ impl<F: SelectionFrame> ResolvedSelection<F> {
     /// `Top` setup), so the edge form of a model edge item holds.
     pub fn upright(&self) -> bool {
         self.upright
+    }
+
+    /// R-A: the outline use of the reader of this selection.
+    pub fn outline_use(&self) -> crate::compute::catalog::OutlineUse {
+        self.outline_use
     }
 
     /// F29: the keys of the convex top circular edges that a default rule
@@ -427,6 +445,7 @@ impl<F: SelectionFrame> ResolvedSelection<F> {
             mirrored: self.mirrored,
             upright: self.upright,
             rims_off_default: self.rims_off_default,
+            outline_use: self.outline_use,
             frame: PhantomData,
         }
     }
@@ -553,10 +572,19 @@ pub fn face_in_setup_frame(face: &FaceItem, info: Option<&SetupTransformInfo>) -
 /// A lateral setup turns a horizontal edge vertical; this map then gives
 /// the depth of its first point only (open: the item holds no normal to
 /// refuse with, as a face does with `FaceNotFlat`).
+///
+/// R-A: the part outline is the part BOTTOM in every setup. A setup that
+/// turns the model over (`is_z_flipped`, a `Bottom` setup) sees the model
+/// top as the part bottom, so the map reads `PartOutline::top_z` there.
+/// A lateral setup keeps the rule of every model edge item.
 pub fn item_z_in_setup_frame(item: &Item, info: Option<&SetupTransformInfo>) -> Option<f64> {
     let z = item.z()?;
     let Some(info) = info.filter(|i| i.needs_transform()) else {
         return Some(z);
+    };
+    let z = match item.part_outline() {
+        Some(outline) if info.is_z_flipped() => outline.top_z,
+        Some(_) | None => z,
     };
     let [x, y] = item.key().anchor;
     let first = match item.shape() {
@@ -742,7 +770,10 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection<M
             MatchedBy::Default { rule: index }
         };
         for (idx, item) in items.iter().enumerate() {
-            if !rule.filter.admits(item, scope.item_use, face_frame) {
+            if !rule
+                .filter
+                .admits(item, (scope.item_use, scope.outline_use), face_frame)
+            {
                 // F29: a convex top circular edge (a hole rim) that the
                 // default rule did not take.
                 if !rule.names_kinds()
@@ -835,6 +866,7 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection<M
         mirrored: false,
         upright: true,
         rims_off_default,
+        outline_use: scope.outline_use,
         frame: PhantomData,
     }
 }

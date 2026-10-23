@@ -121,6 +121,7 @@ fn arm_of(cause: &RefusalCause) -> &'static str {
         RefusalCause::HoleFloorNotRim => "hole_floor_not_rim",
         RefusalCause::HoleInTurnedSetup => "hole_in_turned_setup",
         RefusalCause::NoHoleDepth => "no_hole_depth",
+        RefusalCause::PartOutlineIsThePart => "part_outline_is_the_part",
     }
 }
 
@@ -145,6 +146,7 @@ const ARMS: &[&str] = &[
     "hole_floor_not_rim",
     "hole_in_turned_setup",
     "no_hole_depth",
+    "part_outline_is_the_part",
 ];
 
 fn square(cx: f64) -> Polygon2 {
@@ -303,6 +305,7 @@ fn every_cause_has_an_arm() {
         RefusalCause::HoleFloorNotRim,
         RefusalCause::HoleInTurnedSetup,
         RefusalCause::NoHoleDepth,
+        RefusalCause::PartOutlineIsThePart,
     ];
     let causes: BTreeSet<&str> = samples.iter().map(arm_of).collect();
     let arms: BTreeSet<&str> = ARMS.iter().copied().collect();
@@ -1186,6 +1189,7 @@ fn faces_not_ready() {
             setup: None,
             mesh_faces: &cold,
             item_use: ItemUse::Regions,
+            outline_use: rs_cam_core::compute::catalog::OutlineUse::Refuse,
         },
     );
     let r = view(&resolved, ItemUse::Regions)
@@ -1325,4 +1329,29 @@ fn no_hole_depth() {
     let r = refusal_of(&mut s);
     assert_eq!(r.cause, RefusalCause::NoHoleDepth, "{r}");
     assert_drill_text(&r, &["each hole floor", "circle on layer 'HOLES'"]);
+}
+
+/// R-A: a Pocket that names the part outline of a mesh model refuses by
+/// name: the outline is the whole part.
+#[test]
+fn part_outline_is_the_part() {
+    let outline = Item::at_z(
+        SourceRef::ToolpathModel,
+        None,
+        Shape::Loop(square(0.0)),
+        0.0,
+    )
+    .unwrap()
+    .with_part_outline(rs_cam_core::selection::PartOutline { top_z: FACE_Z });
+    let mut s = pocket_session(
+        drawing_model(vec![outline.clone()]),
+        Selection::from_picks(vec![pick_of(&outline)]),
+        |_| {},
+    );
+    let r = refusal_of(&mut s);
+    assert_eq!(r.cause, RefusalCause::PartOutlineIsThePart, "{r}");
+    assert_names(
+        &r,
+        &["part outline", "whole part", "Profile with side Outside"],
+    );
 }

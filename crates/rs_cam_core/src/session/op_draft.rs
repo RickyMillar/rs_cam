@@ -19,8 +19,11 @@
 //!    `BoundaryConfig::for_3d_op` on a 3D op when a model has a mesh.
 //!
 //! The draft is a value: the caller sends it as `Command::AddToolpath`,
-//! which runs the add-time floor rules (`each_face_floor_due`,
-//! `each_hole_floor_due`).
+//! which runs the add-time floor rules (`part_outline_floor_due`,
+//! `each_face_floor_due`, `each_hole_floor_due`). R-A: a Profile on a mesh
+//! model drafts with side Outside and no tabs (the registry default); its
+//! default selection takes the part outline only, and the add sets the
+//! floor "Model bottom", depth 0.
 
 use crate::compute::catalog::OperationType;
 use crate::compute::config::{

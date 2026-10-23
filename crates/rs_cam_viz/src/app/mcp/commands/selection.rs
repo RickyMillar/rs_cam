@@ -165,6 +165,7 @@ pub(crate) fn selection_report_json(
                 },
                 "plane_z": row.plane_z,
                 "hole": row.hole.as_ref().map(hole_json),
+                "role": outline_role(row.outline),
             }))
             .collect::<Vec<_>>(),
         "selected": report.selected.iter().map(key_json).collect::<Vec<_>>(),
@@ -202,7 +203,18 @@ pub(crate) fn model_item_json(item: &ModelItem) -> serde_json::Value {
         "measure": item.measure,
         "key": key_json(&item.key),
         "hole": item.hole.as_ref().map(hole_json),
+        "role": outline_role(item.outline),
     })
+}
+
+/// R-A: the `role` of a row: `"part_outline"` for the part outline of a
+/// mesh model (the GUI row "Part outline"), else `null`.
+fn outline_role(outline: bool) -> serde_json::Value {
+    if outline {
+        serde_json::json!("part_outline")
+    } else {
+        serde_json::Value::Null
+    }
 }
 
 /// The reply of the `list_model_items` read (P2.7; P4.5 `near`): the core
