@@ -1097,7 +1097,7 @@ mod tests {
         // Centres only in the left two thirds, and not on every 5th row:
         // columns on the right edge have no centre in reach.
         let centres = (0..rows * cols)
-            .map(|i| (i % cols) < cols * 2 / 3 && (i / cols) % 5 != 0)
+            .map(|i| (i % cols) < cols * 2 / 3 && !(i / cols).is_multiple_of(5))
             .collect();
         (floor, centres)
     }

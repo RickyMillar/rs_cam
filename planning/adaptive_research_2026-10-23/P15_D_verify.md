@@ -605,3 +605,157 @@ pocket:
 ```
  M crates/rs_cam_core/src/adaptive/research_geodesic.rs
 ```
+
+## D4 at 6f699bcf
+
+A3 cbeb0acb (the plan's own floor, `adaptive3d/intended_floor.rs`) and C4
+6f699bcf (core spiral, lobe morph, return option). No merge of master. Same
+lane script, own target dir, a `timeout` on each command. Disk: 45 GB free.
+
+### Fix (uncommitted)
+
+- `crates/rs_cam_core/src/stock/standing_islands.rs:1100` (A3 unit-test
+  helper), clippy `manual_is_multiple_of`.
+  - Before: `(i / cols) % 5 != 0`
+  - After: `!(i / cols).is_multiple_of(5)`
+  - Why: the lint denies it. Same value. `--lib standing_islands` 6/6 after.
+
+No other fix. Arm (e) of the roughcov sentry passed, so its assertion is
+unchanged.
+
+### Results
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `fmt --all -- --check` | green (also green after the fix) |
+| 1 | three `check` builds (core `test-support`; core `research,test-support`; viz) | green |
+| 2 | `--lib standing_islands` | green 6/6 |
+| 2 | `--lib sim_triage` | green 22/22 |
+| 2 | `--lib adaptive3d` | green 66 passed, 7 ignored |
+| 2 | `--test a_rough_island_above_the_stock_to_leave_is_flagged_g_roughcov` | green 8/8 (arm (e) included) |
+| 2 | `--features test-support`: all 14 adaptive3d sentries, `adaptive3d_emission_byte_parity`, `..._g_plansimgap`, `..._planner_never_ahead_of_emitted_path`, `..._global_gate_drapes_below_floor` included | green. Byte parity green: the factored floor rule changes no shipped byte |
+| 2 | `test -p rs_cam_viz -q --lib` | green 585 passed, 2 ignored; `the_gui_adopt_reads_the_rough_coverage_g_roughcov` asserts `island.cells == 9 * 17` (line 188) and passes |
+| 2 | `test -p rs_cam_mcp -q` | green 36/36 |
+| 3 | `--features research,test-support --lib research_geodesic` | green 7 passed, 1 ignored (the G-MOPLOAD pass-load test) |
+| 3 | the harness, release, `timeout 900` | green 1/1, 2.64 s |
+| 4 | full workspace clippy | red (1 lint) → green after the fix |
+
+### C4 refactor check: `geodesic_a` against D3
+
+| Shape | D3 | D4 | Same |
+|---|---|---|---|
+| star | 92 = S1 J56 M20 P15; max 0.3600; raw 206 / 2330 | 92 = S1 J56 M20 P15; max 0.3600; raw 206 / 2330 | yes |
+| pocket | 88 = S1 J42 M27 C4 P14; max 0.3624; raw 289 / 2845 | 88 = S1 J42 M27 C4 P14; max 0.3624; raw 289 / 2845 | yes |
+
+The C4 refactor did not change candidate (a). The agent, contour_spiral and
+geodesic_g1 columns also keep their D3 entry splits.
+
+### Harness table
+
+Output: `/home/ricky/personal_repos/rs_cam/.claude/worktrees/adaptive-head/target/tmp/adaptive_geodesic_2d_g1/`.
+The `geodesic_a_through` and `geodesic_a_ramp` columns are gone in C4. Split:
+S starter, J join at a wrap end, M mid-wrap split, C residue contour, W wall
+pass, P residue mop. Retracts equal entries.
+
+| Shape / column | Entries | S/J/M/C/W/P | Max emitted / 0.3626 | Emitted over | Raw over |
+|---|---|---|---|---|---|
+| star / agent | 25 | 1/0/17/0/0/7 | 0.4515 | 1 | 9 / 1749 |
+| star / contour_spiral | 101 | 1/0/93/0/0/7 | 0.3613 | 0 | 501 / 4873 |
+| star / geodesic_g1 | 86 | 1/58/12/0/0/15 | 0.3614 | 0 | 219 / 2422 |
+| star / geodesic_a | 92 | 1/56/20/0/0/15 | 0.3600 | 0 | 206 / 2330 |
+| star / geodesic_morph_alt | 69 | 1/30/14/12/0/12 | **0.9745** | **27 / 2522** | 272 / 2312 |
+| star / geodesic_morph_return | 79 | 1/35/14/12/0/17 | **0.9745** | **24 / 2357** | 314 / 2264 |
+| pocket / agent | 31 | 1/0/19/0/0/11 | 0.3618 | 0 | 9 / 1805 |
+| pocket / contour_spiral | 91 | 1/0/72/8/0/10 | 0.3723 | 1 | 420 / 3797 |
+| pocket / geodesic_g1 | 89 | 1/43/23/6/0/16 | 0.4478 | 1 | 291 / 2974 |
+| pocket / geodesic_a | 88 | 1/42/27/4/0/14 | 0.3624 | 0 | 289 / 2845 |
+| pocket / geodesic_morph_alt | 77 | 1/45/11/9/0/11 | 0.4517 | 1 (mop) | 280 / 3690 |
+| pocket / geodesic_morph_return | 83 | 1/53/10/9/0/10 | 0.4517 | 1 (mop) | 316 / 3521 |
+
+Per-producer load, morph columns (max reading, steps over / steps):
+
+| Class | star morph_alt | star morph_return | pocket morph_alt | pocket morph_return |
+|---|---|---|---|---|
+| emitted: starter | 0.3114, 0/160 | 0.3114, 0/160 | 0.3114, 0/160 | 0.3114, 0/160 |
+| emitted: clearing | 0.3618, 0/816 | 0.3618, 0/759 | 0.3602, 0/1926 | 0.3591, 0/1833 |
+| emitted: clearing link | 0.3185, 0/5 | 0.3185, 0/5 | 0.3229, 0/12 | 0.3229, 0/9 |
+| emitted: residue contour link | **0.9745, 17/67** | **0.9745, 17/46** | 0.3093, 0/11 | 0.3093, 0/11 |
+| emitted: residue contour | 0.6086, 1/670 | 0.6086, 1/618 | 0.3101, 0/767 | 0.3333, 0/769 |
+| emitted: wall pass link | 0.3508, 0/63 | 0.1442, 0/104 | 0.1632, 0/11 | 0.1632, 0/32 |
+| emitted: wall pass | 0.4198, 1/31 | 0.3230, 0/43 | 0.2500, 0/6 | 0.2500, 0/14 |
+| emitted: residue mop link | 0.0527, 0/122 | 0.2500, 0/65 | 0.1448, 0/74 | 0.1448, 0/74 |
+| emitted: residue mop | 0.4530, 8/588 | 0.4814, 6/557 | 0.4517, 1/388 | 0.4517, 1/386 |
+| raw: clearing spiral | 0.5044, 138/392 | 0.5044, 138/392 | 0.4882, 55/151 | 0.4882, 55/151 |
+| raw: clearing morph | 0.5972, 51/994 | 0.7598, 75/514 | 0.7064, 123/1930 | 0.8658, 113/983 |
+| raw: clearing wrap | 0.9550, 52/651 | 0.9550, 56/609 | 0.9316, 63/1287 | 0.8802, 81/1233 |
+| raw: clearing join | 0.8333, 28/30 | 0.8333, 42/47 | 0.8685, 17/28 | 0.9119, 35/52 |
+| raw: clearing link | 0.5376, 3/85 | 0.5376, 3/84 | 0.9601, 22/134 | 0.9647, 24/133 |
+| raw: clearing return | — | 0.3586, 0/458 | — | 0.9412, 8/809 |
+
+Lobe stop reasons (C4 `lobes` line):
+
+| Shape | Lobes / arcs | Plain wraps | Not joined: split | branch | length ratio | gap | Left the region | Return length |
+|---|---|---|---|---|---|---|---|---|
+| star (alt and return) | 6 / 29 | 63 | 53 | 0 | 11 | 0 | 0 | 0.0 mm (alt), 192.1 mm (return) |
+| pocket (alt and return) | 5 / 31 | 57 | 51 | 2 | 0 | 2 | 0 | 0.0 mm (alt), 363.8 mm (return) |
+
+The star morph over-steps, verbatim from `summary.txt` (first three of 17 on
+the one link):
+
+```
+  over: residue contour link (segment 96) from (48.00, 67.43) to (49.19, 66.53), reading 0.8836
+  over: residue contour link (segment 96) from (49.19, 66.53) to (50.39, 65.63), reading 0.9663
+  over: residue contour link (segment 96) from (50.39, 65.63) to (51.58, 64.73), reading 0.9663
+```
+
+The link runs straight from (48.00, 67.43) to (69.51, 51.19), about 27 mm,
+at 0.55 to 0.97 of D. It is an EMITTED link of the residue contour cleanup
+(shipped code), on the stock that the morph plan left. The same link
+is in both star morph columns (segment 96 and 106).
+
+### Magic numbers (A3 and C4 diffs; not changed)
+
+Product code:
+
+| Place | Literal | Derivation |
+|---|---|---|
+| `stock/standing_islands.rs:665` (A3) | `1e-9 * cell * cell` in `r2 = r * r + 1e-9 * cell * cell` | A float-equality epsilon on the disk test, scaled by the cell. UNDERIVED, but not a physical value |
+| `adaptive/research_geodesic.rs:786` (C4) | `cell / 2.0` (`ray_step`) | Derived in its doc: half a cell, so every cell that a ray crosses for more than half a cell holds a sample |
+| `research_geodesic.rs` (C4) | `.max(3.0)` | Unchanged from C2: the fewest chords of a closed polygon |
+| `research_geodesic.rs` (C4) | `1e-9` (`eps`) | Float epsilon |
+| C4 length ratio `(R + 2s)/(R + s)` and half pitch | no literal | Derived, as C4 states |
+| `adaptive3d/intended_floor.rs`, `clearing.rs`, `search.rs`, `path.rs` (A3) | none | The floor rule is a factor of the shipped one; byte parity proves it |
+
+Test fixture values (A3 sentry and unit tests; C4 unit tests): tool 6.0 x
+20.0/25.0, grid 23 x 31 at 0.25, `NO_BLOCK`, `VALLEY_SLOPE 0.4`,
+`VALLEY_X 20.0`, `level_z 6.5`, band 26.0..30.0 and the arm (e) `<= 28.0`
+bound, boundary 10.1/29.9, fringe and strip blocks 32.7..33.1, 41 cells,
+`PLATEAU_Z 5.0`, `PLATEAU_EDGE_X 20.1`, h0/h1 15.1/25.1, disc radii 20.0 and
+30.0, `rectangle_lobe(5, 40.0, ..)`, `4.0 * s`; epsilons 1e-4, 1e-9, 1e-12.
+
+### `git status --short` at the end of D4
+
+```
+ M crates/rs_cam_core/src/stock/standing_islands.rs
+ M planning/adaptive_research_2026-10-23/P15_D_verify.md
+```
+
+### Top three for the lead
+
+1. **The star morph columns emit a keep-down link over the pass load.** A
+   residue contour link of about 27 mm reads 0.55 to 0.97 of D (17 emitted
+   steps over). It is shipped cleanup code reacting to the stock the morph
+   plan leaves, but it is in the EMITTED plan. Find why the residue
+   contour cleanup keeps this link (a G-MOPLOAD-type shipped defect, or a
+   link that the readout judges and the cleanup does not).
+2. **The core spiral does not hold the pass load in the raw plan.** Its
+   raw steps are refused on 138 of 392 (star) and 55 of 151 (pocket), max
+   0.50 and 0.49. This is the same curved-front cause that C3 found for
+   the ramp (the straight-edge bound). The morph is refused on 51 to 123
+   steps per column (max 0.60 to 0.87).
+3. **The morph lowers entries but most wraps stay unjoined.** Entries fall
+   from 92 to 69 (star alt) and from 88 to 77 (pocket alt). The return
+   option gives more entries (79, 83) than alt. The largest stop reason is
+   "split": 53 not joined on the star, 51 on the pocket (against 6 lobes of
+   29 arcs and 5 lobes of 31 arcs). The star also stops 11 for the length
+   ratio; the pocket stops 2 for branch and 2 for gap.
