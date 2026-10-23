@@ -1,79 +1,82 @@
-# Prompt for the next session (Fable, lead)
+# Prompt for the next session (lead, any account) — 2026-10-24
 
-You are the LEAD of the adaptive roughing and spiral research. Your role
-is to orchestrate. You plan, write agent briefs, review agent output by
-path, verify claims, keep the record and bring decisions to the operator.
-You do not do the reading, the coding or the fixture runs yourself.
-Agents do that work.
+You are the LEAD of the adaptive roughing research. Orchestrate agents;
+do not read, code or run fixtures yourself. Read first, in this order:
 
-## Read first
+1. `STATUS.md` — "Where things stand" at the top, then the agent table.
+2. `PLAN.md` (rulings, fixtures, look protocol, gates) and
+   `PROMPT_LEAD_2026-10-23.md` (how agents are run; still binding).
+3. `DEFECTS.md` (14 shipped-code findings), `P15_D_verify.md` (D2–D8:
+   every gate result), `P2_C2_geodesic_fixes.md` (C2–C8: every join idea
+   tried, with measurements), `P15_E_evidence.md` (E1–E4: the instruments
+   on the Corne and wanaka200 controls).
 
-1. `planning/adaptive_research_2026-10-23/PLAN.md` — the operator
-   rulings, fixtures, look-review protocol, phases and gates G0–G3.
-2. `crates/rs_cam_core/src/adaptive/CLAUDE.md` and
-   `crates/rs_cam_core/src/adaptive3d/CLAUDE.md`.
-3. Root `CLAUDE.md` quality gates and working preferences.
+## State (2026-10-24 01:15 NZDT)
 
-## Operator rulings you hold the agents to
+- Everything is on master (609ce75b + planning commits), gates green.
+  Branch `adaptive-instruments` == master; worktree
+  `.claude/worktrees/adaptive-head` (own target, ~12 GB) is where agents
+  edit; delete it with its target when the research ends.
+- The installed GUI `target/release/rs_cam_gui` is the branch build
+  (sha 8820c48c…, mtime 1792752676.96); `gui_status` before trusting it.
+- Peer session "rs-cam-03" (geometry-selection lead) works in the main
+  checkout; coordinate every `--release` build and ff by SendMessage.
+- Instruments (Phase 1.5) are DONE: rough gouge rule (Allowance) and rough
+  coverage (plan's own reachable floor, islands with `touches_wall`),
+  both read what the eye saw on the controls (P15_E_evidence.md E3/E4).
+- Candidate (a), the geodesic wavefront: G1 passed (operator: "the growth
+  pattern looks like the classic adaptive I wanted"). State to show:
+  `g1_2d_renders_v4.html` (`geodesic_curv`: star 73 entries, pocket 63).
+  Serve the package dir with `python3 -m http.server 8766` (the
+  operator's browser is a Flatpak and cannot read repo files directly).
 
-- The gate is the operator's LOOK at the fixture pages: do the links make
-  sense, does the path make sense, does the finished part look good.
-  Reject an agent report that ranks by an aggregate number.
-- No Fusion output and no Fusion comparison.
-- Do not cite June 2026 spiral numbers or images. Phase 0 re-baselines
-  on HEAD.
-- The geodesic wavefront is candidate (a) of three, not the answer.
-- Ideas only from GPL sources. No GPL code enters rs_cam.
-- Real, complex fixtures are the gold standard. Work on them in place.
+## The two open problems on the 2D shapes (fix these before 3D)
 
-## How you run agents
+1. **The far side of the island (meeting line).** The two front branches
+   meet behind the island; the spacing law uses ρ from the entry, so the
+   wraps there are too far apart, one is refused and the refusal cascades
+   (planner stamps only accepted cuts). Operator's two ideas (2026-10-24,
+   01:20), both sound, test them in this order:
+   a. **Let the first-arriving branch keep diffusing.** After the
+      one-side rule, re-seed the field from the CLEARED area (T = 0 on
+      every cell the accepted passes stamped, the island and walls as
+      obstacles) and let that single front fill the far side; the
+      second branch then fills only the gap it left. This is FreeCAD's
+      "grow from the cleared area" (R1 §2) in field form, and the
+      principled fix. No new constant.
+   b. **Split at the meeting line** into two regions and run the
+      spaghetti zone as its own pass. Fallback if (a) cascades.
+   Also keep `curv_local` (spacing from the front's own centre of
+   curvature) in mind: it removed the cascade (876 → 202) but packs wraps
+   at the island corner; it needs a DERIVED spacing floor at the bend
+   node, never a tuned one.
+2. **The per-arc plunge in lobes.** 58 of 73 star entries are wrap-end
+   joins. Tried and refuted under the swept-width rule: ramp (C3), morph
+   (C4/C5), transition (C6), the exact-area measure (C7 — same answer on
+   circular fronts and at wall ends), mid-arc lead-in (C8 — the code
+   never applied: 0 lead-ins, every band fell back; FIND THAT GUARD
+   first, it may be a bug not a limit). The one unexplored, derived
+   option: the lead-in bite grows along the arc so the swept width stays
+   ≤ c·D — C8's radius bound (23–26 mm) says it needs long arcs; measure
+   where it fits before more design.
 
-- Use Opus agents for reading and implementation. Brief each one like a
-  peer: the goal, the questions to answer, the files to read, what is
-  ruled out, and the exact output (a note file under the package
-  directory, with source lines for each claim).
-- Run independent agents in parallel. Reading agents (R1, R2, R3) and
-  the Phase 0 baseline can run at the same time.
-- Parallel editing agents get "no cargo". One sequential verifier agent
-  runs builds and tests through `scripts/cargo_lane.sh`, each test run
-  wrapped in `timeout`.
-- Do not give a large refactor worktree isolation. A worktree needs its
-  own target dir, deleted with the worktree; check `df` first.
-- Agents never commit. You review their diff by path, then commit with
-  explicit pathspecs.
-- Ask the operator before any test run over about three minutes. Do not
-  run the core full gate.
-- Before you trust a GUI or MCP image, confirm the running `rs_cam_gui`
-  was built from HEAD (`gui_status`; `gui_restart` after a rebuild).
+## Then
 
-## Your verification duties
+- Wire candidate (a) as a `ClearingStrategy3d` arm (the 2D kernel runs
+  per Z slice as the others do), run rivmap100, Corne and wanaka200 with
+  the hard bars (now instrumented), make the fixture pages (protocol in
+  PLAN.md), G2.
+- Shipped-code defects to schedule (DEFECTS.md): G-MOPLOAD (the residue
+  mop breaks the pass-load invariant; the V1 mechanism), G-RESLINKLOAD,
+  G-CELLREAD (the planner cell under-reads), G-SHELFSCAN (115 m of rapid
+  on the wanaka back rough), G-WALLSTRIP-PLAN, G-LINKPLOUGH.
 
-- The codebase changed a lot after the old reviews (PLAN.md, "The
-  codebase changed after the old reviews"). Tell every agent that old
-  `file:line` citations are stale and old findings are hypotheses. Reject
-  a report that cites an old location without a fresh lookup.
-- Check each reading note against its source: open two of its cited
-  lines at random. A note that fails goes back.
-- Check each fixture page yourself before the operator sees it: the
-  images are from HEAD, the hard bars are pass/fail, and V1–V3 are
-  marked.
-- Keep `planning/adaptive_research_2026-10-23/STATUS.md` current: what
-  ran, what each agent found, open questions, next gate.
+## Rules that bit us tonight
 
-## Start order
-
-1. Commit `PLAN.md` and this file if they are not committed yet.
-2. In parallel:
-   - Phase 0 agent: baseline pages (ContourParallel, AgentSearch,
-     ContourSpiral) on rivmap100, wanaka200 and the Corne case.
-   - R1 agent: FreeCAD `Adaptive.cpp`, the PLAN questions.
-   - R2 agent: Freesteel blog. It verifies the source first (direct
-     address, then the Wayback Machine). If it finds nothing, it stops.
-   - R3 agent: Held–Spielberger, Bieterman–Sandström, geodesic distance
-     / fast marching, libactp.
-   - Phase 4 agent: run `finish/spiral_finish_compact.rs` on the
-     wanaka200 multitool small-tool regions and count the refusals.
-3. Synthesise R1–R3 into a one-page note: what each candidate field
-   needs, and which of V1–V3 each source addresses.
-4. Stop at gate G0. Show the operator the baseline pages, the synthesis
-   and the Phase 4 refusal count. Do not start Phase 2 code before G0.
+- Every candidate constant derives from R, s, tolerance, cell, ceiling;
+  the verifier scans every diff for bare floats.
+- An agent's "predicted" number is not a result; D-runs decide. Four
+  join ideas looked right on paper and failed in the run.
+- Pre-register the keep-or-drop rule before the run (C5 did; it worked).
+- Agents never commit; the lead commits by pathspec; peers' dirty files
+  block a ff — merge with theirs as base.
