@@ -236,6 +236,13 @@ pub struct ProjectEvidence<'a> {
     /// number the operator would have to change. It never decides a verdict,
     /// so `None` costs nothing but a vaguer message.
     pub resolution_mm: Option<f64>,
+    /// G-ROUGHCOV A2: the 3D Rough coverage readings of THIS run, when the
+    /// caller holds them. The GUI computes them once at adopt from the
+    /// view's checkpoints, because the session copy of a GUI run keeps no
+    /// checkpoint (W2-E). `None`: the session computes them from its own
+    /// stored run, or abstains per rough (`RunNotStored`, `NoCheckpoint`).
+    /// A `Some` list is the answer as given; it is never recomputed.
+    pub rough_coverage: Option<&'a [crate::stock::standing_islands::RoughCoverageReading]>,
 }
 
 impl<'a> ProjectEvidence<'a> {
@@ -254,6 +261,8 @@ impl<'a> ProjectEvidence<'a> {
             cut_trace: sim.cut_trace.as_deref(),
             holder_collisions: Vec::new(),
             resolution_mm: Some(sim.column_grid_cell_mm),
+            // A core run keeps its checkpoints; the session reads them.
+            rough_coverage: None,
         }
     }
 

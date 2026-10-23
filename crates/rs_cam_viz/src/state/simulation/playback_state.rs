@@ -81,6 +81,7 @@ impl SimulationState {
             open_trace: None,
             trace_window: None,
             inspector_tab: SimInspectorTab::default(),
+            rough_coverage: None,
         }
     }
 

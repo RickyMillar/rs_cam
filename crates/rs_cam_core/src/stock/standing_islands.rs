@@ -362,6 +362,13 @@ pub enum RoughCoverageAbstention {
     NoModel,
     /// The op's generation inputs did not resolve (the session error text).
     TargetUnresolved { error: String },
+    /// The run holds the op but no checkpoint stock for it, so there is
+    /// nothing to read (G-ROUGHCOV A2: a missing stock is an abstention,
+    /// never a measured zero).
+    NoCheckpoint,
+    /// The session does not hold the run the caller reads (another run, or
+    /// none), and the caller gave no readings of its own.
+    RunNotStored,
 }
 
 /// The measured coverage of one 3D Rough.
@@ -457,6 +464,10 @@ impl RoughCoverageAbstention {
             Self::TargetUnresolved { error } => {
                 format!("the op's generation inputs did not resolve: {error}")
             }
+            Self::NoCheckpoint => {
+                "the run kept no checkpoint stock for this op".to_owned()
+            }
+            Self::RunNotStored => "the session does not hold this run; simulate again".to_owned(),
         }
     }
 }

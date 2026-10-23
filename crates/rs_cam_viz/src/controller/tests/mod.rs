@@ -37,6 +37,7 @@ mod simulation_state;
 mod smoke;
 mod stale_cards_g_stalecards;
 mod stock_frame;
+mod the_gui_adopt_reads_the_rough_coverage_g_roughcov;
 mod test_artifacts_stay_in_temp_g_testcache;
 mod undo;
 mod view_simulation;

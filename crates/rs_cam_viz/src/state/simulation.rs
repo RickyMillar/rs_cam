@@ -1296,6 +1296,75 @@ pub struct SimulationState {
     /// Runtime-only: the choice lasts while the app runs, and it is not
     /// saved with the project.
     pub inspector_tab: SimInspectorTab,
+    /// G-ROUGHCOV A2: the 3D Rough coverage readings of the adopted run,
+    /// computed ONCE at adopt from the view's checkpoints. The session copy
+    /// of a run keeps no checkpoint (W2-E), so the readings, not the stock,
+    /// reach the session, through `ProjectEvidence::rough_coverage`.
+    /// [`Self::rough_coverage_of_results`] gives them only while
+    /// [`Self::results`] is the run they were read from.
+    pub rough_coverage: Option<RoughCoverageMemo>,
+}
+
+/// The coverage readings of one run and the run they belong to.
+pub struct RoughCoverageMemo {
+    run: RoughCoverageRunKey,
+    pub readings: Vec<rs_cam_core::stock::standing_islands::RoughCoverageReading>,
+}
+
+/// The identity of a run as the view holds it: its boundaries (toolpaths
+/// and move ranges) and the address of its first checkpoint `Arc`. The
+/// address is stable while the view holds the `Arc`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RoughCoverageRunKey {
+    boundaries: Vec<(ToolpathId, usize, usize)>,
+    first_checkpoint: Option<usize>,
+}
+
+impl RoughCoverageRunKey {
+    fn of(results: &SimulationResults) -> Self {
+        Self {
+            boundaries: results
+                .boundaries
+                .iter()
+                .map(|b| (b.id, b.start_move, b.end_move))
+                .collect(),
+            first_checkpoint: results
+                .checkpoints
+                .first()
+                .map(|c| Arc::as_ptr(&c.core) as usize),
+        }
+    }
+}
+
+impl RoughCoverageMemo {
+    /// The readings of `results`, computed by `session` from the view's
+    /// checkpoints (`ProjectSession::rough_coverage_for_run`). The view
+    /// keeps the checkpoints; this copies no stock.
+    pub fn read(
+        session: &rs_cam_core::session::ProjectSession,
+        results: &SimulationResults,
+    ) -> Self {
+        let ids: Vec<ToolpathId> = results.boundaries.iter().map(|b| b.id).collect();
+        let checkpoints: Vec<&rs_cam_core::compute::simulate::SimCheckpointMesh> =
+            results.checkpoints.iter().map(|c| c.core.as_ref()).collect();
+        Self {
+            run: RoughCoverageRunKey::of(results),
+            readings: session.rough_coverage_for_run(&ids, &checkpoints),
+        }
+    }
+}
+
+impl SimulationState {
+    /// The coverage readings of [`Self::results`], or `None` when the memo
+    /// belongs to another run (or there is none). `None` makes the session
+    /// read its own stored run or abstain per rough.
+    pub fn rough_coverage_of_results(
+        &self,
+    ) -> Option<&[rs_cam_core::stock::standing_islands::RoughCoverageReading]> {
+        let results = self.results.as_ref()?;
+        let memo = self.rough_coverage.as_ref()?;
+        (memo.run == RoughCoverageRunKey::of(results)).then_some(memo.readings.as_slice())
+    }
 }
 
 /// A tab of the Simulation inspector (inspector clean-up round 3).

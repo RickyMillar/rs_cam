@@ -920,7 +920,24 @@ impl<B: ComputeBackend> AppController<B> {
                             }),
                         };
                         match self.apply(Command::AdoptSimulation(args)) {
-                            Ok(effects) => self.mirror_adopted_simulation(effects),
+                            Ok(effects) => {
+                                self.mirror_adopted_simulation(effects);
+                                // G-ROUGHCOV A2: the session copy keeps no
+                                // checkpoint (W2-E), so the 3D Rough coverage
+                                // is read HERE, once, from the view's
+                                // checkpoints, against the session as it now
+                                // stands. The view keeps the readings; the
+                                // evidence hands them to every triage,
+                                // diagnostics and narration call. No stock
+                                // is copied or kept for it.
+                                let memo = self.state.simulation.results.as_ref().map(|results| {
+                                    crate::state::simulation::RoughCoverageMemo::read(
+                                        self.state.session(),
+                                        results,
+                                    )
+                                });
+                                self.state.simulation.rough_coverage = memo;
+                            }
                             // The only refusal is `StaleSimulation`. A live
                             // run cannot meet it: the epoch check above and
                             // this apply run in the same frame. A stale run
@@ -2574,7 +2591,11 @@ impl<B: ComputeBackend> AppController<B> {
 ///   cut trace (narration also reads `column_grid_cell_mm`).
 ///
 /// No session reader reads the display mesh, the checkpoints, the
-/// per-vertex deviations or the per-column deviations. The view keeps its
+/// per-vertex deviations or the per-column deviations. G-ROUGHCOV A2: the
+/// 3D Rough coverage needs the checkpoint stock, so the drain reads it at
+/// adopt from the VIEW's checkpoints (`RoughCoverageMemo::read`) and the
+/// evidence carries the readings; the session copy still keeps no
+/// checkpoint. The view keeps its
 /// own mesh, checkpoints and per-vertex deviations. So the session copy
 /// holds an EMPTY mesh, no checkpoints and no deviations. Before W2-E the
 /// session shared the mesh and the checkpoint `Arc`s with the view. After

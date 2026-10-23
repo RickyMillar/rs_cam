@@ -144,6 +144,9 @@ impl SimulationState {
             // measurability abstention's reason with the number the operator
             // would have to change; it never decides a verdict.
             resolution_mm: self.results.as_ref().map(|r| r.column_grid_cell_mm),
+            // G-ROUGHCOV A2: the readings this view computed at adopt, while
+            // they belong to the shown run.
+            rough_coverage: self.rough_coverage_of_results(),
         }
     }
 
@@ -168,6 +171,8 @@ impl SimulationState {
     /// - `resolution_mm`, which enriches a measurability abstention's reason —
     ///   the one field today's sole consumer (`ui::sim_diagnostics`'s
     ///   `NOT MEASURED` strip) actually renders.
+    /// - `rough_coverage` (G-ROUGHCOV A2), the readings the view computed at
+    ///   adopt: an adopt replaces them, so their address and length name them.
     ///
     /// `O(boundaries + collisions)` per frame, the same order that the
     /// neighbouring `issue_cache_key` pays.
@@ -181,9 +186,15 @@ impl SimulationState {
             cut_trace: _,
             holder_collisions,
             resolution_mm,
+            rough_coverage,
         } = evidence;
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         boundaries.hash(&mut hasher);
+        // G-ROUGHCOV A2: the readings are set once per adopt; their address
+        // and length name them.
+        rough_coverage
+            .map(|r| (r.as_ptr() as usize, r.len()))
+            .hash(&mut hasher);
         rapid_collisions.len().hash(&mut hasher);
         for collision in *rapid_collisions {
             let rs_cam_core::stock::collision::RapidCollision {
