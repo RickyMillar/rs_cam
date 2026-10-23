@@ -317,7 +317,10 @@ fn the_default_rule_leaves_out_each_misfit_circle_with_a_note() {
                 assert_eq!(size, DrillSize::strict(TOOL_D));
                 Some((fit, n.first.key.anchor))
             }
-            NoteCause::KindNotServed | NoteCause::AtTheTop { .. } => None,
+            NoteCause::KindNotServed
+            | NoteCause::AtTheTop { .. }
+            | NoteCause::StopsShort { .. }
+            | NoteCause::AtAWall => None,
         })
         .collect();
     fits.sort_by(|a, b| a.1[0].total_cmp(&b.1[0]));

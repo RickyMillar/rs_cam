@@ -180,6 +180,9 @@ pub struct EdgeLine {
     /// The side of the material: `Left` or `Right` of the point order for
     /// an open line, `Inside` or `Outside` for a closed line.
     pub material: EdgeMaterial,
+    /// The index in `ResolvedSelection::items` of the item that gives the
+    /// line. A face item gives more than one line.
+    pub item: usize,
 }
 
 /// The items of an [`ItemUse::Edges`] op (R-C): the closed areas of a
@@ -383,6 +386,29 @@ impl OpItems {
         match &self.view {
             View::Edges(e) => Some(e),
             View::None | View::Regions(_) | View::Curves(_) | View::Holes(_) => None,
+        }
+    }
+
+    /// Chamfer Clearance (operator ruling 2026-10-23): put `lines` in place
+    /// of the model edge lines of an `Edges` view, and mark each item at
+    /// `skipped` (indices in `ResolvedSelection::items`) [`ItemRole::Skipped`]
+    /// and count it in [`Self::skipped_by_kind`]. THE wall trim
+    /// (`compute::edge_clear::clear_edge_walls`) calls it. Every other view
+    /// does not change.
+    pub(crate) fn replace_edge_lines(
+        &mut self,
+        lines: Vec<EdgeLine>,
+        skipped: &[(usize, ItemKind)],
+    ) {
+        let View::Edges(edges) = &mut self.view else {
+            return;
+        };
+        edges.lines = lines;
+        for &(at, kind) in skipped {
+            if let Some(role) = self.roles.get_mut(at) {
+                *role = ItemRole::Skipped;
+                *self.skipped_by_kind.entry(kind).or_insert(0) += 1;
+            }
         }
     }
 }
@@ -672,8 +698,8 @@ fn view_with<F: SelectionFrame>(
             } = regions_of(&areas);
             let lines: Vec<EdgeLine> = model_at
                 .iter()
-                .filter_map(|&pos| served.get(pos))
-                .flat_map(|item| edge_lines(item))
+                .filter_map(|&pos| Some((*served.get(pos)?, *served_at.get(pos)?)))
+                .flat_map(|(item, at)| edge_lines(item, at))
                 .collect();
             if polygons.is_empty() && lines.is_empty() {
                 return Err(empty(notes));
@@ -805,8 +831,9 @@ fn item_serves(item: &Item, use_: ItemUse, upright: bool) -> Result<bool, EdgeRe
 /// The lines of one convex top model item (R-C): a chain, a circular
 /// edge or a ring gives one line; an up face gives its outer ring
 /// (material inside) and each of its own holes (material outside). An
-/// item of another form gives none (`item_serves` refused it).
-fn edge_lines(item: &Item) -> Vec<EdgeLine> {
+/// item of another form gives none (`item_serves` refused it). `at` is the
+/// index of the item in `ResolvedSelection::items`.
+fn edge_lines(item: &Item, at: usize) -> Vec<EdgeLine> {
     let Some(EdgeForm::ConvexTop { material }) = item.model_edge().map(|e| e.form) else {
         return Vec::new();
     };
@@ -815,11 +842,13 @@ fn edge_lines(item: &Item) -> Vec<EdgeLine> {
             line: p.clone(),
             z,
             material,
+            item: at,
         }],
         (Shape::Circle { ring, .. }, Some(z)) => vec![EdgeLine {
             line: ring.clone(),
             z,
             material,
+            item: at,
         }],
         (Shape::Face(face), Some(z)) => {
             std::iter::once((face.rings.exterior.clone(), EdgeMaterial::Inside))
@@ -833,6 +862,7 @@ fn edge_lines(item: &Item) -> Vec<EdgeLine> {
                     line: Polygon2::new(ring),
                     z,
                     material,
+                    item: at,
                 })
                 .collect()
         }

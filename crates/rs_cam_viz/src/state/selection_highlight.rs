@@ -160,6 +160,9 @@ impl HoverDetector {
 ///   frames that face only, not every skipped face of its layer (P3.8).
 /// - A circle that is not of the tool size (`NoteCause::HoleFit`, P6.5):
 ///   the one circle that the note names.
+/// - A Chamfer edge that stops short of a wall (`NoteCause::StopsShort`) or
+///   that the V-bit cannot reach clear of a wall (`NoteCause::AtAWall`):
+///   the first edge that the note names.
 ///
 /// The keys carry the source of the item.
 pub fn note_item_keys(
@@ -172,7 +175,10 @@ pub fn note_item_keys(
         .notes
         .iter()
         .map(|note| match note.cause {
-            NoteCause::AtTheTop { .. } | NoteCause::HoleFit { .. } => {
+            NoteCause::AtTheTop { .. }
+            | NoteCause::HoleFit { .. }
+            | NoteCause::StopsShort { .. }
+            | NoteCause::AtAWall => {
                 vec![(*note.first.key).clone()]
             }
             NoteCause::KindNotServed => {

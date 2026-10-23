@@ -25,11 +25,15 @@
 //!    along a concave edge, and each convex edge is cut at its own Z, on the
 //!    air side of the edge by the tip offset, at `edge Z - (w + t) /
 //!    tan(a)` (F21). The cut Z levels are exactly one per edge Z.
-//! 4. The guard (`ModelGougeRule::Bevel`): the default Chamfer cuts into
-//!    the step walls where four chains end at a wall (the cone of the
-//!    V-bit), so the finding gouges there, and its deepest sample is at X
-//!    20 or X 40. A Chamfer of the four Z 30 chains (convex corners only)
-//!    measures clean: the bevel itself is no gouge.
+//! 4. The guard (`ModelGougeRule::Bevel`): four chains end at a step wall.
+//!    Chamfer Clearance (operator ruling 2026-10-23) stops each of them
+//!    short of the wall (`compute::edge_clear`), so the default Chamfer
+//!    measures clean, and the guard judged samples. Before the ruling the
+//!    cone cut into the walls at X 20 and X 40 and the finding gouged; the
+//!    length of each stop is the claim of
+//!    `a_step_chamfer_stops_short_of_a_wall_chamferclear`. A Chamfer of the
+//!    four Z 30 chains (convex corners only) measures clean: the bevel
+//!    itself is no gouge.
 //! 5. A pick of a concave chain or of a concave ring refuses
 //!    `NotAConvexEdge { Concave }` and names the item; a pick of the
 //!    convex Z 30 ring cuts at Z 30 only.
@@ -424,20 +428,16 @@ fn the_default_chamfer_cuts_each_convex_edge_at_its_own_z_rc() {
         }
     }
 
-    // Claim 4: the four chains that end at a step wall cut into it.
+    // Claim 4: the four chains that end at a step wall stop short of it,
+    // so nothing cuts into a wall (Chamfer Clearance).
     let finding = s
         .result_at(0)
         .unwrap()
         .stats
         .model_gouge
         .expect("the guard ran");
-    assert!(finding.gouges(), "{finding:?}");
-    let [x, _, _] = finding.at;
-    assert!(
-        (x - 20.0).abs() < 1.0 || (x - 40.0).abs() < 1.0,
-        "the deepest gouge is at a step wall: {}",
-        finding.message()
-    );
+    assert!(finding.judged > 0, "non-vacuity: the guard judged samples");
+    assert!(!finding.gouges(), "{}", finding.message());
 }
 
 /// Claim 4: the bevel of the Z 30 chains alone measures clean.
