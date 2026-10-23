@@ -156,9 +156,9 @@ diag_ids! {
     pub const PROJECT_LINK_CUTS_STOCK: &str = "project.link_cuts_stock";
     /// G-ROUGHCOV / G-THINSTAND (2026-10-23). A 3D Rough leaves islands of
     /// material that stand more than its stock to leave plus one cell above
-    /// its own target (model + stock to leave; the floor through holes and
-    /// outside the part), read on the op's checkpoint stock. Each island
-    /// carries its area, height and width. See
+    /// its own target (the floor its plan can reach with its tool, stock to
+    /// leave included), read on the op's checkpoint stock. Each island
+    /// carries its area, height, width and whether it touches a wall. See
     /// [`crate::stock::standing_islands::measure_rough_coverage`].
     pub const PROJECT_ROUGH_LEAVES_ISLANDS: &str = "project.rough_leaves_islands";
     /// Phase 4 (2026-09-07). The plunge-class BACKSTOP: a vertical-dominant fed

@@ -24,9 +24,11 @@ use tracing::info;
 
 mod centre_clip;
 mod clearing;
+mod intended_floor;
 mod path;
 mod region_map;
 mod search;
+pub use intended_floor::{FloorGrid, intended_floor_grid};
 use path::{adaptive_3d_segments, segments_to_toolpath};
 pub use region_map::{AreaRegion, AreaRegionMap, AreaRegionRun};
 

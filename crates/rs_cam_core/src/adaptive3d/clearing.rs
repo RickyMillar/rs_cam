@@ -302,7 +302,7 @@ fn cell_has_material(
     stock_to_leave: f64,
 ) -> bool {
     let surf_z = surface_hm.z_or_bbox_floor_at(row, col);
-    let effective_floor = (surf_z + stock_to_leave).max(z_level);
+    let effective_floor = super::intended_floor::level_floor_z(surf_z, stock_to_leave, z_level);
     stock_has_material_above(material_stock, row, col, effective_floor + 0.01)
 }
 
@@ -1290,7 +1290,7 @@ pub(super) fn clear_z_level_contour_parallel(
             let lower = if surf_z == f64::NEG_INFINITY {
                 z_level
             } else {
-                (surf_z + ctx.stock_to_leave).max(z_level)
+                super::intended_floor::level_floor_z(surf_z, ctx.stock_to_leave, z_level)
             };
             // Per-cell stock-top clamp. Padded coords (row, col) → stock
             // coords (row-1, col-1).
@@ -2434,7 +2434,7 @@ fn clear_one_region(
         let z = if surf_z == f64::NEG_INFINITY {
             z_level
         } else {
-            (surf_z + ctx.stock_to_leave).max(z_level)
+            super::intended_floor::level_floor_z(surf_z, ctx.stock_to_leave, z_level)
         };
         P3::new(p.x, p.y, z)
     };

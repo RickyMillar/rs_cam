@@ -20,8 +20,8 @@ use super::{stock_has_material_above, stock_top_z_at};
 /// cells of the level grid, because a level below a floor still drapes
 /// onto that floor.
 ///
-/// Cell-bucket semantics (matches the planner's `floor` calc
-/// `(surf_z + stock_to_leave).max(z_level)`):
+/// Cell-bucket semantics (the planner's floor,
+/// `intended_floor::level_floor_z`):
 /// - `cells_total`: every cell in the grid.
 /// - `cells_at_z`: cells where the effective floor IS z_level — the
 ///   planner can cut down to z_level here.
@@ -63,7 +63,7 @@ pub(super) fn material_remaining_at_level_diag(
             // stock beside the model, and clearing must take it to the floor —
             // `z_or_bbox_floor_values` says so at the call site.
             let surf_z = surface_hm.z_or_bbox_floor_values()[i];
-            let floor = (surf_z + stock_to_leave).max(z_level);
+            let floor = super::intended_floor::level_floor_z(surf_z, stock_to_leave, z_level);
             diag.cells_total += 1;
             if surf_z + stock_to_leave <= z_level + 0.01 {
                 diag.cells_at_z += 1;

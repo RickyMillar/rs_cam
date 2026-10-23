@@ -857,8 +857,11 @@ pub(super) fn adaptive_3d_segments(
     let z_plan_scope =
         debug_ctx.map(|ctx| ctx.start_span(DebugSpanKind::ZLevelPlan, "Compute Z levels"));
     let surface_bottom = surface_hm.min_z_or_bbox_floor();
-    let z_bottom = (surface_bottom + params.depth.stock_to_leave)
-        .max(params.depth.z_floor.unwrap_or(f64::NEG_INFINITY));
+    let z_bottom = super::intended_floor::plan_bottom_z(
+        surface_bottom,
+        params.depth.stock_to_leave,
+        params.depth.z_floor,
+    );
     // G-LADDERANCHOR: an operation on prior stock starts the levels at the
     // top of the material it can still cut, not at the stock box top.
     let level_top = level_anchor_z(

@@ -1126,10 +1126,11 @@ pub(crate) fn rough_coverage_finding(
         (TriageClass::Action, Category::Quality, Severity::Caution)
     };
     let count = coverage.islands.len();
+    let at_wall = coverage.islands.iter().filter(|i| i.touches_wall).count();
     let mut message = format!(
         "{}the rough leaves {count} island(s) standing more than {:.2} mm above its target \
-         (model + {:.2} mm stock to leave; the floor through holes and outside the part): \
-         {:.1} mm2 in all at cell {:.3} mm. Tallest first:",
+         (the floor its plan can reach with its tool, {:.2} mm stock to leave in it), \
+         {at_wall} of them against a wall: {:.1} mm2 in all at cell {:.3} mm. Tallest first:",
         name.map_or_else(String::new, |n| format!("\"{n}\": ")),
         coverage.bar_mm,
         coverage.stock_to_leave_mm,
@@ -1138,12 +1139,17 @@ pub(crate) fn rough_coverage_finding(
     );
     for island in coverage.islands.iter().take(ADVISORY_CAP_PER_TOOLPATH) {
         message.push_str(&format!(
-            " {:.2} mm high, {:.2} mm wide, {:.1} mm2 at ({:.1}, {:.1});",
+            " {:.2} mm high, {:.2} mm wide, {:.1} mm2 at ({:.1}, {:.1}){};",
             island.max_standing_mm,
             island.min_width_mm,
             island.area_mm2,
             island.peak[0],
             island.peak[1],
+            if island.touches_wall {
+                " at a wall"
+            } else {
+                ""
+            },
         ));
     }
     let hidden = count.saturating_sub(ADVISORY_CAP_PER_TOOLPATH);
@@ -2931,6 +2937,7 @@ mod tests {
                 centroid: [1.0, 2.0],
                 bbox: [0.5, 1.5, 1.5, 2.5],
                 min_width_mm: 0.5,
+                touches_wall: false,
             })
             .collect();
         RoughCoverageReading {

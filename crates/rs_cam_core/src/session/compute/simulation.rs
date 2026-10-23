@@ -376,11 +376,13 @@ impl ProjectSession {
     /// # The target and the reach
     ///
     /// From the op's generation inputs (`resolve_generation_inputs`, the
-    /// one producer): its mesh and spatial index, its tool-centre boundary
+    /// one producer): its mesh and spatial index, its cutter (the tool
+    /// definition the planner's heightmap reads), its tool-centre boundary
     /// polygons (`boundary_centre`, the polygons the boundary clip keeps the
-    /// tool centre in) with half the tool diameter, a pinned `bottom_z`, and
-    /// the op's `stock_to_leave_axial` (its only leave dial,
-    /// `adaptive3d_effective_stock_to_leave`).
+    /// tool centre in), a pinned `bottom_z`, the op's depth per pass (the
+    /// wall rise) and the op's `stock_to_leave_axial` (its only leave dial,
+    /// `adaptive3d_effective_stock_to_leave`). The measure builds the plan's
+    /// reachable floor from them (A3).
     ///
     /// # Abstentions
     ///
@@ -524,10 +526,9 @@ impl ProjectSession {
         checkpoint: Option<&crate::compute::simulate::SimCheckpointMesh>,
     ) -> crate::stock::standing_islands::RoughCoverageReading {
         use crate::stock::standing_islands::{
-            RoughCoverageAbstention, RoughCoverageOutcome, RoughCoverageReading, RoughReach,
-            RoughTarget, measure_rough_coverage,
+            RoughCoverageAbstention, RoughCoverageOutcome, RoughCoverageReading, RoughTarget,
+            measure_rough_coverage,
         };
-        use crate::tool::MillingCutter;
 
         let not_measurable = RoughCoverageOutcome::NotMeasurable;
         let outcome = match (&tc.operation, checkpoint) {
@@ -545,15 +546,14 @@ impl ProjectSession {
                                 let target = RoughTarget {
                                     mesh,
                                     index: spatial,
+                                    cutter: &inputs.tool_def,
                                     stock_to_leave_mm: cfg.stock_to_leave_axial,
+                                    depth_per_pass_mm: cfg.depth_per_pass,
                                     pinned_floor_z: inputs
                                         .heights
                                         .bottom_pinned
                                         .then_some(inputs.heights.bottom_z),
-                                    reach: centre.as_deref().map(|centre| RoughReach {
-                                        centre,
-                                        tool_radius_mm: inputs.tool_def.diameter() / 2.0,
-                                    }),
+                                    centre: centre.as_deref(),
                                 };
                                 measure_rough_coverage(&checkpoint.mesh_stock, &target)
                             }

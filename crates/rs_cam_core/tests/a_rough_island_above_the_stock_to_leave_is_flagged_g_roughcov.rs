@@ -5,18 +5,31 @@
 //! island's area, height and width; an island below that bar is not; and a
 //! cell coarser than the stock to leave abstains.
 //!
-//! The target is the rough's own: `model + stock_to_leave`, and where the
-//! model has no surface (a through hole, the band outside the part) the
-//! mesh-bbox floor plus the stock to leave, as the 3D Rough planner reads
-//! it (`stock::standing_islands::measure_rough_coverage`).
+//! The target is the rough's own reachable floor (A3,
+//! `stock::standing_islands::measure_rough_coverage`): the planner's
+//! per-centre floor (`adaptive3d::intended_floor`: drop-cutter surface +
+//! stock to leave, never below the last level), eroded by the tool disc.
+//! So the floor a flat tool leaves in a valley or an inside corner is not
+//! an island, a column no centre reaches is not compared, a strip left
+//! against a wall IS an island (`touches_wall`), and a core left in a hole
+//! the tool fits is an island.
 //!
-//! The stocks are synthetic dexel stocks; no simulation runs. The finding
-//! is read through `SimulationTriage::build_with_rest_context`, the one
-//! assembly the session's triage entry points call.
+//! The stocks are synthetic dexel stocks; no simulation runs. Each
+//! expected stock is computed here in closed form (the opening of the
+//! model by a 6 mm flat disc), not by the measure. The finding is read
+//! through `SimulationTriage::build_with_rest_context`, the one assembly
+//! the session's triage entry points call.
 //!
-//! Falsifier: remove the `rough_coverage` loop in
-//! `SimulationTriage::build_with_rest_context`, and arm (a) fails; change
-//! the target to skip off-model columns, and arm (d) fails.
+//! Falsifiers:
+//!
+//! * Remove the `rough_coverage` loop in
+//!   `SimulationTriage::build_with_rest_context`: arm (a) fails.
+//! * Read the target as the model + leave at the column (the A2 target):
+//!   arm (e) flags the valley floor and arm (h) flags the hole corners.
+//! * Drop the population (every column compared): arm (f) flags the
+//!   fringe.
+//! * Drop the wall mask: arm (g) reads `touches_wall` false.
+//! * Skip off-model columns: arms (d) and (h) fail.
 
 #![expect(
     clippy::expect_used,
@@ -28,9 +41,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use rs_cam_core::dexel_stock::TriDexelStock;
 use rs_cam_core::diagnostics::ids;
-use rs_cam_core::geo::{BoundingBox3, P3};
+use rs_cam_core::geo::{BoundingBox3, P2, P3};
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
+use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::stock::sim_measurability::MeasurabilityReport;
 use rs_cam_core::stock::sim_triage::{SimulationTriage, TriageClass, TriageInputs};
 use rs_cam_core::stock::simulation_cut::SimulationCutTrace;
@@ -38,6 +52,7 @@ use rs_cam_core::stock::standing_islands::{
     RoughCoverage, RoughCoverageAbstention, RoughCoverageOutcome, RoughCoverageReading,
     RoughTarget, measure_rough_coverage,
 };
+use rs_cam_core::tool::FlatEndmill;
 
 const SIZE_MM: f64 = 40.0;
 const STOCK_TOP_MM: f64 = 10.0;
@@ -45,6 +60,36 @@ const MODEL_Z_MM: f64 = 2.0;
 const STL_MM: f64 = 0.5;
 const CELL_MM: f64 = 0.25;
 const DEPTH_PER_PASS_MM: f64 = 2.0;
+/// The rough's cutter: a 6 mm flat end mill, R = 3 mm.
+const TOOL_DIAMETER_MM: f64 = 6.0;
+const TOOL_RADIUS_MM: f64 = TOOL_DIAMETER_MM / 2.0;
+
+fn cutter() -> FlatEndmill {
+    FlatEndmill::new(TOOL_DIAMETER_MM, 25.0)
+}
+
+/// The rough's target on `model`; `centre`: the tool-centre polygons, or
+/// `None` for the boundary off.
+fn rough_target<'a>(
+    model: &'a TriangleMesh,
+    index: &'a SpatialIndex,
+    cutter: &'a FlatEndmill,
+    stl: f64,
+    centre: Option<&'a [Polygon2]>,
+) -> RoughTarget<'a> {
+    RoughTarget {
+        mesh: model,
+        index,
+        cutter,
+        stock_to_leave_mm: stl,
+        depth_per_pass_mm: DEPTH_PER_PASS_MM,
+        pinned_floor_z: None,
+        centre,
+    }
+}
+
+/// No block: a box outside the grid.
+const NO_BLOCK: [f64; 4] = [-9.0, -9.0, -8.0, -8.0];
 
 fn flat(x0: f64, y0: f64, x1: f64, y1: f64, z: f64) -> (Vec<P3>, Vec<[u32; 3]>) {
     (
@@ -151,13 +196,7 @@ fn an_island_above_the_bar_is_one_island_with_its_area_height_and_width() {
     let s = stock(CELL_MM, |_, _| target_z, [10.0, 10.0, 12.0, 15.0], None);
     let coverage = measured(measure_rough_coverage(
         &s,
-        &RoughTarget {
-            mesh: &model,
-            index: &index,
-            stock_to_leave_mm: STL_MM,
-            pinned_floor_z: None,
-            reach: None,
-        },
+        &rough_target(&model, &index, &cutter(), STL_MM, None),
     ));
     assert!((coverage.bar_mm - (STL_MM + CELL_MM)).abs() < 1e-12);
     assert_eq!(coverage.islands.len(), 1, "{:?}", coverage.islands);
@@ -171,6 +210,10 @@ fn an_island_above_the_bar_is_one_island_with_its_area_height_and_width() {
     assert!(
         (island.min_width_mm - 9.0 * CELL_MM).abs() < 1e-9,
         "{island:?}"
+    );
+    assert!(
+        !island.touches_wall,
+        "a block on open floor is not at a wall"
     );
 
     let reading = RoughCoverageReading {
@@ -203,13 +246,7 @@ fn an_island_below_the_bar_is_not_reported() {
     );
     let coverage = measured(measure_rough_coverage(
         &s,
-        &RoughTarget {
-            mesh: &model,
-            index: &index,
-            stock_to_leave_mm: STL_MM,
-            pinned_floor_z: None,
-            reach: None,
-        },
+        &rough_target(&model, &index, &cutter(), STL_MM, None),
     ));
     assert!(coverage.islands.is_empty(), "{:?}", coverage.islands);
     assert_eq!(coverage.above_spec_cells, 0);
@@ -237,16 +274,7 @@ fn a_cell_coarser_than_the_stock_to_leave_is_not_measurable() {
         [10.0, 10.0, 12.0, 15.0],
         None,
     );
-    let outcome = measure_rough_coverage(
-        &s,
-        &RoughTarget {
-            mesh: &model,
-            index: &index,
-            stock_to_leave_mm: stl,
-            pinned_floor_z: None,
-            reach: None,
-        },
-    );
+    let outcome = measure_rough_coverage(&s, &rough_target(&model, &index, &cutter(), stl, None));
     assert_eq!(
         outcome,
         RoughCoverageOutcome::NotMeasurable(RoughCoverageAbstention::CellCoarserThanStockToLeave {
@@ -286,13 +314,7 @@ fn a_core_where_the_model_has_no_surface_is_measured_from_the_floor() {
     let s = stock(CELL_MM, target, [28.0, 20.0, 30.0, 22.0], None);
     let coverage = measured(measure_rough_coverage(
         &s,
-        &RoughTarget {
-            mesh: &model,
-            index: &index,
-            stock_to_leave_mm: STL_MM,
-            pinned_floor_z: None,
-            reach: None,
-        },
+        &rough_target(&model, &index, &cutter(), STL_MM, None),
     ));
     assert_eq!(coverage.islands.len(), 1, "{:?}", coverage.islands);
     let island = coverage.islands.first().expect("one island");
@@ -301,4 +323,226 @@ fn a_core_where_the_model_has_no_surface_is_measured_from_the_floor() {
         (island.max_standing_mm - (STOCK_TOP_MM - floor_z - STL_MM)).abs() < 1e-5,
         "{island:?}"
     );
+    assert!(!island.touches_wall, "{island:?}");
+}
+
+/// The opening of a V valley `z = 2 + SLOPE·|x − 20|` by the flat disc of
+/// radius R: a disc centred on the valley line touches `2 + SLOPE·R`, and
+/// no disc goes lower, so the floor is `max(model, 2 + SLOPE·R)`.
+const VALLEY_SLOPE: f64 = 0.4;
+const VALLEY_BOTTOM_Z: f64 = 2.0;
+const VALLEY_X: f64 = 20.0;
+
+fn valley_z(x: f64) -> f64 {
+    VALLEY_BOTTOM_Z + VALLEY_SLOPE * (x - VALLEY_X).abs()
+}
+
+fn valley_model() -> TriangleMesh {
+    let (x0, x1, y0, y1) = (-1.0, SIZE_MM + 1.0, -1.0, SIZE_MM + 1.0);
+    let left = (
+        vec![
+            P3::new(x0, y0, valley_z(x0)),
+            P3::new(VALLEY_X, y0, VALLEY_BOTTOM_Z),
+            P3::new(VALLEY_X, y1, VALLEY_BOTTOM_Z),
+            P3::new(x0, y1, valley_z(x0)),
+        ],
+        vec![[0, 1, 2], [0, 2, 3]],
+    );
+    let right = (
+        vec![
+            P3::new(VALLEY_X, y0, VALLEY_BOTTOM_Z),
+            P3::new(x1, y0, valley_z(x1)),
+            P3::new(x1, y1, valley_z(x1)),
+            P3::new(VALLEY_X, y1, VALLEY_BOTTOM_Z),
+        ],
+        vec![[0, 1, 2], [0, 2, 3]],
+    );
+    mesh_of(&[left, right])
+}
+
+/// (e) A sloped model cut in two or more draped levels. Every level drapes
+/// in this planner, so the plan's floor on the slope is the opening of the
+/// model by the tool (the valley bottom stands `SLOPE · R` = 1.2 mm above
+/// the model, which the A2 target flagged): no island. A band held at one
+/// level Z (6.5) over the slope instead of draping is NOT the plan's floor
+/// and reads as ONE island, not at a wall.
+#[test]
+fn the_plan_floor_on_a_slope_reads_no_island_and_a_held_level_reads_one() {
+    let model = valley_model();
+    let index = SpatialIndex::build_auto(&model);
+    let cutter = cutter();
+    let opening = |x: f64| valley_z(x).max(VALLEY_BOTTOM_Z + VALLEY_SLOPE * TOOL_RADIUS_MM);
+    let floor = |x: f64, _y: f64| opening(x) + STL_MM;
+
+    let s = stock(CELL_MM, floor, NO_BLOCK, None);
+    let coverage = measured(measure_rough_coverage(
+        &s,
+        &rough_target(&model, &index, &cutter, STL_MM, None),
+    ));
+    assert!(coverage.compared_cells > 0);
+    assert!(
+        coverage.islands.is_empty(),
+        "{:?}",
+        coverage.islands.first()
+    );
+
+    // The band x in [26, 30] held at Z 6.5: above spec where
+    // 6.5 − (model + leave) > leave + cell, i.e. model < 5.25, x < 28.125.
+    let level_z = 6.5;
+    let held = |x: f64, y: f64| {
+        if (26.0..=30.0).contains(&x) {
+            floor(x, y).max(level_z)
+        } else {
+            floor(x, y)
+        }
+    };
+    let s = stock(CELL_MM, held, NO_BLOCK, None);
+    let coverage = measured(measure_rough_coverage(
+        &s,
+        &rough_target(&model, &index, &cutter, STL_MM, None),
+    ));
+    assert_eq!(coverage.islands.len(), 1, "{:?}", coverage.islands);
+    let island = coverage.islands.first().expect("one island");
+    let rows = (SIZE_MM / CELL_MM) as usize + 1;
+    assert_eq!(island.cells, 9 * rows, "{island:?}");
+    assert!(
+        (island.max_standing_mm - (level_z - valley_z(26.0) - STL_MM)).abs() < 1e-4,
+        "{island:?}"
+    );
+    assert!(island.bbox[0] >= 26.0 - 1e-9 && island.bbox[2] <= 28.0 + 1e-9);
+    assert!(!island.touches_wall, "{island:?}");
+}
+
+/// The tool-centre square of arm (f): cell centres 10.25 ..= 29.75 inside.
+fn centre_square() -> Vec<Polygon2> {
+    vec![Polygon2::new(vec![
+        P2::new(10.1, 10.1),
+        P2::new(29.9, 10.1),
+        P2::new(29.9, 29.9),
+        P2::new(10.1, 29.9),
+    ])]
+}
+
+/// (f) A column farther than R from every centre the tool may take is
+/// outside the population: a full-height fringe at x = 33.0 (3.25 mm from
+/// the last centre at 29.75) reads nothing. A full-height strip at
+/// x = 32.75 (3.00 mm, inside the reach) reads as an island, and it stands
+/// beside the uncut fringe, so it touches a wall (the edge of the reach).
+#[test]
+fn a_fringe_outside_the_reach_reads_nothing_and_a_strip_inside_it_reads() {
+    let model = mesh_of(&[flat(0.0, 0.0, SIZE_MM, SIZE_MM, MODEL_Z_MM)]);
+    let index = SpatialIndex::build_auto(&model);
+    let cutter = cutter();
+    let centre = centre_square();
+    let target_z = MODEL_Z_MM + STL_MM;
+
+    let fringe = stock(CELL_MM, |_, _| target_z, [32.9, 15.0, 33.1, 25.0], None);
+    let coverage = measured(measure_rough_coverage(
+        &fringe,
+        &rough_target(&model, &index, &cutter, STL_MM, Some(&centre)),
+    ));
+    assert!(coverage.compared_cells > 0);
+    assert!(coverage.islands.is_empty(), "{:?}", coverage.islands);
+
+    let strip = stock(CELL_MM, |_, _| target_z, [32.7, 15.0, 33.1, 25.0], None);
+    let coverage = measured(measure_rough_coverage(
+        &strip,
+        &rough_target(&model, &index, &cutter, STL_MM, Some(&centre)),
+    ));
+    assert_eq!(coverage.islands.len(), 1, "{:?}", coverage.islands);
+    let island = coverage.islands.first().expect("one island");
+    assert_eq!(island.cells, 41, "the column x = 32.75 only: {island:?}");
+    assert!(island.touches_wall, "{island:?}");
+}
+
+/// The plateau of arms (d) and (g): Z 5 for x <= 20.1, a vertical wall at
+/// x = 20.1, and a small low face outside the stock that sets the mesh-bbox
+/// floor at Z 1.
+const PLATEAU_Z: f64 = 5.0;
+const PLATEAU_EDGE_X: f64 = 20.1;
+const FLOOR_Z: f64 = 1.0;
+
+/// (g) A 1 mm strip (four cells, x 20.25 ..= 21.0) left at the plateau top
+/// against the vertical wall: the tool reaches it (a centre R from the
+/// wall puts the cutter edge on the wall), so it is an island, 4 mm high,
+/// and it touches the wall (the target rises 4 mm > one 2 mm step).
+#[test]
+fn a_strip_against_a_vertical_wall_reads_and_touches_the_wall() {
+    let model = mesh_of(&[
+        flat(-1.0, -1.0, PLATEAU_EDGE_X, SIZE_MM + 1.0, PLATEAU_Z),
+        flat(50.0, 50.0, 51.0, 51.0, FLOOR_Z),
+    ]);
+    let index = SpatialIndex::build_auto(&model);
+    let cutter = cutter();
+    let target = |x: f64, _y: f64| {
+        if x <= PLATEAU_EDGE_X {
+            PLATEAU_Z + STL_MM
+        } else {
+            FLOOR_Z + STL_MM
+        }
+    };
+    let s = stock(
+        CELL_MM,
+        target,
+        [20.2, -1.0, 21.1, SIZE_MM + 1.0],
+        Some(PLATEAU_Z + STL_MM),
+    );
+    let coverage = measured(measure_rough_coverage(
+        &s,
+        &rough_target(&model, &index, &cutter, STL_MM, None),
+    ));
+    assert_eq!(coverage.islands.len(), 1, "{:?}", coverage.islands);
+    let island = coverage.islands.first().expect("one island");
+    let rows = (SIZE_MM / CELL_MM) as usize + 1;
+    assert_eq!(island.cells, 4 * rows, "{island:?}");
+    assert!(
+        (island.max_standing_mm - (PLATEAU_Z - FLOOR_Z)).abs() < 1e-4,
+        "{island:?}"
+    );
+    assert!(island.touches_wall, "{island:?}");
+}
+
+/// (h) A plate at Z 5 with a 10 mm square through hole (15.1 ..= 25.1).
+/// The 6 mm tool takes the floor only with its centre in 18.1 ..= 22.1, so
+/// the plan reaches the floor within R of that square and leaves the hole
+/// corners at the plate. A stock cut to that floor with a 1 mm core left
+/// at the stock top in the middle reads ONE island, the core, measured
+/// from the floor and not at a wall; the corner residue reads nothing.
+#[test]
+fn a_hole_core_reads_and_the_corner_residue_does_not() {
+    let (h0, h1) = (15.1, 25.1);
+    let (lo, hi) = (-1.0, SIZE_MM + 1.0);
+    let model = mesh_of(&[
+        flat(lo, lo, h0, hi, PLATEAU_Z),
+        flat(h1, lo, hi, hi, PLATEAU_Z),
+        flat(h0, lo, h1, h0, PLATEAU_Z),
+        flat(h0, h1, h1, hi, PLATEAU_Z),
+        flat(50.0, 50.0, 51.0, 51.0, FLOOR_Z),
+    ]);
+    let index = SpatialIndex::build_auto(&model);
+    let cutter = cutter();
+    let (c0, c1) = (h0 + TOOL_RADIUS_MM, h1 - TOOL_RADIUS_MM);
+    let target = |x: f64, y: f64| {
+        let in_hole = x > h0 && x < h1 && y > h0 && y < h1;
+        let dx = (c0 - x).max(x - c1).max(0.0);
+        let dy = (c0 - y).max(y - c1).max(0.0);
+        if in_hole && dx.hypot(dy) <= TOOL_RADIUS_MM {
+            FLOOR_Z + STL_MM
+        } else {
+            PLATEAU_Z + STL_MM
+        }
+    };
+    let s = stock(CELL_MM, target, [19.5, 19.5, 20.5, 20.5], None);
+    let coverage = measured(measure_rough_coverage(
+        &s,
+        &rough_target(&model, &index, &cutter, STL_MM, None),
+    ));
+    assert_eq!(coverage.islands.len(), 1, "{:?}", coverage.islands);
+    let island = coverage.islands.first().expect("one island");
+    assert_eq!(island.cells, 5 * 5, "{island:?}");
+    assert!(
+        (island.max_standing_mm - (STOCK_TOP_MM - FLOOR_Z - STL_MM)).abs() < 1e-4,
+        "{island:?}"
+    );
+    assert!(!island.touches_wall, "{island:?}");
 }

@@ -7,7 +7,7 @@
   `LevelSink` (new per-region work here), `coalesce_level_entries` (check).
 - `path.rs` Z levels, level loop, emitter; `search.rs` clear-path test;
   `centre_clip.rs` session boundary clip (before each stamp); `mod.rs`
-  facade, `ClearingStrategy3d`; `region_map.rs` By Area map.
+  facade, `ClearingStrategy3d`; `region_map.rs` By Area map; `intended_floor.rs` the ONE level floor (`level_floor_z`, `plan_bottom_z`; G-ROUGHCOV A3 reads it; never inline it).
 
 ## Invariants
 

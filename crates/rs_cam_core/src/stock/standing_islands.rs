@@ -46,6 +46,7 @@ use crate::ids::ToolpathId;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::stock::dexel::DexelGrid;
+use crate::tool::MillingCutter;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -187,12 +188,32 @@ pub struct StandingIsland {
     /// * Two islands that touch only at a corner can read up to one cell
     ///   wide each at that corner.
     pub min_width_mm: f64,
+    /// A cell of the island is within one cell (8-neighbour) of a wall: a
+    /// column whose target stands more than one depth per pass above that
+    /// cell's target, or a column outside the reach whose stock top stands
+    /// that high (the plan leaves an unreachable column whole, so its stock
+    /// top is its floor). It tells a strip against a wall or against the
+    /// edge of the reach from a hole core or a free spur. No class reads it.
+    ///
+    /// Always `false` from [`standing_islands`]; only
+    /// [`measure_rough_coverage`] knows the target walls.
+    pub touches_wall: bool,
 }
 
 /// Group the cells of `field` that stand more than `above_mm` above the
 /// target into 4-connected islands, in row-major order of their first cell.
 #[must_use]
 pub fn standing_islands(field: &StandingField, above_mm: f64) -> Vec<StandingIsland> {
+    group_islands(field, above_mm, None)
+}
+
+/// [`standing_islands`], with `near_wall` (row-major, one flag per cell)
+/// setting [`StandingIsland::touches_wall`].
+fn group_islands(
+    field: &StandingField,
+    above_mm: f64,
+    near_wall: Option<&[bool]>,
+) -> Vec<StandingIsland> {
     let (rows, cols) = (field.rows, field.cols);
     let cell = field.cell_mm;
     let above = |row: usize, col: usize| -> bool { field.at(row, col) > above_mm };
@@ -211,6 +232,7 @@ pub fn standing_islands(field: &StandingField, above_mm: f64) -> Vec<StandingIsl
             let mut worst = f64::NEG_INFINITY;
             let mut peak = [0.0f64; 3];
             let mut deepest_inside = 0.0f64;
+            let mut touches_wall = false;
             let mut sum_x = 0.0f64;
             let mut sum_y = 0.0f64;
             let mut bbox = [
@@ -232,6 +254,10 @@ pub fn standing_islands(field: &StandingField, above_mm: f64) -> Vec<StandingIsl
                     peak = [p.x, p.y, field.top_at(r, c)];
                 }
                 deepest_inside = deepest_inside.max(width.at(r, c));
+                touches_wall |= near_wall
+                    .and_then(|m| m.get(r * cols + c))
+                    .copied()
+                    .unwrap_or(false);
                 sum_x += p.x;
                 sum_y += p.y;
                 bbox[0] = bbox[0].min(p.x);
@@ -266,6 +292,7 @@ pub fn standing_islands(field: &StandingField, above_mm: f64) -> Vec<StandingIsl
                 centroid: [sum_x / cells as f64, sum_y / cells as f64],
                 bbox,
                 min_width_mm: (2.0 * deepest_inside - 1.0).max(1.0) * cell,
+                touches_wall,
             });
         }
     }
@@ -317,30 +344,26 @@ fn inscribed_distance(field: &StandingField, above_mm: f64) -> InscribedDistance
 
 // ── G-ROUGHCOV: the coverage of one 3D Rough ─────────────────────────────
 
-/// Where the tool of a rough can reach: the tool-centre polygons of its
-/// boundary and the tool radius.
-#[derive(Clone, Copy)]
-pub struct RoughReach<'a> {
-    /// The containment polygons the boundary clip keeps the tool centre in
-    /// (the session's `boundary_centre`, G-BOUNDARYPHANTOM).
-    pub centre: &'a [Polygon2],
-    /// The cutting radius of the tool (mm): half its named diameter, the
-    /// same radius the boundary clip uses.
-    pub tool_radius_mm: f64,
-}
-
 /// The target of one 3D Rough, in the frame of its checkpoint stock.
 #[derive(Clone, Copy)]
 pub struct RoughTarget<'a> {
     pub mesh: &'a TriangleMesh,
     pub index: &'a SpatialIndex,
+    /// The op's cutter. Its drop-cutter surface is the planner's surface,
+    /// and its profile (`height_at_radius`) erodes the floor.
+    pub cutter: &'a dyn MillingCutter,
     /// The op's axial stock to leave (`stock_to_leave_axial`, mm).
     pub stock_to_leave_mm: f64,
+    /// The op's depth per pass (mm): the rise that makes a wall
+    /// ([`StandingIsland::touches_wall`]).
+    pub depth_per_pass_mm: f64,
     /// A pinned `bottom_z`, which floors the planner's level plan.
     pub pinned_floor_z: Option<f64>,
-    /// `None`: the boundary is off, and every column of the grid is in the
-    /// population.
-    pub reach: Option<RoughReach<'a>>,
+    /// The containment polygons the boundary clip keeps the tool centre in
+    /// (the session's `boundary_centre`, G-BOUNDARYPHANTOM). `None`: the
+    /// boundary is off, and every centre of the grid is a centre the tool
+    /// can take.
+    pub centre: Option<&'a [Polygon2]>,
 }
 
 /// Why a rough's coverage was not measured. The reading abstains: no
@@ -424,12 +447,14 @@ impl RoughCoverageReading {
                 ),
                 Some(tallest) => format!(
                     "coverage: {} island(s) stand more than {:.2} mm above the target \
-                     (model + {:.2} mm stock to leave), {:.1} mm2 in all; the tallest is \
-                     {:.2} mm high and {:.2} mm wide at ({:.1}, {:.1}).",
+                     (the floor the plan can reach, with {:.2} mm stock to leave), {:.1} mm2 \
+                     in all, {} against a wall; the tallest is {:.2} mm high and {:.2} mm \
+                     wide at ({:.1}, {:.1}).",
                     c.islands.len(),
                     c.bar_mm,
                     c.stock_to_leave_mm,
                     c.above_spec_area_mm2,
+                    c.islands.iter().filter(|i| i.touches_wall).count(),
                     tallest.max_standing_mm,
                     tallest.min_width_mm,
                     tallest.peak[0],
@@ -472,52 +497,78 @@ impl RoughCoverageAbstention {
 
 /// Measure one 3D Rough on its checkpoint stock (G-ROUGHCOV).
 ///
-/// # The target (the rough's own)
+/// # The target: the plan's reachable floor (A3)
 ///
-/// The 3D Rough planner (`adaptive3d/path.rs`, "Compute Z levels") cuts to
-/// `surface + stock_to_leave`, and no level goes below
-/// `max(surface_bottom + stock_to_leave, pinned bottom_z)`. Its surface
-/// heightmap reads the mesh-bbox floor where the mesh has no surface
-/// (through holes, outside the silhouette). So the target of a column is:
+/// The target is the floor the rough's OWN plan can leave, from the
+/// planner's own rule (`adaptive3d::intended_floor`, the functions the
+/// planner calls):
 ///
 /// ```text
-/// s      = topmost model surface Z at the column centre, or mesh.bbox.min.z
-/// target = max(s + stock_to_leave, pinned bottom_z)
+/// floor(c)  = max(dc(c) + stock_to_leave, z_bottom)        per tool centre c
+/// z_bottom  = max(min dc + stock_to_leave, pinned bottom_z)  the last level
+/// target(x) = min over centres c with |x − c| ≤ R of floor(c) + h(|x − c|)
 /// ```
 ///
-/// The target of a through hole or of the band outside the part is the
-/// floor, so a core left in a hole (G-HOLECORE) or a band left outside the
-/// wall (G-OUTERBAND) reads as an island.
+/// * `dc` is the drop-cutter tip Z of the op's cutter, floored at the mesh
+///   bbox floor where the cutter meets nothing (through holes, outside the
+///   part): the planner's `SurfaceHeightmap`.
+/// * `h(r)` is the cutter profile above its tip at radius `r`
+///   (`height_at_radius`), `R` the cutter radius. A flat cutter has
+///   `h = 0`, so the target is the erosion of the floor by the tool disc
+///   (the morphological opening of the model by the tool, plus the leave).
+/// * The centres are the cell centres of the stock grid. With the boundary
+///   on, only those inside the tool-centre polygons. A column with no
+///   centre within `R` is outside the population (`NAN`).
 ///
-/// # Walls
+/// So the target holds the leave already, and it holds the tool shape: an
+/// inside corner narrower than the tool, a valley a flat tool cannot follow,
+/// and the slope under a flat tool read as the plan's own floor. A hole
+/// core, the band outside the wall and a spur stand above it (the centres
+/// there take the floor). Material within `R` of a vertical wall is
+/// reachable (a centre `R` from the wall puts the cutter edge on it), so a
+/// strip left against a wall stands above the target and reads as an
+/// island ([`StandingIsland::touches_wall`] marks it).
 ///
-/// The planner offsets in Z alone: `stock_to_leave_axial` is its only
-/// leave dial, and L2 deleted the radial one (`compute/execute/rough_3d.rs`,
-/// `adaptive3d_effective_stock_to_leave`). This reading is vertical too, so
-/// it compares like with like. On a wall at slope `θ` the leave along the
-/// normal is `stock_to_leave × cos θ`, and an island on a wall is
-/// `max_standing × cos θ` thick along the normal. Material the tool shape
-/// cannot reach (an inside corner narrower than the tool, a fillet under a
-/// ball) stands above this target and reads as an island: it is material
-/// the rough leaves, and its area and width say how much.
+/// Every level drapes in this planner and none holds a level on a slope,
+/// so a Z-level terrace above the draped floor is not the plan's floor:
+/// it reads as an island.
 ///
-/// # The population (the rough's reach)
+/// Limits:
 ///
-/// With the boundary on, a column is in the population when its centre is
-/// within `tool_radius − cell` of the tool-centre polygons: the tool centre
-/// stays inside them, and the cutter reaches one radius further. The cell
-/// is taken off because the polygon mask is quantised to cell centres, so
-/// the distance on the grid can exceed the true distance by up to one cell;
-/// the population never holds a column the tool cannot reach. With the
-/// boundary off, every column of the grid is in the population.
+/// * The centres are grid points, a subset of the centres the tool can
+///   take. The minimum over a subset is never lower than the true one, so
+///   the target can stand up to about one cell of slope above the true
+///   reach. It never stands below it.
+/// * With the boundary off, centres off the stock grid are not counted.
+///   A column at the grid edge can read a higher target than the tool
+///   could leave there.
+/// * `dc` is sampled on this grid, not on the planner's grid
+///   (`intended_floor_grid`).
+///
+/// # The cost
+///
+/// One drop-cutter query per cell (the planner's own heightmap cost at this
+/// cell), then the erosion with `k = ⌊R / cell⌋`:
+///
+/// * a flat profile: per row, one sliding minimum per row offset of the
+///   disc, `cells × (2k + 1)` window steps (each amortised O(1));
+/// * any other profile: a bounded window, `cells × disc cells`, about
+///   `cells × π k²`.
 ///
 /// # The bar
 ///
 /// PLAN.md's bar: "no uncut island bigger than the stock to leave". A cell
-/// is above spec when `standing > stock_to_leave + one cell`. The one cell
-/// is the G-OVERCUTREF tolerance (`stock/sim_triage.rs`,
-/// `commanded_tolerance_mm`): a dexel column top is quantised to its cell.
-/// There is no other threshold.
+/// is above spec when
+///
+/// ```text
+/// standing = stock_top − target > stock_to_leave + one cell
+/// ```
+///
+/// The target already holds one stock to leave, so an above-spec cell
+/// carries more than twice the stock to leave over the plan's floor less
+/// the leave. The one cell is the G-OVERCUTREF tolerance
+/// (`stock/sim_triage.rs`, `commanded_tolerance_mm`): a dexel column top is
+/// quantised to its cell. There is no other threshold.
 ///
 /// # Measurability
 ///
@@ -543,23 +594,39 @@ pub fn measure_rough_coverage(
     }
     let tolerance = crate::stock::sim_triage::commanded_tolerance_mm(Some(cell));
     let bar = stl + tolerance;
-    let reach = target.reach.map(|reach| reach_mask(grid, reach));
-    let (mesh, index, pinned) = (target.mesh, target.index, target.pinned_floor_z);
-    let floor_z = mesh.bbox.min.z;
+    let floor = crate::adaptive3d::intended_floor_grid(
+        target.mesh,
+        target.index,
+        target.cutter,
+        crate::adaptive3d::FloorGrid {
+            origin_u: grid.origin_u,
+            origin_v: grid.origin_v,
+            rows: grid.rows,
+            cols: grid.cols,
+            cell_mm: cell,
+        },
+        stl,
+        target.pinned_floor_z,
+    );
+    let centres = target.centre.map(|polygons| centre_mask(grid, polygons));
+    let reach = reachable_floor(
+        &floor,
+        centres.as_deref(),
+        grid.rows,
+        grid.cols,
+        cell,
+        target.cutter,
+    );
     let cols = grid.cols;
-    let field = StandingField::walk(grid, |row, col, p| {
-        if let Some(mask) = &reach
-            && !mask.get(row * cols + col).copied().unwrap_or(false)
-        {
-            return None;
-        }
-        let surface =
-            crate::maps::reach_map::surface_z_at(p.x, p.y, mesh, index).unwrap_or(floor_z);
-        let z = surface + stl;
-        Some(pinned.map_or(z, |floor| z.max(floor)))
+    let field = StandingField::walk(grid, |row, col, _| {
+        reach
+            .get(row * cols + col)
+            .copied()
+            .filter(|t| t.is_finite())
     });
+    let near_wall = wall_cells(&field, &reach, target.depth_per_pass_mm);
     let compared_cells = field.standing.iter().filter(|s| !s.is_nan()).count();
-    let mut islands = standing_islands(&field, bar);
+    let mut islands = group_islands(&field, bar, Some(&near_wall));
     islands.sort_by(|a, b| b.max_standing_mm.total_cmp(&a.max_standing_mm));
     let above_spec_cells: usize = islands.iter().map(|i| i.cells).sum();
     let cell_area = cell * cell;
@@ -576,17 +643,192 @@ pub fn measure_rough_coverage(
     })
 }
 
-/// The population mask of a rough: the columns within `tool_radius − cell`
-/// of the tool-centre polygons (see [`measure_rough_coverage`]).
-fn reach_mask(grid: &DexelGrid, reach: RoughReach<'_>) -> Vec<bool> {
-    let (rows, cols) = (grid.rows, grid.cols);
-    let inside = centre_mask(grid, reach.centre);
-    if !inside.iter().any(|c| *c) {
-        return inside;
+/// The cells of one disc row: the row offset and the cutter profile height
+/// at each column offset, for every offset with `(dx² + dy²) · cell² ≤ R²`.
+struct DiscRow {
+    dy: isize,
+    /// `(dx, h)`, `dx` ascending.
+    cells: Vec<(isize, f64)>,
+}
+
+/// The disc of `cutter` on a grid of `cell`: one [`DiscRow`] per row
+/// offset. A cell where the profile has no height is left out.
+fn disc_rows(cutter: &dyn MillingCutter, cell: f64) -> Vec<DiscRow> {
+    let r = cutter.radius();
+    if !(r.is_finite() && r >= 0.0) {
+        return vec![DiscRow {
+            dy: 0,
+            cells: vec![(0, 0.0)],
+        }];
     }
-    let dist = crate::geometry::grid_field::distance_transform_2d(&inside, rows, cols);
-    let reach_cells = (reach.tool_radius_mm - grid.cell_size).max(0.0) / grid.cell_size;
-    dist.iter().map(|d| *d <= reach_cells).collect()
+    let k = (r / cell).floor() as isize;
+    let r2 = r * r + 1e-9 * cell * cell;
+    (-k..=k)
+        .map(|dy| {
+            let cells = (-k..=k)
+                .filter_map(|dx| {
+                    let d2 = ((dx * dx + dy * dy) as f64) * cell * cell;
+                    if d2 > r2 {
+                        return None;
+                    }
+                    cutter.height_at_radius(d2.sqrt()).map(|h| (dx, h))
+                })
+                .collect();
+            DiscRow { dy, cells }
+        })
+        .collect()
+}
+
+/// The reachable floor of every column (see [`measure_rough_coverage`]):
+/// the minimum over the centres within the disc of `floor + h`. `NAN` where
+/// no centre is within the disc. `centres`: the cells a centre may take
+/// (`None`: all).
+fn reachable_floor(
+    floor: &[f64],
+    centres: Option<&[bool]>,
+    rows: usize,
+    cols: usize,
+    cell: f64,
+    cutter: &dyn MillingCutter,
+) -> Vec<f64> {
+    let disc = disc_rows(cutter, cell);
+    let source: Vec<f64> = floor
+        .iter()
+        .enumerate()
+        .map(|(i, &f)| {
+            let taken = centres.is_none_or(|m| m.get(i).copied().unwrap_or(false));
+            if taken && f.is_finite() {
+                f
+            } else {
+                f64::INFINITY
+            }
+        })
+        .collect();
+    // A flat profile with full rows: one sliding minimum per disc row.
+    let flat = disc.iter().all(|row| {
+        row.cells.iter().all(|&(_, h)| h == 0.0)
+            && row
+                .cells
+                .windows(2)
+                .all(|w| matches!(w, [a, b] if b.0 == a.0 + 1))
+    });
+    let row_of = |r: usize| -> Vec<f64> {
+        let mut out = vec![f64::INFINITY; cols];
+        let mut window = vec![f64::INFINITY; cols];
+        for disc_row in &disc {
+            let Some(src) = r.checked_add_signed(disc_row.dy).filter(|&s| s < rows) else {
+                continue;
+            };
+            let Some(src_row) = source.get(src * cols..(src + 1) * cols) else {
+                continue;
+            };
+            if flat {
+                let (Some(&(lo, _)), Some(&(hi, _))) =
+                    (disc_row.cells.first(), disc_row.cells.last())
+                else {
+                    continue;
+                };
+                sliding_min(src_row, lo, hi, &mut window);
+                for (o, w) in out.iter_mut().zip(&window) {
+                    *o = o.min(*w);
+                }
+            } else {
+                for (c, o) in out.iter_mut().enumerate() {
+                    for &(dx, h) in &disc_row.cells {
+                        if let Some(v) = c.checked_add_signed(dx).and_then(|sc| src_row.get(sc)) {
+                            *o = o.min(v + h);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    };
+    #[cfg(feature = "parallel")]
+    let by_row: Vec<Vec<f64>> = (0..rows).into_par_iter().map(row_of).collect();
+    #[cfg(not(feature = "parallel"))]
+    let by_row: Vec<Vec<f64>> = (0..rows).map(row_of).collect();
+    by_row
+        .into_iter()
+        .flatten()
+        .map(|t| if t.is_finite() { t } else { f64::NAN })
+        .collect()
+}
+
+/// `out[c] = min(row[c + lo ..= c + hi])` over the indices inside the row
+/// (`INFINITY` when none is), by a monotone queue: each index enters and
+/// leaves the queue once.
+fn sliding_min(row: &[f64], lo: isize, hi: isize, out: &mut [f64]) {
+    let n = row.len();
+    let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
+    let mut next = 0usize;
+    let value = |i: usize| row.get(i).copied().unwrap_or(f64::INFINITY);
+    for (c, o) in out.iter_mut().enumerate().take(n) {
+        // Push every index up to c + hi.
+        if let Some(top) = c.checked_add_signed(hi) {
+            let top = top.min(n.saturating_sub(1));
+            while next <= top && next < n {
+                let v = value(next);
+                while queue.back().is_some_and(|&b| value(b) >= v) {
+                    queue.pop_back();
+                }
+                queue.push_back(next);
+                next += 1;
+            }
+        }
+        // Drop every index below c + lo.
+        let start = c.checked_add_signed(lo).unwrap_or(0);
+        while queue.front().is_some_and(|&f| f < start) {
+            queue.pop_front();
+        }
+        *o = queue.front().map_or(f64::INFINITY, |&f| value(f));
+    }
+}
+
+/// One flag per cell: the cell is within one cell (8-neighbour) of a wall
+/// (see [`StandingIsland::touches_wall`]). A neighbour is a wall when its
+/// target stands more than `depth_per_pass` above the cell's target, or
+/// when it is outside the population and its stock top stands that high.
+/// A non-positive or non-finite step marks no wall.
+fn wall_cells(field: &StandingField, reach: &[f64], depth_per_pass: f64) -> Vec<bool> {
+    let (rows, cols) = (field.rows, field.cols);
+    if !(depth_per_pass.is_finite() && depth_per_pass > 0.0) {
+        return vec![false; rows * cols];
+    }
+    let target_at = |r: usize, c: usize| reach.get(r * cols + c).copied().unwrap_or(f64::NAN);
+    let mut near = vec![false; rows * cols];
+    for row in 0..rows {
+        for col in 0..cols {
+            let own = target_at(row, col);
+            if !own.is_finite() {
+                continue;
+            }
+            let rise = own + depth_per_pass;
+            let wall = (-1isize..=1)
+                .flat_map(|dr| (-1isize..=1).map(move |dc| (dr, dc)))
+                .filter(|&d| d != (0, 0))
+                .any(|(dr, dc)| {
+                    let (Some(r), Some(c)) =
+                        (row.checked_add_signed(dr), col.checked_add_signed(dc))
+                    else {
+                        return false;
+                    };
+                    if r >= rows || c >= cols {
+                        return false;
+                    }
+                    let t = target_at(r, c);
+                    if t.is_finite() {
+                        t > rise
+                    } else {
+                        field.top_at(r, c) > rise
+                    }
+                });
+            if let Some(n) = near.get_mut(row * cols + col) {
+                *n = wall;
+            }
+        }
+    }
+    near
 }
 
 /// The cells whose centre is inside any of `polygons` (even-odd over the
@@ -640,13 +882,14 @@ fn centre_mask(grid: &DexelGrid, polygons: &[Polygon2]) -> Vec<bool> {
 )]
 mod tests {
     use super::{
-        RoughCoverageAbstention, RoughCoverageOutcome, RoughReach, RoughTarget, StandingField,
-        measure_rough_coverage, standing_islands,
+        RoughCoverageAbstention, RoughCoverageOutcome, RoughTarget, StandingField,
+        measure_rough_coverage, reachable_floor, standing_islands,
     };
     use crate::dexel_stock::TriDexelStock;
     use crate::geo::{BoundingBox3, P2, P3};
     use crate::mesh::{SpatialIndex, TriangleMesh};
     use crate::polygon::Polygon2;
+    use crate::tool::{BallEndmill, FlatEndmill, MillingCutter};
 
     fn flat_model(size: f64, z: f64) -> TriangleMesh {
         TriangleMesh::from_raw(
@@ -718,25 +961,25 @@ mod tests {
             P2::new(10.0, 10.0),
             P2::new(2.0, 10.0),
         ])];
+        let cutter = FlatEndmill::new(6.0, 20.0);
         let target = RoughTarget {
             mesh: &model,
             index: &index,
+            cutter: &cutter,
             stock_to_leave_mm: 0.5,
+            depth_per_pass_mm: 2.0,
             pinned_floor_z: None,
-            reach: Some(RoughReach {
-                centre: &centre,
-                tool_radius_mm: 3.0,
-            }),
+            centre: Some(&centre),
         };
         let RoughCoverageOutcome::Measured(c) = measure_rough_coverage(&stock, &target) else {
             panic!("expected a measured reading");
         };
         assert!(c.compared_cells > 0);
         assert!(c.islands.is_empty(), "{:?}", c.islands);
-        // The reach is the centre square grown by R − cell = 2.75 mm. The
-        // cells are counted on their centres, so the side holds one more
-        // cell than the length.
-        let side = 8.0 + 2.0 * 2.75 + cell;
+        // The reach is the cell centres within R = 3 mm of a centre inside
+        // the square. The cells are counted on their centres, so the side
+        // holds one more cell than the length.
+        let side = 8.0 + 2.0 * 3.0 + cell;
         assert!(
             c.compared_area_mm2 < side * side + 1e-6,
             "{} vs {}",
@@ -781,12 +1024,15 @@ mod tests {
         let model = flat_model(10.0, 2.0);
         let index = SpatialIndex::build_auto(&model);
         let stock = stock_with_block(10.0, 0.5, 2.0, [4.0, 4.0, 6.0, 6.0]);
+        let cutter = FlatEndmill::new(6.0, 20.0);
         let target = RoughTarget {
             mesh: &model,
             index: &index,
+            cutter: &cutter,
             stock_to_leave_mm: 0.2,
+            depth_per_pass_mm: 2.0,
             pinned_floor_z: None,
-            reach: None,
+            centre: None,
         };
         assert_eq!(
             measure_rough_coverage(&stock, &target),
@@ -797,5 +1043,102 @@ mod tests {
                 }
             )
         );
+    }
+
+    /// The reachable floor by brute force: the minimum over every centre
+    /// cell within `R` of `floor + h`.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "test code: indices bounded by the grid"
+    )]
+    fn brute_reach(
+        floor: &[f64],
+        centres: &[bool],
+        rows: usize,
+        cols: usize,
+        cell: f64,
+        cutter: &dyn MillingCutter,
+    ) -> Vec<f64> {
+        let r = cutter.radius();
+        let mut out = vec![f64::NAN; rows * cols];
+        for row in 0..rows {
+            for col in 0..cols {
+                let mut best = f64::INFINITY;
+                for sr in 0..rows {
+                    for sc in 0..cols {
+                        let d = ((sr as f64 - row as f64).powi(2)
+                            + (sc as f64 - col as f64).powi(2))
+                        .sqrt()
+                            * cell;
+                        if d > r + 1e-9 || !centres[sr * cols + sc] {
+                            continue;
+                        }
+                        let Some(h) = cutter.height_at_radius(d) else {
+                            continue;
+                        };
+                        best = best.min(floor[sr * cols + sc] + h);
+                    }
+                }
+                if best.is_finite() {
+                    out[row * cols + col] = best;
+                }
+            }
+        }
+        out
+    }
+
+    fn sample_floor(rows: usize, cols: usize) -> (Vec<f64>, Vec<bool>) {
+        let floor = (0..rows * cols)
+            .map(|i| {
+                let (r, c) = ((i / cols) as f64, (i % cols) as f64);
+                (r * 0.7).sin() * 3.0 + (c * 0.45).cos() * 2.0 + (r * c * 0.013)
+            })
+            .collect();
+        // Centres only in the left two thirds, and not on every 5th row:
+        // columns on the right edge have no centre in reach.
+        let centres = (0..rows * cols)
+            .map(|i| (i % cols) < cols * 2 / 3 && (i / cols) % 5 != 0)
+            .collect();
+        (floor, centres)
+    }
+
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "test code: indices bounded by the grid"
+    )]
+    fn assert_same_reach(cutter: &dyn MillingCutter) {
+        let (rows, cols, cell) = (23, 31, 0.25);
+        let (floor, centres) = sample_floor(rows, cols);
+        let fast = reachable_floor(&floor, Some(&centres), rows, cols, cell, cutter);
+        let slow = brute_reach(&floor, &centres, rows, cols, cell, cutter);
+        let mut unreachable = 0;
+        for i in 0..rows * cols {
+            if slow[i].is_nan() {
+                unreachable += 1;
+                assert!(fast[i].is_nan(), "cell {i}: {} vs NAN", fast[i]);
+            } else {
+                assert!(
+                    (fast[i] - slow[i]).abs() < 1e-12,
+                    "cell {i}: {} vs {}",
+                    fast[i],
+                    slow[i]
+                );
+            }
+        }
+        assert!(unreachable > 0, "the fixture holds columns out of reach");
+    }
+
+    /// New pin (A3): the separable path (flat cutter, one sliding minimum
+    /// per disc row) equals the minimum over the disc.
+    #[test]
+    fn the_flat_erosion_is_the_minimum_over_the_disc() {
+        assert_same_reach(&FlatEndmill::new(2.0, 10.0));
+    }
+
+    /// New pin (A3): a ball profile adds its height at each radius (the
+    /// bounded-window path).
+    #[test]
+    fn the_ball_erosion_adds_the_profile() {
+        assert_same_reach(&BallEndmill::new(2.0, 10.0));
     }
 }
