@@ -168,7 +168,10 @@ fn an_island_above_the_bar_is_one_island_with_its_area_height_and_width() {
         (island.max_standing_mm - (STOCK_TOP_MM - target_z)).abs() < 1e-5,
         "{island:?}"
     );
-    assert!((island.min_width_mm - 9.0 * CELL_MM).abs() < 1e-9, "{island:?}");
+    assert!(
+        (island.min_width_mm - 9.0 * CELL_MM).abs() < 1e-9,
+        "{island:?}"
+    );
 
     let reading = RoughCoverageReading {
         toolpath_id: ToolpathId::from_raw(1),
@@ -228,7 +231,12 @@ fn a_cell_coarser_than_the_stock_to_leave_is_not_measurable() {
     let index = SpatialIndex::build_auto(&model);
     let coarse = 0.5;
     let stl = 0.25;
-    let s = stock(coarse, |_, _| MODEL_Z_MM + stl, [10.0, 10.0, 12.0, 15.0], None);
+    let s = stock(
+        coarse,
+        |_, _| MODEL_Z_MM + stl,
+        [10.0, 10.0, 12.0, 15.0],
+        None,
+    );
     let outcome = measure_rough_coverage(
         &s,
         &RoughTarget {
@@ -241,12 +249,10 @@ fn a_cell_coarser_than_the_stock_to_leave_is_not_measurable() {
     );
     assert_eq!(
         outcome,
-        RoughCoverageOutcome::NotMeasurable(
-            RoughCoverageAbstention::CellCoarserThanStockToLeave {
-                cell_mm: coarse,
-                stock_to_leave_mm: stl,
-            }
-        )
+        RoughCoverageOutcome::NotMeasurable(RoughCoverageAbstention::CellCoarserThanStockToLeave {
+            cell_mm: coarse,
+            stock_to_leave_mm: stl,
+        })
     );
     let t = triage(&RoughCoverageReading {
         toolpath_id: ToolpathId::from_raw(1),

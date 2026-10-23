@@ -56,6 +56,7 @@ use rs_cam_core::adaptive::research_geodesic::{Candidate2d, Run2d, run_2d};
 use rs_cam_core::adaptive::{AdaptiveParams, KeepDownLinks, PathStrategy2d, adaptive_toolpath};
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
+use rs_cam_core::compute::fixture_values::fixture_feeds;
 use rs_cam_core::compute::operation_configs::AdaptiveConfig;
 use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
@@ -115,12 +116,14 @@ fn params(tool: &FlatEndmill, strategy: PathStrategy2d) -> AdaptiveParams {
     } else {
         0.0
     };
+    // S11: the op has no feed default; a fixture states the pre-S11 values.
+    let (feed_rate, plunge_rate) = fixture_feeds(OperationType::Adaptive);
     AdaptiveParams {
         tool_radius: tool.diameter / 2.0,
         stepover: cfg.stepover,
         cut_depth: -cfg.depth_per_pass,
-        feed_rate: cfg.feed_rate,
-        plunge_rate: cfg.plunge_rate,
+        feed_rate,
+        plunge_rate,
         safe_z: cfg.depth_per_pass,
         tolerance: cfg.tolerance,
         slot_clearing: cfg.slot_clearing,

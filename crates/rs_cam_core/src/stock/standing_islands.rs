@@ -604,8 +604,7 @@ fn centre_mask(grid: &DexelGrid, polygons: &[Polygon2]) -> Vec<bool> {
                 }
             }
             crossings.sort_by(f64::total_cmp);
-            for pair in crossings.chunks_exact(2) {
-                let [x0, x1] = [pair.first(), pair.get(1)].map(|x| x.copied().unwrap_or(0.0));
+            for &[x0, x1] in crossings.as_chunks::<2>().0 {
                 let first = ((x0 - grid.origin_u) / cell).ceil().max(0.0);
                 let last = ((x1 - grid.origin_u) / cell).floor();
                 if last < first {
@@ -682,7 +681,10 @@ mod tests {
         let islands = standing_islands(&field, 1.0);
         assert_eq!(islands.len(), 1);
         let island = islands.first().unwrap();
-        assert!((island.min_width_mm - 3.0 * cell).abs() < 1e-9, "{island:?}");
+        assert!(
+            (island.min_width_mm - 3.0 * cell).abs() < 1e-9,
+            "{island:?}"
+        );
         assert!((island.max_standing_mm - 8.0).abs() < 1e-6, "{island:?}");
 
         let one = stock_with_block(10.0, cell, 2.0, [5.0, 5.0, 5.0, 5.0]);

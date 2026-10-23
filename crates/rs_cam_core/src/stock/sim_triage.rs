@@ -2917,9 +2917,7 @@ mod tests {
 
     // ── G-ROUGHCOV / G-THINSTAND ──────────────────────────────────────
 
-    fn coverage_reading(
-        heights: &[f64],
-    ) -> crate::stock::standing_islands::RoughCoverageReading {
+    fn coverage_reading(heights: &[f64]) -> crate::stock::standing_islands::RoughCoverageReading {
         use crate::stock::standing_islands::{
             RoughCoverage, RoughCoverageOutcome, RoughCoverageReading, StandingIsland,
         };
