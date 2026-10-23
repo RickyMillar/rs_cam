@@ -286,3 +286,29 @@ Files in `target/tmp/adaptive_geodesic_2d_g1/` (worktree):
  M crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs
 ?? planning/adaptive_research_2026-10-23/P15_D_verify.md
 ```
+
+## Re-gate at 2b72f57b
+
+HEAD 2b72f57b (the lead's second merge of master; it brings 5516aa8b, the
+chamfer stop-short). The fixes above are in a2ceb3e1. Same lane script,
+own target dir, a `timeout` on each command. Disk: 50 GB free at the end.
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `check -p rs_cam_core --features research,test-support` | green |
+| 1 | `check -p rs_cam_viz` | green |
+| 2 | `--test a_rough_island_above_the_stock_to_leave_is_flagged_g_roughcov` | green 4/4 |
+| 2 | `--test a_rough_cuts_no_deeper_than_its_leave_g_roughgouge` | green 4/4 |
+| 2 | `--features research,test-support --lib research_geodesic` | green 3/3 |
+| 2 | `--test every_op_states_its_capabilities_w2_4` | green 21/21 |
+| 2 | `--features step --test a_default_step_pocket_never_cuts_below_a_ring_ux7b` | green 10/10 |
+| 2 | the same, filter `a_tool_tangent_to_a_wall_is_clean_and_a_tool_in_it_is_not_ux7b` (a test in the ux7b file, not a target) | green 1/1 |
+| 2 | `--features step --test a_step_chamfer_cuts_convex_edges_only_rc` | green 7/7 |
+| 2 | `--features step --test a_step_chamfer_stops_short_of_a_wall_chamferclear` | green 6/6 |
+| 3 | `test -p rs_cam_viz -q --lib` | green 582 passed, 2 ignored |
+| 3 | `test -p rs_cam_mcp -q` | green 36/36 |
+| 4 | full workspace clippy (`heavy-tests,research,test-support`, `-D warnings`) | green |
+| 5 | `fmt --all -- --check` | green (0 diffs) |
+
+The merge broke nothing. No fix was made, and the working tree has no
+change other than this section.
