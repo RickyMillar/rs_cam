@@ -42,8 +42,13 @@ the classic adaptive I wanted." Decision left to the lead: **candidate (a)
 goes forward; (b) and (c) stay shelved unless (a) stalls.**
 
 G1 defects to fix on (a) before 3D: G1-1 edge spill (wrap ends past the
-region edge), G1-2 meeting-line breakdown behind the island (sawtooth
-fragments instead of a continued front). Then the continuous spiral form
+region edge; partly the one-colour render), G1-2 meeting-line breakdown
+behind the island (sawtooth fragments instead of a continued front),
+G1-3 arm asymmetry on the symmetric star (operator 15:05: "I'm surprised
+they all look different"; lead hypothesis: direction-dependent error of
+the first-order upwind sweep on the square grid, each arm at its own
+angle to the grid; the lower-left arm also carries the residue clean-up).
+Operator 15:05: "I think your plan is good." Then the continuous spiral form
 (no radial step, no plunge per wrap) and the link stage.
 
 ## G0 rulings (operator, 2026-10-23 13:25) and lead judgements
