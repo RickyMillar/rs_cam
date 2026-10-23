@@ -29,6 +29,9 @@
 //! * Drop the population (every column compared): arm (f) flags the
 //!   fringe.
 //! * Drop the wall mask: arm (g) reads `touches_wall` false.
+//! * Tag a wall by the op's depth per pass (the A3 rule): arm (i) tags the
+//!   sliver for one cutter and not for the other; sort tallest first only:
+//!   arm (i) lists the sliver first.
 //! * Skip off-model columns: arms (d) and (h) fail.
 
 #![expect(
@@ -82,7 +85,6 @@ fn rough_target<'a>(
         index,
         cutter,
         stock_to_leave_mm: stl,
-        depth_per_pass_mm: DEPTH_PER_PASS_MM,
         pinned_floor_z: None,
         centre,
     }
@@ -510,28 +512,10 @@ fn a_strip_against_a_vertical_wall_reads_and_touches_the_wall() {
 /// from the floor and not at a wall; the corner residue reads nothing.
 #[test]
 fn a_hole_core_reads_and_the_corner_residue_does_not() {
-    let (h0, h1) = (15.1, 25.1);
-    let (lo, hi) = (-1.0, SIZE_MM + 1.0);
-    let model = mesh_of(&[
-        flat(lo, lo, h0, hi, PLATEAU_Z),
-        flat(h1, lo, hi, hi, PLATEAU_Z),
-        flat(h0, lo, h1, h0, PLATEAU_Z),
-        flat(h0, h1, h1, hi, PLATEAU_Z),
-        flat(50.0, 50.0, 51.0, 51.0, FLOOR_Z),
-    ]);
+    let model = plate_with_hole();
     let index = SpatialIndex::build_auto(&model);
     let cutter = cutter();
-    let (c0, c1) = (h0 + TOOL_RADIUS_MM, h1 - TOOL_RADIUS_MM);
-    let target = |x: f64, y: f64| {
-        let in_hole = x > h0 && x < h1 && y > h0 && y < h1;
-        let dx = (c0 - x).max(x - c1).max(0.0);
-        let dy = (c0 - y).max(y - c1).max(0.0);
-        if in_hole && dx.hypot(dy) <= TOOL_RADIUS_MM {
-            FLOOR_Z + STL_MM
-        } else {
-            PLATEAU_Z + STL_MM
-        }
-    };
+    let target = |x: f64, y: f64| hole_target(x, y, TOOL_RADIUS_MM);
     let s = stock(CELL_MM, target, [19.5, 19.5, 20.5, 20.5], None);
     let coverage = measured(measure_rough_coverage(
         &s,
@@ -545,4 +529,94 @@ fn a_hole_core_reads_and_the_corner_residue_does_not() {
         "{island:?}"
     );
     assert!(!island.touches_wall, "{island:?}");
+}
+
+/// The square through hole of arms (h) and (i).
+const HOLE_LO: f64 = 15.1;
+const HOLE_HI: f64 = 25.1;
+
+/// A plate at Z 5 with the square through hole, and a small low face
+/// outside the stock that sets the mesh-bbox floor at Z 1.
+fn plate_with_hole() -> TriangleMesh {
+    let (h0, h1) = (HOLE_LO, HOLE_HI);
+    let (lo, hi) = (-1.0, SIZE_MM + 1.0);
+    mesh_of(&[
+        flat(lo, lo, h0, hi, PLATEAU_Z),
+        flat(h1, lo, hi, hi, PLATEAU_Z),
+        flat(h0, lo, h1, h0, PLATEAU_Z),
+        flat(h0, h1, h1, hi, PLATEAU_Z),
+        flat(50.0, 50.0, 51.0, 51.0, FLOOR_Z),
+    ])
+}
+
+/// The opening of the plate by a flat disc of `radius`, plus the leave:
+/// the floor where the column is in the hole within `radius` of the
+/// square of centres whose disc fits the hole, the plate elsewhere.
+fn hole_target(x: f64, y: f64, radius: f64) -> f64 {
+    let (c0, c1) = (HOLE_LO + radius, HOLE_HI - radius);
+    let in_hole = x > HOLE_LO && x < HOLE_HI && y > HOLE_LO && y < HOLE_HI;
+    let dx = (c0 - x).max(x - c1).max(0.0);
+    let dy = (c0 - y).max(y - c1).max(0.0);
+    if in_hole && dx.hypot(dy) <= radius {
+        FLOOR_Z + STL_MM
+    } else {
+        PLATEAU_Z + STL_MM
+    }
+}
+
+/// (i) A4: the wall tag reads the island, not the op. A one-cell sliver at
+/// the hole rim (x = 15.25, y 19 ..= 21) left at the plate top + leave
+/// stands 4 mm, as high as the hole wall rises. The 6 mm cutter and the
+/// 3 mm cutter both reach the floor there, and both tag the sliver at a
+/// wall. A core in the middle of the hole left 1.5 mm proud is SHORTER
+/// than the sliver, stays free, and comes first in the list and in the
+/// narration.
+#[test]
+fn the_wall_tag_reads_the_island_and_free_islands_come_first() {
+    let model = plate_with_hole();
+    let index = SpatialIndex::build_auto(&model);
+    let core_top = FLOOR_Z + STL_MM + 1.5;
+    for diameter in [TOOL_DIAMETER_MM, TOOL_DIAMETER_MM / 2.0] {
+        let cutter = FlatEndmill::new(diameter, 25.0);
+        let radius = diameter / 2.0;
+        let target = |x: f64, y: f64| {
+            let in_core = (19.5..=20.5).contains(&x) && (19.5..=20.5).contains(&y);
+            let in_sliver = (15.2..=15.3).contains(&x) && (19.0..=21.0).contains(&y);
+            if in_core {
+                core_top
+            } else if in_sliver {
+                PLATEAU_Z + STL_MM
+            } else {
+                hole_target(x, y, radius)
+            }
+        };
+        let s = stock(CELL_MM, target, NO_BLOCK, None);
+        let coverage = measured(measure_rough_coverage(
+            &s,
+            &rough_target(&model, &index, &cutter, STL_MM, None),
+        ));
+        assert_eq!(
+            coverage.islands.len(),
+            2,
+            "{diameter} mm: {:?}",
+            coverage.islands
+        );
+        let core = coverage.islands.first().expect("the free core");
+        let sliver = coverage.islands.get(1).expect("the sliver at the wall");
+        assert_eq!(core.cells, 5 * 5, "{diameter} mm: {core:?}");
+        assert!(!core.touches_wall, "{diameter} mm: {core:?}");
+        assert_eq!(sliver.cells, 9, "{diameter} mm: {sliver:?}");
+        assert!(sliver.touches_wall, "{diameter} mm: {sliver:?}");
+        assert!(sliver.max_standing_mm > core.max_standing_mm);
+        let reading = RoughCoverageReading {
+            toolpath_id: ToolpathId::from_raw(1),
+            outcome: RoughCoverageOutcome::Measured(coverage),
+        };
+        let sentence = reading.narration_sentence();
+        assert!(
+            sentence.starts_with("coverage: 1 free island(s)")
+                && sentence.contains("1 more touch a wall"),
+            "{sentence}"
+        );
+    }
 }

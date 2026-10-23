@@ -188,15 +188,27 @@ pub struct StandingIsland {
     /// * Two islands that touch only at a corner can read up to one cell
     ///   wide each at that corner.
     pub min_width_mm: f64,
-    /// A cell of the island is within one cell (8-neighbour) of a wall: a
-    /// column whose target stands more than one depth per pass above that
-    /// cell's target, or a column outside the reach whose stock top stands
-    /// that high (the plan leaves an unreachable column whole, so its stock
-    /// top is its floor). It tells a strip against a wall or against the
-    /// edge of the reach from a hole core or a free spur. No class reads it.
+    /// The island stands against a wall that is at least as tall as the
+    /// island (A4). The rule:
     ///
-    /// Always `false` from [`standing_islands`]; only
-    /// [`measure_rough_coverage`] knows the target walls.
+    /// ```text
+    /// rise(i)      = max over the 8 neighbours j of cell i of  wall_top(j) − target(i)
+    /// wall_top(j)  = target(j), or the stock top of j when j is outside the reach
+    /// touches_wall = max over the island's cells of rise(i) > max_standing − one cell
+    /// ```
+    ///
+    /// Derivation: material that leans on something taller than itself is a
+    /// strip against a wall; material with nothing at least as tall within
+    /// one cell stands free (a hole core, a spur). The island's own height,
+    /// `max_standing`, is the scale, so the tag does not read the op's depth
+    /// per pass, and two ops tag the same sliver the same way. A strip left
+    /// at the wall top stands exactly as high as the wall rises, so the test
+    /// allows one cell: the G-OVERCUTREF tolerance, the same quantisation of
+    /// a column top that the bar allows. An unreachable column is left whole
+    /// by the plan, so its stock top is its floor.
+    ///
+    /// No class reads it. Always `false` from [`standing_islands`]; only
+    /// [`measure_rough_coverage`] knows the target.
     pub touches_wall: bool,
 }
 
@@ -207,12 +219,13 @@ pub fn standing_islands(field: &StandingField, above_mm: f64) -> Vec<StandingIsl
     group_islands(field, above_mm, None)
 }
 
-/// [`standing_islands`], with `near_wall` (row-major, one flag per cell)
-/// setting [`StandingIsland::touches_wall`].
+/// [`standing_islands`], with `wall` = (the rise of each cell, row-major,
+/// from [`wall_rise`]; the tolerance) setting
+/// [`StandingIsland::touches_wall`].
 fn group_islands(
     field: &StandingField,
     above_mm: f64,
-    near_wall: Option<&[bool]>,
+    wall: Option<(&[f64], f64)>,
 ) -> Vec<StandingIsland> {
     let (rows, cols) = (field.rows, field.cols);
     let cell = field.cell_mm;
@@ -232,7 +245,7 @@ fn group_islands(
             let mut worst = f64::NEG_INFINITY;
             let mut peak = [0.0f64; 3];
             let mut deepest_inside = 0.0f64;
-            let mut touches_wall = false;
+            let mut max_rise = f64::NEG_INFINITY;
             let mut sum_x = 0.0f64;
             let mut sum_y = 0.0f64;
             let mut bbox = [
@@ -254,10 +267,9 @@ fn group_islands(
                     peak = [p.x, p.y, field.top_at(r, c)];
                 }
                 deepest_inside = deepest_inside.max(width.at(r, c));
-                touches_wall |= near_wall
-                    .and_then(|m| m.get(r * cols + c))
-                    .copied()
-                    .unwrap_or(false);
+                if let Some(rise) = wall.and_then(|(rise, _)| rise.get(r * cols + c)) {
+                    max_rise = max_rise.max(*rise);
+                }
                 sum_x += p.x;
                 sum_y += p.y;
                 bbox[0] = bbox[0].min(p.x);
@@ -292,7 +304,7 @@ fn group_islands(
                 centroid: [sum_x / cells as f64, sum_y / cells as f64],
                 bbox,
                 min_width_mm: (2.0 * deepest_inside - 1.0).max(1.0) * cell,
-                touches_wall,
+                touches_wall: wall.is_some_and(|(_, tol)| max_rise > worst - tol),
             });
         }
     }
@@ -354,9 +366,6 @@ pub struct RoughTarget<'a> {
     pub cutter: &'a dyn MillingCutter,
     /// The op's axial stock to leave (`stock_to_leave_axial`, mm).
     pub stock_to_leave_mm: f64,
-    /// The op's depth per pass (mm): the rise that makes a wall
-    /// ([`StandingIsland::touches_wall`]).
-    pub depth_per_pass_mm: f64,
     /// A pinned `bottom_z`, which floors the planner's level plan.
     pub pinned_floor_z: Option<f64>,
     /// The containment polygons the boundary clip keeps the tool centre in
@@ -413,7 +422,9 @@ pub struct RoughCoverage {
     pub compared_area_mm2: f64,
     pub above_spec_cells: usize,
     pub above_spec_area_mm2: f64,
-    /// Every island, tallest first. Empty is a measured zero.
+    /// Every island: the free ones first, then the ones at a wall
+    /// ([`StandingIsland::touches_wall`]), tallest first within each group.
+    /// Empty is a measured zero.
     pub islands: Vec<StandingIsland>,
 }
 
@@ -445,21 +456,36 @@ impl RoughCoverageReading {
                      {:.3} mm cell) on {:.0} mm2 compared.",
                     c.stock_to_leave_mm, c.cell_mm, c.compared_area_mm2
                 ),
-                Some(tallest) => format!(
-                    "coverage: {} island(s) stand more than {:.2} mm above the target \
-                     (the floor the plan can reach, with {:.2} mm stock to leave), {:.1} mm2 \
-                     in all, {} against a wall; the tallest is {:.2} mm high and {:.2} mm \
-                     wide at ({:.1}, {:.1}).",
-                    c.islands.len(),
-                    c.bar_mm,
-                    c.stock_to_leave_mm,
-                    c.above_spec_area_mm2,
-                    c.islands.iter().filter(|i| i.touches_wall).count(),
-                    tallest.max_standing_mm,
-                    tallest.min_width_mm,
-                    tallest.peak[0],
-                    tallest.peak[1],
-                ),
+                Some(first) => {
+                    // The islands are free first (A4), so `first` is the
+                    // tallest free island when there is one.
+                    let at_wall = c.islands.iter().filter(|i| i.touches_wall).count();
+                    let free = c.islands.len() - at_wall;
+                    let target = format!(
+                        "above the target (the floor the plan can reach, with {:.2} mm stock \
+                         to leave)",
+                        c.stock_to_leave_mm
+                    );
+                    let place = format!(
+                        "{:.2} mm high and {:.2} mm wide at ({:.1}, {:.1})",
+                        first.max_standing_mm, first.min_width_mm, first.peak[0], first.peak[1],
+                    );
+                    if free > 0 {
+                        format!(
+                            "coverage: {free} free island(s) stand more than {:.2} mm {target}; \
+                             the tallest is {place}; {at_wall} more touch a wall; {:.1} mm2 \
+                             in all.",
+                            c.bar_mm, c.above_spec_area_mm2,
+                        )
+                    } else {
+                        format!(
+                            "coverage: no free island stands more than {:.2} mm {target}; \
+                             {at_wall} island(s) touch a wall, the tallest {place}; {:.1} mm2 \
+                             in all.",
+                            c.bar_mm, c.above_spec_area_mm2,
+                        )
+                    }
+                }
             },
             RoughCoverageOutcome::NotMeasurable(why) => {
                 format!("coverage: not measured ({}).", why.describe())
@@ -624,10 +650,16 @@ pub fn measure_rough_coverage(
             .copied()
             .filter(|t| t.is_finite())
     });
-    let near_wall = wall_cells(&field, &reach, target.depth_per_pass_mm);
+    let rise = wall_rise(&field, &reach);
     let compared_cells = field.standing.iter().filter(|s| !s.is_nan()).count();
-    let mut islands = group_islands(&field, bar, Some(&near_wall));
-    islands.sort_by(|a, b| b.max_standing_mm.total_cmp(&a.max_standing_mm));
+    let mut islands = group_islands(&field, bar, Some((&rise, tolerance)));
+    // Free islands first (a hole core, a spur), then the ones at a wall;
+    // tallest first within each group (A4).
+    islands.sort_by(|a, b| {
+        a.touches_wall
+            .cmp(&b.touches_wall)
+            .then(b.max_standing_mm.total_cmp(&a.max_standing_mm))
+    });
     let above_spec_cells: usize = islands.iter().map(|i| i.cells).sum();
     let cell_area = cell * cell;
     RoughCoverageOutcome::Measured(RoughCoverage {
@@ -785,50 +817,38 @@ fn sliding_min(row: &[f64], lo: isize, hi: isize, out: &mut [f64]) {
     }
 }
 
-/// One flag per cell: the cell is within one cell (8-neighbour) of a wall
-/// (see [`StandingIsland::touches_wall`]). A neighbour is a wall when its
-/// target stands more than `depth_per_pass` above the cell's target, or
-/// when it is outside the population and its stock top stands that high.
-/// A non-positive or non-finite step marks no wall.
-fn wall_cells(field: &StandingField, reach: &[f64], depth_per_pass: f64) -> Vec<bool> {
+/// The rise of each cell (see [`StandingIsland::touches_wall`]): the most
+/// any of its 8 neighbours stands above the cell's target, where a
+/// neighbour stands at its target, or at its stock top when it is outside
+/// the reach. `NEG_INFINITY` for a cell outside the reach or with no
+/// neighbour that has a height.
+fn wall_rise(field: &StandingField, reach: &[f64]) -> Vec<f64> {
     let (rows, cols) = (field.rows, field.cols);
-    if !(depth_per_pass.is_finite() && depth_per_pass > 0.0) {
-        return vec![false; rows * cols];
-    }
     let target_at = |r: usize, c: usize| reach.get(r * cols + c).copied().unwrap_or(f64::NAN);
-    let mut near = vec![false; rows * cols];
+    let mut rise = vec![f64::NEG_INFINITY; rows * cols];
     for row in 0..rows {
         for col in 0..cols {
             let own = target_at(row, col);
             if !own.is_finite() {
                 continue;
             }
-            let rise = own + depth_per_pass;
-            let wall = (-1isize..=1)
+            let highest = (-1isize..=1)
                 .flat_map(|dr| (-1isize..=1).map(move |dc| (dr, dc)))
                 .filter(|&d| d != (0, 0))
-                .any(|(dr, dc)| {
-                    let (Some(r), Some(c)) =
-                        (row.checked_add_signed(dr), col.checked_add_signed(dc))
-                    else {
-                        return false;
-                    };
-                    if r >= rows || c >= cols {
-                        return false;
-                    }
+                .filter_map(|(dr, dc)| {
+                    let r = row.checked_add_signed(dr).filter(|&r| r < rows)?;
+                    let c = col.checked_add_signed(dc).filter(|&c| c < cols)?;
                     let t = target_at(r, c);
-                    if t.is_finite() {
-                        t > rise
-                    } else {
-                        field.top_at(r, c) > rise
-                    }
-                });
-            if let Some(n) = near.get_mut(row * cols + col) {
-                *n = wall;
+                    let top = if t.is_finite() { t } else { field.top_at(r, c) };
+                    top.is_finite().then_some(top)
+                })
+                .fold(f64::NEG_INFINITY, f64::max);
+            if let Some(out) = rise.get_mut(row * cols + col) {
+                *out = highest - own;
             }
         }
     }
-    near
+    rise
 }
 
 /// The cells whose centre is inside any of `polygons` (even-odd over the
@@ -967,7 +987,6 @@ mod tests {
             index: &index,
             cutter: &cutter,
             stock_to_leave_mm: 0.5,
-            depth_per_pass_mm: 2.0,
             pinned_floor_z: None,
             centre: Some(&centre),
         };
@@ -1030,7 +1049,6 @@ mod tests {
             index: &index,
             cutter: &cutter,
             stock_to_leave_mm: 0.2,
-            depth_per_pass_mm: 2.0,
             pinned_floor_z: None,
             centre: None,
         };

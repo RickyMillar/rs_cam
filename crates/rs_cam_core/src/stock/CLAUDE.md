@@ -29,7 +29,7 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
   `Arc::clone`, never a deep copy of the trace (G-SIMMEM).
 - `crosses_standing_material` (G-OVERCUTREF): a stepped op is read against its
   realised step + one cell (`commanded_step_mm`), never its median bite.
-- `rough_leaves_islands` (G-ROUGHCOV A3): target = the plan's floor per centre (`adaptive3d::intended_floor_grid`, never a copy) eroded by the tool disc; no centre in reach = not compared; bar = stock to leave + one cell (the leave is in the target once); `touches_wall` marks strips; `cell > stock to leave` abstains.
+- `rough_leaves_islands` (G-ROUGHCOV A3): target = the plan's floor per centre (`adaptive3d::intended_floor_grid`, never a copy) eroded by the tool disc; no centre in reach = not compared; bar = stock to leave + one cell (the leave is in the target once); `touches_wall` = a neighbour wall at least as tall as the island (op-independent, A4); free islands list first; `cell > stock to leave` abstains.
 
 ## Sentries (`cargo test -p rs_cam_core -q <args>`)
 

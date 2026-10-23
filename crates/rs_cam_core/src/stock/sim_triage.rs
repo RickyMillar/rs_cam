@@ -1085,7 +1085,9 @@ fn standing_material_finding(
 /// its own target (`stock::standing_islands::measure_rough_coverage`).
 ///
 /// One finding per rough, none when the reading abstained or found no
-/// island. The message lists the islands tallest first, each with its
+/// island. The message lists the free islands first (a hole core, a
+/// spur), then the ones at a wall, tallest first in each group (A4: the
+/// band and the wall strips no longer hide the free islands), each with its
 /// height, width, area and place, up to [`ADVISORY_CAP_PER_TOOLPATH`] (the
 /// triage's per-toolpath display budget), then "N more". The full list is
 /// on [`SimulationTriage::coverage`]. No spur threshold: the operator reads
@@ -1130,7 +1132,8 @@ pub(crate) fn rough_coverage_finding(
     let mut message = format!(
         "{}the rough leaves {count} island(s) standing more than {:.2} mm above its target \
          (the floor its plan can reach with its tool, {:.2} mm stock to leave in it), \
-         {at_wall} of them against a wall: {:.1} mm2 in all at cell {:.3} mm. Tallest first:",
+         {at_wall} of them against a wall: {:.1} mm2 in all at cell {:.3} mm. Free islands \
+         first, then the ones at a wall, tallest first in each group:",
         name.map_or_else(String::new, |n| format!("\"{n}\": ")),
         coverage.bar_mm,
         coverage.stock_to_leave_mm,

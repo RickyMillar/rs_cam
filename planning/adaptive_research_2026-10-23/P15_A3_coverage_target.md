@@ -261,3 +261,120 @@ Risks to watch in the run (checked by reading, not by cargo):
   not move the band.
 - The viz sentry `g_roughcov` keeps one 9 × 17 island only if the sample
   tool's centres reach the block. They did at `R − cell`, so they do at R.
+
+# A4 (2026-10-23, after E3): free islands first, an op-independent wall tag
+
+Source: P15_E_evidence.md §E3 (main checkout). E3 read every eye defect
+on the A3 target: 37 cores, 2 cores, the spur (13.0 × 0.3 mm) and the
+band. The terraces and the screw holes are gone, and the wanaka front
+fell from 910 to 178 islands. Two defects remained.
+
+## 1. The headline named only wall islands
+
+The band or the fringe headed "tallest first" on every rough, so the free
+cores and the spur never reached the headline.
+
+Fix: `measure_rough_coverage` sorts the islands free first
+(`touches_wall` false), then the ones at a wall. Within each group the
+order is tallest first. The finding's list follows that order. The message
+now says "Free islands first, then the ones at a wall, tallest first in
+each group". The narration sentence is:
+
+```text
+coverage: N free island(s) stand more than B mm above the target (…); the tallest is H mm high and W mm wide at (x, y); M more touch a wall; A mm2 in all.
+coverage: no free island stands more than B mm above the target (…); M island(s) touch a wall, the tallest H mm high and W mm wide at (x, y); A mm2 in all.
+```
+
+The class rule is unchanged: it counts every island over one step + one
+cell, whatever the order.
+
+## 2. The wall tag read the op, not the wall
+
+A3 tagged a cell when a neighbour's target stood more than ONE DEPTH PER
+PASS higher. So a 3.5 mm hex rim was a wall for the 3 mm op (step 3) and
+not for the 6 mm op (step 6): E3 counted 627 untagged rim slivers on op 0.
+
+New rule (in `StandingIsland::touches_wall`):
+
+```text
+rise(i)      = max over the 8 neighbours j of cell i of  wall_top(j) − target(i)
+wall_top(j)  = target(j), or the stock top of j when j is outside the reach
+touches_wall = max over the island's cells of rise(i) > max_standing − one cell
+```
+
+Derivation:
+
+- Material that leans on something at least as tall as itself is a strip
+  against a wall. Material with nothing that tall within one cell stands
+  free (a hole core, a spur).
+- The scale is the island's own peak height, `max_standing`. The rule
+  reads no op parameter, so two ops tag the same sliver the same way.
+  `RoughTarget::depth_per_pass_mm` is deleted, so the compiler holds this.
+- A strip left at the wall top stands EXACTLY as high as the wall rises. A
+  strict "rise > max_standing" misses it. So the test allows one cell: the
+  G-OVERCUTREF tolerance, the same quantisation of a column top that the
+  bar allows.
+- The plan leaves an unreachable column whole, so its stock top is its
+  wall top (the outer fringe and the band against the uncut stock).
+
+**The diagonal neighbours.** The A3 search already covered the 8 cells
+round each cell (`dr, dc ∈ {−1, 0, 1}`). So the 41 free one-cell slivers
+at the foot of the op 1 angled walls (0.8–1.1 mm tall) did not come from
+a 4-neighbour search. I think they come from the threshold: the target
+there rises by less than op 1's 3 mm step but by more than the sliver.
+The new rule compares the rise with the sliver's own 0.8–1.1 mm, so they
+should tag. E4 confirms. If they still read free, the high column is two
+cells away, and the cause is the grid-subset limit of §2. Then a wider
+ring is a new decision for the lead.
+
+A steep slope also tags. Its rise per cell, `cell × tan θ`, exceeds a
+short island's height minus one cell when θ is steep enough. That is a
+"wall" in this rule's sense; the class does not change.
+
+## 3. Sentry arm (i)
+
+`the_wall_tag_reads_the_island_and_free_islands_come_first`: the plate
+with the 10 mm hole of arm (h).
+
+- A one-cell sliver at the hole rim stands 4 mm, as high as the wall
+  rises. The 6 mm cutter and the 3 mm cutter both tag it.
+- A core in the hole centre stands 1.5 mm. It is SHORTER than the sliver,
+  but it stays free and comes first in the list.
+- The narration starts "coverage: 1 free island(s)" and says "1 more
+  touch a wall".
+
+Arms (a), (d), (e), (h) keep `touches_wall` false; arms (f), (g) keep it
+true under the new rule (rise 7.5 vs 7.5 and 4.0 vs 4.0, inside one cell).
+
+## 4. The adopt cost (measured by E3, not optimised)
+
+E3 on wanaka200: the adopt took 18.5 s, against 4.7 s in E2. Only the
+front rough measures; the back rough abstains before the target is built.
+With `N` = the cells of the checkpoint grid and `k = ⌊R / cell⌋`:
+
+```text
+cost ≈ N drop-cutter queries            (intended_floor_grid: the planner's heightmap on the checkpoint grid)
+     + N × (2k + 1) sliding-window steps (the flat erosion)
+     + 8 N                               (the wall rise)
+```
+
+At the 0.5 mm wanaka cell and the 6 mm tool, k = 6, so the erosion is 13
+steps per cell. The drop-cutter queries are the larger term: each query
+searches the mesh under a 6 mm disc. A later pass could reuse the
+planner's own heightmap (same function, its grid) or sample it coarser and
+interpolate. That is not done now (coordinator ruling).
+
+## 5. Files (A4)
+
+- `crates/rs_cam_core/src/stock/standing_islands.rs`: `wall_rise`
+  (replaces `wall_cells`), the per-island rule in `group_islands`, the
+  free-first sort, the narration, the field doc; `depth_per_pass_mm`
+  deleted from `RoughTarget`.
+- `crates/rs_cam_core/src/stock/sim_triage.rs`: the message wording and doc.
+- `crates/rs_cam_core/src/session/compute/simulation.rs`: no depth per pass.
+- `crates/rs_cam_core/tests/a_rough_island_above_the_stock_to_leave_is_flagged_g_roughcov.rs`:
+  arm (i), the shared hole fixture (`plate_with_hole`, `hole_target`).
+- `crates/rs_cam_core/src/stock/CLAUDE.md` (40 lines).
+
+`rustfmt --check` is clean on all four Rust files. No cargo was run.
+The verifier commands of §8 above cover A4 too.

@@ -379,8 +379,8 @@ impl ProjectSession {
     /// one producer): its mesh and spatial index, its cutter (the tool
     /// definition the planner's heightmap reads), its tool-centre boundary
     /// polygons (`boundary_centre`, the polygons the boundary clip keeps the
-    /// tool centre in), a pinned `bottom_z`, the op's depth per pass (the
-    /// wall rise) and the op's `stock_to_leave_axial` (its only leave dial,
+    /// tool centre in), a pinned `bottom_z` and the op's
+    /// `stock_to_leave_axial` (its only leave dial,
     /// `adaptive3d_effective_stock_to_leave`). The measure builds the plan's
     /// reachable floor from them (A3).
     ///
@@ -548,7 +548,6 @@ impl ProjectSession {
                                     index: spatial,
                                     cutter: &inputs.tool_def,
                                     stock_to_leave_mm: cfg.stock_to_leave_axial,
-                                    depth_per_pass_mm: cfg.depth_per_pass,
                                     pinned_floor_z: inputs
                                         .heights
                                         .bottom_pinned
