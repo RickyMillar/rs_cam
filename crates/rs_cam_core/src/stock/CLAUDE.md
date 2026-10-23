@@ -10,7 +10,7 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
 - `sim_triage.rs` — "what should I act on?"; `sim_measurability.rs` — can it be measured?
 - `collision.rs` — three-state `HolderCollisionCheck`; `radial_profile.rs` — the LUT.
   `stock_mesh.rs`, `dexel_mesh.rs`, `dexel_mesh_mc.rs` — mesh extraction; colours: `export/`.
-- `material_slot.rs` — S1 slots; `cut_as.rs` — S6 `CutAs` and the one helper.
+- `material_slot.rs` — S1 slots; `cut_as.rs` — S6 `CutAs`; `standing_islands.rs` — THE walk of material above a target and its islands (union audit, 3D Rough coverage).
 
 ## Invariants
 
@@ -29,12 +29,12 @@ The entry point for an operator answer: `stock::sim_triage::SimulationTriage`.
   `Arc::clone`, never a deep copy of the trace (G-SIMMEM).
 - `crosses_standing_material` (G-OVERCUTREF): a stepped op is read against its
   realised step + one cell (`commanded_step_mm`), never its median bite.
+- `rough_leaves_islands` (G-ROUGHCOV): target = model + stock to leave (mesh-bbox floor off the model); bar = stock to leave + one cell; `cell > stock to leave` abstains.
 
 ## Sentries (`cargo test -p rs_cam_core -q <args>`)
 
 - `--test material_per_segment_s1`, `--test added_material_cuts_as_stock_s6`, `--test measurability_abstention_r8`,
   `--test narration_denominator_and_hints_d7`, `--test air_cut_one_time_base_g_airdenom`, `--test engagement_denominator_m3`,
   `--test a_fresh_stock_pass_at_its_own_depth_is_not_an_overcut_g_overcutref`,
-  `--test a_link_through_stock_is_flagged_g_linkplough` (`link_cuts_stock`; `links_on_mesh` is out)
-- `--test rapid_check_catches_real_side_strikes_g_rapid6497` and `--test
-  rapid_check_catches_shallow_plunges_g_rapidplungetol`: the strike classes to keep.
+  `--test a_link_through_stock_is_flagged_g_linkplough` (`link_cuts_stock`; `links_on_mesh` is out), `--test a_rough_island_above_the_stock_to_leave_is_flagged_g_roughcov`
+- `--test rapid_check_catches_real_side_strikes_g_rapid6497` and `--test rapid_check_catches_shallow_plunges_g_rapidplungetol`: the strike classes to keep.

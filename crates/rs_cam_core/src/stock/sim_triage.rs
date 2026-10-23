@@ -58,6 +58,19 @@ use crate::trace::toolpath_spans::{RegionSpanRole, SpanId};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The rules the triage computes itself, each scoped to one toolpath: from
+/// the cut trace (standing material, entries, links), the kinematic
+/// readings (plunge class), the rest comparisons and the rough coverage
+/// readings. No other diagnostic source makes them.
+pub const TRIAGE_OWN_TOOLPATH_RULES: &[&str] = &[
+    ids::PROJECT_CROSSES_STANDING_MATERIAL,
+    ids::PROJECT_ENTRY_LOAD,
+    ids::PROJECT_LINK_CUTS_STOCK,
+    ids::PROJECT_PLUNGE_CLASS_LOAD,
+    ids::PROJECT_REST_SLOWER_THAN_FRESH,
+    ids::PROJECT_ROUGH_LEAVES_ISLANDS,
+];
+
 /// Advisories retained per toolpath before truncation.
 pub const ADVISORY_CAP_PER_TOOLPATH: usize = 10;
 /// Advisories retained per project before truncation.
@@ -246,6 +259,13 @@ pub struct SimulationTriage {
     pub advisories: Bounded<Finding>,
     /// Class D tallies, explicitly labelled.
     pub counts: ChannelCounts,
+    /// G-ROUGHCOV / G-THINSTAND: the coverage reading of each enabled 3D
+    /// Rough with a checkpoint in this run, measured or abstained, with
+    /// every island (area, height, width). A reading with no island is a
+    /// measured zero; an op with no reading here was not measured. A
+    /// reading with islands also raises `project.rough_leaves_islands`.
+    #[serde(default)]
+    pub coverage: Vec<crate::stock::standing_islands::RoughCoverageReading>,
 }
 
 impl SimulationTriage {
@@ -267,11 +287,36 @@ impl SimulationTriage {
             actions,
             advisories,
             counts: _,
+            coverage: _,
         } = self;
         safety
             .iter()
             .chain(actions.iter())
             .chain(advisories.items.iter())
+    }
+
+    /// The safety and action findings of the rules this triage computes
+    /// itself ([`TRIAGE_OWN_TOOLPATH_RULES`]) that are scoped to
+    /// `toolpath_id`. `ProjectSession::diagnose_toolpath_with_evidence`
+    /// appends them, so `get_toolpath_diagnostics` reads them (lead ruling
+    /// 2026-10-23, G-ROUGHCOV).
+    ///
+    /// Not here: the advisories (air-cut hotspots, capped and deduped per
+    /// project), and the findings the triage copies from other sources
+    /// (collisions, the project diagnostics), which that list already reads
+    /// from those sources.
+    pub fn own_toolpath_findings(
+        &self,
+        toolpath_id: ToolpathId,
+    ) -> impl Iterator<Item = &Diagnostic> {
+        self.safety
+            .iter()
+            .chain(self.actions.iter())
+            .map(|f| &f.diagnostic)
+            .filter(move |d| {
+                d.scope == (Scope::Toolpath { id: toolpath_id })
+                    && TRIAGE_OWN_TOOLPATH_RULES.contains(&d.id.as_str())
+            })
     }
 
     /// Highest severity anywhere in the actionable lists.
@@ -354,7 +399,13 @@ impl SimulationTriage {
     /// know which toolpaths are rest-driven use
     /// [`Self::build_with_rest_context`]; the session does.
     pub fn build(inputs: &TriageInputs<'_>) -> Self {
-        Self::build_with_rest_context(inputs, &BTreeSet::new(), &BTreeSet::new(), &BTreeMap::new())
+        Self::build_with_rest_context(
+            inputs,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &[],
+        )
     }
 
     /// [`Self::build`] plus the set of rest-driven toolpath ids
@@ -376,11 +427,17 @@ impl SimulationTriage {
     /// cycle time of the same operation on fresh stock
     /// (`ProjectSession::current_rest_fresh_comparisons`). See
     /// [`rest_slower_than_fresh_finding`].
+    ///
+    /// `rough_coverage` holds the coverage reading of each 3D Rough
+    /// (`ProjectSession::rough_coverage_readings`, G-ROUGHCOV). The triage
+    /// publishes them on [`SimulationTriage::coverage`], and each reading
+    /// with islands raises one finding ([`rough_coverage_finding`]).
     pub fn build_with_rest_context(
         inputs: &TriageInputs<'_>,
         rest_driven: &BTreeSet<ToolpathId>,
         links_on_mesh: &BTreeSet<ToolpathId>,
         fresh_twin: &BTreeMap<ToolpathId, crate::compute::toolpath_stats::FreshTwinTime>,
+        rough_coverage: &[crate::stock::standing_islands::RoughCoverageReading],
     ) -> Self {
         // F189: every rule pushes here with its own class. ONE routing match
         // below puts each finding in its bucket.
@@ -544,6 +601,25 @@ impl SimulationTriage {
             }
         }
 
+        // G-ROUGHCOV / G-THINSTAND — the material a 3D Rough leaves above
+        // its own target, read on its checkpoint stock. A reading that
+        // abstained raises nothing (`NotMeasurable` abstains).
+        for reading in rough_coverage {
+            if let Some(f) = rough_coverage_finding(
+                reading,
+                inputs
+                    .commanded_depth_per_pass_mm
+                    .get(&reading.toolpath_id)
+                    .copied(),
+                inputs
+                    .toolpath_names
+                    .get(&reading.toolpath_id)
+                    .map(String::as_str),
+            ) {
+                found.push(f);
+            }
+        }
+
         // Phase 4 — the plunge-class backstop. Iterated over the utilization
         // map, NOT over `toolpath_summaries`: that list drops drill ops
         // (`metrics_not_applicable`) and covers only what the dexel run
@@ -649,6 +725,7 @@ impl SimulationTriage {
             actions,
             advisories: Bounded::with_total(advisories, ADVISORY_CAP_PER_PROJECT, advisories_total),
             counts: ChannelCounts::from_trace(inputs.trace),
+            coverage: rough_coverage.to_vec(),
         }
     }
 }
@@ -760,7 +837,10 @@ impl BiteReference {
 /// caller does not know the cell, the floor is the `f32` resolution of a
 /// removed column, [`crate::tool_load::depth::DEXEL_DEPTH_RESOLUTION_MM`]
 /// (EVIDENCE 5.1-6), which the depth gate uses on the same field.
-fn commanded_tolerance_mm(cell_mm: Option<f64>) -> f64 {
+///
+/// G-ROUGHCOV reads the same one-cell tolerance for the bar of a rough's
+/// coverage (`stock::standing_islands::measure_rough_coverage`).
+pub(crate) fn commanded_tolerance_mm(cell_mm: Option<f64>) -> f64 {
     let floor = crate::tool_load::depth::DEXEL_DEPTH_RESOLUTION_MM;
     cell_mm
         .filter(|c| c.is_finite() && *c > 0.0)
@@ -997,6 +1077,128 @@ fn standing_material_finding(
             wasted_runtime_s: 0.0,
             min_radial_engagement: worst_sample.engagement.radial_woc_fraction,
             sample_count: over,
+        },
+    })
+}
+
+/// G-ROUGHCOV / G-THINSTAND: report the islands a 3D Rough leaves above
+/// its own target (`stock::standing_islands::measure_rough_coverage`).
+///
+/// One finding per rough, none when the reading abstained or found no
+/// island. The message lists the islands tallest first, each with its
+/// height, width, area and place, up to [`ADVISORY_CAP_PER_TOOLPATH`] (the
+/// triage's per-toolpath display budget), then "N more". The full list is
+/// on [`SimulationTriage::coverage`]. No spur threshold: the operator reads
+/// the height and the width and decides.
+///
+/// # The class
+///
+/// `Safety` when the tallest island stands more than one commanded depth
+/// per pass plus one cell above the target. That is the reference of
+/// `crosses_standing_material` (G-OVERCUTREF): a later pass that meets the
+/// island takes more than one commanded step in one bite, and a thin
+/// island of that height is the G-SPUR column that can snap. `Action`
+/// otherwise, and when the op has no commanded step.
+pub(crate) fn rough_coverage_finding(
+    reading: &crate::stock::standing_islands::RoughCoverageReading,
+    commanded_step: Option<f64>,
+    name: Option<&str>,
+) -> Option<Finding> {
+    use crate::stock::standing_islands::RoughCoverageOutcome;
+    let RoughCoverageOutcome::Measured(coverage) = &reading.outcome else {
+        return None;
+    };
+    let tallest = coverage.islands.first()?;
+    let toolpath_id = reading.toolpath_id;
+    let step_bar = commanded_step
+        .filter(|s| s.is_finite() && *s > 0.0)
+        .map(|s| s + coverage.tolerance_mm);
+    let over_step = step_bar.map_or(0, |bar| {
+        coverage
+            .islands
+            .iter()
+            .filter(|i| i.max_standing_mm > bar)
+            .count()
+    });
+    let (class, category, severity) = if over_step > 0 {
+        (TriageClass::Safety, Category::Safety, Severity::Critical)
+    } else {
+        (TriageClass::Action, Category::Quality, Severity::Caution)
+    };
+    let count = coverage.islands.len();
+    let mut message = format!(
+        "{}the rough leaves {count} island(s) standing more than {:.2} mm above its target \
+         (model + {:.2} mm stock to leave; the floor through holes and outside the part): \
+         {:.1} mm2 in all at cell {:.3} mm. Tallest first:",
+        name.map_or_else(String::new, |n| format!("\"{n}\": ")),
+        coverage.bar_mm,
+        coverage.stock_to_leave_mm,
+        coverage.above_spec_area_mm2,
+        coverage.cell_mm,
+    );
+    for island in coverage.islands.iter().take(ADVISORY_CAP_PER_TOOLPATH) {
+        message.push_str(&format!(
+            " {:.2} mm high, {:.2} mm wide, {:.1} mm2 at ({:.1}, {:.1});",
+            island.max_standing_mm,
+            island.min_width_mm,
+            island.area_mm2,
+            island.peak[0],
+            island.peak[1],
+        ));
+    }
+    let hidden = count.saturating_sub(ADVISORY_CAP_PER_TOOLPATH);
+    if hidden > 0 {
+        message.push_str(&format!(" and {hidden} more."));
+    }
+    if let Some(bar) = step_bar
+        && over_step > 0
+    {
+        message.push_str(&format!(
+            " {over_step} island(s) stand taller than one depth per pass plus one cell \
+             ({bar:.2} mm): a later pass meets more than one commanded step there."
+        ));
+    }
+    let (rhs_label, rhs_value) = match step_bar {
+        Some(bar) if over_step > 0 => ("depth per pass + one cell", bar),
+        _ => ("stock to leave + one cell", coverage.bar_mm),
+    };
+    Some(Finding {
+        class,
+        dedup_key: DedupKey {
+            id: DiagnosticId::from(ids::PROJECT_ROUGH_LEAVES_ISLANDS),
+            toolpath_id: Some(toolpath_id),
+            region: None,
+            semantic_item_id: None,
+            bucket: [0, 0, 0],
+        },
+        diagnostic: Diagnostic {
+            id: DiagnosticId::from(ids::PROJECT_ROUGH_LEAVES_ISLANDS),
+            scope: Scope::Toolpath { id: toolpath_id },
+            category,
+            severity,
+            confidence: Confidence::Verified,
+            state: DiagnosticState::Current,
+            source: Source::Simulation,
+            message,
+            evidence: Some(DiagnosticEvidence::GeometryCompare {
+                lhs_label: "tallest island above the rough target".to_owned(),
+                lhs_value: tallest.max_standing_mm,
+                rhs_label: rhs_label.to_owned(),
+                rhs_value,
+                unit: "mm".to_owned(),
+            }),
+            fix: None,
+            supersedes: vec![],
+            suppressed_diagnostics: vec![],
+        },
+        occurrences: count,
+        worst: WorstEvidence {
+            position: tallest.peak,
+            move_index: 0,
+            duration_s: 0.0,
+            wasted_runtime_s: 0.0,
+            min_radial_engagement: 0.0,
+            sample_count: coverage.above_spec_cells,
         },
     })
 }
@@ -2546,6 +2748,7 @@ mod tests {
             &rest,
             &BTreeSet::new(),
             &BTreeMap::new(),
+            &[],
         );
         let f = t
             .actions
@@ -2710,5 +2913,81 @@ mod tests {
         );
         assert_eq!(obs.over_threshold_samples, 300);
         assert!(obs.exceeds());
+    }
+
+    // ── G-ROUGHCOV / G-THINSTAND ──────────────────────────────────────
+
+    fn coverage_reading(
+        heights: &[f64],
+    ) -> crate::stock::standing_islands::RoughCoverageReading {
+        use crate::stock::standing_islands::{
+            RoughCoverage, RoughCoverageOutcome, RoughCoverageReading, StandingIsland,
+        };
+        let islands: Vec<StandingIsland> = heights
+            .iter()
+            .map(|&h| StandingIsland {
+                cells: 4,
+                area_mm2: 0.25,
+                max_standing_mm: h,
+                peak: [1.0, 2.0, 3.0],
+                centroid: [1.0, 2.0],
+                bbox: [0.5, 1.5, 1.5, 2.5],
+                min_width_mm: 0.5,
+            })
+            .collect();
+        RoughCoverageReading {
+            toolpath_id: ToolpathId::from_raw(1),
+            outcome: RoughCoverageOutcome::Measured(RoughCoverage {
+                cell_mm: 0.25,
+                stock_to_leave_mm: 0.5,
+                tolerance_mm: 0.25,
+                bar_mm: 0.75,
+                compared_cells: 100,
+                compared_area_mm2: 6.25,
+                above_spec_cells: 4 * islands.len(),
+                above_spec_area_mm2: 0.25 * islands.len() as f64,
+                islands,
+            }),
+        }
+    }
+
+    /// New pin: an island taller than one depth per pass plus one cell is
+    /// a safety finding; a lower one is an action; no island, no finding.
+    #[test]
+    fn g_roughcov_the_class_reads_the_commanded_step() {
+        let tall = rough_coverage_finding(&coverage_reading(&[3.0, 1.0]), Some(2.0), None)
+            .expect("a rough with islands is reported");
+        assert_eq!(tall.class, TriageClass::Safety);
+        assert_eq!(tall.occurrences, 2);
+        let low = rough_coverage_finding(&coverage_reading(&[2.1]), Some(2.0), None)
+            .expect("a rough with islands is reported");
+        assert_eq!(low.class, TriageClass::Action, "2.1 <= 2.0 + one 0.25 cell");
+        let no_step = rough_coverage_finding(&coverage_reading(&[30.0]), None, None)
+            .expect("a rough with islands is reported");
+        assert_eq!(no_step.class, TriageClass::Action);
+        assert!(rough_coverage_finding(&coverage_reading(&[]), Some(2.0), None).is_none());
+    }
+
+    /// New pin: the readings reach the published triage and its bucket.
+    #[test]
+    fn g_roughcov_the_reading_reaches_the_triage() {
+        let trace = SimulationCutTrace::from_samples(0.5, vec![]);
+        let m = MeasurabilityReport::default();
+        let d = BTreeMap::new();
+        let k = BTreeMap::new();
+        let reading = coverage_reading(&[1.0]);
+        let t = SimulationTriage::build_with_rest_context(
+            &inputs(&trace, &m, &[], &[], &[], &d, &k),
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            std::slice::from_ref(&reading),
+        );
+        assert_eq!(t.coverage, vec![reading]);
+        assert!(
+            t.actions
+                .iter()
+                .any(|f| f.diagnostic.id.as_str() == ids::PROJECT_ROUGH_LEAVES_ISLANDS)
+        );
     }
 }

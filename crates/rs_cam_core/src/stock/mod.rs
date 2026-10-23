@@ -14,4 +14,5 @@ pub mod radial_profile;
 pub mod sim_measurability;
 pub mod sim_triage;
 pub mod simulation_cut;
+pub mod standing_islands;
 pub mod stock_mesh;

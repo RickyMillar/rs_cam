@@ -114,6 +114,8 @@ pub(crate) const OWNER_TAB: &[(&str, Option<ToolpathTab>)] = {
         (i::PROJECT_ENTRY_LOAD, L),
         (i::PROJECT_LINK_CUTS_STOCK, L),
         (i::PROJECT_PLUNGE_CLASS_LOAD, L),
+        // G-ROUGHCOV: the Linking tab, as the other stock-reading rules above.
+        (i::PROJECT_ROUGH_LEAVES_ISLANDS, L),
         (i::PROJECT_REST_SLOWER_THAN_FRESH, C),
         // Core keeps this id `pub(crate)`, so the row names its text.
         ("project.kinematic_utilization", NO),

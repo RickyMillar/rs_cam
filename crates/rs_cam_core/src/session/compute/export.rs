@@ -417,6 +417,12 @@ impl ProjectSession {
     /// disagree about one collision. The cut trace comes from the evidence
     /// too.
     ///
+    /// It also appends the toolpath's own simulation-triage findings
+    /// ([`crate::stock::sim_triage::SimulationTriage::own_toolpath_findings`]),
+    /// so the per-op MCP list carries the rough coverage islands
+    /// (G-ROUGHCOV) and the link and standing-material cuts. The cost is one
+    /// triage build per call.
+    ///
     /// A caller that also publishes the project list must use
     /// [`Self::diagnose_toolpath_with_trace`] for the per-toolpath half, or
     /// it publishes each safety finding twice.
@@ -445,6 +451,14 @@ impl ProjectSession {
                 .into_iter()
                 .filter(|diag| diag.category == Category::Safety && names_this_toolpath(diag)),
         );
+        // Lead ruling 2026-10-23 (G-ROUGHCOV): the findings the simulation
+        // triage computes itself for this toolpath (rough coverage islands,
+        // link and standing-material cuts, entry load, plunge class, rest
+        // slower than fresh). Each carries this toolpath's id in its scope;
+        // no other source makes them, so none is listed twice. The triage
+        // advisories (air-cut hotspots) are not appended.
+        let triage = self.simulation_triage(evidence);
+        out.extend(triage.own_toolpath_findings(id).cloned());
         Ok(out)
     }
 

@@ -187,6 +187,18 @@ impl RsCamApp {
             narration.push_str("\n\n");
             narration.push_str(&sentence);
         }
+        // G-ROUGHCOV (lead ruling 2026-10-23): one coverage sentence for a
+        // 3D Rough, from the same core reading the triage publishes on
+        // `triage.coverage`: a measured zero, the islands with the tallest,
+        // or the abstention reason. No sentence when the op is not a 3D
+        // Rough or the stored run is not the shown run (not measured). The
+        // reading walks the op's stock grid once, so this sentence costs
+        // more than the rest of the narration.
+        let evidence = viz_project_evidence(state);
+        if let Some(reading) = state.session().rough_coverage_reading(tc.id, &evidence) {
+            narration.push_str("\n\n");
+            narration.push_str(&reading.narration_sentence());
+        }
         if let Some(stage) = stored_stage
             && !narrated_is_stored
             && stage != rs_cam_core::session::FeedStage::Planned

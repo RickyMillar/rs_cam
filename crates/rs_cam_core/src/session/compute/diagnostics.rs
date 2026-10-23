@@ -390,6 +390,7 @@ fn triage_from_parts(
         ToolpathId,
         &crate::machine::kinematic_utilization::ToolpathKinematicUtilization,
     >,
+    rough_coverage: &[crate::stock::standing_islands::RoughCoverageReading],
 ) -> crate::stock::sim_triage::SimulationTriage {
     use crate::stock::sim_triage::{SimulationTriage, TriageInputs, commanded_step_mm};
 
@@ -481,6 +482,7 @@ fn triage_from_parts(
         &rest_driven,
         &links_on_mesh,
         fresh_twin,
+        rough_coverage,
     )
 }
 
@@ -994,12 +996,16 @@ impl ProjectSession {
         // which may hold a different run, or none.
         let owned = self.kinematic_utilizations(Some(trace));
         let kinematics = owned.iter().map(|(id, util)| (*id, util)).collect();
+        // G-ROUGHCOV: the coverage of each 3D Rough, from the checkpoints
+        // of the stored run (`rough_coverage_readings`).
+        let rough_coverage = self.rough_coverage_readings(evidence);
         triage_from_parts(
             &TriageView::of(self),
             evidence,
             trace,
             project_diagnostics,
             &kinematics,
+            &rough_coverage,
         )
     }
 
@@ -1083,12 +1089,16 @@ impl ProjectSession {
             })
             .chain(missing.iter().map(|util| (util.toolpath_id, util)))
             .collect();
+        // G-ROUGHCOV: the coverage of each 3D Rough, from the checkpoints
+        // of the stored run (`rough_coverage_readings`).
+        let rough_coverage = self.rough_coverage_readings(evidence);
         triage_from_parts(
             &TriageView::of(self),
             evidence,
             trace,
             project_diagnostics,
             &kinematics,
+            &rough_coverage,
         )
     }
 

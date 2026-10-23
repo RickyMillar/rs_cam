@@ -154,6 +154,13 @@ diag_ids! {
     /// reads the model only. See
     /// [`crate::stock::sim_triage::link_cut_observation`].
     pub const PROJECT_LINK_CUTS_STOCK: &str = "project.link_cuts_stock";
+    /// G-ROUGHCOV / G-THINSTAND (2026-10-23). A 3D Rough leaves islands of
+    /// material that stand more than its stock to leave plus one cell above
+    /// its own target (model + stock to leave; the floor through holes and
+    /// outside the part), read on the op's checkpoint stock. Each island
+    /// carries its area, height and width. See
+    /// [`crate::stock::standing_islands::measure_rough_coverage`].
+    pub const PROJECT_ROUGH_LEAVES_ISLANDS: &str = "project.rough_leaves_islands";
     /// Phase 4 (2026-09-07). The plunge-class BACKSTOP: a vertical-dominant fed
     /// descent in the EMITTED motion runs faster in Z than the operation's own
     /// `plunge_rate`. Measured by [`crate::machine::kinematic_utilization`] on the stored

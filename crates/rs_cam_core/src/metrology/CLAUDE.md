@@ -15,7 +15,7 @@ feature and a `required-features` row in `Cargo.toml`.
 - `census.rs` — the two strategy-gate censuses: direction coherence and
   curvature.
 - `monge.rs` — Monge-quadric curvature on an up-facing heightfield.
-- `union_coverage.rs` — the union-coverage audit.
+- `union_coverage.rs` — the union-coverage audit; its walk and flood are `stock/standing_islands.rs` (shared with the 3D Rough coverage).
 
 ## Invariants
 

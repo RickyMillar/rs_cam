@@ -34,6 +34,14 @@
 //! the dexel COLUMNS instrument, stated so nobody reads a wall column as a
 //! flat-ground defect.
 //!
+//! # One measure, two callers (G-ROUGHCOV, 2026-10-23)
+//!
+//! The column walk and the hotspot flood are
+//! `stock::standing_islands` (`StandingField::walk`, `standing_islands`),
+//! which the 3D Rough coverage reading in the simulation triage also calls.
+//! They moved there because this module is behind `test-support` (F085).
+//! The arithmetic and the flood order did not change.
+//!
 //! # What it deliberately does NOT reuse
 //!
 //! `SimulationResult::column_deviations` looks like this measurement but
@@ -61,11 +69,9 @@
 use crate::dexel_stock::TriDexelStock;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::metrology::monge::surface_z;
+use crate::stock::standing_islands::{StandingField, standing_islands};
 
 use crate::geo::P2;
-
-#[cfg(feature = "parallel")]
-use rayon::prelude::*;
 
 /// Dials for the audit. No defaults on purpose: `stock_to_leave` and the
 /// spec tolerance are project statements, not constants of the ruler.
@@ -213,38 +219,15 @@ pub fn audit_stock_vs_model(
     index: &SpatialIndex,
     params: &UnionCoverageParams,
 ) -> UnionCoverageReport {
+    // The ONE column walk (`stock::standing_islands`): `NAN` = off-model,
+    // `NEG_INFINITY` = model under the column but the stock is cut through.
     let grid = &stock.z_grid;
     let cell = grid.cell_size;
     let (rows, cols) = (grid.rows, grid.cols);
-
-    // Per-column standing, row-major. `NAN` = off-model; `-INFINITY` = model
-    // under the column but the stock is cut through (no material).
-    let standing_row = |row: usize| -> Vec<f64> {
-        (0..cols)
-            .map(|col| {
-                let (u, v) = grid.cell_to_world(row, col);
-                let Some(model_top) = surface_z(model, index, P2::new(u, v)) else {
-                    return f64::NAN;
-                };
-                match grid.top_z_at(row, col) {
-                    Some(top) => f64::from(top) - (model_top + params.stock_to_leave_mm),
-                    None => f64::NEG_INFINITY,
-                }
-            })
-            .collect()
-    };
-    #[cfg(feature = "parallel")]
-    let standing: Vec<Vec<f64>> = (0..rows).into_par_iter().map(standing_row).collect();
-    #[cfg(not(feature = "parallel"))]
-    let standing: Vec<Vec<f64>> = (0..rows).map(standing_row).collect();
-
-    let at = |row: usize, col: usize| -> f64 {
-        standing
-            .get(row)
-            .and_then(|r| r.get(col))
-            .copied()
-            .unwrap_or(f64::NAN)
-    };
+    let field = StandingField::walk(grid, |_, _, at| {
+        surface_z(model, index, at).map(|model_top| model_top + params.stock_to_leave_mm)
+    });
+    let at = |row: usize, col: usize| -> f64 { field.at(row, col) };
 
     let mut compared_cells = 0usize;
     let mut off_model_cells = 0usize;
@@ -283,73 +266,17 @@ pub fn audit_stock_vs_model(
     finite_standing.sort_by(f64::total_cmp);
     let p99 = crate::metrology::spacing::quantile(&finite_standing, 0.99);
 
-    // Hotspots: 4-neighbour flood over above-spec cells.
-    let above = |row: usize, col: usize| -> bool { at(row, col) > params.spec_tolerance_mm };
-    let mut visited = vec![false; rows * cols];
-    let mut hotspots: Vec<Hotspot> = Vec::new();
-    let mut stack: Vec<(usize, usize)> = Vec::new();
-    for row in 0..rows {
-        for col in 0..cols {
-            let idx = row * cols + col;
-            if visited.get(idx).copied().unwrap_or(true) || !above(row, col) {
-                continue;
-            }
-            let mut cells = 0usize;
-            let mut worst = f64::NEG_INFINITY;
-            let mut sum_x = 0.0f64;
-            let mut sum_y = 0.0f64;
-            let mut bbox = [
-                f64::INFINITY,
-                f64::INFINITY,
-                f64::NEG_INFINITY,
-                f64::NEG_INFINITY,
-            ];
-            stack.push((row, col));
-            if let Some(v) = visited.get_mut(idx) {
-                *v = true;
-            }
-            while let Some((r, c)) = stack.pop() {
-                cells += 1;
-                let s = at(r, c);
-                if s > worst {
-                    worst = s;
-                }
-                let (x, y) = grid.cell_to_world(r, c);
-                sum_x += x;
-                sum_y += y;
-                bbox[0] = bbox[0].min(x);
-                bbox[1] = bbox[1].min(y);
-                bbox[2] = bbox[2].max(x);
-                bbox[3] = bbox[3].max(y);
-                let neighbours = [
-                    (r.wrapping_sub(1), c),
-                    (r + 1, c),
-                    (r, c.wrapping_sub(1)),
-                    (r, c + 1),
-                ];
-                for (nr, nc) in neighbours {
-                    if nr >= rows || nc >= cols {
-                        continue;
-                    }
-                    let nidx = nr * cols + nc;
-                    if visited.get(nidx).copied().unwrap_or(true) || !above(nr, nc) {
-                        continue;
-                    }
-                    if let Some(v) = visited.get_mut(nidx) {
-                        *v = true;
-                    }
-                    stack.push((nr, nc));
-                }
-            }
-            hotspots.push(Hotspot {
-                area_mm2: cells as f64 * cell * cell,
-                cells,
-                max_standing_mm: worst,
-                centroid: P2::new(sum_x / cells as f64, sum_y / cells as f64),
-                bbox,
-            });
-        }
-    }
+    // Hotspots: the ONE 4-neighbour flood over above-spec cells.
+    let mut hotspots: Vec<Hotspot> = standing_islands(&field, params.spec_tolerance_mm)
+        .into_iter()
+        .map(|island| Hotspot {
+            area_mm2: island.area_mm2,
+            cells: island.cells,
+            max_standing_mm: island.max_standing_mm,
+            centroid: P2::new(island.centroid[0], island.centroid[1]),
+            bbox: island.bbox,
+        })
+        .collect();
     hotspots.sort_by(|a, b| b.area_mm2.total_cmp(&a.area_mm2));
     let hotspot_count = hotspots.len();
     hotspots.truncate(params.max_hotspots);

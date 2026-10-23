@@ -352,6 +352,157 @@ impl ProjectSession {
         Ok(self.simulation.as_ref().unwrap())
     }
 
+    /// G-ROUGHCOV / G-THINSTAND: the coverage reading of each enabled 3D
+    /// Rough (`OperationConfig::Adaptive3d`) in the stored simulation, read
+    /// on the op's own checkpoint stock against the op's own target
+    /// ([`crate::stock::standing_islands::measure_rough_coverage`]).
+    ///
+    /// The simulation triage entry points call this and hand the result to
+    /// `SimulationTriage::build_with_rest_context`, so `run_simulation` and
+    /// `get_diagnostics` publish it.
+    ///
+    /// # Which run
+    ///
+    /// The checkpoints are on `self.simulation`; the evidence a caller hands
+    /// the triage may come from another copy of a run (the GUI keeps its
+    /// own). The reading uses `self.simulation` only when its boundaries are
+    /// the evidence's boundaries, the same toolpaths in the same move
+    /// ranges. Otherwise it returns no reading: not measured, never clean.
+    /// The target is read from the session as it is now; the triage cache
+    /// keys hold the trace and the results, so a new run or a regenerated
+    /// rough gives a new reading.
+    ///
+    /// # The target and the reach
+    ///
+    /// From the op's generation inputs (`resolve_generation_inputs`, the
+    /// one producer): its mesh and spatial index, its tool-centre boundary
+    /// polygons (`boundary_centre`, the polygons the boundary clip keeps the
+    /// tool centre in) with half the tool diameter, a pinned `bottom_z`, and
+    /// the op's `stock_to_leave_axial` (its only leave dial,
+    /// `adaptive3d_effective_stock_to_leave`).
+    ///
+    /// # Abstentions
+    ///
+    /// * A setup that is not the identity setup (its checkpoint carries a
+    ///   `mesh_frame`): the checkpoint stock is setup-local, and this pass
+    ///   reads the identity frame only (F-024: an identity group's grid is
+    ///   in the world frame, the frame of the generation inputs).
+    /// * No mesh, or inputs that do not resolve.
+    /// * A cell coarser than the stock to leave (in the measure).
+    pub(crate) fn rough_coverage_readings(
+        &self,
+        evidence: &crate::session::ProjectEvidence<'_>,
+    ) -> Vec<crate::stock::standing_islands::RoughCoverageReading> {
+        if !self.stored_run_is(evidence) {
+            return Vec::new();
+        }
+        self.toolpath_configs
+            .iter()
+            .enumerate()
+            .filter_map(|(index, _)| self.rough_coverage_at(index))
+            .collect()
+    }
+
+    /// The coverage reading of ONE toolpath, by id: the door
+    /// `narrate_toolpath` reads (lead ruling 2026-10-23). `None` when the
+    /// toolpath is not an enabled 3D Rough, has no checkpoint, or the
+    /// stored run is not the evidence's run. Same rules as
+    /// [`Self::rough_coverage_readings`].
+    ///
+    /// Cost: one generation-input resolve and one `surface_z_at` per grid
+    /// column of the op's stock.
+    pub fn rough_coverage_reading(
+        &self,
+        toolpath_id: ToolpathId,
+        evidence: &crate::session::ProjectEvidence<'_>,
+    ) -> Option<crate::stock::standing_islands::RoughCoverageReading> {
+        if !self.stored_run_is(evidence) {
+            return None;
+        }
+        let index = self
+            .toolpath_configs
+            .iter()
+            .position(|tc| tc.id == toolpath_id)?;
+        self.rough_coverage_at(index)
+    }
+
+    /// True when `self.simulation` is the run of `evidence`: the same
+    /// toolpaths in the same move ranges.
+    fn stored_run_is(&self, evidence: &crate::session::ProjectEvidence<'_>) -> bool {
+        let Some(sim) = self.simulation.as_ref() else {
+            return false;
+        };
+        sim.boundaries.len() == evidence.boundaries.len()
+            && sim
+                .boundaries
+                .iter()
+                .zip(&evidence.boundaries)
+                .all(|(b, &(id, start, end))| {
+                    b.id == id && b.start_move == start && b.end_move == end
+                })
+    }
+
+    /// The reading of the toolpath at `index` on `self.simulation`.
+    fn rough_coverage_at(
+        &self,
+        index: usize,
+    ) -> Option<crate::stock::standing_islands::RoughCoverageReading> {
+        use crate::stock::standing_islands::{
+            RoughCoverageAbstention, RoughCoverageOutcome, RoughCoverageReading, RoughReach,
+            RoughTarget, measure_rough_coverage,
+        };
+        use crate::tool::MillingCutter;
+
+        let sim = self.simulation.as_ref()?;
+        let tc = self.toolpath_configs.get(index)?;
+        let crate::compute::catalog::OperationConfig::Adaptive3d(cfg) = &tc.operation else {
+            return None;
+        };
+        if !tc.enabled {
+            return None;
+        }
+        let checkpoint = sim
+            .boundaries
+            .iter()
+            .position(|b| b.id == tc.id)
+            .and_then(|bi| sim.checkpoints.iter().find(|c| c.boundary_index == bi))?;
+        let outcome = if checkpoint.mesh_frame.is_some() {
+            RoughCoverageOutcome::NotMeasurable(RoughCoverageAbstention::SetupNotIdentity)
+        } else {
+            match self.resolve_generation_inputs(index, &AtomicBool::new(false)) {
+                Err(e) => {
+                    RoughCoverageOutcome::NotMeasurable(RoughCoverageAbstention::TargetUnresolved {
+                        error: e.to_string(),
+                    })
+                }
+                Ok(inputs) => match (inputs.mesh.as_deref(), inputs.spatial_index()) {
+                    (Some(mesh), Some(spatial)) => {
+                        let centre = inputs.boundary_centre();
+                        let target = RoughTarget {
+                            mesh,
+                            index: spatial,
+                            stock_to_leave_mm: cfg.stock_to_leave_axial,
+                            pinned_floor_z: inputs
+                                .heights
+                                .bottom_pinned
+                                .then_some(inputs.heights.bottom_z),
+                            reach: centre.as_deref().map(|centre| RoughReach {
+                                centre,
+                                tool_radius_mm: inputs.tool_def.diameter() / 2.0,
+                            }),
+                        };
+                        measure_rough_coverage(&checkpoint.mesh_stock, &target)
+                    }
+                    _ => RoughCoverageOutcome::NotMeasurable(RoughCoverageAbstention::NoModel),
+                },
+            }
+        };
+        Some(RoughCoverageReading {
+            toolpath_id: tc.id,
+            outcome,
+        })
+    }
+
     /// Modulate ONE toolpath's per-move feeds against a simulation cut
     /// trace, reading the material, the machine and the default spindle
     /// speed off the session.
