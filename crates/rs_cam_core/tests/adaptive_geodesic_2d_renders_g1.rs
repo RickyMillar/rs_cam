@@ -10,15 +10,18 @@
 //! protocol").
 //!
 //! - Strategies: `PathStrategy2d::Agent`, `PathStrategy2d::ContourSpiral`
-//!   and candidate (a) four times: `geodesic_g1` (`GeodesicOptions::G1`,
+//!   and candidate (a) five times: `geodesic_g1` (`GeodesicOptions::G1`,
 //!   the form of the G1 look, the "before"), `geodesic_a`
-//!   (`GeodesicOptions::C2`, the G1 fixes with the G1 join, the C3 state),
-//!   `geodesic_morph_alt` (`GeodesicOptions::C4_ALT`: the morph join, the
-//!   core spiral and half-pitch alternating legs in the lobes) and
-//!   `geodesic_morph_return` (`GeodesicOptions::C4_RETURN`: one-way legs
-//!   and a return through cleared stock).
+//!   (`GeodesicOptions::C2`, the G1 fixes with the G1 join, the C3 state,
+//!   the control), `geodesic_morph_alt` (`GeodesicOptions::C4_ALT`: the
+//!   morph join, the core spiral and half-pitch alternating legs in the
+//!   lobes), `geodesic_curv` (`GeodesicOptions::C5_CURV`: the curvature
+//!   spacing law, plain wraps and the G1 join) and `geodesic_curv_morph`
+//!   (`GeodesicOptions::C5_CURV_MORPH`: the spacing law and the morph).
 //! - The record columns, only when `ADAPTIVE_GEODESIC_EXTRA` is set (any
-//!   value): `geodesic_a_through` (the fixes with the G1 meeting rule),
+//!   value): `geodesic_morph_return` (`GeodesicOptions::C4_RETURN`, one-way
+//!   legs and a return; D4: more entries than the alternation),
+//!   `geodesic_a_through` (the fixes with the G1 meeting rule),
 //!   `geodesic_a_ramp` (the ramp join that C3 reverted, for its
 //!   refused-step dump) and `geodesic_morph_alt_full` (the brief's literal
 //!   alternation, one leg per band, for its refused-step dump). The 2D op exposes no contour-parallel strategy: its
@@ -50,7 +53,12 @@
 //!   producer (max reading, steps, steps over) of the emitted plan, and per
 //!   producer and part (spiral, morph leg, return, wrap, join) of the raw
 //!   plan, where a step over is a step the replay refuses; the first ten
-//!   such refused steps; and, for the morph join, the lobe counts.
+//!   such refused steps; for the morph join, the lobe counts; and the
+//!   cascade diagnostic (`CascadeReadout`, C5): per class, the steps a
+//!   replay model refuses, split into cascades (the step holds once every
+//!   step before it is cut) and intrinsic refusals, the first refusal of
+//!   each producer piece, and the first intrinsic refusals of each class
+//!   with their distance from the seed.
 //!
 //! A shipped column must be the product plan: the harness asserts that its
 //! toolpath equals `adaptive_toolpath` on the same outline, move by move.
@@ -77,8 +85,8 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use rs_cam_core::adaptive::research_geodesic::{
-    Candidate2d, GeodesicOptions, JoinRule, LobeMorph, MeetingRule, PassLoadReadout, Producer,
-    Run2d, Span2d, SpanKind, run_2d,
+    Candidate2d, CascadeReadout, GeodesicOptions, JoinRule, LobeMorph, MeetingRule,
+    PassLoadReadout, Producer, Refusal, Run2d, Span2d, SpanKind, run_2d,
 };
 use rs_cam_core::adaptive::{AdaptiveParams, KeepDownLinks, PathStrategy2d, adaptive_toolpath};
 use rs_cam_core::compute::catalog::OperationType;
@@ -442,6 +450,7 @@ fn summary_text(shape: &str, label: &str, run: &Run2d) -> String {
     }
     tallies(&mut t, "emitted plan", l);
     tallies(&mut t, "raw plan", &s.raw_pass_load);
+    cascade_lines(&mut t, &s.cascade);
     let e = &s.entry_split;
     let _ = writeln!(
         t,
@@ -492,11 +501,14 @@ fn summary_text(shape: &str, label: &str, run: &Run2d) -> String {
         if b.lobes + b.plain_wraps > 0 {
             let _ = writeln!(
                 t,
-                "lobes piece {i}: {} lobes of {} arcs, {} plain wraps; not joined: split {}, branch {}, length ratio {}, gap {}; lobes that left the region (cut plain) {}; return length {:.1} mm",
+                "lobes piece {i}: {} lobes of {} arcs, {} plain wraps; not joined: split {} (two or more children {}, child with two or more parents {}, closed {}), branch {}, length ratio {}, gap {}; lobes that left the region (cut plain) {}; return length {:.1} mm",
                 b.lobes,
                 b.lobe_arcs,
                 b.plain_wraps,
                 b.stop_split,
+                b.split_children,
+                b.split_parents,
+                b.split_closed,
                 b.stop_branch,
                 b.stop_ratio,
                 b.stop_gap,
@@ -506,6 +518,62 @@ fn summary_text(shape: &str, label: &str, run: &Run2d) -> String {
         }
     }
     t
+}
+
+/// One refusal of the cascade diagnostic as a line.
+fn refusal_line(o: &Refusal) -> String {
+    format!(
+        "{} {} (segment {}) from ({:.2}, {:.2}) to ({:.2}, {:.2}), replay reading {:.4}, planned reading {:.4}, {}{}",
+        o.producer.label(),
+        match (o.link, o.part.short()) {
+            (true, _) => "link",
+            (false, "") => "cut",
+            (false, part) => part,
+        },
+        o.segment,
+        o.from.x,
+        o.from.y,
+        o.to.x,
+        o.to.y,
+        o.replay_reading,
+        o.planned_reading,
+        if o.cascade { "cascade" } else { "intrinsic" },
+        o.rho
+            .map_or_else(String::new, |r| format!(", {r:.2} mm from the seed"))
+    )
+}
+
+/// The cascade diagnostic (C5): totals, per class, the first refusal of
+/// each producer piece (the first ten), and the first three intrinsic
+/// refusals of each class.
+fn cascade_lines(t: &mut String, c: &CascadeReadout) {
+    let (refused, cascades, intrinsic) = c.totals();
+    let _ = writeln!(
+        t,
+        "cascade (replay model on the raw plan): {refused} refusals, {cascades} cascades, {intrinsic} intrinsic"
+    );
+    for k in &c.tallies {
+        let _ = writeln!(
+            t,
+            "  {}: refused {}, cascade {}, intrinsic {} (max planned reading {:.4})",
+            k.label, k.refused, k.cascade, k.intrinsic, k.max_intrinsic
+        );
+    }
+    let first_cascades = c.first_of_piece.iter().filter(|o| o.cascade).count();
+    let _ = writeln!(
+        t,
+        "first refusal of each producer piece: {} pieces, {first_cascades} of them cascades; the first ten:",
+        c.first_of_piece.len()
+    );
+    for o in c.first_of_piece.iter().take(10) {
+        let _ = writeln!(t, "  first: {}", refusal_line(o));
+    }
+    let _ = writeln!(t, "intrinsic refusals, the first three of each class:");
+    for k in &c.tallies {
+        for o in c.intrinsic.iter().filter(|o| o.label() == k.label).take(3) {
+            let _ = writeln!(t, "  intrinsic: {}", refusal_line(o));
+        }
+    }
 }
 
 /// One line per class of steps of `readout` ([`PassLoadReadout::tallies`]).
@@ -544,12 +612,20 @@ fn render_candidate_a_beside_the_2d_strategies() {
                 Candidate2d::Geodesic(GeodesicOptions::C4_ALT),
             ),
             (
-                "geodesic_morph_return",
-                Candidate2d::Geodesic(GeodesicOptions::C4_RETURN),
+                "geodesic_curv",
+                Candidate2d::Geodesic(GeodesicOptions::C5_CURV),
+            ),
+            (
+                "geodesic_curv_morph",
+                Candidate2d::Geodesic(GeodesicOptions::C5_CURV_MORPH),
             ),
         ];
         if std::env::var_os("ADAPTIVE_GEODESIC_EXTRA").is_some() {
             columns.extend([
+                (
+                    "geodesic_morph_return",
+                    Candidate2d::Geodesic(GeodesicOptions::C4_RETURN),
+                ),
                 (
                     "geodesic_a_through",
                     Candidate2d::Geodesic(GeodesicOptions {

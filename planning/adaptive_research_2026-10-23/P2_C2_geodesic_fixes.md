@@ -820,3 +820,266 @@ Then read, per morph column:
 - the `load by class, raw plan` block: `clearing spiral`,
   `clearing morph`, `clearing return`, `clearing wrap`, `clearing join`;
 - the first ten refused steps.
+
+## C5 — cascade diagnostic, curvature spacing law (2026-10-23)
+
+Status: CODE COMPLETE, NOT RUN (no cargo; no commit). Base c97093af (C4
+committed in 6f699bcf; D4 in `P15_D_verify.md` §D4). `rustfmt --edition
+2024 --check` is clean on both files. Shipped code is not touched.
+
+### Measurements I start from (D4, star / pocket, `geodesic_morph_alt`)
+
+- Entries 92 → 69 and 88 → 77. Emitted max 0.9745 on the star, from a
+  27 mm residue-contour link (shipped cleanup).
+- Raw plan, every predecessor stamped (the raw readout stamps every step,
+  so its over-steps are refusals with every step before them cut):
+
+  | Class | Star | Pocket |
+  |---|---|---|
+  | spiral | 138 / 392 (max 0.50) | 55 / 151 |
+  | morph | 51 / 994 (max 0.60) | 123 / 1930 (max 0.71) |
+  | wrap | 52 / 651 | 63 / 1287 |
+  | join | 28 / 30 | 17 / 28 |
+
+- The first refused spiral steps lie 4.5 to 5.5 mm from the seed, reading
+  0.37 to 0.50. The C3 model predicts `(2 + 4/ρ)/6` = 0.43 to 0.48 there:
+  the curved-front excess.
+- Lobe stops: star split 53, ratio 11; pocket split 51, branch 2, gap 2.
+- The coordinator's reading (renders3): whole lobes are cut by the mop; the
+  upper two star arms and the left half of the pocket were never cut by
+  a clearing producer. Hypothesis: a refusal cascades.
+
+The D4 readout could not test that hypothesis. Its raw grid stamps every
+step, refused or not, so it shows only the intrinsic refusals. The replay
+stamps only accepted steps.
+
+### (1) The cascade diagnostic (`CascadeReadout`, `cascade_readout`)
+
+- The method walks the raw plan on two grids at once:
+  - the **planned** grid stamps every step (the same grid as the raw
+    readout);
+  - the **replay-model** grid stamps only the steps that hold on it.
+- A refused step lifts the model cutter. While it is lifted, a step that
+  holds WITHOUT the disc at its start cleared re-starts the cut, and the
+  entry hole is stamped (`stamp_entry`; the replay may arrive by a
+  keep-down link instead, which stamps the link's corridor, not a hole). A `Link` holds when every step of it holds; otherwise
+  it is a re-entry at its end. A `Rapid` stamps its entry on both grids.
+- A refusal on the model grid is a **cascade** when the same step holds
+  on the planned grid. It is **intrinsic** when the step does not hold
+  even with every step before it cut.
+- Printed per column:
+  - the totals (refusals, cascades, intrinsic);
+  - per class (producer and part): refused, cascade, intrinsic, and the
+    max planned reading of the intrinsic refusals;
+  - the first refusal of each producer piece (a run of steps of one raw
+    segment and one part), with how many of those are cascades, and the
+    first ten;
+  - the first three intrinsic refusals of each class, with the replay
+    reading, the planned reading and the distance from the seed.
+- Also changed:
+  - `PartIndex` now requires the step's midpoint to lie on the part too.
+    At C4, a radial join step that ended on the next wrap was classed
+    "wrap", so D4's wrap row holds joins. The class counts of C5 are not
+    directly comparable with D4's; the totals are.
+  - `LobeReport` splits the "split" stop into: two or more children,
+    child with two or more parents, closed loop. My reading of the 53 on
+    the star: two arms' arcs come within the reach of each other at an
+    inside corner, so an arc has two "children". This reading is not
+    measured; the new counts test it.
+
+### (2) The curvature spacing law (`Spacing::Curvature`, `curvature_levels`)
+
+Derivation (module doc and `curvature_levels` doc; only R, s and the
+ceiling enter):
+
+1. Take a pass at cutter-centre radius ρ, a spacing s' outside the passes
+   before it. They cleared the disc of radius `a = ρ − s' + R` about the
+   seed.
+2. The stock in the cutter's disc lies outside that disc. Across the
+   heading it spans from the circles' intersection, at
+   `(a² − R² + ρ²)/(2ρ)`, to the far edge at `ρ + R`. That span is the
+   swept width: `w = R − (a² − R² − ρ²)/(2ρ)`. A straight edge gives
+   w = s'; a circle gives more.
+3. Set `w = c·D` and solve: **`s'(ρ) = ρ + R − √(R² + ρ² + 2ρ(R − c·D))`**.
+4. The law is read at the OUTER pass (the one that meets the stock):
+   `ρ_k = ρ_{k−1} + s'(ρ_k)`. This has the closed form
+   `ρ_k = −(R − cD) + √((R − cD)² + (ρ_{k−1} + R)² − R²)`, capped at
+   `ρ_{k−1} + s`, from `ρ_0 = R` (the starter's last lap).
+5. **It reaches s at `ρ* = s(2R − s)/(2(cD − s))` = 22.78 mm** at s 2, R 3,
+   c 0.3626 (cD = 2.1756).
+
+Levels (Python check of the closed form; each has `w = 2.1756` exactly):
+
+| Level | ρ (mm) | Step (mm) |
+|---|---|---|
+| 1 | 4.44 | 1.437 |
+| 2 | 6.03 | 1.593 |
+| 3 | 7.73 | 1.703 |
+| 4 | 9.51 | 1.781 |
+| 5 | 11.35 | 1.839 |
+| 6 | 13.24 | 1.883 |
+| 7 | 15.15 | 1.917 |
+| 8 | 17.10 | 1.945 |
+| 9 | 19.06 | 1.968 |
+| 10 | 21.05 | 1.986 |
+| 11 | 23.05 | 2.000 |
+
+The cost is one extra level out to ρ*.
+
+- **Where it applies.** The law changes only WHICH values of `T` are
+  levels; the field and the contouring are unchanged. So the core spiral
+  (turn n at level n, `T` linear in the angle between levels) and the
+  plain wraps both follow it. From ρ* out (the lobes) the spacing is
+  plain.
+- **The spiral between levels.** The spacing between turns is the chord
+  between two points of `s'`. `s'` is concave: the square root is of a
+  quadratic with a negative discriminant, since `|R − cD| < R`. So the
+  chord lies under the curve, and every point of the spiral holds the law.
+- **Known limit.** The radius is `R + T`, a circular front about the seed.
+  Behind a wall the front is a circle about the bend node, tighter than
+  that, so the law spaces it too widely there (the pocket behind its
+  island). The bend pivots are not used: at a bend, `ρ → 0` gives
+  `s' → 0`. The lattice reads a side cut up to one cell NARROW
+  (`PassLoad::swept_width` doc), so targeting `c·D` exactly does not need
+  a lattice margin. D4's plain-wrap maximum 0.36 is the curvature excess
+  at ρ ≈ 25 to 30 (`(2 + 4/ρ)/6`), not lattice noise.
+
+### (3) Keep or drop the morph — the rule, set before the run
+
+D4 already gives the intrinsic rates (predecessors stamped): on the star
+the morph has 5.1 % (51/994) against 8.0 % for "wrap" (with joins mixed
+in); on the pocket 6.4 % against 4.9 %. That evidence is mixed, so the C5
+run decides:
+
+- **Keep the morph** when, in `geodesic_curv_morph`, the `clearing morph`
+  class has an intrinsic rate (intrinsic / steps of the raw tally) at or
+  below the `clearing wrap` intrinsic rate of the SAME column (same law,
+  same plan), AND most of its replay refusals are cascades. The tie-break
+  is the `clearing wrap` rate of `geodesic_curv`.
+- **Otherwise drop it.** The fallback is the `geodesic_curv` column:
+  plain wraps and the C3 join under the same law. That column is built,
+  so a fallback needs no code. The `intrinsic:` lines of the morph class
+  (replay reading, planned reading, ρ) give the reason.
+
+**(3) is undecided because there is no run.** The fallback is a column
+choice; it needs no code.
+
+### Predictions (not run)
+
+| Column | Star (D4) | Pocket (D4) |
+|---|---|---|
+| `geodesic_a` (control) | 92 (unchanged) | 88 (unchanged) |
+| `geodesic_curv` | 70 to 80 | 75 to 82 |
+| `geodesic_curv_morph` | 35 to 50 | 45 to 60 |
+
+- **Control `geodesic_a`:** must be D4/D3 exactly (92 = S1 J56 M20 P15,
+  0.3600, raw 206/2330; 88 = S1 J42 M27 C4 P14, 0.3624, raw 289/2845).
+  The spacing default is Plain and the level values are 0, 1, 2, … .
+- **`geodesic_curv`, star:**
+  - the inner-circle mid-wrap splits go: M 20 → 0 to 5;
+  - the seam joins stay (one per circle), J about 57 with the extra
+    level.
+- **`geodesic_curv`, pocket:** M 27 → 10 to 15. The rest is behind the
+  island, where the law under-protects.
+- **`geodesic_curv_morph`, star:**
+  - spiral intrinsic refusals 138 → 0 to 10;
+  - the cascades fall with them, and the arms are entered on cut stock;
+  - entries: S1, core 0 to 3, about 5 arm entries, 10 to 15 tip
+    fallbacks, and the residue C+P.
+- **`geodesic_curv_morph`, pocket:** the core is only 3 levels at plain
+  spacing (about 4 under the law). The rest depends on the lobes behind
+  the island.
+- **Cascade share.** In the morph columns at plain spacing (re-run by C5),
+  I predict most replay refusals are cascades (the coordinator's reading).
+  Under the law, the cascade count falls by more than the intrinsic count,
+  because the core no longer seeds them.
+
+### Risks
+
+- The replay model is a model. It re-enters at the first step that
+  holds and stamps an entry hole. The replay's own keep-down link stamps
+  less, and its walk rules (`emit_capped_walk_with`) have more cases. Read
+  the cascade/intrinsic split as the diagnosis, and the cleaned plan's
+  J/M as the outcome.
+- The law uses the circular-front radius about the seed only (above).
+- The level values are no longer integers under the law. `level_count`,
+  `level_chains`, the star-shape test and the core spiral read them
+  through `level_value`. The meeting trim stays one stepover; it is at
+  most `√2·s` from the first branch's cutter, which is covered while
+  `s ≤ R/√2` whatever the level spacing.
+- About 650 new lines that no compiler has seen.
+
+### Harness columns (C5)
+
+- **Default:** agent, contour_spiral, geodesic_g1, geodesic_a (the
+  control), geodesic_morph_alt, geodesic_curv, geodesic_curv_morph.
+- **With `ADAPTIVE_GEODESIC_EXTRA`:** geodesic_morph_return (moved out of
+  the default: D4 shows it worse than the alternation), geodesic_a_through,
+  geodesic_a_ramp, geodesic_morph_alt_full.
+
+### Unit tests (C5)
+
+- `the_curvature_spacing_law_puts_each_tight_pass_on_the_ceiling`:
+  - `s'(ρ*) = s`, and `s'(10⁶) → cD`;
+  - every uncapped level has `w = cD` to 1e-9;
+  - the steps never shrink, and each is at most s;
+  - a step is capped exactly where `ρ ≥ ρ*`.
+- `the_core_spiral_on_a_disc_is_one_piece_with_monotone_radius` now runs
+  under both spacings. The bound is generic: the last core level fits in
+  the disc, and the next one does not fit inside the read margin.
+
+### Files changed by C5
+
+- `crates/rs_cam_core/src/adaptive/research_geodesic.rs`
+- `crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`
+- this note.
+
+### Commands for the verifier (C5)
+
+Through `scripts/cargo_lane.sh`, each with a `timeout`:
+
+```text
+cargo fmt --all -- --check
+cargo test -p rs_cam_core --features research,test-support -q --lib research_geodesic
+cargo clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings
+cargo clippy -p rs_cam_core --all-targets -- -D warnings
+cargo test -p rs_cam_core --features research,test-support --release \
+    --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture
+```
+
+Read in this order:
+
+1. **The two controls, exactly.**
+   - `geodesic_a` as above.
+   - `geodesic_morph_alt`: C5 does not change its plan. The `morph_plan`
+     match is restructured only to count the split cases, and `PartIndex`
+     only relabels steps. So its totals must equal D4: star 69 = S1 J30
+     M14 C12 P12, emitted max 0.9745, raw 272 of 2312; pocket 77 = S1 J45
+     M11 C9 P11, 0.4517, raw 280 of 3690. Only the per-class rows may move
+     (joins out of "wrap").
+
+   A difference in either is a defect: stop and report it.
+2. **Diagnostic self-consistency.** Per class, `intrinsic` in the cascade
+   block should be close to `steps over` in the raw-plan tally, because
+   both read the planned grid. The only legitimate difference is where a
+   model restart's entry stamp cleared more than the planned grid at that
+   spot. A large gap is a defect in the walk, not a finding.
+3. **The lattice quantum.** If `geodesic_curv`'s core circles are still
+   refused with planned readings in `(c, c + cell/D]` (0.3626 to 0.446),
+   that is the lattice's one-cell quantum (the `sliver_ceiling` term), not
+   the model. A spacing margin of one cell would then be the next lever.
+   The brief said "no other constant", so it is not built; it waits for a
+   ruling.
+4. Per column, the `cascade (replay model on the raw plan)` line and
+   block. In `geodesic_morph_alt` (plain spacing), what share of the
+   refusals are cascades? That share tests the coordinator's reading.
+5. `geodesic_curv` against `geodesic_a`: M on both shapes; the
+   `clearing spiral` row (none here) and the `clearing wrap` intrinsic
+   count.
+6. `geodesic_curv_morph`:
+   - the `clearing spiral` intrinsic count (predicted near 0);
+   - the `clearing morph` intrinsic rate against the same column's
+     `clearing wrap` rate, then against `geodesic_curv`'s: the keep/drop
+     rule (3);
+   - the `intrinsic:` lines of the morph class with ρ.
+7. The `lobes piece 0` line: the three split cases.

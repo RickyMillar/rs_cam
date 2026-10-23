@@ -116,10 +116,30 @@
 //!   ([`morph_legs`], [`LobeMorph`]; Bieterman's morph between consecutive
 //!   contours, R3 Source 2). The other arcs are cut as under the G1 join
 //!   with the one-side meeting rule.
-//! - Not in scope: the spacing near the seed. A pass round a cleared disc
-//!   of small radius reads over the ceiling at the full stepover (C3), and
-//!   the core spiral has the same spacing, so the replay still splits its
-//!   inner turns. The lever is a curvature-aware field (C3 §3, `s'(ρ)`).
+//! - The spacing near the seed is the C5 spacing law (below); under plain
+//!   spacing the replay splits the inner turns of the core (C4 run D4:
+//!   138 of 392 raw spiral steps over on the star).
+//!
+//! # The curvature spacing law (C5, [`Spacing::Curvature`])
+//!
+//! A pass round a cleared disc meets more stock than its spacing: the stock
+//! wraps round the cutter. For a pass at cutter-centre radius `ρ` one
+//! spacing `s'` outside the passes before it (cleared to `a = ρ - s' + R`),
+//! the swept width is `R - (a² - R² - ρ²) / (2ρ)` ([`curvature_levels`]
+//! has the derivation). Held to the ceiling `c·D`, the spacing is
+//! `s'(ρ) = ρ + R - √(R² + ρ² + 2ρ(R - c·D))`, which reaches the stepover
+//! at `ρ* = s(2R - s) / (2(c·D - s))` (22.8 mm at s 2, R 3). The law
+//! changes only WHICH values of `T` are the levels; the field and the
+//! contouring are as before. From `ρ*` out (the lobes, where the front is
+//! nearly straight) the spacing is plain.
+//!
+//! # The cascade diagnostic (C5, [`CascadeReadout`])
+//!
+//! The replay stamps only the steps it accepts, so one refused step can
+//! leave stock that the next steps were planned to meet as cut. The
+//! diagnostic walks the raw plan on a planned grid (every step stamped) and
+//! on a replay-model grid (accepted steps only) and calls a refusal a
+//! cascade when the step holds on the planned grid.
 //!
 //! # Engagement, the wall pass and the rest
 //!
@@ -163,6 +183,9 @@
 //!   lattice diagonal is one cell; each ray is sampled at half a cell; the
 //!   spiral's radius is bisected to the op tolerance, and its angle step is
 //!   the chord rule above at the outer radius `R + K·s`.
+//! - C5: the spacing law `s'(ρ)` and `ρ*` above, from `R`, `s` and the
+//!   ceiling only; levels at `ρ_k = -(R - cD) + √((R - cD)² + (ρ_{k-1} +
+//!   R)² - R²)`, capped at `ρ_{k-1} + s`, from `ρ_0 = R`.
 //! - C4: the lobe length ratio `(R + 2s)/(R + s)`, the growth of a circular
 //!   front at the first wrap ([`lobe_length_ratio`]); the matched gap bound
 //!   is the reach; a band has one matched sample per cell of its longer
@@ -203,7 +226,7 @@ use super::path::{
     emit_helical_starter_pocket, pass_load_for, pass_step_len, planner_cell_size,
     segments_to_toolpath, subdivide,
 };
-use super::search::{ToolCentreRegion, measure_step, step_within_pass_load};
+use super::search::{PassLoad, ToolCentreRegion, measure_step, step_within_pass_load};
 use super::{
     AdaptiveParams, AdaptiveRuntimeEvent, CleanupStrategy, KeepDownLinks, MaterialGrid,
     PathStrategy2d,
@@ -506,6 +529,14 @@ pub struct GeodesicField {
     branch_parent: Vec<u32>,
     stepover: f64,
     converged: bool,
+    /// The value of `T` (stepovers) of each level, `levels[0] = 0` (the
+    /// starter rim), up to the largest `T` of the field. Plain spacing:
+    /// `0, 1, 2, ...`. The spacing law ([`Spacing::Curvature`],
+    /// [`curvature_levels`]): closer levels while the front is tightly
+    /// curved.
+    levels: Vec<f64>,
+    /// The largest finite `T` (stepovers).
+    max_t: f64,
 }
 
 impl GeodesicField {
@@ -619,6 +650,7 @@ impl GeodesicField {
             passes,
             ring_count: max_pass.floor() as usize,
         };
+        let levels = (0..=field.ring_count).map(|k| k as f64).collect();
         Some(Self {
             field,
             inside,
@@ -626,7 +658,35 @@ impl GeodesicField {
             branch_parent,
             stepover,
             converged,
+            levels,
+            max_t: max_pass,
         })
+    }
+
+    /// Space the levels by the curvature law ([`curvature_levels`]) for a
+    /// cutter of `tool_radius` and a ceiling of `ceiling_width` mm (`c·D`).
+    fn use_curvature_spacing(&mut self, tool_radius: f64, ceiling_width: f64) {
+        self.levels = curvature_levels(
+            tool_radius,
+            self.stepover,
+            ceiling_width,
+            self.max_t * self.stepover,
+        )
+        .into_iter()
+        .map(|t_mm| t_mm / self.stepover)
+        .collect();
+    }
+
+    /// The value of `T` (stepovers) of level `k`; past the last level, the
+    /// last value plus one stepover per level.
+    fn level_value(&self, k: usize) -> f64 {
+        match self.levels.get(k) {
+            Some(&v) => v,
+            None => {
+                let last = self.levels.last().copied().unwrap_or(0.0);
+                last + (k + 1 - self.levels.len().max(1)) as f64
+            }
+        }
     }
 
     /// The geodesic distance (mm) at the lattice node nearest `p`, `None`
@@ -649,10 +709,11 @@ impl GeodesicField {
         (row < f.rows && col < f.cols).then_some(row * f.cols + col)
     }
 
-    /// The number of wraps: `⌊max T / stepover⌋`.
+    /// The number of wraps: the levels above the rim (`⌊max T / s⌋` under
+    /// plain spacing).
     #[must_use]
     pub fn level_count(&self) -> usize {
-        self.field.ring_count
+        self.levels.len().saturating_sub(1)
     }
 
     /// False when the sweep cap stopped the solve before it converged.
@@ -746,7 +807,11 @@ impl GeodesicField {
             self.cell_reachable(row, col)
                 && (meeting == MeetingRule::Through || !self.cell_on_shock(row, col))
         };
-        join_fragments(iso_contour_where(&self.field, level as f64, &kept))
+        join_fragments(iso_contour_where(
+            &self.field,
+            self.level_value(level),
+            &kept,
+        ))
     }
 
     /// `T` (stepovers) at `p`, bilinear over the cell that holds `p`, the
@@ -855,7 +920,7 @@ impl GeodesicField {
         while k < self.level_count()
             && rays
                 .iter()
-                .all(|ray| Self::ray_crosses_once(ray, (k + 1) as f64))
+                .all(|ray| Self::ray_crosses_once(ray, self.level_value(k + 1)))
         {
             k += 1;
         }
@@ -869,7 +934,7 @@ impl GeodesicField {
         let n = self.star_rays();
         (0..n).all(|i| {
             let ray = self.ray(seed, std::f64::consts::TAU * i as f64 / n as f64, r0);
-            Self::ray_crosses_once(&ray, level as f64)
+            Self::ray_crosses_once(&ray, self.level_value(level))
         })
     }
 
@@ -1240,12 +1305,23 @@ pub enum LobeMorph {
     Return,
 }
 
+/// How far apart the levels (wraps) are (C5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Spacing {
+    /// One stepover everywhere.
+    Plain,
+    /// The curvature law ([`curvature_levels`]): closer while the front is
+    /// a tight circle about the seed, one stepover from `ρ*` out.
+    Curvature,
+}
+
 /// The research options of candidate (a).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GeodesicOptions {
     pub solver: FieldSolver,
     pub meeting: MeetingRule,
     pub join: JoinRule,
+    pub spacing: Spacing,
 }
 
 impl GeodesicOptions {
@@ -1254,6 +1330,7 @@ impl GeodesicOptions {
         solver: FieldSolver::FirstOrder,
         meeting: MeetingRule::Through,
         join: JoinRule::Seam,
+        spacing: Spacing::Plain,
     };
     /// The G1 fixes of editors C2 and C3: the source-tracked field, the
     /// one-side meeting rule, and the G1 join (C3 reverted the ramp join,
@@ -1262,6 +1339,7 @@ impl GeodesicOptions {
         solver: FieldSolver::SourceTracking,
         meeting: MeetingRule::Split,
         join: JoinRule::Seam,
+        spacing: Spacing::Plain,
     };
     /// C4: the C2 field and meeting rule with the morph join, half-pitch
     /// alternation in the lobes.
@@ -1274,6 +1352,18 @@ impl GeodesicOptions {
     pub const C4_RETURN: Self = Self {
         join: JoinRule::Morph(LobeMorph::Return),
         ..Self::C2
+    };
+    /// C5: the C2 form (plain wraps, the G1 join) with the curvature
+    /// spacing law.
+    pub const C5_CURV: Self = Self {
+        spacing: Spacing::Curvature,
+        ..Self::C2
+    };
+    /// C5: the curvature spacing law with the morph join (half-pitch
+    /// alternation).
+    pub const C5_CURV_MORPH: Self = Self {
+        spacing: Spacing::Curvature,
+        ..Self::C4_ALT
     };
 }
 
@@ -1776,6 +1866,63 @@ fn circle_from(c: P2, radius: f64, phi0: f64, tolerance: f64) -> Vec<P2> {
 
 // ── The morph join (C4) ────────────────────────────────────────────────
 
+/// The levels of the spacing law (C5, [`Spacing::Curvature`]): the values
+/// of `T` (mm) of the wraps, from 0 (the starter rim) up to `t_max_mm`.
+///
+/// A pass at cutter-centre radius `ρ` round a cleared disc (the passes
+/// before it, centre the seed) holds the ceiling `c·D` when its spacing is
+/// at most `s'(ρ)` (C3 §3). The derivation: the last pass at `ρ - s'`
+/// cleared the disc of radius `a = ρ - s' + R`. The stock in the cutter's
+/// disc (radius `R`, centre at `ρ`) lies outside that disc; across the
+/// heading (the radial direction) it spans from the two circles'
+/// intersection, at `(a² - R² + ρ²) / (2ρ)` from the seed, to the disc's
+/// far edge at `ρ + R`. That span is the swept width the planner reads:
+/// `w = R - (a² - R² - ρ²) / (2ρ)`. (A straight edge, `ρ → ∞`, gives
+/// `w = s'`; a circle gives more, because the stock wraps round the
+/// cutter.) Setting `w = c·D` and solving for `a`:
+/// `s'(ρ) = ρ + R - √(R² + ρ² + 2ρ(R - c·D))`.
+///
+/// The law is applied pass by pass: the pass of level `k` sits at
+/// `ρ_k = ρ_{k-1} + Δ` with `Δ = s'(ρ_k)` (the spacing is read at the
+/// OUTER pass, the one that meets the stock). Squaring
+/// `√(R² + ρ_k² + 2ρ_k(R - cD)) = ρ_{k-1} + R` gives the closed form
+/// `ρ_k = -(R - cD) + √((R - cD)² + (ρ_{k-1} + R)² - R²)`, and `Δ` is capped
+/// at the stepover `s`. `ρ_0 = R` (the starter's last lap) and `T = ρ - R`.
+/// The law reaches `s` at `ρ* = s(2R - s) / (2(cD - s))` (from
+/// `s'(ρ*) = s`; 22.8 mm at s 2, R 3, c 0.3626); from there the spacing is
+/// plain. Only `R`, `s` and the ceiling enter.
+///
+/// The radius is `R + T`, the radius of a circular front about the seed.
+/// Where the seed sees the point (the core and every star-shaped zone)
+/// that is the front's curvature radius. Behind a wall the front is a
+/// circle about the bend node, tighter than `R + T`, so the law spaces it
+/// too widely there (a known limit, C5 note).
+fn curvature_levels(
+    tool_radius: f64,
+    stepover: f64,
+    ceiling_width: f64,
+    t_max_mm: f64,
+) -> Vec<f64> {
+    let r = tool_radius;
+    let b = r - ceiling_width;
+    let mut out = vec![0.0];
+    let mut rho = r;
+    // `s'` grows with `ρ`, so each level moves at least the first step
+    // (positive), and the walk ends at `t_max_mm`.
+    while rho - r < t_max_mm {
+        let next = (-b + (b * b + (rho + r).powi(2) - r * r).sqrt()).min(rho + stepover);
+        if next <= rho || !next.is_finite() {
+            break;
+        }
+        if next - r > t_max_mm {
+            break;
+        }
+        rho = next;
+        out.push(rho - r);
+    }
+    out
+}
+
 /// The core-zone spiral (C4): one curve from the starter rim out to the
 /// last star-shaped level `K` ([`GeodesicField::star_levels`]), then one
 /// closing lap on level `K`. Returns the spiral and `K`; an empty spiral
@@ -1815,7 +1962,7 @@ fn core_spiral(
     let mut k = field.star_levels(seed, r0);
     while k > 0 {
         check_cancel(cancel)?;
-        let outer = r0 + k as f64 * stepover;
+        let outer = r0 + field.level_value(k) * stepover;
         let sag = (1.0 - (tolerance / outer).min(1.0))
             .acos()
             .max(f64::EPSILON);
@@ -1825,7 +1972,19 @@ fn core_spiral(
         let mut traced = true;
         for j in 0..=per_turn * (k + 1) {
             let theta = j as f64 * dphi;
-            let t = (theta / std::f64::consts::TAU).min(k as f64);
+            // The unwrapped turn count, and `T` there: level `n` of the field
+            // at turn `n`, linear in the angle between two levels.
+            let turns = theta / std::f64::consts::TAU;
+            let t = if turns >= k as f64 {
+                field.level_value(k)
+            } else {
+                let n = turns.floor();
+                let (lo, hi) = (
+                    field.level_value(n as usize),
+                    field.level_value(n as usize + 1),
+                );
+                lo + (turns - n) * (hi - lo)
+            };
             let phi = phi0 + theta;
             let Some(r) = field.radius_at(seed, phi, r0, t, tolerance) else {
                 traced = false;
@@ -1884,7 +2043,16 @@ pub struct LobeReport {
     /// Wrap pieces cut as plain wraps (not in a lobe).
     pub plain_wraps: usize,
     /// Parent-child pairs not joined, per [`LobeStop`] reason.
+    /// `stop_split` is the sum of the three split counts below.
     pub stop_split: usize,
+    /// C5, the split cases: the arc has two or more children (each arc of
+    /// the next level within the reach counts, so two arms whose arcs come
+    /// within the reach at an inside corner make two children) ...
+    pub split_children: usize,
+    /// ... its one child has two or more parents ...
+    pub split_parents: usize,
+    /// ... or one of the two is a closed loop.
+    pub split_closed: usize,
     pub stop_branch: usize,
     pub stop_ratio: usize,
     pub stop_gap: usize,
@@ -2152,14 +2320,22 @@ fn morph_plan(
         }
         let stop = match kids {
             &[j] => match chains.get(j) {
-                Some(b)
-                    if !a.closed && !b.closed && parents.get(j).is_some_and(|ps| ps.len() == 1) =>
-                {
+                Some(b) if a.closed || b.closed => {
+                    report.split_closed += 1;
+                    Err(LobeStop::Split)
+                }
+                Some(b) if parents.get(j).is_some_and(|ps| ps.len() == 1) => {
                     lobe_link(field, a, b, reach, ratio).map_or(Ok(j), Err)
                 }
-                _ => Err(LobeStop::Split),
+                _ => {
+                    report.split_parents += 1;
+                    Err(LobeStop::Split)
+                }
             },
-            _ => Err(LobeStop::Split),
+            _ => {
+                report.split_children += 1;
+                Err(LobeStop::Split)
+            }
         };
         match stop {
             Ok(j) => {
@@ -2509,11 +2685,14 @@ fn geodesic_segments(
         .enumerate()
         .map(|(i, &m)| m && region.contains(&lattice.node(i)))
         .collect();
-    let Some(field) =
+    let Some(mut field) =
         GeodesicField::on_lattice(lattice, inside, seed, r, s, options.solver, &walls)
     else {
         return Ok(None);
     };
+    if options.spacing == Spacing::Curvature {
+        field.use_curvature_spacing(r, pass.ceiling * 2.0 * r);
+    }
 
     let reach = s + (1.0 + SQRT_2) * cell;
     // The ramp join: the levels whose wrap is a whole circle round the seed
@@ -2832,9 +3011,11 @@ impl StepPart {
 }
 
 /// The planned polylines of candidate (a) by [`StepPart`], to classify
-/// each step of the raw plan: a step whose end lies within one cell of a
-/// polyline is on that part (the first match in the order spiral, morph
-/// leg, return, wrap); else it is a join. One cell is the lattice the
+/// each step of the raw plan: a step whose end AND midpoint lie within one
+/// cell of a polyline is on that part (the first match in the order
+/// spiral, morph leg, return, wrap); else it is a join. (C5: the midpoint
+/// test is new; at C4 a radial join step that ended on the next wrap was
+/// classed "wrap".) One cell is the lattice the
 /// pieces were traced on. A return runs on its leg's polyline the other
 /// way, so for a morph leg and a return the step must also run the way of
 /// the nearest segment (a positive dot product).
@@ -2869,6 +3050,7 @@ impl PartIndex {
     /// The part of the step from `a` to `p`.
     fn part(&self, a: P2, p: P2) -> StepPart {
         let directed = |part: StepPart| matches!(part, StepPart::Morph | StepPart::Return);
+        let mid = P2::new(0.5 * (a.x + p.x), 0.5 * (a.y + p.y));
         let near = |part: StepPart| {
             self.polys.iter().any(|(lo, hi, pts, q)| {
                 *q == part
@@ -2876,6 +3058,7 @@ impl PartIndex {
                     && p.x <= hi.x + self.cell
                     && p.y >= lo.y - self.cell
                     && p.y <= hi.y + self.cell
+                    && nearest_segment(pts, mid).is_some_and(|(d, _, _)| d <= self.cell)
                     && nearest_segment(pts, p).is_some_and(|(d, u, v)| {
                         d <= self.cell
                             && (!directed(part)
@@ -3028,13 +3211,7 @@ fn pass_load_readout(
             Some(index) if tag.producer == Producer::Clearing && !tag.link => index.part(a, b),
             _ => StepPart::Unclassified,
         };
-        let label = if tag.link {
-            format!("{} link", tag.producer.label())
-        } else if part == StepPart::Unclassified {
-            tag.producer.label().to_owned()
-        } else {
-            format!("{} {}", tag.producer.label(), part.short())
-        };
+        let label = step_label(tag, part);
         let held = step_within_pass_load(grid, a, b.x, b.y, r, angle, &load);
         out.tally(&label, reading, 1, usize::from(!held));
         if !held {
@@ -3112,6 +3289,350 @@ fn pass_load_readout(
         }
     }
     out
+}
+
+/// The tally label of a step: the producer, then "link" or the part.
+fn step_label(tag: StepTag, part: StepPart) -> String {
+    if tag.link {
+        format!("{} link", tag.producer.label())
+    } else if part == StepPart::Unclassified {
+        tag.producer.label().to_owned()
+    } else {
+        format!("{} {}", tag.producer.label(), part.short())
+    }
+}
+
+/// One step the replay model refuses (C5, [`CascadeReadout`]).
+#[derive(Debug, Clone, Copy)]
+pub struct Refusal {
+    pub from: P2,
+    pub to: P2,
+    pub producer: Producer,
+    pub part: StepPart,
+    /// True for a step of a keep-down `Link`.
+    pub link: bool,
+    /// The index of the segment in the raw plan of its piece.
+    pub segment: usize,
+    /// The reading on the replay grid (only accepted steps stamped).
+    pub replay_reading: f64,
+    /// The reading on the planned grid (every step before it stamped).
+    pub planned_reading: f64,
+    /// True when the step holds on the planned grid: the stock it met is
+    /// stock the plan cleared but the replay did not stamp, because a step
+    /// before it was refused. False: the step meets too much stock even
+    /// when every step before it is cut (an intrinsic refusal).
+    pub cascade: bool,
+    /// The distance (mm) of the step end from the seed.
+    pub rho: Option<f64>,
+}
+
+impl Refusal {
+    /// The class of the step (as [`LoadTally::label`]).
+    #[must_use]
+    pub fn label(&self) -> String {
+        step_label(
+            StepTag {
+                producer: self.producer,
+                link: self.link,
+                segment: self.segment,
+            },
+            self.part,
+        )
+    }
+}
+
+/// The cascade counts of one class of steps (C5).
+#[derive(Debug, Clone, Default)]
+pub struct CascadeTally {
+    /// The class (as [`LoadTally::label`]).
+    pub label: String,
+    /// Steps the replay model refuses.
+    pub refused: usize,
+    /// Of those, the cascades (they hold on the planned grid).
+    pub cascade: usize,
+    /// Of those, the intrinsic refusals.
+    pub intrinsic: usize,
+    /// The largest planned-grid reading of an intrinsic refusal.
+    pub max_intrinsic: f64,
+}
+
+/// The cascade diagnostic of a raw plan (C5).
+///
+/// The replay (`replay_kept_segments`, `emit_capped_walk_with` in
+/// `path.rs`) stamps only the steps it accepts. A refused step leaves its
+/// stock, and a later step that the plan meant to run on cleared stock may
+/// then be refused too: a cascade. The diagnostic walks the raw plan on two
+/// grids at once:
+///
+/// - the planned grid stamps every step (the raw readout's grid, so its
+///   over-steps are those of [`Summary2d::raw_pass_load`]);
+/// - the replay grid models the replay: a step that holds there is
+///   stamped; a refused step is not, and the cutter lifts; while lifted, a
+///   step that holds WITHOUT the disc at its start cleared re-starts the
+///   cut there, with the entry hole stamped (`LinkLoad::stamp_entry`; the
+///   replay may reach it by a keep-down link instead, which stamps the
+///   link's corridor, not a hole). A `Link` holds when
+///   every step of it holds (else it is a re-entry at its end); a `Rapid`
+///   stamps its entry on both grids.
+///
+/// A refusal on the replay grid is a cascade when the same step holds on
+/// the planned grid, and intrinsic when it does not.
+#[derive(Debug, Clone, Default)]
+pub struct CascadeReadout {
+    /// Per class of steps, in the order the classes first appear.
+    pub tallies: Vec<CascadeTally>,
+    /// The first refusal of each producer piece (a run of steps of one raw
+    /// segment and one part), in plan order.
+    pub first_of_piece: Vec<Refusal>,
+    /// Every intrinsic refusal, in plan order.
+    pub intrinsic: Vec<Refusal>,
+}
+
+impl CascadeReadout {
+    fn merge(&mut self, other: &Self) {
+        for t in &other.tallies {
+            self.add(t);
+        }
+        self.first_of_piece.extend_from_slice(&other.first_of_piece);
+        self.intrinsic.extend_from_slice(&other.intrinsic);
+    }
+
+    /// Add the counts of `t` to the tally of its label.
+    fn add(&mut self, t: &CascadeTally) {
+        if let Some(mine) = self.tallies.iter_mut().find(|m| m.label == t.label) {
+            mine.refused += t.refused;
+            mine.cascade += t.cascade;
+            mine.intrinsic += t.intrinsic;
+            mine.max_intrinsic = mine.max_intrinsic.max(t.max_intrinsic);
+        } else {
+            self.tallies.push(t.clone());
+        }
+    }
+
+    /// The refusals, the cascades among them, and the intrinsic ones, over
+    /// every class.
+    #[must_use]
+    pub fn totals(&self) -> (usize, usize, usize) {
+        self.tallies.iter().fold((0, 0, 0), |(r, c, i), t| {
+            (r + t.refused, c + t.cascade, i + t.intrinsic)
+        })
+    }
+}
+
+/// The two grids of the cascade walk and where the replay cutter stands.
+struct CascadeWalk {
+    plan: PieceSetup,
+    replay: PieceSetup,
+    pass: PassLoad,
+    tool_radius: f64,
+    /// True while the replay cutter is down (cutting).
+    down: bool,
+    piece: Option<(usize, StepPart)>,
+    piece_refused: bool,
+    seed: Option<P2>,
+    out: CascadeReadout,
+}
+
+impl CascadeWalk {
+    /// One cutting step from `a` to `b` on both grids.
+    fn step(&mut self, a: P2, b: P2, tag: StepTag, part: StepPart, departing: bool) {
+        let key = (tag.segment, part);
+        if self.piece != Some(key) {
+            self.piece = Some(key);
+            self.piece_refused = false;
+        }
+        let load = if departing {
+            self.pass.departing()
+        } else {
+            self.pass
+        };
+        let r = self.tool_radius;
+        let angle = (b.y - a.y).atan2(b.x - a.x);
+        let planned = measure_step(&self.plan.grid, a, b.x, b.y, r, angle, &load);
+        self.plan.grid.clear_segment(a, b, r);
+        let replayed = measure_step(&self.replay.grid, a, b.x, b.y, r, angle, &load);
+        if replayed <= load.ceiling {
+            if !self.down {
+                self.replay.link_load.stamp_entry(&mut self.replay.grid, a);
+                self.down = true;
+            }
+            self.replay.grid.clear_segment(a, b, r);
+            return;
+        }
+        self.down = false;
+        self.refuse(a, b, tag, part, replayed, planned);
+    }
+
+    /// Record a refusal on the replay grid. A refused step is never a
+    /// departure from a plunge (that load has no ceiling), so the ceiling is
+    /// the pass ceiling.
+    fn refuse(&mut self, a: P2, b: P2, tag: StepTag, part: StepPart, replayed: f64, planned: f64) {
+        let cascade = planned <= self.pass.ceiling;
+        let refusal = Refusal {
+            from: a,
+            to: b,
+            producer: tag.producer,
+            part,
+            link: tag.link,
+            segment: tag.segment,
+            replay_reading: replayed,
+            planned_reading: planned,
+            cascade,
+            rho: self.seed.map(|c| (b.x - c.x).hypot(b.y - c.y)),
+        };
+        self.out.add(&CascadeTally {
+            label: step_label(tag, part),
+            refused: 1,
+            cascade: usize::from(cascade),
+            intrinsic: usize::from(!cascade),
+            max_intrinsic: if cascade { 0.0 } else { planned },
+        });
+        if !cascade {
+            self.out.intrinsic.push(refusal);
+        }
+        if !self.piece_refused {
+            self.piece_refused = true;
+            self.out.first_of_piece.push(refusal);
+        }
+    }
+
+    /// A keep-down link from `from` to `to` in steps of at most `step_len`.
+    fn link(&mut self, from: P2, to: P2, step_len: f64, tag: StepTag) {
+        let r = self.tool_radius;
+        let len = (to.x - from.x).hypot(to.y - from.y);
+        let n = ((len / step_len).ceil() as usize).max(1);
+        self.plan.grid.clear_circle(from.x, from.y, r);
+        let mut trial = self.replay.grid.clone();
+        if self.down {
+            trial.clear_circle(from.x, from.y, r);
+        }
+        let mut held = true;
+        let mut at = from;
+        for k in 1..=n {
+            let t = k as f64 / n as f64;
+            let next = P2::new(from.x + t * (to.x - from.x), from.y + t * (to.y - from.y));
+            let angle = (next.y - at.y).atan2(next.x - at.x);
+            let planned = measure_step(&self.plan.grid, at, next.x, next.y, r, angle, &self.pass);
+            self.plan.grid.clear_segment(at, next, r);
+            if held {
+                let replayed = measure_step(&trial, at, next.x, next.y, r, angle, &self.pass);
+                if replayed <= self.pass.ceiling {
+                    trial.clear_segment(at, next, r);
+                } else {
+                    held = false;
+                    self.piece = Some((tag.segment, StepPart::Unclassified));
+                    self.piece_refused = false;
+                    self.refuse(at, next, tag, StepPart::Unclassified, replayed, planned);
+                }
+            }
+            at = next;
+        }
+        if held {
+            self.replay.grid = trial;
+        } else {
+            // The refused link is a re-entry at its end.
+            self.replay.link_load.stamp_entry(&mut self.replay.grid, to);
+        }
+        self.down = true;
+    }
+}
+
+/// The cascade diagnostic ([`CascadeReadout`]) of the raw plan `segments`
+/// of one piece. `parts` classes the clearing steps as in
+/// [`pass_load_readout`]; `seed` gives each refusal its distance.
+fn cascade_readout(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    segments: &[AdaptiveSegment],
+    parts: Option<&PartIndex>,
+    seed: Option<P2>,
+) -> CascadeReadout {
+    let cell = planner_cell(params);
+    let (Some(plan), Some(replay)) = (
+        PieceSetup::new(polygon, params, cell),
+        PieceSetup::new(polygon, params, cell),
+    ) else {
+        return CascadeReadout::default();
+    };
+    let mut walk = CascadeWalk {
+        plan,
+        replay,
+        pass: pass_load_for(params, cell),
+        tool_radius: params.tool_radius,
+        down: true,
+        piece: None,
+        piece_refused: false,
+        seed,
+        out: CascadeReadout::default(),
+    };
+    let r = params.tool_radius;
+    let step_len = pass_step_len(cell);
+    let mut here: Option<P2> = None;
+    let mut plunged_at: Option<P2> = None;
+    let mut producer = Producer::Unmarked;
+    let mut in_slot_lines = false;
+    for (index, seg) in segments.iter().enumerate() {
+        match seg {
+            AdaptiveSegment::Marker(event) => {
+                producer = producer.after(event);
+                in_slot_lines = matches!(event, AdaptiveRuntimeEvent::SlotClearing { .. });
+            }
+            AdaptiveSegment::Rapid(p) => {
+                walk.plan.link_load.stamp_entry(&mut walk.plan.grid, *p);
+                walk.replay.link_load.stamp_entry(&mut walk.replay.grid, *p);
+                walk.down = true;
+                plunged_at = walk.plan.link_load.plunge_departure_exempt().then_some(*p);
+                here = Some(*p);
+            }
+            AdaptiveSegment::Link(p) => {
+                if let Some(from) = here {
+                    let tag = StepTag {
+                        producer,
+                        link: true,
+                        segment: index,
+                    };
+                    walk.link(from, *p, step_len, tag);
+                }
+                plunged_at = None;
+                here = Some(*p);
+            }
+            AdaptiveSegment::Cut(path) => {
+                let pts = subdivide(path, step_len);
+                if let Some(&p0) = pts.first() {
+                    walk.plan.grid.clear_circle(p0.x, p0.y, r);
+                    if walk.down {
+                        walk.replay.grid.clear_circle(p0.x, p0.y, r);
+                    }
+                }
+                let departure = plunged_at.take();
+                let tag = StepTag {
+                    producer,
+                    link: false,
+                    segment: index,
+                };
+                for w in pts.windows(2) {
+                    let &[a, b] = w else {
+                        continue;
+                    };
+                    if in_slot_lines {
+                        walk.plan.grid.clear_segment(a, b, r);
+                        walk.replay.grid.clear_segment(a, b, r);
+                        continue;
+                    }
+                    let departing = departure.is_some_and(|d| (a.x - d.x).hypot(a.y - d.y) < r);
+                    let part = match parts {
+                        Some(ix) if producer == Producer::Clearing => ix.part(a, b),
+                        _ => StepPart::Unclassified,
+                    };
+                    walk.step(a, b, tag, part, departing);
+                }
+                if let Some(&end) = pts.last() {
+                    here = Some(end);
+                }
+            }
+        }
+    }
+    walk.out
 }
 
 /// What a drawn span of the plan is.
@@ -3209,6 +3730,8 @@ pub struct Summary2d {
     pub raw_pass_load: PassLoadReadout,
     /// Where the entries of the cleaned plan come from ([`EntrySplit`]).
     pub entry_split: EntrySplit,
+    /// The cascade diagnostic of the raw plan (C5, [`CascadeReadout`]).
+    pub cascade: CascadeReadout,
 }
 
 /// Where the entries (`Rapid`s) of a cleaned plan come from (C3). The
@@ -3370,6 +3893,7 @@ pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2
     for piece in &pieces {
         let mut piece_wraps: Vec<Vec<P2>> = Vec::new();
         let mut piece_parts: Option<PartIndex> = None;
+        let mut piece_seed: Option<P2> = None;
         let raw = match candidate {
             Candidate2d::Shipped(_) => {
                 super::adaptive_segments_with_debug(piece, &params, never, None, None).ok()
@@ -3383,6 +3907,7 @@ pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2
                         parts,
                     })) => {
                         piece_parts = Some(parts);
+                        piece_seed = report.seed;
                         run.fields.push(report);
                         piece_wraps.clone_from(&wraps);
                         run.wraps.extend(wraps);
@@ -3401,6 +3926,13 @@ pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2
         let cell = planner_cell(&params);
         let raw_load = pass_load_readout(piece, &params, &raw, piece_parts.as_ref());
         run.summary.raw_pass_load.merge(&raw_load);
+        run.summary.cascade.merge(&cascade_readout(
+            piece,
+            &params,
+            &raw,
+            piece_parts.as_ref(),
+            piece_seed,
+        ));
         let segments = cleaned(piece, &params, raw);
         run.summary
             .entry_split
@@ -3715,47 +4247,128 @@ mod tests {
         let part = Polygon2::new(circle(P2::new(0.0, 0.0), disc_radius + R, cell));
         let region = ToolCentreRegion::new(&part, R);
         let seed = P2::new(0.0, 0.0);
-        let field =
-            GeodesicField::over_part(&part, R, cell, s, seed, R, FieldSolver::SourceTracking)
-                .expect("the seed lies in the disc");
-        let never: &dyn CancelCheck = &|| false;
-        let (spiral, k) =
-            core_spiral(&field, &region, seed, R, 0.0, s, tol, never).expect("not cancelled");
-        // The polygon of the disc lies within `cell` of the circle (the sag
-        // of `circle`), and a level is read only where the four corners of
-        // its cell are reachable (one cell diagonal inside the rim).
-        let lo = ((disc_radius - cell - SQRT_2 * cell - R) / s).floor() as usize;
-        let hi = ((disc_radius - R) / s).floor() as usize;
-        assert!(
-            (lo..=hi).contains(&k),
-            "core levels {k}, expected {lo} to {hi}"
-        );
-        assert!(spiral.len() > 2, "the spiral has points");
-        for pair in spiral.windows(2) {
-            let &[a, b] = pair else {
-                continue;
-            };
+        let ceiling_width = pass_load_for(&test_params(), cell).ceiling * 2.0 * R;
+        for spacing in [Spacing::Plain, Spacing::Curvature] {
+            let mut field =
+                GeodesicField::over_part(&part, R, cell, s, seed, R, FieldSolver::SourceTracking)
+                    .expect("the seed lies in the disc");
+            if spacing == Spacing::Curvature {
+                field.use_curvature_spacing(R, ceiling_width);
+            }
+            let never: &dyn CancelCheck = &|| false;
+            let (spiral, k) =
+                core_spiral(&field, &region, seed, R, 0.0, s, tol, never).expect("not cancelled");
+            // Level `k` is a circle of radius `R + T_k` about the seed. The
+            // polygon of the disc lies within `cell` of the circle (the sag
+            // of `circle`), and a level is read only where the four corners
+            // of its cell are reachable (one cell diagonal inside the rim):
+            // the last core level fits in the disc, and the next one does
+            // not fit inside that margin.
+            let outer = R + field.level_value(k) * s;
+            let next = R + field.level_value(k + 1) * s;
             assert!(
-                region.contains_segment(a, b),
-                "spiral segment {a:?} -> {b:?} leaves the region"
+                k > 0 && outer <= disc_radius && next > disc_radius - cell - SQRT_2 * cell,
+                "{spacing:?}: core levels {k}, outer {outer:.3}, next {next:.3}"
             );
-            let (ra, rb) = (a.x.hypot(a.y), b.x.hypot(b.y));
+            assert!(spiral.len() > 2, "the spiral has points");
+            for pair in spiral.windows(2) {
+                let &[a, b] = pair else {
+                    continue;
+                };
+                assert!(
+                    region.contains_segment(a, b),
+                    "{spacing:?}: spiral segment {a:?} -> {b:?} leaves the region"
+                );
+                let (ra, rb) = (a.x.hypot(a.y), b.x.hypot(b.y));
+                assert!(
+                    rb >= ra - tol,
+                    "{spacing:?}: the radius falls from {ra:.4} to {rb:.4} (tolerance {tol})"
+                );
+            }
+            let first = spiral
+                .first()
+                .map(|p| p.x.hypot(p.y))
+                .expect("a first point");
+            let last = spiral.last().map(|p| p.x.hypot(p.y)).expect("a last point");
             assert!(
-                rb >= ra - tol,
-                "the radius falls from {ra:.4} to {rb:.4} (tolerance {tol})"
+                (first - R).abs() <= tol,
+                "{spacing:?}: starts on the rim: {first:.4}"
+            );
+            assert!(
+                (last - outer).abs() <= cell,
+                "{spacing:?}: ends on level {k} at {outer:.3}: {last:.4}"
             );
         }
-        let first = spiral
-            .first()
-            .map(|p| p.x.hypot(p.y))
-            .expect("a first point");
-        let last = spiral.last().map(|p| p.x.hypot(p.y)).expect("a last point");
-        assert!((first - R).abs() <= tol, "starts on the rim: {first:.4}");
-        let outer = R + k as f64 * s;
+    }
+
+    /// The spacing law of the module doc: `s'(ρ) = ρ + R - √(R² + ρ² +
+    /// 2ρ(R - cD))`.
+    fn s_prime(rho: f64, r: f64, cd: f64) -> f64 {
+        rho + r - (r * r + rho * rho + 2.0 * rho * (r - cd)).sqrt()
+    }
+
+    /// The swept width of a pass at cutter-centre radius `rho`, one spacing
+    /// `delta` outside a cleared disc of radius `rho - delta + R` (the
+    /// circular-front engagement of the derivation).
+    fn circular_width(rho: f64, delta: f64, r: f64) -> f64 {
+        let a = rho - delta + r;
+        r - (a * a - r * r - rho * rho) / (2.0 * rho)
+    }
+
+    /// C5: the curvature spacing law. Each level whose step is under the
+    /// stepover puts the pass exactly on the ceiling width (the closed
+    /// form solves the width equation); the steps never shrink; the step is
+    /// capped at `s` exactly where `ρ ≥ ρ* = s(2R - s) / (2(cD - s))`, and
+    /// `s'(ρ*) = s`; a straight edge (`ρ → ∞`) gives `s' → cD`, the
+    /// straight-edge width.
+    #[test]
+    fn the_curvature_spacing_law_puts_each_tight_pass_on_the_ceiling() {
+        let (s, tol) = op_defaults();
+        let cell = planner_cell_size(R, tol);
+        let cd = pass_load_for(&test_params(), cell).ceiling * 2.0 * R;
         assert!(
-            (last - outer).abs() <= cell,
-            "ends on level {k} at {outer:.3}: {last:.4}"
+            cd > s,
+            "the ceiling width {cd} must exceed the stepover {s}"
         );
+        let rho_star = s * (2.0 * R - s) / (2.0 * (cd - s));
+        assert!(
+            (s_prime(rho_star, R, cd) - s).abs() < 1e-9,
+            "s'(ρ*) = s: {}",
+            s_prime(rho_star, R, cd)
+        );
+        assert!(
+            (s_prime(1e6, R, cd) - cd).abs() < 1e-3,
+            "the straight limit"
+        );
+        let levels = curvature_levels(R, s, cd, 2.0 * rho_star);
+        assert!(levels.len() > 3, "levels: {levels:?}");
+        let mut prev_step = 0.0_f64;
+        for pair in levels.windows(2) {
+            let &[t0, t1] = pair else {
+                continue;
+            };
+            let (rho0, rho1) = (R + t0, R + t1);
+            let step = rho1 - rho0;
+            assert!(
+                step >= prev_step - 1e-9,
+                "the steps never shrink: {prev_step} then {step}"
+            );
+            assert!(step <= s + 1e-9, "a step is at most s: {step}");
+            let capped = step >= s - 1e-9;
+            assert_eq!(
+                capped,
+                rho1 >= rho_star - 1e-9,
+                "capped exactly from ρ* = {rho_star:.4}: step {step:.4} at ρ {rho1:.4}"
+            );
+            if !capped {
+                let w = circular_width(rho1, step, R);
+                assert!(
+                    (w - cd).abs() < 1e-9,
+                    "the pass at ρ {rho1:.4} reads {w:.6} against cD {cd:.6}"
+                );
+            }
+            prev_step = step;
+        }
     }
 
     /// The straight parallel arcs of a rectangular lobe, `s` apart, `n` of
