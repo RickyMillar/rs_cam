@@ -16,6 +16,7 @@ from geom import (R, S, D, CD, C_FRAC, TOL, SEED, ISL_C, ISL_R, HOLE_R, A_UP, B_
 from harness_svg import wraps as harness_wraps
 
 PAGE = os.path.join(HERE, "..", "..", "farside_ideas_v1.html")
+PAGE2 = os.path.join(HERE, "..", "..", "farside_ideas_v2.html")
 
 
 def load_results():
@@ -81,6 +82,10 @@ def add_whole(res):
             w[nm][k]["all_closed"] = "yes" if w[nm][k]["closed"] == w[nm][k]["loops"] else "no"
             w[nm][k]["len_vs_ideal"] = w[nm][k]["length_mm"] / ideal
             w[nm][k]["len_vs_curv"] = w[nm][k]["length_mm"] / h4[f"{nm}_geodesic_curv"]["cut_mm"]
+        for k in ("e", "f", "a"):
+            w[nm][k]["one_closed"] = "yes" if (w[nm][k]["open_arcs"] == 0 and w[nm][k]["levels_multi"] == 0) else "no"
+            if "zone_min" in w[nm][k] and abs(w[nm][k]["last_level"] - w[nm][k]["zone_min"]) < 1e-6:
+                w[nm][k]["one_closed"] = "yes, but it stops at the second basin"
     se = w["star"]["e"]
     w["star"]["e_tip_levels"] = len(se["over_levels"])
     w["star"]["e_tip_wall_max"] = se["over_wall_max"]
@@ -191,7 +196,7 @@ BLUE = "#1f5fbf"
 RED = "#d1342f"
 
 
-def build():
+def build(v2=False):
     res = load_results()
     cur = load_curves()
     res["derived"] = derived(res, cur)
@@ -236,7 +241,7 @@ def build():
     html = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Far-side wrap ideas</title>
+<title>{'Morph and far-side wraps' if v2 else 'Far-side wrap ideas'}</title>
 <style>
 :root {{ --bg:#fbfaf7; --ink:#1b1b1b; --muted:#5b5b5b; --line:#d9d6cf; --card:#ffffff; --accent:#1f5fbf; }}
 body {{ background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; margin:0; }}
@@ -246,6 +251,7 @@ h2 {{ font-size:19px; margin:30px 0 8px; border-bottom:1px solid var(--line); pa
 h3 {{ font-size:16px; margin:0 0 6px; }}
 p {{ margin:6px 0; max-width:78ch; }}
 .sub {{ color:var(--muted); }}
+.grid2 {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(420px, 1fr)); gap:12px; margin-bottom:14px; }}
 .grid4 {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-bottom:14px; }}
 .grid {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:14px; }}
 .card {{ background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }}
@@ -264,13 +270,13 @@ table.all th:first-child, table.all td:first-child {{ text-align:left; }}
 code {{ font-size:13px; }}
 </style></head>
 <body><main>
-<h1>Far-side wrap ideas</h1>
+<h1>{'Morph and far-side wraps' if v2 else 'Far-side wrap ideas'}</h1>
 <p class="sub">Agent C15, 2026-10-24. Pocket fixture <code>ux_2d_pocket.toml</code>, tool-centre space (the pocket inset by R, the island grown by R). Python prototypes with exact geometry; no Rust, no lattice. Scripts: <code>phase2/c15/</code>; every number on this page is checked by <code>assert_c15.py</code>.</p>
 
 <p>Each picture shows the same frame. The black outline is the pocket wall and the grey disc is the island. The dashed circle is the island grown by the tool radius: the cutter centre cannot go inside it. The yellow area is the <b>zone</b>: the area that the island hides from the entry (red dot). The green dashed lines are the two <b>shadow lines</b> from the entry, tangent to the grown island.</p>
 <p class="key">Lines: <span class="sw" style="background:{GREY}"></span>near-side wraps (circles about the entry, the same in every idea)<span class="sw" style="background:{BLUE}"></span>the idea's wraps<span class="sw" style="background:{RED}"></span>the harness wraps (Rust, read from the render SVG)</p>
 
-{whole_section(res, wcur, C)}
+{whole_section(res, wcur, C) if v2 else ''}
 
 <h2>1. Why the far side wobbles</h2>
 <div class="grid">
@@ -344,10 +350,13 @@ code {{ font-size:13px; }}
 
 
 def main():
-    res, html = build()
-    with open(PAGE, "w") as f:
-        f.write(html)
-    print("wrote", os.path.abspath(PAGE), len(html))
+    # v1 is kept as published (the lead's instruction, 2026-10-24); only v2 is
+    # written. assert_c15.py still checks every claim of both pages.
+    for v2, path in ((True, PAGE2),):
+        res, html = build(v2)
+        with open(path, "w") as f:
+            f.write(html)
+        print("wrote", os.path.abspath(path), len(html))
 
 
 
@@ -383,66 +392,88 @@ def results_with_derived():
     return res
 
 
-def whole_section(res, wcur, C):
-    from shapes import Shape
-    from harness_svg import paths_view
-    base = os.path.join(HERE, "..", "renders4")
-    rows = []
+def whole_table(res):
+    """The (e)/(f)/(a) table of the note (assert_c15.py rebuilds and compares it)."""
+    lines = ["| Shape / idea | Levels / wraps | One closed loop each | Open arcs | Levels with 2+ wraps (max) "
+             "| Max gap mm | Min/max gap per loop: median, worst | Interior width D (over) | Arc-end/seam D "
+             "| Area/mm D | Cut mm (× (a)) | Extra levels vs (a) | Residue mm² / wall dist mm |",
+             "|" + "---|" * 13]
     for nm in ("star", "pocket"):
-        sh = Shape(nm)
-        cells = []
-        for k, title, what in (
-                ("e", "(e) harmonic morph",
-                 "Level lines of u: u = 0 on the entry disc, u = 1 on every wall and island, Laplace inside."),
-                ("f", "(f) distance-ratio morph",
-                 "Level lines of u = d_entry / (d_entry + d_wall).")):
-            r = f"whole.{nm}.{k}"
-            cells.append(f"""<section class="card"><h3>{nm}: {title}</h3><p class="what">{what}</p>
-{panel_shape(sh, [(wcur[(nm, k)], BLUE, 0.3)], nm + ' ' + k)}
+        for k in ("e", "f", "a"):
+            r = res["whole"][nm][k]
+            vs = "—" if k == "a" else f"{r['length_vs_a']:.1f}"
+            ex = "—" if k == "a" else f"{r['extra_levels_vs_a']}"
+            lines.append(
+                f"| {nm} ({k}) | {r['levels']} / {r['loops']} | {r['one_closed']} | {r['open_arcs']} "
+                f"| {r['levels_multi']} ({r['max_loops_per_level']}) | {r['max_gap_mm']:.2f} "
+                f"| {r['median_gap_ratio']:.4f}, {r['worst_gap_ratio']:.6f} | {r['sw_interior_max']:.4f} "
+                f"({r['sw_interior_over']}) | {r['sw_seam_max']:.2f} | {r['apm_interior_max']:.4f} "
+                f"| {r['length_mm']:.0f} ({vs}) | {ex} "
+                f"| {r['residue_interior_mm2']:.1f} / {r['residue_max_wall_distance_mm']:.2f} |")
+    return "\n".join(lines)
+
+
+def png_data(path):
+    import base64
+    return "data:image/png;base64," + base64.b64encode(open(path, "rb").read()).decode()
+
+
+def whole_section(res, wcur, C):
+    """v2, section 0: (e), (f) and (a) on the star and the pocket, side by side,
+    with the v4 harness renders."""
+    from shapes import Shape
+    base = os.path.join(HERE, "..", "renders4")
+    shapes = {nm: Shape(nm) for nm in ("star", "pocket")}
+    ideas = (
+        ("e", "(e) harmonic morph",
+         "The loops are the level lines of a smooth field that is 0 at the entry and 1 at every wall, so they start round and end in the wall shape."),
+        ("f", "(f) distance-ratio morph",
+         "The loops are the level lines of (distance from the entry) / (distance from the entry + distance to the nearest wall)."),
+        ("a", "(a) exact distance from the entry, local radius",
+         "The wraps are circles about the entry, cut off by the walls; this is the plan recommended on the far side (section 2)."),
+    )
+
+    def card(nm, k, title, what):
+        r = f"whole.{nm}.{k}"
+        cmp_a = "" if k == "a" else (
+            f"<tr><th>levels more than (a)</th><td>{C(r + '.extra_levels_vs_a', 'd')}</td>"
+            f"<th>cut length against (a)</th><td>{C(r + '.length_vs_a', '.1f')} times</td></tr>")
+        return f"""<section class="card"><h3>{nm}: {title}</h3><p class="what">{what}</p>
+{panel_shape(shapes[nm], [(wcur[(nm, k)], BLUE, 0.3)], nm + ' ' + k)}
 <table class="mini">
-<tr><th>levels / loops</th><td>{C(r + '.levels', 'd')} / {C(r + '.loops', 'd')}</td><th>every loop closed</th><td>{C(r + '.all_closed', 's')}</td></tr>
-<tr><th>levels with 2 or more loops</th><td>{C(r + '.levels_multi', 'd')} (max {C(r + '.max_loops_per_level', 'd')})</td><th>largest gap</th><td>{C(r + '.max_gap_mm', '.2f')} mm</td></tr>
-<tr><th>min/max gap in a loop: median, worst</th><td>{C(r + '.median_gap_ratio', '.4f')}, {C(r + '.worst_gap_ratio', '.6f')}</td><th>smallest radius</th><td>{C(r + '.min_abs_rho_mm', '.2f')} mm</td></tr>
-<tr><th>replay, loop interior</th><td>{C(r + '.sw_interior_max', '.4f')} D ({C(r + '.sw_interior_over', 'd')} over)</td><th>area per mm</th><td>{C(r + '.apm_interior_max', '.4f')} D</td></tr>
-<tr><th>cut length</th><td>{C(r + '.length_mm', '.0f')} mm</td><th>residue / max wall distance</th><td>{C(r + '.residue_interior_mm2', '.1f')} mm² / {C(r + '.residue_max_wall_distance_mm', '.2f')} mm</td></tr>
-</table></section>""")
-        for col, title in (("geodesic_curv", "harness v4: geodesic_curv"), ("contour_spiral", "harness v4: ContourSpiral")):
-            P = paths_view(os.path.join(base, f"{nm}_{col}.svg"), "#1f5fbf", sh.harness_view())
+<tr><th>levels / wraps</th><td>{C(r + '.levels', 'd')} / {C(r + '.loops', 'd')}</td><th>every wrap one closed loop</th><td>{C(r + '.one_closed', 's')}</td></tr>
+<tr><th>open arcs</th><td>{C(r + '.open_arcs', 'd')}</td><th>levels with 2 or more wraps</th><td>{C(r + '.levels_multi', 'd')}</td></tr>
+<tr><th>interior width, max</th><td>{C(r + '.sw_interior_max', '.4f')} D ({C(r + '.sw_interior_over', 'd')} samples over c)</td><th>arc-end / seam width, max</th><td>{C(r + '.sw_seam_max', '.2f')} D</td></tr>
+<tr><th>min/max gap per loop: median, worst</th><td>{C(r + '.median_gap_ratio', '.4f')}, {C(r + '.worst_gap_ratio', '.6f')}</td><th>largest gap</th><td>{C(r + '.max_gap_mm', '.2f')} mm</td></tr>
+<tr><th>cut length</th><td>{C(r + '.length_mm', '.0f')} mm</td><th>residue / max distance from a wall</th><td>{C(r + '.residue_interior_mm2', '.1f')} mm² / {C(r + '.residue_max_wall_distance_mm', '.2f')} mm</td></tr>
+{cmp_a}
+</table></section>"""
+
+    rows = []
+    for k, title, what in ideas:
+        rows.append('<div class="grid2">' + card("star", k, title, what) + card("pocket", k, title, what) + "</div>")
+    for col, title, what in (
+            ("geodesic_curv", "harness v4: geodesic_curv", "The v4 render of the curvature-spaced wraps (the PNG of the harness)."),
+            ("contour_spiral", "harness v4: ContourSpiral", "The v4 render of the shipped ContourSpiral strategy.")):
+        cells = []
+        for nm in ("star", "pocket"):
             h = f"h4.{nm}_{col}"
-            cells.append(f"""<section class="card"><h3>{nm}: {title}</h3><p class="what">The blue clearing cuts of the v4 render, in the same frame.</p>
-{panel_shape(sh, [([P], RED, 0.25)], nm + ' ' + col)}
-<table class="mini"><tr><th>cut length</th><td>{C(h + '.cut_mm', '.1f')} mm</td><th>entries</th><td>{C(h + '.entries', 'd')}</td></tr></table></section>""")
-        rows.append('<div class="grid4">' + "\n".join(cells) + "</div>")
-    return f"""<h2>0. Whole-region morphs: start round, end in the wall shape</h2>
-<p>The operator saw other tools whose wraps start round and turn into the wall shape, half way between this spiral and contour-parallel. Ideas (e) and (f) are two fields with no parameter that do this. The levels use the same rule as the other ideas (the C5 law gap from each loop's own curvature). Red lines in the harness panels are the v4 clearing cuts, blue lines are the loops of (e) and (f).</p>
-<p class="look"><b>Look at:</b> on the star, (e) gives one smooth closed loop per level that turns from a circle into the star. The loops crowd at the inner corners. On the pocket, the loops of (e) crowd round the island and the near walls. On the pocket, (f) stops part way.</p>
-{rows[0]}
-{rows[1]}
+            cells.append(f"""<section class="card"><h3>{nm}: {title}</h3><p class="what">{what}</p>
+<img class="pane" alt="{nm} {col}" src="{png_data(os.path.join(base, f'{nm}_{col}.png'))}">
+<table class="mini"><tr><th>cut length (all passes)</th><td>{C(h + '.cut_mm', '.1f')} mm</td><th>entries</th><td>{C(h + '.entries', 'd')}</td></tr></table></section>""")
+        rows.append('<div class="grid2">' + "".join(cells) + "</div>")
+    W = "whole"
+    return f"""<h2>0. Morph fields (e), (f) and the plan (a), star and pocket</h2>
+<p>The operator saw other tools whose wraps start round and turn into the wall shape. (e) and (f) are two fields with no parameter that do this. (a) is the plan recommended for the far side, shown here on the star too. All three use the same level rule (the C5 law gap from each wrap's own curvature) and the same 0.1 mm replay. The harness renders are the v4 PNGs; the harness has no ContourParallel column (the 2D op runs contour-parallel only behind the narrow-region gate, render harness module doc).</p>
+<p><b>How to read a card.</b> "Open arcs" are wraps that do not close; each costs a plunge or a turn (problem 2). "Interior width" leaves out R of arc length at each end or seam; the ends and seams are reported apart. "Min/max gap per loop" is the smallest gap of a wrap divided by its largest gap: 1 is even.</p>
+{"".join(rows)}
 <div class="verdict">
-<p><b>Closed loops.</b> Star (e): every level is one closed loop ({C('whole.star.e.loops', 'd')} loops in {C('whole.star.e.levels', 'd')} levels). Pocket (e): every loop is closed, but when the loops meet behind the island a level is two loops, one round the island and one along the wall ({C('whole.pocket.e.levels_multi', 'd')} levels). Star (f): {C('whole.star.f.levels_multi', 'd')} levels split into up to {C('whole.star.f.max_loops_per_level', 'd')} loops near the tips. Pocket (f): the march stops at u = {C('whole.pocket.f.last_level', '.4f')}. Behind the island u has a second low basin (lowest value {C('whole.pocket.f.zone_min', '.4f')}) that the loops from the entry reach only at u = {C('whole.pocket.f.reach_level', '.4f')}. A level between the two opens a new loop in standing stock, which needs a new entry.</p>
-<p><b>Spacing.</b> One value of u per loop gives a gap of Δu/|∇u|, so the gap follows the gradient. On the star the narrowest gap of a loop (e) lies nearer an inner corner than a tip in {C('whole.star.e.narrowest_near_inner', 'd')} of {C('whole.star.e.located_loops', 'd')} loops; the widest lies nearer a tip in {C('whole.star.e.widest_near_tip', 'd')} of them. The level rule must hold the widest gap, so elsewhere the loops crowd: the median min/max gap in one loop is {C('whole.star.e.median_gap_ratio', '.4f')} on the star and {C('whole.pocket.e.median_gap_ratio', '.4f')} on the pocket. The cut length is {C('whole.star.e.len_vs_curv', '.1f')} times the v4 geodesic_curv on the star and {C('whole.pocket.e.len_vs_curv', '.1f')} times on the pocket.</p>
-<p><b>Load.</b> (e) holds the ceiling in the loop interior on the pocket ({C('whole.pocket.e.sw_interior_max', '.4f')} D). On the star it holds except on the last {C('whole.star.e_tip_levels', 'd')} loops at {C('whole.star.e_tip_count', 'd')} of the five tips ({C('whole.star.e.sw_interior_max', '.2f')} D, all within {C('whole.star.e_tip_wall_max', '.1f')} mm of the wall). (f) has corners where the nearest wall changes (the medial axis), and they read up to {C('whole.star.f.sw_interior_max', '.2f')} D on the star and {C('whole.pocket.f.sw_interior_max', '.2f')} D on the pocket.</p>
-<p><b>Verdict.</b> (e) gives the closed-loop, round-to-wall look on a region without an island, but at {C('whole.star.e.len_vs_curv', '.1f')} times the cut length, because one u per loop cannot give an even gap. (f) fails on load and, on the pocket, on coverage. Neither removes the per-arc plunge (problem 2) at an acceptable cost. A closed-loop morph needs a gap that is even along each loop, which a level set of one field does not give.</p>
+<p><b>Closed loops.</b> Only (e) on the star keeps every wrap one closed loop ({C(W + '.star.e.loops', 'd')} loops, 0 open arcs). On the pocket, (e) loops stay closed but {C(W + '.pocket.e.levels_multi', 'd')} late levels are two loops, one round the island and one along the wall. (f) splits {C(W + '.star.f.levels_multi', 'd')} star levels into up to {C(W + '.star.f.max_loops_per_level', 'd')} loops, and on the pocket it stops at u = {C(W + '.pocket.f.last_level', '.4f')}: behind the island u has a second low basin (lowest {C(W + '.pocket.f.zone_min', '.4f')}) that the loops from the entry reach only at u = {C(W + '.pocket.f.reach_level', '.4f')}. (a) has {C(W + '.star.a.open_arcs', 'd')} open arcs on the star and {C(W + '.pocket.a.open_arcs', 'd')} on the pocket.</p>
+<p><b>Spacing and cost.</b> (a) keeps an even gap (median min/max {C(W + '.star.a.median_gap_ratio', '.4f')} on the star). One value of u per loop gives (e) a gap that follows the field's gradient, so the loops crowd at the inner corners (narrowest gap there in {C(W + '.star.e.narrowest_near_inner', 'd')} of {C(W + '.star.e.located_loops', 'd')} star loops; median {C(W + '.star.e.median_gap_ratio', '.4f')}). On the star (e) needs {C(W + '.star.e.extra_levels_vs_a', 'd')} more levels and {C(W + '.star.e.length_vs_a', '.1f')} times the cut length of (a); on the pocket {C(W + '.pocket.e.extra_levels_vs_a', 'd')} more levels and {C(W + '.pocket.e.length_vs_a', '.1f')} times.</p>
+<p><b>Load.</b> (a) holds the ceiling in the interior on both shapes ({C(W + '.star.a.sw_interior_max', '.4f')} D star, {C(W + '.pocket.a.sw_interior_max', '.4f')} D pocket; c = {C('inputs.c', '.4f')} D). (e) holds it on the pocket ({C(W + '.pocket.e.sw_interior_max', '.4f')} D); on the star it reads {C(W + '.star.e.sw_interior_max', '.2f')} D on the last {C(W + '.star.e_tip_levels', 'd')} loops at {C(W + '.star.e_tip_count', 'd')} of the five tips. (f) reads up to {C(W + '.star.f.sw_interior_max', '.2f')} D at the corners where the nearest wall changes.</p>
+<p><b>Verdict.</b> (e) removes the per-arc plunge only on a part without an island, and at {C(W + '.star.e.length_vs_a', '.1f')} times the cut length of (a). (f) fails on load. (a) stays the recommendation; its open arcs are the C14 turns' work.</p>
 </div>
 """
-
-
-def whole_table(res):
-    """The (e)/(f) table of the note (assert_c15.py rebuilds and compares it)."""
-    lines = ["| Shape / idea | Levels / loops | All closed | Levels with 2+ loops (max) | Max gap mm "
-             "| Min/max gap per loop: median, worst | Min radius mm | Replay interior D (over) "
-             "| Area/mm D | Cut mm (× v4 geodesic_curv) | Residue mm² / wall dist mm |",
-             "|" + "---|" * 11]
-    for nm in ("star", "pocket"):
-        for k in ("e", "f"):
-            r = res["whole"][nm][k]
-            lines.append(
-                f"| {nm} ({k}) | {r['levels']} / {r['loops']} | {r['all_closed']} | {r['levels_multi']} "
-                f"({r['max_loops_per_level']}) | {r['max_gap_mm']:.2f} | {r['median_gap_ratio']:.4f}, "
-                f"{r['worst_gap_ratio']:.6f} | {r['min_abs_rho_mm']:.2f} | {r['sw_interior_max']:.4f} "
-                f"({r['sw_interior_over']}) | {r['apm_interior_max']:.4f} | {r['length_mm']:.0f} "
-                f"({r['len_vs_curv']:.1f}) | {r['residue_interior_mm2']:.1f} / {r['residue_max_wall_distance_mm']:.2f} |")
-    return "\n".join(lines)
 
 
 if __name__ == "__main__":

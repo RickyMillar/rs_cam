@@ -5,6 +5,7 @@
    "levels": 58,
    "loops": 68,
    "closed": 68,
+   "open_arcs": 0,
    "levels_multi": 10,
    "max_loops_per_level": 2,
    "length_mm": 10536.060239384553,
@@ -26,12 +27,15 @@
    "over_levels": [],
    "over_wall_max": 0.0,
    "over_tips": [],
-   "last_level": 0.999999999995687
+   "last_level": 0.999999999995687,
+   "extra_levels_vs_a": 23,
+   "length_vs_a": 8.364212542755881
   },
   "f": {
    "levels": 49,
    "loops": 49,
    "closed": 49,
+   "open_arcs": 0,
    "levels_multi": 0,
    "max_loops_per_level": 1,
    "length_mm": 3574.909191654969,
@@ -103,7 +107,37 @@
    "over_tips": [],
    "last_level": 0.7856619222794202,
    "zone_min": 0.7856619222794238,
-   "reach_level": 0.8347414244672109
+   "reach_level": 0.8347414244672109,
+   "extra_levels_vs_a": 14,
+   "length_vs_a": 2.837996330761338
+  },
+  "a": {
+   "levels": 35,
+   "loops": 61,
+   "closed": 5,
+   "open_arcs": 56,
+   "levels_multi": 22,
+   "max_loops_per_level": 6,
+   "length_mm": 1259.6595537866474,
+   "max_gap_mm": 2.000000000082224,
+   "max_formula_frac": 0.36264459023671264,
+   "min_abs_rho_mm": 0.8721280782198783,
+   "min_convex_rho_mm": 4.429273473960348,
+   "worst_gap_ratio": 0.9842754330634063,
+   "median_gap_ratio": 0.9979420800000686,
+   "widest_near_tip": 0,
+   "narrowest_near_inner": 0,
+   "located_loops": 0,
+   "sw_interior_max": 0.3617386645419028,
+   "sw_interior_over": 0,
+   "sw_seam_max": 0.6748773299069075,
+   "apm_interior_max": 0.37714573180218336,
+   "residue_interior_mm2": 50.39000000000001,
+   "residue_max_wall_distance_mm": 1.998333564750797,
+   "over_levels": [],
+   "over_wall_max": 0.0,
+   "over_tips": [],
+   "last_level": 61.596355587136856
   }
  },
  "star": {
@@ -113,6 +147,7 @@
    "levels": 32,
    "loops": 32,
    "closed": 32,
+   "open_arcs": 0,
    "levels_multi": 0,
    "max_loops_per_level": 1,
    "length_mm": 5515.912562329257,
@@ -145,12 +180,15 @@
     3,
     4
    ],
-   "last_level": 0.9999999999969768
+   "last_level": 0.9999999999969768,
+   "extra_levels_vs_a": 13,
+   "length_vs_a": 6.127957742188618
   },
   "f": {
    "levels": 65,
    "loops": 73,
    "closed": 73,
+   "open_arcs": 0,
    "levels_multi": 7,
    "max_loops_per_level": 3,
    "length_mm": 10250.04925066505,
@@ -240,7 +278,37 @@
     3,
     4
    ],
-   "last_level": 0.9999999999999976
+   "last_level": 0.9999999999999976,
+   "extra_levels_vs_a": 46,
+   "length_vs_a": 11.387393827160919
+  },
+  "a": {
+   "levels": 19,
+   "loops": 64,
+   "closed": 8,
+   "open_arcs": 56,
+   "levels_multi": 12,
+   "max_loops_per_level": 5,
+   "length_mm": 900.1224868693745,
+   "max_gap_mm": 2.000000000869381,
+   "max_formula_frac": 0.36264459019376427,
+   "min_abs_rho_mm": 4.429273474067586,
+   "min_convex_rho_mm": 4.429273474067586,
+   "worst_gap_ratio": 0.9990684688560076,
+   "median_gap_ratio": 0.9996015214164407,
+   "widest_near_tip": 4,
+   "narrowest_near_inner": 14,
+   "located_loops": 18,
+   "sw_interior_max": 0.3614950114347162,
+   "sw_interior_over": 0,
+   "sw_seam_max": 0.523512001013619,
+   "apm_interior_max": 0.377145731791773,
+   "residue_interior_mm2": 77.33000000000001,
+   "residue_max_wall_distance_mm": 2.5474844037721738,
+   "over_levels": [],
+   "over_wall_max": 0.0,
+   "over_tips": [],
+   "last_level": 36.03333757846603
   }
  }
 }

@@ -1,7 +1,8 @@
 # P2 C15 — far-side ideas for the pocket (2026-10-24)
 
 Status: PROTOTYPE COMPLETE (Python only; no Rust edited, no cargo run, no
-commit). Look page: `farside_ideas_v1.html`. Scripts:
+commit). Look pages: `farside_ideas_v1.html` (far side) and `farside_ideas_v2.html`
+(adds the morph fields and (a) on the star, §8). Scripts:
 `phase2/c15/` (`geom.py`, `fields.py`, `march.py`, `harness_svg.py`,
 `run_c15.py`, `whole.py`, `shapes.py`, `page.py`, `assert_c15.py`, `diag.py`,
 `diag_whole.py`, `preview_whole.py`). Run
@@ -301,12 +302,14 @@ same frame).
 ### Table
 
 <!-- whole:begin -->
-| Shape / idea | Levels / loops | All closed | Levels with 2+ loops (max) | Max gap mm | Min/max gap per loop: median, worst | Min radius mm | Replay interior D (over) | Area/mm D | Cut mm (× v4 geodesic_curv) | Residue mm² / wall dist mm |
-|---|---|---|---|---|---|---|---|---|---|---|
-| star (e) | 32 / 32 | yes | 0 (1) | 1.74 | 0.0243, 0.000100 | 0.72 | 0.8046 (69) | 0.3717 | 5516 (5.2) | 57.3 / 2.11 |
-| star (f) | 65 / 73 | yes | 7 (3) | 1.28 | 0.2055, 0.099149 | 0.72 | 0.9099 (1145) | 0.3526 | 10250 (9.7) | 56.7 / 2.11 |
-| pocket (e) | 58 / 68 | yes | 10 (2) | 2.00 | 0.0005, 0.000003 | 1.46 | 0.3651 (0) | 0.3746 | 10536 (7.8) | 0.0 / 0.00 |
-| pocket (f) | 49 / 49 | yes | 0 (1) | 1.14 | 0.1205, 0.049133 | 0.75 | 0.8972 (334) | 0.4029 | 3575 (2.7) | 2119.8 / 13.84 |
+| Shape / idea | Levels / wraps | One closed loop each | Open arcs | Levels with 2+ wraps (max) | Max gap mm | Min/max gap per loop: median, worst | Interior width D (over) | Arc-end/seam D | Area/mm D | Cut mm (× (a)) | Extra levels vs (a) | Residue mm² / wall dist mm |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| star (e) | 32 / 32 | yes | 0 | 0 (1) | 1.74 | 0.0243, 0.000100 | 0.8046 (69) | 0.75 | 0.3717 | 5516 (6.1) | 13 | 57.3 / 2.11 |
+| star (f) | 65 / 73 | no | 0 | 7 (3) | 1.28 | 0.2055, 0.099149 | 0.9099 (1145) | 0.93 | 0.3526 | 10250 (11.4) | 46 | 56.7 / 2.11 |
+| star (a) | 19 / 64 | no | 56 | 12 (5) | 2.00 | 0.9996, 0.999068 | 0.3615 (0) | 0.52 | 0.3771 | 900 (—) | — | 77.3 / 2.55 |
+| pocket (e) | 58 / 68 | no | 0 | 10 (2) | 2.00 | 0.0005, 0.000003 | 0.3651 (0) | 0.30 | 0.3746 | 10536 (8.4) | 23 | 0.0 / 0.00 |
+| pocket (f) | 49 / 49 | yes, but it stops at the second basin | 0 | 0 (1) | 1.14 | 0.1205, 0.049133 | 0.8972 (334) | 0.26 | 0.4029 | 3575 (2.8) | 14 | 2119.8 / 13.84 |
+| pocket (a) | 35 / 61 | no | 56 | 22 (6) | 2.00 | 0.9979, 0.984275 | 0.3617 (0) | 0.67 | 0.3771 | 1260 (—) | — | 50.4 / 2.00 |
 <!-- whole:end -->
 
 v4 harness for comparison: star `geodesic_curv` 1051.5 mm, 73 entries;
@@ -357,3 +360,29 @@ wall pass and the residue passes; the (e)/(f) lengths are the loops only.)
   closed-loop morph that the operator would accept needs a gap that is even
   along each loop: that is a spacing that varies along the loop (the C6
   pass-count idea), not a level set of one field. §5 stands.
+
+## 8. Page v2 (lead, 2026-10-24): (e), (f) and (a) side by side
+
+`farside_ideas_v2.html` holds sections 0 to 4: section 0 puts (e), (f) and
+(a) first, star beside pocket, with the v4 harness PNGs
+(`renders4/{star,pocket}_{geodesic_curv,contour_spiral}.png`) embedded.
+The harness has no ContourParallel column: the render harness module doc
+says the 2D op runs contour-parallel only behind the narrow-region gate.
+`farside_ideas_v1.html` is kept as committed. The table in §7 now has the
+(a) rows and the columns against (a).
+
+- (a) on the star: 19 levels, 64 wraps, 56 open arcs (the circles cut off
+  by the walls of each lobe), interior width 0.3615 D (0 over c), an even
+  gap (median min/max per wrap 0.9996), 900 mm of cut. The residue
+  (77.3 mm²) lies within 2.55 mm of a wall, at the lobe ends; the wall
+  pass takes it.
+- (a) on the pocket in this run: 35 levels (as in §2), 56 open arcs,
+  0.3617 D, 1260 mm, residue 50.4 mm² within 2.00 mm of a
+  wall (the whole pocket is read here; §2 read the zone only).
+- Against (a): star (e) needs 13 more levels and 6.1 times the cut length;
+  star (f) 46 more levels and 11.4 times; pocket (e) 23 more levels and
+  8.4 times; pocket (f) stops at its second basin.
+- Only star (e) keeps every wrap one closed loop with 0 open arcs. It would
+  remove the per-arc plunge there, at 6.1 times the cut length of (a), and
+  its last 5 loops read 0.80 D at the tips. The recommendation of §5
+  stands: (a), with its open arcs joined by the C14 turns.

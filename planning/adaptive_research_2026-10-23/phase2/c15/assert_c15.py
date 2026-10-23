@@ -113,11 +113,18 @@ def get(key):
 
 
 # ── 3. Every page claim against the fresh results ─────────────────────
+PAGE2 = os.path.join(ROOT, "farside_ideas_v2.html")
+claims = []
+for pg in (PAGE, PAGE2):
+    html = open(pg).read()
+    cl = re.findall(r'<span data-claim="([^"]+)" data-fmt="([^"]+)">([^<]*)</span>', html)
+    check(len(cl) > 100, f"page claims found in {os.path.basename(pg)}: {len(cl)}")
+    for key, fmt, shown in cl:
+        check(format(get(key), fmt) == shown,
+              f"{os.path.basename(pg)} claim {key}: shows {shown}, fresh {format(get(key), fmt)}")
+    claims += cl
 html = open(PAGE).read()
-claims = re.findall(r'<span data-claim="([^"]+)" data-fmt="([^"]+)">([^<]*)</span>', html)
-check(len(claims) > 100, f"page claims found: {len(claims)}")
-for key, fmt, shown in claims:
-    check(format(get(key), fmt) == shown, f"page claim {key}: shows {shown}, fresh {format(get(key), fmt)}")
+html2 = open(PAGE2).read()
 
 # ── 4. The note's table and its prose numbers ─────────────────────────
 note = open(NOTE).read().replace("−", "-")
@@ -289,8 +296,51 @@ for nm in ("star", "pocket"):
     check(W[nm]["f"]["sw_interior_max"] > 2 * c, f"{nm} (f) over at the medial axis")
     check(W[nm]["e"]["len_vs_curv"] > 2, f"{nm} (e) cut length many times geodesic_curv")
 check(st["e"]["narrowest_near_inner"] == st["e"]["located_loops"], "star (e) narrowest gap at the inner corners")
-# the page puts (e)/(f) first
-check(html.index("0. Whole-region morphs") < html.index("1. Why the far side wobbles"), "(e)/(f) first on the page")
+# the v1 page puts (e)/(f) first; v2 puts (e), (f), (a) first, star beside pocket
+check(html.index("0. Whole-region morphs") < html.index("1. Why the far side wobbles"), "(e)/(f) first on v1")
+i0 = html2.index("0. Morph fields (e), (f) and the plan (a)")
+check(i0 < html2.index("1. Why the far side wobbles"), "(e), (f), (a) first on v2")
+check(html2.index("star: (e)") < html2.index("pocket: (e)") < html2.index("star: (f)") < html2.index("star: (a)"),
+      "v2: star beside pocket, (e) then (f) then (a)")
+check(html2.count('src="data:image/png;base64,') == 4, "v2 embeds the four v4 harness PNGs")
+r4 = os.listdir(os.path.join(HERE, "..", "renders4"))
+check(not any("parallel" in f for f in r4), "the harness has no ContourParallel render")
+harness_src = open(os.path.join(ROOT, "..", "..", ".claude", "worktrees", "adaptive-head", "crates", "rs_cam_core",
+                                "tests", "adaptive_geodesic_2d_renders_g1.rs")).read()
+check("The 2D op exposes no contour-parallel strategy" in harness_src, "harness doc: no contour-parallel column")
+# (a) on both shapes, and the comparisons against it
+for nm in ("star", "pocket"):
+    A = W[nm]["a"]
+    check(A["sw_interior_max"] <= c + q and A["sw_interior_over"] == 0, f"{nm} (a) holds the ceiling")
+    check(A["worst_gap_ratio"] > 0.98, f"{nm} (a) even gap")
+    check(A["open_arcs"] > 0 and A["one_closed"] == "no", f"{nm} (a) has open arcs")
+    check(A["residue_max_wall_distance_mm"] < R, f"{nm} (a) residue next to a wall")
+    for k in ("e", "f"):
+        check(W[nm][k]["extra_levels_vs_a"] > 0 and W[nm][k]["length_vs_a"] > 2, f"{nm} ({k}) costs more than (a)")
+check(W["pocket"]["a"]["levels"] == res["a"]["levels"], "whole.py (a) on the pocket = run_c15 (a)")
+check([W[nm][k]["one_closed"] == "yes" for nm in ("star", "pocket") for k in ("e", "f", "a")].count(True) == 1
+      and W["star"]["e"]["one_closed"] == "yes", "only star (e) keeps one closed loop per level")
+check(W["pocket"]["f"]["one_closed"].startswith("yes, but it stops"), "pocket (f) flagged as stopped")
+s8 = note.split("## 8. Page v2")[1]
+sa, pa, se, sf, pe, pf = (W["star"]["a"], W["pocket"]["a"], W["star"]["e"], W["star"]["f"], W["pocket"]["e"],
+                          W["pocket"]["f"])
+prose3 = [
+    f"{sa['levels']} levels, {sa['loops']} wraps, {sa['open_arcs']} open arcs",
+    f"interior width {sa['sw_interior_max']:.4f} D (0 over c)",
+    f"(median min/max per wrap {sa['median_gap_ratio']:.4f}), {sa['length_mm']:.0f} mm of cut",
+    f"({sa['residue_interior_mm2']:.1f} mm²) lies within {sa['residue_max_wall_distance_mm']:.2f} mm of a wall",
+    f"{pa['levels']} levels (as in §2), {pa['open_arcs']} open arcs",
+    f"{pa['sw_interior_max']:.4f} D, {pa['length_mm']:.0f} mm, residue {pa['residue_interior_mm2']:.1f} mm² within "
+    f"{pa['residue_max_wall_distance_mm']:.2f} mm",
+    f"star (e) needs {se['extra_levels_vs_a']} more levels and {se['length_vs_a']:.1f} times the cut length",
+    f"star (f) {sf['extra_levels_vs_a']} more levels and {sf['length_vs_a']:.1f} times",
+    f"pocket (e) {pe['extra_levels_vs_a']} more levels and\n  {pe['length_vs_a']:.1f} times",
+    f"at {se['length_vs_a']:.1f} times the cut length of (a)",
+    f"its last {W['star']['e_tip_levels']} loops read {se['sw_interior_max']:.2f} D at the tips",
+]
+for v in prose3:
+    check(v in s8, f"note §8: '{v}' not found")
 
-print("assert_c15:", "FAILED" if FAILS else "all claims hold", f"({len(claims)} page claims, {len(prose)} note claims)")
+print("assert_c15:", "FAILED" if FAILS else "all claims hold",
+      f"({len(claims)} page claims over v1 and v2, {len(prose) + len(prose2) + len(prose3)} note claims, 2 note tables)")
 sys.exit(1 if FAILS else 0)
