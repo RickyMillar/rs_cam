@@ -99,6 +99,28 @@
 //! its entry law assumed a straight cleared edge ([`EntryLaw`]). It stays
 //! selectable for the record.
 //!
+//! # The morph join (C4, [`JoinRule::Morph`])
+//!
+//! The G1 join leaves one entry per wrap: the replay refuses the radial
+//! seam step (C3: 56 of 92 star entries are joins). The morph join spreads
+//! the outward drift over a whole wrap instead, so no step is radial:
+//!
+//! - The core zone: the levels whose level sets are star-shaped about the
+//!   seed ([`GeodesicField::star_levels`]) are one spiral ([`core_spiral`],
+//!   the level set of `T/s - φ/2π`, with `φ` unwrapped along the curve)
+//!   and a closing lap. One plunge, the starter's.
+//! - The lobes: a run of wall-to-wall arcs, one per level, each the one
+//!   child of the arc before it, in one set of front branches, with a
+//!   length ratio of at most `(R + 2s)/(R + s)` ([`lobe_length_ratio`])
+//!   and every matched pair within the reach, is cut as blended legs
+//!   ([`morph_legs`], [`LobeMorph`]; Bieterman's morph between consecutive
+//!   contours, R3 Source 2). The other arcs are cut as under the G1 join
+//!   with the one-side meeting rule.
+//! - Not in scope: the spacing near the seed. A pass round a cleared disc
+//!   of small radius reads over the ceiling at the full stepover (C3), and
+//!   the core spiral has the same spacing, so the replay still splits its
+//!   inner turns. The lever is a curvature-aware field (C3 §3, `s'(ρ)`).
+//!
 //! # Engagement, the wall pass and the rest
 //!
 //! The segments go through the same pipeline as the agent and the contour
@@ -137,6 +159,15 @@
 //!   rounding).
 //! - The meeting-line trim is one stepover (the brief's rule); it is
 //!   covered by the first branch's disc when `s ≤ R / √2`.
+//! - C4: the star-shape rays are spaced so the arc between two rays at the
+//!   lattice diagonal is one cell; each ray is sampled at half a cell; the
+//!   spiral's radius is bisected to the op tolerance, and its angle step is
+//!   the chord rule above at the outer radius `R + K·s`.
+//! - C4: the lobe length ratio `(R + 2s)/(R + s)`, the growth of a circular
+//!   front at the first wrap ([`lobe_length_ratio`]); the matched gap bound
+//!   is the reach; a band has one matched sample per cell of its longer
+//!   arc; the half-pitch alternation has two legs per band, the least that
+//!   holds one stepover ([`LobeMorph::Alternate`]).
 //!
 //! # Known risks (R3, Source 3)
 //!
@@ -717,6 +748,180 @@ impl GeodesicField {
         };
         join_fragments(iso_contour_where(&self.field, level as f64, &kept))
     }
+
+    /// `T` (stepovers) at `p`, bilinear over the cell that holds `p`, the
+    /// interpolation the level sets use. `None` unless the four corners of
+    /// the cell are reachable and solved.
+    fn sample(&self, p: P2) -> Option<f64> {
+        let f = &self.field;
+        let x = (p.x - f.origin_x) / f.cell;
+        let y = (p.y - f.origin_y) / f.cell;
+        if !x.is_finite() || !y.is_finite() || x < 0.0 || y < 0.0 {
+            return None;
+        }
+        let (col, row) = (x.floor() as usize, y.floor() as usize);
+        if col + 1 >= f.cols || row + 1 >= f.rows || !self.cell_reachable(row, col) {
+            return None;
+        }
+        let at = |r: usize, c: usize| {
+            f.passes
+                .get(r * f.cols + c)
+                .copied()
+                .filter(|t| t.is_finite())
+        };
+        let (v00, v01) = (at(row, col)?, at(row, col + 1)?);
+        let (v10, v11) = (at(row + 1, col)?, at(row + 1, col + 1)?);
+        let (tx, ty) = (x - col as f64, y - row as f64);
+        Some(
+            v00 * (1.0 - tx) * (1.0 - ty)
+                + v01 * tx * (1.0 - ty)
+                + v10 * (1.0 - tx) * ty
+                + v11 * tx * ty,
+        )
+    }
+
+    /// The sample spacing along a ray: half a cell, so every cell that a
+    /// ray crosses for more than half a cell holds a sample.
+    fn ray_step(&self) -> f64 {
+        self.field.cell / 2.0
+    }
+
+    /// The length of the longest ray: the lattice diagonal.
+    fn ray_length(&self) -> f64 {
+        let f = &self.field;
+        (f.rows as f64).hypot(f.cols as f64) * f.cell
+    }
+
+    /// `T` along the ray from `seed` at angle `phi`, from radius `r0` to
+    /// the lattice edge, at [`Self::ray_step`].
+    fn ray(&self, seed: P2, phi: f64, r0: f64) -> Vec<Option<f64>> {
+        let h = self.ray_step();
+        let n = ((self.ray_length() - r0).max(0.0) / h).ceil() as usize;
+        let (c, s) = (phi.cos(), phi.sin());
+        (0..=n)
+            .map(|i| {
+                let r = r0 + i as f64 * h;
+                self.sample(P2::new(seed.x + r * c, seed.y + r * s))
+            })
+            .collect()
+    }
+
+    /// True when the ray samples `ray` cross the level set `T = level`
+    /// exactly once, and that crossing comes before the ray first leaves
+    /// the reachable cells (so the level set is closed round the seed on
+    /// this ray). A crossing is a pair of consecutive reachable samples on
+    /// the two sides of `level`.
+    fn ray_crosses_once(ray: &[Option<f64>], level: f64) -> bool {
+        let mut crossings = 0usize;
+        let mut first_before_exit = false;
+        let mut left = false;
+        for w in ray.windows(2) {
+            let &[a, b] = w else {
+                continue;
+            };
+            let (Some(a), Some(b)) = (a, b) else {
+                left = true;
+                continue;
+            };
+            if (a < level) != (b < level) {
+                crossings += 1;
+                if crossings == 1 && !left {
+                    first_before_exit = true;
+                }
+            }
+        }
+        crossings == 1 && first_before_exit
+    }
+
+    /// The number of rays of the star-shape test: the arc between two rays
+    /// at the longest ray is at most one cell, so no reachable cell lies
+    /// between two rays unseen.
+    fn star_rays(&self) -> usize {
+        ((std::f64::consts::TAU * self.ray_length() / self.field.cell).ceil() as usize).max(3)
+    }
+
+    /// The core zone (C4): the largest `k` such that each level set
+    /// `T = 1, ..., k` is star-shaped about `seed` and closed round it:
+    /// each of [`Self::star_rays`] rays from the seed disc rim (radius
+    /// `r0`) crosses it exactly once, before the ray leaves the reachable
+    /// cells. A level set behind an island fails: the rays toward the
+    /// island leave the region before they cross it.
+    fn star_levels(&self, seed: P2, r0: f64) -> usize {
+        let n = self.star_rays();
+        let rays: Vec<Vec<Option<f64>>> = (0..n)
+            .map(|i| self.ray(seed, std::f64::consts::TAU * i as f64 / n as f64, r0))
+            .collect();
+        let mut k = 0usize;
+        while k < self.level_count()
+            && rays
+                .iter()
+                .all(|ray| Self::ray_crosses_once(ray, (k + 1) as f64))
+        {
+            k += 1;
+        }
+        k
+    }
+
+    /// True when the level set `T = level` passes the star-shape test of
+    /// [`Self::star_levels`] about `seed`.
+    #[cfg(test)]
+    fn level_is_star_shaped(&self, seed: P2, r0: f64, level: usize) -> bool {
+        let n = self.star_rays();
+        (0..n).all(|i| {
+            let ray = self.ray(seed, std::f64::consts::TAU * i as f64 / n as f64, r0);
+            Self::ray_crosses_once(&ray, level as f64)
+        })
+    }
+
+    /// The radius on the ray from `seed` at angle `phi` where `T` first
+    /// reaches `t` (stepovers), walked out from `r0` at [`Self::ray_step`]
+    /// and bisected to `tolerance`. `r0` when `T(r0) ≥ t`. `None` when the
+    /// ray leaves the reachable cells first.
+    fn radius_at(&self, seed: P2, phi: f64, r0: f64, t: f64, tolerance: f64) -> Option<f64> {
+        let (c, s) = (phi.cos(), phi.sin());
+        let at = |r: f64| self.sample(P2::new(seed.x + r * c, seed.y + r * s));
+        if at(r0).is_some_and(|v| v >= t) {
+            return Some(r0);
+        }
+        let h = self.ray_step();
+        let n = ((self.ray_length() - r0).max(0.0) / h).ceil() as usize;
+        let mut lo = r0;
+        for i in 1..=n {
+            let hi = r0 + i as f64 * h;
+            let v = at(hi)?;
+            if v >= t {
+                let (mut lo, mut hi) = (lo, hi);
+                while hi - lo > tolerance {
+                    let mid = 0.5 * (lo + hi);
+                    // The float halving has reached its resolution.
+                    if mid <= lo || mid >= hi {
+                        break;
+                    }
+                    if at(mid)? >= t {
+                        hi = mid;
+                    } else {
+                        lo = mid;
+                    }
+                }
+                return Some(hi);
+            }
+            lo = hi;
+        }
+        None
+    }
+
+    /// The front branches ([`Branches`]) at the lattice nodes nearest the
+    /// points of `pts`, sorted, without repeats.
+    fn branches_of(&self, pts: &[P2]) -> Vec<u32> {
+        let mut out: Vec<u32> = pts
+            .iter()
+            .filter_map(|&p| self.nearest_node(p))
+            .filter_map(|i| self.branch.get(i).copied())
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
 }
 
 /// True when `a` and `b` are the same chaining point.
@@ -979,6 +1184,60 @@ pub enum JoinRule {
     /// R 3, over the ceiling (2.18 mm) for every `ρ` under about 23 mm. Not
     /// the default; kept so a run can dump the steps the replay refuses.
     Ramp,
+    /// The morph join (C4): the star-shaped core round the seed is one
+    /// spiral ([`core_spiral`]), and each lobe (a run of wall-to-wall arcs,
+    /// one per level, each with one parent and one child) is cut as blended
+    /// legs between consecutive arcs ([`morph_legs`]). An arc that is not
+    /// in a lobe is cut as under [`JoinRule::Seam`], with the one-side
+    /// meeting rule.
+    Morph(LobeMorph),
+}
+
+/// How the legs of a lobe run between consecutive arcs `A_k` and `A_{k+1}`
+/// (C4).
+///
+/// A leg is the blend `B(p, λ) = (1 - λ)·A_k(p) + λ·A_{k+1}(p)` at the
+/// matched normalised arc length `p ∈ [0, 1]`; `λ` is the part of the band
+/// the leg has reached at `p`. Before the band the cleared edge is `A_k`
+/// (`λ = 0` everywhere, after the plain pass of the lobe's first arc or the
+/// band before). The stock a leg meets at `p` is its `λ` minus the largest
+/// `λ` cut so far at `p`, in stepovers. The bound is one stepover, the
+/// spacing of every other wrap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LobeMorph {
+    /// Half-pitch alternation, the default: two legs per band, out with
+    /// `λ = p/2` from `p = 0` and back with `λ = 1 - p/2` from `p = 1`.
+    /// The leg out meets `p/2 ≤ 1/2` stepover past `A_k`; the leg back
+    /// meets `(1 - p/2) - p/2 = 1 - p ≤ 1`. The band leaves the edge at
+    /// `λ = 1 - p/2`, which is `-p/2` of the next band, so the next leg out
+    /// meets `p/2 + p/2 = p ≤ 1`. Both turns are continuous (the legs meet
+    /// at `λ = 1/2` at `p = 1` and at `A_{k+1}(0)` at `p = 0`). Two legs per
+    /// band is the least number for which an alternation holds one
+    /// stepover: one leg per band meets two ([`LobeMorph::AlternateFull`]).
+    /// The last band leaves `A_n` short by `p/2`; the lobe ends with a
+    /// plain pass of `A_n`, which meets at most half a stepover.
+    Alternate,
+    /// The brief's literal option (i): one leg per band, the direction
+    /// alternating (`λ = p` out; `λ = 1 - p` back from `p = 1`). The leg
+    /// back meets `(1 - p) - (p - 1) = 2 - 2p` stepovers: two at the near
+    /// end. Kept selectable so a run can dump the steps the replay refuses
+    /// there; not a harness column by default.
+    AlternateFull,
+    /// The brief's option (ii): one leg per band, always out (`λ = p`, so
+    /// each leg meets exactly one stepover), then back along the leg just
+    /// cut, through cleared stock (zero load: the FreeCAD link idea, R1
+    /// §4), then the step from `A_k(0)` to `A_{k+1}(0)`. That step is
+    /// radial: it meets one full stepover head-on, the seam step of
+    /// [`JoinRule::Seam`] (about 0.94 of D), so the replay is predicted to
+    /// refuse it once per band. The last band does not return: the lobe
+    /// ends with `A_n` cut back from the far end (it meets `1 - p`).
+    ///
+    /// The return is a `Cut` along the reversed leg, not keep-down `Link`s:
+    /// `feed_link_checked` (`path.rs`) reads a link's samples on the
+    /// lattice with the wall test, and a leg ends on the wall, so a link
+    /// could turn into a re-entry and hide the mechanism under test. The
+    /// readout reads the return like any cut (about zero load).
+    Return,
 }
 
 /// The research options of candidate (a).
@@ -1003,6 +1262,18 @@ impl GeodesicOptions {
         solver: FieldSolver::SourceTracking,
         meeting: MeetingRule::Split,
         join: JoinRule::Seam,
+    };
+    /// C4: the C2 field and meeting rule with the morph join, half-pitch
+    /// alternation in the lobes.
+    pub const C4_ALT: Self = Self {
+        join: JoinRule::Morph(LobeMorph::Alternate),
+        ..Self::C2
+    };
+    /// C4: the morph join, one-way legs with a return through cleared
+    /// stock.
+    pub const C4_RETURN: Self = Self {
+        join: JoinRule::Morph(LobeMorph::Return),
+        ..Self::C2
     };
 }
 
@@ -1073,6 +1344,17 @@ fn polyline_length(pts: &[P2]) -> f64 {
         .sum()
 }
 
+/// The segment of `poly` nearest `p`: the distance and the segment's two
+/// ends. `None` for fewer than two points.
+fn nearest_segment(poly: &[P2], p: P2) -> Option<(f64, P2, P2)> {
+    poly.windows(2)
+        .filter_map(|w| match w {
+            &[u, v] => Some((point_to_segment_distance(&p, &u, &v), u, v)),
+            _ => None,
+        })
+        .min_by(|x, y| x.0.total_cmp(&y.0))
+}
+
 /// The point of the polyline `poly` nearest `p`, and its distance.
 fn nearest_on(poly: &[P2], p: P2) -> Option<(P2, f64)> {
     let mut best: Option<(P2, f64)> = None;
@@ -1101,6 +1383,115 @@ fn nearest_on(poly: &[P2], p: P2) -> Option<(P2, f64)> {
     best
 }
 
+/// The wrap pieces of `field` from level `min_level` up, level by level,
+/// every vertex and segment inside `region` ([`inside_pieces`]); under
+/// [`MeetingRule::Split`] each open piece records whether its ends lie at a
+/// meeting line.
+fn collect_chains(
+    field: &GeodesicField,
+    region: &ToolCentreRegion,
+    min_level: usize,
+    meeting: MeetingRule,
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<Chain>, Cancelled> {
+    let cell = field.cell();
+    let mut chains: Vec<Chain> = Vec::new();
+    for level in min_level.max(1)..=field.level_count() {
+        check_cancel(cancel)?;
+        for pts in field.level_chains(level, meeting) {
+            if pts.len() < 2 {
+                continue;
+            }
+            let closed = is_closed(&pts, cell);
+            for (piece, closed) in inside_pieces(pts, closed, region) {
+                let mut chain = Chain::new(level, piece, closed);
+                if meeting == MeetingRule::Split && !closed {
+                    chain.shock = [
+                        chain.pts.first().is_some_and(|&p| end_at_shock(field, p)),
+                        chain.pts.last().is_some_and(|&p| end_at_shock(field, p)),
+                    ];
+                }
+                chains.push(chain);
+            }
+        }
+    }
+    Ok(chains)
+}
+
+/// For each chain, the chains one level lower within `reach` of it: its
+/// parents, which must be cut first.
+fn parents_of(
+    chains: &[Chain],
+    reach: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<Vec<usize>>, Cancelled> {
+    let mut parents: Vec<Vec<usize>> = Vec::with_capacity(chains.len());
+    for chain in chains {
+        check_cancel(cancel)?;
+        parents.push(
+            chains
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.level + 1 == chain.level && chain.within(p, reach))
+                .map(|(j, _)| j)
+                .collect(),
+        );
+    }
+    Ok(parents)
+}
+
+/// The meeting-line rule ([`MeetingRule::Split`]) on `pts`, the cutting
+/// order of `chain`: the branch cut second ends one stepover short of the
+/// line. `cut_shock_ends` holds the meeting-line ends already cut, per
+/// level; the ends of `chain` at a meeting line are added. Call it before
+/// any other change to `pts` (it compares `pts` with `chain.pts` to know
+/// the direction).
+fn meeting_trim(
+    chain: &Chain,
+    pts: &mut Vec<P2>,
+    cut_shock_ends: &mut Vec<(usize, P2)>,
+    reach: f64,
+    stepover: f64,
+) {
+    if chain.closed {
+        return;
+    }
+    let reversed = pts.first() != chain.pts.first();
+    let [first_shock, last_shock] = if reversed {
+        [chain.shock[1], chain.shock[0]]
+    } else {
+        chain.shock
+    };
+    let met = |p: Option<&P2>, ends: &[(usize, P2)]| {
+        p.is_some_and(|&p| {
+            ends.iter()
+                .any(|&(level, q)| level == chain.level && (q.x - p.x).hypot(q.y - p.y) <= reach)
+        })
+    };
+    let trim_last = last_shock && met(pts.last(), cut_shock_ends);
+    let trim_first = first_shock && met(pts.first(), cut_shock_ends);
+    for (end, shock) in [
+        (pts.first().copied(), first_shock),
+        (pts.last().copied(), last_shock),
+    ] {
+        if let (Some(p), true) = (end, shock) {
+            cut_shock_ends.push((chain.level, p));
+        }
+    }
+    let keep =
+        polyline_length(pts) - stepover * f64::from(u8::from(trim_last) + u8::from(trim_first));
+    if keep > 0.0 {
+        if trim_last {
+            trim_end(pts, stepover);
+        }
+        if trim_first {
+            pts.reverse();
+            trim_end(pts, stepover);
+            pts.reverse();
+        }
+    }
+}
+
 /// The wraps of `field` from level `min_level` up, in cutting order from
 /// `start` (module doc, "The join and the order"), each oriented for
 /// cutting, every vertex and segment inside `region` ([`inside_pieces`]).
@@ -1118,40 +1509,8 @@ fn ordered_wraps(
     options: GeodesicOptions,
     cancel: &dyn CancelCheck,
 ) -> Result<Vec<Wrap>, Cancelled> {
-    let cell = field.cell();
-    let mut chains: Vec<Chain> = Vec::new();
-    for level in min_level.max(1)..=field.level_count() {
-        check_cancel(cancel)?;
-        for pts in field.level_chains(level, options.meeting) {
-            if pts.len() < 2 {
-                continue;
-            }
-            let closed = is_closed(&pts, cell);
-            for (piece, closed) in inside_pieces(pts, closed, region) {
-                let mut chain = Chain::new(level, piece, closed);
-                if options.meeting == MeetingRule::Split && !closed {
-                    chain.shock = [
-                        chain.pts.first().is_some_and(|&p| end_at_shock(field, p)),
-                        chain.pts.last().is_some_and(|&p| end_at_shock(field, p)),
-                    ];
-                }
-                chains.push(chain);
-            }
-        }
-    }
-    // The wraps one level lower within reach: each must be cut first.
-    let mut parents: Vec<Vec<usize>> = Vec::with_capacity(chains.len());
-    for chain in &chains {
-        check_cancel(cancel)?;
-        parents.push(
-            chains
-                .iter()
-                .enumerate()
-                .filter(|(_, p)| p.level + 1 == chain.level && chain.within(p, reach))
-                .map(|(j, _)| j)
-                .collect(),
-        );
-    }
+    let chains = collect_chains(field, region, min_level, options.meeting, cancel)?;
+    let parents = parents_of(&chains, reach, cancel)?;
     let ramp = options.join == JoinRule::Ramp;
     let mut done = vec![false; chains.len()];
     // Chain index -> its index in the output.
@@ -1204,44 +1563,8 @@ fn ordered_wraps(
             Some(parent_start) => chain.oriented(parent_start),
             None => chain.oriented(cur),
         };
-        let reversed = !chain.closed && pts.first() != chain.pts.first();
-        // The meeting-line rule: the branch cut second ends one stepover
-        // short of the line.
-        if options.meeting == MeetingRule::Split && !chain.closed {
-            let [first_shock, last_shock] = if reversed {
-                [chain.shock[1], chain.shock[0]]
-            } else {
-                chain.shock
-            };
-            let met = |p: Option<&P2>| {
-                p.is_some_and(|&p| {
-                    cut_shock_ends.iter().any(|&(level, q)| {
-                        level == chain.level && (q.x - p.x).hypot(q.y - p.y) <= reach
-                    })
-                })
-            };
-            let trim_last = last_shock && met(pts.last());
-            let trim_first = first_shock && met(pts.first());
-            for (end, shock) in [
-                (pts.first().copied(), first_shock),
-                (pts.last().copied(), last_shock),
-            ] {
-                if let (Some(p), true) = (end, shock) {
-                    cut_shock_ends.push((chain.level, p));
-                }
-            }
-            let keep = polyline_length(&pts)
-                - stepover * f64::from(u8::from(trim_last) + u8::from(trim_first));
-            if keep > 0.0 {
-                if trim_last {
-                    trim_end(&mut pts, stepover);
-                }
-                if trim_first {
-                    pts.reverse();
-                    trim_end(&mut pts, stepover);
-                    pts.reverse();
-                }
-            }
+        if options.meeting == MeetingRule::Split {
+            meeting_trim(chain, &mut pts, &mut cut_shock_ends, reach, stepover);
         }
         // The parent the wrap is entered from: the cut parent nearest its
         // first point; the rim for the lowest level.
@@ -1451,6 +1774,556 @@ fn circle_from(c: P2, radius: f64, phi0: f64, tolerance: f64) -> Vec<P2> {
         .collect()
 }
 
+// ── The morph join (C4) ────────────────────────────────────────────────
+
+/// The core-zone spiral (C4): one curve from the starter rim out to the
+/// last star-shaped level `K` ([`GeodesicField::star_levels`]), then one
+/// closing lap on level `K`. Returns the spiral and `K`; an empty spiral
+/// and 0 when no level is star-shaped.
+///
+/// The curve is the level set `F = 0` of `F(x) = T(x)/s - φ(x)/2π`, with
+/// `φ` the polar angle about the seed from the seam ray `phi0` (the
+/// starter's end). `F` jumps by one across the seam ray. The branch cut is
+/// handled by unwrapping `φ` along the curve: the tracer walks the
+/// unwrapped angle `θ` from 0 to `2πK` and, on the ray at `phi0 + θ`, takes
+/// the radius where `T = θ/2π` stepovers ([`GeodesicField::radius_at`]).
+/// Each level set of the core crosses each ray once (the star-shape test),
+/// so `T` grows along the ray through every level up to `K` and the point
+/// is the one crossing of that ray. The curve is continuous, one stepover
+/// outward per turn, so a step of length `ds` on a turn of length `L_k`
+/// drifts outward by `s·ds/L_k`.
+///
+/// The angle step keeps every chord within the op tolerance of a circle of
+/// the outer radius `r0 + K·s`: `Δφ = 2π / ⌈π / acos(1 - tolerance / ρ)⌉`
+/// (the rule of [`circle_from`]). A spiral that leaves the region
+/// (`ToolCentreRegion::contains_segment`) drops its outer level and is
+/// traced again.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input of one planning call"
+)]
+fn core_spiral(
+    field: &GeodesicField,
+    region: &ToolCentreRegion,
+    seed: P2,
+    r0: f64,
+    phi0: f64,
+    stepover: f64,
+    tolerance: f64,
+    cancel: &dyn CancelCheck,
+) -> Result<(Vec<P2>, usize), Cancelled> {
+    let mut k = field.star_levels(seed, r0);
+    while k > 0 {
+        check_cancel(cancel)?;
+        let outer = r0 + k as f64 * stepover;
+        let sag = (1.0 - (tolerance / outer).min(1.0))
+            .acos()
+            .max(f64::EPSILON);
+        let per_turn = (std::f64::consts::PI / sag).ceil().max(3.0) as usize;
+        let dphi = std::f64::consts::TAU / per_turn as f64;
+        let mut pts: Vec<P2> = Vec::with_capacity(per_turn * (k + 1) + 1);
+        let mut traced = true;
+        for j in 0..=per_turn * (k + 1) {
+            let theta = j as f64 * dphi;
+            let t = (theta / std::f64::consts::TAU).min(k as f64);
+            let phi = phi0 + theta;
+            let Some(r) = field.radius_at(seed, phi, r0, t, tolerance) else {
+                traced = false;
+                break;
+            };
+            pts.push(P2::new(seed.x + r * phi.cos(), seed.y + r * phi.sin()));
+        }
+        let inside = traced
+            && pts.windows(2).all(|w| match w {
+                &[a, b] => region.contains_segment(a, b),
+                _ => true,
+            });
+        if inside {
+            return Ok((pts, k));
+        }
+        k -= 1;
+    }
+    Ok((Vec::new(), 0))
+}
+
+/// The largest ratio of the lengths of two consecutive arcs of one lobe
+/// (C4). A front grows from the seed disc of radius `R`; at level `k` a
+/// circular front has radius `R + k·s`, so an arc of one angular span grows
+/// by `(R + (k + 1)·s) / (R + k·s)` per level. That is largest at the first
+/// wrap (`k = 1`): `(R + 2s) / (R + s)` (1.4 at s 2, R 3). It is the
+/// loosest growth the front itself gives, not a fit; a larger ratio (either
+/// way) means the arc gained or lost length at a wall, and matched
+/// normalised arc length would pair points that are not across one band.
+fn lobe_length_ratio(tool_radius: f64, stepover: f64) -> f64 {
+    (tool_radius + 2.0 * stepover) / (tool_radius + stepover)
+}
+
+/// Why two consecutive arcs are not one lobe (C4). The harness prints the
+/// counts ([`LobeReport`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LobeStop {
+    /// The arc has more than one child, or its child more than one parent
+    /// (an arc splits or two arcs merge), or one of them is a closed loop.
+    Split,
+    /// The two arcs lie in different sets of front branches (behind an
+    /// island, or where a shadow line first crosses the arc).
+    Branch,
+    /// The lengths differ by more than [`lobe_length_ratio`].
+    Ratio,
+    /// A matched pair of points is more than the reach apart.
+    Gap,
+}
+
+/// The lobe counts of one piece (C4).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LobeReport {
+    /// Lobes: runs of two or more arcs cut by the morph.
+    pub lobes: usize,
+    /// Arcs in the lobes.
+    pub lobe_arcs: usize,
+    /// Wrap pieces cut as plain wraps (not in a lobe).
+    pub plain_wraps: usize,
+    /// Parent-child pairs not joined, per [`LobeStop`] reason.
+    pub stop_split: usize,
+    pub stop_branch: usize,
+    pub stop_ratio: usize,
+    pub stop_gap: usize,
+    /// Lobes cut as plain wraps after all, because a leg left the
+    /// tool-centre region (a blend of two arcs that end on a curved wall
+    /// cuts the chord of that wall).
+    pub outside: usize,
+    /// Length (mm) of the return cuts through cleared stock
+    /// ([`LobeMorph::Return`]).
+    pub return_length_mm: f64,
+}
+
+/// `pts` resampled at `m + 1` points of equal arc length, its two ends
+/// included.
+fn resample(pts: &[P2], m: usize) -> Vec<P2> {
+    let m = m.max(1);
+    let total = polyline_length(pts);
+    let (Some(&first), Some(&last)) = (pts.first(), pts.last()) else {
+        return Vec::new();
+    };
+    if total <= 0.0 {
+        return vec![first; m + 1];
+    }
+    let mut out = Vec::with_capacity(m + 1);
+    out.push(first);
+    let mut seg = 0usize;
+    let mut walked = 0.0_f64;
+    for i in 1..m {
+        let target = total * i as f64 / m as f64;
+        while let (Some(&a), Some(&b)) = (pts.get(seg), pts.get(seg + 1)) {
+            let len = (b.x - a.x).hypot(b.y - a.y);
+            if walked + len >= target || seg + 2 >= pts.len() {
+                let t = if len > 0.0 {
+                    ((target - walked) / len).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                out.push(P2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)));
+                break;
+            }
+            walked += len;
+            seg += 1;
+        }
+    }
+    out.push(last);
+    out
+}
+
+/// The number of matched samples of a band between arcs `a` and `b`: one
+/// per cell of the longer arc (the contour has about one vertex per cell).
+fn band_samples(a: &[P2], b: &[P2], cell: f64) -> usize {
+    ((polyline_length(a).max(polyline_length(b)) / cell).ceil() as usize).max(1)
+}
+
+/// `b` turned so that its first point pairs with the first point of `a`:
+/// the pairing of the ends with the smaller sum of distances.
+fn aligned_to(a: &[P2], b: &[P2]) -> Vec<P2> {
+    let d = |p: Option<&P2>, q: Option<&P2>| match (p, q) {
+        (Some(p), Some(q)) => (p.x - q.x).hypot(p.y - q.y),
+        _ => f64::INFINITY,
+    };
+    let straight = d(a.first(), b.first()) + d(a.last(), b.last());
+    let crossed = d(a.first(), b.last()) + d(a.last(), b.first());
+    let mut out = b.to_vec();
+    if crossed < straight {
+        out.reverse();
+    }
+    out
+}
+
+/// Whether arc `b` (the one child of `a`) continues the lobe of `a`
+/// (C4): `None` when it does, else why not. Read on the untrimmed arcs:
+/// the meeting trim depends on the cutting order.
+fn lobe_link(
+    field: &GeodesicField,
+    a: &Chain,
+    b: &Chain,
+    reach: f64,
+    ratio: f64,
+) -> Option<LobeStop> {
+    if field.branches_of(&a.pts) != field.branches_of(&b.pts) {
+        return Some(LobeStop::Branch);
+    }
+    let (la, lb) = (polyline_length(&a.pts), polyline_length(&b.pts));
+    if la <= 0.0 || lb <= 0.0 || la.max(lb) > ratio * la.min(lb) {
+        return Some(LobeStop::Ratio);
+    }
+    let b_pts = aligned_to(&a.pts, &b.pts);
+    let m = band_samples(&a.pts, &b_pts, field.cell());
+    let gap = resample(&a.pts, m)
+        .iter()
+        .zip(resample(&b_pts, m).iter())
+        .map(|(p, q)| (q.x - p.x).hypot(q.y - p.y))
+        .fold(0.0_f64, f64::max);
+    (gap > reach).then_some(LobeStop::Gap)
+}
+
+/// What a planned piece of the morph join is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PieceKind {
+    /// A plain pass of one wrap piece (a plain wrap, the first and the last
+    /// arc of a lobe).
+    Wrap,
+    /// A blended leg of a lobe.
+    Morph,
+    /// The return of [`LobeMorph::Return`] along the leg just cut.
+    Return,
+}
+
+/// One planned piece of the morph join, in cutting order.
+struct PlanPiece {
+    pts: Vec<P2>,
+    kind: PieceKind,
+}
+
+/// The blend of `a` and `b` (resampled to the same count) at sample `i`
+/// with band fraction `lambda`.
+fn blend(a: &[P2], b: &[P2], i: usize, lambda: f64) -> Option<P2> {
+    let (p, q) = (a.get(i)?, b.get(i)?);
+    Some(P2::new(
+        (1.0 - lambda) * p.x + lambda * q.x,
+        (1.0 - lambda) * p.y + lambda * q.y,
+    ))
+}
+
+/// The legs of a lobe after its first arc is cut (C4, [`LobeMorph`]).
+/// `arcs` are the lobe's arcs in level order, each with its first point on
+/// the `p = 0` side: where the plain pass of `arcs[0]` ended. Ends with a
+/// plain pass of the last arc from the end the cutter stands at. Every
+/// piece starts where the one before ends, except the step of
+/// [`LobeMorph::Return`] from `A_k(0)` to `A_{k+1}(0)`.
+fn morph_legs(arcs: &[Vec<P2>], morph: LobeMorph, cell: f64) -> Vec<PlanPiece> {
+    let mut out: Vec<PlanPiece> = Vec::new();
+    let bands = arcs.len().saturating_sub(1);
+    let mut at_far_end = false;
+    for k in 0..bands {
+        let (Some(a), Some(b)) = (arcs.get(k), arcs.get(k + 1)) else {
+            break;
+        };
+        let m = band_samples(a, b, cell);
+        let (a, b) = (resample(a, m), resample(b, m));
+        let leg = |lambda: &dyn Fn(f64) -> f64, forward: bool| -> Vec<P2> {
+            (0..=m)
+                .filter_map(|j| {
+                    let i = if forward { j } else { m - j };
+                    blend(&a, &b, i, lambda(i as f64 / m as f64))
+                })
+                .collect()
+        };
+        match morph {
+            LobeMorph::Alternate => {
+                out.push(PlanPiece {
+                    pts: leg(&|p: f64| 0.5 * p, true),
+                    kind: PieceKind::Morph,
+                });
+                out.push(PlanPiece {
+                    pts: leg(&|p: f64| 1.0 - 0.5 * p, false),
+                    kind: PieceKind::Morph,
+                });
+            }
+            LobeMorph::AlternateFull => {
+                if at_far_end {
+                    out.push(PlanPiece {
+                        pts: leg(&|p: f64| 1.0 - p, false),
+                        kind: PieceKind::Morph,
+                    });
+                } else {
+                    out.push(PlanPiece {
+                        pts: leg(&|p: f64| p, true),
+                        kind: PieceKind::Morph,
+                    });
+                }
+                at_far_end = !at_far_end;
+            }
+            LobeMorph::Return => {
+                let pts = leg(&|p: f64| p, true);
+                if k + 1 < bands {
+                    let mut back = pts.clone();
+                    back.reverse();
+                    out.push(PlanPiece {
+                        pts,
+                        kind: PieceKind::Morph,
+                    });
+                    out.push(PlanPiece {
+                        pts: back,
+                        kind: PieceKind::Return,
+                    });
+                } else {
+                    out.push(PlanPiece {
+                        pts,
+                        kind: PieceKind::Morph,
+                    });
+                    at_far_end = true;
+                }
+            }
+        }
+    }
+    // The last arc, from the end the cutter stands at.
+    if bands > 0
+        && let Some(last) = arcs.last()
+    {
+        let mut pts = last.clone();
+        if at_far_end {
+            pts.reverse();
+        }
+        out.push(PlanPiece {
+            pts,
+            kind: PieceKind::Wrap,
+        });
+    }
+    out
+}
+
+/// The cutting plan of the morph join after the core spiral (C4): the
+/// wrap pieces of `field` from `min_level` up, grouped into lobes and
+/// plain wraps, in cutting order from `start`.
+///
+/// - A lobe link joins arc `a` to arc `b` when `b` is the one child of `a`
+///   and `a` the one parent of `b`, both are open arcs, and [`lobe_link`]
+///   holds (one set of front branches, the length ratio, the matched gap
+///   within the reach). Each run of linked arcs is a lobe; an arc with no
+///   link either way is a plain wrap.
+/// - The order rule of [`ordered_wraps`]: a unit (lobe or plain wrap) is cut
+///   after every parent of its first arc; the nearest ready unit goes next.
+///   Inside a lobe each arc's one parent is the arc before it.
+/// - A lobe: its first arc is cut as a plain wrap from the end nearer the
+///   cutter, then [`morph_legs`]. The one-side meeting rule
+///   ([`meeting_trim`]) applies to every arc as it is placed.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input of one planning call"
+)]
+fn morph_plan(
+    field: &GeodesicField,
+    region: &ToolCentreRegion,
+    start: P2,
+    reach: f64,
+    stepover: f64,
+    tool_radius: f64,
+    min_level: usize,
+    options: GeodesicOptions,
+    morph: LobeMorph,
+    cancel: &dyn CancelCheck,
+) -> Result<(Vec<PlanPiece>, LobeReport), Cancelled> {
+    let cell = field.cell();
+    let chains = collect_chains(field, region, min_level, options.meeting, cancel)?;
+    let parents = parents_of(&chains, reach, cancel)?;
+    let mut children: Vec<Vec<usize>> = vec![Vec::new(); chains.len()];
+    for (j, ps) in parents.iter().enumerate() {
+        for &i in ps {
+            if let Some(c) = children.get_mut(i) {
+                c.push(j);
+            }
+        }
+    }
+    let ratio = lobe_length_ratio(tool_radius, stepover);
+    let mut report = LobeReport::default();
+    let mut next: Vec<Option<usize>> = vec![None; chains.len()];
+    let mut has_prev = vec![false; chains.len()];
+    for (i, a) in chains.iter().enumerate() {
+        check_cancel(cancel)?;
+        let kids = children.get(i).map_or(&[][..], Vec::as_slice);
+        if kids.is_empty() {
+            continue;
+        }
+        let stop = match kids {
+            &[j] => match chains.get(j) {
+                Some(b)
+                    if !a.closed && !b.closed && parents.get(j).is_some_and(|ps| ps.len() == 1) =>
+                {
+                    lobe_link(field, a, b, reach, ratio).map_or(Ok(j), Err)
+                }
+                _ => Err(LobeStop::Split),
+            },
+            _ => Err(LobeStop::Split),
+        };
+        match stop {
+            Ok(j) => {
+                if let Some(n) = next.get_mut(i) {
+                    *n = Some(j);
+                }
+                if let Some(h) = has_prev.get_mut(j) {
+                    *h = true;
+                }
+            }
+            Err(LobeStop::Split) => report.stop_split += 1,
+            Err(LobeStop::Branch) => report.stop_branch += 1,
+            Err(LobeStop::Ratio) => report.stop_ratio += 1,
+            Err(LobeStop::Gap) => report.stop_gap += 1,
+        }
+    }
+    // The units: each run of linked arcs from an arc with no link into it.
+    let mut units: Vec<Vec<usize>> = Vec::new();
+    for (i, &prev) in has_prev.iter().enumerate() {
+        if prev {
+            continue;
+        }
+        let mut unit = vec![i];
+        let mut at = i;
+        while let Some(j) = next.get(at).copied().flatten() {
+            if unit.len() > chains.len() {
+                break;
+            }
+            unit.push(j);
+            at = j;
+        }
+        if unit.len() >= 2 {
+            report.lobes += 1;
+            report.lobe_arcs += unit.len();
+        } else {
+            report.plain_wraps += 1;
+        }
+        units.push(unit);
+    }
+
+    let mut done = vec![false; chains.len()];
+    let mut unit_done = vec![false; units.len()];
+    let mut cut_shock_ends: Vec<(usize, P2)> = Vec::new();
+    let mut out: Vec<PlanPiece> = Vec::new();
+    let mut cur = start;
+    for _ in 0..units.len() {
+        check_cancel(cancel)?;
+        let first_of = |u: usize| units.get(u).and_then(|unit| unit.first().copied());
+        let ready = |u: usize| {
+            !unit_done.get(u).copied().unwrap_or(true)
+                && first_of(u)
+                    .and_then(|i| parents.get(i))
+                    .is_some_and(|ps| ps.iter().all(|&p| done.get(p).copied().unwrap_or(true)))
+        };
+        let pending = |u: usize| !unit_done.get(u).copied().unwrap_or(true);
+        let nearest = (0..units.len())
+            .filter(|&u| ready(u))
+            .filter_map(|u| {
+                first_of(u)
+                    .and_then(|i| chains.get(i))
+                    .map(|c| (u, c.entry_distance(cur)))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(u, _)| u);
+        // No unit ready (not expected: a unit waits only on the parents of
+        // its first arc): take the pending unit of the lowest level.
+        let lowest = || {
+            (0..units.len())
+                .filter(|&u| pending(u))
+                .filter_map(|u| {
+                    first_of(u)
+                        .and_then(|i| chains.get(i))
+                        .map(|c| (u, c.level))
+                })
+                .min_by_key(|&(_, level)| level)
+                .map(|(u, _)| u)
+        };
+        let Some(u) = nearest.or_else(lowest) else {
+            break;
+        };
+        if let Some(flag) = unit_done.get_mut(u) {
+            *flag = true;
+        }
+        let Some(unit) = units.get(u) else {
+            break;
+        };
+        for &i in unit {
+            if let Some(flag) = done.get_mut(i) {
+                *flag = true;
+            }
+        }
+        let Some(first) = unit.first().and_then(|&i| chains.get(i)) else {
+            continue;
+        };
+        // The first arc (or the plain wrap): from the end nearer the cutter.
+        let mut pts = first.oriented(cur);
+        if options.meeting == MeetingRule::Split {
+            meeting_trim(first, &mut pts, &mut cut_shock_ends, reach, stepover);
+        }
+        let mut arcs: Vec<Vec<P2>> = Vec::with_capacity(unit.len());
+        let mut p0 = pts.clone();
+        p0.reverse();
+        arcs.push(p0);
+        out.push(PlanPiece {
+            pts,
+            kind: PieceKind::Wrap,
+        });
+        for &i in unit.iter().skip(1) {
+            let (Some(chain), Some(prev)) = (chains.get(i), arcs.last()) else {
+                break;
+            };
+            // `p = 0` on the side where the arc before starts.
+            let mut q = aligned_to(prev, &chain.pts);
+            if options.meeting == MeetingRule::Split {
+                meeting_trim(chain, &mut q, &mut cut_shock_ends, reach, stepover);
+            }
+            arcs.push(q);
+        }
+        let legs = morph_legs(&arcs, morph, cell);
+        let inside = legs.iter().all(|piece| {
+            piece.pts.windows(2).all(|w| match w {
+                &[a, b] => region.contains_segment(a, b),
+                _ => true,
+            })
+        });
+        if inside {
+            for piece in legs {
+                if piece.kind == PieceKind::Return {
+                    report.return_length_mm += polyline_length(&piece.pts);
+                }
+                out.push(piece);
+            }
+        } else {
+            // The fallback: the other arcs as plain wraps, each from the
+            // end nearer the cutter.
+            report.outside += 1;
+            let mut at = out
+                .last()
+                .and_then(|p| p.pts.last())
+                .copied()
+                .unwrap_or(cur);
+            for arc in arcs.iter().skip(1) {
+                let d =
+                    |q: Option<&P2>| q.map_or(f64::INFINITY, |q| (q.x - at.x).hypot(q.y - at.y));
+                let mut pts = arc.clone();
+                if d(pts.last()) < d(pts.first()) {
+                    pts.reverse();
+                }
+                if let Some(&end) = pts.last() {
+                    at = end;
+                }
+                out.push(PlanPiece {
+                    pts,
+                    kind: PieceKind::Wrap,
+                });
+            }
+        }
+        if let Some(&end) = out.last().and_then(|p| p.pts.last()) {
+            cur = end;
+        }
+    }
+    Ok((out, report))
+}
+
 // ── The producer ───────────────────────────────────────────────────────
 
 /// What candidate (a) solved on one piece.
@@ -1472,9 +2345,13 @@ pub struct FieldReport {
     /// The number of front branches ([`FieldSolver::SourceTracking`]; 1
     /// under the first-order solver).
     pub branches: usize,
-    /// The levels the spiral replaces ([`JoinRule::Ramp`]): the wraps that
+    /// The levels the spiral replaces. [`JoinRule::Ramp`]: the wraps that
     /// are whole circles round the seed, `⌊(clearance - R) / s⌋`.
+    /// [`JoinRule::Morph`]: the star-shaped core levels
+    /// ([`GeodesicField::star_levels`]).
     pub spiral_levels: usize,
+    /// The lobe counts of the morph join (all 0 under the other joins).
+    pub lobes: LobeReport,
 }
 
 /// The planner input every producer of one piece shares.
@@ -1527,8 +2404,14 @@ struct Produced {
     /// The starter pocket, then the wraps, before the cleanup.
     segments: Vec<AdaptiveSegment>,
     report: FieldReport,
-    /// The wraps in cutting order, oriented.
+    /// The wraps in cutting order, oriented. Under the morph join: the
+    /// planned pieces (the core spiral, the plain passes and the legs; not
+    /// the returns), so a "wrap end" of [`EntrySplit`] is a piece end, a
+    /// leg's turn included.
     wraps: Vec<Vec<P2>>,
+    /// The planned polylines by part, for the readout's step classes
+    /// ([`PartIndex`]).
+    parts: PartIndex,
 }
 
 /// The clearance (mm) from `p` to the nearest ring of `region`: the largest
@@ -1547,6 +2430,38 @@ fn clearance(region: &ToolCentreRegion, p: P2) -> f64 {
         })
         .map(|(a, b)| point_to_segment_distance(&p, &a, &b))
         .fold(f64::INFINITY, f64::min)
+}
+
+/// Append `path` to the cutting run `run` from the cutter position `cur`:
+/// a gap no longer than `reach` is a cutting step inside the `Cut` (the
+/// spiral's seam step); a longer one is a keep-down `Link`, which the
+/// replay admits under the pass load or turns into a re-entry.
+fn append_path(
+    path: &[P2],
+    run: &mut Vec<P2>,
+    cur: &mut P2,
+    segments: &mut Vec<AdaptiveSegment>,
+    reach: f64,
+) {
+    let Some(&start) = path.first() else {
+        return;
+    };
+    let gap = (start.x - cur.x).hypot(start.y - cur.y);
+    if gap <= reach {
+        if gap > CHAIN_EPS {
+            run.push(start);
+        }
+        run.extend(path.iter().skip(1).copied());
+    } else {
+        if run.len() >= 2 {
+            segments.push(AdaptiveSegment::Cut(std::mem::take(run)));
+        }
+        segments.push(AdaptiveSegment::Link(start));
+        *run = path.to_vec();
+    }
+    if let Some(&end) = run.last() {
+        *cur = end;
+    }
 }
 
 /// Candidate (a) on one piece outline: the starter pocket, then the wraps
@@ -1612,6 +2527,77 @@ fn geodesic_segments(
         None => 0,
     };
     let phi0 = (starter_end.y - seed.y).atan2(starter_end.x - seed.x);
+    if let JoinRule::Morph(morph) = options.join {
+        // C4: the core spiral, then the lobes and the plain wraps.
+        let (core, core_levels) =
+            core_spiral(&field, &region, seed, r, phi0, s, params.tolerance, cancel)?;
+        let (plan, lobes) = morph_plan(
+            &field,
+            &region,
+            core.last().copied().unwrap_or(starter_end),
+            reach,
+            s,
+            r,
+            core_levels + 1,
+            options,
+            morph,
+            cancel,
+        )?;
+        let report = FieldReport {
+            applied: true,
+            seed: Some(seed),
+            seed_radius: r,
+            levels: field.level_count(),
+            chains: plan.iter().filter(|p| p.kind != PieceKind::Return).count(),
+            converged: field.converged(),
+            branches: field.branch_count(),
+            spiral_levels: core_levels,
+            lobes,
+        };
+        let mut parts = PartIndex::new(cell);
+        parts.add(&core, StepPart::Spiral);
+        let mut wraps: Vec<Vec<P2>> = Vec::with_capacity(plan.len() + 1);
+        if !core.is_empty() {
+            wraps.push(core.clone());
+        }
+        for piece in &plan {
+            let part = match piece.kind {
+                PieceKind::Wrap => StepPart::Wrap,
+                PieceKind::Morph => StepPart::Morph,
+                PieceKind::Return => StepPart::Return,
+            };
+            parts.add(&piece.pts, part);
+            if piece.kind != PieceKind::Return {
+                wraps.push(piece.pts.clone());
+            }
+        }
+        let first = core
+            .first()
+            .or_else(|| plan.first().and_then(|p| p.pts.first()))
+            .copied();
+        if let Some(first) = first {
+            segments.push(AdaptiveSegment::Marker(AdaptiveRuntimeEvent::PassEntry {
+                pass_index: 1,
+                entry_x: first.x,
+                entry_y: first.y,
+            }));
+        }
+        let mut run: Vec<P2> = vec![starter_end];
+        let mut cur = starter_end;
+        append_path(&core, &mut run, &mut cur, &mut segments, reach);
+        for piece in &plan {
+            append_path(&piece.pts, &mut run, &mut cur, &mut segments, reach);
+        }
+        if run.len() >= 2 {
+            segments.push(AdaptiveSegment::Cut(run));
+        }
+        return Ok(Some(Produced {
+            segments,
+            report,
+            wraps,
+            parts,
+        }));
+    }
     let outer = r + spiral_levels as f64 * s;
     let spiral: Vec<P2> = match law {
         Some(law) if spiral_levels > 0 => law.spiral(seed, phi0, outer, params.tolerance),
@@ -1636,6 +2622,7 @@ fn geodesic_segments(
         converged: field.converged(),
         branches: field.branch_count(),
         spiral_levels,
+        lobes: LobeReport::default(),
     };
     let nominal: Vec<Vec<P2>> = wraps.iter().map(|w| w.pts.clone()).collect();
 
@@ -1652,31 +2639,9 @@ fn geodesic_segments(
     }
     let mut run: Vec<P2> = vec![starter_end];
     let mut cur = starter_end;
-    // Append `path` to the run: a gap no longer than the reach is a cutting
-    // step inside the `Cut` (the spiral's seam step); a longer one is a
-    // keep-down `Link`, which the replay admits under the pass load or
-    // turns into a re-entry.
     let join =
         |path: &[P2], run: &mut Vec<P2>, cur: &mut P2, segments: &mut Vec<AdaptiveSegment>| {
-            let Some(&start) = path.first() else {
-                return;
-            };
-            let gap = (start.x - cur.x).hypot(start.y - cur.y);
-            if gap <= reach {
-                if gap > CHAIN_EPS {
-                    run.push(start);
-                }
-                run.extend(path.iter().skip(1).copied());
-            } else {
-                if run.len() >= 2 {
-                    segments.push(AdaptiveSegment::Cut(std::mem::take(run)));
-                }
-                segments.push(AdaptiveSegment::Link(start));
-                *run = path.to_vec();
-            }
-            if let Some(&end) = run.last() {
-                *cur = end;
-            }
+            append_path(path, run, cur, segments, reach);
         };
 
     match law {
@@ -1729,10 +2694,16 @@ fn geodesic_segments(
     if run.len() >= 2 {
         segments.push(AdaptiveSegment::Cut(run));
     }
+    let mut parts = PartIndex::new(cell);
+    parts.add(&spiral, StepPart::Spiral);
+    for w in &nominal {
+        parts.add(w, StepPart::Wrap);
+    }
     Ok(Some(Produced {
         segments,
         report,
         wraps: nominal,
+        parts,
     }))
 }
 
@@ -1818,12 +2789,17 @@ pub enum StepPart {
     /// Not classified (a cleaned plan, a shipped strategy).
     #[default]
     Unclassified,
-    /// On the spiral of the ramp join (within one cell of its disc).
+    /// On the spiral of the ramp join or the core spiral of the morph join
+    /// (its end within one cell of the spiral polyline).
     Spiral,
+    /// On a blended leg of a lobe (morph join).
+    Morph,
+    /// On the return of [`LobeMorph::Return`] through cleared stock.
+    Return,
     /// On a planned wrap (its end within one cell of the wrap polyline).
     Wrap,
-    /// Off every wrap: a ramp, a back-run, a seam step or an arc-to-arc
-    /// step.
+    /// Off every planned piece: a ramp, a back-run, a seam step, an
+    /// arc-to-arc step, or the near-end step of [`LobeMorph::Return`].
     Join,
 }
 
@@ -1834,10 +2810,104 @@ impl StepPart {
         match self {
             Self::Unclassified => "",
             Self::Spiral => "spiral",
+            Self::Morph => "morph leg",
+            Self::Return => "return",
             Self::Wrap => "on a wrap",
             Self::Join => "join (ramp, back-run or seam step)",
         }
     }
+
+    /// A one-word name for a tally line.
+    #[must_use]
+    pub fn short(self) -> &'static str {
+        match self {
+            Self::Unclassified => "",
+            Self::Spiral => "spiral",
+            Self::Morph => "morph",
+            Self::Return => "return",
+            Self::Wrap => "wrap",
+            Self::Join => "join",
+        }
+    }
+}
+
+/// The planned polylines of candidate (a) by [`StepPart`], to classify
+/// each step of the raw plan: a step whose end lies within one cell of a
+/// polyline is on that part (the first match in the order spiral, morph
+/// leg, return, wrap); else it is a join. One cell is the lattice the
+/// pieces were traced on. A return runs on its leg's polyline the other
+/// way, so for a morph leg and a return the step must also run the way of
+/// the nearest segment (a positive dot product).
+#[derive(Debug, Clone, Default)]
+struct PartIndex {
+    cell: f64,
+    /// Each polyline with its bounding box (low, high corner) and part.
+    polys: Vec<(P2, P2, Vec<P2>, StepPart)>,
+}
+
+impl PartIndex {
+    fn new(cell: f64) -> Self {
+        Self {
+            cell,
+            polys: Vec::new(),
+        }
+    }
+
+    fn add(&mut self, pts: &[P2], part: StepPart) {
+        if pts.is_empty() {
+            return;
+        }
+        let mut lo = P2::new(f64::INFINITY, f64::INFINITY);
+        let mut hi = P2::new(f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for p in pts {
+            lo = P2::new(lo.x.min(p.x), lo.y.min(p.y));
+            hi = P2::new(hi.x.max(p.x), hi.y.max(p.y));
+        }
+        self.polys.push((lo, hi, pts.to_vec(), part));
+    }
+
+    /// The part of the step from `a` to `p`.
+    fn part(&self, a: P2, p: P2) -> StepPart {
+        let directed = |part: StepPart| matches!(part, StepPart::Morph | StepPart::Return);
+        let near = |part: StepPart| {
+            self.polys.iter().any(|(lo, hi, pts, q)| {
+                *q == part
+                    && p.x >= lo.x - self.cell
+                    && p.x <= hi.x + self.cell
+                    && p.y >= lo.y - self.cell
+                    && p.y <= hi.y + self.cell
+                    && nearest_segment(pts, p).is_some_and(|(d, u, v)| {
+                        d <= self.cell
+                            && (!directed(part)
+                                || (v.x - u.x) * (p.x - a.x) + (v.y - u.y) * (p.y - a.y) > 0.0)
+                    })
+            })
+        };
+        [
+            StepPart::Spiral,
+            StepPart::Morph,
+            StepPart::Return,
+            StepPart::Wrap,
+        ]
+        .into_iter()
+        .find(|&part| near(part))
+        .unwrap_or(StepPart::Join)
+    }
+}
+
+/// The readout of one class of steps (C4): a producer of the cleaned plan,
+/// or a producer and a [`StepPart`] of the raw plan.
+#[derive(Debug, Clone, Default)]
+pub struct LoadTally {
+    /// The class: the producer's label, then the part or "link".
+    pub label: String,
+    /// The largest reading of a step in the class.
+    pub max_reading: f64,
+    /// Steps read.
+    pub steps: usize,
+    /// Steps over the ceiling: in the raw plan, the steps the replay
+    /// refuses.
+    pub steps_over: usize,
 }
 
 /// The planner's own pass-load reading of a plan, replayed on a fresh grid.
@@ -1868,6 +2938,9 @@ pub struct PassLoadReadout {
     pub exempt_steps: usize,
     /// Every step over the ceiling, in plan order.
     pub over: Vec<OverStep>,
+    /// The readout per class of steps ([`LoadTally`]), in the order the
+    /// classes first appear.
+    pub tallies: Vec<LoadTally>,
 }
 
 impl PassLoadReadout {
@@ -1878,6 +2951,26 @@ impl PassLoadReadout {
         self.steps_over += other.steps_over;
         self.exempt_steps += other.exempt_steps;
         self.over.extend_from_slice(&other.over);
+        for t in &other.tallies {
+            self.tally(&t.label, t.max_reading, t.steps, t.steps_over);
+        }
+    }
+
+    /// Add `steps` steps (of which `over` over the ceiling, the largest
+    /// reading `max`) to the tally of `label`.
+    fn tally(&mut self, label: &str, max: f64, steps: usize, over: usize) {
+        if let Some(t) = self.tallies.iter_mut().find(|t| t.label == label) {
+            t.max_reading = t.max_reading.max(max);
+            t.steps += steps;
+            t.steps_over += over;
+        } else {
+            self.tallies.push(LoadTally {
+                label: label.to_owned(),
+                max_reading: max,
+                steps,
+                steps_over: over,
+            });
+        }
     }
 }
 
@@ -1889,10 +2982,15 @@ struct StepTag {
     segment: usize,
 }
 
+/// The readout of `segments` on `polygon`. With `parts` (candidate (a)'s
+/// raw plan) each clearing step is classed by [`PartIndex::part`] and each
+/// over-step records its part; the tallies are per producer and part.
+/// Without it the tallies are per producer.
 fn pass_load_readout(
     polygon: &Polygon2,
     params: &AdaptiveParams,
     segments: &[AdaptiveSegment],
+    parts: Option<&PartIndex>,
 ) -> PassLoadReadout {
     let cell = planner_cell(params);
     let r = params.tool_radius;
@@ -1926,7 +3024,20 @@ fn pass_load_readout(
         let reading = measure_step(grid, a, b.x, b.y, r, angle, &load);
         out.steps += 1;
         out.max_reading = out.max_reading.max(reading);
-        if !step_within_pass_load(grid, a, b.x, b.y, r, angle, &load) {
+        let part = match parts {
+            Some(index) if tag.producer == Producer::Clearing && !tag.link => index.part(a, b),
+            _ => StepPart::Unclassified,
+        };
+        let label = if tag.link {
+            format!("{} link", tag.producer.label())
+        } else if part == StepPart::Unclassified {
+            tag.producer.label().to_owned()
+        } else {
+            format!("{} {}", tag.producer.label(), part.short())
+        };
+        let held = step_within_pass_load(grid, a, b.x, b.y, r, angle, &load);
+        out.tally(&label, reading, 1, usize::from(!held));
+        if !held {
             out.steps_over += 1;
             out.over.push(OverStep {
                 from: a,
@@ -1935,7 +3046,7 @@ fn pass_load_readout(
                 producer: tag.producer,
                 link: tag.link,
                 segment: tag.segment,
-                part: StepPart::Unclassified,
+                part,
             });
         }
     };
@@ -2171,35 +3282,6 @@ fn entry_split(segments: &[AdaptiveSegment], wraps: &[Vec<P2>], step: f64) -> En
     out
 }
 
-/// Classify the over-steps of candidate (a)'s raw plan ([`StepPart`]):
-/// within one cell of the spiral's disc (radius `spiral_outer` about
-/// `seed`, when there is a spiral), within one cell of a wrap, else a join.
-fn classify_parts(
-    over: &mut [OverStep],
-    wraps: &[Vec<P2>],
-    seed: Option<P2>,
-    spiral_outer: Option<f64>,
-    cell: f64,
-) {
-    for step in over {
-        let p = step.to;
-        let in_spiral = match (seed, spiral_outer) {
-            (Some(c), Some(outer)) => (p.x - c.x).hypot(p.y - c.y) <= outer + cell,
-            _ => false,
-        };
-        let on_wrap = wraps
-            .iter()
-            .any(|w| nearest_on(w, p).is_some_and(|(_, d)| d <= cell));
-        step.part = if in_spiral {
-            StepPart::Spiral
-        } else if on_wrap {
-            StepPart::Wrap
-        } else {
-            StepPart::Join
-        };
-    }
-}
-
 /// One research run over every inset piece of an outline.
 pub struct Run2d {
     /// The emitted toolpath of every piece, in order.
@@ -2287,7 +3369,7 @@ pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2
     };
     for piece in &pieces {
         let mut piece_wraps: Vec<Vec<P2>> = Vec::new();
-        let mut spiral: (Option<P2>, Option<f64>) = (None, None);
+        let mut piece_parts: Option<PartIndex> = None;
         let raw = match candidate {
             Candidate2d::Shipped(_) => {
                 super::adaptive_segments_with_debug(piece, &params, never, None, None).ok()
@@ -2298,13 +3380,9 @@ pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2
                         segments,
                         report,
                         wraps,
+                        parts,
                     })) => {
-                        spiral = (
-                            report.seed,
-                            (report.spiral_levels > 0).then_some(
-                                report.seed_radius + report.spiral_levels as f64 * params.stepover,
-                            ),
-                        );
+                        piece_parts = Some(parts);
                         run.fields.push(report);
                         piece_wraps.clone_from(&wraps);
                         run.wraps.extend(wraps);
@@ -2321,10 +3399,7 @@ pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2
             continue;
         };
         let cell = planner_cell(&params);
-        let mut raw_load = pass_load_readout(piece, &params, &raw);
-        if matches!(candidate, Candidate2d::Geodesic(_)) {
-            classify_parts(&mut raw_load.over, &piece_wraps, spiral.0, spiral.1, cell);
-        }
+        let raw_load = pass_load_readout(piece, &params, &raw, piece_parts.as_ref());
         run.summary.raw_pass_load.merge(&raw_load);
         let segments = cleaned(piece, &params, raw);
         run.summary
@@ -2337,7 +3412,7 @@ pub fn run_2d(outline: &Polygon2, params: &AdaptiveParams, candidate: Candidate2
         run.spans.extend(spans_of(&segments));
         run.summary
             .pass_load
-            .merge(&pass_load_readout(piece, &params, &segments));
+            .merge(&pass_load_readout(piece, &params, &segments, None));
         run.summary.retracts += tp
             .moves
             .iter()
@@ -2624,6 +3699,227 @@ mod tests {
                 "{solver:?}: the five axes must be read out to 25 mm at least, read to {read_to}"
             );
         }
+    }
+
+    /// C4: on a disc seeded at its centre every level set is a circle round
+    /// the seed, so the core is star-shaped out to the last level whose
+    /// cells are all reachable, and the core spiral is one piece (every
+    /// segment inside the region) whose radius never falls by more than the
+    /// tolerance it was bisected to. It starts on the starter rim (radius
+    /// `R`) and ends one closing lap at `R + K·s`.
+    #[test]
+    fn the_core_spiral_on_a_disc_is_one_piece_with_monotone_radius() {
+        let (s, tol) = op_defaults();
+        let cell = planner_cell_size(R, tol);
+        let disc_radius = 20.0;
+        let part = Polygon2::new(circle(P2::new(0.0, 0.0), disc_radius + R, cell));
+        let region = ToolCentreRegion::new(&part, R);
+        let seed = P2::new(0.0, 0.0);
+        let field =
+            GeodesicField::over_part(&part, R, cell, s, seed, R, FieldSolver::SourceTracking)
+                .expect("the seed lies in the disc");
+        let never: &dyn CancelCheck = &|| false;
+        let (spiral, k) =
+            core_spiral(&field, &region, seed, R, 0.0, s, tol, never).expect("not cancelled");
+        // The polygon of the disc lies within `cell` of the circle (the sag
+        // of `circle`), and a level is read only where the four corners of
+        // its cell are reachable (one cell diagonal inside the rim).
+        let lo = ((disc_radius - cell - SQRT_2 * cell - R) / s).floor() as usize;
+        let hi = ((disc_radius - R) / s).floor() as usize;
+        assert!(
+            (lo..=hi).contains(&k),
+            "core levels {k}, expected {lo} to {hi}"
+        );
+        assert!(spiral.len() > 2, "the spiral has points");
+        for pair in spiral.windows(2) {
+            let &[a, b] = pair else {
+                continue;
+            };
+            assert!(
+                region.contains_segment(a, b),
+                "spiral segment {a:?} -> {b:?} leaves the region"
+            );
+            let (ra, rb) = (a.x.hypot(a.y), b.x.hypot(b.y));
+            assert!(
+                rb >= ra - tol,
+                "the radius falls from {ra:.4} to {rb:.4} (tolerance {tol})"
+            );
+        }
+        let first = spiral
+            .first()
+            .map(|p| p.x.hypot(p.y))
+            .expect("a first point");
+        let last = spiral.last().map(|p| p.x.hypot(p.y)).expect("a last point");
+        assert!((first - R).abs() <= tol, "starts on the rim: {first:.4}");
+        let outer = R + k as f64 * s;
+        assert!(
+            (last - outer).abs() <= cell,
+            "ends on level {k} at {outer:.3}: {last:.4}"
+        );
+    }
+
+    /// The straight parallel arcs of a rectangular lobe, `s` apart, `n` of
+    /// them, `width` long, each with one point per cell (the contour's
+    /// density), first point at `x = 0`.
+    fn rectangle_lobe(n: usize, width: f64, s: f64, cell: f64) -> Vec<Vec<P2>> {
+        (0..n)
+            .map(|k| {
+                let y = k as f64 * s;
+                subdivide(&[P2::new(0.0, y), P2::new(width, y)], cell)
+            })
+            .collect()
+    }
+
+    /// True when segments `ab` and `cd` cross at a point inside both (a
+    /// touch at a shared end does not count).
+    fn segments_cross(a: P2, b: P2, c: P2, d: P2) -> bool {
+        let orient = |p: P2, q: P2, r: P2| (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+        let eps = 1e-9;
+        let (o1, o2) = (orient(a, b, c), orient(a, b, d));
+        let (o3, o4) = (orient(c, d, a), orient(c, d, b));
+        ((o1 > eps && o2 < -eps) || (o1 < -eps && o2 > eps))
+            && ((o3 > eps && o4 < -eps) || (o3 < -eps && o4 > eps))
+    }
+
+    /// The largest and the smallest distance from the points of `from` to
+    /// the polyline `to`.
+    fn spacing(from: &[P2], to: &[P2]) -> (f64, f64) {
+        from.iter()
+            .filter_map(|&p| nearest_on(to, p).map(|(_, d)| d))
+            .fold((f64::INFINITY, 0.0_f64), |(lo, hi), d| {
+                (lo.min(d), hi.max(d))
+            })
+    }
+
+    /// C4: the lobe morph on a rectangular lobe. The cut pieces (every piece
+    /// but a return) do not cross themselves or each other, and the legs
+    /// that run the same way lie `s` apart within one cell: the half-pitch
+    /// alternation's legs `l` and `l + 2`, the one-way legs `l` and `l + 1`.
+    /// The literal alternation ([`LobeMorph::AlternateFull`]) leaves two
+    /// stepovers between its leg back and the leg before at the near end,
+    /// the claim of its doc.
+    #[test]
+    fn the_lobe_morph_on_a_rectangle_lobe_holds_one_stepover() {
+        let (s, tol) = op_defaults();
+        let cell = planner_cell_size(R, tol);
+        let arcs = rectangle_lobe(5, 40.0, s, cell);
+        for morph in [LobeMorph::Alternate, LobeMorph::Return] {
+            let pieces = morph_legs(&arcs, morph, cell);
+            let cuts: Vec<&PlanPiece> = pieces
+                .iter()
+                .filter(|p| p.kind != PieceKind::Return)
+                .collect();
+            let segs: Vec<(P2, P2)> = cuts
+                .iter()
+                .flat_map(|p| {
+                    p.pts.windows(2).filter_map(|w| match w {
+                        &[a, b] => Some((a, b)),
+                        _ => None,
+                    })
+                })
+                .collect();
+            for (i, &(a, b)) in segs.iter().enumerate() {
+                for &(c, d) in segs.iter().skip(i + 1) {
+                    assert!(
+                        !segments_cross(a, b, c, d),
+                        "{morph:?}: {a:?}->{b:?} crosses {c:?}->{d:?}"
+                    );
+                }
+            }
+            let legs: Vec<&[P2]> = cuts
+                .iter()
+                .filter(|p| p.kind == PieceKind::Morph)
+                .map(|p| p.pts.as_slice())
+                .collect();
+            let apart = match morph {
+                LobeMorph::Alternate => 2,
+                LobeMorph::AlternateFull | LobeMorph::Return => 1,
+            };
+            assert_eq!(
+                legs.len(),
+                match morph {
+                    LobeMorph::Alternate => 2 * (arcs.len() - 1),
+                    LobeMorph::AlternateFull | LobeMorph::Return => arcs.len() - 1,
+                },
+                "{morph:?}: legs per band"
+            );
+            for (l, later) in legs.iter().zip(legs.iter().skip(apart)) {
+                let (lo, hi) = spacing(later, l);
+                assert!(
+                    lo >= s - cell && hi <= s + cell,
+                    "{morph:?}: legs {lo:.4} to {hi:.4} apart, expected {s} ± {cell}"
+                );
+            }
+            // The last piece is the plain pass of the last arc.
+            let last = pieces.last().expect("the lobe has pieces");
+            assert_eq!(
+                last.kind,
+                PieceKind::Wrap,
+                "{morph:?}: ends on the last arc"
+            );
+            assert!(
+                last.pts.iter().all(|p| (p.y - 4.0 * s).abs() < 1e-9),
+                "{morph:?}: the last pass is the last arc"
+            );
+        }
+        // The literal alternation: the leg back of the second band ends at
+        // `A_2(0) = (0, 2s)`, two stepovers from the first leg.
+        let full = morph_legs(&arcs, LobeMorph::AlternateFull, cell);
+        let mut legs = full.iter().filter(|p| p.kind == PieceKind::Morph);
+        let (Some(out), Some(back)) = (legs.next(), legs.next()) else {
+            panic!("the literal alternation has two legs at least");
+        };
+        let (_, hi) = spacing(&back.pts, &out.pts);
+        assert!(
+            hi >= 2.0 * s - cell,
+            "the literal alternation leaves {hi:.4} mm at the near end, the doc says 2s"
+        );
+    }
+
+    /// C4: the star-shape test. On a disc seeded at its centre with a round
+    /// island off the seed, the circles round the seed that do not reach
+    /// the island are star-shaped; a level set that reaches round the
+    /// island fails, since the rays toward the island leave the region
+    /// before they cross it. The same disc with no island passes those
+    /// levels (the control: the island is the cause).
+    #[test]
+    fn the_star_shape_test_rejects_a_level_set_behind_an_island() {
+        let (s, tol) = op_defaults();
+        let cell = planner_cell_size(R, tol);
+        let disc_radius = 30.0;
+        let outer = circle(P2::new(0.0, 0.0), disc_radius + R, cell);
+        // The island of the part: radius 2 at (14, 0); its hole in the
+        // tool-centre region has radius 2 + R = 5, so the front reaches it
+        // 9 mm from the seed, at T = 9 - R = 6 mm, level 3.
+        let mut hole = circle(P2::new(14.0, 0.0), 2.0, cell);
+        hole.reverse();
+        let seed = P2::new(0.0, 0.0);
+        let with_island = Polygon2::with_holes(outer.clone(), vec![hole]);
+        let without = Polygon2::new(outer);
+        let solve = |part: &Polygon2| {
+            GeodesicField::over_part(part, R, cell, s, seed, R, FieldSolver::SourceTracking)
+                .expect("the seed lies in the disc")
+        };
+        let island = solve(&with_island);
+        let open = solve(&without);
+        for level in [1, 2] {
+            assert!(
+                island.level_is_star_shaped(seed, R, level),
+                "level {level} closes before the island"
+            );
+        }
+        for level in [4, 7] {
+            assert!(
+                !island.level_is_star_shaped(seed, R, level),
+                "level {level} reaches round the island: not star-shaped"
+            );
+            assert!(
+                open.level_is_star_shaped(seed, R, level),
+                "control: level {level} is a circle without the island"
+            );
+        }
+        let k = island.star_levels(seed, R);
+        assert!((2..=3).contains(&k), "core levels with the island: {k}");
     }
 
     /// The lattice node `i` of `field`.

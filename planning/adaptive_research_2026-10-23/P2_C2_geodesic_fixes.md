@@ -568,3 +568,255 @@ Read in `summary.txt`: per column the `entries by producer` line (compare
 `raw plan` block of `geodesic_a_ramp` (the first ten refused steps), and
 the pocket's `wrap pieces` for `geodesic_a` (expected near
 `geodesic_a_through`'s, not double).
+
+## C4 — the morph join (2026-10-23)
+
+Status: CODE COMPLETE, NOT RUN. No cargo (the brief says so); no commit.
+`rustfmt --edition 2024 --check` is clean on both files. Base 26355fe9.
+Spec: main-checkout `STATUS.md`, "Next for the geodesic candidate (C4,
+after D3): the morph join". Shipped code is not touched.
+
+### Method
+
+1. **Core-zone spiral** (`core_spiral`, `GeodesicField::star_levels`).
+   - The star-shape test: rays from the seed-disc rim, spaced so that the
+     arc between two rays at the lattice diagonal is one cell, each
+     sampled every half cell on the bilinear field (the interpolation the
+     level sets use). Level `k` passes when every ray crosses `T = k`
+     exactly once, and that crossing comes before the ray first leaves
+     the reachable cells. `K` is the largest `k` for which levels 1..k all
+     pass. A level set behind an island fails: the rays toward the island
+     leave the region before they cross it.
+   - The spiral is the level set `F = 0` of `F(x) = T(x)/s − φ(x)/2π`.
+     **Branch cut: φ is unwrapped along the curve.** The tracer walks the
+     unwrapped angle θ from 0 to 2πK. On the ray at `φ₀ + θ` (φ₀ = the
+     starter's end direction, so the spiral starts where the starter
+     ends) it takes the radius where `T = θ/2π` stepovers, by bisection
+     to the op tolerance. The star-shape test guarantees one crossing per
+     ray, so no half-field is necessary. A closing lap on level K
+     follows. A spiral that leaves the region drops its outer level and
+     is traced again.
+   - Angle step: the chord rule of `circle_from` at `R + K·s`.
+2. **Lobes** (`morph_plan`, `lobe_link`, `morph_legs`, `LobeMorph`).
+   - Arc `a` links to arc `b` when `b` is the one child of `a` and `a` the
+     one parent of `b` (the parent relation of the order rule: one level
+     apart, within the reach), both are open, and `lobe_link` holds:
+     1. the same set of front branches at their vertices;
+     2. the length ratio is at most `(R + 2s)/(R + s)`;
+     3. every matched pair `A_k(u)`, `A_{k+1}(u)` (one sample per cell of
+        the longer arc) is within the reach.
+     The links are read on the untrimmed arcs. A run of linked arcs is a
+     lobe; every other arc is a plain wrap (the C3 rule).
+   - The order: a unit (lobe or plain wrap) is cut after every parent of
+     its first arc; the nearest ready unit goes next (the order rule of
+     `ordered_wraps`).
+   - In a lobe the first arc is cut plain from the end nearer the cutter;
+     `p = 0` is where that pass ends. Each later arc is turned to pair its
+     ends with the arc before. The one-side meeting trim (`meeting_trim`,
+     factored out of `ordered_wraps` with the same arithmetic) applies to
+     every arc as it is placed. Then the legs, and the lobe ends with a
+     plain pass of its last arc.
+   - Check: if any leg segment leaves the tool-centre region (a blend of
+     two arcs that end on a curved wall cuts that wall's chord), the lobe
+     is cut as plain wraps. `LobeReport::outside` counts this.
+3. **Behind an island**: rule 1 above (branch sets) and the split rule
+   (one child, one parent) stop a lobe there. The C3 one-side rule
+   applies to the arcs that fall back. The counts per reason are in
+   `LobeReport` (`stop_split`, `stop_branch`, `stop_ratio`, `stop_gap`).
+   As the advisor noted, branch-set equality also stops a lobe at the
+   level where a shadow line first crosses the arc ({0} against {0, b});
+   that stop is counted under `branch`.
+4. **Readout**: `PassLoadReadout::tallies`. Each class of steps has its
+   max reading, steps over and steps. The classes of the emitted plan
+   are per producer. The classes of the raw plan are per producer and
+   part: spiral, morph, return, wrap, join, link. A part is the planned
+   polyline within one cell of the step end; a morph step or a return
+   step must also run the way of the nearest segment, because a return
+   lies on its leg. The raw plan's "steps over" are the steps the replay
+   refuses. The S/J/M/C/W/P entry split stays.
+   `classify_parts` (the disc test of the ramp spiral) is replaced by
+   `PartIndex`, so the ramp column now classes a spiral step by the
+   spiral polyline, not by the disc.
+
+### Derivations (only R, s, the cell, the tolerance and the ceiling enter)
+
+- **Leg bookkeeping.** A leg is `B(p, λ) = (1 − λ)·A_k(p) + λ·A_{k+1}(p)`.
+  The stock that a leg meets at `p` is its λ minus the largest λ cut at
+  `p` so far, in stepovers. The bound is 1, the spacing of every other
+  wrap.
+  - **The brief's literal (i), one leg per band in alternating
+    directions:** the leg back runs λ = 1 − p from the far end and meets
+    `2 − 2p`: two stepovers at the near end. An alternation needs two
+    legs per band. Selectable as `LobeMorph::AlternateFull`; not a
+    default column.
+  - **Default `geodesic_morph_alt` = half-pitch alternation:** out with
+    λ = p/2, back with λ = 1 − p/2. The leg out meets
+    `p/2 + p/2 = p ≤ 1` (the band before left the edge at −p/2 of this
+    band), and the leg back meets `1 − p ≤ 1`. Both turns are
+    continuous. The last band leaves `A_n` short by p/2, so a plain pass
+    of `A_n` follows (it meets ≤ 1/2). "Two" is derived: it is the least
+    number of legs for which an alternation holds one stepover. Cost:
+    about twice the lobe cut length, at half the mean depth.
+  - **`geodesic_morph_return` = the brief's (ii):** a leg out (λ = p,
+    meets exactly 1), then a return along it through cleared stock (zero
+    load), then the step `A_k(0) → A_{k+1}(0)`. That step is radial: it
+    meets one full stepover head-on, which is the seam step of the G1
+    join (about 0.94 of D). **It is predicted refused once per band.**
+    The last band does not return; `A_n` is cut back from the far end
+    (meets 1 − p). The return is a `Cut` along the reversed leg, not
+    `Link`s: `feed_link_checked` reads link samples on the lattice with
+    the wall test, and a leg ends on the wall, so a link could become a
+    re-entry and hide the mechanism. The return length is reported apart
+    (`return_length_mm`) and is in the cut length.
+- **Length factor** `(R + 2s)/(R + s)` = 1.4 at s 2, R 3. A circular front
+  of level k has radius `R + k·s`. An arc of one angular span grows by
+  `(R + (k+1)s)/(R + ks)` per level, the largest at the first wrap. This
+  is the loosest growth the front itself gives, not a fit. A larger ratio
+  either way means the arc gained or lost length at a wall.
+- **Matched-gap bound** = the reach `s + (1 + √2)·cell`. **Samples per
+  band** = one per cell of the longer arc (the contour has about one
+  vertex per cell).
+- **Rays**: `⌈2π·L/cell⌉` with L the lattice diagonal; samples every
+  cell/2; bisection to the op tolerance.
+
+### Unit tests (new)
+
+- `the_core_spiral_on_a_disc_is_one_piece_with_monotone_radius`: disc of
+  tool-centre radius 20, seed at the centre. K lies in
+  `⌊(20 − cell − √2·cell − R)/s⌋ ..= ⌊(20 − R)/s⌋` (7..=8). Every segment
+  is inside the region. The radius never falls by more than the
+  tolerance. The spiral starts at R and ends within one cell of R + K·s.
+- `the_lobe_morph_on_a_rectangle_lobe_holds_one_stepover`: 5 straight
+  arcs, 40 mm long, s apart. For `Alternate` and `Return`, no two cut
+  segments cross, and the legs that run the same way are s ± one cell
+  apart. There are 2(n−1) or n−1 legs, and the last piece is the last
+  arc. For `AlternateFull`, the leg back is at least 2s − cell from the
+  leg before (the doc's claim).
+- `the_star_shape_test_rejects_a_level_set_behind_an_island`: disc of
+  radius 30 with an island hole of radius 5 at (14, 0). Levels 1 and 2
+  pass, levels 4 and 7 fail, and 2 ≤ K ≤ 3. The control is the same disc
+  with no island, where levels 4 and 7 pass.
+
+### Predicted entries per column (not run; the run decides)
+
+D3 for reference: star `geodesic_a` 92 = S1 J56 M20 P15, pocket 88 = S1
+J42 M27 C4 P14.
+
+- **Core (both morph columns).** The C3 width formula `2 + 4/ρ` mm
+  (against 2.18) applies to a pitch-s spiral as it applies to the wraps.
+  The D3 dump shows spiral steps at ρ 3.4 to 5.0 reading 0.38 to 0.52,
+  at the ramp's tighter pitch. So **the replay still splits the inner
+  turns**. The core removes the seam joins (J) but not the mid-turn splits
+  (M). I do NOT claim one plunge per core zone. Star: K ≈ 6 (the ramp's
+  clearance count was 6); the core holds about 10 to 20 of the old J+M,
+  and those become about 10 to 20 M. Pocket: K ≈ 3.
+- **Star, `geodesic_morph_alt`.** 5 arms are 5 lobes (level K+1 is 5
+  arcs). Count:
+  - one entry per arm, because the link from one arm tip to the next
+    arm's base crosses the wall: 4 to 5;
+  - near each tip the arcs shrink faster than 1/1.4 and fall back to
+    plain wraps, with a radial join per tip arc: about 2 to 3 per arm,
+    10 to 15 in total;
+  - S 1 and P about 15 as before.
+  Total about **40 to 55** (D3: 92), J about 15 to 20, M about 10 to
+  20. The morph-step load should be at or below the plain-wrap load: a
+  leg meets the full stepover only at its ends, and s/2 at mid-arc.
+- **Star, `geodesic_morph_return`.** Add one refused near-end step per band
+  (about 7 to 10 bands × 5 arms). Total about **80 to 100**, J high. This
+  column is expected to lose to the alternation; it is built so the
+  readout shows that.
+- **Pocket, both columns.** Three front branches. The lobes stop at the
+  island (split), at the shadow lines (branch) and at the meeting line
+  (branch; the two sides do not merge again), so about 4 to 8 lobes. Alt:
+  about **40 to 55** (D3: 88). Return: about **75 to 95**. If
+  `LobeReport::outside` is not 0, read it first: lobes that end on the
+  island may leave the region by the chord sag (about s²/(8·ρ_island) ≈
+  0.06 mm) and fall back to plain wraps whole.
+- **Readout targets:**
+  - `clearing morph` max at or below `clearing wrap` max;
+  - `clearing return` max about 0;
+  - `clearing join` steps over ≈ refused near-end steps in the return
+    column.
+
+### What the mid-wrap splits (M) look like with the morph (item 7)
+
+Curvature-aware spacing is not built. After the morph, M comes from two
+places:
+
+1. The inner core turns (ρ under about 23 mm, the C3 bound).
+2. The arm bases of the star, where ρ is about 15 to 23 mm and a leg end
+   meets a full stepover.
+
+Both are the `2 + 4/ρ` excess. The C3 §3 field `s'(ρ)` (1.50 mm at ρ 5,
+1.80 at 10, 1.92 at 15) is the lever that closes both. In the morph form
+it is a T/s' − φ/2π spiral, with no change to the lobe legs. Read the
+core's M count in the run before that lever is ruled on.
+
+### Risks
+
+- Code that no compiler has seen: about 1300 new lines.
+  - `JoinRule` has a payload variant now; `== JoinRule::Ramp` still
+    compiles (`PartialEq` is derived).
+  - `level_is_star_shaped` is `#[cfg(test)]`, because only the tests call
+    it.
+- The star-shape test cost: about 1800 rays × 570 samples on the star (a
+  bilinear sample each). That is cheap in release. The unit tests use
+  discs of 20 and 30 mm.
+- A lobe's legs are checked against the region only as a whole; one bad
+  segment drops the whole lobe to plain wraps (counted).
+- The fallback "lowest pending unit" in the order loop is not expected to
+  fire; if a run shows an odd order, look there first.
+- `PartIndex::part` is O(steps × polyline points), with a bounding-box
+  filter. It runs on the raw plan only.
+
+### Harness columns
+
+Default: agent, contour_spiral, geodesic_g1, geodesic_a,
+geodesic_morph_alt, geodesic_morph_return. `geodesic_a_through` is NOT in
+the default run any more (the brief did not name it; D3 has its row) and,
+with `geodesic_a_ramp` and `geodesic_morph_alt_full`, runs when
+`ADAPTIVE_GEODESIC_EXTRA` is set. A "wrap end" for J in the morph columns is
+the end of a planned piece (core spiral, plain pass, leg; not a return),
+so a replay split at a leg's turn counts as J.
+
+### Files changed by C4
+
+- `crates/rs_cam_core/src/adaptive/research_geodesic.rs`
+- `crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`
+- this note.
+
+No `pub(crate)` request elsewhere.
+
+### Commands for the verifier (C4)
+
+Through `scripts/cargo_lane.sh`, each with a `timeout`:
+
+```text
+cargo fmt --all -- --check
+cargo test -p rs_cam_core --features research,test-support -q --lib research_geodesic
+cargo clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings
+cargo clippy -p rs_cam_core --all-targets -- -D warnings
+cargo test -p rs_cam_core --features research,test-support --release \
+    --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture
+ADAPTIVE_GEODESIC_EXTRA=1 cargo test -p rs_cam_core --features research,test-support --release \
+    --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture   # the record columns
+```
+
+**First check, the regression anchor.** The refactor (`collect_chains`,
+`parents_of`, `meeting_trim`, `append_path`) must leave `geodesic_a`
+exactly at D3:
+
+| Shape | Entries | Split | Max reading | Raw plan over-steps |
+|---|---|---|---|---|
+| star | 92 | S1 J56 M20 P15 | 0.3600 | 206 of 2330 |
+| pocket | 88 | S1 J42 M27 C4 P14 | 0.3624 | 289 of 2845 |
+
+A difference there is a refactor defect: stop and report it.
+
+Then read, per morph column:
+
+- the `entries by producer` line;
+- the `lobes piece 0` line;
+- the `load by class, raw plan` block: `clearing spiral`,
+  `clearing morph`, `clearing return`, `clearing wrap`, `clearing join`;
+- the first ten refused steps.
