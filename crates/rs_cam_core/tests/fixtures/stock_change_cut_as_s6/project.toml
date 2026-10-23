@@ -4,6 +4,8 @@
 # cut through the Resin layer and into the stock below it, so the run has
 # Resin samples, stock samples and mixed samples. The first pocket steps
 # down 1 mm per pass, so its first pass (to Z -1) cuts the Resin alone.
+# Each pocket states spindle_rpm = 18000: the default post spindle speed
+# that an op with no RPM read before S11 (74af0f8e).
 format_version = 3
 
 [job]
@@ -57,6 +59,7 @@ floor = { from = "top", depth = 3.0 }
 depth_per_pass = 1.0
 feed_rate = 1000.0
 plunge_rate = 500.0
+spindle_rpm = 18000
 climb = true
 pattern = "contour"
 angle = 0.0
@@ -79,6 +82,7 @@ floor = { from = "top", depth = 3.5 }
 depth_per_pass = 3.5
 feed_rate = 1000.0
 plunge_rate = 500.0
+spindle_rpm = 18000
 climb = true
 pattern = "contour"
 angle = 0.0
