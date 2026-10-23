@@ -1522,3 +1522,127 @@ new file is `phase2/d9_harness.txt` (main checkout).
  M crates/rs_cam_core/src/adaptive/research_geodesic.rs
  M crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs
 ```
+
+## D10 at f576e51e + uncommitted C11
+
+C11 on top of f576e51e (C9 committed): the split at the meeting line
+(`Reseed::Zone`, `GeodesicOptions::C11_SPLIT`, column
+`geodesic_curv_split`), `GeodesicField::grown_from` (`reseeded` calls it),
+and the fix of the D9 join readout (`seam_joins`). Same worktree, own
+target dir, the lane script and a `timeout` on each command. Disk: 40 GB
+free at the start and at the end.
+
+### Fix
+
+None. Every command compiled and passed on C11's code as delivered.
+
+### Results
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `fmt --all -- --check` | green |
+| 1 | `check -p rs_cam_core --features research,test-support` | green, no warning |
+| 2 | `--features research,test-support --lib research_geodesic` | green 15 passed, 2 ignored |
+| 2 | `--lib the_far_side_zone_lies_behind_the_island` (alone) | green 1/1; the shadow assertion holds both ways, so the risk that C11 named did not occur |
+| 2 | `--lib adaptive` | green 141 passed, 7 ignored |
+| 2 | `--features test-support --test adaptive3d_emission_byte_parity` | green 5/5 (shipped path neutral) |
+| 3 | `clippy -p rs_cam_core --all-targets -- -D warnings` | green |
+| 3 | `clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings` | green |
+| 4 | the harness, release, `--ignored --nocapture` | green 1/1, 9.00 s; output in `phase2/d10_harness.txt` |
+
+### Controls (exact)
+
+| Column | Star | Pocket | Same |
+|---|---|---|---|
+| geodesic_a | 92 = S1 J56 M20 P15; 0.3600; raw 206/2330 | 88 = S1 J42 M27 C4 P14; 0.3624; raw 289/2845 | yes |
+| geodesic_curv | 73 = S1 J58 M0 P14; 0.3581; raw 145/2545 | 63 = S1 J34 M12 C6 P10; 0.4677; raw 260/2952 | yes |
+| geodesic_curv_reseed | 73 = S1 J58 M0 P14; 0 re-seeds | 74 = S1 J63 M0 C0 P10; 47 re-seeds, 48 fields | yes |
+| agent | 25; 0.4515; raw 9/1749 | 31; 0.3618; raw 9/1805 | yes |
+| contour_spiral | 101; 0.3613; raw 501/4873 | 91; 0.3723; raw 420/3797 | yes |
+
+I compared every control `.txt` byte for byte against its D9 copy: all
+twelve columns on both shapes (the five above and the seven older
+`geodesic_*` variants). The only difference is the `joins piece 0` line of
+`geodesic_curv_reseed`, which C11 fixed:
+
+- star, D9: `closed-to-closed seam 0, closed to arc 0, from an arc 0`
+- star, D10: `closed-to-closed seam 16, closed to arc 33, from an arc 50`
+  (now equal to `star_geodesic_curv.txt`)
+- pocket, D9: `closed-to-closed seam 0, closed to arc 0, from an arc 0`
+- pocket, D10: `closed-to-closed seam 4, closed to arc 7, from an arc 76`
+
+### `geodesic_curv_split`
+
+Star: the zone is empty (`zone 0 nodes (0.0 mm²)`, `1 fields in use`). The
+`.txt` equals `star_geodesic_curv.txt` except the title and the two new
+`split` lines. Thus the star gives 73 = S1 J58 M0 P14, 0.3581, raw
+145/2545, as predicted.
+
+| Item | Pocket split | Pocket `geodesic_curv` |
+|---|---|---|
+| Fields in use | 2 | 1 |
+| Zone | 3709 nodes, 927.2 mm² (prototype 959), 2 front branches, 60 meeting-line cells | — |
+| First region | 32 levels, 44 wraps | 32 levels, 99 wrap pieces |
+| Zone field | T = 0 on 4978 cleared nodes (1244.5 mm²); 18 levels, 35 wraps, 2 front branches, 64 meeting-line cells, 0 zone nodes not reached, converged true | — |
+| Entries (= retracts) | **84** | 63 |
+| S / L / J / M / C / W / P | 1 / 0 / 64 / 3 / 0 / 0 / 16 | 1 / 0 / 34 / 12 / 6 / 0 / 10 |
+| Joins line | closed-to-closed seam 4, closed to arc 2, from an arc 72 | — |
+| Max emitted swept width | 0.3609, 0 over (clearing) | 0.4677, 2 over (mop) |
+| Residue mop max | 0.3597, 0 / 111 | 0.4677, 2 / 349 |
+| Raw plan, over / steps | 230 / 2889 | 260 / 2952 |
+| Cut length | 1173.8 mm | 1343.7 mm |
+| Keep-down links | 161 (232.8 mm) | 173 (382.7 mm) |
+
+Cascade (refused / cascade / intrinsic), raw plan:
+
+| Class | Pocket split | Pocket `geodesic_curv` |
+|---|---|---|
+| total | 194 / 69 / 125 (near-ceiling 17) | 876 / 663 / 213 |
+| clearing join | 102 / 8 / 94 (0.9426) | 104 / 17 / 87 |
+| clearing wrap | **86 / 60 / 26** (0.8333) | 763 / 640 / 123 |
+| clearing link | 6 / 1 / 5 (0.8972) | 9 / 6 / 3 |
+
+C11's predictions: zone about 3800 nodes / 950 mm² (measured 3709 / 927.2);
+2 branches (2); fields 2 (2); zone levels 16 to 18 (18); zone wraps 30 to 45
+(35); first-region wraps 35 to 45 (44); wrap cascades 20 to 150 (60);
+entries 45 to 70 (84: outside the range, above it); max width under the
+ceiling (0.3609). All hold except the entries.
+
+### Keep-or-drop (C11's pre-registered rule, applied as written)
+
+| Rule | Limit | Measured | Holds |
+|---|---|---|---|
+| 1. pocket `clearing wrap` cascades ≤ half of `geodesic_curv` | ≤ 320 | 60 | yes |
+| 2. entries ≤ `geodesic_curv` on each shape | star ≤ 73, pocket ≤ 63 | star 73, pocket **84** | **no** (pocket +21) |
+| 3. max emitted swept width ≤ 0.3626, mop excepted | 0.3626 | star 0.3581, pocket 0.3609; 0 over | yes |
+
+**Verdict: DROP** (rule 2 fails on the pocket: 84 > 63). The joins (J)
+rise from 34 to 64 and the mop entries (P) from 10 to 16. The mid-wrap
+splits (M) fall from 12 to 3 and the residue contours (C) from 6 to 0. The
+cascade falls from 640 to 60 and the mop step over the ceiling is gone, but
+the rule does not count these.
+
+### Magic numbers (C11 diff)
+
+No bare float literal without a derivation in the product hunks
+(`pass.ceiling * 2.0 * r` is the ceiling width). Test code: the island
+`(25, 20)` and the seed offset 17 restate C9's test position; `1e-9` is
+comparison slack with no derivation; `let reach = s + (1.0 + SQRT_2) *
+cell` restates the product formula in `geodesic_segments` (a copy, not a
+call: if the product formula changes, the test does not follow).
+
+### Files the harness wrote
+
+79 files in
+`.claude/worktrees/adaptive-head/target/tmp/adaptive_geodesic_2d_g1/`:
+`summary.txt` and `<shape>_<column>.{txt,svg,png}` for 13 columns × 2
+shapes. New in this run: `star_geodesic_curv_split.{txt,svg,png}` and
+`pocket_geodesic_curv_split.{txt,svg,png}`. Outside `target/`, the only
+new file is `phase2/d10_harness.txt` (main checkout).
+
+### `git status --short` (worktree) at the end of D10
+
+```
+ M crates/rs_cam_core/src/adaptive/research_geodesic.rs
+ M crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs
+```

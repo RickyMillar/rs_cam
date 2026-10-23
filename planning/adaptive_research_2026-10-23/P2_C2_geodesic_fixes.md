@@ -1988,3 +1988,290 @@ Read in this order:
    pocket (rule (1): cascade ≤ 320), and per class on both shapes.
 5. The max emitted swept width and its over-steps (rule (3)).
 6. Then apply the keep-or-drop rule above.
+
+## C11 — split at the meeting line (2026-10-24)
+
+Status: CODE COMPLETE, NOT RUN (no cargo; no commit). Base f576e51e
+(worktree `.claude/worktrees/adaptive-head`, branch `adaptive-instruments`,
+C9 committed). `rustfmt --edition 2024 --check` is clean on both Rust
+files. No shipped path is changed (`path.rs`, `search.rs`, `spiral.rs`,
+`mod.rs`, `material_grid.rs` are not touched) and no visibility changes:
+the module reads `ToolCentreRegion::pieces` (`pub(crate)`) and
+`Polygon2::holes` (`pub`).
+
+Paths below are in `crates/rs_cam_core/src/adaptive/research_geodesic.rs`
+unless named otherwise; line numbers are of the C11 tree.
+
+### Keep-or-drop rule (set before any prediction)
+
+Column `geodesic_curv_split` (`GeodesicOptions::C11_SPLIT`, :1809)
+against `geodesic_curv` (`C5_CURV`). KEEP when ALL three hold:
+
+1. On the pocket, the cascade-class wrap refusals (the `clearing wrap`
+   row of the cascade block, column "cascade") are at most half of
+   `geodesic_curv`'s: at most 640 / 2 = 320.
+2. Total entries do not rise above `geodesic_curv`: at most 63 on the
+   pocket and at most 73 on the star.
+3. The max emitted swept width is at most the ceiling 0.3626, except the
+   known G-MOPLOAD mop step (a `residue mop` over-step counts as known).
+
+Otherwise DROP; the lead then takes the far side to the operator.
+
+### The design
+
+Operator idea 1b: split the region at the meeting line and clear the far
+side ("the spaghetti zone") as its own pass. One new option value,
+`Reseed::Zone` (:1721), in the preset `C11_SPLIT` = `C5_CURV` with
+`reseed: Reseed::Zone`. The hook is in `geodesic_segments` (:3826): when
+the zone is not empty, `split_segments` (:4858) plans the piece; when it is
+empty (no island) the plan is the `Reseed::Off` plan, line for line (only
+the report gets a `split` record).
+
+**(1) The zone** (`far_side_zone`, :4696). The reachable, solved nodes
+whose source-tracked front branch, or an ancestor of it, is a bend round a
+HOLE ring of the tool-centre region (`Branches::bend` :406 keys a branch by
+(parent, ring, side); `Walls::ring_near` :438 names the ring; the hole
+rings are found in the same order, exterior then holes per piece). On a
+part with one island and a convex outer wall this is exactly the set of
+nodes the island hides from the seed: the shadow of the island.
+
+Why this definition and not the other two of the brief:
+
+- It is the brief's option 3 at no tolerance. Where a path does not bend,
+  the node sees the seed centre `c`, its pivot is `c`, and the law's
+  radius `ρ = R + T` is the front's own radius exactly (the law,
+  `curvature_levels` :2539, is derived for that circle). Where the path
+  bends at a node `b`, `T = |b − c| − R + |x − b|`, so
+  `(R + T) − |x − b| = |b − c|` (more bends add to it). That is the
+  distance from the seed to a bend node, never 0: the two radii disagree at
+  EVERY shadow node, and the smallest disagreement is the seed's distance
+  to the island. So no tolerance enters, and option 3 gives this set.
+- It is the brief's option 2 ("beyond the meeting line, pivot a bend node
+  behind the island") without the word "beyond": the meeting line lies
+  inside the shadow (both branches that meet went round the island), and
+  the part of the shadow before the meeting line is where the refusals
+  start (C9 §"Why this trigger": the D5 render shows the refusals start
+  where the fronts bend round the island, before they meet; D9's first
+  trigger, (27.50, 35.31), lies at the island's upper tangent point
+  (28.7, 36.4), computed below).
+- Option 1 ("the nodes of the second branch") is not a property of the
+  field: both branches reach the meeting line at the same `T`, by the
+  definition of the line. "Second" is an order of cutting.
+
+**Closed off.** The zone is bounded by the island, the walls and the two
+shadow lines, the rays from the seed that touch the island. A ray from the
+seed is a gradient line of `T` in the first region (`T = |x − c| − R`), so
+the first region's wraps (circles about the seed) cross the border at a
+right angle, as they end at a wall. The last step of a wrap at the border
+meets only its band: the wrap below ends on the same ray, `s'` closer to
+the seed, and its end disc (radius `R > s'`) covers the stock on the inner
+side, so the cap beyond the border reads the band width `s'`.
+
+Pocket geometry (Python check of the fixture `demo_pocket.svg`: rect 5..75
+× 5..55 rx 8, island r 10 at (40, 30); tool-centre: 8..72 × 8..52, hole r
+13; seed (18.5, 18.5) from D5). Seed to island centre 24.38 mm; the shadow
+lines leave the seed at −4.08° and 60.36°; tangent points (39.0, 17.0)
+and (28.7, 36.4). Prototype on a 0.5 mm lattice (the planner cell at R 3):
+zone 3836 nodes, 959 mm², of 2312 mm² reachable (session scratchpad
+`c11/zone.py`; its region test is my reading of the SVG, not the planner's
+`ToolCentreRegion`).
+
+**(2) The first region** (`split_segments` step 1). The first field with
+the zone left out of its reachable nodes (`GeodesicField::with_inside`,
+:908: the values, branches, pivots and levels unchanged). A level set is
+built over cells with four reachable corners (`cell_reachable`), so every
+wrap ends at the last cell before the border and none enters the zone. The
+rest is the `geodesic_curv` plan: `ordered_wraps` (:2039), the one-side
+meeting rule (it has nothing to do here: every first-region node is branch
+0), `append_path` (:3727). In this region the law is exact.
+
+**(3) The cut.** The plan so far (the starter pocket, the first region,
+the open run) is walked through C9's replay model (`ReplayModel` :4189,
+`walk`), and `cleared_nodes` (:4411) reads the cleared area from the
+model's grid: the zone starts from the stock the replay will have cut, not
+from the planned wraps.
+
+**(4) The zone's seed: T = 0 on the cut (chosen), not its own entry.**
+
+- An own entry at the zone's EDT maximum costs one plunge and a starter
+  pocket (+1 entry at least). Its front is a circle that the island, the
+  walls and BOTH shadow lines cut, so each level is up to four arcs, each
+  with a join. And the planner has no EDT of a sub-region: the shipped EDT
+  (`compute_boundary_distances`) measures the distance to the walls, not
+  to the cut; the zone's EDT maximum would need a new transform.
+- `T = 0` on the cut: no plunge. The zone's border with the cut is the
+  two shadow lines, straight; the cut's edge along each is the row of the
+  first region's wrap end discs, a scallop of `R − √(R² − (s/2)²)` = 0.17
+  mm at s 2, R 3. The front grown from it is straight: each level is one
+  arc per side, from the island or the meeting line to a wall.
+  Prototype: the deepest zone node lies 31.97 mm from the upper line and
+  32.23 mm from the lower one (split at the wedge bisector), so 16 and 17
+  levels under the law from `ρ_0 = R` (15 and 16 at plain spacing).
+- So `T = 0` on the cut has fewer entries: no plunge, and about one arc
+  per level per side. It is C9's mechanism ONCE: one solve, no trigger.
+
+The zone field (`GeodesicField::grown_from`, :819; `reseeded` :810 is now
+a call of it with the field's own mask and branches, the same operations,
+so C9 is unchanged): `T = 0` and a pivot at every cleared node, solved by
+`sweep_sources` (:525) over the zone nodes and the cleared nodes only
+(`zone_inside`), the islands and walls unreachable as before.
+
+**The branches of the zone field** (`zone_labels`, :4736). With every
+cleared node in branch 0, the two fronts that grow from the two shadow
+lines would be one branch and meet in a kink that the one-side rule cannot
+see (`cell_on_shock` :1108 needs two unrelated branches). So each cleared
+node takes the branch of the zone node nearest it in lattice steps
+(breadth first over the 8 neighbours from every zone node at once): the
+cleared nodes along the upper line take the branch that went over the
+island, those along the lower line the other. The two are children of
+branch 0 and unrelated, so the zone field's fronts meet on a meeting line
+and the one-side rule (C2) applies inside the zone. The branch table of
+the first field is handed over, so the ids keep their parents.
+
+**Spacing in the zone.** The curvature law from `ρ_0 = R`
+(`use_curvature_spacing` :1013), C9's rule: the cut is treated as the
+starter lap. On the straight border plain spacing would be exact (the law's
+`ρ → ∞` limit is `s`); the law is never wider than plain (capped at `s`)
+and costs about one level per side (above), and it protects the places
+where the zone's front bends round the island's far side (a bend node
+there makes a tight circle again).
+
+**(5) The link.** The zone's wraps are ordered from the cutter's position
+at the end of the first region (`ordered_wraps(&zone_field, region, cur,
+…)`), and the first one is entered by `append_path`: a cutting step within
+the reach, else one keep-down `Link`, which the replay admits under the
+pass load or turns into a re-entry. One `PassEntry` marker for the whole
+plan, as in every column.
+
+**(6) The rest** is the shared cleanup of every column: the replay
+(`step_within_pass_load`), the residue contours, the wall pass and the
+mop.
+
+**The D9 readout defect, fixed.** `reseed_segments` now records each
+emitted wrap as (field, closed, level) and builds its `JoinReport` with
+`seam_joins` (:4646), the rule of the one-field plan (closed to closed
+one level up in the same field: closed seam; else closed to arc, or from
+an arc; the last wrap has no join). A truncated wrap counts as open. With
+0 re-seeds it gives the `geodesic_curv` counts (the star's `joins piece 0`
+line must now read as `star_geodesic_curv.txt`). This changes that line
+only; no move.
+
+### Readout (the `.txt` of the new column)
+
+- `split piece 0:` fields in use (1 or 2), zone nodes and mm², how it was
+  found (the text "the nodes whose source-tracked path to the seed bends
+  round an island"), the first field's branches and meeting-line cells in
+  the zone, the first region's levels and wraps;
+- `  zone field:` the seed (`T = 0` on N cleared nodes, mm²), levels,
+  wraps, branches and meeting-line cells in the zone, zone nodes not
+  reached, converged.
+- Entries by producer (S/L/J/M/C/W/P), the cascade block and the max
+  emitted swept width are the existing lines; the `joins piece` line now
+  counts both fields.
+
+### Unit test
+
+`the_far_side_zone_lies_behind_the_island` (:7364), on `island_pocket`,
+seed (8, 20) on the island's axis (C9's test position):
+
+- the zone lies behind the island: every node the island hides from the
+  seed (`!contains_segment(seed, node)`) is within one cell diagonal of a
+  zone node, and every zone node within one cell diagonal of a hidden node
+  (the bend sits on a lattice node); the first field's meeting line has
+  cells in the zone;
+- the first region's wraps never enter it: for every point of every
+  `ordered_wraps` wrap of the restricted field, the nearest lattice node is
+  a first-region node (a contour point lies on an edge of a kept cell, and
+  the node nearest a point on an edge is one of its ends);
+- the two regions cover the reachable area: each solved node is in
+  exactly one; with the grid cut by the disc of every first-region node,
+  every first-region node reads cleared, the zone field grown from the
+  cleared nodes solves every zone node, it has at least two branches in
+  the zone, and its two fronts meet there (meeting-line cells > 0).
+
+### Predictions (NOT results; the run decides)
+
+- **Star:** the star has no hole, so the zone is empty by construction and
+  the plan is `geodesic_curv`'s: 73 = S1 J58 M0 P14, 0.3581, raw 145/2545.
+  Its `.txt` must equal `star_geodesic_curv.txt` except the title and one
+  `split piece 0: 1 fields in use; zone 0 nodes …` line. A difference is a
+  defect of the hook.
+- **Pocket, the zone:** about 3800 nodes, about 950 mm² (prototype 959),
+  2 front branches, fields in use 2, zone levels 16 to 18, zone wraps 30 to
+  45.
+- **Pocket, the first region:** 32 levels (the first field's); wraps about
+  35 to 45 (estimate: 4 closed loops, about 30 arcs between the walls, the
+  island's near side and the two lines, about 9 arcs in the strip under
+  the lower line).
+- **Pocket, cascades:** `clearing wrap` cascade 640 → 20 to 150 (rule (1)
+  predicted to hold): the law is exact in the first region, and the zone's
+  front is straight where it meets the cut.
+- **Pocket, entries:** 45 to 70. Each arc still costs about one join where
+  the next arc is entered radially (the G1 join); the split cuts the lower
+  arcs of `geodesic_curv` (bottom wall round to the meeting line) at the
+  lower line, which adds arcs, while the far side loses its M and P work.
+  **Rule (2) is at risk.**
+- **Max emitted swept width:** at most 0.3626 apart from the mop (rule (3)
+  predicted to hold; the replay holds every clearing step).
+
+### Risks for the verifier
+
+- About 400 new lines that no compiler has seen.
+- The zone test asserts the shadow both ways to one cell diagonal. A
+  hidden node next to a shadow line far from the island could take a bend
+  at a neighbour whose nearest ring is the outer wall (a branch keyed to
+  the exterior ring, so not in the zone). I expect the shorter path round
+  the tangent point to win there, but if the test fails on that
+  assertion, that is the cause; it is a lattice artefact of the border, not
+  of the plan.
+- `zone_labels` labels by lattice steps (8-neighbour breadth first), not by
+  distance; only the cleared nodes beside the border matter, and there
+  the nearest zone node is across the line.
+- The model is a model (C5 risk note); read the cascade block of the
+  column, which replays the emitted raw plan.
+
+### Files changed by C11
+
+- `crates/rs_cam_core/src/adaptive/research_geodesic.rs`: `Reseed::Zone`,
+  `GeodesicOptions::C11_SPLIT`, `FieldReport::split`, `SplitReport`;
+  `GeodesicField::with_inside`, `GeodesicField::grown_from` (`reseeded`
+  calls it); `seam_joins` and the join counts of `reseed_segments` (the D9
+  defect); `far_side_zone`, `zone_labels`, `branches_in`,
+  `meeting_cells_in`, `split_segments` and the hook in
+  `geodesic_segments`; the module doc section; the unit test.
+- `crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`: the
+  `geodesic_curv_split` column (default set) and the `split` lines.
+- This note.
+
+### Commands for the verifier (C11)
+
+Through `scripts/cargo_lane.sh`, each with a `timeout`, from the worktree:
+
+```text
+timeout 600 scripts/cargo_lane.sh fmt --all -- --check
+timeout 1800 scripts/cargo_lane.sh check -p rs_cam_core --features research,test-support
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --lib research_geodesic
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core -q --lib adaptive
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features test-support -q --test adaptive3d_emission_byte_parity
+timeout 1800 scripts/cargo_lane.sh clippy -p rs_cam_core --all-targets -- -D warnings
+timeout 1800 scripts/cargo_lane.sh clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support --release \
+    --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture
+```
+
+Read in this order:
+
+1. **Controls (exact).** `geodesic_a` star 92 / pocket 88; `geodesic_curv`
+   star 73 = S1 J58 M0 P14 (0.3581, raw 145/2545), pocket 63 = S1 J34 M12
+   C6 P10 (0.4677, raw 260/2952); `geodesic_curv_reseed` 73 / 74 (its
+   `.txt` differs from D9's only in the `joins piece 0` line); agent 25 /
+   31; contour_spiral 101 / 91. A difference is a defect of the
+   `grown_from` split or the new option value: stop and report it.
+2. `geodesic_curv_split`, star: must equal `geodesic_curv` (zone 0 nodes).
+3. Pocket: the `split piece 0` and `zone field` lines (zone area, fields 2,
+   zone nodes not reached 0).
+4. The `entries by producer` line (S/L/J/M/C/W/P).
+5. The cascade block: `clearing wrap` refused / cascade / intrinsic on the
+   pocket (rule (1): cascade ≤ 320).
+6. The max emitted swept width and its over-steps (rule (3)).
+7. Then apply the keep-or-drop rule above.
