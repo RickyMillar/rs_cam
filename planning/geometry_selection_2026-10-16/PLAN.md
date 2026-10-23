@@ -1090,3 +1090,16 @@ fusion does but this is a future issue".
   presets).
 - Fix: the CLI job path skips the stock defaults and Suggest (parity
   defect, `crates/rs_cam_cli/src/job.rs:1207-1209`).
+
+## Operator ruling 2026-10-23: face Pocket "Cut past open sides" (opt-in)
+
+Live finding (5516aa8b): Pocket -> Waterline leaves a tool-radius fin of
+stock at each outer corner of the lower steps; the Waterline does not
+reach it, so the rest Chamfer refuses. References: FreeCAD Pocket
+"Extensions" (extend a picked open edge to the stock), Fusion 2D Pocket
+(add the stock outline to the pocket geometry). Operator: "yeah. add
+the opt in. keep the vocab easy to understand."
+- A face Pocket gets the setting "Cut past open sides" (off by
+  default). On: the pocket of each face clears the stock beyond the face
+  edges that have no wall, out to the stock edge, at that face's Z.
+  Edges against a wall never move. The default Pocket does not change.
