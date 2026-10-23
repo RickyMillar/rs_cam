@@ -10,7 +10,10 @@
 //! protocol").
 //!
 //! - Strategies: `PathStrategy2d::Agent`, `PathStrategy2d::ContourSpiral`
-//!   and candidate (a). The 2D op exposes no contour-parallel strategy: its
+//!   and candidate (a) three times: `geodesic_g1` (`GeodesicOptions::G1`,
+//!   the form of the G1 look, the "before"), `geodesic_a`
+//!   (`GeodesicOptions::C2`, the G1 fixes) and `geodesic_a_through` (the
+//!   fixes with the G1 meeting rule, to compare the meeting-line rules). The 2D op exposes no contour-parallel strategy: its
 //!   contour-parallel path runs only behind the narrow-region gate
 //!   (`CleanupStrategy::ContourParallelNarrow` / `Hybrid`), so it is not a
 //!   column here.
@@ -21,12 +24,19 @@
 //!   The rest of `AdaptiveParams` is set as `clearing_2d.rs` sets it. Z does
 //!   not enter an XY plan: the cut level is one depth per pass under the
 //!   stock top, and the safe Z is one depth per pass over it.
-//! - The SVG: cutting moves blue, keep-down links orange, rapids dashed
-//!   grey, each entry (plunge) a red ring, the outline black, and for
-//!   candidate (a) its wraps in pale grey under the moves.
+//! - The SVG and the PNG (the harness draws both from one list of marks, so
+//!   no outside converter can drop the colours): the cleaned planner plan
+//!   (`Run2d::spans`, before the toolpath emission), one colour and stroke
+//!   width per producer and move kind. Clearing cuts blue, the starter
+//!   purple, the wall pass green (widest), residue contours brown, the
+//!   residue mop magenta, keep-down links orange, rapids dashed grey, each
+//!   entry a red ring, each step over the pass load a black ring, the
+//!   outline black, and candidate (a)'s wraps pale grey under the moves.
+//!   The legend is in the SVG caption.
 //! - The summary: cut and link length, entries, lifts (retracts), keep-down
 //!   links and the planner's pass-load readout (`research_geodesic` module
-//!   doc, `PassLoadReadout`).
+//!   doc, `PassLoadReadout`), with one line per step over the ceiling: its
+//!   producer, cut or link, segment, position and reading.
 //!
 //! A shipped column must be the product plan: the harness asserts that its
 //! toolpath equals `adaptive_toolpath` on the same outline, move by move.
@@ -52,7 +62,9 @@ mod common;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
-use rs_cam_core::adaptive::research_geodesic::{Candidate2d, Run2d, run_2d};
+use rs_cam_core::adaptive::research_geodesic::{
+    Candidate2d, GeodesicOptions, MeetingRule, Producer, Run2d, Span2d, SpanKind, run_2d,
+};
 use rs_cam_core::adaptive::{AdaptiveParams, KeepDownLinks, PathStrategy2d, adaptive_toolpath};
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
@@ -62,7 +74,6 @@ use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::tool::FlatEndmill;
-use rs_cam_core::toolpath::{MoveIntent, MoveType, Toolpath};
 
 /// The two development shapes (PLAN.md, "Fixtures").
 const SHAPES: &[(&str, &str)] = &[
@@ -158,7 +169,7 @@ fn assert_product_parity(outline: &Polygon2, params: &AdaptiveParams, run: &Run2
     }
 }
 
-/// World XY to SVG pixels (Y up in the world, down on the page).
+/// World XY to page pixels (Y up in the world, down on the page).
 struct View {
     min_x: f64,
     max_y: f64,
@@ -185,24 +196,196 @@ impl View {
         }
     }
 
-    fn px(&self, x: f64, y: f64) -> (f64, f64) {
+    fn px(&self, p: P2) -> (f64, f64) {
         (
-            MARGIN_PX + (x - self.min_x) * self.scale,
-            MARGIN_PX + (self.max_y - y) * self.scale,
+            MARGIN_PX + (p.x - self.min_x) * self.scale,
+            MARGIN_PX + (self.max_y - p.y) * self.scale,
         )
     }
 }
 
-fn polyline(view: &View, pts: &[P2], closed: bool, style: &str) -> String {
-    let mut d = String::new();
-    for (k, p) in pts.iter().enumerate() {
-        let (x, y) = view.px(p.x, p.y);
-        let _ = write!(d, "{}{x:.2},{y:.2} ", if k == 0 { "M" } else { "L" });
+/// One drawn item, in page pixels. The SVG and the PNG draw the same list.
+enum Mark {
+    /// A polyline: colour, stroke width (px), dashed.
+    Line {
+        pts: Vec<(f64, f64)>,
+        rgb: [u8; 3],
+        width: f64,
+        dashed: bool,
+    },
+    /// A ring: centre, radius (px), colour.
+    Ring {
+        at: (f64, f64),
+        radius: f64,
+        rgb: [u8; 3],
+    },
+}
+
+/// The style of a span of the plan (the legend is in the caption).
+fn span_style(span: &Span2d) -> ([u8; 3], f64, bool) {
+    match (span.kind, span.producer) {
+        (SpanKind::Rapid, _) => ([0x99, 0x99, 0x99], 0.8, true),
+        (SpanKind::Link, _) => ([0xf0, 0x80, 0x00], 1.0, false),
+        (SpanKind::Cut, Producer::WallPass) => ([0x1a, 0x8a, 0x3a], 2.0, false),
+        (SpanKind::Cut, Producer::ResidueContour) => ([0xb5, 0x65, 0x1d], 1.6, false),
+        (SpanKind::Cut, Producer::ResidueMop) => ([0xc0, 0x27, 0x8f], 1.6, false),
+        (SpanKind::Cut, Producer::Starter) => ([0x7b, 0x3f, 0xa0], 1.2, false),
+        (SpanKind::Cut, _) => ([0x1f, 0x5f, 0xbf], 1.0, false),
     }
-    if closed {
-        d.push('Z');
+}
+
+const LEGEND: &str = "blue clearing cut | purple starter | green wall pass | brown residue contour | magenta residue mop\norange keep-down link | grey dashed rapid | red ring entry | black ring step over the pass load | pale grey (a) wraps";
+
+fn marks(outline: &Polygon2, run: &Run2d, view: &View) -> Vec<Mark> {
+    let line = |pts: &[P2], rgb: [u8; 3], width: f64, dashed: bool| Mark::Line {
+        pts: pts.iter().map(|&p| view.px(p)).collect(),
+        rgb,
+        width,
+        dashed,
+    };
+    let mut out: Vec<Mark> = run
+        .wraps
+        .iter()
+        .map(|w| line(w, [0xd0, 0xd0, 0xd0], 0.6, false))
+        .collect();
+    for ring in std::iter::once(&outline.exterior).chain(outline.holes.iter()) {
+        let closed: Vec<P2> = ring.iter().chain(ring.first()).copied().collect();
+        out.push(line(&closed, [0, 0, 0], 1.2, false));
     }
-    format!("<path d='{d}' {style}/>\n")
+    for span in &run.spans {
+        let (rgb, width, dashed) = span_style(span);
+        out.push(line(&span.pts, rgb, width, dashed));
+        if span.kind == SpanKind::Rapid
+            && let Some(&entry) = span.pts.last()
+        {
+            out.push(Mark::Ring {
+                at: view.px(entry),
+                radius: 4.0,
+                rgb: [0xdd, 0, 0],
+            });
+        }
+    }
+    for over in &run.summary.pass_load.over {
+        out.push(Mark::Ring {
+            at: view.px(over.to),
+            radius: 7.0,
+            rgb: [0, 0, 0],
+        });
+    }
+    out
+}
+
+fn hex(rgb: [u8; 3]) -> String {
+    format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2])
+}
+
+fn svg_of(marks: &[Mark], view: &View, caption: &str) -> String {
+    let mut svg = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{CANVAS_PX}\" height=\"{h:.0}\" viewBox=\"0 0 {CANVAS_PX} {h:.0}\">\n<rect width=\"100%\" height=\"100%\" fill=\"#ffffff\"/>\n",
+        h = view.height
+    );
+    for mark in marks {
+        match mark {
+            Mark::Line {
+                pts,
+                rgb,
+                width,
+                dashed,
+            } => {
+                let mut d = String::new();
+                for (k, (x, y)) in pts.iter().enumerate() {
+                    let _ = write!(d, "{}{x:.1},{y:.1}", if k == 0 { "M" } else { "L" });
+                }
+                let dash = if *dashed {
+                    " stroke-dasharray=\"3,3\""
+                } else {
+                    ""
+                };
+                let _ = writeln!(
+                    svg,
+                    "<path d=\"{d}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{width}\"{dash}/>",
+                    hex(*rgb)
+                );
+            }
+            Mark::Ring { at, radius, rgb } => {
+                let _ = writeln!(
+                    svg,
+                    "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{radius}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.4\"/>",
+                    at.0,
+                    at.1,
+                    hex(*rgb)
+                );
+            }
+        }
+    }
+    for (k, line) in caption.lines().chain(LEGEND.lines()).enumerate() {
+        let _ = writeln!(
+            svg,
+            "<text x=\"6\" y=\"{}\" font-family=\"monospace\" font-size=\"11\" fill=\"#000000\">{line}</text>",
+            14 + 13 * k
+        );
+    }
+    svg.push_str("</svg>\n");
+    svg
+}
+
+/// The PNG of the same marks, drawn here so that no outside converter can
+/// drop the colours (the G1 PNGs came out in one colour). No text: the
+/// caption is in the SVG and the `.txt`.
+fn png_of(marks: &[Mark], view: &View) -> image::RgbImage {
+    let (w, h) = (CANVAS_PX as u32, view.height.ceil() as u32);
+    let mut img = image::RgbImage::from_pixel(w, h, image::Rgb([255, 255, 255]));
+    let mut dot = |x: f64, y: f64, radius: f64, rgb: [u8; 3]| {
+        let r = radius.max(0.5);
+        let (x0, x1) = ((x - r).floor() as i64, (x + r).ceil() as i64);
+        let (y0, y1) = ((y - r).floor() as i64, (y + r).ceil() as i64);
+        for py in y0..=y1 {
+            for px in x0..=x1 {
+                let inside = (px as f64 - x).hypot(py as f64 - y) <= r;
+                if inside && px >= 0 && py >= 0 && (px as u32) < w && (py as u32) < h {
+                    img.put_pixel(px as u32, py as u32, image::Rgb(rgb));
+                }
+            }
+        }
+    };
+    // Sample spacing along a stroke and the dash period (px): display only.
+    let step = 0.5;
+    let dash = 6.0;
+    for mark in marks {
+        match mark {
+            Mark::Line {
+                pts,
+                rgb,
+                width,
+                dashed,
+            } => {
+                let mut along = 0.0_f64;
+                for pair in pts.windows(2) {
+                    let &[(ax, ay), (bx, by)] = pair else {
+                        continue;
+                    };
+                    let len = (bx - ax).hypot(by - ay);
+                    let n = (len / step).ceil().max(1.0) as usize;
+                    for k in 0..=n {
+                        let t = k as f64 / n as f64;
+                        let on = !*dashed || (along + t * len) % dash < dash / 2.0;
+                        if on {
+                            dot(ax + t * (bx - ax), ay + t * (by - ay), width / 2.0, *rgb);
+                        }
+                    }
+                    along += len;
+                }
+            }
+            Mark::Ring { at, radius, rgb } => {
+                let n = (std::f64::consts::TAU * radius / step).ceil() as usize;
+                for k in 0..n {
+                    let a = std::f64::consts::TAU * k as f64 / n as f64;
+                    dot(at.0 + radius * a.cos(), at.1 + radius * a.sin(), 0.7, *rgb);
+                }
+            }
+        }
+    }
+    img
 }
 
 fn summary_text(shape: &str, label: &str, run: &Run2d) -> String {
@@ -228,115 +411,35 @@ fn summary_text(shape: &str, label: &str, run: &Run2d) -> String {
         "pass load (planner readout): max {:.4} vs ceiling {:.4}; {} of {} steps over; {} exempt plunge-departure steps",
         l.max_reading, l.ceiling, l.steps_over, l.steps, l.exempt_steps
     );
+    for o in &l.over {
+        let _ = writeln!(
+            t,
+            "  over: {} {} (segment {}) from ({:.2}, {:.2}) to ({:.2}, {:.2}), reading {:.4}",
+            o.producer.label(),
+            if o.link { "link" } else { "cut" },
+            o.segment,
+            o.from.x,
+            o.from.y,
+            o.to.x,
+            o.to.y,
+            o.reading
+        );
+    }
     for (i, f) in run.fields.iter().enumerate() {
         let _ = writeln!(
             t,
-            "field piece {i}: applied {}, seed {:?}, seed radius {:.2} mm, levels {}, wrap pieces {}, converged {}",
-            f.applied, f.seed, f.seed_radius, f.levels, f.chains, f.converged
+            "field piece {i}: applied {}, seed {:?}, seed radius {:.2} mm, levels {}, wrap pieces {}, converged {}, front branches {}, spiral levels {}",
+            f.applied,
+            f.seed,
+            f.seed_radius,
+            f.levels,
+            f.chains,
+            f.converged,
+            f.branches,
+            f.spiral_levels
         );
     }
     t
-}
-
-fn render(outline: &Polygon2, run: &Run2d, cut_depth: f64, caption: &str) -> String {
-    let view = View::over(outline);
-    let mut svg = format!(
-        "<svg xmlns='http://www.w3.org/2000/svg' width='{CANVAS_PX}' height='{h:.0}' viewBox='0 0 {CANVAS_PX} {h:.0}'>\n<rect width='100%' height='100%' fill='white'/>\n",
-        h = view.height
-    );
-    for wrap in &run.wraps {
-        svg.push_str(&polyline(
-            &view,
-            wrap,
-            false,
-            "fill='none' stroke='#d0d0d0' stroke-width='0.6'",
-        ));
-    }
-    svg.push_str(&polyline(
-        &view,
-        &outline.exterior,
-        true,
-        "fill='none' stroke='black' stroke-width='1.2'",
-    ));
-    for hole in &outline.holes {
-        svg.push_str(&polyline(
-            &view,
-            hole,
-            true,
-            "fill='none' stroke='black' stroke-width='1.2'",
-        ));
-    }
-    draw_moves(&view, &run.toolpath, cut_depth, &mut svg);
-    for (k, line) in caption.lines().enumerate() {
-        let _ = writeln!(
-            svg,
-            "<text x='6' y='{}' font-family='monospace' font-size='11'>{line}</text>",
-            14 + 13 * k
-        );
-    }
-    svg.push_str("</svg>\n");
-    svg
-}
-
-fn draw_moves(view: &View, tp: &Toolpath, cut_depth: f64, svg: &mut String) {
-    let at_depth = |z: f64| (z - cut_depth).abs() < 1e-6;
-    let mut prev: Option<rs_cam_core::geo::P3> = None;
-    for m in &tp.moves {
-        let to = m.target;
-        if let Some(from) = prev {
-            let (x0, y0) = view.px(from.x, from.y);
-            let (x1, y1) = view.px(to.x, to.y);
-            let flat = (from.x - to.x).hypot(from.y - to.y) > 1e-9;
-            match m.move_type {
-                MoveType::Rapid if flat => {
-                    let _ = writeln!(
-                        svg,
-                        "<line x1='{x0:.2}' y1='{y0:.2}' x2='{x1:.2}' y2='{y1:.2}' stroke='#999' stroke-width='0.6' stroke-dasharray='3,3'/>"
-                    );
-                }
-                MoveType::Rapid => {}
-                MoveType::Linear { .. } if m.intent == MoveIntent::EntryPlunge => {
-                    let _ = writeln!(
-                        svg,
-                        "<circle cx='{x1:.2}' cy='{y1:.2}' r='4' fill='none' stroke='#d00' stroke-width='1.4'/>"
-                    );
-                }
-                MoveType::Linear { .. } if flat && at_depth(from.z) && at_depth(to.z) => {
-                    let colour = if m.intent == MoveIntent::Linking {
-                        "#f08000"
-                    } else {
-                        "#1f5fbf"
-                    };
-                    let _ = writeln!(
-                        svg,
-                        "<line x1='{x0:.2}' y1='{y0:.2}' x2='{x1:.2}' y2='{y1:.2}' stroke='{colour}' stroke-width='0.9'/>"
-                    );
-                }
-                MoveType::Linear { .. } => {}
-                MoveType::ArcCW { i, j, .. } | MoveType::ArcCCW { i, j, .. } => {
-                    // Y flips on the page, so a world CCW arc is a page CW
-                    // arc: SVG sweep 1.
-                    let ccw = matches!(m.move_type, MoveType::ArcCCW { .. });
-                    let radius = i.hypot(j);
-                    let c = (from.x + i, from.y + j);
-                    let a0 = (from.y - c.1).atan2(from.x - c.0);
-                    let a1 = (to.y - c.1).atan2(to.x - c.0);
-                    let mut sweep = if ccw { a1 - a0 } else { a0 - a1 };
-                    if sweep <= 0.0 {
-                        sweep += std::f64::consts::TAU;
-                    }
-                    let large = u8::from(sweep > std::f64::consts::PI);
-                    let r_px = radius * view.scale;
-                    let _ = writeln!(
-                        svg,
-                        "<path d='M{x0:.2},{y0:.2} A{r_px:.2},{r_px:.2} 0 {large} {} {x1:.2},{y1:.2}' fill='none' stroke='#1f5fbf' stroke-width='0.9'/>",
-                        u8::from(ccw)
-                    );
-                }
-            }
-        }
-        prev = Some(to);
-    }
 }
 
 #[test]
@@ -353,12 +456,20 @@ fn render_candidate_a_beside_the_2d_strategies() {
                 "contour_spiral",
                 Candidate2d::Shipped(PathStrategy2d::ContourSpiral),
             ),
-            ("geodesic_a", Candidate2d::Geodesic),
+            ("geodesic_g1", Candidate2d::Geodesic(GeodesicOptions::G1)),
+            ("geodesic_a", Candidate2d::Geodesic(GeodesicOptions::C2)),
+            (
+                "geodesic_a_through",
+                Candidate2d::Geodesic(GeodesicOptions {
+                    meeting: MeetingRule::Through,
+                    ..GeodesicOptions::C2
+                }),
+            ),
         ];
         for (label, candidate) in columns {
             let strategy = match candidate {
                 Candidate2d::Shipped(s) => s,
-                Candidate2d::Geodesic => PathStrategy2d::Agent,
+                Candidate2d::Geodesic(_) => PathStrategy2d::Agent,
             };
             let params = params(&tool, strategy);
             let run = run_2d(&outline, &params, candidate);
@@ -372,9 +483,14 @@ fn render_candidate_a_beside_the_2d_strategies() {
                 );
             }
             let text = summary_text(shape, label, &run);
-            let svg = render(&outline, &run, params.cut_depth, &text);
+            let view = View::over(&outline);
+            let drawn = marks(&outline, &run, &view);
             let stem = dir.join(format!("{shape}_{label}"));
-            std::fs::write(stem.with_extension("svg"), svg).expect("write the SVG");
+            std::fs::write(stem.with_extension("svg"), svg_of(&drawn, &view, &text))
+                .expect("write the SVG");
+            png_of(&drawn, &view)
+                .save(stem.with_extension("png"))
+                .expect("write the PNG");
             std::fs::write(stem.with_extension("txt"), &text).expect("write the summary");
             all.push_str(&text);
             all.push('\n');

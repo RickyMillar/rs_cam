@@ -25,6 +25,30 @@ use crate::trace::debug_trace::{
 
 use std::time::Instant;
 
+// ── The planner lattice ────────────────────────────────────────────────
+
+/// The planner cell is the tool radius over this many cells, floored at the
+/// tolerance ([`planner_cell_size`]). A shipped value (the material grid of
+/// every 2D producer and of each Adaptive3d slice); this constant is its
+/// one source, which the research candidate reads too.
+pub(super) const PLANNER_CELLS_PER_TOOL_RADIUS: f64 = 6.0;
+
+/// The pass step of the planner, in planner cells: a walk step, a link
+/// step and a replay step are each at most this many cells long. A shipped
+/// value; this constant is its one source.
+pub(super) const PASS_STEP_CELLS: f64 = 3.0;
+
+/// The planner cell (mm): `max(R / PLANNER_CELLS_PER_TOOL_RADIUS, tolerance)`.
+pub(super) fn planner_cell_size(tool_radius: f64, tolerance: f64) -> f64 {
+    (tool_radius / PLANNER_CELLS_PER_TOOL_RADIUS).max(tolerance)
+}
+
+/// The pass step (mm) on a lattice of `cell_size`:
+/// `cell_size × PASS_STEP_CELLS`.
+pub(super) fn pass_step_len(cell_size: f64) -> f64 {
+    cell_size * PASS_STEP_CELLS
+}
+
 // ── Link vs retract ────────────────────────────────────────────────────
 
 /// Check if the straight line from `from` to `to` is safe to traverse at
@@ -74,7 +98,7 @@ pub(super) fn is_clear_path(
 pub(crate) struct LinkLoad {
     rule: KeepDownLinks,
     tool_radius: f64,
-    /// The pass step length, `cell_size × 3`.
+    /// The pass step length, [`pass_step_len`].
     step_len: f64,
     /// The measure, band and ceiling every step is held to.
     pass: PassLoad,
@@ -130,7 +154,7 @@ impl LinkLoad {
         Self {
             rule: params.keep_down_links,
             tool_radius: params.tool_radius,
-            step_len: grid.cell_size * 3.0,
+            step_len: pass_step_len(grid.cell_size),
             pass: pass_load_for(params, grid.cell_size),
             entry_radius: params.tool_radius + helix,
             entry_mask,
@@ -696,7 +720,7 @@ pub(crate) fn adaptive_segments_with_debug(
     let machinable = &machinable_vec[0];
 
     // Build material grid from the original polygon (not inset)
-    let cell_size = (tool_radius / 6.0).max(tolerance);
+    let cell_size = planner_cell_size(tool_radius, tolerance);
     let mut grid = MaterialGrid::from_polygon(polygon, cell_size);
     if params.keep_down_links == KeepDownLinks::WithinPassLoad {
         grid.keep_fringe(polygon);
@@ -748,7 +772,7 @@ pub(crate) fn adaptive_segments_with_debug(
         );
     }
 
-    let step_len = cell_size * 3.0;
+    let step_len = pass_step_len(cell_size);
     let link_load = LinkLoad::new(params, &grid, polygon);
     let pass_load = link_load.pass;
     // Where an agent pass may enter: the machinable region, or under a
@@ -1639,8 +1663,8 @@ pub(crate) fn apply_residue_mop_cleanup(
     segments: &[AdaptiveSegment],
 ) -> Vec<AdaptiveSegment> {
     let tool_radius = params.tool_radius;
-    let cell_size = (tool_radius / 6.0).max(params.tolerance);
-    let step_len = cell_size * 3.0;
+    let cell_size = planner_cell_size(tool_radius, params.tolerance);
+    let step_len = pass_step_len(cell_size);
 
     // Step 1 — smart short-Cut drop. Short Cuts are kept when they
     // clear material the long Cuts wouldn't (overlap is cheap; travel
@@ -1749,8 +1773,8 @@ pub(crate) fn apply_contour_parallel_residue_cleanup(
     segments: &[AdaptiveSegment],
 ) -> Vec<AdaptiveSegment> {
     let tool_radius = params.tool_radius;
-    let cell_size = (tool_radius / 6.0).max(params.tolerance);
-    let step_len = cell_size * 3.0;
+    let cell_size = planner_cell_size(tool_radius, params.tolerance);
+    let step_len = pass_step_len(cell_size);
     let stepover = params.stepover;
 
     // Step 1 — smart short-Cut drop. Short Cuts are kept when they
