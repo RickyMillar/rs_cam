@@ -450,7 +450,8 @@ diag_ids! {
     /// UX-7b (operator rulings 2026-10-22, SAFETY): the emitted moves of a
     /// 2.5D op cut into the mesh of its own model
     /// (`compute::model_gouge`). Blocking: export refuses while it stands
-    /// (`ExportRefusal::CutsIntoModel`).
+    /// (`ExportRefusal::CutsIntoModel`). B2: Caution when a 3D Rough cuts
+    /// into its stock to leave only (`ModelGougeFinding::severity`).
     pub const SAFETY_CUTS_INTO_MODEL: &str = "safety.cuts_into_model";
     pub const PRECOND_PROJECT_CURVE_NO_CURVE: &str = "precondition.project_curve_no_curve";
     pub const PRECOND_PROJECT_CURVE_NO_SURFACE: &str = "precondition.project_curve_no_surface";

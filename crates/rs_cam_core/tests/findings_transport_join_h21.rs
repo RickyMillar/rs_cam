@@ -307,6 +307,8 @@ fn every_finding_recorded() -> GenerationFindings {
             surface_z: 30.0,
             move_index: 12,
             depth_top_z: Some(32.0),
+            below_surface_mm: 5.0,
+            at_wall: false,
         }),
     }
 }

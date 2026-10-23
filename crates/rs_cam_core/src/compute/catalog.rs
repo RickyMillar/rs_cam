@@ -1093,39 +1093,42 @@ impl OperationConfig {
         }
     }
 
-    /// G-ROUGHGOUGE: the offset (mm) of the model gouge limit above the
-    /// drop-cutter CL Z under [`ModelGougeRule::Allowance`], or `None` for
-    /// an op without that rule. The match names every variant, so a new op
-    /// states its offset.
+    /// G-ROUGHGOUGE: the leave and the chord tolerance that set the model
+    /// gouge limit under [`ModelGougeRule::Allowance`], or `None` for an op
+    /// without that rule. The match names every variant, so a new op states
+    /// its allowance.
     ///
-    /// The offset is the leave that the planner holds, less the chord
-    /// tolerance that it states. Both terms come from the config that the
-    /// planner reads; neither is a typed number:
+    /// Both terms come from the config that the planner reads; neither is a
+    /// typed number:
     ///
     /// - the leave: `Adaptive3dConfig::stock_to_leave_axial`, the one value
     ///   `compute::execute::adaptive3d_effective_stock_to_leave` gives the
     ///   planner (that function is private to `compute::execute`);
-    /// - the chord tolerance:
+    /// - the tolerance:
     ///   [`crate::adaptive3d::Adaptive3dGeometry::chord_tolerance`] of
     ///   `tolerance` and `segment_merge_tolerance`. The emitter drapes each
     ///   cut to CL Z + leave and then simplifies it by RDP at this
     ///   tolerance (`adaptive3d::clearing::stamp_emitted_segment`), so a
-    ///   chord may sit this far below a draped point.
+    ///   chord may sit this far from a draped point, in Z and in XY.
     ///
     /// `segment_merge_tolerance` is the value the session gives the planner
-    /// (`ExecutionContext::segment_merge_tolerance`). The offset is not
-    /// clamped at zero: at leave 0 it is negative, and that is the promise
-    /// of the planner.
+    /// (`ExecutionContext::segment_merge_tolerance`). The limit is the CL Z
+    /// plus the leave less the tolerance (`compute::model_gouge`).
     #[must_use]
-    pub fn model_gouge_limit_offset_mm(&self, segment_merge_tolerance: Option<f64>) -> Option<f64> {
+    pub fn model_gouge_allowance(
+        &self,
+        segment_merge_tolerance: Option<f64>,
+    ) -> Option<crate::compute::model_gouge::ModelGougeAllowance> {
         match self {
-            OperationConfig::Adaptive3d(c) => Some(
-                c.stock_to_leave_axial
-                    - crate::adaptive3d::Adaptive3dGeometry::chord_tolerance(
+            OperationConfig::Adaptive3d(c) => {
+                Some(crate::compute::model_gouge::ModelGougeAllowance {
+                    leave_mm: c.stock_to_leave_axial,
+                    tolerance_mm: crate::adaptive3d::Adaptive3dGeometry::chord_tolerance(
                         c.tolerance,
                         segment_merge_tolerance,
                     ),
-            ),
+                })
+            }
             OperationConfig::Face(_)
             | OperationConfig::Pocket(_)
             | OperationConfig::Profile(_)

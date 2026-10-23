@@ -65,12 +65,35 @@
 //! The probe is the reduced tool of `Surface`. Its CL Z is at or below the
 //! CL Z of the full tool, so a draped point never reads as a gouge.
 //!
-//! The radial leave: the 3D Rough has none (L2 removed the dial; the
-//! planner offsets in Z only), so the probe radius is the tool radius less
-//! [`MODEL_GOUGE_TOL_MM`], as for `Surface`. A tool that enters a wall by
-//! more than that tolerance reads the full height of the wall above the
-//! tip as the depth: the finding is a radial gouge reported as a Z depth.
-//! Read `at` against the nearest wall in XY.
+//! The radial tolerance (B2, operator ruling 2026-10-23: a default rough
+//! must export; a graze within the op's own tolerance is not a defect).
+//! A 2.5D op cuts its wall at the exact offset, so the CAD rounding
+//! ([`MODEL_GOUGE_TOL_MM`]) is its only radial error. The 3D Rough plans
+//! its path at its chord tolerance: the RDP step may move a draped chord
+//! by that tolerance in 3D, so in XY too, and the tool side may come that
+//! close to a wall by design (evidence run: 0.02 to 0.05 mm on the Corne
+//! hex holes at a 0.3 mm slack). So under `Allowance` the probe radius is
+//! the tool radius less the chord tolerance ([`probe_radial_tolerance_mm`]).
+//! The 3D Rough has no radial leave (L2), so nothing else widens the probe.
+//!
+//! The class: a sample below the limit cuts into the leave. It cuts into
+//! the model only when it is also below the model surface less the op
+//! tolerance (`ModelGougeFinding::below_surface_mm`). Only that case is
+//! Blocking and refuses the export; a cut into the leave alone is Caution
+//! ([`ModelGougeFinding::severity`]). Under `Allowance` the limit and that
+//! surface differ by the leave at every sample, so the deepest sample below
+//! the limit is also the deepest below the surface.
+//!
+//! The wall flag. A probe of radius `r` reads the highest material in its
+//! disk, so a contact on the side of a wall reads the wall height as the
+//! depth. The guard tests the deepest sample: the CL Z of any cutter of
+//! radius `r` is at most the CL Z of a flat end mill of radius `r`, and
+//! that is at most the surface under the centre plus `r * tan(a)`, with
+//! `a` the steepest slope in the disk. So a CL Z more than `r` above the
+//! surface under the tip centre (or no surface under the centre) proves a
+//! slope steeper than 45 degrees in the disk: a wall. The message then says
+//! that the depths are the height of that wall, and that the tool may touch
+//! only its side. The Z-only measure cannot give the radial overlap.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -99,6 +122,48 @@ pub const MODEL_GOUGE_TOL_MM: f64 = crate::selection::CAD_ROUNDING_MM;
 /// the CAD rounding, so a cut to the face plane reads clean.
 pub const MODEL_GOUGE_Z_TOL_MM: f64 =
     crate::selection::FLAT_REGION_Z_BAND_MM + crate::selection::CAD_ROUNDING_MM;
+
+/// G-ROUGHGOUGE: the two terms of the [`ModelGougeRule::Allowance`] limit,
+/// from `OperationConfig::model_gouge_allowance`.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct ModelGougeAllowance {
+    /// The axial stock to leave of the op (mm).
+    pub leave_mm: f64,
+    /// The chord tolerance of the op (mm): the planner may put a chord this
+    /// far below a draped point, and the tool side this far into a wall.
+    pub tolerance_mm: f64,
+}
+
+impl ModelGougeAllowance {
+    /// No allowance: every rule except `Allowance`.
+    pub const NONE: Self = Self {
+        leave_mm: 0.0,
+        tolerance_mm: 0.0,
+    };
+}
+
+/// The radial tolerance (mm) of the probe under `rule`: the probe radius is
+/// `tool_radius` less it. [`MODEL_GOUGE_TOL_MM`] for every rule except
+/// `Allowance`, which takes the chord tolerance of the op (B2, see the
+/// module doc), kept between [`MODEL_GOUGE_TOL_MM`] and
+/// `tool_radius - MODEL_GOUGE_TOL_MM` so the probe keeps a radius.
+#[must_use]
+pub fn probe_radial_tolerance_mm(
+    rule: ModelGougeRule,
+    allowance: ModelGougeAllowance,
+    tool_radius: f64,
+) -> f64 {
+    match rule {
+        ModelGougeRule::Allowance { .. } => allowance
+            .tolerance_mm
+            .min(tool_radius - MODEL_GOUGE_TOL_MM)
+            .max(MODEL_GOUGE_TOL_MM),
+        ModelGougeRule::Surface { .. }
+        | ModelGougeRule::Hole { .. }
+        | ModelGougeRule::Bevel { .. }
+        | ModelGougeRule::Exempt => MODEL_GOUGE_TOL_MM,
+    }
+}
 
 /// Samples between two cancel polls.
 const CANCEL_POLL_SAMPLES: usize = 4096;
@@ -132,13 +197,48 @@ pub struct ModelGougeFinding {
     /// [`GougeProbe::depth_bases`]. A Drill names the depth to type from
     /// it: `depth_top_z - surface_z`.
     pub depth_top_z: Option<f64>,
+    /// B2: the depth (mm) of the tip at `at` below the model surface less
+    /// the op tolerance (`Allowance`: CL Z less the chord tolerance). Signed:
+    /// negative when the tip stays above it (a cut into the leave only).
+    /// Every other rule: equal to `deepest_mm`. `0.0` when clean. It sets
+    /// the class ([`Self::severity`]).
+    pub below_surface_mm: f64,
+    /// B2 (`Allowance` only): at `at` a slope steeper than 45 degrees stands
+    /// within the probe radius, or no surface lies under the tip centre (the
+    /// wall test of the module doc). The depths are then the height of a
+    /// wall above the tip.
+    pub at_wall: bool,
 }
 
 impl ModelGougeFinding {
-    /// True when a sample cuts into the model.
+    /// True when a sample goes below the limit of the rule (for
+    /// `Allowance`: into the leave, or deeper).
     #[must_use]
     pub const fn gouges(&self) -> bool {
         self.gouging > 0
+    }
+
+    /// True when the deepest sample cuts into the model itself: export
+    /// refuses (`ExportRefusal::CutsIntoModel`). Under every rule except
+    /// `Allowance` this is [`Self::gouges`].
+    #[must_use]
+    pub fn blocks_export(&self) -> bool {
+        self.gouges() && self.below_surface_mm > MODEL_GOUGE_Z_TOL_MM
+    }
+
+    /// The class of the finding: `None` when clean, `Blocking` when it cuts
+    /// into the model ([`Self::blocks_export`]), and `Caution` when it cuts
+    /// into the leave only (B2, operator ruling 2026-10-23).
+    #[must_use]
+    pub fn severity(&self) -> Option<crate::diagnostics::Severity> {
+        use crate::diagnostics::Severity;
+        if !self.gouges() {
+            None
+        } else if self.blocks_export() {
+            Some(Severity::Blocking)
+        } else {
+            Some(Severity::Caution)
+        }
     }
 
     /// The operator sentence: the cause, where, and the fix of the row.
@@ -161,14 +261,39 @@ impl ModelGougeFinding {
             );
         }
         if let ModelGougeRule::Allowance { fix } = self.rule {
+            let blocks = self.blocks_export();
+            let class = if blocks {
+                "The toolpath cuts into the model"
+            } else {
+                "The toolpath cuts into the stock to leave, not into the model"
+            };
+            let surface = if self.below_surface_mm > MODEL_GOUGE_Z_TOL_MM {
+                format!("{:.3} mm below", self.below_surface_mm)
+            } else if self.below_surface_mm > 0.0 {
+                format!("within {MODEL_GOUGE_Z_TOL_MM} mm of")
+            } else {
+                format!("{:.3} mm above", -self.below_surface_mm)
+            };
+            let wall = if self.at_wall {
+                " A wall steeper than 45 degrees stands within the tool radius here, or no \
+                 surface lies under the tool centre: the depths are the height of that wall \
+                 above the tip, and the tool may touch only the side of the wall."
+            } else {
+                ""
+            };
+            let export = if blocks {
+                "export refuses while this stands"
+            } else {
+                "export does not refuse on it"
+            };
             return format!(
-                "The toolpath cuts into the stock to leave or into the model: {count} of \
-                 {judged} sampled cutting positions go below the model surface plus the stock \
-                 to leave (less the chord tolerance of the op). The deepest is {deep:.3} mm at \
-                 X {x:.3} Y {y:.3}: the tool tip is at Z {z:.3}, and the tip may go down to Z \
-                 {limit:.3} there. {fix}. [Measured at generation on the emitted moves \
-                 against the mesh of the toolpath model, tolerance {tol} mm in Z; export \
-                 refuses while this stands.]",
+                "{class}: {count} of {judged} sampled cutting positions go below the limit of \
+                 the stock to leave (the model surface plus the leave, less the op tolerance). \
+                 The deepest is {deep:.3} mm below that limit at X {x:.3} Y {y:.3}: the tool \
+                 tip is at Z {z:.3}, and the limit there is Z {limit:.3}. The tip is \
+                 {surface} the model surface less the op tolerance.{wall} {fix}. [Measured at \
+                 generation on the emitted moves against the mesh of the toolpath model, \
+                 tolerance {tol} mm in Z; {export}.]",
                 count = self.gouging,
                 judged = self.judged,
                 deep = self.deepest_mm,
@@ -221,11 +346,12 @@ pub struct GougeProbe<'a> {
     /// below the V-bit CL Z (`OperationConfig::bevel_depth_mm`). `0.0` for
     /// every other rule.
     pub bevel_depth_mm: f64,
-    /// [`ModelGougeRule::Allowance`]: the offset (mm) of the limit above the
-    /// CL Z, from `OperationConfig::model_gouge_limit_offset_mm` (the leave
-    /// less the chord tolerance of the op; negative at leave 0). `0.0` for
-    /// every other rule.
-    pub limit_offset_mm: f64,
+    /// [`ModelGougeRule::Allowance`]: the leave and the chord tolerance of
+    /// the op (`OperationConfig::model_gouge_allowance`). The limit is the
+    /// CL Z plus the leave less the tolerance; the model surface less the
+    /// tolerance is the CL Z less the tolerance.
+    /// [`ModelGougeAllowance::NONE`] for every other rule.
+    pub allowance: ModelGougeAllowance,
     /// F30 (after F19): the XY and the depth base of each hole of a Drill
     /// whose floor is a depth below the Top Z, in the setup frame
     /// (`compute::execute::drill_depth_bases`). The fix text reads the base
@@ -263,6 +389,8 @@ pub fn measure(
         surface_z: 0.0,
         move_index: 0,
         depth_top_z: None,
+        below_surface_mm: 0.0,
+        at_wall: false,
     };
     let mut samples: Vec<P3> = Vec::new();
     let mut walked = 0_usize;
@@ -297,7 +425,8 @@ pub fn measure(
                 ModelGougeRule::Allowance { .. } => {
                     let cl =
                         point_drop_cutter(p.x, p.y, probe.mesh, probe.index, probe.reduced_tool);
-                    cl.contacted.then_some(cl.z + probe.limit_offset_mm)
+                    cl.contacted
+                        .then_some(cl.z + probe.allowance.leave_mm - probe.allowance.tolerance_mm)
                 }
                 ModelGougeRule::Hole { .. } => {
                     let floor = point_drop_cutter(p.x, p.y, probe.mesh, probe.index, &point);
@@ -335,6 +464,16 @@ pub fn measure(
             .filter(|(d, _)| *d <= probe.tool_radius)
             .min_by(|a, b| a.0.total_cmp(&b.0))
             .map(|(_, base)| base);
+        // B2: the class and the wall flag at the deepest sample.
+        finding.below_surface_mm = finding.deepest_mm;
+        if matches!(rule, ModelGougeRule::Allowance { .. }) {
+            // The limit and the surface less the tolerance differ by the
+            // leave at every sample.
+            finding.below_surface_mm = finding.deepest_mm - probe.allowance.leave_mm;
+            let cl_z = finding.surface_z - probe.allowance.leave_mm + probe.allowance.tolerance_mm;
+            let centre = point_drop_cutter(x, y, probe.mesh, probe.index, &point);
+            finding.at_wall = !centre.contacted || cl_z - centre.z > probe.reduced_tool.radius();
+        }
     }
     Ok(Some(finding))
 }

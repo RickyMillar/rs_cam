@@ -56,8 +56,8 @@ const FIX_BORE: &str = "Set the floor no lower than the hole floor of the model"
 /// G-ROUGHGOUGE: the fix sentence of the guard on a 3D Rough. The planner
 /// holds the leave on every cut, so a finding is a planner defect or a
 /// tool that enters a wall: the operator reads the move and reports it.
-const FIX_ROUGH_3D: &str = "Look at the move named here: if the tool enters a wall of the \
-                            model, report it as a planner defect; do not cut this toolpath";
+const FIX_ROUGH_3D: &str = "Look at the move named here: a cut below the model surface is a \
+                            planner defect, so report it";
 
 pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
     op_type: OperationType::Face,

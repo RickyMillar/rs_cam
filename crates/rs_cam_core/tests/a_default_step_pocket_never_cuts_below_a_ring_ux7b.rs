@@ -85,7 +85,9 @@ use common::tools::endmill_tool_config;
 use rs_cam_core::compute::StockConfig;
 use rs_cam_core::compute::catalog::{ModelGougeRule, OperationConfig, OperationType};
 use rs_cam_core::compute::floor::Floor;
-use rs_cam_core::compute::model_gouge::{GougeProbe, MODEL_GOUGE_TOL_MM, measure};
+use rs_cam_core::compute::model_gouge::{
+    GougeProbe, MODEL_GOUGE_TOL_MM, ModelGougeAllowance, measure,
+};
 use rs_cam_core::compute::operation_configs::{DrillConfig, PocketConfig};
 use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
 use rs_cam_core::compute::tool_config::ToolConfig;
@@ -433,7 +435,7 @@ fn a_tool_tangent_to_a_wall_is_clean_and_a_tool_in_it_is_not_ux7b() {
         reduced_tool: &reduced,
         tool_radius: R,
         bevel_depth_mm: 0.0,
-        limit_offset_mm: 0.0,
+        allowance: ModelGougeAllowance::NONE,
         depth_bases: &[],
     };
     let rule = OperationType::Pocket.capabilities().model_gouge;
@@ -534,7 +536,7 @@ fn a_drill_gouges_only_below_the_floor_of_a_model_hole_ux7b() {
         reduced_tool: &tool,
         tool_radius: 3.0,
         bevel_depth_mm: 0.0,
-        limit_offset_mm: 0.0,
+        allowance: ModelGougeAllowance::NONE,
         depth_bases: &[],
     };
     let mut tp = Toolpath::new();

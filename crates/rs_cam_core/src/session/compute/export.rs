@@ -133,7 +133,9 @@ impl ProjectSession {
     #[must_use]
     pub fn model_gouge_refusal(&self, index: usize) -> Option<String> {
         let finding = self.result_at(index)?.stats.model_gouge?;
-        if !finding.gouges() {
+        // B2: a cut into the leave alone (a 3D Rough) is Caution, not a
+        // refusal.
+        if !finding.blocks_export() {
             return None;
         }
         let name = self

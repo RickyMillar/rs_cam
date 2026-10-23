@@ -1,5 +1,9 @@
 # P1.5 editor B — the gouge instrument for a 3D Rough (G-ROUGHGOUGE)
 
+> Superseded in part by `P15_B2_gouge_rule.md` (after the evidence run):
+> `limit_offset_mm` is now `ModelGougeAllowance`, the probe shrinks by
+> the chord tolerance, and a cut into the leave alone is Caution.
+
 Worktree `.claude/worktrees/adaptive-head`, branch `adaptive-instruments`,
 base a23df1f8. Not built and not run (the verifier runs cargo). Not
 committed.

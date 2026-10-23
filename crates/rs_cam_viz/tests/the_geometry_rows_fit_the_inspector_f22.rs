@@ -380,6 +380,8 @@ fn block(state: &mut AppState) {
             surface_z: 8.0,
             move_index: 12,
             depth_top_z: None,
+            below_surface_mm: 10.0,
+            at_wall: false,
         }),
         ..ToolpathStats::default()
     };

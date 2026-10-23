@@ -729,12 +729,14 @@ impl JobPhases<'_, '_> {
     /// no mesh (a drawing), or when a Profile compensates in the
     /// controller: its emitted path is the contour, not the tool centre.
     ///
-    /// The probe is the tool with its diameter less twice
-    /// `compute::model_gouge::MODEL_GOUGE_TOL_MM`, so a tool tangent to a
-    /// model wall does not read a gouge. G-ROUGHGOUGE: under
-    /// `ModelGougeRule::Allowance` the probe also carries the limit offset
-    /// of the config (`OperationConfig::model_gouge_limit_offset_mm`), with
-    /// the merge tolerance the planner gets.
+    /// The probe is the tool with its diameter less twice the radial
+    /// tolerance of the rule (`compute::model_gouge::probe_radial_tolerance_mm`:
+    /// `MODEL_GOUGE_TOL_MM`; a 3D Rough, its chord tolerance), so a tool
+    /// tangent to a model wall does not read a gouge. G-ROUGHGOUGE: under
+    /// `ModelGougeRule::Allowance` the probe carries the leave and the chord
+    /// tolerance of the config (`OperationConfig::model_gouge_allowance`,
+    /// with the merge tolerance the planner gets), and the tool shrinks by
+    /// that tolerance (`model_gouge::probe_radial_tolerance_mm`, B2).
     ///
     /// # Errors
     ///
@@ -747,7 +749,9 @@ impl JobPhases<'_, '_> {
         cancel: &AtomicBool,
     ) -> Result<(), SessionError> {
         use crate::compute::catalog::{ModelGougeRule, OperationConfig};
-        use crate::compute::model_gouge::{GougeProbe, MODEL_GOUGE_TOL_MM, measure};
+        use crate::compute::model_gouge::{
+            GougeProbe, ModelGougeAllowance, measure, probe_radial_tolerance_mm,
+        };
         use crate::compute::operation_configs::CompensationType;
         let rule = self.inputs.operation.capabilities().model_gouge;
         if matches!(rule, ModelGougeRule::Exempt) {
@@ -764,12 +768,23 @@ impl JobPhases<'_, '_> {
         else {
             return Ok(());
         };
+        // G-ROUGHGOUGE: the leave and the chord tolerance of a 3D Rough.
+        // The merge tolerance is the one `execute_generation` gives the
+        // planner (`ExecutionContext::segment_merge_tolerance`). `None` only
+        // for a row that is not `Allowance` (the G-ROUGHGOUGE sentry).
+        let merge_tolerance = self.context.dressups.segment_merge.map(|m| m.tolerance);
+        let allowance = self
+            .inputs
+            .operation
+            .model_gouge_allowance(merge_tolerance)
+            .unwrap_or(ModelGougeAllowance::NONE);
         // The reduced tool stays inside the real one: the corner radius of
         // a bull nose (or of a flat end mill) can be the full radius, so it
         // shrinks with it (the tool check holds a corner to half the
-        // diameter).
+        // diameter). B2: a 3D Rough shrinks by its chord tolerance.
         let mut reduced = self.inputs.tool.clone();
-        reduced.diameter -= 2.0 * MODEL_GOUGE_TOL_MM;
+        reduced.diameter -=
+            2.0 * probe_radial_tolerance_mm(rule, allowance, self.inputs.tool_def.radius());
         reduced.corner_radius = reduced.corner_radius.min(reduced.diameter / 2.0);
         reduced.corner_radius_mm = reduced.corner_radius_mm.min(reduced.diameter / 2.0);
         let reduced_tool = crate::session::session_cutter(&reduced)?;
@@ -781,9 +796,6 @@ impl JobPhases<'_, '_> {
             &self.inputs.emission_stock_bbox,
             &self.inputs.heights,
         );
-        // G-ROUGHGOUGE: the merge tolerance that `execute_generation` gives
-        // the planner (`ExecutionContext::segment_merge_tolerance`).
-        let merge_tolerance = self.context.dressups.segment_merge.map(|m| m.tolerance);
         // R-C: a Chamfer may cut the bevel depth below the V-bit CL Z.
         let half_angle = (self.inputs.tool.included_angle / 2.0).to_radians();
         let probe = GougeProbe {
@@ -796,14 +808,7 @@ impl JobPhases<'_, '_> {
                 .operation
                 .bevel_depth_mm(half_angle)
                 .unwrap_or(0.0),
-            // G-ROUGHGOUGE: a 3D Rough may stay this far above the CL Z
-            // (the leave less its chord tolerance). `None` only for a row
-            // that is not `Allowance` (the G-ROUGHGOUGE sentry).
-            limit_offset_mm: self
-                .inputs
-                .operation
-                .model_gouge_limit_offset_mm(merge_tolerance)
-                .unwrap_or(0.0),
+            allowance,
             // F30 (after F19): a Drill measures its depth from the rim of
             // each hole (`compute::floor::hole_floors`).
             depth_bases: &depth_bases,
