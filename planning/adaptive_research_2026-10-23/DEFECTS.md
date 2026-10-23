@@ -47,3 +47,5 @@ Not defects but instrument gaps (ruling 2026-10-23: build before Phase 2):
 | G-WALLSTRIP | Green mid-height strips stand inside the Corne case wall on AgentSearch and ContourSpiral; not named in Phase 0. | `phase0/img/corne_agent_search_p15_stock.png` |
 | G-ROUGHGOUGE-STRICT | The new Allowance rule blocks export on every rough: wall-graze depth overstated (Z-only), and the blocking class applies inside the leave band. Fix in progress (B2). | P15_E §gouge |
 | G-ROUGHCOV-WIRING | `triage.coverage` is `[]` in the GUI: the viz hands the session an empty checkpoint list. Fix in progress (A2). | P15_E §coverage |
+
+| G-WALLSTRIP-PLAN | The ContourParallel 3D Rough leaves real 0.6–1.4 mm strips of stock against vertical walls (E2, Corne zero control: confirmed against the model). Reachable material the planner left; suspected grid-cell inset or the last pass stopping short of the boundary. Coverage reads them honestly. | P15_E_evidence.md §E2, `phase0/img/corne_contour_parallel_p15b_islands.png` |

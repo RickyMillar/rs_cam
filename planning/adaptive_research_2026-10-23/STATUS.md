@@ -227,19 +227,53 @@ every corner look busy and potentially an artifact."
   band, N10 hole cores). ContourSpiral: links no (seam loop clusters), path
   yes except the seams, part partly (N7 band, 2 hole cores).
 
-## Lead ruling 19:30 on the coverage target (A3)
+## Lead ruling 19:30, amended 19:40 after advisor review, on the coverage target (A3)
 
-The bar must judge against the rough's OWN intended surface, not the
-model: a Z-level rough cannot remove (a) the terrace between two levels on
-a slope, (b) the material within one tool radius of a wall above the
-wall foot, (c) anything outside the tool-reachable region. All three are
-one derived surface: the drop-cutter of the rough's cutter over the model
-plus its axial leave, quantised UP to the next level of the op's Z plan.
-A cell is above spec when the stock stands more than one simulation cell
-above that surface. No new constant. Hole cores, the spur and the band
-stay (the tool reaches them); fringe, wall strips and terraces go. The
-wall strips are a separate look item (G-WALLSTRIP), not a coverage
-failure of the rough's plan.
+The bar judges against the rough's OWN intended surface, derived, no new
+constant:
+
+1. **Reachable envelope.** For each XY the floor the cutter could leave is
+   the minimum, over every tool-centre position within R of that XY, of
+   the planner's per-centre intended floor: an erosion of the centre-floor
+   surface by the tool disc, on the grid. This removes the one-cell edge
+   fringe (no reachable centre covers it) and keeps hole cores, the spur
+   and the band (centres fit).
+2. **Per-centre intended floor from the planner's own rule.** Every level
+   drapes in this planner, with guards on steep slopes, so a terrace is
+   either the guard's intent or a drape defect; only `adaptive3d`'s own
+   code knows which. A3 reads `step_levels` and the drape/guard path and
+   reuses (or factors out, as ONE shared function) the per-centre intended
+   floor: drape surface + leave where it drapes, the level Z where the
+   guard holds the level. If it cannot be factored, terraces stay flagged
+   and the note says why. One instrument, one source for the target.
+3. **Wall strips stay findings.** Material within one tool radius of a
+   wall IS reachable (the tool edge meets the wall when its centre is R
+   away; only the inside-corner fillet is geometric residue). The 0.6–1.4
+   mm strips E2 confirmed are material the planner left, so the
+   ContourParallel zero control fails on them honestly. The planner-side
+   cause (grid-cell inset, last pass short of the boundary) is filed as
+   G-WALLSTRIP-PLAN next to G-WALLSTRIP.
+
+Visible at the next gate: the gouge Caution path and `at_wall` are tested
+only synthetically (no live positive yet); the probe tolerance t ≈ 0.3 mm
+leaves a real wall cut up to t unflagged.
+
+## Next for the geodesic candidate (C4, after D3): the morph join
+
+C3's split: 56 of 86 star entries are wrap-to-wrap re-entries. A radial
+step sweeps width D; spread the outward drift s over the whole wrap so
+the sideways component per step is s/L. Core zone (level sets
+star-shaped about the seed): trace T(x) = s·(k + φ(x)/2π), one spiral,
+one plunge (editor C's proposal). Lobes: sample arc k and k+1 at matched
+normalised arc length u and trace the point-wise blend (the
+Bieterman/Held morph per band), alternate direction per band or return
+along the just-cut arc as a fed link through cleared stock. Behind an
+island, morph only within one source-tracking branch; fall back to the
+one-side rule where arc lengths differ by a stated factor or an arc
+splits. Verify with the readout (morph-step load near the plain-wrap
+load; join entries near zero). Curvature-aware spacing is the second
+lever, measured after the morph. The 3D arm is wired only when the 2D
+joins show entries near one per lobe.
 
 ## Handed over 15:35: G-MOPLOAD and G-RAPIDLIFTPIN (adaptive/ sentries red since 10-20, see DEFECTS.md). G-MOPLOAD is a real pass-load break in the residue mop (the V1 mechanism): queue it right after the G1 fixes; the Phase 2 candidate must not inherit the mop.
 
