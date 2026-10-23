@@ -44,11 +44,9 @@ You are the lead of the geometry selection programme. Read `PLAN.md` from
    a lower face.
 4. DONE a68cf423: D6 Bottom height on the Heights tab, D1 Model bottom,
    Q8 names. Open: the Geometry tab still has a read-only Floor line.
-5. R-A: the outline item and the default Profile (design note
-   `RA_OUTLINE_DESIGN.md`; decisions taken:
-   exact outline from the mesh triangles, outline only, Outside, to the
-   model bottom, no tabs, a "this cut frees the part" note; only Profile
-   Outside takes it by default; area ops refuse it).
+5. DONE c49414c5: R-A part outline item, default Profile Outside to the
+   model bottom, no tabs, "frees the part" note. Open: after ModelBottom
+   is written a face-ring pick on that Profile does not get Each face.
 6. R2: an add with no fitting tool makes the op with the state "no tool
    fits: needs <kinds>" (Fusion). Medium: an op may exist with no tool.
 7. T3 (delete the last tab, note that the part is freed) and L8 (run the
