@@ -1079,6 +1079,66 @@ impl OperationConfig {
         }
     }
 
+    /// G-ROUGHGOUGE: the offset (mm) of the model gouge limit above the
+    /// drop-cutter CL Z under [`ModelGougeRule::Allowance`], or `None` for
+    /// an op without that rule. The match names every variant, so a new op
+    /// states its offset.
+    ///
+    /// The offset is the leave that the planner holds, less the chord
+    /// tolerance that it states. Both terms come from the config that the
+    /// planner reads; neither is a typed number:
+    ///
+    /// - the leave: `Adaptive3dConfig::stock_to_leave_axial`, the one value
+    ///   `compute::execute::adaptive3d_effective_stock_to_leave` gives the
+    ///   planner (that function is private to `compute::execute`);
+    /// - the chord tolerance:
+    ///   [`crate::adaptive3d::Adaptive3dGeometry::chord_tolerance`] of
+    ///   `tolerance` and `segment_merge_tolerance`. The emitter drapes each
+    ///   cut to CL Z + leave and then simplifies it by RDP at this
+    ///   tolerance (`adaptive3d::clearing::stamp_emitted_segment`), so a
+    ///   chord may sit this far below a draped point.
+    ///
+    /// `segment_merge_tolerance` is the value the session gives the planner
+    /// (`ExecutionContext::segment_merge_tolerance`). The offset is not
+    /// clamped at zero: at leave 0 it is negative, and that is the promise
+    /// of the planner.
+    #[must_use]
+    pub fn model_gouge_limit_offset_mm(&self, segment_merge_tolerance: Option<f64>) -> Option<f64> {
+        match self {
+            OperationConfig::Adaptive3d(c) => Some(
+                c.stock_to_leave_axial
+                    - crate::adaptive3d::Adaptive3dGeometry::chord_tolerance(
+                        c.tolerance,
+                        segment_merge_tolerance,
+                    ),
+            ),
+            OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Bore(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => None,
+        }
+    }
+
     /// The floor of the op (geometry selection P3.2, ruling D9): `Some` for
     /// Pocket, Profile, Zigzag, Adaptive 2D and Bore (P6.6), the
     /// `FloorOwner::OpFloor` ops. The match names every variant.

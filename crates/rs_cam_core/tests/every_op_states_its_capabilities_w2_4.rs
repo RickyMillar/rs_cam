@@ -108,6 +108,10 @@
 //! each at its own Z), `face_top` `RefuseBuried` to `RefuseBuriedEach`
 //! (each item is buried against its own top), and `model_gouge` `Exempt`
 //! to `Bevel` (a cut deeper than the bevel below the V-bit CL Z gouges).
+//!
+//! G-ROUGHGOUGE (adaptive research Phase 1.5, 2026-10-23) moved one
+//! answer: 3D Rough `model_gouge` `Exempt` to `Allowance` (a tip below the
+//! CL Z plus the leave less the chord tolerance gouges).
 
 #![expect(
     clippy::unwrap_used,
@@ -989,7 +993,7 @@ fn every_field_has_a_frozen_column() {
 #[rustfmt::skip]
 fn frozen_ux7b() -> Vec<(OperationType, &'static str)> {
     use OperationType as O;
-    let (s, h, b, e) = ("Surface", "Hole", "Bevel", "Exempt");
+    let (s, h, b, a, e) = ("Surface", "Hole", "Bevel", "Allowance", "Exempt");
     vec![
     (O::Face, s),
     (O::Pocket, s),
@@ -1004,7 +1008,7 @@ fn frozen_ux7b() -> Vec<(OperationType, &'static str)> {
     (O::Bore, h),
     (O::Chamfer, b),
     (O::DropCutter, e),
-    (O::Adaptive3d, e),
+    (O::Adaptive3d, a),
     (O::Waterline, e),
     (O::Pencil, e),
     (O::Scallop, e),
@@ -1025,6 +1029,7 @@ fn gouge_variant(rule: ModelGougeRule) -> &'static str {
         ModelGougeRule::Surface { .. } => "Surface",
         ModelGougeRule::Hole { .. } => "Hole",
         ModelGougeRule::Bevel { .. } => "Bevel",
+        ModelGougeRule::Allowance { .. } => "Allowance",
         ModelGougeRule::Exempt => "Exempt",
     }
 }

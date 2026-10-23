@@ -22,7 +22,7 @@
   stamps an entry only when a cut commits it; a replaced entry is never
   stamped, and cuts and links stamp from `PlannerCursor::tool_pos`
   (G-PHANTOMSTAMP). Never delete a segment after it is stamped. Every
-  segment passes `centre_clip` before its push (G-BOUNDARYPHANTOM).
+  segment passes `centre_clip` before its push (G-BOUNDARYPHANTOM). The RDP rule is ONE function, `Adaptive3dGeometry::chord_tolerance`; the model gouge guard reads it (G-ROUGHGOUGE).
 - A region is in tool-centre space; the 2D planner insets it again and
   plans one piece, so `planner_outlines` splits it (D2, G-ADAPT3DPIECES).
 - The Z plan is ONE Depth/Pass (`path.rs::step_levels`, plus Detect Flat

@@ -195,9 +195,18 @@ pub enum ModelGougeRule {
     /// end of an edge that runs into a wall. The guard does not see a cut
     /// into another face that is shallower than the bevel depth.
     Bevel { fix: &'static str },
+    /// G-ROUGHGOUGE (3D Rough): an op that leaves stock on the model. A
+    /// sample gouges when the tip goes below the drop-cutter CL Z plus the
+    /// limit offset of the config
+    /// (`OperationConfig::model_gouge_limit_offset_mm`: the leave less the
+    /// chord tolerance of the op). The guard then sees a cut into the
+    /// leave as well as a cut into the model. The probe is the same as for
+    /// `Surface`, so the guard does not judge a radial leave; the 3D Rough
+    /// has no radial leave (L2).
+    Allowance { fix: &'static str },
     /// No guard: the cut is the intent, and the model may not show it (an
     /// engraving, an inlay, a trace, a pin hole), or the op follows the
-    /// surface itself (the 3D ops).
+    /// surface itself (the 3D finishers).
     Exempt,
 }
 
@@ -207,7 +216,10 @@ impl ModelGougeRule {
     #[must_use]
     pub const fn fix_hint(self) -> &'static str {
         match self {
-            Self::Surface { fix } | Self::Hole { fix, .. } | Self::Bevel { fix } => fix,
+            Self::Surface { fix }
+            | Self::Hole { fix, .. }
+            | Self::Bevel { fix }
+            | Self::Allowance { fix } => fix,
             Self::Exempt => "",
         }
     }

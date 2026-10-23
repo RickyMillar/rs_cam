@@ -193,8 +193,17 @@ impl Adaptive3dGeometry {
     /// cut: the larger of the operation tolerance and the segment merge
     /// tolerance. One value for both, so the planner stamps what ships.
     pub fn cut_simplify_tolerance(&self) -> f64 {
-        self.segment_merge_tolerance
-            .map_or(self.tolerance, |m| self.tolerance.max(m))
+        Self::chord_tolerance(self.tolerance, self.segment_merge_tolerance)
+    }
+
+    /// The rule of [`Self::cut_simplify_tolerance`] on its two inputs: the
+    /// operation `tolerance` and the segment merge tolerance (when the
+    /// merge is on). The model gouge guard of the 3D Rough reads it too
+    /// (`OperationConfig::model_gouge_limit_offset_mm`, G-ROUGHGOUGE): a
+    /// simplified chord can sit this far below a draped point.
+    #[must_use]
+    pub fn chord_tolerance(tolerance: f64, segment_merge_tolerance: Option<f64>) -> f64 {
+        segment_merge_tolerance.map_or(tolerance, |m| tolerance.max(m))
     }
 }
 

@@ -731,7 +731,10 @@ impl JobPhases<'_, '_> {
     ///
     /// The probe is the tool with its diameter less twice
     /// `compute::model_gouge::MODEL_GOUGE_TOL_MM`, so a tool tangent to a
-    /// model wall does not read a gouge.
+    /// model wall does not read a gouge. G-ROUGHGOUGE: under
+    /// `ModelGougeRule::Allowance` the probe also carries the limit offset
+    /// of the config (`OperationConfig::model_gouge_limit_offset_mm`), with
+    /// the merge tolerance the planner gets.
     ///
     /// # Errors
     ///
@@ -778,6 +781,9 @@ impl JobPhases<'_, '_> {
             &self.inputs.emission_stock_bbox,
             &self.inputs.heights,
         );
+        // G-ROUGHGOUGE: the merge tolerance that `execute_generation` gives
+        // the planner (`ExecutionContext::segment_merge_tolerance`).
+        let merge_tolerance = self.context.dressups.segment_merge.map(|m| m.tolerance);
         // R-C: a Chamfer may cut the bevel depth below the V-bit CL Z.
         let half_angle = (self.inputs.tool.included_angle / 2.0).to_radians();
         let probe = GougeProbe {
@@ -789,6 +795,14 @@ impl JobPhases<'_, '_> {
                 .inputs
                 .operation
                 .bevel_depth_mm(half_angle)
+                .unwrap_or(0.0),
+            // G-ROUGHGOUGE: a 3D Rough may stay this far above the CL Z
+            // (the leave less its chord tolerance). `None` only for a row
+            // that is not `Allowance` (the G-ROUGHGOUGE sentry).
+            limit_offset_mm: self
+                .inputs
+                .operation
+                .model_gouge_limit_offset_mm(merge_tolerance)
                 .unwrap_or(0.0),
             // F30 (after F19): a Drill measures its depth from the rim of
             // each hole (`compute::floor::hole_floors`).
