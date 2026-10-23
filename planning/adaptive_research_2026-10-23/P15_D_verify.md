@@ -1090,3 +1090,159 @@ NARROW, so the planner cell under-reads.
    half cell they rise (star curv 5 → 19, pocket 56 → 134), so the planner
    cell under-reads the swept width. A plan that the planner cell reads as
    legal can be over the ceiling at a finer read.
+
+## D7 at 8deecf98
+
+Master 629748f1 merged by the lead, then C7 (`PassLoadMeasure` threaded
+through `adaptive/path.rs` and `search.rs`, shipped sites on `SweptWidth`;
+research columns `geodesic_curv_area`, `agent_area`,
+`contour_spiral_area`). Same lane script, own target dir, a `timeout` on
+each command. Disk: 43 GB free.
+
+### Fixes
+
+None.
+
+### Results
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `fmt --all -- --check` | green |
+| 1 | `check -p rs_cam_core` (plain) | green, no warning |
+| 1 | `check -p rs_cam_core --features research,test-support` | green, no warning |
+| 2 | `--lib adaptive` | green 141 passed, 7 ignored |
+| 2 | `a_clearing_cut_holds_the_pass_load_g_adaptpassload` | red, the SAME red as master: moves 2810 and 6159, sim 0.8329080445671909, exact 0.9403847504031052 |
+| 2 | `a_rapid_leaves_cut_depth_straight_up_g_adaptrapidlift` | red, the SAME red as master: move 6930, clearance 0.24951132908296492 |
+| 2 | `a_link_feeds_only_within_the_pass_load_g_adaptlinkload`, `adaptive_keeps_its_planner_order_g_adaptorder`, `adaptive_property_harness`, `contour_spiral_gcode_validity_phase0`, `adaptive_plans_every_inset_piece_g_adaptpieces` | green |
+| 2 | `adaptive3d_emission_byte_parity` | green 5/5: the threaded measure changes no shipped byte |
+| 2 | the 14 adaptive3d sentries (`--features test-support`) | green |
+| 3 | `--features research,test-support --lib research_geodesic` | green 11 passed, 2 ignored (G-MOPLOAD; and the C6 disc join test, now `#[ignore]` with the D6 reason) |
+| 4 | `clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings` | green |
+| 4 | `clippy -p rs_cam_core --all-targets -- -D warnings` (plain: the `expect(dead_code)` without `research`) | green |
+| 5 | the harness, release, `timeout 900` | green 1/1, 7.67 s |
+
+### Controls (exact)
+
+| Column | Star | Pocket | Same as before |
+|---|---|---|---|
+| geodesic_a | 92 = S1 J56 M20 P15; 0.3600; raw 206/2330 | 88 = S1 J42 M27 C4 P14; 0.3624; raw 289/2845 | yes |
+| geodesic_curv | 73 = S1 J58 M0 P14; 0.3581; raw 145/2545 | 63 = S1 J34 M12 C6 P10; 0.4677; raw 260/2952 | yes |
+| agent | 25 = S1 M17 P7; 0.4515; raw 9/1749 | 31 = S1 M19 P11; 0.3618; raw 9/1805 | yes (D3) |
+| contour_spiral | 101 = S1 M93 P7; 0.3613; raw 501/4873 | 91 = S1 M72 C8 P10; 0.3723; raw 420/3797 | yes (D3) |
+
+The harness also asserts that each shipped column equals
+`adaptive_toolpath` move by move, and it passed: product parity holds.
+
+### The three area columns (replay measure `AreaPerMm`)
+
+Split: S starter, J join at a wrap end, M mid-wrap split, C residue contour,
+P residue mop. Retracts equal entries.
+
+| Shape / column | Entries (swept-width column) | S/J/M/C/P | Emitted: swept width max, over | Emitted: area per mm max, over | Raw over (area / steps) |
+|---|---|---|---|---|---|
+| star / geodesic_curv_area | **199** (73) | 6/75/104/0/14 | 0.7492, 20 | 0.7187, 6 | 1543 / 2545 |
+| star / agent_area | **119** (25) | 6/0/105/0/8 | 0.4746, 6 | 0.3622, 0 | 672 / 1749 |
+| star / contour_spiral_area | **134** (101) | 6/0/124/0/4 | 0.6778, 16 | 0.3854, 1 | 887 / 4873 |
+| pocket / geodesic_curv_area | **217** (63) | 6/74/124/0/13 | 0.6458, 6 | 0.4375, 1 | 1934 / 2952 |
+| pocket / agent_area | **140** (31) | 6/0/128/0/6 | 0.9792, 7 | 0.4757, 5 | 915 / 1805 |
+| pocket / contour_spiral_area | **161** (91) | 6/0/123/25/7 | 0.8141, 7 | 0.4132, 2 | 996 / 3797 |
+
+Per class, emitted plan (swept width max, over | area per mm max, over):
+
+| Class | star curv_area | pocket curv_area | star agent_area | pocket agent_area | star cs_area | pocket cs_area |
+|---|---|---|---|---|---|---|
+| starter | 0.2179, 0 \| 0.3622, 0 | 0.2179, 0 \| 0.3622, 0 | the same | the same | the same | the same |
+| clearing | 0.5587, 7 \| 0.3622, 0 | 0.6458, 6 \| 0.3620, 0 | 0.4651, 4 \| 0.3611, 0 | 0.9792, 5 \| 0.3611, 0 | 0.6778, 10 \| 0.3854, 1 | 0.5458, 5 \| 0.3621, 0 |
+| clearing link | 0.2707, 0 \| 0.3350, 0 | 0.2639, 0 \| 0.2213, 0 | 0.3277, 0 \| 0.3495, 0 | 0.0620, 0 \| 0.0891, 0 | 0.3053, 0 \| 0.3559, 0 | 0, 0 \| 0, 0 |
+| residue contour | — | — | — | — | — | 0.1623, 0 \| 0.3509, 0 |
+| wall pass link | 0.5009, 1 \| 0.1874, 0 | 0.2938, 0 \| 0.3611, 0 | 0, 0 \| 0.0285, 0 | 0, 0 \| 0.0160, 0 | 0, 0 \| 0.0039, 0 | 0.8141, 2 \| 0.3603, 0 |
+| wall pass | 0.6777, 1 \| 0.2780, 0 | 0.1667, 0 \| 0.3308, 0 | 0, 0 \| 0.1338, 0 | 0.3333, 0 \| 0.2751, 0 | 0.4512, 1 \| 0.2317, 0 | 0.1529, 0 \| 0.3502, 0 |
+| residue mop | 0.7492, 11 \| 0.7187, 6 | 0.3618, 0 \| 0.4375, 1 | 0.4746, 2 \| 0.3125, 0 | 0.7995, 2 \| 0.4757, 5 | 0.5180, 5 \| 0.3194, 0 | 0.3321, 0 \| 0.4132, 2 |
+| residue mop link | 0.2991, 0 \| 0.1738, 0 | 0, 0 \| 0.0833, 0 | 0.1747, 0 \| 0.1667, 0 | 0, 0 \| 0.0833, 0 | 0, 0 \| 0.0892, 0 | 0, 0 \| 0.1968, 0 |
+
+Per class, raw plan (swept width over | area per mm max, over / steps):
+
+| Class | star curv_area | pocket curv_area | star agent_area | pocket agent_area | star cs_area | pocket cs_area |
+|---|---|---|---|---|---|---|
+| starter | 0 \| 0.8287, 36 / 160 | 0 \| 0.8287, 36 / 160 | 0 \| 0.8287, 36 / 160 | the same | the same | the same |
+| clearing join | 106 \| 1.0569, 109 / 130 | 89 \| 1.0784, 96 / 113 | — | — | — | — |
+| clearing wrap | 38 \| **4.8449**, 1396 / 2173 | 146 \| **7.8531**, 1775 / 2545 | — | — | — | — |
+| clearing link | 1 \| 0.5112, 2 / 82 | 25 \| 0.9781, 27 / 134 | 0 \| 0.3495, 0 / 350 | 0 \| 0.1397, 0 / 258 | — | — |
+| clearing | — | — | 9 \| 0.5694, 636 / 1239 | 9 \| 0.5833, 879 / 1387 | 501 \| 1.0954, 851 / 4713 | 420 \| 0.9572, 960 / 3637 |
+
+Cascade (replay model on the raw plan, area measure; refused / cascade /
+intrinsic; near-ceiling = intrinsic in the first quantum over the ceiling):
+
+| Column | Total | Near-ceiling | starter | join | wrap | link | clearing |
+|---|---|---|---|---|---|---|---|
+| star curv_area | 269 / 5 / 264 | 31 | 6 / 0 / 6 | 47 / 0 / 47 | 214 / 5 / 209 (planned max 3.9384) | 2 / 0 / 2 | — |
+| pocket curv_area | 333 / 3 / 330 | 43 | 6 / 0 / 6 | 53 / 0 / 53 | 268 / 3 / 265 (planned max 7.8531) | 6 / 0 / 6 | — |
+| star agent_area | 168 / 2 / 166 | 103 | 6 / 0 / 6 | — | — | — | 162 / 2 / 160 |
+| pocket agent_area | 260 / 10 / 250 | 150 | 6 / 0 / 6 | — | — | — | 254 / 10 / 244 |
+| star cs_area | 274 / 2 / 272 | 35 | 6 / 0 / 6 | — | — | — | 268 / 2 / 266 |
+| pocket cs_area | 264 / 0 / 264 | 60 | 6 / 0 / 6 | — | — | — | 258 / 0 / 258 |
+
+### C7's prediction: raw join refusals about halve, J the same
+
+| Shape | Join refusals, replay model (swept → area) | Raw join over (swept → area) | J entries (swept → area) |
+|---|---|---|---|
+| star | 97 → 47 (halved) | 106 → 109 (not halved) | 58 → **75** |
+| pocket | 104 → 53 (halved) | 89 → 96 (not halved) | 34 → **74** |
+
+- The replay-model join refusals halve, as C7 predicted.
+- The raw tally of join steps over the ceiling does not fall.
+- J does NOT stay the same: it rises on both shapes. The total entries of
+  `geodesic_curv_area` rise 2.7 and 3.4 times, mostly from mid-wrap splits (M 0 → 104, 12 → 124).
+
+### Readings
+
+- The area measure changes the plan of every column a lot, the shipped
+  producers under the research measure included (agent 25 → 119 and
+  31 → 140; contour spiral 101 → 134 and 91 → 161).
+- The STARTER is refused under the area measure. Its raw steps read up to
+  0.8287 of D (36 of 160 over), and every area column has 6 starter
+  entries (1 in the swept-width columns). Swept width reads the same
+  starter steps at 0.3114.
+- The raw wrap readings reach 4.84 (star) and 7.85 (pocket) of D. An
+  area per mm above 1 D clears more than a full slot per mm, which
+  cannot be the geometry. The doc of `compute_area_per_mm`
+  (`search.rs:650`) gives the quantum error as `√2 · cell · P / ℓ` per mm,
+  and that has no limit as the step length `ℓ` goes to 0. A short step (for
+  example the last piece of a `subdivide`d move) over-reads without limit.
+  This is the likely cause of the readings over 1 D, of the starter
+  refusals and of the entry growth. It is NOT proven: this pass did not
+  dump the step lengths of the refused steps.
+- The area measure admits emitted steps that the swept width refuses: the
+  emitted swept-width maxima in the area columns are 0.47 to 0.98 of D
+  (pocket agent clearing at 0.9792).
+
+### Magic numbers (C7 diff; not changed)
+
+- Product code (`search.rs`, `path.rs`, `research_geodesic.rs`): none.
+  `compute_area_per_mm` uses `cell²` and `(cell / SUB)²`; `area_per_mm`
+  reuses the swept-width ceiling, target and band.
+- Test fixtures (C7 unit tests): `stock_grid(45.0 | 40.0, ..)`,
+  `10.0 + R`, `y = 10.0 + s`, `5.0` to `20.0`, `y_k = 15.0`,
+  `wall_x = 40.0 - R`, `x0 = 20.0`, the epsilon `1e-9`.
+
+### `git status --short` at the end of D7
+
+```
+ M planning/adaptive_research_2026-10-23/P15_D_verify.md
+```
+
+### Top three for the lead
+
+1. **The area-per-mm reading is not bounded on short steps.** Raw readings
+   reach 4.8 and 7.9 of D. The quantum error grows as `1/ℓ` (the doc says
+   so). Before the area columns are read as evidence, bound the step
+   length (for example, read the area over a fixed length, or over the
+   whole subdivided move), or dump `ℓ` for the refused steps.
+2. **Under the area measure every column needs more entries: 1.3 times
+   (star contour spiral) to 4.8 times (star agent).** This includes the shipped agent (25 → 119). The starter alone
+   is refused 6 times. C7's prediction holds for the replay-model join
+   refusals (97 → 47, 104 → 53), but J rises (58 → 75, 34 → 74), and M
+   jumps (0 → 104, 12 → 124).
+3. **Shipped neutrality holds.** Byte parity is green, the two master reds
+   are unchanged, the 14 adaptive3d sentries and `--lib adaptive` are
+   green, and both clippy configurations hold the `expect(dead_code)`.
