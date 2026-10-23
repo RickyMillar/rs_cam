@@ -142,6 +142,16 @@ for nm in ("star", "pocket"):
     be = [(r["c15_e"]["time_cut_feed_min"] - r[pl.lk(l)]["time_cut_feed_min"]) * 60 / r[pl.lk(l)]["retracts"]
           for l in lams if l < 1.0]
     check(abs(min(be) - r["breakeven_min_s"]) < 1e-9 and abs(max(be) - r["breakeven_max_s"]) < 1e-9, f"{nm} break-even")
+# the lead's variant: replacing air runs never adds a retract and never
+# lengthens the path
+for nm in ("star", "pocket"):
+    for k in ("c15_e", "h_step"):
+        t, b0 = sw[nm][k + "_trim"], sw[nm][k]
+        check(t["retracts"] == b0["retracts"] == 0, f"{nm} {k} trim retracts")
+        check(t["trimmed_mm"] >= 0 and t["trims"] <= t["air_runs"], f"{nm} {k} trim counts")
+    r = sw[nm]
+    check(abs(r["c15_e_trim_be_a"] - (r["c15_e_trim"]["time_cut_feed_min"] - r["c15_a"]["time_cut_feed_min"]) * 60
+              / r["c15_a"]["retracts"]) < 1e-9, f"{nm} trimmed (e) break-even")
 # one plan again from scratch: C15 (a) on the star
 import sweep  # noqa: E402
 sweep.setup("star")
@@ -151,7 +161,21 @@ for f in ("engaged_mm", "air_mm", "retracts", "links", "cut_width_max"):
 
 # ── 5. Every claim on the page; the page and the note are what the
 #      results give ───────────────────────────────────────────────────────
-page = open(pg.PAGE).read()
+import hashlib  # noqa: E402
+# page v3 is frozen as committed (a94da348): its bytes must not change, and
+# its claims outside the sweep ("sw.") still match the current results; its
+# "sw." claims came from the sweep before the links were string pulled
+v3 = open(pg.PAGE, "rb").read()
+check(hashlib.sha256(v3).hexdigest() == "f196b3762274b7100842d5e5fdc75c5b61b4da6158cf87debb69277e5280ad9c", "v3 unchanged")
+v3c = re.findall(r'<span data-claim="([^"]+)" data-fmt="([^"]+)">([^<]*)</span>', v3.decode())
+n3 = 0
+for key, f, txt in v3c:
+    if key.startswith("sw."):
+        continue
+    n3 += 1
+    check(htmlmod.unescape(txt) == pg.fmt(pg.get(res, key), f), f"v3 claim {key}")
+print("v3 claims checked outside the sweep:", n3)
+page = open(pg.PAGE4).read()
 claims = re.findall(r'<span data-claim="([^"]+)" data-fmt="([^"]+)">([^<]*)</span>', page)
 check(len(claims) > 200, f"claims {len(claims)}")
 for key, f, txt in claims:
@@ -164,11 +188,11 @@ check(note == pg.note(res), "note equals a fresh build")
 # every number in the note's fixed text (with each claim replaced by a
 # marker) is a date, a section or agent number, a code constant (0.1 mm
 # tolerance, 0.0001 mm solve tolerance), a percentile label (90 %, 99 %),
-# a section number (§1 to §8), or a condition number ((1), (2))
+# a section number (§1 to §9), or a condition number ((1), (2))
 marked = pg.note(res, C=lambda key, f=".2f": "§")
 left = sorted(set(re.findall(r"(?<![\w.])\d+(?:\.\d+)?(?![\w])", marked)))
 print("numbers in the fixed note text:", left)
-allowed = {"2026", "10", "24", "17", "15", "14", "5", "70", "0.0001", "0.1", "90", "99", "1", "2", "3", "4", "6", "7", "8", "0",
+allowed = {"2026", "10", "24", "17", "15", "14", "5", "70", "0.0001", "0.1", "90", "99", "1", "2", "3", "4", "6", "7", "8", "9", "0",
            "34", "35", "3163", "3168", "1077", "1083", "1439"}  # source lines, checked in 4b
 check(set(left) <= allowed, f"note numbers not from a claim: {sorted(set(left) - allowed)}")
 pmarked = re.sub(r'<span data-claim[^>]*>[^<]*</span>', "§", page)

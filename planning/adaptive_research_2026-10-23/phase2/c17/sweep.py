@@ -66,8 +66,9 @@ def setup(nm):
     SHAPES[nm] = (sh, U, T / Tmax, Tmax)
 
 
-def run_plan(sh, levels):
+def run_plan(sh, levels, trimmed=False):
     pl = pn.Planner(sh)
+    pl.trimmed = trimmed
     for i, lv in enumerate(levels):
         pl.level = i
         pl.add_level(lv)
@@ -102,8 +103,8 @@ def task(args):
         field = ClipField(F, sh)
         lv, cv = march(field, whole.starter(sh), max_levels=600, stop_within=TOL)
     else:
-        cv = key_levels(nm, key)
-    m, pl = run_plan(sh, cv)
+        cv = key_levels(nm, key.replace("_trim", ""))
+    m, pl = run_plan(sh, cv, trimmed=isinstance(key, str) and key.endswith("_trim"))
     m["seconds"] = time.time() - t0
     print(nm, key, {k: (round(v, 3) if isinstance(v, float) else v) for k, v in m.items()}, flush=True)
     return nm, key, m, store(pl)
@@ -131,7 +132,7 @@ def feasible(m):
 def main():
     for nm in ("star", "pocket"):
         setup(nm)
-    tasks = [(nm, k) for nm in ("star", "pocket") for k in ("c15_a", "c15_e", "h_step", "g_step")]
+    tasks = [(nm, k) for nm in ("star", "pocket") for k in ("c15_a", "c15_e", "h_step", "g_step", "c15_e_trim", "h_step_trim")]
     tasks += [(nm, float(l)) for nm in ("star", "pocket") for l in LAMS]
     with Pool(8, initializer=init) as pool:
         out = pool.map(task, tasks, chunksize=1)

@@ -16,7 +16,8 @@ from page import panel_shape  # noqa: E402  (C15 drawing, same frame as v2)
 import page_links as pl  # noqa: E402
 
 ROOT = os.path.join(HERE, "..", "..")
-PAGE = os.path.join(ROOT, "farside_ideas_v3.html")
+PAGE = os.path.join(ROOT, "farside_ideas_v3.html")  # frozen, committed a94da348
+PAGE4 = os.path.join(ROOT, "farside_ideas_v4.html")
 NOTE = os.path.join(ROOT, "P2_C17_streamline_march.md")
 
 BLUE, GREY, ORANGE = "#1f5fbf", "#9a9a9a", "#e08a00"
@@ -238,7 +239,6 @@ table.all th:first-child, table.all td:first-child { text-align:left; }
 code { font-size:13px; }
 """
 
-
 def answers(C):
     """The five questions of the brief, shared by the page and the note."""
     s, p = "star.h_step", "pocket.h_step"
@@ -278,7 +278,17 @@ def answers(C):
     ]
 
 
+def v4_tail(res, paths, C):
+    """Sections 4 to 6 and the overall verdict of page v4."""
+    return (pl.section(res["sw"], paths, C) + pl.trim_section(res["sw"], paths, C) + f"""<div class="verdict">
+<p><b>Overall verdict.</b> The march is not a candidate for Rust. With the air counted as keep-down travel it takes the time of (e) ({C('sw.star.h_step.time_vs_e', '.2f')} and {C('sw.pocket.h_step.time_vs_e', '.2f')} times (e) at the cut feed), but its cut parts read over c where a loop leaves a wall. In the family from (a) to (e), only (e) has no retract and holds c in its cut parts, so λ* is (e) on both shapes. Links in place of the air runs of (e) save little on the star and {C('sw.pocket.c15_e_trim.trimmed_mm', '.0f')} mm on the pocket; most of the extra time of (e) is engaged path. The choice between (e) and (a) with its retracts depends on what a retract costs, which this prototype does not measure: (a) is faster unless a retract costs more than {C('sw.star.c15_a.breakeven_s', '.1f')} s (star) or {C('sw.pocket.c15_a.breakeven_s', '.1f')} s (pocket) against (e), or {C('sw.star.c15_e_trim_be_a', '.1f')} s and {C('sw.pocket.c15_e_trim_be_a', '.1f')} s against the trimmed (e).</p>
+</div>
+""")
+
+
 def build():
+    """Page v4. Page v3 is frozen as committed (a94da348); its sections 4
+    and 5 came from the sweep before the links were string pulled."""
     res, cur = load()
     res = derive(res)
     sw, paths = pl.load_sweep()
@@ -303,7 +313,7 @@ def build():
 <style>{CSS}</style></head>
 <body><main>
 <h1>Loops and links</h1>
-<p class="sub">Agent C17, 2026-10-24. Star and pocket fixtures in tool-centre space, the same frames as <code>farside_ideas_v2.html</code>. Python prototype on C15's exact geometry, fields and 0.1 mm replay; no Rust. Scripts: <code>phase2/c17/</code>; <code>assert_c17.py</code> checks every number on this page.</p>
+<p class="sub">Agent C17, 2026-10-24. Page v4: v3 plus the cut and link split, the (a)–(e) family with links string pulled, and the lead's variant (section 6). Star and pocket fixtures in tool-centre space, the same frames as <code>farside_ideas_v2.html</code>. Python prototype on C15's exact geometry, fields and 0.1 mm replay; no Rust. Scripts: <code>phase2/c17/</code>; <code>assert_c17.py</code> checks every number on this page.</p>
 
 <p><b>The question.</b> The harmonic level lines (C15 (e)) look good but cut the same stock many times: one value of the field per loop puts the loops close where the field is steep. The lead's idea: use the field only for its direction, move every point of a loop along its own streamline by its own law gap, and let a point that reaches a wall stop there.</p>
 <p><b>The rule, as run.</b></p>
@@ -319,13 +329,10 @@ def build():
 <h2>3. The five questions</h2>
 {qa}
 <div class="verdict">
-<p><b>Verdict on the march by cut length.</b> The streamline march does what the lead predicted for the shape: every loop is one closed curve, the load holds away from the walls, and the stock is cut. But it does not remove the overlap. It moves it: the cut length is {C(s + '.length_vs_e', '.2f')} times (e) on the star and {C(p + '.length_vs_e', '.2f')} times on the pocket, because a closed loop must run along all the wall it has reached. Against (a) it is {C(s + '.length_vs_a', '.1f')} times (star) and {C(p + '.length_vs_a', '.1f')} times (pocket). Sections 4 and 5 replace cut length with engaged length, air length and time.</p>
+<p><b>Verdict on the march by cut length.</b> The streamline march does what the lead predicted for the shape: every loop is one closed curve, the load holds away from the walls, and the stock is cut. But it does not remove the overlap. It moves it: the cut length is {C(s + '.length_vs_e', '.2f')} times (e) on the star and {C(p + '.length_vs_e', '.2f')} times on the pocket, because a closed loop must run along all the wall it has reached. Against (a) it is {C(s + '.length_vs_a', '.1f')} times (star) and {C(p + '.length_vs_a', '.1f')} times (pocket). Sections 4 to 6 replace cut length with engaged length, air length and time.</p>
 <p class="pred"><b>Prediction (not measured):</b> a Rust version would need a field solve, a streamline tracer, the implicit step solve, the air stop on a stock model, and loop resampling; about the size of the C15 (a) level rule plus a stock query per point per loop. The wall runs are a property of a closed loop, not of the implementation, so a Rust version would keep them.</p>
 </div>
-{pl.section(res["sw"], paths, C)}
-<div class="verdict">
-<p><b>Overall verdict.</b> The march is not a candidate for Rust: with the air counted as keep-down travel it takes the time of (e) ({C('sw.star.h_step.time_vs_e', '.2f')} and {C('sw.pocket.h_step.time_vs_e', '.2f')} times (e) at the cut feed), but its cut parts read over c where a loop leaves a wall. In the family from (a) to (e), only (e) has no retract and holds c in its cut parts, so λ* is (e) on both shapes. The choice between (e) and (a) with its retracts depends on what a retract costs, which this prototype does not measure: (a) is faster unless a retract costs more than {C('sw.star.c15_a.breakeven_s', '.1f')} s (star) or {C('sw.pocket.c15_a.breakeven_s', '.1f')} s (pocket).</p>
-</div>
+{v4_tail(res, paths, C)}
 </main></body></html>
 """
     return res, html
@@ -359,7 +366,7 @@ def note(res, C=None):
     return f"""# P2 C17 — the streamline march (2026-10-24)
 
 Status: PROTOTYPE COMPLETE (Python only; no Rust edited, no cargo run, no
-commit). Page: `farside_ideas_v3.html`. Scripts: `phase2/c17/`
+commit). Pages: `farside_ideas_v3.html` (frozen) and `farside_ideas_v4.html` (current). Scripts: `phase2/c17/`
 (`stream.py`, `run_c17.py`, `page_c17.py`, `assert_c17.py`; `try.py`,
 `try2.py`, `look.py` and `look2.py` are the debugging tools). Run
 `run_c17.py` (about 70 s), then `page_c17.py`, then `assert_c17.py`.
@@ -481,16 +488,16 @@ Pocket:
 - The air stop reads the replay raster; a Rust stock model would read its
   own.
 
-""" + pl.note_section(res["sw"], C)
+""" + pl.note_section(res["sw"], C) + "\n" + pl.trim_note(res["sw"], C)
 
 
 def main():
     res, html = build()
-    with open(PAGE, "w") as f:
+    with open(PAGE4, "w") as f:
         f.write(html)
     with open(NOTE, "w") as f:
         f.write(note(res))
-    print("wrote", os.path.abspath(PAGE), len(html), os.path.abspath(NOTE))
+    print("wrote", os.path.abspath(PAGE4), len(html), os.path.abspath(NOTE))
 
 
 if __name__ == "__main__":

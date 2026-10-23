@@ -49,6 +49,11 @@ class Planner:
         self.pieces = []  # dict(kind=cut|link|feed|retract, P, w, a, eng, interior)
         self.here = sh.seed + np.array([R, 0.0])  # the starter's last lap ends here
         self.level = 0
+        self.trimmed = False
+        self.trims = 0
+        self.trimmed_mm = 0.0
+        self.air_runs = self.air_runs_routed = 0
+        self.air_run_mm = 0.0
 
     # ── replay a piece ────────────────────────────────────────────────
     def _cut(self, P, kind):
@@ -162,8 +167,32 @@ class Planner:
         while seq[-1] != ia:
             seq.append(pred[seq[-1]])
         seq = seq[::-1]
-        pts = np.stack([X[r[seq], c[seq]], Y[r[seq], c[seq]]], 1)
-        return np.vstack([A, pts, B])
+        pts = np.vstack([A, np.stack([X[r[seq], c[seq]], Y[r[seq], c[seq]]], 1), B])
+        return self._pull(pts, X, Y, ok)
+
+    @staticmethod
+    def _pull(pts, X, Y, ok):
+        """String pulling: from each kept point, go straight to the farthest
+        later point whose segment stays on clear nodes (the grid path reads up
+        to 1/cos(22.5 deg) long; the pulled path is within a cell of the
+        shortest one)."""
+        def seg_ok(p, q):
+            n = max(2, int(math.ceil(np.hypot(*(q - p)) / H)) + 1)
+            t = np.linspace(0, 1, n)
+            S_ = p[None] + t[:, None] * (q - p)[None]
+            i = np.clip(np.round((S_[:, 1] - Y[0, 0]) / H).astype(int), 0, X.shape[0] - 1)
+            j = np.clip(np.round((S_[:, 0] - X[0, 0]) / H).astype(int), 0, X.shape[1] - 1)
+            return bool(ok[i, j].all())
+        out = [pts[0]]
+        i = 0
+        n = len(pts)
+        while i < n - 1:
+            j = i + 1
+            while j + 1 < n and seg_ok(pts[i], pts[j + 1]):
+                j += 1
+            out.append(pts[j])
+            i = j
+        return np.array(out)
 
     def _cut_through_ok(self, seg):
         """A straight feed through stock is allowed when no step of the
@@ -192,6 +221,60 @@ class Planner:
             self._cut(path, kind)
         self._cut(P, "cut")
 
+    def add_curve_trimmed(self, P):
+        """The lead's variant: keep the loop's shape, but replace each part
+        that would cut nothing (an air run: an earlier loop already cut it)
+        by the shortest keep-down route between its ends, when that route is
+        shorter. Without a shorter route the air run stays."""
+        if is_closed(P):
+            Q = P[:-1]
+            k = int(np.argmin(np.hypot(*(Q - self.here).T)))
+            P = np.vstack([Q[k:], Q[:k], Q[k:k + 1]])
+        elif np.hypot(*(P[-1] - self.here)) < np.hypot(*(P[0] - self.here)):
+            P = P[::-1]
+        kind, path = self.route(self.here.copy(), P[0].copy())
+        if kind == "retract":
+            self.pieces.append(dict(kind="retract", P=path, level=self.level))
+            self.here = P[0].copy()
+        elif len(path) >= 2 and np.hypot(*(path[-1] - path[0])) > 0:
+            self._cut(path, kind)
+        Q = resample(P, TOL)
+        # classify on a copy of the stock, as _cut would read it
+        saved = self.rp.stock.copy()
+        w, a = self.rp.cut(Q)
+        self.rp.stock = saved
+        s = np.concatenate([[0], np.cumsum(np.hypot(*np.diff(Q, axis=0).T))])
+        cs = np.concatenate([[0], np.cumsum(a)])
+        lo = np.searchsorted(s, s - PASS_STEP / 2, side="left")
+        hi = np.searchsorted(s, s + PASS_STEP / 2, side="right")
+        span = np.maximum(s[np.minimum(hi, len(s)) - 1] - s[lo], TOL)
+        eng = (cs[hi] - cs[lo]) / span > H
+        k = np.nonzero(np.diff(np.concatenate([[1], eng.astype(int), [1]])))[0]
+        air_runs = list(zip(k[0::2], k[1::2] - 1))  # [first, last] air sample
+        pos = 0
+        for i, j in air_runs:
+            if j - i < 2:
+                continue
+            if i > pos:
+                self._cut(Q[pos:i + 1], "cut")
+            run_len = s[j] - s[i]
+            self.air_runs += 1
+            self.air_run_mm += run_len
+            kind, path = self.route(Q[i].copy(), Q[j].copy())
+            self.air_runs_routed += kind == "link"
+            if kind == "link":
+                L = float(np.hypot(*np.diff(path, axis=0).T).sum())
+                if L < run_len:
+                    self._cut(path, "link")
+                    self.trimmed_mm += run_len - L
+                    self.trims += 1
+                    pos = j
+                    continue
+            self._cut(Q[i:j + 1], "cut")
+            pos = j
+        if pos < len(Q) - 1:
+            self._cut(Q[pos:], "cut")
+
     def add_level(self, curves):
         left = list(curves)
         while left:
@@ -200,7 +283,7 @@ class Planner:
                     return float(np.hypot(*(P - self.here).T).min())
                 return float(min(np.hypot(*(P[0] - self.here)), np.hypot(*(P[-1] - self.here))))
             k = int(np.argmin([dist(P) for P in left]))
-            self.add_curve(left.pop(k))
+            (self.add_curve_trimmed if self.trimmed else self.add_curve)(left.pop(k))
 
 
 def run_interior(s, e):
@@ -267,4 +350,6 @@ def summarise(pl, sh):
         cut_width_max=float(w_int.max()), cut_width_over=int((w_int > C_FRAC + TOL / D).sum()),
         cut_width_all_max=float(w_all.max()), cut_width_all_over=int((w_all > C_FRAC + TOL / D).sum()),
         residue_mm2=res["mm2"], residue_unreachable_mm2=res["unreachable_mm2"],
+        trims=int(pl.trims), trimmed_mm=float(pl.trimmed_mm), air_runs=int(pl.air_runs),
+        air_runs_routed=int(pl.air_runs_routed), air_run_mm=float(pl.air_run_mm),
     )

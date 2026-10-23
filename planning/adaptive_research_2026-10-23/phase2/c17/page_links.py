@@ -12,7 +12,8 @@ from page import panel_shape  # noqa: E402  (C15)
 
 CUTC, AIRC, RETC = "#2a78d6", "#eb6834", "#333333"  # validated pair (dataviz validator, light)
 PLANS = (("c15_a", "C15 (a): exact-distance wraps"), ("c15_e", "C15 (e): harmonic level lines"),
-         ("h_step", "streamline march"), ("g_step", "control: exact-distance streamlines"))
+         ("h_step", "streamline march"), ("g_step", "control: exact-distance streamlines"),
+         ("c15_e_trim", "(e), air runs replaced by links"), ("h_step_trim", "march, air runs replaced by links"))
 
 
 def load_sweep():
@@ -70,6 +71,8 @@ def derive_sweep(sw):
         r["star_m"] = r[lk(star_)] if star_ is not None else None
         r["prev_m"] = r[lk(r["lam_prev"])] if r["lam_prev"] is not None else None
         r["zero_m"] = r[lk(0.0)]
+        r["c15_e_trim_be_a"] = ((r["c15_e_trim"]["time_cut_feed_min"] - r["c15_a"]["time_cut_feed_min"]) * 60
+                                / r["c15_a"]["retracts"])
         r["march_beats"] = "no" if (r["h_step"]["cut_width_max"] > st.C_FRAC + st.TOL / st.D or
                                     r["h_step"]["retracts"] > 0) else "yes"
     return sw
@@ -184,7 +187,7 @@ def section(sw, paths, C):
         "h_step": lambda nm: f"No retract; {C(f'sw.{nm}.h_step.air_share', '.0%')} of the path is air, mostly the wall runs.",
     }
     for nm in ("star", "pocket"):
-        for k, title in PLANS[:3]:
+        for k, title in PLANS[:3]:  # the trimmed plans are drawn in section 6
             p = f"sw.{nm}.{k}"
             cards4.append(f"""<section class="card"><h3>{nm}: {title}</h3><p class="what">{sent4[k](nm)}</p>
 {plan_svg(sh[nm], paths[(nm, k)], nm + ' ' + k)}
@@ -208,7 +211,7 @@ def section(sw, paths, C):
     return f"""<h2>4. Cut parts and link parts (operator addition)</h2>
 <p>The operator: the overlap of the harmonic plans runs through cleared stock at depth, so it is keep-down travel, not load. So the cut length is the wrong cost. Each plan here is replayed in order with its links. Every sample is <b>engaged</b> when the stock it removes, read as area per mm over one pass step centred on it, is more than one cell width ({C('sw.inputs.cell', '.1f')} mm: the raster's resolution, one cell per cell of path). Every other sample is <b>air</b>.</p>
 <ul>
-<li><b>Links.</b> Between two curves the plan takes FreeCAD's rule (R1 §4, ideas only). A link is clear when the tool disc, grown by s·R = {C('sw.inputs.clear', '.2f')} mm, holds no standing stock. The test starts 2·s·R inside each end. A keep-down route may be up to {C('sw.inputs.route_ratio', '.0f')} × the direct length (here, the shortest 8-connected path over the clear nodes). A gap shorter than 2·s·R may be cut straight when no step cuts more than {C('sw.inputs.cut_through', '.1f')} × c·D per mm. Otherwise the link is a <b>retract</b>.</li>
+<li><b>Links.</b> Between two curves the plan takes FreeCAD's rule (R1 §4, ideas only). A link is clear when the tool disc, grown by s·R = {C('sw.inputs.clear', '.2f')} mm, holds no standing stock. The test starts 2·s·R inside each end. A keep-down route may be up to {C('sw.inputs.route_ratio', '.0f')} × the direct length (here, the shortest 8-connected path over the clear nodes, then string pulled to straight segments). A gap shorter than 2·s·R may be cut straight when no step cuts more than {C('sw.inputs.cut_through', '.1f')} × c·D per mm. Otherwise the link is a <b>retract</b>.</li>
 <li><b>Order.</b> The levels are cut in order. In a level, the next curve is the nearest one. An open arc starts at its nearer end, and a closed loop starts at its nearest point.</li>
 <li><b>Feeds.</b> The cut feed is {C('sw.inputs.F_cut', '.0f')} mm/min (<code>fixture_feeds(Adaptive)</code>, <code>compute/fixture_values.rs:34-35</code>; the op has no feed default). The 2D adaptive feeds its own keep-down <code>Link</code> at that same cut feed (<code>adaptive/path.rs:3163-3168</code>, <code>params.feed_rate</code>). A separate link feed exists only in the link-moves dressup: <code>link_feed_rate</code>, default {C('sw.inputs.F_link_dressup', '.0f')} mm/min (<code>compute/config.rs:1077-1083</code>, <code>1439</code>).</li>
 <li><b>Times.</b> The times are for information only: path length over feed, with no acceleration. A retract is counted, not timed.</li>
@@ -276,8 +279,10 @@ cleared stock, not load, so cut length is the wrong cost. Script:
 - Links: FreeCAD's rule, R1 §4 (ideas only). A link is clear when the tool
   disc grown by s·R = {C('sw.inputs.clear', '.2f')} mm holds no standing stock, tested from
   2·s·R inside each end. A keep-down route may be up to {C('sw.inputs.route_ratio', '.0f')} × the direct
-  length (the shortest 8-connected path over clear nodes, which reads a
-  route up to {C('sw.inputs.grid_overread', '.1%')} long). A gap under 2·s·R may be cut straight at most
+  length (the shortest 8-connected path over clear nodes, then string
+  pulled: each kept point goes straight to the farthest later point it sees
+  over clear nodes; the grid path alone reads up to {C('sw.inputs.grid_overread', '.1%')} long). A gap
+  under 2·s·R may be cut straight at most
   {C('sw.inputs.cut_through', '.1f')} × c·D per mm. Otherwise the link is a retract.
 - Order: levels in order; in a level the nearest curve next. An open arc
   starts at its nearer end and a closed loop at its nearest point. The cut
@@ -363,4 +368,57 @@ Result:
 - The streamline march has no retract. But its cut parts read
   {C(st_ + '.h_step.cut_width_max', '.4f')} D (star) and {C(po + '.h_step.cut_width_max', '.4f')} D (pocket) where a loop leaves a wall, which is over c. So it
   fails condition (2) and does not beat λ* (star {C(st_ + '.march_beats', 's')}, pocket {C(po + '.march_beats', 's')}).
+"""
+
+
+def trim_section(sw, paths, C):
+    sh = {nm: st.Shape(nm) for nm in ("star", "pocket")}
+    cards = []
+    for nm in ("star", "pocket"):
+        for k, base in (("c15_e_trim", "c15_e"), ("h_step_trim", "h_step")):
+            p, b = f"sw.{nm}.{k}", f"sw.{nm}.{base}"
+            cards.append(f"""<section class="card"><h3>{nm}: {dict(PLANS)[k]}</h3>
+<p class="what">{C(p + '.trims', 'd')} of {C(p + '.air_runs', 'd')} air runs get a shorter keep-down link; the path is {C(p + '.trimmed_mm', '.0f')} mm shorter and takes {C(p + '.time_cut_feed_min', '.2f')} min against {C(b + '.time_cut_feed_min', '.2f')} min.</p>
+{plan_svg(sh[nm], paths[(nm, k)], nm + ' ' + k)}
+<table class="mini"><tr><th>engaged / air</th><td>{C(p + '.engaged_mm', '.0f')} / {C(p + '.air_mm', '.0f')} mm</td><th>retracts</th><td>{C(p + '.retracts', 'd')}</td></tr>
+<tr><th>time, cut feed</th><td>{C(p + '.time_cut_feed_min', '.2f')} min</td><th>time, link feed</th><td>{C(p + '.time_link_feed_min', '.2f')} min</td></tr>
+<tr><th>cut-part interior max</th><td>{C(p + '.cut_width_max', '.4f')} D</td><th>residue</th><td>{C(p + '.residue_mm2', '.1f')} mm²</td></tr></table></section>""")
+    st_, po = "sw.star", "sw.pocket"
+    return f"""<h2>6. Keep the loop shape, replace the air runs by links (lead's variant)</h2>
+<p>Each loop of (e), and of the march, keeps its shape. An <b>air run</b> is a part of the loop that cuts nothing, because an earlier loop already cut it. Each air run is replaced by the shortest keep-down route between its two ends (the rule of section 4) when that route is shorter. This is what the C14 turns do for (a). The loops are cut in their order, and the replay classifies each run against the stock as it is at that moment.</p>
+<div class="grid">{"".join(cards)}</div>
+<div class="verdict">
+<p><b>Result.</b></p>
+<ul>
+<li><b>Star.</b> The air runs of (e) lie along the straight walls of the lobes, so no route is shorter. Only {C(st_ + '.c15_e_trim.trimmed_mm', '.1f')} mm is saved, and (e) stays at {C(st_ + '.c15_e_trim.time_cut_feed_min', '.2f')} min.</li>
+<li><b>Pocket.</b> The links cross the cleared corners and the area round the island. They save {C(po + '.c15_e_trim.trimmed_mm', '.0f')} mm, and (e) takes {C(po + '.c15_e_trim.time_cut_feed_min', '.2f')} min instead of {C(po + '.c15_e.time_cut_feed_min', '.2f')} min.</li>
+<li><b>The march.</b> Its wall and corridor runs shorten more: {C(st_ + '.h_step_trim.trimmed_mm', '.0f')} mm (star) and {C(po + '.h_step_trim.trimmed_mm', '.0f')} mm (pocket), to {C(st_ + '.h_step_trim.time_cut_feed_min', '.2f')} and {C(po + '.h_step_trim.time_cut_feed_min', '.2f')} min. Its cut parts still read {C(st_ + '.h_step_trim.cut_width_max', '.4f')} D and {C(po + '.h_step_trim.cut_width_max', '.4f')} D, which is over c.</li>
+<li><b>Retracts.</b> No retract is added: {C(st_ + '.c15_e_trim.retracts', 'd')} and {C(po + '.c15_e_trim.retracts', 'd')} for the trimmed (e).</li>
+<li><b>Against (a).</b> (a) takes {C(st_ + '.c15_a.time_cut_feed_min', '.2f')} and {C(po + '.c15_a.time_cut_feed_min', '.2f')} min, with {C(st_ + '.c15_a.retracts', 'd')} and {C(po + '.c15_a.retracts', 'd')} retracts. The trimmed (e) is faster only if a retract costs more than {C(st_ + '.c15_e_trim_be_a', '.1f')} s (star) or {C(po + '.c15_e_trim_be_a', '.1f')} s (pocket).</li>
+</ul>
+<p>The rest of the extra time of (e) is engaged path, not air: (e) engages {C(st_ + '.c15_e.engaged_vs_a', '.1f')} and {C(po + '.c15_e.engaged_vs_a', '.1f')} times the length of (a), because its thin loops cut little stock per mm. No change to the links can remove that.</p>
+</div>
+"""
+
+
+def trim_note(sw, C):
+    st_, po = "sw.star", "sw.pocket"
+    return f"""## 9. Lead's variant: keep the loop shape, replace the air runs by links
+
+- Each loop of (e) (and of the march) keeps its shape. An air run (it cuts
+  nothing, because an earlier loop already cut it) is replaced by the
+  shortest keep-down route between its ends (§7 rule) when that route is
+  shorter. This is what the C14 turns do for (a). The run is classified
+  against the stock at the time it is cut.
+- Star (e): {C(st_ + '.c15_e_trim.trims', 'd')} of {C(st_ + '.c15_e_trim.air_runs', 'd')} air runs get a shorter link, which saves only {C(st_ + '.c15_e_trim.trimmed_mm', '.1f')} mm. The air runs lie
+  along the straight lobe walls, where the run is already the shortest
+  route. The time is {C(st_ + '.c15_e_trim.time_cut_feed_min', '.2f')} min against {C(st_ + '.c15_e.time_cut_feed_min', '.2f')} min.
+- Pocket (e): {C(po + '.c15_e_trim.trims', 'd')} of {C(po + '.c15_e_trim.air_runs', 'd')} runs, which saves {C(po + '.c15_e_trim.trimmed_mm', '.0f')} mm. The time is {C(po + '.c15_e_trim.time_cut_feed_min', '.2f')} min against {C(po + '.c15_e.time_cut_feed_min', '.2f')} min.
+- March: it saves {C(st_ + '.h_step_trim.trimmed_mm', '.0f')} mm (star) and {C(po + '.h_step_trim.trimmed_mm', '.0f')} mm (pocket), for {C(st_ + '.h_step_trim.time_cut_feed_min', '.2f')} and {C(po + '.h_step_trim.time_cut_feed_min', '.2f')} min.
+  Its cut parts still read {C(st_ + '.h_step_trim.cut_width_max', '.4f')} D and {C(po + '.h_step_trim.cut_width_max', '.4f')} D, which is over c.
+- No retract is added ({C(st_ + '.c15_e_trim.retracts', 'd')} and {C(po + '.c15_e_trim.retracts', 'd')}). Against (a) ({C(st_ + '.c15_a.retracts', 'd')} and {C(po + '.c15_a.retracts', 'd')} retracts), the
+  trimmed (e) is faster only if a retract costs more than {C(st_ + '.c15_e_trim_be_a', '.1f')} s (star) or
+  {C(po + '.c15_e_trim_be_a', '.1f')} s (pocket).
+- The rest of the extra time of (e) is engaged path: (e) engages {C(st_ + '.c15_e.engaged_vs_a', '.1f')} and {C(po + '.c15_e.engaged_vs_a', '.1f')}
+  times the length of (a). No change to the links removes that.
 """
