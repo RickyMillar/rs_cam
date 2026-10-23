@@ -215,7 +215,7 @@ repo rule with no source; the raw 3.0 is UNDERIVED.
 | `detect_flat_areas` | false | `OC:1570` | `[OFF]` |
 | `region_ordering` | Global | `OC:1571` | `[U]` A choice. |
 | `clearing_strategy` | ContourParallel | `OC:1572` | `[U]` A choice. |
-| `trochoid_cap_mult` | 1.6 | `OC:1573, 1592-1594` | `[S]` measured: "the balanced knee from the cap sweep" (`planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`). |
+| `trochoid_cap_mult` | 1.6 | `OC:1573, 1592-1594` | `[S]` (owned by adaptive_research_2026-10-23; not removed here) measured: "the balanced knee from the cap sweep" (`planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`). |
 | `engagement_measure` | DiskArea | `OC:1574` | `[U]` "the historical" value. |
 | `z_blend` | false | `OC:1575` | `[OFF]` |
 | `min_region_cut_length_mm` | 15.0 mm | `OC:1577, 1543-1552` | `[S]` measured on the Wanaka Back Rough (F-038). One fixture and one 6 mm tool; better: `2.5 × D` from the stated "2× tool diameter" heuristic. Doc defect: the field doc (`OC:~1514`) says "Default 5.0 mm"; the code is 15.0. |
