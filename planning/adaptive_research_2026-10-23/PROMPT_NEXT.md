@@ -17,8 +17,11 @@ do not read, code or run fixtures yourself. Read first, in this order:
   Branch `adaptive-instruments` == master; worktree
   `.claude/worktrees/adaptive-head` (own target, ~12 GB) is where agents
   edit; delete it with its target when the research ends.
-- The installed GUI `target/release/rs_cam_gui` is the branch build
-  (sha 8820c48c…, mtime 1792752676.96); `gui_status` before trusting it.
+- The installed GUI `target/release/rs_cam_gui` was the branch build
+  (sha 8820c48c…); at ~01:40 on the 24th the geometry-selection lead
+  rebuilt it from master c3ebc3f9 (includes everything here plus their
+  e5362911). Run `gui_status` and `gui_restart` before trusting an image;
+  the mtime tells you which build you have.
 - Peer session (geometry-selection lead, name changes per session) works
   in the main checkout; coordinate every `--release` build and ff by
   SendMessage. Their R2/Q7/Q9 landed as e5362911 (2026-10-24 01:30):
