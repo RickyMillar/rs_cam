@@ -1,0 +1,11 @@
+pocket / geodesic_a_through
+pieces: 1
+cut length: 1490.1 mm
+keep-down links: 150 (669.5 mm)
+entries (plunges): 92
+retracts (lifts to safe Z, last included): 92
+pass load (planner readout): max 0.4743 vs ceiling 0.3626; 3 of 4825 steps over; 0 exempt plunge-departure steps
+  over: residue mop cut (segment 251) from (42.76, 51.64) to (42.03, 51.77), reading 0.4511
+  over: residue mop cut (segment 260) from (9.63, 42.16) to (9.04, 41.70), reading 0.4743
+  over: residue mop cut (segment 260) from (8.48, 25.15) to (8.87, 24.51), reading 0.4595
+field piece 0: applied true, seed Some([18.5, 18.5]), seed radius 3.00 mm, levels 31, wrap pieces 83, converged true, front branches 3, spiral levels 3
