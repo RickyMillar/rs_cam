@@ -1,6 +1,30 @@
 # Adaptive research — status
 
-Lead session: Fable, started 2026-10-23 10:41 NZDT. **At gate G0** (all Phase 0, Phase 1 and Phase 4 inputs ready; no Phase 2 code started).
+Lead session: Fable, started 2026-10-23 10:41 NZDT. **G0 PASSED 2026-10-23 13:30** with rulings below. Next: Phase 1.5 instruments, then Phase 2.
+
+## G0 rulings (operator, 2026-10-23 13:25) and lead judgements
+
+1. **Instruments first.** Operator: "instruments are important." Before
+   any Phase 2 candidate: a coverage instrument for a 3D Rough through MCP
+   (G-ROUGHCOV, start from `metrology/union_coverage.rs`), a gouge check of
+   emitted moves against the model mesh for a rough (G-ROUGHGOUGE), and a
+   thin-standing-material detector (G-THINSTAND, from `phase0/tools/spurs.py`).
+2. **Defects filed now:** `DEFECTS.md` (G-LINKPLOUGH, G-SPUR, G-HOLECORE,
+   G-OUTERBAND, G-AXIALDOC, G-WALLDIP, G-HOPRETRACT, G-SIMCYCLE).
+3. **Trochoid cap 1.6 (lead judgement, operator: "no magic numbers").** The
+   value is a tuned knee from the June wanaka200 sweep, not a derivation.
+   Under the 2026-10-23 ruling it goes: `TROCHOID_CAP_MULT_3D` and
+   `default_trochoid_cap_mult()` are removed when Phase 2 touches
+   ContourSpiral; the spiral's engagement bound becomes the existing derived
+   pass-load ceiling (`adaptive/search.rs` `step_within_pass_load`), which
+   the plan already names as the bound for every candidate. Until then the
+   baseline pages state 1.6. The peer's default-removal diff does not touch
+   these two symbols (checked 13:20), so this research owns the removal.
+4. **Compact spiral (lead judgement).** Arm STOPPED: 0 of 47 islands, and
+   the 12 holeless islands refuse too. The module's own [REPO] constants
+   (`max_chord_mm` 0.1, `closure_tol_mm` 0.05, backtrack 0.35 rad) are
+   underived; they stay only because the module is research-only behind
+   the `research` feature and nothing ships them. No productisation.
 
 ## Baseline pin
 
