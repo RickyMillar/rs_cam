@@ -1,0 +1,63 @@
+star / geodesic_morph_return
+pieces: 1
+cut length: 1424.2 mm
+keep-down links: 41 (299.3 mm)
+entries (plunges): 79
+retracts (lifts to safe Z, last included): 79
+pass load (planner readout): max 0.9745 vs ceiling 0.3626; 24 of 2357 steps over; 0 exempt plunge-departure steps
+  over: residue contour link (segment 106) from (48.00, 67.43) to (49.19, 66.53), reading 0.8836
+  over: residue contour link (segment 106) from (49.19, 66.53) to (50.39, 65.63), reading 0.9663
+  over: residue contour link (segment 106) from (50.39, 65.63) to (51.58, 64.73), reading 0.9663
+  over: residue contour link (segment 106) from (51.58, 64.73) to (52.78, 63.82), reading 0.9501
+  over: residue contour link (segment 106) from (52.78, 63.82) to (53.97, 62.92), reading 0.9663
+  over: residue contour link (segment 106) from (53.97, 62.92) to (55.17, 62.02), reading 0.9338
+  over: residue contour link (segment 106) from (55.17, 62.02) to (56.36, 61.12), reading 0.9663
+  over: residue contour link (segment 106) from (56.36, 61.12) to (57.56, 60.22), reading 0.9663
+  over: residue contour link (segment 106) from (57.56, 60.22) to (58.75, 59.31), reading 0.9663
+  over: residue contour link (segment 106) from (58.75, 59.31) to (59.95, 58.41), reading 0.9501
+  over: residue contour link (segment 106) from (59.95, 58.41) to (61.14, 57.51), reading 0.9745
+  over: residue contour link (segment 106) from (62.34, 56.61) to (63.53, 55.70), reading 0.5511
+  over: residue contour link (segment 106) from (63.53, 55.70) to (64.73, 54.80), reading 0.8510
+  over: residue contour link (segment 106) from (64.73, 54.80) to (65.92, 53.90), reading 0.9501
+  over: residue contour link (segment 106) from (65.92, 53.90) to (67.12, 53.00), reading 0.9663
+  over: residue contour link (segment 106) from (67.12, 53.00) to (68.31, 52.09), reading 0.9663
+  over: residue contour link (segment 106) from (68.31, 52.09) to (69.51, 51.19), reading 0.9501
+  over: residue contour cut (segment 110) from (63.53, 58.45) to (63.75, 59.15), reading 0.6086
+  over: residue mop cut (segment 206) from (65.50, 59.50) to (64.30, 60.39), reading 0.4814
+  over: residue mop cut (segment 209) from (30.99, 74.46) to (30.40, 73.99), reading 0.4533
+  over: residue mop cut (segment 209) from (31.66, 75.79) to (32.26, 76.24), reading 0.4553
+  over: residue mop cut (segment 209) from (31.08, 76.45) to (31.70, 76.87), reading 0.4626
+  over: residue mop cut (segment 212) from (58.71, 70.77) to (59.39, 71.10), reading 0.4575
+  over: residue mop cut (segment 234) from (28.77, 80.73) to (29.38, 81.15), reading 0.4503
+load by class, emitted plan (max reading, steps over of steps):
+  starter: max 0.3114, 0 of 160
+  clearing: max 0.3618, 0 of 759
+  clearing link: max 0.3185, 0 of 5
+  residue contour link: max 0.9745, 17 of 46
+  residue contour: max 0.6086, 1 of 618
+  wall pass link: max 0.1442, 0 of 104
+  wall pass: max 0.3230, 0 of 43
+  residue mop link: max 0.2500, 0 of 65
+  residue mop: max 0.4814, 6 of 557
+load by class, raw plan (max reading, steps over of steps):
+  starter: max 0.3114, 0 of 160
+  clearing spiral: max 0.5044, 138 of 392
+  clearing link: max 0.5376, 3 of 84
+  clearing wrap: max 0.9550, 56 of 609
+  clearing join: max 0.8333, 42 of 47
+  clearing return: max 0.3586, 0 of 458
+  clearing morph: max 0.7598, 75 of 514
+entries by producer: starter 1, clearing at a wrap end (join) 35, clearing mid-wrap (replay split) 14, residue contour 12, wall pass 0, residue mop 17, other 0
+raw plan (before the replay): 314 of 2264 steps over the ceiling (the steps the replay refuses; exact up to the first); the first ten:
+  refused: clearing cut spiral (segment 4) from (53.27, 52.32) to (52.82, 53.15), reading 0.3944
+  refused: clearing cut spiral (segment 4) from (51.40, 54.44) to (50.49, 54.83), reading 0.3804
+  refused: clearing cut spiral (segment 4) from (50.49, 54.83) to (49.50, 55.00), reading 0.4005
+  refused: clearing cut spiral (segment 4) from (49.50, 55.00) to (48.47, 55.01), reading 0.5044
+  refused: clearing cut spiral (segment 4) from (48.47, 55.01) to (47.47, 54.72), reading 0.4125
+  refused: clearing cut spiral (segment 4) from (47.47, 54.72) to (46.54, 54.21), reading 0.4640
+  refused: clearing cut spiral (segment 4) from (46.54, 54.21) to (45.74, 53.50), reading 0.3734
+  refused: clearing cut spiral (segment 4) from (45.74, 53.50) to (45.11, 52.62), reading 0.4256
+  refused: clearing cut spiral (segment 4) from (45.11, 52.62) to (44.69, 51.60), reading 0.4544
+  refused: clearing cut spiral (segment 4) from (44.69, 51.60) to (44.50, 50.50), reading 0.3983
+field piece 0: applied true, seed Some([49.5, 50.5]), seed radius 3.00 mm, levels 18, wrap pieces 98, converged true, front branches 1, spiral levels 6
+lobes piece 0: 6 lobes of 29 arcs, 63 plain wraps; not joined: split 53, branch 0, length ratio 11, gap 0; lobes that left the region (cut plain) 0; return length 192.1 mm
