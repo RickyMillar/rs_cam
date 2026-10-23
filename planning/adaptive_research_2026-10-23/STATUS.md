@@ -2,6 +2,31 @@
 
 Lead session: Fable, started 2026-10-23 10:41 NZDT. **G0 PASSED 2026-10-23 13:30** with rulings below. Next: Phase 1.5 instruments, then Phase 2.
 
+## Phase 1.5 + Phase 2 start (2026-10-23 13:45)
+
+Branch `adaptive-instruments` in worktree `.claude/worktrees/adaptive-head`
+(HEAD a23df1f8, own target). Agents edit there with no cargo; one verifier
+runs the worktree lane script. The lead commits by pathspec on the branch
+and cherry-picks onto master after the peer's default-removal commit lands
+(it edits `compute/operation_configs.rs` widely; rebase on it).
+
+Facts checked before briefing: `metrology::union_coverage` is LIVE (only
+its evidence test is a gated target); `ToolpathStats::untouched_material_mm2`
+is the scallop-cascade measure, not a rough measure, so the rough's coverage
+is the union audit per op checkpoint; `ModelGougeRule::Exempt` on 3D ops
+dates from UX-7b (6d5a5423, 2026-10-22), whose scope was 2.5D ops; the
+Surface rule samples EMITTED moves at ≤ D/4 through the drop-cutter.
+
+| Agent | Scope | Owns (files) |
+|---|---|---|
+| A coverage+thinstand | G-ROUGHCOV + G-THINSTAND: union audit per rough checkpoint against model + stock_to_leave, islands with height and min width, into SimulationTriage findings | `metrology/union_coverage.rs`, `stock/sim_triage.rs`, `session/compute/simulation.rs` (wiring), new sentry |
+| B gouge | G-ROUGHGOUGE: Surface rule with the stock_to_leave allowance for 3D Rough (and other 3D ops that leave stock), on emitted moves; registry row change LAST | `compute/model_gouge.rs`, `compute/catalog/registry.rs` (one row), new sentry with an injected gouge |
+| C candidate (a) | Phase 2 2D: geodesic field from the entry with islands as obstacles, wraps as level sets, one continuous path, behind a research flag; render beside the 2D baselines on `ux_2d_star` / `ux_2d_pocket` | new `adaptive/research_geodesic.rs` (or similar), a render harness; no edit to shipped paths |
+| D verifier | after A–C: fmt, clippy, named sentries, `rs_cam_core --lib adaptive`, viz `--lib`, mcp tests; `rg` for bare float literals in new code | — |
+
+Operator 13:40: "sounds like it's worth trying some of these ideas" → Phase 2
+candidate (a) starts in parallel with the instruments; (b) and (c) wait for G1.
+
 ## G0 rulings (operator, 2026-10-23 13:25) and lead judgements
 
 1. **Instruments first.** Operator: "instruments are important." Before
